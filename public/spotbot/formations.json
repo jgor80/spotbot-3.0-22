@@ -1,0 +1,114 @@
+{
+  "4-5-1 ATTACK": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CM", "CM", "CAM", "CAM", "LM", "RM", "ST"],
+    "meta": "Strengths: Overloads midfield for ball retention.\nWeaknesses: Relies on single ST.\nBest used: Possession play against narrow defenses.\nKey players: High Passing CAMs."
+  },
+  "4-3-2-1": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CM", "CM", "CM", "CAM", "CAM", "ST"],
+    "meta": "Strengths: Central threats with midfield dominance.\nWeaknesses: Vulnerable to wide attacks.\nBest used: Counter-attacking through the middle.\nKey players: Quick mobile attackers."
+  },
+  "4-3-1-2": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CM", "CM", "CM", "CAM", "ST", "ST"],
+    "meta": "Strengths: Quick 1-2 passing between attackers.\nWeaknesses: No natural width.\nBest used: Exploiting CB spacing.\nKey players: Technically gifted CAM."
+  },
+  "4-3-3 FLAT": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CM", "CM", "CM", "LW", "RW", "ST"],
+    "meta": "Strengths: Balanced with natural width.\nWeaknesses: Defense exposed if CMs push high.\nBest used: All-around strategy.\nKey players: Rapid Wingers."
+  },
+  "4-4-2 FLAT": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CM", "CM", "LM", "RM", "ST", "ST"],
+    "meta": "Strengths: Classic balanced with two strikers.\nWeaknesses: Outnumbered in midfield vs 3 CMs.\nBest used: Direct football with crosses.\nKey players: Strikers with good link-up."
+  },
+  "3-5-2": {
+    "positions": ["GK", "CB", "CB", "CB", "CDM", "CDM", "CAM", "LM", "RM", "ST", "ST"],
+    "meta": "Strengths: Central defensive solidity.\nWeaknesses: Dependent on LM/RM tracking back.\nBest used: Overwhelming central midfield.\nKey players: High stamina LM/RM."
+  },
+  "3-1-4-2": {
+    "positions": ["GK", "CB", "CB", "CB", "CDM", "CM", "CM", "LM", "RM", "ST", "ST"],
+    "meta": "Strengths: CDM shield with attacking versatility.\nWeaknesses: Gaps if wingers don't defend.\nBest used: Attacking with position rotation.\nKey players: High work rate CDM."
+  },
+  "3-4-2-1": {
+    "positions": ["GK", "CB", "CB", "CB", "CM", "CM", "LM", "RM", "CAM", "CAM", "ST"],
+    "meta": "Strengths: Compact central diamond.\nWeaknesses: CMs exposed without CDM anchor.\nBest used: High-pressure offense.\nKey players: CAMs with good shooting."
+  },
+  "3-4-1-2": {
+    "positions": ["GK", "CB", "CB", "CB", "CM", "CM", "LM", "RM", "CAM", "ST", "ST"],
+    "meta": "Strengths: Central overloads in final third.\nWeaknesses: LM/RM must cover flanks.\nBest used: Aggressive high-tempo attack.\nKey players: Agile CAM."
+  },
+  "3-4-3 FLAT": {
+    "positions": ["GK", "CB", "CB", "CB", "CM", "CM", "LM", "RM", "LW", "RW", "ST"],
+    "meta": "Strengths: Five forward threats.\nWeaknesses: Two CMs easily overrun.\nBest used: Against defensive opponents.\nKey players: Pacey wingers."
+  },
+  "4-2-2-2": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "CDM", "CAM", "CAM", "ST", "ST"],
+    "meta": "Strengths: Meta-friendly and balanced.\nWeaknesses: Wide CAMs must track back.\nBest used: Counter-attacks and defense.\nKey players: High awareness CDMs."
+  },
+  "4-5-1 FLAT": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CM", "CM", "CM", "LM", "RM", "ST"],
+    "meta": "Strengths: Midfield possession machine.\nWeaknesses: Single striker isolated.\nBest used: Minimizing central space.\nKey players: Balanced CMs."
+  },
+  "4-2-3-1 WIDE": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "CDM", "LM", "RM", "CAM", "ST"],
+    "meta": "Strengths: Two CDMs for protection.\nWeaknesses: Wide midfielders isolated.\nBest used: Exploiting wide areas.\nKey players: Pacey wingers."
+  },
+  "4-2-3-1 NARROW": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "CDM", "CAM", "CAM", "CAM", "ST"],
+    "meta": "Strengths: Three CAMs for control.\nWeaknesses: No natural width.\nBest used: Narrow central overloads.\nKey players: Technical CAMs."
+  },
+  "4-2-4": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CM", "CM", "LW", "RW", "ST", "ST"],
+    "meta": "Strengths: Four attackers for pressure.\nWeaknesses: Only two CMs.\nBest used: All-out attack.\nKey players: Prolific strikers."
+  },
+  "4-1-2-1-2 WIDE": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "LM", "RM", "CAM", "ST", "ST"],
+    "meta": "Strengths: CDM anchor with wide options.\nWeaknesses: CMs cover large areas.\nBest used: Quick wide attacks.\nKey players: High stamina LM/RM."
+  },
+  "4-1-2-1-2 NARROW": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "CM", "CM", "CAM", "ST", "ST"],
+    "meta": "Strengths: Narrow diamond control.\nWeaknesses: No natural width.\nBest used: Central overloads.\nKey players: Vision CAM."
+  },
+  "4-4-1-1": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CM", "CM", "LM", "RM", "CF", "ST"],
+    "meta": "Strengths: Extra playmaker via CF.\nWeaknesses: Two CMs can be overrun.\nBest used: Patient build-up.\nKey players: Creative CF."
+  },
+  "4-4-2 HOLD": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "CDM", "LM", "RM", "ST", "ST"],
+    "meta": "Strengths: Double CDM for defense.\nWeaknesses: Strikers isolated.\nBest used: Counter-attacking.\nKey players: Pacey strikers."
+  },
+  "5-4-1 FLAT": {
+    "positions": ["GK", "CB", "CB", "CB", "LWB", "RWB", "CM", "CM", "LM", "RM", "ST"],
+    "meta": "Strengths: Five-back security.\nWeaknesses: Lone striker isolated.\nBest used: Defensive stability.\nKey players: Attacking wingbacks."
+  },
+  "5-3-2": {
+    "positions": ["GK", "CB", "CB", "CB", "LWB", "RWB", "CM", "CM", "CM", "ST", "ST"],
+    "meta": "Strengths: Five-back with three CMs.\nWeaknesses: Wingbacks must be fit.\nBest used: Defensive with counter.\nKey players: Box-to-box CMs."
+  },
+  "5-2-1-2": {
+    "positions": ["GK", "CB", "CB", "CB", "LWB", "RWB", "CDM", "CDM", "CAM", "ST", "ST"],
+    "meta": "Strengths: Ultra-defensive shape.\nWeaknesses: Offensive creativity limited.\nBest used: Locking down matches.\nKey players: High stamina wingbacks."
+  },
+  "5-2-2-1": {
+    "positions": ["GK", "CB", "CB", "CB", "LWB", "RWB", "CM", "CM", "CAM", "CAM", "ST"],
+    "meta": "Strengths: Two CAMs link play.\nWeaknesses: Wingbacks stretched.\nBest used: Quick transitions.\nKey players: Creative CAMs."
+  },
+  "5-1-2-2": {
+    "positions": ["GK", "CB", "CB", "CB", "LB", "RB", "CDM", "CM", "CM", "ST", "ST"],
+    "meta": "Strengths: CDM shields five-back.\nWeaknesses: CMs heavily burdened.\nBest used: Counter with pacey STs.\nKey players: Passing CDM."
+  },
+  "4-1-4-1": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "CM", "CM", "LM", "RM", "ST"],
+    "meta": "Strengths: CDM with four midfielders.\nWeaknesses: Single striker lacks support.\nBest used: Patient possession.\nKey players: High work rate CDM."
+  },
+  "4-1-3-2": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "CM", "LM", "RM", "ST", "ST"],
+    "meta": "Strengths: Wide midfield overload.\nWeaknesses: Single CM exposed.\nBest used: Wide play to strikers.\nKey players: Crossing LM/RM."
+  },
+  "4-3-3 ATTACK": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CM", "CM", "CAM", "LW", "RW", "ST"],
+    "meta": "Strengths: Constant vertical threat.\nWeaknesses: Attacking fullbacks leave gaps.\nBest used: High-risk attacking.\nKey players: Primary Playmaker CAM."
+  },
+  "5-2-3": {
+    "positions": ["GK", "CB", "CB", "CB", "LB", "RB", "CM", "CM", "LW", "RW", "ST"],
+    "meta": "Strengths: Three attackers with five-back.\nWeaknesses: Midfield easily bypassed.\nBest used: Wing-play focused attacks.\nKey players: Pacey fullbacks."
+  }
+}

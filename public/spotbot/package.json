@@ -1,0 +1,16 @@
+{
+  "name": "spotbot",
+  "version": "1.0.0",
+  "description": "SpotBot Discord Bot",
+  "main": "index.cjs",
+  "scripts": {
+    "start": "node index.cjs"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "@supabase/supabase-js": "^2.39.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

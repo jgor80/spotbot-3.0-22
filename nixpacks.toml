@@ -1,0 +1,10 @@
+providers = []
+
+[phases.install]
+cmds = ["cd public/spotbot && npm install"]
+
+[phases.build]
+cmds = ["echo 'Skipping build'"]
+
+[start]
+cmd = "node public/spotbot/index.cjs"
