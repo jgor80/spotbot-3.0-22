@@ -23,3 +23,30 @@ verify_jwt = false
 
 [functions.win-probability]
 verify_jwt = false
+
+[functions.event-create]
+verify_jwt = false
+
+[functions.availability-response]
+verify_jwt = false
+
+[functions.send-reminders]
+verify_jwt = false
+
+[functions.mark-attendance]
+verify_jwt = false
+
+[functions.get-event-availability]
+verify_jwt = false
+
+[functions.create-lineup]
+verify_jwt = false
+
+[functions.suggest-optimal-lineup]
+verify_jwt = false
+
+[functions.get-lineup]
+verify_jwt = false
+
+[functions.claim-competition-win]
+verify_jwt = false
