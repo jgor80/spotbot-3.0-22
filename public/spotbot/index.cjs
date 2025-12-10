@@ -132,6 +132,7 @@ const POSITION_INFERENCE = Object.freeze({
 // =======================
 
 const COMMANDS = [
+  // Spot Management Commands
   { name: 'spotpanel', description: 'Create the global control panel for club spots.' },
   { name: 'spots', description: 'Show a read-only board with club dropdown.' },
   { name: 'vcspots', description: 'Create/update a live club spot panel linked to your current voice channel.' },
@@ -150,7 +151,122 @@ const COMMANDS = [
   { name: 'posboard', description: 'Show position preferences for players in your current voice channel.' },
   { name: 'posprefs', description: 'View position preferences for VC members or online players.' },
   { name: 'autoassign', description: 'Toggle auto-assign for the current club.' },
-  { name: 'syncprefs', description: 'Auto-set your position preferences based on your Discord roles (e.g., CB, ST, GK roles).' }
+  { name: 'syncprefs', description: 'Auto-set your position preferences based on your Discord roles (e.g., CB, ST, GK roles).' },
+
+  // Draft System Commands
+  { name: 'draft', description: 'Start a draft with players in your current voice channel.' },
+  { 
+    name: 'draftpick', 
+    description: 'Pick a player for your team (captains only).',
+    options: [
+      { name: 'player', description: 'The player to pick.', type: 6, required: true }
+    ]
+  },
+  { 
+    name: 'draftresult', 
+    description: 'Report the result of the current draft.',
+    options: [
+      { name: 'team_a_score', description: 'Score for Team A.', type: 4, required: true },
+      { name: 'team_b_score', description: 'Score for Team B.', type: 4, required: true }
+    ]
+  },
+  { name: 'draftcancel', description: 'Cancel the current draft (captains/admins only).' },
+
+  // Player Rating & Profile Commands
+  { 
+    name: 'profile', 
+    description: 'View a player\'s profile and ratings.',
+    options: [
+      { name: 'player', description: 'The player to view (defaults to yourself).', type: 6, required: false }
+    ]
+  },
+  { 
+    name: 'leaderboard', 
+    description: 'Show the server leaderboard.',
+    options: [
+      { name: 'type', description: 'Leaderboard type.', type: 3, required: false, choices: [
+        { name: 'Overall Rating', value: 'overall' },
+        { name: 'Win Rate', value: 'win_rate' },
+        { name: 'Goals', value: 'goals' },
+        { name: 'Assists', value: 'assists' },
+        { name: 'Form', value: 'form' }
+      ]},
+      { name: 'position', description: 'Filter by position.', type: 3, required: false }
+    ]
+  },
+  { name: 'mystats', description: 'Quick view of your own stats and current form.' },
+
+  // Availability & Event Commands
+  { 
+    name: 'event', 
+    description: 'Create an availability event.',
+    options: [
+      { name: 'title', description: 'Event title.', type: 3, required: true },
+      { name: 'date', description: 'Date and time (e.g., "2024-01-15 20:00").', type: 3, required: true },
+      { name: 'type', description: 'Event type.', type: 3, required: false, choices: [
+        { name: 'League Match', value: 'league' },
+        { name: 'Tournament', value: 'tournament' },
+        { name: 'Draft Night', value: 'draft' },
+        { name: 'Practice', value: 'practice' }
+      ]},
+      { name: 'description', description: 'Event description.', type: 3, required: false }
+    ]
+  },
+  { 
+    name: 'available', 
+    description: 'Mark your availability for an event.',
+    options: [
+      { name: 'response', description: 'Your availability.', type: 3, required: true, choices: [
+        { name: 'Yes', value: 'yes' },
+        { name: 'No', value: 'no' },
+        { name: 'Maybe', value: 'maybe' }
+      ]}
+    ]
+  },
+  { 
+    name: 'attendance', 
+    description: 'Mark attendance after an event (managers only).',
+    options: [
+      { name: 'player', description: 'The player to mark.', type: 6, required: true },
+      { name: 'showed', description: 'Did they show up?', type: 5, required: true }
+    ]
+  },
+
+  // Competition Win Commands
+  { 
+    name: 'claimwin', 
+    description: 'Claim a competition win for verification.',
+    options: [
+      { name: 'competition', description: 'Competition name.', type: 3, required: true },
+      { name: 'type', description: 'Competition type.', type: 3, required: true, choices: [
+        { name: 'Tournament', value: 'tournament' },
+        { name: 'League', value: 'league' }
+      ]},
+      { name: 'tier', description: 'Competition tier.', type: 3, required: true, choices: [
+        { name: 'Major', value: 'major' },
+        { name: 'Minor', value: 'minor' },
+        { name: 'Community', value: 'community' },
+        { name: 'Division 1', value: 'div1' },
+        { name: 'Division 2', value: 'div2' },
+        { name: 'Division 3', value: 'div3' },
+        { name: 'Division 4', value: 'div4' }
+      ]},
+      { name: 'proof', description: 'Proof URL (screenshot/clip).', type: 3, required: false }
+    ]
+  },
+  { 
+    name: 'verifywin', 
+    description: 'Verify a pending win claim (admins only).',
+    options: [
+      { name: 'claim_id', description: 'The claim ID to verify.', type: 3, required: true },
+      { name: 'action', description: 'Approve or reject.', type: 3, required: true, choices: [
+        { name: 'Approve', value: 'approve' },
+        { name: 'Reject', value: 'reject' }
+      ]},
+      { name: 'reason', description: 'Reason (required for rejection).', type: 3, required: false }
+    ]
+  },
+  { name: 'pendingwins', description: 'Show pending win claims (admins only).' }
 ];
 
 // =======================
@@ -2291,6 +2407,475 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         return interaction.editReply({ embeds: [embed] });
       }
+
+      // =======================
+      // DRAFT COMMANDS
+      // =======================
+
+      if (cmd === 'draft') {
+        const voiceChannel = interaction.member?.voice?.channel;
+        if (!voiceChannel) {
+          return interaction.reply({
+            content: '❌ You must be in a voice channel with players to start a draft.',
+            flags: 64
+          });
+        }
+
+        // Check for existing active draft
+        if (activeDrafts.has(guildId)) {
+          return interaction.reply({
+            content: '❌ A draft is already in progress. Use `/draftresult` to finish it first.',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply();
+
+        const members = [...voiceChannel.members.values()].filter((m) => !m.user.bot);
+        const playerIds = members.map(m => m.id);
+
+        if (playerIds.length < 4) {
+          return interaction.editReply({
+            content: `❌ Need at least 4 players to start a draft. Currently have ${playerIds.length} in voice.`
+          });
+        }
+
+        const { error, data } = await callEdgeFunction('draft-start', {
+          guild_id: guildId,
+          voice_channel_id: voiceChannel.id,
+          player_discord_ids: playerIds
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to start draft: ${error}` });
+        }
+
+        activeDrafts.set(guildId, data);
+
+        const embed = buildDraftEmbed(data, interaction.guild);
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      if (cmd === 'draftpick') {
+        const draftData = activeDrafts.get(guildId);
+        if (!draftData) {
+          return interaction.reply({
+            content: '❌ No active draft. Start one with `/draft` in a voice channel.',
+            flags: 64
+          });
+        }
+
+        const currentCaptain = draftData.current_picker === 'a' 
+          ? draftData.captain_a.discord_user_id 
+          : draftData.captain_b.discord_user_id;
+
+        if (interaction.user.id !== currentCaptain) {
+          return interaction.reply({
+            content: `❌ It's not your turn! <@${currentCaptain}>'s turn to pick.`,
+            flags: 64
+          });
+        }
+
+        const pickedPlayer = interaction.options.getUser('player');
+        if (!pickedPlayer) {
+          return interaction.reply({ content: '❌ You must specify a player to pick.', flags: 64 });
+        }
+
+        await interaction.deferReply();
+
+        const { error, data } = await callEdgeFunction('draft-pick', {
+          draft_id: draftData.draft_id,
+          captain_discord_id: interaction.user.id,
+          picked_player_discord_id: pickedPlayer.id
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to pick: ${error}` });
+        }
+
+        // Update local cache
+        activeDrafts.set(guildId, {
+          ...draftData,
+          team_a_player_ids: data.team_a,
+          team_b_player_ids: data.team_b,
+          available_players: data.available_players,
+          current_picker: data.current_picker,
+          pick_number: data.pick_number
+        });
+
+        if (data.draft_complete) {
+          const completeEmbed = new EmbedBuilder()
+            .setTitle('✅ Draft Complete!')
+            .setColor(0x00ff00)
+            .addFields(
+              { name: '🔴 Team A', value: data.team_a.map(id => `<@${id}>`).join('\n'), inline: true },
+              { name: '🔵 Team B', value: data.team_b.map(id => `<@${id}>`).join('\n'), inline: true }
+            )
+            .setDescription('Use `/draftresult <team_a_score> <team_b_score>` to report the match result!');
+          
+          return interaction.editReply({ embeds: [completeEmbed] });
+        }
+
+        const embed = buildDraftEmbed(activeDrafts.get(guildId), interaction.guild);
+        embed.setDescription(`✅ **${pickedPlayer.username}** picked by <@${interaction.user.id}>!\n\n` + embed.data.description);
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      if (cmd === 'draftresult') {
+        const draftData = activeDrafts.get(guildId);
+        if (!draftData) {
+          return interaction.reply({
+            content: '❌ No active draft to report results for.',
+            flags: 64
+          });
+        }
+
+        const teamAScore = interaction.options.getInteger('team_a_score');
+        const teamBScore = interaction.options.getInteger('team_b_score');
+
+        await interaction.deferReply();
+
+        const { error, data } = await callEdgeFunction('draft-result', {
+          draft_id: draftData.draft_id,
+          reporter_discord_id: interaction.user.id,
+          team_a_score: teamAScore,
+          team_b_score: teamBScore
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to report result: ${error}` });
+        }
+
+        const embed = buildDraftResultEmbed({
+          team_a_score: teamAScore,
+          team_b_score: teamBScore,
+          winning_team: teamAScore > teamBScore ? 'a' : teamBScore > teamAScore ? 'b' : 'draw',
+          status: data.status,
+          confirmations: data.confirmations,
+          required: data.required_confirmations
+        });
+
+        if (data.status === 'confirmed') {
+          activeDrafts.delete(guildId);
+          embed.setFooter({ text: '🎉 Result confirmed! Stats recorded. DMs sent for peer evaluations.' });
+        } else {
+          embed.setFooter({ text: `${data.confirmations}/${data.required_confirmations} confirmations. Others: use /draftresult with same score to confirm.` });
+        }
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      if (cmd === 'draftcancel') {
+        const draftData = activeDrafts.get(guildId);
+        if (!draftData) {
+          return interaction.reply({
+            content: '❌ No active draft to cancel.',
+            flags: 64
+          });
+        }
+
+        // Only captains or managers can cancel
+        const isCaptain = interaction.user.id === draftData.captain_a?.discord_user_id || 
+                          interaction.user.id === draftData.captain_b?.discord_user_id;
+        
+        if (!isCaptain && !isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only captains or managers can cancel a draft.',
+            flags: 64
+          });
+        }
+
+        activeDrafts.delete(guildId);
+        return interaction.reply({
+          content: '🗑️ Draft cancelled. Start a new one with `/draft`.',
+        });
+      }
+
+      // =======================
+      // PLAYER PROFILE & STATS COMMANDS
+      // =======================
+
+      if (cmd === 'profile') {
+        const targetUser = interaction.options.getUser('player') || interaction.user;
+        
+        await interaction.deferReply();
+
+        const { error, data } = await callEdgeFunction('get-player-profile', {
+          guild_id: guildId,
+          discord_user_id: targetUser.id
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to fetch profile: ${error}` });
+        }
+
+        const embed = buildProfileEmbed(data, targetUser.username);
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      if (cmd === 'leaderboard') {
+        const type = interaction.options.getString('type') || 'overall';
+        const position = interaction.options.getString('position');
+        
+        await interaction.deferReply();
+
+        const { error, data } = await callEdgeFunction('get-leaderboard', {
+          guild_id: guildId,
+          type,
+          position,
+          limit: 10
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to fetch leaderboard: ${error}` });
+        }
+
+        const embed = buildLeaderboardEmbed(data.players || [], type, interaction.guild.name);
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      if (cmd === 'mystats') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { error, data } = await callEdgeFunction('get-player-profile', {
+          guild_id: guildId,
+          discord_user_id: interaction.user.id
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to fetch stats: ${error}` });
+        }
+
+        const streakEmoji = data.streak_type === 'win' ? '🔥' : data.streak_type === 'loss' ? '❄️' : '➖';
+        const formText = data.last_5_results?.map(r => r === 'W' ? '🟢' : r === 'L' ? '🔴' : '⚪').join('') || 'No games yet';
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📊 Your Stats`)
+          .setColor(0x5865f2)
+          .addFields(
+            { name: '⭐ Rating', value: `**${data.overall_rating || 50}**`, inline: true },
+            { name: '🎮 Games', value: `${data.games_played || 0}`, inline: true },
+            { name: '🏆 Wins', value: `${data.wins || 0} (${data.win_rate || 0}%)`, inline: true },
+            { name: '⚽ Goals', value: `${data.goals || 0}`, inline: true },
+            { name: '🎯 Assists', value: `${data.assists || 0}`, inline: true },
+            { name: `${streakEmoji} Streak`, value: `${data.current_streak || 0}`, inline: true },
+            { name: '📈 Recent Form', value: formText, inline: false }
+          );
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // =======================
+      // AVAILABILITY & EVENT COMMANDS
+      // =======================
+
+      if (cmd === 'event') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only managers can create events.',
+            flags: 64
+          });
+        }
+
+        const title = interaction.options.getString('title');
+        const dateStr = interaction.options.getString('date');
+        const eventType = interaction.options.getString('type') || 'practice';
+        const description = interaction.options.getString('description');
+
+        // Parse date
+        const scheduledAt = new Date(dateStr);
+        if (isNaN(scheduledAt.getTime())) {
+          return interaction.reply({
+            content: '❌ Invalid date format. Use: YYYY-MM-DD HH:MM (e.g., 2024-01-15 20:00)',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply();
+
+        const { error, data } = await callEdgeFunction('event-create', {
+          guild_id: guildId,
+          created_by_discord_id: interaction.user.id,
+          title,
+          scheduled_at: scheduledAt.toISOString(),
+          event_type: eventType,
+          description,
+          channel_id: interaction.channelId
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to create event: ${error}` });
+        }
+
+        const eventEmbed = new EmbedBuilder()
+          .setTitle(`📅 ${title}`)
+          .setColor(0x5865f2)
+          .addFields(
+            { name: '📆 Date', value: scheduledAt.toLocaleString(), inline: true },
+            { name: '🏷️ Type', value: eventType, inline: true },
+            { name: '✅ Available', value: '0', inline: true },
+            { name: '❌ Unavailable', value: '0', inline: true },
+            { name: '❓ Maybe', value: '0', inline: true }
+          )
+          .setDescription(description || 'React below to mark your availability!')
+          .setFooter({ text: `Event ID: ${data.event_id}` });
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`avail_yes_${data.event_id}`).setLabel('✅ Available').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`avail_no_${data.event_id}`).setLabel('❌ Unavailable').setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`avail_maybe_${data.event_id}`).setLabel('❓ Maybe').setStyle(ButtonStyle.Secondary)
+        );
+
+        return interaction.editReply({ embeds: [eventEmbed], components: [row] });
+      }
+
+      if (cmd === 'available') {
+        const response = interaction.options.getString('response');
+        
+        // This would need context of which event - simplified version
+        return interaction.reply({
+          content: `Use the buttons on an event post to mark availability, or react to event messages!`,
+          flags: 64
+        });
+      }
+
+      if (cmd === 'attendance') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only managers can mark attendance.',
+            flags: 64
+          });
+        }
+
+        const player = interaction.options.getUser('player');
+        const showed = interaction.options.getBoolean('showed');
+
+        await interaction.deferReply({ flags: 64 });
+
+        const { error } = await callEdgeFunction('mark-attendance', {
+          guild_id: guildId,
+          discord_user_id: player.id,
+          actually_showed: showed,
+          recorded_by_discord_id: interaction.user.id
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to mark attendance: ${error}` });
+        }
+
+        return interaction.editReply({
+          content: `${showed ? '✅' : '❌'} Marked <@${player.id}> as ${showed ? 'showed up' : 'no-show'}.`
+        });
+      }
+
+      // =======================
+      // COMPETITION WIN COMMANDS
+      // =======================
+
+      if (cmd === 'claimwin') {
+        const competition = interaction.options.getString('competition');
+        const compType = interaction.options.getString('type');
+        const tier = interaction.options.getString('tier');
+        const proofUrl = interaction.options.getString('proof');
+
+        await interaction.deferReply({ flags: 64 });
+
+        const { error, data } = await callEdgeFunction('claim-competition-win', {
+          guild_id: guildId,
+          claimed_by_discord_id: interaction.user.id,
+          competition_name: competition,
+          competition_type: compType,
+          tier,
+          proof_url: proofUrl
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to submit claim: ${error}` });
+        }
+
+        return interaction.editReply({
+          content: `✅ **Win claim submitted!**\n\n` +
+            `🏆 **${competition}** (${tier} ${compType})\n` +
+            `📋 Claim ID: \`${data.claim_id}\`\n\n` +
+            `An admin will verify your claim soon.`
+        });
+      }
+
+      if (cmd === 'verifywin') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only admins can verify win claims.',
+            flags: 64
+          });
+        }
+
+        const claimId = interaction.options.getString('claim_id');
+        const action = interaction.options.getString('action');
+        const reason = interaction.options.getString('reason');
+
+        if (action === 'reject' && !reason) {
+          return interaction.reply({
+            content: '❌ A reason is required when rejecting a claim.',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        const { error } = await callEdgeFunction('claim-competition-win', {
+          claim_id: claimId,
+          action,
+          verified_by_discord_id: interaction.user.id,
+          rejection_reason: reason
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to verify: ${error}` });
+        }
+
+        return interaction.editReply({
+          content: `${action === 'approve' ? '✅ Claim approved!' : '❌ Claim rejected.'}`
+        });
+      }
+
+      if (cmd === 'pendingwins') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only admins can view pending claims.',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        const { data: claims, error } = await supabase
+          .from('pending_win_claims')
+          .select('*')
+          .eq('guild_id', guildId)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to fetch claims: ${error.message}` });
+        }
+
+        if (!claims || claims.length === 0) {
+          return interaction.editReply({ content: '✅ No pending win claims!' });
+        }
+
+        const lines = claims.map(c => 
+          `• \`${c.id.slice(0, 8)}\` <@${c.claimed_by_discord_id}> – **${c.competition_name}** (${c.tier} ${c.competition_type})`
+        );
+
+        const embed = new EmbedBuilder()
+          .setTitle('📋 Pending Win Claims')
+          .setColor(0xffcc00)
+          .setDescription(lines.join('\n'))
+          .setFooter({ text: 'Use /verifywin <claim_id> <approve/reject> to review' });
+
+        return interaction.editReply({ embeds: [embed] });
+      }
     }
 
     // ----- Buttons -----
@@ -2310,6 +2895,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (id === 'open_help') {
         return interaction.reply({ embeds: [buildHelpEmbed()], flags: 64 });
+      }
+
+      // Availability response buttons
+      if (id.startsWith('avail_')) {
+        const parts = id.split('_');
+        const response = parts[1]; // yes, no, maybe
+        const eventId = parts.slice(2).join('_');
+
+        await interaction.deferReply({ flags: 64 });
+
+        const { error } = await callEdgeFunction('availability-response', {
+          event_id: eventId,
+          discord_user_id: interaction.user.id,
+          response
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to record availability: ${error}` });
+        }
+
+        const responseEmojis = { yes: '✅', no: '❌', maybe: '❓' };
+        return interaction.editReply({
+          content: `${responseEmojis[response]} Availability marked as **${response}**!`
+        });
       }
 
       if (id.startsWith('prefpos_')) {
@@ -3400,6 +4009,149 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   }
 });
+
+// =======================
+// EDGE FUNCTION HELPER
+// =======================
+
+async function callEdgeFunction(functionName, body) {
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`
+      },
+      body: JSON.stringify(body)
+    });
+    
+    const data = await response.json();
+    if (!response.ok) {
+      console.error(`❌ Edge function ${functionName} error:`, data);
+      return { error: data.error || 'Unknown error', data: null };
+    }
+    return { error: null, data };
+  } catch (err) {
+    console.error(`❌ Edge function ${functionName} exception:`, err);
+    return { error: err.message, data: null };
+  }
+}
+
+// =======================
+// DRAFT STATE CACHE
+// =======================
+
+const activeDrafts = new Map(); // guildId -> draft data
+
+// =======================
+// EMBED BUILDERS FOR NEW FEATURES
+// =======================
+
+function buildProfileEmbed(profile, username) {
+  const rating = profile.overall_rating || 50;
+  const ratingBar = buildProgressBar(rating, 100, 10);
+  
+  const streakEmoji = profile.streak_type === 'win' ? '🔥' : profile.streak_type === 'loss' ? '❄️' : '➖';
+  const streakText = profile.current_streak > 0 ? `${streakEmoji} ${profile.current_streak}` : 'No streak';
+  
+  const achievements = (profile.top_achievements || []).slice(0, 3).join(' ') || 'None yet';
+  
+  const embed = new EmbedBuilder()
+    .setTitle(`📊 Player Profile: ${username}`)
+    .setColor(rating >= 70 ? 0x00ff00 : rating >= 50 ? 0xffcc00 : 0xff6600)
+    .addFields(
+      { name: '⭐ Overall Rating', value: `**${rating}** \`${ratingBar}\``, inline: true },
+      { name: '📈 Form', value: streakText, inline: true },
+      { name: '🎯 Primary Position', value: profile.primary_position || 'Not set', inline: true },
+      { name: '🎮 Games Played', value: `${profile.games_played || 0}`, inline: true },
+      { name: '🏆 Wins', value: `${profile.wins || 0} (${profile.win_rate || 0}%)`, inline: true },
+      { name: '⚽ Goals / 🎯 Assists', value: `${profile.goals || 0} / ${profile.assists || 0}`, inline: true },
+      { name: '🏅 Achievements', value: achievements, inline: false }
+    );
+  
+  if (profile.competition_wins && profile.competition_wins.length > 0) {
+    const winsText = profile.competition_wins.slice(0, 3).map(w => 
+      `🏆 ${w.competition_name} (${w.tier})`
+    ).join('\n');
+    embed.addFields({ name: '🏆 Competition Wins', value: winsText, inline: false });
+  }
+  
+  return embed;
+}
+
+function buildLeaderboardEmbed(players, type, guildName) {
+  const typeLabels = {
+    overall: '⭐ Overall Rating',
+    win_rate: '🏆 Win Rate',
+    goals: '⚽ Goals',
+    assists: '🎯 Assists',
+    form: '📈 Form'
+  };
+  
+  const lines = players.slice(0, 10).map((p, i) => {
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+    const name = p.discord_username || `<@${p.discord_user_id}>`;
+    
+    let stat;
+    switch (type) {
+      case 'win_rate': stat = `${p.win_rate || 0}%`; break;
+      case 'goals': stat = `${p.goals || 0}`; break;
+      case 'assists': stat = `${p.assists || 0}`; break;
+      case 'form': stat = `${p.form_rating || 0}`; break;
+      default: stat = `${p.overall_rating || 50}`;
+    }
+    
+    return `${medal} **${name}** – ${stat}`;
+  });
+  
+  return new EmbedBuilder()
+    .setTitle(`🏆 ${guildName} Leaderboard – ${typeLabels[type] || 'Overall'}`)
+    .setColor(0xffd700)
+    .setDescription(lines.join('\n') || 'No players found.')
+    .setFooter({ text: `Top 10 players • Updated just now` });
+}
+
+function buildDraftEmbed(draftData, guild) {
+  const teamAPlayers = draftData.team_a_player_ids || [];
+  const teamBPlayers = draftData.team_b_player_ids || [];
+  const availablePlayers = draftData.available_players || [];
+  
+  const teamALines = teamAPlayers.map(id => `<@${id}>`).join('\n') || 'Empty';
+  const teamBLines = teamBPlayers.map(id => `<@${id}>`).join('\n') || 'Empty';
+  
+  const availableLines = availablePlayers.slice(0, 10).map(p => {
+    const rating = p.overall_rating || 50;
+    const streak = p.current_streak > 0 ? (p.streak_type === 'win' ? `🔥${p.current_streak}` : `❄️${p.current_streak}`) : '';
+    return `<@${p.discord_user_id}> (${rating}) ${streak}`;
+  }).join('\n') || 'None';
+  
+  const currentPicker = draftData.current_picker === 'a' ? draftData.captain_a_discord_id : draftData.captain_b_discord_id;
+  
+  return new EmbedBuilder()
+    .setTitle('⚔️ DRAFT IN PROGRESS')
+    .setColor(0xff6b35)
+    .addFields(
+      { name: `🔴 Team A (Captain: <@${draftData.captain_a_discord_id}>)`, value: teamALines, inline: true },
+      { name: `🔵 Team B (Captain: <@${draftData.captain_b_discord_id}>)`, value: teamBLines, inline: true },
+      { name: '👥 Available Players', value: availableLines, inline: false }
+    )
+    .setDescription(`**Pick #${draftData.pick_number || 1}** – <@${currentPicker}>'s turn to pick!`)
+    .setFooter({ text: 'Use /draftpick @player to pick • /draftresult to report score' });
+}
+
+function buildDraftResultEmbed(result) {
+  const winner = result.winning_team === 'a' ? '🔴 Team A' : result.winning_team === 'b' ? '🔵 Team B' : '🤝 Draw';
+  
+  return new EmbedBuilder()
+    .setTitle('🏁 Draft Result')
+    .setColor(result.status === 'confirmed' ? 0x00ff00 : 0xffcc00)
+    .addFields(
+      { name: 'Score', value: `🔴 Team A: **${result.team_a_score}** – 🔵 Team B: **${result.team_b_score}**`, inline: false },
+      { name: 'Winner', value: winner, inline: true },
+      { name: 'Status', value: result.status === 'confirmed' ? '✅ Confirmed' : '⏳ Pending confirmation', inline: true }
+    )
+    .setFooter({ text: result.status === 'confirmed' ? 'Stats recorded!' : 'Waiting for more confirmations...' });
+}
 
 // =======================
 // LOGIN
