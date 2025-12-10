@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { GuildSelector } from "@/components/GuildSelector";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -42,6 +43,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               SpotBot
             </span>
           </Link>
+
+          {/* Guild Selector */}
+          <div className="hidden md:block">
+            <GuildSelector />
+          </div>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">
@@ -79,6 +85,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
           <nav className="md:hidden border-t bg-card p-4 animate-slide-up">
+            <div className="mb-4">
+              <GuildSelector />
+            </div>
             {navItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
