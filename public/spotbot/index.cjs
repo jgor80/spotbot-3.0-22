@@ -1,5 +1,5 @@
 // ============================================
-// SpotBot 2.0 - Unified Discord Bot
+// SquadIQ Spots - Unified Discord Bot
 // Combines Spot Management + Position Preferences
 // with Supabase persistence and auto-assign from VC
 // ============================================
@@ -136,7 +136,7 @@ const COMMANDS = [
   { name: 'spotpanel', description: 'Create the global control panel for club spots.' },
   { name: 'spots', description: 'Show a read-only board with club dropdown.' },
   { name: 'vcspots', description: 'Create/update a live club spot panel linked to your current voice channel.' },
-  { name: 'spothelp', description: 'Shows the SpotBot manual & quick commands.' },
+  { name: 'spothelp', description: 'Shows the SquadIQ Spots manual & quick commands.' },
   {
     name: 'spotblock',
     description: 'Block or unblock a user from moving players.',
@@ -511,7 +511,7 @@ async function handleSlotOpened(guildId, clubKey, slotIndex) {
       if (!member) continue;
 
       await member.send({
-        content: `✅ A spot you were waiting for just opened: **${slotLabel}** in **${clubName}**.\nJump into VC and claim it on the SpotBot panel!`
+        content: `✅ A spot you were waiting for just opened: **${slotLabel}** in **${clubName}**.\nJump into VC and claim it on the SquadIQ panel!`
       });
     } catch {
       // DMs closed / blocked, ignore
@@ -1066,7 +1066,7 @@ async function smartAssignFromVc(interaction, state, clubKey) {
 
   if (await isUserBlocked(guildId, interaction.user.id)) {
     return interaction.reply({
-      content: 'You have been blocked from moving players on SpotBot.',
+      content: 'You have been blocked from moving players on SquadIQ Spots.',
       flags: 64
     });
   }
@@ -1397,7 +1397,7 @@ async function startAssignFromVc(interaction, state, clubKey) {
 
   if (await isUserBlocked(guildId, interaction.user.id)) {
     return interaction.reply({
-      content: 'You have been blocked from moving players on SpotBot.',
+      content: 'You have been blocked from moving players on SquadIQ Spots.',
       flags: 64
     });
   }
@@ -1479,7 +1479,7 @@ async function startManagePlayers(interaction, state, clubKey) {
 
   if (await isUserBlocked(guildId, interaction.user.id)) {
     return interaction.reply({
-      content: 'You have been blocked from moving players on SpotBot.',
+      content: 'You have been blocked from moving players on SquadIQ Spots.',
       flags: 64
     });
   }
@@ -1759,7 +1759,7 @@ async function setClubFormation(interaction, guildId, clubKey, formationName) {
 
 function buildHelpEmbed() {
   return new EmbedBuilder()
-    .setTitle('📘 SpotBot 2.0 Help')
+    .setTitle('📘 SquadIQ Spots Help')
     .setColor(0x5865f2)
     .setDescription(
       '**Core Commands**\n' +
@@ -1786,7 +1786,7 @@ function buildHelpEmbed() {
       '🔔 **Waitlist**: Get a DM notification when a spot opens\n' +
       '✨ **Auto-Assign**: Auto-place players in their preferred position when joining VC!'
     )
-    .setFooter({ text: 'SpotBot 2.0 • Unified Spot Management + Position Preferences' });
+    .setFooter({ text: 'SquadIQ Spots • Unified Spot Management + Position Preferences' });
 }
 
 // =======================
@@ -1794,7 +1794,7 @@ function buildHelpEmbed() {
 // =======================
 
 client.once(Events.ClientReady, async (c) => {
-  console.log(`✅ SpotBot 2.0 logged in as ${c.user.tag}`);
+  console.log(`✅ SquadIQ Spots logged in as ${c.user.tag}`);
 
   try {
     await c.application.commands.set(COMMANDS);
@@ -2102,7 +2102,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         await setUserBlocked(guildId, target.id, true);
         return interaction.reply({
-          content: `🚫 <@${target.id}> is now **blocked** from moving other players on SpotBot.`,
+          content: `🚫 <@${target.id}> is now **blocked** from moving other players on SquadIQ Spots.`,
           flags: 64
         });
       }
@@ -2127,7 +2127,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (!linkedClubKey) {
           return interaction.reply({
-            content: 'This voice channel is not linked to a SpotBot club. Use `/vcspots` to link it first.',
+            content: 'This voice channel is not linked to a SquadIQ club. Use `/vcspots` to link it first.',
             flags: 64
           });
         }
