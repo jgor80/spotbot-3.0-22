@@ -1,7 +1,7 @@
 {
-  "name": "spotbot",
+  "name": "squadiq-spots",
   "version": "1.0.0",
-  "description": "SpotBot Discord Bot",
+  "description": "SquadIQ Spots Discord Bot",
   "main": "index.cjs",
   "scripts": {
     "start": "node index.cjs"

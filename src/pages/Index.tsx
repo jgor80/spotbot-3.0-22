@@ -15,7 +15,7 @@ export default function Dashboard() {
       <div className="space-y-6">
         <div>
           <h1 className="font-display text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">Welcome to SpotBot Analytics</p>
+          <p className="text-muted-foreground">Welcome to SquadIQ</p>
         </div>
 
         {!selectedGuildId && !guildLoading ? (
