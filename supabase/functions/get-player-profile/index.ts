@@ -1,0 +1,237 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+interface GetPlayerProfileRequest {
+  guild_id: string;
+  discord_user_id: string;
+  include_position_breakdown?: boolean;
+  include_chemistry?: boolean;
+  include_recent_games?: boolean;
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+    );
+
+    const { 
+      guild_id, 
+      discord_user_id, 
+      include_position_breakdown = true,
+      include_chemistry = true,
+      include_recent_games = true,
+    }: GetPlayerProfileRequest = await req.json();
+
+    console.log(`[get-player-profile] Fetching profile for ${discord_user_id} in guild ${guild_id}`);
+
+    // Get the summary first
+    const { data: summary } = await supabase
+      .from("player_summary")
+      .select("*")
+      .eq("guild_id", guild_id)
+      .eq("discord_user_id", discord_user_id)
+      .maybeSingle();
+
+    // Get full rating breakdown
+    const { data: rating } = await supabase
+      .from("player_ratings")
+      .select("*")
+      .eq("guild_id", guild_id)
+      .eq("discord_user_id", discord_user_id)
+      .maybeSingle();
+
+    // Get profile info
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("discord_user_id", discord_user_id)
+      .maybeSingle();
+
+    // Get streaks
+    const { data: streaks } = await supabase
+      .from("player_streaks")
+      .select("*")
+      .eq("guild_id", guild_id)
+      .eq("discord_user_id", discord_user_id)
+      .maybeSingle();
+
+    // Get achievements
+    const { data: achievements } = await supabase
+      .from("player_achievements")
+      .select("*")
+      .eq("guild_id", guild_id)
+      .eq("discord_user_id", discord_user_id)
+      .order("earned_at", { ascending: false });
+
+    // Get competition wins
+    const { data: competitionWins } = await supabase
+      .from("competition_wins")
+      .select("*")
+      .eq("guild_id", guild_id)
+      .eq("discord_user_id", discord_user_id)
+      .eq("verified", true)
+      .order("placed_at", { ascending: false });
+
+    // Get reliability
+    const { data: reliability } = await supabase
+      .from("player_reliability")
+      .select("*")
+      .eq("guild_id", guild_id)
+      .eq("discord_user_id", discord_user_id)
+      .maybeSingle();
+
+    let positionBreakdown = null;
+    if (include_position_breakdown) {
+      const { data } = await supabase
+        .from("player_position_ratings")
+        .select("*")
+        .eq("guild_id", guild_id)
+        .eq("discord_user_id", discord_user_id)
+        .order("games_at_position", { ascending: false });
+      positionBreakdown = data;
+    }
+
+    let chemistry = null;
+    if (include_chemistry) {
+      const { data } = await supabase
+        .from("player_chemistry")
+        .select("*")
+        .eq("guild_id", guild_id)
+        .or(`player_a_discord_id.eq.${discord_user_id},player_b_discord_id.eq.${discord_user_id}`)
+        .gte("games_together", 3) // Only show meaningful chemistry
+        .order("win_rate", { ascending: false })
+        .limit(10);
+      
+      // Normalize to show partner ID
+      chemistry = (data || []).map(c => ({
+        partner_discord_id: c.player_a_discord_id === discord_user_id 
+          ? c.player_b_discord_id 
+          : c.player_a_discord_id,
+        games_together: c.games_together,
+        wins_together: c.wins_together,
+        win_rate: c.win_rate,
+        synergy_score: c.synergy_score,
+      }));
+    }
+
+    let recentGames = null;
+    if (include_recent_games) {
+      const { data } = await supabase
+        .from("player_stats")
+        .select("*, drafts(captain_a_discord_id, captain_b_discord_id, team_a_player_ids, team_b_player_ids)")
+        .eq("guild_id", guild_id)
+        .eq("discord_user_id", discord_user_id)
+        .order("recorded_at", { ascending: false })
+        .limit(10);
+      recentGames = data;
+    }
+
+    // Calculate rating tier
+    const overallRating = rating?.overall_rating || summary?.overall_rating || 50;
+    const ratingTier = getRatingTier(overallRating);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        player: {
+          discord_user_id,
+          discord_username: profile?.discord_username || summary?.discord_username,
+          discord_avatar: profile?.discord_avatar,
+          ea_username: profile?.ea_username,
+          primary_position: profile?.primary_position || summary?.primary_position,
+          
+          // Rating
+          overall_rating: overallRating,
+          rating_tier: ratingTier,
+          rating_breakdown: rating ? {
+            draft_performance: rating.draft_performance_rating,
+            club_performance: rating.club_performance_rating,
+            peer_evaluation: rating.peer_rating,
+            build_quality: rating.build_quality_rating,
+          } : null,
+          
+          // Stats
+          games_played: rating?.games_played || 0,
+          wins: rating?.wins || 0,
+          losses: rating?.losses || 0,
+          draws: rating?.draws || 0,
+          win_rate: rating?.games_played > 0 ? ((rating.wins / rating.games_played) * 100).toFixed(1) : "0.0",
+          goals: rating?.total_goals || 0,
+          assists: rating?.total_assists || 0,
+          clean_sheets: rating?.total_clean_sheets || 0,
+          motm_awards: rating?.total_motm || 0,
+          
+          // Form & Streaks
+          form: streaks ? {
+            form_rating: streaks.form_rating,
+            last_5: streaks.last_5_results,
+            last_10: streaks.last_10_results,
+            current_win_streak: streaks.current_win_streak,
+            current_loss_streak: streaks.current_loss_streak,
+            longest_win_streak: streaks.longest_win_streak,
+          } : null,
+          
+          // Achievements
+          achievements: achievements || [],
+          
+          // Competition Wins
+          competition_wins: {
+            tournaments: (competitionWins || []).filter(w => w.competition_type === "tournament"),
+            leagues: (competitionWins || []).filter(w => w.competition_type === "league"),
+            total_tournaments: (competitionWins || []).filter(w => w.competition_type === "tournament").length,
+            total_leagues: (competitionWins || []).filter(w => w.competition_type === "league").length,
+            major_wins: (competitionWins || []).filter(w => ["major", "div1"].includes(w.tier)).length,
+          },
+          
+          // Reliability
+          reliability: reliability ? {
+            score: reliability.reliability_score,
+            total_events: reliability.total_events,
+            showed_up: reliability.events_showed,
+            no_showed: reliability.events_no_showed,
+          } : null,
+          
+          // Position breakdown
+          position_breakdown: positionBreakdown,
+          
+          // Chemistry
+          top_chemistry: chemistry,
+          
+          // Recent games
+          recent_games: recentGames,
+          
+          // Timestamps
+          last_active: rating?.last_game_at,
+          last_calculated: rating?.last_calculated_at,
+        },
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  } catch (error) {
+    console.error("[get-player-profile] Error:", error);
+    return new Response(
+      JSON.stringify({ error: (error as Error).message }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});
+
+function getRatingTier(rating: number): { name: string; icon: string; color: string } {
+  if (rating >= 90) return { name: "Diamond", icon: "💎", color: "#b9f2ff" };
+  if (rating >= 80) return { name: "Platinum", icon: "🏆", color: "#e5e4e2" };
+  if (rating >= 70) return { name: "Gold", icon: "🥇", color: "#ffd700" };
+  if (rating >= 60) return { name: "Silver", icon: "🥈", color: "#c0c0c0" };
+  if (rating >= 50) return { name: "Bronze", icon: "🥉", color: "#cd7f32" };
+  return { name: "Iron", icon: "⚙️", color: "#5a5a5a" };
+}
