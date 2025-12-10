@@ -1,1 +1,25 @@
 project_id = "vynlrqlisrvuejwawaxh"
+
+[functions.draft-start]
+verify_jwt = false
+
+[functions.draft-pick]
+verify_jwt = false
+
+[functions.draft-result]
+verify_jwt = false
+
+[functions.submit-peer-evaluation]
+verify_jwt = false
+
+[functions.calculate-ratings]
+verify_jwt = false
+
+[functions.get-player-profile]
+verify_jwt = false
+
+[functions.get-leaderboard]
+verify_jwt = false
+
+[functions.win-probability]
+verify_jwt = false
