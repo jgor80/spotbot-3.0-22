@@ -9,9 +9,6 @@ import Leaderboard from "./pages/Leaderboard";
 import LineupPage from "./pages/LineupPage";
 import ProfilePage from "./pages/ProfilePage";
 import SettingsPage from "./pages/SettingsPage";
-import ScoutingPage from "./pages/ScoutingPage";
-import CompetitionsPage from "./pages/CompetitionsPage";
-import DraftsPage from "./pages/DraftsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,9 +26,6 @@ const App = () => (
             <Route path="/lineup" element={<LineupPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/scouting" element={<ScoutingPage />} />
-            <Route path="/competitions" element={<CompetitionsPage />} />
-            <Route path="/drafts" element={<DraftsPage />} />
             <Route path="/players" element={<Leaderboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
