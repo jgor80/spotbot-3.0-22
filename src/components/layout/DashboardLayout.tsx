@@ -9,22 +9,37 @@ import {
   Menu,
   X,
   Zap,
-  Settings,
-  Gamepad2
+  Gamepad2,
+  Eye,
+  Swords,
+  Medal
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { GuildSelector } from "@/components/GuildSelector";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 
 interface DashboardLayoutProps {
   children: ReactNode;
 }
 
-const navItems = [
+const mainNavItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
-  { path: "/players", label: "Players", icon: Users },
   { path: "/lineup", label: "Lineup", icon: ClipboardList },
+];
+
+const moreNavItems = [
+  { path: "/drafts", label: "Drafts", icon: Swords },
+  { path: "/scouting", label: "Scouting", icon: Eye },
+  { path: "/competitions", label: "Competitions", icon: Medal },
   { path: "/profile", label: "Profile", icon: User },
   { path: "/settings", label: "Link EA", icon: Gamepad2 },
 ];
@@ -54,14 +69,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-1">
-            {navItems.map((item) => {
+            {mainNavItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
                 <Link
                   key={item.path}
                   to={item.path}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+                    "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                     isActive
                       ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -72,6 +87,28 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 </Link>
               );
             })}
+            
+            {/* More dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-muted-foreground">
+                  More
+                  <Menu className="h-4 w-4 ml-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Features</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {moreNavItems.map((item) => (
+                  <DropdownMenuItem key={item.path} asChild>
+                    <Link to={item.path} className="flex items-center gap-2">
+                      <item.icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </nav>
 
           {/* Mobile Menu Button */}
@@ -91,7 +128,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             <div className="mb-4">
               <GuildSelector />
             </div>
-            {navItems.map((item) => {
+            {[...mainNavItems, ...moreNavItems].map((item) => {
               const isActive = location.pathname === item.path;
               return (
                 <Link
