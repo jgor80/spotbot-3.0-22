@@ -1,10 +1,14 @@
-providers = []
+# Disable auto-detection to prevent Vite/Bun detection
+providers = ["node"]
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = ["cd public/spotbot && npm install"]
 
 [phases.build]
-cmds = ["echo 'Skipping build'"]
+cmds = ["echo 'Bot only - no build needed'"]
 
 [start]
 cmd = "node public/spotbot/index.cjs"
