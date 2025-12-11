@@ -3841,7 +3841,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setTitle('🎮 EA FC Pro Clubs Configuration')
           .setColor(currentClub?.ea_club_id ? 0x00ff00 : 0xffcc00)
           .addFields(
-            { name: '🏟️ Current Club', value: currentClub?.name || 'None', inline: true },
+            { name: '🏟️ Club', value: currentClub?.name || 'None', inline: true },
             { name: '🔗 EA Club ID', value: currentClub?.ea_club_id || 'Not linked', inline: true },
             { name: '🖥️ Platform', value: currentClub?.ea_platform || 'Not set', inline: true },
             { name: '📡 Monitoring', value: currentClub?.monitoring_enabled ? '✅ Active' : '❌ Off', inline: true },
