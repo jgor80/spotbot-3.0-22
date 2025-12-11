@@ -6,10 +6,31 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Validation helpers
+const DISCORD_ID_REGEX = /^\d{17,19}$/;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const VALID_RESPONSES = ["yes", "no", "maybe"] as const;
+
 interface AvailabilityResponseRequest {
   event_id: string;
   discord_user_id: string;
   response: "yes" | "no" | "maybe";
+}
+
+function validateRequest(body: any): string[] {
+  const errors: string[] = [];
+  
+  if (!body.event_id || !UUID_REGEX.test(body.event_id)) {
+    errors.push("event_id must be a valid UUID");
+  }
+  if (!body.discord_user_id || !DISCORD_ID_REGEX.test(body.discord_user_id)) {
+    errors.push("discord_user_id must be a valid Discord ID");
+  }
+  if (!VALID_RESPONSES.includes(body.response)) {
+    errors.push(`response must be one of: ${VALID_RESPONSES.join(", ")}`);
+  }
+  
+  return errors;
 }
 
 serve(async (req) => {
@@ -23,7 +44,19 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { event_id, discord_user_id, response }: AvailabilityResponseRequest = await req.json();
+    const body = await req.json();
+    
+    // Validate input
+    const errors = validateRequest(body);
+    if (errors.length > 0) {
+      console.log(`[availability-response] Validation failed: ${errors.join("; ")}`);
+      return new Response(
+        JSON.stringify({ error: "Validation failed", details: errors }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { event_id, discord_user_id, response }: AvailabilityResponseRequest = body;
 
     console.log(`[availability-response] ${discord_user_id} responding "${response}" to event ${event_id}`);
 

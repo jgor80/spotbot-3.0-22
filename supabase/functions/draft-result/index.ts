@@ -6,11 +6,34 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Validation helpers
+const DISCORD_ID_REGEX = /^\d{17,19}$/;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 interface DraftResultRequest {
   draft_id: string;
   reporter_discord_id: string;
   team_a_score: number;
   team_b_score: number;
+}
+
+function validateRequest(body: any): string[] {
+  const errors: string[] = [];
+  
+  if (!body.draft_id || !UUID_REGEX.test(body.draft_id)) {
+    errors.push("draft_id must be a valid UUID");
+  }
+  if (!body.reporter_discord_id || !DISCORD_ID_REGEX.test(body.reporter_discord_id)) {
+    errors.push("reporter_discord_id must be a valid Discord ID");
+  }
+  if (typeof body.team_a_score !== "number" || !Number.isInteger(body.team_a_score) || body.team_a_score < 0 || body.team_a_score > 99) {
+    errors.push("team_a_score must be an integer between 0 and 99");
+  }
+  if (typeof body.team_b_score !== "number" || !Number.isInteger(body.team_b_score) || body.team_b_score < 0 || body.team_b_score > 99) {
+    errors.push("team_b_score must be an integer between 0 and 99");
+  }
+  
+  return errors;
 }
 
 serve(async (req) => {
@@ -24,7 +47,19 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { draft_id, reporter_discord_id, team_a_score, team_b_score }: DraftResultRequest = await req.json();
+    const body = await req.json();
+    
+    // Validate input
+    const errors = validateRequest(body);
+    if (errors.length > 0) {
+      console.log(`[draft-result] Validation failed: ${errors.join("; ")}`);
+      return new Response(
+        JSON.stringify({ error: "Validation failed", details: errors }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { draft_id, reporter_discord_id, team_a_score, team_b_score }: DraftResultRequest = body;
 
     console.log(`[draft-result] ${reporter_discord_id} reporting ${team_a_score}-${team_b_score} for draft ${draft_id}`);
 
@@ -287,7 +322,7 @@ async function updatePlayerStreak(
 
     // Calculate form rating (W=3, D=1, L=0, out of 15 max for last 5)
     const formPoints = last5.reduce((sum, r) => sum + (r === "W" ? 3 : r === "D" ? 1 : 0), 0);
-    const formRating = (formPoints / 15) * 100; // 0-100 scale
+    const formRating = (formPoints / 15) * 100;
 
     await supabase
       .from("player_streaks")
@@ -379,10 +414,9 @@ async function updateChemistry(
 
 async function createFeedbackRequests(supabase: any, draft: any) {
   const allPlayers = [...draft.team_a_player_ids, ...draft.team_b_player_ids];
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
   const feedbackRequests = allPlayers.map(playerId => {
-    // Each player rates their teammates (not themselves)
     const isTeamA = draft.team_a_player_ids.includes(playerId);
     const teammates = (isTeamA ? draft.team_a_player_ids : draft.team_b_player_ids)
       .filter((id: string) => id !== playerId);

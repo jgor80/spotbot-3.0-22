@@ -6,10 +6,30 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Validation helpers
+const DISCORD_ID_REGEX = /^\d{17,19}$/;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 interface DraftPickRequest {
   draft_id: string;
   captain_discord_id: string;
   picked_player_discord_id: string;
+}
+
+function validateRequest(body: any): string[] {
+  const errors: string[] = [];
+  
+  if (!body.draft_id || !UUID_REGEX.test(body.draft_id)) {
+    errors.push("draft_id must be a valid UUID");
+  }
+  if (!body.captain_discord_id || !DISCORD_ID_REGEX.test(body.captain_discord_id)) {
+    errors.push("captain_discord_id must be a valid Discord ID");
+  }
+  if (!body.picked_player_discord_id || !DISCORD_ID_REGEX.test(body.picked_player_discord_id)) {
+    errors.push("picked_player_discord_id must be a valid Discord ID");
+  }
+  
+  return errors;
 }
 
 serve(async (req) => {
@@ -23,7 +43,19 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { draft_id, captain_discord_id, picked_player_discord_id }: DraftPickRequest = await req.json();
+    const body = await req.json();
+    
+    // Validate input
+    const errors = validateRequest(body);
+    if (errors.length > 0) {
+      console.log(`[draft-pick] Validation failed: ${errors.join("; ")}`);
+      return new Response(
+        JSON.stringify({ error: "Validation failed", details: errors }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { draft_id, captain_discord_id, picked_player_discord_id }: DraftPickRequest = body;
 
     console.log(`[draft-pick] Captain ${captain_discord_id} picking ${picked_player_discord_id} in draft ${draft_id}`);
 
