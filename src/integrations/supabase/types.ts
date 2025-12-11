@@ -141,6 +141,57 @@ export type Database = {
         }
         Relationships: []
       }
+      club_matches: {
+        Row: {
+          club_key: string
+          created_at: string | null
+          ea_match_id: string
+          guild_id: string
+          id: string
+          match_data: Json | null
+          match_type: string
+          opponent_club_id: string | null
+          opponent_club_name: string | null
+          player_stats: Json | null
+          processed_at: string | null
+          result: string | null
+          score_against: number | null
+          score_for: number | null
+        }
+        Insert: {
+          club_key: string
+          created_at?: string | null
+          ea_match_id: string
+          guild_id: string
+          id?: string
+          match_data?: Json | null
+          match_type?: string
+          opponent_club_id?: string | null
+          opponent_club_name?: string | null
+          player_stats?: Json | null
+          processed_at?: string | null
+          result?: string | null
+          score_against?: number | null
+          score_for?: number | null
+        }
+        Update: {
+          club_key?: string
+          created_at?: string | null
+          ea_match_id?: string
+          guild_id?: string
+          id?: string
+          match_data?: Json | null
+          match_type?: string
+          opponent_club_id?: string | null
+          opponent_club_name?: string | null
+          player_stats?: Json | null
+          processed_at?: string | null
+          result?: string | null
+          score_against?: number | null
+          score_for?: number | null
+        }
+        Relationships: []
+      }
       competition_wins: {
         Row: {
           competition_name: string
