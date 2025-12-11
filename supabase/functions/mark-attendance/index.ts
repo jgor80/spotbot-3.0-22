@@ -6,6 +6,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Validation helpers
+const DISCORD_ID_REGEX = /^\d{17,19}$/;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 interface MarkAttendanceRequest {
   guild_id: string;
   event_id: string;
@@ -14,6 +18,42 @@ interface MarkAttendanceRequest {
     discord_user_id: string;
     showed_up: boolean;
   }[];
+}
+
+function validateRequest(body: any): string[] {
+  const errors: string[] = [];
+  
+  if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) {
+    errors.push("guild_id must be a valid Discord ID");
+  }
+  if (!body.event_id || !UUID_REGEX.test(body.event_id)) {
+    errors.push("event_id must be a valid UUID");
+  }
+  if (!body.recorded_by_discord_id || !DISCORD_ID_REGEX.test(body.recorded_by_discord_id)) {
+    errors.push("recorded_by_discord_id must be a valid Discord ID");
+  }
+  
+  if (!Array.isArray(body.attendance)) {
+    errors.push("attendance must be an array");
+  } else if (body.attendance.length === 0) {
+    errors.push("attendance must have at least 1 record");
+  } else if (body.attendance.length > 50) {
+    errors.push("attendance must have at most 50 records");
+  } else {
+    for (let i = 0; i < body.attendance.length; i++) {
+      const record = body.attendance[i];
+      if (!record.discord_user_id || !DISCORD_ID_REGEX.test(record.discord_user_id)) {
+        errors.push(`attendance[${i}].discord_user_id must be a valid Discord ID`);
+        break;
+      }
+      if (typeof record.showed_up !== "boolean") {
+        errors.push(`attendance[${i}].showed_up must be a boolean`);
+        break;
+      }
+    }
+  }
+  
+  return errors;
 }
 
 serve(async (req) => {
@@ -27,9 +67,45 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { guild_id, event_id, recorded_by_discord_id, attendance }: MarkAttendanceRequest = await req.json();
+    const body = await req.json();
+    
+    // Validate input
+    const errors = validateRequest(body);
+    if (errors.length > 0) {
+      console.log(`[mark-attendance] Validation failed: ${errors.join("; ")}`);
+      return new Response(
+        JSON.stringify({ error: "Validation failed", details: errors }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { guild_id, event_id, recorded_by_discord_id, attendance }: MarkAttendanceRequest = body;
 
     console.log(`[mark-attendance] Recording attendance for event ${event_id}, ${attendance.length} players`);
+
+    // Verify recorder has permission (admin, moderator, captain, or manager)
+    const { data: hasPermission, error: permError } = await supabase.rpc("has_any_role", {
+      _guild_id: guild_id,
+      _discord_user_id: recorded_by_discord_id,
+      _roles: ["admin", "moderator", "captain", "manager"],
+    });
+
+    if (permError) {
+      console.error("[mark-attendance] Permission check error:", permError);
+      return new Response(
+        JSON.stringify({ error: "Failed to verify permissions" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Enforce permission check
+    if (hasPermission !== true) {
+      console.log(`[mark-attendance] Permission denied for ${recorded_by_discord_id}`);
+      return new Response(
+        JSON.stringify({ error: "You don't have permission to mark attendance. Required role: admin, moderator, captain, or manager." }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Get the event
     const { data: event, error: eventError } = await supabase
@@ -112,29 +188,13 @@ async function updateReliability(
     .eq("discord_user_id", discordUserId)
     .maybeSingle();
 
-  // Scoring:
-  // Said Yes + Showed = +1 point
-  // Said Yes + No-Show = -3 points (heavy penalty)
-  // Said Maybe + Showed = +0.5 points
-  // Said Maybe + No-Show = -1 point
-  // Said No = neutral (we don't track these typically)
-
-  let pointChange = 0;
-  if (saidYes && showedUp) pointChange = 1;
-  else if (saidYes && !showedUp) pointChange = -3;
-  else if (saidMaybe && showedUp) pointChange = 0.5;
-  else if (saidMaybe && !showedUp) pointChange = -1;
-
   if (existing) {
     const newTotal = existing.total_events + 1;
     const newAvailable = existing.events_available + (saidYes || saidMaybe ? 1 : 0);
     const newShowed = existing.events_showed + (showedUp ? 1 : 0);
     const newNoShowed = existing.events_no_showed + ((saidYes || saidMaybe) && !showedUp ? 1 : 0);
 
-    // Calculate reliability score (base 100, modified by points)
-    // We use a weighted moving average approach
     const baseScore = newShowed > 0 ? (newShowed / Math.max(1, newAvailable)) * 100 : 100;
-    // Apply penalty for no-shows more heavily
     const penaltyFactor = Math.max(0, 1 - (newNoShowed * 0.1));
     const newScore = Math.max(0, Math.min(100, baseScore * penaltyFactor));
 
@@ -159,7 +219,7 @@ async function updateReliability(
       events_available: saidYes || saidMaybe ? 1 : 0,
       events_showed: showedValue,
       events_no_showed: noShowValue,
-      reliability_score: showedUp ? 100 : (saidYes ? 0 : 100), // No-show on first event = 0
+      reliability_score: showedUp ? 100 : (saidYes ? 0 : 100),
     });
   }
 

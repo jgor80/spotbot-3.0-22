@@ -6,19 +6,55 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Validation helpers
+const DISCORD_ID_REGEX = /^\d{17,19}$/;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 interface PeerEvaluationRequest {
   guild_id: string;
   evaluator_discord_id: string;
   evaluated_discord_id: string;
   draft_id?: string;
   ratings: {
-    technical_skill: number; // 1-5
+    technical_skill: number;
     game_iq: number;
     work_ethic: number;
     communication: number;
     consistency: number;
     clutch_factor: number;
   };
+}
+
+function validateRequest(body: any): string[] {
+  const errors: string[] = [];
+  
+  if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) {
+    errors.push("guild_id must be a valid Discord ID");
+  }
+  if (!body.evaluator_discord_id || !DISCORD_ID_REGEX.test(body.evaluator_discord_id)) {
+    errors.push("evaluator_discord_id must be a valid Discord ID");
+  }
+  if (!body.evaluated_discord_id || !DISCORD_ID_REGEX.test(body.evaluated_discord_id)) {
+    errors.push("evaluated_discord_id must be a valid Discord ID");
+  }
+  if (body.draft_id && !UUID_REGEX.test(body.draft_id)) {
+    errors.push("draft_id must be a valid UUID");
+  }
+  
+  // Validate ratings object
+  if (!body.ratings || typeof body.ratings !== "object") {
+    errors.push("ratings object is required");
+  } else {
+    const requiredRatings = ["technical_skill", "game_iq", "work_ethic", "communication", "consistency", "clutch_factor"];
+    for (const field of requiredRatings) {
+      const value = body.ratings[field];
+      if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 5) {
+        errors.push(`ratings.${field} must be an integer between 1 and 5`);
+      }
+    }
+  }
+  
+  return errors;
 }
 
 serve(async (req) => {
@@ -32,18 +68,21 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { guild_id, evaluator_discord_id, evaluated_discord_id, draft_id, ratings }: PeerEvaluationRequest = await req.json();
-
-    console.log(`[peer-eval] ${evaluator_discord_id} evaluating ${evaluated_discord_id}`);
-
-    // Validate ratings are 1-5
-    const ratingValues = Object.values(ratings);
-    if (ratingValues.some(r => r < 1 || r > 5)) {
+    const body = await req.json();
+    
+    // Validate input
+    const errors = validateRequest(body);
+    if (errors.length > 0) {
+      console.log(`[peer-eval] Validation failed: ${errors.join("; ")}`);
       return new Response(
-        JSON.stringify({ error: "Ratings must be between 1 and 5" }),
+        JSON.stringify({ error: "Validation failed", details: errors }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const { guild_id, evaluator_discord_id, evaluated_discord_id, draft_id, ratings }: PeerEvaluationRequest = body;
+
+    console.log(`[peer-eval] ${evaluator_discord_id} evaluating ${evaluated_discord_id}`);
 
     // Can't evaluate yourself
     if (evaluator_discord_id === evaluated_discord_id) {
@@ -64,6 +103,7 @@ serve(async (req) => {
     const trustScore = trustData?.trust_score ?? 1.0;
 
     // Calculate overall score (average of all ratings)
+    const ratingValues = Object.values(ratings);
     const overallScore = ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length;
     const trustWeightedScore = overallScore * trustScore;
 
@@ -96,8 +136,8 @@ serve(async (req) => {
       .upsert({
         guild_id,
         discord_user_id: evaluator_discord_id,
-        evaluations_given: (trustData ? 1 : 1), // Will increment via trigger or next logic
-        trust_score: Math.min(2.0, (trustScore || 1.0) + 0.01), // Slowly increase trust
+        evaluations_given: (trustData ? 1 : 1),
+        trust_score: Math.min(2.0, (trustScore || 1.0) + 0.01),
       }, { onConflict: "guild_id,discord_user_id" });
 
     // Update the feedback request if this was from a DM

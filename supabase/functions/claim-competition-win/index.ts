@@ -6,6 +6,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Validation helpers
+const DISCORD_ID_REGEX = /^\d{17,19}$/;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const COMPETITION_TYPES = ["tournament", "league"] as const;
+const TIERS = ["major", "minor", "community", "div1", "div2", "div3", "div4"] as const;
+
 interface ClaimWinRequest {
   guild_id: string;
   claimed_by_discord_id: string;
@@ -13,7 +19,7 @@ interface ClaimWinRequest {
   tier: "major" | "minor" | "community" | "div1" | "div2" | "div3" | "div4";
   competition_name: string;
   team_name?: string;
-  placed_at?: string; // ISO date
+  placed_at?: string;
   proof_url?: string;
 }
 
@@ -23,6 +29,61 @@ interface VerifyWinRequest {
   reviewer_discord_id: string;
   approved: boolean;
   rejection_reason?: string;
+}
+
+function validateClaimRequest(body: any): string[] {
+  const errors: string[] = [];
+  
+  if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) {
+    errors.push("guild_id must be a valid Discord ID");
+  }
+  if (!body.claimed_by_discord_id || !DISCORD_ID_REGEX.test(body.claimed_by_discord_id)) {
+    errors.push("claimed_by_discord_id must be a valid Discord ID");
+  }
+  if (!COMPETITION_TYPES.includes(body.competition_type)) {
+    errors.push(`competition_type must be one of: ${COMPETITION_TYPES.join(", ")}`);
+  }
+  if (!TIERS.includes(body.tier)) {
+    errors.push(`tier must be one of: ${TIERS.join(", ")}`);
+  }
+  if (!body.competition_name || typeof body.competition_name !== "string") {
+    errors.push("competition_name is required");
+  } else if (body.competition_name.length > 200) {
+    errors.push("competition_name must be at most 200 characters");
+  }
+  if (body.team_name && (typeof body.team_name !== "string" || body.team_name.length > 100)) {
+    errors.push("team_name must be at most 100 characters");
+  }
+  if (body.placed_at && isNaN(new Date(body.placed_at).getTime())) {
+    errors.push("placed_at must be a valid date");
+  }
+  if (body.proof_url && (typeof body.proof_url !== "string" || body.proof_url.length > 2000)) {
+    errors.push("proof_url must be at most 2000 characters");
+  }
+  
+  return errors;
+}
+
+function validateVerifyRequest(body: any): string[] {
+  const errors: string[] = [];
+  
+  if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) {
+    errors.push("guild_id must be a valid Discord ID");
+  }
+  if (!body.claim_id || !UUID_REGEX.test(body.claim_id)) {
+    errors.push("claim_id must be a valid UUID");
+  }
+  if (!body.reviewer_discord_id || !DISCORD_ID_REGEX.test(body.reviewer_discord_id)) {
+    errors.push("reviewer_discord_id must be a valid Discord ID");
+  }
+  if (typeof body.approved !== "boolean") {
+    errors.push("approved must be a boolean");
+  }
+  if (body.rejection_reason && (typeof body.rejection_reason !== "string" || body.rejection_reason.length > 500)) {
+    errors.push("rejection_reason must be at most 500 characters");
+  }
+  
+  return errors;
 }
 
 serve(async (req) => {
@@ -41,9 +102,23 @@ serve(async (req) => {
     // Check if this is a claim or verify request
     if (body.claim_id) {
       // Verification request
+      const errors = validateVerifyRequest(body);
+      if (errors.length > 0) {
+        return new Response(
+          JSON.stringify({ error: "Validation failed", details: errors }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       return handleVerification(supabase, body as VerifyWinRequest);
     } else {
       // New claim
+      const errors = validateClaimRequest(body);
+      if (errors.length > 0) {
+        return new Response(
+          JSON.stringify({ error: "Validation failed", details: errors }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       return handleClaim(supabase, body as ClaimWinRequest);
     }
   } catch (error) {
@@ -106,6 +181,30 @@ async function handleVerification(supabase: any, request: VerifyWinRequest) {
 
   console.log(`[claim-competition-win] ${reviewer_discord_id} ${approved ? "approving" : "rejecting"} claim ${claim_id}`);
 
+  // Verify reviewer has permission (admin or moderator only)
+  const { data: hasPermission, error: permError } = await supabase.rpc("has_any_role", {
+    _guild_id: guild_id,
+    _discord_user_id: reviewer_discord_id,
+    _roles: ["admin", "moderator"],
+  });
+
+  if (permError) {
+    console.error("[claim-competition-win] Permission check error:", permError);
+    return new Response(
+      JSON.stringify({ error: "Failed to verify permissions" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  // Enforce permission check - only admins/moderators can verify claims
+  if (hasPermission !== true) {
+    console.log(`[claim-competition-win] Permission denied for ${reviewer_discord_id}`);
+    return new Response(
+      JSON.stringify({ error: "You don't have permission to verify competition wins. Required role: admin or moderator." }),
+      { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
   // Get the claim
   const { data: claim, error: claimError } = await supabase
     .from("pending_win_claims")
@@ -126,13 +225,6 @@ async function handleVerification(supabase: any, request: VerifyWinRequest) {
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
-
-  // Verify reviewer has permission
-  const { data: hasPermission } = await supabase.rpc("has_any_role", {
-    _guild_id: guild_id,
-    _discord_user_id: reviewer_discord_id,
-    _roles: ["admin", "moderator"],
-  });
 
   // Update claim status
   await supabase

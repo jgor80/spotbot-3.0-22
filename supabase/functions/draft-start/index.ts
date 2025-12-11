@@ -6,10 +6,38 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Validation helpers
+const DISCORD_ID_REGEX = /^\d{17,19}$/;
+
 interface DraftStartRequest {
   guild_id: string;
   voice_channel_id: string;
-  player_discord_ids: string[]; // Players in VC
+  player_discord_ids: string[];
+}
+
+function validateRequest(body: any): string[] {
+  const errors: string[] = [];
+  
+  if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) {
+    errors.push("guild_id must be a valid Discord ID");
+  }
+  if (!body.voice_channel_id || !DISCORD_ID_REGEX.test(body.voice_channel_id)) {
+    errors.push("voice_channel_id must be a valid Discord ID");
+  }
+  if (!Array.isArray(body.player_discord_ids)) {
+    errors.push("player_discord_ids must be an array");
+  } else if (body.player_discord_ids.length > 50) {
+    errors.push("player_discord_ids must have at most 50 players");
+  } else {
+    for (let i = 0; i < body.player_discord_ids.length; i++) {
+      if (!DISCORD_ID_REGEX.test(body.player_discord_ids[i])) {
+        errors.push(`player_discord_ids[${i}] must be a valid Discord ID`);
+        break;
+      }
+    }
+  }
+  
+  return errors;
 }
 
 serve(async (req) => {
@@ -23,7 +51,19 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { guild_id, voice_channel_id, player_discord_ids }: DraftStartRequest = await req.json();
+    const body = await req.json();
+    
+    // Validate input
+    const errors = validateRequest(body);
+    if (errors.length > 0) {
+      console.log(`[draft-start] Validation failed: ${errors.join("; ")}`);
+      return new Response(
+        JSON.stringify({ error: "Validation failed", details: errors }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { guild_id, voice_channel_id, player_discord_ids }: DraftStartRequest = body;
 
     console.log(`[draft-start] Starting draft for guild ${guild_id} with ${player_discord_ids.length} players`);
 
@@ -59,7 +99,7 @@ serve(async (req) => {
         team_a_player_ids: [captainA],
         team_b_player_ids: [captainB],
         available_player_ids: availablePlayers,
-        current_picker: "a", // Captain A picks first
+        current_picker: "a",
         status: "picking",
         started_at: new Date().toISOString(),
       })
