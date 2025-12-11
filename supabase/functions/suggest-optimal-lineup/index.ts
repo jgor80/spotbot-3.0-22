@@ -45,23 +45,79 @@ interface SuggestLineupRequest {
   prioritize?: "rating" | "form" | "chemistry" | "reliability";
 }
 
+// Validation helpers
+const DISCORD_ID_REGEX = /^\d{17,19}$/;
+const VALID_PRIORITIES = ["rating", "form", "chemistry", "reliability"] as const;
+
+function validateRequest(body: any): string[] {
+  const errors: string[] = [];
+  
+  if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) {
+    errors.push("guild_id must be a valid Discord ID");
+  }
+  if (!body.formation || !FORMATIONS[body.formation]) {
+    errors.push(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}`);
+  }
+  if (!Array.isArray(body.available_player_ids) || body.available_player_ids.length === 0) {
+    errors.push("available_player_ids must be a non-empty array");
+  } else if (body.available_player_ids.length > 50) {
+    errors.push("available_player_ids must have at most 50 items");
+  } else {
+    for (let i = 0; i < body.available_player_ids.length; i++) {
+      if (!DISCORD_ID_REGEX.test(body.available_player_ids[i])) {
+        errors.push(`available_player_ids[${i}] must be a valid Discord ID`);
+        break;
+      }
+    }
+  }
+  if (body.prioritize && !VALID_PRIORITIES.includes(body.prioritize)) {
+    errors.push(`prioritize must be one of: ${VALID_PRIORITIES.join(", ")}`);
+  }
+  
+  return errors;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Verify the request is from the Discord bot (service role key)
+    const authHeader = req.headers.get("authorization");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    
+    if (!authHeader || !authHeader.includes(serviceRoleKey)) {
+      console.log("[suggest-lineup] Unauthorized: Missing or invalid service role key");
+      return new Response(
+        JSON.stringify({ error: "This operation requires bot authentication" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+      serviceRoleKey
     );
+
+    const body = await req.json();
+    
+    // Validate input
+    const errors = validateRequest(body);
+    if (errors.length > 0) {
+      console.log(`[suggest-lineup] Validation failed: ${errors.join("; ")}`);
+      return new Response(
+        JSON.stringify({ error: "Validation failed", details: errors }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const {
       guild_id,
       formation,
       available_player_ids,
       prioritize = "rating",
-    }: SuggestLineupRequest = await req.json();
+    }: SuggestLineupRequest = body;
 
     console.log(`[suggest-lineup] Suggesting ${formation} from ${available_player_ids.length} players, prioritizing ${prioritize}`);
 

@@ -39,9 +39,21 @@ serve(async (req) => {
   }
 
   try {
+    // Verify the request is from the Discord bot (service role key)
+    const authHeader = req.headers.get("authorization");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    
+    if (!authHeader || !authHeader.includes(serviceRoleKey)) {
+      console.log("[availability-response] Unauthorized: Missing or invalid service role key");
+      return new Response(
+        JSON.stringify({ error: "This operation requires bot authentication" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+      serviceRoleKey
     );
 
     const body = await req.json();
