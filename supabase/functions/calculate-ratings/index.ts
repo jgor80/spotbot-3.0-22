@@ -85,10 +85,10 @@ serve(async (req) => {
 
 async function calculatePlayerRating(supabase: any, guildId: string, player: any): Promise<number> {
   // Calculate draft performance rating (win rate, goals, assists, EA rating avg)
-  const draftRating = await calculateDraftPerformance(supabase, guildId, player);
+  const draftRating = await calculateDraftPerformance(supabase, guildId, player, "draft");
   
-  // Club/tournament performance would come from EA API - use existing or default
-  const clubRating = player.club_performance_rating || 50;
+  // Calculate club performance rating from EA API matches
+  const clubRating = await calculateDraftPerformance(supabase, guildId, player, "club");
   
   // Peer rating already calculated on evaluation submission
   const peerRating = player.peer_rating || 50;
@@ -125,6 +125,7 @@ async function calculatePlayerRating(supabase: any, guildId: string, player: any
     .update({
       overall_rating: finalRating,
       draft_performance_rating: draftRating,
+      club_performance_rating: clubRating,
       last_calculated_at: new Date().toISOString(),
     })
     .eq("id", player.id);
@@ -132,14 +133,14 @@ async function calculatePlayerRating(supabase: any, guildId: string, player: any
   return finalRating;
 }
 
-async function calculateDraftPerformance(supabase: any, guildId: string, player: any): Promise<number> {
-  // Get all draft stats for this player
+async function calculateDraftPerformance(supabase: any, guildId: string, player: any, matchType: string): Promise<number> {
+  // Get all stats for this player of the specified match type
   const { data: stats } = await supabase
     .from("player_stats")
     .select("*")
     .eq("guild_id", guildId)
     .eq("discord_user_id", player.discord_user_id)
-    .eq("match_type", "draft");
+    .eq("match_type", matchType);
 
   if (!stats || stats.length === 0) return 50; // Default rating
 
