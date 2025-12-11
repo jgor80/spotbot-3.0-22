@@ -8,7 +8,9 @@ import {
   User,
   Menu,
   X,
-  Zap
+  Zap,
+  Settings,
+  Gamepad2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,8 +24,9 @@ const navItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { path: "/players", label: "Players", icon: Users },
-  { path: "/lineup", label: "Lineup Builder", icon: ClipboardList },
-  { path: "/profile", label: "My Profile", icon: User },
+  { path: "/lineup", label: "Lineup", icon: ClipboardList },
+  { path: "/profile", label: "Profile", icon: User },
+  { path: "/settings", label: "Link EA", icon: Gamepad2 },
 ];
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
