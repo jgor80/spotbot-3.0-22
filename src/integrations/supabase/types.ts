@@ -239,6 +239,7 @@ export type Database = {
       }
       dm_feedback_requests: {
         Row: {
+          club_match_id: string | null
           completed_at: string | null
           created_at: string
           dm_sent_at: string | null
@@ -247,10 +248,12 @@ export type Database = {
           expires_at: string
           guild_id: string
           id: string
+          match_type: string | null
           status: Database["public"]["Enums"]["feedback_status"]
           teammates_to_evaluate: string[]
         }
         Insert: {
+          club_match_id?: string | null
           completed_at?: string | null
           created_at?: string
           dm_sent_at?: string | null
@@ -259,10 +262,12 @@ export type Database = {
           expires_at: string
           guild_id: string
           id?: string
+          match_type?: string | null
           status?: Database["public"]["Enums"]["feedback_status"]
           teammates_to_evaluate?: string[]
         }
         Update: {
+          club_match_id?: string | null
           completed_at?: string | null
           created_at?: string
           dm_sent_at?: string | null
@@ -271,10 +276,18 @@ export type Database = {
           expires_at?: string
           guild_id?: string
           id?: string
+          match_type?: string | null
           status?: Database["public"]["Enums"]["feedback_status"]
           teammates_to_evaluate?: string[]
         }
         Relationships: [
+          {
+            foreignKeyName: "dm_feedback_requests_club_match_id_fkey"
+            columns: ["club_match_id"]
+            isOneToOne: false
+            referencedRelation: "club_matches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "dm_feedback_requests_draft_id_fkey"
             columns: ["draft_id"]
@@ -1322,6 +1335,8 @@ export type Database = {
           discord_avatar: string | null
           discord_user_id: string
           discord_username: string | null
+          ea_persona_id: string | null
+          ea_platform: string | null
           ea_username: string | null
           id: string
           primary_position: string | null
@@ -1332,6 +1347,8 @@ export type Database = {
           discord_avatar?: string | null
           discord_user_id: string
           discord_username?: string | null
+          ea_persona_id?: string | null
+          ea_platform?: string | null
           ea_username?: string | null
           id?: string
           primary_position?: string | null
@@ -1342,6 +1359,8 @@ export type Database = {
           discord_avatar?: string | null
           discord_user_id?: string
           discord_username?: string | null
+          ea_persona_id?: string | null
+          ea_platform?: string | null
           ea_username?: string | null
           id?: string
           primary_position?: string | null

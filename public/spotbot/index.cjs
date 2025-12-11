@@ -2498,6 +2498,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
     .addFields(
       { name: '🏟️ Club', value: club?.name || 'None', inline: true },
       { name: '📋 Formation', value: formationName, inline: true },
+      { name: '🔗 EA Link', value: club?.ea_club_id ? `✅ ${club.ea_club_id}` : '❌ Not linked', inline: true },
       { name: '👥 Roster', value: `${filledSlots}/${totalSlots} filled`, inline: true },
       { name: '🔗 Linked VC', value: linkedVc ? `<#${linkedVc}>` : 'Not linked', inline: true },
       { name: '✨ Auto-Assign', value: autoAssignEnabled ? '✅ Enabled' : '❌ Disabled', inline: true },
@@ -2608,8 +2609,8 @@ function buildAdminControlPanelButtons() {
       .setEmoji('📋')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId('squadiq_draft')
-      .setLabel('Start Draft')
+      .setCustomId('squadiq_draftpanel')
+      .setLabel('Draft Panel')
       .setEmoji('⚔️')
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
@@ -2650,7 +2651,7 @@ function buildAdminControlPanelButtons() {
   );
   rows.push(row2);
   
-  // Row 3: Scouting & Analytics (NEW - provides button access to scouting features)
+  // Row 3: Scouting & Analytics
   const row3 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('squadiq_scout')
@@ -4603,6 +4604,109 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
+      // Draft Panel - shows full draft control interface
+      if (id === 'squadiq_draftpanel') {
+        await interaction.deferReply({ flags: 64 });
+        
+        // Check for active draft
+        const { data: activeDraft } = await supabase
+          .from('drafts')
+          .select('*')
+          .eq('guild_id', guildId)
+          .in('status', ['pending', 'picking'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (activeDraft) {
+          // Show active draft embed with controls
+          const embed = buildDraftEmbed(activeDraft, interaction.guild);
+          
+          const draftButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`draft_report_${activeDraft.id}`)
+              .setLabel('Report Result')
+              .setEmoji('📝')
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId(`draft_cancel_${activeDraft.id}`)
+              .setLabel('Cancel Draft')
+              .setEmoji('❌')
+              .setStyle(ButtonStyle.Danger)
+          );
+          
+          return interaction.editReply({ embeds: [embed], components: [draftButtons] });
+        }
+        
+        // No active draft - show start draft panel
+        const voiceChannel = interaction.member?.voice?.channel;
+        const vcMembers = voiceChannel ? 
+          [...voiceChannel.members.values()].filter(m => !m.user.bot) : [];
+        
+        const startEmbed = new EmbedBuilder()
+          .setTitle('⚔️ Draft Control Panel')
+          .setColor(0xff6b35)
+          .setDescription(
+            '**No active draft**\n\n' +
+            'To start a draft:\n' +
+            '1️⃣ Join a voice channel with 4+ players\n' +
+            '2️⃣ Click **Start Draft** below or use `/draft`\n\n' +
+            `**Your VC:** ${voiceChannel ? `${voiceChannel.name} (${vcMembers.length} players)` : 'Not in a voice channel'}`
+          );
+        
+        // Add recent drafts info
+        const { data: recentDrafts } = await supabase
+          .from('drafts')
+          .select('id, created_at, status, captain_a_discord_id, captain_b_discord_id')
+          .eq('guild_id', guildId)
+          .order('created_at', { ascending: false })
+          .limit(3);
+        
+        if (recentDrafts && recentDrafts.length > 0) {
+          const recentText = recentDrafts.map(d => {
+            const date = new Date(d.created_at).toLocaleDateString();
+            return `• ${date} - ${d.status} (Captains: <@${d.captain_a_discord_id}> vs <@${d.captain_b_discord_id}>)`;
+          }).join('\n');
+          startEmbed.addFields({ name: '📜 Recent Drafts', value: recentText });
+        }
+        
+        // Add pending feedback count
+        const { count: pendingFeedback } = await supabase
+          .from('dm_feedback_requests')
+          .select('*', { count: 'exact', head: true })
+          .eq('guild_id', guildId)
+          .eq('status', 'pending');
+        
+        if (pendingFeedback > 0) {
+          startEmbed.addFields({ 
+            name: '📬 Pending Feedback', 
+            value: `${pendingFeedback} players have pending peer evaluations`,
+            inline: true 
+          });
+        }
+        
+        const startButtons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('squadiq_draft')
+            .setLabel('Start Draft')
+            .setEmoji('⚔️')
+            .setStyle(ButtonStyle.Success)
+            .setDisabled(!voiceChannel || vcMembers.length < 4),
+          new ButtonBuilder()
+            .setCustomId('squadiq_send_feedback_dms')
+            .setLabel('Send Feedback DMs')
+            .setEmoji('📬')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId('squadiq_link_ea_modal')
+            .setLabel('Link EA Account')
+            .setEmoji('🎮')
+            .setStyle(ButtonStyle.Secondary)
+        );
+        
+        return interaction.editReply({ embeds: [startEmbed], components: [startButtons] });
+      }
+
       if (id === 'squadiq_draft') {
         const voiceChannel = interaction.member?.voice?.channel;
         if (!voiceChannel) {
@@ -4764,6 +4868,186 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (id === 'squadiq_help') {
         return interaction.reply({ embeds: [buildHelpEmbed()], flags: 64 });
+      }
+
+      // Send Feedback DMs button - sends pending feedback requests via DM
+      if (id === 'squadiq_send_feedback_dms') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        const result = await sendPendingFeedbackDMs(guildId, interaction.guild);
+        
+        return interaction.editReply({
+          content: `📬 **Feedback DMs Sent!**\n\n` +
+            `✅ Sent: ${result.sent}\n` +
+            `⏭️ Skipped (already sent): ${result.skipped}\n` +
+            `❌ Failed: ${result.failed}\n\n` +
+            `Players will receive DMs with buttons to rate their teammates.`
+        });
+      }
+
+      // Link EA Account button - opens modal
+      if (id === 'squadiq_link_ea_modal') {
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_linkea_modal')
+          .setTitle('Link EA Account');
+        
+        const usernameInput = new TextInputBuilder()
+          .setCustomId('ea_username')
+          .setLabel('EA FC Pro Clubs Username')
+          .setPlaceholder('Enter your exact EA username')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const platformInput = new TextInputBuilder()
+          .setCustomId('ea_platform')
+          .setLabel('Platform (ps5/xbox/pc)')
+          .setPlaceholder('ps5, xbox, or pc')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const row1 = new ActionRowBuilder().addComponents(usernameInput);
+        const row2 = new ActionRowBuilder().addComponents(platformInput);
+        modal.addComponents(row1, row2);
+        return interaction.showModal(modal);
+      }
+
+      // Draft report result button
+      if (id.startsWith('draft_report_')) {
+        const draftId = id.substring('draft_report_'.length);
+        
+        const modal = new ModalBuilder()
+          .setCustomId(`draft_result_modal_${draftId}`)
+          .setTitle('Report Draft Result');
+        
+        const teamAScore = new TextInputBuilder()
+          .setCustomId('team_a_score')
+          .setLabel('Team A Score')
+          .setPlaceholder('Enter score (e.g., 3)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const teamBScore = new TextInputBuilder()
+          .setCustomId('team_b_score')
+          .setLabel('Team B Score')
+          .setPlaceholder('Enter score (e.g., 2)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const row1 = new ActionRowBuilder().addComponents(teamAScore);
+        const row2 = new ActionRowBuilder().addComponents(teamBScore);
+        modal.addComponents(row1, row2);
+        return interaction.showModal(modal);
+      }
+
+      // Draft cancel button
+      if (id.startsWith('draft_cancel_')) {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only admins can cancel drafts.', flags: 64 });
+        }
+        
+        const draftId = id.substring('draft_cancel_'.length);
+        
+        await interaction.deferReply({ flags: 64 });
+        
+        const { error } = await supabase
+          .from('drafts')
+          .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+          .eq('id', draftId);
+        
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to cancel draft: ${error.message}` });
+        }
+        
+        activeDrafts.delete(guildId);
+        return interaction.editReply({ content: '✅ Draft cancelled.' });
+      }
+
+      // Feedback rating buttons (from DMs)
+      if (id.startsWith('feedback_rate_')) {
+        const parts = id.split('_');
+        // Format: feedback_rate_{rating}_{feedbackRequestId}_{evaluatedUserId}
+        const rating = parseInt(parts[2], 10);
+        const feedbackRequestId = parts[3];
+        const evaluatedUserId = parts[4];
+        
+        await interaction.deferUpdate();
+        
+        // Record the peer evaluation
+        const { data: feedbackRequest } = await supabase
+          .from('dm_feedback_requests')
+          .select('*')
+          .eq('id', feedbackRequestId)
+          .single();
+        
+        if (!feedbackRequest) {
+          return interaction.followUp({ content: '❌ Feedback request not found or expired.', flags: 64 });
+        }
+        
+        // Insert peer evaluation
+        await supabase.from('peer_evaluations').insert({
+          guild_id: feedbackRequest.guild_id,
+          draft_id: feedbackRequest.draft_id,
+          club_match_id: feedbackRequest.club_match_id,
+          evaluator_discord_id: interaction.user.id,
+          evaluated_discord_id: evaluatedUserId,
+          overall_score: rating,
+          technical_skill: rating,
+          game_iq: rating,
+          work_ethic: rating,
+          communication: rating,
+          consistency: rating,
+          clutch_factor: rating
+        });
+        
+        // Update feedback request - remove this teammate from the list
+        const remaining = feedbackRequest.teammates_to_evaluate.filter(id => id !== evaluatedUserId);
+        
+        await supabase
+          .from('dm_feedback_requests')
+          .update({
+            teammates_to_evaluate: remaining,
+            status: remaining.length === 0 ? 'completed' : 'pending',
+            completed_at: remaining.length === 0 ? new Date().toISOString() : null
+          })
+          .eq('id', feedbackRequestId);
+        
+        // Trigger rating recalculation for the evaluated player
+        await callEdgeFunction('calculate-ratings', {
+          guild_id: feedbackRequest.guild_id,
+          discord_user_id: evaluatedUserId
+        });
+        
+        if (remaining.length > 0) {
+          // Show next teammate to rate
+          const nextUserId = remaining[0];
+          const nextEmbed = new EmbedBuilder()
+            .setTitle('⭐ Rate Your Teammate')
+            .setColor(0x5865f2)
+            .setDescription(`Rate <@${nextUserId}>'s performance (1-5 stars):`)
+            .setFooter({ text: `${remaining.length} teammate(s) remaining` });
+          
+          const ratingButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`feedback_rate_1_${feedbackRequestId}_${nextUserId}`).setLabel('⭐').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`feedback_rate_2_${feedbackRequestId}_${nextUserId}`).setLabel('⭐⭐').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`feedback_rate_3_${feedbackRequestId}_${nextUserId}`).setLabel('⭐⭐⭐').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId(`feedback_rate_4_${feedbackRequestId}_${nextUserId}`).setLabel('⭐⭐⭐⭐').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId(`feedback_rate_5_${feedbackRequestId}_${nextUserId}`).setLabel('⭐⭐⭐⭐⭐').setStyle(ButtonStyle.Success)
+          );
+          
+          return interaction.editReply({ embeds: [nextEmbed], components: [ratingButtons] });
+        }
+        
+        // All done!
+        const doneEmbed = new EmbedBuilder()
+          .setTitle('✅ Feedback Complete!')
+          .setColor(0x00ff00)
+          .setDescription('Thank you for rating your teammates! Your feedback helps improve player ratings and team chemistry.');
+        
+        return interaction.editReply({ embeds: [doneEmbed], components: [] });
       }
 
       // Scouting button - opens modal for club name input
@@ -5791,6 +6075,116 @@ client.on(Events.InteractionCreate, async (interaction) => {
         } catch (err) {
           console.error('[Profile Modal] Error:', err);
           return interaction.editReply({ content: `❌ Error fetching profile: ${err.message}` });
+        }
+      }
+
+      // Link EA Modal
+      if (id === 'squadiq_linkea_modal') {
+        const eaUsername = interaction.fields.getTextInputValue('ea_username').trim();
+        const eaPlatform = interaction.fields.getTextInputValue('ea_platform').trim().toLowerCase();
+        
+        // Validate platform
+        const validPlatforms = ['ps5', 'ps4', 'xbox', 'xbox-series-xs', 'xboxone', 'pc'];
+        let normalizedPlatform = eaPlatform;
+        if (eaPlatform === 'xbox') normalizedPlatform = 'xbox-series-xs';
+        if (eaPlatform === 'playstation' || eaPlatform === 'ps') normalizedPlatform = 'ps5';
+        
+        if (!validPlatforms.includes(normalizedPlatform) && !validPlatforms.includes(eaPlatform)) {
+          return interaction.reply({
+            content: '❌ Invalid platform. Use: ps5, ps4, xbox, or pc',
+            flags: 64
+          });
+        }
+        
+        await interaction.deferReply({ flags: 64 });
+        
+        try {
+          // Update or create profile with EA username
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('discord_user_id', interaction.user.id)
+            .single();
+          
+          if (existingProfile) {
+            await supabase
+              .from('profiles')
+              .update({
+                ea_username: eaUsername,
+                ea_platform: normalizedPlatform,
+                updated_at: new Date().toISOString()
+              })
+              .eq('discord_user_id', interaction.user.id);
+          } else {
+            await supabase
+              .from('profiles')
+              .insert({
+                discord_user_id: interaction.user.id,
+                discord_username: interaction.user.username,
+                ea_username: eaUsername,
+                ea_platform: normalizedPlatform
+              });
+          }
+          
+          return interaction.editReply({
+            content: `✅ **EA Account Linked!**\n\n` +
+              `🎮 **Username:** ${eaUsername}\n` +
+              `🖥️ **Platform:** ${EA_PLATFORM_NAMES[normalizedPlatform] || normalizedPlatform}\n\n` +
+              `Your stats from club matches will now be automatically tracked!`
+          });
+        } catch (err) {
+          console.error('[LinkEA Modal] Error:', err);
+          return interaction.editReply({ content: `❌ Error linking EA account: ${err.message}` });
+        }
+      }
+
+      // Draft Result Modal
+      if (id.startsWith('draft_result_modal_')) {
+        const draftId = id.substring('draft_result_modal_'.length);
+        const teamAScore = parseInt(interaction.fields.getTextInputValue('team_a_score'), 10);
+        const teamBScore = parseInt(interaction.fields.getTextInputValue('team_b_score'), 10);
+        
+        if (isNaN(teamAScore) || isNaN(teamBScore) || teamAScore < 0 || teamBScore < 0) {
+          return interaction.reply({
+            content: '❌ Invalid scores. Please enter valid numbers.',
+            flags: 64
+          });
+        }
+        
+        await interaction.deferReply({ flags: 64 });
+        
+        try {
+          const { error, data } = await callEdgeFunction('draft-result', {
+            draft_id: draftId,
+            reporter_discord_id: interaction.user.id,
+            team_a_score: teamAScore,
+            team_b_score: teamBScore
+          });
+          
+          if (error) {
+            return interaction.editReply({ content: `❌ Failed to report result: ${error}` });
+          }
+          
+          const winner = teamAScore > teamBScore ? '🔴 Team A' : teamBScore > teamAScore ? '🔵 Team B' : '🤝 Draw';
+          
+          const embed = new EmbedBuilder()
+            .setTitle('📝 Draft Result Reported')
+            .setColor(0x5865f2)
+            .addFields(
+              { name: 'Score', value: `🔴 Team A: **${teamAScore}** - 🔵 Team B: **${teamBScore}**`, inline: false },
+              { name: 'Winner', value: winner, inline: true },
+              { name: 'Status', value: data.status === 'confirmed' ? '✅ Confirmed' : '⏳ Awaiting confirmation', inline: true }
+            )
+            .setDescription(
+              data.status === 'confirmed' 
+                ? '✅ Result confirmed! Stats recorded and feedback requests sent.'
+                : `⏳ Need ${data.confirmations_needed || 1} more confirmation(s) from other players.`
+            );
+          
+          return interaction.editReply({ embeds: [embed] });
+        } catch (err) {
+          console.error('[Draft Result Modal] Error:', err);
+          return interaction.editReply({ content: `❌ Error reporting result: ${err.message}` });
         }
       }
     }
@@ -6841,14 +7235,157 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
     // Post result to stats channel
     if (club.stats_channel_id) {
       await postMatchResult(guildId, club.stats_channel_id, {
-        result, scoreFor, scoreAgainst, opponentName, playerStats, clubName: club.name
+        result, scoreFor, scoreAgainst, opponentName, playerStats, clubName: club.name, matchId
       });
     }
+    
+    // Create feedback requests for players in this match
+    await createClubMatchFeedbackRequests(guildId, matchId, playerStats);
     
     console.log(`[EA] Processed match ${matchId}: ${result} ${scoreFor}-${scoreAgainst} vs ${opponentName}`);
     
   } catch (err) {
     console.error(`[EA] Error processing match:`, err);
+  }
+}
+
+// Create feedback requests for club match participants
+async function createClubMatchFeedbackRequests(guildId, eaMatchId, playerStats) {
+  try {
+    // Get the club_match record
+    const { data: clubMatch } = await supabase
+      .from('club_matches')
+      .select('id')
+      .eq('guild_id', guildId)
+      .eq('ea_match_id', eaMatchId)
+      .single();
+    
+    if (!clubMatch) {
+      console.log(`[Feedback] No club_match found for ${eaMatchId}`);
+      return;
+    }
+    
+    // Map EA usernames to Discord IDs
+    const discordPlayerIds = [];
+    for (const pStat of playerStats) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('discord_user_id')
+        .eq('ea_username', pStat.ea_username)
+        .single();
+      
+      if (profile) {
+        discordPlayerIds.push(profile.discord_user_id);
+      }
+    }
+    
+    if (discordPlayerIds.length < 2) {
+      console.log(`[Feedback] Not enough linked players for feedback (${discordPlayerIds.length})`);
+      return;
+    }
+    
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    
+    const feedbackRequests = discordPlayerIds.map(playerId => {
+      const teammates = discordPlayerIds.filter(id => id !== playerId);
+      return {
+        guild_id: guildId,
+        draft_id: null,
+        club_match_id: clubMatch.id,
+        match_type: 'club',
+        evaluator_discord_id: playerId,
+        teammates_to_evaluate: teammates,
+        expires_at: expiresAt.toISOString()
+      };
+    });
+    
+    await supabase.from('dm_feedback_requests').insert(feedbackRequests);
+    console.log(`[Feedback] Created ${feedbackRequests.length} feedback requests for club match ${eaMatchId}`);
+    
+  } catch (err) {
+    console.error(`[Feedback] Error creating club match feedback requests:`, err);
+  }
+}
+
+// Send pending feedback DMs to players
+async function sendPendingFeedbackDMs(guildId, guild) {
+  const result = { sent: 0, skipped: 0, failed: 0 };
+  
+  try {
+    // Get all pending feedback requests for this guild that haven't been DMed yet
+    const { data: pendingRequests } = await supabase
+      .from('dm_feedback_requests')
+      .select('*')
+      .eq('guild_id', guildId)
+      .eq('status', 'pending')
+      .is('dm_sent_at', null)
+      .gt('expires_at', new Date().toISOString());
+    
+    if (!pendingRequests || pendingRequests.length === 0) {
+      console.log(`[Feedback] No pending DMs to send for guild ${guildId}`);
+      return result;
+    }
+    
+    for (const request of pendingRequests) {
+      if (request.teammates_to_evaluate.length === 0) {
+        result.skipped++;
+        continue;
+      }
+      
+      try {
+        // Fetch the Discord user
+        const member = await guild.members.fetch(request.evaluator_discord_id).catch(() => null);
+        if (!member) {
+          console.log(`[Feedback] Member not found: ${request.evaluator_discord_id}`);
+          result.failed++;
+          continue;
+        }
+        
+        // Build the feedback DM
+        const firstTeammateId = request.teammates_to_evaluate[0];
+        const matchType = request.match_type === 'club' ? 'Club Match' : 'Draft';
+        
+        const embed = new EmbedBuilder()
+          .setTitle('⭐ Rate Your Teammates!')
+          .setColor(0x5865f2)
+          .setDescription(
+            `You recently played a **${matchType}**!\n\n` +
+            `Please rate your teammates' performance. This helps improve the rating system and team chemistry.\n\n` +
+            `**Rate:** <@${firstTeammateId}>\n` +
+            `(1 = Poor, 5 = Excellent)`
+          )
+          .setFooter({ text: `${request.teammates_to_evaluate.length} teammate(s) to rate • Expires in 24h` });
+        
+        const ratingButtons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`feedback_rate_1_${request.id}_${firstTeammateId}`).setLabel('⭐').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`feedback_rate_2_${request.id}_${firstTeammateId}`).setLabel('⭐⭐').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`feedback_rate_3_${request.id}_${firstTeammateId}`).setLabel('⭐⭐⭐').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId(`feedback_rate_4_${request.id}_${firstTeammateId}`).setLabel('⭐⭐⭐⭐').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`feedback_rate_5_${request.id}_${firstTeammateId}`).setLabel('⭐⭐⭐⭐⭐').setStyle(ButtonStyle.Success)
+        );
+        
+        await member.send({ embeds: [embed], components: [ratingButtons] });
+        
+        // Mark as sent
+        await supabase
+          .from('dm_feedback_requests')
+          .update({ dm_sent_at: new Date().toISOString() })
+          .eq('id', request.id);
+        
+        result.sent++;
+        console.log(`[Feedback] Sent DM to ${member.user.username}`);
+        
+      } catch (err) {
+        console.error(`[Feedback] Failed to DM ${request.evaluator_discord_id}:`, err.message);
+        result.failed++;
+      }
+    }
+    
+    return result;
+    
+  } catch (err) {
+    console.error(`[Feedback] Error sending feedback DMs:`, err);
+    return result;
   }
 }
 
