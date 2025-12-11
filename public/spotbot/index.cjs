@@ -478,6 +478,9 @@ const COMMANDS = [
   { name: 'squadiq', description: 'Launch the SquadIQ control panel in this channel (admin only).' },
   { name: 'refreshpanel', description: 'Force refresh the admin panel in this channel.' },
 
+  // Scouting Panel
+  { name: 'scoutpanel', description: 'Create a scouting panel in this channel for club scouting and match analysis.' },
+
   // Scouting Commands (ScoutBot functionality)
   {
     name: 'scoutclub',
@@ -2709,6 +2712,78 @@ function buildAdminControlPanelButtons() {
   return rows;
 }
 
+// =======================
+// SCOUTING PANEL BUILDER
+// =======================
+
+function buildScoutingPanelEmbed(guildId) {
+  return new EmbedBuilder()
+    .setTitle('🔍 SquadIQ Scouting Panel')
+    .setColor(0x5865f2)
+    .setDescription(
+      '**Welcome to the Scouting Hub!**\n\n' +
+      'Use the buttons below to scout opponents, analyze clubs, and prepare match strategies.\n\n' +
+      '**🔍 Scout Club** - Generate an AI scouting report for any Pro Clubs team\n' +
+      '**📊 Club Matches** - View recent match history for any club\n' +
+      '**⚔️ Match Preview** - AI-powered preview comparing two teams\n' +
+      '**👤 View Profile** - Check any player\'s stats and ratings\n' +
+      '**📈 Leaderboard** - See top players in the server'
+    )
+    .setFooter({ text: 'AI-powered analysis • Updated in real-time' })
+    .setTimestamp();
+}
+
+function buildScoutingPanelComponents() {
+  const rows = [];
+  
+  // Row 1: Main scouting actions
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_scout')
+      .setLabel('Scout Club')
+      .setEmoji('🔍')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_matches')
+      .setLabel('Club Matches')
+      .setEmoji('📊')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_preview')
+      .setLabel('Match Preview')
+      .setEmoji('⚔️')
+      .setStyle(ButtonStyle.Primary)
+  );
+  rows.push(row1);
+  
+  // Row 2: Additional actions
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_profile')
+      .setLabel('View Profile')
+      .setEmoji('👤')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_leaderboard')
+      .setLabel('Leaderboard')
+      .setEmoji('📈')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_refresh')
+      .setLabel('Refresh')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setLabel('Web Dashboard')
+      .setEmoji('🌐')
+      .setStyle(ButtonStyle.Link)
+      .setURL('https://squadiq.lovable.app/scouting')
+  );
+  rows.push(row2);
+  
+  return rows;
+}
+
 async function buildDebugEmbed(guildId, state) {
   const debugInfo = [];
   
@@ -4566,6 +4641,28 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         return interaction.editReply({ content: '✅ All panels refreshed!' });
       }
+
+      // =======================
+      // SCOUTING PANEL COMMAND
+      // =======================
+
+      if (cmd === 'scoutpanel') {
+        const embed = buildScoutingPanelEmbed(guildId);
+        const components = buildScoutingPanelComponents();
+
+        await interaction.reply({
+          embeds: [embed],
+          components
+        });
+
+        // Store the panel location for reference
+        const msg = await interaction.fetchReply();
+        state.scoutPanelChannelId = interaction.channelId;
+        state.scoutPanelMessageId = msg.id;
+        await saveGuildSettings(guildId, state);
+
+        return;
+      }
     }
 
     // ----- Buttons -----
@@ -5133,6 +5230,135 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const row = new ActionRowBuilder().addComponents(playerInput);
         modal.addComponents(row);
         return interaction.showModal(modal);
+      }
+
+      // =======================
+      // SCOUTING PANEL BUTTON HANDLERS
+      // =======================
+
+      // Scout Club button from scouting panel
+      if (id === 'scoutpanel_scout') {
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_scout_modal')
+          .setTitle('Scout a Club');
+        
+        const clubNameInput = new TextInputBuilder()
+          .setCustomId('scout_club_name')
+          .setLabel('Club Name')
+          .setPlaceholder('Enter the EA FC Pro Clubs team name')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const row = new ActionRowBuilder().addComponents(clubNameInput);
+        modal.addComponents(row);
+        return interaction.showModal(modal);
+      }
+
+      // Club Matches button from scouting panel
+      if (id === 'scoutpanel_matches') {
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_clubmatches_modal')
+          .setTitle('Club Match History');
+        
+        const clubNameInput = new TextInputBuilder()
+          .setCustomId('matches_club_name')
+          .setLabel('Club Name')
+          .setPlaceholder('Enter the EA FC Pro Clubs team name')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const row = new ActionRowBuilder().addComponents(clubNameInput);
+        modal.addComponents(row);
+        return interaction.showModal(modal);
+      }
+
+      // Match Preview button from scouting panel
+      if (id === 'scoutpanel_preview') {
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_matchpreview_modal')
+          .setTitle('Match Preview');
+        
+        const homeInput = new TextInputBuilder()
+          .setCustomId('preview_home_club')
+          .setLabel('Home Club Name')
+          .setPlaceholder('Enter the home team name')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const awayInput = new TextInputBuilder()
+          .setCustomId('preview_away_club')
+          .setLabel('Away Club Name')
+          .setPlaceholder('Enter the away team name')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const row1 = new ActionRowBuilder().addComponents(homeInput);
+        const row2 = new ActionRowBuilder().addComponents(awayInput);
+        modal.addComponents(row1, row2);
+        return interaction.showModal(modal);
+      }
+
+      // View Profile button from scouting panel
+      if (id === 'scoutpanel_profile') {
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_profile_modal')
+          .setTitle('View Player Profile');
+        
+        const playerInput = new TextInputBuilder()
+          .setCustomId('profile_player')
+          .setLabel('Player (leave empty for yourself)')
+          .setPlaceholder('Enter Discord username or ID, or leave empty')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+        
+        const row = new ActionRowBuilder().addComponents(playerInput);
+        modal.addComponents(row);
+        return interaction.showModal(modal);
+      }
+
+      // Leaderboard button from scouting panel
+      if (id === 'scoutpanel_leaderboard') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { error, data } = await callEdgeFunction('get-leaderboard', {
+          guild_id: guildId,
+          type: 'overall',
+          limit: 15
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to fetch leaderboard: ${error}` });
+        }
+
+        const players = data?.players || [];
+        if (players.length === 0) {
+          return interaction.editReply({ content: 'No players on the leaderboard yet. Play some games to get started!' });
+        }
+
+        const lines = players.map((p, i) => {
+          const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+          const rating = Math.round(p.overall_rating || 50);
+          const pos = p.primary_position || '—';
+          return `${medal} **${p.discord_username || 'Unknown'}** • ${rating} OVR • ${pos}`;
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('📈 Server Leaderboard')
+          .setColor(0x5865f2)
+          .setDescription(lines.join('\n'))
+          .setFooter({ text: 'Based on overall rating • Top 15 players' })
+          .setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // Refresh button from scouting panel
+      if (id === 'scoutpanel_refresh') {
+        await interaction.update({
+          embeds: [buildScoutingPanelEmbed(guildId)],
+          components: buildScoutingPanelComponents()
+        });
+        return;
       }
 
       // Availability response buttons
