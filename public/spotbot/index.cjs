@@ -2967,6 +2967,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
           // Start monitoring
           startEaMonitoring(guildId, currentClub.key);
 
+          // Auto-sync historical matches in background
+          syncClubHistory(guildId, currentClub.key).then(result => {
+            console.log(`[EA] Initial sync for ${currentClub.name}: ${result.synced} matches added`);
+          }).catch(err => {
+            console.error(`[EA] Initial sync error:`, err);
+          });
+
           const embed = new EmbedBuilder()
             .setTitle('✅ EA FC Club Linked!')
             .setColor(0x00ff00)
@@ -2975,7 +2982,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               { name: '🖥️ Platform', value: EA_PLATFORM_NAMES[platform] || platform, inline: true },
               { name: '📊 Stats Channel', value: statsChannel ? `<#${statsChannel.id}>` : 'Not set', inline: true }
             )
-            .setDescription(`Now monitoring **${currentClub.name}** for division matches!\n\n📩 Match results will be auto-posted and stats recorded.\n\n**Important:** Players need to use \`/linkea\` to connect their EA username for stats tracking.`);
+            .setDescription(`Now monitoring **${currentClub.name}** for division matches!\n\n📩 Match results will be auto-posted and stats recorded.\n🔄 **Syncing match history in background...**\n\n**Important:** Players need to use \`/linkea\` to connect their EA username for stats tracking.`);
 
           return interaction.editReply({ embeds: [embed] });
 
@@ -3057,9 +3064,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.deferReply({ flags: 64 });
 
         try {
-          // Force check for new matches
-          await checkForNewMatches(guildId, currentClub.key);
-          return interaction.editReply({ content: `✅ Synced! Checked for new matches for **${currentClub.name}**.` });
+          // Sync full match history (not just new matches)
+          const result = await syncClubHistory(guildId, currentClub.key);
+          
+          if (result.error) {
+            return interaction.editReply({ content: `❌ Sync failed: ${result.error}` });
+          }
+          
+          const embed = new EmbedBuilder()
+            .setTitle(`✅ Club History Synced`)
+            .setColor(0x00ff00)
+            .setDescription(`Pulled match history for **${currentClub.name}**`)
+            .addFields(
+              { name: '📥 New Matches Added', value: `${result.synced}`, inline: true },
+              { name: '⏭️ Already Recorded', value: `${result.skipped}`, inline: true }
+            )
+            .setFooter({ text: 'Player stats recorded for linked EA accounts' });
+          
+          return interaction.editReply({ embeds: [embed] });
         } catch (err) {
           return interaction.editReply({ content: `❌ Sync failed: ${err.message}` });
         }
@@ -4507,6 +4529,177 @@ async function postMatchResult(guildId, channelId, matchInfo) {
     
   } catch (err) {
     console.error(`[EA] Error posting match result:`, err);
+  }
+}
+
+// Sync historical matches from EA API - pulls all available match history without duplicating
+async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
+  try {
+    const state = await getGuildState(guildId);
+    if (!state) return { synced: 0, skipped: 0, error: null };
+    
+    const club = state.clubs?.find(c => c.key === clubKey);
+    if (!club?.ea_club_id || !club?.ea_platform) {
+      return { synced: 0, skipped: 0, error: 'Club not linked to EA' };
+    }
+    
+    console.log(`[EA] Syncing history for ${club.name} (${club.ea_club_id})`);
+    
+    // Fetch all available matches from EA API (both division and cup)
+    const [divisionMatches, cupMatches] = await Promise.all([
+      matchesStats({
+        clubId: club.ea_club_id,
+        platform: club.ea_platform,
+        matchType: 'matchType9' // Division matches
+      }).catch(() => []),
+      matchesStats({
+        clubId: club.ea_club_id,
+        platform: club.ea_platform,
+        matchType: 'matchType13' // Cup matches
+      }).catch(() => [])
+    ]);
+    
+    const allMatches = [
+      ...divisionMatches.map(m => ({ ...m, matchType: 'division' })),
+      ...cupMatches.map(m => ({ ...m, matchType: 'cup' }))
+    ].slice(0, maxMatches);
+    
+    if (allMatches.length === 0) {
+      return { synced: 0, skipped: 0, error: 'No matches found from EA API' };
+    }
+    
+    // Get all existing match IDs to avoid duplicates
+    const { data: existingMatches } = await supabase
+      .from('club_matches')
+      .select('ea_match_id')
+      .eq('guild_id', guildId)
+      .eq('club_key', clubKey);
+    
+    const existingIds = new Set((existingMatches || []).map(m => m.ea_match_id));
+    
+    let synced = 0;
+    let skipped = 0;
+    
+    for (const matchData of allMatches) {
+      const matchId = matchData.matchId?.toString();
+      if (!matchId) continue;
+      
+      // Skip if already exists
+      if (existingIds.has(matchId)) {
+        skipped++;
+        continue;
+      }
+      
+      // Process this match
+      const ourClubData = matchData.clubs?.[club.ea_club_id];
+      const opponentClubId = Object.keys(matchData.clubs || {}).find(id => id !== club.ea_club_id);
+      const opponentClubData = opponentClubId ? matchData.clubs[opponentClubId] : null;
+      
+      const scoreFor = parseInt(ourClubData?.goals || 0);
+      const scoreAgainst = parseInt(opponentClubData?.goals || 0);
+      const opponentName = opponentClubData?.name || 'Unknown';
+      
+      let result = 'draw';
+      if (scoreFor > scoreAgainst) result = 'win';
+      else if (scoreFor < scoreAgainst) result = 'loss';
+      
+      // Extract player stats
+      const playerStats = [];
+      const players = matchData.players?.[club.ea_club_id] || {};
+      
+      for (const [eaPlayerId, pStats] of Object.entries(players)) {
+        playerStats.push({
+          ea_username: pStats.playername,
+          goals: parseInt(pStats.goals || 0),
+          assists: parseInt(pStats.assists || 0),
+          rating: parseFloat(pStats.rating || 0),
+          position: pStats.pos,
+          motm: pStats.mom === '1'
+        });
+      }
+      
+      // Save to club_matches table
+      const { error: insertError } = await supabase.from('club_matches').insert({
+        guild_id: guildId,
+        club_key: clubKey,
+        ea_match_id: matchId,
+        match_type: matchData.matchType,
+        result,
+        score_for: scoreFor,
+        score_against: scoreAgainst,
+        opponent_club_name: opponentName,
+        opponent_club_id: opponentClubId,
+        match_data: matchData,
+        player_stats: playerStats
+      });
+      
+      if (insertError) {
+        console.error(`[EA] Failed to insert match ${matchId}:`, insertError.message);
+        continue;
+      }
+      
+      // Map EA usernames to Discord users and record player stats
+      for (const pStat of playerStats) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('discord_user_id')
+          .eq('ea_username', pStat.ea_username)
+          .maybeSingle();
+        
+        if (profile) {
+          // Check if player_stats already exists for this match
+          const { data: existingStat } = await supabase
+            .from('player_stats')
+            .select('id')
+            .eq('guild_id', guildId)
+            .eq('discord_user_id', profile.discord_user_id)
+            .eq('match_type', 'club')
+            .eq('recorded_at', matchData.timestamp || new Date().toISOString())
+            .maybeSingle();
+          
+          if (!existingStat) {
+            await supabase.from('player_stats').insert({
+              guild_id: guildId,
+              discord_user_id: profile.discord_user_id,
+              draft_id: null,
+              match_type: 'club',
+              goals: pStat.goals,
+              assists: pStat.assists,
+              clean_sheet: pStat.position === 'GK' && scoreAgainst === 0,
+              won: result === 'win',
+              ea_match_rating: pStat.rating,
+              position_played: pStat.position,
+              man_of_match: pStat.motm
+            });
+            
+            // Trigger rating recalculation
+            await callEdgeFunction('calculate-ratings', {
+              guild_id: guildId,
+              discord_user_id: profile.discord_user_id
+            });
+          }
+        }
+      }
+      
+      synced++;
+      existingIds.add(matchId); // Prevent processing same match twice
+    }
+    
+    // Update last_match_id to most recent
+    if (allMatches.length > 0) {
+      const latestMatchId = allMatches[0].matchId?.toString();
+      if (latestMatchId) {
+        club.last_match_id = latestMatchId;
+        await saveGuildSettings(guildId, state);
+      }
+    }
+    
+    console.log(`[EA] History sync complete: ${synced} synced, ${skipped} skipped`);
+    return { synced, skipped, error: null };
+    
+  } catch (err) {
+    console.error(`[EA] Error syncing history:`, err);
+    return { synced: 0, skipped: 0, error: err.message };
   }
 }
 
