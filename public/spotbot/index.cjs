@@ -4309,11 +4309,102 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.reply({ content: 'Current club not found.', flags: 64 });
         }
 
+        // Update the club name
         currentClub.name = newName;
         await saveGuildSettings(guildId, state);
         await refreshClubPanels(guildId, clubKey);
 
-        return interaction.reply({ content: `Club renamed to **${newName}**.`, flags: 64 });
+        // If already linked to EA, just rename
+        if (currentClub.ea_club_id) {
+          return interaction.reply({ content: `Club renamed to **${newName}**.`, flags: 64 });
+        }
+
+        // Auto-search for EA club - try next-gen platforms first
+        await interaction.deferReply({ flags: 64 });
+        
+        const nextGenPlatforms = ['ps5', 'xbox-series-xs', 'pc'];
+        const oldGenPlatforms = ['ps4', 'xboxone'];
+        let foundClub = null;
+        let foundPlatform = null;
+
+        // Try next-gen platforms first
+        for (const platform of nextGenPlatforms) {
+          try {
+            const clubs = await searchClub({ name: newName, platform });
+            if (clubs && clubs.length > 0) {
+              foundClub = clubs[0];
+              foundPlatform = platform;
+              break;
+            }
+          } catch (err) {
+            console.log(`[EA] Search failed for ${platform}:`, err.message);
+          }
+        }
+
+        // If not found on next-gen, try old-gen
+        if (!foundClub) {
+          for (const platform of oldGenPlatforms) {
+            try {
+              const clubs = await searchClub({ name: newName, platform });
+              if (clubs && clubs.length > 0) {
+                foundClub = clubs[0];
+                foundPlatform = platform;
+                break;
+              }
+            } catch (err) {
+              console.log(`[EA] Search failed for ${platform}:`, err.message);
+            }
+          }
+        }
+
+        if (foundClub && foundPlatform) {
+          // Auto-link the EA club
+          currentClub.ea_club_id = foundClub.clubId?.toString();
+          currentClub.ea_platform = foundPlatform;
+          currentClub.monitoring_enabled = true;
+          currentClub.last_match_id = null;
+
+          await saveGuildSettings(guildId, state);
+
+          // Start monitoring
+          startEaMonitoring(guildId, clubKey);
+
+          // Auto-sync historical matches in background
+          syncClubHistory(guildId, clubKey).then(result => {
+            console.log(`[EA] Auto-link sync for ${currentClub.name}: ${result.synced} matches added`);
+          }).catch(err => {
+            console.error(`[EA] Auto-link sync error:`, err);
+          });
+
+          const embed = new EmbedBuilder()
+            .setTitle('✅ Club Renamed & EA Linked!')
+            .setColor(0x00ff00)
+            .addFields(
+              { name: '🏟️ Club Name', value: newName, inline: true },
+              { name: '🎮 EA Club', value: foundClub.name || newName, inline: true },
+              { name: '🖥️ Platform', value: EA_PLATFORM_NAMES[foundPlatform] || foundPlatform, inline: true }
+            )
+            .setDescription(
+              `Found and linked EA club automatically!\n\n` +
+              `📩 Match results will be auto-posted and stats recorded.\n` +
+              `🔄 **Syncing match history in background...**\n\n` +
+              `**Important:** Players need to use \`/linkea\` to connect their EA username for stats tracking.`
+            );
+
+          return interaction.editReply({ embeds: [embed] });
+        } else {
+          // Not found on any platform - just rename without EA linking
+          const embed = new EmbedBuilder()
+            .setTitle('✅ Club Renamed')
+            .setColor(0xffcc00)
+            .setDescription(
+              `Club renamed to **${newName}**.\n\n` +
+              `⚠️ Could not find an EA club with this name on any platform.\n` +
+              `Use \`/setclub ${newName} <platform>\` to manually link your EA club.`
+            );
+
+          return interaction.editReply({ embeds: [embed] });
+        }
       }
     }
 
