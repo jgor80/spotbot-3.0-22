@@ -313,7 +313,11 @@ const COMMANDS = [
     options: [
       { name: 'username', description: 'Your EA FC Pro Clubs username.', type: 3, required: true }
     ]
-  }
+  },
+
+  // Admin Panel
+  { name: 'squadiq', description: 'Launch the SquadIQ control panel in this channel (admin only).' },
+  { name: 'refreshpanel', description: 'Force refresh the admin panel in this channel.' }
 ];
 
 // =======================
@@ -365,6 +369,7 @@ async function saveGuildSettings(guildId, state) {
         admin_panel_message_id: state.adminPanelMessageId,
         vc_panels: state.vcPanels || {},
         club_vc_links: state.clubVcLinks || {},
+        // Store squadiq panel info in vc_panels as a special key
         updated_at: new Date().toISOString()
       }, { onConflict: 'guild_id' });
 
@@ -1839,6 +1844,350 @@ function buildHelpEmbed() {
 }
 
 // =======================
+// ADMIN CONTROL PANEL BUILDERS
+// =======================
+
+async function buildAdminControlPanelEmbeds(guildId, state) {
+  const embeds = [];
+  
+  // Header embed with branding
+  const headerEmbed = new EmbedBuilder()
+    .setTitle('🎮 SQUADIQ CONTROL CENTER')
+    .setColor(0x5865f2)
+    .setDescription(
+      '**Your central hub for squad management, drafts, and player analytics.**\n\n' +
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    );
+  embeds.push(headerEmbed);
+  
+  // Club & Formation Status
+  const clubKey = state.currentClubKey;
+  const club = getClubByKey(state.clubs, clubKey);
+  const clubBoard = state.boardState?.[clubKey];
+  const formationName = clubBoard?.formation || DEFAULT_FORMATION;
+  const linkedVc = state.clubVcLinks?.[clubKey];
+  const autoAssignEnabled = state.autoAssign?.[clubKey];
+  
+  let filledSlots = 0, totalSlots = 0;
+  if (clubBoard?.slots) {
+    totalSlots = clubBoard.slots.length;
+    filledSlots = clubBoard.slots.filter(s => !s.open).length;
+  }
+  
+  const clubStatusEmbed = new EmbedBuilder()
+    .setTitle('⚽ CLUB STATUS')
+    .setColor(filledSlots === totalSlots ? 0x00ff00 : filledSlots > 0 ? 0xffcc00 : 0x5865f2)
+    .addFields(
+      { name: '🏟️ Current Club', value: club?.name || 'None', inline: true },
+      { name: '📋 Formation', value: formationName, inline: true },
+      { name: '👥 Roster', value: `${filledSlots}/${totalSlots} filled`, inline: true },
+      { name: '🔗 Linked VC', value: linkedVc ? `<#${linkedVc}>` : 'Not linked', inline: true },
+      { name: '✨ Auto-Assign', value: autoAssignEnabled ? '✅ Enabled' : '❌ Disabled', inline: true },
+      { name: '📡 EA Tracking', value: club?.ea_club_id ? '✅ Connected' : '❌ Not linked', inline: true }
+    );
+  embeds.push(clubStatusEmbed);
+  
+  // Get some stats from the database
+  let playerCount = 0;
+  let activeDraftCount = 0;
+  let pendingClaimsCount = 0;
+  let recentMatchesCount = 0;
+  
+  try {
+    // Count players with prefs in this guild
+    const { count: prefCount } = await supabase
+      .from('position_preferences')
+      .select('*', { count: 'exact', head: true })
+      .eq('guild_id', guildId);
+    playerCount = prefCount || 0;
+    
+    // Count pending drafts
+    const { count: draftCount } = await supabase
+      .from('drafts')
+      .select('*', { count: 'exact', head: true })
+      .eq('guild_id', guildId)
+      .in('status', ['pending', 'picking']);
+    activeDraftCount = draftCount || 0;
+    
+    // Count pending win claims
+    const { count: claimsCount } = await supabase
+      .from('pending_win_claims')
+      .select('*', { count: 'exact', head: true })
+      .eq('guild_id', guildId)
+      .eq('status', 'pending');
+    pendingClaimsCount = claimsCount || 0;
+    
+    // Count recent club matches (last 7 days)
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { count: matchCount } = await supabase
+      .from('club_matches')
+      .select('*', { count: 'exact', head: true })
+      .eq('guild_id', guildId)
+      .gte('created_at', weekAgo);
+    recentMatchesCount = matchCount || 0;
+  } catch (err) {
+    console.error('[AdminPanel] Error fetching stats:', err);
+  }
+  
+  // Stats overview embed
+  const statsEmbed = new EmbedBuilder()
+    .setTitle('📊 SYSTEM STATUS')
+    .setColor(0x00d4aa)
+    .addFields(
+      { name: '👥 Players Registered', value: `${playerCount}`, inline: true },
+      { name: '⚔️ Active Drafts', value: `${activeDraftCount}`, inline: true },
+      { name: '🏆 Pending Claims', value: `${pendingClaimsCount}`, inline: true },
+      { name: '📈 Matches (7d)', value: `${recentMatchesCount}`, inline: true },
+      { name: '🌐 Web Dashboard', value: '[Open →](https://squadiq.lovable.app)', inline: true },
+      { name: '⏱️ Last Update', value: `<t:${Math.floor(Date.now() / 1000)}:R>`, inline: true }
+    );
+  embeds.push(statsEmbed);
+  
+  // Quick actions reference
+  const actionsEmbed = new EmbedBuilder()
+    .setTitle('🛠️ QUICK ACTIONS')
+    .setColor(0xff6b35)
+    .setDescription(
+      '**Use the buttons below or these commands:**\n\n' +
+      '**📋 Spot Management**\n' +
+      '`/spotpanel` – Full spot control panel\n' +
+      '`/vcspots` – Link VC to spots\n' +
+      '`/autoassign` – Toggle auto-assignment\n\n' +
+      '**⚔️ Draft System**\n' +
+      '`/draft` – Start a captain draft\n' +
+      '`/draftresult` – Report match result\n\n' +
+      '**🎮 EA Integration**\n' +
+      '`/setclub` – Link EA Pro Clubs\n' +
+      '`/syncclub` – Manual stats sync\n' +
+      '`/clubstats` – Check EA status\n\n' +
+      '**👤 Player Management**\n' +
+      '`/profile` – View player profile\n' +
+      '`/leaderboard` – Server rankings\n' +
+      '`/syncprefs all` – Sync all roles to prefs\n\n' +
+      '**🏆 Competition Tracking**\n' +
+      '`/pendingwins` – Review win claims\n' +
+      '`/verifywin` – Approve/reject claims\n\n' +
+      '**📅 Events**\n' +
+      '`/event` – Create availability event'
+    );
+  embeds.push(actionsEmbed);
+  
+  return embeds;
+}
+
+function buildAdminControlPanelButtons() {
+  const rows = [];
+  
+  // Row 1: Core management
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('squadiq_spotpanel')
+      .setLabel('Spot Panel')
+      .setEmoji('📋')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('squadiq_draft')
+      .setLabel('Start Draft')
+      .setEmoji('⚔️')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId('squadiq_leaderboard')
+      .setLabel('Leaderboard')
+      .setEmoji('🏆')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('squadiq_syncprefs')
+      .setLabel('Sync Prefs')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Secondary)
+  );
+  rows.push(row1);
+  
+  // Row 2: EA & Stats
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('squadiq_eaconfig')
+      .setLabel('EA Config')
+      .setEmoji('🎮')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('squadiq_syncclub')
+      .setLabel('Sync Matches')
+      .setEmoji('📥')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('squadiq_pendingwins')
+      .setLabel('Pending Claims')
+      .setEmoji('📋')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('squadiq_refresh')
+      .setLabel('Refresh')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Success)
+  );
+  rows.push(row2);
+  
+  // Row 3: Debug & Info
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('squadiq_debug')
+      .setLabel('Debug Info')
+      .setEmoji('🔧')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('squadiq_logs')
+      .setLabel('Recent Activity')
+      .setEmoji('📜')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('squadiq_help')
+      .setLabel('Full Help')
+      .setEmoji('❔')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setLabel('Web Dashboard')
+      .setEmoji('🌐')
+      .setStyle(ButtonStyle.Link)
+      .setURL('https://squadiq.lovable.app')
+  );
+  rows.push(row3);
+  
+  return rows;
+}
+
+async function buildDebugEmbed(guildId, state) {
+  const debugInfo = [];
+  
+  // Guild state
+  debugInfo.push('**📦 Guild State**');
+  debugInfo.push(`• Clubs loaded: ${state.clubs?.length || 0}`);
+  debugInfo.push(`• Current club: ${state.currentClubKey}`);
+  debugInfo.push(`• VC panels: ${Object.keys(state.vcPanels || {}).length}`);
+  debugInfo.push(`• VC links: ${Object.entries(state.clubVcLinks || {}).filter(([k, v]) => v).length}`);
+  debugInfo.push('');
+  
+  // Caches
+  debugInfo.push('**🧠 Cache Status**');
+  debugInfo.push(`• Guild states cached: ${guildStates.size}`);
+  debugInfo.push(`• Position prefs cached: ${positionPrefsCache.size} guilds`);
+  debugInfo.push(`• Blocked users cached: ${blockedUsersCache.size} guilds`);
+  debugInfo.push(`• Active drafts: ${activeDrafts.size}`);
+  debugInfo.push(`• EA monitors running: ${eaMonitoringIntervals.size}`);
+  debugInfo.push('');
+  
+  // EA Integration
+  debugInfo.push('**🎮 EA Integration**');
+  for (const club of state.clubs || []) {
+    if (club.ea_club_id) {
+      const monitorKey = `${guildId}_${club.key}`;
+      const isRunning = eaMonitoringIntervals.has(monitorKey);
+      debugInfo.push(`• ${club.name}: ID ${club.ea_club_id} (${club.ea_platform}) - ${isRunning ? '🟢 Polling' : '🔴 Stopped'}`);
+    }
+  }
+  
+  // Database stats
+  let dbStats = {};
+  try {
+    const tables = ['player_ratings', 'player_stats', 'drafts', 'club_matches'];
+    for (const table of tables) {
+      const { count } = await supabase
+        .from(table)
+        .select('*', { count: 'exact', head: true })
+        .eq('guild_id', guildId);
+      dbStats[table] = count || 0;
+    }
+  } catch (err) {
+    debugInfo.push('');
+    debugInfo.push('**⚠️ DB query error:** ' + err.message);
+  }
+  
+  debugInfo.push('');
+  debugInfo.push('**💾 Database Records**');
+  debugInfo.push(`• player_ratings: ${dbStats.player_ratings || 0}`);
+  debugInfo.push(`• player_stats: ${dbStats.player_stats || 0}`);
+  debugInfo.push(`• drafts: ${dbStats.drafts || 0}`);
+  debugInfo.push(`• club_matches: ${dbStats.club_matches || 0}`);
+  
+  return new EmbedBuilder()
+    .setTitle('🔧 Debug Information')
+    .setColor(0x888888)
+    .setDescription(debugInfo.join('\n'))
+    .setFooter({ text: `Guild ID: ${guildId} • ${new Date().toISOString()}` });
+}
+
+async function buildRecentActivityEmbed(guildId) {
+  const activities = [];
+  
+  try {
+    // Recent drafts
+    const { data: recentDrafts } = await supabase
+      .from('drafts')
+      .select('id, status, created_at, captain_a_discord_id, captain_b_discord_id')
+      .eq('guild_id', guildId)
+      .order('created_at', { ascending: false })
+      .limit(3);
+    
+    if (recentDrafts?.length > 0) {
+      activities.push('**⚔️ Recent Drafts**');
+      for (const d of recentDrafts) {
+        const time = Math.floor(new Date(d.created_at).getTime() / 1000);
+        activities.push(`• <t:${time}:R> - ${d.status} (Captains: <@${d.captain_a_discord_id}> vs <@${d.captain_b_discord_id}>)`);
+      }
+      activities.push('');
+    }
+    
+    // Recent matches
+    const { data: recentMatches } = await supabase
+      .from('club_matches')
+      .select('result, score_for, score_against, opponent_club_name, created_at')
+      .eq('guild_id', guildId)
+      .order('created_at', { ascending: false })
+      .limit(5);
+    
+    if (recentMatches?.length > 0) {
+      activities.push('**📊 Recent Matches**');
+      for (const m of recentMatches) {
+        const time = Math.floor(new Date(m.created_at).getTime() / 1000);
+        const emoji = m.result === 'win' ? '✅' : m.result === 'loss' ? '❌' : '🤝';
+        activities.push(`• <t:${time}:R> ${emoji} ${m.score_for}-${m.score_against} vs ${m.opponent_club_name}`);
+      }
+      activities.push('');
+    }
+    
+    // Recent win claims
+    const { data: recentClaims } = await supabase
+      .from('pending_win_claims')
+      .select('claimed_by_discord_id, competition_name, status, created_at')
+      .eq('guild_id', guildId)
+      .order('created_at', { ascending: false })
+      .limit(3);
+    
+    if (recentClaims?.length > 0) {
+      activities.push('**🏆 Recent Win Claims**');
+      for (const c of recentClaims) {
+        const time = Math.floor(new Date(c.created_at).getTime() / 1000);
+        const statusEmoji = c.status === 'approved' ? '✅' : c.status === 'rejected' ? '❌' : '⏳';
+        activities.push(`• <t:${time}:R> ${statusEmoji} <@${c.claimed_by_discord_id}> - ${c.competition_name}`);
+      }
+    }
+    
+  } catch (err) {
+    activities.push('**⚠️ Error fetching activity:** ' + err.message);
+  }
+  
+  if (activities.length === 0) {
+    activities.push('*No recent activity recorded.*');
+  }
+  
+  return new EmbedBuilder()
+    .setTitle('📜 Recent Activity')
+    .setColor(0x5865f2)
+    .setDescription(activities.join('\n'))
+    .setFooter({ text: 'Showing last 24-48 hours of activity' });
+}
+
+// =======================
 // READY & COMMAND REG
 // =======================
 
@@ -3185,6 +3534,67 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         return interaction.editReply({ embeds: [embed] });
       }
+
+      // =======================
+      // ADMIN CONTROL PANEL COMMANDS
+      // =======================
+
+      if (cmd === 'squadiq') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only admins and managers can launch the SquadIQ control panel.',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply();
+
+        const embeds = await buildAdminControlPanelEmbeds(guildId, state);
+        const buttons = buildAdminControlPanelButtons();
+
+        const msg = await interaction.editReply({
+          embeds,
+          components: buttons
+        });
+
+        // Store the panel location
+        state.squadiqPanelChannelId = interaction.channelId;
+        state.squadiqPanelMessageId = msg.id;
+        await saveGuildSettings(guildId, state);
+
+        return;
+      }
+
+      if (cmd === 'refreshpanel') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only admins can refresh panels.',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        // Refresh all panels
+        await refreshClubPanels(guildId, state.currentClubKey);
+
+        // Also try to refresh the squadiq panel if it exists
+        if (state.squadiqPanelChannelId && state.squadiqPanelMessageId) {
+          try {
+            const channel = await client.channels.fetch(state.squadiqPanelChannelId);
+            if (channel) {
+              const msg = await channel.messages.fetch(state.squadiqPanelMessageId);
+              const embeds = await buildAdminControlPanelEmbeds(guildId, state);
+              const buttons = buildAdminControlPanelButtons();
+              await msg.edit({ embeds, components: buttons });
+            }
+          } catch (err) {
+            console.error('[RefreshPanel] Error refreshing squadiq panel:', err);
+          }
+        }
+
+        return interaction.editReply({ content: '✅ All panels refreshed!' });
+      }
     }
 
     // ----- Buttons -----
@@ -3203,6 +3613,191 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       if (id === 'open_help') {
+        return interaction.reply({ embeds: [buildHelpEmbed()], flags: 64 });
+      }
+
+      // =======================
+      // SQUADIQ CONTROL PANEL BUTTONS
+      // =======================
+
+      if (id === 'squadiq_refresh') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+        await interaction.deferUpdate();
+        const embeds = await buildAdminControlPanelEmbeds(guildId, state);
+        const buttons = buildAdminControlPanelButtons();
+        return interaction.editReply({ embeds, components: buttons });
+      }
+
+      if (id === 'squadiq_spotpanel') {
+        return interaction.reply({
+          embeds: [buildEmbedForClub(guildId, state.currentClubKey, state)],
+          components: buildAdminComponents(guildId, state.currentClubKey, state),
+          flags: 64
+        });
+      }
+
+      if (id === 'squadiq_draft') {
+        const voiceChannel = interaction.member?.voice?.channel;
+        if (!voiceChannel) {
+          return interaction.reply({
+            content: '❌ Join a voice channel with players to start a draft.',
+            flags: 64
+          });
+        }
+
+        if (activeDrafts.has(guildId)) {
+          return interaction.reply({
+            content: '❌ A draft is already in progress. Use `/draftresult` to finish it first.',
+            flags: 64
+          });
+        }
+
+        return interaction.reply({
+          content: '⚔️ To start a draft, use `/draft` in a voice channel with your players.\n\nThis will randomly assign captains and begin the pick-em process!',
+          flags: 64
+        });
+      }
+
+      if (id === 'squadiq_leaderboard') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { data: players } = await supabase
+          .from('player_summary')
+          .select('*')
+          .eq('guild_id', guildId)
+          .order('overall_rating', { ascending: false })
+          .limit(10);
+
+        if (!players || players.length === 0) {
+          return interaction.editReply({ content: 'No players with ratings found yet.' });
+        }
+
+        const embed = buildLeaderboardEmbed(players, 'overall', interaction.guild.name);
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      if (id === 'squadiq_syncprefs') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+        return interaction.reply({
+          content: '🔄 **Sync Position Preferences**\n\n' +
+            'Use `/syncprefs all` to sync position preferences from Discord roles for all server members.\n\n' +
+            'This will match roles like `ST`, `GK`, `Striker`, `Goalkeeper`, etc. to position preferences.',
+          flags: 64
+        });
+      }
+
+      if (id === 'squadiq_eaconfig') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+
+        const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
+        
+        const embed = new EmbedBuilder()
+          .setTitle('🎮 EA FC Pro Clubs Configuration')
+          .setColor(currentClub?.ea_club_id ? 0x00ff00 : 0xffcc00)
+          .addFields(
+            { name: '🏟️ Current Club', value: currentClub?.name || 'None', inline: true },
+            { name: '🔗 EA Club ID', value: currentClub?.ea_club_id || 'Not linked', inline: true },
+            { name: '🖥️ Platform', value: currentClub?.ea_platform || 'Not set', inline: true },
+            { name: '📡 Monitoring', value: currentClub?.monitoring_enabled ? '✅ Active' : '❌ Off', inline: true },
+            { name: '📊 Stats Channel', value: currentClub?.stats_channel_id ? `<#${currentClub.stats_channel_id}>` : 'Not set', inline: true }
+          )
+          .setDescription(
+            '**Commands:**\n' +
+            '`/setclub <name> <platform>` - Link EA club\n' +
+            '`/clubstats enable/disable` - Toggle monitoring\n' +
+            '`/syncclub` - Manual match sync\n' +
+            '`/linkea <username>` - Link player EA accounts'
+          );
+
+        return interaction.reply({ embeds: [embed], flags: 64 });
+      }
+
+      if (id === 'squadiq_syncclub') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+
+        const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
+        
+        if (!currentClub?.ea_club_id) {
+          return interaction.reply({
+            content: '❌ No EA club linked. Use `/setclub` first.',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        const result = await syncClubHistory(guildId, currentClub.key);
+        
+        if (result.error) {
+          return interaction.editReply({ content: `❌ Sync failed: ${result.error}` });
+        }
+
+        return interaction.editReply({
+          content: `✅ Synced **${result.synced}** new matches (${result.skipped} already recorded) for **${currentClub.name}**`
+        });
+      }
+
+      if (id === 'squadiq_pendingwins') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        const { data: claims } = await supabase
+          .from('pending_win_claims')
+          .select('*')
+          .eq('guild_id', guildId)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (!claims || claims.length === 0) {
+          return interaction.editReply({ content: '✅ No pending win claims!' });
+        }
+
+        const lines = claims.map(c => 
+          `• \`${c.id.slice(0, 8)}\` <@${c.claimed_by_discord_id}> – **${c.competition_name}** (${c.tier} ${c.competition_type})`
+        );
+
+        const embed = new EmbedBuilder()
+          .setTitle('📋 Pending Win Claims')
+          .setColor(0xffcc00)
+          .setDescription(lines.join('\n'))
+          .setFooter({ text: 'Use /verifywin <claim_id> <approve/reject> to review' });
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      if (id === 'squadiq_debug') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+        const embed = await buildDebugEmbed(guildId, state);
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      if (id === 'squadiq_logs') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+        const embed = await buildRecentActivityEmbed(guildId);
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      if (id === 'squadiq_help') {
         return interaction.reply({ embeds: [buildHelpEmbed()], flags: 64 });
       }
 
