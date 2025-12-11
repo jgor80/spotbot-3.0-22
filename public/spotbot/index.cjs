@@ -234,7 +234,12 @@ const DEFAULT_CLUBS = [
   { key: 'club2', name: 'Club 2', enabled: false },
   { key: 'club3', name: 'Club 3', enabled: false },
   { key: 'club4', name: 'Club 4', enabled: false },
-  { key: 'club5', name: 'Club 5', enabled: false }
+  { key: 'club5', name: 'Club 5', enabled: false },
+  { key: 'club6', name: 'Club 6', enabled: false },
+  { key: 'club7', name: 'Club 7', enabled: false },
+  { key: 'club8', name: 'Club 8', enabled: false },
+  { key: 'club9', name: 'Club 9', enabled: false },
+  { key: 'club10', name: 'Club 10', enabled: false }
 ];
 
 // All positions available across formations (derived from formations.json)
