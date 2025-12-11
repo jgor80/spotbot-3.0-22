@@ -681,7 +681,7 @@ async function searchClubsAcrossPlatforms(query) {
   const seen = new Set();
   const unique = [];
   for (const r of results) {
-    const key = \`\${r.fcPlatform}:\${r.clubId}\`;
+    const key = `${r.fcPlatform}:${r.clubId}`;
     if (seen.has(key)) continue;
     seen.add(key);
     unique.push(r);
@@ -804,17 +804,17 @@ async function summarizeMatchesForClub(fcPlatform, clubId, displayName, leaderbo
   const friendlies = computeRecord(matchesPayload.friendlyMatches, clubId) || empty;
 
   function formatLine(label, rec) {
-    if (!rec.played) return \`\${label}: no matches in last sample.\`;
+    if (!rec.played) return `${label}: no matches in last sample.`;
     const { played, wins, draws, losses, goalsFor, goalsAgainst, goalDiff } = rec;
-    return \`\${label}: \${wins}-\${draws}-\${losses} in \${played} matches, GF \${goalsFor} / GA \${goalsAgainst} (GD \${goalDiff >= 0 ? '+' : ''}\${goalDiff})\`;
+    return `${label}: ${wins}-${draws}-${losses} in ${played} matches, GF ${goalsFor} / GA ${goalsAgainst} (GD ${goalDiff >= 0 ? '+' : ''}${goalDiff})`;
   }
 
   return [
-    \`Last matches for **\${displayName}** (by mode, up to EA cap):\`,
+    `Last matches for **${displayName}** (by mode, up to EA cap):`,
     formatLine('League', league),
     formatLine('Playoffs', playoffs),
     formatLine('Friendlies', friendlies)
-  ].join('\\n');
+  ].join('\n');
 }
 
 /**
@@ -840,23 +840,23 @@ async function createScoutingReportFromId(fcPlatform, clubId, displayName, leade
   const statsStr = safeJsonStringify(statsPayload, 64000);
   const matchesStr = safeJsonStringify(matchesPayload, 64000);
 
-  const userPrompt = \`
+  const userPrompt = `
 Analyzing EA FC Pro Clubs team:
-- Club display name: \${displayName}
-- EA internal club ID: \${clubId}
-- Platform: \${fcPlatform}
+- Club display name: ${displayName}
+- EA internal club ID: ${clubId}
+- Platform: ${fcPlatform}
 
 CLUB_INFO_JSON:
-\${infoStr}
+${infoStr}
 
 STATS_JSON:
-\${statsStr}
+${statsStr}
 
 MATCH_HISTORY_JSON:
-\${matchesStr}
+${matchesStr}
 
 Using only this data, write the scouting report with DTB score, CVI rankings, and game plan.
-\`;
+`;
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
@@ -893,29 +893,29 @@ async function createMatchPreviewReport(homeClub, awayClub) {
     throw err;
   }
 
-  const userPrompt = \`
+  const userPrompt = `
 Match preview between two EA FC Pro Clubs teams:
 
 HOME CLUB:
-- Name: \${homeClub.name}
-- Club ID: \${homeClub.clubId}
-- Platform: \${homeClub.fcPlatform}
+- Name: ${homeClub.name}
+- Club ID: ${homeClub.clubId}
+- Platform: ${homeClub.fcPlatform}
 
-HOME_INFO: \${safeJsonStringify(homeData.infoPayload, 8000)}
-HOME_STATS: \${safeJsonStringify(homeData.statsPayload, 32000)}
-HOME_MATCHES: \${safeJsonStringify(homeData.matchesPayload, 32000)}
+HOME_INFO: ${safeJsonStringify(homeData.infoPayload, 8000)}
+HOME_STATS: ${safeJsonStringify(homeData.statsPayload, 32000)}
+HOME_MATCHES: ${safeJsonStringify(homeData.matchesPayload, 32000)}
 
 AWAY CLUB:
-- Name: \${awayClub.name}
-- Club ID: \${awayClub.clubId}
-- Platform: \${awayClub.fcPlatform}
+- Name: ${awayClub.name}
+- Club ID: ${awayClub.clubId}
+- Platform: ${awayClub.fcPlatform}
 
-AWAY_INFO: \${safeJsonStringify(awayData.infoPayload, 8000)}
-AWAY_STATS: \${safeJsonStringify(awayData.statsPayload, 32000)}
-AWAY_MATCHES: \${safeJsonStringify(awayData.matchesPayload, 32000)}
+AWAY_INFO: ${safeJsonStringify(awayData.infoPayload, 8000)}
+AWAY_STATS: ${safeJsonStringify(awayData.statsPayload, 32000)}
+AWAY_MATCHES: ${safeJsonStringify(awayData.matchesPayload, 32000)}
 
 Write the match preview with DTB scores, key players, and score prediction.
-\`;
+`;
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
