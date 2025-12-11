@@ -153,7 +153,16 @@ const COMMANDS = [
   { name: 'posboard', description: 'Show position preferences for players in your current voice channel.' },
   { name: 'posprefs', description: 'View position preferences for VC members or online players.' },
   { name: 'autoassign', description: 'Toggle auto-assign for the current club.' },
-  { name: 'syncprefs', description: 'Auto-set your position preferences based on your Discord roles (e.g., CB, ST, GK roles).' },
+  { 
+    name: 'syncprefs', 
+    description: 'Sync position preferences from Discord roles.',
+    options: [
+      { name: 'scope', description: 'Sync just yourself or the whole server.', type: 3, required: false, choices: [
+        { name: 'Just Me', value: 'me' },
+        { name: 'Entire Server', value: 'all' }
+      ]}
+    ]
+  },
 
   // Draft System Commands
   { name: 'draft', description: 'Start a draft with players in your current voice channel.' },
@@ -2360,95 +2369,154 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       if (cmd === 'syncprefs') {
-        await interaction.deferReply({ flags: 64 });
+        const scope = interaction.options.getString('scope') || 'me';
         
-        const member = interaction.member;
-        if (!member) {
-          return interaction.editReply({ content: '❌ Could not fetch your member data.' });
-        }
-
-        // Get user's roles
-        const userRoles = member.roles.cache;
-        const matchedPositions = [];
+        // Position mappings for role name -> position code
+        const positionMappings = {
+          'STRIKER': 'ST',
+          'CENTRE FORWARD': 'CF',
+          'CENTER FORWARD': 'CF',
+          'RIGHT WING': 'RW',
+          'LEFT WING': 'LW',
+          'ATTACKING MID': 'CAM',
+          'ATTACKING MIDFIELDER': 'CAM',
+          'CENTRAL MID': 'CM',
+          'CENTRAL MIDFIELDER': 'CM',
+          'MIDFIELDER': 'CM',
+          'DEFENSIVE MID': 'CDM',
+          'DEFENSIVE MIDFIELDER': 'CDM',
+          'RIGHT MID': 'RM',
+          'RIGHT MIDFIELDER': 'RM',
+          'LEFT MID': 'LM',
+          'LEFT MIDFIELDER': 'LM',
+          'RIGHT WING BACK': 'RWB',
+          'LEFT WING BACK': 'LWB',
+          'RIGHT BACK': 'RB',
+          'LEFT BACK': 'LB',
+          'CENTRE BACK': 'CB',
+          'CENTER BACK': 'CB',
+          'CENTRAL DEFENDER': 'CB',
+          'DEFENDER': 'CB',
+          'GOALKEEPER': 'GK',
+          'GOALIE': 'GK',
+          'KEEPER': 'GK',
+          'FORWARD': 'ST',
+          'WINGER': 'RW'
+        };
         
-        // Check each role name against position options (case-insensitive)
-        for (const [roleId, role] of userRoles) {
-          const roleName = role.name.toUpperCase().trim();
-          
-          // Check for exact position match
-          if (POSITION_PREF_OPTIONS.includes(roleName)) {
-            if (!matchedPositions.includes(roleName)) {
-              matchedPositions.push(roleName);
-            }
-          } else {
-            // Check for common position role naming patterns
-            // e.g., "Striker", "Centre Back", "Goalkeeper", etc.
-            const positionMappings = {
-              'STRIKER': 'ST',
-              'CENTRE FORWARD': 'CF',
-              'CENTER FORWARD': 'CF',
-              'RIGHT WING': 'RW',
-              'LEFT WING': 'LW',
-              'ATTACKING MID': 'CAM',
-              'ATTACKING MIDFIELDER': 'CAM',
-              'CENTRAL MID': 'CM',
-              'CENTRAL MIDFIELDER': 'CM',
-              'MIDFIELDER': 'CM',
-              'DEFENSIVE MID': 'CDM',
-              'DEFENSIVE MIDFIELDER': 'CDM',
-              'RIGHT MID': 'RM',
-              'RIGHT MIDFIELDER': 'RM',
-              'LEFT MID': 'LM',
-              'LEFT MIDFIELDER': 'LM',
-              'RIGHT WING BACK': 'RWB',
-              'LEFT WING BACK': 'LWB',
-              'RIGHT BACK': 'RB',
-              'LEFT BACK': 'LB',
-              'CENTRE BACK': 'CB',
-              'CENTER BACK': 'CB',
-              'CENTRAL DEFENDER': 'CB',
-              'DEFENDER': 'CB',
-              'GOALKEEPER': 'GK',
-              'GOALIE': 'GK',
-              'KEEPER': 'GK',
-              'FORWARD': 'ST',
-              'WINGER': 'RW'
-            };
+        // Helper function to extract positions from a member's roles
+        function extractPositionsFromRoles(memberRoles) {
+          const matchedPositions = [];
+          for (const [roleId, role] of memberRoles) {
+            const roleName = role.name.toUpperCase().trim();
             
-            if (positionMappings[roleName] && !matchedPositions.includes(positionMappings[roleName])) {
+            // Check for exact position match
+            if (POSITION_PREF_OPTIONS.includes(roleName)) {
+              if (!matchedPositions.includes(roleName)) {
+                matchedPositions.push(roleName);
+              }
+            } else if (positionMappings[roleName] && !matchedPositions.includes(positionMappings[roleName])) {
               matchedPositions.push(positionMappings[roleName]);
             }
           }
+          return matchedPositions.slice(0, PREFS_LIMIT);
         }
+        
+        if (scope === 'all') {
+          // Check for admin/manage server permission
+          if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+            return interaction.reply({ 
+              content: '❌ You need **Manage Server** permission to sync preferences for the entire server.', 
+              flags: 64 
+            });
+          }
+          
+          await interaction.deferReply();
+          
+          // Fetch all guild members
+          const guild = interaction.guild;
+          let allMembers;
+          try {
+            allMembers = await guild.members.fetch();
+          } catch (err) {
+            console.error('Failed to fetch guild members:', err);
+            return interaction.editReply({ content: '❌ Failed to fetch server members. Make sure the bot has the Server Members Intent enabled.' });
+          }
+          
+          let syncedCount = 0;
+          let skippedCount = 0;
+          const syncedUsers = [];
+          
+          for (const [memberId, member] of allMembers) {
+            // Skip bots
+            if (member.user.bot) continue;
+            
+            const positions = extractPositionsFromRoles(member.roles.cache);
+            
+            if (positions.length > 0) {
+              await setUserPrefs(guildId, memberId, positions);
+              syncedCount++;
+              syncedUsers.push({ id: memberId, username: member.user.username, positions });
+            } else {
+              skippedCount++;
+            }
+          }
+          
+          // Build summary of synced users (limit to first 15 for display)
+          const displayUsers = syncedUsers.slice(0, 15);
+          const userSummary = displayUsers.map(u => 
+            `<@${u.id}>: ${u.positions.map(p => `\`${p}\``).join(', ')}`
+          ).join('\n');
+          
+          const embed = new EmbedBuilder()
+            .setTitle('🔄 Server-Wide Position Sync Complete')
+            .setColor(0x57f287)
+            .setDescription(
+              `**${syncedCount}** member(s) synced with position roles.\n` +
+              `**${skippedCount}** member(s) had no position roles (skipped).\n\n` +
+              (userSummary ? `**Synced Users:**\n${userSummary}` : '') +
+              (syncedUsers.length > 15 ? `\n_...and ${syncedUsers.length - 15} more_` : '')
+            );
+          
+          return interaction.editReply({ embeds: [embed] });
+          
+        } else {
+          // Original single-user sync
+          await interaction.deferReply({ flags: 64 });
+          
+          const member = interaction.member;
+          if (!member) {
+            return interaction.editReply({ content: '❌ Could not fetch your member data.' });
+          }
 
-        if (matchedPositions.length === 0) {
-          return interaction.editReply({
-            content: '❌ **No position roles found on your account.**\n\n' +
-              'To use this feature, you need Discord roles matching position names like:\n' +
-              '`ST`, `CF`, `RW`, `LW`, `CAM`, `CM`, `CDM`, `RM`, `LM`, `RWB`, `LWB`, `RB`, `LB`, `CB`, `GK`\n\n' +
-              'Or full names like `Striker`, `Goalkeeper`, `Centre Back`, etc.\n\n' +
-              'Ask a server admin to assign you the appropriate position roles!'
-          });
+          const matchedPositions = extractPositionsFromRoles(member.roles.cache);
+
+          if (matchedPositions.length === 0) {
+            return interaction.editReply({
+              content: '❌ **No position roles found on your account.**\n\n' +
+                'To use this feature, you need Discord roles matching position names like:\n' +
+                '`ST`, `CF`, `RW`, `LW`, `CAM`, `CM`, `CDM`, `RM`, `LM`, `RWB`, `LWB`, `RB`, `LB`, `CB`, `GK`\n\n' +
+                'Or full names like `Striker`, `Goalkeeper`, `Centre Back`, etc.\n\n' +
+                'Ask a server admin to assign you the appropriate position roles!'
+            });
+          }
+
+          // Save preferences
+          await setUserPrefs(guildId, interaction.user.id, matchedPositions);
+          
+          const summary = matchedPositions.map((p, i) => `${RANK_EMOJI[i + 1] || (i + 1)} **${p}** ${POSITION_META[p]?.emoji || ''}`).join('\n');
+          
+          const embed = new EmbedBuilder()
+            .setTitle('🔄 Position Preferences Synced from Roles')
+            .setColor(0x57f287)
+            .setDescription(
+              `Found **${matchedPositions.length}** position role(s) on your account!\n\n` +
+              `**Your preferences are now:**\n${summary}\n\n` +
+              `_Use \`/myprefs\` to reorder or adjust these._`
+            );
+
+          return interaction.editReply({ embeds: [embed] });
         }
-
-        // Limit to max preferences
-        const finalPrefs = matchedPositions.slice(0, PREFS_LIMIT);
-        
-        // Save preferences
-        await setUserPrefs(guildId, interaction.user.id, finalPrefs);
-        
-        const summary = finalPrefs.map((p, i) => `${RANK_EMOJI[i + 1] || (i + 1)} **${p}** ${POSITION_META[p]?.emoji || ''}`).join('\n');
-        
-        const embed = new EmbedBuilder()
-          .setTitle('🔄 Position Preferences Synced from Roles')
-          .setColor(0x57f287)
-          .setDescription(
-            `Found **${finalPrefs.length}** position role(s) on your account!\n\n` +
-            `**Your preferences are now:**\n${summary}\n\n` +
-            `_Use \`/myprefs\` to reorder or adjust these._`
-          );
-
-        return interaction.editReply({ embeds: [embed] });
       }
 
       // =======================
