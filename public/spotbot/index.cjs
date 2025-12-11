@@ -24,6 +24,20 @@ const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const OpenAI = require('openai');
+
+// =======================
+// OPENAI CONFIGURATION (for scouting)
+// =======================
+
+const openaiApiKey = process.env.OPENAI_API_KEY;
+let openai = null;
+if (openaiApiKey) {
+  openai = new OpenAI({ apiKey: openaiApiKey });
+  console.log('✅ OpenAI configured for scouting reports');
+} else {
+  console.warn('⚠️ OPENAI_API_KEY not set – scouting reports and match previews will be unavailable.');
+}
 
 // =======================
 // EA FC API CONFIGURATION
@@ -457,7 +471,31 @@ const COMMANDS = [
 
   // Admin Panel
   { name: 'squadiq', description: 'Launch the SquadIQ control panel in this channel (admin only).' },
-  { name: 'refreshpanel', description: 'Force refresh the admin panel in this channel.' }
+  { name: 'refreshpanel', description: 'Force refresh the admin panel in this channel.' },
+
+  // Scouting Commands (ScoutBot functionality)
+  {
+    name: 'scoutclub',
+    description: 'Generate an AI scouting report for any EA FC Pro Clubs team.',
+    options: [
+      { name: 'name', description: 'Club name as it appears in-game.', type: 3, required: true }
+    ]
+  },
+  {
+    name: 'clubmatches',
+    description: 'Show a summary of recent matches for any EA FC Pro Clubs team.',
+    options: [
+      { name: 'name', description: 'Club name as it appears in-game.', type: 3, required: true }
+    ]
+  },
+  {
+    name: 'matchpreview',
+    description: 'Generate an AI match preview between two EA FC Pro Clubs teams.',
+    options: [
+      { name: 'home', description: 'Home club name.', type: 3, required: true },
+      { name: 'away', description: 'Away club name.', type: 3, required: true }
+    ]
+  }
 ];
 
 // =======================
@@ -472,6 +510,429 @@ const guildQueues = new Map();
 const pendingReadyChecks = new Map(); // Map<uniqueId, { guildId, clubKey, vcId, userId, positions }>
 const activeDrafts = new Map(); // Map<guildId, draftData>
 const eaMonitoringIntervals = new Map(); // Map<guildId_clubKey, intervalId> for EA polling
+
+// Scouting state (for select menu choices)
+const pendingScoutChoices = new Map(); // Map<userId, { query, results }>
+const pendingMatchesChoices = new Map(); // Map<userId, { query, results }>
+const pendingPreviewChoices = new Map(); // Map<userId, { homeQuery, awayQuery, homeResults, awayResults, homeIndex, awayIndex }>
+
+// FC Platform labels for scouting
+const FC_PLATFORM_LABELS = {
+  'common-gen5': 'Gen 5 (PS5 / Xbox Series / PC)',
+  'common-gen4': 'Gen 4 (PS4 / Xbox One)'
+};
+
+// =======================
+// SCOUTING OPENAI PROMPTS
+// =======================
+
+const SCOUT_SYSTEM_PROMPT = `
+You are an experienced EA FC Pro Clubs opposition scout.
+
+You will receive:
+- Club info JSON for a single team
+- Aggregated club + player stats JSON
+- Match history JSON for league, playoffs, and friendlies (sometimes partial)
+
+Your job: produce a **concise, practical, numbers-first scouting report** for a competitive Pro Clubs team that focuses on:
+- A **Difficulty To Beat (DTB)** score from 0–100
+- A **Club Value Index (CVI)** ranking of key players
+- **Per-position production** (forwards vs midfield vs defense vs GK)
+- **Attacking & defensive tendencies**
+- **Recent form**
+- A clear **game plan** to beat them
+
+Avoid meta commentary and boilerplate. Spend your words on actual metrics and what they imply.
+
+### Difficulty To Beat (DTB)
+Assign the club a DTB score from 0–100 (higher = harder to beat).
+- ~40–50: average team
+- ~55–65: solid / above average competitive side
+- ~70–80: strong / high-level side
+- 80+: very tough / elite side
+
+### Report structure (sections)
+1. **Overall Summary** - One paragraph with headline metrics and DTB score
+2. **Key Players & CVI** - Top 8-12 players table with deeper analysis
+3. **Attacking Tendencies** - GF/GP, goal creation patterns
+4. **Defensive Tendencies** - GA/GP, clean sheets, weak points
+5. **Recent Form** - Last matches W-D-L and trends
+6. **Game Plan to Beat Them** - 4-7 actionable tactical bullets
+
+Keep the report under 3000 characters for Discord. Use markdown code blocks for tables.`;
+
+const MATCH_PREVIEW_SYSTEM_PROMPT = `
+You are an experienced EA FC Pro Clubs opposition scout preparing a head-to-head match preview between two clubs.
+
+Your job: produce a concise, numbers-first match preview that:
+- Assigns **each team** a **Difficulty To Beat (DTB)** score from 0–100
+- Compares overall strength and style of both clubs
+- Highlights key players for each side
+- Summarizes attacking and defensive tendencies
+- Ends with **tactical keys** and a **specific score prediction**
+
+### Report structure
+1. **DTB Comparison** - Table with both teams' DTB, Win%, GF/GP, GA/GP
+2. **Key Players** - Top 3-5 per team with positions and contributions
+3. **Attacking vs Defensive** - Direct comparison
+4. **Tactical Keys** - 4-6 specific matchup insights
+5. **Score Prediction** - "Predicted score: Home X-Y Away (confidence: low/medium/high)"
+
+Keep under 3000 characters for Discord. Use markdown code blocks for tables.`;
+
+// =======================
+// SCOUTING HELPER FUNCTIONS
+// =======================
+
+function safeJsonStringify(obj, maxChars) {
+  try {
+    const s = JSON.stringify(obj);
+    if (!maxChars) return s;
+    return s.length > maxChars ? s.slice(0, maxChars) : s;
+  } catch (e) {
+    return String(obj || '').slice(0, maxChars || 8000);
+  }
+}
+
+function isNonEmpty(value) {
+  if (value == null) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value).length > 0;
+  return true;
+}
+
+function countMatches(raw) {
+  if (!raw) return 0;
+  if (Array.isArray(raw)) return raw.length;
+  if (Array.isArray(raw.matches)) return raw.matches.length;
+  if (typeof raw === 'object') {
+    let total = 0;
+    for (const v of Object.values(raw)) {
+      if (Array.isArray(v)) total += v.length;
+      else if (v && Array.isArray(v.matches)) total += v.matches.length;
+    }
+    return total;
+  }
+  return 0;
+}
+
+/**
+ * Search clubs across all FC platforms (for scouting)
+ */
+async function searchClubsAcrossPlatforms(query) {
+  const q = (query || '').trim();
+  if (!q) return [];
+
+  const FC_PLATFORMS = ['common-gen5', 'common-gen4'];
+  const results = [];
+
+  console.log('[Scout] Searching "%s" on platforms: %s', q, FC_PLATFORMS.join(', '));
+
+  await Promise.all(
+    FC_PLATFORMS.map(async (fcPlatform) => {
+      try {
+        const res = await axios.get(
+          'https://proclubs.ea.com/api/fc/allTimeLeaderboard/search',
+          {
+            params: { platform: fcPlatform, clubName: q },
+            headers: EA_HEADERS,
+            timeout: 10000,
+            validateStatus: () => true
+          }
+        );
+
+        if (res.status !== 200 || !res.data) return;
+
+        let data = res.data;
+        if (data && typeof data === 'object' && data['0']) {
+          data = data['0'];
+        }
+
+        let rows = [];
+        if (Array.isArray(data)) {
+          rows = data;
+        } else if (data && typeof data === 'object') {
+          rows = Object.values(data).filter(v => v && typeof v === 'object');
+        }
+
+        for (const row of rows) {
+          const info = row.clubInfo || row.clubinfo || row.info || row;
+          if (!info || typeof info !== 'object') continue;
+
+          const clubId = String(info.clubId ?? info.clubID ?? info.id ?? info.club ?? '');
+          if (!clubId) continue;
+
+          results.push({
+            fcPlatform,
+            clubId,
+            name: info.name || info.clubName || info.clubname || q,
+            region: info.regionName || info.region || info.countryName || null,
+            division: info.division || info.leagueDivision || info.bestDivision || null,
+            raw: info
+          });
+        }
+      } catch (err) {
+        console.error('[Scout] Search error for platform=%s:', fcPlatform, err.message);
+      }
+    })
+  );
+
+  // Deduplicate
+  const seen = new Set();
+  const unique = [];
+  for (const r of results) {
+    const key = \`\${r.fcPlatform}:\${r.clubId}\`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(r);
+  }
+
+  console.log('[Scout] Found %d unique clubs for "%s"', unique.length, q);
+  return unique;
+}
+
+/**
+ * Fetch comprehensive club data from EA for scouting
+ */
+async function fetchScoutClubData(fcPlatform, clubId, leaderboardSeed = null) {
+  const platform = fcPlatform || 'common-gen5';
+  const clubIdsParam = String(clubId);
+  const baseParams = { platform };
+  const clubParams = { ...baseParams, clubIds: clubIdsParam };
+  const singleClubParams = { ...baseParams, clubId: clubIdsParam };
+
+  const requests = {
+    info: axios.get('https://proclubs.ea.com/api/fc/clubs/info', {
+      params: clubParams, headers: EA_HEADERS, timeout: 8000
+    }),
+    overallStats: axios.get('https://proclubs.ea.com/api/fc/clubs/overallStats', {
+      params: clubParams, headers: EA_HEADERS, timeout: 8000
+    }),
+    playoffAchievements: axios.get('https://proclubs.ea.com/api/fc/club/playoffAchievements', {
+      params: singleClubParams, headers: EA_HEADERS, timeout: 8000
+    }),
+    membersCareer: axios.get('https://proclubs.ea.com/api/fc/members/career/stats', {
+      params: singleClubParams, headers: EA_HEADERS, timeout: 8000
+    }),
+    membersSeason: axios.get('https://proclubs.ea.com/api/fc/members/stats', {
+      params: singleClubParams, headers: EA_HEADERS, timeout: 8000
+    }),
+    leagueMatches: axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
+      params: { ...clubParams, matchType: 'leagueMatch', maxResultCount: 100 },
+      headers: EA_HEADERS, timeout: 10000
+    }),
+    playoffMatches: axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
+      params: { ...clubParams, matchType: 'playoffMatch', maxResultCount: 100 },
+      headers: EA_HEADERS, timeout: 10000
+    }),
+    friendlyMatches: axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
+      params: { ...clubParams, matchType: 'friendlyMatch', maxResultCount: 100 },
+      headers: EA_HEADERS, timeout: 10000
+    })
+  };
+
+  const settled = await Promise.allSettled(Object.values(requests));
+  const keys = Object.keys(requests);
+  
+  function safeData(s) {
+    if (s.status === 'fulfilled') return s.value.data;
+    console.error('[Scout] Fetch error:', s.reason?.message || s.reason);
+    return null;
+  }
+
+  const infoRaw = safeData(settled[keys.indexOf('info')]);
+  let clubInfo = null;
+  if (Array.isArray(infoRaw)) {
+    clubInfo = infoRaw[0] || null;
+  } else if (infoRaw && typeof infoRaw === 'object') {
+    clubInfo = infoRaw[clubIdsParam] || infoRaw;
+  }
+
+  return {
+    infoPayload: { clubInfo, leaderboardSeed },
+    statsPayload: {
+      overallStats: safeData(settled[keys.indexOf('overallStats')]),
+      playoffAchievements: safeData(settled[keys.indexOf('playoffAchievements')]),
+      membersCareer: safeData(settled[keys.indexOf('membersCareer')]),
+      membersSeason: safeData(settled[keys.indexOf('membersSeason')])
+    },
+    matchesPayload: {
+      leagueMatches: safeData(settled[keys.indexOf('leagueMatches')]),
+      playoffMatches: safeData(settled[keys.indexOf('playoffMatches')]),
+      friendlyMatches: safeData(settled[keys.indexOf('friendlyMatches')])
+    }
+  };
+}
+
+/**
+ * Compute match record from match history
+ */
+function computeRecord(matches, clubId) {
+  if (!Array.isArray(matches)) return null;
+
+  let wins = 0, draws = 0, losses = 0, goalsFor = 0, goalsAgainst = 0;
+
+  for (const m of matches) {
+    if (!m || !m.clubs || !m.clubs[clubId]) continue;
+    const me = m.clubs[clubId];
+    const oppId = Object.keys(m.clubs).find(id => id !== String(clubId));
+    const opp = oppId ? m.clubs[oppId] : null;
+
+    const gf = Number(me.goals) || 0;
+    const ga = opp ? Number(opp.goals) || 0 : 0;
+
+    goalsFor += gf;
+    goalsAgainst += ga;
+
+    if (gf > ga) wins++;
+    else if (gf < ga) losses++;
+    else draws++;
+  }
+
+  return { played: wins + draws + losses, wins, draws, losses, goalsFor, goalsAgainst, goalDiff: goalsFor - goalsAgainst };
+}
+
+/**
+ * Generate match summary for a club
+ */
+async function summarizeMatchesForClub(fcPlatform, clubId, displayName, leaderboardSeed) {
+  const { matchesPayload } = await fetchScoutClubData(fcPlatform, clubId, leaderboardSeed);
+
+  const empty = { played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, goalDiff: 0 };
+  const league = computeRecord(matchesPayload.leagueMatches, clubId) || empty;
+  const playoffs = computeRecord(matchesPayload.playoffMatches, clubId) || empty;
+  const friendlies = computeRecord(matchesPayload.friendlyMatches, clubId) || empty;
+
+  function formatLine(label, rec) {
+    if (!rec.played) return \`\${label}: no matches in last sample.\`;
+    const { played, wins, draws, losses, goalsFor, goalsAgainst, goalDiff } = rec;
+    return \`\${label}: \${wins}-\${draws}-\${losses} in \${played} matches, GF \${goalsFor} / GA \${goalsAgainst} (GD \${goalDiff >= 0 ? '+' : ''}\${goalDiff})\`;
+  }
+
+  return [
+    \`Last matches for **\${displayName}** (by mode, up to EA cap):\`,
+    formatLine('League', league),
+    formatLine('Playoffs', playoffs),
+    formatLine('Friendlies', friendlies)
+  ].join('\\n');
+}
+
+/**
+ * Create scouting report using OpenAI
+ */
+async function createScoutingReportFromId(fcPlatform, clubId, displayName, leaderboardSeed) {
+  if (!openai) {
+    throw new Error('OPENAI_API_KEY is not configured.');
+  }
+
+  const { infoPayload, statsPayload, matchesPayload } = await fetchScoutClubData(fcPlatform, clubId, leaderboardSeed);
+
+  const hasStats = Object.values(statsPayload).some(isNonEmpty);
+  const hasMatches = Object.values(matchesPayload).some(isNonEmpty);
+
+  if (!hasStats && !hasMatches) {
+    const err = new Error('No stats or match history available from EA for this club.');
+    err.code = 'insufficient_data';
+    throw err;
+  }
+
+  const infoStr = safeJsonStringify(infoPayload, 16000);
+  const statsStr = safeJsonStringify(statsPayload, 64000);
+  const matchesStr = safeJsonStringify(matchesPayload, 64000);
+
+  const userPrompt = \`
+Analyzing EA FC Pro Clubs team:
+- Club display name: \${displayName}
+- EA internal club ID: \${clubId}
+- Platform: \${fcPlatform}
+
+CLUB_INFO_JSON:
+\${infoStr}
+
+STATS_JSON:
+\${statsStr}
+
+MATCH_HISTORY_JSON:
+\${matchesStr}
+
+Using only this data, write the scouting report with DTB score, CVI rankings, and game plan.
+\`;
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: SCOUT_SYSTEM_PROMPT },
+      { role: 'user', content: userPrompt }
+    ],
+    max_tokens: 2000
+  });
+
+  const report = response.choices?.[0]?.message?.content || 'No report generated.';
+  return { info: infoPayload.clubInfo || null, report };
+}
+
+/**
+ * Create match preview using OpenAI
+ */
+async function createMatchPreviewReport(homeClub, awayClub) {
+  if (!openai) {
+    throw new Error('OPENAI_API_KEY is not configured.');
+  }
+
+  const [homeData, awayData] = await Promise.all([
+    fetchScoutClubData(homeClub.fcPlatform, homeClub.clubId, homeClub.raw),
+    fetchScoutClubData(awayClub.fcPlatform, awayClub.clubId, awayClub.raw)
+  ]);
+
+  const homeHasData = Object.values(homeData.statsPayload).some(isNonEmpty) || Object.values(homeData.matchesPayload).some(isNonEmpty);
+  const awayHasData = Object.values(awayData.statsPayload).some(isNonEmpty) || Object.values(awayData.matchesPayload).some(isNonEmpty);
+
+  if (!homeHasData || !awayHasData) {
+    const err = new Error('No stats or match history available from EA for one or both clubs.');
+    err.code = 'insufficient_data';
+    throw err;
+  }
+
+  const userPrompt = \`
+Match preview between two EA FC Pro Clubs teams:
+
+HOME CLUB:
+- Name: \${homeClub.name}
+- Club ID: \${homeClub.clubId}
+- Platform: \${homeClub.fcPlatform}
+
+HOME_INFO: \${safeJsonStringify(homeData.infoPayload, 8000)}
+HOME_STATS: \${safeJsonStringify(homeData.statsPayload, 32000)}
+HOME_MATCHES: \${safeJsonStringify(homeData.matchesPayload, 32000)}
+
+AWAY CLUB:
+- Name: \${awayClub.name}
+- Club ID: \${awayClub.clubId}
+- Platform: \${awayClub.fcPlatform}
+
+AWAY_INFO: \${safeJsonStringify(awayData.infoPayload, 8000)}
+AWAY_STATS: \${safeJsonStringify(awayData.statsPayload, 32000)}
+AWAY_MATCHES: \${safeJsonStringify(awayData.matchesPayload, 32000)}
+
+Write the match preview with DTB scores, key players, and score prediction.
+\`;
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: MATCH_PREVIEW_SYSTEM_PROMPT },
+      { role: 'user', content: userPrompt }
+    ],
+    max_tokens: 2000
+  });
+
+  const preview = response.choices?.[0]?.message?.content || 'No preview generated.';
+  return {
+    homeInfo: homeData.infoPayload.clubInfo || null,
+    awayInfo: awayData.infoPayload.clubInfo || null,
+    preview
+  };
+}
 
 // =======================
 // SUPABASE FUNCTIONS
@@ -3676,6 +4137,324 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       // =======================
+      // SCOUTING COMMANDS (ScoutBot functionality)
+      // =======================
+
+      if (cmd === 'scoutclub') {
+        if (!openai) {
+          return interaction.reply({
+            content: '❌ Scouting reports require OpenAI configuration. Contact your server admin.',
+            flags: 64
+          });
+        }
+
+        const clubName = interaction.options.getString('name');
+        await interaction.deferReply();
+
+        try {
+          const matches = await searchClubsAcrossPlatforms(clubName);
+
+          if (!matches.length) {
+            return interaction.editReply({
+              content: 'I could not find any clubs matching that name on EA FC servers. Try a different spelling or the exact in-game name.'
+            });
+          }
+
+          // If only one result, go straight to the report
+          if (matches.length === 1) {
+            const chosen = matches[0];
+            const labelPlatform = FC_PLATFORM_LABELS[chosen.fcPlatform] || chosen.fcPlatform;
+
+            await interaction.editReply({
+              content: `Found one match: **${chosen.name}** on **${labelPlatform}**. Generating scouting report...`
+            });
+
+            try {
+              const { info, report } = await createScoutingReportFromId(
+                chosen.fcPlatform,
+                chosen.clubId,
+                chosen.name,
+                chosen.raw
+              );
+
+              const titleName = info?.name || chosen.name;
+              const trimmed = report.length > 4000 ? report.slice(0, 4000) + '...' : report;
+
+              const embed = new EmbedBuilder()
+                .setTitle(`🔍 Scouting Report: ${titleName}`)
+                .setColor(0x5865f2)
+                .setDescription(trimmed)
+                .setFooter({ text: `Platform: ${labelPlatform} • Club ID: ${chosen.clubId}` });
+
+              return interaction.editReply({ content: null, embeds: [embed] });
+            } catch (err) {
+              console.error('❌ Error creating scouting report:', err);
+              if (err.code === 'insufficient_data') {
+                return interaction.editReply({
+                  content: 'I found the club, but EA did not return enough stats or match history to generate a meaningful scouting report.'
+                });
+              }
+              return interaction.editReply({
+                content: 'I found the club, but failed to generate a scouting report. Please try again later.'
+              });
+            }
+          }
+
+          // Multiple results: let user choose via dropdown
+          const top = matches.slice(0, 5);
+          pendingScoutChoices.set(interaction.user.id, { query: clubName, results: top });
+
+          const options = top.map((club, index) => {
+            const labelPlatform = FC_PLATFORM_LABELS[club.fcPlatform] || club.fcPlatform;
+            return {
+              label: `${club.name} (${labelPlatform})`.slice(0, 100),
+              description: `Club ID: ${club.clubId}`.slice(0, 100),
+              value: String(index)
+            };
+          });
+
+          const select = new StringSelectMenuBuilder()
+            .setCustomId('scoutclub_pick')
+            .setPlaceholder('Select the correct club')
+            .addOptions(options);
+
+          const row = new ActionRowBuilder().addComponents(select);
+
+          const lines = top.map((club, index) => {
+            const labelPlatform = FC_PLATFORM_LABELS[club.fcPlatform] || club.fcPlatform;
+            return `**${index + 1}.** ${club.name} (${labelPlatform})`;
+          });
+
+          const embed = new EmbedBuilder()
+            .setTitle('🔍 Multiple clubs found')
+            .setColor(0x5865f2)
+            .setDescription(
+              lines.join('\n') + '\n\nUse the dropdown below to pick the club you want to scout.'
+            );
+
+          return interaction.editReply({ content: null, embeds: [embed], components: [row] });
+        } catch (err) {
+          console.error('❌ Error in /scoutclub:', err);
+          return interaction.editReply({ content: `❌ Search failed: ${err.message}` });
+        }
+      }
+
+      if (cmd === 'clubmatches') {
+        const clubName = interaction.options.getString('name');
+        await interaction.deferReply();
+
+        try {
+          const matches = await searchClubsAcrossPlatforms(clubName);
+
+          if (!matches.length) {
+            return interaction.editReply({
+              content: 'I could not find any clubs matching that name on EA FC servers. Try a different spelling or the exact in-game name.'
+            });
+          }
+
+          // If only one result, go straight to the summary
+          if (matches.length === 1) {
+            const chosen = matches[0];
+            const labelPlatform = FC_PLATFORM_LABELS[chosen.fcPlatform] || chosen.fcPlatform;
+
+            await interaction.editReply({
+              content: `Found one match: **${chosen.name}** on **${labelPlatform}**. Fetching match history...`
+            });
+
+            try {
+              const summaryText = await summarizeMatchesForClub(
+                chosen.fcPlatform,
+                chosen.clubId,
+                chosen.name,
+                chosen.raw
+              );
+
+              return interaction.editReply({ content: summaryText });
+            } catch (err) {
+              console.error('❌ Error summarizing matches:', err);
+              return interaction.editReply({
+                content: 'I found the club, but failed to fetch match history from EA.'
+              });
+            }
+          }
+
+          // Multiple results: let user choose via dropdown
+          const top = matches.slice(0, 5);
+          pendingMatchesChoices.set(interaction.user.id, { query: clubName, results: top });
+
+          const options = top.map((club, index) => {
+            const labelPlatform = FC_PLATFORM_LABELS[club.fcPlatform] || club.fcPlatform;
+            return {
+              label: `${club.name} (${labelPlatform})`.slice(0, 100),
+              description: `Club ID: ${club.clubId}`.slice(0, 100),
+              value: String(index)
+            };
+          });
+
+          const select = new StringSelectMenuBuilder()
+            .setCustomId('clubmatches_pick')
+            .setPlaceholder('Select the correct club')
+            .addOptions(options);
+
+          const row = new ActionRowBuilder().addComponents(select);
+
+          const embed = new EmbedBuilder()
+            .setTitle('📊 Multiple clubs found')
+            .setColor(0x5865f2)
+            .setDescription('Use the dropdown below to pick the club whose recent matches you want to see.');
+
+          return interaction.editReply({ content: null, embeds: [embed], components: [row] });
+        } catch (err) {
+          console.error('❌ Error in /clubmatches:', err);
+          return interaction.editReply({ content: `❌ Search failed: ${err.message}` });
+        }
+      }
+
+      if (cmd === 'matchpreview') {
+        if (!openai) {
+          return interaction.reply({
+            content: '❌ Match previews require OpenAI configuration. Contact your server admin.',
+            flags: 64
+          });
+        }
+
+        const homeName = interaction.options.getString('home');
+        const awayName = interaction.options.getString('away');
+
+        await interaction.deferReply();
+
+        try {
+          const [homeCandidates, awayCandidates] = await Promise.all([
+            searchClubsAcrossPlatforms(homeName),
+            searchClubsAcrossPlatforms(awayName)
+          ]);
+
+          if (!homeCandidates.length && !awayCandidates.length) {
+            return interaction.editReply({
+              content: 'I could not find any clubs matching either name on EA FC servers. Try more exact in-game names for both.'
+            });
+          }
+
+          if (!homeCandidates.length) {
+            return interaction.editReply({
+              content: `I could not find any clubs matching the home club name **${homeName}** on EA FC servers.`
+            });
+          }
+
+          if (!awayCandidates.length) {
+            return interaction.editReply({
+              content: `I could not find any clubs matching the away club name **${awayName}** on EA FC servers.`
+            });
+          }
+
+          // If exactly one for each, go straight to the preview
+          if (homeCandidates.length === 1 && awayCandidates.length === 1) {
+            const home = homeCandidates[0];
+            const away = awayCandidates[0];
+
+            const homeLabel = FC_PLATFORM_LABELS[home.fcPlatform] || home.fcPlatform;
+            const awayLabel = FC_PLATFORM_LABELS[away.fcPlatform] || away.fcPlatform;
+
+            await interaction.editReply({
+              content: `Found:\n- Home: **${home.name}** (${homeLabel})\n- Away: **${away.name}** (${awayLabel})\n\nGenerating match preview...`
+            });
+
+            try {
+              const { homeInfo, awayInfo, preview } = await createMatchPreviewReport(home, away);
+
+              const homeTitle = homeInfo?.name || home.name;
+              const awayTitle = awayInfo?.name || away.name;
+              const trimmed = preview.length > 4000 ? preview.slice(0, 4000) + '...' : preview;
+
+              const embed = new EmbedBuilder()
+                .setTitle(`⚔️ Match Preview: ${homeTitle} vs ${awayTitle}`)
+                .setColor(0x5865f2)
+                .setDescription(trimmed);
+
+              return interaction.editReply({ content: null, embeds: [embed] });
+            } catch (err) {
+              console.error('❌ Error creating match preview:', err);
+              if (err.code === 'insufficient_data') {
+                return interaction.editReply({
+                  content: 'I found both clubs, but EA did not return enough stats or match history to generate a meaningful match preview.'
+                });
+              }
+              return interaction.editReply({
+                content: 'I found both clubs, but failed to generate a match preview. Please try again later.'
+              });
+            }
+          }
+
+          // Multiple results for one or both: let user choose via dropdown(s)
+          const homeTop = homeCandidates.slice(0, 5);
+          const awayTop = awayCandidates.slice(0, 5);
+
+          pendingPreviewChoices.set(interaction.user.id, {
+            homeQuery: homeName,
+            awayQuery: awayName,
+            homeResults: homeTop,
+            awayResults: awayTop,
+            homeIndex: homeTop.length === 1 ? 0 : null,
+            awayIndex: awayTop.length === 1 ? 0 : null
+          });
+
+          const components = [];
+
+          // Home side
+          if (homeTop.length > 1) {
+            const homeOptions = homeTop.map((club, index) => {
+              const labelPlatform = FC_PLATFORM_LABELS[club.fcPlatform] || club.fcPlatform;
+              return {
+                label: `${club.name} (${labelPlatform})`.slice(0, 100),
+                description: 'Select as home club',
+                value: String(index)
+              };
+            });
+
+            const homeSelect = new StringSelectMenuBuilder()
+              .setCustomId('matchpreview_home_pick')
+              .setPlaceholder('Select the home club')
+              .addOptions(homeOptions);
+
+            components.push(new ActionRowBuilder().addComponents(homeSelect));
+          }
+
+          // Away side
+          if (awayTop.length > 1) {
+            const awayOptions = awayTop.map((club, index) => {
+              const labelPlatform = FC_PLATFORM_LABELS[club.fcPlatform] || club.fcPlatform;
+              return {
+                label: `${club.name} (${labelPlatform})`.slice(0, 100),
+                description: 'Select as away club',
+                value: String(index)
+              };
+            });
+
+            const awaySelect = new StringSelectMenuBuilder()
+              .setCustomId('matchpreview_away_pick')
+              .setPlaceholder('Select the away club')
+              .addOptions(awayOptions);
+
+            components.push(new ActionRowBuilder().addComponents(awaySelect));
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle('⚔️ Match Preview: Select clubs')
+            .setColor(0x5865f2)
+            .setDescription(
+              `**Home:** ${homeTop.length === 1 ? `Auto-selected: ${homeTop[0].name}` : `${homeTop.length} candidates found`}\n` +
+              `**Away:** ${awayTop.length === 1 ? `Auto-selected: ${awayTop[0].name}` : `${awayTop.length} candidates found`}\n\n` +
+              'Use the dropdown(s) below to pick the correct clubs.'
+            );
+
+          return interaction.editReply({ content: null, embeds: [embed], components });
+        } catch (err) {
+          console.error('❌ Error in /matchpreview:', err);
+          return interaction.editReply({ content: `❌ Search failed: ${err.message}` });
+        }
+      }
+
+      // ======================= 
       // ADMIN CONTROL PANEL COMMANDS
       // =======================
 
@@ -4586,6 +5365,206 @@ client.on(Events.InteractionCreate, async (interaction) => {
     // ----- Select Menus -----
     if (interaction.isStringSelectMenu()) {
       const id = interaction.customId;
+
+      // =======================
+      // SCOUTING SELECT MENUS
+      // =======================
+
+      // Scout club pick
+      if (id === 'scoutclub_pick') {
+        const userId = interaction.user.id;
+        const scoutState = pendingScoutChoices.get(userId);
+
+        if (!scoutState) {
+          return interaction.reply({
+            content: 'No pending club selection found. Please run `/scoutclub` again.',
+            flags: 64
+          });
+        }
+
+        const index = parseInt(interaction.values[0], 10);
+        const chosen = scoutState.results[index];
+        if (!chosen) {
+          return interaction.reply({
+            content: 'Invalid club selection. Please run `/scoutclub` again.',
+            flags: 64
+          });
+        }
+
+        pendingScoutChoices.delete(userId);
+        const labelPlatform = FC_PLATFORM_LABELS[chosen.fcPlatform] || chosen.fcPlatform;
+
+        await interaction.deferUpdate();
+        await interaction.editReply({
+          content: `Generating scouting report for **${chosen.name}** on **${labelPlatform}**...`,
+          embeds: [],
+          components: []
+        });
+
+        try {
+          const { info, report } = await createScoutingReportFromId(
+            chosen.fcPlatform,
+            chosen.clubId,
+            chosen.name,
+            chosen.raw
+          );
+
+          const titleName = info?.name || chosen.name;
+          const trimmed = report.length > 4000 ? report.slice(0, 4000) + '...' : report;
+
+          const embed = new EmbedBuilder()
+            .setTitle(`🔍 Scouting Report: ${titleName}`)
+            .setColor(0x5865f2)
+            .setDescription(trimmed)
+            .setFooter({ text: `Platform: ${labelPlatform} • Club ID: ${chosen.clubId}` });
+
+          return interaction.editReply({ content: null, embeds: [embed] });
+        } catch (err) {
+          console.error('❌ Error creating scouting report (select):', err);
+          let msg = 'I found the club, but failed to generate a scouting report.';
+          if (err.code === 'insufficient_data') {
+            msg = 'I found the club, but EA did not return enough stats or match history to generate a meaningful scouting report.';
+          }
+          return interaction.editReply({ content: msg, embeds: [], components: [] });
+        }
+      }
+
+      // Club matches pick
+      if (id === 'clubmatches_pick') {
+        const userId = interaction.user.id;
+        const matchesState = pendingMatchesChoices.get(userId);
+
+        if (!matchesState) {
+          return interaction.reply({
+            content: 'No pending club selection found. Please run `/clubmatches` again.',
+            flags: 64
+          });
+        }
+
+        const index = parseInt(interaction.values[0], 10);
+        const chosen = matchesState.results[index];
+        if (!chosen) {
+          return interaction.reply({
+            content: 'Invalid club selection. Please run `/clubmatches` again.',
+            flags: 64
+          });
+        }
+
+        pendingMatchesChoices.delete(userId);
+        const labelPlatform = FC_PLATFORM_LABELS[chosen.fcPlatform] || chosen.fcPlatform;
+
+        await interaction.deferUpdate();
+        await interaction.editReply({
+          content: `Fetching recent matches for **${chosen.name}** on **${labelPlatform}**...`,
+          embeds: [],
+          components: []
+        });
+
+        try {
+          const summaryText = await summarizeMatchesForClub(
+            chosen.fcPlatform,
+            chosen.clubId,
+            chosen.name,
+            chosen.raw
+          );
+
+          return interaction.editReply({ content: summaryText, embeds: [], components: [] });
+        } catch (err) {
+          console.error('❌ Error summarizing matches (select):', err);
+          return interaction.editReply({
+            content: 'I found the club, but failed to fetch match history from EA.',
+            embeds: [],
+            components: []
+          });
+        }
+      }
+
+      // Match preview picks
+      if (id === 'matchpreview_home_pick' || id === 'matchpreview_away_pick') {
+        const userId = interaction.user.id;
+        const previewState = pendingPreviewChoices.get(userId);
+
+        if (!previewState) {
+          return interaction.reply({
+            content: 'No pending match preview selection found. Please run `/matchpreview` again.',
+            flags: 64
+          });
+        }
+
+        const index = parseInt(interaction.values[0], 10);
+        const isHome = id === 'matchpreview_home_pick';
+
+        if (Number.isNaN(index)) {
+          return interaction.reply({
+            content: 'Invalid selection. Please run `/matchpreview` again.',
+            flags: 64
+          });
+        }
+
+        if (isHome) {
+          if (!previewState.homeResults[index]) {
+            return interaction.reply({
+              content: 'Invalid home club selection. Please run `/matchpreview` again.',
+              flags: 64
+            });
+          }
+          previewState.homeIndex = index;
+        } else {
+          if (!previewState.awayResults[index]) {
+            return interaction.reply({
+              content: 'Invalid away club selection. Please run `/matchpreview` again.',
+              flags: 64
+            });
+          }
+          previewState.awayIndex = index;
+        }
+
+        // If both sides are now chosen, generate the preview
+        if (previewState.homeIndex != null && previewState.awayIndex != null) {
+          const home = previewState.homeResults[previewState.homeIndex];
+          const away = previewState.awayResults[previewState.awayIndex];
+
+          pendingPreviewChoices.delete(userId);
+
+          const homeLabel = FC_PLATFORM_LABELS[home.fcPlatform] || home.fcPlatform;
+          const awayLabel = FC_PLATFORM_LABELS[away.fcPlatform] || away.fcPlatform;
+
+          await interaction.deferUpdate();
+          await interaction.editReply({
+            content: `Generating match preview for **${home.name}** vs **${away.name}**...`,
+            embeds: [],
+            components: []
+          });
+
+          try {
+            const { homeInfo, awayInfo, preview } = await createMatchPreviewReport(home, away);
+
+            const homeTitle = homeInfo?.name || home.name;
+            const awayTitle = awayInfo?.name || away.name;
+            const trimmed = preview.length > 4000 ? preview.slice(0, 4000) + '...' : preview;
+
+            const embed = new EmbedBuilder()
+              .setTitle(`⚔️ Match Preview: ${homeTitle} vs ${awayTitle}`)
+              .setColor(0x5865f2)
+              .setDescription(trimmed);
+
+            return interaction.editReply({ content: null, embeds: [embed] });
+          } catch (err) {
+            console.error('❌ Error creating match preview (select):', err);
+            let msg = 'I found both clubs, but failed to generate a match preview.';
+            if (err.code === 'insufficient_data') {
+              msg = 'I found both clubs, but EA did not return enough stats or match history to generate a meaningful match preview.';
+            }
+            return interaction.editReply({ content: msg, embeds: [], components: [] });
+          }
+        }
+
+        // One side chosen, still waiting for the other
+        await interaction.deferUpdate();
+        return;
+      }
+
+      // Viewer club select
 
       // Viewer club select
       if (id === 'viewer_club_select') {
