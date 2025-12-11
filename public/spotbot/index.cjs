@@ -7078,6 +7078,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
     }
+    }
   } catch (err) {
     // Handle Discord's "Unknown interaction" error gracefully (interaction timed out)
     if (err.code === 10062) {
