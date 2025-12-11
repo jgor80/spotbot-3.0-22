@@ -4156,7 +4156,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
             { label: 'Smart assign from VC (using prefs)', value: 'smart_assign', description: 'Auto-assign based on preferences' },
             { label: 'Remove/move existing players', value: 'manage', description: 'Manage slotted players' },
             { label: 'Send ready-check DM to your VC', value: 'ready_check', description: 'DM all VC members' },
-            { label: 'Set my position preferences', value: 'set_prefs', description: 'Edit your own preferences' }
+            { label: 'Set my position preferences', value: 'set_prefs', description: 'Edit your own preferences' },
+            { label: 'Link my EA Username', value: 'link_ea', description: 'Connect your EA account for stats' }
           );
 
         const row = new ActionRowBuilder().addComponents(select);
@@ -4546,6 +4547,40 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.editReply({ embeds: [embed] });
         }
       }
+
+      // Link EA Username modal
+      if (id === 'link_ea_modal') {
+        const eaUsername = interaction.fields.getTextInputValue('ea_username').trim();
+        if (!eaUsername) {
+          return interaction.reply({ content: '❌ EA username cannot be empty.', flags: 64 });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        // Update the user's profile with their EA username
+        const { error } = await supabase
+          .from('profiles')
+          .upsert({
+            discord_user_id: interaction.user.id,
+            ea_username: eaUsername,
+            discord_username: interaction.user.username,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'discord_user_id' });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to save EA username: ${error.message}` });
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle('✅ EA Account Linked!')
+          .setColor(0x00ff00)
+          .setDescription(`Your EA username **${eaUsername}** is now linked to your Discord account.\n\nWhen your club plays division matches, your stats will be automatically recorded!`)
+          .addFields(
+            { name: '📊 What happens now?', value: 'Your goals, assists, ratings, and other stats from Pro Clubs matches will be tracked and contribute to your SquadIQ rating.', inline: false }
+          );
+
+        return interaction.editReply({ embeds: [embed] });
+      }
     }
 
     // ----- Select Menus -----
@@ -4625,6 +4660,32 @@ client.on(Events.InteractionCreate, async (interaction) => {
             components: buildPrefComponents(existing),
             flags: 64
           });
+        }
+        if (choice === 'link_ea') {
+          // Check if user already has an EA username linked
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('ea_username')
+            .eq('discord_user_id', interaction.user.id)
+            .single();
+
+          const modal = new ModalBuilder()
+            .setCustomId('link_ea_modal')
+            .setTitle('Link EA Username')
+            .addComponents(
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('ea_username')
+                  .setLabel('Your EA FC Pro Clubs username')
+                  .setStyle(TextInputStyle.Short)
+                  .setPlaceholder('Enter your EA username exactly as it appears in-game')
+                  .setRequired(true)
+                  .setValue(existingProfile?.ea_username || '')
+              )
+            );
+
+          await interaction.showModal(modal);
+          return;
         }
         return;
       }
