@@ -1418,7 +1418,7 @@ function buildEmbedForClub(guildId, clubKey, state) {
   ].filter(Boolean).join('\n');
 
   return new EmbedBuilder()
-    .setTitle(`⚽ CURRENT CLUB: ${club.name.toUpperCase()}`)
+    .setTitle(`⚽ Club: ${club.name.toUpperCase()}`)
     .setDescription(description)
     .setColor(openCount === 0 ? 0x00ff00 : openCount <= 3 ? 0xffcc00 : 0x5865f2)
     .setFooter({ text: `Formation: ${formationName} • 🟢 = claim spot • 🔴 = quick actions • 🔔 = waitlist` });
@@ -2414,34 +2414,51 @@ async function setClubFormation(interaction, guildId, clubKey, formationName) {
 
 function buildHelpEmbed() {
   return new EmbedBuilder()
-    .setTitle('📘 SquadIQ Spots Help')
+    .setTitle('📘 SquadIQ Complete Help')
     .setColor(0x5865f2)
     .setDescription(
-      '**Core Commands**\n' +
+      '**📋 Spot Management**\n' +
       '`/spotpanel` – Create admin control panel\n' +
       '`/spots` – View spots read-only\n' +
       '`/vcspots` – Link VC to club panel\n' +
       '`/whoisplaying` – See who\'s in your VC club\n' +
-      '`/spothelp` – Show this help message\n' +
-      '`/spotblock` – Block/unblock a user from moving players\n\n' +
-      '**Preference Commands**\n' +
+      '`/spotblock` – Block/unblock a user\n' +
+      '`/autoassign` – Toggle auto-assign\n\n' +
+      '**🎮 Preferences**\n' +
       '`/pospanel` – Create preference panel\n' +
-      '`/myprefs` – Edit your preferences privately\n' +
-      '`/posboard` – See VC members\' preferences\n' +
-      '`/posprefs` – Filter preferences by role\n\n' +
-      '**Manager Commands**\n' +
-      '`/autoassign` – Toggle auto-assign for current club\n\n' +
-      '**Panel Buttons & Menus**\n' +
-      '• **Formation** – Change club formation\n' +
-      '• **Player Tools** – Assign from VC, smart-assign, move/remove players, ready-check, set preferences\n' +
-      '• **Club Tools** – Rename/add/remove clubs, reset spots, link VC, toggle auto-assign, refresh\n\n' +
-      '**Quick Tips**\n' +
-      '🟢 Click an open spot to **claim** it\n' +
-      '🔴 Click a taken spot for **quick actions**: Move, Remove, or Waitlist\n' +
-      '🔔 **Waitlist**: Get a DM notification when a spot opens\n' +
-      '✨ **Auto-Assign**: Auto-place players in their preferred position when joining VC!'
+      '`/myprefs` – Edit your preferences\n' +
+      '`/posboard` – See VC members\' prefs\n' +
+      '`/syncprefs` – Sync from Discord roles\n\n' +
+      '**⚔️ Drafts & Games**\n' +
+      '`/draft` – Start captain draft\n' +
+      '`/draftpick` – Pick a player\n' +
+      '`/draftresult` – Report result\n\n' +
+      '**🔍 Scouting (AI)**\n' +
+      '`/scoutclub` – AI scouting report\n' +
+      '`/clubmatches` – Match history\n' +
+      '`/matchpreview` – AI match preview\n\n' +
+      '**👤 Player Stats**\n' +
+      '`/profile` – View player profile\n' +
+      '`/leaderboard` – Server rankings\n' +
+      '`/mystats` – Your quick stats\n\n' +
+      '**🎮 EA Integration**\n' +
+      '`/setclub` – Link EA Pro Clubs\n' +
+      '`/linkea` – Link your EA username\n' +
+      '`/syncclub` – Manual stats sync\n\n' +
+      '**🏆 Competition**\n' +
+      '`/claimwin` – Claim a win\n' +
+      '`/pendingwins` – Review claims\n' +
+      '`/verifywin` – Approve/reject\n\n' +
+      '**📅 Events**\n' +
+      '`/event` – Create availability event\n' +
+      '`/available` – Mark availability\n\n' +
+      '**💡 Quick Tips**\n' +
+      '🟢 Click open spot to claim\n' +
+      '🔴 Click taken spot for actions\n' +
+      '🔔 Waitlist for DM alerts\n' +
+      '✨ Auto-assign from VC prefs'
     )
-    .setFooter({ text: 'SquadIQ Spots • Unified Spot Management + Position Preferences' });
+    .setFooter({ text: 'SquadIQ • Complete Squad Management System' });
 }
 
 // =======================
@@ -2479,7 +2496,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
     .setTitle('⚽ CLUB STATUS')
     .setColor(filledSlots === totalSlots ? 0x00ff00 : filledSlots > 0 ? 0xffcc00 : 0x5865f2)
     .addFields(
-      { name: '🏟️ Current Club', value: club?.name || 'None', inline: true },
+      { name: '🏟️ Club', value: club?.name || 'None', inline: true },
       { name: '📋 Formation', value: formationName, inline: true },
       { name: '👥 Roster', value: `${filledSlots}/${totalSlots} filled`, inline: true },
       { name: '🔗 Linked VC', value: linkedVc ? `<#${linkedVc}>` : 'Not linked', inline: true },
@@ -2561,6 +2578,10 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
       '`/setclub` – Link EA Pro Clubs\n' +
       '`/syncclub` – Manual stats sync\n' +
       '`/clubstats` – Check EA status\n\n' +
+      '**🔍 Scouting & Analytics**\n' +
+      '`/scoutclub` – AI scouting report\n' +
+      '`/matchpreview` – AI match preview\n' +
+      '`/clubmatches` – Recent match history\n\n' +
       '**👤 Player Management**\n' +
       '`/profile` – View player profile\n' +
       '`/leaderboard` – Server rankings\n' +
@@ -2629,8 +2650,33 @@ function buildAdminControlPanelButtons() {
   );
   rows.push(row2);
   
-  // Row 3: Debug & Info
+  // Row 3: Scouting & Analytics (NEW - provides button access to scouting features)
   const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('squadiq_scout')
+      .setLabel('Scout Club')
+      .setEmoji('🔍')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('squadiq_matchpreview')
+      .setLabel('Match Preview')
+      .setEmoji('⚔️')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('squadiq_clubmatches')
+      .setLabel('Club Matches')
+      .setEmoji('📊')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('squadiq_profile')
+      .setLabel('View Profile')
+      .setEmoji('👤')
+      .setStyle(ButtonStyle.Secondary)
+  );
+  rows.push(row3);
+  
+  // Row 4: Debug & Info
+  const row4 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('squadiq_debug')
       .setLabel('Debug Info')
@@ -2652,7 +2698,7 @@ function buildAdminControlPanelButtons() {
       .setStyle(ButtonStyle.Link)
       .setURL('https://squadiq.lovable.app')
   );
-  rows.push(row3);
+  rows.push(row4);
   
   return rows;
 }
@@ -4720,6 +4766,86 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.reply({ embeds: [buildHelpEmbed()], flags: 64 });
       }
 
+      // Scouting button - opens modal for club name input
+      if (id === 'squadiq_scout') {
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_scout_modal')
+          .setTitle('Scout a Club');
+        
+        const clubNameInput = new TextInputBuilder()
+          .setCustomId('scout_club_name')
+          .setLabel('Club Name')
+          .setPlaceholder('Enter the EA FC Pro Clubs team name')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const row = new ActionRowBuilder().addComponents(clubNameInput);
+        modal.addComponents(row);
+        return interaction.showModal(modal);
+      }
+
+      // Club Matches button - opens modal for club name input
+      if (id === 'squadiq_clubmatches') {
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_clubmatches_modal')
+          .setTitle('View Club Matches');
+        
+        const clubNameInput = new TextInputBuilder()
+          .setCustomId('matches_club_name')
+          .setLabel('Club Name')
+          .setPlaceholder('Enter the EA FC Pro Clubs team name')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const row = new ActionRowBuilder().addComponents(clubNameInput);
+        modal.addComponents(row);
+        return interaction.showModal(modal);
+      }
+
+      // Match Preview button - opens modal for both club names
+      if (id === 'squadiq_matchpreview') {
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_matchpreview_modal')
+          .setTitle('Match Preview');
+        
+        const homeInput = new TextInputBuilder()
+          .setCustomId('preview_home_club')
+          .setLabel('Home Club Name')
+          .setPlaceholder('Enter the home team name')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const awayInput = new TextInputBuilder()
+          .setCustomId('preview_away_club')
+          .setLabel('Away Club Name')
+          .setPlaceholder('Enter the away team name')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const row1 = new ActionRowBuilder().addComponents(homeInput);
+        const row2 = new ActionRowBuilder().addComponents(awayInput);
+        modal.addComponents(row1, row2);
+        return interaction.showModal(modal);
+      }
+
+      // View Profile button - opens modal for player selection
+      if (id === 'squadiq_profile') {
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_profile_modal')
+          .setTitle('View Player Profile');
+        
+        const playerInput = new TextInputBuilder()
+          .setCustomId('profile_player')
+          .setLabel('Player (leave empty for yourself)')
+          .setPlaceholder('Enter Discord username or ID, or leave empty')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+        
+        const row = new ActionRowBuilder().addComponents(playerInput);
+        modal.addComponents(row);
+        return interaction.showModal(modal);
+      }
+
       // Availability response buttons
       if (id.startsWith('avail_')) {
         const parts = id.split('_');
@@ -5359,6 +5485,313 @@ client.on(Events.InteractionCreate, async (interaction) => {
           );
 
         return interaction.editReply({ embeds: [embed] });
+      }
+
+      // =====================
+      // SQUADIQ PANEL MODALS
+      // =====================
+
+      // Scout Club Modal
+      if (id === 'squadiq_scout_modal') {
+        const clubName = interaction.fields.getTextInputValue('scout_club_name').trim();
+        if (!clubName) {
+          return interaction.reply({ content: '❌ Club name cannot be empty.', flags: 64 });
+        }
+
+        await interaction.deferReply();
+
+        try {
+          const results = await searchClubsAcrossPlatforms(clubName);
+
+          if (results.length === 0) {
+            return interaction.editReply({
+              content: `❌ No clubs found matching "${clubName}" on any platform.\n\nTry the exact club name as it appears in-game.`
+            });
+          }
+
+          if (results.length === 1) {
+            const chosen = results[0];
+            const labelPlatform = FC_PLATFORM_LABELS[chosen.fcPlatform] || chosen.fcPlatform;
+
+            await interaction.editReply({
+              content: `Generating scouting report for **${chosen.name}** on **${labelPlatform}**...`
+            });
+
+            const { info, report } = await createScoutingReportFromId(
+              chosen.fcPlatform,
+              chosen.clubId,
+              chosen.name,
+              chosen.raw
+            );
+
+            const titleName = info?.name || chosen.name;
+            const trimmed = report.length > 4000 ? report.slice(0, 4000) + '...' : report;
+
+            const embed = new EmbedBuilder()
+              .setTitle(`🔍 Scouting Report: ${titleName}`)
+              .setColor(0x5865f2)
+              .setDescription(trimmed)
+              .setFooter({ text: `Platform: ${labelPlatform} • Club ID: ${chosen.clubId}` });
+
+            return interaction.editReply({ content: null, embeds: [embed] });
+          }
+
+          // Multiple results - show selector
+          pendingScoutChoices.set(interaction.user.id, { query: clubName, results });
+          const options = results.slice(0, 25).map((r, i) => ({
+            label: r.name.slice(0, 100),
+            value: String(i),
+            description: (FC_PLATFORM_LABELS[r.fcPlatform] || r.fcPlatform).slice(0, 100)
+          }));
+
+          const select = new StringSelectMenuBuilder()
+            .setCustomId('scoutclub_pick')
+            .setPlaceholder('Choose the correct club')
+            .addOptions(options);
+
+          const row = new ActionRowBuilder().addComponents(select);
+
+          return interaction.editReply({
+            content: `Found ${results.length} clubs matching "${clubName}". Pick the correct one:`,
+            components: [row]
+          });
+        } catch (err) {
+          console.error('[Scout Modal] Error:', err);
+          return interaction.editReply({ content: `❌ Error searching for clubs: ${err.message}` });
+        }
+      }
+
+      // Club Matches Modal
+      if (id === 'squadiq_clubmatches_modal') {
+        const clubName = interaction.fields.getTextInputValue('matches_club_name').trim();
+        if (!clubName) {
+          return interaction.reply({ content: '❌ Club name cannot be empty.', flags: 64 });
+        }
+
+        await interaction.deferReply();
+
+        try {
+          const results = await searchClubsAcrossPlatforms(clubName);
+
+          if (results.length === 0) {
+            return interaction.editReply({
+              content: `❌ No clubs found matching "${clubName}" on any platform.`
+            });
+          }
+
+          if (results.length === 1) {
+            const chosen = results[0];
+            const labelPlatform = FC_PLATFORM_LABELS[chosen.fcPlatform] || chosen.fcPlatform;
+
+            await interaction.editReply({
+              content: `Fetching recent matches for **${chosen.name}** on **${labelPlatform}**...`
+            });
+
+            const summaryText = await summarizeMatchesForClub(
+              chosen.fcPlatform,
+              chosen.clubId,
+              chosen.name,
+              chosen.raw
+            );
+
+            return interaction.editReply({ content: summaryText });
+          }
+
+          // Multiple results - show selector
+          pendingMatchesChoices.set(interaction.user.id, { query: clubName, results });
+          const options = results.slice(0, 25).map((r, i) => ({
+            label: r.name.slice(0, 100),
+            value: String(i),
+            description: (FC_PLATFORM_LABELS[r.fcPlatform] || r.fcPlatform).slice(0, 100)
+          }));
+
+          const select = new StringSelectMenuBuilder()
+            .setCustomId('clubmatches_pick')
+            .setPlaceholder('Choose the correct club')
+            .addOptions(options);
+
+          const row = new ActionRowBuilder().addComponents(select);
+
+          return interaction.editReply({
+            content: `Found ${results.length} clubs matching "${clubName}". Pick the correct one:`,
+            components: [row]
+          });
+        } catch (err) {
+          console.error('[ClubMatches Modal] Error:', err);
+          return interaction.editReply({ content: `❌ Error searching for clubs: ${err.message}` });
+        }
+      }
+
+      // Match Preview Modal
+      if (id === 'squadiq_matchpreview_modal') {
+        const homeClub = interaction.fields.getTextInputValue('preview_home_club').trim();
+        const awayClub = interaction.fields.getTextInputValue('preview_away_club').trim();
+
+        if (!homeClub || !awayClub) {
+          return interaction.reply({ content: '❌ Both club names are required.', flags: 64 });
+        }
+
+        await interaction.deferReply();
+
+        try {
+          const [homeResults, awayResults] = await Promise.all([
+            searchClubsAcrossPlatforms(homeClub),
+            searchClubsAcrossPlatforms(awayClub)
+          ]);
+
+          if (homeResults.length === 0) {
+            return interaction.editReply({ content: `❌ No clubs found matching "${homeClub}" for home team.` });
+          }
+          if (awayResults.length === 0) {
+            return interaction.editReply({ content: `❌ No clubs found matching "${awayClub}" for away team.` });
+          }
+
+          // If both have exactly one result, generate preview directly
+          if (homeResults.length === 1 && awayResults.length === 1) {
+            const home = homeResults[0];
+            const away = awayResults[0];
+
+            await interaction.editReply({
+              content: `Generating match preview: **${home.name}** vs **${away.name}**...`
+            });
+
+            const report = await createMatchPreviewReport(home, away);
+
+            const embed = new EmbedBuilder()
+              .setTitle(`⚔️ Match Preview: ${home.name} vs ${away.name}`)
+              .setColor(0xff6b35)
+              .setDescription(report.length > 4000 ? report.slice(0, 4000) + '...' : report)
+              .setFooter({ text: 'AI-powered match analysis' });
+
+            return interaction.editReply({ content: null, embeds: [embed] });
+          }
+
+          // Need to select clubs - store state and show selectors
+          pendingPreviewChoices.set(interaction.user.id, {
+            homeQuery: homeClub,
+            awayQuery: awayClub,
+            homeResults,
+            awayResults,
+            homeIndex: homeResults.length === 1 ? 0 : null,
+            awayIndex: awayResults.length === 1 ? 0 : null
+          });
+
+          // Show home selector first if needed
+          if (homeResults.length > 1) {
+            const options = homeResults.slice(0, 25).map((r, i) => ({
+              label: r.name.slice(0, 100),
+              value: String(i),
+              description: (FC_PLATFORM_LABELS[r.fcPlatform] || r.fcPlatform).slice(0, 100)
+            }));
+
+            const select = new StringSelectMenuBuilder()
+              .setCustomId('matchpreview_home_pick')
+              .setPlaceholder('Select HOME club')
+              .addOptions(options);
+
+            const row = new ActionRowBuilder().addComponents(select);
+
+            return interaction.editReply({
+              content: `Found ${homeResults.length} clubs matching "${homeClub}". Select the **HOME** team:`,
+              components: [row]
+            });
+          }
+
+          // Home is selected, show away selector
+          const options = awayResults.slice(0, 25).map((r, i) => ({
+            label: r.name.slice(0, 100),
+            value: String(i),
+            description: (FC_PLATFORM_LABELS[r.fcPlatform] || r.fcPlatform).slice(0, 100)
+          }));
+
+          const select = new StringSelectMenuBuilder()
+            .setCustomId('matchpreview_away_pick')
+            .setPlaceholder('Select AWAY club')
+            .addOptions(options);
+
+          const row = new ActionRowBuilder().addComponents(select);
+
+          return interaction.editReply({
+            content: `Found ${awayResults.length} clubs matching "${awayClub}". Select the **AWAY** team:`,
+            components: [row]
+          });
+        } catch (err) {
+          console.error('[MatchPreview Modal] Error:', err);
+          return interaction.editReply({ content: `❌ Error: ${err.message}` });
+        }
+      }
+
+      // Profile Modal
+      if (id === 'squadiq_profile_modal') {
+        const playerInput = interaction.fields.getTextInputValue('profile_player').trim();
+        
+        await interaction.deferReply({ flags: 64 });
+
+        let targetUserId = interaction.user.id;
+        let targetUsername = interaction.user.username;
+
+        if (playerInput) {
+          // Try to find the user by mention, ID, or username
+          try {
+            // Check if it's a mention format <@123456789>
+            const mentionMatch = playerInput.match(/^<@!?(\d+)>$/);
+            if (mentionMatch) {
+              targetUserId = mentionMatch[1];
+            } else if (/^\d+$/.test(playerInput)) {
+              // It's a raw ID
+              targetUserId = playerInput;
+            } else {
+              // Try to find by username in the guild
+              const members = await interaction.guild.members.fetch({ query: playerInput, limit: 1 });
+              const member = members.first();
+              if (member) {
+                targetUserId = member.id;
+                targetUsername = member.user.username;
+              }
+            }
+          } catch (err) {
+            console.log('[Profile Modal] Could not find user:', playerInput);
+          }
+        }
+
+        // Fetch profile data from Supabase
+        try {
+          const { data: summary } = await supabase
+            .from('player_summary')
+            .select('*')
+            .eq('guild_id', guildId)
+            .eq('discord_user_id', targetUserId)
+            .single();
+
+          if (!summary) {
+            return interaction.editReply({ content: `❌ No profile data found for this player. They need to play some games first!` });
+          }
+
+          const rating = Math.round(summary.overall_rating || 50);
+          const winRate = Math.round((summary.win_rate || 0) * 100);
+          const ratingBar = '█'.repeat(Math.floor(rating / 10)) + '░'.repeat(10 - Math.floor(rating / 10));
+
+          const embed = new EmbedBuilder()
+            .setTitle(`👤 Player Profile: ${summary.discord_username || targetUsername}`)
+            .setColor(rating >= 70 ? 0x00ff00 : rating >= 50 ? 0xffcc00 : 0xff6b35)
+            .addFields(
+              { name: '⭐ Overall Rating', value: `**${rating}** \`${ratingBar}\``, inline: true },
+              { name: '🎯 Position', value: summary.primary_position || 'Not set', inline: true },
+              { name: '📊 Win Rate', value: `${winRate}%`, inline: true },
+              { name: '🎮 Games Played', value: `${summary.games_played || 0}`, inline: true },
+              { name: '⚽ Goals', value: `${summary.goals || 0}`, inline: true },
+              { name: '🅰️ Assists', value: `${summary.assists || 0}`, inline: true },
+              { name: '🔥 Current Streak', value: summary.streak_type ? `${summary.current_streak} ${summary.streak_type}` : 'None', inline: true },
+              { name: '🏆 Wins', value: `${summary.wins || 0}`, inline: true },
+              { name: '📈 Form', value: summary.form_rating ? `${Math.round(summary.form_rating)}` : 'N/A', inline: true }
+            )
+            .setFooter({ text: `Use /profile @player for full profile • Web: squadiq.lovable.app` });
+
+          return interaction.editReply({ embeds: [embed] });
+        } catch (err) {
+          console.error('[Profile Modal] Error:', err);
+          return interaction.editReply({ content: `❌ Error fetching profile: ${err.message}` });
+        }
       }
     }
 
