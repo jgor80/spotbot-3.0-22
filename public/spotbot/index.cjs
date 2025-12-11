@@ -83,49 +83,50 @@ const DEFAULT_CLUBS = [
   { key: 'club5', name: 'Club 5', enabled: false }
 ];
 
-// All positions available across formations
-const POSITION_PREF_OPTIONS = ['ST', 'CF', 'RW', 'LW', 'CAM', 'CM', 'CDM', 'RM', 'LM', 'RWB', 'LWB', 'RB', 'LB', 'CB', 'GK'];
+// All positions available across formations (derived from formations.json)
+// Valid positions: GK, CB, LB, RB, LWB, RWB, CDM, CM, CAM, LM, RM, LW, RW, CF, ST
+const POSITION_PREF_OPTIONS = ['GK', 'CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'CF', 'ST'];
 const PREFS_LIMIT = 6;
 
 const POSITION_META = Object.freeze({
-  ST: { emoji: '⚽', label: 'Striker' },
-  CF: { emoji: '⚽', label: 'Centre Forward' },
-  RW: { emoji: '🏃', label: 'Right Wing' },
-  LW: { emoji: '🏃', label: 'Left Wing' },
-  CAM: { emoji: '🎯', label: 'Attacking Midfielder' },
-  CM: { emoji: '🎯', label: 'Central Midfielder' },
-  CDM: { emoji: '🛡️', label: 'Defensive Midfielder' },
-  RM: { emoji: '🏃', label: 'Right Midfielder' },
-  LM: { emoji: '🏃', label: 'Left Midfielder' },
-  RWB: { emoji: '🧱', label: 'Right Wing Back' },
-  LWB: { emoji: '🧱', label: 'Left Wing Back' },
-  RB: { emoji: '🧱', label: 'Right Back' },
-  LB: { emoji: '🧱', label: 'Left Back' },
+  GK: { emoji: '🧤', label: 'Goalkeeper' },
   CB: { emoji: '🧱', label: 'Centre Back' },
-  GK: { emoji: '🧤', label: 'Goalkeeper' }
+  LB: { emoji: '🧱', label: 'Left Back' },
+  RB: { emoji: '🧱', label: 'Right Back' },
+  LWB: { emoji: '🧱', label: 'Left Wing Back' },
+  RWB: { emoji: '🧱', label: 'Right Wing Back' },
+  CDM: { emoji: '🛡️', label: 'Defensive Midfielder' },
+  CM: { emoji: '🎯', label: 'Central Midfielder' },
+  CAM: { emoji: '🎯', label: 'Attacking Midfielder' },
+  LM: { emoji: '🏃', label: 'Left Midfielder' },
+  RM: { emoji: '🏃', label: 'Right Midfielder' },
+  LW: { emoji: '🏃', label: 'Left Wing' },
+  RW: { emoji: '🏃', label: 'Right Wing' },
+  CF: { emoji: '⚽', label: 'Centre Forward' },
+  ST: { emoji: '⚽', label: 'Striker' }
 });
 
 const RANK_EMOJI = Object.freeze({
   1: '1️⃣', 2: '2️⃣', 3: '3️⃣', 4: '4️⃣', 5: '5️⃣', 6: '6️⃣'
 });
 
-// Position similarity mapping for smart inference (ordered by similarity)
+// Position similarity mapping for smart inference (only valid formation positions)
 const POSITION_INFERENCE = Object.freeze({
-  ST: ['CF', 'CAM', 'RW', 'LW'],
-  CF: ['ST', 'CAM', 'RW', 'LW'],
-  RW: ['RM', 'RWB', 'ST', 'CF', 'LW'],
-  LW: ['LM', 'LWB', 'ST', 'CF', 'RW'],
-  CAM: ['CM', 'CF', 'ST', 'RM', 'LM'],
-  CM: ['CAM', 'CDM', 'RM', 'LM'],
-  CDM: ['CM', 'CB', 'CAM'],
-  RM: ['RW', 'CM', 'RWB', 'CAM', 'LM'],
-  LM: ['LW', 'CM', 'LWB', 'CAM', 'RM'],
-  RWB: ['RB', 'RW', 'RM'],
-  LWB: ['LB', 'LW', 'LM'],
-  RB: ['RWB', 'CB', 'RM'],
-  LB: ['LWB', 'CB', 'LM'],
+  GK: [],
   CB: ['CDM', 'LB', 'RB'],
-  GK: []
+  LB: ['LWB', 'CB', 'LM'],
+  RB: ['RWB', 'CB', 'RM'],
+  LWB: ['LB', 'LM', 'LW'],
+  RWB: ['RB', 'RM', 'RW'],
+  CDM: ['CM', 'CB', 'CAM'],
+  CM: ['CAM', 'CDM', 'RM', 'LM'],
+  CAM: ['CM', 'CF', 'ST', 'RM', 'LM'],
+  LM: ['LW', 'CM', 'LWB', 'CAM'],
+  RM: ['RW', 'CM', 'RWB', 'CAM'],
+  LW: ['LM', 'ST', 'CF', 'RW'],
+  RW: ['RM', 'ST', 'CF', 'LW'],
+  CF: ['ST', 'CAM', 'RW', 'LW'],
+  ST: ['CF', 'CAM', 'RW', 'LW']
 });
 
 // =======================
