@@ -2935,73 +2935,6 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 // MAIN INTERACTION HANDLER
 // =======================
 
-// Helper: Send a reply that auto-deletes after specified seconds (for non-panel messages)
-async function sendAutoDeleteReply(interaction, options, deleteAfterSeconds = 300) {
-  try {
-    const reply = await interaction.reply({ ...options, fetchReply: true });
-    if (reply && deleteAfterSeconds > 0 && !options.components?.length) {
-      setTimeout(() => {
-        reply.delete().catch(() => {});
-      }, deleteAfterSeconds * 1000);
-    }
-    return reply;
-  } catch (err) {
-    console.error('[AutoDelete] Error sending reply:', err.message);
-    throw err;
-  }
-}
-
-// Helper: Edit reply that auto-deletes after specified seconds
-async function editAutoDeleteReply(interaction, options, deleteAfterSeconds = 300) {
-  try {
-    const reply = await interaction.editReply({ ...options, fetchReply: true });
-    // Only auto-delete if no components (panels should persist)
-    if (reply && deleteAfterSeconds > 0 && !options.components?.length) {
-      setTimeout(() => {
-        reply.delete().catch(() => {});
-      }, deleteAfterSeconds * 1000);
-    }
-    return reply;
-  } catch (err) {
-    console.error('[AutoDelete] Error editing reply:', err.message);
-    throw err;
-  }
-}
-
-// Helper: Safe interaction reply with timeout handling
-async function safeReply(interaction, options) {
-  try {
-    if (interaction.deferred || interaction.replied) {
-      return await interaction.editReply(options);
-    } else {
-      return await interaction.reply(options);
-    }
-  } catch (err) {
-    if (err.code === 10062) {
-      console.warn('[SafeReply] Interaction expired, skipping reply');
-      return null;
-    }
-    throw err;
-  }
-}
-
-// Helper: Safe defer with timeout handling  
-async function safeDefer(interaction, options = {}) {
-  try {
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferReply(options);
-      return true;
-    }
-    return false;
-  } catch (err) {
-    if (err.code === 10062) {
-      console.warn('[SafeDefer] Interaction expired');
-      return false;
-    }
-    throw err;
-  }
-}
-
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     // Handle DM interactions for ready check position selection
@@ -3272,10 +3205,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setColor(0x5865f2)
           .setDescription(lines.length ? lines.join('\n') : 'No one is currently slotted for this club.');
 
-        // Auto-delete after 5 minutes (non-panel informational message)
-        const msg = await interaction.reply({ embeds: [embed], fetchReply: true });
-        setTimeout(() => msg.delete().catch(() => {}), 5 * 60 * 1000);
-        return;
+        return interaction.reply({ embeds: [embed] });
       }
 
       if (cmd === 'pospanel') {
@@ -3372,12 +3302,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setColor(0x5865f2)
           .setDescription(`Voice: ${voiceChannel} • **${members.length}** player(s)`)
           .addFields(fields)
-          .setFooter({ text: 'Players without saved preferences not shown. • Auto-deletes in 5 min' });
+          .setFooter({ text: 'Players without saved preferences not shown.' });
 
-        // Auto-delete after 5 minutes
-        const msg = await interaction.reply({ embeds: [embed], fetchReply: true });
-        setTimeout(() => msg.delete().catch(() => {}), 5 * 60 * 1000);
-        return;
+        return interaction.reply({ embeds: [embed] });
+      }
 
       if (cmd === 'posprefs') {
         const guild = interaction.guild;
@@ -4640,14 +4568,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const id = interaction.customId;
 
       if (id === 'open_prefs') {
-        if (!await safeDefer(interaction, { flags: 64 })) return;
-        
         const existing = await getUserPrefs(guildId, interaction.user.id);
         const formationData = getFormationForUserVc(interaction.member, state);
         
-        return interaction.editReply({
+        return interaction.reply({
           embeds: [buildPrefsEmbed(existing, formationData?.formationName)],
-          components: buildPrefComponents(existing, formationData?.positions)
+          components: buildPrefComponents(existing, formationData?.positions),
+          flags: 64
         });
       }
 
@@ -4670,11 +4597,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       if (id === 'squadiq_spotpanel') {
-        if (!await safeDefer(interaction, { flags: 64 })) return;
-        
-        return interaction.editReply({
+        return interaction.reply({
           embeds: [buildEmbedForClub(guildId, state.currentClubKey, state)],
-          components: buildAdminComponents(guildId, state.currentClubKey, state)
+          components: buildAdminComponents(guildId, state.currentClubKey, state),
+          flags: 64
         });
       }
 
@@ -5469,9 +5395,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       // Formation menu button
       if (id.startsWith('formation_menu_')) {
-        // Defer immediately to prevent timeout
-        if (!await safeDefer(interaction, { flags: 64 })) return;
-        
         const clubKey = id.substring('formation_menu_'.length);
         const clubBoard = boardState[clubKey] || createEmptyBoardForFormation(DEFAULT_FORMATION);
         const currentFormation = clubBoard.formation || DEFAULT_FORMATION;
@@ -5512,9 +5435,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
           rows.push(new ActionRowBuilder().addComponents(select));
         });
 
-        return interaction.editReply({
+        return interaction.reply({
           content: 'Choose a formation. Current players will be moved into the closest matching spots.',
-          components: rows
+          components: rows,
+          flags: 64
         });
       }
 
@@ -5526,7 +5450,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         const clubBoard = boardState[clubKey];
         if (!clubBoard || !clubBoard.slots[index]) {
-          return safeReply(interaction, { content: 'This spot no longer exists.', flags: 64 });
+          return interaction.reply({ content: 'This spot no longer exists.', flags: 64 });
         }
 
         const slot = clubBoard.slots[index];
@@ -7078,28 +7002,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
     }
-    }
   } catch (err) {
-    // Handle Discord's "Unknown interaction" error gracefully (interaction timed out)
-    if (err.code === 10062) {
-      console.warn('[Interaction] Interaction expired (10062) - user may have waited too long');
-      return;
-    }
-    
     console.error('❌ Error handling interaction:', err);
-    
-    // Try to respond to the user
-    try {
-      if (!interaction.replied && !interaction.deferred) {
-        await interaction.reply({ content: '❌ An error occurred processing your request.', flags: 64 });
-      } else if (interaction.deferred) {
-        await interaction.editReply({ content: '❌ An error occurred processing your request.' });
-      }
-    } catch (replyErr) {
-      // If we can't reply, the interaction likely expired - that's fine
-      if (replyErr.code !== 10062) {
-        console.error('[Interaction] Failed to send error reply:', replyErr.message);
-      }
+    if (!interaction.replied && !interaction.deferred) {
+      try {
+        await interaction.reply({ content: 'An error occurred.', flags: 64 });
+      } catch (e) {}
     }
   }
 });
