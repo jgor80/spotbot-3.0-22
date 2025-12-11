@@ -7586,8 +7586,24 @@ async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
         }
       }
       
+      // Create feedback requests for club match participants
+      await createClubMatchFeedbackRequests(guildId, matchId, playerStats);
+      
       synced++;
       existingIds.add(matchId); // Prevent processing same match twice
+    }
+    
+    // Auto-send feedback DMs after syncing matches
+    if (synced > 0) {
+      try {
+        const guild = await client.guilds.fetch(guildId).catch(() => null);
+        if (guild) {
+          const feedbackResult = await sendPendingFeedbackDMs(guildId, guild);
+          console.log(`[EA] Auto-sent ${feedbackResult.sent} feedback DMs after sync`);
+        }
+      } catch (feedbackErr) {
+        console.error(`[EA] Error auto-sending feedback DMs:`, feedbackErr.message);
+      }
     }
     
     // Update last_match_id to most recent
