@@ -21,9 +21,149 @@ const {
 } = require('discord.js');
 
 const { createClient } = require('@supabase/supabase-js');
-const { searchClub, matchesStats } = require('eafc-clubs-api');
+const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+
+// =======================
+// EA FC API CONFIGURATION
+// =======================
+
+// Platform mapping from Discord choices to EA API values
+const EA_PLATFORM_MAP = {
+  'ps5': 'common-gen5',
+  'xbox-series-xs': 'common-gen5',
+  'pc': 'common-gen5',
+  'ps4': 'common-gen4',
+  'xboxone': 'common-gen4'
+};
+
+// Headers to avoid Akamai blocking
+const EA_HEADERS = {
+  'accept': 'application/json',
+  'accept-language': 'en-US,en;q=0.9',
+  'content-type': 'application/json',
+  'dnt': '1',
+  'origin': 'https://www.ea.com',
+  'referer': 'https://www.ea.com/',
+  'sec-ch-ua': '"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"',
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"Windows"',
+  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
+};
+
+/**
+ * Search for clubs on EA FC Pro Clubs API
+ * @param {Object} options - { name: string, platform: string }
+ * @returns {Array} - Array of club objects with clubId, name, etc.
+ */
+async function searchClub(options) {
+  const { name, platform } = options;
+  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  
+  console.log(`[EA] Searching for club "${name}" on platform ${platform} -> ${fcPlatform}`);
+  
+  try {
+    const res = await axios.get('https://proclubs.ea.com/api/fc/allTimeLeaderboard/search', {
+      params: {
+        platform: fcPlatform,
+        clubName: name
+      },
+      headers: EA_HEADERS,
+      timeout: 10000,
+      validateStatus: () => true
+    });
+    
+    console.log(`[EA] Search response status: ${res.status}`);
+    
+    if (res.status !== 200 || !res.data) {
+      return [];
+    }
+    
+    let data = res.data;
+    
+    // Handle wrapped responses (keyed at "0")
+    if (data && typeof data === 'object' && data['0']) {
+      data = data['0'];
+    }
+    
+    let rows = [];
+    if (Array.isArray(data)) {
+      rows = data;
+    } else if (data && typeof data === 'object') {
+      rows = Object.values(data).filter(v => v && typeof v === 'object');
+    }
+    
+    const results = [];
+    for (const row of rows) {
+      const info = row.clubInfo || row.clubinfo || row.info || row;
+      if (!info || typeof info !== 'object') continue;
+      
+      const clubId = String(info.clubId ?? info.clubID ?? info.id ?? info.club ?? '');
+      if (!clubId) continue;
+      
+      results.push({
+        clubId,
+        name: info.name || info.clubName || info.clubname || name,
+        region: info.regionName || info.region || info.countryName || null,
+        division: info.division || info.leagueDivision || info.bestDivision || null,
+        platform: fcPlatform,
+        raw: info
+      });
+    }
+    
+    console.log(`[EA] Found ${results.length} clubs matching "${name}"`);
+    return results;
+    
+  } catch (err) {
+    console.error(`[EA] Search error for "${name}" on ${fcPlatform}:`, err.message);
+    throw err;
+  }
+}
+
+/**
+ * Fetch match stats from EA FC Pro Clubs API
+ * @param {Object} options - { clubId: string, platform: string, matchType: string }
+ * @returns {Array} - Array of match objects
+ */
+async function matchesStats(options) {
+  const { clubId, platform, matchType = 'leagueMatch' } = options;
+  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  
+  console.log(`[EA] Fetching ${matchType} for club ${clubId} on ${fcPlatform}`);
+  
+  try {
+    const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
+      params: {
+        platform: fcPlatform,
+        clubIds: clubId,
+        matchType,
+        maxResultCount: 50
+      },
+      headers: EA_HEADERS,
+      timeout: 10000,
+      validateStatus: () => true
+    });
+    
+    if (res.status !== 200 || !res.data) {
+      return [];
+    }
+    
+    let matches = res.data;
+    if (Array.isArray(matches)) {
+      return matches;
+    } else if (matches && typeof matches === 'object') {
+      // Handle different response formats
+      if (Array.isArray(matches.matches)) return matches.matches;
+      return Object.values(matches).filter(v => v && typeof v === 'object');
+    }
+    
+    return [];
+  } catch (err) {
+    console.error(`[EA] Match stats error for club ${clubId}:`, err.message);
+    throw err;
+  }
+}
 
 // =======================
 // ENVIRONMENT & SETUP
