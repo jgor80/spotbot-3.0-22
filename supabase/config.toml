@@ -53,3 +53,6 @@ verify_jwt = false
 
 [functions.sync-ea-stats]
 verify_jwt = false
+
+[functions.get-service-key]
+verify_jwt = false
