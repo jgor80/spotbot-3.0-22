@@ -508,6 +508,16 @@ async function syncMatches(guildId, clubKey, club) {
         if (!updatedPlayerIds.includes(profile.discord_user_id)) {
           updatedPlayerIds.push(profile.discord_user_id);
         }
+        
+        // Update position ratings tally
+        if (pStat.position) {
+          await updatePositionRating(guildId, profile.discord_user_id, pStat.position, {
+            goals: pStat.goals,
+            assists: pStat.assists,
+            rating: pStat.rating,
+            won: result === 'win'
+          });
+        }
       }
     }
     
@@ -545,6 +555,77 @@ async function syncMatches(guildId, clubKey, club) {
   }
   
   return { synced, skipped, playerStats: playerStatsCount, updatedPlayerIds };
+}
+
+// Update position rating tally for a player
+async function updatePositionRating(guildId, discordUserId, position, stats) {
+  // Normalize position
+  const positionMap = {
+    'goalkeeper': 'GK', 'gk': 'GK',
+    'defender': 'CB', 'cb': 'CB', 'rb': 'RB', 'lb': 'LB', 'rwb': 'RWB', 'lwb': 'LWB',
+    'midfielder': 'CM', 'cm': 'CM', 'cdm': 'CDM', 'cam': 'CAM', 'rm': 'RM', 'lm': 'LM',
+    'attacker': 'ST', 'st': 'ST', 'cf': 'CF', 'rw': 'RW', 'lw': 'LW', 'rf': 'RF', 'lf': 'LF'
+  };
+  
+  const normalizedPosition = positionMap[position.toLowerCase()] || position.toUpperCase();
+  
+  // Get existing position rating
+  const { data: existing } = await supabase
+    .from('player_position_ratings')
+    .select('*')
+    .eq('guild_id', guildId)
+    .eq('discord_user_id', discordUserId)
+    .eq('position', normalizedPosition)
+    .maybeSingle();
+  
+  if (existing) {
+    // Update existing tally
+    const newGames = existing.games_at_position + 1;
+    const newGoals = existing.goals_at_position + (stats.goals || 0);
+    const newAssists = existing.assists_at_position + (stats.assists || 0);
+    
+    // Calculate rolling average for match rating
+    const currentAvg = existing.avg_match_rating || 0;
+    const newAvg = currentAvg > 0 
+      ? (currentAvg * existing.games_at_position + stats.rating) / newGames
+      : stats.rating;
+    
+    // Recalculate position rating based on performance
+    const winRate = stats.won ? 1 : 0;
+    const currentRating = existing.rating || 50;
+    const performanceBonus = (stats.goals * 3) + (stats.assists * 2) + (stats.rating / 10);
+    const newRating = Math.min(100, Math.max(0, 
+      currentRating + (performanceBonus * 0.1) + (winRate * 2 - 1)
+    ));
+    
+    await supabase
+      .from('player_position_ratings')
+      .update({
+        games_at_position: newGames,
+        goals_at_position: newGoals,
+        assists_at_position: newAssists,
+        avg_match_rating: newAvg,
+        rating: newRating,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', existing.id);
+  } else {
+    // Insert new position rating
+    const initialRating = 50 + (stats.rating / 10) + (stats.goals * 2) + stats.assists;
+    
+    await supabase
+      .from('player_position_ratings')
+      .insert({
+        guild_id: guildId,
+        discord_user_id: discordUserId,
+        position: normalizedPosition,
+        games_at_position: 1,
+        goals_at_position: stats.goals || 0,
+        assists_at_position: stats.assists || 0,
+        avg_match_rating: stats.rating || 0,
+        rating: Math.min(100, Math.max(0, initialRating))
+      });
+  }
 }
 
 // Trigger rating recalculation for players with new stats
