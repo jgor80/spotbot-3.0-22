@@ -95,18 +95,35 @@ serve(async (req) => {
 
     if (error) throw error;
 
-    // Enhance with ranking and tier
+    // Get EA usernames from profiles
+    const discordIds = (players || []).map(p => p.discord_user_id);
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("discord_user_id, ea_username")
+      .in("discord_user_id", discordIds);
+
+    const eaUsernameMap = new Map(
+      (profiles || []).map(p => [p.discord_user_id, p.ea_username])
+    );
+
+    // Enhance with ranking, tier, and EA username
     const leaderboard = (players || []).map((player, index) => ({
       rank: index + 1,
       discord_user_id: player.discord_user_id,
       discord_username: player.discord_username,
+      ea_username: eaUsernameMap.get(player.discord_user_id) || null,
       overall_rating: player.overall_rating,
       rating_tier: getRatingTier(player.overall_rating),
       games_played: player.games_played,
       wins: player.wins,
+      losses: player.losses,
+      draws: player.draws,
       win_rate: player.win_rate,
       goals: player.goals,
       assists: player.assists,
+      clean_sheets: player.clean_sheets,
+      man_of_match: player.man_of_match,
+      avg_match_rating: player.avg_match_rating,
       form_rating: player.form_rating,
       current_streak: player.current_streak,
       streak_type: player.streak_type,

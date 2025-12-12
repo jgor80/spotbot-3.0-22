@@ -62,10 +62,13 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
                 <TableCell>
                   <div className="flex items-center gap-3">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-medium text-sm">
-                      {player.discord_username?.charAt(0).toUpperCase() || "?"}
+                      {(player.ea_username || player.discord_username)?.charAt(0).toUpperCase() || "?"}
                     </div>
                     <div>
-                      <p className="font-medium">{player.discord_username || "Unknown"}</p>
+                      <p className="font-medium">{player.ea_username || player.discord_username || "Unknown"}</p>
+                      {player.ea_username && player.discord_username && (
+                        <p className="text-xs text-muted-foreground">{player.discord_username}</p>
+                      )}
                       {player.primary_position && (
                         <Badge variant="outline" className="text-xs mt-0.5">
                           {player.primary_position}
