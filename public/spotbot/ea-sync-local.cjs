@@ -380,6 +380,14 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
         .eq('discord_user_id', profile.discord_user_id)
         .maybeSingle();
       
+      // Define positionMap before using it in summaryData
+      const positionMap = {
+        'goalkeeper': 'GK', 'gk': 'GK',
+        'defender': 'CB', 'cb': 'CB', 'rb': 'RB', 'lb': 'LB', 'rwb': 'RWB', 'lwb': 'LWB',
+        'midfielder': 'CM', 'cm': 'CM', 'cdm': 'CDM', 'cam': 'CAM', 'rm': 'RM', 'lm': 'LM',
+        'attacker': 'ST', 'st': 'ST', 'cf': 'CF', 'rw': 'RW', 'lw': 'LW', 'rf': 'RF', 'lf': 'LF'
+      };
+      
       const summaryData = {
         guild_id: guildId,
         discord_user_id: profile.discord_user_id,
@@ -404,18 +412,6 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
         last_active_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
-      
-      // Define positionMap in scope for summary
-      const positionMap = {
-        'goalkeeper': 'GK', 'gk': 'GK',
-        'defender': 'CB', 'cb': 'CB', 'rb': 'RB', 'lb': 'LB', 'rwb': 'RWB', 'lwb': 'LWB',
-        'midfielder': 'CM', 'cm': 'CM', 'cdm': 'CDM', 'cam': 'CAM', 'rm': 'RM', 'lm': 'LM',
-        'attacker': 'ST', 'st': 'ST', 'cf': 'CF', 'rw': 'RW', 'lw': 'LW', 'rf': 'RF', 'lf': 'LF'
-      };
-      
-      if (position) {
-        summaryData.primary_position = positionMap[position.toLowerCase()] || position.toUpperCase();
-      }
       
       if (existingSummary) {
         await supabase
