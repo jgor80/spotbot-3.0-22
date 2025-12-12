@@ -111,6 +111,24 @@ export default function ScoutingPage() {
     enabled: !!selectedGuildId,
   });
 
+  // Fetch saved scouting reports
+  const { data: savedReports, refetch: refetchReports } = useQuery({
+    queryKey: ["scoutingReports", selectedGuildId],
+    queryFn: async () => {
+      if (!selectedGuildId) return [];
+      
+      const { data, error } = await supabase
+        .from("scouting_reports")
+        .select("*")
+        .eq("guild_id", selectedGuildId)
+        .order("updated_at", { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedGuildId,
+  });
+
   // Fetch aggregate stats for all players with EA usernames
   const { data: aggregateStats, isLoading: aggregateLoading } = useQuery({
     queryKey: ["aggregateStats", selectedGuildId],
@@ -199,6 +217,23 @@ export default function ScoutingPage() {
     enabled: !!selectedGuildId,
   });
 
+  // Load existing report when player is selected
+  const loadExistingReport = (playerId: string) => {
+    const existingReport = savedReports?.find(r => r.discord_user_id === playerId);
+    if (existingReport) {
+      setPlayerScoutReport(existingReport.report_content);
+      setPlayerData(existingReport.player_data);
+    } else {
+      setPlayerScoutReport(null);
+      setPlayerData(null);
+    }
+  };
+
+  const handlePlayerSelect = (playerId: string) => {
+    setSelectedPlayerId(playerId);
+    loadExistingReport(playerId);
+  };
+
   const handleScoutPlayer = async () => {
     if (!selectedPlayerId || !selectedGuildId) return;
     
@@ -225,9 +260,12 @@ export default function ScoutingPage() {
       setPlayerScoutReport(data.analysis);
       setPlayerData(data.player_data);
       
+      // Refetch saved reports to update cache
+      refetchReports();
+      
       toast({
         title: "Scout Report Ready",
-        description: "AI analysis complete",
+        description: "AI analysis complete and saved",
       });
     } catch (error) {
       toast({
@@ -363,31 +401,40 @@ Focus on controlling midfield to limit their counter-attacks.
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex gap-2">
-                  <Select value={selectedPlayerId} onValueChange={setSelectedPlayerId}>
+                  <Select value={selectedPlayerId} onValueChange={handlePlayerSelect}>
                     <SelectTrigger className="flex-1">
                       <SelectValue placeholder="Select a player to scout..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {players?.map((player) => (
-                        <SelectItem key={player.discord_user_id} value={player.discord_user_id}>
-                          <span className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs">
-                              {player.overall_rating.toFixed(1)}
-                            </Badge>
-                            {player.discord_username || player.discord_user_id}
-                            {player.primary_position && (
-                              <span className="text-muted-foreground text-xs">
-                                ({player.primary_position})
-                              </span>
-                            )}
-                          </span>
-                        </SelectItem>
-                      ))}
+                      {players?.map((player) => {
+                        const hasReport = savedReports?.some(r => r.discord_user_id === player.discord_user_id);
+                        return (
+                          <SelectItem key={player.discord_user_id} value={player.discord_user_id}>
+                            <span className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">
+                                {player.overall_rating.toFixed(1)}
+                              </Badge>
+                              {player.discord_username || player.discord_user_id}
+                              {player.primary_position && (
+                                <span className="text-muted-foreground text-xs">
+                                  ({player.primary_position})
+                                </span>
+                              )}
+                              {hasReport && (
+                                <Badge variant="secondary" className="text-xs ml-1">
+                                  Report
+                                </Badge>
+                              )}
+                            </span>
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                   <Button 
                     onClick={handleScoutPlayer} 
                     disabled={isScoutingPlayer || !selectedPlayerId}
+                    title={playerScoutReport ? "Regenerate Report" : "Generate Report"}
                   >
                     {isScoutingPlayer ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -396,6 +443,16 @@ Focus on controlling midfield to limit their counter-attacks.
                     )}
                   </Button>
                 </div>
+
+                {/* Show existing report timestamp if viewing saved report */}
+                {selectedPlayerId && savedReports?.find(r => r.discord_user_id === selectedPlayerId) && !isScoutingPlayer && (
+                  <div className="text-xs text-muted-foreground flex items-center gap-2">
+                    <span>Last updated: {format(new Date(savedReports.find(r => r.discord_user_id === selectedPlayerId)!.updated_at), "PPp")}</span>
+                    <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={handleScoutPlayer}>
+                      Refresh Report
+                    </Button>
+                  </div>
+                )}
 
                 {isScoutingPlayer && (
                   <div className="flex items-center justify-center py-12">
