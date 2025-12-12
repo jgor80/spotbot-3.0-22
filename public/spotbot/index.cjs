@@ -5362,6 +5362,78 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
+      // Auto-link confirmation buttons (from DM)
+      if (id.startsWith('autolink_confirm_')) {
+        const parts = id.substring('autolink_confirm_'.length).split('_');
+        const eaUsername = parts.slice(0, -1).join('_'); // Handle usernames with underscores
+        const eaPlatform = parts[parts.length - 1];
+        
+        try {
+          // Check if already linked
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('id, ea_username')
+            .eq('discord_user_id', interaction.user.id)
+            .maybeSingle();
+          
+          if (existingProfile?.ea_username) {
+            return interaction.update({
+              content: `✅ You're already linked to EA account **${existingProfile.ea_username}**!`,
+              embeds: [],
+              components: []
+            });
+          }
+          
+          // Link the account
+          if (existingProfile) {
+            await supabase
+              .from('profiles')
+              .update({
+                ea_username: eaUsername,
+                ea_platform: eaPlatform,
+                updated_at: new Date().toISOString()
+              })
+              .eq('discord_user_id', interaction.user.id);
+          } else {
+            await supabase
+              .from('profiles')
+              .insert({
+                discord_user_id: interaction.user.id,
+                discord_username: interaction.user.username,
+                ea_username: eaUsername,
+                ea_platform: eaPlatform
+              });
+          }
+          
+          const embed = new EmbedBuilder()
+            .setTitle('✅ EA Account Linked!')
+            .setColor(0x00ff00)
+            .setDescription(
+              `Your EA account **${eaUsername}** has been linked!\n\n` +
+              `Your stats from club matches will now be automatically tracked and contribute to your ratings.`
+            )
+            .setFooter({ text: 'Welcome to SquadIQ!' });
+          
+          return interaction.update({ content: null, embeds: [embed], components: [] });
+        } catch (err) {
+          console.error('[AutoLink Confirm] Error:', err);
+          return interaction.update({
+            content: `❌ Error linking account: ${err.message}`,
+            embeds: [],
+            components: []
+          });
+        }
+      }
+      
+      // Auto-link dismiss button
+      if (id === 'autolink_dismiss') {
+        return interaction.update({
+          content: 'No problem! You can always link your EA account later using `/linkea` in the server.',
+          embeds: [],
+          components: []
+        });
+      }
+
       // Availability response buttons
       if (id.startsWith('avail_')) {
         const parts = id.split('_');
@@ -7847,6 +7919,9 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
     // Create feedback requests for players in this match
     await createClubMatchFeedbackRequests(guildId, matchId, playerStats);
     
+    // Auto-link: DM unlinked players suggesting they link their EA account
+    await promptUnlinkedPlayersToLink(guildId, club, playerStats);
+    
     console.log(`[EA] Processed match ${matchId}: ${result} ${scoreFor}-${scoreAgainst} vs ${opponentName}`);
     
   } catch (err) {
@@ -7926,6 +8001,142 @@ async function createClubMatchFeedbackRequests(guildId, eaMatchId, playerStats) 
     console.error(`[Feedback] Error creating club match feedback requests:`, err);
   }
 }
+
+// Auto-link: DM unlinked players prompting them to link their EA account
+async function promptUnlinkedPlayersToLink(guildId, club, playerStats) {
+  try {
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) return;
+    
+    for (const pStat of playerStats) {
+      // Check if this EA username is already linked to a profile
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('discord_user_id')
+        .eq('ea_username', pStat.ea_username)
+        .maybeSingle();
+      
+      if (existingProfile) {
+        // Already linked, skip
+        continue;
+      }
+      
+      // Try to fuzzy-match EA username to Discord members
+      const eaName = pStat.ea_username?.toLowerCase() || '';
+      if (!eaName) continue;
+      
+      // Search for members with similar display names or usernames
+      let potentialMatch = null;
+      
+      try {
+        // Try exact match first
+        const members = await guild.members.fetch({ query: eaName, limit: 5 });
+        
+        for (const [memberId, member] of members) {
+          const displayName = member.displayName?.toLowerCase() || '';
+          const username = member.user.username?.toLowerCase() || '';
+          
+          // Check for close match (contains or exact)
+          if (displayName === eaName || username === eaName ||
+              displayName.includes(eaName) || eaName.includes(displayName) ||
+              username.includes(eaName) || eaName.includes(username)) {
+            potentialMatch = member;
+            break;
+          }
+        }
+        
+        // If no match found, also check nickname similarity
+        if (!potentialMatch) {
+          const allMembers = await guild.members.fetch();
+          for (const [memberId, member] of allMembers) {
+            const displayName = member.displayName?.toLowerCase() || '';
+            const username = member.user.username?.toLowerCase() || '';
+            
+            // Calculate similarity score
+            const similarity = Math.max(
+              getSimilarity(displayName, eaName),
+              getSimilarity(username, eaName)
+            );
+            
+            if (similarity > 0.7) {
+              potentialMatch = member;
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        console.log(`[AutoLink] Error searching for member matching ${eaName}:`, err.message);
+      }
+      
+      if (potentialMatch) {
+        // Check if we've already DMed this user recently (avoid spam)
+        const recentDmKey = `autolink_${potentialMatch.id}`;
+        const now = Date.now();
+        
+        if (!autoLinkDmCache.has(recentDmKey) || (now - autoLinkDmCache.get(recentDmKey)) > 24 * 60 * 60 * 1000) {
+          try {
+            const embed = new EmbedBuilder()
+              .setTitle('🎮 Link Your EA Account!')
+              .setColor(0x5865f2)
+              .setDescription(
+                `Hey! We detected **${pStat.ea_username}** playing for **${club.name}** and think it might be you!\n\n` +
+                `Link your EA account to automatically track your stats, goals, assists, ratings, and more!`
+              )
+              .addFields(
+                { name: '📊 What You Get', value: '• Automatic stat tracking\n• Personal performance ratings\n• Position-based analytics\n• Form and streak tracking', inline: false }
+              )
+              .setFooter({ text: 'Click the button below to link your EA account' });
+            
+            const row = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`autolink_confirm_${pStat.ea_username}_${club.ea_platform || 'ps5'}`)
+                .setLabel(`Yes, I'm ${pStat.ea_username}`)
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId('autolink_dismiss')
+                .setLabel("That's not me")
+                .setStyle(ButtonStyle.Secondary)
+            );
+            
+            await potentialMatch.send({ embeds: [embed], components: [row] });
+            autoLinkDmCache.set(recentDmKey, now);
+            console.log(`[AutoLink] DM sent to ${potentialMatch.user.username} suggesting EA account: ${pStat.ea_username}`);
+          } catch (dmErr) {
+            console.log(`[AutoLink] Could not DM ${potentialMatch.user.username}: ${dmErr.message}`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[AutoLink] Error prompting unlinked players:', err);
+  }
+}
+
+// Simple string similarity function
+function getSimilarity(str1, str2) {
+  if (!str1 || !str2) return 0;
+  str1 = str1.toLowerCase();
+  str2 = str2.toLowerCase();
+  
+  if (str1 === str2) return 1;
+  if (str1.includes(str2) || str2.includes(str1)) return 0.8;
+  
+  // Levenshtein distance-based similarity
+  const longer = str1.length > str2.length ? str1 : str2;
+  const shorter = str1.length > str2.length ? str2 : str1;
+  
+  if (longer.length === 0) return 1;
+  
+  let matchCount = 0;
+  for (let i = 0; i < shorter.length; i++) {
+    if (longer.includes(shorter[i])) matchCount++;
+  }
+  
+  return matchCount / longer.length;
+}
+
+// Cache to prevent spamming auto-link DMs
+const autoLinkDmCache = new Map();
 
 // Send pending feedback DMs to players
 async function sendPendingFeedbackDMs(guildId, guild) {

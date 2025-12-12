@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.claim-competition-win]
 verify_jwt = false
+
+[functions.sync-ea-stats]
+verify_jwt = false
