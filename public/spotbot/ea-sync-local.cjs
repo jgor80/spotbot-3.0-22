@@ -335,27 +335,32 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
       }
     }
     
-    // Extract ALL aggregate stats from EA member data
+    // Extract ALL aggregate stats from EA member data (matching EA website fields)
     const goals = parseInt(member.goals || 0);
     const assists = parseInt(member.assists || 0);
-    const gamesPlayed = parseInt(member.gamesPlayed || member.matches || 0);
+    const gamesPlayed = parseInt(member.gamesPlayed || member.matches || member.memberGamesPlayed || 0);
     const wins = parseInt(member.wins || 0);
     const losses = parseInt(member.losses || 0);
     const draws = gamesPlayed - wins - losses;
-    const avgRating = parseFloat(member.ratingAve || member.avgRating || 0);
+    const avgRating = parseFloat(member.ratingAve || member.avgRating || member.proOverall || 0);
     const cleanSheets = parseInt(member.cleanSheetsDef || member.cleanSheetsGK || member.cleanSheets || 0);
     const manOfMatch = parseInt(member.manOfTheMatch || member.mom || 0);
     const position = favoritePosition;
     const winRate = gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0;
     
-    // Extended stats from EA API
+    // Extended stats from EA API (all fields visible on EA club member page)
     const shots = parseInt(member.shots || 0);
-    const tackles = parseInt(member.tacklesmade || member.tackles || 0);
+    const tackles = parseInt(member.tacklesmade || member.tacklesMade || member.tackles || 0);
+    const tackleAttempts = parseInt(member.tackleattempts || member.tackleAttempts || 0);
+    const tackleSuccessRate = tackleAttempts > 0 ? (tackles / tackleAttempts) * 100 : 0;
     const passesMade = parseInt(member.passesmade || member.passesMade || 0);
     const passAttempts = parseInt(member.passattempts || member.passAttempts || 0);
+    const passSuccessRate = passAttempts > 0 ? (passesMade / passAttempts) * 100 : 0;
     const saves = parseInt(member.saves || member.gksaves || member.gkSaves || 0);
     const interceptions = parseInt(member.interceptions || 0);
     const clearances = parseInt(member.clearances || 0);
+    
+    console.log(`  📊 ${eaUsername}: ${gamesPlayed} games, ${goals}G/${assists}A, ${winRate.toFixed(1)}% win, ${passSuccessRate.toFixed(1)}% pass, ${tackleSuccessRate.toFixed(1)}% tackle`);
     
     // Skip temp profiles for rating updates (only real Discord users)
     const isRealUser = !profile.discord_user_id.startsWith('ea_');
