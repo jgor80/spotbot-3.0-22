@@ -64,6 +64,8 @@ interface AggregatePlayerStats {
   form_rating: number | null;
   reliability_score: number | null;
   achievement_count: number;
+  ea_username?: string | null;
+  ea_platform?: string | null;
 }
 
 export default function ScoutingPage() {
@@ -99,13 +101,14 @@ export default function ScoutingPage() {
     enabled: !!selectedGuildId,
   });
 
-  // Fetch aggregate stats for all players
+  // Fetch aggregate stats for all players with EA usernames
   const { data: aggregateStats, isLoading: aggregateLoading } = useQuery({
     queryKey: ["aggregateStats", selectedGuildId],
     queryFn: async (): Promise<AggregatePlayerStats[]> => {
       if (!selectedGuildId) return [];
       
-      const { data, error } = await supabase
+      // Fetch player summary
+      const { data: summaryData, error: summaryError } = await supabase
         .from("player_summary")
         .select(`
           discord_user_id,
@@ -124,8 +127,25 @@ export default function ScoutingPage() {
         .eq("guild_id", selectedGuildId)
         .order("overall_rating", { ascending: false });
       
-      if (error) throw error;
-      return data || [];
+      if (summaryError) throw summaryError;
+      
+      // Fetch profiles for EA usernames
+      const discordIds = (summaryData || []).map(p => p.discord_user_id);
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("discord_user_id, ea_username, ea_platform")
+        .in("discord_user_id", discordIds);
+      
+      // Merge EA usernames into player stats
+      const profileMap = new Map(
+        (profilesData || []).map(p => [p.discord_user_id, p])
+      );
+      
+      return (summaryData || []).map(player => ({
+        ...player,
+        ea_username: profileMap.get(player.discord_user_id)?.ea_username || null,
+        ea_platform: profileMap.get(player.discord_user_id)?.ea_platform || null
+      }));
     },
     enabled: !!selectedGuildId,
   });
@@ -617,15 +637,24 @@ Focus on controlling midfield to limit their counter-attacks.
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold">
-                                  {(player.discord_username || player.discord_user_id).charAt(0).toUpperCase()}
+                                  {(player.ea_username || player.discord_username || player.discord_user_id).charAt(0).toUpperCase()}
                                 </div>
                                 <div>
-                                  <p className="font-medium">{player.discord_username || player.discord_user_id}</p>
-                                  {player.primary_position && (
-                                    <Badge variant="outline" className="text-xs">
-                                      {player.primary_position}
-                                    </Badge>
-                                  )}
+                                  <p className="font-medium">
+                                    {player.ea_username || player.discord_username || player.discord_user_id}
+                                  </p>
+                                  <div className="flex items-center gap-1">
+                                    {player.primary_position && (
+                                      <Badge variant="outline" className="text-xs">
+                                        {player.primary_position}
+                                      </Badge>
+                                    )}
+                                    {player.ea_username && player.discord_username && (
+                                      <span className="text-xs text-muted-foreground">
+                                        ({player.discord_username})
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </TableCell>
