@@ -44,6 +44,24 @@ interface ClubMatch {
   created_at: string;
 }
 
+interface RecentResultsHighlight {
+  ratings: { name: string; avg: number; matches: number }[];
+  goals: { name: string; goals: number; conversion: number; shots: number }[];
+  assists: { name: string; assists: number }[];
+  passes: { name: string; passes: number; success: number }[];
+  tackles: { name: string; tackles: number }[];
+  dribbles: { name: string; dribbles: number }[];
+  interceptions: { name: string; interceptions: number }[];
+  saves: { name: string; saves: number }[];
+}
+
+interface RecentResultsResponse {
+  window_size: number;
+  recent_matches: ClubMatch[];
+  player_highlights: RecentResultsHighlight;
+  ai_summary?: string;
+}
+
 interface PlayerSummary {
   discord_user_id: string;
   discord_username: string | null;
@@ -232,6 +250,23 @@ export default function ScoutingPage() {
       
       if (error) throw error;
       return data || [];
+    },
+    enabled: !!selectedGuildId,
+  });
+
+  // Fetch recent results with highlights and AI summary
+  const { data: recentResults, isLoading: recentResultsLoading } = useQuery({
+    queryKey: ["recentResults", selectedGuildId],
+    queryFn: async (): Promise<RecentResultsResponse | null> => {
+      if (!selectedGuildId) return null;
+
+      const { data, error } = await supabase.functions.invoke("recent-results", {
+        body: { guild_id: selectedGuildId, window_size: 5 },
+      });
+
+      if (error) throw error;
+      if (!data || data.error) throw new Error(data.error || "Failed to load results");
+      return data as RecentResultsResponse;
     },
     enabled: !!selectedGuildId,
   });
@@ -663,6 +698,159 @@ Focus on controlling midfield to limit their counter-attacks.
           </TabsContent>
 
           <TabsContent value="matches" className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card className="h-full">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5" />
+                    Last 5 Match Standouts
+                  </CardTitle>
+                  <CardDescription>
+                    Aggregated leaders from the most recent matches in your server
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {recentResultsLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : recentResults ? (
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground mb-1">Highest AMR</p>
+                          <div className="space-y-1">
+                            {recentResults.player_highlights.ratings.map((p) => (
+                              <div key={`rating-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                <span className="font-medium truncate">{p.name}</span>
+                                <span className="text-sm text-muted-foreground">{p.avg.toFixed(1)} AMR</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground mb-1">Top Goalscorers</p>
+                          <div className="space-y-1">
+                            {recentResults.player_highlights.goals.map((p) => (
+                              <div key={`goals-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                <span className="font-medium truncate">{p.name}</span>
+                                <span className="text-sm text-muted-foreground">{p.goals} G ({p.conversion}% conv)</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground mb-1">Top Assisters</p>
+                          <div className="space-y-1">
+                            {recentResults.player_highlights.assists.map((p) => (
+                              <div key={`assists-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                <span className="font-medium truncate">{p.name}</span>
+                                <span className="text-sm text-muted-foreground">{p.assists} assists</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground mb-1">Top Passers</p>
+                          <div className="space-y-1">
+                            {recentResults.player_highlights.passes.map((p) => (
+                              <div key={`passes-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                <span className="font-medium truncate">{p.name}</span>
+                                <span className="text-sm text-muted-foreground">{p.passes} passes ({p.success}% success)</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground mb-1">Top Tacklers</p>
+                          <div className="space-y-1">
+                            {recentResults.player_highlights.tackles.map((p) => (
+                              <div key={`tackles-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                <span className="font-medium truncate">{p.name}</span>
+                                <span className="text-sm text-muted-foreground">{p.tackles} tackles</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p className="text-xs uppercase text-muted-foreground mb-1">Dribblers</p>
+                            <div className="space-y-1">
+                              {recentResults.player_highlights.dribbles.map((p) => (
+                                <div key={`dribbles-${p.name}`} className="rounded-lg border bg-muted/40 px-3 py-2">
+                                  <p className="font-medium truncate">{p.name}</p>
+                                  <p className="text-xs text-muted-foreground">{p.dribbles} dribbles</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase text-muted-foreground mb-1">Interceptions</p>
+                            <div className="space-y-1">
+                              {recentResults.player_highlights.interceptions.map((p) => (
+                                <div key={`interceptions-${p.name}`} className="rounded-lg border bg-muted/40 px-3 py-2">
+                                  <p className="font-medium truncate">{p.name}</p>
+                                  <p className="text-xs text-muted-foreground">{p.interceptions} INT</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        {recentResults.player_highlights.saves.length > 0 && (
+                          <div>
+                            <p className="text-xs uppercase text-muted-foreground mb-1">Top Keepers</p>
+                            <div className="space-y-1">
+                              {recentResults.player_highlights.saves.map((p) => (
+                                <div key={`saves-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                  <span className="font-medium truncate">{p.name}</span>
+                                  <span className="text-sm text-muted-foreground">{p.saves} saves</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-10 text-center text-muted-foreground">
+                      <p>No recent matches yet</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="h-full">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5" />
+                    AI Recap (last 5)
+                  </CardTitle>
+                  <CardDescription>Quick digest of chemistry, form, and takeaways</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {recentResultsLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : recentResults?.ai_summary ? (
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <ReactMarkdown>{recentResults.ai_summary}</ReactMarkdown>
+                    </div>
+                  ) : recentResults ? (
+                    <div className="py-8 text-center text-muted-foreground">
+                      <p>Sync a few matches to generate an AI recap.</p>
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center text-muted-foreground">
+                      <p>Recent results not available.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">

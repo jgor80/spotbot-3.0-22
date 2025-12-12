@@ -460,11 +460,24 @@ async function persistAggregatedStats(
       gamesPlayed
     )
 
+    const { data: existingRatings, error: ratingsFetchError } = await supabase
     const { data: existingRating } = await supabase
       .from('player_ratings')
       .select('id')
       .eq('guild_id', guildId)
       .eq('discord_user_id', aggregate.discord_user_id)
+
+    if (ratingsFetchError) {
+      console.error(`[sync-ea-stats] Failed to fetch player_ratings row for ${aggregate.discord_user_id}:`, ratingsFetchError)
+      continue
+    }
+
+    const ratingId = existingRatings?.[0]?.id
+    const extraRatingIds = (existingRatings || []).slice(1).map((row: any) => row.id)
+    if (extraRatingIds.length > 0) {
+      console.log(`[sync-ea-stats] Cleaning up duplicate player_ratings rows for ${aggregate.discord_user_id}: ${extraRatingIds.join(',')}`)
+      await supabase.from('player_ratings').delete().in('id', extraRatingIds)
+    }
       .maybeSingle()
 
     const ratingsData = {
@@ -489,6 +502,11 @@ async function persistAggregatedStats(
       updated_at: new Date().toISOString()
     }
 
+    if (ratingId) {
+      await supabase
+        .from('player_ratings')
+        .update({ ...ratingsData, overall_rating: clubPerformanceRating })
+        .eq('id', ratingId)
     if (existingRating) {
       await supabase
         .from('player_ratings')
@@ -505,11 +523,24 @@ async function persistAggregatedStats(
         })
     }
 
+    const { data: existingSummaries, error: summaryFetchError } = await supabase
     const { data: existingSummary } = await supabase
       .from('player_summary')
       .select('id')
       .eq('guild_id', guildId)
       .eq('discord_user_id', aggregate.discord_user_id)
+
+    if (summaryFetchError) {
+      console.error(`[sync-ea-stats] Failed to fetch player_summary row for ${aggregate.discord_user_id}:`, summaryFetchError)
+      continue
+    }
+
+    const summaryId = existingSummaries?.[0]?.id
+    const extraSummaryIds = (existingSummaries || []).slice(1).map((row: any) => row.id)
+    if (extraSummaryIds.length > 0) {
+      console.log(`[sync-ea-stats] Cleaning up duplicate player_summary rows for ${aggregate.discord_user_id}: ${extraSummaryIds.join(',')}`)
+      await supabase.from('player_summary').delete().in('id', extraSummaryIds)
+    }
       .maybeSingle()
 
     const summaryData = {
@@ -537,6 +568,8 @@ async function persistAggregatedStats(
       updated_at: new Date().toISOString()
     }
 
+    if (summaryId) {
+      await supabase.from('player_summary').update(summaryData).eq('id', summaryId)
     if (existingSummary) {
       await supabase.from('player_summary').update(summaryData).eq('id', existingSummary.id)
     } else {
@@ -547,6 +580,107 @@ async function persistAggregatedStats(
   }
 
   return persisted
+}
+
+function calculateFormRatingFromResults(results: string[]) {
+  const windowed = results.slice(0, 5)
+  const formPoints = windowed.reduce((sum, r) => sum + (r === 'W' ? 3 : r === 'D' ? 1 : 0), 0)
+  return Math.round((formPoints / 15) * 100)
+}
+
+async function updatePlayerFormFromRecentMatches(
+  supabase: any,
+  guildId: string,
+  discordUserId: string
+) {
+  const { data: recentStats, error: statsError } = await supabase
+    .from('player_stats')
+    .select('ea_match_id')
+    .eq('guild_id', guildId)
+    .eq('discord_user_id', discordUserId)
+    .eq('match_type', 'club')
+    .not('ea_match_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(10)
+
+  if (statsError || !recentStats || recentStats.length === 0) return
+
+  const matchIds = [...new Set(recentStats.map((s: any) => s.ea_match_id).filter(Boolean))]
+  if (matchIds.length === 0) return
+
+  const { data: matchResults, error: matchError } = await supabase
+    .from('club_matches')
+    .select('ea_match_id, result')
+    .eq('guild_id', guildId)
+    .in('ea_match_id', matchIds)
+
+  if (matchError || !matchResults || matchResults.length === 0) return
+
+  const resultMap = new Map(matchResults.map((m: any) => [m.ea_match_id, m.result]))
+  const orderedResults = recentStats
+    .map((stat: any) => {
+      const r = resultMap.get(stat.ea_match_id)
+      if (r === 'win') return 'W'
+      if (r === 'loss') return 'L'
+      if (r === 'draw') return 'D'
+      return null
+    })
+    .filter((r): r is string => Boolean(r))
+
+  if (orderedResults.length === 0) return
+
+  const last5 = orderedResults.slice(0, 5)
+  const last10 = orderedResults.slice(0, 10)
+
+  let currentWinStreak = 0
+  let currentLossStreak = 0
+  let longestWinStreak = 0
+  let longestLossStreak = 0
+
+  for (const res of last10) {
+    if (res === 'W') {
+      if (currentLossStreak === 0) currentWinStreak++
+      else currentWinStreak = 1
+      currentLossStreak = 0
+    } else if (res === 'L') {
+      if (currentWinStreak === 0) currentLossStreak++
+      else currentLossStreak = 1
+      currentWinStreak = 0
+    } else {
+      currentWinStreak = 0
+      currentLossStreak = 0
+    }
+
+    longestWinStreak = Math.max(longestWinStreak, currentWinStreak)
+    longestLossStreak = Math.max(longestLossStreak, currentLossStreak)
+  }
+
+  // Current streak should be based on the leading run of W or L values
+  const leading = last10[0]
+  let currentWin = 0
+  let currentLoss = 0
+  for (const res of last10) {
+    if (res !== leading) break
+    if (res === 'W') currentWin++
+    if (res === 'L') currentLoss++
+  }
+
+  const formRating = calculateFormRatingFromResults(last5)
+
+  await supabase
+    .from('player_streaks')
+    .upsert({
+      guild_id: guildId,
+      discord_user_id: discordUserId,
+      current_win_streak: leading === 'W' ? currentWin : 0,
+      current_loss_streak: leading === 'L' ? currentLoss : 0,
+      longest_win_streak: longestWinStreak,
+      longest_loss_streak: longestLossStreak,
+      last_5_results: last5,
+      last_10_results: last10,
+      form_rating: formRating,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'guild_id,discord_user_id' })
 }
 
 Deno.serve(async (req) => {
@@ -708,9 +842,16 @@ Deno.serve(async (req) => {
                     motm: pStats.mom === '1',
                     shots: parseInt(pStats.shots || 0),
                     tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
-                    passes_made: parseInt(pStats.passesmade || 0),
-                    pass_attempts: parseInt(pStats.passattempts || 0),
-                    red_cards: pStats.redcards === '1'
+                    passes_made: parseInt(pStats.passesmade || pStats.passesMade || 0),
+                    pass_attempts: parseInt(pStats.passattempts || pStats.passAttempts || 0),
+                    red_cards: pStats.redcards === '1',
+                    saves: parseInt(pStats.saves || pStats.gksaves || 0),
+                    interceptions: parseInt(pStats.interceptions || 0),
+                    clearances: parseInt(pStats.clearances || 0),
+                    possession: parseFloat(pStats.possession || 0),
+                    dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
+                    fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
+                    offsides: parseInt(pStats.offsides || 0)
                   })
                 }
                 
@@ -759,7 +900,8 @@ Deno.serve(async (req) => {
                         pass_attempts: pStat.pass_attempts,
                         red_cards: pStat.red_cards
                       })
-                      
+
+                      guildUpdatedPlayerIds.add(profile.discord_user_id)
                       await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id)
                     }
                   }
@@ -777,6 +919,12 @@ Deno.serve(async (req) => {
       if (aggregates.size > 0) {
         const persisted = await persistAggregatedStats(supabase, guildId, aggregates)
         memberStatsSynced += persisted
+      }
+
+      // Rebuild form rating and streaks from the last 5-10 club games for updated players
+      const formUpdateIds = Array.from(guildUpdatedPlayerIds)
+      for (const playerId of formUpdateIds) {
+        await updatePlayerFormFromRecentMatches(supabase, guildId, playerId)
       }
 
       // Recalculate ratings for players touched within this guild using the aggregated totals
@@ -817,4 +965,4 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
-})
+});
