@@ -1072,6 +1072,7 @@ export type Database = {
       player_ratings: {
         Row: {
           avg_match_rating: number | null
+          baseline_synced: boolean | null
           build_quality_rating: number | null
           clearances: number | null
           club_performance_rating: number | null
@@ -1102,6 +1103,7 @@ export type Database = {
         }
         Insert: {
           avg_match_rating?: number | null
+          baseline_synced?: boolean | null
           build_quality_rating?: number | null
           clearances?: number | null
           club_performance_rating?: number | null
@@ -1132,6 +1134,7 @@ export type Database = {
         }
         Update: {
           avg_match_rating?: number | null
+          baseline_synced?: boolean | null
           build_quality_rating?: number | null
           clearances?: number | null
           club_performance_rating?: number | null
@@ -1337,6 +1340,7 @@ export type Database = {
           achievement_count: number
           assists: number
           avg_match_rating: number | null
+          baseline_synced: boolean | null
           clean_sheets: number | null
           current_streak: number
           discord_user_id: string
@@ -1372,6 +1376,7 @@ export type Database = {
           achievement_count?: number
           assists?: number
           avg_match_rating?: number | null
+          baseline_synced?: boolean | null
           clean_sheets?: number | null
           current_streak?: number
           discord_user_id: string
@@ -1407,6 +1412,7 @@ export type Database = {
           achievement_count?: number
           assists?: number
           avg_match_rating?: number | null
+          baseline_synced?: boolean | null
           clean_sheets?: number | null
           current_streak?: number
           discord_user_id?: string
