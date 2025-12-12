@@ -44,6 +44,58 @@ async function fetchMatches(clubId: string, platform: string, matchType: string 
   }
 }
 
+// Auto-detect player position preferences based on most-played positions
+async function updatePlayerPositionPreferences(supabase: any, guildId: string, discordUserId: string) {
+  try {
+    // Get all positions played by this player in this guild
+    const { data: stats } = await supabase
+      .from('player_stats')
+      .select('position_played')
+      .eq('guild_id', guildId)
+      .eq('discord_user_id', discordUserId)
+      .not('position_played', 'is', null)
+    
+    if (!stats || stats.length === 0) return
+    
+    // Count position occurrences
+    const positionCounts: Record<string, number> = {}
+    for (const stat of stats) {
+      const pos = stat.position_played
+      if (pos) {
+        positionCounts[pos] = (positionCounts[pos] || 0) + 1
+      }
+    }
+    
+    // Sort by count descending and take top 3
+    const sortedPositions = Object.entries(positionCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([pos]) => pos)
+    
+    if (sortedPositions.length === 0) return
+    
+    // Upsert position preferences
+    const { error } = await supabase
+      .from('position_preferences')
+      .upsert({
+        guild_id: guildId,
+        user_id: discordUserId,
+        preferences: sortedPositions,
+        updated_at: new Date().toISOString()
+      }, {
+        onConflict: 'guild_id,user_id'
+      })
+    
+    if (error) {
+      console.error(`[sync-ea-stats] Failed to update position preferences for ${discordUserId}:`, error.message)
+    } else {
+      console.log(`[sync-ea-stats] Updated position preferences for ${discordUserId}: ${sortedPositions.join(', ')}`)
+    }
+  } catch (err) {
+    console.error(`[sync-ea-stats] Error updating position preferences:`, err)
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -190,6 +242,9 @@ Deno.serve(async (req) => {
                 await supabase.functions.invoke('calculate-ratings', {
                   body: { guild_id: guildId, discord_user_id: profile.discord_user_id }
                 })
+                
+                // Auto-detect position preferences based on most-played positions
+                await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id)
               }
             }
             
