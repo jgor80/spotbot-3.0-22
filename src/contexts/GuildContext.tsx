@@ -31,15 +31,13 @@ export function GuildProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     async function fetchGuilds() {
       try {
-        // Fetch guilds from guild_settings with their club configurations
+        // Fetch guilds from guild_settings with their club configurations and name
         const { data, error } = await supabase
           .from("guild_settings")
-          .select("guild_id, clubs");
+          .select("guild_id, clubs, name");
 
         if (error) throw error;
 
-        // Also try to get guild names from profiles table (discord servers don't store names directly)
-        // We'll use the first enabled club name as a fallback display name
         const guildList = (data || []).map((g) => {
           let clubs: Array<{ key: string; name: string; enabled: boolean }> = [];
           
@@ -52,9 +50,9 @@ export function GuildProvider({ children }: { children: ReactNode }) {
             clubs = [];
           }
           
-          // Use first enabled club name as guild display name, or fallback to ID
+          // Use stored guild name, or first enabled club name, or fallback to ID
           const enabledClub = clubs.find(c => c.enabled);
-          const displayName = enabledClub?.name || `Server ${g.guild_id.slice(-6)}`;
+          const displayName = g.name || enabledClub?.name || `Server ${g.guild_id.slice(-6)}`;
 
           return {
             guild_id: g.guild_id,
