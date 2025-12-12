@@ -55,6 +55,10 @@
     "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "CDM", "CAM", "CAM", "CAM", "ST"],
     "meta": "Strengths: Three CAMs for control.\nWeaknesses: No natural width.\nBest used: Narrow central overloads.\nKey players: Technical CAMs."
   },
+  "4-2-1-3": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "CDM", "CAM", "LW", "RW", "ST"],
+    "meta": "Strengths: Double pivot with attacking width.\nWeaknesses: CAM must link play alone.\nBest used: Counter-attacks with pace on wings.\nKey players: Box-to-box CDMs and pacey wingers."
+  },
   "4-2-4": {
     "positions": ["GK", "CB", "CB", "LB", "RB", "CM", "CM", "LW", "RW", "ST", "ST"],
     "meta": "Strengths: Four attackers for pressure.\nWeaknesses: Only two CMs.\nBest used: All-out attack.\nKey players: Prolific strikers."
