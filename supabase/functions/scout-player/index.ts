@@ -7,21 +7,98 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// EA API Configuration
+const EA_PLATFORM_MAP: Record<string, string> = {
+  'ps5': 'common-gen5',
+  'xbox-series-xs': 'common-gen5',
+  'pc': 'common-gen5',
+  'ps4': 'common-gen4',
+  'xboxone': 'common-gen4'
+};
+
+const EA_HEADERS = {
+  'Accept': 'application/json',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Referer': 'https://www.ea.com/games/ea-sports-fc/clubs',
+  'Origin': 'https://www.ea.com',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+};
+
+// Search for a player's club memberships
+async function searchPlayerClubs(eaUsername: string): Promise<any[]> {
+  const clubs: any[] = [];
+  const platforms = ['common-gen5', 'common-gen4'];
+  
+  for (const platform of platforms) {
+    try {
+      // Search clubs by name to find where this player might be
+      const searchUrl = `https://proclubs.ea.com/api/fc/clubs/search?platform=${platform}&clubName=${encodeURIComponent(eaUsername.substring(0, 3))}`;
+      const response = await fetch(searchUrl, { headers: EA_HEADERS });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const clubList = Array.isArray(data) ? data : data?.clubs || [];
+        
+        // Check each club for the player
+        for (const club of clubList.slice(0, 10)) {
+          const members = await fetchClubMembers(club.clubId?.toString(), platform);
+          const playerMember = members.find((m: any) => 
+            (m.name || m.playerName)?.toLowerCase() === eaUsername.toLowerCase()
+          );
+          
+          if (playerMember) {
+            clubs.push({
+              club_id: club.clubId?.toString(),
+              club_name: club.name || club.clubName,
+              platform: platform,
+              player_stats: playerMember
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.log(`[scout-player] Error searching on ${platform}:`, err);
+    }
+  }
+  
+  return clubs;
+}
+
+// Fetch club members
+async function fetchClubMembers(clubId: string, platform: string): Promise<any[]> {
+  try {
+    const response = await fetch(
+      `https://proclubs.ea.com/api/fc/members/stats?platform=${platform}&clubId=${clubId}`,
+      { headers: EA_HEADERS }
+    );
+    
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    if (data?.members) return data.members;
+    if (Array.isArray(data)) return data;
+    return Object.values(data).filter(v => v && typeof v === 'object');
+  } catch (err) {
+    return [];
+  }
+}
+
+// Fetch player stats from a specific club
+async function fetchPlayerFromClub(clubId: string, platform: string, eaUsername: string): Promise<any | null> {
+  const members = await fetchClubMembers(clubId, platform);
+  return members.find((m: any) => 
+    (m.name || m.playerName)?.toLowerCase() === eaUsername.toLowerCase()
+  ) || null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { guild_id, player_id } = await req.json();
+    const { guild_id, player_id, ea_username, search_ea } = await req.json();
     
-    if (!guild_id || !player_id) {
-      return new Response(JSON.stringify({ error: 'guild_id and player_id are required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const openaiKey = Deno.env.get('OPENAI_API_KEY');
@@ -34,149 +111,357 @@ serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    let playerData: any = null;
+    let eaClubStats: any[] = [];
+    let discordPlayerFound = false;
 
-    // Fetch all player data in parallel
-    const [
-      { data: summary },
-      { data: ratings },
-      { data: profile },
-      { data: streaks },
-      { data: achievements },
-      { data: positionRatings },
-      { data: chemistry },
-      { data: recentStats },
-      { data: reliability },
-      { data: competitionWins }
-    ] = await Promise.all([
-      supabase.from('player_summary').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).maybeSingle(),
-      supabase.from('player_ratings').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).maybeSingle(),
-      supabase.from('profiles').select('*').eq('discord_user_id', player_id).maybeSingle(),
-      supabase.from('player_streaks').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).maybeSingle(),
-      supabase.from('player_achievements').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id),
-      supabase.from('player_position_ratings').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).order('games_at_position', { ascending: false }),
-      supabase.from('player_chemistry').select('*').eq('guild_id', guild_id).or(`player_a_discord_id.eq.${player_id},player_b_discord_id.eq.${player_id}`).order('games_together', { ascending: false }).limit(10),
-      supabase.from('player_stats').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).order('recorded_at', { ascending: false }).limit(20),
-      supabase.from('player_reliability').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).maybeSingle(),
-      supabase.from('competition_wins').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).eq('verified', true)
-    ]);
+    // Mode 1: Scout by EA username (external player lookup)
+    if (ea_username && search_ea) {
+      console.log(`[scout-player] Searching EA for: ${ea_username}`);
+      
+      // First check if this EA username is linked to a Discord user in our system
+      const { data: linkedProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('ea_username', ea_username)
+        .maybeSingle();
+      
+      if (linkedProfile && !linkedProfile.discord_user_id.startsWith('ea_')) {
+        // This EA user is a Discord member - use their full data
+        discordPlayerFound = true;
+        console.log(`[scout-player] Found linked Discord user: ${linkedProfile.discord_user_id}`);
+      }
+      
+      // Search EA API for all clubs this player is in
+      const platforms = ['common-gen5', 'common-gen4'];
+      
+      // Get all guild clubs to search
+      const { data: guildSettings } = await supabase
+        .from('guild_settings')
+        .select('guild_id, clubs');
+      
+      for (const settings of guildSettings || []) {
+        const clubs = settings.clubs as any[] || [];
+        for (const club of clubs) {
+          if (!club.ea_club_id || !club.ea_platform) continue;
+          
+          const fcPlatform = EA_PLATFORM_MAP[club.ea_platform] || club.ea_platform;
+          const playerStats = await fetchPlayerFromClub(club.ea_club_id, fcPlatform, ea_username);
+          
+          if (playerStats) {
+            eaClubStats.push({
+              guild_id: settings.guild_id,
+              club_id: club.ea_club_id,
+              club_name: club.name,
+              club_key: club.key,
+              platform: club.ea_platform,
+              stats: {
+                goals: parseInt(playerStats.goals || 0),
+                assists: parseInt(playerStats.assists || 0),
+                games_played: parseInt(playerStats.gamesPlayed || playerStats.matches || 0),
+                wins: parseInt(playerStats.wins || 0),
+                losses: parseInt(playerStats.losses || 0),
+                avg_rating: parseFloat(playerStats.ratingAve || playerStats.avgRating || 0),
+                clean_sheets: parseInt(playerStats.cleanSheetsDef || playerStats.cleanSheetsGK || 0),
+                man_of_match: parseInt(playerStats.manOfTheMatch || 0),
+                position: playerStats.favoritePosition || playerStats.proPos,
+                // Extended stats
+                shots: parseInt(playerStats.shots || 0),
+                tackles: parseInt(playerStats.tacklesmade || playerStats.tackles || 0),
+                passes_made: parseInt(playerStats.passesmade || 0),
+                pass_attempts: parseInt(playerStats.passattempts || 0),
+                pass_accuracy: playerStats.passattempts > 0 ? 
+                  ((parseInt(playerStats.passesmade || 0) / parseInt(playerStats.passattempts || 1)) * 100).toFixed(1) : 0,
+                saves: parseInt(playerStats.saves || playerStats.gksaves || 0),
+                interceptions: parseInt(playerStats.interceptions || 0),
+                clearances: parseInt(playerStats.clearances || 0)
+              }
+            });
+          }
+        }
+      }
+      
+      // Build player data from EA stats
+      if (eaClubStats.length > 0 || discordPlayerFound) {
+        // Aggregate stats across all clubs
+        const aggregated = eaClubStats.reduce((acc, club) => ({
+          games_played: acc.games_played + club.stats.games_played,
+          wins: acc.wins + club.stats.wins,
+          losses: acc.losses + club.stats.losses,
+          goals: acc.goals + club.stats.goals,
+          assists: acc.assists + club.stats.assists,
+          clean_sheets: acc.clean_sheets + club.stats.clean_sheets,
+          motm: acc.motm + club.stats.man_of_match,
+          shots: acc.shots + club.stats.shots,
+          tackles: acc.tackles + club.stats.tackles,
+          passes_made: acc.passes_made + club.stats.passes_made,
+          pass_attempts: acc.pass_attempts + club.stats.pass_attempts,
+          saves: acc.saves + club.stats.saves,
+          total_rating: acc.total_rating + (club.stats.avg_rating * club.stats.games_played),
+          rating_games: acc.rating_games + club.stats.games_played
+        }), {
+          games_played: 0, wins: 0, losses: 0, goals: 0, assists: 0,
+          clean_sheets: 0, motm: 0, shots: 0, tackles: 0, passes_made: 0,
+          pass_attempts: 0, saves: 0, total_rating: 0, rating_games: 0
+        });
+        
+        const avgRating = aggregated.rating_games > 0 ? aggregated.total_rating / aggregated.rating_games : 0;
+        const winRate = aggregated.games_played > 0 ? (aggregated.wins / aggregated.games_played * 100) : 0;
+        const passAccuracy = aggregated.pass_attempts > 0 ? (aggregated.passes_made / aggregated.pass_attempts * 100) : 0;
+        
+        // Get primary position from most played
+        const positions = eaClubStats.map(c => c.stats.position).filter(Boolean);
+        const primaryPosition = positions.length > 0 ? positions[0] : 'Unknown';
+        
+        playerData = {
+          profile: {
+            username: ea_username,
+            ea_username: ea_username,
+            ea_platform: eaClubStats[0]?.platform || 'Unknown',
+            primary_position: primaryPosition,
+            is_discord_member: discordPlayerFound
+          },
+          overall: {
+            rating: avgRating * 10, // Convert 0-10 to 0-100
+            games_played: aggregated.games_played,
+            wins: aggregated.wins,
+            losses: aggregated.losses,
+            draws: aggregated.games_played - aggregated.wins - aggregated.losses,
+            win_rate: winRate,
+            goals: aggregated.goals,
+            assists: aggregated.assists,
+            clean_sheets: aggregated.clean_sheets,
+            motm_count: aggregated.motm
+          },
+          extended_stats: {
+            shots: aggregated.shots,
+            tackles: aggregated.tackles,
+            passes_made: aggregated.passes_made,
+            pass_attempts: aggregated.pass_attempts,
+            pass_accuracy: passAccuracy.toFixed(1),
+            saves: aggregated.saves,
+            goals_per_game: aggregated.games_played > 0 ? (aggregated.goals / aggregated.games_played).toFixed(2) : 0,
+            assists_per_game: aggregated.games_played > 0 ? (aggregated.assists / aggregated.games_played).toFixed(2) : 0
+          },
+          clubs: eaClubStats.map(c => ({
+            name: c.club_name,
+            platform: c.platform,
+            games: c.stats.games_played,
+            wins: c.stats.wins,
+            goals: c.stats.goals,
+            assists: c.stats.assists,
+            avg_rating: c.stats.avg_rating
+          })),
+          source: 'ea_api'
+        };
+      } else {
+        return new Response(JSON.stringify({ 
+          error: 'Player not found in any tracked clubs',
+          searched_ea_username: ea_username 
+        }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+    // Mode 2: Scout by Discord ID (existing functionality)
+    else if (guild_id && player_id) {
+      discordPlayerFound = true;
+      
+      // Fetch all player data in parallel
+      const [
+        { data: summary },
+        { data: ratings },
+        { data: profile },
+        { data: streaks },
+        { data: achievements },
+        { data: positionRatings },
+        { data: chemistry },
+        { data: recentStats },
+        { data: reliability },
+        { data: competitionWins }
+      ] = await Promise.all([
+        supabase.from('player_summary').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).maybeSingle(),
+        supabase.from('player_ratings').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).maybeSingle(),
+        supabase.from('profiles').select('*').eq('discord_user_id', player_id).maybeSingle(),
+        supabase.from('player_streaks').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).maybeSingle(),
+        supabase.from('player_achievements').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id),
+        supabase.from('player_position_ratings').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).order('games_at_position', { ascending: false }),
+        supabase.from('player_chemistry').select('*').eq('guild_id', guild_id).or(`player_a_discord_id.eq.${player_id},player_b_discord_id.eq.${player_id}`).order('games_together', { ascending: false }).limit(10),
+        supabase.from('player_stats').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).order('recorded_at', { ascending: false }).limit(20),
+        supabase.from('player_reliability').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).maybeSingle(),
+        supabase.from('competition_wins').select('*').eq('guild_id', guild_id).eq('discord_user_id', player_id).eq('verified', true)
+      ]);
 
-    if (!summary && !ratings && !profile) {
-      return new Response(JSON.stringify({ error: 'Player not found' }), {
-        status: 404,
+      if (!summary && !ratings && !profile) {
+        return new Response(JSON.stringify({ error: 'Player not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
+      // If player has EA username, fetch their stats from ALL clubs they're in
+      if (profile?.ea_username) {
+        const { data: guildSettings } = await supabase
+          .from('guild_settings')
+          .select('guild_id, clubs');
+        
+        for (const settings of guildSettings || []) {
+          const clubs = settings.clubs as any[] || [];
+          for (const club of clubs) {
+            if (!club.ea_club_id || !club.ea_platform) continue;
+            
+            const fcPlatform = EA_PLATFORM_MAP[club.ea_platform] || club.ea_platform;
+            const playerStats = await fetchPlayerFromClub(club.ea_club_id, fcPlatform, profile.ea_username);
+            
+            if (playerStats) {
+              eaClubStats.push({
+                guild_id: settings.guild_id,
+                club_name: club.name,
+                platform: club.ea_platform,
+                stats: {
+                  goals: parseInt(playerStats.goals || 0),
+                  assists: parseInt(playerStats.assists || 0),
+                  games_played: parseInt(playerStats.gamesPlayed || playerStats.matches || 0),
+                  wins: parseInt(playerStats.wins || 0),
+                  avg_rating: parseFloat(playerStats.ratingAve || playerStats.avgRating || 0),
+                  position: playerStats.favoritePosition || playerStats.proPos
+                }
+              });
+            }
+          }
+        }
+      }
+
+      // Build comprehensive player data object
+      playerData = {
+        profile: {
+          username: summary?.discord_username || profile?.discord_username || player_id,
+          ea_username: profile?.ea_username,
+          ea_platform: profile?.ea_platform,
+          primary_position: summary?.primary_position || profile?.primary_position,
+          is_discord_member: true
+        },
+        overall: {
+          rating: summary?.overall_rating || ratings?.overall_rating || 50,
+          games_played: summary?.games_played || ratings?.games_played || 0,
+          wins: summary?.wins || ratings?.wins || 0,
+          losses: ratings?.losses || 0,
+          draws: ratings?.draws || 0,
+          win_rate: summary?.win_rate || 0,
+          goals: summary?.goals || ratings?.total_goals || 0,
+          assists: summary?.assists || ratings?.total_assists || 0,
+          clean_sheets: ratings?.total_clean_sheets || 0,
+          motm_count: ratings?.total_motm || 0
+        },
+        ratings_breakdown: {
+          overall: ratings?.overall_rating,
+          draft_performance: ratings?.draft_performance_rating,
+          club_performance: ratings?.club_performance_rating,
+          peer_rating: ratings?.peer_rating,
+          build_quality: ratings?.build_quality_rating
+        },
+        form: {
+          form_rating: summary?.form_rating || streaks?.form_rating,
+          current_streak: summary?.current_streak || 0,
+          streak_type: summary?.streak_type,
+          longest_win_streak: summary?.longest_win_streak || streaks?.longest_win_streak || 0,
+          current_win_streak: streaks?.current_win_streak || 0,
+          current_loss_streak: streaks?.current_loss_streak || 0,
+          current_goal_streak: streaks?.current_goal_streak || 0,
+          last_5_results: streaks?.last_5_results || [],
+          last_10_results: streaks?.last_10_results || []
+        },
+        positions: positionRatings?.map(p => ({
+          position: p.position,
+          games: p.games_at_position,
+          goals: p.goals_at_position,
+          assists: p.assists_at_position,
+          avg_rating: p.avg_match_rating,
+          position_rating: p.rating
+        })) || [],
+        reliability: {
+          score: reliability?.reliability_score || summary?.reliability_score || 100,
+          total_events: reliability?.total_events || 0,
+          events_showed: reliability?.events_showed || 0,
+          events_no_showed: reliability?.events_no_showed || 0
+        },
+        chemistry: chemistry?.map(c => ({
+          partner_id: c.player_a_discord_id === player_id ? c.player_b_discord_id : c.player_a_discord_id,
+          games_together: c.games_together,
+          wins_together: c.wins_together,
+          win_rate: c.win_rate,
+          synergy_score: c.synergy_score
+        })) || [],
+        achievements: achievements?.map(a => ({
+          name: a.achievement_name,
+          icon: a.achievement_icon,
+          earned_at: a.earned_at
+        })) || [],
+        competition_wins: competitionWins?.map(w => ({
+          competition: w.competition_name,
+          type: w.competition_type,
+          tier: w.tier,
+          team: w.team_name,
+          date: w.placed_at
+        })) || [],
+        recent_games: recentStats?.map(s => ({
+          date: s.recorded_at,
+          match_type: s.match_type,
+          position: s.position_played,
+          goals: s.goals,
+          assists: s.assists,
+          rating: s.ea_match_rating,
+          won: s.won,
+          clean_sheet: s.clean_sheet,
+          motm: s.man_of_match
+        })) || [],
+        clubs: eaClubStats,
+        source: 'database'
+      };
+    } else {
+      return new Response(JSON.stringify({ error: 'Either guild_id+player_id or ea_username+search_ea is required' }), {
+        status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    // Build comprehensive player data object
-    const playerData = {
-      profile: {
-        username: summary?.discord_username || profile?.discord_username || player_id,
-        ea_username: profile?.ea_username,
-        ea_platform: profile?.ea_platform,
-        primary_position: summary?.primary_position || profile?.primary_position
-      },
-      overall: {
-        rating: summary?.overall_rating || ratings?.overall_rating || 50,
-        games_played: summary?.games_played || ratings?.games_played || 0,
-        wins: summary?.wins || ratings?.wins || 0,
-        losses: ratings?.losses || 0,
-        draws: ratings?.draws || 0,
-        win_rate: summary?.win_rate || 0,
-        goals: summary?.goals || ratings?.total_goals || 0,
-        assists: summary?.assists || ratings?.total_assists || 0,
-        clean_sheets: ratings?.total_clean_sheets || 0,
-        motm_count: ratings?.total_motm || 0
-      },
-      ratings_breakdown: {
-        overall: ratings?.overall_rating,
-        draft_performance: ratings?.draft_performance_rating,
-        club_performance: ratings?.club_performance_rating,
-        peer_rating: ratings?.peer_rating,
-        build_quality: ratings?.build_quality_rating
-      },
-      form: {
-        form_rating: summary?.form_rating || streaks?.form_rating,
-        current_streak: summary?.current_streak || 0,
-        streak_type: summary?.streak_type,
-        longest_win_streak: summary?.longest_win_streak || streaks?.longest_win_streak || 0,
-        current_win_streak: streaks?.current_win_streak || 0,
-        current_loss_streak: streaks?.current_loss_streak || 0,
-        current_goal_streak: streaks?.current_goal_streak || 0,
-        last_5_results: streaks?.last_5_results || [],
-        last_10_results: streaks?.last_10_results || []
-      },
-      positions: positionRatings?.map(p => ({
-        position: p.position,
-        games: p.games_at_position,
-        goals: p.goals_at_position,
-        assists: p.assists_at_position,
-        avg_rating: p.avg_match_rating,
-        position_rating: p.rating
-      })) || [],
-      reliability: {
-        score: reliability?.reliability_score || summary?.reliability_score || 100,
-        total_events: reliability?.total_events || 0,
-        events_showed: reliability?.events_showed || 0,
-        events_no_showed: reliability?.events_no_showed || 0
-      },
-      chemistry: chemistry?.map(c => ({
-        partner_id: c.player_a_discord_id === player_id ? c.player_b_discord_id : c.player_a_discord_id,
-        games_together: c.games_together,
-        wins_together: c.wins_together,
-        win_rate: c.win_rate,
-        synergy_score: c.synergy_score
-      })) || [],
-      achievements: achievements?.map(a => ({
-        name: a.achievement_name,
-        icon: a.achievement_icon,
-        earned_at: a.earned_at
-      })) || [],
-      competition_wins: competitionWins?.map(w => ({
-        competition: w.competition_name,
-        type: w.competition_type,
-        tier: w.tier,
-        team: w.team_name,
-        date: w.placed_at
-      })) || [],
-      recent_games: recentStats?.map(s => ({
-        date: s.recorded_at,
-        match_type: s.match_type,
-        position: s.position_played,
-        goals: s.goals,
-        assists: s.assists,
-        rating: s.ea_match_rating,
-        won: s.won,
-        clean_sheet: s.clean_sheet,
-        motm: s.man_of_match
-      })) || []
-    };
 
     // Calculate additional stats
     const totalGoalContributions = playerData.overall.goals + playerData.overall.assists;
     const goalsPerGame = playerData.overall.games_played > 0 ? (playerData.overall.goals / playerData.overall.games_played).toFixed(2) : 0;
     const assistsPerGame = playerData.overall.games_played > 0 ? (playerData.overall.assists / playerData.overall.games_played).toFixed(2) : 0;
     
-    // Build AI prompt
+    // Build AI prompt based on data source
+    const clubsInfo = playerData.clubs?.length > 0 
+      ? `\nCLUB MEMBERSHIPS (${playerData.clubs.length} clubs):\n${JSON.stringify(playerData.clubs, null, 2)}`
+      : '';
+    
     const prompt = `You are an expert football/soccer scout and analyst. Analyze this player's comprehensive statistics and provide a detailed scouting report.
 
 PLAYER DATA:
 ${JSON.stringify(playerData, null, 2)}
+${clubsInfo}
 
 ADDITIONAL METRICS:
 - Goals per game: ${goalsPerGame}
 - Assists per game: ${assistsPerGame}
 - Total goal contributions: ${totalGoalContributions}
+- Data source: ${playerData.source === 'ea_api' ? 'EA FC Pro Clubs API (external lookup)' : 'SquadIQ Database (Discord member)'}
+- Is Discord member: ${discordPlayerFound}
+- Clubs tracked: ${eaClubStats.length}
 
 Provide a detailed scouting report covering:
 1. **Player Overview** - Brief summary of who this player is
 2. **Strengths** - What they excel at based on the data
 3. **Weaknesses** - Areas needing improvement
 4. **Position Analysis** - Best positions and versatility
-5. **Form Assessment** - Current form and recent performance trends
-6. **Chemistry Insights** - Who they play well with
-7. **Reliability Rating** - Attendance and consistency
-8. **Draft Value** - How valuable would they be in a draft pick
-9. **Recommendations** - Tactical suggestions for using this player
+5. **Form Assessment** - Current form and recent performance trends${playerData.form ? '' : ' (N/A for external lookups)'}
+6. **Chemistry Insights** - Who they play well with${playerData.chemistry?.length > 0 ? '' : ' (N/A for external lookups)'}
+7. **Reliability Rating** - Attendance and consistency${playerData.reliability ? '' : ' (N/A for external lookups)'}
+8. **Multi-Club Analysis** - Performance across different clubs${eaClubStats.length > 0 ? '' : ' (N/A)'}
+9. **Draft Value** - How valuable would they be in a draft pick
+10. **Recommendations** - Tactical suggestions for using this player
 
 Be specific and reference actual numbers from the data. Format with markdown.`;
 
@@ -213,6 +498,7 @@ Be specific and reference actual numbers from the data. Format with markdown.`;
     return new Response(JSON.stringify({ 
       success: true,
       player_data: playerData,
+      ea_clubs: eaClubStats,
       analysis 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
