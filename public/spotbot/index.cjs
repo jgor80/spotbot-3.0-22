@@ -8013,6 +8013,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           components: [filterSelect]
         });
       }
+    }
   } catch (err) {
     console.error('❌ Error handling interaction:', err);
     if (!interaction.replied && !interaction.deferred) {
