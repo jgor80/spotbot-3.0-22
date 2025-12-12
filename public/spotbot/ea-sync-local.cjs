@@ -212,19 +212,39 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
       // Use ea_username as a temporary discord_user_id placeholder
       const tempDiscordId = `ea_${eaUsername.replace(/[^a-zA-Z0-9]/g, '_')}`;
       
-      const { data: newProfile, error: insertError } = await supabase
+      // Check if temp profile already exists (in case ea_username was updated)
+      const { data: existingTemp } = await supabase
         .from('profiles')
-        .insert({
-          discord_user_id: tempDiscordId,
-          ea_username: eaUsername,
-          ea_platform: platform
-        })
         .select('discord_user_id')
-        .single();
+        .eq('discord_user_id', tempDiscordId)
+        .maybeSingle();
       
-      if (insertError) {
-        console.log(`  ❌ Failed to create profile for ${eaUsername}: ${insertError.message}`);
-        continue;
+      if (existingTemp) {
+        // Update existing temp profile with current ea_username
+        await supabase
+          .from('profiles')
+          .update({ ea_username: eaUsername, ea_platform: platform })
+          .eq('discord_user_id', tempDiscordId);
+        profile = existingTemp;
+        console.log(`  🔗 Linked existing temp profile for ${eaUsername}`);
+      } else {
+        const { data: newProfile, error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            discord_user_id: tempDiscordId,
+            ea_username: eaUsername,
+            ea_platform: platform
+          })
+          .select('discord_user_id')
+          .single();
+        
+        if (insertError) {
+          console.log(`  ❌ Failed to create profile for ${eaUsername}: ${insertError.message}`);
+          continue;
+        }
+        
+        console.log(`  ✨ Created profile for ${eaUsername}`);
+        profile = newProfile;
       }
       
       console.log(`  ✨ Created profile for ${eaUsername}`);
