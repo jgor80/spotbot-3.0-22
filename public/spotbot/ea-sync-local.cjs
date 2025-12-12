@@ -616,10 +616,10 @@ function scheduledSync() {
   }
 }
 
-// Run immediately then every 1 minute
+// Run immediately then every 10 minutes
 console.log('🚀 EA Sync Local started');
 console.log('📡 Running from your local IP to bypass EA cloud blocking');
-console.log('⏱️  Syncing every 1 minute (active 8 AM - 2 AM CT)\n');
+console.log('⏱️  Syncing every 10 minutes (active 8 AM - 2 AM CT)\n');
 
 scheduledSync();
-setInterval(scheduledSync, 60000);
+setInterval(scheduledSync, 600000); // 10 minutes = 600,000ms
