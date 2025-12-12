@@ -515,163 +515,162 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
     
     console.log(`  📊 ${eaUsername}: ${gamesPlayed} games, ${goals}G/${assists}A, ${winRate.toFixed(1)}% win, ${passSuccessRate.toFixed(1)}% pass, ${tackleSuccessRate.toFixed(1)}% tackle`);
     
-    // Skip temp profiles for rating updates (only real Discord users)
-    const isRealUser = !profile.discord_user_id.startsWith('ea_');
+    // Update stats for ALL players (including ea_ prefixed temp profiles)
+    // ===== ENSURE player_ratings record exists =====
+    const { data: existingRating } = await supabase
+      .from('player_ratings')
+      .select('id, games_played, baseline_synced')
+      .eq('guild_id', guildId)
+      .eq('discord_user_id', profile.discord_user_id)
+      .maybeSingle();
     
-    if (isRealUser) {
-      // ===== ENSURE player_ratings record exists =====
-      const { data: existingRating } = await supabase
+    // Get discord username from profile
+    const { data: fullProfile } = await supabase
+      .from('profiles')
+      .select('discord_username')
+      .eq('discord_user_id', profile.discord_user_id)
+      .maybeSingle();
+    
+    // Define positionMap
+    const positionMap = {
+      'goalkeeper': 'GK', 'gk': 'GK',
+      'defender': 'CB', 'cb': 'CB', 'rb': 'RB', 'lb': 'LB', 'rwb': 'RWB', 'lwb': 'LWB',
+      'midfielder': 'CM', 'cm': 'CM', 'cdm': 'CDM', 'cam': 'CAM', 'rm': 'RM', 'lm': 'LM',
+      'attacker': 'ST', 'st': 'ST', 'cf': 'CF', 'rw': 'RW', 'lw': 'LW', 'rf': 'RF', 'lf': 'LF'
+    };
+    
+    const mappedPosition = position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null;
+    
+    if (!existingRating) {
+      // Create initial rating record with EA aggregate stats
+      await supabase
         .from('player_ratings')
-        .select('id, games_played, baseline_synced')
-        .eq('guild_id', guildId)
-        .eq('discord_user_id', profile.discord_user_id)
-        .maybeSingle();
+        .insert({
+          guild_id: guildId,
+          discord_user_id: profile.discord_user_id,
+          overall_rating: 50,
+          games_played: gamesPlayed,
+          wins: wins,
+          losses: losses,
+          draws: draws,
+          total_goals: goals,
+          total_assists: assists,
+          total_clean_sheets: cleanSheets,
+          total_motm: manOfMatch,
+          avg_match_rating: avgRating,
+          shots: shots,
+          tackles: tackles,
+          passes_made: passesMade,
+          pass_attempts: passAttempts,
+          saves: saves,
+          interceptions: interceptions,
+          clearances: clearances,
+          baseline_synced: true,
+        });
       
-      // Get discord username from profile
-      const { data: fullProfile } = await supabase
-        .from('profiles')
-        .select('discord_username')
-        .eq('discord_user_id', profile.discord_user_id)
-        .maybeSingle();
+      console.log(`  ✨ Created player_ratings for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A)`);
+    } else {
+      // Always update stats from EA member board (source of truth for aggregate stats)
+      await supabase
+        .from('player_ratings')
+        .update({
+          games_played: gamesPlayed,
+          wins: wins,
+          losses: losses,
+          draws: draws,
+          total_goals: goals,
+          total_assists: assists,
+          total_clean_sheets: cleanSheets,
+          total_motm: manOfMatch,
+          avg_match_rating: avgRating,
+          shots: shots,
+          tackles: tackles,
+          passes_made: passesMade,
+          pass_attempts: passAttempts,
+          saves: saves,
+          interceptions: interceptions,
+          clearances: clearances,
+          baseline_synced: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingRating.id);
       
-      // Define positionMap
-      const positionMap = {
-        'goalkeeper': 'GK', 'gk': 'GK',
-        'defender': 'CB', 'cb': 'CB', 'rb': 'RB', 'lb': 'LB', 'rwb': 'RWB', 'lwb': 'LWB',
-        'midfielder': 'CM', 'cm': 'CM', 'cdm': 'CDM', 'cam': 'CAM', 'rm': 'RM', 'lm': 'LM',
-        'attacker': 'ST', 'st': 'ST', 'cf': 'CF', 'rw': 'RW', 'lw': 'LW', 'rf': 'RF', 'lf': 'LF'
-      };
-      
-      const mappedPosition = position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null;
-      
-      if (!existingRating) {
-        // Create initial rating record with EA aggregate stats
-        await supabase
-          .from('player_ratings')
-          .insert({
-            guild_id: guildId,
-            discord_user_id: profile.discord_user_id,
-            overall_rating: 50,
-            games_played: gamesPlayed,
-            wins: wins,
-            losses: losses,
-            draws: draws,
-            total_goals: goals,
-            total_assists: assists,
-            total_clean_sheets: cleanSheets,
-            total_motm: manOfMatch,
-            avg_match_rating: avgRating,
-            shots: shots,
-            tackles: tackles,
-            passes_made: passesMade,
-            pass_attempts: passAttempts,
-            saves: saves,
-            interceptions: interceptions,
-            clearances: clearances,
-            baseline_synced: true,
-          });
-        
-        console.log(`  ✨ Created player_ratings for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A)`);
-      } else {
-        // Always update stats from EA member board (source of truth for aggregate stats)
-        await supabase
-          .from('player_ratings')
-          .update({
-            games_played: gamesPlayed,
-            wins: wins,
-            losses: losses,
-            draws: draws,
-            total_goals: goals,
-            total_assists: assists,
-            total_clean_sheets: cleanSheets,
-            total_motm: manOfMatch,
-            avg_match_rating: avgRating,
-            shots: shots,
-            tackles: tackles,
-            passes_made: passesMade,
-            pass_attempts: passAttempts,
-            saves: saves,
-            interceptions: interceptions,
-            clearances: clearances,
-            baseline_synced: true,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingRating.id);
-        
-        console.log(`  📈 Updated player_ratings for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A, ${avgRating.toFixed(1)} avg)`);
-      }
-      
-      // ===== ENSURE player_summary record exists =====
-      const { data: existingSummary } = await supabase
-        .from('player_summary')
-        .select('id, games_played, baseline_synced')
-        .eq('guild_id', guildId)
-        .eq('discord_user_id', profile.discord_user_id)
-        .maybeSingle();
-      
-      if (!existingSummary) {
-        // Create initial summary record with EA aggregate stats
-        await supabase
-          .from('player_summary')
-          .insert({
-            guild_id: guildId,
-            discord_user_id: profile.discord_user_id,
-            discord_username: fullProfile?.discord_username || eaUsername,
-            overall_rating: 50,
-            primary_position: mappedPosition,
-            games_played: gamesPlayed,
-            wins: wins,
-            losses: losses,
-            draws: draws,
-            win_rate: winRate,
-            goals: goals,
-            assists: assists,
-            clean_sheets: cleanSheets,
-            man_of_match: manOfMatch,
-            avg_match_rating: avgRating,
-            shots: shots,
-            tackles: tackles,
-            passes_made: passesMade,
-            pass_attempts: passAttempts,
-            saves: saves,
-            baseline_synced: true,
-          });
-        
-        console.log(`  ✨ Created player_summary for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A)`);
-      } else {
-        // Always update stats from EA member board (source of truth for aggregate stats)
-        await supabase
-          .from('player_summary')
-          .update({
-            discord_username: fullProfile?.discord_username || eaUsername,
-            primary_position: mappedPosition,
-            games_played: gamesPlayed,
-            wins: wins,
-            losses: losses,
-            draws: draws,
-            win_rate: winRate,
-            goals: goals,
-            assists: assists,
-            clean_sheets: cleanSheets,
-            man_of_match: manOfMatch,
-            avg_match_rating: avgRating,
-            shots: shots,
-            tackles: tackles,
-            passes_made: passesMade,
-            pass_attempts: passAttempts,
-            saves: saves,
-            baseline_synced: true,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingSummary.id);
-        
-        console.log(`  📈 Updated player_summary for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A, ${winRate.toFixed(1)}% WR)`);
-      }
-      
-      // Track for rating recalculation
-      updatedPlayerIds.push(profile.discord_user_id);
-      synced++;
+      console.log(`  📈 Updated player_ratings for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A, ${avgRating.toFixed(1)} avg)`);
     }
+    
+    // ===== ENSURE player_summary record exists =====
+    const { data: existingSummary } = await supabase
+      .from('player_summary')
+      .select('id, games_played, baseline_synced')
+      .eq('guild_id', guildId)
+      .eq('discord_user_id', profile.discord_user_id)
+      .maybeSingle();
+    
+    if (!existingSummary) {
+      // Create initial summary record with EA aggregate stats
+      await supabase
+        .from('player_summary')
+        .insert({
+          guild_id: guildId,
+          discord_user_id: profile.discord_user_id,
+          discord_username: fullProfile?.discord_username || eaUsername,
+          overall_rating: 50,
+          primary_position: mappedPosition,
+          games_played: gamesPlayed,
+          wins: wins,
+          losses: losses,
+          draws: draws,
+          win_rate: winRate,
+          goals: goals,
+          assists: assists,
+          clean_sheets: cleanSheets,
+          man_of_match: manOfMatch,
+          avg_match_rating: avgRating,
+          shots: shots,
+          tackles: tackles,
+          passes_made: passesMade,
+          pass_attempts: passAttempts,
+          saves: saves,
+          baseline_synced: true,
+        });
+      
+      console.log(`  ✨ Created player_summary for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A)`);
+    } else {
+      // Always update stats from EA member board (source of truth for aggregate stats)
+      await supabase
+        .from('player_summary')
+        .update({
+          discord_username: fullProfile?.discord_username || eaUsername,
+          primary_position: mappedPosition,
+          games_played: gamesPlayed,
+          wins: wins,
+          losses: losses,
+          draws: draws,
+          win_rate: winRate,
+          goals: goals,
+          assists: assists,
+          clean_sheets: cleanSheets,
+          man_of_match: manOfMatch,
+          avg_match_rating: avgRating,
+          shots: shots,
+          tackles: tackles,
+          passes_made: passesMade,
+          pass_attempts: passAttempts,
+          saves: saves,
+          baseline_synced: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingSummary.id);
+      
+      console.log(`  📈 Updated player_summary for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A, ${winRate.toFixed(1)}% WR)`);
+    }
+    
+    // Track for rating recalculation (only real Discord users)
+    const isRealUser = !profile.discord_user_id.startsWith('ea_');
+    if (isRealUser) {
+      updatedPlayerIds.push(profile.discord_user_id);
+    }
+    synced++;
     
     // Also update the ea_aggregate record in player_stats for historical tracking
     const { data: existingStats } = await supabase
