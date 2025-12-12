@@ -488,18 +488,32 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
       }
     }
     
+    // Debug: Log raw EA member data to see available fields
+    if (synced === 0) {
+      console.log(`  🔍 [DEBUG] Sample EA member data keys:`, Object.keys(member));
+      console.log(`  🔍 [DEBUG] Raw member data:`, JSON.stringify(member, null, 2));
+    }
+    
     // Extract ALL aggregate stats from EA member data (matching EA website fields)
     const goals = parseInt(member.goals || 0);
     const assists = parseInt(member.assists || 0);
     const gamesPlayed = parseInt(member.gamesPlayed || member.matches || member.memberGamesPlayed || 0);
-    const wins = parseInt(member.wins || 0);
-    const losses = parseInt(member.losses || 0);
+    // EA API uses winRate as a decimal (0.55 = 55%) - need to check actual field names
+    const wins = parseInt(member.wins || member.memberWins || 0);
+    const losses = parseInt(member.losses || member.memberLosses || 0);
     const draws = gamesPlayed - wins - losses;
     const avgRating = parseFloat(member.ratingAve || member.avgRating || member.proOverall || 0);
     const cleanSheets = parseInt(member.cleanSheetsDef || member.cleanSheetsGK || member.cleanSheets || 0);
     const manOfMatch = parseInt(member.manOfTheMatch || member.mom || 0);
     const position = favoritePosition;
-    const winRate = gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0;
+    
+    // EA may provide winRate directly as a decimal or percentage
+    let winRate = 0;
+    if (member.winRate !== undefined) {
+      winRate = parseFloat(member.winRate) * (member.winRate <= 1 ? 100 : 1); // Handle both 0.55 and 55 formats
+    } else if (gamesPlayed > 0) {
+      winRate = (wins / gamesPlayed) * 100;
+    }
     
     // Extended stats from EA API (all fields visible on EA club member page)
     const shots = parseInt(member.shots || 0);
@@ -508,7 +522,14 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
     const tackleSuccessRate = tackleAttempts > 0 ? (tackles / tackleAttempts) * 100 : 0;
     const passesMade = parseInt(member.passesmade || member.passesMade || 0);
     const passAttempts = parseInt(member.passattempts || member.passAttempts || 0);
-    const passSuccessRate = passAttempts > 0 ? (passesMade / passAttempts) * 100 : 0;
+    // EA may also provide passSuccessRate directly
+    let passSuccessRate = 0;
+    if (member.passSuccessRate !== undefined || member.passaccuracy !== undefined) {
+      passSuccessRate = parseFloat(member.passSuccessRate || member.passaccuracy || 0);
+      if (passSuccessRate <= 1) passSuccessRate *= 100; // Handle decimal format
+    } else if (passAttempts > 0) {
+      passSuccessRate = (passesMade / passAttempts) * 100;
+    }
     const saves = parseInt(member.saves || member.gksaves || member.gkSaves || 0);
     const interceptions = parseInt(member.interceptions || 0);
     const clearances = parseInt(member.clearances || 0);
