@@ -25,8 +25,11 @@ import {
   Minus,
   User,
   Sparkles,
-  ListChecks
+  ListChecks,
+  BarChart3
 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { RatingBadge } from "@/components/player/RatingBadge";
 import { format } from "date-fns";
 import ReactMarkdown from "react-markdown";
 
@@ -46,6 +49,21 @@ interface PlayerSummary {
   discord_username: string | null;
   overall_rating: number;
   primary_position: string | null;
+}
+
+interface AggregatePlayerStats {
+  discord_user_id: string;
+  discord_username: string | null;
+  overall_rating: number;
+  primary_position: string | null;
+  games_played: number;
+  wins: number;
+  goals: number;
+  assists: number;
+  win_rate: number;
+  form_rating: number | null;
+  reliability_score: number | null;
+  achievement_count: number;
 }
 
 export default function ScoutingPage() {
@@ -72,6 +90,37 @@ export default function ScoutingPage() {
       const { data, error } = await supabase
         .from("player_summary")
         .select("discord_user_id, discord_username, overall_rating, primary_position")
+        .eq("guild_id", selectedGuildId)
+        .order("overall_rating", { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedGuildId,
+  });
+
+  // Fetch aggregate stats for all players
+  const { data: aggregateStats, isLoading: aggregateLoading } = useQuery({
+    queryKey: ["aggregateStats", selectedGuildId],
+    queryFn: async (): Promise<AggregatePlayerStats[]> => {
+      if (!selectedGuildId) return [];
+      
+      const { data, error } = await supabase
+        .from("player_summary")
+        .select(`
+          discord_user_id,
+          discord_username,
+          overall_rating,
+          primary_position,
+          games_played,
+          wins,
+          goals,
+          assists,
+          win_rate,
+          form_rating,
+          reliability_score,
+          achievement_count
+        `)
         .eq("guild_id", selectedGuildId)
         .order("overall_rating", { ascending: false });
       
@@ -244,6 +293,10 @@ Focus on controlling midfield to limit their counter-attacks.
             <TabsTrigger value="lists" className="flex items-center gap-2">
               <ListChecks className="h-4 w-4" />
               My Lists
+            </TabsTrigger>
+            <TabsTrigger value="all-stats" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              All Players
             </TabsTrigger>
           </TabsList>
 
@@ -510,6 +563,126 @@ Focus on controlling midfield to limit their counter-attacks.
 
           <TabsContent value="lists" className="space-y-4">
             <ScoutingLists currentUserId="captain_user" />
+          </TabsContent>
+
+          <TabsContent value="all-stats" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  All Player Stats
+                </CardTitle>
+                <CardDescription>
+                  Aggregate stats and ratings for all Discord members
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {aggregateLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : aggregateStats && aggregateStats.length > 0 ? (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">#</TableHead>
+                          <TableHead>Player</TableHead>
+                          <TableHead className="text-center">Rating</TableHead>
+                          <TableHead className="text-center hidden md:table-cell">Games</TableHead>
+                          <TableHead className="text-center hidden md:table-cell">Wins</TableHead>
+                          <TableHead className="text-center hidden sm:table-cell">Win %</TableHead>
+                          <TableHead className="text-center hidden lg:table-cell">Goals</TableHead>
+                          <TableHead className="text-center hidden lg:table-cell">Assists</TableHead>
+                          <TableHead className="text-center hidden xl:table-cell">G+A</TableHead>
+                          <TableHead className="text-center hidden xl:table-cell">Form</TableHead>
+                          <TableHead className="text-center hidden xl:table-cell">Reliability</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {aggregateStats.map((player, index) => (
+                          <TableRow 
+                            key={player.discord_user_id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => {
+                              setSelectedPlayerId(player.discord_user_id);
+                              // Switch to scout player tab
+                              const tabTrigger = document.querySelector('[data-state="active"][value="all-stats"]')?.closest('[role="tablist"]')?.querySelector('[value="player"]') as HTMLElement;
+                              tabTrigger?.click();
+                            }}
+                          >
+                            <TableCell className="font-medium text-muted-foreground">
+                              {index + 1}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold">
+                                  {(player.discord_username || player.discord_user_id).charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <p className="font-medium">{player.discord_username || player.discord_user_id}</p>
+                                  {player.primary_position && (
+                                    <Badge variant="outline" className="text-xs">
+                                      {player.primary_position}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <RatingBadge rating={player.overall_rating} />
+                            </TableCell>
+                            <TableCell className="text-center hidden md:table-cell">
+                              {player.games_played}
+                            </TableCell>
+                            <TableCell className="text-center hidden md:table-cell">
+                              {player.wins}
+                            </TableCell>
+                            <TableCell className="text-center hidden sm:table-cell">
+                              <span className={player.win_rate >= 50 ? "text-green-500" : player.win_rate >= 40 ? "text-yellow-500" : "text-red-500"}>
+                                {player.win_rate.toFixed(1)}%
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center hidden lg:table-cell">
+                              {player.goals}
+                            </TableCell>
+                            <TableCell className="text-center hidden lg:table-cell">
+                              {player.assists}
+                            </TableCell>
+                            <TableCell className="text-center hidden xl:table-cell font-bold">
+                              {player.goals + player.assists}
+                            </TableCell>
+                            <TableCell className="text-center hidden xl:table-cell">
+                              {player.form_rating ? (
+                                <span className={player.form_rating >= 60 ? "text-green-500" : player.form_rating >= 40 ? "text-yellow-500" : "text-red-500"}>
+                                  {player.form_rating.toFixed(0)}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-center hidden xl:table-cell">
+                              {player.reliability_score ? (
+                                <span className={player.reliability_score >= 80 ? "text-green-500" : player.reliability_score >= 60 ? "text-yellow-500" : "text-red-500"}>
+                                  {player.reliability_score.toFixed(0)}%
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="py-12 text-center text-muted-foreground">
+                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No players found in this server</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
