@@ -1178,6 +1178,7 @@ export type Database = {
           created_at: string
           discord_user_id: string
           draft_id: string | null
+          ea_match_id: string | null
           ea_match_rating: number | null
           goals: number
           guild_id: string
@@ -1200,6 +1201,7 @@ export type Database = {
           created_at?: string
           discord_user_id: string
           draft_id?: string | null
+          ea_match_id?: string | null
           ea_match_rating?: number | null
           goals?: number
           guild_id: string
@@ -1222,6 +1224,7 @@ export type Database = {
           created_at?: string
           discord_user_id?: string
           draft_id?: string | null
+          ea_match_id?: string | null
           ea_match_rating?: number | null
           goals?: number
           guild_id?: string

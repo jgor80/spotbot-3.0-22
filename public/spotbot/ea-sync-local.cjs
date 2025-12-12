@@ -311,34 +311,50 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
   return synced;
 }
 
-// Process and sync matches
+// Process and sync matches (last 10 only with deduplication)
 async function syncMatches(guildId, clubKey, club) {
   const matches = await fetchMatches(club.ea_club_id, club.ea_platform);
   
   if (!matches.length) {
     console.log(`⚠️ No matches found for ${club.name}`);
-    return { synced: 0, skipped: 0 };
+    return { synced: 0, skipped: 0, playerStats: 0 };
   }
   
-  // Get existing match IDs
+  // Only process last 10 matches
+  const last10Matches = matches.slice(0, 10);
+  console.log(`📊 Processing last ${last10Matches.length} matches for ${club.name}`);
+  
+  // Get existing match IDs from club_matches
   const { data: existingMatches } = await supabase
     .from('club_matches')
     .select('ea_match_id')
     .eq('guild_id', guildId)
     .eq('club_key', clubKey);
   
-  const existingIds = new Set((existingMatches || []).map(m => m.ea_match_id));
+  const existingMatchIds = new Set((existingMatches || []).map(m => m.ea_match_id));
   
-  let synced = 0, skipped = 0;
+  // Get existing player stats by ea_match_id for deduplication
+  const matchIds = last10Matches.map(m => m.matchId?.toString()).filter(Boolean);
+  const { data: existingPlayerStats } = await supabase
+    .from('player_stats')
+    .select('ea_match_id, discord_user_id')
+    .eq('guild_id', guildId)
+    .in('ea_match_id', matchIds);
   
-  for (const matchData of matches) {
+  const existingPlayerStatsSet = new Set(
+    (existingPlayerStats || []).map(s => `${s.ea_match_id}:${s.discord_user_id}`)
+  );
+  
+  let synced = 0, skipped = 0, playerStatsCount = 0;
+  
+  for (const matchData of last10Matches) {
     const matchId = matchData.matchId?.toString();
-    if (!matchId || existingIds.has(matchId)) {
+    if (!matchId) {
       skipped++;
       continue;
     }
     
-    // Process match
+    // Process match data
     const ourClubData = matchData.clubs?.[club.ea_club_id];
     const opponentClubId = Object.keys(matchData.clubs || {}).find(id => id !== club.ea_club_id);
     const opponentClubData = opponentClubId ? matchData.clubs[opponentClubId] : null;
@@ -350,80 +366,108 @@ async function syncMatches(guildId, clubKey, club) {
     if (scoreFor > scoreAgainst) result = 'win';
     else if (scoreFor < scoreAgainst) result = 'loss';
     
-    // Extract player stats
+    // Extract extended player stats from EA data
     const playerStats = [];
     const players = matchData.players?.[club.ea_club_id] || {};
     
-    for (const [, pStats] of Object.entries(players)) {
+    for (const [playerId, pStats] of Object.entries(players)) {
+      // Extract ALL available stats from EA API
       playerStats.push({
-        ea_username: pStats.playername,
+        ea_username: pStats.playername || pStats.name,
         goals: parseInt(pStats.goals || 0),
         assists: parseInt(pStats.assists || 0),
         rating: parseFloat(pStats.rating || 0),
-        position: pStats.pos,
-        motm: pStats.mom === '1',
+        position: pStats.pos || pStats.position,
+        motm: pStats.mom === '1' || pStats.mom === 1,
         shots: parseInt(pStats.shots || 0),
-        tackles: parseInt(pStats.tacklesmade || 0),
-        passes_made: parseInt(pStats.passesmade || 0),
-        pass_attempts: parseInt(pStats.passattempts || 0),
-        red_cards: pStats.redcards === '1'
+        tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
+        passes_made: parseInt(pStats.passesmade || pStats.passesMade || 0),
+        pass_attempts: parseInt(pStats.passattempts || pStats.passAttempts || 0),
+        red_cards: pStats.redcards === '1' || pStats.redcards === 1,
+        // Extended stats
+        saves: parseInt(pStats.saves || pStats.gksaves || 0),
+        interceptions: parseInt(pStats.interceptions || 0),
+        clearances: parseInt(pStats.clearances || 0),
+        possession: parseFloat(pStats.possession || 0),
+        dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
+        fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
+        offsides: parseInt(pStats.offsides || 0)
       });
     }
     
-    // Insert match
-    const { error: matchError } = await supabase.from('club_matches').insert({
-      guild_id: guildId,
-      club_key: clubKey,
-      ea_match_id: matchId,
-      match_type: 'division',
-      result,
-      score_for: scoreFor,
-      score_against: scoreAgainst,
-      opponent_club_name: opponentClubData?.name || 'Unknown',
-      opponent_club_id: opponentClubId,
-      match_data: matchData,
-      player_stats: playerStats
-    });
-    
-    if (matchError) {
-      console.error(`[DB] Match insert error:`, matchError.message);
-      continue;
+    // Insert/update match in club_matches (skip if exists)
+    if (!existingMatchIds.has(matchId)) {
+      const { error: matchError } = await supabase.from('club_matches').insert({
+        guild_id: guildId,
+        club_key: clubKey,
+        ea_match_id: matchId,
+        match_type: 'division',
+        result,
+        score_for: scoreFor,
+        score_against: scoreAgainst,
+        opponent_club_name: opponentClubData?.name || 'Unknown',
+        opponent_club_id: opponentClubId,
+        match_data: matchData,
+        player_stats: playerStats
+      });
+      
+      if (matchError) {
+        console.error(`[DB] Match insert error:`, matchError.message);
+      } else {
+        synced++;
+        console.log(`✅ New match ${matchId}: ${result} ${scoreFor}-${scoreAgainst}`);
+      }
+    } else {
+      skipped++;
     }
     
-    // Record player stats for linked players
+    // Record individual player stats with deduplication
     for (const pStat of playerStats) {
+      // Find profile for this EA username
       const { data: profile } = await supabase
         .from('profiles')
         .select('discord_user_id')
         .eq('ea_username', pStat.ea_username)
         .maybeSingle();
       
-      if (profile) {
-        await supabase.from('player_stats').insert({
-          guild_id: guildId,
-          discord_user_id: profile.discord_user_id,
-          match_type: 'club',
-          goals: pStat.goals,
-          assists: pStat.assists,
-          clean_sheet: pStat.position === 'GK' && scoreAgainst === 0,
-          won: result === 'win',
-          ea_match_rating: pStat.rating,
-          position_played: pStat.position,
-          man_of_match: pStat.motm,
-          shots: pStat.shots,
-          tackles: pStat.tackles,
-          passes_made: pStat.passes_made,
-          pass_attempts: pStat.pass_attempts,
-          red_cards: pStat.red_cards
-        });
+      if (!profile) continue;
+      
+      // Check if we already have this player's stats for this match
+      const statsKey = `${matchId}:${profile.discord_user_id}`;
+      if (existingPlayerStatsSet.has(statsKey)) continue;
+      
+      // Insert player stats with ea_match_id for future deduplication
+      const { error: statsError } = await supabase.from('player_stats').insert({
+        guild_id: guildId,
+        discord_user_id: profile.discord_user_id,
+        ea_match_id: matchId,
+        match_type: 'club',
+        goals: pStat.goals,
+        assists: pStat.assists,
+        clean_sheet: (pStat.position === 'GK' || pStat.position === 'goalkeeper') && scoreAgainst === 0,
+        won: result === 'win',
+        ea_match_rating: pStat.rating,
+        position_played: pStat.position,
+        man_of_match: pStat.motm,
+        shots: pStat.shots,
+        tackles: pStat.tackles,
+        passes_made: pStat.passes_made,
+        pass_attempts: pStat.pass_attempts,
+        red_cards: pStat.red_cards
+      });
+      
+      if (!statsError) {
+        playerStatsCount++;
+        existingPlayerStatsSet.add(statsKey); // Mark as processed
       }
     }
-    
-    synced++;
-    console.log(`✅ Synced match ${matchId}: ${result} ${scoreFor}-${scoreAgainst}`);
   }
   
-  return { synced, skipped };
+  if (playerStatsCount > 0) {
+    console.log(`📈 Recorded ${playerStatsCount} player stats entries`);
+  }
+  
+  return { synced, skipped, playerStats: playerStatsCount };
 }
 
 // Main sync loop
