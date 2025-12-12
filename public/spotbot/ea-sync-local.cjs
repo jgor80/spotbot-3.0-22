@@ -44,27 +44,64 @@ const EA_HEADERS = {
   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
 };
 
-// Fetch match history
-async function fetchMatches(clubId, platform, matchType = 'matchType9') {
+// Fetch match history - tries multiple matchType formats
+async function fetchMatches(clubId, platform) {
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
   
+  // EA API sometimes changes matchType format - try multiple options
+  const matchTypes = ['leagueMatch', 'gameType9', 'matchType9', 'league'];
+  
+  for (const matchType of matchTypes) {
+    try {
+      console.log(`[EA] Trying matchType: ${matchType}`);
+      const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
+        params: { platform: fcPlatform, clubIds: clubId, matchType, maxResultCount: 50 },
+        headers: EA_HEADERS,
+        timeout: 10000
+      });
+      
+      if (res.status !== 200) continue;
+      
+      let matches = res.data;
+      if (Array.isArray(matches) && matches.length > 0) {
+        console.log(`[EA] Success with matchType: ${matchType}`);
+        return matches;
+      }
+      if (matches?.matches && matches.matches.length > 0) {
+        console.log(`[EA] Success with matchType: ${matchType}`);
+        return matches.matches;
+      }
+      
+      const vals = Object.values(matches).filter(v => v && typeof v === 'object');
+      if (vals.length > 0) {
+        console.log(`[EA] Success with matchType: ${matchType}`);
+        return vals;
+      }
+    } catch (err) {
+      console.log(`[EA] matchType ${matchType} failed: ${err.message}`);
+    }
+  }
+  
+  // Also try without matchType param
   try {
+    console.log(`[EA] Trying without matchType param`);
     const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
-      params: { platform: fcPlatform, clubIds: clubId, matchType, maxResultCount: 50 },
+      params: { platform: fcPlatform, clubIds: clubId, maxResultCount: 50 },
       headers: EA_HEADERS,
       timeout: 10000
     });
     
-    if (res.status !== 200) return [];
-    
-    let matches = res.data;
-    if (Array.isArray(matches)) return matches;
-    if (matches?.matches) return matches.matches;
-    return Object.values(matches).filter(v => v && typeof v === 'object');
+    if (res.status === 200) {
+      let matches = res.data;
+      if (Array.isArray(matches)) return matches;
+      if (matches?.matches) return matches.matches;
+      return Object.values(matches).filter(v => v && typeof v === 'object');
+    }
   } catch (err) {
-    console.error(`[EA] Match fetch error:`, err.message);
-    return [];
+    console.log(`[EA] No matchType failed: ${err.message}`);
   }
+  
+  return [];
 }
 
 // Fetch club info
