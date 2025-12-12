@@ -5506,11 +5506,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         try {
           // Call the sync-ea-stats edge function for a full sync
-          const response = await fetch(`${SUPABASE_URL}/functions/v1/sync-ea-stats`, {
+          const response = await fetch(`${supabaseUrl}/functions/v1/sync-ea-stats`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+              'Authorization': `Bearer ${supabaseKey}`
             },
             body: JSON.stringify({
               guild_id: guildId,
