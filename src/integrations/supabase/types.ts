@@ -1446,6 +1446,42 @@ export type Database = {
         }
         Relationships: []
       }
+      scouting_lists: {
+        Row: {
+          created_at: string
+          created_by_discord_id: string
+          description: string | null
+          guild_id: string
+          id: string
+          is_public: boolean
+          name: string
+          player_ids: string[]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by_discord_id: string
+          description?: string | null
+          guild_id: string
+          id?: string
+          is_public?: boolean
+          name: string
+          player_ids?: string[]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by_discord_id?: string
+          description?: string | null
+          guild_id?: string
+          id?: string
+          is_public?: boolean
+          name?: string
+          player_ids?: string[]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       team_rosters: {
         Row: {
           discord_user_id: string

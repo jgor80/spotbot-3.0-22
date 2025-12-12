@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useGuild } from "@/contexts/GuildContext";
+import { ScoutingLists } from "@/components/scouting/ScoutingLists";
 import { 
   Search, 
   Loader2, 
@@ -23,7 +24,8 @@ import {
   TrendingDown,
   Minus,
   User,
-  Sparkles
+  Sparkles,
+  ListChecks
 } from "lucide-react";
 import { format } from "date-fns";
 import ReactMarkdown from "react-markdown";
@@ -238,6 +240,10 @@ Focus on controlling midfield to limit their counter-attacks.
             <TabsTrigger value="preview" className="flex items-center gap-2">
               <ClipboardList className="h-4 w-4" />
               Match Preview
+            </TabsTrigger>
+            <TabsTrigger value="lists" className="flex items-center gap-2">
+              <ListChecks className="h-4 w-4" />
+              My Lists
             </TabsTrigger>
           </TabsList>
 
@@ -500,6 +506,10 @@ Focus on controlling midfield to limit their counter-attacks.
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="lists" className="space-y-4">
+            <ScoutingLists currentUserId="captain_user" />
           </TabsContent>
         </Tabs>
       </div>
