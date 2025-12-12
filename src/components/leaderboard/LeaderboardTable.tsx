@@ -9,7 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface LeaderboardTableProps {
@@ -64,15 +65,31 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-medium text-sm">
                       {(player.ea_username || player.discord_username)?.charAt(0).toUpperCase() || "?"}
                     </div>
-                    <div>
-                      <p className="font-medium">{player.ea_username || player.discord_username || "Unknown"}</p>
-                      {player.ea_username && player.discord_username && (
-                        <p className="text-xs text-muted-foreground">{player.discord_username}</p>
-                      )}
-                      {player.primary_position && (
-                        <Badge variant="outline" className="text-xs mt-0.5">
-                          {player.primary_position}
-                        </Badge>
+                    <div className="flex items-center gap-2">
+                      <div>
+                        <p className="font-medium">{player.ea_username || player.discord_username || "Unknown"}</p>
+                        {player.ea_username && player.discord_username && (
+                          <p className="text-xs text-muted-foreground">{player.discord_username}</p>
+                        )}
+                        {player.primary_position && (
+                          <Badge variant="outline" className="text-xs mt-0.5">
+                            {player.primary_position}
+                          </Badge>
+                        )}
+                      </div>
+                      {player.discord_user_id.startsWith('ea_') && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger>
+                              <div className="flex items-center justify-center h-5 w-5 rounded-full bg-amber-500/20 text-amber-500">
+                                <AlertTriangle className="h-3 w-3" />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="text-sm">Unlinked EA account - needs Discord linking</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       )}
                     </div>
                   </div>
