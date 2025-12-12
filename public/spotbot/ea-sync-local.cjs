@@ -246,9 +246,6 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
         console.log(`  ✨ Created profile for ${eaUsername}`);
         profile = newProfile;
       }
-      
-      console.log(`  ✨ Created profile for ${eaUsername}`);
-      profile = newProfile;
     }
     
     // Aggregate stats from EA member data
