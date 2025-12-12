@@ -13,6 +13,9 @@ interface DraftStartRequest {
   guild_id: string;
   voice_channel_id: string;
   player_discord_ids: string[];
+  team_a_vc_id?: string;
+  team_b_vc_id?: string;
+  min_games_for_captain?: number; // Minimum games to be eligible as captain
 }
 
 function validateRequest(body: any): string[] {
@@ -63,7 +66,14 @@ serve(async (req) => {
       );
     }
 
-    const { guild_id, voice_channel_id, player_discord_ids }: DraftStartRequest = body;
+    const { 
+      guild_id, 
+      voice_channel_id, 
+      player_discord_ids,
+      team_a_vc_id,
+      team_b_vc_id,
+      min_games_for_captain = 5 // Default: need at least 5 games to be captain
+    }: DraftStartRequest = body;
 
     console.log(`[draft-start] Starting draft for guild ${guild_id} with ${player_discord_ids.length} players`);
 
@@ -82,13 +92,97 @@ serve(async (req) => {
         .upsert({ discord_user_id: discordId }, { onConflict: "discord_user_id" });
     }
 
-    // Randomly select two captains
-    const shuffled = [...player_discord_ids].sort(() => Math.random() - 0.5);
-    const captainA = shuffled[0];
-    const captainB = shuffled[1];
-    const availablePlayers = shuffled.slice(2);
+    // Fetch player ratings to determine captain eligibility
+    const { data: playerRatings } = await supabase
+      .from("player_ratings")
+      .select("discord_user_id, games_played, overall_rating")
+      .eq("guild_id", guild_id)
+      .in("discord_user_id", player_discord_ids);
 
-    // Create the draft
+    const ratingsMap = new Map(
+      (playerRatings || []).map(p => [p.discord_user_id, p])
+    );
+
+    // Filter for captain-eligible players (those with enough games)
+    const eligibleCaptains = player_discord_ids.filter(id => {
+      const rating = ratingsMap.get(id);
+      return rating && rating.games_played >= min_games_for_captain;
+    });
+
+    console.log(`[draft-start] ${eligibleCaptains.length} players eligible as captains (min ${min_games_for_captain} games)`);
+
+    // If not enough eligible captains, fall back to all players but prioritize experienced ones
+    let captainPool = eligibleCaptains.length >= 2 
+      ? eligibleCaptains 
+      : player_discord_ids;
+
+    // Sort captain pool by games played (most experienced first) then add some randomness
+    captainPool = [...captainPool].sort((a, b) => {
+      const aGames = ratingsMap.get(a)?.games_played || 0;
+      const bGames = ratingsMap.get(b)?.games_played || 0;
+      // Primary sort by games, secondary random factor for variety
+      if (aGames !== bGames) return bGames - aGames;
+      return Math.random() - 0.5;
+    });
+
+    // Select captains: if we have enough eligible, pick from top half randomly
+    // Otherwise just pick from the sorted pool
+    let captainA: string;
+    let captainB: string;
+
+    if (eligibleCaptains.length >= 4) {
+      // Pick randomly from top half of eligible players
+      const topHalf = captainPool.slice(0, Math.ceil(captainPool.length / 2));
+      const shuffledTop = [...topHalf].sort(() => Math.random() - 0.5);
+      captainA = shuffledTop[0];
+      captainB = shuffledTop[1];
+    } else if (eligibleCaptains.length >= 2) {
+      // Use the two most experienced eligible players with some randomness
+      const shuffled = [...eligibleCaptains].sort(() => Math.random() - 0.5);
+      captainA = shuffled[0];
+      captainB = shuffled[1];
+    } else {
+      // Fallback: random selection but prefer experienced players
+      // Weight by games played
+      const weighted = player_discord_ids.map(id => ({
+        id,
+        weight: (ratingsMap.get(id)?.games_played || 0) + 1
+      }));
+      
+      const totalWeight = weighted.reduce((sum, p) => sum + p.weight, 0);
+      
+      // Weighted random selection for first captain
+      let rand = Math.random() * totalWeight;
+      let captainAIndex = 0;
+      for (let i = 0; i < weighted.length; i++) {
+        rand -= weighted[i].weight;
+        if (rand <= 0) {
+          captainAIndex = i;
+          break;
+        }
+      }
+      captainA = weighted[captainAIndex].id;
+      
+      // Remove first captain and select second
+      const remaining = weighted.filter(p => p.id !== captainA);
+      const remainingWeight = remaining.reduce((sum, p) => sum + p.weight, 0);
+      rand = Math.random() * remainingWeight;
+      let captainBIndex = 0;
+      for (let i = 0; i < remaining.length; i++) {
+        rand -= remaining[i].weight;
+        if (rand <= 0) {
+          captainBIndex = i;
+          break;
+        }
+      }
+      captainB = remaining[captainBIndex].id;
+    }
+
+    const availablePlayers = player_discord_ids.filter(id => id !== captainA && id !== captainB);
+
+    console.log(`[draft-start] Selected captains: ${captainA} vs ${captainB}`);
+
+    // Create the draft with optional team VCs
     const { data: draft, error: draftError } = await supabase
       .from("drafts")
       .insert({
@@ -102,6 +196,8 @@ serve(async (req) => {
         current_picker: "a",
         status: "picking",
         started_at: new Date().toISOString(),
+        team_a_vc_id: team_a_vc_id || null,
+        team_b_vc_id: team_b_vc_id || null,
       })
       .select()
       .single();
@@ -131,6 +227,10 @@ serve(async (req) => {
       discord_user_id: id,
     }));
 
+    // Include captain eligibility info in response
+    const captainAData = ratingsMap.get(captainA);
+    const captainBData = ratingsMap.get(captainB);
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -138,14 +238,23 @@ serve(async (req) => {
         captain_a: {
           ...(playerData.get(captainA) || { overall_rating: 50 }),
           discord_user_id: captainA,
+          games_played: captainAData?.games_played || 0,
         },
         captain_b: {
           ...(playerData.get(captainB) || { overall_rating: 50 }),
           discord_user_id: captainB,
+          games_played: captainBData?.games_played || 0,
         },
         available_players: availableWithRatings,
         current_picker: "a",
         pick_number: 1,
+        team_a_vc_id: team_a_vc_id || null,
+        team_b_vc_id: team_b_vc_id || null,
+        captain_selection_info: {
+          eligible_captains_count: eligibleCaptains.length,
+          min_games_required: min_games_for_captain,
+          used_fallback: eligibleCaptains.length < 2,
+        },
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

@@ -324,7 +324,15 @@ const COMMANDS = [
   },
 
   // Draft System Commands
-  { name: 'draft', description: 'Start a draft with players in your current voice channel.' },
+  { 
+    name: 'draft', 
+    description: 'Start a draft with players in your current voice channel.',
+    options: [
+      { name: 'team_a_vc', description: 'Voice channel for Team A (optional, for auto-move).', type: 7, required: false },
+      { name: 'team_b_vc', description: 'Voice channel for Team B (optional, for auto-move).', type: 7, required: false },
+      { name: 'min_games', description: 'Minimum games to be captain (default: 5).', type: 4, required: false }
+    ]
+  },
   { 
     name: 'draftpick', 
     description: 'Pick a player for your team (captains only).',
@@ -341,6 +349,7 @@ const COMMANDS = [
     ]
   },
   { name: 'draftcancel', description: 'Cancel the current draft (captains/admins only).' },
+  { name: 'draftreroll', description: 'Request to reroll captains (before picks begin). Requires both captains to agree.' },
 
   // Player Rating & Profile Commands
   { 
@@ -2917,6 +2926,84 @@ async function buildRecentActivityEmbed(guildId) {
 }
 
 // =======================
+// DRAFT VC MOVE HELPER
+// =======================
+
+/**
+ * Move players to their respective team voice channels after draft completion
+ * @param {Guild} guild - Discord guild object
+ * @param {string[]} teamAPlayerIds - Player IDs for Team A
+ * @param {string[]} teamBPlayerIds - Player IDs for Team B  
+ * @param {string} teamAVcId - Voice channel ID for Team A
+ * @param {string} teamBVcId - Voice channel ID for Team B
+ * @returns {Object} - { moved: number, failed: number, errors: string[] }
+ */
+async function movePlayersToTeamVCs(guild, teamAPlayerIds, teamBPlayerIds, teamAVcId, teamBVcId) {
+  const result = { moved: 0, failed: 0, errors: [] };
+  
+  if (!guild || !teamAVcId || !teamBVcId) {
+    return result;
+  }
+  
+  try {
+    // Fetch the target voice channels
+    const teamAVc = await guild.channels.fetch(teamAVcId).catch(() => null);
+    const teamBVc = await guild.channels.fetch(teamBVcId).catch(() => null);
+    
+    if (!teamAVc || !teamBVc) {
+      result.errors.push('Could not find one or both team voice channels');
+      return result;
+    }
+    
+    if (teamAVc.type !== ChannelType.GuildVoice || teamBVc.type !== ChannelType.GuildVoice) {
+      result.errors.push('Team channels must be voice channels');
+      return result;
+    }
+    
+    // Move Team A players
+    for (const playerId of teamAPlayerIds) {
+      try {
+        const member = await guild.members.fetch(playerId).catch(() => null);
+        if (member?.voice?.channel) {
+          await member.voice.setChannel(teamAVc);
+          result.moved++;
+          console.log(`[Draft VC] Moved ${playerId} to Team A VC`);
+        }
+      } catch (err) {
+        result.failed++;
+        console.error(`[Draft VC] Failed to move ${playerId} to Team A:`, err.message);
+      }
+    }
+    
+    // Move Team B players
+    for (const playerId of teamBPlayerIds) {
+      try {
+        const member = await guild.members.fetch(playerId).catch(() => null);
+        if (member?.voice?.channel) {
+          await member.voice.setChannel(teamBVc);
+          result.moved++;
+          console.log(`[Draft VC] Moved ${playerId} to Team B VC`);
+        }
+      } catch (err) {
+        result.failed++;
+        console.error(`[Draft VC] Failed to move ${playerId} to Team B:`, err.message);
+      }
+    }
+    
+    console.log(`[Draft VC] Move complete: ${result.moved} moved, ${result.failed} failed`);
+    
+  } catch (err) {
+    result.errors.push(err.message);
+    console.error('[Draft VC] Error moving players:', err);
+  }
+  
+  return result;
+}
+
+// Pending captain reroll requests (guildId -> { draftId, initiator, originalCaptainA, originalCaptainB, expires })
+const pendingCaptainRerolls = new Map();
+
+// =======================
 // READY & COMMAND REG
 // =======================
 
@@ -3629,10 +3716,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
           });
         }
 
+        // Get optional team VCs for auto-move after draft
+        const teamAVc = interaction.options.getChannel('team_a_vc');
+        const teamBVc = interaction.options.getChannel('team_b_vc');
+        const minGames = interaction.options.getInteger('min_games') || 5;
+
+        // Validate VCs if provided
+        if (teamAVc && teamAVc.type !== ChannelType.GuildVoice) {
+          return interaction.editReply({ content: '❌ Team A VC must be a voice channel.' });
+        }
+        if (teamBVc && teamBVc.type !== ChannelType.GuildVoice) {
+          return interaction.editReply({ content: '❌ Team B VC must be a voice channel.' });
+        }
+
         const { error, data } = await callEdgeFunction('draft-start', {
           guild_id: guildId,
           voice_channel_id: voiceChannel.id,
-          player_discord_ids: playerIds
+          player_discord_ids: playerIds,
+          team_a_vc_id: teamAVc?.id || null,
+          team_b_vc_id: teamBVc?.id || null,
+          min_games_for_captain: minGames
         });
 
         if (error) {
@@ -3642,7 +3745,36 @@ client.on(Events.InteractionCreate, async (interaction) => {
         activeDrafts.set(guildId, data);
 
         const embed = buildDraftEmbed(data, interaction.guild);
-        return interaction.editReply({ embeds: [embed] });
+        
+        // Add captain selection info
+        if (data.captain_selection_info) {
+          const info = data.captain_selection_info;
+          let selectionNote = '';
+          if (info.used_fallback) {
+            selectionNote = `⚠️ Not enough experienced players (${info.eligible_captains_count}/${info.min_games_required} games min). Captain selection weighted by experience.`;
+          } else {
+            selectionNote = `✅ ${info.eligible_captains_count} players eligible (${info.min_games_required}+ games). Captains selected from experienced pool.`;
+          }
+          embed.addFields({ name: '👑 Captain Selection', value: selectionNote });
+        }
+
+        // Add VC info if configured
+        if (teamAVc && teamBVc) {
+          embed.addFields({
+            name: '🎧 Team Voice Channels',
+            value: `Team A → <#${teamAVc.id}>\nTeam B → <#${teamBVc.id}>\n*Players will be moved after draft completes.*`
+          });
+        }
+
+        // Add reroll button
+        const rerollRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`draft_reroll_${data.draft_id}`)
+            .setLabel('🔄 Reroll Captains')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+        return interaction.editReply({ embeds: [embed], components: [rerollRow] });
       }
 
       if (cmd === 'draftpick') {
@@ -3701,6 +3833,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
               { name: '🔵 Team B', value: data.team_b.map(id => `<@${id}>`).join('\n'), inline: true }
             )
             .setDescription('Use `/draftresult <team_a_score> <team_b_score>` to report the match result!');
+          
+          // Move players to team VCs if configured
+          if (data.team_a_vc_id && data.team_b_vc_id) {
+            const vcMoveResults = await movePlayersToTeamVCs(
+              interaction.guild,
+              data.team_a,
+              data.team_b,
+              data.team_a_vc_id,
+              data.team_b_vc_id
+            );
+            
+            if (vcMoveResults.moved > 0) {
+              completeEmbed.addFields({
+                name: '🎧 Voice Channels',
+                value: `Moved ${vcMoveResults.moved} players to team VCs\n` +
+                  `Team A → <#${data.team_a_vc_id}>\n` +
+                  `Team B → <#${data.team_b_vc_id}>`
+              });
+            }
+          }
           
           return interaction.editReply({ embeds: [completeEmbed] });
         }
@@ -3778,6 +3930,131 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.reply({
           content: '🗑️ Draft cancelled. Start a new one with `/draft`.',
         });
+      }
+
+      // Reroll captains command
+      if (cmd === 'draftreroll') {
+        const draftData = activeDrafts.get(guildId);
+        if (!draftData) {
+          return interaction.reply({
+            content: '❌ No active draft to reroll captains for.',
+            flags: 64
+          });
+        }
+
+        // Only allow reroll before any picks are made (pick_number should be 1 or 0)
+        if (draftData.pick_number > 1) {
+          return interaction.reply({
+            content: '❌ Cannot reroll captains after picking has begun.',
+            flags: 64
+          });
+        }
+
+        const isCaptain = interaction.user.id === draftData.captain_a?.discord_user_id || 
+                          interaction.user.id === draftData.captain_b?.discord_user_id;
+        
+        if (!isCaptain && !isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only captains or managers can request a captain reroll.',
+            flags: 64
+          });
+        }
+
+        // Check for existing reroll request
+        const existingRequest = pendingCaptainRerolls.get(guildId);
+        if (existingRequest && existingRequest.draftId === draftData.draft_id) {
+          // Second captain agreeing - execute reroll
+          if (existingRequest.initiator !== interaction.user.id) {
+            await interaction.deferReply();
+            
+            // Reroll captains by calling draft-start again with same players
+            const allPlayers = [
+              ...draftData.team_a_player_ids || [draftData.captain_a.discord_user_id],
+              ...draftData.team_b_player_ids || [draftData.captain_b.discord_user_id],
+              ...(draftData.available_players || []).map(p => p.discord_user_id || p)
+            ];
+            
+            // Cancel old draft
+            await supabase
+              .from('drafts')
+              .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+              .eq('id', draftData.draft_id);
+            
+            // Start new draft with same players
+            const { error, data: newDraft } = await callEdgeFunction('draft-start', {
+              guild_id: guildId,
+              voice_channel_id: draftData.voice_channel_id,
+              player_discord_ids: allPlayers,
+              team_a_vc_id: draftData.team_a_vc_id,
+              team_b_vc_id: draftData.team_b_vc_id
+            });
+
+            pendingCaptainRerolls.delete(guildId);
+
+            if (error) {
+              return interaction.editReply({ content: `❌ Failed to reroll captains: ${error}` });
+            }
+
+            activeDrafts.set(guildId, newDraft);
+            
+            const embed = buildDraftEmbed(newDraft, interaction.guild);
+            embed.setDescription('🔄 **Captains Rerolled!**\n\n' + (embed.data.description || ''));
+            
+            return interaction.editReply({ embeds: [embed] });
+          } else {
+            return interaction.reply({
+              content: `⏳ You already requested a reroll. Waiting for the other captain <@${
+                existingRequest.initiator === draftData.captain_a.discord_user_id 
+                  ? draftData.captain_b.discord_user_id 
+                  : draftData.captain_a.discord_user_id
+              }> to agree.`,
+              flags: 64
+            });
+          }
+        }
+
+        // First captain requesting - create pending request
+        pendingCaptainRerolls.set(guildId, {
+          draftId: draftData.draft_id,
+          initiator: interaction.user.id,
+          originalCaptainA: draftData.captain_a.discord_user_id,
+          originalCaptainB: draftData.captain_b.discord_user_id,
+          expires: Date.now() + 60000 // 1 minute expiry
+        });
+
+        const otherCaptain = interaction.user.id === draftData.captain_a.discord_user_id 
+          ? draftData.captain_b.discord_user_id 
+          : draftData.captain_a.discord_user_id;
+
+        const rerollEmbed = new EmbedBuilder()
+          .setTitle('🔄 Captain Reroll Requested')
+          .setColor(0xffcc00)
+          .setDescription(
+            `<@${interaction.user.id}> has requested to reroll captains.\n\n` +
+            `<@${otherCaptain}> - use \`/draftreroll\` or click the button to agree.`
+          )
+          .setFooter({ text: 'Request expires in 60 seconds' });
+
+        const rerollButtons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`draft_reroll_confirm_${draftData.draft_id}`)
+            .setLabel('✅ Agree to Reroll')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`draft_reroll_cancel_${draftData.draft_id}`)
+            .setLabel('❌ Keep Current Captains')
+            .setStyle(ButtonStyle.Danger)
+        );
+
+        // Auto-expire after 60 seconds
+        setTimeout(() => {
+          const request = pendingCaptainRerolls.get(guildId);
+          if (request && request.draftId === draftData.draft_id) {
+            pendingCaptainRerolls.delete(guildId);
+          }
+        }, 60000);
+
+        return interaction.reply({ embeds: [rerollEmbed], components: [rerollButtons] });
       }
 
       // =======================
@@ -5067,6 +5344,83 @@ client.on(Events.InteractionCreate, async (interaction) => {
         
         activeDrafts.delete(guildId);
         return interaction.editReply({ content: '✅ Draft cancelled.' });
+      }
+
+      // Draft reroll buttons
+      if (id.startsWith('draft_reroll_confirm_') || id.startsWith('draft_reroll_')) {
+        const draftId = id.replace('draft_reroll_confirm_', '').replace('draft_reroll_', '');
+        const draftData = activeDrafts.get(guildId);
+        
+        if (!draftData || draftData.draft_id !== draftId) {
+          return interaction.reply({ content: '❌ This draft is no longer active.', flags: 64 });
+        }
+
+        const isCaptain = interaction.user.id === draftData.captain_a?.discord_user_id || 
+                          interaction.user.id === draftData.captain_b?.discord_user_id;
+        
+        if (!isCaptain && !isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only captains can vote on reroll.', flags: 64 });
+        }
+
+        const existingRequest = pendingCaptainRerolls.get(guildId);
+        
+        if (!existingRequest) {
+          // First person clicking - create request
+          pendingCaptainRerolls.set(guildId, {
+            draftId,
+            initiator: interaction.user.id,
+            expires: Date.now() + 60000
+          });
+          
+          const otherCaptain = interaction.user.id === draftData.captain_a.discord_user_id 
+            ? draftData.captain_b.discord_user_id 
+            : draftData.captain_a.discord_user_id;
+          
+          return interaction.reply({
+            content: `🔄 <@${interaction.user.id}> wants to reroll captains. <@${otherCaptain}> click the button to agree.`,
+            flags: 0
+          });
+        }
+        
+        if (existingRequest.initiator === interaction.user.id) {
+          return interaction.reply({ content: '⏳ Waiting for the other captain to agree.', flags: 64 });
+        }
+
+        // Second captain agreeing
+        await interaction.deferUpdate();
+        
+        const allPlayers = [
+          ...(draftData.team_a_player_ids || [draftData.captain_a.discord_user_id]),
+          ...(draftData.team_b_player_ids || [draftData.captain_b.discord_user_id]),
+          ...(draftData.available_players || []).map(p => p.discord_user_id || p)
+        ];
+        
+        await supabase.from('drafts').update({ status: 'cancelled' }).eq('id', draftId);
+        
+        const { error, data: newDraft } = await callEdgeFunction('draft-start', {
+          guild_id: guildId,
+          voice_channel_id: draftData.voice_channel_id,
+          player_discord_ids: allPlayers,
+          team_a_vc_id: draftData.team_a_vc_id,
+          team_b_vc_id: draftData.team_b_vc_id
+        });
+
+        pendingCaptainRerolls.delete(guildId);
+
+        if (error) {
+          return interaction.followUp({ content: `❌ Reroll failed: ${error}`, flags: 64 });
+        }
+
+        activeDrafts.set(guildId, newDraft);
+        const embed = buildDraftEmbed(newDraft, interaction.guild);
+        embed.setDescription('🔄 **Captains Rerolled!**\n\n' + (embed.data.description || ''));
+        
+        return interaction.editReply({ embeds: [embed], components: [] });
+      }
+
+      if (id.startsWith('draft_reroll_cancel_')) {
+        pendingCaptainRerolls.delete(guildId);
+        return interaction.update({ content: '❌ Reroll cancelled. Keeping current captains.', embeds: [], components: [] });
       }
 
       // Feedback rating buttons (from DMs)

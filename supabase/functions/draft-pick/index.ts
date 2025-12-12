@@ -169,7 +169,12 @@ serve(async (req) => {
         available_players: newAvailable,
         next_picker: isComplete ? null : nextPicker,
         is_complete: isComplete,
+        draft_complete: isComplete, // Alias for compatibility
         draft_status: isComplete ? "completed" : "picking",
+        // Include VC info when draft is complete so bot can move players
+        team_a_vc_id: isComplete ? draft.team_a_vc_id : null,
+        team_b_vc_id: isComplete ? draft.team_b_vc_id : null,
+        guild_id: draft.guild_id,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
