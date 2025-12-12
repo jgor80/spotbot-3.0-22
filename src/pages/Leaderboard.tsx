@@ -2,18 +2,38 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { LeaderboardTable } from "@/components/leaderboard/LeaderboardTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGuild } from "@/contexts/GuildContext";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
 
+const POSITION_FILTERS = [
+  { value: "all", label: "All Positions" },
+  { value: "GK", label: "Goalkeeper" },
+  { value: "CB", label: "Center Back" },
+  { value: "LB", label: "Left Back" },
+  { value: "RB", label: "Right Back" },
+  { value: "CDM", label: "CDM" },
+  { value: "CM", label: "Center Mid" },
+  { value: "CAM", label: "CAM" },
+  { value: "LM", label: "Left Mid" },
+  { value: "RM", label: "Right Mid" },
+  { value: "LW", label: "Left Wing" },
+  { value: "RW", label: "Right Wing" },
+  { value: "ST", label: "Striker" },
+  { value: "CF", label: "Center Forward" },
+];
+
 export default function Leaderboard() {
   const { selectedGuildId, isLoading: guildLoading } = useGuild();
   const [activeTab, setActiveTab] = useState("overall");
+  const [positionFilter, setPositionFilter] = useState("all");
   
   const { data: players, isLoading: playersLoading, error } = useLeaderboard(
     selectedGuildId,
-    activeTab
+    activeTab,
+    positionFilter === "all" ? undefined : positionFilter
   );
 
   const isLoading = guildLoading || playersLoading;
@@ -21,9 +41,23 @@ export default function Leaderboard() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="font-display text-3xl font-bold">Leaderboard</h1>
-          <p className="text-muted-foreground">Top players ranked by performance</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="font-display text-3xl font-bold">Leaderboard</h1>
+            <p className="text-muted-foreground">Top players ranked by performance</p>
+          </div>
+          <Select value={positionFilter} onValueChange={setPositionFilter}>
+            <SelectTrigger className="w-[180px] bg-card">
+              <SelectValue placeholder="Filter by position" />
+            </SelectTrigger>
+            <SelectContent className="bg-card border z-50">
+              {POSITION_FILTERS.map((pos) => (
+                <SelectItem key={pos.value} value={pos.value}>
+                  {pos.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {!selectedGuildId && !guildLoading ? (
@@ -72,7 +106,9 @@ export default function Leaderboard() {
             ) : (
               <Card className="mt-4">
                 <CardContent className="py-8 text-center text-muted-foreground">
-                  No players found. Start playing games to appear on the leaderboard!
+                  {positionFilter !== "all" 
+                    ? `No ${POSITION_FILTERS.find(p => p.value === positionFilter)?.label || positionFilter} players found.`
+                    : "No players found. Start playing games to appear on the leaderboard!"}
                 </CardContent>
               </Card>
             )}
