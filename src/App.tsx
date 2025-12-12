@@ -12,6 +12,7 @@ import SettingsPage from "./pages/SettingsPage";
 import DraftsPage from "./pages/DraftsPage";
 import ScoutingPage from "./pages/ScoutingPage";
 import CompetitionsPage from "./pages/CompetitionsPage";
+import TeamsPage from "./pages/TeamsPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/drafts" element={<DraftsPage />} />
             <Route path="/scouting" element={<ScoutingPage />} />
             <Route path="/competitions" element={<CompetitionsPage />} />
+            <Route path="/teams" element={<TeamsPage />} />
             <Route path="/players" element={<Leaderboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
