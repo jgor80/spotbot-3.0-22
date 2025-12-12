@@ -451,10 +451,33 @@ async function runSync() {
   console.log(`\n✅ Sync complete: ${totalSynced} matches synced, ${totalSkipped} skipped, ${clubsSynced} clubs updated\n`);
 }
 
-// Run immediately then every 2 minutes
+// Check if current time is within active hours (8 AM - 2 AM Central Time)
+function isActiveHours() {
+  // Get current time in Central Time
+  const now = new Date();
+  const centralTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+  const hour = centralTime.getHours();
+  
+  // Active from 8 AM (8) to 2 AM (2) next day
+  // So we're INACTIVE only between 2 AM and 8 AM (hours 2-7)
+  return hour >= 8 || hour < 2;
+}
+
+// Run sync if within active hours
+function scheduledSync() {
+  if (isActiveHours()) {
+    runSync();
+  } else {
+    const now = new Date();
+    const centralTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+    console.log(`\n💤 Outside active hours (${centralTime.toLocaleTimeString()}). Syncing resumes at 8 AM CT.\n`);
+  }
+}
+
+// Run immediately then every 1 minute
 console.log('🚀 EA Sync Local started');
 console.log('📡 Running from your local IP to bypass EA cloud blocking');
-console.log('⏱️  Syncing every 2 minutes\n');
+console.log('⏱️  Syncing every 1 minute (active 8 AM - 2 AM CT)\n');
 
-runSync();
-setInterval(runSync, 120000);
+scheduledSync();
+setInterval(scheduledSync, 60000);
