@@ -369,7 +369,7 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
       // ===== ENSURE player_ratings record exists =====
       const { data: existingRating } = await supabase
         .from('player_ratings')
-        .select('id, games_played')
+        .select('id, games_played, baseline_synced')
         .eq('guild_id', guildId)
         .eq('discord_user_id', profile.discord_user_id)
         .maybeSingle();
@@ -392,7 +392,7 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
       const mappedPosition = position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null;
       
       if (!existingRating) {
-        // Create initial rating record with EA aggregate stats as baseline
+        // Create initial rating record with EA aggregate stats as baseline (one-time only)
         await supabase
           .from('player_ratings')
           .insert({
@@ -415,11 +415,12 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
             saves: saves,
             interceptions: interceptions,
             clearances: clearances,
+            baseline_synced: true, // Mark as synced immediately
           });
         
-        console.log(`  ✨ Created player_ratings for ${eaUsername} with EA baseline (${gamesPlayed} games)`);
-      } else if (existingRating.games_played < gamesPlayed) {
-        // Update with EA aggregate if it has more games (EA is authoritative for career totals)
+        console.log(`  ✨ Created player_ratings for ${eaUsername} with EA baseline (${gamesPlayed} games) - baseline_synced=true`);
+      } else if (!existingRating.baseline_synced) {
+        // One-time baseline sync: only update if baseline hasn't been synced yet
         await supabase
           .from('player_ratings')
           .update({
@@ -439,23 +440,26 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
             saves: saves,
             interceptions: interceptions,
             clearances: clearances,
+            baseline_synced: true, // Mark as synced after this update
             updated_at: new Date().toISOString()
           })
           .eq('id', existingRating.id);
         
-        console.log(`  📈 Updated player_ratings for ${eaUsername} from EA (${existingRating.games_played} → ${gamesPlayed} games)`);
+        console.log(`  📈 One-time baseline sync for ${eaUsername} player_ratings (${gamesPlayed} games) - baseline_synced=true`);
+      } else {
+        console.log(`  ⏭️ Skipping EA aggregate for ${eaUsername} player_ratings (baseline already synced)`);
       }
       
       // ===== ENSURE player_summary record exists =====
       const { data: existingSummary } = await supabase
         .from('player_summary')
-        .select('id, games_played')
+        .select('id, games_played, baseline_synced')
         .eq('guild_id', guildId)
         .eq('discord_user_id', profile.discord_user_id)
         .maybeSingle();
       
       if (!existingSummary) {
-        // Create initial summary record with EA aggregate stats as baseline
+        // Create initial summary record with EA aggregate stats as baseline (one-time only)
         await supabase
           .from('player_summary')
           .insert({
@@ -479,11 +483,12 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
             passes_made: passesMade,
             pass_attempts: passAttempts,
             saves: saves,
+            baseline_synced: true, // Mark as synced immediately
           });
         
-        console.log(`  ✨ Created player_summary for ${eaUsername} with EA baseline (${gamesPlayed} games, ${goals}G/${assists}A)`);
-      } else if (existingSummary.games_played < gamesPlayed) {
-        // Update with EA aggregate if it has more games (EA is authoritative for career totals)
+        console.log(`  ✨ Created player_summary for ${eaUsername} with EA baseline (${gamesPlayed} games, ${goals}G/${assists}A) - baseline_synced=true`);
+      } else if (!existingSummary.baseline_synced) {
+        // One-time baseline sync: only update if baseline hasn't been synced yet
         await supabase
           .from('player_summary')
           .update({
@@ -504,13 +509,14 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
             passes_made: passesMade,
             pass_attempts: passAttempts,
             saves: saves,
+            baseline_synced: true, // Mark as synced after this update
             updated_at: new Date().toISOString()
           })
           .eq('id', existingSummary.id);
         
-        console.log(`  📈 Updated player_summary for ${eaUsername} from EA (${existingSummary.games_played} → ${gamesPlayed} games)`);
+        console.log(`  📈 One-time baseline sync for ${eaUsername} player_summary (${gamesPlayed} games) - baseline_synced=true`);
       } else {
-        // Only update position and username if EA games <= tracked games
+        // Only update position and username (baseline already synced, stats come from match tracking now)
         await supabase
           .from('player_summary')
           .update({
@@ -519,6 +525,8 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
             updated_at: new Date().toISOString()
           })
           .eq('id', existingSummary.id);
+        
+        console.log(`  ⏭️ Skipping EA aggregate for ${eaUsername} player_summary (baseline already synced)`);
       }
       
       // Track for rating recalculation
