@@ -192,6 +192,66 @@ export type Database = {
         }
         Relationships: []
       }
+      club_stats: {
+        Row: {
+          best_division: string | null
+          club_key: string
+          club_name: string | null
+          created_at: string
+          draws: number | null
+          ea_club_id: string
+          ea_platform: string
+          goals_conceded: number | null
+          goals_scored: number | null
+          guild_id: string
+          id: string
+          last_synced_at: string | null
+          losses: number | null
+          skill_rating: number | null
+          total_members: number | null
+          updated_at: string
+          wins: number | null
+        }
+        Insert: {
+          best_division?: string | null
+          club_key: string
+          club_name?: string | null
+          created_at?: string
+          draws?: number | null
+          ea_club_id: string
+          ea_platform: string
+          goals_conceded?: number | null
+          goals_scored?: number | null
+          guild_id: string
+          id?: string
+          last_synced_at?: string | null
+          losses?: number | null
+          skill_rating?: number | null
+          total_members?: number | null
+          updated_at?: string
+          wins?: number | null
+        }
+        Update: {
+          best_division?: string | null
+          club_key?: string
+          club_name?: string | null
+          created_at?: string
+          draws?: number | null
+          ea_club_id?: string
+          ea_platform?: string
+          goals_conceded?: number | null
+          goals_scored?: number | null
+          guild_id?: string
+          id?: string
+          last_synced_at?: string | null
+          losses?: number | null
+          skill_rating?: number | null
+          total_members?: number | null
+          updated_at?: string
+          wins?: number | null
+        }
+        Relationships: []
+      }
       competition_wins: {
         Row: {
           competition_name: string
@@ -1124,8 +1184,13 @@ export type Database = {
           id: string
           man_of_match: boolean | null
           match_type: string
+          pass_attempts: number | null
+          passes_made: number | null
           position_played: string | null
           recorded_at: string
+          red_cards: boolean | null
+          shots: number | null
+          tackles: number | null
           team: string | null
           won: boolean | null
         }
@@ -1141,8 +1206,13 @@ export type Database = {
           id?: string
           man_of_match?: boolean | null
           match_type?: string
+          pass_attempts?: number | null
+          passes_made?: number | null
           position_played?: string | null
           recorded_at?: string
+          red_cards?: boolean | null
+          shots?: number | null
+          tackles?: number | null
           team?: string | null
           won?: boolean | null
         }
@@ -1158,8 +1228,13 @@ export type Database = {
           id?: string
           man_of_match?: boolean | null
           match_type?: string
+          pass_attempts?: number | null
+          passes_made?: number | null
           position_played?: string | null
           recorded_at?: string
+          red_cards?: boolean | null
+          shots?: number | null
+          tackles?: number | null
           team?: string | null
           won?: boolean | null
         }
