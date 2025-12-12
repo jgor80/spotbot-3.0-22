@@ -6,6 +6,47 @@
 
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
+const stringSimilarity = require('string-similarity');
+
+// Fuzzy match EA usernames to Discord members
+async function fuzzyMatchEaToDiscord(supabase, guildId, eaUsername) {
+  // Get all real Discord members in the guild (not temp ea_ profiles)
+  const { data: guildMembers } = await supabase
+    .from('profiles')
+    .select('discord_user_id, discord_username')
+    .not('discord_user_id', 'like', 'ea_%')
+    .not('ea_username', 'is', null);
+  
+  // Also get guild members without EA links
+  const { data: unlinkedMembers } = await supabase
+    .from('profiles')
+    .select('discord_user_id, discord_username')
+    .not('discord_user_id', 'like', 'ea_%')
+    .is('ea_username', null);
+  
+  const allMembers = [...(guildMembers || []), ...(unlinkedMembers || [])];
+  
+  if (!allMembers.length) return null;
+  
+  // Find best match
+  const usernames = allMembers.map(m => m.discord_username || '').filter(Boolean);
+  if (!usernames.length) return null;
+  
+  const match = stringSimilarity.findBestMatch(eaUsername.toLowerCase(), usernames.map(u => u.toLowerCase()));
+  
+  // Only accept matches with > 70% similarity
+  if (match.bestMatch.rating >= 0.7) {
+    const matchedMember = allMembers.find(
+      m => m.discord_username?.toLowerCase() === match.bestMatch.target
+    );
+    if (matchedMember) {
+      console.log(`  🔍 Fuzzy match: ${eaUsername} -> ${matchedMember.discord_username} (${(match.bestMatch.rating * 100).toFixed(0)}%)`);
+      return matchedMember;
+    }
+  }
+  
+  return null;
+}
 
 // Load environment variables
 require('dotenv').config();
@@ -209,43 +250,58 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
       .maybeSingle();
     
     if (!profile) {
-      // Auto-create profile for this EA username (without Discord link)
-      // Use ea_username as a temporary discord_user_id placeholder
-      const tempDiscordId = `ea_${eaUsername.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      // Try fuzzy matching to Discord members first
+      const fuzzyMatch = await fuzzyMatchEaToDiscord(supabase, guildId, eaUsername);
       
-      // Check if temp profile already exists (in case ea_username was updated)
-      const { data: existingTemp } = await supabase
-        .from('profiles')
-        .select('discord_user_id')
-        .eq('discord_user_id', tempDiscordId)
-        .maybeSingle();
-      
-      if (existingTemp) {
-        // Update existing temp profile with current ea_username
-        await supabase
+      if (fuzzyMatch) {
+        // Auto-link to matched Discord user
+        const { error: linkError } = await supabase
           .from('profiles')
           .update({ ea_username: eaUsername, ea_platform: platform })
-          .eq('discord_user_id', tempDiscordId);
-        profile = existingTemp;
-        console.log(`  🔗 Linked existing temp profile for ${eaUsername}`);
-      } else {
-        const { data: newProfile, error: insertError } = await supabase
-          .from('profiles')
-          .insert({
-            discord_user_id: tempDiscordId,
-            ea_username: eaUsername,
-            ea_platform: platform
-          })
-          .select('discord_user_id')
-          .single();
+          .eq('discord_user_id', fuzzyMatch.discord_user_id);
         
-        if (insertError) {
-          console.log(`  ❌ Failed to create profile for ${eaUsername}: ${insertError.message}`);
-          continue;
+        if (!linkError) {
+          profile = { discord_user_id: fuzzyMatch.discord_user_id };
+          console.log(`  ✅ Auto-linked ${eaUsername} to Discord user ${fuzzyMatch.discord_username}`);
         }
+      }
+      
+      // Fall back to temp profile if no fuzzy match
+      if (!profile) {
+        const tempDiscordId = `ea_${eaUsername.replace(/[^a-zA-Z0-9]/g, '_')}`;
         
-        console.log(`  ✨ Created profile for ${eaUsername}`);
-        profile = newProfile;
+        const { data: existingTemp } = await supabase
+          .from('profiles')
+          .select('discord_user_id')
+          .eq('discord_user_id', tempDiscordId)
+          .maybeSingle();
+        
+        if (existingTemp) {
+          await supabase
+            .from('profiles')
+            .update({ ea_username: eaUsername, ea_platform: platform })
+            .eq('discord_user_id', tempDiscordId);
+          profile = existingTemp;
+          console.log(`  🔗 Linked existing temp profile for ${eaUsername}`);
+        } else {
+          const { data: newProfile, error: insertError } = await supabase
+            .from('profiles')
+            .insert({
+              discord_user_id: tempDiscordId,
+              ea_username: eaUsername,
+              ea_platform: platform
+            })
+            .select('discord_user_id')
+            .single();
+          
+          if (insertError) {
+            console.log(`  ❌ Failed to create profile for ${eaUsername}: ${insertError.message}`);
+            continue;
+          }
+          
+          console.log(`  ✨ Created temp profile for ${eaUsername}`);
+          profile = newProfile;
+        }
       }
     }
     
