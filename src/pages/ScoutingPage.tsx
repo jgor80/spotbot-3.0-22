@@ -58,6 +58,8 @@ interface AggregatePlayerStats {
   primary_position: string | null;
   games_played: number;
   wins: number;
+  losses: number;
+  draws: number;
   goals: number;
   assists: number;
   win_rate: number;
@@ -66,6 +68,14 @@ interface AggregatePlayerStats {
   achievement_count: number;
   ea_username?: string | null;
   ea_platform?: string | null;
+  clean_sheets: number;
+  man_of_match: number;
+  avg_match_rating: number | null;
+  shots: number;
+  tackles: number;
+  passes_made: number;
+  pass_attempts: number;
+  saves: number;
 }
 
 export default function ScoutingPage() {
@@ -117,12 +127,22 @@ export default function ScoutingPage() {
           primary_position,
           games_played,
           wins,
+          losses,
+          draws,
           goals,
           assists,
           win_rate,
           form_rating,
           reliability_score,
-          achievement_count
+          achievement_count,
+          clean_sheets,
+          man_of_match,
+          avg_match_rating,
+          shots,
+          tackles,
+          passes_made,
+          pass_attempts,
+          saves
         `)
         .eq("guild_id", selectedGuildId)
         .order("overall_rating", { ascending: false });
@@ -143,6 +163,16 @@ export default function ScoutingPage() {
       
       return (summaryData || []).map(player => ({
         ...player,
+        losses: player.losses || 0,
+        draws: player.draws || 0,
+        clean_sheets: player.clean_sheets || 0,
+        man_of_match: player.man_of_match || 0,
+        avg_match_rating: player.avg_match_rating || null,
+        shots: player.shots || 0,
+        tackles: player.tackles || 0,
+        passes_made: player.passes_made || 0,
+        pass_attempts: player.pass_attempts || 0,
+        saves: player.saves || 0,
         ea_username: profileMap.get(player.discord_user_id)?.ea_username || null,
         ea_platform: profileMap.get(player.discord_user_id)?.ea_platform || null
       }));

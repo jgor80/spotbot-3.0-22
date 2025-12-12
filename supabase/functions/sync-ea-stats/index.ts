@@ -189,6 +189,15 @@ async function syncMemberStats(supabase: any, guildId: string, clubId: string, p
       const position = member.favoritePosition || member.proPos || null
       const winRate = gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0
       
+      // Extended stats from EA API
+      const shots = parseInt(member.shots || 0)
+      const tackles = parseInt(member.tacklesmade || member.tackles || 0)
+      const passesMade = parseInt(member.passesmade || member.passesMade || 0)
+      const passAttempts = parseInt(member.passattempts || member.passAttempts || 0)
+      const saves = parseInt(member.saves || member.gksaves || member.gkSaves || 0)
+      const interceptions = parseInt(member.interceptions || 0)
+      const clearances = parseInt(member.clearances || 0)
+      
       // Calculate club performance rating
       const clubPerformanceRating = Math.min(100, Math.max(0,
         (avgRating * 10) +
@@ -197,7 +206,7 @@ async function syncMemberStats(supabase: any, guildId: string, clubId: string, p
         (assists / Math.max(1, gamesPlayed) * 5)
       ))
       
-      // Update player_ratings
+      // Update player_ratings with extended stats
       const { data: existingRating } = await supabase
         .from('player_ratings')
         .select('id')
@@ -205,22 +214,32 @@ async function syncMemberStats(supabase: any, guildId: string, clubId: string, p
         .eq('discord_user_id', profile.discord_user_id)
         .maybeSingle()
       
+      const ratingsData = {
+        games_played: gamesPlayed,
+        wins: wins,
+        losses: losses,
+        draws: draws,
+        total_goals: goals,
+        total_assists: assists,
+        total_clean_sheets: cleanSheets,
+        total_motm: manOfMatch,
+        club_performance_rating: clubPerformanceRating,
+        avg_match_rating: avgRating,
+        shots: shots,
+        tackles: tackles,
+        passes_made: passesMade,
+        pass_attempts: passAttempts,
+        saves: saves,
+        interceptions: interceptions,
+        clearances: clearances,
+        last_game_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      
       if (existingRating) {
         await supabase
           .from('player_ratings')
-          .update({
-            games_played: gamesPlayed,
-            wins: wins,
-            losses: losses,
-            draws: draws,
-            total_goals: goals,
-            total_assists: assists,
-            total_clean_sheets: cleanSheets,
-            total_motm: manOfMatch,
-            club_performance_rating: clubPerformanceRating,
-            last_game_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
+          .update(ratingsData)
           .eq('id', existingRating.id)
       } else {
         await supabase
@@ -228,17 +247,8 @@ async function syncMemberStats(supabase: any, guildId: string, clubId: string, p
           .insert({
             guild_id: guildId,
             discord_user_id: profile.discord_user_id,
-            games_played: gamesPlayed,
-            wins: wins,
-            losses: losses,
-            draws: draws,
-            total_goals: goals,
-            total_assists: assists,
-            total_clean_sheets: cleanSheets,
-            total_motm: manOfMatch,
-            club_performance_rating: clubPerformanceRating,
             overall_rating: clubPerformanceRating,
-            last_game_at: new Date().toISOString()
+            ...ratingsData
           })
       }
       
@@ -258,10 +268,20 @@ async function syncMemberStats(supabase: any, guildId: string, clubId: string, p
         discord_username: profile.discord_username || eaUsername,
         games_played: gamesPlayed,
         wins: wins,
+        losses: losses,
+        draws: draws,
         goals: goals,
         assists: assists,
         win_rate: winRate,
         overall_rating: clubPerformanceRating,
+        avg_match_rating: avgRating,
+        clean_sheets: cleanSheets,
+        man_of_match: manOfMatch,
+        shots: shots,
+        tackles: tackles,
+        passes_made: passesMade,
+        pass_attempts: passAttempts,
+        saves: saves,
         primary_position: normalizedPosition,
         last_active_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
