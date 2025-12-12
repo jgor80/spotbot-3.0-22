@@ -56,17 +56,30 @@ export async function fetchLeaderboard(
 }
 
 export async function fetchAvailablePlayers(guildId: string): Promise<LeaderboardPlayer[]> {
-  const { data, error } = await supabase
+  // First get player summaries
+  const { data: summaryData, error: summaryError } = await supabase
     .from("player_summary")
     .select("*")
     .eq("guild_id", guildId)
     .order("overall_rating", { ascending: false });
 
-  if (error) throw error;
+  if (summaryError) throw summaryError;
 
-  return (data || []).map((player, index) => ({
+  // Get EA usernames from profiles table
+  const discordIds = (summaryData || []).map(p => p.discord_user_id);
+  const { data: profilesData } = await supabase
+    .from("profiles")
+    .select("discord_user_id, ea_username")
+    .in("discord_user_id", discordIds);
+
+  const eaUsernameMap = new Map(
+    (profilesData || []).map(p => [p.discord_user_id, p.ea_username])
+  );
+
+  return (summaryData || []).map((player, index) => ({
     discord_user_id: player.discord_user_id,
     discord_username: player.discord_username,
+    ea_username: eaUsernameMap.get(player.discord_user_id) || null,
     overall_rating: player.overall_rating,
     games_played: player.games_played,
     wins: player.wins,

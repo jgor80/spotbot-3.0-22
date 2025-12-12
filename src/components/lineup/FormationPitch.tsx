@@ -73,7 +73,7 @@ export function FormationPitch({
                 {slot ? (
                   <div className="flex flex-col items-center">
                     <span className="text-xs font-bold text-primary-foreground truncate max-w-[40px]">
-                      {slot.discord_username?.slice(0, 4) || "?"}
+                      {(slot.ea_username || slot.discord_username)?.slice(0, 4) || "?"}
                     </span>
                     {slot.rating !== undefined && (
                       <span className="text-[10px] font-bold text-primary-foreground/80">
