@@ -10,36 +10,132 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useState, useMemo } from "react";
 
 interface LeaderboardTableProps {
   players: LeaderboardPlayer[];
   onPlayerClick?: (playerId: string) => void;
 }
 
+type SortKey = "rank" | "rating" | "games" | "wins" | "win_rate" | "goals" | "assists" | "clean_sheets" | "motm" | "pass_pct";
+type SortDirection = "asc" | "desc";
+
 export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTableProps) {
+  const [sortKey, setSortKey] = useState<SortKey>("rank");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      // Default to descending for most stats (higher is better), ascending for rank
+      setSortDirection(key === "rank" ? "asc" : "desc");
+    }
+  };
+
+  const sortedPlayers = useMemo(() => {
+    const sorted = [...players].sort((a, b) => {
+      let aVal: number;
+      let bVal: number;
+
+      switch (sortKey) {
+        case "rank":
+          aVal = a.rank;
+          bVal = b.rank;
+          break;
+        case "rating":
+          aVal = a.overall_rating;
+          bVal = b.overall_rating;
+          break;
+        case "games":
+          aVal = a.games_played;
+          bVal = b.games_played;
+          break;
+        case "wins":
+          aVal = a.wins;
+          bVal = b.wins;
+          break;
+        case "win_rate":
+          aVal = a.win_rate || 0;
+          bVal = b.win_rate || 0;
+          break;
+        case "goals":
+          aVal = a.goals;
+          bVal = b.goals;
+          break;
+        case "assists":
+          aVal = a.assists;
+          bVal = b.assists;
+          break;
+        case "clean_sheets":
+          aVal = a.clean_sheets || 0;
+          bVal = b.clean_sheets || 0;
+          break;
+        case "motm":
+          aVal = a.man_of_match || 0;
+          bVal = b.man_of_match || 0;
+          break;
+        case "pass_pct":
+          aVal = a.pass_attempts > 0 ? (a.passes_made / a.pass_attempts) * 100 : 0;
+          bVal = b.pass_attempts > 0 ? (b.passes_made / b.pass_attempts) * 100 : 0;
+          break;
+        default:
+          return 0;
+      }
+
+      if (sortDirection === "asc") {
+        return aVal - bVal;
+      }
+      return bVal - aVal;
+    });
+    return sorted;
+  }, [players, sortKey, sortDirection]);
+
+  const SortIcon = ({ columnKey }: { columnKey: SortKey }) => {
+    if (sortKey !== columnKey) {
+      return <ArrowUpDown className="ml-1 h-3 w-3 opacity-50" />;
+    }
+    return sortDirection === "asc" 
+      ? <ArrowUp className="ml-1 h-3 w-3" />
+      : <ArrowDown className="ml-1 h-3 w-3" />;
+  };
+
+  const SortableHeader = ({ columnKey, children, className }: { columnKey: SortKey; children: React.ReactNode; className?: string }) => (
+    <TableHead 
+      className={cn("cursor-pointer hover:bg-muted/80 transition-colors select-none", className)}
+      onClick={() => handleSort(columnKey)}
+    >
+      <div className="flex items-center justify-center">
+        {children}
+        <SortIcon columnKey={columnKey} />
+      </div>
+    </TableHead>
+  );
+
   return (
     <div className="rounded-lg border bg-card overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/50">
-            <TableHead className="w-12 text-center">#</TableHead>
+            <SortableHeader columnKey="rank" className="w-12 text-center">#</SortableHeader>
             <TableHead>Player</TableHead>
-            <TableHead className="text-center">Rating</TableHead>
-            <TableHead className="text-center hidden md:table-cell">Games</TableHead>
-            <TableHead className="text-center hidden md:table-cell">W/D/L</TableHead>
-            <TableHead className="text-center hidden lg:table-cell">Win%</TableHead>
-            <TableHead className="text-center hidden sm:table-cell">Goals</TableHead>
-            <TableHead className="text-center hidden sm:table-cell">Assists</TableHead>
-            <TableHead className="text-center hidden lg:table-cell">CS</TableHead>
-            <TableHead className="text-center hidden lg:table-cell">MotM</TableHead>
-            <TableHead className="text-center hidden xl:table-cell">Pass%</TableHead>
+            <SortableHeader columnKey="rating" className="text-center">Rating</SortableHeader>
+            <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
+            <SortableHeader columnKey="wins" className="text-center hidden md:table-cell">W/D/L</SortableHeader>
+            <SortableHeader columnKey="win_rate" className="text-center hidden lg:table-cell">Win%</SortableHeader>
+            <SortableHeader columnKey="goals" className="text-center hidden sm:table-cell">Goals</SortableHeader>
+            <SortableHeader columnKey="assists" className="text-center hidden sm:table-cell">Assists</SortableHeader>
+            <SortableHeader columnKey="clean_sheets" className="text-center hidden lg:table-cell">CS</SortableHeader>
+            <SortableHeader columnKey="motm" className="text-center hidden lg:table-cell">MotM</SortableHeader>
+            <SortableHeader columnKey="pass_pct" className="text-center hidden xl:table-cell">Pass%</SortableHeader>
             <TableHead className="text-center">Form</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {players.map((player) => {
+          {sortedPlayers.map((player) => {
             const formTrend = player.form_rating 
               ? player.form_rating > 60 ? "up" : player.form_rating < 40 ? "down" : "neutral"
               : "neutral";
