@@ -17,6 +17,8 @@ const WEIGHTS = {
 interface CalculateRatingsRequest {
   guild_id: string;
   discord_user_id?: string; // If provided, only recalculate for this player
+  player_ids?: string[]; // If provided, recalculate for these players (from EA sync)
+  trigger?: string; // Source of the trigger (e.g., 'ea_sync', 'manual')
 }
 
 serve(async (req) => {
@@ -30,9 +32,46 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { guild_id, discord_user_id }: CalculateRatingsRequest = await req.json();
+    const { guild_id, discord_user_id, player_ids, trigger }: CalculateRatingsRequest = await req.json();
 
-    console.log(`[calculate-ratings] Calculating for guild ${guild_id}${discord_user_id ? `, player ${discord_user_id}` : " (all players)"}`);
+    console.log(`[calculate-ratings] Calculating for guild ${guild_id}, trigger: ${trigger || 'manual'}`);
+
+    // Determine which players to calculate
+    let playerIdsToProcess: string[] = [];
+    
+    if (player_ids && player_ids.length > 0) {
+      playerIdsToProcess = player_ids;
+      console.log(`[calculate-ratings] Processing ${player_ids.length} players from EA sync`);
+    } else if (discord_user_id) {
+      playerIdsToProcess = [discord_user_id];
+    }
+
+    // Ensure player_ratings records exist for all players being processed
+    if (playerIdsToProcess.length > 0) {
+      for (const playerId of playerIdsToProcess) {
+        // Check if rating record exists
+        const { data: existing } = await supabase
+          .from("player_ratings")
+          .select("id")
+          .eq("guild_id", guild_id)
+          .eq("discord_user_id", playerId)
+          .maybeSingle();
+
+        if (!existing) {
+          // Create initial rating record
+          await supabase.from("player_ratings").insert({
+            guild_id,
+            discord_user_id: playerId,
+            overall_rating: 50,
+            games_played: 0,
+            wins: 0,
+            losses: 0,
+            draws: 0,
+          });
+          console.log(`[calculate-ratings] Created rating record for ${playerId}`);
+        }
+      }
+    }
 
     // Get players to calculate
     let query = supabase
@@ -40,8 +79,8 @@ serve(async (req) => {
       .select("*")
       .eq("guild_id", guild_id);
 
-    if (discord_user_id) {
-      query = query.eq("discord_user_id", discord_user_id);
+    if (playerIdsToProcess.length > 0) {
+      query = query.in("discord_user_id", playerIdsToProcess);
     }
 
     const { data: players, error } = await query;
@@ -135,48 +174,71 @@ async function calculatePlayerRating(supabase: any, guildId: string, player: any
 
 async function calculateDraftPerformance(supabase: any, guildId: string, player: any, matchType: string): Promise<number> {
   // Get all stats for this player of the specified match type
-  const { data: stats } = await supabase
+  // For 'club' type, also include 'ea_aggregate' stats to capture all EA data
+  let query = supabase
     .from("player_stats")
     .select("*")
     .eq("guild_id", guildId)
-    .eq("discord_user_id", player.discord_user_id)
-    .eq("match_type", matchType);
+    .eq("discord_user_id", player.discord_user_id);
+  
+  if (matchType === "club") {
+    // Include both individual match stats and aggregate EA stats
+    query = query.in("match_type", ["club", "ea_aggregate"]);
+  } else {
+    query = query.eq("match_type", matchType);
+  }
+
+  const { data: stats } = await query;
 
   if (!stats || stats.length === 0) return 50; // Default rating
 
-  // Calculate components
-  const totalGames = stats.length;
-  const wins = stats.filter((s: any) => s.won === true).length;
+  // Filter out ea_aggregate for game count (those are career summaries, not individual games)
+  const gameStats = stats.filter((s: any) => s.match_type !== "ea_aggregate");
+  const totalGames = gameStats.length || 1;
+  const wins = gameStats.filter((s: any) => s.won === true).length;
   const winRate = (wins / totalGames) * 100;
 
+  // Use all stats for goals/assists (includes aggregate)
   const totalGoals = stats.reduce((sum: number, s: any) => sum + (s.goals || 0), 0);
   const totalAssists = stats.reduce((sum: number, s: any) => sum + (s.assists || 0), 0);
-  const avgGoals = totalGoals / totalGames;
-  const avgAssists = totalAssists / totalGames;
+  const avgGoals = totalGoals / Math.max(totalGames, 1);
+  const avgAssists = totalAssists / Math.max(totalGames, 1);
 
   // EA match ratings if available
-  const gamesWithRating = stats.filter((s: any) => s.ea_match_rating !== null);
+  const gamesWithRating = stats.filter((s: any) => s.ea_match_rating !== null && s.ea_match_rating > 0);
   const avgEARating = gamesWithRating.length > 0
     ? gamesWithRating.reduce((sum: number, s: any) => sum + s.ea_match_rating, 0) / gamesWithRating.length
     : null;
 
-  // Calculate draft performance (weighted formula)
+  // Calculate performance rating (weighted formula)
   // Win rate: 50% weight, Goals+Assists contribution: 30%, EA rating: 20%
-  let draftRating = winRate * 0.5;
+  let performanceRating = winRate * 0.5;
 
   // Goals+Assists contribution (normalize: 1 G/A per game = good)
   const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
-  draftRating += gaContribution * 0.3;
+  performanceRating += gaContribution * 0.3;
 
   // EA rating if available (already 0-10 scale, convert to 0-100)
   if (avgEARating !== null) {
-    draftRating += (avgEARating * 10) * 0.2;
+    performanceRating += (avgEARating * 10) * 0.2;
   } else {
     // If no EA rating, redistribute weight to win rate
-    draftRating += winRate * 0.2;
+    performanceRating += winRate * 0.2;
   }
 
-  return Math.max(0, Math.min(100, draftRating));
+  // Update player_ratings aggregate stats
+  await supabase
+    .from("player_ratings")
+    .update({
+      games_played: totalGames,
+      wins,
+      total_goals: totalGoals,
+      total_assists: totalAssists,
+      last_game_at: gameStats.length > 0 ? new Date().toISOString() : player.last_game_at,
+    })
+    .eq("id", player.id);
+
+  return Math.max(0, Math.min(100, performanceRating));
 }
 
 async function updatePlayerSummary(supabase: any, guildId: string, discordUserId: string) {
