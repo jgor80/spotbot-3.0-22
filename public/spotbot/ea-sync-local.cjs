@@ -150,6 +150,41 @@ async function fetchClubMembers(clubId, platform) {
   }
 }
 
+// Sync club stats to database
+async function syncClubStats(guildId, clubKey, clubId, platform) {
+  const clubInfo = await fetchClubInfo(clubId, platform);
+  if (!clubInfo) return null;
+  
+  const clubData = {
+    guild_id: guildId,
+    club_key: clubKey,
+    ea_club_id: clubId,
+    ea_platform: platform,
+    skill_rating: parseInt(clubInfo.skillRating || 0),
+    wins: parseInt(clubInfo.wins || 0),
+    draws: parseInt(clubInfo.draws || clubInfo.ties || 0),
+    losses: parseInt(clubInfo.losses || 0),
+    goals_scored: parseInt(clubInfo.goals || clubInfo.goalsScored || 0),
+    goals_conceded: parseInt(clubInfo.goalsAgainst || 0),
+    total_members: parseInt(clubInfo.memberCount || 0),
+    club_name: clubInfo.name || null,
+    best_division: clubInfo.bestDivision || null,
+    last_synced_at: new Date().toISOString()
+  };
+  
+  const { error } = await supabase
+    .from('club_stats')
+    .upsert(clubData, { onConflict: 'guild_id,club_key' });
+  
+  if (error) {
+    console.error(`[DB] Club stats upsert error:`, error.message);
+    return null;
+  }
+  
+  console.log(`✅ Synced club stats: ${clubData.club_name || clubKey} (SR: ${clubData.skill_rating})`);
+  return clubData;
+}
+
 // Sync member stats to player_stats table
 async function syncMemberStats(guildId, clubId, platform, clubName) {
   const members = await fetchClubMembers(clubId, platform);
