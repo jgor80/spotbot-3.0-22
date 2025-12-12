@@ -1,6 +1,7 @@
 import { LeaderboardPlayer } from "@/types/player";
 import { RatingBadge } from "@/components/player/RatingBadge";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -10,7 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { TrendingUp, TrendingDown, Minus, AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useMemo } from "react";
 
@@ -25,6 +26,7 @@ type SortDirection = "asc" | "desc";
 export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -36,8 +38,19 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
     }
   };
 
-  const sortedPlayers = useMemo(() => {
-    const sorted = [...players].sort((a, b) => {
+  const filteredAndSortedPlayers = useMemo(() => {
+    // First filter by search query
+    const filtered = players.filter((player) => {
+      if (!searchQuery.trim()) return true;
+      const query = searchQuery.toLowerCase();
+      return (
+        player.ea_username?.toLowerCase().includes(query) ||
+        player.discord_username?.toLowerCase().includes(query)
+      );
+    });
+
+    // Then sort
+    return [...filtered].sort((a, b) => {
       let aVal: number;
       let bVal: number;
 
@@ -91,8 +104,7 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
       }
       return bVal - aVal;
     });
-    return sorted;
-  }, [players, sortKey, sortDirection]);
+  }, [players, sortKey, sortDirection, searchQuery]);
 
   const SortIcon = ({ columnKey }: { columnKey: SortKey }) => {
     if (sortKey !== columnKey) {
@@ -116,8 +128,18 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
   );
 
   return (
-    <div className="rounded-lg border bg-card overflow-hidden">
-      <Table>
+    <div className="space-y-4">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search players by name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-9 bg-card"
+        />
+      </div>
+      <div className="rounded-lg border bg-card overflow-hidden">
+        <Table>
         <TableHeader>
           <TableRow className="bg-muted/50">
             <SortableHeader columnKey="rank" className="w-12 text-center">#</SortableHeader>
@@ -135,7 +157,7 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sortedPlayers.map((player) => {
+          {filteredAndSortedPlayers.map((player) => {
             const formTrend = player.form_rating 
               ? player.form_rating > 60 ? "up" : player.form_rating < 40 ? "down" : "neutral"
               : "neutral";
@@ -239,6 +261,7 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
           })}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }
