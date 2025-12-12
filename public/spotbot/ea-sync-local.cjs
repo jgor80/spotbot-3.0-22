@@ -248,6 +248,36 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
       }
     }
     
+    // Extract favorite position from EA data
+    const favoritePosition = member.favoritePosition || member.proPos || null;
+    
+    // Auto-update position preferences from EA data
+    if (favoritePosition && profile.discord_user_id) {
+      // Map EA position codes to our position format
+      const positionMap = {
+        'goalkeeper': 'GK', 'gk': 'GK',
+        'defender': 'CB', 'cb': 'CB', 'rb': 'RB', 'lb': 'LB', 'rwb': 'RWB', 'lwb': 'LWB',
+        'midfielder': 'CM', 'cm': 'CM', 'cdm': 'CDM', 'cam': 'CAM', 'rm': 'RM', 'lm': 'LM',
+        'attacker': 'ST', 'st': 'ST', 'cf': 'CF', 'rw': 'RW', 'lw': 'LW', 'rf': 'RF', 'lf': 'LF'
+      };
+      
+      const normalizedPosition = positionMap[favoritePosition.toLowerCase()] || favoritePosition.toUpperCase();
+      
+      // Upsert position preference
+      const { error: prefError } = await supabase
+        .from('position_preferences')
+        .upsert({
+          guild_id: guildId,
+          user_id: profile.discord_user_id,
+          preferences: [normalizedPosition],
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'guild_id,user_id' });
+      
+      if (prefError) {
+        console.log(`  ⚠️ Position pref error for ${eaUsername}: ${prefError.message}`);
+      }
+    }
+    
     // Aggregate stats from EA member data
     const goals = parseInt(member.goals || 0);
     const assists = parseInt(member.assists || 0);
@@ -256,7 +286,7 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
     const avgRating = parseFloat(member.ratingAve || member.avgRating || 0);
     const cleanSheets = parseInt(member.cleanSheetsDef || member.cleanSheetsGK || 0);
     const manOfMatch = parseInt(member.manOfTheMatch || 0);
-    const position = member.favoritePosition || member.proPos || null;
+    const position = favoritePosition;
     
     // Check if we already have stats for this player
     const { data: existingStats, error: checkError } = await supabase
@@ -346,6 +376,7 @@ async function syncMatches(guildId, clubKey, club) {
   );
   
   let synced = 0, skipped = 0, playerStatsCount = 0;
+  const updatedPlayerIds = []; // Track players who got new stats
   
   for (const matchData of last10Matches) {
     const matchId = matchData.matchId?.toString();
@@ -459,6 +490,10 @@ async function syncMatches(guildId, clubKey, club) {
       if (!statsError) {
         playerStatsCount++;
         existingPlayerStatsSet.add(statsKey); // Mark as processed
+        // Track player for rating recalculation
+        if (!updatedPlayerIds.includes(profile.discord_user_id)) {
+          updatedPlayerIds.push(profile.discord_user_id);
+        }
       }
     }
   }
@@ -467,7 +502,39 @@ async function syncMatches(guildId, clubKey, club) {
     console.log(`📈 Recorded ${playerStatsCount} player stats entries`);
   }
   
-  return { synced, skipped, playerStats: playerStatsCount };
+  return { synced, skipped, playerStats: playerStatsCount, updatedPlayerIds };
+}
+
+// Trigger rating recalculation for players with new stats
+async function triggerRatingRecalculation(guildId, playerIds) {
+  if (!playerIds.length) return;
+  
+  console.log(`📊 Triggering rating recalculation for ${playerIds.length} players...`);
+  
+  try {
+    // Call the calculate-ratings edge function
+    const response = await axios.post(
+      `${supabaseUrl}/functions/v1/calculate-ratings`,
+      { 
+        guild_id: guildId, 
+        player_ids: playerIds,
+        trigger: 'ea_sync'
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      }
+    );
+    
+    if (response.status === 200) {
+      console.log(`✅ Ratings recalculated for ${playerIds.length} players`);
+    }
+  } catch (err) {
+    console.log(`⚠️ Rating recalculation skipped: ${err.message}`);
+  }
 }
 
 // Main sync loop
@@ -485,6 +552,7 @@ async function runSync() {
   }
   
   let totalSynced = 0, totalSkipped = 0, clubsSynced = 0;
+  const playersToRecalculate = new Map(); // guildId -> Set of playerIds
   
   for (const settings of guildSettings || []) {
     const clubs = settings.clubs || [];
@@ -503,10 +571,23 @@ async function runSync() {
       const membersSynced = await syncMemberStats(settings.guild_id, club.ea_club_id, club.ea_platform, club.name);
       
       // Sync matches
-      const { synced, skipped } = await syncMatches(settings.guild_id, club.key, club);
+      const { synced, skipped, playerStats, updatedPlayerIds } = await syncMatches(settings.guild_id, club.key, club);
       totalSynced += synced;
       totalSkipped += skipped;
+      
+      // Track players who need rating recalculation
+      if (updatedPlayerIds && updatedPlayerIds.length > 0) {
+        if (!playersToRecalculate.has(settings.guild_id)) {
+          playersToRecalculate.set(settings.guild_id, new Set());
+        }
+        updatedPlayerIds.forEach(id => playersToRecalculate.get(settings.guild_id).add(id));
+      }
     }
+  }
+  
+  // Trigger rating recalculation for all affected players
+  for (const [guildId, playerIds] of playersToRecalculate) {
+    await triggerRatingRecalculation(guildId, Array.from(playerIds));
   }
   
   console.log(`\n✅ Sync complete: ${totalSynced} matches synced, ${totalSkipped} skipped, ${clubsSynced} clubs updated\n`);
