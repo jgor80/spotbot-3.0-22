@@ -21,9 +21,12 @@ import {
   Calendar,
   TrendingUp,
   TrendingDown,
-  Minus
+  Minus,
+  User,
+  Sparkles
 } from "lucide-react";
 import { format } from "date-fns";
+import ReactMarkdown from "react-markdown";
 
 interface ClubMatch {
   id: string;
@@ -36,6 +39,13 @@ interface ClubMatch {
   created_at: string;
 }
 
+interface PlayerSummary {
+  discord_user_id: string;
+  discord_username: string | null;
+  overall_rating: number;
+  primary_position: string | null;
+}
+
 export default function ScoutingPage() {
   const { selectedGuildId } = useGuild();
   const { toast } = useToast();
@@ -44,6 +54,30 @@ export default function ScoutingPage() {
   const [searchPlatform, setSearchPlatform] = useState("ps5");
   const [isSearching, setIsSearching] = useState(false);
   const [scoutReport, setScoutReport] = useState<string | null>(null);
+  
+  // Player scouting state
+  const [selectedPlayerId, setSelectedPlayerId] = useState("");
+  const [isScoutingPlayer, setIsScoutingPlayer] = useState(false);
+  const [playerScoutReport, setPlayerScoutReport] = useState<string | null>(null);
+  const [playerData, setPlayerData] = useState<any>(null);
+
+  // Fetch players for selection
+  const { data: players } = useQuery({
+    queryKey: ["players", selectedGuildId],
+    queryFn: async (): Promise<PlayerSummary[]> => {
+      if (!selectedGuildId) return [];
+      
+      const { data, error } = await supabase
+        .from("player_summary")
+        .select("discord_user_id, discord_username, overall_rating, primary_position")
+        .eq("guild_id", selectedGuildId)
+        .order("overall_rating", { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedGuildId,
+  });
 
   // Fetch recent club matches for the current guild
   const { data: recentMatches, isLoading: matchesLoading } = useQuery({
@@ -64,6 +98,47 @@ export default function ScoutingPage() {
     enabled: !!selectedGuildId,
   });
 
+  const handleScoutPlayer = async () => {
+    if (!selectedPlayerId || !selectedGuildId) return;
+    
+    setIsScoutingPlayer(true);
+    setPlayerScoutReport(null);
+    setPlayerData(null);
+    
+    try {
+      toast({
+        title: "Scouting Player",
+        description: "Gathering stats and generating AI analysis...",
+      });
+      
+      const { data, error } = await supabase.functions.invoke("scout-player", {
+        body: { guild_id: selectedGuildId, player_id: selectedPlayerId }
+      });
+      
+      if (error) throw error;
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
+      
+      setPlayerScoutReport(data.analysis);
+      setPlayerData(data.player_data);
+      
+      toast({
+        title: "Scout Report Ready",
+        description: "AI analysis complete",
+      });
+    } catch (error) {
+      toast({
+        title: "Scouting Failed",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsScoutingPlayer(false);
+    }
+  };
+
   const handleScoutClub = async () => {
     if (!searchClubName.trim()) return;
     
@@ -71,13 +146,11 @@ export default function ScoutingPage() {
     setScoutReport(null);
     
     try {
-      // This would call your scouting edge function
       toast({
         title: "Scouting Club",
         description: `Searching for ${searchClubName} on ${searchPlatform}...`,
       });
       
-      // Simulate scouting report (in real implementation, call edge function)
       await new Promise(resolve => setTimeout(resolve, 1500));
       
       setScoutReport(`
@@ -145,11 +218,15 @@ Focus on controlling midfield to limit their counter-attacks.
       <div className="space-y-6">
         <div>
           <h1 className="font-display text-3xl font-bold">Scouting Center</h1>
-          <p className="text-muted-foreground">Scout opponents and analyze match history</p>
+          <p className="text-muted-foreground">Scout opponents, players, and analyze match history</p>
         </div>
 
-        <Tabs defaultValue="scout" className="space-y-4">
+        <Tabs defaultValue="player" className="space-y-4">
           <TabsList>
+            <TabsTrigger value="player" className="flex items-center gap-2">
+              <User className="h-4 w-4" />
+              Scout Player
+            </TabsTrigger>
             <TabsTrigger value="scout" className="flex items-center gap-2">
               <Target className="h-4 w-4" />
               Scout Club
@@ -163,6 +240,101 @@ Focus on controlling midfield to limit their counter-attacks.
               Match Preview
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="player" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5" />
+                  AI Player Scout
+                </CardTitle>
+                <CardDescription>
+                  Generate a comprehensive AI-powered scouting report for any player
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2">
+                  <Select value={selectedPlayerId} onValueChange={setSelectedPlayerId}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Select a player to scout..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {players?.map((player) => (
+                        <SelectItem key={player.discord_user_id} value={player.discord_user_id}>
+                          <span className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs">
+                              {player.overall_rating.toFixed(1)}
+                            </Badge>
+                            {player.discord_username || player.discord_user_id}
+                            {player.primary_position && (
+                              <span className="text-muted-foreground text-xs">
+                                ({player.primary_position})
+                              </span>
+                            )}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button 
+                    onClick={handleScoutPlayer} 
+                    disabled={isScoutingPlayer || !selectedPlayerId}
+                  >
+                    {isScoutingPlayer ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+
+                {isScoutingPlayer && (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="text-center space-y-4">
+                      <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+                      <p className="text-muted-foreground">
+                        Analyzing player data with AI...
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {playerData && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 rounded-lg bg-muted/30 border">
+                    <div className="text-center">
+                      <p className="text-2xl font-bold">{playerData.overall.rating?.toFixed(1)}</p>
+                      <p className="text-xs text-muted-foreground">Overall Rating</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold">{playerData.overall.games_played}</p>
+                      <p className="text-xs text-muted-foreground">Games</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold">{playerData.overall.win_rate?.toFixed(1)}%</p>
+                      <p className="text-xs text-muted-foreground">Win Rate</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-2xl font-bold">{playerData.overall.goals + playerData.overall.assists}</p>
+                      <p className="text-xs text-muted-foreground">G+A</p>
+                    </div>
+                  </div>
+                )}
+
+                {playerScoutReport && (
+                  <div className="mt-6 p-6 rounded-lg bg-muted/50 border prose prose-sm dark:prose-invert max-w-none">
+                    <ReactMarkdown>{playerScoutReport}</ReactMarkdown>
+                  </div>
+                )}
+
+                {!playerScoutReport && !isScoutingPlayer && (
+                  <div className="py-12 text-center text-muted-foreground">
+                    <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Select a player to generate an AI scouting report</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="scout" className="space-y-4">
             <Card>
