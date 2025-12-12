@@ -392,7 +392,7 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
       const mappedPosition = position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null;
       
       if (!existingRating) {
-        // Create initial rating record with EA aggregate stats as baseline (one-time only)
+        // Create initial rating record with EA aggregate stats
         await supabase
           .from('player_ratings')
           .insert({
@@ -415,12 +415,12 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
             saves: saves,
             interceptions: interceptions,
             clearances: clearances,
-            baseline_synced: true, // Mark as synced immediately
+            baseline_synced: true,
           });
         
-        console.log(`  ✨ Created player_ratings for ${eaUsername} with EA baseline (${gamesPlayed} games) - baseline_synced=true`);
-      } else if (!existingRating.baseline_synced) {
-        // One-time baseline sync: only update if baseline hasn't been synced yet
+        console.log(`  ✨ Created player_ratings for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A)`);
+      } else {
+        // Always update stats from EA member board (source of truth for aggregate stats)
         await supabase
           .from('player_ratings')
           .update({
@@ -440,14 +440,12 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
             saves: saves,
             interceptions: interceptions,
             clearances: clearances,
-            baseline_synced: true, // Mark as synced after this update
+            baseline_synced: true,
             updated_at: new Date().toISOString()
           })
           .eq('id', existingRating.id);
         
-        console.log(`  📈 One-time baseline sync for ${eaUsername} player_ratings (${gamesPlayed} games) - baseline_synced=true`);
-      } else {
-        console.log(`  ⏭️ Skipping EA aggregate for ${eaUsername} player_ratings (baseline already synced)`);
+        console.log(`  📈 Updated player_ratings for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A, ${avgRating.toFixed(1)} avg)`);
       }
       
       // ===== ENSURE player_summary record exists =====
@@ -459,7 +457,7 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
         .maybeSingle();
       
       if (!existingSummary) {
-        // Create initial summary record with EA aggregate stats as baseline (one-time only)
+        // Create initial summary record with EA aggregate stats
         await supabase
           .from('player_summary')
           .insert({
@@ -483,12 +481,12 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
             passes_made: passesMade,
             pass_attempts: passAttempts,
             saves: saves,
-            baseline_synced: true, // Mark as synced immediately
+            baseline_synced: true,
           });
         
-        console.log(`  ✨ Created player_summary for ${eaUsername} with EA baseline (${gamesPlayed} games, ${goals}G/${assists}A) - baseline_synced=true`);
-      } else if (!existingSummary.baseline_synced) {
-        // One-time baseline sync: only update if baseline hasn't been synced yet
+        console.log(`  ✨ Created player_summary for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A)`);
+      } else {
+        // Always update stats from EA member board (source of truth for aggregate stats)
         await supabase
           .from('player_summary')
           .update({
@@ -509,24 +507,12 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
             passes_made: passesMade,
             pass_attempts: passAttempts,
             saves: saves,
-            baseline_synced: true, // Mark as synced after this update
+            baseline_synced: true,
             updated_at: new Date().toISOString()
           })
           .eq('id', existingSummary.id);
         
-        console.log(`  📈 One-time baseline sync for ${eaUsername} player_summary (${gamesPlayed} games) - baseline_synced=true`);
-      } else {
-        // Only update position and username (baseline already synced, stats come from match tracking now)
-        await supabase
-          .from('player_summary')
-          .update({
-            discord_username: fullProfile?.discord_username || eaUsername,
-            primary_position: mappedPosition,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingSummary.id);
-        
-        console.log(`  ⏭️ Skipping EA aggregate for ${eaUsername} player_summary (baseline already synced)`);
+        console.log(`  📈 Updated player_summary for ${eaUsername} (${gamesPlayed} games, ${goals}G/${assists}A, ${winRate.toFixed(1)}% WR)`);
       }
       
       // Track for rating recalculation
