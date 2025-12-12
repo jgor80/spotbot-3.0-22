@@ -25,6 +25,7 @@ export interface PlayerProfile {
     name: string;
     icon: string;
   };
+  baseline_synced?: boolean;
 }
 
 export interface PlayerAchievement {

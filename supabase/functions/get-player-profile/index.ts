@@ -214,6 +214,9 @@ serve(async (req) => {
           // Timestamps
           last_active: rating?.last_game_at,
           last_calculated: rating?.last_calculated_at,
+          
+          // Baseline sync status
+          baseline_synced: rating?.baseline_synced || summary?.baseline_synced || false,
         },
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
