@@ -498,22 +498,32 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
     const goals = parseInt(member.goals || 0);
     const assists = parseInt(member.assists || 0);
     const gamesPlayed = parseInt(member.gamesPlayed || member.matches || member.memberGamesPlayed || 0);
-    // EA API uses winRate as a decimal (0.55 = 55%) - need to check actual field names
-    const wins = parseInt(member.wins || member.memberWins || 0);
-    const losses = parseInt(member.losses || member.memberLosses || 0);
-    const draws = gamesPlayed - wins - losses;
+    
+    // EA API provides winRate as decimal (e.g., 0.55 = 55%) - calculate wins from it
+    let wins = parseInt(member.wins || member.memberWins || 0);
+    let losses = parseInt(member.losses || member.memberLosses || 0);
+    
+    // If wins/losses are 0 but we have winRate, calculate from it
+    if (wins === 0 && gamesPlayed > 0) {
+      let winRateDecimal = 0;
+      if (member.winRate !== undefined) {
+        winRateDecimal = parseFloat(member.winRate);
+        // Handle both 0.55 and 55 formats
+        if (winRateDecimal > 1) winRateDecimal = winRateDecimal / 100;
+      }
+      wins = Math.round(gamesPlayed * winRateDecimal);
+      // Estimate losses as ~80% of non-wins, leaving ~20% as draws
+      losses = Math.round((gamesPlayed - wins) * 0.8);
+    }
+    
+    const draws = Math.max(0, gamesPlayed - wins - losses);
     const avgRating = parseFloat(member.ratingAve || member.avgRating || member.proOverall || 0);
     const cleanSheets = parseInt(member.cleanSheetsDef || member.cleanSheetsGK || member.cleanSheets || 0);
     const manOfMatch = parseInt(member.manOfTheMatch || member.mom || 0);
     const position = favoritePosition;
     
-    // EA may provide winRate directly as a decimal or percentage
-    let winRate = 0;
-    if (member.winRate !== undefined) {
-      winRate = parseFloat(member.winRate) * (member.winRate <= 1 ? 100 : 1); // Handle both 0.55 and 55 formats
-    } else if (gamesPlayed > 0) {
-      winRate = (wins / gamesPlayed) * 100;
-    }
+    // Calculate winRate for display
+    const winRate = gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0;
     
     // Extended stats from EA API (all fields visible on EA club member page)
     const shots = parseInt(member.shots || 0);
@@ -1272,12 +1282,32 @@ async function runSync() {
         if (!eaUsername) continue;
         
         // Extract stats from this club
+        const gamesPlayed = parseInt(member.gamesPlayed || member.matches || member.memberGamesPlayed || 0);
+        
+        // EA API provides winRate as decimal (e.g., 0.55 = 55%) - calculate wins from it
+        let wins = parseInt(member.wins || member.memberWins || 0);
+        let losses = parseInt(member.losses || member.memberLosses || 0);
+        
+        // If wins/losses are 0 but we have winRate, calculate from it
+        if (wins === 0 && gamesPlayed > 0) {
+          let winRateDecimal = 0;
+          if (member.winRate !== undefined) {
+            winRateDecimal = parseFloat(member.winRate);
+            // Handle both 0.55 and 55 formats
+            if (winRateDecimal > 1) winRateDecimal = winRateDecimal / 100;
+          }
+          wins = Math.round(gamesPlayed * winRateDecimal);
+          // Estimate losses (assume roughly equal to non-wins for now, minus some draws)
+          // A reasonable estimate: losses ~ (gamesPlayed - wins) * 0.8, draws ~ 20% of remaining
+          losses = Math.round((gamesPlayed - wins) * 0.8);
+        }
+        
         const stats = {
-          gamesPlayed: parseInt(member.gamesPlayed || member.matches || member.memberGamesPlayed || 0),
+          gamesPlayed,
           goals: parseInt(member.goals || 0),
           assists: parseInt(member.assists || 0),
-          wins: parseInt(member.wins || member.memberWins || 0),
-          losses: parseInt(member.losses || member.memberLosses || 0),
+          wins,
+          losses,
           avgRating: parseFloat(member.ratingAve || member.avgRating || member.proOverall || 0),
           cleanSheets: parseInt(member.cleanSheetsDef || member.cleanSheetsGK || member.cleanSheets || 0),
           manOfMatch: parseInt(member.manOfTheMatch || member.mom || 0),
