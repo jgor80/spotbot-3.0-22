@@ -6003,7 +6003,30 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       // Scout Player button from scouting panel
       if (id === 'scoutpanel_scoutplayer') {
-        await interaction.deferReply({ flags: 64 });
+        // Show options: Scout Discord member OR Scout by EA ID
+        const row1 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('scoutplayer_discord')
+            .setLabel('Scout Discord Member')
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji('👤'),
+          new ButtonBuilder()
+            .setCustomId('scoutplayer_ea')
+            .setLabel('Scout by EA Username')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('🎮')
+        );
+
+        return interaction.reply({
+          content: '🎯 **Scout a Player**\n\nChoose how you want to scout:',
+          components: [row1],
+          flags: 64
+        });
+      }
+
+      // Scout Discord member option
+      if (id === 'scoutplayer_discord') {
+        await interaction.deferUpdate();
 
         // Fetch players from player_summary for this guild
         const { data: players } = await supabase
@@ -6014,7 +6037,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .limit(25);
 
         if (!players || players.length === 0) {
-          return interaction.editReply({ content: 'No players found in this server. Players need to play games to appear here.' });
+          return interaction.editReply({ content: 'No players found in this server. Players need to play games to appear here.', components: [] });
         }
 
         const options = players.map(p => ({
@@ -6031,9 +6054,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const row = new ActionRowBuilder().addComponents(selectMenu);
 
         return interaction.editReply({
-          content: '🎯 **Scout a Player**\n\nSelect a player to generate an AI-powered scouting report:',
+          content: '🎯 **Scout a Discord Member**\n\nSelect a player to generate an AI-powered scouting report:',
           components: [row]
         });
+      }
+
+      // Scout by EA Username option - show modal
+      if (id === 'scoutplayer_ea') {
+        const modal = new ModalBuilder()
+          .setCustomId('scoutplayer_ea_modal')
+          .setTitle('Scout by EA Username');
+
+        const eaUsernameInput = new TextInputBuilder()
+          .setCustomId('ea_username')
+          .setLabel('EA FC Pro Clubs Username')
+          .setPlaceholder('Enter the EA username to scout')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(50);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(eaUsernameInput));
+        return interaction.showModal(modal);
       }
 
       // Leaderboard button from scouting panel
@@ -6513,24 +6554,39 @@ client.on(Events.InteractionCreate, async (interaction) => {
             });
           }
 
-          const playerData = data?.playerData || {};
+          const playerData = data?.player_data || {};
           const analysis = data?.analysis || 'No analysis available.';
+          const eaClubs = data?.ea_clubs || [];
+
+          // Build clubs info
+          let clubsText = '';
+          if (eaClubs.length > 0) {
+            clubsText = eaClubs.map(c => 
+              `• **${c.club_name}** (${c.platform}): ${c.stats?.games_played || 0}G, ${c.stats?.wins || 0}W`
+            ).join('\n');
+          }
 
           // Build the scouting report embed
           const embed = new EmbedBuilder()
-            .setTitle(`🎯 Scouting Report: ${playerData.discord_username || 'Unknown Player'}`)
+            .setTitle(`🎯 Scouting Report: ${playerData.profile?.username || 'Unknown Player'}`)
             .setColor(0x5865f2)
-            .setDescription(analysis.substring(0, 4000)) // Discord limit
+            .setDescription(analysis.length > 3500 ? analysis.substring(0, 3500) + '...' : analysis)
             .addFields(
-              { name: '📊 Overall Rating', value: `${Math.round(playerData.overall_rating || 50)}`, inline: true },
-              { name: '🎮 Games Played', value: `${playerData.games_played || 0}`, inline: true },
-              { name: '📍 Position', value: playerData.primary_position || 'Unknown', inline: true },
-              { name: '🏆 Win Rate', value: `${Math.round((playerData.win_rate || 0) * 100)}%`, inline: true },
-              { name: '⚽ Goals', value: `${playerData.total_goals || 0}`, inline: true },
-              { name: '🅰️ Assists', value: `${playerData.total_assists || 0}`, inline: true }
-            )
-            .setFooter({ text: 'AI-powered analysis • SquadIQ Scouting' })
-            .setTimestamp();
+              { name: '📊 Overall Rating', value: `${Math.round(playerData.overall?.rating || 50)}`, inline: true },
+              { name: '🎮 Games Played', value: `${playerData.overall?.games_played || 0}`, inline: true },
+              { name: '📍 Position', value: playerData.profile?.primary_position || 'Unknown', inline: true },
+              { name: '🏆 Win Rate', value: `${Math.round(playerData.overall?.win_rate || 0)}%`, inline: true },
+              { name: '⚽ Goals', value: `${playerData.overall?.goals || 0}`, inline: true },
+              { name: '🅰️ Assists', value: `${playerData.overall?.assists || 0}`, inline: true }
+            );
+
+          // Add clubs found if any
+          if (clubsText) {
+            embed.addFields({ name: `🏟️ Clubs (${eaClubs.length})`, value: clubsText.substring(0, 1000), inline: false });
+          }
+
+          embed.setFooter({ text: 'AI-powered analysis • SquadIQ Scouting' });
+          embed.setTimestamp();
 
           return interaction.editReply({ 
             content: null,
@@ -7735,6 +7791,78 @@ client.on(Events.InteractionCreate, async (interaction) => {
         } catch (err) {
           console.error('[LinkEA Modal] Error:', err);
           return interaction.editReply({ content: `❌ Error linking EA account: ${err.message}` });
+        }
+      }
+
+      // Scout Player by EA Username Modal
+      if (id === 'scoutplayer_ea_modal') {
+        const eaUsername = interaction.fields.getTextInputValue('ea_username').trim();
+        
+        if (!eaUsername) {
+          return interaction.reply({ content: '❌ EA username cannot be empty.', flags: 64 });
+        }
+
+        await interaction.deferReply();
+
+        try {
+          // Call the scout-player edge function with EA username lookup
+          const { error, data } = await callEdgeFunction('scout-player', {
+            ea_username: eaUsername,
+            search_ea: true
+          });
+
+          if (error) {
+            return interaction.editReply({ 
+              content: `❌ Failed to scout player: ${error}\n\nMake sure the EA username is exact and the player is in a tracked club.`
+            });
+          }
+
+          const playerData = data?.player_data || {};
+          const analysis = data?.analysis || 'No analysis available.';
+          const eaClubs = data?.ea_clubs || [];
+
+          // Build clubs info
+          let clubsText = '';
+          if (eaClubs.length > 0) {
+            clubsText = eaClubs.map(c => 
+              `• **${c.club_name}** (${c.platform}): ${c.stats?.games_played || 0}G, ${c.stats?.wins || 0}W, ${c.stats?.goals || 0}⚽, ${c.stats?.assists || 0}🅰️`
+            ).join('\n');
+          }
+
+          // Build the scouting report embed
+          const embed = new EmbedBuilder()
+            .setTitle(`🎯 EA Scouting Report: ${eaUsername}`)
+            .setColor(playerData.profile?.is_discord_member ? 0x5865f2 : 0xff9500)
+            .setDescription(analysis.length > 3500 ? analysis.substring(0, 3500) + '...' : analysis);
+
+          // Add stats fields
+          if (playerData.overall) {
+            embed.addFields(
+              { name: '📊 Rating', value: `${Math.round(playerData.overall.rating || 0)}`, inline: true },
+              { name: '🎮 Games', value: `${playerData.overall.games_played || 0}`, inline: true },
+              { name: '🏆 Win Rate', value: `${Math.round(playerData.overall.win_rate || 0)}%`, inline: true },
+              { name: '⚽ Goals', value: `${playerData.overall.goals || 0}`, inline: true },
+              { name: '🅰️ Assists', value: `${playerData.overall.assists || 0}`, inline: true },
+              { name: '📍 Position', value: playerData.profile?.primary_position || 'Unknown', inline: true }
+            );
+          }
+
+          // Add clubs found
+          if (clubsText) {
+            embed.addFields({ name: `🏟️ Clubs Found (${eaClubs.length})`, value: clubsText.substring(0, 1000), inline: false });
+          }
+
+          embed.setFooter({ 
+            text: playerData.profile?.is_discord_member 
+              ? '✅ Discord Member • AI-powered analysis' 
+              : '⚠️ External Player • AI-powered analysis'
+          });
+          embed.setTimestamp();
+
+          return interaction.editReply({ embeds: [embed] });
+        } catch (err) {
+          console.error('[Scout EA Player] Error:', err);
+          return interaction.editReply({ content: `❌ Error generating report: ${err.message}` });
         }
       }
 
