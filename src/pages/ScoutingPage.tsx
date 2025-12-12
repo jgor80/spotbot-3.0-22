@@ -44,6 +44,24 @@ interface ClubMatch {
   created_at: string;
 }
 
+interface RecentResultsHighlight {
+  ratings: { name: string; avg: number; matches: number }[];
+  goals: { name: string; goals: number; conversion: number; shots: number }[];
+  assists: { name: string; assists: number }[];
+  passes: { name: string; passes: number; success: number }[];
+  tackles: { name: string; tackles: number }[];
+  dribbles: { name: string; dribbles: number }[];
+  interceptions: { name: string; interceptions: number }[];
+  saves: { name: string; saves: number }[];
+}
+
+interface RecentResultsResponse {
+  window_size: number;
+  recent_matches: ClubMatch[];
+  player_highlights: RecentResultsHighlight;
+  ai_summary?: string;
+}
+
 interface PlayerSummary {
   discord_user_id: string;
   discord_username: string | null;
@@ -91,6 +109,8 @@ export default function ScoutingPage() {
   // Player scouting state
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [isScoutingPlayer, setIsScoutingPlayer] = useState(false);
+  const [isScoutingEaPlayer, setIsScoutingEaPlayer] = useState(false);
+  const [eaGamertag, setEaGamertag] = useState("");
   const [playerScoutReport, setPlayerScoutReport] = useState<string | null>(null);
   const [playerData, setPlayerData] = useState<any>(null);
 
@@ -234,6 +254,23 @@ export default function ScoutingPage() {
     enabled: !!selectedGuildId,
   });
 
+  // Fetch recent results with highlights and AI summary
+  const { data: recentResults, isLoading: recentResultsLoading } = useQuery({
+    queryKey: ["recentResults", selectedGuildId],
+    queryFn: async (): Promise<RecentResultsResponse | null> => {
+      if (!selectedGuildId) return null;
+
+      const { data, error } = await supabase.functions.invoke("recent-results", {
+        body: { guild_id: selectedGuildId, window_size: 5 },
+      });
+
+      if (error) throw error;
+      if (!data || data.error) throw new Error(data.error || "Failed to load results");
+      return data as RecentResultsResponse;
+    },
+    enabled: !!selectedGuildId,
+  });
+
   // Load existing report when player is selected
   const loadExistingReport = (playerId: string) => {
     const existingReport = savedReports?.find(r => r.discord_user_id === playerId);
@@ -253,7 +290,7 @@ export default function ScoutingPage() {
 
   const handleScoutPlayer = async () => {
     if (!selectedPlayerId || !selectedGuildId) return;
-    
+
     setIsScoutingPlayer(true);
     setPlayerScoutReport(null);
     setPlayerData(null);
@@ -292,6 +329,52 @@ export default function ScoutingPage() {
       });
     } finally {
       setIsScoutingPlayer(false);
+    }
+  };
+
+  const handleScoutEaPlayer = async () => {
+    const trimmedGamertag = eaGamertag.trim();
+    if (!trimmedGamertag) {
+      toast({
+        title: "EA Gamertag Required",
+        description: "Enter an EA ID or gamertag to scout",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsScoutingEaPlayer(true);
+    setPlayerScoutReport(null);
+    setPlayerData(null);
+
+    try {
+      toast({
+        title: "Searching EA",
+        description: `Gathering stats for ${trimmedGamertag}...`,
+      });
+
+      const { data, error } = await supabase.functions.invoke("scout-player", {
+        body: { ea_username: trimmedGamertag, ea_platform: searchPlatform },
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      setPlayerScoutReport(data.analysis);
+      setPlayerData(data.player_data);
+
+      toast({
+        title: "Scout Report Ready",
+        description: `AI analysis generated for ${trimmedGamertag}`,
+      });
+    } catch (error) {
+      toast({
+        title: "EA Lookup Failed",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsScoutingEaPlayer(false);
     }
   };
 
@@ -462,8 +545,39 @@ Focus on controlling midfield to limit their counter-attacks.
                   </Button>
                 </div>
 
+                <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
+                  <div className="flex flex-col md:flex-row gap-2">
+                    <Input
+                      placeholder="EA ID / Gamertag (outside your server)"
+                      value={eaGamertag}
+                      onChange={(e) => setEaGamertag(e.target.value)}
+                    />
+                    <Select value={searchPlatform} onValueChange={setSearchPlatform}>
+                      <SelectTrigger className="md:w-[180px]">
+                        <SelectValue placeholder="Platform" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ps5">PS5 / PS4</SelectItem>
+                        <SelectItem value="xbox-series-xs">Xbox</SelectItem>
+                        <SelectItem value="pc">PC</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={handleScoutEaPlayer}
+                      disabled={isScoutingPlayer || isScoutingEaPlayer}
+                      variant="secondary"
+                    >
+                      {isScoutingEaPlayer ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      <span className="ml-2">Scout EA Gamertag</span>
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Pulls every stat EA exposes for this player across tracked clubs and any clubs we discover in EA search.
+                  </p>
+                </div>
+
                 {/* Show existing report timestamp if viewing saved report */}
-                {selectedPlayerId && savedReports?.find(r => r.discord_user_id === selectedPlayerId) && !isScoutingPlayer && (
+                {selectedPlayerId && savedReports?.find(r => r.discord_user_id === selectedPlayerId) && !(isScoutingPlayer || isScoutingEaPlayer) && (
                   <div className="text-xs text-muted-foreground flex items-center gap-2">
                     <span>Last updated: {format(new Date(savedReports.find(r => r.discord_user_id === selectedPlayerId)!.updated_at), "PPp")}</span>
                     <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={handleScoutPlayer}>
@@ -472,7 +586,7 @@ Focus on controlling midfield to limit their counter-attacks.
                   </div>
                 )}
 
-                {isScoutingPlayer && (
+                {(isScoutingPlayer || isScoutingEaPlayer) && (
                   <div className="flex items-center justify-center py-12">
                     <div className="text-center space-y-4">
                       <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
@@ -504,13 +618,19 @@ Focus on controlling midfield to limit their counter-attacks.
                   </div>
                 )}
 
+                {playerData?.raw_member_fields?.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    EA fields discovered: {playerData.raw_member_fields.join(", ")}
+                  </p>
+                )}
+
                 {playerScoutReport && (
                   <div className="mt-6 p-6 rounded-lg bg-muted/50 border prose prose-sm dark:prose-invert max-w-none">
                     <ReactMarkdown>{playerScoutReport}</ReactMarkdown>
                   </div>
                 )}
 
-                {!playerScoutReport && !isScoutingPlayer && (
+                {!playerScoutReport && !(isScoutingPlayer || isScoutingEaPlayer) && (
                   <div className="py-12 text-center text-muted-foreground">
                     <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>Select a player to generate an AI scouting report</p>
@@ -578,6 +698,159 @@ Focus on controlling midfield to limit their counter-attacks.
           </TabsContent>
 
           <TabsContent value="matches" className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card className="h-full">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5" />
+                    Last 5 Match Standouts
+                  </CardTitle>
+                  <CardDescription>
+                    Aggregated leaders from the most recent matches in your server
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {recentResultsLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : recentResults ? (
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground mb-1">Highest AMR</p>
+                          <div className="space-y-1">
+                            {recentResults.player_highlights.ratings.map((p) => (
+                              <div key={`rating-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                <span className="font-medium truncate">{p.name}</span>
+                                <span className="text-sm text-muted-foreground">{p.avg.toFixed(1)} AMR</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground mb-1">Top Goalscorers</p>
+                          <div className="space-y-1">
+                            {recentResults.player_highlights.goals.map((p) => (
+                              <div key={`goals-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                <span className="font-medium truncate">{p.name}</span>
+                                <span className="text-sm text-muted-foreground">{p.goals} G ({p.conversion}% conv)</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground mb-1">Top Assisters</p>
+                          <div className="space-y-1">
+                            {recentResults.player_highlights.assists.map((p) => (
+                              <div key={`assists-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                <span className="font-medium truncate">{p.name}</span>
+                                <span className="text-sm text-muted-foreground">{p.assists} assists</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground mb-1">Top Passers</p>
+                          <div className="space-y-1">
+                            {recentResults.player_highlights.passes.map((p) => (
+                              <div key={`passes-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                <span className="font-medium truncate">{p.name}</span>
+                                <span className="text-sm text-muted-foreground">{p.passes} passes ({p.success}% success)</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground mb-1">Top Tacklers</p>
+                          <div className="space-y-1">
+                            {recentResults.player_highlights.tackles.map((p) => (
+                              <div key={`tackles-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                <span className="font-medium truncate">{p.name}</span>
+                                <span className="text-sm text-muted-foreground">{p.tackles} tackles</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p className="text-xs uppercase text-muted-foreground mb-1">Dribblers</p>
+                            <div className="space-y-1">
+                              {recentResults.player_highlights.dribbles.map((p) => (
+                                <div key={`dribbles-${p.name}`} className="rounded-lg border bg-muted/40 px-3 py-2">
+                                  <p className="font-medium truncate">{p.name}</p>
+                                  <p className="text-xs text-muted-foreground">{p.dribbles} dribbles</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase text-muted-foreground mb-1">Interceptions</p>
+                            <div className="space-y-1">
+                              {recentResults.player_highlights.interceptions.map((p) => (
+                                <div key={`interceptions-${p.name}`} className="rounded-lg border bg-muted/40 px-3 py-2">
+                                  <p className="font-medium truncate">{p.name}</p>
+                                  <p className="text-xs text-muted-foreground">{p.interceptions} INT</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        {recentResults.player_highlights.saves.length > 0 && (
+                          <div>
+                            <p className="text-xs uppercase text-muted-foreground mb-1">Top Keepers</p>
+                            <div className="space-y-1">
+                              {recentResults.player_highlights.saves.map((p) => (
+                                <div key={`saves-${p.name}`} className="flex items-center justify-between rounded-lg border bg-muted/40 px-3 py-2">
+                                  <span className="font-medium truncate">{p.name}</span>
+                                  <span className="text-sm text-muted-foreground">{p.saves} saves</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-10 text-center text-muted-foreground">
+                      <p>No recent matches yet</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="h-full">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5" />
+                    AI Recap (last 5)
+                  </CardTitle>
+                  <CardDescription>Quick digest of chemistry, form, and takeaways</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {recentResultsLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : recentResults?.ai_summary ? (
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <ReactMarkdown>{recentResults.ai_summary}</ReactMarkdown>
+                    </div>
+                  ) : recentResults ? (
+                    <div className="py-8 text-center text-muted-foreground">
+                      <p>Sync a few matches to generate an AI recap.</p>
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center text-muted-foreground">
+                      <p>Recent results not available.</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
