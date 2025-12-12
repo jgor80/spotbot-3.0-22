@@ -341,18 +341,18 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
   return synced;
 }
 
-// Process and sync matches (last 10 only with deduplication)
+// Process and sync matches (last 50 with deduplication)
 async function syncMatches(guildId, clubKey, club) {
   const matches = await fetchMatches(club.ea_club_id, club.ea_platform);
   
   if (!matches.length) {
     console.log(`⚠️ No matches found for ${club.name}`);
-    return { synced: 0, skipped: 0, playerStats: 0 };
+    return { synced: 0, skipped: 0, playerStats: 0, updatedPlayerIds: [] };
   }
   
-  // Only process last 10 matches
-  const last10Matches = matches.slice(0, 10);
-  console.log(`📊 Processing last ${last10Matches.length} matches for ${club.name}`);
+  // Process last 50 matches for comprehensive history
+  const last50Matches = matches.slice(0, 50);
+  console.log(`📊 Processing last ${last50Matches.length} matches for ${club.name}`);
   
   // Get existing match IDs from club_matches
   const { data: existingMatches } = await supabase
@@ -364,7 +364,7 @@ async function syncMatches(guildId, clubKey, club) {
   const existingMatchIds = new Set((existingMatches || []).map(m => m.ea_match_id));
   
   // Get existing player stats by ea_match_id for deduplication
-  const matchIds = last10Matches.map(m => m.matchId?.toString()).filter(Boolean);
+  const matchIds = last50Matches.map(m => m.matchId?.toString()).filter(Boolean);
   const { data: existingPlayerStats } = await supabase
     .from('player_stats')
     .select('ea_match_id, discord_user_id')
@@ -378,7 +378,7 @@ async function syncMatches(guildId, clubKey, club) {
   let synced = 0, skipped = 0, playerStatsCount = 0;
   const updatedPlayerIds = []; // Track players who got new stats
   
-  for (const matchData of last10Matches) {
+  for (const matchData of last50Matches) {
     const matchId = matchData.matchId?.toString();
     if (!matchId) {
       skipped++;
