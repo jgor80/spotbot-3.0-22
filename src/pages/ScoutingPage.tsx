@@ -47,6 +47,7 @@ interface ClubMatch {
 interface PlayerSummary {
   discord_user_id: string;
   discord_username: string | null;
+  ea_username: string | null;
   overall_rating: number;
   primary_position: string | null;
 }
@@ -93,20 +94,36 @@ export default function ScoutingPage() {
   const [playerScoutReport, setPlayerScoutReport] = useState<string | null>(null);
   const [playerData, setPlayerData] = useState<any>(null);
 
-  // Fetch players for selection
+  // Fetch players for selection with EA usernames
   const { data: players } = useQuery({
     queryKey: ["players", selectedGuildId],
     queryFn: async (): Promise<PlayerSummary[]> => {
       if (!selectedGuildId) return [];
       
-      const { data, error } = await supabase
+      // Fetch player summaries
+      const { data: summaryData, error: summaryError } = await supabase
         .from("player_summary")
         .select("discord_user_id, discord_username, overall_rating, primary_position")
         .eq("guild_id", selectedGuildId)
         .order("overall_rating", { ascending: false });
       
-      if (error) throw error;
-      return data || [];
+      if (summaryError) throw summaryError;
+
+      // Fetch EA usernames from profiles
+      const discordIds = (summaryData || []).map(p => p.discord_user_id);
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("discord_user_id, ea_username")
+        .in("discord_user_id", discordIds);
+
+      const eaUsernameMap = new Map(
+        (profilesData || []).map(p => [p.discord_user_id, p.ea_username])
+      );
+
+      return (summaryData || []).map(p => ({
+        ...p,
+        ea_username: eaUsernameMap.get(p.discord_user_id) || null,
+      }));
     },
     enabled: !!selectedGuildId,
   });
@@ -408,13 +425,14 @@ Focus on controlling midfield to limit their counter-attacks.
                     <SelectContent>
                       {players?.map((player) => {
                         const hasReport = savedReports?.some(r => r.discord_user_id === player.discord_user_id);
+                        const displayName = player.ea_username || player.discord_username || player.discord_user_id;
                         return (
                           <SelectItem key={player.discord_user_id} value={player.discord_user_id}>
                             <span className="flex items-center gap-2">
                               <Badge variant="outline" className="text-xs">
                                 {player.overall_rating.toFixed(1)}
                               </Badge>
-                              {player.discord_username || player.discord_user_id}
+                              {displayName}
                               {player.primary_position && (
                                 <span className="text-muted-foreground text-xs">
                                   ({player.primary_position})

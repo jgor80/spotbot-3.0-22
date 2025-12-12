@@ -76,6 +76,7 @@ export interface RecentGame {
 export interface LeaderboardPlayer {
   discord_user_id: string;
   discord_username: string | null;
+  ea_username: string | null;
   overall_rating: number;
   games_played: number;
   wins: number;
@@ -95,6 +96,7 @@ export interface LineupSlot {
   position: string;
   discord_user_id: string;
   discord_username?: string;
+  ea_username?: string;
   rating?: number;
   is_substitute: boolean;
 }

@@ -18,6 +18,9 @@ export function PlayerCard({ player, rank, onClick, selected, compact }: PlayerC
     ? player.form_rating > 60 ? "up" : player.form_rating < 40 ? "down" : "neutral"
     : "neutral";
 
+  // Use EA username as primary, fallback to Discord username
+  const displayName = player.ea_username || player.discord_username || "Unknown";
+
   if (compact) {
     return (
       <div
@@ -31,7 +34,7 @@ export function PlayerCard({ player, rank, onClick, selected, compact }: PlayerC
       >
         <RatingBadge rating={player.overall_rating} size="sm" />
         <div className="flex-1 min-w-0">
-          <p className="font-medium truncate">{player.discord_username || "Unknown"}</p>
+          <p className="font-medium truncate">{displayName}</p>
           <p className="text-xs text-muted-foreground">{player.primary_position || "ANY"}</p>
         </div>
         {selected && (
@@ -61,7 +64,7 @@ export function PlayerCard({ player, rank, onClick, selected, compact }: PlayerC
 
           <div className="flex-1 min-w-0">
             <h3 className="font-display text-lg font-semibold truncate">
-              {player.discord_username || "Unknown Player"}
+              {displayName}
             </h3>
             
             <div className="flex items-center gap-2 mt-1">

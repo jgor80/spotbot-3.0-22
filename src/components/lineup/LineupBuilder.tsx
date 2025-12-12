@@ -41,8 +41,10 @@ export function LineupBuilder({
     return availablePlayers.filter(p => {
       if (assignedIds.has(p.discord_user_id)) return false;
       if (!searchQuery) return true;
-      return p.discord_username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-             p.primary_position?.toLowerCase().includes(searchQuery.toLowerCase());
+      const query = searchQuery.toLowerCase();
+      return p.ea_username?.toLowerCase().includes(query) ||
+             p.discord_username?.toLowerCase().includes(query) ||
+             p.primary_position?.toLowerCase().includes(query);
     });
   }, [availablePlayers, slots, searchQuery]);
 
@@ -66,6 +68,7 @@ export function LineupBuilder({
       position,
       discord_user_id: player.discord_user_id,
       discord_username: player.discord_username || undefined,
+      ea_username: player.ea_username || undefined,
       rating: player.overall_rating,
       is_substitute: false,
     };
@@ -237,7 +240,7 @@ export function LineupBuilder({
                     className="flex items-center gap-2 py-1.5 px-3"
                   >
                     <span className="font-bold">{slot.position}</span>
-                    <span>{slot.discord_username || "Unknown"}</span>
+                    <span>{slot.ea_username || slot.discord_username || "Unknown"}</span>
                     <span className="text-primary font-bold">{slot.rating?.toFixed(0)}</span>
                     <button
                       onClick={() => handleRemovePlayer(slot.slot_index)}
