@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ClubsManager } from "@/components/settings/ClubsManager";
+import { EaLinkingPanel } from "@/components/settings/EaLinkingPanel";
 import { 
   Gamepad2, 
   User, 
@@ -229,6 +230,10 @@ export default function SettingsPage() {
               <Users className="h-4 w-4 mr-2" />
               Teams
             </TabsTrigger>
+            <TabsTrigger value="ea-linking">
+              <Link2 className="h-4 w-4 mr-2" />
+              EA Linking
+            </TabsTrigger>
             <TabsTrigger value="players">
               <User className="h-4 w-4 mr-2" />
               Players
@@ -237,6 +242,10 @@ export default function SettingsPage() {
 
           <TabsContent value="teams">
             <ClubsManager />
+          </TabsContent>
+
+          <TabsContent value="ea-linking">
+            <EaLinkingPanel />
           </TabsContent>
 
           <TabsContent value="players" className="space-y-6">
