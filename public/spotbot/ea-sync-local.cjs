@@ -427,24 +427,32 @@ async function syncMatches(guildId, clubKey, club) {
     }
     
     // Insert/update match in club_matches (skip if exists)
-    if (!existingMatchIds.has(matchId)) {
-      const { error: matchError } = await supabase.from('club_matches').insert({
-        guild_id: guildId,
-        club_key: clubKey,
-        ea_match_id: matchId,
-        match_type: 'division',
-        result,
-        score_for: scoreFor,
-        score_against: scoreAgainst,
-        opponent_club_name: opponentClubData?.name || 'Unknown',
-        opponent_club_id: opponentClubId,
-        match_data: matchData,
-        player_stats: playerStats
-      });
+    const isNewMatch = !existingMatchIds.has(matchId);
+    let clubMatchId = null;
+    
+    if (isNewMatch) {
+      const { data: insertedMatch, error: matchError } = await supabase
+        .from('club_matches')
+        .insert({
+          guild_id: guildId,
+          club_key: clubKey,
+          ea_match_id: matchId,
+          match_type: 'division',
+          result,
+          score_for: scoreFor,
+          score_against: scoreAgainst,
+          opponent_club_name: opponentClubData?.name || 'Unknown',
+          opponent_club_id: opponentClubId,
+          match_data: matchData,
+          player_stats: playerStats
+        })
+        .select('id')
+        .single();
       
       if (matchError) {
         console.error(`[DB] Match insert error:`, matchError.message);
       } else {
+        clubMatchId = insertedMatch.id;
         synced++;
         console.log(`✅ New match ${matchId}: ${result} ${scoreFor}-${scoreAgainst}`);
       }
@@ -453,6 +461,8 @@ async function syncMatches(guildId, clubKey, club) {
     }
     
     // Record individual player stats with deduplication
+    const matchPlayerIds = []; // Track players in THIS match for feedback
+    
     for (const pStat of playerStats) {
       // Find profile for this EA username
       const { data: profile } = await supabase
@@ -462,6 +472,9 @@ async function syncMatches(guildId, clubKey, club) {
         .maybeSingle();
       
       if (!profile) continue;
+      
+      // Skip temp profiles (ea_*) - only real Discord users
+      if (profile.discord_user_id.startsWith('ea_')) continue;
       
       // Check if we already have this player's stats for this match
       const statsKey = `${matchId}:${profile.discord_user_id}`;
@@ -490,11 +503,40 @@ async function syncMatches(guildId, clubKey, club) {
       if (!statsError) {
         playerStatsCount++;
         existingPlayerStatsSet.add(statsKey); // Mark as processed
+        matchPlayerIds.push(profile.discord_user_id);
         // Track player for rating recalculation
         if (!updatedPlayerIds.includes(profile.discord_user_id)) {
           updatedPlayerIds.push(profile.discord_user_id);
         }
       }
+    }
+    
+    // Create feedback requests for new matches with multiple players
+    if (isNewMatch && clubMatchId && matchPlayerIds.length >= 2) {
+      console.log(`📨 Creating feedback requests for ${matchPlayerIds.length} players...`);
+      
+      for (const evaluatorId of matchPlayerIds) {
+        // Teammates are everyone except the evaluator
+        const teammates = matchPlayerIds.filter(id => id !== evaluatorId);
+        
+        const { error: feedbackError } = await supabase
+          .from('dm_feedback_requests')
+          .insert({
+            guild_id: guildId,
+            evaluator_discord_id: evaluatorId,
+            club_match_id: clubMatchId,
+            match_type: 'club',
+            teammates_to_evaluate: teammates,
+            status: 'pending',
+            expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
+          });
+        
+        if (feedbackError) {
+          console.log(`  ⚠️ Feedback request error for ${evaluatorId}: ${feedbackError.message}`);
+        }
+      }
+      
+      console.log(`  ✅ Created ${matchPlayerIds.length} feedback requests`);
     }
   }
   
