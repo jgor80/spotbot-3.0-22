@@ -103,18 +103,63 @@ serve(async (req) => {
       (playerRatings || []).map(p => [p.discord_user_id, p])
     );
 
-    // Filter for captain-eligible players (those with enough games)
-    const eligibleCaptains = player_discord_ids.filter(id => {
-      const rating = ratingsMap.get(id);
-      return rating && rating.games_played >= min_games_for_captain;
+    // Get recent drafts to check captain cooldown (last 3 drafts)
+    const { data: recentDrafts } = await supabase
+      .from("drafts")
+      .select("captain_a_discord_id, captain_b_discord_id")
+      .eq("guild_id", guild_id)
+      .in("status", ["completed", "picking"])
+      .order("created_at", { ascending: false })
+      .limit(3);
+
+    // Build set of players on captain cooldown
+    const captainsOnCooldown = new Set<string>();
+    recentDrafts?.forEach(draft => {
+      if (draft.captain_a_discord_id) captainsOnCooldown.add(draft.captain_a_discord_id);
+      if (draft.captain_b_discord_id) captainsOnCooldown.add(draft.captain_b_discord_id);
     });
 
-    console.log(`[draft-start] ${eligibleCaptains.length} players eligible as captains (min ${min_games_for_captain} games)`);
+    console.log(`[draft-start] Captains on cooldown (last 3 drafts):`, Array.from(captainsOnCooldown));
 
-    // If not enough eligible captains, fall back to all players but prioritize experienced ones
-    let captainPool = eligibleCaptains.length >= 2 
-      ? eligibleCaptains 
-      : player_discord_ids;
+    // Filter for captain-eligible players (those with enough games AND not on cooldown)
+    const eligibleCaptains = player_discord_ids.filter(id => {
+      const rating = ratingsMap.get(id);
+      const hasEnoughGames = rating && rating.games_played >= min_games_for_captain;
+      const notOnCooldown = !captainsOnCooldown.has(id);
+      return hasEnoughGames && notOnCooldown;
+    });
+
+    // Also track players who meet games requirement but are on cooldown
+    const eligibleButOnCooldown = player_discord_ids.filter(id => {
+      const rating = ratingsMap.get(id);
+      const hasEnoughGames = rating && rating.games_played >= min_games_for_captain;
+      return hasEnoughGames && captainsOnCooldown.has(id);
+    });
+
+    console.log(`[draft-start] ${eligibleCaptains.length} players eligible as captains (min ${min_games_for_captain} games, not on cooldown)`);
+    console.log(`[draft-start] ${eligibleButOnCooldown.length} players on cooldown`);
+
+    // Determine captain pool with fallback logic:
+    // 1. Prefer eligible captains (enough games + not on cooldown)
+    // 2. If not enough, include those on cooldown who have enough games
+    // 3. If still not enough, use all players
+    let captainPool: string[];
+    let usedCooldownFallback = false;
+    let usedGamesFallback = false;
+
+    if (eligibleCaptains.length >= 2) {
+      captainPool = eligibleCaptains;
+    } else if (eligibleCaptains.length + eligibleButOnCooldown.length >= 2) {
+      // Include cooldown players if needed
+      captainPool = [...eligibleCaptains, ...eligibleButOnCooldown];
+      usedCooldownFallback = true;
+      console.log(`[draft-start] Including cooldown players in pool due to insufficient eligible captains`);
+    } else {
+      // Fallback to all players
+      captainPool = player_discord_ids;
+      usedGamesFallback = true;
+      console.log(`[draft-start] Falling back to all players for captain selection`);
+    }
 
     // Sort captain pool by games played (most experienced first) then add some randomness
     captainPool = [...captainPool].sort((a, b) => {
@@ -253,7 +298,9 @@ serve(async (req) => {
         captain_selection_info: {
           eligible_captains_count: eligibleCaptains.length,
           min_games_required: min_games_for_captain,
-          used_fallback: eligibleCaptains.length < 2,
+          used_cooldown_fallback: usedCooldownFallback,
+          used_games_fallback: usedGamesFallback,
+          captains_on_cooldown: Array.from(captainsOnCooldown),
         },
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
