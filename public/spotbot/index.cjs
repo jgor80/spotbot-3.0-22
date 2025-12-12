@@ -602,6 +602,12 @@ const COMMANDS = [
 
   // Scouting Panel
   { name: 'scoutpanel', description: 'Create a scouting panel in this channel for club scouting and match analysis.' },
+  
+  // EA Sync Panel
+  { name: 'eapanel', description: 'Create an EA integration panel for managing club links and syncing stats.' },
+  
+  // Ratings Panel
+  { name: 'ratingspanel', description: 'Create a ratings panel for viewing player ratings, leaderboards, and stats.' },
 
   // Scouting Commands (ScoutBot functionality)
   {
@@ -2913,6 +2919,167 @@ function buildScoutingPanelComponents() {
   return rows;
 }
 
+// =======================
+// EA SYNC PANEL BUILDER
+// =======================
+
+function buildEaPanelEmbed(guildId, state) {
+  const currentClub = state?.clubs?.find(c => c.key === state.currentClubKey);
+  const isLinked = !!currentClub?.ea_club_id;
+  const isMonitoring = !!currentClub?.monitoring_enabled;
+  
+  return new EmbedBuilder()
+    .setTitle('🎮 EA FC Integration Panel')
+    .setColor(isLinked ? (isMonitoring ? 0x00ff00 : 0xffcc00) : 0xff6600)
+    .setDescription(
+      '**Manage your EA FC Pro Clubs integration**\n\n' +
+      `**Current Club:** ${currentClub?.name || 'None selected'}\n` +
+      `**EA Club ID:** ${currentClub?.ea_club_id || 'Not linked'}\n` +
+      `**Platform:** ${currentClub?.ea_platform || 'Not set'}\n` +
+      `**Monitoring:** ${isMonitoring ? '🟢 Active' : '🔴 Disabled'}\n\n` +
+      '**🔗 Link Club** - Connect your club to EA FC Pro Clubs\n' +
+      '**📥 Sync Matches** - Manually sync recent match history\n' +
+      '**📡 Toggle Monitoring** - Enable/disable auto-sync\n' +
+      '**🎮 Link EA Account** - Connect your personal EA account\n' +
+      '**📊 View Status** - See detailed integration status'
+    )
+    .setFooter({ text: 'Auto-syncs every 2 minutes when monitoring is enabled' })
+    .setTimestamp();
+}
+
+function buildEaPanelComponents(state) {
+  const rows = [];
+  const currentClub = state?.clubs?.find(c => c.key === state.currentClubKey);
+  const isLinked = !!currentClub?.ea_club_id;
+  const isMonitoring = !!currentClub?.monitoring_enabled;
+  
+  // Row 1: Main EA actions
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('eapanel_link')
+      .setLabel('Link Club')
+      .setEmoji('🔗')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('eapanel_sync')
+      .setLabel('Sync Matches')
+      .setEmoji('📥')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(!isLinked),
+    new ButtonBuilder()
+      .setCustomId('eapanel_toggle')
+      .setLabel(isMonitoring ? 'Disable Monitoring' : 'Enable Monitoring')
+      .setEmoji(isMonitoring ? '🔴' : '🟢')
+      .setStyle(isMonitoring ? ButtonStyle.Danger : ButtonStyle.Success)
+      .setDisabled(!isLinked)
+  );
+  rows.push(row1);
+  
+  // Row 2: Additional actions
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('eapanel_linkea')
+      .setLabel('Link My EA Account')
+      .setEmoji('🎮')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('eapanel_status')
+      .setLabel('View Status')
+      .setEmoji('📊')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('eapanel_refresh')
+      .setLabel('Refresh')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setLabel('Web Dashboard')
+      .setEmoji('🌐')
+      .setStyle(ButtonStyle.Link)
+      .setURL('https://squadiq.lovable.app/settings')
+  );
+  rows.push(row2);
+  
+  return rows;
+}
+
+// =======================
+// RATINGS PANEL BUILDER
+// =======================
+
+function buildRatingsPanelEmbed(guildId) {
+  return new EmbedBuilder()
+    .setTitle('📊 Player Ratings Panel')
+    .setColor(0x5865f2)
+    .setDescription(
+      '**Access player ratings and statistics**\n\n' +
+      '**📈 Leaderboard** - View top players by various metrics\n' +
+      '**👤 View Profile** - Check any player\'s detailed stats\n' +
+      '**🎯 Scout Player** - Generate AI scouting report\n' +
+      '**📊 My Stats** - Quick view of your own performance\n' +
+      '**🔥 Form Check** - See players\' recent form\n' +
+      '**🏆 Achievements** - View player achievements and badges'
+    )
+    .setFooter({ text: 'Ratings updated after each game • AI-powered insights' })
+    .setTimestamp();
+}
+
+function buildRatingsPanelComponents() {
+  const rows = [];
+  
+  // Row 1: Main rating actions
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ratingspanel_leaderboard')
+      .setLabel('Leaderboard')
+      .setEmoji('📈')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('ratingspanel_profile')
+      .setLabel('View Profile')
+      .setEmoji('👤')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('ratingspanel_scoutplayer')
+      .setLabel('Scout Player')
+      .setEmoji('🎯')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('ratingspanel_mystats')
+      .setLabel('My Stats')
+      .setEmoji('📊')
+      .setStyle(ButtonStyle.Primary)
+  );
+  rows.push(row1);
+  
+  // Row 2: Additional actions
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ratingspanel_form')
+      .setLabel('Form Check')
+      .setEmoji('🔥')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('ratingspanel_achievements')
+      .setLabel('Achievements')
+      .setEmoji('🏆')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('ratingspanel_refresh')
+      .setLabel('Refresh')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setLabel('Web Dashboard')
+      .setEmoji('🌐')
+      .setStyle(ButtonStyle.Link)
+      .setURL('https://squadiq.lovable.app/leaderboard')
+  );
+  rows.push(row2);
+  
+  return rows;
+}
+
 async function buildDebugEmbed(guildId, state) {
   const debugInfo = [];
   
@@ -5053,6 +5220,57 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         return;
       }
+
+      // =======================
+      // EA SYNC PANEL COMMAND
+      // =======================
+
+      if (cmd === 'eapanel') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only admins and managers can create the EA panel.',
+            flags: 64
+          });
+        }
+
+        const embed = buildEaPanelEmbed(guildId, state);
+        const components = buildEaPanelComponents(state);
+
+        await interaction.reply({
+          embeds: [embed],
+          components
+        });
+
+        // Store the panel location for reference
+        const msg = await interaction.fetchReply();
+        state.eaPanelChannelId = interaction.channelId;
+        state.eaPanelMessageId = msg.id;
+        await saveGuildSettings(guildId, state);
+
+        return;
+      }
+
+      // =======================
+      // RATINGS PANEL COMMAND
+      // =======================
+
+      if (cmd === 'ratingspanel') {
+        const embed = buildRatingsPanelEmbed(guildId);
+        const components = buildRatingsPanelComponents();
+
+        await interaction.reply({
+          embeds: [embed],
+          components
+        });
+
+        // Store the panel location for reference
+        const msg = await interaction.fetchReply();
+        state.ratingsPanelChannelId = interaction.channelId;
+        state.ratingsPanelMessageId = msg.id;
+        await saveGuildSettings(guildId, state);
+
+        return;
+      }
     }
 
     // ----- Buttons -----
@@ -5863,6 +6081,415 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
+      // =======================
+      // EA PANEL BUTTON HANDLERS
+      // =======================
+
+      // EA Panel - Link Club button
+      if (id === 'eapanel_link') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only managers can link clubs.', flags: 64 });
+        }
+
+        const modal = new ModalBuilder()
+          .setCustomId('eapanel_link_modal')
+          .setTitle('Link EA Club');
+
+        const clubNameInput = new TextInputBuilder()
+          .setCustomId('ea_club_name')
+          .setLabel('EA FC Pro Clubs Team Name')
+          .setPlaceholder('Enter your club name exactly as it appears')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+
+        const platformInput = new TextInputBuilder()
+          .setCustomId('ea_platform')
+          .setLabel('Platform (ps5, ps4, xbox, pc)')
+          .setPlaceholder('ps5, ps4, xbox, or pc')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setValue('ps5');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(clubNameInput),
+          new ActionRowBuilder().addComponents(platformInput)
+        );
+
+        await interaction.showModal(modal);
+        return;
+      }
+
+      // EA Panel - Sync Matches button
+      if (id === 'eapanel_sync') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only managers can sync matches.', flags: 64 });
+        }
+
+        const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
+        if (!currentClub?.ea_club_id) {
+          return interaction.reply({ content: '❌ No EA club linked. Use Link Club first.', flags: 64 });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        const result = await syncClubHistory(guildId, currentClub.key);
+
+        if (result.error) {
+          return interaction.editReply({ content: `❌ Sync failed: ${result.error}` });
+        }
+
+        return interaction.editReply({
+          content: `✅ **Synced ${result.synced} new matches** for **${currentClub.name}**\n(${result.skipped} already recorded)`
+        });
+      }
+
+      // EA Panel - Toggle Monitoring button
+      if (id === 'eapanel_toggle') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only managers can toggle monitoring.', flags: 64 });
+        }
+
+        const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
+        if (!currentClub?.ea_club_id) {
+          return interaction.reply({ content: '❌ No EA club linked.', flags: 64 });
+        }
+
+        currentClub.monitoring_enabled = !currentClub.monitoring_enabled;
+        await saveGuildSettings(guildId, state);
+
+        if (currentClub.monitoring_enabled) {
+          startEaMonitoring(guildId, currentClub.key);
+        } else {
+          stopEaMonitoring(guildId, currentClub.key);
+        }
+
+        await interaction.update({
+          embeds: [buildEaPanelEmbed(guildId, state)],
+          components: buildEaPanelComponents(state)
+        });
+        return;
+      }
+
+      // EA Panel - Link EA Account button
+      if (id === 'eapanel_linkea') {
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('ea_username, ea_platform')
+          .eq('discord_user_id', interaction.user.id)
+          .maybeSingle();
+
+        const modal = new ModalBuilder()
+          .setCustomId('link_ea_modal')
+          .setTitle('Link Your EA Account');
+
+        const usernameInput = new TextInputBuilder()
+          .setCustomId('ea_username')
+          .setLabel('Your EA FC Pro Clubs username')
+          .setPlaceholder('Exactly as it appears in-game')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setValue(existingProfile?.ea_username || '');
+
+        const platformInput = new TextInputBuilder()
+          .setCustomId('ea_platform')
+          .setLabel('Platform (ps5, ps4, xbox, pc)')
+          .setPlaceholder('ps5, ps4, xbox, or pc')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setValue(existingProfile?.ea_platform || 'ps5');
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(usernameInput),
+          new ActionRowBuilder().addComponents(platformInput)
+        );
+
+        await interaction.showModal(modal);
+        return;
+      }
+
+      // EA Panel - View Status button
+      if (id === 'eapanel_status') {
+        await interaction.deferReply({ flags: 64 });
+
+        const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
+        const isLinked = !!currentClub?.ea_club_id;
+        const isMonitoring = !!currentClub?.monitoring_enabled;
+        const monitorKey = `${guildId}_${currentClub?.key}`;
+        const isPolling = eaMonitoringIntervals.has(monitorKey);
+
+        // Count linked players
+        const { count: linkedPlayers } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .not('ea_username', 'is', null);
+
+        // Count recent matches
+        const { count: recentMatches } = await supabase
+          .from('club_matches')
+          .select('id', { count: 'exact', head: true })
+          .eq('guild_id', guildId)
+          .eq('club_key', currentClub?.key || '');
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📊 EA Integration Status: ${currentClub?.name || 'No Club'}`)
+          .setColor(isLinked ? (isMonitoring ? 0x00ff00 : 0xffcc00) : 0xff6600)
+          .addFields(
+            { name: '🔗 EA Club Linked', value: isLinked ? `✅ Yes (ID: ${currentClub.ea_club_id})` : '❌ Not linked', inline: true },
+            { name: '📡 Platform', value: currentClub?.ea_platform || 'Not set', inline: true },
+            { name: '🔄 Auto-Monitoring', value: isMonitoring ? (isPolling ? '🟢 Active (polling)' : '🟡 Enabled (not polling)') : '🔴 Disabled', inline: true },
+            { name: '📊 Matches Tracked', value: `${recentMatches || 0}`, inline: true },
+            { name: '👥 Players Linked', value: `${linkedPlayers || 0}`, inline: true },
+            { name: '🕐 Last Match ID', value: currentClub?.last_match_id || 'None', inline: true }
+          )
+          .setFooter({ text: 'Enable monitoring to auto-track games • Link EA accounts to record player stats' });
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // EA Panel - Refresh button
+      if (id === 'eapanel_refresh') {
+        await interaction.update({
+          embeds: [buildEaPanelEmbed(guildId, state)],
+          components: buildEaPanelComponents(state)
+        });
+        return;
+      }
+
+      // =======================
+      // RATINGS PANEL BUTTON HANDLERS
+      // =======================
+
+      // Ratings Panel - Leaderboard button
+      if (id === 'ratingspanel_leaderboard') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { error, data } = await callEdgeFunction('get-leaderboard', {
+          guild_id: guildId,
+          type: 'overall',
+          limit: 15
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to fetch leaderboard: ${error}` });
+        }
+
+        const players = data?.players || [];
+        if (players.length === 0) {
+          return interaction.editReply({ content: 'No players on the leaderboard yet. Play some games to get started!' });
+        }
+
+        const lines = players.map((p, i) => {
+          const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+          const rating = Math.round(p.overall_rating || 50);
+          const pos = p.primary_position || '—';
+          return `${medal} **${p.discord_username || 'Unknown'}** • ${rating} OVR • ${pos}`;
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('📈 Server Leaderboard')
+          .setColor(0x5865f2)
+          .setDescription(lines.join('\n'))
+          .setFooter({ text: 'Based on overall rating • Top 15 players' })
+          .setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // Ratings Panel - View Profile button
+      if (id === 'ratingspanel_profile') {
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_profile_modal')
+          .setTitle('View Player Profile');
+
+        const playerInput = new TextInputBuilder()
+          .setCustomId('profile_player')
+          .setLabel('Player (leave empty for yourself)')
+          .setPlaceholder('Enter Discord username or ID, or leave empty')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
+        const row = new ActionRowBuilder().addComponents(playerInput);
+        modal.addComponents(row);
+        return interaction.showModal(modal);
+      }
+
+      // Ratings Panel - Scout Player button
+      if (id === 'ratingspanel_scoutplayer') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { data: players } = await supabase
+          .from('player_summary')
+          .select('discord_user_id, discord_username, overall_rating, primary_position')
+          .eq('guild_id', guildId)
+          .order('overall_rating', { ascending: false })
+          .limit(25);
+
+        if (!players || players.length === 0) {
+          return interaction.editReply({ content: 'No players found in this server.' });
+        }
+
+        const options = players.map(p => ({
+          label: `${p.discord_username || 'Unknown'} (${Math.round(p.overall_rating || 50)} OVR)`,
+          value: p.discord_user_id,
+          description: p.primary_position ? `Position: ${p.primary_position}` : 'Position: Unknown'
+        }));
+
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('ratingspanel_scoutplayer_select')
+          .setPlaceholder('Select a player to scout')
+          .addOptions(options);
+
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+
+        return interaction.editReply({
+          content: '🎯 **Scout a Player**\n\nSelect a player to generate an AI-powered scouting report:',
+          components: [row]
+        });
+      }
+
+      // Ratings Panel - My Stats button
+      if (id === 'ratingspanel_mystats') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { error, data } = await callEdgeFunction('get-player-profile', {
+          guild_id: guildId,
+          discord_user_id: interaction.user.id
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to fetch stats: ${error}` });
+        }
+
+        const streakEmoji = data.streak_type === 'win' ? '🔥' : data.streak_type === 'loss' ? '❄️' : '➖';
+        const formText = data.last_5_results?.map(r => r === 'W' ? '🟢' : r === 'L' ? '🔴' : '⚪').join('') || 'No games yet';
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📊 Your Stats`)
+          .setColor(0x5865f2)
+          .addFields(
+            { name: '⭐ Rating', value: `**${Math.round(data.overall_rating || 50)}**`, inline: true },
+            { name: '🎮 Games', value: `${data.games_played || 0}`, inline: true },
+            { name: '🏆 Wins', value: `${data.wins || 0} (${Math.round(data.win_rate || 0)}%)`, inline: true },
+            { name: '⚽ Goals', value: `${data.total_goals || 0}`, inline: true },
+            { name: '🎯 Assists', value: `${data.total_assists || 0}`, inline: true },
+            { name: `${streakEmoji} Streak`, value: `${data.current_streak || 0}`, inline: true },
+            { name: '📈 Recent Form', value: formText, inline: false }
+          );
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // Ratings Panel - Form Check button
+      if (id === 'ratingspanel_form') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { data: players } = await supabase
+          .from('player_summary')
+          .select('discord_username, form_rating, current_streak, streak_type')
+          .eq('guild_id', guildId)
+          .order('form_rating', { ascending: false, nullsFirst: false })
+          .limit(15);
+
+        if (!players || players.length === 0) {
+          return interaction.editReply({ content: 'No player form data available yet.' });
+        }
+
+        const lines = players.map((p, i) => {
+          const form = Math.round(p.form_rating || 50);
+          const streakEmoji = p.streak_type === 'win' ? '🔥' : p.streak_type === 'loss' ? '❄️' : '➖';
+          const streak = p.current_streak || 0;
+          return `${i + 1}. **${p.discord_username || 'Unknown'}** • Form: ${form} ${streakEmoji}${streak > 0 ? streak : ''}`;
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('🔥 Current Form')
+          .setColor(0x5865f2)
+          .setDescription(lines.join('\n'))
+          .setFooter({ text: '🔥 = Win streak • ❄️ = Loss streak' })
+          .setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // Ratings Panel - Achievements button
+      if (id === 'ratingspanel_achievements') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { data: achievements } = await supabase
+          .from('player_achievements')
+          .select('discord_user_id, achievement_name, achievement_icon, earned_at')
+          .eq('guild_id', guildId)
+          .order('earned_at', { ascending: false })
+          .limit(20);
+
+        if (!achievements || achievements.length === 0) {
+          return interaction.editReply({ content: 'No achievements earned yet. Keep playing to unlock badges!' });
+        }
+
+        const lines = achievements.map(a => {
+          const time = Math.floor(new Date(a.earned_at).getTime() / 1000);
+          return `${a.achievement_icon} **${a.achievement_name}** • <t:${time}:R>`;
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('🏆 Recent Achievements')
+          .setColor(0xffd700)
+          .setDescription(lines.join('\n'))
+          .setFooter({ text: 'Showing last 20 achievements' })
+          .setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // Ratings Panel - Refresh button
+      if (id === 'ratingspanel_refresh') {
+        await interaction.update({
+          embeds: [buildRatingsPanelEmbed(guildId)],
+          components: buildRatingsPanelComponents()
+        });
+        return;
+      }
+
+      // Ratings Panel - Scout Player select menu
+      if (id === 'ratingspanel_scoutplayer_select') {
+        const playerId = interaction.values[0];
+
+        await interaction.update({
+          content: '🔍 **Generating AI Scouting Report...**\n\nThis may take a few seconds.',
+          components: []
+        });
+
+        try {
+          const { error, data } = await callEdgeFunction('scout-player', {
+            guild_id: guildId,
+            player_id: playerId
+          });
+
+          if (error) {
+            return interaction.editReply({ content: `❌ Failed to generate report: ${error}`, components: [] });
+          }
+
+          const playerData = data?.playerData || {};
+          const analysis = data?.analysis || 'No analysis available.';
+
+          const embed = new EmbedBuilder()
+            .setTitle(`🎯 Scouting Report: ${playerData.discord_username || 'Unknown Player'}`)
+            .setColor(0x5865f2)
+            .setDescription(analysis.substring(0, 4000))
+            .addFields(
+              { name: '📊 Overall Rating', value: `${Math.round(playerData.overall_rating || 50)}`, inline: true },
+              { name: '🎮 Games Played', value: `${playerData.games_played || 0}`, inline: true },
+              { name: '📍 Position', value: playerData.primary_position || 'Unknown', inline: true }
+            )
+            .setFooter({ text: 'AI-powered analysis • SquadIQ Scouting' })
+            .setTimestamp();
+
+          return interaction.editReply({ content: null, embeds: [embed], components: [] });
+        } catch (err) {
+          return interaction.editReply({ content: `❌ Error: ${err.message}`, components: [] });
+        }
+      }
+
       // Scout Player select menu handler
       if (id === 'scoutpanel_scoutplayer_select') {
         const playerId = interaction.values[0];
@@ -6671,6 +7298,77 @@ client.on(Events.InteractionCreate, async (interaction) => {
           );
 
         return interaction.editReply({ embeds: [embed] });
+      }
+
+      // EA Panel - Link Club Modal
+      if (id === 'eapanel_link_modal') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only managers can link clubs.', flags: 64 });
+        }
+
+        const clubName = interaction.fields.getTextInputValue('ea_club_name').trim();
+        const platform = interaction.fields.getTextInputValue('ea_platform').trim().toLowerCase();
+
+        if (!clubName) {
+          return interaction.reply({ content: '❌ Club name cannot be empty.', flags: 64 });
+        }
+
+        const validPlatforms = ['ps5', 'ps4', 'xbox', 'xbox-series-xs', 'xboxone', 'pc'];
+        const normalizedPlatform = platform === 'xbox' ? 'xbox-series-xs' : platform;
+        
+        if (!validPlatforms.includes(platform) && !validPlatforms.includes(normalizedPlatform)) {
+          return interaction.reply({ content: '❌ Invalid platform. Use: ps5, ps4, xbox, or pc', flags: 64 });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        try {
+          const clubs = await searchClub({ name: clubName, platform: normalizedPlatform });
+
+          if (!clubs || clubs.length === 0) {
+            return interaction.editReply({
+              content: `❌ Could not find a club named **${clubName}** on ${EA_PLATFORM_NAMES[normalizedPlatform] || normalizedPlatform}.\n\nMake sure the name is exactly as it appears in EA FC Pro Clubs.`
+            });
+          }
+
+          const eaClub = clubs[0];
+          const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
+
+          if (!currentClub) {
+            return interaction.editReply({ content: '❌ No current club selected.' });
+          }
+
+          currentClub.ea_club_id = eaClub.clubId?.toString();
+          currentClub.ea_platform = normalizedPlatform;
+          currentClub.monitoring_enabled = true;
+          currentClub.last_match_id = null;
+
+          await saveGuildSettings(guildId, state);
+          startEaMonitoring(guildId, currentClub.key);
+
+          // Sync historical matches in background
+          syncClubHistory(guildId, currentClub.key).then(result => {
+            console.log(`[EA] Initial sync for ${currentClub.name}: ${result.synced} matches added`);
+          }).catch(err => {
+            console.error(`[EA] Initial sync error:`, err);
+          });
+
+          const embed = new EmbedBuilder()
+            .setTitle('✅ EA FC Club Linked!')
+            .setColor(0x00ff00)
+            .addFields(
+              { name: '🎮 Club Name', value: eaClub.name || clubName, inline: true },
+              { name: '🖥️ Platform', value: EA_PLATFORM_NAMES[normalizedPlatform] || normalizedPlatform, inline: true },
+              { name: '📡 Monitoring', value: '🟢 Active', inline: true }
+            )
+            .setDescription(`Now monitoring **${currentClub.name}** for division matches!\n\n📩 Match results will be auto-posted and stats recorded.\n🔄 **Syncing match history in background...**`);
+
+          return interaction.editReply({ embeds: [embed] });
+
+        } catch (err) {
+          console.error('[EA] Error in eapanel_link_modal:', err);
+          return interaction.editReply({ content: `❌ Failed to search EA: ${err.message}` });
+        }
       }
 
       // =====================
