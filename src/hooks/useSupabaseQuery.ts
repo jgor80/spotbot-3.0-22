@@ -52,7 +52,11 @@ export async function fetchLeaderboard(
   }
 
   const data = await response.json();
-  return data.leaderboard;
+  // Map entries to expected format (API returns 'entries' not 'leaderboard')
+  return (data.entries || data.leaderboard || []).map((player: any) => ({
+    ...player,
+    ea_username: player.ea_username || null,
+  }));
 }
 
 export async function fetchAvailablePlayers(guildId: string): Promise<LeaderboardPlayer[]> {
