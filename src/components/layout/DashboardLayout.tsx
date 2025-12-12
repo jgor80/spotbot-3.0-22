@@ -12,7 +12,9 @@ import {
   Gamepad2,
   Swords,
   Target,
-  Medal
+  Medal,
+  UsersRound,
+  Settings
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -25,12 +27,13 @@ interface DashboardLayoutProps {
 const navItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  { path: "/teams", label: "Teams", icon: UsersRound },
   { path: "/lineup", label: "Lineup", icon: ClipboardList },
   { path: "/drafts", label: "Drafts", icon: Swords },
   { path: "/scouting", label: "Scouting", icon: Target },
   { path: "/competitions", label: "Wins", icon: Medal },
   { path: "/profile", label: "Profile", icon: User },
-  { path: "/settings", label: "Link EA", icon: Gamepad2 },
+  { path: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
