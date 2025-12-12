@@ -24,13 +24,17 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/50">
-            <TableHead className="w-16 text-center">#</TableHead>
+            <TableHead className="w-12 text-center">#</TableHead>
             <TableHead>Player</TableHead>
             <TableHead className="text-center">Rating</TableHead>
             <TableHead className="text-center hidden md:table-cell">Games</TableHead>
-            <TableHead className="text-center hidden md:table-cell">Wins</TableHead>
+            <TableHead className="text-center hidden md:table-cell">W/D/L</TableHead>
+            <TableHead className="text-center hidden lg:table-cell">Win%</TableHead>
             <TableHead className="text-center hidden sm:table-cell">Goals</TableHead>
             <TableHead className="text-center hidden sm:table-cell">Assists</TableHead>
+            <TableHead className="text-center hidden lg:table-cell">CS</TableHead>
+            <TableHead className="text-center hidden lg:table-cell">MotM</TableHead>
+            <TableHead className="text-center hidden xl:table-cell">Pass%</TableHead>
             <TableHead className="text-center">Form</TableHead>
           </TableRow>
         </TableHeader>
@@ -100,14 +104,32 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
                 <TableCell className="text-center hidden md:table-cell">
                   {player.games_played}
                 </TableCell>
-                <TableCell className="text-center hidden md:table-cell">
-                  {player.wins}
+                <TableCell className="text-center hidden md:table-cell text-xs">
+                  <span className="text-primary">{player.wins}</span>
+                  <span className="text-muted-foreground">/</span>
+                  <span className="text-muted-foreground">{player.draws}</span>
+                  <span className="text-muted-foreground">/</span>
+                  <span className="text-destructive">{player.losses}</span>
+                </TableCell>
+                <TableCell className="text-center hidden lg:table-cell">
+                  {player.win_rate?.toFixed(0)}%
                 </TableCell>
                 <TableCell className="text-center hidden sm:table-cell">
                   {player.goals}
                 </TableCell>
                 <TableCell className="text-center hidden sm:table-cell">
                   {player.assists}
+                </TableCell>
+                <TableCell className="text-center hidden lg:table-cell">
+                  {player.clean_sheets || 0}
+                </TableCell>
+                <TableCell className="text-center hidden lg:table-cell">
+                  {player.man_of_match || 0}
+                </TableCell>
+                <TableCell className="text-center hidden xl:table-cell">
+                  {player.pass_attempts > 0 
+                    ? ((player.passes_made / player.pass_attempts) * 100).toFixed(0) + '%'
+                    : '-'}
                 </TableCell>
                 <TableCell className="text-center">
                   <div className="flex items-center justify-center">

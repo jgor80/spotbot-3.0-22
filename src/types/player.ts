@@ -80,9 +80,21 @@ export interface LeaderboardPlayer {
   overall_rating: number;
   games_played: number;
   wins: number;
+  losses: number;
+  draws: number;
+  win_rate: number;
   goals: number;
   assists: number;
+  clean_sheets: number;
+  man_of_match: number;
+  avg_match_rating: number | null;
+  shots: number;
+  tackles: number;
+  passes_made: number;
+  pass_attempts: number;
+  saves: number;
   form_rating: number | null;
+  reliability_score: number | null;
   primary_position: string | null;
   rank: number;
   rating_tier: {
