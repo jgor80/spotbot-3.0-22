@@ -23,7 +23,8 @@ import {
   Loader2,
   Search,
   RefreshCw,
-  Users
+  Users,
+  Zap
 } from "lucide-react";
 
 interface PlayerProfile {
@@ -33,6 +34,77 @@ interface PlayerProfile {
   ea_platform: string | null;
   ea_persona_id: string | null;
   primary_position: string | null;
+}
+
+function SyncNowCard({ guildId }: { guildId: string | null }) {
+  const { toast } = useToast();
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSyncNow = async () => {
+    if (!guildId) {
+      toast({
+        title: "No Guild Selected",
+        description: "Please select a guild first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-ea-stats", {
+        body: { sync_type: "full", guild_id: guildId },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "EA Sync Complete",
+        description: `Synced ${data?.memberStatsSynced || 0} players, ${data?.clubStatsSynced || 0} clubs, ${data?.totalSynced || 0} matches.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Sync Failed",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Zap className="h-5 w-5 text-warning" />
+          EA Stats Sync
+        </CardTitle>
+        <CardDescription>
+          Manually trigger an immediate sync of EA FC Pro Clubs stats for all monitored clubs
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button 
+          onClick={handleSyncNow} 
+          disabled={isSyncing || !guildId}
+          className="gap-2"
+        >
+          {isSyncing ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Syncing...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-4 w-4" />
+              Sync Now
+            </>
+          )}
+        </Button>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function SettingsPage() {
@@ -240,7 +312,8 @@ export default function SettingsPage() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="teams">
+          <TabsContent value="teams" className="space-y-4">
+            <SyncNowCard guildId={selectedGuildId} />
             <ClubsManager />
           </TabsContent>
 
