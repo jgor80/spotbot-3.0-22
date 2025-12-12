@@ -71,7 +71,6 @@ async function fetchClubInfo(clubId: string, platform: string) {
     }
     
     const data = await response.json()
-    // Response is typically an array or object keyed by club ID
     if (Array.isArray(data) && data.length > 0) return data[0]
     if (data[clubId]) return data[clubId]
     return data
@@ -96,7 +95,6 @@ async function fetchClubMembers(clubId: string, platform: string) {
     }
     
     const data = await response.json()
-    // Response is typically { members: [...] } or an array
     if (data?.members && Array.isArray(data.members)) return data.members
     if (Array.isArray(data)) return data
     return Object.values(data).filter(v => v && typeof v === 'object')
@@ -138,7 +136,7 @@ async function syncClubStats(supabase: any, guildId: string, clubKey: string, cl
       return null
     }
     
-    console.log(`[sync-ea-stats] Synced club stats for ${clubData.club_name}: ${clubData.skill_rating} SR, ${clubData.wins}W-${clubData.draws}D-${clubData.losses}L`)
+    console.log(`[sync-ea-stats] Synced club stats for ${clubData.club_name}: ${clubData.skill_rating} SR`)
     return clubData
   } catch (err) {
     console.error(`[sync-ea-stats] Error syncing club stats:`, err)
@@ -146,10 +144,150 @@ async function syncClubStats(supabase: any, guildId: string, clubKey: string, cl
   }
 }
 
+// Sync member career stats to player_ratings and player_summary
+async function syncMemberStats(supabase: any, guildId: string, clubId: string, platform: string, clubName: string) {
+  try {
+    const members = await fetchClubMembers(clubId, platform)
+    if (!members || members.length === 0) {
+      console.log(`[sync-ea-stats] No members found for ${clubName}`)
+      return { synced: 0, updatedPlayerIds: [] }
+    }
+    
+    let synced = 0
+    const updatedPlayerIds: string[] = []
+    
+    const positionMap: Record<string, string> = {
+      'goalkeeper': 'GK', 'gk': 'GK',
+      'defender': 'CB', 'cb': 'CB', 'rb': 'RB', 'lb': 'LB', 'rwb': 'RWB', 'lwb': 'LWB',
+      'midfielder': 'CM', 'cm': 'CM', 'cdm': 'CDM', 'cam': 'CAM', 'rm': 'RM', 'lm': 'LM',
+      'attacker': 'ST', 'st': 'ST', 'cf': 'CF', 'rw': 'RW', 'lw': 'LW', 'rf': 'RF', 'lf': 'LF'
+    }
+    
+    for (const member of members) {
+      const eaUsername = member.name || member.playerName
+      if (!eaUsername) continue
+      
+      // Find profile for this EA username
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('discord_user_id, discord_username')
+        .eq('ea_username', eaUsername)
+        .maybeSingle()
+      
+      if (!profile || profile.discord_user_id.startsWith('ea_')) continue
+      
+      // Extract aggregate stats from EA member data
+      const goals = parseInt(member.goals || 0)
+      const assists = parseInt(member.assists || 0)
+      const gamesPlayed = parseInt(member.gamesPlayed || member.matches || 0)
+      const wins = parseInt(member.wins || 0)
+      const losses = parseInt(member.losses || 0)
+      const draws = gamesPlayed - wins - losses
+      const avgRating = parseFloat(member.ratingAve || member.avgRating || 0)
+      const cleanSheets = parseInt(member.cleanSheetsDef || member.cleanSheetsGK || member.cleanSheets || 0)
+      const manOfMatch = parseInt(member.manOfTheMatch || member.mom || 0)
+      const position = member.favoritePosition || member.proPos || null
+      const winRate = gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0
+      
+      // Calculate club performance rating
+      const clubPerformanceRating = Math.min(100, Math.max(0,
+        (avgRating * 10) +
+        (winRate * 0.3) +
+        (goals / Math.max(1, gamesPlayed) * 10) +
+        (assists / Math.max(1, gamesPlayed) * 5)
+      ))
+      
+      // Update player_ratings
+      const { data: existingRating } = await supabase
+        .from('player_ratings')
+        .select('id')
+        .eq('guild_id', guildId)
+        .eq('discord_user_id', profile.discord_user_id)
+        .maybeSingle()
+      
+      if (existingRating) {
+        await supabase
+          .from('player_ratings')
+          .update({
+            games_played: gamesPlayed,
+            wins: wins,
+            losses: losses,
+            draws: draws,
+            total_goals: goals,
+            total_assists: assists,
+            total_clean_sheets: cleanSheets,
+            total_motm: manOfMatch,
+            club_performance_rating: clubPerformanceRating,
+            last_game_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingRating.id)
+      } else {
+        await supabase
+          .from('player_ratings')
+          .insert({
+            guild_id: guildId,
+            discord_user_id: profile.discord_user_id,
+            games_played: gamesPlayed,
+            wins: wins,
+            losses: losses,
+            draws: draws,
+            total_goals: goals,
+            total_assists: assists,
+            total_clean_sheets: cleanSheets,
+            total_motm: manOfMatch,
+            club_performance_rating: clubPerformanceRating,
+            overall_rating: clubPerformanceRating,
+            last_game_at: new Date().toISOString()
+          })
+      }
+      
+      // Update player_summary
+      const normalizedPosition = position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null
+      
+      const { data: existingSummary } = await supabase
+        .from('player_summary')
+        .select('id')
+        .eq('guild_id', guildId)
+        .eq('discord_user_id', profile.discord_user_id)
+        .maybeSingle()
+      
+      const summaryData = {
+        guild_id: guildId,
+        discord_user_id: profile.discord_user_id,
+        discord_username: profile.discord_username || eaUsername,
+        games_played: gamesPlayed,
+        wins: wins,
+        goals: goals,
+        assists: assists,
+        win_rate: winRate,
+        overall_rating: clubPerformanceRating,
+        primary_position: normalizedPosition,
+        last_active_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      
+      if (existingSummary) {
+        await supabase.from('player_summary').update(summaryData).eq('id', existingSummary.id)
+      } else {
+        await supabase.from('player_summary').insert(summaryData)
+      }
+      
+      updatedPlayerIds.push(profile.discord_user_id)
+      synced++
+      console.log(`[sync-ea-stats] Updated ${eaUsername}: ${gamesPlayed}G ${wins}W ${goals}g ${assists}a`)
+    }
+    
+    return { synced, updatedPlayerIds }
+  } catch (err) {
+    console.error(`[sync-ea-stats] Error syncing member stats:`, err)
+    return { synced: 0, updatedPlayerIds: [] }
+  }
+}
+
 // Auto-detect player position preferences based on most-played positions
 async function updatePlayerPositionPreferences(supabase: any, guildId: string, discordUserId: string) {
   try {
-    // Get all positions played by this player in this guild
     const { data: stats } = await supabase
       .from('player_stats')
       .select('position_played')
@@ -159,7 +297,6 @@ async function updatePlayerPositionPreferences(supabase: any, guildId: string, d
     
     if (!stats || stats.length === 0) return
     
-    // Count position occurrences
     const positionCounts: Record<string, number> = {}
     for (const stat of stats) {
       const pos = stat.position_played
@@ -168,7 +305,6 @@ async function updatePlayerPositionPreferences(supabase: any, guildId: string, d
       }
     }
     
-    // Sort by count descending and take top 3
     const sortedPositions = Object.entries(positionCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
@@ -176,23 +312,14 @@ async function updatePlayerPositionPreferences(supabase: any, guildId: string, d
     
     if (sortedPositions.length === 0) return
     
-    // Upsert position preferences
-    const { error } = await supabase
+    await supabase
       .from('position_preferences')
       .upsert({
         guild_id: guildId,
         user_id: discordUserId,
         preferences: sortedPositions,
         updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'guild_id,user_id'
-      })
-    
-    if (error) {
-      console.error(`[sync-ea-stats] Failed to update position preferences for ${discordUserId}:`, error.message)
-    } else {
-      console.log(`[sync-ea-stats] Updated position preferences for ${discordUserId}: ${sortedPositions.join(', ')}`)
-    }
+      }, { onConflict: 'guild_id,user_id' })
   } catch (err) {
     console.error(`[sync-ea-stats] Error updating position preferences:`, err)
   }
@@ -208,7 +335,14 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
     
-    console.log('[sync-ea-stats] Starting cron-based EA sync...')
+    // Parse request body for sync type
+    let syncType = 'full'
+    try {
+      const body = await req.json()
+      syncType = body.sync_type || 'full'
+    } catch { /* ignore parse errors */ }
+    
+    console.log(`[sync-ea-stats] Starting ${syncType} EA sync...`)
     
     // Get all guild settings with EA-linked clubs
     const { data: guildSettings, error: settingsError } = await supabase
@@ -233,6 +367,8 @@ Deno.serve(async (req) => {
     let totalSkipped = 0
     let guildsProcessed = 0
     let clubStatsSynced = 0
+    let memberStatsSynced = 0
+    const allUpdatedPlayerIds: string[] = []
     
     for (const settings of guildSettings) {
       const guildId = settings.guild_id
@@ -241,7 +377,6 @@ Deno.serve(async (req) => {
       if (!clubs || !Array.isArray(clubs)) continue
       
       for (const club of clubs) {
-        // Only sync clubs with EA linking and monitoring enabled
         if (!club.ea_club_id || !club.ea_platform || !club.monitoring_enabled) {
           continue
         }
@@ -249,126 +384,119 @@ Deno.serve(async (req) => {
         console.log(`[sync-ea-stats] Syncing ${club.name} (${club.ea_club_id}) for guild ${guildId}`)
         
         try {
-          // Sync club stats (skill rating, record, etc.)
+          // Sync club stats
           const clubStatsResult = await syncClubStats(supabase, guildId, club.key, club.ea_club_id, club.ea_platform)
           if (clubStatsResult) clubStatsSynced++
           
-          // Fetch recent matches
-          const matches = await fetchMatches(club.ea_club_id, club.ea_platform)
+          // Sync member career stats (pulls from EA member list API)
+          const { synced: membersSynced, updatedPlayerIds } = await syncMemberStats(
+            supabase, guildId, club.ea_club_id, club.ea_platform, club.name
+          )
+          memberStatsSynced += membersSynced
+          allUpdatedPlayerIds.push(...updatedPlayerIds)
           
-          if (!matches || matches.length === 0) continue
-          
-          // Get existing match IDs
-          const { data: existingMatches } = await supabase
-            .from('club_matches')
-            .select('ea_match_id')
-            .eq('guild_id', guildId)
-            .eq('club_key', club.key)
-          
-          const existingIds = new Set((existingMatches || []).map((m: any) => m.ea_match_id))
-          
-          for (const matchData of matches) {
-            const matchId = matchData.matchId?.toString()
-            if (!matchId || existingIds.has(matchId)) {
-              totalSkipped++
-              continue
-            }
+          // Also sync recent matches for match-by-match tracking
+          if (syncType === 'full') {
+            const matches = await fetchMatches(club.ea_club_id, club.ea_platform)
             
-            // Process match
-            const ourClubData = matchData.clubs?.[club.ea_club_id]
-            const opponentClubId = Object.keys(matchData.clubs || {}).find((id: string) => id !== club.ea_club_id)
-            const opponentClubData = opponentClubId ? matchData.clubs[opponentClubId] : null
-            
-            const scoreFor = parseInt(ourClubData?.goals || 0)
-            const scoreAgainst = parseInt(opponentClubData?.goals || 0)
-            const opponentName = opponentClubData?.name || 'Unknown'
-            
-            let result = 'draw'
-            if (scoreFor > scoreAgainst) result = 'win'
-            else if (scoreFor < scoreAgainst) result = 'loss'
-            
-            // Extract player stats with expanded fields
-            const playerStats: any[] = []
-            const players = matchData.players?.[club.ea_club_id] || {}
-            
-            for (const [eaPlayerId, pStats] of Object.entries(players) as any) {
-              playerStats.push({
-                ea_username: pStats.playername,
-                goals: parseInt(pStats.goals || 0),
-                assists: parseInt(pStats.assists || 0),
-                rating: parseFloat(pStats.rating || 0),
-                position: pStats.pos,
-                motm: pStats.mom === '1',
-                // New expanded stats
-                shots: parseInt(pStats.shots || 0),
-                tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
-                passes_made: parseInt(pStats.passesmade || 0),
-                pass_attempts: parseInt(pStats.passattempts || 0),
-                red_cards: pStats.redcards === '1' || pStats.redCards === '1'
-              })
-            }
-            
-            // Insert match
-            const { error: insertError } = await supabase.from('club_matches').insert({
-              guild_id: guildId,
-              club_key: club.key,
-              ea_match_id: matchId,
-              match_type: 'division',
-              result,
-              score_for: scoreFor,
-              score_against: scoreAgainst,
-              opponent_club_name: opponentName,
-              opponent_club_id: opponentClubId,
-              match_data: matchData,
-              player_stats: playerStats
-            })
-            
-            if (insertError) {
-              console.error(`[sync-ea-stats] Failed to insert match ${matchId}:`, insertError.message)
-              continue
-            }
-            
-            // Record player stats for linked players
-            for (const pStat of playerStats) {
-              const { data: profile } = await supabase
-                .from('profiles')
-                .select('discord_user_id')
-                .eq('ea_username', pStat.ea_username)
-                .maybeSingle()
+            if (matches && matches.length > 0) {
+              const { data: existingMatches } = await supabase
+                .from('club_matches')
+                .select('ea_match_id')
+                .eq('guild_id', guildId)
+                .eq('club_key', club.key)
               
-              if (profile) {
-                await supabase.from('player_stats').insert({
+              const existingIds = new Set((existingMatches || []).map((m: any) => m.ea_match_id))
+              
+              for (const matchData of matches) {
+                const matchId = matchData.matchId?.toString()
+                if (!matchId || existingIds.has(matchId)) {
+                  totalSkipped++
+                  continue
+                }
+                
+                const ourClubData = matchData.clubs?.[club.ea_club_id]
+                const opponentClubId = Object.keys(matchData.clubs || {}).find((id: string) => id !== club.ea_club_id)
+                const opponentClubData = opponentClubId ? matchData.clubs[opponentClubId] : null
+                
+                const scoreFor = parseInt(ourClubData?.goals || 0)
+                const scoreAgainst = parseInt(opponentClubData?.goals || 0)
+                
+                let result = 'draw'
+                if (scoreFor > scoreAgainst) result = 'win'
+                else if (scoreFor < scoreAgainst) result = 'loss'
+                
+                const playerStats: any[] = []
+                const players = matchData.players?.[club.ea_club_id] || {}
+                
+                for (const [, pStats] of Object.entries(players) as any) {
+                  playerStats.push({
+                    ea_username: pStats.playername,
+                    goals: parseInt(pStats.goals || 0),
+                    assists: parseInt(pStats.assists || 0),
+                    rating: parseFloat(pStats.rating || 0),
+                    position: pStats.pos,
+                    motm: pStats.mom === '1',
+                    shots: parseInt(pStats.shots || 0),
+                    tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
+                    passes_made: parseInt(pStats.passesmade || 0),
+                    pass_attempts: parseInt(pStats.passattempts || 0),
+                    red_cards: pStats.redcards === '1'
+                  })
+                }
+                
+                const { error: insertError } = await supabase.from('club_matches').insert({
                   guild_id: guildId,
-                  discord_user_id: profile.discord_user_id,
-                  draft_id: null,
-                  match_type: 'club',
-                  goals: pStat.goals,
-                  assists: pStat.assists,
-                  clean_sheet: pStat.position === 'GK' && scoreAgainst === 0,
-                  won: result === 'win',
-                  ea_match_rating: pStat.rating,
-                  position_played: pStat.position,
-                  man_of_match: pStat.motm,
-                  // New expanded stats
-                  shots: pStat.shots,
-                  tackles: pStat.tackles,
-                  passes_made: pStat.passes_made,
-                  pass_attempts: pStat.pass_attempts,
-                  red_cards: pStat.red_cards
+                  club_key: club.key,
+                  ea_match_id: matchId,
+                  match_type: 'division',
+                  result,
+                  score_for: scoreFor,
+                  score_against: scoreAgainst,
+                  opponent_club_name: opponentClubData?.name || 'Unknown',
+                  opponent_club_id: opponentClubId,
+                  match_data: matchData,
+                  player_stats: playerStats
                 })
                 
-                // Trigger rating recalculation
-                await supabase.functions.invoke('calculate-ratings', {
-                  body: { guild_id: guildId, discord_user_id: profile.discord_user_id }
-                })
-                
-                // Auto-detect position preferences based on most-played positions
-                await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id)
+                if (!insertError) {
+                  totalSynced++
+                  existingIds.add(matchId)
+                  
+                  // Record player stats
+                  for (const pStat of playerStats) {
+                    const { data: profile } = await supabase
+                      .from('profiles')
+                      .select('discord_user_id')
+                      .eq('ea_username', pStat.ea_username)
+                      .maybeSingle()
+                    
+                    if (profile && !profile.discord_user_id.startsWith('ea_')) {
+                      await supabase.from('player_stats').insert({
+                        guild_id: guildId,
+                        discord_user_id: profile.discord_user_id,
+                        ea_match_id: matchId,
+                        match_type: 'club',
+                        goals: pStat.goals,
+                        assists: pStat.assists,
+                        clean_sheet: pStat.position === 'GK' && scoreAgainst === 0,
+                        won: result === 'win',
+                        ea_match_rating: pStat.rating,
+                        position_played: pStat.position,
+                        man_of_match: pStat.motm,
+                        shots: pStat.shots,
+                        tackles: pStat.tackles,
+                        passes_made: pStat.passes_made,
+                        pass_attempts: pStat.pass_attempts,
+                        red_cards: pStat.red_cards
+                      })
+                      
+                      await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id)
+                    }
+                  }
+                }
               }
             }
-            
-            totalSynced++
-            existingIds.add(matchId)
           }
           
           guildsProcessed++
@@ -378,13 +506,38 @@ Deno.serve(async (req) => {
       }
     }
     
-    console.log(`[sync-ea-stats] Completed: ${totalSynced} matches synced, ${totalSkipped} skipped, ${clubStatsSynced} club stats synced, ${guildsProcessed} guilds processed`)
+    // Trigger rating recalculation for all updated players
+    const uniquePlayerIds = [...new Set(allUpdatedPlayerIds)]
+    if (uniquePlayerIds.length > 0) {
+      console.log(`[sync-ea-stats] Triggering rating recalculation for ${uniquePlayerIds.length} players`)
+      // Group by guild and trigger recalculation
+      for (const settings of guildSettings) {
+        const guildPlayerIds = uniquePlayerIds.filter(async (id) => {
+          const { data } = await supabase
+            .from('player_ratings')
+            .select('id')
+            .eq('guild_id', settings.guild_id)
+            .eq('discord_user_id', id)
+            .maybeSingle()
+          return !!data
+        })
+        
+        if (guildPlayerIds.length > 0) {
+          await supabase.functions.invoke('calculate-ratings', {
+            body: { guild_id: settings.guild_id, player_ids: guildPlayerIds, trigger: 'ea_sync' }
+          })
+        }
+      }
+    }
+    
+    console.log(`[sync-ea-stats] Completed: ${totalSynced} matches, ${memberStatsSynced} members, ${clubStatsSynced} clubs`)
     
     return new Response(JSON.stringify({ 
       success: true,
       synced: totalSynced,
       skipped: totalSkipped,
       club_stats_synced: clubStatsSynced,
+      member_stats_synced: memberStatsSynced,
       guilds_processed: guildsProcessed
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -393,9 +546,7 @@ Deno.serve(async (req) => {
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     console.error('[sync-ea-stats] Error:', error)
-    return new Response(JSON.stringify({ 
-      error: errorMessage
-    }), {
+    return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
