@@ -7783,14 +7783,33 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
     });
     
     // Map EA usernames to Discord users and record stats
+    // Only track stats for players who are members of THIS guild
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    
     for (const pStat of playerStats) {
       const { data: profile } = await supabase
         .from('profiles')
         .select('discord_user_id')
         .eq('ea_username', pStat.ea_username)
-        .single();
+        .maybeSingle();
       
       if (profile) {
+        // Verify this player is a member of this guild
+        let isMember = false;
+        if (guild) {
+          try {
+            const member = await guild.members.fetch(profile.discord_user_id).catch(() => null);
+            isMember = !!member;
+          } catch {
+            isMember = false;
+          }
+        }
+        
+        if (!isMember) {
+          console.log(`[EA] Skipping stats for ${pStat.ea_username} - not a member of guild ${guildId}`);
+          continue;
+        }
+        
         // Record player stats
         await supabase.from('player_stats').insert({
           guild_id: guildId,
@@ -7851,17 +7870,32 @@ async function createClubMatchFeedbackRequests(guildId, eaMatchId, playerStats) 
       return;
     }
     
-    // Map EA usernames to Discord IDs
+    // Map EA usernames to Discord IDs - only include guild members
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
     const discordPlayerIds = [];
+    
     for (const pStat of playerStats) {
       const { data: profile } = await supabase
         .from('profiles')
         .select('discord_user_id')
         .eq('ea_username', pStat.ea_username)
-        .single();
+        .maybeSingle();
       
       if (profile) {
-        discordPlayerIds.push(profile.discord_user_id);
+        // Verify this player is a member of this guild
+        let isMember = false;
+        if (guild) {
+          try {
+            const member = await guild.members.fetch(profile.discord_user_id).catch(() => null);
+            isMember = !!member;
+          } catch {
+            isMember = false;
+          }
+        }
+        
+        if (isMember) {
+          discordPlayerIds.push(profile.discord_user_id);
+        }
       }
     }
     
@@ -8130,6 +8164,9 @@ async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
       }
       
       // Map EA usernames to Discord users and record player stats
+      // Only track stats for players who are members of THIS guild
+      const guild = await client.guilds.fetch(guildId).catch(() => null);
+      
       for (const pStat of playerStats) {
         const { data: profile } = await supabase
           .from('profiles')
@@ -8138,6 +8175,22 @@ async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
           .maybeSingle();
         
         if (profile) {
+          // Verify this player is a member of this guild
+          let isMember = false;
+          if (guild) {
+            try {
+              const member = await guild.members.fetch(profile.discord_user_id).catch(() => null);
+              isMember = !!member;
+            } catch {
+              isMember = false;
+            }
+          }
+          
+          if (!isMember) {
+            console.log(`[EA] Skipping stats for ${pStat.ea_username} - not a member of guild ${guildId}`);
+            continue;
+          }
+          
           // Check if player_stats already exists for this match
           const { data: existingStat } = await supabase
             .from('player_stats')
