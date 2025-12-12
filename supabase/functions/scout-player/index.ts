@@ -495,6 +495,29 @@ Be specific and reference actual numbers from the data. Format with markdown.`;
     const aiResult = await openaiResponse.json();
     const analysis = aiResult.choices[0]?.message?.content || 'Unable to generate analysis';
 
+    // Save the scouting report to database (upsert - replace if exists)
+    const playerId = player_id || `ea_${ea_username?.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const reportGuildId = guild_id || eaClubStats[0]?.guild_id || 'global';
+    
+    try {
+      await supabase
+        .from('scouting_reports')
+        .upsert({
+          guild_id: reportGuildId,
+          discord_user_id: playerId,
+          ea_username: ea_username || playerData.profile?.ea_username,
+          report_content: analysis,
+          player_data: playerData,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'guild_id,discord_user_id'
+        });
+      console.log(`[scout-player] Saved scouting report for ${playerId} in guild ${reportGuildId}`);
+    } catch (saveError) {
+      console.error('[scout-player] Failed to save report:', saveError);
+      // Don't fail the request if save fails
+    }
+
     return new Response(JSON.stringify({ 
       success: true,
       player_data: playerData,
