@@ -579,6 +579,7 @@ export type Database = {
           current_club_key: string
           guild_id: string
           id: string
+          name: string | null
           updated_at: string
           vc_panels: Json
         }
@@ -592,6 +593,7 @@ export type Database = {
           current_club_key?: string
           guild_id: string
           id?: string
+          name?: string | null
           updated_at?: string
           vc_panels?: Json
         }
@@ -605,6 +607,7 @@ export type Database = {
           current_club_key?: string
           guild_id?: string
           id?: string
+          name?: string | null
           updated_at?: string
           vc_panels?: Json
         }
