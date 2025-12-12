@@ -1485,6 +1485,7 @@ function buildViewerClubSelect(clubs, selectedKey) {
 
 function buildAdminComponents(guildId, clubKey, state) {
   const clubRow = buildClubSelect(state.clubs, clubKey);
+  const club = getClubByKey(state.clubs, clubKey);
 
   const controlRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
@@ -1500,9 +1501,9 @@ function buildAdminComponents(guildId, clubKey, state) {
       .setLabel('Club Tools')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
-      .setCustomId('open_help')
-      .setLabel('❔ Help')
-      .setStyle(ButtonStyle.Secondary)
+      .setCustomId(`ea_tools_${clubKey}`)
+      .setLabel(club?.monitoring_enabled ? '📊 EA Active' : '📊 EA Stats')
+      .setStyle(club?.monitoring_enabled ? ButtonStyle.Success : ButtonStyle.Secondary)
   );
 
   const buttonRows = buildButtons(guildId, clubKey, state);
@@ -5624,6 +5625,47 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
+      // EA Tools menu button
+      if (id.startsWith('ea_tools_')) {
+        const clubKey = id.substring('ea_tools_'.length);
+        const club = getClubByKey(clubs, clubKey);
+
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only managers can access EA tools.',
+            flags: 64
+          });
+        }
+
+        const isLinked = !!club?.ea_club_id;
+        const isMonitoring = !!club?.monitoring_enabled;
+
+        const options = [
+          { label: isMonitoring ? '🔴 Disable EA Monitoring' : '🟢 Enable EA Monitoring', value: 'toggle_monitoring', description: isMonitoring ? 'Stop auto-fetching match stats' : 'Auto-fetch match stats every 2 min' },
+          { label: '🔄 Sync Club History', value: 'sync_history', description: 'Fetch last 50 games from EA (no duplicates)' },
+          { label: '🔗 Link EA Club', value: 'link_club', description: 'Connect this club to EA FC Pro Clubs' },
+          { label: '🎮 Link My EA Account', value: 'link_ea', description: 'Link your EA username to Discord' },
+          { label: '📊 EA Club Status', value: 'ea_status', description: 'View EA integration status' }
+        ];
+
+        const select = new StringSelectMenuBuilder()
+          .setCustomId(`ea_tools_select_${clubKey}`)
+          .setPlaceholder('Choose an EA tool')
+          .addOptions(options);
+
+        const row = new ActionRowBuilder().addComponents(select);
+
+        const statusText = isLinked 
+          ? `✅ **${club.name}** is linked to EA Club ID: \`${club.ea_club_id}\` (${club.ea_platform})\n📡 Monitoring: ${isMonitoring ? '🟢 Active' : '🔴 Disabled'}`
+          : `❌ **${club.name}** is not linked to an EA club yet.`;
+
+        return interaction.reply({
+          content: `📊 **EA Stats Tools**\n\n${statusText}\n\nChoose an action:`,
+          components: [row],
+          flags: 64
+        });
+      }
+
       // Formation menu button
       if (id.startsWith('formation_menu_')) {
         const clubKey = id.substring('formation_menu_'.length);
@@ -6369,6 +6411,140 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
       }
 
+      // Link EA Club Modal (from EA Tools)
+      if (id.startsWith('link_ea_club_modal_')) {
+        const clubKey = id.substring('link_ea_club_modal_'.length);
+        const eaClubName = interaction.fields.getTextInputValue('ea_club_name').trim();
+        const eaPlatform = interaction.fields.getTextInputValue('ea_platform').trim().toLowerCase();
+
+        // Validate platform
+        const validPlatforms = ['ps5', 'ps4', 'xbox', 'xbox-series-xs', 'xboxone', 'pc'];
+        let normalizedPlatform = eaPlatform;
+        if (eaPlatform === 'xbox') normalizedPlatform = 'xbox-series-xs';
+        if (eaPlatform === 'playstation' || eaPlatform === 'ps') normalizedPlatform = 'ps5';
+
+        if (!validPlatforms.includes(normalizedPlatform) && !validPlatforms.includes(eaPlatform)) {
+          return interaction.reply({
+            content: '❌ Invalid platform. Use: ps5, ps4, xbox, or pc',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        try {
+          // Search for the club on EA
+          const results = await searchClub({ name: eaClubName, platform: normalizedPlatform });
+
+          if (!results || results.length === 0) {
+            return interaction.editReply({
+              content: `❌ Could not find a club named **${eaClubName}** on ${EA_PLATFORM_NAMES[normalizedPlatform] || normalizedPlatform}.\n\nMake sure the name is exactly as it appears in EA FC Pro Clubs.`
+            });
+          }
+
+          // Use the first (best) match
+          const eaClub = results[0];
+          const club = state.clubs?.find(c => c.key === clubKey);
+
+          if (!club) {
+            return interaction.editReply({ content: '❌ Club not found in server settings.' });
+          }
+
+          // Update the club with EA info
+          club.ea_club_id = eaClub.clubId;
+          club.ea_platform = normalizedPlatform;
+          club.monitoring_enabled = true;
+          club.last_match_id = null;
+
+          await saveGuildSettings(guildId, state);
+
+          // Start monitoring and sync history
+          startEaMonitoring(guildId, clubKey);
+          const syncResult = await syncClubHistory(guildId, clubKey, 50);
+
+          await refreshClubPanels(guildId, clubKey);
+
+          const embed = new EmbedBuilder()
+            .setTitle('✅ EA Club Linked Successfully!')
+            .setColor(0x00ff00)
+            .addFields(
+              { name: '🎮 EA Club', value: eaClub.name || eaClubName, inline: true },
+              { name: '🆔 Club ID', value: eaClub.clubId, inline: true },
+              { name: '🖥️ Platform', value: EA_PLATFORM_NAMES[normalizedPlatform] || normalizedPlatform, inline: true },
+              { name: '📊 Matches Synced', value: `${syncResult.synced} new (${syncResult.skipped} already existed)`, inline: true },
+              { name: '📡 Monitoring', value: '🟢 Active', inline: true }
+            )
+            .setDescription('EA stats will now be automatically tracked every 2 minutes!')
+            .setFooter({ text: 'Players need to link their EA accounts with /linkea to receive personal stats' });
+
+          return interaction.editReply({ embeds: [embed] });
+
+        } catch (err) {
+          console.error('[Link EA Club Modal] Error:', err);
+          return interaction.editReply({ content: `❌ Error linking EA club: ${err.message}` });
+        }
+      }
+
+      // Link EA Modal (from Spot Panel)
+      if (id === 'link_ea_modal') {
+        const eaUsername = interaction.fields.getTextInputValue('ea_username').trim();
+        const eaPlatform = interaction.fields.getTextInputValue('ea_platform').trim().toLowerCase();
+
+        // Validate platform
+        const validPlatforms = ['ps5', 'ps4', 'xbox', 'xbox-series-xs', 'xboxone', 'pc'];
+        let normalizedPlatform = eaPlatform;
+        if (eaPlatform === 'xbox') normalizedPlatform = 'xbox-series-xs';
+        if (eaPlatform === 'playstation' || eaPlatform === 'ps') normalizedPlatform = 'ps5';
+
+        if (!validPlatforms.includes(normalizedPlatform) && !validPlatforms.includes(eaPlatform)) {
+          return interaction.reply({
+            content: '❌ Invalid platform. Use: ps5, ps4, xbox, or pc',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        try {
+          // Update or create profile with EA username
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('discord_user_id', interaction.user.id)
+            .maybeSingle();
+
+          if (existingProfile) {
+            await supabase
+              .from('profiles')
+              .update({
+                ea_username: eaUsername,
+                ea_platform: normalizedPlatform,
+                updated_at: new Date().toISOString()
+              })
+              .eq('discord_user_id', interaction.user.id);
+          } else {
+            await supabase
+              .from('profiles')
+              .insert({
+                discord_user_id: interaction.user.id,
+                discord_username: interaction.user.username,
+                ea_username: eaUsername,
+                ea_platform: normalizedPlatform
+              });
+          }
+
+          return interaction.editReply({
+            content: `✅ **EA Account Linked!**\n\n` +
+              `🎮 **Username:** ${eaUsername}\n` +
+              `🖥️ **Platform:** ${EA_PLATFORM_NAMES[normalizedPlatform] || normalizedPlatform}\n\n` +
+              `Your stats from club matches will now be automatically tracked!`
+          });
+        } catch (err) {
+          console.error('[Link EA Modal] Error:', err);
+          return interaction.editReply({ content: `❌ Error linking EA account: ${err.message}` });
+        }
+      }
+
       // Draft Result Modal
       if (id.startsWith('draft_result_modal_')) {
         const draftId = id.substring('draft_result_modal_'.length);
@@ -6766,7 +6942,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (choice === 'add') {
           const disabledClub = clubs.find((c) => !c.enabled);
           if (!disabledClub) {
-            return interaction.update({ content: 'All available club slots are already in use (max 5).', components: [] });
+            return interaction.update({ content: 'All available club slots are already in use (max 10).', components: [] });
+          }
           }
 
           disabledClub.enabled = true;
@@ -6843,6 +7020,185 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (choice === 'refresh') {
           await refreshClubPanels(guildId, clubKey);
           return interaction.update({ content: 'Panel refreshed.', components: [] });
+        }
+
+        return;
+      }
+
+      // EA Tools select menu
+      if (id.startsWith('ea_tools_select_')) {
+        const clubKey = id.substring('ea_tools_select_'.length);
+        const choice = interaction.values[0];
+
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only managers can use EA tools.',
+            flags: 64
+          });
+        }
+
+        const club = getClubByKey(clubs, clubKey);
+        if (!club) {
+          return interaction.reply({ content: 'Unknown club selected.', flags: 64 });
+        }
+
+        if (choice === 'toggle_monitoring') {
+          if (!club.ea_club_id) {
+            return interaction.update({
+              content: '❌ You must link this club to an EA club first using "Link EA Club".',
+              components: []
+            });
+          }
+
+          club.monitoring_enabled = !club.monitoring_enabled;
+          await saveGuildSettings(guildId, state);
+
+          if (club.monitoring_enabled) {
+            startEaMonitoring(guildId, clubKey);
+            // Also sync history immediately when enabling
+            await interaction.deferUpdate();
+            const result = await syncClubHistory(guildId, clubKey, 50);
+            await refreshClubPanels(guildId, clubKey);
+            return interaction.followUp({
+              content: `✅ **EA Monitoring Enabled** for **${club.name}**!\n\n📊 Synced ${result.synced} matches (${result.skipped} already existed).\n\n📡 Will check for new games every 2 minutes.`,
+              flags: 64
+            });
+          } else {
+            stopEaMonitoring(guildId, clubKey);
+            await refreshClubPanels(guildId, clubKey);
+            return interaction.update({
+              content: `🔴 **EA Monitoring Disabled** for **${club.name}**.\n\nNo longer auto-fetching match stats.`,
+              components: []
+            });
+          }
+        }
+
+        if (choice === 'sync_history') {
+          if (!club.ea_club_id) {
+            return interaction.update({
+              content: '❌ You must link this club to an EA club first using "Link EA Club".',
+              components: []
+            });
+          }
+
+          await interaction.deferUpdate();
+          const result = await syncClubHistory(guildId, clubKey, 50);
+
+          if (result.error) {
+            return interaction.followUp({
+              content: `❌ Error syncing history: ${result.error}`,
+              flags: 64
+            });
+          }
+
+          return interaction.followUp({
+            content: `✅ **History Synced for ${club.name}!**\n\n` +
+              `📊 **${result.synced}** new matches recorded\n` +
+              `⏭️ **${result.skipped}** matches already existed (skipped)\n\n` +
+              `Player stats have been updated and feedback DMs sent.`,
+            flags: 64
+          });
+        }
+
+        if (choice === 'link_club') {
+          const modal = new ModalBuilder()
+            .setCustomId(`link_ea_club_modal_${clubKey}`)
+            .setTitle('Link EA Club');
+
+          const clubNameInput = new TextInputBuilder()
+            .setCustomId('ea_club_name')
+            .setLabel('EA FC Pro Clubs Team Name')
+            .setPlaceholder('Enter your club name exactly as it appears')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setValue(club.name || '');
+
+          const platformInput = new TextInputBuilder()
+            .setCustomId('ea_platform')
+            .setLabel('Platform (ps5, ps4, xbox, pc)')
+            .setPlaceholder('ps5, ps4, xbox, or pc')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setValue(club.ea_platform || 'ps5');
+
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(clubNameInput),
+            new ActionRowBuilder().addComponents(platformInput)
+          );
+
+          await interaction.showModal(modal);
+          return;
+        }
+
+        if (choice === 'link_ea') {
+          const { data: existingProfile } = await supabase
+            .from('profiles')
+            .select('ea_username, ea_platform')
+            .eq('discord_user_id', interaction.user.id)
+            .maybeSingle();
+
+          const modal = new ModalBuilder()
+            .setCustomId('link_ea_modal')
+            .setTitle('Link Your EA Account');
+
+          const usernameInput = new TextInputBuilder()
+            .setCustomId('ea_username')
+            .setLabel('Your EA FC Pro Clubs username')
+            .setPlaceholder('Exactly as it appears in-game')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setValue(existingProfile?.ea_username || '');
+
+          const platformInput = new TextInputBuilder()
+            .setCustomId('ea_platform')
+            .setLabel('Platform (ps5, ps4, xbox, pc)')
+            .setPlaceholder('ps5, ps4, xbox, or pc')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setValue(existingProfile?.ea_platform || 'ps5');
+
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(usernameInput),
+            new ActionRowBuilder().addComponents(platformInput)
+          );
+
+          await interaction.showModal(modal);
+          return;
+        }
+
+        if (choice === 'ea_status') {
+          const isLinked = !!club.ea_club_id;
+          const isMonitoring = !!club.monitoring_enabled;
+          const monitorKey = `${guildId}_${clubKey}`;
+          const isPolling = eaMonitoringIntervals.has(monitorKey);
+
+          // Count linked players
+          const { count: linkedPlayers } = await supabase
+            .from('profiles')
+            .select('id', { count: 'exact', head: true })
+            .not('ea_username', 'is', null);
+
+          // Count recent matches
+          const { count: recentMatches } = await supabase
+            .from('club_matches')
+            .select('id', { count: 'exact', head: true })
+            .eq('guild_id', guildId)
+            .eq('club_key', clubKey);
+
+          const embed = new EmbedBuilder()
+            .setTitle(`📊 EA Integration Status: ${club.name}`)
+            .setColor(isLinked ? (isMonitoring ? 0x00ff00 : 0xffcc00) : 0xff6600)
+            .addFields(
+              { name: '🔗 EA Club Linked', value: isLinked ? `✅ Yes (ID: ${club.ea_club_id})` : '❌ Not linked', inline: true },
+              { name: '📡 Platform', value: club.ea_platform || 'Not set', inline: true },
+              { name: '🔄 Auto-Monitoring', value: isMonitoring ? (isPolling ? '🟢 Active (polling)' : '🟡 Enabled (not polling)') : '🔴 Disabled', inline: true },
+              { name: '📊 Matches Tracked', value: `${recentMatches || 0}`, inline: true },
+              { name: '👥 Players Linked', value: `${linkedPlayers || 0}`, inline: true },
+              { name: '🕐 Last Match ID', value: club.last_match_id || 'None', inline: true }
+            )
+            .setFooter({ text: 'Enable monitoring to auto-track games • Link EA accounts to record player stats' });
+
+          return interaction.update({ content: null, embeds: [embed], components: [] });
         }
 
         return;
