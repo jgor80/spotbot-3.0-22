@@ -24,6 +24,7 @@ const EA_HEADERS = {
   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
 }
 
+// Fetch match history with player stats
 async function fetchMatches(clubId: string, platform: string, matchType: string = 'matchType9') {
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform
   
@@ -41,6 +42,96 @@ async function fetchMatches(clubId: string, platform: string, matchType: string 
   } catch (err) {
     console.error(`[EA] Error fetching matches for ${clubId}:`, err)
     return []
+  }
+}
+
+// Fetch club info (skill rating, record, goals)
+async function fetchClubInfo(clubId: string, platform: string) {
+  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  
+  try {
+    const response = await fetch(`https://proclubs.ea.com/api/fc/clubs/info?platform=${fcPlatform}&clubIds=${clubId}`, {
+      headers: EA_HEADERS
+    })
+    
+    if (!response.ok) {
+      console.error(`[EA] Club info request failed: ${response.status}`)
+      return null
+    }
+    
+    const data = await response.json()
+    // Response is typically an array or object keyed by club ID
+    if (Array.isArray(data) && data.length > 0) return data[0]
+    if (data[clubId]) return data[clubId]
+    return data
+  } catch (err) {
+    console.error(`[EA] Error fetching club info for ${clubId}:`, err)
+    return null
+  }
+}
+
+// Fetch club member list with stats
+async function fetchClubMembers(clubId: string, platform: string) {
+  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  
+  try {
+    const response = await fetch(`https://proclubs.ea.com/api/fc/members/stats?platform=${fcPlatform}&clubId=${clubId}`, {
+      headers: EA_HEADERS
+    })
+    
+    if (!response.ok) {
+      console.error(`[EA] Club members request failed: ${response.status}`)
+      return []
+    }
+    
+    const data = await response.json()
+    // Response is typically { members: [...] } or an array
+    if (data?.members && Array.isArray(data.members)) return data.members
+    if (Array.isArray(data)) return data
+    return Object.values(data).filter(v => v && typeof v === 'object')
+  } catch (err) {
+    console.error(`[EA] Error fetching club members for ${clubId}:`, err)
+    return []
+  }
+}
+
+// Sync club stats to database
+async function syncClubStats(supabase: any, guildId: string, clubKey: string, clubId: string, platform: string) {
+  try {
+    const clubInfo = await fetchClubInfo(clubId, platform)
+    if (!clubInfo) return null
+    
+    const clubData = {
+      guild_id: guildId,
+      club_key: clubKey,
+      ea_club_id: clubId,
+      ea_platform: platform,
+      skill_rating: parseInt(clubInfo.skillRating || clubInfo.skill_rating || 0),
+      wins: parseInt(clubInfo.wins || 0),
+      draws: parseInt(clubInfo.draws || clubInfo.ties || 0),
+      losses: parseInt(clubInfo.losses || 0),
+      goals_scored: parseInt(clubInfo.goals || clubInfo.goalsFor || 0),
+      goals_conceded: parseInt(clubInfo.goalsAgainst || 0),
+      total_members: parseInt(clubInfo.memberCount || clubInfo.members || 0),
+      best_division: clubInfo.bestDivision || clubInfo.divisionName || null,
+      club_name: clubInfo.name || clubInfo.clubName || null,
+      last_synced_at: new Date().toISOString()
+    }
+    
+    const { error } = await supabase
+      .from('club_stats')
+      .upsert(clubData, { onConflict: 'guild_id,club_key' })
+    
+    if (error) {
+      console.error(`[sync-ea-stats] Failed to sync club stats:`, error.message)
+      return null
+    }
+    
+    console.log(`[sync-ea-stats] Synced club stats for ${clubData.club_name}: ${clubData.skill_rating} SR, ${clubData.wins}W-${clubData.draws}D-${clubData.losses}L`)
+    return clubData
+  } catch (err) {
+    console.error(`[sync-ea-stats] Error syncing club stats:`, err)
+    return null
   }
 }
 
@@ -130,6 +221,7 @@ Deno.serve(async (req) => {
     let totalSynced = 0
     let totalSkipped = 0
     let guildsProcessed = 0
+    let clubStatsSynced = 0
     
     for (const settings of guildSettings) {
       const guildId = settings.guild_id
@@ -146,6 +238,10 @@ Deno.serve(async (req) => {
         console.log(`[sync-ea-stats] Syncing ${club.name} (${club.ea_club_id}) for guild ${guildId}`)
         
         try {
+          // Sync club stats (skill rating, record, etc.)
+          const clubStatsResult = await syncClubStats(supabase, guildId, club.key, club.ea_club_id, club.ea_platform)
+          if (clubStatsResult) clubStatsSynced++
+          
           // Fetch recent matches
           const matches = await fetchMatches(club.ea_club_id, club.ea_platform)
           
@@ -180,7 +276,7 @@ Deno.serve(async (req) => {
             if (scoreFor > scoreAgainst) result = 'win'
             else if (scoreFor < scoreAgainst) result = 'loss'
             
-            // Extract player stats
+            // Extract player stats with expanded fields
             const playerStats: any[] = []
             const players = matchData.players?.[club.ea_club_id] || {}
             
@@ -191,7 +287,13 @@ Deno.serve(async (req) => {
                 assists: parseInt(pStats.assists || 0),
                 rating: parseFloat(pStats.rating || 0),
                 position: pStats.pos,
-                motm: pStats.mom === '1'
+                motm: pStats.mom === '1',
+                // New expanded stats
+                shots: parseInt(pStats.shots || 0),
+                tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
+                passes_made: parseInt(pStats.passesmade || 0),
+                pass_attempts: parseInt(pStats.passattempts || 0),
+                red_cards: pStats.redcards === '1' || pStats.redCards === '1'
               })
             }
             
@@ -235,7 +337,13 @@ Deno.serve(async (req) => {
                   won: result === 'win',
                   ea_match_rating: pStat.rating,
                   position_played: pStat.position,
-                  man_of_match: pStat.motm
+                  man_of_match: pStat.motm,
+                  // New expanded stats
+                  shots: pStat.shots,
+                  tackles: pStat.tackles,
+                  passes_made: pStat.passes_made,
+                  pass_attempts: pStat.pass_attempts,
+                  red_cards: pStat.red_cards
                 })
                 
                 // Trigger rating recalculation
@@ -259,12 +367,13 @@ Deno.serve(async (req) => {
       }
     }
     
-    console.log(`[sync-ea-stats] Completed: ${totalSynced} synced, ${totalSkipped} skipped, ${guildsProcessed} guilds processed`)
+    console.log(`[sync-ea-stats] Completed: ${totalSynced} matches synced, ${totalSkipped} skipped, ${clubStatsSynced} club stats synced, ${guildsProcessed} guilds processed`)
     
     return new Response(JSON.stringify({ 
       success: true,
       synced: totalSynced,
       skipped: totalSkipped,
+      club_stats_synced: clubStatsSynced,
       guilds_processed: guildsProcessed
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
