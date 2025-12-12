@@ -150,39 +150,94 @@ async function fetchClubMembers(clubId, platform) {
   }
 }
 
-// Sync club stats to database
-async function syncClubStats(guildId, clubKey, clubId, platform) {
-  const clubInfo = await fetchClubInfo(clubId, platform);
-  if (!clubInfo) return null;
+// Sync member stats to player_stats table
+async function syncMemberStats(guildId, clubId, platform, clubName) {
+  const members = await fetchClubMembers(clubId, platform);
   
-  const clubData = {
-    guild_id: guildId,
-    club_key: clubKey,
-    ea_club_id: clubId,
-    ea_platform: platform,
-    skill_rating: parseInt(clubInfo.skillRating || 0),
-    wins: parseInt(clubInfo.wins || 0),
-    draws: parseInt(clubInfo.draws || clubInfo.ties || 0),
-    losses: parseInt(clubInfo.losses || 0),
-    goals_scored: parseInt(clubInfo.goals || clubInfo.goalsScored || 0),
-    goals_conceded: parseInt(clubInfo.goalsAgainst || 0),
-    total_members: parseInt(clubInfo.memberCount || 0),
-    club_name: clubInfo.name || null,
-    best_division: clubInfo.bestDivision || null,
-    last_synced_at: new Date().toISOString()
-  };
-  
-  const { error } = await supabase
-    .from('club_stats')
-    .upsert(clubData, { onConflict: 'guild_id,club_key' });
-  
-  if (error) {
-    console.error(`[DB] Club stats upsert error:`, error.message);
-    return null;
+  if (!members.length) {
+    console.log(`⚠️ No members found for ${clubName}`);
+    return 0;
   }
   
-  console.log(`✅ Synced club stats: ${clubData.club_name || clubKey} (SR: ${clubData.skill_rating})`);
-  return clubData;
+  let synced = 0;
+  
+  for (const member of members) {
+    const eaUsername = member.name || member.playerName;
+    if (!eaUsername) continue;
+    
+    // Find linked Discord profile
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('discord_user_id')
+      .eq('ea_username', eaUsername)
+      .maybeSingle();
+    
+    if (!profile) {
+      console.log(`  ⏭️ No linked profile for ${eaUsername}`);
+      continue;
+    }
+    
+    // Aggregate stats from EA member data
+    const goals = parseInt(member.goals || 0);
+    const assists = parseInt(member.assists || 0);
+    const gamesPlayed = parseInt(member.gamesPlayed || member.matches || 0);
+    const wins = parseInt(member.wins || 0);
+    const avgRating = parseFloat(member.ratingAve || member.avgRating || 0);
+    const cleanSheets = parseInt(member.cleanSheetsDef || member.cleanSheetsGK || 0);
+    const manOfMatch = parseInt(member.manOfTheMatch || 0);
+    const position = member.favoritePosition || member.proPos || null;
+    
+    // Check if we already have stats for this player
+    const { data: existingStats, error: checkError } = await supabase
+      .from('player_stats')
+      .select('id, goals, assists')
+      .eq('guild_id', guildId)
+      .eq('discord_user_id', profile.discord_user_id)
+      .eq('match_type', 'ea_aggregate')
+      .maybeSingle();
+    
+    if (existingStats) {
+      // Update existing aggregate
+      const { error } = await supabase
+        .from('player_stats')
+        .update({
+          goals,
+          assists,
+          ea_match_rating: avgRating,
+          position_played: position,
+          recorded_at: new Date().toISOString()
+        })
+        .eq('id', existingStats.id);
+      
+      if (!error) {
+        console.log(`  🔄 Updated ${eaUsername}: ${goals}G ${assists}A (${avgRating.toFixed(1)} avg)`);
+        synced++;
+      }
+    } else {
+      // Insert new aggregate record
+      const { error } = await supabase
+        .from('player_stats')
+        .insert({
+          guild_id: guildId,
+          discord_user_id: profile.discord_user_id,
+          match_type: 'ea_aggregate',
+          goals,
+          assists,
+          ea_match_rating: avgRating,
+          position_played: position,
+          won: null,
+          clean_sheet: cleanSheets > 0,
+          man_of_match: manOfMatch > 0
+        });
+      
+      if (!error) {
+        console.log(`  ✅ Added ${eaUsername}: ${goals}G ${assists}A (${avgRating.toFixed(1)} avg)`);
+        synced++;
+      }
+    }
+  }
+  
+  return synced;
 }
 
 // Process and sync matches
@@ -327,6 +382,10 @@ async function runSync() {
       // Sync club stats
       await syncClubStats(settings.guild_id, club.key, club.ea_club_id, club.ea_platform);
       clubsSynced++;
+      
+      // Sync member stats (aggregate career stats)
+      console.log(`\n👥 Syncing member stats for ${club.name}...`);
+      const membersSynced = await syncMemberStats(settings.guild_id, club.ea_club_id, club.ea_platform, club.name);
       
       // Sync matches
       const { synced, skipped } = await syncMatches(settings.guild_id, club.key, club);
