@@ -3124,16 +3124,9 @@ client.once(Events.ClientReady, async (c) => {
   console.log(`✅ SquadIQ Spots logged in as ${c.user.tag}`);
 
   try {
+    // Register commands globally only (not per-guild to avoid duplicates)
     await c.application.commands.set(COMMANDS);
-    console.log('✅ Commands registered');
-
-    for (const guild of c.guilds.cache.values()) {
-      try {
-        await c.application.commands.set(COMMANDS, guild.id);
-      } catch (err) {
-        console.error('⚠️ Failed to register commands in guild', guild.id, err);
-      }
-    }
+    console.log(`✅ Commands registered globally for ${c.guilds.cache.size} guilds`);
     
     // Resume EA FC Pro Clubs monitoring for all linked clubs
     resumeEaMonitoring();
