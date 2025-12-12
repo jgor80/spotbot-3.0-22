@@ -200,16 +200,35 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
     const eaUsername = member.name || member.playerName;
     if (!eaUsername) continue;
     
-    // Find linked Discord profile
-    const { data: profile } = await supabase
+    // Find or create profile for EA username
+    let { data: profile } = await supabase
       .from('profiles')
       .select('discord_user_id')
       .eq('ea_username', eaUsername)
       .maybeSingle();
     
     if (!profile) {
-      console.log(`  ⏭️ No linked profile for ${eaUsername}`);
-      continue;
+      // Auto-create profile for this EA username (without Discord link)
+      // Use ea_username as a temporary discord_user_id placeholder
+      const tempDiscordId = `ea_${eaUsername.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      
+      const { data: newProfile, error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          discord_user_id: tempDiscordId,
+          ea_username: eaUsername,
+          ea_platform: platform
+        })
+        .select('discord_user_id')
+        .single();
+      
+      if (insertError) {
+        console.log(`  ❌ Failed to create profile for ${eaUsername}: ${insertError.message}`);
+        continue;
+      }
+      
+      console.log(`  ✨ Created profile for ${eaUsername}`);
+      profile = newProfile;
     }
     
     // Aggregate stats from EA member data
