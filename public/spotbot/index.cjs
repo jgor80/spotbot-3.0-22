@@ -2771,10 +2771,10 @@ function buildAdminControlPanelButtons() {
       .setEmoji('🎮')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
-      .setCustomId('squadiq_syncclub')
-      .setLabel('Sync Matches')
-      .setEmoji('📥')
-      .setStyle(ButtonStyle.Secondary),
+      .setCustomId('squadiq_syncstats')
+      .setLabel('Sync Stats')
+      .setEmoji('📊')
+      .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId('squadiq_pendingwins')
       .setLabel('Pending Claims')
@@ -5150,7 +5150,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           });
         }
 
-        await interaction.deferReply();
+        await interaction.deferReply({ flags: 64 });
 
         const embeds = await buildAdminControlPanelEmbeds(guildId, state);
         const buttons = buildAdminControlPanelButtons();
@@ -5497,31 +5497,50 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.reply({ embeds: [embed], flags: 64 });
       }
 
-      if (id === 'squadiq_syncclub') {
+      if (id === 'squadiq_syncstats') {
         if (!isManager(interaction.member)) {
           return interaction.reply({ content: '❌ Admin only.', flags: 64 });
         }
 
-        const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
-        
-        if (!currentClub?.ea_club_id) {
-          return interaction.reply({
-            content: '❌ No EA club linked. Use `/setclub` first.',
-            flags: 64
-          });
-        }
-
         await interaction.deferReply({ flags: 64 });
 
-        const result = await syncClubHistory(guildId, currentClub.key);
-        
-        if (result.error) {
-          return interaction.editReply({ content: `❌ Sync failed: ${result.error}` });
-        }
+        try {
+          // Call the sync-ea-stats edge function for a full sync
+          const response = await fetch(`${SUPABASE_URL}/functions/v1/sync-ea-stats`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({
+              guild_id: guildId,
+              sync_type: 'full'
+            })
+          });
 
-        return interaction.editReply({
-          content: `✅ Synced **${result.synced}** new matches (${result.skipped} already recorded) for **${currentClub.name}**`
-        });
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[squadiq_syncstats] Sync failed:', response.status, errorText);
+            return interaction.editReply({ 
+              content: `❌ Stats sync failed: ${response.status} - Check if EA API is accessible from local sync script.` 
+            });
+          }
+
+          const result = await response.json();
+          
+          return interaction.editReply({
+            content: `📊 **Stats Sync Complete**\n\n` +
+              `• Matches synced: **${result.total_matches || 0}**\n` +
+              `• Members updated: **${result.total_members || 0}**\n` +
+              `• Clubs processed: **${result.total_clubs || 0}**\n\n` +
+              `⚠️ Note: Full EA sync runs via local script every 10 min. This triggers an immediate refresh.`
+          });
+        } catch (error) {
+          console.error('[squadiq_syncstats] Error:', error);
+          return interaction.editReply({ 
+            content: `❌ Stats sync error: ${error.message}. The local EA sync script handles most syncing.` 
+          });
+        }
       }
 
       if (id === 'squadiq_pendingwins') {
