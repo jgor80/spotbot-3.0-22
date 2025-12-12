@@ -2847,6 +2847,7 @@ function buildScoutingPanelEmbed(guildId) {
       '**Welcome to the Scouting Hub!**\n\n' +
       'Use the buttons below to scout opponents, analyze clubs, and prepare match strategies.\n\n' +
       '**🔍 Scout Club** - Generate an AI scouting report for any Pro Clubs team\n' +
+      '**🎯 Scout Player** - Generate an AI scouting report for any player\n' +
       '**📊 Club Matches** - View recent match history for any club\n' +
       '**⚔️ Match Preview** - AI-powered preview comparing two teams\n' +
       '**👤 View Profile** - Check any player\'s stats and ratings\n' +
@@ -2865,6 +2866,11 @@ function buildScoutingPanelComponents() {
       .setCustomId('scoutpanel_scout')
       .setLabel('Scout Club')
       .setEmoji('🔍')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_scoutplayer')
+      .setLabel('Scout Player')
+      .setEmoji('🎯')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId('scoutpanel_matches')
@@ -5777,6 +5783,41 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.showModal(modal);
       }
 
+      // Scout Player button from scouting panel
+      if (id === 'scoutpanel_scoutplayer') {
+        await interaction.deferReply({ flags: 64 });
+
+        // Fetch players from player_summary for this guild
+        const { data: players } = await supabase
+          .from('player_summary')
+          .select('discord_user_id, discord_username, overall_rating, primary_position')
+          .eq('guild_id', guildId)
+          .order('overall_rating', { ascending: false })
+          .limit(25);
+
+        if (!players || players.length === 0) {
+          return interaction.editReply({ content: 'No players found in this server. Players need to play games to appear here.' });
+        }
+
+        const options = players.map(p => ({
+          label: `${p.discord_username || 'Unknown'} (${Math.round(p.overall_rating || 50)} OVR)`,
+          value: p.discord_user_id,
+          description: p.primary_position ? `Position: ${p.primary_position}` : 'Position: Unknown'
+        }));
+
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('scoutpanel_scoutplayer_select')
+          .setPlaceholder('Select a player to scout')
+          .addOptions(options);
+
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+
+        return interaction.editReply({
+          content: '🎯 **Scout a Player**\n\nSelect a player to generate an AI-powered scouting report:',
+          components: [row]
+        });
+      }
+
       // Leaderboard button from scouting panel
       if (id === 'scoutpanel_leaderboard') {
         await interaction.deferReply({ flags: 64 });
@@ -5820,6 +5861,62 @@ client.on(Events.InteractionCreate, async (interaction) => {
           components: buildScoutingPanelComponents()
         });
         return;
+      }
+
+      // Scout Player select menu handler
+      if (id === 'scoutpanel_scoutplayer_select') {
+        const playerId = interaction.values[0];
+        
+        await interaction.update({
+          content: '🔍 **Generating AI Scouting Report...**\n\nThis may take a few seconds as we analyze the player data.',
+          components: []
+        });
+
+        try {
+          // Call the scout-player edge function
+          const { error, data } = await callEdgeFunction('scout-player', {
+            guild_id: guildId,
+            player_id: playerId
+          });
+
+          if (error) {
+            return interaction.editReply({ 
+              content: `❌ Failed to generate scouting report: ${error}`,
+              components: []
+            });
+          }
+
+          const playerData = data?.playerData || {};
+          const analysis = data?.analysis || 'No analysis available.';
+
+          // Build the scouting report embed
+          const embed = new EmbedBuilder()
+            .setTitle(`🎯 Scouting Report: ${playerData.discord_username || 'Unknown Player'}`)
+            .setColor(0x5865f2)
+            .setDescription(analysis.substring(0, 4000)) // Discord limit
+            .addFields(
+              { name: '📊 Overall Rating', value: `${Math.round(playerData.overall_rating || 50)}`, inline: true },
+              { name: '🎮 Games Played', value: `${playerData.games_played || 0}`, inline: true },
+              { name: '📍 Position', value: playerData.primary_position || 'Unknown', inline: true },
+              { name: '🏆 Win Rate', value: `${Math.round((playerData.win_rate || 0) * 100)}%`, inline: true },
+              { name: '⚽ Goals', value: `${playerData.total_goals || 0}`, inline: true },
+              { name: '🅰️ Assists', value: `${playerData.total_assists || 0}`, inline: true }
+            )
+            .setFooter({ text: 'AI-powered analysis • SquadIQ Scouting' })
+            .setTimestamp();
+
+          return interaction.editReply({ 
+            content: null,
+            embeds: [embed],
+            components: []
+          });
+        } catch (err) {
+          console.error('[Scout Player] Error:', err);
+          return interaction.editReply({ 
+            content: `❌ Error generating report: ${err.message}`,
+            components: []
+          });
+        }
       }
 
       // Auto-link confirmation buttons (from DM)
