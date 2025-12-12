@@ -91,6 +91,8 @@ export default function ScoutingPage() {
   // Player scouting state
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [isScoutingPlayer, setIsScoutingPlayer] = useState(false);
+  const [isScoutingEaPlayer, setIsScoutingEaPlayer] = useState(false);
+  const [eaGamertag, setEaGamertag] = useState("");
   const [playerScoutReport, setPlayerScoutReport] = useState<string | null>(null);
   const [playerData, setPlayerData] = useState<any>(null);
 
@@ -253,7 +255,7 @@ export default function ScoutingPage() {
 
   const handleScoutPlayer = async () => {
     if (!selectedPlayerId || !selectedGuildId) return;
-    
+
     setIsScoutingPlayer(true);
     setPlayerScoutReport(null);
     setPlayerData(null);
@@ -292,6 +294,52 @@ export default function ScoutingPage() {
       });
     } finally {
       setIsScoutingPlayer(false);
+    }
+  };
+
+  const handleScoutEaPlayer = async () => {
+    const trimmedGamertag = eaGamertag.trim();
+    if (!trimmedGamertag) {
+      toast({
+        title: "EA Gamertag Required",
+        description: "Enter an EA ID or gamertag to scout",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsScoutingEaPlayer(true);
+    setPlayerScoutReport(null);
+    setPlayerData(null);
+
+    try {
+      toast({
+        title: "Searching EA",
+        description: `Gathering stats for ${trimmedGamertag}...`,
+      });
+
+      const { data, error } = await supabase.functions.invoke("scout-player", {
+        body: { ea_username: trimmedGamertag, ea_platform: searchPlatform },
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      setPlayerScoutReport(data.analysis);
+      setPlayerData(data.player_data);
+
+      toast({
+        title: "Scout Report Ready",
+        description: `AI analysis generated for ${trimmedGamertag}`,
+      });
+    } catch (error) {
+      toast({
+        title: "EA Lookup Failed",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsScoutingEaPlayer(false);
     }
   };
 
@@ -462,8 +510,39 @@ Focus on controlling midfield to limit their counter-attacks.
                   </Button>
                 </div>
 
+                <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
+                  <div className="flex flex-col md:flex-row gap-2">
+                    <Input
+                      placeholder="EA ID / Gamertag (outside your server)"
+                      value={eaGamertag}
+                      onChange={(e) => setEaGamertag(e.target.value)}
+                    />
+                    <Select value={searchPlatform} onValueChange={setSearchPlatform}>
+                      <SelectTrigger className="md:w-[180px]">
+                        <SelectValue placeholder="Platform" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ps5">PS5 / PS4</SelectItem>
+                        <SelectItem value="xbox-series-xs">Xbox</SelectItem>
+                        <SelectItem value="pc">PC</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={handleScoutEaPlayer}
+                      disabled={isScoutingPlayer || isScoutingEaPlayer}
+                      variant="secondary"
+                    >
+                      {isScoutingEaPlayer ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                      <span className="ml-2">Scout EA Gamertag</span>
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Pulls every stat EA exposes for this player across tracked clubs and any clubs we discover in EA search.
+                  </p>
+                </div>
+
                 {/* Show existing report timestamp if viewing saved report */}
-                {selectedPlayerId && savedReports?.find(r => r.discord_user_id === selectedPlayerId) && !isScoutingPlayer && (
+                {selectedPlayerId && savedReports?.find(r => r.discord_user_id === selectedPlayerId) && !(isScoutingPlayer || isScoutingEaPlayer) && (
                   <div className="text-xs text-muted-foreground flex items-center gap-2">
                     <span>Last updated: {format(new Date(savedReports.find(r => r.discord_user_id === selectedPlayerId)!.updated_at), "PPp")}</span>
                     <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={handleScoutPlayer}>
@@ -472,7 +551,7 @@ Focus on controlling midfield to limit their counter-attacks.
                   </div>
                 )}
 
-                {isScoutingPlayer && (
+                {(isScoutingPlayer || isScoutingEaPlayer) && (
                   <div className="flex items-center justify-center py-12">
                     <div className="text-center space-y-4">
                       <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
@@ -504,13 +583,19 @@ Focus on controlling midfield to limit their counter-attacks.
                   </div>
                 )}
 
+                {playerData?.raw_member_fields?.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    EA fields discovered: {playerData.raw_member_fields.join(", ")}
+                  </p>
+                )}
+
                 {playerScoutReport && (
                   <div className="mt-6 p-6 rounded-lg bg-muted/50 border prose prose-sm dark:prose-invert max-w-none">
                     <ReactMarkdown>{playerScoutReport}</ReactMarkdown>
                   </div>
                 )}
 
-                {!playerScoutReport && !isScoutingPlayer && (
+                {!playerScoutReport && !(isScoutingPlayer || isScoutingEaPlayer) && (
                   <div className="py-12 text-center text-muted-foreground">
                     <User className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>Select a player to generate an AI scouting report</p>
