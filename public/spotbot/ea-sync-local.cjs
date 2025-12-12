@@ -292,6 +292,15 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
     const position = favoritePosition;
     const winRate = gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0;
     
+    // Extended stats from EA API
+    const shots = parseInt(member.shots || 0);
+    const tackles = parseInt(member.tacklesmade || member.tackles || 0);
+    const passesMade = parseInt(member.passesmade || member.passesMade || 0);
+    const passAttempts = parseInt(member.passattempts || member.passAttempts || 0);
+    const saves = parseInt(member.saves || member.gksaves || member.gkSaves || 0);
+    const interceptions = parseInt(member.interceptions || 0);
+    const clearances = parseInt(member.clearances || 0);
+    
     // Skip temp profiles for rating updates (only real Discord users)
     const isRealUser = !profile.discord_user_id.startsWith('ea_');
     
@@ -312,26 +321,36 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
         (assists / Math.max(1, gamesPlayed) * 5) // Assists per game bonus
       ));
       
+      const ratingsData = {
+        games_played: gamesPlayed,
+        wins: wins,
+        losses: losses,
+        draws: draws,
+        total_goals: goals,
+        total_assists: assists,
+        total_clean_sheets: cleanSheets,
+        total_motm: manOfMatch,
+        club_performance_rating: clubPerformanceRating,
+        avg_match_rating: avgRating,
+        shots: shots,
+        tackles: tackles,
+        passes_made: passesMade,
+        pass_attempts: passAttempts,
+        saves: saves,
+        interceptions: interceptions,
+        clearances: clearances,
+        last_game_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      
       if (existingRating) {
         // Update existing rating with EA stats
         await supabase
           .from('player_ratings')
-          .update({
-            games_played: gamesPlayed,
-            wins: wins,
-            losses: losses,
-            draws: draws,
-            total_goals: goals,
-            total_assists: assists,
-            total_clean_sheets: cleanSheets,
-            total_motm: manOfMatch,
-            club_performance_rating: clubPerformanceRating,
-            last_game_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
+          .update(ratingsData)
           .eq('id', existingRating.id);
         
-        console.log(`  🔄 Updated player_ratings for ${eaUsername}: ${gamesPlayed}G ${wins}W (${winRate.toFixed(0)}%)`);
+        console.log(`  🔄 Updated player_ratings for ${eaUsername}: ${gamesPlayed}G ${wins}W ${goals}Goals ${assists}Ast (${winRate.toFixed(0)}%)`);
       } else {
         // Create new player rating record
         await supabase
@@ -339,20 +358,11 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
           .insert({
             guild_id: guildId,
             discord_user_id: profile.discord_user_id,
-            games_played: gamesPlayed,
-            wins: wins,
-            losses: losses,
-            draws: draws,
-            total_goals: goals,
-            total_assists: assists,
-            total_clean_sheets: cleanSheets,
-            total_motm: manOfMatch,
-            club_performance_rating: clubPerformanceRating,
             overall_rating: clubPerformanceRating,
-            last_game_at: new Date().toISOString()
+            ...ratingsData
           });
         
-        console.log(`  ✨ Created player_ratings for ${eaUsername}: ${gamesPlayed}G ${wins}W`);
+        console.log(`  ✨ Created player_ratings for ${eaUsername}: ${gamesPlayed}G ${wins}W ${goals}Goals`);
       }
       
       // ===== UPDATE player_summary with EA career stats =====
@@ -376,10 +386,20 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
         discord_username: fullProfile?.discord_username || eaUsername,
         games_played: gamesPlayed,
         wins: wins,
+        losses: losses,
+        draws: draws,
         goals: goals,
         assists: assists,
         win_rate: winRate,
         overall_rating: clubPerformanceRating,
+        avg_match_rating: avgRating,
+        clean_sheets: cleanSheets,
+        man_of_match: manOfMatch,
+        shots: shots,
+        tackles: tackles,
+        passes_made: passesMade,
+        pass_attempts: passAttempts,
+        saves: saves,
         primary_position: position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null,
         last_active_at: new Date().toISOString(),
         updated_at: new Date().toISOString()

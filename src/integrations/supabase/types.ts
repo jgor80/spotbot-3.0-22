@@ -1071,7 +1071,9 @@ export type Database = {
       }
       player_ratings: {
         Row: {
+          avg_match_rating: number | null
           build_quality_rating: number | null
+          clearances: number | null
           club_performance_rating: number | null
           created_at: string
           discord_user_id: string
@@ -1080,11 +1082,17 @@ export type Database = {
           games_played: number
           guild_id: string
           id: string
+          interceptions: number | null
           last_calculated_at: string
           last_game_at: string | null
           losses: number
           overall_rating: number
+          pass_attempts: number | null
+          passes_made: number | null
           peer_rating: number | null
+          saves: number | null
+          shots: number | null
+          tackles: number | null
           total_assists: number
           total_clean_sheets: number
           total_goals: number
@@ -1093,7 +1101,9 @@ export type Database = {
           wins: number
         }
         Insert: {
+          avg_match_rating?: number | null
           build_quality_rating?: number | null
+          clearances?: number | null
           club_performance_rating?: number | null
           created_at?: string
           discord_user_id: string
@@ -1102,11 +1112,17 @@ export type Database = {
           games_played?: number
           guild_id: string
           id?: string
+          interceptions?: number | null
           last_calculated_at?: string
           last_game_at?: string | null
           losses?: number
           overall_rating?: number
+          pass_attempts?: number | null
+          passes_made?: number | null
           peer_rating?: number | null
+          saves?: number | null
+          shots?: number | null
+          tackles?: number | null
           total_assists?: number
           total_clean_sheets?: number
           total_goals?: number
@@ -1115,7 +1131,9 @@ export type Database = {
           wins?: number
         }
         Update: {
+          avg_match_rating?: number | null
           build_quality_rating?: number | null
+          clearances?: number | null
           club_performance_rating?: number | null
           created_at?: string
           discord_user_id?: string
@@ -1124,11 +1142,17 @@ export type Database = {
           games_played?: number
           guild_id?: string
           id?: string
+          interceptions?: number | null
           last_calculated_at?: string
           last_game_at?: string | null
           losses?: number
           overall_rating?: number
+          pass_attempts?: number | null
+          passes_made?: number | null
           peer_rating?: number | null
+          saves?: number | null
+          shots?: number | null
+          tackles?: number | null
           total_assists?: number
           total_clean_sheets?: number
           total_goals?: number
@@ -1312,9 +1336,12 @@ export type Database = {
         Row: {
           achievement_count: number
           assists: number
+          avg_match_rating: number | null
+          clean_sheets: number | null
           current_streak: number
           discord_user_id: string
           discord_username: string | null
+          draws: number | null
           form_rating: number | null
           games_played: number
           goals: number
@@ -1323,11 +1350,18 @@ export type Database = {
           last_active_at: string | null
           league_wins: number
           longest_win_streak: number
+          losses: number | null
           major_wins: number
+          man_of_match: number | null
           overall_rating: number
+          pass_attempts: number | null
+          passes_made: number | null
           primary_position: string | null
           reliability_score: number | null
+          saves: number | null
+          shots: number | null
           streak_type: string | null
+          tackles: number | null
           top_achievements: string[]
           tournament_wins: number
           updated_at: string
@@ -1337,9 +1371,12 @@ export type Database = {
         Insert: {
           achievement_count?: number
           assists?: number
+          avg_match_rating?: number | null
+          clean_sheets?: number | null
           current_streak?: number
           discord_user_id: string
           discord_username?: string | null
+          draws?: number | null
           form_rating?: number | null
           games_played?: number
           goals?: number
@@ -1348,11 +1385,18 @@ export type Database = {
           last_active_at?: string | null
           league_wins?: number
           longest_win_streak?: number
+          losses?: number | null
           major_wins?: number
+          man_of_match?: number | null
           overall_rating?: number
+          pass_attempts?: number | null
+          passes_made?: number | null
           primary_position?: string | null
           reliability_score?: number | null
+          saves?: number | null
+          shots?: number | null
           streak_type?: string | null
+          tackles?: number | null
           top_achievements?: string[]
           tournament_wins?: number
           updated_at?: string
@@ -1362,9 +1406,12 @@ export type Database = {
         Update: {
           achievement_count?: number
           assists?: number
+          avg_match_rating?: number | null
+          clean_sheets?: number | null
           current_streak?: number
           discord_user_id?: string
           discord_username?: string | null
+          draws?: number | null
           form_rating?: number | null
           games_played?: number
           goals?: number
@@ -1373,11 +1420,18 @@ export type Database = {
           last_active_at?: string | null
           league_wins?: number
           longest_win_streak?: number
+          losses?: number | null
           major_wins?: number
+          man_of_match?: number | null
           overall_rating?: number
+          pass_attempts?: number | null
+          passes_made?: number | null
           primary_position?: string | null
           reliability_score?: number | null
+          saves?: number | null
+          shots?: number | null
           streak_type?: string | null
+          tackles?: number | null
           top_achievements?: string[]
           tournament_wins?: number
           updated_at?: string
