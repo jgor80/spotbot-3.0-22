@@ -488,10 +488,13 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
       }
     }
     
-    // Debug: Log raw EA member data to see available fields
+    // Debug: Log raw EA member data to see available fields (first player of each club)
     if (synced === 0) {
-      console.log(`  🔍 [DEBUG] Sample EA member data keys:`, Object.keys(member));
-      console.log(`  🔍 [DEBUG] Raw member data:`, JSON.stringify(member, null, 2));
+      console.log(`  🔍 [DEBUG] Sample EA member data for ${eaUsername}:`);
+      console.log(`  🔍 [DEBUG] Keys:`, Object.keys(member).join(', '));
+      // Log all pass-related fields
+      console.log(`  🔍 [DEBUG] Pass fields: passesmade=${member.passesmade}, passattempts=${member.passattempts}, passingaccuracy=${member.passingaccuracy}, passaccuracy=${member.passaccuracy}, passSuccessRate=${member.passSuccessRate}`);
+      console.log(`  🔍 [DEBUG] Win fields: wins=${member.wins}, losses=${member.losses}, winRate=${member.winRate}, gamesPlayed=${member.gamesPlayed}`);
     }
     
     // Extract ALL aggregate stats from EA member data (matching EA website fields)
@@ -530,13 +533,19 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
     const tackles = parseInt(member.tacklesmade || member.tacklesMade || member.tackles || 0);
     const tackleAttempts = parseInt(member.tackleattempts || member.tackleAttempts || 0);
     const tackleSuccessRate = tackleAttempts > 0 ? (tackles / tackleAttempts) * 100 : 0;
-    const passesMade = parseInt(member.passesmade || member.passesMade || 0);
-    const passAttempts = parseInt(member.passattempts || member.passAttempts || 0);
-    // EA may also provide passSuccessRate directly
+    const passesMade = parseInt(member.passesmade || member.passesMade || member.passes || 0);
+    let passAttempts = parseInt(member.passattempts || member.passAttempts || 0);
+    
+    // EA may provide pass accuracy directly as passingaccuracy, passaccuracy, or passSuccessRate
     let passSuccessRate = 0;
-    if (member.passSuccessRate !== undefined || member.passaccuracy !== undefined) {
-      passSuccessRate = parseFloat(member.passSuccessRate || member.passaccuracy || 0);
-      if (passSuccessRate <= 1) passSuccessRate *= 100; // Handle decimal format
+    const passAccuracyRaw = member.passingaccuracy || member.passaccuracy || member.passSuccessRate || member.passAccuracy;
+    if (passAccuracyRaw !== undefined) {
+      passSuccessRate = parseFloat(passAccuracyRaw);
+      if (passSuccessRate <= 1 && passSuccessRate > 0) passSuccessRate *= 100; // Handle decimal format
+      // If we have pass accuracy but no attempts, estimate attempts from made/accuracy
+      if (passAttempts === 0 && passSuccessRate > 0 && passesMade > 0) {
+        passAttempts = Math.round(passesMade / (passSuccessRate / 100));
+      }
     } else if (passAttempts > 0) {
       passSuccessRate = (passesMade / passAttempts) * 100;
     }
@@ -1313,8 +1322,21 @@ async function runSync() {
           manOfMatch: parseInt(member.manOfTheMatch || member.mom || 0),
           shots: parseInt(member.shots || 0),
           tackles: parseInt(member.tacklesmade || member.tackles || 0),
-          passesMade: parseInt(member.passesmade || member.passesMade || 0),
-          passAttempts: parseInt(member.passattempts || member.passAttempts || 0),
+          passesMade: parseInt(member.passesmade || member.passesMade || member.passes || 0),
+          passAttempts: (() => {
+            let attempts = parseInt(member.passattempts || member.passAttempts || 0);
+            // Estimate attempts from pass accuracy if not provided
+            if (attempts === 0) {
+              const passAccuracyRaw = member.passingaccuracy || member.passaccuracy || member.passSuccessRate || member.passAccuracy;
+              const passesMade = parseInt(member.passesmade || member.passesMade || member.passes || 0);
+              if (passAccuracyRaw !== undefined && passesMade > 0) {
+                let passAcc = parseFloat(passAccuracyRaw);
+                if (passAcc <= 1 && passAcc > 0) passAcc *= 100;
+                if (passAcc > 0) attempts = Math.round(passesMade / (passAcc / 100));
+              }
+            }
+            return attempts;
+          })(),
           saves: parseInt(member.saves || member.gksaves || member.gkSaves || 0),
           interceptions: parseInt(member.interceptions || 0),
           clearances: parseInt(member.clearances || 0),
