@@ -13,8 +13,11 @@ import {
   TrendingUp,
   Award,
   Calendar,
-  Star
+  Star,
+  Database,
+  CheckCircle2
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface PlayerProfileProps {
   player: PlayerProfileType;
@@ -55,6 +58,37 @@ export function PlayerProfileView({ player }: PlayerProfileProps) {
                 <Badge variant="outline" className="border-primary-foreground/30">
                   {player.rating_tier.icon} {player.rating_tier.name}
                 </Badge>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge 
+                        variant={player.baseline_synced ? "default" : "outline"} 
+                        className={player.baseline_synced 
+                          ? "bg-success/20 text-success border-success/30 gap-1" 
+                          : "border-warning/50 text-warning gap-1"
+                        }
+                      >
+                        {player.baseline_synced ? (
+                          <>
+                            <CheckCircle2 className="h-3 w-3" />
+                            EA Synced
+                          </>
+                        ) : (
+                          <>
+                            <Database className="h-3 w-3" />
+                            Pending Sync
+                          </>
+                        )}
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {player.baseline_synced 
+                        ? "EA baseline stats have been imported" 
+                        : "EA baseline stats not yet imported"
+                      }
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </div>
 
