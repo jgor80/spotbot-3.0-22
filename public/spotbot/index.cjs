@@ -179,6 +179,119 @@ async function matchesStats(options) {
   }
 }
 
+/**
+ * Fetch club info (skill rating, record, goals)
+ * @param {Object} options - { clubId: string, platform: string }
+ * @returns {Object|null} - Club info object
+ */
+async function fetchClubInfo(options) {
+  const { clubId, platform } = options;
+  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  
+  try {
+    const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/info', {
+      params: {
+        platform: fcPlatform,
+        clubIds: clubId
+      },
+      headers: EA_HEADERS,
+      timeout: 10000,
+      validateStatus: () => true
+    });
+    
+    if (res.status !== 200 || !res.data) {
+      console.error(`[EA] Club info request failed: ${res.status}`);
+      return null;
+    }
+    
+    const data = res.data;
+    // Response is typically an array or object keyed by club ID
+    if (Array.isArray(data) && data.length > 0) return data[0];
+    if (data[clubId]) return data[clubId];
+    return data;
+  } catch (err) {
+    console.error(`[EA] Club info error for ${clubId}:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * Fetch club member list with stats
+ * @param {Object} options - { clubId: string, platform: string }
+ * @returns {Array} - Array of member objects
+ */
+async function fetchClubMembers(options) {
+  const { clubId, platform } = options;
+  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  
+  try {
+    const res = await axios.get('https://proclubs.ea.com/api/fc/members/stats', {
+      params: {
+        platform: fcPlatform,
+        clubId
+      },
+      headers: EA_HEADERS,
+      timeout: 10000,
+      validateStatus: () => true
+    });
+    
+    if (res.status !== 200 || !res.data) {
+      console.error(`[EA] Club members request failed: ${res.status}`);
+      return [];
+    }
+    
+    const data = res.data;
+    if (data?.members && Array.isArray(data.members)) return data.members;
+    if (Array.isArray(data)) return data;
+    return Object.values(data).filter(v => v && typeof v === 'object');
+  } catch (err) {
+    console.error(`[EA] Club members error for ${clubId}:`, err.message);
+    return [];
+  }
+}
+
+/**
+ * Sync club stats to database (called from local bot)
+ */
+async function syncClubStatsLocal(guildId, clubKey, clubId, platform) {
+  try {
+    const clubInfo = await fetchClubInfo({ clubId, platform });
+    if (!clubInfo) return null;
+    
+    const clubData = {
+      guild_id: guildId,
+      club_key: clubKey,
+      ea_club_id: clubId,
+      ea_platform: platform,
+      skill_rating: parseInt(clubInfo.skillRating || clubInfo.skill_rating || 0),
+      wins: parseInt(clubInfo.wins || 0),
+      draws: parseInt(clubInfo.draws || clubInfo.ties || 0),
+      losses: parseInt(clubInfo.losses || 0),
+      goals_scored: parseInt(clubInfo.goals || clubInfo.goalsScored || 0),
+      goals_conceded: parseInt(clubInfo.goalsAgainst || clubInfo.goalsConceded || 0),
+      total_members: parseInt(clubInfo.memberCount || clubInfo.totalMembers || 0),
+      club_name: clubInfo.name || clubInfo.clubName || null,
+      best_division: clubInfo.bestDivision || clubInfo.bestDivisionName || null,
+      last_synced_at: new Date().toISOString()
+    };
+    
+    const { error } = await supabase
+      .from('club_stats')
+      .upsert(clubData, { onConflict: 'guild_id,club_key' });
+    
+    if (error) {
+      console.error(`[EA] Failed to sync club stats:`, error.message);
+      return null;
+    }
+    
+    console.log(`[EA] Synced club stats for ${clubData.club_name || clubKey}`);
+    return clubData;
+  } catch (err) {
+    console.error(`[EA] Error syncing club stats:`, err);
+    return null;
+  }
+}
+
 // =======================
 // ENVIRONMENT & SETUP
 // =======================
@@ -8110,6 +8223,9 @@ async function checkForNewMatches(guildId, clubKey) {
     
     console.log(`[EA] Checking matches for ${club.name} (${club.ea_club_id})`);
     
+    // Sync club stats (skill rating, record, etc.) - runs locally to avoid EA blocking
+    await syncClubStatsLocal(guildId, clubKey, club.ea_club_id, club.ea_platform);
+    
     // Fetch recent matches from EA API
     const matches = await matchesStats({
       clubId: club.ea_club_id,
@@ -8178,7 +8294,7 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
     if (scoreFor > scoreAgainst) result = 'win';
     else if (scoreFor < scoreAgainst) result = 'loss';
     
-    // Extract player stats
+    // Extract player stats with expanded fields
     const playerStats = [];
     const players = matchData.players?.[club.ea_club_id] || {};
     
@@ -8189,7 +8305,13 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
         assists: parseInt(pStats.assists || 0),
         rating: parseFloat(pStats.rating || 0),
         position: pStats.pos,
-        motm: pStats.mom === '1'
+        motm: pStats.mom === '1',
+        // Expanded stats
+        shots: parseInt(pStats.shots || 0),
+        tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
+        passes_made: parseInt(pStats.passesmade || 0),
+        pass_attempts: parseInt(pStats.passattempts || 0),
+        red_cards: pStats.redcards === '1' || pStats.redCards === '1'
       });
     }
     
@@ -8236,7 +8358,7 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
           continue;
         }
         
-        // Record player stats
+        // Record player stats with expanded fields
         await supabase.from('player_stats').insert({
           guild_id: guildId,
           discord_user_id: profile.discord_user_id,
@@ -8248,7 +8370,13 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
           won: result === 'win',
           ea_match_rating: pStat.rating,
           position_played: pStat.position,
-          man_of_match: pStat.motm
+          man_of_match: pStat.motm,
+          // Expanded stats
+          shots: pStat.shots,
+          tackles: pStat.tackles,
+          passes_made: pStat.passes_made,
+          pass_attempts: pStat.pass_attempts,
+          red_cards: pStat.red_cards
         });
         
         // Trigger rating recalculation
