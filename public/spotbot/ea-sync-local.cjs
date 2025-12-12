@@ -305,70 +305,31 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
     const isRealUser = !profile.discord_user_id.startsWith('ea_');
     
     if (isRealUser) {
-      // ===== UPDATE player_ratings with EA career stats =====
+      // ===== ENSURE player_ratings record exists (don't overwrite with EA career stats) =====
       const { data: existingRating } = await supabase
         .from('player_ratings')
-        .select('*')
+        .select('id')
         .eq('guild_id', guildId)
         .eq('discord_user_id', profile.discord_user_id)
         .maybeSingle();
       
-      // Calculate club performance rating from EA stats
-      const clubPerformanceRating = Math.min(100, Math.max(0,
-        (avgRating * 10) + // EA match rating (0-10 -> 0-100)
-        (winRate * 0.3) + // Win rate bonus (0-30)
-        (goals / Math.max(1, gamesPlayed) * 10) + // Goals per game bonus
-        (assists / Math.max(1, gamesPlayed) * 5) // Assists per game bonus
-      ));
-      
-      const ratingsData = {
-        games_played: gamesPlayed,
-        wins: wins,
-        losses: losses,
-        draws: draws,
-        total_goals: goals,
-        total_assists: assists,
-        total_clean_sheets: cleanSheets,
-        total_motm: manOfMatch,
-        club_performance_rating: clubPerformanceRating,
-        avg_match_rating: avgRating,
-        shots: shots,
-        tackles: tackles,
-        passes_made: passesMade,
-        pass_attempts: passAttempts,
-        saves: saves,
-        interceptions: interceptions,
-        clearances: clearances,
-        last_game_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      
-      if (existingRating) {
-        // Update existing rating with EA stats
-        await supabase
-          .from('player_ratings')
-          .update(ratingsData)
-          .eq('id', existingRating.id);
-        
-        console.log(`  🔄 Updated player_ratings for ${eaUsername}: ${gamesPlayed}G ${wins}W ${goals}Goals ${assists}Ast (${winRate.toFixed(0)}%)`);
-      } else {
-        // Create new player rating record
+      if (!existingRating) {
+        // Create initial rating record - stats will be calculated from individual matches
         await supabase
           .from('player_ratings')
           .insert({
             guild_id: guildId,
             discord_user_id: profile.discord_user_id,
-            overall_rating: clubPerformanceRating,
-            ...ratingsData
+            overall_rating: 50, // Default, will be recalculated
           });
         
-        console.log(`  ✨ Created player_ratings for ${eaUsername}: ${gamesPlayed}G ${wins}W ${goals}Goals`);
+        console.log(`  ✨ Created player_ratings for ${eaUsername} (will calculate from matches)`);
       }
       
-      // ===== UPDATE player_summary with EA career stats =====
+      // ===== ENSURE player_summary record exists (don't overwrite with EA career stats) =====
       const { data: existingSummary } = await supabase
         .from('player_summary')
-        .select('*')
+        .select('id')
         .eq('guild_id', guildId)
         .eq('discord_user_id', profile.discord_user_id)
         .maybeSingle();
@@ -380,7 +341,7 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
         .eq('discord_user_id', profile.discord_user_id)
         .maybeSingle();
       
-      // Define positionMap before using it in summaryData
+      // Define positionMap
       const positionMap = {
         'goalkeeper': 'GK', 'gk': 'GK',
         'defender': 'CB', 'cb': 'CB', 'rb': 'RB', 'lb': 'LB', 'rwb': 'RWB', 'lwb': 'LWB',
@@ -388,47 +349,32 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
         'attacker': 'ST', 'st': 'ST', 'cf': 'CF', 'rw': 'RW', 'lw': 'LW', 'rf': 'RF', 'lf': 'LF'
       };
       
-      const summaryData = {
-        guild_id: guildId,
-        discord_user_id: profile.discord_user_id,
-        discord_username: fullProfile?.discord_username || eaUsername,
-        games_played: gamesPlayed,
-        wins: wins,
-        losses: losses,
-        draws: draws,
-        goals: goals,
-        assists: assists,
-        win_rate: winRate,
-        overall_rating: clubPerformanceRating,
-        avg_match_rating: avgRating,
-        clean_sheets: cleanSheets,
-        man_of_match: manOfMatch,
-        shots: shots,
-        tackles: tackles,
-        passes_made: passesMade,
-        pass_attempts: passAttempts,
-        saves: saves,
-        primary_position: position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null,
-        last_active_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      
-      if (existingSummary) {
+      if (!existingSummary) {
+        // Create initial summary record - stats will be calculated from individual matches
         await supabase
           .from('player_summary')
-          .update(summaryData)
-          .eq('id', existingSummary.id);
+          .insert({
+            guild_id: guildId,
+            discord_user_id: profile.discord_user_id,
+            discord_username: fullProfile?.discord_username || eaUsername,
+            overall_rating: 50, // Default, will be recalculated
+            primary_position: position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null,
+          });
         
-        console.log(`  🔄 Updated player_summary for ${eaUsername}`);
+        console.log(`  ✨ Created player_summary for ${eaUsername} (will calculate from matches)`);
       } else {
+        // Only update position and username, not stats
         await supabase
           .from('player_summary')
-          .insert(summaryData);
-        
-        console.log(`  ✨ Created player_summary for ${eaUsername}`);
+          .update({
+            discord_username: fullProfile?.discord_username || eaUsername,
+            primary_position: position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingSummary.id);
       }
       
-      // Track for rating recalculation
+      // Track for rating recalculation from individual matches
       updatedPlayerIds.push(profile.discord_user_id);
       synced++;
     }

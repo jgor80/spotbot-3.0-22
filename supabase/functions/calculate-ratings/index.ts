@@ -173,36 +173,27 @@ async function calculatePlayerRating(supabase: any, guildId: string, player: any
 }
 
 async function calculateDraftPerformance(supabase: any, guildId: string, player: any, matchType: string): Promise<number> {
-  // Get all stats for this player of the specified match type
-  // For 'club' type, also include 'ea_aggregate' stats to capture all EA data
-  let query = supabase
+  // Get all individual match stats for this player of the specified match type
+  // EXCLUDE ea_aggregate as those are career summaries, not individual games
+  const { data: stats } = await supabase
     .from("player_stats")
     .select("*")
     .eq("guild_id", guildId)
-    .eq("discord_user_id", player.discord_user_id);
-  
-  if (matchType === "club") {
-    // Include both individual match stats and aggregate EA stats
-    query = query.in("match_type", ["club", "ea_aggregate"]);
-  } else {
-    query = query.eq("match_type", matchType);
-  }
-
-  const { data: stats } = await query;
+    .eq("discord_user_id", player.discord_user_id)
+    .eq("match_type", matchType)
+    .not("match_type", "eq", "ea_aggregate");
 
   if (!stats || stats.length === 0) return 50; // Default rating
 
-  // Filter out ea_aggregate for game count (those are career summaries, not individual games)
-  const gameStats = stats.filter((s: any) => s.match_type !== "ea_aggregate");
-  const totalGames = gameStats.length || 1;
-  const wins = gameStats.filter((s: any) => s.won === true).length;
+  const totalGames = stats.length;
+  const wins = stats.filter((s: any) => s.won === true).length;
   const winRate = (wins / totalGames) * 100;
 
-  // Use all stats for goals/assists (includes aggregate)
+  // Sum goals/assists from individual matches only
   const totalGoals = stats.reduce((sum: number, s: any) => sum + (s.goals || 0), 0);
   const totalAssists = stats.reduce((sum: number, s: any) => sum + (s.assists || 0), 0);
-  const avgGoals = totalGoals / Math.max(totalGames, 1);
-  const avgAssists = totalAssists / Math.max(totalGames, 1);
+  const avgGoals = totalGoals / totalGames;
+  const avgAssists = totalAssists / totalGames;
 
   // EA match ratings if available
   const gamesWithRating = stats.filter((s: any) => s.ea_match_rating !== null && s.ea_match_rating > 0);
@@ -226,15 +217,21 @@ async function calculateDraftPerformance(supabase: any, guildId: string, player:
     performanceRating += winRate * 0.2;
   }
 
-  // Update player_ratings aggregate stats
+  // Update player_ratings aggregate stats from individual matches
+  const losses = stats.filter((s: any) => s.won === false).length;
+  const draws = stats.filter((s: any) => s.won === null).length;
+  
   await supabase
     .from("player_ratings")
     .update({
       games_played: totalGames,
       wins,
+      losses,
+      draws,
       total_goals: totalGoals,
       total_assists: totalAssists,
-      last_game_at: gameStats.length > 0 ? new Date().toISOString() : player.last_game_at,
+      avg_match_rating: avgEARating,
+      last_game_at: stats.length > 0 ? new Date().toISOString() : player.last_game_at,
     })
     .eq("id", player.id);
 
