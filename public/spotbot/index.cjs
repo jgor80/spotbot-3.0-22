@@ -7370,7 +7370,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
           if (!disabledClub) {
             return interaction.update({ content: 'All available club slots are already in use (max 10).', components: [] });
           }
-          }
 
           disabledClub.enabled = true;
           boardState[disabledClub.key] = createEmptyBoardForFormation(DEFAULT_FORMATION);
