@@ -11,8 +11,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useGuild } from "@/contexts/GuildContext";
 import { ScoutingLists } from "@/components/scouting/ScoutingLists";
-import { 
-  Search, 
+import {
+  Search,
   Loader2, 
   Target, 
   Swords, 
@@ -26,7 +26,9 @@ import {
   User,
   Sparkles,
   ListChecks,
-  BarChart3
+  BarChart3,
+  MessageSquare,
+  Bolt
 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RatingBadge } from "@/components/player/RatingBadge";
@@ -113,6 +115,8 @@ export default function ScoutingPage() {
   const [eaGamertag, setEaGamertag] = useState("");
   const [playerScoutReport, setPlayerScoutReport] = useState<string | null>(null);
   const [playerData, setPlayerData] = useState<any>(null);
+  const [commandOutputs, setCommandOutputs] = useState<{ title: string; content: string }[]>([]);
+  const [activeCommand, setActiveCommand] = useState<string | null>(null);
 
   // Fetch players for selection with EA usernames
   const { data: players } = useQuery({
@@ -321,6 +325,16 @@ export default function ScoutingPage() {
         title: "Scout Report Ready",
         description: "AI analysis complete and saved",
       });
+
+      setCommandOutputs(prev => [
+        {
+          title: "SquadIQ • Player Scout",
+          content: `Saved and refreshed the report for ${selectedPlayerId}. Latest rating: ${
+            data.player_data?.overall?.rating?.toFixed?.(1) || "N/A"
+          } across ${data.player_data?.overall?.games_played || 0} games.`,
+        },
+        ...prev,
+      ].slice(0, 4));
     } catch (error) {
       toast({
         title: "Scouting Failed",
@@ -367,6 +381,13 @@ export default function ScoutingPage() {
         title: "Scout Report Ready",
         description: `AI analysis generated for ${trimmedGamertag}`,
       });
+
+      appendCommandOutput(
+        "SquadIQ • EA Gamertag Scout",
+        `Pulled every EA stat for ${trimmedGamertag} (${searchPlatform.toUpperCase()}). Latest rating: ${
+          data.player_data?.overall?.rating?.toFixed?.(1) || "N/A"
+        } | Games: ${data.player_data?.overall?.games_played || 0}.`
+      );
     } catch (error) {
       toast({
         title: "EA Lookup Failed",
@@ -414,7 +435,7 @@ Focus on controlling midfield to limit their counter-attacks.
 - Target their weak left-back position
 - Be wary of their clinical striker
       `);
-      
+
       toast({
         title: "Scout Report Ready",
         description: `Report generated for ${searchClubName}`,
@@ -427,6 +448,95 @@ Focus on controlling midfield to limit their counter-attacks.
       });
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const appendCommandOutput = (title: string, content: string) => {
+    setCommandOutputs(prev => [{ title, content }, ...prev].slice(0, 4));
+  };
+
+  const handleQuickRecentResults = async () => {
+    if (!selectedGuildId) {
+      toast({
+        title: "Select a Guild",
+        description: "Choose a server to pull recent results",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setActiveCommand("recent-results");
+    try {
+      const { data, error } = await supabase.functions.invoke("recent-results", {
+        body: { guild_id: selectedGuildId, window_size: 5 },
+      });
+
+      if (error) throw error;
+      if (!data || data.error) throw new Error(data?.error || "Unable to load recent results");
+
+      const goalsLeader = data.player_highlights?.goals?.[0];
+      const ratingLeader = data.player_highlights?.ratings?.[0];
+      const assistsLeader = data.player_highlights?.assists?.[0];
+
+      appendCommandOutput(
+        "SquadIQ • Recent Results",
+        `Last ${data.window_size} matches ready. ${
+          ratingLeader ? `${ratingLeader.name} leads AMR at ${ratingLeader.avg.toFixed?.(1)}` : "No rating leader yet"
+        }. ${
+          goalsLeader ? `${goalsLeader.name} tops goals (${goalsLeader.goals})` : "No goals data"
+        }. ${assistsLeader ? `${assistsLeader.name} leads assists (${assistsLeader.assists})` : "No assists data"}.`
+      );
+
+      toast({ title: "Recent Results", description: "Pulled last 5-match recap for Discord panel" });
+    } catch (error) {
+      toast({
+        title: "Recent Results Failed",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setActiveCommand(null);
+    }
+  };
+
+  const handleQuickFormLeaderboard = async () => {
+    if (!selectedGuildId) {
+      toast({
+        title: "Select a Guild",
+        description: "Choose a server to pull form leaderboard",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setActiveCommand("form-leaderboard");
+    try {
+      const { data, error } = await supabase.functions.invoke("get-leaderboard", {
+        body: { guild_id: selectedGuildId, type: "form", limit: 5 },
+      });
+
+      if (error) throw error;
+      if (!data || data.error) throw new Error(data?.error || "Unable to load form leaderboard");
+
+      const entries = data.entries || [];
+      const lines = entries
+        .map((entry: any) => `${entry.rank}. ${entry.ea_username || entry.discord_username || entry.discord_user_id} (${entry.form_rating ?? "-"} form)`)
+        .join(" | ");
+
+      appendCommandOutput(
+        "SquadIQ • In-Form Leaders",
+        entries.length ? lines : "No form data yet — run EA sync first."
+      );
+
+      toast({ title: "Form Leaderboard", description: "In-form results are ready for the SquadIQ panel" });
+    } catch (error) {
+      toast({
+        title: "Form Leaderboard Failed",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setActiveCommand(null);
     }
   };
 
@@ -459,6 +569,72 @@ Focus on controlling midfield to limit their counter-attacks.
           <h1 className="font-display text-3xl font-bold">Scouting Center</h1>
           <p className="text-muted-foreground">Scout opponents, players, and analyze match history</p>
         </div>
+
+        <Card className="bg-muted/40">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              SquadIQ Discord Panel
+            </CardTitle>
+            <CardDescription>
+              One-click buttons that mirror the Discord scouting commands so staff don&apos;t need slash commands.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid md:grid-cols-4 gap-2">
+              <Button
+                variant="secondary"
+                onClick={handleScoutPlayer}
+                disabled={!selectedPlayerId || isScoutingPlayer || activeCommand === "scout-player"}
+                className="w-full justify-start gap-2"
+              >
+                {isScoutingPlayer ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bolt className="h-4 w-4" />}
+                Scout Selected Player
+              </Button>
+
+              <Button
+                variant="secondary"
+                onClick={handleScoutEaPlayer}
+                disabled={isScoutingEaPlayer}
+                className="w-full justify-start gap-2"
+              >
+                {isScoutingEaPlayer ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bolt className="h-4 w-4" />}
+                Scout EA Gamertag
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleQuickRecentResults}
+                disabled={activeCommand === "recent-results"}
+                className="w-full justify-start gap-2"
+              >
+                {activeCommand === "recent-results" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bolt className="h-4 w-4" />}
+                Recent Results Recap
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleQuickFormLeaderboard}
+                disabled={activeCommand === "form-leaderboard"}
+                className="w-full justify-start gap-2"
+              >
+                {activeCommand === "form-leaderboard" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bolt className="h-4 w-4" />}
+                In-Form Leaderboard
+              </Button>
+            </div>
+
+            {commandOutputs.length > 0 && (
+              <div className="grid md:grid-cols-2 gap-3">
+                {commandOutputs.map((entry, idx) => (
+                  <div key={`${entry.title}-${idx}`} className="rounded-lg border bg-background p-3 shadow-sm">
+                    <p className="font-medium">{entry.title}</p>
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap mt-1">{entry.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Tabs defaultValue="player" className="space-y-4">
           <TabsList>
