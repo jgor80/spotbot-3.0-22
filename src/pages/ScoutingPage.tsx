@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
 import { useGuild } from "@/contexts/GuildContext";
 import { ScoutingLists } from "@/components/scouting/ScoutingLists";
+import { MatchDetailView } from "@/components/scouting/MatchDetailView";
 import {
   Search,
   Loader2, 
@@ -60,8 +61,22 @@ interface RecentResultsHighlight {
 interface RecentResultsResponse {
   window_size: number;
   recent_matches: ClubMatch[];
+  detailed_matches?: DetailedMatch[];
   player_highlights: RecentResultsHighlight;
   ai_summary?: string;
+}
+
+interface DetailedMatch {
+  id: string;
+  ea_match_id: string;
+  result: string | null;
+  score_for: number;
+  score_against: number;
+  opponent_club_name: string | null;
+  match_type: string;
+  created_at: string;
+  club_key: string;
+  players: any[];
 }
 
 interface PlayerSummary {
@@ -1041,6 +1056,12 @@ Focus on controlling midfield to limit their counter-attacks.
                 {matchesLoading ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : recentResults?.detailed_matches && recentResults.detailed_matches.length > 0 ? (
+                  <div className="space-y-3">
+                    {recentResults.detailed_matches.map((match) => (
+                      <MatchDetailView key={match.id} match={match} />
+                    ))}
                   </div>
                 ) : recentMatches && recentMatches.length > 0 ? (
                   <div className="space-y-3">
