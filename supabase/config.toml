@@ -59,3 +59,6 @@ verify_jwt = false
 
 [functions.scout-player]
 verify_jwt = false
+
+[functions.analyze-build-screenshot]
+verify_jwt = false

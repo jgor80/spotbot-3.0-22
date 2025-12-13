@@ -342,9 +342,6 @@ serve(async (req) => {
 
       // Build player data from EA stats
       if (eaClubStats.length > 0 || discordPlayerFound || personaProfiles.length > 0) {
-      
-      // Build player data from EA stats
-      if (eaClubStats.length > 0 || discordPlayerFound) {
         // Aggregate stats across all clubs (tracked + discovered)
         const aggregated = eaClubStats.reduce((acc, club) => ({
           games_played: acc.games_played + club.stats.games_played,
@@ -384,7 +381,6 @@ serve(async (req) => {
             username: normalizedEaUsername,
             ea_username: normalizedEaUsername,
             ea_platform: eaClubStats[0]?.platform || personaProfiles[0]?.platform || 'Unknown',
-            ea_platform: eaClubStats[0]?.platform || 'Unknown',
             primary_position: primaryPosition,
             is_discord_member: discordPlayerFound,
             persona_profiles: personaProfiles
