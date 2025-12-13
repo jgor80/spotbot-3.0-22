@@ -59,3 +59,15 @@ verify_jwt = false
 
 [functions.scout-player]
 verify_jwt = false
+
+[functions.match-analysis]
+verify_jwt = false
+
+[functions.recent-results]
+verify_jwt = false
+
+[functions.verify-ea-username]
+verify_jwt = false
+
+[functions.link-ea-account]
+verify_jwt = false

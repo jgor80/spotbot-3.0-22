@@ -23,6 +23,7 @@ import {
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
+import { supabase } from "@/integrations/supabase/client";
 
 interface MatchPlayerStat {
   name: string;
@@ -102,38 +103,49 @@ export function MatchDetailView({ match }: MatchDetailViewProps) {
   const handleAnalyzeMatch = async () => {
     setIsAnalyzing(true);
     try {
-      // Generate stats-based match summary
-      const mvp = match.players.length > 0 
-        ? match.players.reduce((best, current) => current.rating > best.rating ? current : best, match.players[0])
-        : null;
+      // Prepare player stats for the edge function
+      const playerStats = match.players.map(p => ({
+        name: p.name,
+        position: p.position || 'N/A',
+        rating: p.rating,
+        goals: p.goals,
+        assists: p.assists,
+        passesCompleted: p.passesMade,
+        passAttempts: p.passAttempts,
+        tacklesMade: p.tackles,
+        tackleAttempts: p.tackleAttempts,
+        interceptions: p.interceptions,
+        shots: p.shots,
+        saves: p.saves,
+        cleanSheet: p.goalsConceded === 0,
+        manOfMatch: p.motm,
+        redCard: p.redCards > 0,
+        minutesPlayed: p.minutesPlayed
+      }));
 
-      const topScorer = match.players.filter(p => p.goals > 0).sort((a, b) => b.goals - a.goals)[0];
-      const topAssister = match.players.filter(p => p.assists > 0).sort((a, b) => b.assists - a.assists)[0];
-      const totalShots = match.players.reduce((sum, p) => sum + p.shots, 0);
-      const avgPassAccuracy = match.players.length > 0 
-        ? Math.round(match.players.reduce((sum, p) => sum + p.passAccuracy, 0) / match.players.length) 
-        : 0;
-      const totalTackles = match.players.reduce((sum, p) => sum + p.tackles, 0);
-      const totalInterceptions = match.players.reduce((sum, p) => sum + p.interceptions, 0);
-      const totalClearances = match.players.reduce((sum, p) => sum + p.clearances, 0);
+      const { data, error } = await supabase.functions.invoke('match-analysis', {
+        body: {
+          matchData: {
+            result: match.result,
+            scoreFor: match.score_for,
+            scoreAgainst: match.score_against,
+            opponent: match.opponent_club_name,
+            matchType: match.match_type,
+            playerStats
+          }
+        }
+      });
 
-      setAiAnalysis(`## Match Summary
+      if (error) throw error;
+      
+      if (data?.error) {
+        throw new Error(data.error);
+      }
 
-**MVP**: ${mvp?.name || 'N/A'} with a ${mvp?.rating.toFixed(1)} rating${mvp?.motm ? ' (Man of the Match)' : ''}
-
-**Key Stats**:
-${topScorer ? `- **Top Scorer**: ${topScorer.name} (${topScorer.goals} goals)` : '- No goals scored'}
-${topAssister ? `- **Playmaker**: ${topAssister.name} (${topAssister.assists} assists)` : ''}
-- **Total Shots**: ${totalShots}
-- **Pass Accuracy**: ${avgPassAccuracy}% avg
-
-**Defensive Performance**:
-- **Tackles**: ${totalTackles} successful
-- **Interceptions**: ${totalInterceptions}
-- **Clearances**: ${totalClearances}`);
-
-      toast({ title: "Analysis Complete" });
+      setAiAnalysis(data.analysis);
+      toast({ title: "AI Analysis Complete" });
     } catch (error) {
+      console.error('Match analysis error:', error);
       toast({ 
         title: "Analysis Failed", 
         description: (error as Error).message,
