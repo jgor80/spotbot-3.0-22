@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -21,7 +21,6 @@ import {
   Star
 } from "lucide-react";
 import { format } from "date-fns";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
 
@@ -74,81 +73,49 @@ export function MatchDetailView({ match }: MatchDetailViewProps) {
   const getResultIcon = (result: string | null) => {
     switch (result) {
       case "win":
-        return <TrendingUp className="h-4 w-4 text-green-500" />;
+        return <TrendingUp className="h-4 w-4 text-success" />;
       case "loss":
-        return <TrendingDown className="h-4 w-4 text-red-500" />;
+        return <TrendingDown className="h-4 w-4 text-destructive" />;
       default:
-        return <Minus className="h-4 w-4 text-yellow-500" />;
+        return <Minus className="h-4 w-4 text-warning" />;
     }
   };
 
   const getResultBadge = (result: string | null) => {
     switch (result) {
       case "win":
-        return <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Win</Badge>;
+        return <Badge className="bg-success/10 text-success border-success/20">Win</Badge>;
       case "loss":
-        return <Badge className="bg-red-500/10 text-red-500 border-red-500/20">Loss</Badge>;
+        return <Badge className="bg-destructive/10 text-destructive border-destructive/20">Loss</Badge>;
       default:
-        return <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">Draw</Badge>;
+        return <Badge className="bg-warning/10 text-warning border-warning/20">Draw</Badge>;
     }
   };
 
   const getRatingColor = (rating: number) => {
-    if (rating >= 8) return "text-green-500";
-    if (rating >= 7) return "text-yellow-500";
-    if (rating >= 6) return "text-orange-500";
-    return "text-red-500";
+    if (rating >= 8) return "text-success";
+    if (rating >= 7) return "text-warning";
+    if (rating >= 6) return "text-accent";
+    return "text-destructive";
   };
 
   const handleAnalyzeMatch = async () => {
     setIsAnalyzing(true);
     try {
-      const prompt = `Analyze this single Pro Clubs match in detail:
-
-MATCH: ${match.result?.toUpperCase() || 'DRAW'} ${match.score_for}-${match.score_against} vs ${match.opponent_club_name || 'Unknown'}
-DATE: ${format(new Date(match.created_at), "PPP")}
-TYPE: ${match.match_type}
-
-PLAYER PERFORMANCES:
-${match.players.map(p => `- ${p.name} (${p.position || 'N/A'}): ${p.rating.toFixed(1)} rating | ${p.goals}G ${p.assists}A | ${p.passesMade}/${p.passAttempts} passes (${p.passAccuracy}%) | ${p.tackles} tackles (${p.tackleSuccessRate}%) | ${p.motm ? '⭐ MOTM' : ''}`).join('\n')}
-
-Provide a brief match analysis:
-1. **MVP**: Who was the best player and why?
-2. **Key Moments**: What likely decided this game?
-3. **Standouts**: Who exceeded expectations?
-4. **Improvements**: What could be better next time?`;
-
-      const { data, error } = await supabase.functions.invoke("recent-results", {
-        body: {
-          guild_id: "analysis",
-          window_size: 1,
-          include_ai_summary: false
-        }
-      });
-
-      // Use OpenAI directly for single match analysis
-      const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: "You are a Pro Clubs match analyst. Be concise and specific." },
-            { role: "user", content: prompt }
-          ],
-          max_tokens: 500
-        })
-      });
-
-      // Fallback: just show a summary based on stats
-      const mvp = match.players.reduce((best, current) => 
-        current.rating > best.rating ? current : best
-      , match.players[0]);
+      // Generate stats-based match summary
+      const mvp = match.players.length > 0 
+        ? match.players.reduce((best, current) => current.rating > best.rating ? current : best, match.players[0])
+        : null;
 
       const topScorer = match.players.filter(p => p.goals > 0).sort((a, b) => b.goals - a.goals)[0];
       const topAssister = match.players.filter(p => p.assists > 0).sort((a, b) => b.assists - a.assists)[0];
+      const totalShots = match.players.reduce((sum, p) => sum + p.shots, 0);
+      const avgPassAccuracy = match.players.length > 0 
+        ? Math.round(match.players.reduce((sum, p) => sum + p.passAccuracy, 0) / match.players.length) 
+        : 0;
+      const totalTackles = match.players.reduce((sum, p) => sum + p.tackles, 0);
+      const totalInterceptions = match.players.reduce((sum, p) => sum + p.interceptions, 0);
+      const totalClearances = match.players.reduce((sum, p) => sum + p.clearances, 0);
 
       setAiAnalysis(`## Match Summary
 
@@ -157,13 +124,13 @@ Provide a brief match analysis:
 **Key Stats**:
 ${topScorer ? `- **Top Scorer**: ${topScorer.name} (${topScorer.goals} goals)` : '- No goals scored'}
 ${topAssister ? `- **Playmaker**: ${topAssister.name} (${topAssister.assists} assists)` : ''}
-- **Total Shots**: ${match.players.reduce((sum, p) => sum + p.shots, 0)}
-- **Pass Accuracy**: ${Math.round(match.players.reduce((sum, p) => sum + p.passAccuracy, 0) / match.players.length)}% avg
+- **Total Shots**: ${totalShots}
+- **Pass Accuracy**: ${avgPassAccuracy}% avg
 
 **Defensive Performance**:
-- **Tackles**: ${match.players.reduce((sum, p) => sum + p.tackles, 0)} successful
-- **Interceptions**: ${match.players.reduce((sum, p) => sum + p.interceptions, 0)}
-- **Clearances**: ${match.players.reduce((sum, p) => sum + p.clearances, 0)}`);
+- **Tackles**: ${totalTackles} successful
+- **Interceptions**: ${totalInterceptions}
+- **Clearances**: ${totalClearances}`);
 
       toast({ title: "Analysis Complete" });
     } catch (error) {
@@ -277,8 +244,8 @@ ${topAssister ? `- **Playmaker**: ${topAssister.name} (${topAssister.assists} as
                     <TableRow key={`${player.name}-${idx}`}>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          {player.motm && <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />}
-                          <span className="font-medium">{player.name}</span>
+                                          {player.motm && <Star className="h-4 w-4 text-warning fill-warning" />}
+                                          <span className="font-medium">{player.name}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
@@ -300,10 +267,10 @@ ${topAssister ? `- **Playmaker**: ${topAssister.name} (${topAssister.assists} as
                       <TableCell className="text-center hidden md:table-cell">
                         {player.shots > 0 ? player.shots : "-"}
                       </TableCell>
-                      <TableCell className="text-center hidden md:table-cell">
-                        <span className={player.passAccuracy >= 80 ? "text-green-500" : player.passAccuracy >= 70 ? "text-yellow-500" : "text-red-500"}>
-                          {player.passAccuracy}%
-                        </span>
+                                      <TableCell className="text-center hidden md:table-cell">
+                                        <span className={player.passAccuracy >= 80 ? "text-success" : player.passAccuracy >= 70 ? "text-warning" : "text-destructive"}>
+                                          {player.passAccuracy}%
+                                        </span>
                       </TableCell>
                       <TableCell className="text-center hidden lg:table-cell">
                         {player.tackles > 0 ? (
@@ -324,9 +291,9 @@ ${topAssister ? `- **Playmaker**: ${topAssister.name} (${topAssister.assists} as
                         {player.saves > 0 ? player.saves : "-"}
                       </TableCell>
                       <TableCell className="text-center hidden xl:table-cell">
-                        {player.redCards > 0 ? (
-                          <span className="text-red-500 font-bold">{player.redCards}</span>
-                        ) : "-"}
+                                        {player.redCards > 0 ? (
+                                          <span className="text-destructive font-bold">{player.redCards}</span>
+                                        ) : "-"}
                       </TableCell>
                     </TableRow>
                   ))}

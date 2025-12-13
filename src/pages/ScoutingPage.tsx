@@ -558,22 +558,22 @@ Focus on controlling midfield to limit their counter-attacks.
   const getResultIcon = (result: string | null) => {
     switch (result) {
       case "win":
-        return <TrendingUp className="h-4 w-4 text-green-500" />;
+        return <TrendingUp className="h-4 w-4 text-success" />;
       case "loss":
-        return <TrendingDown className="h-4 w-4 text-red-500" />;
+        return <TrendingDown className="h-4 w-4 text-destructive" />;
       default:
-        return <Minus className="h-4 w-4 text-yellow-500" />;
+        return <Minus className="h-4 w-4 text-warning" />;
     }
   };
 
   const getResultBadge = (result: string | null) => {
     switch (result) {
       case "win":
-        return <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Win</Badge>;
+        return <Badge className="bg-success/10 text-success border-success/20">Win</Badge>;
       case "loss":
-        return <Badge className="bg-red-500/10 text-red-500 border-red-500/20">Loss</Badge>;
+        return <Badge className="bg-destructive/10 text-destructive border-destructive/20">Loss</Badge>;
       default:
-        return <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">Draw</Badge>;
+        return <Badge className="bg-warning/10 text-warning border-warning/20">Draw</Badge>;
     }
   };
 
@@ -1243,7 +1243,7 @@ Focus on controlling midfield to limit their counter-attacks.
                               {player.wins}
                             </TableCell>
                             <TableCell className="text-center hidden sm:table-cell">
-                              <span className={player.win_rate >= 50 ? "text-green-500" : player.win_rate >= 40 ? "text-yellow-500" : "text-red-500"}>
+                              <span className={player.win_rate >= 50 ? "text-success" : player.win_rate >= 40 ? "text-warning" : "text-destructive"}>
                                 {player.win_rate.toFixed(1)}%
                               </span>
                             </TableCell>
@@ -1258,7 +1258,7 @@ Focus on controlling midfield to limit their counter-attacks.
                             </TableCell>
                             <TableCell className="text-center hidden xl:table-cell">
                               {player.form_rating ? (
-                                <span className={player.form_rating >= 60 ? "text-green-500" : player.form_rating >= 40 ? "text-yellow-500" : "text-red-500"}>
+                                <span className={player.form_rating >= 60 ? "text-success" : player.form_rating >= 40 ? "text-warning" : "text-destructive"}>
                                   {player.form_rating.toFixed(0)}
                                 </span>
                               ) : (
@@ -1267,7 +1267,7 @@ Focus on controlling midfield to limit their counter-attacks.
                             </TableCell>
                             <TableCell className="text-center hidden xl:table-cell">
                               {player.reliability_score ? (
-                                <span className={player.reliability_score >= 80 ? "text-green-500" : player.reliability_score >= 60 ? "text-yellow-500" : "text-red-500"}>
+                                <span className={player.reliability_score >= 80 ? "text-success" : player.reliability_score >= 60 ? "text-warning" : "text-destructive"}>
                                   {player.reliability_score.toFixed(0)}%
                                 </span>
                               ) : (

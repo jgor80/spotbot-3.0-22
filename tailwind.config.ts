@@ -80,6 +80,15 @@ export default {
           bronze: "hsl(var(--tier-bronze))",
         },
       },
+      textColor: {
+        success: "hsl(var(--success))",
+        warning: "hsl(var(--warning))",
+        info: "hsl(var(--info))",
+        "tier-elite": "hsl(var(--tier-elite))",
+        "tier-gold": "hsl(var(--tier-gold))",
+        "tier-silver": "hsl(var(--tier-silver))",
+        "tier-bronze": "hsl(var(--tier-bronze))",
+      },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",

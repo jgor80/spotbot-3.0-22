@@ -67,11 +67,11 @@ export default function Dashboard() {
   const getTypeBadge = (type: string) => {
     switch (type) {
       case "comp":
-        return <Badge className="bg-purple-500/10 text-purple-500 border-purple-500/20 text-xs">Comp</Badge>;
+        return <Badge className="bg-primary/10 text-primary border-primary/20 text-xs">Comp</Badge>;
       case "casual":
-        return <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-xs">Casual</Badge>;
+        return <Badge className="bg-success/10 text-success border-success/20 text-xs">Casual</Badge>;
       case "academy":
-        return <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20 text-xs">Academy</Badge>;
+        return <Badge className="bg-info/10 text-info border-info/20 text-xs">Academy</Badge>;
       default:
         return <Badge variant="outline" className="text-xs">{type}</Badge>;
     }
@@ -244,10 +244,10 @@ export default function Dashboard() {
                           <Badge
                             className={
                               draft.status === "completed"
-                                ? "bg-green-500/10 text-green-500 border-green-500/20"
+                                ? "bg-success/10 text-success border-success/20"
                                 : draft.status === "picking"
-                                ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
-                                : "bg-blue-500/10 text-blue-500 border-blue-500/20"
+                                ? "bg-warning/10 text-warning border-warning/20"
+                                : "bg-info/10 text-info border-info/20"
                             }
                           >
                             {draft.status}
