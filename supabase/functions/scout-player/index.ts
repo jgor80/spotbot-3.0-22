@@ -29,6 +29,64 @@ const EA_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
 };
 
+type PersonaProfile = {
+  platform: string;
+  persona_id?: string;
+  display_name?: string;
+  club_id?: string;
+  club_name?: string;
+  raw?: any;
+};
+
+// Attempt direct persona lookups for a gamertag so external players (non-tracked clubs) can be scouted
+async function fetchPlayerPersonas(eaUsername: string, platform: string): Promise<PersonaProfile[]> {
+  const candidates: PersonaProfile[] = [];
+  const probes = [
+    `https://proclubs.ea.com/api/fc/players/search?platform=${platform}&personaName=${encodeURIComponent(eaUsername)}`,
+    `https://proclubs.ea.com/api/fc/personas/search?platform=${platform}&personaName=${encodeURIComponent(eaUsername)}`
+  ];
+
+  for (const probeUrl of probes) {
+    try {
+      const resp = await fetch(probeUrl, { headers: EA_HEADERS });
+      if (!resp.ok) continue;
+
+      const payload = await resp.json();
+      const entries = Array.isArray(payload)
+        ? payload
+        : (payload?.players || payload?.personas || []);
+
+      for (const entry of entries) {
+        if (!entry) continue;
+        const displayName = entry.name || entry.personaName || entry.persona_name || entry.displayName;
+
+        // Keep loosely matched results but prefer exact gamertag matches
+        if (displayName && displayName.toLowerCase().includes(eaUsername.toLowerCase())) {
+          candidates.push({
+            platform,
+            persona_id: (entry.personaId || entry.persona_id || entry.id)?.toString(),
+            display_name: displayName,
+            club_id: (entry.clubId || entry.club_id)?.toString(),
+            club_name: entry.clubName || entry.club_name,
+            raw: entry
+          });
+        }
+      }
+    } catch (err) {
+      console.log(`[scout-player] Persona probe failed (${platform} ${probeUrl}):`, err);
+    }
+  }
+
+  // Deduplicate by persona + platform
+  const deduped = new Map<string, PersonaProfile>();
+  for (const hit of candidates) {
+    const key = `${hit.platform}:${hit.persona_id || hit.display_name}`;
+    if (!deduped.has(key)) deduped.set(key, hit);
+  }
+
+  return [...deduped.values()];
+}
+
 // Search for a player's club memberships
 async function searchPlayerClubs(eaUsername: string): Promise<any[]> {
   const clubs: any[] = [];
@@ -162,6 +220,7 @@ serve(async (req) => {
     
     let playerData: any = null;
     let eaClubStats: any[] = [];
+    let personaProfiles: PersonaProfile[] = [];
     let discordPlayerFound = false;
 
     // Mode 1: Scout by EA username (external player lookup)
@@ -187,6 +246,14 @@ serve(async (req) => {
         'common-gen5',
         'common-gen4'
       ].filter(Boolean) as string[];
+
+      // Probe EA directly for persona info so we can scout players outside tracked clubs
+      for (const platform of platforms) {
+        const hits = await fetchPlayerPersonas(normalizedEaUsername, platform);
+        if (hits?.length) {
+          personaProfiles.push(...hits);
+        }
+      }
 
       // Get all guild clubs to search
       const { data: guildSettings } = await supabase
@@ -247,9 +314,34 @@ serve(async (req) => {
           processedClubKeys.add(dedupeKey);
         }
       }
-      
+
+      // Also pull any clubs referenced by persona probes (even if not tracked/discovered via club search)
+      for (const persona of personaProfiles) {
+        if (!persona.club_id) continue;
+        const fcPlatform = platforms.find(p => p === persona.platform) || persona.platform;
+        const dedupeKey = `${fcPlatform}:${persona.club_id}`;
+        if (processedClubKeys.has(dedupeKey)) continue;
+
+        const playerStats = await fetchPlayerFromClub(persona.club_id, fcPlatform, normalizedEaUsername);
+        if (playerStats) {
+          Object.keys(playerStats || {}).forEach((k) => memberFieldSet.add(k));
+          const stats = summarizeMemberStats(playerStats);
+          eaClubStats.push({
+            guild_id: null,
+            club_id: persona.club_id,
+            club_name: persona.club_name,
+            club_key: null,
+            platform: fcPlatform,
+            stats,
+            raw_member: playerStats,
+            source: 'ea_persona_probe'
+          });
+          processedClubKeys.add(dedupeKey);
+        }
+      }
+
       // Build player data from EA stats
-      if (eaClubStats.length > 0 || discordPlayerFound) {
+      if (eaClubStats.length > 0 || discordPlayerFound || personaProfiles.length > 0) {
         // Aggregate stats across all clubs (tracked + discovered)
         const aggregated = eaClubStats.reduce((acc, club) => ({
           games_played: acc.games_played + club.stats.games_played,
@@ -288,9 +380,10 @@ serve(async (req) => {
           profile: {
             username: normalizedEaUsername,
             ea_username: normalizedEaUsername,
-            ea_platform: eaClubStats[0]?.platform || 'Unknown',
+            ea_platform: eaClubStats[0]?.platform || personaProfiles[0]?.platform || 'Unknown',
             primary_position: primaryPosition,
-            is_discord_member: discordPlayerFound
+            is_discord_member: discordPlayerFound,
+            persona_profiles: personaProfiles
           },
           overall: {
             rating: avgRating * 10, // Convert 0-10 to 0-100
@@ -339,7 +432,8 @@ serve(async (req) => {
       } else {
         return new Response(JSON.stringify({
           error: 'Player not found in EA search',
-          searched_ea_username: normalizedEaUsername
+          searched_ea_username: normalizedEaUsername,
+          persona_profiles: personaProfiles
         }), {
           status: 404,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -514,15 +608,19 @@ serve(async (req) => {
     const assistsPerGame = playerData.overall.games_played > 0 ? (playerData.overall.assists / playerData.overall.games_played).toFixed(2) : 0;
     
     // Build AI prompt based on data source
-    const clubsInfo = playerData.clubs?.length > 0 
+    const clubsInfo = playerData.clubs?.length > 0
       ? `\nCLUB MEMBERSHIPS (${playerData.clubs.length} clubs):\n${JSON.stringify(playerData.clubs, null, 2)}`
       : '';
-    
+    const personaInfo = personaProfiles.length > 0
+      ? `\nEA PERSONA PROFILES (${personaProfiles.length} hits):\n${JSON.stringify(personaProfiles, null, 2)}`
+      : '';
+
     const prompt = `You are an expert football/soccer scout and analyst. Analyze this player's comprehensive statistics and provide a detailed scouting report.
 
 PLAYER DATA:
 ${JSON.stringify(playerData, null, 2)}
 ${clubsInfo}
+${personaInfo}
 
 ADDITIONAL METRICS:
 - Goals per game: ${goalsPerGame}
@@ -599,11 +697,12 @@ Be specific and reference actual numbers from the data. Format with markdown.`;
       // Don't fail the request if save fails
     }
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       success: true,
       player_data: playerData,
       ea_clubs: eaClubStats,
-      analysis 
+      persona_profiles: personaProfiles,
+      analysis
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
