@@ -8,11 +8,11 @@ interface RatingBadgeProps {
 }
 
 function getRatingTier(rating: number) {
-  if (rating >= 85) return { name: "Elite", color: "tier-elite", bgClass: "bg-gradient-hero" };
-  if (rating >= 75) return { name: "Gold", color: "tier-gold", bgClass: "bg-gradient-gold" };
-  if (rating >= 60) return { name: "Silver", color: "tier-silver", bgClass: "bg-secondary" };
-  if (rating >= 45) return { name: "Bronze", color: "tier-bronze", bgClass: "bg-muted" };
-  return { name: "Unranked", color: "muted-foreground", bgClass: "bg-muted" };
+  if (rating >= 85) return { name: "Elite", textClass: "text-tier-elite", bgClass: "bg-gradient-hero" };
+  if (rating >= 75) return { name: "Gold", textClass: "text-tier-gold", bgClass: "bg-gradient-gold" };
+  if (rating >= 60) return { name: "Silver", textClass: "text-tier-silver", bgClass: "bg-secondary" };
+  if (rating >= 45) return { name: "Bronze", textClass: "text-tier-bronze", bgClass: "bg-muted" };
+  return { name: "Unranked", textClass: "text-muted-foreground", bgClass: "bg-muted" };
 }
 
 const sizeClasses = {
@@ -38,7 +38,7 @@ export function RatingBadge({ rating, size = "md", showTier = false, className }
         {Math.round(rating)}
       </div>
       {showTier && (
-        <span className={cn("text-xs font-medium", `text-${tier.color}`)}>
+        <span className={cn("text-xs font-medium", tier.textClass)}>
           {tier.name}
         </span>
       )}
