@@ -3,6 +3,7 @@
 This project exposes Discord-facing commands through Supabase Edge Functions. Use this list to confirm coverage (including spot availability/preference flows) and find the entry points in code.
 
 ## Availability & "Spot" management
+- **spotpanel** (`public/spotbot/index.cjs`): creates the SquadIQ control panel for managing club spots from Discord.
 - **availability-response** (`supabase/functions/availability-response/index.ts`): records a player's "yes / no / maybe" response for an event.
 - **get-event-availability** (`supabase/functions/get-event-availability/index.ts`): fetches the response breakdown for a specific event so you can see who has a spot.
 - **mark-attendance** (`supabase/functions/mark-attendance/index.ts`): admin-side override to mark players present/absent.
