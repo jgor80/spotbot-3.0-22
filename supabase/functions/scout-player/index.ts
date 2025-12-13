@@ -438,7 +438,6 @@ serve(async (req) => {
           error: 'Player not found in EA search',
           searched_ea_username: normalizedEaUsername,
           persona_profiles: personaProfiles
-          searched_ea_username: normalizedEaUsername
         }), {
           status: 404,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
