@@ -90,10 +90,7 @@ export function GuildSelector() {
                 >
                   <Server className="h-4 w-4 shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{guild.name}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      ID: {guild.guild_id.slice(-8)}
-                    </p>
+                    <p className="font-medium truncate">{guild.name || `Server ${guild.guild_id.slice(-6)}`}</p>
                   </div>
                   {selectedGuildId === guild.guild_id && (
                     <Check className="h-4 w-4 shrink-0 text-primary" />
