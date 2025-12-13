@@ -1,6 +1,7 @@
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { LeaderboardTable } from "@/components/leaderboard/LeaderboardTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useGuild } from "@/contexts/GuildContext";
@@ -26,9 +27,11 @@ const POSITION_FILTERS = [
 ];
 
 export default function Leaderboard() {
-  const { selectedGuildId, isLoading: guildLoading } = useGuild();
+  const { selectedGuildId, isLoading: guildLoading, selectedGuild } = useGuild();
   const [activeTab, setActiveTab] = useState("overall");
   const [positionFilter, setPositionFilter] = useState("all");
+
+  const enabledClubs = (selectedGuild?.clubs || []).filter((club) => club.enabled);
   
   const { data: players, isLoading: playersLoading, error } = useLeaderboard(
     selectedGuildId,
@@ -59,6 +62,28 @@ export default function Leaderboard() {
             </SelectContent>
           </Select>
         </div>
+
+        {selectedGuild && (
+          <Card className="bg-muted/30">
+            <CardContent className="pt-6 space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Discord server: <span className="font-medium text-foreground">{selectedGuild.name}</span>
+              </p>
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-xs text-muted-foreground">Enabled clubs:</span>
+                {enabledClubs.length > 0 ? (
+                  enabledClubs.map((club) => (
+                    <Badge key={club.key} variant="secondary" className="text-xs">
+                      {club.name || club.key}
+                    </Badge>
+                  ))
+                ) : (
+                  <Badge variant="outline" className="text-xs">No clubs configured</Badge>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {!selectedGuildId && !guildLoading ? (
           <Card>
