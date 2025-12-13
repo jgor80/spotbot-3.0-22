@@ -47,7 +47,7 @@ export default function Leaderboard() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="font-display text-3xl font-bold">Leaderboard</h1>
-            <p className="text-muted-foreground">Top players ranked by performance, organized by Discord server and aggregated across every enabled club.</p>
+            <p className="text-muted-foreground">Top players ranked by performance, aggregated across every monitored club in this server</p>
           </div>
           <Select value={positionFilter} onValueChange={setPositionFilter}>
             <SelectTrigger className="w-[180px] bg-card">

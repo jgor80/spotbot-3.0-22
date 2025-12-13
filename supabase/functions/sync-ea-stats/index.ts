@@ -461,6 +461,7 @@ async function persistAggregatedStats(
     )
 
     const { data: existingRatings, error: ratingsFetchError } = await supabase
+    const { data: existingRating } = await supabase
       .from('player_ratings')
       .select('id')
       .eq('guild_id', guildId)
@@ -477,6 +478,7 @@ async function persistAggregatedStats(
       console.log(`[sync-ea-stats] Cleaning up duplicate player_ratings rows for ${aggregate.discord_user_id}: ${extraRatingIds.join(',')}`)
       await supabase.from('player_ratings').delete().in('id', extraRatingIds)
     }
+      .maybeSingle()
 
     const ratingsData = {
       games_played: gamesPlayed,
@@ -505,6 +507,11 @@ async function persistAggregatedStats(
         .from('player_ratings')
         .update({ ...ratingsData, overall_rating: clubPerformanceRating })
         .eq('id', ratingId)
+    if (existingRating) {
+      await supabase
+        .from('player_ratings')
+        .update(ratingsData)
+        .eq('id', existingRating.id)
     } else {
       await supabase
         .from('player_ratings')
@@ -517,6 +524,7 @@ async function persistAggregatedStats(
     }
 
     const { data: existingSummaries, error: summaryFetchError } = await supabase
+    const { data: existingSummary } = await supabase
       .from('player_summary')
       .select('id')
       .eq('guild_id', guildId)
@@ -533,6 +541,7 @@ async function persistAggregatedStats(
       console.log(`[sync-ea-stats] Cleaning up duplicate player_summary rows for ${aggregate.discord_user_id}: ${extraSummaryIds.join(',')}`)
       await supabase.from('player_summary').delete().in('id', extraSummaryIds)
     }
+      .maybeSingle()
 
     const summaryData = {
       guild_id: guildId,
@@ -561,6 +570,8 @@ async function persistAggregatedStats(
 
     if (summaryId) {
       await supabase.from('player_summary').update(summaryData).eq('id', summaryId)
+    if (existingSummary) {
+      await supabase.from('player_summary').update(summaryData).eq('id', existingSummary.id)
     } else {
       await supabase.from('player_summary').insert(summaryData)
     }

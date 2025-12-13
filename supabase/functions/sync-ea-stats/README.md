@@ -35,16 +35,3 @@ curl -X POST \
 ```
 
 You can omit `probe_hidden` unless you want the extra endpoint probes. When deployed in Supabase, the function is reachable at `https://<your-project>.supabase.co/functions/v1/sync-ea-stats` with the same headers/body.
-
-### Keeping your local trigger script up to date
-The repo now includes `ea-sync-local.js` as a ready-to-run trigger helper that mirrors the examples above. It reads `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, optional `SYNC_TYPE`, and `EA_PROBE_HIDDEN` from the environment, then POSTs to `sync-ea-stats` and prints the response.
-
-Run it from this folder (set env vars inline or load them via `node --env-file .env ea-sync-local.js`):
-
-```bash
-SUPABASE_URL=http://localhost:54321 \
-SUPABASE_SERVICE_ROLE_KEY=your-key \
-node ea-sync-local.js
-```
-
-If you maintain your own `ea-sync-local.js`, mirror the same flags (especially `EA_PROBE_HIDDEN=true` when you want hidden endpoints probed) so it stays aligned with the latest sync options.
