@@ -3420,12 +3420,16 @@ async function syncGuildNames(discordClient) {
 }
 
 client.on(Events.GuildCreate, async (guild) => {
+  // Commands are registered globally, no need to register per-guild (causes duplicates)
+  console.log(`✅ Joined new guild: ${guild.name} (${guild.id})`);
+  // Sync guild name to database
   try {
-    if (!client.application?.commands) return;
-    await client.application.commands.set(COMMANDS, guild.id);
-    console.log(`✅ Commands registered in newly joined guild ${guild.name}`);
+    await supabase
+      .from('guild_settings')
+      .upsert({ guild_id: guild.id, name: guild.name }, { onConflict: 'guild_id' });
+    console.log(`[Guild] Synced new guild: ${guild.name}`);
   } catch (err) {
-    console.error('⚠️ Failed to register commands in new guild', guild.id, err);
+    console.error('⚠️ Failed to sync new guild', guild.id, err);
   }
 });
 
