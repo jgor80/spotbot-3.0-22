@@ -924,12 +924,24 @@ async function syncMatches(guildId, clubKey, club) {
     const matchPlayerIds = []; // Track players in THIS match for feedback
     
     for (const pStat of playerStats) {
-      // Find profile for this EA username
-      const { data: profile } = await supabase
+      // Find profile for this EA username - prioritize real Discord users over temp ea_ profiles
+      let { data: profile } = await supabase
         .from('profiles')
         .select('discord_user_id')
         .eq('ea_username', pStat.ea_username)
+        .not('discord_user_id', 'like', 'ea_%')
         .maybeSingle();
+      
+      // Fall back to temp profile if no real user found
+      if (!profile) {
+        const { data: tempProfile } = await supabase
+          .from('profiles')
+          .select('discord_user_id')
+          .eq('ea_username', pStat.ea_username)
+          .like('discord_user_id', 'ea_%')
+          .maybeSingle();
+        profile = tempProfile;
+      }
       
       if (!profile) continue;
       
