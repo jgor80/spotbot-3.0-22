@@ -40,6 +40,12 @@ interface UnlinkedProfile {
   ea_platform: string | null;
 }
 
+interface DiscordMember {
+  discord_user_id: string;
+  discord_username: string | null;
+  ea_username: string | null;
+}
+
 export function EaLinkingPanel() {
   const { selectedGuildId } = useGuild();
   const { toast } = useToast();
@@ -48,6 +54,7 @@ export function EaLinkingPanel() {
   const [selectedProfile, setSelectedProfile] = useState<UnlinkedProfile | null>(null);
   const [targetDiscordId, setTargetDiscordId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
   
   // Fetch unlinked EA profiles (those with ea_ prefix)
   const { data: unlinkedProfiles, isLoading } = useQuery({
@@ -65,6 +72,28 @@ export function EaLinkingPanel() {
     },
     enabled: !!selectedGuildId,
   });
+  
+  // Fetch Discord members without EA links for the dropdown
+  const { data: availableMembers } = useQuery({
+    queryKey: ["availableMembers", selectedGuildId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("discord_user_id, discord_username, ea_username")
+        .not("discord_user_id", "like", "ea_%")
+        .is("ea_username", null)
+        .order("discord_username");
+      
+      if (error) throw error;
+      return data as DiscordMember[];
+    },
+    enabled: !!selectedGuildId,
+  });
+  
+  // Filter members based on search
+  const filteredMembers = availableMembers?.filter(m => 
+    m.discord_username?.toLowerCase().includes(memberSearchQuery.toLowerCase())
+  ) || [];
   
   // Link mutation
   const linkMutation = useMutation({
@@ -214,12 +243,12 @@ export function EaLinkingPanel() {
       </Card>
       
       {/* Link Dialog */}
-      <Dialog open={!!selectedProfile} onOpenChange={() => setSelectedProfile(null)}>
-        <DialogContent>
+      <Dialog open={!!selectedProfile} onOpenChange={() => { setSelectedProfile(null); setTargetDiscordId(""); setMemberSearchQuery(""); }}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Link EA Account to Discord</DialogTitle>
             <DialogDescription>
-              Enter the Discord User ID to link with this EA account. All stats will be merged.
+              Select a Discord member to link with this EA account. All stats will be merged.
             </DialogDescription>
           </DialogHeader>
           
@@ -238,19 +267,51 @@ export function EaLinkingPanel() {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="discord-id">Discord User ID</Label>
-                <div className="flex gap-2">
-                  <User className="h-4 w-4 text-muted-foreground mt-3" />
-                  <Input
-                    id="discord-id"
-                    placeholder="e.g. 123456789012345678"
-                    value={targetDiscordId}
-                    onChange={(e) => setTargetDiscordId(e.target.value)}
-                  />
-                </div>
+                <Label>Select Discord Member</Label>
+                <Select value={targetDiscordId} onValueChange={setTargetDiscordId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Choose a Discord member..." />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    <div className="px-2 pb-2">
+                      <Input
+                        placeholder="Search members..."
+                        value={memberSearchQuery}
+                        onChange={(e) => setMemberSearchQuery(e.target.value)}
+                        className="h-8"
+                      />
+                    </div>
+                    {filteredMembers.length === 0 ? (
+                      <div className="py-4 text-center text-sm text-muted-foreground">
+                        {memberSearchQuery ? "No matching members" : "No unlinked members available"}
+                      </div>
+                    ) : (
+                      filteredMembers.map((member) => (
+                        <SelectItem key={member.discord_user_id} value={member.discord_user_id}>
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            <span>{member.discord_username || member.discord_user_id}</span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
                 <p className="text-xs text-muted-foreground">
-                  Right-click a user in Discord and select "Copy User ID" (requires Developer Mode)
+                  Only showing Discord members without an EA account linked
                 </p>
+              </div>
+              
+              {/* Manual ID fallback */}
+              <div className="space-y-2 pt-2 border-t">
+                <Label htmlFor="discord-id" className="text-muted-foreground">Or enter Discord User ID manually</Label>
+                <Input
+                  id="discord-id"
+                  placeholder="e.g. 123456789012345678"
+                  value={targetDiscordId}
+                  onChange={(e) => setTargetDiscordId(e.target.value)}
+                  className="font-mono text-sm"
+                />
               </div>
             </div>
           )}
