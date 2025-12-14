@@ -310,6 +310,7 @@ export type Database = {
           id: string
           match_type: string | null
           status: Database["public"]["Enums"]["feedback_status"]
+          teammates_data: Json | null
           teammates_to_evaluate: string[]
         }
         Insert: {
@@ -324,6 +325,7 @@ export type Database = {
           id?: string
           match_type?: string | null
           status?: Database["public"]["Enums"]["feedback_status"]
+          teammates_data?: Json | null
           teammates_to_evaluate?: string[]
         }
         Update: {
@@ -338,6 +340,7 @@ export type Database = {
           id?: string
           match_type?: string | null
           status?: Database["public"]["Enums"]["feedback_status"]
+          teammates_data?: Json | null
           teammates_to_evaluate?: string[]
         }
         Relationships: [
@@ -761,6 +764,7 @@ export type Database = {
       }
       peer_evaluations: {
         Row: {
+          club_match_id: string | null
           clutch_factor: number | null
           communication: number | null
           consistency: number | null
@@ -772,11 +776,13 @@ export type Database = {
           guild_id: string
           id: string
           overall_score: number | null
+          position_played: string | null
           technical_skill: number | null
           trust_weighted_score: number | null
           work_ethic: number | null
         }
         Insert: {
+          club_match_id?: string | null
           clutch_factor?: number | null
           communication?: number | null
           consistency?: number | null
@@ -788,11 +794,13 @@ export type Database = {
           guild_id: string
           id?: string
           overall_score?: number | null
+          position_played?: string | null
           technical_skill?: number | null
           trust_weighted_score?: number | null
           work_ethic?: number | null
         }
         Update: {
+          club_match_id?: string | null
           clutch_factor?: number | null
           communication?: number | null
           consistency?: number | null
@@ -804,11 +812,19 @@ export type Database = {
           guild_id?: string
           id?: string
           overall_score?: number | null
+          position_played?: string | null
           technical_skill?: number | null
           trust_weighted_score?: number | null
           work_ethic?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "peer_evaluations_club_match_id_fkey"
+            columns: ["club_match_id"]
+            isOneToOne: false
+            referencedRelation: "club_matches"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "peer_evaluations_draft_id_fkey"
             columns: ["draft_id"]

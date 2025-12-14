@@ -997,9 +997,30 @@ async function syncMatches(guildId, clubKey, club) {
     if (isNewMatch && clubMatchId && matchPlayerIds.length >= 2) {
       console.log(`📨 Creating feedback requests for ${matchPlayerIds.length} players...`);
       
+      // Build player data with positions and EA usernames for the feedback panel
+      const playerDataMap = {};
+      for (const pStat of playerStats) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('discord_user_id, ea_username')
+          .eq('ea_username', pStat.ea_username)
+          .not('discord_user_id', 'like', 'ea_%')
+          .maybeSingle();
+        
+        if (profile && matchPlayerIds.includes(profile.discord_user_id)) {
+          playerDataMap[profile.discord_user_id] = {
+            discord_user_id: profile.discord_user_id,
+            ea_username: pStat.ea_username,
+            position_played: pStat.position || 'ANY'
+          };
+        }
+      }
+      
       for (const evaluatorId of matchPlayerIds) {
-        // Teammates are everyone except the evaluator
-        const teammates = matchPlayerIds.filter(id => id !== evaluatorId);
+        // Build teammates data array with positions (everyone except the evaluator)
+        const teammatesData = matchPlayerIds
+          .filter(id => id !== evaluatorId)
+          .map(id => playerDataMap[id] || { discord_user_id: id, ea_username: 'Unknown', position_played: 'ANY' });
         
         const { error: feedbackError } = await supabase
           .from('dm_feedback_requests')
@@ -1008,7 +1029,8 @@ async function syncMatches(guildId, clubKey, club) {
             evaluator_discord_id: evaluatorId,
             club_match_id: clubMatchId,
             match_type: 'club',
-            teammates_to_evaluate: teammates,
+            teammates_to_evaluate: matchPlayerIds.filter(id => id !== evaluatorId),
+            teammates_data: teammatesData,
             status: 'pending',
             expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
           });
@@ -1018,7 +1040,7 @@ async function syncMatches(guildId, clubKey, club) {
         }
       }
       
-      console.log(`  ✅ Created ${matchPlayerIds.length} feedback requests`);
+      console.log(`  ✅ Created ${matchPlayerIds.length} feedback requests with position data`);
     }
   }
   
