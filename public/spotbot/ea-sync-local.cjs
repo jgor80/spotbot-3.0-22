@@ -994,53 +994,86 @@ async function syncMatches(guildId, clubKey, club) {
     }
     
     // Create feedback requests for new matches with multiple players
+    // First check if feedback is enabled for this guild
     if (isNewMatch && clubMatchId && matchPlayerIds.length >= 2) {
-      console.log(`📨 Creating feedback requests for ${matchPlayerIds.length} players...`);
+      const { data: guildSettings } = await supabase
+        .from('guild_settings')
+        .select('feedback_enabled')
+        .eq('guild_id', guildId)
+        .single();
       
-      // Build player data with positions and EA usernames for the feedback panel
-      const playerDataMap = {};
-      for (const pStat of playerStats) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('discord_user_id, ea_username')
-          .eq('ea_username', pStat.ea_username)
-          .not('discord_user_id', 'like', 'ea_%')
-          .maybeSingle();
+      // Skip if feedback is disabled
+      if (guildSettings && guildSettings.feedback_enabled === false) {
+        console.log(`📨 Feedback disabled for guild ${guildId}, skipping...`);
+      } else {
+        console.log(`📨 Creating feedback requests for ${matchPlayerIds.length} players...`);
         
-        if (profile && matchPlayerIds.includes(profile.discord_user_id)) {
-          playerDataMap[profile.discord_user_id] = {
-            discord_user_id: profile.discord_user_id,
-            ea_username: pStat.ea_username,
-            position_played: pStat.position || 'ANY'
-          };
+        // Build player data with positions and EA usernames for the feedback panel
+        const playerDataMap = {};
+        for (const pStat of playerStats) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('discord_user_id, ea_username')
+            .eq('ea_username', pStat.ea_username)
+            .not('discord_user_id', 'like', 'ea_%')
+            .maybeSingle();
+          
+          if (profile && matchPlayerIds.includes(profile.discord_user_id)) {
+            playerDataMap[profile.discord_user_id] = {
+              discord_user_id: profile.discord_user_id,
+              ea_username: pStat.ea_username,
+              position_played: pStat.position || 'ANY'
+            };
+          }
         }
-      }
-      
-      for (const evaluatorId of matchPlayerIds) {
-        // Build teammates data array with positions (everyone except the evaluator)
-        const teammatesData = matchPlayerIds
-          .filter(id => id !== evaluatorId)
-          .map(id => playerDataMap[id] || { discord_user_id: id, ea_username: 'Unknown', position_played: 'ANY' });
         
-        const { error: feedbackError } = await supabase
-          .from('dm_feedback_requests')
-          .insert({
-            guild_id: guildId,
-            evaluator_discord_id: evaluatorId,
-            club_match_id: clubMatchId,
-            match_type: 'club',
-            teammates_to_evaluate: matchPlayerIds.filter(id => id !== evaluatorId),
-            teammates_data: teammatesData,
-            status: 'pending',
-            expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
-          });
-        
-        if (feedbackError) {
-          console.log(`  ⚠️ Feedback request error for ${evaluatorId}: ${feedbackError.message}`);
+        let createdCount = 0;
+        for (const evaluatorId of matchPlayerIds) {
+          // Check if a feedback request already exists for this player + match
+          const { data: existingRequest } = await supabase
+            .from('dm_feedback_requests')
+            .select('id')
+            .eq('evaluator_discord_id', evaluatorId)
+            .eq('club_match_id', clubMatchId)
+            .maybeSingle();
+          
+          if (existingRequest) {
+            console.log(`  ⏭️ Feedback request already exists for ${evaluatorId}, skipping...`);
+            continue;
+          }
+          
+          // Build teammates data array with positions (everyone except the evaluator)
+          const teammatesData = matchPlayerIds
+            .filter(id => id !== evaluatorId)
+            .map(id => playerDataMap[id] || { discord_user_id: id, ea_username: 'Unknown', position_played: 'ANY' });
+          
+          const { error: feedbackError } = await supabase
+            .from('dm_feedback_requests')
+            .insert({
+              guild_id: guildId,
+              evaluator_discord_id: evaluatorId,
+              club_match_id: clubMatchId,
+              match_type: 'club',
+              teammates_to_evaluate: matchPlayerIds.filter(id => id !== evaluatorId),
+              teammates_data: teammatesData,
+              status: 'pending',
+              expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
+            });
+          
+          if (feedbackError) {
+            // Could be unique constraint violation - just skip
+            if (feedbackError.code === '23505') {
+              console.log(`  ⏭️ Duplicate feedback request for ${evaluatorId}, skipping...`);
+            } else {
+              console.log(`  ⚠️ Feedback request error for ${evaluatorId}: ${feedbackError.message}`);
+            }
+          } else {
+            createdCount++;
+          }
         }
+        
+        console.log(`  ✅ Created ${createdCount} feedback requests with position data`);
       }
-      
-      console.log(`  ✅ Created ${matchPlayerIds.length} feedback requests with position data`);
     }
   }
   

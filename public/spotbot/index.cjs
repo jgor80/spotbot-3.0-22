@@ -10745,6 +10745,18 @@ async function sendPendingFeedbackDMs(guildId, guild) {
   const result = { sent: 0, skipped: 0, failed: 0 };
   
   try {
+    // Check if feedback is enabled for this guild
+    const { data: guildSettings } = await supabase
+      .from('guild_settings')
+      .select('feedback_enabled')
+      .eq('guild_id', guildId)
+      .single();
+    
+    if (guildSettings && guildSettings.feedback_enabled === false) {
+      console.log(`[Feedback] Feedback disabled for guild ${guildId}, skipping DMs...`);
+      return result;
+    }
+    
     // Get all pending feedback requests for this guild that haven't been DMed yet
     const { data: pendingRequests } = await supabase
       .from('dm_feedback_requests')
