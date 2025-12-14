@@ -6169,10 +6169,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.update({ content: '❌ Reroll cancelled. Keeping current captains.', embeds: [], components: [] });
       }
 
-      // Feedback rating buttons (from DMs)
+      // Feedback rating buttons (from DMs) - new panel-based system
+      // Format: feedback_rate_{rating}_{feedbackRequestId}_{evaluatedUserId}
       if (id.startsWith('feedback_rate_')) {
         const parts = id.split('_');
-        // Format: feedback_rate_{rating}_{feedbackRequestId}_{evaluatedUserId}
         const rating = parseInt(parts[2], 10);
         const feedbackRequestId = parts[3];
         const evaluatedUserId = parts[4];
@@ -6190,13 +6190,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.followUp({ content: '❌ Feedback request not found or expired.', flags: 64 });
         }
         
-        // Insert peer evaluation
+        // Find the position this player was playing from teammates_data
+        const teammatesData = feedbackRequest.teammates_data || [];
+        const evaluatedPlayer = teammatesData.find(t => t.discord_user_id === evaluatedUserId);
+        const positionPlayed = evaluatedPlayer?.position_played || null;
+        
+        // Insert peer evaluation with position
         await supabase.from('peer_evaluations').insert({
           guild_id: feedbackRequest.guild_id,
           draft_id: feedbackRequest.draft_id,
           club_match_id: feedbackRequest.club_match_id,
           evaluator_discord_id: interaction.user.id,
           evaluated_discord_id: evaluatedUserId,
+          position_played: positionPlayed,
           overall_score: rating,
           technical_skill: rating,
           game_iq: rating,
@@ -6206,15 +6212,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
           clutch_factor: rating
         });
         
-        // Update feedback request - remove this teammate from the list
-        const remaining = feedbackRequest.teammates_to_evaluate.filter(id => id !== evaluatedUserId);
+        // Update teammates_data to mark this player as rated
+        const updatedTeammatesData = teammatesData.map(t => 
+          t.discord_user_id === evaluatedUserId 
+            ? { ...t, rated: true, given_rating: rating }
+            : t
+        );
+        
+        // Check if all teammates have been rated
+        const allRated = updatedTeammatesData.every(t => t.rated);
         
         await supabase
           .from('dm_feedback_requests')
           .update({
-            teammates_to_evaluate: remaining,
-            status: remaining.length === 0 ? 'completed' : 'pending',
-            completed_at: remaining.length === 0 ? new Date().toISOString() : null
+            teammates_data: updatedTeammatesData,
+            status: allRated ? 'completed' : 'pending',
+            completed_at: allRated ? new Date().toISOString() : null
           })
           .eq('id', feedbackRequestId);
         
@@ -6224,33 +6237,50 @@ client.on(Events.InteractionCreate, async (interaction) => {
           discord_user_id: evaluatedUserId
         });
         
-        if (remaining.length > 0) {
-          // Show next teammate to rate
-          const nextUserId = remaining[0];
-          const nextEmbed = new EmbedBuilder()
-            .setTitle('⭐ Rate Your Teammate')
-            .setColor(0x5865f2)
-            .setDescription(`Rate <@${nextUserId}>'s performance (1-5 stars):`)
-            .setFooter({ text: `${remaining.length} teammate(s) remaining` });
-          
-          const ratingButtons = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`feedback_rate_1_${feedbackRequestId}_${nextUserId}`).setLabel('⭐').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`feedback_rate_2_${feedbackRequestId}_${nextUserId}`).setLabel('⭐⭐').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`feedback_rate_3_${feedbackRequestId}_${nextUserId}`).setLabel('⭐⭐⭐').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId(`feedback_rate_4_${feedbackRequestId}_${nextUserId}`).setLabel('⭐⭐⭐⭐').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId(`feedback_rate_5_${feedbackRequestId}_${nextUserId}`).setLabel('⭐⭐⭐⭐⭐').setStyle(ButtonStyle.Success)
-          );
-          
-          return interaction.editReply({ embeds: [nextEmbed], components: [ratingButtons] });
+        // Rebuild the panel with updated ratings
+        const matchType = feedbackRequest.match_type === 'club' ? 'Club Match' : 'Draft';
+        
+        // Build description showing all teammates and their ratings
+        let description = `Rate each teammate from the **${matchType}**:\n\n`;
+        for (const teammate of updatedTeammatesData) {
+          const position = teammate.position_played || 'ANY';
+          const name = teammate.ea_username || `<@${teammate.discord_user_id}>`;
+          if (teammate.rated) {
+            const stars = '⭐'.repeat(teammate.given_rating);
+            description += `✅ **${name}** (${position}): ${stars}\n`;
+          } else {
+            description += `⬜ **${name}** (${position}): Not rated yet\n`;
+          }
         }
         
-        // All done!
-        const doneEmbed = new EmbedBuilder()
-          .setTitle('✅ Feedback Complete!')
-          .setColor(0x00ff00)
-          .setDescription('Thank you for rating your teammates! Your feedback helps improve player ratings and team chemistry.');
+        if (allRated) {
+          // All done!
+          const doneEmbed = new EmbedBuilder()
+            .setTitle('✅ Feedback Complete!')
+            .setColor(0x00ff00)
+            .setDescription(description + '\n\nThank you for rating your teammates! Your feedback helps improve player ratings.');
+          
+          return interaction.editReply({ embeds: [doneEmbed], components: [] });
+        }
         
-        return interaction.editReply({ embeds: [doneEmbed], components: [] });
+        // Find next unrated teammate
+        const nextUnrated = updatedTeammatesData.find(t => !t.rated);
+        
+        const embed = new EmbedBuilder()
+          .setTitle('⭐ Rate Your Teammates')
+          .setColor(0x5865f2)
+          .setDescription(description + `\n**Now rating: ${nextUnrated.ea_username || 'Teammate'}** (${nextUnrated.position_played || 'ANY'})`);
+        
+        // Build rating buttons for next unrated player
+        const ratingButtons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`feedback_rate_1_${feedbackRequestId}_${nextUnrated.discord_user_id}`).setLabel('⭐ 1').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`feedback_rate_2_${feedbackRequestId}_${nextUnrated.discord_user_id}`).setLabel('⭐ 2').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`feedback_rate_3_${feedbackRequestId}_${nextUnrated.discord_user_id}`).setLabel('⭐ 3').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId(`feedback_rate_4_${feedbackRequestId}_${nextUnrated.discord_user_id}`).setLabel('⭐ 4').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`feedback_rate_5_${feedbackRequestId}_${nextUnrated.discord_user_id}`).setLabel('⭐ 5').setStyle(ButtonStyle.Success)
+        );
+        
+        return interaction.editReply({ embeds: [embed], components: [ratingButtons] });
       }
 
       // Scouting button - opens modal for club name input
@@ -10730,7 +10760,11 @@ async function sendPendingFeedbackDMs(guildId, guild) {
     }
     
     for (const request of pendingRequests) {
-      if (request.teammates_to_evaluate.length === 0) {
+      // Use teammates_data if available, fall back to teammates_to_evaluate
+      const teammatesData = request.teammates_data || [];
+      const teammateIds = request.teammates_to_evaluate || [];
+      
+      if (teammatesData.length === 0 && teammateIds.length === 0) {
         result.skipped++;
         continue;
       }
@@ -10744,27 +10778,57 @@ async function sendPendingFeedbackDMs(guildId, guild) {
           continue;
         }
         
-        // Build the feedback DM
-        const firstTeammateId = request.teammates_to_evaluate[0];
         const matchType = request.match_type === 'club' ? 'Club Match' : 'Draft';
         
+        // Build the feedback panel showing all teammates with positions
+        let description = `You recently played a **${matchType}**!\n\nRate each teammate's performance:\n\n`;
+        
+        // If we have teammates_data with positions, use that
+        if (teammatesData.length > 0) {
+          for (const teammate of teammatesData) {
+            const position = teammate.position_played || 'ANY';
+            const name = teammate.ea_username || `<@${teammate.discord_user_id}>`;
+            if (teammate.rated) {
+              const stars = '⭐'.repeat(teammate.given_rating);
+              description += `✅ **${name}** (${position}): ${stars}\n`;
+            } else {
+              description += `⬜ **${name}** (${position}): Not rated yet\n`;
+            }
+          }
+        } else {
+          // Fallback for old format without teammates_data
+          for (const id of teammateIds) {
+            description += `⬜ <@${id}>: Not rated yet\n`;
+          }
+        }
+        
+        // Find first unrated teammate
+        let firstUnrated;
+        if (teammatesData.length > 0) {
+          firstUnrated = teammatesData.find(t => !t.rated);
+        } else {
+          firstUnrated = { discord_user_id: teammateIds[0], ea_username: null, position_played: null };
+        }
+        
+        if (!firstUnrated) {
+          result.skipped++;
+          continue;
+        }
+        
+        description += `\n**Now rating: ${firstUnrated.ea_username || 'Teammate'}** (${firstUnrated.position_played || 'ANY'})`;
+        
         const embed = new EmbedBuilder()
-          .setTitle('⭐ Rate Your Teammates!')
+          .setTitle('⭐ Rate Your Teammates')
           .setColor(0x5865f2)
-          .setDescription(
-            `You recently played a **${matchType}**!\n\n` +
-            `Please rate your teammates' performance. This helps improve the rating system and team chemistry.\n\n` +
-            `**Rate:** <@${firstTeammateId}>\n` +
-            `(1 = Poor, 5 = Excellent)`
-          )
-          .setFooter({ text: `${request.teammates_to_evaluate.length} teammate(s) to rate • Expires in 24h` });
+          .setDescription(description)
+          .setFooter({ text: `Expires in 24h` });
         
         const ratingButtons = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`feedback_rate_1_${request.id}_${firstTeammateId}`).setLabel('⭐').setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId(`feedback_rate_2_${request.id}_${firstTeammateId}`).setLabel('⭐⭐').setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId(`feedback_rate_3_${request.id}_${firstTeammateId}`).setLabel('⭐⭐⭐').setStyle(ButtonStyle.Primary),
-          new ButtonBuilder().setCustomId(`feedback_rate_4_${request.id}_${firstTeammateId}`).setLabel('⭐⭐⭐⭐').setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`feedback_rate_5_${request.id}_${firstTeammateId}`).setLabel('⭐⭐⭐⭐⭐').setStyle(ButtonStyle.Success)
+          new ButtonBuilder().setCustomId(`feedback_rate_1_${request.id}_${firstUnrated.discord_user_id}`).setLabel('⭐ 1').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`feedback_rate_2_${request.id}_${firstUnrated.discord_user_id}`).setLabel('⭐ 2').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`feedback_rate_3_${request.id}_${firstUnrated.discord_user_id}`).setLabel('⭐ 3').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId(`feedback_rate_4_${request.id}_${firstUnrated.discord_user_id}`).setLabel('⭐ 4').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`feedback_rate_5_${request.id}_${firstUnrated.discord_user_id}`).setLabel('⭐ 5').setStyle(ButtonStyle.Success)
         );
         
         await member.send({ embeds: [embed], components: [ratingButtons] });
@@ -10776,7 +10840,7 @@ async function sendPendingFeedbackDMs(guildId, guild) {
           .eq('id', request.id);
         
         result.sent++;
-        console.log(`[Feedback] Sent DM to ${member.user.username}`);
+        console.log(`[Feedback] Sent panel DM to ${member.user.username}`);
         
       } catch (err) {
         console.error(`[Feedback] Failed to DM ${request.evaluator_discord_id}:`, err.message);
