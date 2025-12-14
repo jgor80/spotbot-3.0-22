@@ -10740,6 +10740,9 @@ function getSimilarity(str1, str2) {
 // Cache to prevent spamming auto-link DMs
 const autoLinkDmCache = new Map();
 
+// Track sent DMs to prevent duplicates within session
+const sentFeedbackDMs = new Set();
+
 // Send pending feedback DMs to players
 async function sendPendingFeedbackDMs(guildId, guild) {
   const result = { sent: 0, skipped: 0, failed: 0 };
@@ -10758,13 +10761,18 @@ async function sendPendingFeedbackDMs(guildId, guild) {
     }
     
     // Get all pending feedback requests for this guild that haven't been DMed yet
+    // Only get requests from the last 24 hours to avoid sending old DMs
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: pendingRequests } = await supabase
       .from('dm_feedback_requests')
       .select('*')
       .eq('guild_id', guildId)
       .eq('status', 'pending')
       .is('dm_sent_at', null)
-      .gt('expires_at', new Date().toISOString());
+      .gt('expires_at', new Date().toISOString())
+      .gt('created_at', oneDayAgo)
+      .order('created_at', { ascending: false })
+      .limit(50);
     
     if (!pendingRequests || pendingRequests.length === 0) {
       console.log(`[Feedback] No pending DMs to send for guild ${guildId}`);
@@ -10772,6 +10780,14 @@ async function sendPendingFeedbackDMs(guildId, guild) {
     }
     
     for (const request of pendingRequests) {
+      // Skip if we've already processed this request in this session
+      const requestKey = `${request.evaluator_discord_id}_${request.club_match_id || request.id}`;
+      if (sentFeedbackDMs.has(requestKey)) {
+        console.log(`[Feedback] Already sent in this session: ${requestKey}`);
+        result.skipped++;
+        continue;
+      }
+      
       // Use teammates_data if available, fall back to teammates_to_evaluate
       const teammatesData = request.teammates_data || [];
       const teammateIds = request.teammates_to_evaluate || [];
@@ -10782,6 +10798,22 @@ async function sendPendingFeedbackDMs(guildId, guild) {
       }
       
       try {
+        // Mark as sent FIRST to prevent race conditions
+        const { error: updateError } = await supabase
+          .from('dm_feedback_requests')
+          .update({ dm_sent_at: new Date().toISOString() })
+          .eq('id', request.id)
+          .is('dm_sent_at', null); // Only update if not already sent
+        
+        if (updateError) {
+          console.log(`[Feedback] Could not mark as sent: ${updateError.message}`);
+          result.skipped++;
+          continue;
+        }
+        
+        // Add to session cache
+        sentFeedbackDMs.add(requestKey);
+        
         // Fetch the Discord user
         const member = await guild.members.fetch(request.evaluator_discord_id).catch(() => null);
         if (!member) {
@@ -10845,14 +10877,8 @@ async function sendPendingFeedbackDMs(guildId, guild) {
         
         await member.send({ embeds: [embed], components: [ratingButtons] });
         
-        // Mark as sent
-        await supabase
-          .from('dm_feedback_requests')
-          .update({ dm_sent_at: new Date().toISOString() })
-          .eq('id', request.id);
-        
         result.sent++;
-        console.log(`[Feedback] Sent panel DM to ${member.user.username}`);
+        console.log(`[Feedback] Sent panel DM to ${member.user.username} for match ${request.club_match_id}`);
         
       } catch (err) {
         console.error(`[Feedback] Failed to DM ${request.evaluator_discord_id}:`, err.message);
