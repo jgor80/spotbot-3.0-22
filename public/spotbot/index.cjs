@@ -6201,7 +6201,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.editReply({ content: `❌ Failed to fetch leaderboard: ${error}` });
         }
 
-        const players = data?.players || [];
+        const players = data?.entries || data?.players || [];
         if (players.length === 0) {
           return interaction.editReply({ content: 'No players on the leaderboard yet. Play some games to get started!' });
         }
@@ -6210,7 +6210,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
           const rating = Math.round(p.overall_rating || 50);
           const pos = p.primary_position || '—';
-          return `${medal} **${p.discord_username || 'Unknown'}** • ${rating} OVR • ${pos}`;
+          const name = p.ea_username || p.discord_username || 'Unknown';
+          return `${medal} **${name}** • ${rating} OVR • ${pos}`;
         });
 
         const embed = new EmbedBuilder()
@@ -6979,7 +6980,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.editReply({ content: `❌ Failed to fetch leaderboard: ${error}` });
         }
 
-        const players = data?.players || [];
+        const players = data?.entries || data?.players || [];
         if (players.length === 0) {
           return interaction.editReply({ content: 'No players on the leaderboard yet. Play some games to get started!' });
         }
@@ -6988,7 +6989,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
           const rating = Math.round(p.overall_rating || 50);
           const pos = p.primary_position || '—';
-          return `${medal} **${p.discord_username || 'Unknown'}** • ${rating} OVR • ${pos}`;
+          const name = p.ea_username || p.discord_username || 'Unknown';
+          return `${medal} **${name}** • ${rating} OVR • ${pos}`;
         });
 
         const embed = new EmbedBuilder()
@@ -8366,18 +8368,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
             .select('*')
             .eq('guild_id', guildId)
             .eq('discord_user_id', targetUserId)
-            .single();
+            .maybeSingle();
 
           if (!summary) {
             return interaction.editReply({ content: `❌ No profile data found for this player. They need to play some games first!` });
           }
 
           const rating = Math.round(summary.overall_rating || 50);
-          const winRate = Math.round((summary.win_rate || 0) * 100);
+          // win_rate is already stored as percentage (e.g., 44.0 for 44%)
+          const winRate = Math.round(summary.win_rate || 0);
           const ratingBar = '█'.repeat(Math.floor(rating / 10)) + '░'.repeat(10 - Math.floor(rating / 10));
 
           const embed = new EmbedBuilder()
-            .setTitle(`👤 Player Profile: ${summary.discord_username || targetUsername}`)
+            .setTitle(`👤 Player Profile: ${summary.ea_username || summary.discord_username || targetUsername}`)
             .setColor(rating >= 70 ? 0x00ff00 : rating >= 50 ? 0xffcc00 : 0xff6b35)
             .addFields(
               { name: '⭐ Overall Rating', value: `**${rating}** \`${ratingBar}\``, inline: true },
