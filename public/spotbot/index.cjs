@@ -3391,6 +3391,9 @@ client.once(Events.ClientReady, async (c) => {
     
     // Resume EA FC Pro Clubs monitoring for all linked clubs
     resumeEaMonitoring();
+    
+    // Start background polling for pending feedback DMs (created by local sync script)
+    startFeedbackDMPolling(c);
   } catch (err) {
     console.error('❌ Failed to register commands:', err);
   }
@@ -10618,6 +10621,77 @@ async function resumeEaMonitoring() {
     console.log(`[EA] Resumed monitoring for ${eaMonitoringIntervals.size} clubs`);
   } catch (err) {
     console.error(`[EA] Error resuming monitoring:`, err);
+  }
+}
+
+// =======================
+// BACKGROUND FEEDBACK DM POLLING
+// Automatically sends pending feedback DMs created by local EA sync script
+// =======================
+
+let feedbackPollingInterval = null;
+
+function startFeedbackDMPolling(discordClient) {
+  if (feedbackPollingInterval) {
+    console.log(`[Feedback] Polling already running, skipping...`);
+    return;
+  }
+  
+  console.log(`[Feedback] Starting background DM polling (every 30 seconds)`);
+  
+  // Run immediately on startup
+  pollAndSendFeedbackDMs(discordClient);
+  
+  // Then poll every 30 seconds
+  feedbackPollingInterval = setInterval(() => {
+    pollAndSendFeedbackDMs(discordClient);
+  }, 30000); // 30 seconds
+}
+
+async function pollAndSendFeedbackDMs(discordClient) {
+  try {
+    // Get all pending feedback requests across all guilds that haven't been DMed yet
+    const { data: pendingRequests, error } = await supabase
+      .from('dm_feedback_requests')
+      .select('guild_id')
+      .eq('status', 'pending')
+      .is('dm_sent_at', null)
+      .gt('expires_at', new Date().toISOString());
+    
+    if (error) {
+      console.error(`[Feedback] Error fetching pending requests:`, error.message);
+      return;
+    }
+    
+    if (!pendingRequests || pendingRequests.length === 0) {
+      return; // Silent return when no pending DMs
+    }
+    
+    // Get unique guild IDs with pending requests
+    const uniqueGuildIds = [...new Set(pendingRequests.map(r => r.guild_id))];
+    
+    console.log(`[Feedback] Found ${pendingRequests.length} pending DMs across ${uniqueGuildIds.length} guild(s)`);
+    
+    // Process each guild's pending feedback DMs
+    for (const guildId of uniqueGuildIds) {
+      try {
+        const guild = await discordClient.guilds.fetch(guildId).catch(() => null);
+        if (!guild) {
+          console.log(`[Feedback] Guild ${guildId} not accessible, skipping...`);
+          continue;
+        }
+        
+        const result = await sendPendingFeedbackDMs(guildId, guild);
+        
+        if (result.sent > 0) {
+          console.log(`[Feedback] Sent ${result.sent} DMs for guild ${guild.name} (skipped: ${result.skipped}, failed: ${result.failed})`);
+        }
+      } catch (guildErr) {
+        console.error(`[Feedback] Error processing guild ${guildId}:`, guildErr.message);
+      }
+    }
+  } catch (err) {
+    console.error(`[Feedback] Polling error:`, err.message);
   }
 }
 
