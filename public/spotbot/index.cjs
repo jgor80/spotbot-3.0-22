@@ -3380,6 +3380,18 @@ client.once(Events.ClientReady, async (c) => {
   console.log(`✅ SquadIQ Spots logged in as ${c.user.tag}`);
 
   try {
+    // One-time cleanup: Remove all guild-specific commands to fix duplicates
+    console.log(`🧹 Clearing guild-specific commands to fix duplicates...`);
+    for (const [guildId, guild] of c.guilds.cache) {
+      try {
+        await guild.commands.set([]);
+        console.log(`  ✓ Cleared commands for guild: ${guild.name}`);
+      } catch (err) {
+        console.error(`  ✗ Failed to clear commands for ${guild.name}:`, err.message);
+      }
+    }
+    console.log(`🧹 Guild command cleanup complete`);
+    
     // Register commands globally only (not per-guild to avoid duplicates)
     await c.application.commands.set(COMMANDS);
     console.log(`✅ Commands registered globally for ${c.guilds.cache.size} guilds`);
