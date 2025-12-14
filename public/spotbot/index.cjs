@@ -6570,6 +6570,220 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
+      // Compare Players - First player selected
+      if (id === 'scoutpanel_compare_player1') {
+        const player1Id = interaction.values[0];
+
+        // Store player1 selection and show player2 selection
+        const { data: players } = await supabase
+          .from('player_summary')
+          .select('discord_user_id, discord_username, ea_username, overall_rating, primary_position')
+          .eq('guild_id', guildId)
+          .neq('discord_user_id', player1Id) // Exclude already selected player
+          .order('overall_rating', { ascending: false })
+          .limit(25);
+
+        if (!players || players.length === 0) {
+          return interaction.update({ content: 'No other players available to compare.', components: [] });
+        }
+
+        const options = players.map(p => ({
+          label: `${p.ea_username || p.discord_username || 'Unknown'} (${Math.round(p.overall_rating || 50)} OVR)`,
+          value: `${player1Id}|${p.discord_user_id}`, // Combine both IDs
+          description: p.primary_position ? `Position: ${p.primary_position}` : 'Position: Unknown'
+        }));
+
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('scoutpanel_compare_player2')
+          .setPlaceholder('Select second player')
+          .addOptions(options);
+
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+
+        return interaction.update({
+          content: '⚖️ **Compare Players**\n\nNow select the second player to compare:',
+          components: [row]
+        });
+      }
+
+      // Compare Players - Second player selected - Show comparison
+      if (id === 'scoutpanel_compare_player2') {
+        const [player1Id, player2Id] = interaction.values[0].split('|');
+
+        await interaction.update({
+          content: '⚖️ **Generating player comparison...**\n\n📊 Fetching stats for both players...',
+          components: []
+        });
+
+        try {
+          // Fetch both players' full stats
+          const { data: player1Data } = await supabase
+            .from('player_summary')
+            .select('*')
+            .eq('guild_id', guildId)
+            .eq('discord_user_id', player1Id)
+            .single();
+
+          const { data: player2Data } = await supabase
+            .from('player_summary')
+            .select('*')
+            .eq('guild_id', guildId)
+            .eq('discord_user_id', player2Id)
+            .single();
+
+          if (!player1Data || !player2Data) {
+            return interaction.editReply({ content: '❌ Could not fetch player data.', components: [] });
+          }
+
+          // Get profiles for EA usernames
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('discord_user_id, ea_username')
+            .in('discord_user_id', [player1Id, player2Id]);
+
+          const p1Profile = profiles?.find(p => p.discord_user_id === player1Id);
+          const p2Profile = profiles?.find(p => p.discord_user_id === player2Id);
+
+          const p1Name = p1Profile?.ea_username || player1Data.discord_username || 'Player 1';
+          const p2Name = p2Profile?.ea_username || player2Data.discord_username || 'Player 2';
+
+          // Helper to compare and add emoji
+          const compare = (val1, val2, higherBetter = true) => {
+            if (val1 === val2) return ['➖', '➖'];
+            if (higherBetter) {
+              return val1 > val2 ? ['🟢', '🔴'] : ['🔴', '🟢'];
+            }
+            return val1 < val2 ? ['🟢', '🔴'] : ['🔴', '🟢'];
+          };
+
+          // Build comprehensive stat comparisons
+          const stats = [
+            { name: '⭐ Overall Rating', v1: Math.round(player1Data.overall_rating || 50), v2: Math.round(player2Data.overall_rating || 50) },
+            { name: '🎮 Games Played', v1: player1Data.games_played || 0, v2: player2Data.games_played || 0 },
+            { name: '🏆 Wins', v1: player1Data.wins || 0, v2: player2Data.wins || 0 },
+            { name: '📈 Win Rate', v1: Math.round(player1Data.win_rate || 0), v2: Math.round(player2Data.win_rate || 0), suffix: '%' },
+            { name: '⚽ Goals', v1: player1Data.goals || 0, v2: player2Data.goals || 0 },
+            { name: '🅰️ Assists', v1: player1Data.assists || 0, v2: player2Data.assists || 0 },
+            { name: '🔥 Form Rating', v1: Math.round(player1Data.form_rating || 50), v2: Math.round(player2Data.form_rating || 50) },
+            { name: '🎯 Avg Match Rating', v1: (player1Data.avg_match_rating || 0).toFixed(1), v2: (player2Data.avg_match_rating || 0).toFixed(1) },
+            { name: '🥅 Clean Sheets', v1: player1Data.clean_sheets || 0, v2: player2Data.clean_sheets || 0 },
+            { name: '🏅 Man of Match', v1: player1Data.man_of_match || 0, v2: player2Data.man_of_match || 0 },
+            { name: '🔫 Shots', v1: player1Data.shots || 0, v2: player2Data.shots || 0 },
+            { name: '⛔ Tackles', v1: player1Data.tackles || 0, v2: player2Data.tackles || 0 },
+            { name: '📤 Passes Made', v1: player1Data.passes_made || 0, v2: player2Data.passes_made || 0 },
+            { name: '🧤 Saves', v1: player1Data.saves || 0, v2: player2Data.saves || 0 },
+            { name: '✅ Reliability', v1: Math.round(player1Data.reliability_score || 100), v2: Math.round(player2Data.reliability_score || 100), suffix: '%' },
+          ];
+
+          // Build comparison lines with bars
+          const buildBar = (val1, val2, max) => {
+            const ratio1 = max > 0 ? val1 / max : 0;
+            const ratio2 = max > 0 ? val2 / max : 0;
+            const bar1 = '█'.repeat(Math.round(ratio1 * 5)) + '░'.repeat(5 - Math.round(ratio1 * 5));
+            const bar2 = '█'.repeat(Math.round(ratio2 * 5)) + '░'.repeat(5 - Math.round(ratio2 * 5));
+            return [bar1, bar2];
+          };
+
+          // Build main comparison embed
+          let comparisonText = '';
+          for (const stat of stats) {
+            const [e1, e2] = compare(parseFloat(stat.v1), parseFloat(stat.v2));
+            const suffix = stat.suffix || '';
+            comparisonText += `**${stat.name}**\n`;
+            comparisonText += `${e1} ${p1Name}: **${stat.v1}${suffix}**\n`;
+            comparisonText += `${e2} ${p2Name}: **${stat.v2}${suffix}**\n\n`;
+          }
+
+          // Calculate per-game ratios
+          const p1Games = player1Data.games_played || 1;
+          const p2Games = player2Data.games_played || 1;
+          const perGameStats = [
+            { name: 'Goals/Game', v1: ((player1Data.goals || 0) / p1Games).toFixed(2), v2: ((player2Data.goals || 0) / p2Games).toFixed(2) },
+            { name: 'Assists/Game', v1: ((player1Data.assists || 0) / p1Games).toFixed(2), v2: ((player2Data.assists || 0) / p2Games).toFixed(2) },
+            { name: 'Shots/Game', v1: ((player1Data.shots || 0) / p1Games).toFixed(2), v2: ((player2Data.shots || 0) / p2Games).toFixed(2) },
+            { name: 'Tackles/Game', v1: ((player1Data.tackles || 0) / p1Games).toFixed(2), v2: ((player2Data.tackles || 0) / p2Games).toFixed(2) },
+          ];
+
+          let perGameText = '';
+          for (const stat of perGameStats) {
+            const [e1, e2] = compare(parseFloat(stat.v1), parseFloat(stat.v2));
+            perGameText += `${stat.name}: ${e1} **${stat.v1}** vs ${e2} **${stat.v2}**\n`;
+          }
+
+          // Calculate overall winner
+          let p1Wins = 0, p2Wins = 0;
+          for (const stat of stats) {
+            const v1 = parseFloat(stat.v1);
+            const v2 = parseFloat(stat.v2);
+            if (v1 > v2) p1Wins++;
+            else if (v2 > v1) p2Wins++;
+          }
+
+          let verdictEmoji = '🤝';
+          let verdictText = 'Evenly matched!';
+          if (p1Wins > p2Wins + 3) {
+            verdictEmoji = '👑';
+            verdictText = `**${p1Name}** wins the comparison!`;
+          } else if (p2Wins > p1Wins + 3) {
+            verdictEmoji = '👑';
+            verdictText = `**${p2Name}** wins the comparison!`;
+          } else if (p1Wins > p2Wins) {
+            verdictText = `**${p1Name}** has a slight edge`;
+          } else if (p2Wins > p1Wins) {
+            verdictText = `**${p2Name}** has a slight edge`;
+          }
+
+          // Build radar chart visualization (text-based)
+          const radarStats = [
+            { name: 'Rating', v1: (player1Data.overall_rating || 50) / 100, v2: (player2Data.overall_rating || 50) / 100 },
+            { name: 'Wins', v1: Math.min((player1Data.wins || 0) / 50, 1), v2: Math.min((player2Data.wins || 0) / 50, 1) },
+            { name: 'Goals', v1: Math.min((player1Data.goals || 0) / 30, 1), v2: Math.min((player2Data.goals || 0) / 30, 1) },
+            { name: 'Assists', v1: Math.min((player1Data.assists || 0) / 20, 1), v2: Math.min((player2Data.assists || 0) / 20, 1) },
+            { name: 'Form', v1: (player1Data.form_rating || 50) / 100, v2: (player2Data.form_rating || 50) / 100 },
+          ];
+
+          let radarText = '**📊 SKILL RADAR**\n```\n';
+          radarText += `Stat       │ ${p1Name.substring(0, 8).padEnd(8)} │ ${p2Name.substring(0, 8).padEnd(8)}\n`;
+          radarText += `───────────┼──────────┼──────────\n`;
+          for (const rs of radarStats) {
+            const bar1 = '█'.repeat(Math.round(rs.v1 * 8)).padEnd(8);
+            const bar2 = '█'.repeat(Math.round(rs.v2 * 8)).padEnd(8);
+            radarText += `${rs.name.padEnd(10)} │ ${bar1} │ ${bar2}\n`;
+          }
+          radarText += '```';
+
+          const embed = new EmbedBuilder()
+            .setTitle(`⚖️ Player Comparison`)
+            .setColor(0x5865f2)
+            .setDescription(
+              `**${p1Name}** vs **${p2Name}**\n\n` +
+              `${verdictEmoji} ${verdictText}\n` +
+              `📊 Stats won: **${p1Wins}** - **${p2Wins}**\n\n` +
+              radarText
+            )
+            .addFields(
+              { 
+                name: `🔵 ${p1Name}`, 
+                value: `Rating: **${Math.round(player1Data.overall_rating || 50)}**\nPosition: **${player1Data.primary_position || '—'}**\nGames: **${player1Data.games_played || 0}**\nWin Rate: **${Math.round(player1Data.win_rate || 0)}%**`, 
+                inline: true 
+              },
+              { 
+                name: `🔴 ${p2Name}`, 
+                value: `Rating: **${Math.round(player2Data.overall_rating || 50)}**\nPosition: **${player2Data.primary_position || '—'}**\nGames: **${player2Data.games_played || 0}**\nWin Rate: **${Math.round(player2Data.win_rate || 0)}%**`, 
+                inline: true 
+              },
+              { name: '📈 Per-Game Efficiency', value: perGameText, inline: false }
+            )
+            .setFooter({ text: '🟢 = Better | 🔴 = Worse | ➖ = Equal • SquadIQ Scouting' })
+            .setTimestamp();
+
+          return interaction.editReply({ content: null, embeds: [embed], components: [] });
+        } catch (err) {
+          console.error('[Compare Players] Error:', err);
+          return interaction.editReply({ content: `❌ Error comparing players: ${err.message}`, components: [] });
+        }
+      }
+
       // =======================
       // EA PANEL BUTTON HANDLERS
       // =======================
