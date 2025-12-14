@@ -2845,21 +2845,64 @@ function buildAdminControlPanelButtons() {
 // SCOUTING PANEL BUILDER
 // =======================
 
-function buildScoutingPanelEmbed(guildId) {
+async function buildScoutingPanelEmbed(guildId) {
+  // Fetch some live stats for the panel
+  let playerCount = 0;
+  let recentMatchCount = 0;
+  let scoutingListCount = 0;
+  
+  try {
+    const { count: pCount } = await supabase
+      .from('player_summary')
+      .select('*', { count: 'exact', head: true })
+      .eq('guild_id', guildId);
+    playerCount = pCount || 0;
+    
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { count: mCount } = await supabase
+      .from('club_matches')
+      .select('*', { count: 'exact', head: true })
+      .eq('guild_id', guildId)
+      .gte('created_at', weekAgo);
+    recentMatchCount = mCount || 0;
+    
+    const { count: sCount } = await supabase
+      .from('scouting_lists')
+      .select('*', { count: 'exact', head: true })
+      .eq('guild_id', guildId);
+    scoutingListCount = sCount || 0;
+  } catch (err) {
+    console.error('[ScoutPanel] Error fetching stats:', err);
+  }
+  
   return new EmbedBuilder()
-    .setTitle('🔍 SquadIQ Scouting Panel')
+    .setTitle('🔍 SCOUTIQ - Intelligence Hub')
     .setColor(0x5865f2)
     .setDescription(
-      '**Welcome to the Scouting Hub!**\n\n' +
-      'Use the buttons below to scout opponents, analyze clubs, and prepare match strategies.\n\n' +
-      '**🔍 Scout Club** - Generate an AI scouting report for any Pro Clubs team\n' +
-      '**🎯 Scout Player** - Generate an AI scouting report for any player\n' +
-      '**📊 Club Matches** - View recent match history for any club\n' +
-      '**⚔️ Match Preview** - AI-powered preview comparing two teams\n' +
-      '**👤 View Profile** - Check any player\'s stats and ratings\n' +
-      '**📈 Leaderboard** - See top players in the server'
+      '**Your command center for player intelligence and match analysis.**\n\n' +
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n' +
+      '**📊 SCOUTING**\n' +
+      '• **Scout Club** - AI analysis of any Pro Clubs team\n' +
+      '• **Scout Player** - Deep dive on any player\n' +
+      '• **View Profile** - Quick stats lookup\n\n' +
+      '**⚔️ MATCH ANALYSIS**\n' +
+      '• **Match Preview** - AI head-to-head comparison\n' +
+      '• **Recent Results** - Last matches with AI summary\n' +
+      '• **Club Matches** - Full match history\n\n' +
+      '**📋 LISTS & RANKINGS**\n' +
+      '• **Scouting Lists** - Manage player watchlists\n' +
+      '• **Leaderboard** - Server rankings\n' +
+      '• **Form Check** - Hot and cold streaks\n\n' +
+      '**🏆 PERFORMANCE**\n' +
+      '• **My Stats** - Your personal dashboard\n' +
+      '• **Achievements** - Badges and awards'
     )
-    .setFooter({ text: 'AI-powered analysis • Updated in real-time' })
+    .addFields(
+      { name: '👥 Players Tracked', value: `${playerCount}`, inline: true },
+      { name: '📈 Matches (7d)', value: `${recentMatchCount}`, inline: true },
+      { name: '📋 Scout Lists', value: `${scoutingListCount}`, inline: true }
+    )
+    .setFooter({ text: 'AI-powered analysis • All features button-accessible • No slash commands needed' })
     .setTimestamp();
 }
 
@@ -2879,29 +2922,74 @@ function buildScoutingPanelComponents() {
       .setEmoji('🎯')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
+      .setCustomId('scoutpanel_profile')
+      .setLabel('View Profile')
+      .setEmoji('👤')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
       .setCustomId('scoutpanel_matches')
       .setLabel('Club Matches')
       .setEmoji('📊')
-      .setStyle(ButtonStyle.Primary),
+      .setStyle(ButtonStyle.Secondary)
+  );
+  rows.push(row1);
+  
+  // Row 2: Match analysis
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('scoutpanel_preview')
       .setLabel('Match Preview')
       .setEmoji('⚔️')
-      .setStyle(ButtonStyle.Primary)
-  );
-  rows.push(row1);
-  
-  // Row 2: Additional actions
-  const row2 = new ActionRowBuilder().addComponents(
+      .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
-      .setCustomId('scoutpanel_profile')
-      .setLabel('View Profile')
-      .setEmoji('👤')
+      .setCustomId('scoutpanel_recent')
+      .setLabel('Recent Results')
+      .setEmoji('📋')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_winprob')
+      .setLabel('Win Probability')
+      .setEmoji('🎲')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_form')
+      .setLabel('Form Check')
+      .setEmoji('🔥')
+      .setStyle(ButtonStyle.Secondary)
+  );
+  rows.push(row2);
+  
+  // Row 3: Lists & rankings
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_lists')
+      .setLabel('Scout Lists')
+      .setEmoji('📋')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('scoutpanel_leaderboard')
       .setLabel('Leaderboard')
       .setEmoji('📈')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_achievements')
+      .setLabel('Achievements')
+      .setEmoji('🏆')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_mystats')
+      .setLabel('My Stats')
+      .setEmoji('📊')
+      .setStyle(ButtonStyle.Secondary)
+  );
+  rows.push(row3);
+  
+  // Row 4: Utility buttons
+  const row4 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('scoutpanel_compare')
+      .setLabel('Compare Players')
+      .setEmoji('⚖️')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('scoutpanel_refresh')
@@ -2914,7 +3002,7 @@ function buildScoutingPanelComponents() {
       .setStyle(ButtonStyle.Link)
       .setURL('https://squadiq.lovable.app/scouting')
   );
-  rows.push(row2);
+  rows.push(row4);
   
   return rows;
 }
@@ -5204,7 +5292,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       // =======================
 
       if (cmd === 'scoutpanel') {
-        const embed = buildScoutingPanelEmbed(guildId);
+        const embed = await buildScoutingPanelEmbed(guildId);
         const components = buildScoutingPanelComponents();
 
         await interaction.reply({
@@ -6134,11 +6222,352 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       // Refresh button from scouting panel
       if (id === 'scoutpanel_refresh') {
+        const refreshEmbed = await buildScoutingPanelEmbed(guildId);
         await interaction.update({
-          embeds: [buildScoutingPanelEmbed(guildId)],
+          embeds: [refreshEmbed],
           components: buildScoutingPanelComponents()
         });
         return;
+      }
+
+      // Recent Results button from scouting panel
+      if (id === 'scoutpanel_recent') {
+        await interaction.deferReply({ flags: 64 });
+
+        try {
+          const { error, data } = await callEdgeFunction('recent-results', {
+            guild_id: guildId,
+            include_ai_summary: true
+          });
+
+          if (error) {
+            return interaction.editReply({ content: `❌ Failed to fetch recent results: ${error}` });
+          }
+
+          const matches = data?.matches || [];
+          const summary = data?.summary || null;
+
+          if (matches.length === 0) {
+            return interaction.editReply({ content: '📊 No recent matches found. Play some games to see results here!' });
+          }
+
+          // Build match list
+          const matchLines = matches.slice(0, 5).map((m, i) => {
+            const result = m.result === 'win' ? '🟢 W' : m.result === 'loss' ? '🔴 L' : '⚪ D';
+            const score = `${m.score_for || 0}-${m.score_against || 0}`;
+            const opponent = m.opponent_club_name || 'Unknown';
+            return `${i + 1}. ${result} **${score}** vs ${opponent}`;
+          });
+
+          const embed = new EmbedBuilder()
+            .setTitle('📋 Recent Match Results')
+            .setColor(0x5865f2)
+            .setDescription(matchLines.join('\n'))
+            .setFooter({ text: 'Last 5 matches • Updated in real-time' })
+            .setTimestamp();
+
+          if (summary?.ai_analysis) {
+            embed.addFields({
+              name: '🤖 AI Analysis',
+              value: summary.ai_analysis.substring(0, 1000)
+            });
+          }
+
+          // Add stats fields if available
+          if (summary?.leaders) {
+            const leaders = summary.leaders;
+            const statsFields = [];
+            if (leaders.goals) statsFields.push({ name: '⚽ Top Scorer', value: `${leaders.goals.player} (${leaders.goals.value})`, inline: true });
+            if (leaders.assists) statsFields.push({ name: '🅰️ Top Assists', value: `${leaders.assists.player} (${leaders.assists.value})`, inline: true });
+            if (leaders.rating) statsFields.push({ name: '⭐ Best Rating', value: `${leaders.rating.player} (${leaders.rating.value})`, inline: true });
+            if (statsFields.length > 0) embed.addFields(statsFields);
+          }
+
+          return interaction.editReply({ embeds: [embed] });
+        } catch (err) {
+          return interaction.editReply({ content: `❌ Error: ${err.message}` });
+        }
+      }
+
+      // Win Probability button from scouting panel
+      if (id === 'scoutpanel_winprob') {
+        const modal = new ModalBuilder()
+          .setCustomId('scoutpanel_winprob_modal')
+          .setTitle('Calculate Win Probability');
+
+        const team1Input = new TextInputBuilder()
+          .setCustomId('winprob_team1')
+          .setLabel('Team 1 Players (comma-separated)')
+          .setPlaceholder('Player1, Player2, Player3...')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true);
+
+        const team2Input = new TextInputBuilder()
+          .setCustomId('winprob_team2')
+          .setLabel('Team 2 Players (comma-separated)')
+          .setPlaceholder('Player1, Player2, Player3...')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(true);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(team1Input),
+          new ActionRowBuilder().addComponents(team2Input)
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      // Form Check button from scouting panel
+      if (id === 'scoutpanel_form') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { data: players } = await supabase
+          .from('player_summary')
+          .select('discord_username, ea_username, form_rating, current_streak, streak_type')
+          .eq('guild_id', guildId)
+          .order('form_rating', { ascending: false, nullsFirst: false })
+          .limit(15);
+
+        if (!players || players.length === 0) {
+          return interaction.editReply({ content: 'No player form data available yet. Players need games to build form.' });
+        }
+
+        // Split into hot and cold
+        const hotPlayers = players.filter(p => (p.form_rating || 50) >= 60);
+        const coldPlayers = players.filter(p => (p.form_rating || 50) < 40);
+
+        let description = '';
+        if (hotPlayers.length > 0) {
+          description += '**🔥 HOT FORM**\n';
+          description += hotPlayers.slice(0, 5).map((p, i) => {
+            const name = p.ea_username || p.discord_username || 'Unknown';
+            const form = Math.round(p.form_rating || 50);
+            const streak = p.streak_type === 'win' ? `🔥${p.current_streak}` : '';
+            return `${i + 1}. **${name}** • Form: ${form} ${streak}`;
+          }).join('\n');
+          description += '\n\n';
+        }
+
+        if (coldPlayers.length > 0) {
+          description += '**❄️ COLD FORM**\n';
+          description += coldPlayers.slice(0, 5).map((p, i) => {
+            const name = p.ea_username || p.discord_username || 'Unknown';
+            const form = Math.round(p.form_rating || 50);
+            const streak = p.streak_type === 'loss' ? `❄️${p.current_streak}` : '';
+            return `${i + 1}. **${name}** • Form: ${form} ${streak}`;
+          }).join('\n');
+        }
+
+        if (!description) {
+          description = 'All players are in neutral form (40-60 range).';
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle('🔥 Player Form Check')
+          .setColor(0xff6b35)
+          .setDescription(description)
+          .setFooter({ text: 'Form updates after each match • 🔥 Hot = 60+ | ❄️ Cold = <40' })
+          .setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // Scouting Lists button from scouting panel
+      if (id === 'scoutpanel_lists') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { data: lists } = await supabase
+          .from('scouting_lists')
+          .select('id, name, description, player_ids, is_public, created_by_discord_id')
+          .eq('guild_id', guildId)
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (!lists || lists.length === 0) {
+          // Show options to create a list
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('scoutpanel_createlist')
+              .setLabel('Create Scouting List')
+              .setEmoji('➕')
+              .setStyle(ButtonStyle.Success)
+          );
+
+          return interaction.editReply({
+            content: '📋 **No scouting lists found!**\n\nCreate your first scouting list to track players you\'re interested in.',
+            components: [row]
+          });
+        }
+
+        const listLines = lists.map((l, i) => {
+          const playerCount = l.player_ids?.length || 0;
+          const visibility = l.is_public ? '🌐 Public' : '🔒 Private';
+          return `${i + 1}. **${l.name}** (${playerCount} players) ${visibility}`;
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('📋 Scouting Lists')
+          .setColor(0x5865f2)
+          .setDescription(listLines.join('\n'))
+          .setFooter({ text: 'Click a list below to view or manage it' })
+          .setTimestamp();
+
+        // Build select menu for lists
+        const options = lists.map(l => ({
+          label: l.name,
+          value: l.id,
+          description: `${l.player_ids?.length || 0} players • ${l.is_public ? 'Public' : 'Private'}`
+        }));
+
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('scoutpanel_list_select')
+          .setPlaceholder('Select a list to view')
+          .addOptions(options);
+
+        const row1 = new ActionRowBuilder().addComponents(selectMenu);
+        const row2 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('scoutpanel_createlist')
+            .setLabel('Create New List')
+            .setEmoji('➕')
+            .setStyle(ButtonStyle.Success)
+        );
+
+        return interaction.editReply({ embeds: [embed], components: [row1, row2] });
+      }
+
+      // Create Scouting List button
+      if (id === 'scoutpanel_createlist') {
+        const modal = new ModalBuilder()
+          .setCustomId('scoutpanel_createlist_modal')
+          .setTitle('Create Scouting List');
+
+        const nameInput = new TextInputBuilder()
+          .setCustomId('list_name')
+          .setLabel('List Name')
+          .setPlaceholder('e.g., "Transfer Targets", "Rival Team"')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(50);
+
+        const descInput = new TextInputBuilder()
+          .setCustomId('list_description')
+          .setLabel('Description (optional)')
+          .setPlaceholder('What is this list for?')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setMaxLength(100);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(nameInput),
+          new ActionRowBuilder().addComponents(descInput)
+        );
+
+        return interaction.showModal(modal);
+      }
+
+      // Achievements button from scouting panel
+      if (id === 'scoutpanel_achievements') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { data: achievements } = await supabase
+          .from('player_achievements')
+          .select('discord_user_id, achievement_name, achievement_icon, earned_at')
+          .eq('guild_id', guildId)
+          .order('earned_at', { ascending: false })
+          .limit(20);
+
+        if (!achievements || achievements.length === 0) {
+          return interaction.editReply({ content: '🏆 No achievements earned yet. Keep playing to unlock badges!' });
+        }
+
+        const lines = achievements.map(a => {
+          const time = Math.floor(new Date(a.earned_at).getTime() / 1000);
+          return `${a.achievement_icon} **${a.achievement_name}** • <t:${time}:R>`;
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('🏆 Recent Server Achievements')
+          .setColor(0xffd700)
+          .setDescription(lines.join('\n'))
+          .setFooter({ text: 'Showing last 20 achievements' })
+          .setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // My Stats button from scouting panel
+      if (id === 'scoutpanel_mystats') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { error, data } = await callEdgeFunction('get-player-profile', {
+          guild_id: guildId,
+          discord_user_id: interaction.user.id
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to fetch stats: ${error}` });
+        }
+
+        if (!data || !data.player) {
+          return interaction.editReply({ content: '📊 No stats found! Play some games to build your profile.' });
+        }
+
+        const p = data.player;
+        const streakEmoji = p.streak_type === 'win' ? '🔥' : p.streak_type === 'loss' ? '❄️' : '➖';
+        const formText = p.last_5_results?.map(r => r === 'W' ? '🟢' : r === 'L' ? '🔴' : '⚪').join('') || 'No games yet';
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📊 Your Stats: ${p.ea_username || p.discord_username || interaction.user.username}`)
+          .setColor(0x5865f2)
+          .addFields(
+            { name: '⭐ Rating', value: `**${Math.round(p.overall_rating || 50)}**`, inline: true },
+            { name: '🎮 Games', value: `${p.games_played || 0}`, inline: true },
+            { name: '🏆 Wins', value: `${p.wins || 0} (${Math.round(p.win_rate || 0)}%)`, inline: true },
+            { name: '⚽ Goals', value: `${p.goals || 0}`, inline: true },
+            { name: '🅰️ Assists', value: `${p.assists || 0}`, inline: true },
+            { name: `${streakEmoji} Streak`, value: `${p.current_streak || 0}`, inline: true },
+            { name: '📈 Recent Form', value: formText, inline: false }
+          )
+          .setFooter({ text: 'Keep playing to improve your rating!' })
+          .setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // Compare Players button from scouting panel
+      if (id === 'scoutpanel_compare') {
+        await interaction.deferReply({ flags: 64 });
+
+        // Fetch players for selection
+        const { data: players } = await supabase
+          .from('player_summary')
+          .select('discord_user_id, discord_username, ea_username, overall_rating, primary_position')
+          .eq('guild_id', guildId)
+          .order('overall_rating', { ascending: false })
+          .limit(25);
+
+        if (!players || players.length < 2) {
+          return interaction.editReply({ content: 'Need at least 2 players with stats to compare.' });
+        }
+
+        const options = players.map(p => ({
+          label: `${p.ea_username || p.discord_username || 'Unknown'} (${Math.round(p.overall_rating || 50)} OVR)`,
+          value: p.discord_user_id,
+          description: p.primary_position ? `Position: ${p.primary_position}` : 'Position: Unknown'
+        }));
+
+        const selectMenu1 = new StringSelectMenuBuilder()
+          .setCustomId('scoutpanel_compare_player1')
+          .setPlaceholder('Select first player')
+          .addOptions(options);
+
+        const row = new ActionRowBuilder().addComponents(selectMenu1);
+
+        return interaction.editReply({
+          content: '⚖️ **Compare Players**\n\nSelect the first player to compare:',
+          components: [row]
+        });
       }
 
       // =======================
@@ -7882,6 +8311,69 @@ client.on(Events.InteractionCreate, async (interaction) => {
         } catch (err) {
           console.error('[Scout EA Player] Error:', err);
           return interaction.editReply({ content: `❌ Error generating report: ${err.message}` });
+        }
+      }
+
+      // Create Scouting List Modal
+      if (id === 'scoutpanel_createlist_modal') {
+        const listName = interaction.fields.getTextInputValue('list_name').trim();
+        const listDesc = interaction.fields.getTextInputValue('list_description')?.trim() || null;
+
+        if (!listName) {
+          return interaction.reply({ content: '❌ List name is required.', flags: 64 });
+        }
+
+        try {
+          await supabase.from('scouting_lists').insert({
+            guild_id: guildId,
+            name: listName,
+            description: listDesc,
+            created_by_discord_id: interaction.user.id,
+            player_ids: [],
+            is_public: false
+          });
+
+          return interaction.reply({
+            content: `✅ **Scouting list "${listName}" created!**\n\nUse the Scout Player button to add players to your list.`,
+            flags: 64
+          });
+        } catch (err) {
+          return interaction.reply({ content: `❌ Failed to create list: ${err.message}`, flags: 64 });
+        }
+      }
+
+      // Win Probability Modal
+      if (id === 'scoutpanel_winprob_modal') {
+        const team1Input = interaction.fields.getTextInputValue('winprob_team1').trim();
+        const team2Input = interaction.fields.getTextInputValue('winprob_team2').trim();
+
+        await interaction.deferReply({ flags: 64 });
+
+        try {
+          const { error, data } = await callEdgeFunction('win-probability', {
+            guild_id: guildId,
+            team1_names: team1Input.split(',').map(n => n.trim()),
+            team2_names: team2Input.split(',').map(n => n.trim())
+          });
+
+          if (error) {
+            return interaction.editReply({ content: `❌ Failed to calculate: ${error}` });
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle('🎲 Win Probability Analysis')
+            .setColor(0x5865f2)
+            .addFields(
+              { name: '🔵 Team 1', value: `${Math.round(data?.team1_probability || 50)}%`, inline: true },
+              { name: '🔴 Team 2', value: `${Math.round(data?.team2_probability || 50)}%`, inline: true }
+            )
+            .setDescription(data?.analysis || 'Based on player ratings and recent form.')
+            .setFooter({ text: 'AI-powered prediction • SquadIQ' })
+            .setTimestamp();
+
+          return interaction.editReply({ embeds: [embed] });
+        } catch (err) {
+          return interaction.editReply({ content: `❌ Error: ${err.message}` });
         }
       }
 
