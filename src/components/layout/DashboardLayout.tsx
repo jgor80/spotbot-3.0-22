@@ -14,7 +14,8 @@ import {
   Target,
   Medal,
   UsersRound,
-  Settings
+  Settings,
+  Star
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ interface DashboardLayoutProps {
 const navItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  { path: "/ratings", label: "Ratings", icon: Star },
   { path: "/teams", label: "Teams", icon: UsersRound },
   { path: "/lineup", label: "Lineup", icon: ClipboardList },
   { path: "/drafts", label: "Drafts", icon: Swords },
