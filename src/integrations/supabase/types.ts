@@ -580,6 +580,7 @@ export type Database = {
           clubs: Json
           created_at: string
           current_club_key: string
+          feedback_enabled: boolean
           guild_id: string
           id: string
           name: string | null
@@ -594,6 +595,7 @@ export type Database = {
           clubs?: Json
           created_at?: string
           current_club_key?: string
+          feedback_enabled?: boolean
           guild_id: string
           id?: string
           name?: string | null
@@ -608,6 +610,7 @@ export type Database = {
           clubs?: Json
           created_at?: string
           current_club_key?: string
+          feedback_enabled?: boolean
           guild_id?: string
           id?: string
           name?: string | null

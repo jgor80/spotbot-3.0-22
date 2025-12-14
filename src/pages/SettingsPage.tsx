@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ClubsManager } from "@/components/settings/ClubsManager";
+import { FeedbackSettingsCard } from "@/components/settings/FeedbackSettingsCard";
 import { EaLinkingPanel } from "@/components/settings/EaLinkingPanel";
 import { 
   Gamepad2, 
@@ -314,6 +315,7 @@ export default function SettingsPage() {
 
           <TabsContent value="teams" className="space-y-4">
             <SyncNowCard guildId={selectedGuildId} />
+            <FeedbackSettingsCard guildId={selectedGuildId} />
             <ClubsManager />
           </TabsContent>
 
