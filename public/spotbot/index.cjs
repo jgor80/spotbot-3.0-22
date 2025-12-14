@@ -2751,15 +2751,15 @@ function buildAdminControlPanelButtons() {
       .setEmoji('⚔️')
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
-      .setCustomId('squadiq_leaderboard')
-      .setLabel('Leaderboard')
-      .setEmoji('🏆')
-      .setStyle(ButtonStyle.Secondary),
+      .setCustomId('squadiq_eventpanel')
+      .setLabel('Events')
+      .setEmoji('📅')
+      .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId('squadiq_syncprefs')
-      .setLabel('Sync Prefs')
-      .setEmoji('🔄')
-      .setStyle(ButtonStyle.Secondary)
+      .setCustomId('squadiq_teampanel')
+      .setLabel('Teams')
+      .setEmoji('👥')
+      .setStyle(ButtonStyle.Primary)
   );
   rows.push(row1);
   
@@ -2776,15 +2776,15 @@ function buildAdminControlPanelButtons() {
       .setEmoji('📊')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId('squadiq_pendingwins')
-      .setLabel('Pending Claims')
-      .setEmoji('📋')
-      .setStyle(ButtonStyle.Secondary),
+      .setCustomId('squadiq_autolink')
+      .setLabel('Auto-Link EA')
+      .setEmoji('🔗')
+      .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId('squadiq_refresh')
-      .setLabel('Refresh')
-      .setEmoji('🔄')
-      .setStyle(ButtonStyle.Success)
+      .setCustomId('squadiq_buildsupload')
+      .setLabel('Builds')
+      .setEmoji('🏗️')
+      .setStyle(ButtonStyle.Secondary)
   );
   rows.push(row2);
   
@@ -2796,40 +2796,35 @@ function buildAdminControlPanelButtons() {
       .setEmoji('🔍')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId('squadiq_matchpreview')
-      .setLabel('Match Preview')
-      .setEmoji('⚔️')
-      .setStyle(ButtonStyle.Primary),
+      .setCustomId('squadiq_pendingwins')
+      .setLabel('Win Claims')
+      .setEmoji('🏆')
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
-      .setCustomId('squadiq_clubmatches')
-      .setLabel('Club Matches')
-      .setEmoji('📊')
+      .setCustomId('squadiq_leaderboard')
+      .setLabel('Leaderboard')
+      .setEmoji('📈')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('squadiq_profile')
-      .setLabel('View Profile')
+      .setLabel('Profile')
       .setEmoji('👤')
       .setStyle(ButtonStyle.Secondary)
   );
   rows.push(row3);
   
-  // Row 4: Debug & Info
+  // Row 4: Debug & Links
   const row4 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('squadiq_debug')
-      .setLabel('Debug Info')
+      .setLabel('Debug')
       .setEmoji('🔧')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
-      .setCustomId('squadiq_logs')
-      .setLabel('Recent Activity')
-      .setEmoji('📜')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('squadiq_help')
-      .setLabel('Full Help')
-      .setEmoji('❔')
-      .setStyle(ButtonStyle.Secondary),
+      .setCustomId('squadiq_refresh')
+      .setLabel('Refresh')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setLabel('Web Dashboard')
       .setEmoji('🌐')
@@ -3389,6 +3384,9 @@ client.once(Events.ClientReady, async (c) => {
     await c.application.commands.set(COMMANDS);
     console.log(`✅ Commands registered globally for ${c.guilds.cache.size} guilds`);
     
+    // Sync guild names to database
+    await syncGuildNames(c);
+    
     // Resume EA FC Pro Clubs monitoring for all linked clubs
     resumeEaMonitoring();
     
@@ -3398,6 +3396,28 @@ client.once(Events.ClientReady, async (c) => {
     console.error('❌ Failed to register commands:', err);
   }
 });
+
+// Sync guild names to guild_settings table
+async function syncGuildNames(discordClient) {
+  try {
+    console.log(`[Guild] Syncing guild names for ${discordClient.guilds.cache.size} guilds...`);
+    
+    for (const [guildId, guild] of discordClient.guilds.cache) {
+      const { error } = await supabase
+        .from('guild_settings')
+        .update({ name: guild.name })
+        .eq('guild_id', guildId);
+      
+      if (!error) {
+        console.log(`[Guild] Updated name: ${guildId} -> ${guild.name}`);
+      }
+    }
+    
+    console.log(`[Guild] Guild names synced successfully`);
+  } catch (err) {
+    console.error(`[Guild] Error syncing guild names:`, err);
+  }
+}
 
 client.on(Events.GuildCreate, async (guild) => {
   try {
@@ -5688,6 +5708,276 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (id === 'squadiq_help') {
         return interaction.reply({ embeds: [buildHelpEmbed()], flags: 64 });
+      }
+
+      // Auto-Link EA Accounts button - triggers fuzzy matching for all unlinked profiles
+      if (id === 'squadiq_autolink') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        try {
+          const result = await autoLinkEaAccounts(guildId, interaction.guild);
+          
+          return interaction.editReply({
+            content: `🔗 **EA Account Auto-Link Complete**\n\n` +
+              `✅ Linked: ${result.linked}\n` +
+              `⏭️ Already linked: ${result.skipped}\n` +
+              `❌ No match found: ${result.noMatch}\n\n` +
+              `Auto-linking uses fuzzy matching (>50% similarity) to connect EA usernames to Discord members.`
+          });
+        } catch (error) {
+          console.error('[Auto-Link] Error:', error);
+          return interaction.editReply({ content: `❌ Error: ${error.message}` });
+        }
+      }
+
+      // Events Panel button
+      if (id === 'squadiq_eventpanel') {
+        await interaction.deferReply({ flags: 64 });
+        
+        // Fetch upcoming events
+        const { data: events } = await supabase
+          .from('availability_events')
+          .select('*')
+          .eq('guild_id', guildId)
+          .eq('closed', false)
+          .order('scheduled_at', { ascending: true })
+          .limit(5);
+        
+        const eventLines = (events || []).map(e => {
+          const time = new Date(e.scheduled_at).toLocaleString();
+          return `• **${e.title}** – ${time}`;
+        }).join('\n') || 'No upcoming events';
+        
+        const embed = new EmbedBuilder()
+          .setTitle('📅 Event Management')
+          .setColor(0x5865f2)
+          .setDescription(
+            '**Upcoming Events:**\n' + eventLines + '\n\n' +
+            '**Create New Event:**\n' +
+            'Use `/event` command to create availability checks\n\n' +
+            '**Event Types:** Match, Training, Scrimmage, Tournament'
+          )
+          .setFooter({ text: 'Players respond with ✅ Yes / ❌ No / ❓ Maybe' });
+        
+        const buttons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('squadiq_event_create')
+            .setLabel('Create Event')
+            .setEmoji('➕')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId('squadiq_event_list')
+            .setLabel('View All Events')
+            .setEmoji('📋')
+            .setStyle(ButtonStyle.Secondary)
+        );
+        
+        return interaction.editReply({ embeds: [embed], components: [buttons] });
+      }
+
+      // Teams Panel button
+      if (id === 'squadiq_teampanel') {
+        await interaction.deferReply({ flags: 64 });
+        
+        // Fetch teams
+        const { data: teams } = await supabase
+          .from('teams')
+          .select('*')
+          .eq('guild_id', guildId)
+          .eq('active', true)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        
+        const teamLines = (teams || []).map(t => {
+          const captain = t.captain_discord_id ? `<@${t.captain_discord_id}>` : 'No captain';
+          return `• **${t.name}** (${t.team_type}) – ${captain}`;
+        }).join('\n') || 'No teams created yet';
+        
+        const embed = new EmbedBuilder()
+          .setTitle('👥 Team Management')
+          .setColor(0x5865f2)
+          .setDescription(
+            '**Active Teams:**\n' + teamLines + '\n\n' +
+            '**Manage Teams on Web Dashboard:**\n' +
+            'Create teams, assign players to rosters, set captains and managers.'
+          )
+          .setFooter({ text: 'Full team management available on web • squadiq.lovable.app' });
+        
+        const buttons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('squadiq_team_create')
+            .setLabel('Create Team')
+            .setEmoji('➕')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setLabel('Manage on Web')
+            .setEmoji('🌐')
+            .setStyle(ButtonStyle.Link)
+            .setURL('https://squadiq.lovable.app/teams')
+        );
+        
+        return interaction.editReply({ embeds: [embed], components: [buttons] });
+      }
+
+      // Builds Upload Panel button
+      if (id === 'squadiq_buildsupload') {
+        const embed = new EmbedBuilder()
+          .setTitle('🏗️ Player Build Upload')
+          .setColor(0x5865f2)
+          .setDescription(
+            '**Submit Your Pro Clubs Build:**\n\n' +
+            '1️⃣ Take a screenshot of your player build screen in EA FC\n' +
+            '2️⃣ Click the button below to upload\n' +
+            '3️⃣ Your build will be verified and added to your profile\n\n' +
+            '**What to include:**\n' +
+            '• Height, Weight\n' +
+            '• Position & Playstyles\n' +
+            '• Build Rating (if visible)\n\n' +
+            '*Verified builds contribute to your Build Quality rating!*'
+          )
+          .setFooter({ text: 'Screenshots help verify player builds for fair matchmaking' });
+        
+        const buttons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('squadiq_build_upload')
+            .setLabel('Upload Build Screenshot')
+            .setEmoji('📸')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId('squadiq_build_manual')
+            .setLabel('Enter Manually')
+            .setEmoji('✏️')
+            .setStyle(ButtonStyle.Secondary)
+        );
+        
+        return interaction.reply({ embeds: [embed], components: [buttons], flags: 64 });
+      }
+
+      // Build upload button handler
+      if (id === 'squadiq_build_upload') {
+        return interaction.reply({
+          content: '📸 **Upload Your Build Screenshot**\n\n' +
+            'Please post your build screenshot in this channel, then an admin will verify it.\n\n' +
+            '*Alternatively, use the web dashboard at squadiq.lovable.app to upload directly.*',
+          flags: 64
+        });
+      }
+
+      // Manual build entry modal
+      if (id === 'squadiq_build_manual') {
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_build_manual_modal')
+          .setTitle('Enter Build Details');
+        
+        const positionInput = new TextInputBuilder()
+          .setCustomId('build_position')
+          .setLabel('Position (e.g., ST, CM, CB, GK)')
+          .setPlaceholder('ST')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const heightInput = new TextInputBuilder()
+          .setCustomId('build_height')
+          .setLabel('Height (cm)')
+          .setPlaceholder('185')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+        
+        const playstylesInput = new TextInputBuilder()
+          .setCustomId('build_playstyles')
+          .setLabel('Playstyles (comma separated)')
+          .setPlaceholder('Technical, Quick Step, First Touch')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(false);
+        
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(positionInput),
+          new ActionRowBuilder().addComponents(heightInput),
+          new ActionRowBuilder().addComponents(playstylesInput)
+        );
+        return interaction.showModal(modal);
+      }
+
+      // Create Event modal trigger
+      if (id === 'squadiq_event_create') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+        
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_event_create_modal')
+          .setTitle('Create Event');
+        
+        const titleInput = new TextInputBuilder()
+          .setCustomId('event_title')
+          .setLabel('Event Title')
+          .setPlaceholder('League Match vs Team Name')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const dateInput = new TextInputBuilder()
+          .setCustomId('event_date')
+          .setLabel('Date & Time (e.g., 2025-01-15 20:00)')
+          .setPlaceholder('2025-01-15 20:00')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const typeInput = new TextInputBuilder()
+          .setCustomId('event_type')
+          .setLabel('Type (match/training/scrimmage/tournament)')
+          .setPlaceholder('match')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+        
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(titleInput),
+          new ActionRowBuilder().addComponents(dateInput),
+          new ActionRowBuilder().addComponents(typeInput)
+        );
+        return interaction.showModal(modal);
+      }
+
+      // Create Team modal trigger
+      if (id === 'squadiq_team_create') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+        
+        const modal = new ModalBuilder()
+          .setCustomId('squadiq_team_create_modal')
+          .setTitle('Create Team');
+        
+        const nameInput = new TextInputBuilder()
+          .setCustomId('team_name')
+          .setLabel('Team Name')
+          .setPlaceholder('First Team')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        
+        const typeInput = new TextInputBuilder()
+          .setCustomId('team_type')
+          .setLabel('Type (comp/casual/academy)')
+          .setPlaceholder('comp')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+        
+        const captainInput = new TextInputBuilder()
+          .setCustomId('team_captain')
+          .setLabel('Captain Discord ID (optional)')
+          .setPlaceholder('123456789012345678')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+        
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(nameInput),
+          new ActionRowBuilder().addComponents(typeInput),
+          new ActionRowBuilder().addComponents(captainInput)
+        );
+        return interaction.showModal(modal);
       }
 
       // Send Feedback DMs button - sends pending feedback requests via DM
@@ -8780,6 +9070,143 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.editReply({ content: `❌ Error reporting result: ${err.message}` });
         }
       }
+
+      // Event Create Modal
+      if (id === 'squadiq_event_create_modal') {
+        const eventTitle = interaction.fields.getTextInputValue('event_title').trim();
+        const eventDate = interaction.fields.getTextInputValue('event_date').trim();
+        const eventType = interaction.fields.getTextInputValue('event_type')?.trim() || 'match';
+
+        if (!eventTitle || !eventDate) {
+          return interaction.reply({ content: '❌ Title and date are required.', flags: 64 });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        try {
+          // Parse the date
+          const scheduledAt = new Date(eventDate);
+          if (isNaN(scheduledAt.getTime())) {
+            return interaction.editReply({ content: '❌ Invalid date format. Use YYYY-MM-DD HH:MM' });
+          }
+
+          const { data: event, error } = await supabase
+            .from('availability_events')
+            .insert({
+              guild_id: guildId,
+              title: eventTitle,
+              event_type: eventType,
+              scheduled_at: scheduledAt.toISOString(),
+              created_by_discord_id: interaction.user.id,
+              channel_id: interaction.channel?.id
+            })
+            .select()
+            .single();
+
+          if (error) {
+            return interaction.editReply({ content: `❌ Failed to create event: ${error.message}` });
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle(`📅 ${eventTitle}`)
+            .setColor(0x5865f2)
+            .setDescription(`**Type:** ${eventType}\n**When:** ${scheduledAt.toLocaleString()}\n\nRespond with your availability!`)
+            .setFooter({ text: 'Click a button to respond' });
+
+          const buttons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`event_yes_${event.id}`).setLabel('✅ Available').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId(`event_no_${event.id}`).setLabel('❌ Unavailable').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId(`event_maybe_${event.id}`).setLabel('❓ Maybe').setStyle(ButtonStyle.Secondary)
+          );
+
+          await interaction.editReply({
+            content: '✅ Event created!',
+            embeds: [embed],
+            components: [buttons]
+          });
+        } catch (err) {
+          console.error('[Event Create Modal] Error:', err);
+          return interaction.editReply({ content: `❌ Error: ${err.message}` });
+        }
+      }
+
+      // Team Create Modal
+      if (id === 'squadiq_team_create_modal') {
+        const teamName = interaction.fields.getTextInputValue('team_name').trim();
+        const teamType = interaction.fields.getTextInputValue('team_type')?.trim() || 'comp';
+        const captainId = interaction.fields.getTextInputValue('team_captain')?.trim() || null;
+
+        if (!teamName) {
+          return interaction.reply({ content: '❌ Team name is required.', flags: 64 });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        try {
+          const { data: team, error } = await supabase
+            .from('teams')
+            .insert({
+              guild_id: guildId,
+              name: teamName,
+              team_type: teamType,
+              captain_discord_id: captainId,
+              manager_discord_ids: [interaction.user.id]
+            })
+            .select()
+            .single();
+
+          if (error) {
+            return interaction.editReply({ content: `❌ Failed to create team: ${error.message}` });
+          }
+
+          return interaction.editReply({
+            content: `✅ **Team "${teamName}" created!**\n\n` +
+              `**Type:** ${teamType}\n` +
+              `**Captain:** ${captainId ? `<@${captainId}>` : 'Not set'}\n\n` +
+              `Manage your team roster at squadiq.lovable.app/teams`
+          });
+        } catch (err) {
+          console.error('[Team Create Modal] Error:', err);
+          return interaction.editReply({ content: `❌ Error: ${err.message}` });
+        }
+      }
+
+      // Build Manual Entry Modal
+      if (id === 'squadiq_build_manual_modal') {
+        const position = interaction.fields.getTextInputValue('build_position').trim().toUpperCase();
+        const height = interaction.fields.getTextInputValue('build_height')?.trim() || null;
+        const playstyles = interaction.fields.getTextInputValue('build_playstyles')?.trim() || null;
+
+        await interaction.deferReply({ flags: 64 });
+
+        try {
+          const { error } = await supabase
+            .from('player_build_profiles')
+            .upsert({
+              guild_id: guildId,
+              discord_user_id: interaction.user.id,
+              position: position,
+              height_cm: height ? parseInt(height) : null,
+              playstyles: playstyles ? playstyles.split(',').map(p => p.trim()) : [],
+              verified: false
+            }, { onConflict: 'guild_id,discord_user_id,position' });
+
+          if (error) {
+            return interaction.editReply({ content: `❌ Failed to save build: ${error.message}` });
+          }
+
+          return interaction.editReply({
+            content: `✅ **Build Saved!**\n\n` +
+              `**Position:** ${position}\n` +
+              `**Height:** ${height || 'Not specified'}cm\n` +
+              `**Playstyles:** ${playstyles || 'None specified'}\n\n` +
+              `⏳ Awaiting admin verification. Once verified, this will contribute to your Build Quality rating!`
+          });
+        } catch (err) {
+          console.error('[Build Manual Modal] Error:', err);
+          return interaction.editReply({ content: `❌ Error: ${err.message}` });
+        }
+      }
     }
 
     // ----- Select Menus -----
@@ -10696,6 +11123,163 @@ async function pollAndSendFeedbackDMs(discordClient) {
   } catch (err) {
     console.error(`[Feedback] Polling error:`, err.message);
   }
+}
+
+// =======================
+// AUTO-LINK EA ACCOUNTS TO DISCORD MEMBERS
+// =======================
+
+async function autoLinkEaAccounts(guildId, guild) {
+  const result = { linked: 0, skipped: 0, noMatch: 0 };
+  
+  try {
+    // Get all temporary ea_ profiles that need linking
+    const { data: tempProfiles } = await supabase
+      .from('profiles')
+      .select('discord_user_id, ea_username, ea_platform')
+      .like('discord_user_id', 'ea_%');
+    
+    if (!tempProfiles || tempProfiles.length === 0) {
+      return result;
+    }
+    
+    console.log(`[Auto-Link] Found ${tempProfiles.length} unlinked EA profiles`);
+    
+    // Fetch all guild members
+    await guild.members.fetch();
+    const guildMembers = guild.members.cache;
+    
+    // Get existing Discord profiles that don't have EA accounts linked
+    const { data: discordProfiles } = await supabase
+      .from('profiles')
+      .select('discord_user_id, discord_username, ea_username')
+      .not('discord_user_id', 'like', 'ea_%');
+    
+    const unlinkedMembers = (discordProfiles || []).filter(p => !p.ea_username && p.discord_username);
+    
+    for (const tempProfile of tempProfiles) {
+      const eaUsername = tempProfile.ea_username;
+      if (!eaUsername) continue;
+      
+      // First check if any guild member's Discord username matches
+      let bestMatch = null;
+      let bestSimilarity = 0;
+      
+      // Check guild members directly
+      for (const [memberId, member] of guildMembers) {
+        const similarity = stringSimilarity(eaUsername.toLowerCase(), member.user.username.toLowerCase());
+        if (similarity > bestSimilarity && similarity >= 0.5) {
+          bestSimilarity = similarity;
+          bestMatch = { discord_user_id: memberId, discord_username: member.user.username };
+        }
+        
+        // Also check display name
+        if (member.displayName) {
+          const displaySimilarity = stringSimilarity(eaUsername.toLowerCase(), member.displayName.toLowerCase());
+          if (displaySimilarity > bestSimilarity && displaySimilarity >= 0.5) {
+            bestSimilarity = displaySimilarity;
+            bestMatch = { discord_user_id: memberId, discord_username: member.user.username };
+          }
+        }
+      }
+      
+      // Also check against profiles table
+      for (const profile of unlinkedMembers) {
+        if (!profile.discord_username) continue;
+        const similarity = stringSimilarity(eaUsername.toLowerCase(), profile.discord_username.toLowerCase());
+        if (similarity > bestSimilarity && similarity >= 0.5) {
+          bestSimilarity = similarity;
+          bestMatch = profile;
+        }
+      }
+      
+      if (!bestMatch) {
+        result.noMatch++;
+        continue;
+      }
+      
+      // Check if target already has an EA account linked
+      const existingProfile = discordProfiles?.find(p => p.discord_user_id === bestMatch.discord_user_id);
+      if (existingProfile?.ea_username) {
+        result.skipped++;
+        continue;
+      }
+      
+      console.log(`[Auto-Link] Linking ${eaUsername} -> ${bestMatch.discord_username} (${(bestSimilarity * 100).toFixed(0)}%)`);
+      
+      const tempDiscordId = tempProfile.discord_user_id;
+      const realDiscordId = bestMatch.discord_user_id;
+      
+      // Update the real Discord profile with EA info
+      await supabase
+        .from('profiles')
+        .upsert({
+          discord_user_id: realDiscordId,
+          ea_username: eaUsername,
+          ea_platform: tempProfile.ea_platform,
+          discord_username: bestMatch.discord_username
+        }, { onConflict: 'discord_user_id' });
+      
+      // Migrate player_stats
+      await supabase
+        .from('player_stats')
+        .update({ discord_user_id: realDiscordId })
+        .eq('discord_user_id', tempDiscordId);
+      
+      // Migrate player_summary
+      await supabase
+        .from('player_summary')
+        .update({ discord_user_id: realDiscordId })
+        .eq('discord_user_id', tempDiscordId);
+      
+      // Migrate player_ratings
+      await supabase
+        .from('player_ratings')
+        .update({ discord_user_id: realDiscordId })
+        .eq('discord_user_id', tempDiscordId);
+      
+      // Delete temp profile
+      await supabase
+        .from('profiles')
+        .delete()
+        .eq('discord_user_id', tempDiscordId);
+      
+      result.linked++;
+      
+      // Remove from unlinked list to prevent double-matching
+      const idx = unlinkedMembers.findIndex(m => m.discord_user_id === realDiscordId);
+      if (idx !== -1) unlinkedMembers.splice(idx, 1);
+    }
+    
+    return result;
+  } catch (err) {
+    console.error('[Auto-Link] Error:', err);
+    throw err;
+  }
+}
+
+// Simple string similarity function (Dice coefficient)
+function stringSimilarity(str1, str2) {
+  if (str1 === str2) return 1;
+  if (str1.length < 2 || str2.length < 2) return 0;
+  
+  const bigrams = new Map();
+  for (let i = 0; i < str1.length - 1; i++) {
+    const bigram = str1.substring(i, i + 2);
+    bigrams.set(bigram, (bigrams.get(bigram) || 0) + 1);
+  }
+  
+  let intersectionSize = 0;
+  for (let i = 0; i < str2.length - 1; i++) {
+    const bigram = str2.substring(i, i + 2);
+    const count = bigrams.get(bigram) || 0;
+    if (count > 0) {
+      bigrams.set(bigram, count - 1);
+      intersectionSize++;
+    }
+  }
+  
+  return (2.0 * intersectionSize) / (str1.length + str2.length - 2);
 }
 
 // =======================
