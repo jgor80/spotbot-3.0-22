@@ -8,6 +8,18 @@ const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 const stringSimilarity = require('string-similarity');
 
+// Normalize username for better matching - strip common variations
+function normalizeUsername(username) {
+  if (!username) return '';
+  return username
+    .toLowerCase()
+    .replace(/[_\-\.]/g, '')         // Remove underscores, dashes, dots
+    .replace(/[0-9]+$/g, '')         // Remove trailing numbers
+    .replace(/^(ttv|yt|twitch)/i, '') // Remove common prefixes
+    .replace(/x{2,}$/i, '')          // Remove trailing xxx
+    .trim();
+}
+
 // Fuzzy match EA usernames to Discord members
 async function fuzzyMatchEaToDiscord(supabase, guildId, eaUsername) {
   // Get all real Discord members in the guild (not temp ea_ profiles)
@@ -28,19 +40,36 @@ async function fuzzyMatchEaToDiscord(supabase, guildId, eaUsername) {
   
   if (!allMembers.length) return null;
   
-  // Find best match
+  // Find best match using both raw and normalized usernames
   const usernames = allMembers.map(m => m.discord_username || '').filter(Boolean);
   if (!usernames.length) return null;
   
-  const match = stringSimilarity.findBestMatch(eaUsername.toLowerCase(), usernames.map(u => u.toLowerCase()));
+  const normalizedEa = normalizeUsername(eaUsername);
   
-  // Only accept matches with > 70% similarity
-  if (match.bestMatch.rating >= 0.7) {
+  // Try exact normalized match first
+  for (const member of allMembers) {
+    if (member.discord_username && normalizeUsername(member.discord_username) === normalizedEa) {
+      console.log(`  🎯 Exact normalized match: ${eaUsername} -> ${member.discord_username}`);
+      return member;
+    }
+  }
+  
+  // Try fuzzy match on both raw and normalized
+  const rawMatch = stringSimilarity.findBestMatch(eaUsername.toLowerCase(), usernames.map(u => u.toLowerCase()));
+  const normalizedMatch = stringSimilarity.findBestMatch(normalizedEa, usernames.map(u => normalizeUsername(u)));
+  
+  // Use whichever match is better
+  const bestMatch = rawMatch.bestMatch.rating >= normalizedMatch.bestMatch.rating ? rawMatch : normalizedMatch;
+  const matchType = rawMatch.bestMatch.rating >= normalizedMatch.bestMatch.rating ? 'raw' : 'normalized';
+  
+  // Accept matches with > 40% similarity (lowered for better coverage)
+  if (bestMatch.bestMatch.rating >= 0.4) {
     const matchedMember = allMembers.find(
-      m => m.discord_username?.toLowerCase() === match.bestMatch.target
+      m => m.discord_username?.toLowerCase() === bestMatch.bestMatch.target || 
+           normalizeUsername(m.discord_username) === bestMatch.bestMatch.target
     );
     if (matchedMember) {
-      console.log(`  🔍 Fuzzy match: ${eaUsername} -> ${matchedMember.discord_username} (${(match.bestMatch.rating * 100).toFixed(0)}%)`);
+      console.log(`  🔍 Fuzzy match (${matchType}): ${eaUsername} -> ${matchedMember.discord_username} (${(bestMatch.bestMatch.rating * 100).toFixed(0)}%)`);
       return matchedMember;
     }
   }
@@ -89,22 +118,42 @@ async function retroMatchUnlinkedProfiles(guildId) {
     const usernames = unlinkedMembers.map(m => m.discord_username).filter(Boolean);
     if (usernames.length === 0) continue;
     
-    const match = stringSimilarity.findBestMatch(
-      eaUsername.toLowerCase(), 
-      usernames.map(u => u.toLowerCase())
+    const normalizedEa = normalizeUsername(eaUsername);
+    
+    // Try exact normalized match first
+    let matchedMember = unlinkedMembers.find(
+      m => m.discord_username && normalizeUsername(m.discord_username) === normalizedEa
     );
     
-    // Accept matches with > 50% similarity for retro-matching (more lenient)
-    if (match.bestMatch.rating >= 0.5) {
-      const matchedMember = unlinkedMembers.find(
-        m => m.discord_username?.toLowerCase() === match.bestMatch.target
+    if (matchedMember) {
+      console.log(`  🎯 Retro exact match: ${eaUsername} -> ${matchedMember.discord_username}`);
+    } else {
+      // Try fuzzy match on both raw and normalized
+      const rawMatch = stringSimilarity.findBestMatch(
+        eaUsername.toLowerCase(), 
+        usernames.map(u => u.toLowerCase())
+      );
+      const normalizedMatch = stringSimilarity.findBestMatch(
+        normalizedEa, 
+        usernames.map(u => normalizeUsername(u))
       );
       
-      if (matchedMember) {
-        console.log(`  🔗 Retro-linking: ${eaUsername} -> ${matchedMember.discord_username} (${(match.bestMatch.rating * 100).toFixed(0)}%)`);
+      // Use whichever match is better
+      const bestMatch = rawMatch.bestMatch.rating >= normalizedMatch.bestMatch.rating ? rawMatch : normalizedMatch;
+      
+      // Accept matches with > 35% similarity for retro-matching (more lenient)
+      if (bestMatch.bestMatch.rating >= 0.35) {
+        matchedMember = unlinkedMembers.find(
+          m => m.discord_username?.toLowerCase() === bestMatch.bestMatch.target || 
+               normalizeUsername(m.discord_username) === bestMatch.bestMatch.target
+        );
         
-        const tempDiscordId = tempProfile.discord_user_id;
-        const realDiscordId = matchedMember.discord_user_id;
+        if (matchedMember) {
+          console.log(`  🔗 Retro-linking: ${eaUsername} -> ${matchedMember.discord_username} (${(bestMatch.bestMatch.rating * 100).toFixed(0)}%)`);
+        }
+      }
+      const tempDiscordId = tempProfile.discord_user_id;
+      const realDiscordId = matchedMember.discord_user_id;
         
         // Update the real Discord profile with EA info
         await supabase
@@ -193,7 +242,6 @@ async function retroMatchUnlinkedProfiles(guildId) {
         // Remove from unlinked list so we don't double-match
         const idx = unlinkedMembers.findIndex(m => m.discord_user_id === realDiscordId);
         if (idx !== -1) unlinkedMembers.splice(idx, 1);
-      }
     }
   }
   
