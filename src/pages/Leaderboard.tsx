@@ -40,6 +40,7 @@ export default function Leaderboard() {
   const [positionFilter, setPositionFilter] = useState("all");
   const [timePeriod, setTimePeriod] = useState("all");
   const [showWorst, setShowWorst] = useState(false);
+  const [clubFilter, setClubFilter] = useState("all");
 
   const enabledClubs = (selectedGuild?.clubs || []).filter((club) => club.enabled);
 
@@ -59,7 +60,8 @@ export default function Leaderboard() {
     activeTab,
     positionFilter === "all" ? undefined : positionFilter,
     100, // Fetch more for filtering
-    monthYear
+    monthYear,
+    clubFilter === "all" ? undefined : clubFilter
   );
 
   // Client-side filtering and sorting for worst performers
@@ -94,7 +96,9 @@ export default function Leaderboard() {
               <p className="text-muted-foreground">
                 {showWorst 
                   ? "Players ranked from worst to best (min 3 games)" 
-                  : "Top players ranked by performance, aggregated across every monitored club in this server"}
+                  : clubFilter === "all"
+                    ? "Top players ranked by performance, aggregated across every monitored club in this server"
+                    : `Stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter} only`}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -112,6 +116,19 @@ export default function Leaderboard() {
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
+            <Select value={clubFilter} onValueChange={setClubFilter}>
+              <SelectTrigger className="w-[180px] bg-card">
+                <SelectValue placeholder="Select club" />
+              </SelectTrigger>
+              <SelectContent className="bg-card border z-50">
+                <SelectItem value="all">All Clubs (Aggregate)</SelectItem>
+                {enabledClubs.map((club) => (
+                  <SelectItem key={club.key} value={club.key}>
+                    {club.name || club.key}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={timePeriod} onValueChange={setTimePeriod}>
               <SelectTrigger className="w-[140px] bg-card">
                 <SelectValue placeholder="Time period" />

@@ -7,13 +7,14 @@ export function useLeaderboard(
   type: string = "overall",
   position?: string,
   limit: number = 50,
-  monthYear?: string
+  monthYear?: string,
+  clubKey?: string
 ) {
   return useQuery({
-    queryKey: ["leaderboard", guildId, type, position, limit, monthYear],
+    queryKey: ["leaderboard", guildId, type, position, limit, monthYear, clubKey],
     queryFn: async (): Promise<LeaderboardPlayer[]> => {
       if (!guildId) throw new Error("No guild selected");
-      return fetchLeaderboard(guildId, type, position, limit, monthYear);
+      return fetchLeaderboard(guildId, type, position, limit, monthYear, clubKey);
     },
     enabled: !!guildId,
   });
