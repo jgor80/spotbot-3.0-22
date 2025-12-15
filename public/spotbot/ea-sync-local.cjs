@@ -601,6 +601,17 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
     const interceptions = parseInt(member.interceptions || 0);
     const clearances = parseInt(member.clearances || 0);
     
+    // GK-specific detailed save breakdowns from EA member data
+    const savesDiving = parseInt(member.savesdiving || member.gkSavesDiving || member.gksavesdive || 0);
+    const savesReflex = parseInt(member.savesreflex || member.gkSavesReflex || member.gksavesreflex || 0);
+    const savesParry = parseInt(member.savesparry || member.gkSavesParry || member.gksavesparry || 0);
+    const savesCross = parseInt(member.savescross || member.gkSavesCross || member.gksavescross || member.crosscatches || 0);
+    const savesPunch = parseInt(member.savespunch || member.gkSavesPunch || member.gksavespunch || member.punches || 0);
+    const goalsConceded = parseInt(member.goalsconceded || member.goalsAgainst || member.goalsConceded || 0);
+    const dribbles = parseInt(member.dribblewon || member.dribbles || 0);
+    const fouls = parseInt(member.fouls || member.foulcommited || 0);
+    const offsides = parseInt(member.offsides || 0);
+    
     console.log(`  📊 ${eaUsername}: ${gamesPlayed} games, ${goals}G/${assists}A, ${winRate.toFixed(1)}% win, ${passSuccessRate.toFixed(1)}% pass, ${tackleSuccessRate.toFixed(1)}% tackle`);
     
     // Update stats for ALL players (including ea_ prefixed temp profiles)
@@ -630,7 +641,7 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
     const mappedPosition = position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null;
     
     if (!existingRating) {
-      // Create initial rating record with EA aggregate stats
+      // Create initial rating record with EA aggregate stats including GK-specific
       await supabase
         .from('player_ratings')
         .insert({
@@ -648,11 +659,22 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
           avg_match_rating: avgRating,
           shots: shots,
           tackles: tackles,
+          tackle_attempts: tackleAttempts,
           passes_made: passesMade,
           pass_attempts: passAttempts,
           saves: saves,
           interceptions: interceptions,
           clearances: clearances,
+          // GK-specific stats
+          saves_diving: savesDiving,
+          saves_reflex: savesReflex,
+          saves_parry: savesParry,
+          saves_cross: savesCross,
+          saves_punch: savesPunch,
+          goals_conceded: goalsConceded,
+          dribbles: dribbles,
+          fouls: fouls,
+          offsides: offsides,
           baseline_synced: true,
         });
       
@@ -673,11 +695,22 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
           avg_match_rating: avgRating,
           shots: shots,
           tackles: tackles,
+          tackle_attempts: tackleAttempts,
           passes_made: passesMade,
           pass_attempts: passAttempts,
           saves: saves,
           interceptions: interceptions,
           clearances: clearances,
+          // GK-specific stats
+          saves_diving: savesDiving,
+          saves_reflex: savesReflex,
+          saves_parry: savesParry,
+          saves_cross: savesCross,
+          saves_punch: savesPunch,
+          goals_conceded: goalsConceded,
+          dribbles: dribbles,
+          fouls: fouls,
+          offsides: offsides,
           baseline_synced: true,
           updated_at: new Date().toISOString()
         })
@@ -695,7 +728,7 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
       .maybeSingle();
     
     if (!existingSummary) {
-      // Create initial summary record with EA aggregate stats
+      // Create initial summary record with EA aggregate stats including GK-specific
       await supabase
         .from('player_summary')
         .insert({
@@ -716,9 +749,22 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
           avg_match_rating: avgRating,
           shots: shots,
           tackles: tackles,
+          tackle_attempts: tackleAttempts,
           passes_made: passesMade,
           pass_attempts: passAttempts,
           saves: saves,
+          interceptions: interceptions,
+          clearances: clearances,
+          // GK-specific stats
+          saves_diving: savesDiving,
+          saves_reflex: savesReflex,
+          saves_parry: savesParry,
+          saves_cross: savesCross,
+          saves_punch: savesPunch,
+          goals_conceded: goalsConceded,
+          dribbles: dribbles,
+          fouls: fouls,
+          offsides: offsides,
           baseline_synced: true,
         });
       
@@ -742,9 +788,22 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
           avg_match_rating: avgRating,
           shots: shots,
           tackles: tackles,
+          tackle_attempts: tackleAttempts,
           passes_made: passesMade,
           pass_attempts: passAttempts,
           saves: saves,
+          interceptions: interceptions,
+          clearances: clearances,
+          // GK-specific stats
+          saves_diving: savesDiving,
+          saves_reflex: savesReflex,
+          saves_parry: savesParry,
+          saves_cross: savesCross,
+          saves_punch: savesPunch,
+          goals_conceded: goalsConceded,
+          dribbles: dribbles,
+          fouls: fouls,
+          offsides: offsides,
           baseline_synced: true,
           updated_at: new Date().toISOString()
         })
@@ -862,7 +921,7 @@ async function syncMatches(guildId, clubKey, club) {
     const players = matchData.players?.[club.ea_club_id] || {};
     
     for (const [playerId, pStats] of Object.entries(players)) {
-      // Extract ALL available stats from EA API
+      // Extract ALL available stats from EA API - comprehensive capture
       playerStats.push({
         ea_username: pStats.playername || pStats.name,
         goals: parseInt(pStats.goals || 0),
@@ -872,6 +931,7 @@ async function syncMatches(guildId, clubKey, club) {
         motm: pStats.mom === '1' || pStats.mom === 1,
         shots: parseInt(pStats.shots || 0),
         tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
+        tackle_attempts: parseInt(pStats.tackleattempts || pStats.tackleAttempts || 0),
         passes_made: parseInt(pStats.passesmade || pStats.passesMade || 0),
         pass_attempts: parseInt(pStats.passattempts || pStats.passAttempts || 0),
         red_cards: pStats.redcards === '1' || pStats.redcards === 1,
@@ -882,7 +942,21 @@ async function syncMatches(guildId, clubKey, club) {
         possession: parseFloat(pStats.possession || 0),
         dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
         fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
-        offsides: parseInt(pStats.offsides || 0)
+        offsides: parseInt(pStats.offsides || 0),
+        // Player archetype/build from EA (like OurProClub captures)
+        archetypeid: pStats.archetypeid || pStats.archetypeId || pStats.archetype || null,
+        seconds_played: parseInt(pStats.secondsPlayed || pStats.seconds_played || 0),
+        // GK-specific detailed save breakdowns
+        saves_diving: parseInt(pStats.savesdiving || pStats.gkSavesDiving || pStats.gksavesdive || 0),
+        saves_reflex: parseInt(pStats.savesreflex || pStats.gkSavesReflex || pStats.gksavesreflex || 0),
+        saves_parry: parseInt(pStats.savesparry || pStats.gkSavesParry || pStats.gksavesparry || 0),
+        saves_cross: parseInt(pStats.savescross || pStats.gkSavesCross || pStats.gksavescross || pStats.crosscatches || 0),
+        saves_punch: parseInt(pStats.savespunch || pStats.gkSavesPunch || pStats.gksavespunch || pStats.punches || 0),
+        // GK goals conceded
+        goals_conceded: parseInt(pStats.goalsconceded || pStats.goalsAgainst || 0),
+        // Clean sheet tracking for GK (already calculated separately but capture raw too)
+        cleansheetsgk: pStats.cleansheetsgk === '1' || pStats.cleansheetsgk === 1,
+        cleansheetsdef: pStats.cleansheetsdef === '1' || pStats.cleansheetsdef === 1
       });
     }
     
@@ -952,7 +1026,7 @@ async function syncMatches(guildId, clubKey, club) {
       const statsKey = `${matchId}:${profile.discord_user_id}`;
       if (existingPlayerStatsSet.has(statsKey)) continue;
       
-      // Insert player stats with ea_match_id for future deduplication
+      // Insert player stats with ea_match_id for future deduplication - comprehensive stats
       const { error: statsError } = await supabase.from('player_stats').insert({
         guild_id: guildId,
         discord_user_id: profile.discord_user_id,
@@ -967,9 +1041,26 @@ async function syncMatches(guildId, clubKey, club) {
         man_of_match: pStat.motm,
         shots: pStat.shots,
         tackles: pStat.tackles,
+        tackle_attempts: pStat.tackle_attempts,
         passes_made: pStat.passes_made,
         pass_attempts: pStat.pass_attempts,
-        red_cards: pStat.red_cards
+        red_cards: pStat.red_cards,
+        // Extended stats
+        interceptions: pStat.interceptions,
+        clearances: pStat.clearances,
+        possession: pStat.possession,
+        dribbles: pStat.dribbles,
+        fouls: pStat.fouls,
+        offsides: pStat.offsides,
+        seconds_played: pStat.seconds_played,
+        archetypeid: pStat.archetypeid,
+        // GK-specific detailed save breakdowns
+        saves_diving: pStat.saves_diving,
+        saves_reflex: pStat.saves_reflex,
+        saves_parry: pStat.saves_parry,
+        saves_cross: pStat.saves_cross,
+        saves_punch: pStat.saves_punch,
+        goals_conceded: pStat.goals_conceded
       });
       
       if (!statsError) {
