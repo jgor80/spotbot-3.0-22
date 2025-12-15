@@ -1049,6 +1049,132 @@ export type Database = {
         }
         Relationships: []
       }
+      player_club_stats: {
+        Row: {
+          archetypeid: string | null
+          assists: number | null
+          avg_match_rating: number | null
+          baseline_synced: boolean | null
+          clean_sheets: number | null
+          clearances: number | null
+          club_key: string
+          created_at: string
+          discord_user_id: string
+          discord_username: string | null
+          draws: number | null
+          dribbles: number | null
+          ea_club_id: string | null
+          fouls: number | null
+          games_played: number | null
+          goals: number | null
+          goals_conceded: number | null
+          guild_id: string
+          id: string
+          interceptions: number | null
+          losses: number | null
+          man_of_match: number | null
+          offsides: number | null
+          pass_attempts: number | null
+          passes_made: number | null
+          primary_position: string | null
+          saves: number | null
+          saves_cross: number | null
+          saves_diving: number | null
+          saves_parry: number | null
+          saves_punch: number | null
+          saves_reflex: number | null
+          seconds_played: number | null
+          shots: number | null
+          tackle_attempts: number | null
+          tackles: number | null
+          updated_at: string
+          win_rate: number | null
+          wins: number | null
+        }
+        Insert: {
+          archetypeid?: string | null
+          assists?: number | null
+          avg_match_rating?: number | null
+          baseline_synced?: boolean | null
+          clean_sheets?: number | null
+          clearances?: number | null
+          club_key: string
+          created_at?: string
+          discord_user_id: string
+          discord_username?: string | null
+          draws?: number | null
+          dribbles?: number | null
+          ea_club_id?: string | null
+          fouls?: number | null
+          games_played?: number | null
+          goals?: number | null
+          goals_conceded?: number | null
+          guild_id: string
+          id?: string
+          interceptions?: number | null
+          losses?: number | null
+          man_of_match?: number | null
+          offsides?: number | null
+          pass_attempts?: number | null
+          passes_made?: number | null
+          primary_position?: string | null
+          saves?: number | null
+          saves_cross?: number | null
+          saves_diving?: number | null
+          saves_parry?: number | null
+          saves_punch?: number | null
+          saves_reflex?: number | null
+          seconds_played?: number | null
+          shots?: number | null
+          tackle_attempts?: number | null
+          tackles?: number | null
+          updated_at?: string
+          win_rate?: number | null
+          wins?: number | null
+        }
+        Update: {
+          archetypeid?: string | null
+          assists?: number | null
+          avg_match_rating?: number | null
+          baseline_synced?: boolean | null
+          clean_sheets?: number | null
+          clearances?: number | null
+          club_key?: string
+          created_at?: string
+          discord_user_id?: string
+          discord_username?: string | null
+          draws?: number | null
+          dribbles?: number | null
+          ea_club_id?: string | null
+          fouls?: number | null
+          games_played?: number | null
+          goals?: number | null
+          goals_conceded?: number | null
+          guild_id?: string
+          id?: string
+          interceptions?: number | null
+          losses?: number | null
+          man_of_match?: number | null
+          offsides?: number | null
+          pass_attempts?: number | null
+          passes_made?: number | null
+          primary_position?: string | null
+          saves?: number | null
+          saves_cross?: number | null
+          saves_diving?: number | null
+          saves_parry?: number | null
+          saves_punch?: number | null
+          saves_reflex?: number | null
+          seconds_played?: number | null
+          shots?: number | null
+          tackle_attempts?: number | null
+          tackles?: number | null
+          updated_at?: string
+          win_rate?: number | null
+          wins?: number | null
+        }
+        Relationships: []
+      }
       player_position_ratings: {
         Row: {
           assists_at_position: number

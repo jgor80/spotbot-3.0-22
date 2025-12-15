@@ -1552,6 +1552,106 @@ async function runSync() {
         
         console.log(`  📊 ${eaUsername}: ${stats.gamesPlayed} games, ${stats.goals}G/${stats.assists}A from ${club.name}`);
         
+        // ===== SAVE PER-CLUB STATS to player_club_stats table =====
+        // Find or create profile for EA username
+        let profile = null;
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('discord_user_id')
+          .eq('ea_username', eaUsername)
+          .maybeSingle();
+        
+        if (existingProfile) {
+          profile = existingProfile;
+        } else {
+          // Try fuzzy match or create temp profile
+          const fuzzyMatch = await fuzzyMatchEaToDiscord(supabase, settings.guild_id, eaUsername);
+          if (fuzzyMatch) {
+            await supabase
+              .from('profiles')
+              .update({ ea_username: eaUsername, ea_platform: club.ea_platform })
+              .eq('discord_user_id', fuzzyMatch.discord_user_id);
+            profile = { discord_user_id: fuzzyMatch.discord_user_id };
+          } else {
+            const tempDiscordId = `ea_${eaUsername.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const { data: existingTemp } = await supabase
+              .from('profiles')
+              .select('discord_user_id')
+              .eq('discord_user_id', tempDiscordId)
+              .maybeSingle();
+            
+            if (existingTemp) {
+              profile = existingTemp;
+            } else {
+              const { data: newProfile } = await supabase
+                .from('profiles')
+                .insert({
+                  discord_user_id: tempDiscordId,
+                  ea_username: eaUsername,
+                  ea_platform: club.ea_platform
+                })
+                .select('discord_user_id')
+                .single();
+              profile = newProfile;
+            }
+          }
+        }
+        
+        if (profile) {
+          // Get discord username
+          const { data: fullProfile } = await supabase
+            .from('profiles')
+            .select('discord_username')
+            .eq('discord_user_id', profile.discord_user_id)
+            .maybeSingle();
+          
+          // Map position
+          const positionMap = {
+            'goalkeeper': 'GK', 'gk': 'GK',
+            'defender': 'CB', 'cb': 'CB', 'rb': 'RB', 'lb': 'LB', 'rwb': 'RWB', 'lwb': 'LWB',
+            'midfielder': 'CM', 'cm': 'CM', 'cdm': 'CDM', 'cam': 'CAM', 'rm': 'RM', 'lm': 'LM',
+            'attacker': 'ST', 'st': 'ST', 'cf': 'CF', 'rw': 'RW', 'lw': 'LW', 'rf': 'RF', 'lf': 'LF'
+          };
+          const mappedPosition = stats.position ? (positionMap[stats.position.toLowerCase()] || stats.position.toUpperCase()) : null;
+          const draws = Math.max(0, stats.gamesPlayed - stats.wins - stats.losses);
+          const winRate = stats.gamesPlayed > 0 ? (stats.wins / stats.gamesPlayed) * 100 : 0;
+          
+          // Upsert to player_club_stats
+          const { error: clubStatsError } = await supabase
+            .from('player_club_stats')
+            .upsert({
+              guild_id: settings.guild_id,
+              discord_user_id: profile.discord_user_id,
+              club_key: club.key,
+              ea_club_id: club.ea_club_id,
+              discord_username: fullProfile?.discord_username || eaUsername,
+              primary_position: mappedPosition,
+              games_played: stats.gamesPlayed,
+              wins: stats.wins,
+              losses: stats.losses,
+              draws: draws,
+              win_rate: winRate,
+              goals: stats.goals,
+              assists: stats.assists,
+              clean_sheets: stats.cleanSheets,
+              man_of_match: stats.manOfMatch,
+              avg_match_rating: stats.avgRating,
+              shots: stats.shots,
+              tackles: stats.tackles,
+              passes_made: stats.passesMade,
+              pass_attempts: stats.passAttempts,
+              saves: stats.saves,
+              interceptions: stats.interceptions,
+              clearances: stats.clearances,
+              baseline_synced: true,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'guild_id,discord_user_id,club_key' });
+          
+          if (clubStatsError) {
+            console.log(`  ⚠️ player_club_stats upsert error for ${eaUsername}: ${clubStatsError.message}`);
+          }
+        }
+        
         // Aggregate with existing data for this player
         if (playerAggregates.has(eaUsername)) {
           const existing = playerAggregates.get(eaUsername);

@@ -70,148 +70,34 @@ serve(async (req) => {
       ? (guildSettings?.clubs as Array<{ key: string; name: string; enabled: boolean }>).filter((c) => c.enabled)
       : [];
 
-    // If club_key is provided and not "all", aggregate stats from player_stats for that club only
+    // If club_key is provided and not "all", get stats for that club
     let players: any[] = [];
     
     if (club_key && club_key !== "all") {
-      console.log(`[get-leaderboard] Filtering by club: ${club_key}`);
+      console.log(`[get-leaderboard] Filtering by club: ${club_key}, source: ${stats_source}`);
       
-      // Get player stats for the specific club by joining with club_matches
-      const { data: clubPlayerStats, error: statsError } = await supabase
-        .from("player_stats")
-        .select(`
-          discord_user_id,
-          goals,
-          assists,
-          won,
-          ea_match_rating,
-          clean_sheet,
-          man_of_match,
-          shots,
-          tackles,
-          passes_made,
-          pass_attempts,
-          saves_diving,
-          saves_reflex,
-          saves_parry,
-          saves_cross,
-          saves_punch,
-          goals_conceded,
-          interceptions,
-          clearances,
-          dribbles,
-          fouls,
-          offsides,
-          seconds_played,
-          position_played,
-          archetypeid,
-          ea_match_id
-        `)
-        .eq("guild_id", guild_id)
-        .eq("match_type", "club");
-      
-      if (statsError) throw statsError;
-      
-      // Get club_matches to filter by club_key
-      const { data: clubMatches } = await supabase
-        .from("club_matches")
-        .select("ea_match_id")
-        .eq("guild_id", guild_id)
-        .eq("club_key", club_key);
-      
-      const clubMatchIds = new Set((clubMatches || []).map(m => m.ea_match_id));
-      
-      // Filter player_stats to only those matches for this club
-      const filteredStats = (clubPlayerStats || []).filter(ps => 
-        ps.ea_match_id && clubMatchIds.has(ps.ea_match_id)
-      );
-      
-      // Aggregate stats per player
-      const playerAggregates = new Map<string, any>();
-      
-      for (const stat of filteredStats) {
-        const existing = playerAggregates.get(stat.discord_user_id) || {
-          discord_user_id: stat.discord_user_id,
-          games_played: 0,
-          wins: 0,
-          losses: 0,
-          draws: 0,
-          goals: 0,
-          assists: 0,
-          clean_sheets: 0,
-          man_of_match: 0,
-          shots: 0,
-          tackles: 0,
-          passes_made: 0,
-          pass_attempts: 0,
-          saves: 0,
-          saves_diving: 0,
-          saves_reflex: 0,
-          saves_parry: 0,
-          saves_cross: 0,
-          saves_punch: 0,
-          goals_conceded: 0,
-          interceptions: 0,
-          clearances: 0,
-          dribbles: 0,
-          fouls: 0,
-          offsides: 0,
-          seconds_played: 0,
-          rating_sum: 0,
-          position_counts: {} as Record<string, number>,
-          archetypeid: null,
-        };
+      // For "members" source with specific club, use player_club_stats (EA member board data)
+      if (stats_source === "members") {
+        console.log(`[get-leaderboard] Using player_club_stats for EA member board data`);
         
-        existing.games_played += 1;
-        existing.goals += stat.goals || 0;
-        existing.assists += stat.assists || 0;
-        existing.clean_sheets += stat.clean_sheet ? 1 : 0;
-        existing.man_of_match += stat.man_of_match ? 1 : 0;
-        existing.shots += stat.shots || 0;
-        existing.tackles += stat.tackles || 0;
-        existing.passes_made += stat.passes_made || 0;
-        existing.pass_attempts += stat.pass_attempts || 0;
-        existing.saves += (stat.saves_diving || 0) + (stat.saves_reflex || 0) + (stat.saves_parry || 0) + (stat.saves_cross || 0) + (stat.saves_punch || 0);
-        existing.saves_diving += stat.saves_diving || 0;
-        existing.saves_reflex += stat.saves_reflex || 0;
-        existing.saves_parry += stat.saves_parry || 0;
-        existing.saves_cross += stat.saves_cross || 0;
-        existing.saves_punch += stat.saves_punch || 0;
-        existing.goals_conceded += stat.goals_conceded || 0;
-        existing.interceptions += stat.interceptions || 0;
-        existing.clearances += stat.clearances || 0;
-        existing.dribbles += stat.dribbles || 0;
-        existing.fouls += stat.fouls || 0;
-        existing.offsides += stat.offsides || 0;
-        existing.seconds_played += stat.seconds_played || 0;
-        existing.rating_sum += stat.ea_match_rating || 0;
-        existing.archetypeid = existing.archetypeid || stat.archetypeid;
+        let query = supabase
+          .from("player_club_stats")
+          .select("*")
+          .eq("guild_id", guild_id)
+          .eq("club_key", club_key)
+          .gt("games_played", 0);
         
-        if (stat.won === true) existing.wins += 1;
-        else if (stat.won === false) existing.losses += 1;
-        else existing.draws += 1;
-        
-        if (stat.position_played) {
-          existing.position_counts[stat.position_played] = (existing.position_counts[stat.position_played] || 0) + 1;
+        if (position) {
+          query = query.eq("primary_position", position);
         }
         
-        playerAggregates.set(stat.discord_user_id, existing);
-      }
-      
-      // Convert to array with calculated fields
-      players = Array.from(playerAggregates.values()).map(p => {
-        const winRate = p.games_played > 0 ? (p.wins / p.games_played) * 100 : 0;
-        const avgMatchRating = p.games_played > 0 ? p.rating_sum / p.games_played : 0;
-        // Estimate overall rating from avg match rating (scale 0-10 to 0-100)
-        const overallRating = avgMatchRating ? Math.min(100, avgMatchRating * 10) : 50;
-        const primaryPosition = getPrimaryPositionFromCounts(p.position_counts);
+        const { data: clubStats, error: clubStatsError } = await query;
         
-        return {
+        if (clubStatsError) throw clubStatsError;
+        
+        players = (clubStats || []).map(p => ({
           ...p,
-          win_rate: winRate,
-          avg_match_rating: avgMatchRating,
-          overall_rating: overallRating,
-          primary_position: primaryPosition,
+          overall_rating: p.avg_match_rating ? Math.min(100, p.avg_match_rating * 10) : 50,
           form_rating: null,
           reliability_score: 100,
           top_achievements: [],
@@ -220,12 +106,158 @@ serve(async (req) => {
           current_streak: 0,
           streak_type: null,
           club_keys: [club_key],
-        };
-      }).filter(p => p.games_played > 0);
-      
-      // Apply position filter
-      if (position) {
-        players = players.filter(p => p.primary_position === position);
+        }));
+      } else {
+        // For "games" or "all" source, aggregate from player_stats (monitored match data)
+        const { data: clubPlayerStats, error: statsError } = await supabase
+          .from("player_stats")
+          .select(`
+            discord_user_id,
+            goals,
+            assists,
+            won,
+            ea_match_rating,
+            clean_sheet,
+            man_of_match,
+            shots,
+            tackles,
+            passes_made,
+            pass_attempts,
+            saves_diving,
+            saves_reflex,
+            saves_parry,
+            saves_cross,
+            saves_punch,
+            goals_conceded,
+            interceptions,
+            clearances,
+            dribbles,
+            fouls,
+            offsides,
+            seconds_played,
+            position_played,
+            archetypeid,
+            ea_match_id
+          `)
+          .eq("guild_id", guild_id)
+          .eq("match_type", "club");
+        
+        if (statsError) throw statsError;
+        
+        // Get club_matches to filter by club_key
+        const { data: clubMatches } = await supabase
+          .from("club_matches")
+          .select("ea_match_id")
+          .eq("guild_id", guild_id)
+          .eq("club_key", club_key);
+        
+        const clubMatchIds = new Set((clubMatches || []).map(m => m.ea_match_id));
+        
+        // Filter player_stats to only those matches for this club
+        const filteredStats = (clubPlayerStats || []).filter(ps => 
+          ps.ea_match_id && clubMatchIds.has(ps.ea_match_id)
+        );
+        
+        // Aggregate stats per player
+        const playerAggregates = new Map<string, any>();
+        
+        for (const stat of filteredStats) {
+          const existing = playerAggregates.get(stat.discord_user_id) || {
+            discord_user_id: stat.discord_user_id,
+            games_played: 0,
+            wins: 0,
+            losses: 0,
+            draws: 0,
+            goals: 0,
+            assists: 0,
+            clean_sheets: 0,
+            man_of_match: 0,
+            shots: 0,
+            tackles: 0,
+            passes_made: 0,
+            pass_attempts: 0,
+            saves: 0,
+            saves_diving: 0,
+            saves_reflex: 0,
+            saves_parry: 0,
+            saves_cross: 0,
+            saves_punch: 0,
+            goals_conceded: 0,
+            interceptions: 0,
+            clearances: 0,
+            dribbles: 0,
+            fouls: 0,
+            offsides: 0,
+            seconds_played: 0,
+            rating_sum: 0,
+            position_counts: {} as Record<string, number>,
+            archetypeid: null,
+          };
+          
+          existing.games_played += 1;
+          existing.goals += stat.goals || 0;
+          existing.assists += stat.assists || 0;
+          existing.clean_sheets += stat.clean_sheet ? 1 : 0;
+          existing.man_of_match += stat.man_of_match ? 1 : 0;
+          existing.shots += stat.shots || 0;
+          existing.tackles += stat.tackles || 0;
+          existing.passes_made += stat.passes_made || 0;
+          existing.pass_attempts += stat.pass_attempts || 0;
+          existing.saves += (stat.saves_diving || 0) + (stat.saves_reflex || 0) + (stat.saves_parry || 0) + (stat.saves_cross || 0) + (stat.saves_punch || 0);
+          existing.saves_diving += stat.saves_diving || 0;
+          existing.saves_reflex += stat.saves_reflex || 0;
+          existing.saves_parry += stat.saves_parry || 0;
+          existing.saves_cross += stat.saves_cross || 0;
+          existing.saves_punch += stat.saves_punch || 0;
+          existing.goals_conceded += stat.goals_conceded || 0;
+          existing.interceptions += stat.interceptions || 0;
+          existing.clearances += stat.clearances || 0;
+          existing.dribbles += stat.dribbles || 0;
+          existing.fouls += stat.fouls || 0;
+          existing.offsides += stat.offsides || 0;
+          existing.seconds_played += stat.seconds_played || 0;
+          existing.rating_sum += stat.ea_match_rating || 0;
+          existing.archetypeid = existing.archetypeid || stat.archetypeid;
+          
+          if (stat.won === true) existing.wins += 1;
+          else if (stat.won === false) existing.losses += 1;
+          else existing.draws += 1;
+          
+          if (stat.position_played) {
+            existing.position_counts[stat.position_played] = (existing.position_counts[stat.position_played] || 0) + 1;
+          }
+          
+          playerAggregates.set(stat.discord_user_id, existing);
+        }
+        
+        // Convert to array with calculated fields
+        players = Array.from(playerAggregates.values()).map(p => {
+          const winRate = p.games_played > 0 ? (p.wins / p.games_played) * 100 : 0;
+          const avgMatchRating = p.games_played > 0 ? p.rating_sum / p.games_played : 0;
+          const overallRating = avgMatchRating ? Math.min(100, avgMatchRating * 10) : 50;
+          const primaryPosition = getPrimaryPositionFromCounts(p.position_counts);
+          
+          return {
+            ...p,
+            win_rate: winRate,
+            avg_match_rating: avgMatchRating,
+            overall_rating: overallRating,
+            primary_position: primaryPosition,
+            form_rating: null,
+            reliability_score: 100,
+            top_achievements: [],
+            tournament_wins: 0,
+            league_wins: 0,
+            current_streak: 0,
+            streak_type: null,
+            club_keys: [club_key],
+          };
+        }).filter(p => p.games_played > 0);
+        
+        // Apply position filter
+        if (position) {
+          players = players.filter(p => p.primary_position === position);
+        }
       }
     } else if (stats_source === "games") {
       // Aggregate from player_stats only (monitored match data)
