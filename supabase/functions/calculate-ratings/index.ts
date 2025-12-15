@@ -183,17 +183,82 @@ async function calculateDraftPerformance(supabase: any, guildId: string, player:
     .eq("match_type", matchType)
     .not("match_type", "eq", "ea_aggregate");
 
-  if (!stats || stats.length === 0) return 50; // Default rating
+  // Also get EA aggregate baseline stats (career stats from EA roster)
+  const { data: baselineStats } = await supabase
+    .from("player_stats")
+    .select("*")
+    .eq("guild_id", guildId)
+    .eq("discord_user_id", player.discord_user_id)
+    .eq("match_type", "ea_aggregate");
 
-  const totalGames = stats.length;
-  const wins = stats.filter((s: any) => s.won === true).length;
-  const winRate = (wins / totalGames) * 100;
+  // Sum baseline career stats from EA aggregate records
+  let baselineGames = 0;
+  let baselineWins = 0;
+  let baselineLosses = 0;
+  let baselineDraws = 0;
+  let baselineGoals = 0;
+  let baselineAssists = 0;
 
-  // Sum goals/assists from individual matches only
-  const totalGoals = stats.reduce((sum: number, s: any) => sum + (s.goals || 0), 0);
-  const totalAssists = stats.reduce((sum: number, s: any) => sum + (s.assists || 0), 0);
-  const avgGoals = totalGoals / totalGames;
-  const avgAssists = totalAssists / totalGames;
+  if (baselineStats && baselineStats.length > 0) {
+    // EA aggregate records contain career totals - use the highest values as baseline
+    for (const bs of baselineStats) {
+      baselineGoals = Math.max(baselineGoals, bs.goals || 0);
+      baselineAssists = Math.max(baselineAssists, bs.assists || 0);
+    }
+    // Estimate baseline games from goals/assists ratio (roughly 0.5 contributions per game average)
+    const estimatedGames = Math.floor((baselineGoals + baselineAssists) / 0.5);
+    baselineGames = estimatedGames;
+    // Estimate 50% win rate for baseline
+    baselineWins = Math.floor(baselineGames * 0.5);
+    baselineLosses = Math.floor(baselineGames * 0.3);
+    baselineDraws = baselineGames - baselineWins - baselineLosses;
+  }
+
+  if (!stats || stats.length === 0) {
+    // Use baseline stats only if no tracked individual matches
+    if (baselineGames > 0) {
+      await supabase
+        .from("player_ratings")
+        .update({
+          games_played: baselineGames,
+          wins: baselineWins,
+          losses: baselineLosses,
+          draws: baselineDraws,
+          total_goals: baselineGoals,
+          total_assists: baselineAssists,
+          baseline_synced: true,
+        })
+        .eq("id", player.id);
+      
+      // Return estimated rating based on baseline
+      const estimatedWinRate = baselineGames > 0 ? (baselineWins / baselineGames) * 100 : 50;
+      return estimatedWinRate;
+    }
+    return 50; // Default rating
+  }
+
+  // Count tracked individual games
+  const trackedGames = stats.length;
+  const trackedWins = stats.filter((s: any) => s.won === true).length;
+  const trackedLosses = stats.filter((s: any) => s.won === false).length;
+  const trackedDraws = stats.filter((s: any) => s.won === null).length;
+  
+  // Sum goals/assists from individual matches
+  const trackedGoals = stats.reduce((sum: number, s: any) => sum + (s.goals || 0), 0);
+  const trackedAssists = stats.reduce((sum: number, s: any) => sum + (s.assists || 0), 0);
+
+  // Combine baseline + tracked stats for totals displayed
+  const totalGames = baselineGames + trackedGames;
+  const totalWins = baselineWins + trackedWins;
+  const totalLosses = baselineLosses + trackedLosses;
+  const totalDraws = baselineDraws + trackedDraws;
+  const totalGoals = baselineGoals + trackedGoals;
+  const totalAssists = baselineAssists + trackedAssists;
+
+  // Calculate performance rating based on TRACKED games only (more accurate)
+  const winRate = trackedGames > 0 ? (trackedWins / trackedGames) * 100 : 50;
+  const avgGoals = trackedGames > 0 ? trackedGoals / trackedGames : 0;
+  const avgAssists = trackedGames > 0 ? trackedAssists / trackedGames : 0;
 
   // EA match ratings if available
   const gamesWithRating = stats.filter((s: any) => s.ea_match_rating !== null && s.ea_match_rating > 0);
@@ -217,20 +282,18 @@ async function calculateDraftPerformance(supabase: any, guildId: string, player:
     performanceRating += winRate * 0.2;
   }
 
-  // Update player_ratings aggregate stats from individual matches
-  const losses = stats.filter((s: any) => s.won === false).length;
-  const draws = stats.filter((s: any) => s.won === null).length;
-  
+  // Update player_ratings with combined totals (baseline + tracked)
   await supabase
     .from("player_ratings")
     .update({
       games_played: totalGames,
-      wins,
-      losses,
-      draws,
+      wins: totalWins,
+      losses: totalLosses,
+      draws: totalDraws,
       total_goals: totalGoals,
       total_assists: totalAssists,
       avg_match_rating: avgEARating,
+      baseline_synced: baselineGames > 0,
       last_game_at: stats.length > 0 ? new Date().toISOString() : player.last_game_at,
     })
     .eq("id", player.id);
