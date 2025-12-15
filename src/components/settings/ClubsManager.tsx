@@ -23,7 +23,18 @@ import { Switch } from "@/components/ui/switch";
 import { useGuild } from "@/contexts/GuildContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { GripVertical, Save, Loader2, Users, Wifi, WifiOff } from "lucide-react";
+import { GripVertical, Save, Loader2, Users, Wifi, WifiOff, Trash2, AlertTriangle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface Club {
   key: string;
@@ -36,11 +47,13 @@ interface Club {
 
 interface SortableClubItemProps {
   club: Club;
+  isDuplicate: boolean;
   onToggleEnabled: (key: string) => void;
   onToggleMonitoring: (key: string) => void;
+  onDelete: (key: string) => void;
 }
 
-function SortableClubItem({ club, onToggleEnabled, onToggleMonitoring }: SortableClubItemProps) {
+function SortableClubItem({ club, isDuplicate, onToggleEnabled, onToggleMonitoring, onDelete }: SortableClubItemProps) {
   const {
     attributes,
     listeners,
@@ -61,7 +74,7 @@ function SortableClubItem({ club, onToggleEnabled, onToggleMonitoring }: Sortabl
       ref={setNodeRef}
       style={style}
       className={`flex items-center gap-3 p-3 rounded-lg border bg-card ${
-        isDragging ? "border-primary shadow-lg" : "border-border"
+        isDragging ? "border-primary shadow-lg" : isDuplicate ? "border-destructive" : "border-border"
       }`}
     >
       <button
@@ -80,9 +93,16 @@ function SortableClubItem({ club, onToggleEnabled, onToggleMonitoring }: Sortabl
               EA Linked
             </Badge>
           )}
+          {isDuplicate && (
+            <Badge variant="destructive" className="text-xs flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              Duplicate
+            </Badge>
+          )}
         </div>
         <p className="text-xs text-muted-foreground">
           {club.key} {club.ea_platform && `• ${club.ea_platform}`}
+          {club.ea_club_id && ` • ID: ${club.ea_club_id}`}
         </p>
       </div>
 
@@ -110,6 +130,31 @@ function SortableClubItem({ club, onToggleEnabled, onToggleMonitoring }: Sortabl
             aria-label="Toggle club enabled"
           />
         </div>
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete {club.name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will remove the club from this server. Any linked EA data and stats will remain in the database but will no longer be tracked.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => onDelete(club.key)}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );
@@ -136,6 +181,24 @@ export function ClubsManager() {
       setHasChanges(false);
     }
   }, [selectedGuild]);
+
+  // Find duplicate EA club IDs
+  const getDuplicateEaClubIds = (): Set<string> => {
+    const eaClubIds = clubs
+      .filter(c => c.ea_club_id)
+      .map(c => c.ea_club_id!);
+    const seen = new Set<string>();
+    const duplicates = new Set<string>();
+    for (const id of eaClubIds) {
+      if (seen.has(id)) {
+        duplicates.add(id);
+      }
+      seen.add(id);
+    }
+    return duplicates;
+  };
+
+  const duplicateEaClubIds = getDuplicateEaClubIds();
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -168,8 +231,27 @@ export function ClubsManager() {
     setHasChanges(true);
   };
 
+  const deleteClub = (key: string) => {
+    setClubs((items) => items.filter((item) => item.key !== key));
+    setHasChanges(true);
+    toast({
+      title: "Club Removed",
+      description: "Remember to save changes to apply.",
+    });
+  };
+
   const saveChanges = async () => {
     if (!selectedGuildId) return;
+
+    // Check for duplicates before saving
+    if (duplicateEaClubIds.size > 0) {
+      toast({
+        title: "Duplicate EA Clubs Detected",
+        description: "Please remove duplicate EA club links before saving. Each EA club can only be tracked once per server.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -236,6 +318,12 @@ export function ClubsManager() {
             </Button>
           )}
         </div>
+        {duplicateEaClubIds.size > 0 && (
+          <div className="mt-2 p-2 rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            Duplicate EA clubs detected! Each EA club can only be tracked once per server.
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         <DndContext
@@ -252,8 +340,10 @@ export function ClubsManager() {
                 <SortableClubItem
                   key={club.key}
                   club={club}
+                  isDuplicate={club.ea_club_id ? duplicateEaClubIds.has(club.ea_club_id) : false}
                   onToggleEnabled={toggleEnabled}
                   onToggleMonitoring={toggleMonitoring}
+                  onDelete={deleteClub}
                 />
               ))}
             </div>
