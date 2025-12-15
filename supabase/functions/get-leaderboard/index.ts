@@ -80,15 +80,30 @@ serve(async (req) => {
       query = query.eq("primary_position", position);
     }
 
-    // Note: we aggregate locally (in case the table still has per-club rows)
-    // so we only need to fetch a generous slice, then we will re-order after
-    // combining per-discord entries. Fetching 5x the requested limit gives
-    // headroom for duplicates before trimming the final list.
-    const { data: players, error } = await query.limit(limit * 5);
+    // Fetch all players to ensure proper aggregation of linked accounts
+    const { data: players, error } = await query.limit(500);
 
     if (error) throw error;
 
-    const aggregatedPlayers = aggregatePlayers(players || []);
+    // Get all profiles to map ea_ accounts to real Discord IDs
+    const { data: allProfiles } = await supabase
+      .from("profiles")
+      .select("discord_user_id, ea_username")
+      .not("ea_username", "is", null);
+
+    // Build a map from ea_username (normalized) to real discord_user_id
+    const eaToDiscordMap = new Map<string, string>();
+    for (const profile of allProfiles || []) {
+      if (profile.ea_username && !profile.discord_user_id.startsWith('ea_')) {
+        // Normalize EA username for matching (lowercase, remove special chars variations)
+        const normalized = profile.ea_username.toLowerCase().replace(/[\s\-_]/g, '');
+        eaToDiscordMap.set(normalized, profile.discord_user_id);
+        // Also map the exact ea_username
+        eaToDiscordMap.set(profile.ea_username.toLowerCase(), profile.discord_user_id);
+      }
+    }
+
+    const aggregatedPlayers = aggregatePlayers(players || [], eaToDiscordMap);
 
     // Order by type using the aggregated values
     const sortedPlayers = aggregatedPlayers.sort((a, b) => {
@@ -194,11 +209,24 @@ function getRatingTier(rating: number): { name: string; icon: string } {
   return { name: "Iron", icon: "⚙️" };
 }
 
-function aggregatePlayers(players: any[]) {
+function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
   const aggregated = new Map<string, any>();
 
   for (const player of players) {
-    const existing = aggregated.get(player.discord_user_id);
+    // Determine the canonical discord_user_id
+    let canonicalId = player.discord_user_id;
+    
+    // If this is an ea_ prefixed account, try to find the linked real Discord ID
+    if (canonicalId.startsWith('ea_')) {
+      const eaUsername = canonicalId.replace('ea_', '');
+      const normalized = eaUsername.toLowerCase().replace(/[\s\-_]/g, '');
+      const linkedId = eaToDiscordMap.get(normalized) || eaToDiscordMap.get(eaUsername.toLowerCase());
+      if (linkedId) {
+        canonicalId = linkedId;
+      }
+    }
+
+    const existing = aggregated.get(canonicalId);
 
     const clubKeys = new Set<string>();
     if (player.club_key) clubKeys.add(player.club_key);
@@ -210,7 +238,7 @@ function aggregatePlayers(players: any[]) {
     }
 
     const aggregate = existing ?? {
-      discord_user_id: player.discord_user_id,
+      discord_user_id: canonicalId,
       discord_username: player.discord_username,
       wins: 0,
       losses: 0,
@@ -225,6 +253,18 @@ function aggregatePlayers(players: any[]) {
       passes_made: 0,
       pass_attempts: 0,
       saves: 0,
+      saves_diving: 0,
+      saves_reflex: 0,
+      saves_parry: 0,
+      saves_cross: 0,
+      saves_punch: 0,
+      goals_conceded: 0,
+      interceptions: 0,
+      clearances: 0,
+      dribbles: 0,
+      fouls: 0,
+      offsides: 0,
+      seconds_played: 0,
       form_rating: null,
       reliability_score: player.reliability_score,
       primary_position: player.primary_position,
@@ -240,9 +280,14 @@ function aggregatePlayers(players: any[]) {
       current_streak: player.current_streak,
       streak_type: player.streak_type,
       club_keys: [],
+      archetypeid: player.archetypeid,
     };
 
-    aggregate.discord_username = aggregate.discord_username || player.discord_username;
+    // Prefer real Discord username over ea_ username
+    if (!aggregate.discord_username || aggregate.discord_username.startsWith('ea_') || aggregate.discord_username === canonicalId) {
+      aggregate.discord_username = player.discord_username || aggregate.discord_username;
+    }
+    
     aggregate.wins += player.wins || 0;
     aggregate.losses += player.losses || 0;
     aggregate.draws += player.draws || 0;
@@ -256,8 +301,21 @@ function aggregatePlayers(players: any[]) {
     aggregate.passes_made += player.passes_made || 0;
     aggregate.pass_attempts += player.pass_attempts || 0;
     aggregate.saves += player.saves || 0;
+    aggregate.saves_diving += player.saves_diving || 0;
+    aggregate.saves_reflex += player.saves_reflex || 0;
+    aggregate.saves_parry += player.saves_parry || 0;
+    aggregate.saves_cross += player.saves_cross || 0;
+    aggregate.saves_punch += player.saves_punch || 0;
+    aggregate.goals_conceded += player.goals_conceded || 0;
+    aggregate.interceptions += player.interceptions || 0;
+    aggregate.clearances += player.clearances || 0;
+    aggregate.dribbles += player.dribbles || 0;
+    aggregate.fouls += player.fouls || 0;
+    aggregate.offsides += player.offsides || 0;
+    aggregate.seconds_played += player.seconds_played || 0;
     aggregate.reliability_score = aggregate.reliability_score ?? player.reliability_score;
     aggregate.primary_position = aggregate.primary_position || player.primary_position;
+    aggregate.archetypeid = aggregate.archetypeid || player.archetypeid;
     aggregate.rating_sum += (player.avg_match_rating || 0) * (player.games_played || 0);
     aggregate.overall_sum += (player.overall_rating || 0) * (player.games_played || 0);
     if (player.form_rating != null) {
@@ -268,7 +326,7 @@ function aggregatePlayers(players: any[]) {
     aggregate.position_counts = positionCounts;
     aggregate.club_keys = Array.from(clubKeys);
 
-    aggregated.set(player.discord_user_id, aggregate);
+    aggregated.set(canonicalId, aggregate);
   }
 
   return Array.from(aggregated.values()).map((agg) => {
