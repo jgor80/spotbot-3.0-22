@@ -71,3 +71,15 @@ verify_jwt = false
 
 [functions.link-ea-account]
 verify_jwt = false
+
+[functions.get-match-history]
+verify_jwt = false
+
+[functions.get-club-info-api]
+verify_jwt = false
+
+[functions.get-club-members-api]
+verify_jwt = false
+
+[functions.get-player-stats-api]
+verify_jwt = false

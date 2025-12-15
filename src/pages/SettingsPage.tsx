@@ -14,6 +14,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ClubsManager } from "@/components/settings/ClubsManager";
 import { FeedbackSettingsCard } from "@/components/settings/FeedbackSettingsCard";
 import { EaLinkingPanel } from "@/components/settings/EaLinkingPanel";
+import { ApiAccessCard } from "@/components/settings/ApiAccessCard";
 import { 
   Gamepad2, 
   User, 
@@ -25,7 +26,8 @@ import {
   Search,
   RefreshCw,
   Users,
-  Zap
+  Zap,
+  Code
 } from "lucide-react";
 
 interface PlayerProfile {
@@ -311,6 +313,10 @@ export default function SettingsPage() {
               <User className="h-4 w-4 mr-2" />
               Players
             </TabsTrigger>
+            <TabsTrigger value="api">
+              <Code className="h-4 w-4 mr-2" />
+              API
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="teams" className="space-y-4">
@@ -321,6 +327,10 @@ export default function SettingsPage() {
 
           <TabsContent value="ea-linking">
             <EaLinkingPanel />
+          </TabsContent>
+
+          <TabsContent value="api">
+            <ApiAccessCard />
           </TabsContent>
 
           <TabsContent value="players" className="space-y-6">
