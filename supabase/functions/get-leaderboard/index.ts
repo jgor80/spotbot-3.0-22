@@ -13,6 +13,7 @@ interface GetLeaderboardRequest {
   limit?: number;
   month_year?: string; // For monthly leaderboard, e.g., "2025-01"
   club_key?: string; // Filter by specific club, or "all" for aggregate
+  stats_source?: "all" | "members" | "games"; // "members" = EA career stats, "games" = monitored match stats only
 }
 
 serve(async (req) => {
@@ -33,9 +34,10 @@ serve(async (req) => {
       limit = 10,
       month_year,
       club_key,
+      stats_source = "all",
     }: GetLeaderboardRequest = await req.json();
 
-    console.log(`[get-leaderboard] Fetching ${type} leaderboard for guild ${guild_id}, club: ${club_key || 'all'}`);
+    console.log(`[get-leaderboard] Fetching ${type} leaderboard for guild ${guild_id}, club: ${club_key || 'all'}, source: ${stats_source}`);
 
     // If requesting monthly snapshot
     if (month_year) {
@@ -225,13 +227,157 @@ serve(async (req) => {
       if (position) {
         players = players.filter(p => p.primary_position === position);
       }
+    } else if (stats_source === "games") {
+      // Aggregate from player_stats only (monitored match data)
+      console.log(`[get-leaderboard] Aggregating from player_stats (games only)`);
+      
+      const { data: allPlayerStats, error: statsError } = await supabase
+        .from("player_stats")
+        .select(`
+          discord_user_id,
+          goals,
+          assists,
+          won,
+          ea_match_rating,
+          clean_sheet,
+          man_of_match,
+          shots,
+          tackles,
+          passes_made,
+          pass_attempts,
+          saves_diving,
+          saves_reflex,
+          saves_parry,
+          saves_cross,
+          saves_punch,
+          goals_conceded,
+          interceptions,
+          clearances,
+          dribbles,
+          fouls,
+          offsides,
+          seconds_played,
+          position_played,
+          archetypeid
+        `)
+        .eq("guild_id", guild_id)
+        .eq("match_type", "club");
+      
+      if (statsError) throw statsError;
+      
+      // Aggregate stats per player
+      const playerAggregates = new Map<string, any>();
+      
+      for (const stat of allPlayerStats || []) {
+        const existing = playerAggregates.get(stat.discord_user_id) || {
+          discord_user_id: stat.discord_user_id,
+          games_played: 0,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          goals: 0,
+          assists: 0,
+          clean_sheets: 0,
+          man_of_match: 0,
+          shots: 0,
+          tackles: 0,
+          passes_made: 0,
+          pass_attempts: 0,
+          saves: 0,
+          saves_diving: 0,
+          saves_reflex: 0,
+          saves_parry: 0,
+          saves_cross: 0,
+          saves_punch: 0,
+          goals_conceded: 0,
+          interceptions: 0,
+          clearances: 0,
+          dribbles: 0,
+          fouls: 0,
+          offsides: 0,
+          seconds_played: 0,
+          rating_sum: 0,
+          position_counts: {} as Record<string, number>,
+          archetypeid: null,
+        };
+        
+        existing.games_played += 1;
+        existing.goals += stat.goals || 0;
+        existing.assists += stat.assists || 0;
+        existing.clean_sheets += stat.clean_sheet ? 1 : 0;
+        existing.man_of_match += stat.man_of_match ? 1 : 0;
+        existing.shots += stat.shots || 0;
+        existing.tackles += stat.tackles || 0;
+        existing.passes_made += stat.passes_made || 0;
+        existing.pass_attempts += stat.pass_attempts || 0;
+        existing.saves += (stat.saves_diving || 0) + (stat.saves_reflex || 0) + (stat.saves_parry || 0) + (stat.saves_cross || 0) + (stat.saves_punch || 0);
+        existing.saves_diving += stat.saves_diving || 0;
+        existing.saves_reflex += stat.saves_reflex || 0;
+        existing.saves_parry += stat.saves_parry || 0;
+        existing.saves_cross += stat.saves_cross || 0;
+        existing.saves_punch += stat.saves_punch || 0;
+        existing.goals_conceded += stat.goals_conceded || 0;
+        existing.interceptions += stat.interceptions || 0;
+        existing.clearances += stat.clearances || 0;
+        existing.dribbles += stat.dribbles || 0;
+        existing.fouls += stat.fouls || 0;
+        existing.offsides += stat.offsides || 0;
+        existing.seconds_played += stat.seconds_played || 0;
+        existing.rating_sum += stat.ea_match_rating || 0;
+        existing.archetypeid = existing.archetypeid || stat.archetypeid;
+        
+        if (stat.won === true) existing.wins += 1;
+        else if (stat.won === false) existing.losses += 1;
+        else existing.draws += 1;
+        
+        if (stat.position_played) {
+          existing.position_counts[stat.position_played] = (existing.position_counts[stat.position_played] || 0) + 1;
+        }
+        
+        playerAggregates.set(stat.discord_user_id, existing);
+      }
+      
+      // Convert to array with calculated fields
+      players = Array.from(playerAggregates.values()).map(p => {
+        const winRate = p.games_played > 0 ? (p.wins / p.games_played) * 100 : 0;
+        const avgMatchRating = p.games_played > 0 ? p.rating_sum / p.games_played : 0;
+        const overallRating = avgMatchRating ? Math.min(100, avgMatchRating * 10) : 50;
+        const primaryPosition = getPrimaryPositionFromCounts(p.position_counts);
+        
+        return {
+          ...p,
+          win_rate: winRate,
+          avg_match_rating: avgMatchRating,
+          overall_rating: overallRating,
+          primary_position: primaryPosition,
+          form_rating: null,
+          reliability_score: 100,
+          top_achievements: [],
+          tournament_wins: 0,
+          league_wins: 0,
+          current_streak: 0,
+          streak_type: null,
+          club_keys: [],
+        };
+      }).filter(p => p.games_played > 0);
+      
+      // Apply position filter
+      if (position) {
+        players = players.filter(p => p.primary_position === position);
+      }
     } else {
       // Get from player_summary for aggregate leaderboard across all clubs
+      // stats_source === "all" or "members" both use player_summary
       let query = supabase
         .from("player_summary")
         .select("*")
         .eq("guild_id", guild_id)
         .gt("games_played", 0);
+
+      // For "members" source, only show players with EA baseline data
+      if (stats_source === "members") {
+        query = query.eq("baseline_synced", true);
+      }
 
       if (position) {
         query = query.eq("primary_position", position);
