@@ -1443,7 +1443,7 @@ async function triggerRatingRecalculation(guildId, playerIds) {
           'Authorization': `Bearer ${supabaseKey}`,
           'Content-Type': 'application/json'
         },
-        timeout: 30000
+        timeout: 120000 // 2 minutes for large player batches
       }
     );
     

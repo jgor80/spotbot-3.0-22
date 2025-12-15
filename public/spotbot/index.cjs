@@ -10385,16 +10385,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
 // EDGE FUNCTION HELPER
 // =======================
 
-async function callEdgeFunction(functionName, body) {
+async function callEdgeFunction(functionName, body, timeoutMs = 120000) {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
     const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${supabaseKey}`
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     
     const data = await response.json();
     if (!response.ok) {
@@ -10403,6 +10409,10 @@ async function callEdgeFunction(functionName, body) {
     }
     return { error: null, data };
   } catch (err) {
+    if (err.name === 'AbortError') {
+      console.error(`❌ Edge function ${functionName} timed out after ${timeoutMs}ms`);
+      return { error: 'Request timed out', data: null };
+    }
     console.error(`❌ Edge function ${functionName} exception:`, err);
     return { error: err.message, data: null };
   }
