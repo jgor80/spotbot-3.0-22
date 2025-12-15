@@ -1106,7 +1106,7 @@ async function saveGuildSettings(guildId, state) {
         admin_panel_message_id: state.adminPanelMessageId,
         vc_panels: state.vcPanels || {},
         club_vc_links: state.clubVcLinks || {},
-        // Store squadiq panel info in vc_panels as a special key
+        feedback_enabled: state.feedbackEnabled !== false,
         updated_at: new Date().toISOString()
       }, { onConflict: 'guild_id' });
 
@@ -1350,7 +1350,8 @@ async function getGuildState(guildId) {
       adminPanelChannelId: dbData.admin_panel_channel_id,
       adminPanelMessageId: dbData.admin_panel_message_id,
       vcPanels: dbData.vc_panels || {},
-      clubVcLinks: dbData.club_vc_links || {}
+      clubVcLinks: dbData.club_vc_links || {},
+      feedbackEnabled: dbData.feedback_enabled !== false // default true
     };
   } else {
     const clubs = cloneDefaultClubs();
@@ -2735,7 +2736,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
   return embeds;
 }
 
-function buildAdminControlPanelButtons() {
+function buildAdminControlPanelButtons(state) {
   const rows = [];
   
   // Row 1: Core management
@@ -2764,6 +2765,7 @@ function buildAdminControlPanelButtons() {
   rows.push(row1);
   
   // Row 2: EA & Stats
+  const feedbackEnabled = state?.feedbackEnabled !== false;
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId('squadiq_eaconfig')
@@ -2776,14 +2778,14 @@ function buildAdminControlPanelButtons() {
       .setEmoji('📊')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
+      .setCustomId('squadiq_togglefeedback')
+      .setLabel(feedbackEnabled ? 'Feedback: ON' : 'Feedback: OFF')
+      .setEmoji('📨')
+      .setStyle(feedbackEnabled ? ButtonStyle.Success : ButtonStyle.Danger),
+    new ButtonBuilder()
       .setCustomId('squadiq_autolink')
       .setLabel('Auto-Link EA')
       .setEmoji('🔗')
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId('squadiq_buildsupload')
-      .setLabel('Builds')
-      .setEmoji('🏗️')
       .setStyle(ButtonStyle.Secondary)
   );
   rows.push(row2);
@@ -3010,6 +3012,7 @@ function buildEaPanelEmbed(guildId, state) {
   const currentClub = state?.clubs?.find(c => c.key === state.currentClubKey);
   const isLinked = !!currentClub?.ea_club_id;
   const isMonitoring = !!currentClub?.monitoring_enabled;
+  const feedbackEnabled = state?.feedbackEnabled !== false;
   
   return new EmbedBuilder()
     .setTitle('🎮 EA FC Integration Panel')
@@ -3019,10 +3022,12 @@ function buildEaPanelEmbed(guildId, state) {
       `**Current Club:** ${currentClub?.name || 'None selected'}\n` +
       `**EA Club ID:** ${currentClub?.ea_club_id || 'Not linked'}\n` +
       `**Platform:** ${currentClub?.ea_platform || 'Not set'}\n` +
-      `**Monitoring:** ${isMonitoring ? '🟢 Active' : '🔴 Disabled'}\n\n` +
+      `**Monitoring:** ${isMonitoring ? '🟢 Active' : '🔴 Disabled'}\n` +
+      `**Peer Feedback:** ${feedbackEnabled ? '🟢 Enabled' : '🔴 Disabled'}\n\n` +
       '**🔗 Link Club** - Connect your club to EA FC Pro Clubs\n' +
       '**📥 Sync Matches** - Manually sync recent match history\n' +
       '**📡 Toggle Monitoring** - Enable/disable auto-sync\n' +
+      '**📨 Toggle Feedback** - Enable/disable peer feedback DMs\n' +
       '**🎮 Link EA Account** - Connect your personal EA account\n' +
       '**📊 View Status** - See detailed integration status'
     )
@@ -3035,6 +3040,7 @@ function buildEaPanelComponents(state) {
   const currentClub = state?.clubs?.find(c => c.key === state.currentClubKey);
   const isLinked = !!currentClub?.ea_club_id;
   const isMonitoring = !!currentClub?.monitoring_enabled;
+  const feedbackEnabled = state?.feedbackEnabled !== false;
   
   // Row 1: Main EA actions
   const row1 = new ActionRowBuilder().addComponents(
@@ -3054,7 +3060,12 @@ function buildEaPanelComponents(state) {
       .setLabel(isMonitoring ? 'Disable Monitoring' : 'Enable Monitoring')
       .setEmoji(isMonitoring ? '🔴' : '🟢')
       .setStyle(isMonitoring ? ButtonStyle.Danger : ButtonStyle.Success)
-      .setDisabled(!isLinked)
+      .setDisabled(!isLinked),
+    new ButtonBuilder()
+      .setCustomId('eapanel_togglefeedback')
+      .setLabel(feedbackEnabled ? 'Feedback: ON' : 'Feedback: OFF')
+      .setEmoji('📨')
+      .setStyle(feedbackEnabled ? ButtonStyle.Success : ButtonStyle.Danger)
   );
   rows.push(row1);
   
@@ -3181,6 +3192,11 @@ async function buildDebugEmbed(guildId, state) {
   debugInfo.push(`• Blocked users cached: ${blockedUsersCache.size} guilds`);
   debugInfo.push(`• Active drafts: ${activeDrafts.size}`);
   debugInfo.push(`• EA monitors running: ${eaMonitoringIntervals.size}`);
+  debugInfo.push('');
+  
+  // Settings
+  debugInfo.push('**⚙️ Settings**');
+  debugInfo.push(`• Peer feedback: ${state.feedbackEnabled !== false ? '🟢 Enabled' : '🔴 Disabled'}`);
   debugInfo.push('');
   
   // EA Integration
@@ -5280,7 +5296,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.deferReply({ flags: 64 });
 
         const embeds = await buildAdminControlPanelEmbeds(guildId, state);
-        const buttons = buildAdminControlPanelButtons();
+        const buttons = buildAdminControlPanelButtons(state);
 
         const msg = await interaction.editReply({
           embeds,
@@ -5315,7 +5331,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             if (channel) {
               const msg = await channel.messages.fetch(state.squadiqPanelMessageId);
               const embeds = await buildAdminControlPanelEmbeds(guildId, state);
-              const buttons = buildAdminControlPanelButtons();
+              const buttons = buildAdminControlPanelButtons(state);
               await msg.edit({ embeds, components: buttons });
             }
           } catch (err) {
@@ -5429,7 +5445,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         await interaction.deferUpdate();
         const embeds = await buildAdminControlPanelEmbeds(guildId, state);
-        const buttons = buildAdminControlPanelButtons();
+        const buttons = buildAdminControlPanelButtons(state);
         return interaction.editReply({ embeds, components: buttons });
       }
 
@@ -5668,6 +5684,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
             content: `❌ Stats sync error: ${error.message}. The local EA sync script handles most syncing.` 
           });
         }
+      }
+
+      // SquadIQ - Toggle Feedback button
+      if (id === 'squadiq_togglefeedback') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only managers can toggle feedback settings.', flags: 64 });
+        }
+
+        state.feedbackEnabled = !state.feedbackEnabled;
+        await saveGuildSettings(guildId, state);
+
+        const statusText = state.feedbackEnabled ? '✅ **Peer Feedback ENABLED**' : '❌ **Peer Feedback DISABLED**';
+        const descriptionText = state.feedbackEnabled 
+          ? 'Players will receive DMs to rate teammates after matches.'
+          : 'Players will NOT receive feedback DMs after matches.';
+
+        return interaction.reply({
+          content: `📨 ${statusText}\n\n${descriptionText}`,
+          flags: 64
+        });
       }
 
       if (id === 'squadiq_pendingwins') {
@@ -7291,6 +7327,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       // EA Panel - Refresh button
       if (id === 'eapanel_refresh') {
+        await interaction.update({
+          embeds: [buildEaPanelEmbed(guildId, state)],
+          components: buildEaPanelComponents(state)
+        });
+        return;
+      }
+
+      // EA Panel - Toggle Feedback button
+      if (id === 'eapanel_togglefeedback') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only managers can toggle feedback settings.', flags: 64 });
+        }
+
+        state.feedbackEnabled = !state.feedbackEnabled;
+        await saveGuildSettings(guildId, state);
+
         await interaction.update({
           embeds: [buildEaPanelEmbed(guildId, state)],
           components: buildEaPanelComponents(state)
