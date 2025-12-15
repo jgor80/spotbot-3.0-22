@@ -1099,19 +1099,29 @@ export type Database = {
           discord_user_id: string
           draft_performance_rating: number | null
           draws: number
+          dribbles: number | null
+          fouls: number | null
           games_played: number
+          goals_conceded: number | null
           guild_id: string
           id: string
           interceptions: number | null
           last_calculated_at: string
           last_game_at: string | null
           losses: number
+          offsides: number | null
           overall_rating: number
           pass_attempts: number | null
           passes_made: number | null
           peer_rating: number | null
           saves: number | null
+          saves_cross: number | null
+          saves_diving: number | null
+          saves_parry: number | null
+          saves_punch: number | null
+          saves_reflex: number | null
           shots: number | null
+          tackle_attempts: number | null
           tackles: number | null
           total_assists: number
           total_clean_sheets: number
@@ -1130,19 +1140,29 @@ export type Database = {
           discord_user_id: string
           draft_performance_rating?: number | null
           draws?: number
+          dribbles?: number | null
+          fouls?: number | null
           games_played?: number
+          goals_conceded?: number | null
           guild_id: string
           id?: string
           interceptions?: number | null
           last_calculated_at?: string
           last_game_at?: string | null
           losses?: number
+          offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null
           passes_made?: number | null
           peer_rating?: number | null
           saves?: number | null
+          saves_cross?: number | null
+          saves_diving?: number | null
+          saves_parry?: number | null
+          saves_punch?: number | null
+          saves_reflex?: number | null
           shots?: number | null
+          tackle_attempts?: number | null
           tackles?: number | null
           total_assists?: number
           total_clean_sheets?: number
@@ -1161,19 +1181,29 @@ export type Database = {
           discord_user_id?: string
           draft_performance_rating?: number | null
           draws?: number
+          dribbles?: number | null
+          fouls?: number | null
           games_played?: number
+          goals_conceded?: number | null
           guild_id?: string
           id?: string
           interceptions?: number | null
           last_calculated_at?: string
           last_game_at?: string | null
           losses?: number
+          offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null
           passes_made?: number | null
           peer_rating?: number | null
           saves?: number | null
+          saves_cross?: number | null
+          saves_diving?: number | null
+          saves_parry?: number | null
+          saves_punch?: number | null
+          saves_reflex?: number | null
           shots?: number | null
+          tackle_attempts?: number | null
           tackles?: number | null
           total_assists?: number
           total_clean_sheets?: number
@@ -1222,70 +1252,115 @@ export type Database = {
       }
       player_stats: {
         Row: {
+          archetypeid: string | null
           assists: number
           clean_sheet: boolean | null
+          clearances: number | null
           created_at: string
           discord_user_id: string
           draft_id: string | null
+          dribbles: number | null
           ea_match_id: string | null
           ea_match_rating: number | null
+          fouls: number | null
           goals: number
+          goals_conceded: number | null
           guild_id: string
           id: string
+          interceptions: number | null
           man_of_match: boolean | null
           match_type: string
+          offsides: number | null
           pass_attempts: number | null
           passes_made: number | null
           position_played: string | null
+          possession: number | null
           recorded_at: string
           red_cards: boolean | null
+          saves_cross: number | null
+          saves_diving: number | null
+          saves_parry: number | null
+          saves_punch: number | null
+          saves_reflex: number | null
+          seconds_played: number | null
           shots: number | null
+          tackle_attempts: number | null
           tackles: number | null
           team: string | null
           won: boolean | null
         }
         Insert: {
+          archetypeid?: string | null
           assists?: number
           clean_sheet?: boolean | null
+          clearances?: number | null
           created_at?: string
           discord_user_id: string
           draft_id?: string | null
+          dribbles?: number | null
           ea_match_id?: string | null
           ea_match_rating?: number | null
+          fouls?: number | null
           goals?: number
+          goals_conceded?: number | null
           guild_id: string
           id?: string
+          interceptions?: number | null
           man_of_match?: boolean | null
           match_type?: string
+          offsides?: number | null
           pass_attempts?: number | null
           passes_made?: number | null
           position_played?: string | null
+          possession?: number | null
           recorded_at?: string
           red_cards?: boolean | null
+          saves_cross?: number | null
+          saves_diving?: number | null
+          saves_parry?: number | null
+          saves_punch?: number | null
+          saves_reflex?: number | null
+          seconds_played?: number | null
           shots?: number | null
+          tackle_attempts?: number | null
           tackles?: number | null
           team?: string | null
           won?: boolean | null
         }
         Update: {
+          archetypeid?: string | null
           assists?: number
           clean_sheet?: boolean | null
+          clearances?: number | null
           created_at?: string
           discord_user_id?: string
           draft_id?: string | null
+          dribbles?: number | null
           ea_match_id?: string | null
           ea_match_rating?: number | null
+          fouls?: number | null
           goals?: number
+          goals_conceded?: number | null
           guild_id?: string
           id?: string
+          interceptions?: number | null
           man_of_match?: boolean | null
           match_type?: string
+          offsides?: number | null
           pass_attempts?: number | null
           passes_made?: number | null
           position_played?: string | null
+          possession?: number | null
           recorded_at?: string
           red_cards?: boolean | null
+          saves_cross?: number | null
+          saves_diving?: number | null
+          saves_parry?: number | null
+          saves_punch?: number | null
+          saves_reflex?: number | null
+          seconds_played?: number | null
           shots?: number | null
+          tackle_attempts?: number | null
           tackles?: number | null
           team?: string | null
           won?: boolean | null
@@ -1357,33 +1432,48 @@ export type Database = {
       player_summary: {
         Row: {
           achievement_count: number
+          archetypeid: string | null
           assists: number
           avg_match_rating: number | null
           baseline_synced: boolean | null
           clean_sheets: number | null
+          clearances: number | null
           current_streak: number
           discord_user_id: string
           discord_username: string | null
           draws: number | null
+          dribbles: number | null
           form_rating: number | null
+          fouls: number | null
           games_played: number
           goals: number
+          goals_conceded: number | null
           guild_id: string
           id: string
+          interceptions: number | null
           last_active_at: string | null
           league_wins: number
           longest_win_streak: number
           losses: number | null
           major_wins: number
           man_of_match: number | null
+          offsides: number | null
           overall_rating: number
           pass_attempts: number | null
           passes_made: number | null
+          possession: number | null
           primary_position: string | null
           reliability_score: number | null
           saves: number | null
+          saves_cross: number | null
+          saves_diving: number | null
+          saves_parry: number | null
+          saves_punch: number | null
+          saves_reflex: number | null
+          seconds_played: number | null
           shots: number | null
           streak_type: string | null
+          tackle_attempts: number | null
           tackles: number | null
           top_achievements: string[]
           tournament_wins: number
@@ -1393,33 +1483,48 @@ export type Database = {
         }
         Insert: {
           achievement_count?: number
+          archetypeid?: string | null
           assists?: number
           avg_match_rating?: number | null
           baseline_synced?: boolean | null
           clean_sheets?: number | null
+          clearances?: number | null
           current_streak?: number
           discord_user_id: string
           discord_username?: string | null
           draws?: number | null
+          dribbles?: number | null
           form_rating?: number | null
+          fouls?: number | null
           games_played?: number
           goals?: number
+          goals_conceded?: number | null
           guild_id: string
           id?: string
+          interceptions?: number | null
           last_active_at?: string | null
           league_wins?: number
           longest_win_streak?: number
           losses?: number | null
           major_wins?: number
           man_of_match?: number | null
+          offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null
           passes_made?: number | null
+          possession?: number | null
           primary_position?: string | null
           reliability_score?: number | null
           saves?: number | null
+          saves_cross?: number | null
+          saves_diving?: number | null
+          saves_parry?: number | null
+          saves_punch?: number | null
+          saves_reflex?: number | null
+          seconds_played?: number | null
           shots?: number | null
           streak_type?: string | null
+          tackle_attempts?: number | null
           tackles?: number | null
           top_achievements?: string[]
           tournament_wins?: number
@@ -1429,33 +1534,48 @@ export type Database = {
         }
         Update: {
           achievement_count?: number
+          archetypeid?: string | null
           assists?: number
           avg_match_rating?: number | null
           baseline_synced?: boolean | null
           clean_sheets?: number | null
+          clearances?: number | null
           current_streak?: number
           discord_user_id?: string
           discord_username?: string | null
           draws?: number | null
+          dribbles?: number | null
           form_rating?: number | null
+          fouls?: number | null
           games_played?: number
           goals?: number
+          goals_conceded?: number | null
           guild_id?: string
           id?: string
+          interceptions?: number | null
           last_active_at?: string | null
           league_wins?: number
           longest_win_streak?: number
           losses?: number | null
           major_wins?: number
           man_of_match?: number | null
+          offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null
           passes_made?: number | null
+          possession?: number | null
           primary_position?: string | null
           reliability_score?: number | null
           saves?: number | null
+          saves_cross?: number | null
+          saves_diving?: number | null
+          saves_parry?: number | null
+          saves_punch?: number | null
+          saves_reflex?: number | null
+          seconds_played?: number | null
           shots?: number | null
           streak_type?: string | null
+          tackle_attempts?: number | null
           tackles?: number | null
           top_achievements?: string[]
           tournament_wins?: number
