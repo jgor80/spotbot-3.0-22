@@ -2649,6 +2649,8 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
   let activeDraftCount = 0;
   let pendingClaimsCount = 0;
   let recentMatchesCount = 0;
+  let pendingFeedbackCount = 0;
+  let completedFeedbackCount = 0;
   
   try {
     // Count players with prefs in this guild
@@ -2682,11 +2684,30 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
       .eq('guild_id', guildId)
       .gte('created_at', weekAgo);
     recentMatchesCount = matchCount || 0;
+    
+    // Count pending feedback requests
+    const { count: pendingFbCount } = await supabase
+      .from('dm_feedback_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('guild_id', guildId)
+      .eq('status', 'pending');
+    pendingFeedbackCount = pendingFbCount || 0;
+    
+    // Count completed feedback requests (last 30 days)
+    const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { count: completedFbCount } = await supabase
+      .from('dm_feedback_requests')
+      .select('*', { count: 'exact', head: true })
+      .eq('guild_id', guildId)
+      .eq('status', 'completed')
+      .gte('completed_at', monthAgo);
+    completedFeedbackCount = completedFbCount || 0;
   } catch (err) {
     console.error('[AdminPanel] Error fetching stats:', err);
   }
   
   // Stats overview embed
+  const feedbackEnabled = state?.feedbackEnabled !== false;
   const statsEmbed = new EmbedBuilder()
     .setTitle('📊 SYSTEM STATUS')
     .setColor(0x00d4aa)
@@ -2695,6 +2716,9 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
       { name: '⚔️ Active Drafts', value: `${activeDraftCount}`, inline: true },
       { name: '🏆 Pending Claims', value: `${pendingClaimsCount}`, inline: true },
       { name: '📈 Matches (7d)', value: `${recentMatchesCount}`, inline: true },
+      { name: '📬 Pending Feedback', value: `${pendingFeedbackCount}`, inline: true },
+      { name: '✅ Completed (30d)', value: `${completedFeedbackCount}`, inline: true },
+      { name: '📨 Feedback Status', value: feedbackEnabled ? '✅ Enabled' : '❌ Disabled', inline: true },
       { name: '🌐 Web Dashboard', value: '[Open →](https://squadiq.lovable.app)', inline: true },
       { name: '⏱️ Last Update', value: `<t:${Math.floor(Date.now() / 1000)}:R>`, inline: true }
     );
@@ -2783,15 +2807,20 @@ function buildAdminControlPanelButtons(state) {
       .setEmoji('📨')
       .setStyle(feedbackEnabled ? ButtonStyle.Success : ButtonStyle.Danger),
     new ButtonBuilder()
-      .setCustomId('squadiq_autolink')
-      .setLabel('Auto-Link EA')
-      .setEmoji('🔗')
+      .setCustomId('squadiq_clearfeedback')
+      .setLabel('Clear Pending')
+      .setEmoji('🗑️')
       .setStyle(ButtonStyle.Secondary)
   );
   rows.push(row2);
   
-  // Row 3: Scouting & Analytics
+  // Row 3: Links & Auto
   const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('squadiq_autolink')
+      .setLabel('Auto-Link EA')
+      .setEmoji('🔗')
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId('squadiq_scout')
       .setLabel('Scout Club')
@@ -5695,18 +5724,61 @@ client.on(Events.InteractionCreate, async (interaction) => {
         state.feedbackEnabled = !state.feedbackEnabled;
         await saveGuildSettings(guildId, state);
 
-        const statusText = state.feedbackEnabled ? '✅ **Peer Feedback ENABLED**' : '❌ **Peer Feedback DISABLED**';
-        const descriptionText = state.feedbackEnabled 
-          ? 'Players will receive DMs to rate teammates after matches.'
-          : 'Players will NOT receive feedback DMs after matches.';
+          const statusText = state.feedbackEnabled ? '✅ **Peer Feedback ENABLED**' : '❌ **Peer Feedback DISABLED**';
+          const descriptionText = state.feedbackEnabled 
+            ? 'Players will receive DMs to rate teammates after matches.'
+            : 'Players will NOT receive feedback DMs after matches.';
 
-        return interaction.reply({
-          content: `📨 ${statusText}\n\n${descriptionText}`,
-          flags: 64
-        });
-      }
+          return interaction.reply({
+            content: `📨 ${statusText}\n\n${descriptionText}`,
+            flags: 64
+          });
+        }
 
-      if (id === 'squadiq_pendingwins') {
+        // SquadIQ - Clear Pending Feedback button
+        if (id === 'squadiq_clearfeedback') {
+          if (!isManager(interaction.member)) {
+            return interaction.reply({ content: '❌ Only managers can clear pending feedback.', flags: 64 });
+          }
+
+          await interaction.deferReply({ flags: 64 });
+
+          try {
+            // Count pending before clearing
+            const { count: pendingCount } = await supabase
+              .from('dm_feedback_requests')
+              .select('*', { count: 'exact', head: true })
+              .eq('guild_id', guildId)
+              .eq('status', 'pending');
+
+            if (!pendingCount || pendingCount === 0) {
+              return interaction.editReply({ content: '✅ No pending feedback requests to clear!' });
+            }
+
+            // Update all pending to expired
+            const { error } = await supabase
+              .from('dm_feedback_requests')
+              .update({ status: 'expired' })
+              .eq('guild_id', guildId)
+              .eq('status', 'pending');
+
+            if (error) {
+              console.error('[ClearFeedback] Error:', error);
+              return interaction.editReply({ content: `❌ Error clearing feedback: ${error.message}` });
+            }
+
+            return interaction.editReply({
+              content: `🗑️ **Cleared ${pendingCount} Pending Feedback Requests**\n\n` +
+                `All pending DM feedback requests have been marked as expired.\n` +
+                `No more DMs will be sent for these requests.`
+            });
+          } catch (error) {
+            console.error('[ClearFeedback] Error:', error);
+            return interaction.editReply({ content: `❌ Error: ${error.message}` });
+          }
+        }
+
+        if (id === 'squadiq_pendingwins') {
         if (!isManager(interaction.member)) {
           return interaction.reply({ content: '❌ Admin only.', flags: 64 });
         }
