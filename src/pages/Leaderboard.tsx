@@ -41,6 +41,7 @@ export default function Leaderboard() {
   const [timePeriod, setTimePeriod] = useState("all");
   const [showWorst, setShowWorst] = useState(false);
   const [clubFilter, setClubFilter] = useState("all");
+  const [statsSource, setStatsSource] = useState<"all" | "members" | "games">("all");
 
   const enabledClubs = (selectedGuild?.clubs || []).filter((club) => club.enabled);
 
@@ -55,13 +56,17 @@ export default function Leaderboard() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   }, [timePeriod]);
   
+  // Only pass statsSource when viewing aggregate (clubFilter === "all")
+  const effectiveStatsSource = clubFilter === "all" ? statsSource : undefined;
+  
   const { data: players, isLoading: playersLoading, error } = useLeaderboard(
     selectedGuildId,
     activeTab,
     positionFilter === "all" ? undefined : positionFilter,
     100, // Fetch more for filtering
     monthYear,
-    clubFilter === "all" ? undefined : clubFilter
+    clubFilter === "all" ? undefined : clubFilter,
+    effectiveStatsSource
   );
 
   // Client-side filtering and sorting for worst performers
@@ -97,7 +102,11 @@ export default function Leaderboard() {
                 {showWorst 
                   ? "Players ranked from worst to best (min 3 games)" 
                   : clubFilter === "all"
-                    ? "Top players ranked by performance, aggregated across every monitored club in this server"
+                    ? statsSource === "members"
+                      ? "Career stats from EA member board (baseline sync)"
+                      : statsSource === "games"
+                        ? "Stats from monitored matches only"
+                        : "Combined stats across every monitored club"
                     : `Stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter} only`}
               </p>
             </div>
@@ -129,6 +138,18 @@ export default function Leaderboard() {
                 ))}
               </SelectContent>
             </Select>
+            {clubFilter === "all" && (
+              <Select value={statsSource} onValueChange={(v) => setStatsSource(v as "all" | "members" | "games")}>
+                <SelectTrigger className="w-[180px] bg-card">
+                  <SelectValue placeholder="Stats source" />
+                </SelectTrigger>
+                <SelectContent className="bg-card border z-50">
+                  <SelectItem value="all">Combined Stats</SelectItem>
+                  <SelectItem value="members">Members Board (EA)</SelectItem>
+                  <SelectItem value="games">Game Stats Only</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
             <Select value={timePeriod} onValueChange={setTimePeriod}>
               <SelectTrigger className="w-[140px] bg-card">
                 <SelectValue placeholder="Time period" />

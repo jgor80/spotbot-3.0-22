@@ -34,7 +34,8 @@ export async function fetchLeaderboard(
   position?: string,
   limit: number = 50,
   monthYear?: string,
-  clubKey?: string
+  clubKey?: string,
+  statsSource?: "all" | "members" | "games"
 ): Promise<LeaderboardPlayer[]> {
   const response = await fetch(`${SUPABASE_URL}/functions/v1/get-leaderboard`, {
     method: "POST",
@@ -46,6 +47,7 @@ export async function fetchLeaderboard(
       limit,
       month_year: monthYear,
       club_key: clubKey,
+      stats_source: statsSource,
     }),
   });
 
