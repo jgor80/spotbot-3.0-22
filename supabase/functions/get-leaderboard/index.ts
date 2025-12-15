@@ -8,7 +8,7 @@ const corsHeaders = {
 
 interface GetLeaderboardRequest {
   guild_id: string;
-  type?: "overall" | "goals" | "assists" | "wins" | "form" | "reliability";
+  type?: "overall" | "goals" | "assists" | "wins" | "form" | "reliability" | "avg_rating" | "saves" | "tackles" | "clean_sheets";
   position?: string; // Filter by position
   limit?: number;
   month_year?: string; // For monthly leaderboard, e.g., "2025-01"
@@ -103,6 +103,14 @@ serve(async (req) => {
           return (b.form_rating ?? 0) - (a.form_rating ?? 0);
         case "reliability":
           return (b.reliability_score ?? 0) - (a.reliability_score ?? 0);
+        case "avg_rating":
+          return (b.avg_match_rating ?? 0) - (a.avg_match_rating ?? 0);
+        case "saves":
+          return (b.saves ?? 0) - (a.saves ?? 0);
+        case "tackles":
+          return (b.tackles ?? 0) - (a.tackles ?? 0);
+        case "clean_sheets":
+          return (b.clean_sheets ?? 0) - (a.clean_sheets ?? 0);
         default:
           return (b.overall_rating ?? 0) - (a.overall_rating ?? 0);
       }
