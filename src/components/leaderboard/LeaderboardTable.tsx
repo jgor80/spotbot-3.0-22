@@ -18,12 +18,13 @@ import { useState, useMemo } from "react";
 interface LeaderboardTableProps {
   players: LeaderboardPlayer[];
   onPlayerClick?: (playerId: string) => void;
+  highlightColumn?: "rating" | "goals" | "assists" | "wins" | "avg_rating" | "saves" | "tackles" | "clean_sheets";
 }
 
-type SortKey = "rank" | "rating" | "games" | "wins" | "win_rate" | "goals" | "assists" | "clean_sheets" | "motm" | "pass_pct";
+type SortKey = "rank" | "rating" | "games" | "wins" | "win_rate" | "goals" | "assists" | "clean_sheets" | "motm" | "pass_pct" | "avg_rating" | "saves" | "tackles";
 type SortDirection = "asc" | "desc";
 
-export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTableProps) {
+export function LeaderboardTable({ players, onPlayerClick, highlightColumn }: LeaderboardTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("rank");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [searchQuery, setSearchQuery] = useState("");
@@ -95,6 +96,18 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
           aVal = a.pass_attempts > 0 ? (a.passes_made / a.pass_attempts) * 100 : 0;
           bVal = b.pass_attempts > 0 ? (b.passes_made / b.pass_attempts) * 100 : 0;
           break;
+        case "avg_rating":
+          aVal = a.avg_match_rating || 0;
+          bVal = b.avg_match_rating || 0;
+          break;
+        case "saves":
+          aVal = a.saves || 0;
+          bVal = b.saves || 0;
+          break;
+        case "tackles":
+          aVal = a.tackles || 0;
+          bVal = b.tackles || 0;
+          break;
         default:
           return 0;
       }
@@ -115,17 +128,34 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
       : <ArrowDown className="ml-1 h-3 w-3" />;
   };
 
-  const SortableHeader = ({ columnKey, children, className }: { columnKey: SortKey; children: React.ReactNode; className?: string }) => (
-    <TableHead 
-      className={cn("cursor-pointer hover:bg-muted/80 transition-colors select-none", className)}
-      onClick={() => handleSort(columnKey)}
-    >
-      <div className="flex items-center justify-center">
-        {children}
-        <SortIcon columnKey={columnKey} />
-      </div>
-    </TableHead>
-  );
+  const SortableHeader = ({ columnKey, children, className }: { columnKey: SortKey; children: React.ReactNode; className?: string }) => {
+    const isHighlighted = highlightColumn && (
+      (highlightColumn === "rating" && columnKey === "rating") ||
+      (highlightColumn === "goals" && columnKey === "goals") ||
+      (highlightColumn === "assists" && columnKey === "assists") ||
+      (highlightColumn === "wins" && columnKey === "wins") ||
+      (highlightColumn === "avg_rating" && columnKey === "avg_rating") ||
+      (highlightColumn === "saves" && columnKey === "saves") ||
+      (highlightColumn === "tackles" && columnKey === "tackles") ||
+      (highlightColumn === "clean_sheets" && columnKey === "clean_sheets")
+    );
+    
+    return (
+      <TableHead 
+        className={cn(
+          "cursor-pointer hover:bg-muted/80 transition-colors select-none",
+          isHighlighted && "bg-primary/10 text-primary font-semibold",
+          className
+        )}
+        onClick={() => handleSort(columnKey)}
+      >
+        <div className="flex items-center justify-center">
+          {children}
+          <SortIcon columnKey={columnKey} />
+        </div>
+      </TableHead>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -145,14 +175,16 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
             <SortableHeader columnKey="rank" className="w-12 text-center">#</SortableHeader>
             <TableHead>Player</TableHead>
             <SortableHeader columnKey="rating" className="text-center">Rating</SortableHeader>
+            <SortableHeader columnKey="avg_rating" className="text-center hidden lg:table-cell">Avg</SortableHeader>
             <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
             <SortableHeader columnKey="wins" className="text-center hidden md:table-cell">W/D/L</SortableHeader>
             <SortableHeader columnKey="win_rate" className="text-center hidden lg:table-cell">Win%</SortableHeader>
             <SortableHeader columnKey="goals" className="text-center hidden sm:table-cell">Goals</SortableHeader>
             <SortableHeader columnKey="assists" className="text-center hidden sm:table-cell">Assists</SortableHeader>
             <SortableHeader columnKey="clean_sheets" className="text-center hidden lg:table-cell">CS</SortableHeader>
-            <SortableHeader columnKey="motm" className="text-center hidden lg:table-cell">MotM</SortableHeader>
-            <SortableHeader columnKey="pass_pct" className="text-center hidden xl:table-cell">Pass%</SortableHeader>
+            <SortableHeader columnKey="saves" className="text-center hidden xl:table-cell">Saves</SortableHeader>
+            <SortableHeader columnKey="tackles" className="text-center hidden xl:table-cell">Tackles</SortableHeader>
+            <SortableHeader columnKey="motm" className="text-center hidden xl:table-cell">MotM</SortableHeader>
             <TableHead className="text-center">Form</TableHead>
           </TableRow>
         </TableHeader>
@@ -219,6 +251,9 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
                 <TableCell className="text-center">
                   <RatingBadge rating={player.overall_rating} size="sm" />
                 </TableCell>
+                <TableCell className="text-center hidden lg:table-cell">
+                  {player.avg_match_rating?.toFixed(1) || '-'}
+                </TableCell>
                 <TableCell className="text-center hidden md:table-cell">
                   {player.games_played}
                 </TableCell>
@@ -241,13 +276,14 @@ export function LeaderboardTable({ players, onPlayerClick }: LeaderboardTablePro
                 <TableCell className="text-center hidden lg:table-cell">
                   {player.clean_sheets || 0}
                 </TableCell>
-                <TableCell className="text-center hidden lg:table-cell">
-                  {player.man_of_match || 0}
+                <TableCell className="text-center hidden xl:table-cell">
+                  {player.saves || 0}
                 </TableCell>
                 <TableCell className="text-center hidden xl:table-cell">
-                  {player.pass_attempts > 0 
-                    ? ((player.passes_made / player.pass_attempts) * 100).toFixed(0) + '%'
-                    : '-'}
+                  {player.tackles || 0}
+                </TableCell>
+                <TableCell className="text-center hidden xl:table-cell">
+                  {player.man_of_match || 0}
                 </TableCell>
                 <TableCell className="text-center">
                   <div className="flex items-center justify-center">
