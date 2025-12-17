@@ -548,6 +548,26 @@ function getRatingTier(rating: number): { name: string; icon: string } {
 function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
   const aggregated = new Map<string, any>();
 
+  // First pass: identify all linked Discord IDs so we can skip ea_ records that are already linked
+  const linkedDiscordIds = new Set<string>();
+  for (const player of players) {
+    if (player.discord_user_id.startsWith('ea_')) {
+      const eaUsername = player.discord_user_id.replace('ea_', '');
+      const normalized = eaUsername.toLowerCase().replace(/[\s\-_]/g, '');
+      const linkedId = eaToDiscordMap.get(normalized) || eaToDiscordMap.get(eaUsername.toLowerCase());
+      if (linkedId) {
+        linkedDiscordIds.add(linkedId);
+      }
+    }
+  }
+
+  // Check if a real Discord ID exists in the players array for each linked ea_ account
+  const realDiscordIdsInData = new Set(
+    players
+      .filter(p => !p.discord_user_id.startsWith('ea_'))
+      .map(p => p.discord_user_id)
+  );
+
   for (const player of players) {
     // Determine the canonical discord_user_id
     let canonicalId = player.discord_user_id;
@@ -558,6 +578,12 @@ function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
       const normalized = eaUsername.toLowerCase().replace(/[\s\-_]/g, '');
       const linkedId = eaToDiscordMap.get(normalized) || eaToDiscordMap.get(eaUsername.toLowerCase());
       if (linkedId) {
+        // SKIP this ea_ record if the linked Discord ID already exists in the data
+        // This prevents double-counting stats from both ea_ and real Discord records
+        if (realDiscordIdsInData.has(linkedId)) {
+          console.log(`[aggregatePlayers] Skipping ea_ record ${canonicalId} - linked Discord ${linkedId} already has data`);
+          continue;
+        }
         canonicalId = linkedId;
       }
     }

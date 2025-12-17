@@ -103,6 +103,30 @@ serve(async (req) => {
       await updatePlayerSummary(supabase, guild_id, result.discord_user_id);
     }
 
+    // Award achievements for updated players
+    if (results.length > 0) {
+      try {
+        const playerIdsToCheck = results.map(r => r.discord_user_id);
+        const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+        const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+        
+        await fetch(`${supabaseUrl}/functions/v1/award-achievements`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${supabaseKey}`,
+          },
+          body: JSON.stringify({
+            guild_id,
+            player_ids: playerIdsToCheck,
+          }),
+        });
+        console.log(`[calculate-ratings] Triggered achievement check for ${playerIdsToCheck.length} players`);
+      } catch (e) {
+        console.error("[calculate-ratings] Failed to trigger achievement check:", e);
+      }
+    }
+
     console.log(`[calculate-ratings] Recalculated ${results.length} players`);
 
     return new Response(

@@ -125,6 +125,9 @@ serve(async (req) => {
           
           // Trigger DM feedback requests
           await createFeedbackRequests(supabase, draft);
+          
+          // Trigger achievement check
+          await triggerAchievementCheck(supabase, draft.guild_id, [...draft.team_a_player_ids, ...draft.team_b_player_ids]);
         }
 
         return new Response(
@@ -299,7 +302,9 @@ async function updatePlayerStreak(
   playerId: string,
   won: boolean,
   lost: boolean,
-  isDraw: boolean
+  isDraw: boolean,
+  scoredGoal: boolean = false,
+  keptCleanSheet: boolean = false
 ) {
   const result = won ? "W" : lost ? "L" : "D";
 
@@ -317,8 +322,16 @@ async function updatePlayerStreak(
     let newWinStreak = won ? existing.current_win_streak + 1 : 0;
     let newLossStreak = lost ? existing.current_loss_streak + 1 : 0;
     
+    // Goal streak tracking
+    let newGoalStreak = scoredGoal ? (existing.current_goal_streak || 0) + 1 : 0;
+    
+    // Clean sheet streak tracking
+    let newCleanSheetStreak = keptCleanSheet ? (existing.current_clean_sheet_streak || 0) + 1 : 0;
+    
     const longestWin = Math.max(existing.longest_win_streak, newWinStreak);
     const longestLoss = Math.max(existing.longest_loss_streak, newLossStreak);
+    const longestGoal = Math.max(existing.longest_goal_streak || 0, newGoalStreak);
+    const longestCleanSheet = Math.max(existing.longest_clean_sheet_streak || 0, newCleanSheetStreak);
 
     // Calculate form rating (W=3, D=1, L=0, out of 15 max for last 5)
     const formPoints = last5.reduce((sum, r) => sum + (r === "W" ? 3 : r === "D" ? 1 : 0), 0);
@@ -329,8 +342,12 @@ async function updatePlayerStreak(
       .update({
         current_win_streak: newWinStreak,
         current_loss_streak: newLossStreak,
+        current_goal_streak: newGoalStreak,
+        current_clean_sheet_streak: newCleanSheetStreak,
         longest_win_streak: longestWin,
         longest_loss_streak: longestLoss,
+        longest_goal_streak: longestGoal,
+        longest_clean_sheet_streak: longestCleanSheet,
         last_5_results: last5,
         last_10_results: last10,
         form_rating: formRating,
@@ -344,8 +361,12 @@ async function updatePlayerStreak(
         discord_user_id: playerId,
         current_win_streak: won ? 1 : 0,
         current_loss_streak: lost ? 1 : 0,
+        current_goal_streak: scoredGoal ? 1 : 0,
+        current_clean_sheet_streak: keptCleanSheet ? 1 : 0,
         longest_win_streak: won ? 1 : 0,
         longest_loss_streak: lost ? 1 : 0,
+        longest_goal_streak: scoredGoal ? 1 : 0,
+        longest_clean_sheet_streak: keptCleanSheet ? 1 : 0,
         last_5_results: [result],
         last_10_results: [result],
         form_rating: won ? 100 : lost ? 0 : 33,
@@ -432,4 +453,26 @@ async function createFeedbackRequests(supabase: any, draft: any) {
 
   await supabase.from("dm_feedback_requests").insert(feedbackRequests);
   console.log(`[draft-result] Created ${feedbackRequests.length} feedback requests`);
+}
+
+async function triggerAchievementCheck(supabase: any, guildId: string, playerIds: string[]) {
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    
+    await fetch(`${supabaseUrl}/functions/v1/award-achievements`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({
+        guild_id: guildId,
+        player_ids: playerIds,
+      }),
+    });
+    console.log(`[draft-result] Triggered achievement check for ${playerIds.length} players`);
+  } catch (e) {
+    console.error("[draft-result] Failed to trigger achievement check:", e);
+  }
 }
