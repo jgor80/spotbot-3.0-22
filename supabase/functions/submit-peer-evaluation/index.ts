@@ -126,6 +126,27 @@ serve(async (req) => {
       );
     }
 
+    // Check if there's a valid (non-expired) feedback request for this match
+    if (club_match_id) {
+      const { data: feedbackRequest } = await supabase
+        .from("dm_feedback_requests")
+        .select("expires_at, status")
+        .eq("club_match_id", club_match_id)
+        .eq("evaluator_discord_id", evaluator_discord_id)
+        .maybeSingle();
+      
+      if (feedbackRequest) {
+        const expiresAt = new Date(feedbackRequest.expires_at);
+        if (expiresAt < new Date()) {
+          console.log(`[peer-eval] Feedback expired for match ${club_match_id}`);
+          return new Response(
+            JSON.stringify({ error: "Feedback window has expired (30 minutes)" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+    }
+
     // Get evaluator's trust score
     const { data: trustData } = await supabase
       .from("evaluator_trust_scores")

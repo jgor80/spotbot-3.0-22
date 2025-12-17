@@ -1148,7 +1148,7 @@ async function syncMatches(guildId, clubKey, club) {
               teammates_to_evaluate: matchPlayerIds.filter(id => id !== evaluatorId),
               teammates_data: teammatesData,
               status: 'pending',
-              expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
+              expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() // 30 minutes only
             });
           
           if (feedbackError) {
