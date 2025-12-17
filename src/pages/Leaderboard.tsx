@@ -3,6 +3,7 @@ import { LeaderboardTable } from "@/components/leaderboard/LeaderboardTable";
 import { OffenseLeaderboardTable } from "@/components/leaderboard/OffenseLeaderboardTable";
 import { DefenseLeaderboardTable } from "@/components/leaderboard/DefenseLeaderboardTable";
 import { GKLeaderboardTable } from "@/components/leaderboard/GKLeaderboardTable";
+import { MidfielderLeaderboardTable } from "@/components/leaderboard/MidfielderLeaderboardTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,23 +15,6 @@ import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { Loader2, TrendingDown } from "lucide-react";
 import { useState, useMemo } from "react";
 
-const POSITION_FILTERS = [
-  { value: "all", label: "All Positions" },
-  { value: "GK", label: "Goalkeeper" },
-  { value: "CB", label: "Center Back" },
-  { value: "LB", label: "Left Back" },
-  { value: "RB", label: "Right Back" },
-  { value: "CDM", label: "CDM" },
-  { value: "CM", label: "Center Mid" },
-  { value: "CAM", label: "CAM" },
-  { value: "LM", label: "Left Mid" },
-  { value: "RM", label: "Right Mid" },
-  { value: "LW", label: "Left Wing" },
-  { value: "RW", label: "Right Wing" },
-  { value: "ST", label: "Striker" },
-  { value: "CF", label: "Center Forward" },
-];
-
 const TIME_PERIODS = [
   { value: "all", label: "All Time" },
   { value: "week", label: "This Week" },
@@ -39,19 +23,21 @@ const TIME_PERIODS = [
 
 const BOARD_TYPES = [
   { value: "overall", label: "Overall" },
-  { value: "offense", label: "Offense" },
-  { value: "defense", label: "Defense" },
+  { value: "forward", label: "Forward" },
+  { value: "midfielder", label: "Midfielder" },
+  { value: "defender", label: "Defender" },
   { value: "goalkeeper", label: "Goalkeeper" },
 ];
 
-const OFFENSE_POSITIONS = ['ST', 'CF', 'LW', 'RW', 'CAM'];
-const DEFENSE_POSITIONS = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM'];
+// Map EA positions to categories
+const FORWARD_POSITIONS = ['ST', 'CF', 'LW', 'RW', 'RS', 'LS'];
+const MIDFIELDER_POSITIONS = ['CAM', 'CM', 'CDM', 'LM', 'RM', 'LCM', 'RCM', 'LAM', 'RAM'];
+const DEFENDER_POSITIONS = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'LCB', 'RCB'];
 
 export default function Leaderboard() {
   const { selectedGuildId, isLoading: guildLoading, selectedGuild } = useGuild();
   const [activeTab, setActiveTab] = useState("overall");
   const [boardType, setBoardType] = useState("overall");
-  const [positionFilter, setPositionFilter] = useState("all");
   const [timePeriod, setTimePeriod] = useState("all");
   const [showWorst, setShowWorst] = useState(false);
   const [clubFilter, setClubFilter] = useState("all");
@@ -67,9 +53,9 @@ export default function Leaderboard() {
 
   const effectivePositionFilter = useMemo(() => {
     if (boardType === "goalkeeper") return "GK";
-    if (positionFilter !== "all") return positionFilter;
+    // For positional boards, we filter client-side based on EA position categories
     return undefined;
-  }, [boardType, positionFilter]);
+  }, [boardType]);
   
   const { data: players, isLoading: playersLoading, error } = useLeaderboard(
     selectedGuildId,
@@ -86,15 +72,21 @@ export default function Leaderboard() {
     
     let filtered = [...players];
     
-    if (boardType === "offense") {
+    // Filter by EA position category
+    if (boardType === "forward") {
       filtered = filtered.filter(p => 
-        !p.primary_position || OFFENSE_POSITIONS.includes(p.primary_position) ||
-        p.goals > 0 || p.assists > 0
+        FORWARD_POSITIONS.includes(p.primary_position || '') ||
+        (!p.primary_position && (p.goals > 0 || p.assists > 0))
       );
-    } else if (boardType === "defense") {
+    } else if (boardType === "midfielder") {
       filtered = filtered.filter(p => 
-        !p.primary_position || DEFENSE_POSITIONS.includes(p.primary_position) ||
-        (p.tackles || 0) > 0 || (p.interceptions || 0) > 0
+        MIDFIELDER_POSITIONS.includes(p.primary_position || '') ||
+        (!p.primary_position && (p.passes_made || 0) > 0)
+      );
+    } else if (boardType === "defender") {
+      filtered = filtered.filter(p => 
+        DEFENDER_POSITIONS.includes(p.primary_position || '') ||
+        (!p.primary_position && ((p.tackles || 0) > 0 || (p.interceptions || 0) > 0))
       );
     } else if (boardType === "goalkeeper") {
       filtered = filtered.filter(p => 
@@ -121,22 +113,26 @@ export default function Leaderboard() {
           <CardContent className="py-8 text-center text-muted-foreground">
             {boardType === "goalkeeper" 
               ? "No goalkeepers found with save data."
-              : boardType === "offense"
-                ? "No attackers found with goal/assist data."
-                : boardType === "defense"
-                  ? "No defenders found with defensive stats."
-                  : showWorst 
-                    ? "No players with at least 3 games found."
-                    : "No players found."}
+              : boardType === "forward"
+                ? "No forwards found with goal/assist data."
+                : boardType === "midfielder"
+                  ? "No midfielders found."
+                  : boardType === "defender"
+                    ? "No defenders found with defensive stats."
+                    : showWorst 
+                      ? "No players with at least 3 games found."
+                      : "No players found."}
           </CardContent>
         </Card>
       );
     }
 
     switch (boardType) {
-      case "offense":
+      case "forward":
         return <OffenseLeaderboardTable players={processedPlayers} />;
-      case "defense":
+      case "midfielder":
+        return <MidfielderLeaderboardTable players={processedPlayers} />;
+      case "defender":
         return <DefenseLeaderboardTable players={processedPlayers} />;
       case "goalkeeper":
         return <GKLeaderboardTable players={processedPlayers} />;
@@ -153,27 +149,30 @@ export default function Leaderboard() {
             <div>
               <h1 className="font-display text-3xl font-bold">
                 {showWorst ? "Bottom Performers" : 
-                  boardType === "offense" ? "Offense Leaderboard" :
-                  boardType === "defense" ? "Defense Leaderboard" :
+                  boardType === "forward" ? "Forward Leaderboard" :
+                  boardType === "midfielder" ? "Midfielder Leaderboard" :
+                  boardType === "defender" ? "Defender Leaderboard" :
                   boardType === "goalkeeper" ? "Goalkeeper Leaderboard" :
                   "Leaderboard"}
               </h1>
               <p className="text-muted-foreground">
                 {showWorst 
                   ? "Players ranked from worst to best (min 3 games)" 
-                  : boardType === "offense" 
-                    ? "Top scorers and playmakers"
-                    : boardType === "defense"
-                      ? "Top defenders by tackles, interceptions, and clearances"
-                      : boardType === "goalkeeper"
-                        ? "Goalkeeper stats: saves, clean sheets, and save percentage"
-                        : clubFilter === "all"
-                          ? statsSource === "members"
-                            ? "Career stats from EA member board"
-                            : statsSource === "games"
-                              ? "Stats from tracked matches only"
-                              : "EA member stats with tracked game indicators"
-                          : `Stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter}`}
+                  : boardType === "forward" 
+                    ? "Goals, assists, shots, dribbles & shot conversion"
+                    : boardType === "midfielder"
+                      ? "Passes, assists, tackles, interceptions & possession"
+                      : boardType === "defender"
+                        ? "Tackles, interceptions, clearances & clean sheets"
+                        : boardType === "goalkeeper"
+                          ? "Saves breakdown, clean sheets & save percentage"
+                          : clubFilter === "all"
+                            ? statsSource === "members"
+                              ? "Career stats from EA member board"
+                              : statsSource === "games"
+                                ? "Stats from tracked matches only"
+                                : "EA member stats with tracked game indicators"
+                            : `Stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter}`}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -238,20 +237,6 @@ export default function Leaderboard() {
                 ))}
               </SelectContent>
             </Select>
-            {boardType === "overall" && (
-              <Select value={positionFilter} onValueChange={setPositionFilter}>
-                <SelectTrigger className="w-[180px] bg-card">
-                  <SelectValue placeholder="Filter by position" />
-                </SelectTrigger>
-                <SelectContent className="bg-card border z-50">
-                  {POSITION_FILTERS.map((pos) => (
-                    <SelectItem key={pos.value} value={pos.value}>
-                      {pos.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
           </div>
         </div>
 
