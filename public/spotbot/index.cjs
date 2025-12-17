@@ -9350,10 +9350,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         
         const teammatesData = feedbackRequest.teammates_data || [];
-        const currentlyRating = teammatesData.find(t => t.currently_rating);
+        let currentlyRating = teammatesData.find(t => t.currently_rating);
+        
+        // Auto-select first unrated if none selected
+        if (!currentlyRating) {
+          currentlyRating = teammatesData.find(t => !t.rated);
+          if (currentlyRating) {
+            currentlyRating.currently_rating = true;
+          }
+        }
         
         if (!currentlyRating) {
-          return interaction.followUp({ content: '⚠️ Please select a player first using the top dropdown!', flags: 64 });
+          return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
         }
         
         const updatedTeammatesData = teammatesData.map(t => 
@@ -9394,10 +9402,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         
         const teammatesData = feedbackRequest.teammates_data || [];
-        const currentlyRating = teammatesData.find(t => t.currently_rating);
+        let currentlyRating = teammatesData.find(t => t.currently_rating);
+        
+        // Auto-select first unrated if none selected
+        if (!currentlyRating) {
+          currentlyRating = teammatesData.find(t => !t.rated);
+          if (currentlyRating) {
+            currentlyRating.currently_rating = true;
+          }
+        }
         
         if (!currentlyRating) {
-          return interaction.followUp({ content: '⚠️ Please select a player first using the top dropdown!', flags: 64 });
+          return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
         }
         
         const updatedTeammatesData = teammatesData.map(t => 
@@ -9438,10 +9454,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         
         const teammatesData = feedbackRequest.teammates_data || [];
-        const currentlyRating = teammatesData.find(t => t.currently_rating);
+        let currentlyRating = teammatesData.find(t => t.currently_rating);
+        
+        // Auto-select first unrated if none selected
+        if (!currentlyRating) {
+          currentlyRating = teammatesData.find(t => !t.rated);
+          if (currentlyRating) {
+            currentlyRating.currently_rating = true;
+          }
+        }
         
         if (!currentlyRating) {
-          return interaction.followUp({ content: '⚠️ Please select a player first using the top dropdown!', flags: 64 });
+          return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
         }
         
         const updatedTeammatesData = teammatesData.map(t => 
@@ -9482,10 +9506,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         
         const teammatesData = feedbackRequest.teammates_data || [];
-        const currentlyRating = teammatesData.find(t => t.currently_rating);
+        let currentlyRating = teammatesData.find(t => t.currently_rating);
+        
+        // Auto-select first unrated if none selected
+        if (!currentlyRating) {
+          currentlyRating = teammatesData.find(t => !t.rated);
+          if (currentlyRating) {
+            currentlyRating.currently_rating = true;
+          }
+        }
         
         if (!currentlyRating) {
-          return interaction.followUp({ content: '⚠️ Please select a player first using the top dropdown!', flags: 64 });
+          return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
         }
         
         // Check if all ratings are set
@@ -11241,10 +11273,22 @@ async function sendPendingFeedbackDMs(guildId, guild) {
       }
       
       try {
-        // Mark as sent FIRST to prevent race conditions
+        // Auto-select the first unrated player as currently_rating
+        const updatedTeammatesData = teammatesData.map((t, idx) => {
+          const firstUnratedIdx = teammatesData.findIndex(tm => !tm.rated);
+          return {
+            ...t,
+            currently_rating: idx === firstUnratedIdx && !t.rated
+          };
+        });
+        
+        // Mark as sent FIRST and set first player as currently rating
         const { error: updateError } = await supabase
           .from('dm_feedback_requests')
-          .update({ dm_sent_at: new Date().toISOString() })
+          .update({ 
+            dm_sent_at: new Date().toISOString(),
+            teammates_data: updatedTeammatesData.length > 0 ? updatedTeammatesData : teammatesData
+          })
           .eq('id', request.id)
           .is('dm_sent_at', null); // Only update if not already sent
         
@@ -11253,6 +11297,9 @@ async function sendPendingFeedbackDMs(guildId, guild) {
           result.skipped++;
           continue;
         }
+        
+        // Update local reference for panel building
+        request.teammates_data = updatedTeammatesData.length > 0 ? updatedTeammatesData : teammatesData;
         
         // Add to session cache
         sentFeedbackDMs.add(requestKey);
