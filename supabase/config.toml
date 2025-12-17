@@ -74,3 +74,6 @@ verify_jwt = false
 
 [functions.get-club-info-api]
 verify_jwt = false
+
+[functions.award-achievements]
+verify_jwt = false
