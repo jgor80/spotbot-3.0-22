@@ -603,9 +603,22 @@ serve(async (req) => {
       avg_match_rating: player.avg_match_rating,
       shots: player.shots || 0,
       tackles: player.tackles || 0,
+      tackle_attempts: player.tackle_attempts || 0,
       passes_made: player.passes_made || 0,
       pass_attempts: player.pass_attempts || 0,
       saves: player.saves || 0,
+      saves_diving: player.saves_diving || 0,
+      saves_reflex: player.saves_reflex || 0,
+      saves_parry: player.saves_parry || 0,
+      saves_cross: player.saves_cross || 0,
+      saves_punch: player.saves_punch || 0,
+      goals_conceded: player.goals_conceded || 0,
+      interceptions: player.interceptions || 0,
+      clearances: player.clearances || 0,
+      dribbles: player.dribbles || 0,
+      fouls: player.fouls || 0,
+      offsides: player.offsides || 0,
+      seconds_played: player.seconds_played || 0,
       form_rating: player.form_rating,
       reliability_score: player.reliability_score,
       current_streak: player.current_streak,
@@ -717,6 +730,7 @@ function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
       man_of_match: 0,
       shots: 0,
       tackles: 0,
+      tackle_attempts: 0,
       passes_made: 0,
       pass_attempts: 0,
       saves: 0,
@@ -766,6 +780,7 @@ function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
     aggregate.man_of_match += player.man_of_match || 0;
     aggregate.shots += player.shots || 0;
     aggregate.tackles += player.tackles || 0;
+    aggregate.tackle_attempts += player.tackle_attempts || 0;
     aggregate.passes_made += player.passes_made || 0;
     aggregate.pass_attempts += player.pass_attempts || 0;
     aggregate.saves += player.saves || 0;

@@ -1,5 +1,8 @@
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { LeaderboardTable } from "@/components/leaderboard/LeaderboardTable";
+import { OffenseLeaderboardTable } from "@/components/leaderboard/OffenseLeaderboardTable";
+import { DefenseLeaderboardTable } from "@/components/leaderboard/DefenseLeaderboardTable";
+import { GKLeaderboardTable } from "@/components/leaderboard/GKLeaderboardTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -34,9 +37,20 @@ const TIME_PERIODS = [
   { value: "month", label: "This Month" },
 ];
 
+const BOARD_TYPES = [
+  { value: "overall", label: "Overall" },
+  { value: "offense", label: "Offense" },
+  { value: "defense", label: "Defense" },
+  { value: "goalkeeper", label: "Goalkeeper" },
+];
+
+const OFFENSE_POSITIONS = ['ST', 'CF', 'LW', 'RW', 'CAM'];
+const DEFENSE_POSITIONS = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM'];
+
 export default function Leaderboard() {
   const { selectedGuildId, isLoading: guildLoading, selectedGuild } = useGuild();
   const [activeTab, setActiveTab] = useState("overall");
+  const [boardType, setBoardType] = useState("overall");
   const [positionFilter, setPositionFilter] = useState("all");
   const [timePeriod, setTimePeriod] = useState("all");
   const [showWorst, setShowWorst] = useState(false);
@@ -45,47 +59,91 @@ export default function Leaderboard() {
 
   const enabledClubs = (selectedGuild?.clubs || []).filter((club) => club.enabled);
 
-  // Calculate month_year for time filtering
   const monthYear = useMemo(() => {
     if (timePeriod === "all") return undefined;
     const now = new Date();
-    if (timePeriod === "month") {
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    }
-    // For week, we'll filter client-side or just show current month data
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   }, [timePeriod]);
+
+  const effectivePositionFilter = useMemo(() => {
+    if (boardType === "goalkeeper") return "GK";
+    if (positionFilter !== "all") return positionFilter;
+    return undefined;
+  }, [boardType, positionFilter]);
   
-  // Pass statsSource for both aggregate and club-specific views
   const { data: players, isLoading: playersLoading, error } = useLeaderboard(
     selectedGuildId,
     activeTab,
-    positionFilter === "all" ? undefined : positionFilter,
-    100, // Fetch more for filtering
+    effectivePositionFilter,
+    100,
     monthYear,
     clubFilter === "all" ? undefined : clubFilter,
     statsSource
   );
 
-  // Client-side filtering and sorting for worst performers
   const processedPlayers = useMemo(() => {
     if (!players) return [];
     
     let filtered = [...players];
     
-    // Filter to only players with games for worst performers view
-    if (showWorst) {
-      filtered = filtered.filter(p => p.games_played >= 3); // Min 3 games to appear
-      // Reverse the sort order
-      filtered = filtered.reverse();
-      // Re-rank
-      filtered = filtered.map((p, idx) => ({ ...p, rank: idx + 1 }));
+    if (boardType === "offense") {
+      filtered = filtered.filter(p => 
+        !p.primary_position || OFFENSE_POSITIONS.includes(p.primary_position) ||
+        p.goals > 0 || p.assists > 0
+      );
+    } else if (boardType === "defense") {
+      filtered = filtered.filter(p => 
+        !p.primary_position || DEFENSE_POSITIONS.includes(p.primary_position) ||
+        (p.tackles || 0) > 0 || (p.interceptions || 0) > 0
+      );
+    } else if (boardType === "goalkeeper") {
+      filtered = filtered.filter(p => 
+        p.primary_position === 'GK' || (p.saves || 0) > 0
+      );
     }
     
+    if (showWorst) {
+      filtered = filtered.filter(p => p.games_played >= 3);
+      filtered = filtered.reverse();
+    }
+    
+    filtered = filtered.map((p, idx) => ({ ...p, rank: idx + 1 }));
+    
     return filtered;
-  }, [players, showWorst]);
+  }, [players, showWorst, boardType]);
 
   const isLoading = guildLoading || playersLoading;
+
+  const renderTable = () => {
+    if (processedPlayers.length === 0) {
+      return (
+        <Card className="mt-4">
+          <CardContent className="py-8 text-center text-muted-foreground">
+            {boardType === "goalkeeper" 
+              ? "No goalkeepers found with save data."
+              : boardType === "offense"
+                ? "No attackers found with goal/assist data."
+                : boardType === "defense"
+                  ? "No defenders found with defensive stats."
+                  : showWorst 
+                    ? "No players with at least 3 games found."
+                    : "No players found."}
+          </CardContent>
+        </Card>
+      );
+    }
+
+    switch (boardType) {
+      case "offense":
+        return <OffenseLeaderboardTable players={processedPlayers} />;
+      case "defense":
+        return <DefenseLeaderboardTable players={processedPlayers} />;
+      case "goalkeeper":
+        return <GKLeaderboardTable players={processedPlayers} />;
+      default:
+        return <LeaderboardTable players={processedPlayers} highlightColumn={activeTab as any} />;
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -94,22 +152,28 @@ export default function Leaderboard() {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h1 className="font-display text-3xl font-bold">
-                {showWorst ? "Bottom Performers" : "Leaderboard"}
+                {showWorst ? "Bottom Performers" : 
+                  boardType === "offense" ? "Offense Leaderboard" :
+                  boardType === "defense" ? "Defense Leaderboard" :
+                  boardType === "goalkeeper" ? "Goalkeeper Leaderboard" :
+                  "Leaderboard"}
               </h1>
               <p className="text-muted-foreground">
                 {showWorst 
                   ? "Players ranked from worst to best (min 3 games)" 
-                  : clubFilter === "all"
-                    ? statsSource === "members"
-                      ? "Career stats from EA member board (official totals)"
-                      : statsSource === "games"
-                        ? "Stats from tracked matches only (detailed game data)"
-                        : "EA member stats with tracked game indicators"
-                    : statsSource === "members"
-                      ? `EA career stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter}`
-                      : statsSource === "games"
-                        ? `Tracked match stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter}`
-                        : `EA stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter} (with tracked games)`}
+                  : boardType === "offense" 
+                    ? "Top scorers and playmakers"
+                    : boardType === "defense"
+                      ? "Top defenders by tackles, interceptions, and clearances"
+                      : boardType === "goalkeeper"
+                        ? "Goalkeeper stats: saves, clean sheets, and save percentage"
+                        : clubFilter === "all"
+                          ? statsSource === "members"
+                            ? "Career stats from EA member board"
+                            : statsSource === "games"
+                              ? "Stats from tracked matches only"
+                              : "EA member stats with tracked game indicators"
+                          : `Stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter}`}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -127,6 +191,18 @@ export default function Leaderboard() {
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
+            <Select value={boardType} onValueChange={setBoardType}>
+              <SelectTrigger className="w-[150px] bg-card">
+                <SelectValue placeholder="Board type" />
+              </SelectTrigger>
+              <SelectContent className="bg-card border z-50">
+                {BOARD_TYPES.map((type) => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={clubFilter} onValueChange={setClubFilter}>
               <SelectTrigger className="w-[180px] bg-card">
                 <SelectValue placeholder="Select club" />
@@ -162,18 +238,20 @@ export default function Leaderboard() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={positionFilter} onValueChange={setPositionFilter}>
-              <SelectTrigger className="w-[180px] bg-card">
-                <SelectValue placeholder="Filter by position" />
-              </SelectTrigger>
-              <SelectContent className="bg-card border z-50">
-                {POSITION_FILTERS.map((pos) => (
-                  <SelectItem key={pos.value} value={pos.value}>
-                    {pos.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {boardType === "overall" && (
+              <Select value={positionFilter} onValueChange={setPositionFilter}>
+                <SelectTrigger className="w-[180px] bg-card">
+                  <SelectValue placeholder="Filter by position" />
+                </SelectTrigger>
+                <SelectContent className="bg-card border z-50">
+                  {POSITION_FILTERS.map((pos) => (
+                    <SelectItem key={pos.value} value={pos.value}>
+                      {pos.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
         </div>
 
@@ -208,7 +286,7 @@ export default function Leaderboard() {
               <p>Select a Discord server from the dropdown above to view the leaderboard.</p>
             </CardContent>
           </Card>
-        ) : (
+        ) : boardType === "overall" ? (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="flex-wrap h-auto gap-1">
               <TabsTrigger value="overall">Overall</TabsTrigger>
@@ -231,45 +309,33 @@ export default function Leaderboard() {
                   Failed to load leaderboard. Please try again.
                 </CardContent>
               </Card>
-            ) : processedPlayers && processedPlayers.length > 0 ? (
-              <>
-                <TabsContent value="overall" className="mt-4">
-                  <LeaderboardTable players={processedPlayers} highlightColumn="rating" />
-                </TabsContent>
-                <TabsContent value="goals" className="mt-4">
-                  <LeaderboardTable players={processedPlayers} highlightColumn="goals" />
-                </TabsContent>
-                <TabsContent value="assists" className="mt-4">
-                  <LeaderboardTable players={processedPlayers} highlightColumn="assists" />
-                </TabsContent>
-                <TabsContent value="wins" className="mt-4">
-                  <LeaderboardTable players={processedPlayers} highlightColumn="wins" />
-                </TabsContent>
-                <TabsContent value="avg_rating" className="mt-4">
-                  <LeaderboardTable players={processedPlayers} highlightColumn="avg_rating" />
-                </TabsContent>
-                <TabsContent value="saves" className="mt-4">
-                  <LeaderboardTable players={processedPlayers} highlightColumn="saves" />
-                </TabsContent>
-                <TabsContent value="tackles" className="mt-4">
-                  <LeaderboardTable players={processedPlayers} highlightColumn="tackles" />
-                </TabsContent>
-                <TabsContent value="clean_sheets" className="mt-4">
-                  <LeaderboardTable players={processedPlayers} highlightColumn="clean_sheets" />
-                </TabsContent>
-              </>
             ) : (
-              <Card className="mt-4">
-                <CardContent className="py-8 text-center text-muted-foreground">
-                  {positionFilter !== "all" 
-                    ? `No ${POSITION_FILTERS.find(p => p.value === positionFilter)?.label || positionFilter} players found.`
-                    : showWorst 
-                      ? "No players with at least 3 games found."
-                      : "No players found. Start playing games to appear on the leaderboard!"}
-                </CardContent>
-              </Card>
+              <>
+                <TabsContent value="overall" className="mt-4">{renderTable()}</TabsContent>
+                <TabsContent value="goals" className="mt-4">{renderTable()}</TabsContent>
+                <TabsContent value="assists" className="mt-4">{renderTable()}</TabsContent>
+                <TabsContent value="wins" className="mt-4">{renderTable()}</TabsContent>
+                <TabsContent value="avg_rating" className="mt-4">{renderTable()}</TabsContent>
+                <TabsContent value="saves" className="mt-4">{renderTable()}</TabsContent>
+                <TabsContent value="tackles" className="mt-4">{renderTable()}</TabsContent>
+                <TabsContent value="clean_sheets" className="mt-4">{renderTable()}</TabsContent>
+              </>
             )}
           </Tabs>
+        ) : (
+          <div className="mt-4">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : error ? (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  Failed to load leaderboard. Please try again.
+                </CardContent>
+              </Card>
+            ) : renderTable()}
+          </div>
         )}
       </div>
     </DashboardLayout>
