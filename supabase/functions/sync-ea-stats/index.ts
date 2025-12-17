@@ -40,6 +40,7 @@ const KNOWN_MEMBER_KEYS = new Set([
 ])
 
 // Fetch match history with player stats
+// matchType9 = Division games, matchType13 = Cup/Knockout games (competitions/friendlies)
 async function fetchMatches(clubId: string, platform: string, matchType: string = 'matchType9') {
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform
   const url = `https://proclubs.ea.com/api/fc/clubs/matches?platform=${fcPlatform}&clubIds=${clubId}&matchType=${matchType}&maxResultCount=10`
@@ -763,7 +764,12 @@ Deno.serve(async (req) => {
           
           // Also sync recent matches for match-by-match tracking
           if (syncType === 'full') {
-            const matches = await fetchMatches(club.ea_club_id, club.ea_platform)
+            // Fetch both division matches (matchType9) and cup/competition matches (matchType13)
+            const divisionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType9')
+            const competitionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType13')
+            
+            // Process division matches
+            const matches = divisionMatches
 
             if (matches && matches.length > 0) {
               // Surface every field we can see on the most recent match so we know what EA returns
@@ -892,8 +898,116 @@ Deno.serve(async (req) => {
 
                       guildUpdatedPlayerIds.add(profile.discord_user_id)
                       await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id)
+            }
+            
+            // Process competition/cup matches (matchType13) - these are tournament/league games
+            if (competitionMatches && competitionMatches.length > 0) {
+              const { data: existingCompMatches } = await supabase
+                .from('club_matches')
+                .select('ea_match_id')
+                .eq('guild_id', guildId)
+                .eq('club_key', club.key)
+              
+              const existingCompIds = new Set((existingCompMatches || []).map((m: any) => m.ea_match_id))
+              
+              for (const matchData of competitionMatches) {
+                const matchId = matchData.matchId?.toString()
+                if (!matchId || existingCompIds.has(matchId)) {
+                  totalSkipped++
+                  continue
+                }
+                
+                const ourClubData = matchData.clubs?.[club.ea_club_id]
+                const opponentClubId = Object.keys(matchData.clubs || {}).find((id: string) => id !== club.ea_club_id)
+                const opponentClubData = opponentClubId ? matchData.clubs[opponentClubId] : null
+                
+                const scoreFor = parseInt(ourClubData?.goals || 0)
+                const scoreAgainst = parseInt(opponentClubData?.goals || 0)
+                
+                let result = 'draw'
+                if (scoreFor > scoreAgainst) result = 'win'
+                else if (scoreFor < scoreAgainst) result = 'loss'
+                
+                const playerStats: any[] = []
+                const players = matchData.players?.[club.ea_club_id] || {}
+                
+                for (const [, pStats] of Object.entries(players) as any) {
+                  playerStats.push({
+                    ea_username: pStats.playername,
+                    goals: parseInt(pStats.goals || 0),
+                    assists: parseInt(pStats.assists || 0),
+                    rating: parseFloat(pStats.rating || 0),
+                    position: pStats.pos,
+                    motm: pStats.mom === '1',
+                    shots: parseInt(pStats.shots || 0),
+                    tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
+                    passes_made: parseInt(pStats.passesmade || pStats.passesMade || 0),
+                    pass_attempts: parseInt(pStats.passattempts || pStats.passAttempts || 0),
+                    red_cards: pStats.redcards === '1',
+                    saves: parseInt(pStats.saves || pStats.gksaves || 0),
+                    interceptions: parseInt(pStats.interceptions || 0),
+                    clearances: parseInt(pStats.clearances || 0),
+                    possession: parseFloat(pStats.possession || 0),
+                    dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
+                    fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
+                    offsides: parseInt(pStats.offsides || 0)
+                  })
+                }
+                
+                const { error: insertError } = await supabase.from('club_matches').insert({
+                  guild_id: guildId,
+                  club_key: club.key,
+                  ea_match_id: matchId,
+                  match_type: 'competition', // Competition/cup games
+                  result,
+                  score_for: scoreFor,
+                  score_against: scoreAgainst,
+                  opponent_club_name: opponentClubData?.name || 'Unknown',
+                  opponent_club_id: opponentClubId,
+                  match_data: matchData,
+                  player_stats: playerStats
+                })
+                
+                if (!insertError) {
+                  totalSynced++
+                  existingCompIds.add(matchId)
+                  
+                  // Record player stats for competition matches
+                  for (const pStat of playerStats) {
+                    const { data: profile } = await supabase
+                      .from('profiles')
+                      .select('discord_user_id')
+                      .eq('ea_username', pStat.ea_username)
+                      .maybeSingle()
+                    
+                    if (profile && !profile.discord_user_id.startsWith('ea_')) {
+                      await supabase.from('player_stats').insert({
+                        guild_id: guildId,
+                        discord_user_id: profile.discord_user_id,
+                        ea_match_id: matchId,
+                        match_type: 'competition', // Competition/cup match type
+                        goals: pStat.goals,
+                        assists: pStat.assists,
+                        clean_sheet: pStat.position === 'GK' && scoreAgainst === 0,
+                        won: result === 'win',
+                        ea_match_rating: pStat.rating,
+                        position_played: pStat.position,
+                        man_of_match: pStat.motm,
+                        shots: pStat.shots,
+                        tackles: pStat.tackles,
+                        passes_made: pStat.passes_made,
+                        pass_attempts: pStat.pass_attempts,
+                        red_cards: pStat.red_cards
+                      })
+
+                      guildUpdatedPlayerIds.add(profile.discord_user_id)
+                      await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id)
                     }
                   }
+                }
+              }
+            }
+          }
                 }
               }
             }
