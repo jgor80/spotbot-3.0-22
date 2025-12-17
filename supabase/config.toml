@@ -77,3 +77,6 @@ verify_jwt = false
 
 [functions.award-achievements]
 verify_jwt = false
+
+[functions.calculate-vibe-chemistry]
+verify_jwt = false

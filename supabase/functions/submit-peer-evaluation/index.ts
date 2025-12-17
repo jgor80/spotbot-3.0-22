@@ -9,12 +9,15 @@ const corsHeaders = {
 // Validation helpers
 const DISCORD_ID_REGEX = /^\d{17,19}$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const VALID_PLAY_AGAIN = ["prefer", "neutral", "avoid"] as const;
 
 interface PeerEvaluationRequest {
   guild_id: string;
   evaluator_discord_id: string;
   evaluated_discord_id: string;
   draft_id?: string;
+  club_match_id?: string;
+  position_played?: string;
   ratings: {
     technical_skill: number;
     game_iq: number;
@@ -22,6 +25,12 @@ interface PeerEvaluationRequest {
     communication: number;
     consistency: number;
     clutch_factor: number;
+  };
+  // New vibe ratings
+  vibe?: {
+    enjoyment: number;      // 1-5: How fun was playing with this person?
+    team_energy: number;    // 1-5: Did they bring positive energy?
+    play_again: "prefer" | "neutral" | "avoid";  // Would you team with them again?
   };
 }
 
@@ -40,6 +49,9 @@ function validateRequest(body: any): string[] {
   if (body.draft_id && !UUID_REGEX.test(body.draft_id)) {
     errors.push("draft_id must be a valid UUID");
   }
+  if (body.club_match_id && !UUID_REGEX.test(body.club_match_id)) {
+    errors.push("club_match_id must be a valid UUID");
+  }
   
   // Validate ratings object
   if (!body.ratings || typeof body.ratings !== "object") {
@@ -51,6 +63,19 @@ function validateRequest(body: any): string[] {
       if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 5) {
         errors.push(`ratings.${field} must be an integer between 1 and 5`);
       }
+    }
+  }
+
+  // Validate vibe object (optional)
+  if (body.vibe) {
+    if (typeof body.vibe.enjoyment !== "number" || body.vibe.enjoyment < 1 || body.vibe.enjoyment > 5) {
+      errors.push("vibe.enjoyment must be an integer between 1 and 5");
+    }
+    if (typeof body.vibe.team_energy !== "number" || body.vibe.team_energy < 1 || body.vibe.team_energy > 5) {
+      errors.push("vibe.team_energy must be an integer between 1 and 5");
+    }
+    if (!VALID_PLAY_AGAIN.includes(body.vibe.play_again)) {
+      errors.push("vibe.play_again must be 'prefer', 'neutral', or 'avoid'");
     }
   }
   
@@ -80,9 +105,18 @@ serve(async (req) => {
       );
     }
 
-    const { guild_id, evaluator_discord_id, evaluated_discord_id, draft_id, ratings }: PeerEvaluationRequest = body;
+    const { 
+      guild_id, 
+      evaluator_discord_id, 
+      evaluated_discord_id, 
+      draft_id, 
+      club_match_id,
+      position_played,
+      ratings,
+      vibe 
+    }: PeerEvaluationRequest = body;
 
-    console.log(`[peer-eval] ${evaluator_discord_id} evaluating ${evaluated_discord_id}`);
+    console.log(`[peer-eval] ${evaluator_discord_id} evaluating ${evaluated_discord_id}${vibe ? ' with vibe' : ''}`);
 
     // Can't evaluate yourself
     if (evaluator_discord_id === evaluated_discord_id) {
@@ -107,23 +141,34 @@ serve(async (req) => {
     const overallScore = ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length;
     const trustWeightedScore = overallScore * trustScore;
 
-    // Insert evaluation
+    // Insert evaluation with vibe data
+    const evaluationData: any = {
+      guild_id,
+      evaluator_discord_id,
+      evaluated_discord_id,
+      draft_id,
+      club_match_id,
+      position_played,
+      technical_skill: ratings.technical_skill,
+      game_iq: ratings.game_iq,
+      work_ethic: ratings.work_ethic,
+      communication: ratings.communication,
+      consistency: ratings.consistency,
+      clutch_factor: ratings.clutch_factor,
+      overall_score: overallScore,
+      trust_weighted_score: trustWeightedScore,
+    };
+
+    // Add vibe ratings if provided
+    if (vibe) {
+      evaluationData.enjoyment = vibe.enjoyment;
+      evaluationData.team_energy = vibe.team_energy;
+      evaluationData.play_again = vibe.play_again;
+    }
+
     const { error: insertError } = await supabase
       .from("peer_evaluations")
-      .insert({
-        guild_id,
-        evaluator_discord_id,
-        evaluated_discord_id,
-        draft_id,
-        technical_skill: ratings.technical_skill,
-        game_iq: ratings.game_iq,
-        work_ethic: ratings.work_ethic,
-        communication: ratings.communication,
-        consistency: ratings.consistency,
-        clutch_factor: ratings.clutch_factor,
-        overall_score: overallScore,
-        trust_weighted_score: trustWeightedScore,
-      });
+      .insert(evaluationData);
 
     if (insertError) {
       console.error("[peer-eval] Error inserting:", insertError);
@@ -168,6 +213,11 @@ serve(async (req) => {
     // Trigger rating recalculation for the evaluated player
     await recalculatePeerRating(supabase, guild_id, evaluated_discord_id);
 
+    // Update vibe chemistry if vibe data was provided
+    if (vibe) {
+      await updateVibeChemistry(supabase, guild_id, evaluator_discord_id, evaluated_discord_id, vibe);
+    }
+
     console.log(`[peer-eval] Evaluation recorded successfully`);
 
     return new Response(
@@ -175,6 +225,7 @@ serve(async (req) => {
         success: true,
         message: "Evaluation submitted",
         overall_score: overallScore,
+        vibe_recorded: !!vibe,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -212,4 +263,113 @@ async function recalculatePeerRating(supabase: any, guildId: string, playerId: s
     .eq("discord_user_id", playerId);
 
   console.log(`[peer-eval] Updated peer rating for ${playerId}: ${peerRating100.toFixed(1)}`);
+}
+
+async function updateVibeChemistry(
+  supabase: any, 
+  guildId: string, 
+  evaluatorId: string, 
+  evaluatedId: string,
+  vibe: { enjoyment: number; team_energy: number; play_again: string }
+) {
+  // Ensure consistent ordering of player IDs for bidirectional chemistry
+  const [playerA, playerB] = [evaluatorId, evaluatedId].sort();
+
+  // Get existing chemistry record
+  const { data: existing } = await supabase
+    .from("player_vibe_chemistry")
+    .select("*")
+    .eq("guild_id", guildId)
+    .eq("player_a_discord_id", playerA)
+    .eq("player_b_discord_id", playerB)
+    .maybeSingle();
+
+  // Calculate new averages
+  const currentGames = existing?.games_together || 0;
+  const newGames = currentGames + 1;
+
+  const avgEnjoyment = existing?.avg_enjoyment 
+    ? ((existing.avg_enjoyment * currentGames) + vibe.enjoyment) / newGames
+    : vibe.enjoyment;
+
+  const avgTeamEnergy = existing?.avg_team_energy
+    ? ((existing.avg_team_energy * currentGames) + vibe.team_energy) / newGames
+    : vibe.team_energy;
+
+  // Update play_again counts
+  const preferCount = (existing?.prefer_count || 0) + (vibe.play_again === "prefer" ? 1 : 0);
+  const neutralCount = (existing?.neutral_count || 0) + (vibe.play_again === "neutral" ? 1 : 0);
+  const avoidCount = (existing?.avoid_count || 0) + (vibe.play_again === "avoid" ? 1 : 0);
+
+  // Calculate vibe score (0-100)
+  // Base = (enjoyment + team_energy) / 2 * 20  -> converts 1-5 to 0-100
+  // Modifier: prefer = +10, neutral = 0, avoid = -15
+  const baseScore = ((avgEnjoyment + avgTeamEnergy) / 2) * 20;
+  const playAgainModifier = (preferCount * 10 - avoidCount * 15) / Math.max(1, newGames);
+  const vibeScore = Math.max(0, Math.min(100, baseScore + playAgainModifier));
+
+  // Determine vibe status
+  let vibeStatus = "neutral";
+  if (vibeScore >= 80) vibeStatus = "great";
+  else if (vibeScore >= 60) vibeStatus = "good";
+  else if (vibeScore < 40 || avoidCount >= 2) vibeStatus = "avoid";
+
+  // Upsert chemistry record
+  await supabase
+    .from("player_vibe_chemistry")
+    .upsert({
+      guild_id: guildId,
+      player_a_discord_id: playerA,
+      player_b_discord_id: playerB,
+      games_together: newGames,
+      avg_enjoyment: avgEnjoyment,
+      avg_team_energy: avgTeamEnergy,
+      prefer_count: preferCount,
+      neutral_count: neutralCount,
+      avoid_count: avoidCount,
+      vibe_score: vibeScore,
+      vibe_status: vibeStatus,
+      last_played_together: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "guild_id,player_a_discord_id,player_b_discord_id" });
+
+  console.log(`[peer-eval] Updated vibe chemistry for ${playerA} <-> ${playerB}: ${vibeScore.toFixed(1)} (${vibeStatus})`);
+
+  // Update player vibe scores in player_summary
+  await updatePlayerVibeScore(supabase, guildId, evaluatedId);
+}
+
+async function updatePlayerVibeScore(supabase: any, guildId: string, playerId: string) {
+  // Get all vibe chemistry records involving this player
+  const { data: chemistryRecords } = await supabase
+    .from("player_vibe_chemistry")
+    .select("vibe_score, games_together")
+    .eq("guild_id", guildId)
+    .or(`player_a_discord_id.eq.${playerId},player_b_discord_id.eq.${playerId}`);
+
+  if (!chemistryRecords || chemistryRecords.length === 0) return;
+
+  // Calculate weighted average vibe score based on games together
+  let totalWeightedScore = 0;
+  let totalGames = 0;
+
+  for (const record of chemistryRecords) {
+    if (record.vibe_score != null) {
+      totalWeightedScore += record.vibe_score * record.games_together;
+      totalGames += record.games_together;
+    }
+  }
+
+  const avgVibeScore = totalGames > 0 ? totalWeightedScore / totalGames : null;
+
+  // Update player_summary
+  if (avgVibeScore != null) {
+    await supabase
+      .from("player_summary")
+      .update({ vibe_score: avgVibeScore })
+      .eq("guild_id", guildId)
+      .eq("discord_user_id", playerId);
+
+    console.log(`[peer-eval] Updated vibe score for ${playerId}: ${avgVibeScore.toFixed(1)}`);
+  }
 }

@@ -143,12 +143,19 @@ serve(async (req) => {
       .eq("guild_id", guild_id)
       .in("discord_user_id", available_player_ids);
 
-    // Get chemistry data
+    // Get performance chemistry data
     const { data: chemistry } = await supabase
       .from("player_chemistry")
       .select("*")
       .eq("guild_id", guild_id)
       .gte("games_together", 2);
+
+    // Get vibe chemistry data
+    const { data: vibeChemistry } = await supabase
+      .from("player_vibe_chemistry")
+      .select("*")
+      .eq("guild_id", guild_id)
+      .gte("games_together", 1);
 
     // Build player lookup maps
     const playerMap = new Map((players || []).map(p => [p.discord_user_id, p]));
@@ -238,7 +245,7 @@ serve(async (req) => {
       }
     }
 
-    // Calculate team chemistry bonus
+    // Calculate team performance chemistry bonus
     let totalChemistry = 0;
     let chemPairs = 0;
     const assignedIds = assignments.map(a => a.discord_user_id);
@@ -251,6 +258,44 @@ serve(async (req) => {
     }
 
     const avgChemistry = chemPairs > 0 ? totalChemistry / chemPairs : 50;
+
+    // Calculate team vibe chemistry
+    let totalVibeScore = 0;
+    let vibePairs = 0;
+    const vibeWarnings: string[] = [];
+    const vibeMap = new Map<string, any>();
+
+    // Build vibe lookup map
+    for (const vibe of vibeChemistry || []) {
+      const key1 = `${vibe.player_a_discord_id}|${vibe.player_b_discord_id}`;
+      const key2 = `${vibe.player_b_discord_id}|${vibe.player_a_discord_id}`;
+      vibeMap.set(key1, vibe);
+      vibeMap.set(key2, vibe);
+    }
+
+    // Check all pairs in the lineup for vibe chemistry
+    for (let i = 0; i < assignedIds.length; i++) {
+      for (let j = i + 1; j < assignedIds.length; j++) {
+        const key = `${assignedIds[i]}|${assignedIds[j]}`;
+        const vibe = vibeMap.get(key);
+        
+        if (vibe) {
+          totalVibeScore += vibe.vibe_score || 50;
+          vibePairs++;
+
+          // Check for avoid status - this is a warning
+          if (vibe.vibe_status === "avoid" || vibe.avoid_count >= 2) {
+            const player1 = playerMap.get(assignedIds[i]);
+            const player2 = playerMap.get(assignedIds[j]);
+            const name1 = player1?.discord_username || assignedIds[i];
+            const name2 = player2?.discord_username || assignedIds[j];
+            vibeWarnings.push(`⚠️ ${name1} and ${name2} have poor vibe chemistry`);
+          }
+        }
+      }
+    }
+
+    const avgVibeChemistry = vibePairs > 0 ? totalVibeScore / vibePairs : 50;
 
     // Calculate team average rating
     const avgRating = assignments.length > 0
@@ -273,7 +318,15 @@ serve(async (req) => {
       player: playerMap.get(a.discord_user_id) || { discord_user_id: a.discord_user_id, overall_rating: 50 },
     }));
 
-    console.log(`[suggest-lineup] Suggested lineup with avg rating ${avgRating.toFixed(1)}, chemistry ${avgChemistry.toFixed(1)}`);
+    // Combine warnings
+    const allWarnings = [
+      ...(assignments.length < formationDef.slots
+        ? [`Only ${assignments.length}/${formationDef.slots} positions filled`]
+        : []),
+      ...vibeWarnings,
+    ];
+
+    console.log(`[suggest-lineup] Suggested lineup with avg rating ${avgRating.toFixed(1)}, chemistry ${avgChemistry.toFixed(1)}, vibe ${avgVibeChemistry.toFixed(1)}`);
 
     return new Response(
       JSON.stringify({
@@ -282,13 +335,13 @@ serve(async (req) => {
         priority: prioritize,
         team_avg_rating: Math.round(avgRating * 10) / 10,
         team_chemistry: Math.round(avgChemistry * 10) / 10,
+        team_vibe_chemistry: Math.round(avgVibeChemistry * 10) / 10,
         slots: enrichedAssignments,
         substitutes,
         positions_filled: assignments.length,
         positions_total: formationDef.slots,
-        warnings: assignments.length < formationDef.slots
-          ? [`Only ${assignments.length}/${formationDef.slots} positions filled`]
-          : [],
+        warnings: allWarnings,
+        vibe_warnings: vibeWarnings,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

@@ -6277,7 +6277,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.update({ content: '❌ Reroll cancelled. Keeping current captains.', embeds: [], components: [] });
       }
 
-      // Feedback rating buttons (from DMs) - new panel-based system
+      // Feedback rating buttons (from DMs) - new panel-based system with vibe ratings
       // Format: feedback_rate_{rating}_{feedbackRequestId}_{evaluatedUserId}
       if (id.startsWith('feedback_rate_')) {
         const parts = id.split('_');
@@ -6303,7 +6303,161 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const evaluatedPlayer = teammatesData.find(t => t.discord_user_id === evaluatedUserId);
         const positionPlayed = evaluatedPlayer?.position_played || null;
         
-        // Insert peer evaluation with position
+        // Update teammates_data with performance rating (but not fully rated yet - need vibe)
+        const updatedTeammatesData = teammatesData.map(t => 
+          t.discord_user_id === evaluatedUserId 
+            ? { ...t, performance_rating: rating, pending_vibe: true }
+            : t
+        );
+        
+        await supabase
+          .from('dm_feedback_requests')
+          .update({ teammates_data: updatedTeammatesData })
+          .eq('id', feedbackRequestId);
+        
+        // Show vibe rating panel for this player
+        const matchType = feedbackRequest.match_type === 'club' ? 'Club Match' : 'Draft';
+        const playerName = evaluatedPlayer?.ea_username || `<@${evaluatedUserId}>`;
+        
+        const vibeEmbed = new EmbedBuilder()
+          .setTitle('🎭 Rate the Vibe')
+          .setColor(0x9b59b6)
+          .setDescription(
+            `You gave **${playerName}** ${rating}⭐ for performance.\n\n` +
+            `Now rate the **vibe** - how was it playing with them?\n\n` +
+            `**Enjoyment**: How fun was playing with this person?`
+          );
+        
+        // Enjoyment rating buttons (1-5)
+        const enjoymentButtons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`vibe_enjoy_1_${feedbackRequestId}_${evaluatedUserId}_${rating}`).setLabel('😐 1').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`vibe_enjoy_2_${feedbackRequestId}_${evaluatedUserId}_${rating}`).setLabel('🙂 2').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`vibe_enjoy_3_${feedbackRequestId}_${evaluatedUserId}_${rating}`).setLabel('😊 3').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId(`vibe_enjoy_4_${feedbackRequestId}_${evaluatedUserId}_${rating}`).setLabel('😄 4').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`vibe_enjoy_5_${feedbackRequestId}_${evaluatedUserId}_${rating}`).setLabel('🤩 5').setStyle(ButtonStyle.Success)
+        );
+        
+        return interaction.editReply({ embeds: [vibeEmbed], components: [enjoymentButtons] });
+      }
+
+      // Vibe enjoyment rating
+      // Format: vibe_enjoy_{enjoyment}_{feedbackRequestId}_{evaluatedUserId}_{performanceRating}
+      if (id.startsWith('vibe_enjoy_')) {
+        const parts = id.split('_');
+        const enjoyment = parseInt(parts[2], 10);
+        const feedbackRequestId = parts[3];
+        const evaluatedUserId = parts[4];
+        const performanceRating = parseInt(parts[5], 10);
+        
+        await interaction.deferUpdate();
+        
+        const { data: feedbackRequest } = await supabase
+          .from('dm_feedback_requests')
+          .select('*')
+          .eq('id', feedbackRequestId)
+          .single();
+        
+        if (!feedbackRequest) {
+          return interaction.followUp({ content: '❌ Feedback request not found.', flags: 64 });
+        }
+        
+        const evaluatedPlayer = feedbackRequest.teammates_data?.find(t => t.discord_user_id === evaluatedUserId);
+        const playerName = evaluatedPlayer?.ea_username || `<@${evaluatedUserId}>`;
+        
+        const energyEmbed = new EmbedBuilder()
+          .setTitle('⚡ Team Energy')
+          .setColor(0x9b59b6)
+          .setDescription(
+            `Rating **${playerName}**:\n` +
+            `• Performance: ${performanceRating}⭐\n` +
+            `• Enjoyment: ${enjoyment}/5\n\n` +
+            `**Team Energy**: Did they bring positive energy to the team?`
+          );
+        
+        const energyButtons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`vibe_energy_1_${feedbackRequestId}_${evaluatedUserId}_${performanceRating}_${enjoyment}`).setLabel('😴 1').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`vibe_energy_2_${feedbackRequestId}_${evaluatedUserId}_${performanceRating}_${enjoyment}`).setLabel('😶 2').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`vibe_energy_3_${feedbackRequestId}_${evaluatedUserId}_${performanceRating}_${enjoyment}`).setLabel('😊 3').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId(`vibe_energy_4_${feedbackRequestId}_${evaluatedUserId}_${performanceRating}_${enjoyment}`).setLabel('💪 4').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`vibe_energy_5_${feedbackRequestId}_${evaluatedUserId}_${performanceRating}_${enjoyment}`).setLabel('🔥 5').setStyle(ButtonStyle.Success)
+        );
+        
+        return interaction.editReply({ embeds: [energyEmbed], components: [energyButtons] });
+      }
+
+      // Vibe team energy rating
+      // Format: vibe_energy_{energy}_{feedbackRequestId}_{evaluatedUserId}_{performanceRating}_{enjoyment}
+      if (id.startsWith('vibe_energy_')) {
+        const parts = id.split('_');
+        const teamEnergy = parseInt(parts[2], 10);
+        const feedbackRequestId = parts[3];
+        const evaluatedUserId = parts[4];
+        const performanceRating = parseInt(parts[5], 10);
+        const enjoyment = parseInt(parts[6], 10);
+        
+        await interaction.deferUpdate();
+        
+        const { data: feedbackRequest } = await supabase
+          .from('dm_feedback_requests')
+          .select('*')
+          .eq('id', feedbackRequestId)
+          .single();
+        
+        if (!feedbackRequest) {
+          return interaction.followUp({ content: '❌ Feedback request not found.', flags: 64 });
+        }
+        
+        const evaluatedPlayer = feedbackRequest.teammates_data?.find(t => t.discord_user_id === evaluatedUserId);
+        const playerName = evaluatedPlayer?.ea_username || `<@${evaluatedUserId}>`;
+        
+        const playAgainEmbed = new EmbedBuilder()
+          .setTitle('🔄 Play Again?')
+          .setColor(0x9b59b6)
+          .setDescription(
+            `Rating **${playerName}**:\n` +
+            `• Performance: ${performanceRating}⭐\n` +
+            `• Enjoyment: ${enjoyment}/5\n` +
+            `• Team Energy: ${teamEnergy}/5\n\n` +
+            `**Would you want to team up with them again?**`
+          );
+        
+        const playAgainButtons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`vibe_again_prefer_${feedbackRequestId}_${evaluatedUserId}_${performanceRating}_${enjoyment}_${teamEnergy}`).setLabel('👍 Prefer').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`vibe_again_neutral_${feedbackRequestId}_${evaluatedUserId}_${performanceRating}_${enjoyment}_${teamEnergy}`).setLabel('😐 Neutral').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`vibe_again_avoid_${feedbackRequestId}_${evaluatedUserId}_${performanceRating}_${enjoyment}_${teamEnergy}`).setLabel('👎 Avoid').setStyle(ButtonStyle.Danger)
+        );
+        
+        return interaction.editReply({ embeds: [playAgainEmbed], components: [playAgainButtons] });
+      }
+
+      // Vibe play again preference - final step, save everything
+      // Format: vibe_again_{preference}_{feedbackRequestId}_{evaluatedUserId}_{performanceRating}_{enjoyment}_{teamEnergy}
+      if (id.startsWith('vibe_again_')) {
+        const parts = id.split('_');
+        const playAgain = parts[2]; // prefer/neutral/avoid
+        const feedbackRequestId = parts[3];
+        const evaluatedUserId = parts[4];
+        const performanceRating = parseInt(parts[5], 10);
+        const enjoyment = parseInt(parts[6], 10);
+        const teamEnergy = parseInt(parts[7], 10);
+        
+        await interaction.deferUpdate();
+        
+        const { data: feedbackRequest } = await supabase
+          .from('dm_feedback_requests')
+          .select('*')
+          .eq('id', feedbackRequestId)
+          .single();
+        
+        if (!feedbackRequest) {
+          return interaction.followUp({ content: '❌ Feedback request not found.', flags: 64 });
+        }
+        
+        const teammatesData = feedbackRequest.teammates_data || [];
+        const evaluatedPlayer = teammatesData.find(t => t.discord_user_id === evaluatedUserId);
+        const positionPlayed = evaluatedPlayer?.position_played || null;
+        
+        // Insert full peer evaluation with vibe data
         await supabase.from('peer_evaluations').insert({
           guild_id: feedbackRequest.guild_id,
           draft_id: feedbackRequest.draft_id,
@@ -6311,19 +6465,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
           evaluator_discord_id: interaction.user.id,
           evaluated_discord_id: evaluatedUserId,
           position_played: positionPlayed,
-          overall_score: rating,
-          technical_skill: rating,
-          game_iq: rating,
-          work_ethic: rating,
-          communication: rating,
-          consistency: rating,
-          clutch_factor: rating
+          overall_score: performanceRating,
+          technical_skill: performanceRating,
+          game_iq: performanceRating,
+          work_ethic: performanceRating,
+          communication: performanceRating,
+          consistency: performanceRating,
+          clutch_factor: performanceRating,
+          // Vibe ratings
+          enjoyment: enjoyment,
+          team_energy: teamEnergy,
+          play_again: playAgain
         });
         
-        // Update teammates_data to mark this player as rated
+        // Update teammates_data to mark this player as fully rated
         const updatedTeammatesData = teammatesData.map(t => 
           t.discord_user_id === evaluatedUserId 
-            ? { ...t, rated: true, given_rating: rating }
+            ? { ...t, rated: true, given_rating: performanceRating, vibe: { enjoyment, teamEnergy, playAgain } }
             : t
         );
         
@@ -6355,7 +6513,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const name = teammate.ea_username || `<@${teammate.discord_user_id}>`;
           if (teammate.rated) {
             const stars = '⭐'.repeat(teammate.given_rating);
-            description += `✅ **${name}** (${position}): ${stars}\n`;
+            const vibeEmoji = teammate.vibe?.playAgain === 'prefer' ? '💚' : teammate.vibe?.playAgain === 'avoid' ? '💔' : '💛';
+            description += `✅ **${name}** (${position}): ${stars} ${vibeEmoji}\n`;
           } else {
             description += `⬜ **${name}** (${position}): Not rated yet\n`;
           }
@@ -6366,7 +6525,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const doneEmbed = new EmbedBuilder()
             .setTitle('✅ Feedback Complete!')
             .setColor(0x00ff00)
-            .setDescription(description + '\n\nThank you for rating your teammates! Your feedback helps improve player ratings.');
+            .setDescription(description + '\n\nThank you for rating your teammates! Your feedback helps improve player ratings and team chemistry.\n\n💚 = Prefer to play with | 💛 = Neutral | 💔 = Avoid');
           
           return interaction.editReply({ embeds: [doneEmbed], components: [] });
         }
@@ -6377,7 +6536,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const embed = new EmbedBuilder()
           .setTitle('⭐ Rate Your Teammates')
           .setColor(0x5865f2)
-          .setDescription(description + `\n**Now rating: ${nextUnrated.ea_username || 'Teammate'}** (${nextUnrated.position_played || 'ANY'})`);
+          .setDescription(description + `\n**Now rating: ${nextUnrated.ea_username || 'Teammate'}** (${nextUnrated.position_played || 'ANY'})\n\nRate their **performance** (1-5 stars):`);
         
         // Build rating buttons for next unrated player
         const ratingButtons = new ActionRowBuilder().addComponents(
