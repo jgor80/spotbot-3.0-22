@@ -3996,7 +3996,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
           
           // Check if this was the last dropdown (clutch) - auto submit
           if (category === 'clutch') {
-            const currentPlayer = teammatesData.find(t => t.ext_currently_rating);
+            // Re-fetch to get latest data with the clutch rating we just set
+            const { data: latestRequest } = await supabase
+              .from('dm_feedback_requests')
+              .select('*')
+              .eq('id', feedbackRequestId)
+              .single();
+            
+            const latestTeammatesData = latestRequest?.teammates_data || updatedTeammatesData;
+            const currentPlayer = latestTeammatesData.find(t => t.ext_currently_rating);
+            
             const tech = currentPlayer?.ext_technical_skill;
             const iq = currentPlayer?.ext_game_iq;
             const ethic = currentPlayer?.ext_work_ethic;
@@ -4021,9 +4030,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 .or(`club_match_id.eq.${feedbackRequest.club_match_id},draft_id.eq.${feedbackRequest.draft_id}`);
               
               // Mark as ext_rated
-              const finalTeammatesData = updatedTeammatesData.map(t => 
+              const finalTeammatesData = latestTeammatesData.map(t => 
                 t.discord_user_id === currentPlayer.discord_user_id
-                  ? { ...t, ext_rated: true, ext_currently_rating: false }
+                  ? { ...t, ext_rated: true, ext_currently_rating: false, ext_clutch_factor: rating }
                   : t
               );
               
@@ -4041,7 +4050,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 });
               } else {
                 return interaction.followUp({ 
-                  content: `✅ Extended ratings saved for **${currentPlayer.ea_username || 'Player'}**!\n\n👉 Select the next player from the dropdown above.`, 
+                  content: `✅ Extended ratings saved for **${currentPlayer.ea_username || 'Player'}**!\n\n👉 Click the Manager button again to rate the next player.`, 
                   flags: 64 
                 });
               }
@@ -4198,6 +4207,68 @@ client.on(Events.InteractionCreate, async (interaction) => {
             ])
         );
         
+        // Next button for page 2
+        const nextButton = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`feedback_ext_next_${feedbackRequestId}`)
+            .setLabel('Next → Communication & Clutch')
+            .setStyle(ButtonStyle.Primary)
+            .setEmoji('➡️')
+        );
+        
+        return interaction.reply({ 
+          embeds: [extEmbed], 
+          components: [extPlayerSelect, techSelect, iqSelect, ethicSelect, nextButton],
+          flags: 64 
+        });
+      }
+      
+      // Page 2 of extended ratings - Communication, Consistency, Clutch
+      if (id.startsWith('feedback_ext_next_')) {
+        const feedbackRequestId = id.replace('feedback_ext_next_', '');
+        
+        const { data: feedbackRequest } = await supabase
+          .from('dm_feedback_requests')
+          .select('*')
+          .eq('id', feedbackRequestId)
+          .single();
+        
+        if (!feedbackRequest) {
+          return interaction.reply({ content: '❌ Feedback request not found.', flags: 64 });
+        }
+        
+        const teammatesData = feedbackRequest.teammates_data || [];
+        const currentlyRating = teammatesData.find(t => t.ext_currently_rating);
+        
+        if (!currentlyRating) {
+          return interaction.reply({ content: '⚠️ No player selected. Please select a player first.', flags: 64 });
+        }
+        
+        // Check page 1 ratings are complete
+        const tech = currentlyRating.ext_technical_skill;
+        const iq = currentlyRating.ext_game_iq;
+        const ethic = currentlyRating.ext_work_ethic;
+        
+        if (!tech || !iq || !ethic) {
+          return interaction.reply({ 
+            content: '⚠️ Please complete Page 1 ratings first:\n' +
+                     `• Technical: ${tech ? '✅' : '❌'}\n` +
+                     `• Game IQ: ${iq ? '✅' : '❌'}\n` +
+                     `• Work Ethic: ${ethic ? '✅' : '❌'}`,
+            flags: 64 
+          });
+        }
+        
+        const extEmbed2 = new EmbedBuilder()
+          .setTitle('🎖️ Manager Extended Ratings - Page 2')
+          .setColor(0xf1c40f)
+          .setDescription(`Rating **${currentlyRating.ea_username || 'Player'}** (${currentlyRating.position_played || 'ANY'})\n\n` +
+                          `✅ Technical: ${tech}/5\n` +
+                          `✅ Game IQ: ${iq}/5\n` +
+                          `✅ Work Ethic: ${ethic}/5\n\n` +
+                          `**Complete the remaining ratings:**`)
+          .setFooter({ text: 'Clutch Factor auto-submits ratings' });
+        
         // Communication dropdown
         const commSelect = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
@@ -4212,9 +4283,46 @@ client.on(Events.InteractionCreate, async (interaction) => {
             ])
         );
         
+        // Consistency dropdown
+        const consistSelect = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`feedback_ext_consist_${feedbackRequestId}`)
+            .setPlaceholder('📊 Consistency (1-5)')
+            .addOptions([
+              { label: '1 - Unreliable', value: '1', description: 'Very inconsistent' },
+              { label: '2 - Streaky', value: '2', description: 'Hot and cold' },
+              { label: '3 - Steady', value: '3', description: 'Reliably average' },
+              { label: '4 - Dependable', value: '4', description: 'Consistently good' },
+              { label: '5 - Rock Solid', value: '5', description: 'Always delivers' }
+            ])
+        );
+        
+        // Clutch Factor dropdown
+        const clutchSelect = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`feedback_ext_clutch_${feedbackRequestId}`)
+            .setPlaceholder('🔥 Clutch Factor (1-5)')
+            .addOptions([
+              { label: '1 - Chokes', value: '1', description: 'Folds under pressure' },
+              { label: '2 - Nervous', value: '2', description: 'Struggles in big moments' },
+              { label: '3 - Composed', value: '3', description: 'Handles pressure okay' },
+              { label: '4 - Clutch', value: '4', description: 'Steps up when needed' },
+              { label: '5 - Ice Cold', value: '5', description: 'Thrives under pressure' }
+            ])
+        );
+        
+        // Back button
+        const backButton = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`feedback_manager_${feedbackRequestId}`)
+            .setLabel('← Back to Page 1')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('⬅️')
+        );
+        
         return interaction.reply({ 
-          embeds: [extEmbed], 
-          components: [extPlayerSelect, techSelect, iqSelect, ethicSelect, commSelect],
+          embeds: [extEmbed2], 
+          components: [commSelect, consistSelect, clutchSelect, backButton],
           flags: 64 
         });
       }
