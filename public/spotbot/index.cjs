@@ -11093,8 +11093,7 @@ async function sendPendingFeedbackDMs(guildId, guild) {
       .lt('expires_at', now);
     
     // Get all pending feedback requests for this guild that haven't been DMed yet
-    // Only get requests from the last 2 MINUTES to ensure only new games get DMs
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    // Only get non-expired requests (30 min window from creation)
     const { data: pendingRequests } = await supabase
       .from('dm_feedback_requests')
       .select('*')
@@ -11102,7 +11101,6 @@ async function sendPendingFeedbackDMs(guildId, guild) {
       .eq('status', 'pending')
       .is('dm_sent_at', null)
       .gt('expires_at', now)
-      .gt('created_at', twoMinutesAgo)
       .order('created_at', { ascending: false })
       .limit(50);
     
