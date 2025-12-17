@@ -775,14 +775,17 @@ export type Database = {
           communication: number | null
           consistency: number | null
           created_at: string
+          defensive_skill: number | null
           draft_id: string | null
           enjoyment: number | null
           evaluated_discord_id: string
           evaluator_discord_id: string
           game_iq: number | null
+          goal_scoring: number | null
           guild_id: string
           id: string
           overall_score: number | null
+          passing_skill: number | null
           play_again: string | null
           position_played: string | null
           team_energy: number | null
@@ -796,14 +799,17 @@ export type Database = {
           communication?: number | null
           consistency?: number | null
           created_at?: string
+          defensive_skill?: number | null
           draft_id?: string | null
           enjoyment?: number | null
           evaluated_discord_id: string
           evaluator_discord_id: string
           game_iq?: number | null
+          goal_scoring?: number | null
           guild_id: string
           id?: string
           overall_score?: number | null
+          passing_skill?: number | null
           play_again?: string | null
           position_played?: string | null
           team_energy?: number | null
@@ -817,14 +823,17 @@ export type Database = {
           communication?: number | null
           consistency?: number | null
           created_at?: string
+          defensive_skill?: number | null
           draft_id?: string | null
           enjoyment?: number | null
           evaluated_discord_id?: string
           evaluator_discord_id?: string
           game_iq?: number | null
+          goal_scoring?: number | null
           guild_id?: string
           id?: string
           overall_score?: number | null
+          passing_skill?: number | null
           play_again?: string | null
           position_played?: string | null
           team_energy?: number | null

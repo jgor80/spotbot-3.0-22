@@ -10,6 +10,21 @@ const corsHeaders = {
 const DISCORD_ID_REGEX = /^\d{17,19}$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VALID_PLAY_AGAIN = ["prefer", "neutral", "avoid"] as const;
+const VALID_POSITION_CATEGORIES = ["GK", "DEF", "MID", "ATT"] as const;
+
+// Position category mapping
+function getPositionCategory(position: string | null | undefined): "GK" | "DEF" | "MID" | "ATT" {
+  if (!position) return "ATT";
+  const gk = ['GK'];
+  const def = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'SW'];
+  const mid = ['CDM', 'CM', 'CAM', 'LM', 'RM', 'LDM', 'RDM', 'LAM', 'RAM'];
+  const att = ['ST', 'CF', 'LW', 'RW', 'LS', 'RS', 'LF', 'RF'];
+  
+  if (gk.includes(position)) return 'GK';
+  if (def.includes(position)) return 'DEF';
+  if (mid.includes(position)) return 'MID';
+  return 'ATT';
+}
 
 interface PeerEvaluationRequest {
   guild_id: string;
@@ -19,18 +34,23 @@ interface PeerEvaluationRequest {
   club_match_id?: string;
   position_played?: string;
   ratings: {
-    technical_skill: number;
+    // Position-specific ratings (only one set will be provided based on position)
+    technical_skill?: number;  // GK only
+    passing_skill?: number;    // DEF, MID, ATT
+    goal_scoring?: number;     // MID, ATT
+    defensive_skill?: number;  // DEF, MID
+    // Universal ratings
     game_iq: number;
     work_ethic: number;
     communication: number;
     consistency: number;
     clutch_factor: number;
   };
-  // New vibe ratings
+  // Vibe ratings
   vibe?: {
-    enjoyment: number;      // 1-5: How fun was playing with this person?
-    team_energy: number;    // 1-5: Did they bring positive energy?
-    play_again: "prefer" | "neutral" | "avoid";  // Would you team with them again?
+    enjoyment: number;
+    team_energy: number;
+    play_again: "prefer" | "neutral" | "avoid";
   };
 }
 
@@ -57,11 +77,36 @@ function validateRequest(body: any): string[] {
   if (!body.ratings || typeof body.ratings !== "object") {
     errors.push("ratings object is required");
   } else {
-    const requiredRatings = ["technical_skill", "game_iq", "work_ethic", "communication", "consistency", "clutch_factor"];
-    for (const field of requiredRatings) {
+    // Universal ratings that are always required
+    const universalRatings = ["game_iq", "work_ethic", "communication", "consistency", "clutch_factor"];
+    for (const field of universalRatings) {
       const value = body.ratings[field];
       if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 5) {
         errors.push(`ratings.${field} must be an integer between 1 and 5`);
+      }
+    }
+    
+    // Position-specific validation
+    const positionCategory = getPositionCategory(body.position_played);
+    
+    if (positionCategory === "GK") {
+      // GK requires technical_skill
+      if (body.ratings.technical_skill !== undefined) {
+        const val = body.ratings.technical_skill;
+        if (typeof val !== "number" || !Number.isInteger(val) || val < 1 || val > 5) {
+          errors.push("ratings.technical_skill must be an integer between 1 and 5");
+        }
+      }
+    } else {
+      // Non-GK positions: validate position-specific skills if provided
+      const optionalSkills = ["passing_skill", "goal_scoring", "defensive_skill"];
+      for (const field of optionalSkills) {
+        if (body.ratings[field] !== undefined) {
+          const val = body.ratings[field];
+          if (typeof val !== "number" || !Number.isInteger(val) || val < 1 || val > 5) {
+            errors.push(`ratings.${field} must be an integer between 1 and 5`);
+          }
+        }
       }
     }
   }
@@ -116,7 +161,8 @@ serve(async (req) => {
       vibe 
     }: PeerEvaluationRequest = body;
 
-    console.log(`[peer-eval] ${evaluator_discord_id} evaluating ${evaluated_discord_id}${vibe ? ' with vibe' : ''}`);
+    const positionCategory = getPositionCategory(position_played);
+    console.log(`[peer-eval] ${evaluator_discord_id} evaluating ${evaluated_discord_id} (${positionCategory})${vibe ? ' with vibe' : ''}`);
 
     // Can't evaluate yourself
     if (evaluator_discord_id === evaluated_discord_id) {
@@ -157,12 +203,28 @@ serve(async (req) => {
 
     const trustScore = trustData?.trust_score ?? 1.0;
 
-    // Calculate overall score (average of all ratings)
-    const ratingValues = Object.values(ratings);
-    const overallScore = ratingValues.reduce((a, b) => a + b, 0) / ratingValues.length;
+    // Calculate overall score based on position-specific weights
+    let ratingSum = 0;
+    let ratingCount = 0;
+    
+    // Universal ratings
+    ratingSum += ratings.game_iq + ratings.work_ethic + ratings.communication + ratings.consistency + ratings.clutch_factor;
+    ratingCount += 5;
+    
+    // Position-specific ratings
+    if (positionCategory === "GK" && ratings.technical_skill) {
+      ratingSum += ratings.technical_skill;
+      ratingCount += 1;
+    } else {
+      if (ratings.passing_skill) { ratingSum += ratings.passing_skill; ratingCount += 1; }
+      if (ratings.goal_scoring) { ratingSum += ratings.goal_scoring; ratingCount += 1; }
+      if (ratings.defensive_skill) { ratingSum += ratings.defensive_skill; ratingCount += 1; }
+    }
+    
+    const overallScore = ratingSum / ratingCount;
     const trustWeightedScore = overallScore * trustScore;
 
-    // Insert evaluation with vibe data
+    // Insert evaluation with position-specific data
     const evaluationData: any = {
       guild_id,
       evaluator_discord_id,
@@ -170,7 +232,12 @@ serve(async (req) => {
       draft_id,
       club_match_id,
       position_played,
-      technical_skill: ratings.technical_skill,
+      // Position-specific skills
+      technical_skill: positionCategory === "GK" ? ratings.technical_skill : null,
+      passing_skill: ratings.passing_skill || null,
+      goal_scoring: ratings.goal_scoring || null,
+      defensive_skill: ratings.defensive_skill || null,
+      // Universal ratings
       game_iq: ratings.game_iq,
       work_ethic: ratings.work_ethic,
       communication: ratings.communication,
@@ -196,7 +263,7 @@ serve(async (req) => {
       throw insertError;
     }
 
-    // Update evaluator's trust score (more evaluations = more trusted, up to a point)
+    // Update evaluator's trust score
     await supabase
       .from("evaluator_trust_scores")
       .upsert({
@@ -206,7 +273,7 @@ serve(async (req) => {
         trust_score: Math.min(2.0, (trustScore || 1.0) + 0.01),
       }, { onConflict: "guild_id,discord_user_id" });
 
-    // Update the feedback request if this was from a DM
+    // Update the feedback request if this was from a draft
     if (draft_id) {
       const { data: feedbackRequest } = await supabase
         .from("dm_feedback_requests")
@@ -239,13 +306,14 @@ serve(async (req) => {
       await updateVibeChemistry(supabase, guild_id, evaluator_discord_id, evaluated_discord_id, vibe);
     }
 
-    console.log(`[peer-eval] Evaluation recorded successfully`);
+    console.log(`[peer-eval] Evaluation recorded successfully for ${positionCategory}`);
 
     return new Response(
       JSON.stringify({
         success: true,
         message: "Evaluation submitted",
         overall_score: overallScore,
+        position_category: positionCategory,
         vibe_recorded: !!vibe,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -323,8 +391,6 @@ async function updateVibeChemistry(
   const avoidCount = (existing?.avoid_count || 0) + (vibe.play_again === "avoid" ? 1 : 0);
 
   // Calculate vibe score (0-100)
-  // Base = (enjoyment + team_energy) / 2 * 20  -> converts 1-5 to 0-100
-  // Modifier: prefer = +10, neutral = 0, avoid = -15
   const baseScore = ((avgEnjoyment + avgTeamEnergy) / 2) * 20;
   const playAgainModifier = (preferCount * 10 - avoidCount * 15) / Math.max(1, newGames);
   const vibeScore = Math.max(0, Math.min(100, baseScore + playAgainModifier));
