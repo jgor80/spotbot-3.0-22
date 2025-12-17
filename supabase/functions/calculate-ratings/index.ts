@@ -7,10 +7,11 @@ const corsHeaders = {
 };
 
 const WEIGHTS = {
-  draft_performance: 0.40,
-  club_performance: 0.20,
-  peer_evaluation: 0.25,
-  build_quality: 0.15,
+  draft_performance: 0.15,      // Reduced from 40% - not many drafts
+  club_performance: 0.25,       // Division games - increased from 20%
+  competition_performance: 0.25, // Cup/friendly games (tournaments/leagues)
+  peer_evaluation: 0.20,        // Reduced from 25%
+  build_quality: 0.15,          // Keep 15%
 };
 
 interface CalculateRatingsRequest {
@@ -287,16 +288,19 @@ function calculatePlayerRatingFast(player: any, allStats: any[]): { rating: numb
   // Separate stats by type
   const draftStats = allStats.filter(s => s.match_type === "draft");
   const clubStats = allStats.filter(s => s.match_type === "club");
+  const competitionStats = allStats.filter(s => s.match_type === "competition" || s.match_type === "friendly");
   const baselineStats = allStats.filter(s => s.match_type === "ea_aggregate");
 
   const draftRating = calculatePerformanceRating(draftStats, baselineStats);
   const clubRating = calculatePerformanceRating(clubStats, baselineStats);
+  const competitionRating = calculatePerformanceRating(competitionStats, baselineStats);
   const peerRating = player.peer_rating || 50;
   const buildRating = player.build_quality_rating || 50;
 
   const overall = 
     (draftRating.rating * WEIGHTS.draft_performance) +
     (clubRating.rating * WEIGHTS.club_performance) +
+    (competitionRating.rating * WEIGHTS.competition_performance) +
     (peerRating * WEIGHTS.peer_evaluation) +
     (buildRating * WEIGHTS.build_quality);
 
@@ -315,7 +319,7 @@ function calculatePlayerRatingFast(player: any, allStats: any[]): { rating: numb
   finalRating = Math.max(0, Math.min(100, finalRating));
 
   // Combine stats
-  const trackedStats = [...draftStats, ...clubStats];
+  const trackedStats = [...draftStats, ...clubStats, ...competitionStats];
   const trackedGames = trackedStats.length;
   const trackedWins = trackedStats.filter(s => s.won === true).length;
   const trackedLosses = trackedStats.filter(s => s.won === false).length;
@@ -426,44 +430,45 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
   let performanceRating: number;
 
   if (isGK) {
-    // GK Rating: 40% win rate, 25% saves performance, 25% clean sheet rate, 10% EA rating
-    performanceRating = winRate * 0.4;
+    // GK Rating: 25% win rate, 15% saves, 20% clean sheets, 40% EA rating (heavily weighted due to limited data)
+    performanceRating = winRate * 0.25;
     
-    // Saves contribution (5+ saves per game = 100)
+    // Saves contribution (reduced weight since data is sparse)
     const savesContribution = Math.min(100, avgSaves * 20);
-    performanceRating += savesContribution * 0.25;
+    performanceRating += savesContribution * 0.15;
     
     // Clean sheet rate
-    performanceRating += cleanSheetRate * 0.25;
+    performanceRating += cleanSheetRate * 0.20;
     
-    // EA rating or goals conceded penalty
+    // EA rating heavily weighted (captures overall GK performance)
     if (avgEARating !== null) {
-      performanceRating += (avgEARating * 10) * 0.1;
+      performanceRating += (avgEARating * 10) * 0.40;
     } else {
-      // Lower goals conceded = better
+      // Fallback: blend clean sheets + goals conceded penalty
       const gcPenalty = Math.max(0, 100 - avgGoalsConceded * 30);
-      performanceRating += gcPenalty * 0.1;
+      performanceRating += (cleanSheetRate * 0.5 + gcPenalty * 0.5) * 0.40;
     }
   } else if (isDefender) {
-    // Defender Rating: 35% win rate, 30% defensive actions, 15% clean sheets, 10% G+A, 10% EA rating
-    performanceRating = winRate * 0.35;
+    // Defender Rating: 25% win rate, 25% defensive actions, 20% clean sheets, 5% G+A, 25% EA rating
+    performanceRating = winRate * 0.25;
     
     // Defensive actions contribution (tackles + interceptions + clearances)
-    // Good defender: 3+ tackles, 2+ interceptions, 3+ clearances per game = 100
     const defensiveContribution = Math.min(100, (avgTackles * 12) + (avgInterceptions * 15) + (avgClearances * 10));
-    performanceRating += defensiveContribution * 0.30;
+    performanceRating += defensiveContribution * 0.25;
     
-    // Clean sheet bonus
-    performanceRating += cleanSheetRate * 0.15;
+    // Clean sheet bonus (increased importance)
+    performanceRating += cleanSheetRate * 0.20;
     
-    // Defenders can still contribute offensively (reduced weight)
+    // Minimal offensive contribution
     const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
-    performanceRating += gaContribution * 0.10;
+    performanceRating += gaContribution * 0.05;
     
+    // EA rating heavily weighted
     if (avgEARating !== null) {
-      performanceRating += (avgEARating * 10) * 0.10;
+      performanceRating += (avgEARating * 10) * 0.25;
     } else {
-      performanceRating += defensiveContribution * 0.10;
+      // Fallback: use defensive + clean sheet blend
+      performanceRating += (defensiveContribution * 0.5 + cleanSheetRate * 0.5) * 0.25;
     }
   } else if (isMidfielder) {
     // Midfielder Rating: 40% win rate, 20% G+A, 20% defensive, 10% clean sheets, 10% EA rating

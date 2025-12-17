@@ -14,6 +14,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ClubsManager } from "@/components/settings/ClubsManager";
 import { FeedbackSettingsCard } from "@/components/settings/FeedbackSettingsCard";
 import { EaLinkingPanel } from "@/components/settings/EaLinkingPanel";
+import { BuildSubmissionPanel } from "@/components/settings/BuildSubmissionPanel";
 import { 
   Gamepad2, 
   User, 
@@ -25,7 +26,8 @@ import {
   Search,
   RefreshCw,
   Users,
-  Zap
+  Zap,
+  Hammer
 } from "lucide-react";
 
 interface PlayerProfile {
@@ -361,6 +363,10 @@ export default function SettingsPage() {
                 <TabsList>
                   <TabsTrigger value="ea-account">EA Account</TabsTrigger>
                   <TabsTrigger value="positions">Positions</TabsTrigger>
+                  <TabsTrigger value="build">
+                    <Hammer className="h-4 w-4 mr-2" />
+                    My Build
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="ea-account">
@@ -538,6 +544,10 @@ export default function SettingsPage() {
                       </Button>
                     </CardContent>
                   </Card>
+                </TabsContent>
+
+                <TabsContent value="build">
+                  <BuildSubmissionPanel discordUserId={searchedUserId} />
                 </TabsContent>
               </Tabs>
             )}
