@@ -90,6 +90,7 @@ export async function fetchAvailablePlayers(guildId: string): Promise<Leaderboar
     ea_username: eaUsernameMap.get(player.discord_user_id) || null,
     overall_rating: player.overall_rating,
     games_played: player.games_played,
+    tracked_games: 0, // Not tracked in this context
     wins: player.wins,
     losses: player.losses || 0,
     draws: player.draws || 0,

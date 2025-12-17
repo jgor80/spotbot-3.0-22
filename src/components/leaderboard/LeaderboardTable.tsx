@@ -255,7 +255,27 @@ export function LeaderboardTable({ players, onPlayerClick, highlightColumn }: Le
                   {player.avg_match_rating?.toFixed(1) || '-'}
                 </TableCell>
                 <TableCell className="text-center hidden md:table-cell">
-                  {player.games_played}
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className={cn(
+                          player.tracked_games > 0 && player.tracked_games < player.games_played && "cursor-help"
+                        )}>
+                          {player.games_played}
+                          {player.tracked_games > 0 && player.tracked_games < player.games_played && (
+                            <span className="text-xs text-muted-foreground ml-1">
+                              ({player.tracked_games})
+                            </span>
+                          )}
+                        </span>
+                      </TooltipTrigger>
+                      {player.tracked_games > 0 && player.tracked_games < player.games_played && (
+                        <TooltipContent>
+                          <p className="text-sm">{player.tracked_games} of {player.games_played} games tracked with detailed stats</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
                 </TableCell>
                 <TableCell className="text-center hidden md:table-cell text-xs">
                   <span className="text-primary">{player.wins}</span>

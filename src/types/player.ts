@@ -80,6 +80,7 @@ export interface LeaderboardPlayer {
   ea_username: string | null;
   overall_rating: number;
   games_played: number;
+  tracked_games: number; // Games we have detailed match stats for
   wins: number;
   losses: number;
   draws: number;
