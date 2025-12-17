@@ -383,23 +383,118 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
   const trackedGoals = stats.reduce((sum, s) => sum + (s.goals || 0), 0);
   const trackedAssists = stats.reduce((sum, s) => sum + (s.assists || 0), 0);
 
+  // Defensive stats
+  const trackedTackles = stats.reduce((sum, s) => sum + (s.tackles || 0), 0);
+  const trackedInterceptions = stats.reduce((sum, s) => sum + (s.interceptions || 0), 0);
+  const trackedClearances = stats.reduce((sum, s) => sum + (s.clearances || 0), 0);
+  const trackedCleanSheets = stats.filter(s => s.clean_sheet === true).length;
+  
+  // GK stats
+  const trackedSaves = stats.reduce((sum, s) => sum + (s.saves || 0) + (s.saves_diving || 0) + (s.saves_reflex || 0) + (s.saves_parry || 0) + (s.saves_cross || 0) + (s.saves_punch || 0), 0);
+  const trackedGoalsConceded = stats.reduce((sum, s) => sum + (s.goals_conceded || 0), 0);
+
+  // Determine primary position from stats
+  const positionCounts: Record<string, number> = {};
+  for (const s of stats) {
+    const pos = s.position_played?.toUpperCase() || "";
+    if (pos) {
+      positionCounts[pos] = (positionCounts[pos] || 0) + 1;
+    }
+  }
+  const primaryPosition = Object.keys(positionCounts).sort((a, b) => positionCounts[b] - positionCounts[a])[0] || "";
+  
+  // Position classification
+  const isGK = primaryPosition === "GK";
+  const isDefender = ["CB", "LB", "RB", "LWB", "RWB", "SW"].includes(primaryPosition);
+  const isMidfielder = ["CDM", "CM", "LM", "RM", "CAM", "LCM", "RCM", "LDM", "RDM"].includes(primaryPosition);
+
   const winRate = trackedGames > 0 ? (trackedWins / trackedGames) * 100 : 50;
   const avgGoals = trackedGames > 0 ? trackedGoals / trackedGames : 0;
   const avgAssists = trackedGames > 0 ? trackedAssists / trackedGames : 0;
+  const avgTackles = trackedGames > 0 ? trackedTackles / trackedGames : 0;
+  const avgInterceptions = trackedGames > 0 ? trackedInterceptions / trackedGames : 0;
+  const avgClearances = trackedGames > 0 ? trackedClearances / trackedGames : 0;
+  const avgSaves = trackedGames > 0 ? trackedSaves / trackedGames : 0;
+  const cleanSheetRate = trackedGames > 0 ? (trackedCleanSheets / trackedGames) * 100 : 0;
+  const avgGoalsConceded = trackedGames > 0 ? trackedGoalsConceded / trackedGames : 0;
 
   const gamesWithRating = stats.filter(s => s.ea_match_rating !== null && s.ea_match_rating > 0);
   const avgEARating = gamesWithRating.length > 0
     ? gamesWithRating.reduce((sum, s) => sum + s.ea_match_rating, 0) / gamesWithRating.length
     : null;
 
-  let performanceRating = winRate * 0.5;
-  const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
-  performanceRating += gaContribution * 0.3;
+  let performanceRating: number;
 
-  if (avgEARating !== null) {
-    performanceRating += (avgEARating * 10) * 0.2;
+  if (isGK) {
+    // GK Rating: 40% win rate, 25% saves performance, 25% clean sheet rate, 10% EA rating
+    performanceRating = winRate * 0.4;
+    
+    // Saves contribution (5+ saves per game = 100)
+    const savesContribution = Math.min(100, avgSaves * 20);
+    performanceRating += savesContribution * 0.25;
+    
+    // Clean sheet rate
+    performanceRating += cleanSheetRate * 0.25;
+    
+    // EA rating or goals conceded penalty
+    if (avgEARating !== null) {
+      performanceRating += (avgEARating * 10) * 0.1;
+    } else {
+      // Lower goals conceded = better
+      const gcPenalty = Math.max(0, 100 - avgGoalsConceded * 30);
+      performanceRating += gcPenalty * 0.1;
+    }
+  } else if (isDefender) {
+    // Defender Rating: 35% win rate, 30% defensive actions, 15% clean sheets, 10% G+A, 10% EA rating
+    performanceRating = winRate * 0.35;
+    
+    // Defensive actions contribution (tackles + interceptions + clearances)
+    // Good defender: 3+ tackles, 2+ interceptions, 3+ clearances per game = 100
+    const defensiveContribution = Math.min(100, (avgTackles * 12) + (avgInterceptions * 15) + (avgClearances * 10));
+    performanceRating += defensiveContribution * 0.30;
+    
+    // Clean sheet bonus
+    performanceRating += cleanSheetRate * 0.15;
+    
+    // Defenders can still contribute offensively (reduced weight)
+    const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
+    performanceRating += gaContribution * 0.10;
+    
+    if (avgEARating !== null) {
+      performanceRating += (avgEARating * 10) * 0.10;
+    } else {
+      performanceRating += defensiveContribution * 0.10;
+    }
+  } else if (isMidfielder) {
+    // Midfielder Rating: 40% win rate, 20% G+A, 20% defensive, 10% clean sheets, 10% EA rating
+    performanceRating = winRate * 0.40;
+    
+    const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
+    performanceRating += gaContribution * 0.20;
+    
+    // Midfielders should contribute defensively too
+    const defensiveContribution = Math.min(100, (avgTackles * 12) + (avgInterceptions * 15));
+    performanceRating += defensiveContribution * 0.20;
+    
+    // Slight clean sheet bonus for defensive mids
+    performanceRating += cleanSheetRate * 0.10;
+    
+    if (avgEARating !== null) {
+      performanceRating += (avgEARating * 10) * 0.10;
+    } else {
+      performanceRating += winRate * 0.10;
+    }
   } else {
-    performanceRating += winRate * 0.2;
+    // Attacker/Default Rating: 50% win rate, 30% G+A, 20% EA rating (original formula)
+    performanceRating = winRate * 0.50;
+    const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
+    performanceRating += gaContribution * 0.30;
+
+    if (avgEARating !== null) {
+      performanceRating += (avgEARating * 10) * 0.20;
+    } else {
+      performanceRating += winRate * 0.20;
+    }
   }
 
   return { rating: Math.max(0, Math.min(100, performanceRating)) };
