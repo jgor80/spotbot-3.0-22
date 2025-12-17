@@ -32,6 +32,7 @@ import {
   ChevronUp
 } from "lucide-react";
 import { RatingBadge } from "@/components/player/RatingBadge";
+import { TwitchStreamers } from "@/components/TwitchStreamers";
 
 interface PeerEvaluation {
   id: string;
@@ -211,11 +212,12 @@ export default function RatingsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="font-display text-3xl font-bold">Player Ratings</h1>
-          <p className="text-muted-foreground">Peer evaluations by position and comprehensive player stats</p>
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-6">
+        <div className="space-y-6">
+          <div>
+            <h1 className="font-display text-3xl font-bold">Player Ratings</h1>
+            <p className="text-muted-foreground">Peer evaluations by position and comprehensive player stats</p>
+          </div>
 
         <Tabs defaultValue="positions" className="space-y-4">
           <TabsList>
@@ -665,6 +667,12 @@ export default function RatingsPage() {
             )}
           </TabsContent>
         </Tabs>
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-4">
+          <TwitchStreamers />
+        </div>
       </div>
     </DashboardLayout>
   );
