@@ -8,11 +8,11 @@ interface RatingBadgeProps {
 }
 
 function getRatingTier(rating: number) {
-  if (rating >= 85) return { name: "Elite", textClass: "text-tier-elite", bgClass: "bg-gradient-hero" };
-  if (rating >= 75) return { name: "Gold", textClass: "text-tier-gold", bgClass: "bg-gradient-gold" };
-  if (rating >= 60) return { name: "Silver", textClass: "text-tier-silver", bgClass: "bg-secondary" };
-  if (rating >= 45) return { name: "Bronze", textClass: "text-tier-bronze", bgClass: "bg-muted" };
-  return { name: "Unranked", textClass: "text-muted-foreground", bgClass: "bg-muted" };
+  if (rating >= 85) return { name: "Elite", textClass: "text-tier-elite", bgClass: "bg-gradient-to-br from-emerald-500 to-emerald-700", textColor: "text-white" };
+  if (rating >= 75) return { name: "Gold", textClass: "text-tier-gold", bgClass: "bg-gradient-to-br from-amber-400 to-amber-600", textColor: "text-white" };
+  if (rating >= 60) return { name: "Silver", textClass: "text-tier-silver", bgClass: "bg-gradient-to-br from-slate-400 to-slate-600", textColor: "text-white" };
+  if (rating >= 45) return { name: "Bronze", textClass: "text-tier-bronze", bgClass: "bg-gradient-to-br from-orange-600 to-orange-800", textColor: "text-white" };
+  return { name: "Unranked", textClass: "text-muted-foreground", bgClass: "bg-muted", textColor: "text-muted-foreground" };
 }
 
 const sizeClasses = {
@@ -29,8 +29,9 @@ export function RatingBadge({ rating, size = "md", showTier = false, className }
     <div className={cn("flex flex-col items-center gap-1", className)}>
       <div
         className={cn(
-          "flex items-center justify-center rounded-lg font-display font-bold text-primary-foreground shadow-lg",
+          "flex items-center justify-center rounded-lg font-display font-bold shadow-lg border border-white/20",
           tier.bgClass,
+          tier.textColor,
           sizeClasses[size],
           rating >= 85 && "rating-glow"
         )}
