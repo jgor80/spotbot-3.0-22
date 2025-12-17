@@ -6295,7 +6295,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .single();
         
         if (!feedbackRequest) {
-          return interaction.followUp({ content: '❌ Feedback request not found or expired.', flags: 64 });
+          return interaction.followUp({ content: '❌ Feedback request not found.', flags: 64 });
+        }
+        
+        // Check if feedback has expired (30 minute window)
+        if (new Date(feedbackRequest.expires_at) < new Date()) {
+          // Delete the DM message
+          try {
+            await interaction.message.delete();
+          } catch {}
+          return interaction.followUp({ content: '⏰ **Feedback window expired!**\n\nFeedback must be submitted within 30 minutes of the game being registered.', flags: 64 });
         }
         
         // Find the position this player was playing from teammates_data
@@ -6361,6 +6370,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.followUp({ content: '❌ Feedback request not found.', flags: 64 });
         }
         
+        // Check if feedback has expired
+        if (new Date(feedbackRequest.expires_at) < new Date()) {
+          try { await interaction.message.delete(); } catch {}
+          return interaction.followUp({ content: '⏰ **Feedback window expired!** Feedback must be submitted within 30 minutes.', flags: 64 });
+        }
+        
         const evaluatedPlayer = feedbackRequest.teammates_data?.find(t => t.discord_user_id === evaluatedUserId);
         const playerName = evaluatedPlayer?.ea_username || `<@${evaluatedUserId}>`;
         
@@ -6407,6 +6422,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.followUp({ content: '❌ Feedback request not found.', flags: 64 });
         }
         
+        // Check if feedback has expired
+        if (new Date(feedbackRequest.expires_at) < new Date()) {
+          try { await interaction.message.delete(); } catch {}
+          return interaction.followUp({ content: '⏰ **Feedback window expired!** Feedback must be submitted within 30 minutes.', flags: 64 });
+        }
+        
         const evaluatedPlayer = feedbackRequest.teammates_data?.find(t => t.discord_user_id === evaluatedUserId);
         const playerName = evaluatedPlayer?.ea_username || `<@${evaluatedUserId}>`;
         
@@ -6451,6 +6472,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         
         if (!feedbackRequest) {
           return interaction.followUp({ content: '❌ Feedback request not found.', flags: 64 });
+        }
+        
+        // Check if feedback has expired
+        if (new Date(feedbackRequest.expires_at) < new Date()) {
+          try { await interaction.message.delete(); } catch {}
+          return interaction.followUp({ content: '⏰ **Feedback window expired!** Feedback must be submitted within 30 minutes.', flags: 64 });
         }
         
         const teammatesData = feedbackRequest.teammates_data || [];
@@ -10874,7 +10901,7 @@ async function createClubMatchFeedbackRequests(guildId, eaMatchId, playerStats) 
       return;
     }
     
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes only
     
     const feedbackRequests = discordPlayerIds.map(playerId => {
       const teammates = discordPlayerIds.filter(id => id !== playerId);
@@ -11036,6 +11063,9 @@ const autoLinkDmCache = new Map();
 // Track sent DMs to prevent duplicates within session
 const sentFeedbackDMs = new Set();
 
+// Track DM messages for auto-deletion after 30 minutes
+const feedbackDMMessages = new Map(); // requestId -> { messageId, channelId, expiresAt }
+
 // Send pending feedback DMs to players
 async function sendPendingFeedbackDMs(guildId, guild) {
   const result = { sent: 0, skipped: 0, failed: 0 };
@@ -11053,17 +11083,26 @@ async function sendPendingFeedbackDMs(guildId, guild) {
       return result;
     }
     
+    // First, mark any expired feedback requests as expired
+    const now = new Date().toISOString();
+    await supabase
+      .from('dm_feedback_requests')
+      .update({ status: 'expired' })
+      .eq('guild_id', guildId)
+      .eq('status', 'pending')
+      .lt('expires_at', now);
+    
     // Get all pending feedback requests for this guild that haven't been DMed yet
-    // Only get requests from the last 5 MINUTES to avoid sending old DMs
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    // Only get requests from the last 2 MINUTES to ensure only new games get DMs
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     const { data: pendingRequests } = await supabase
       .from('dm_feedback_requests')
       .select('*')
       .eq('guild_id', guildId)
       .eq('status', 'pending')
       .is('dm_sent_at', null)
-      .gt('expires_at', new Date().toISOString())
-      .gt('created_at', fiveMinutesAgo)
+      .gt('expires_at', now)
+      .gt('created_at', twoMinutesAgo)
       .order('created_at', { ascending: false })
       .limit(50);
     
@@ -11154,11 +11193,16 @@ async function sendPendingFeedbackDMs(guildId, guild) {
         
         description += `\n**Now rating: ${firstUnrated.ea_username || 'Teammate'}** (${firstUnrated.position_played || 'ANY'})`;
         
+        // Calculate remaining time
+        const expiresAt = new Date(request.expires_at);
+        const remainingMs = expiresAt.getTime() - Date.now();
+        const remainingMins = Math.max(1, Math.floor(remainingMs / 60000));
+        
         const embed = new EmbedBuilder()
           .setTitle('⭐ Rate Your Teammates')
           .setColor(0x5865f2)
           .setDescription(description)
-          .setFooter({ text: `Expires in 24h` });
+          .setFooter({ text: `⏰ Expires in ${remainingMins} minutes - this message will auto-delete` });
         
         const ratingButtons = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`feedback_rate_1_${request.id}_${firstUnrated.discord_user_id}`).setLabel('⭐ 1').setStyle(ButtonStyle.Secondary),
@@ -11168,10 +11212,47 @@ async function sendPendingFeedbackDMs(guildId, guild) {
           new ButtonBuilder().setCustomId(`feedback_rate_5_${request.id}_${firstUnrated.discord_user_id}`).setLabel('⭐ 5').setStyle(ButtonStyle.Success)
         );
         
-        await member.send({ embeds: [embed], components: [ratingButtons] });
+        const sentMessage = await member.send({ embeds: [embed], components: [ratingButtons] });
+        
+        // Store message for auto-deletion and schedule deletion
+        feedbackDMMessages.set(request.id, {
+          messageId: sentMessage.id,
+          channelId: sentMessage.channel.id,
+          memberId: member.id,
+          expiresAt: expiresAt.getTime()
+        });
+        
+        // Schedule auto-delete after remaining time
+        setTimeout(async () => {
+          try {
+            const dmInfo = feedbackDMMessages.get(request.id);
+            if (dmInfo) {
+              const user = await client.users.fetch(dmInfo.memberId).catch(() => null);
+              if (user) {
+                const dmChannel = await user.createDM().catch(() => null);
+                if (dmChannel) {
+                  const msg = await dmChannel.messages.fetch(dmInfo.messageId).catch(() => null);
+                  if (msg) {
+                    await msg.delete().catch(() => {});
+                    console.log(`[Feedback] Auto-deleted expired DM for request ${request.id}`);
+                  }
+                }
+              }
+              feedbackDMMessages.delete(request.id);
+            }
+            // Also mark request as expired in DB
+            await supabase
+              .from('dm_feedback_requests')
+              .update({ status: 'expired' })
+              .eq('id', request.id)
+              .eq('status', 'pending');
+          } catch (err) {
+            console.log(`[Feedback] Could not auto-delete DM: ${err.message}`);
+          }
+        }, remainingMs + 1000); // Add 1 second buffer
         
         result.sent++;
-        console.log(`[Feedback] Sent panel DM to ${member.user.username} for match ${request.club_match_id}`);
+        console.log(`[Feedback] Sent panel DM to ${member.user.username} for match ${request.club_match_id} (expires in ${remainingMins}m)`);
         
       } catch (err) {
         console.error(`[Feedback] Failed to DM ${request.evaluator_discord_id}:`, err.message);
