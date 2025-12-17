@@ -4144,13 +4144,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
           }
         }
         
-        description += `\n**Rating ${firstUnrated?.ea_username || 'Player'}** - select skill levels:`;
+        // Add progress indicators for current player
+        const tech = firstUnrated?.ext_technical_skill;
+        const iq = firstUnrated?.ext_game_iq;
+        const ethic = firstUnrated?.ext_work_ethic;
+        const comm = firstUnrated?.ext_communication;
+        const consist = firstUnrated?.ext_consistency;
+        const clutch = firstUnrated?.ext_clutch_factor;
+        
+        description += `\n**Rating ${firstUnrated?.ea_username || 'Player'}** - Page 1 of 2\n\n`;
+        description += `**Progress:**\n`;
+        description += `${tech ? '✅' : '⬜'} Technical Skill ${tech ? `(${tech}/5)` : ''}\n`;
+        description += `${iq ? '✅' : '⬜'} Game IQ ${iq ? `(${iq}/5)` : ''}\n`;
+        description += `${ethic ? '✅' : '⬜'} Work Ethic ${ethic ? `(${ethic}/5)` : ''}\n`;
+        description += `─────────────────\n`;
+        description += `${comm ? '✅' : '⏳'} Communication ${comm ? `(${comm}/5)` : '(Page 2)'}\n`;
+        description += `${consist ? '✅' : '⏳'} Consistency ${consist ? `(${consist}/5)` : '(Page 2)'}\n`;
+        description += `${clutch ? '✅' : '⏳'} Clutch Factor ${clutch ? `(${clutch}/5)` : '(Page 2)'}\n`;
         
         const extEmbed = new EmbedBuilder()
-          .setTitle('🎖️ Manager Extended Ratings')
+          .setTitle('🎖️ Manager Extended Ratings - Page 1')
           .setColor(0xf1c40f)
           .setDescription(description)
-          .setFooter({ text: 'Only captains and managers see these detailed options' });
+          .setFooter({ text: 'Complete Page 1, then click Next for remaining ratings' });
         
         // Player select dropdown for extended ratings
         const unratedExt = updatedTeammatesData.filter(t => !t.ext_rated);
@@ -4259,15 +4275,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
           });
         }
         
+        const comm = currentlyRating.ext_communication;
+        const consist = currentlyRating.ext_consistency;
+        const clutch = currentlyRating.ext_clutch_factor;
+        
+        let page2Desc = `**Rating ${currentlyRating.ea_username || 'Player'}** (${currentlyRating.position_played || 'ANY'})\n\n`;
+        page2Desc += `**Progress - Page 2 of 2:**\n`;
+        page2Desc += `✅ Technical Skill (${tech}/5)\n`;
+        page2Desc += `✅ Game IQ (${iq}/5)\n`;
+        page2Desc += `✅ Work Ethic (${ethic}/5)\n`;
+        page2Desc += `─────────────────\n`;
+        page2Desc += `${comm ? '✅' : '⬜'} Communication ${comm ? `(${comm}/5)` : ''}\n`;
+        page2Desc += `${consist ? '✅' : '⬜'} Consistency ${consist ? `(${consist}/5)` : ''}\n`;
+        page2Desc += `${clutch ? '✅' : '⬜'} Clutch Factor ${clutch ? `(${clutch}/5)` : ''}\n`;
+        
         const extEmbed2 = new EmbedBuilder()
           .setTitle('🎖️ Manager Extended Ratings - Page 2')
           .setColor(0xf1c40f)
-          .setDescription(`Rating **${currentlyRating.ea_username || 'Player'}** (${currentlyRating.position_played || 'ANY'})\n\n` +
-                          `✅ Technical: ${tech}/5\n` +
-                          `✅ Game IQ: ${iq}/5\n` +
-                          `✅ Work Ethic: ${ethic}/5\n\n` +
-                          `**Complete the remaining ratings:**`)
-          .setFooter({ text: 'Clutch Factor auto-submits ratings' });
+          .setDescription(page2Desc)
+          .setFooter({ text: 'Selecting Clutch Factor auto-submits all ratings' });
         
         // Communication dropdown
         const commSelect = new ActionRowBuilder().addComponents(
