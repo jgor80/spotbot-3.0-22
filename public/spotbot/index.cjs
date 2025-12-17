@@ -3910,6 +3910,399 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
       
+      // Handle extended manager feedback dropdowns in DMs
+      if (id.startsWith('feedback_ext_')) {
+        const parts = id.split('_');
+        const category = parts[2]; // tech, iq, ethic, comm, consist, clutch, submit
+        const feedbackRequestId = parts.slice(3).join('_');
+        
+        await interaction.deferUpdate();
+        
+        const { data: feedbackRequest } = await supabase
+          .from('dm_feedback_requests')
+          .select('*')
+          .eq('id', feedbackRequestId)
+          .single();
+        
+        if (!feedbackRequest) {
+          return interaction.followUp({ content: '❌ Feedback request not found.', flags: 64 });
+        }
+        
+        if (new Date(feedbackRequest.expires_at) < new Date()) {
+          try { await interaction.message.delete(); } catch {}
+          return interaction.followUp({ content: '⏰ **Feedback window expired!**', flags: 64 });
+        }
+        
+        const teammatesData = feedbackRequest.teammates_data || [];
+        let currentlyRating = teammatesData.find(t => t.ext_currently_rating);
+        
+        if (!currentlyRating) {
+          currentlyRating = teammatesData.find(t => !t.ext_rated);
+          if (currentlyRating) currentlyRating.ext_currently_rating = true;
+        }
+        
+        if (!currentlyRating) {
+          return interaction.followUp({ content: '⚠️ All teammates have extended ratings!', flags: 64 });
+        }
+        
+        const rating = parseInt(interaction.values[0], 10);
+        const categoryLabels = {
+          tech: 'Technical Skill',
+          iq: 'Game IQ',
+          ethic: 'Work Ethic',
+          comm: 'Communication',
+          consist: 'Consistency',
+          clutch: 'Clutch Factor'
+        };
+        
+        const pendingFields = {
+          tech: 'ext_technical_skill',
+          iq: 'ext_game_iq',
+          ethic: 'ext_work_ethic',
+          comm: 'ext_communication',
+          consist: 'ext_consistency',
+          clutch: 'ext_clutch_factor'
+        };
+        
+        // Handle player selection for extended ratings
+        if (category === 'player') {
+          const selectedPlayerId = interaction.values[0];
+          const updatedTeammatesData = teammatesData.map(t => ({
+            ...t,
+            ext_currently_rating: t.discord_user_id === selectedPlayerId
+          }));
+          
+          await supabase
+            .from('dm_feedback_requests')
+            .update({ teammates_data: updatedTeammatesData })
+            .eq('id', feedbackRequestId);
+          
+          const selectedPlayer = teammatesData.find(t => t.discord_user_id === selectedPlayerId);
+          return interaction.followUp({ 
+            content: `🎖️ Now rating **${selectedPlayer?.ea_username || 'Player'}** - select skill ratings from dropdowns!`, 
+            flags: 64 
+          });
+        }
+        
+        if (pendingFields[category]) {
+          const updatedTeammatesData = teammatesData.map(t => 
+            t.ext_currently_rating ? { ...t, [pendingFields[category]]: rating } : t
+          );
+          
+          await supabase
+            .from('dm_feedback_requests')
+            .update({ teammates_data: updatedTeammatesData })
+            .eq('id', feedbackRequestId);
+          
+          // Check if this was the last dropdown (clutch) - auto submit
+          if (category === 'clutch') {
+            const currentPlayer = teammatesData.find(t => t.ext_currently_rating);
+            const tech = currentPlayer?.ext_technical_skill;
+            const iq = currentPlayer?.ext_game_iq;
+            const ethic = currentPlayer?.ext_work_ethic;
+            const comm = currentPlayer?.ext_communication;
+            const consist = currentPlayer?.ext_consistency;
+            
+            if (tech && iq && ethic && comm && consist) {
+              // All ratings complete, submit automatically
+              await supabase
+                .from('peer_evaluations')
+                .update({
+                  technical_skill: tech,
+                  game_iq: iq,
+                  work_ethic: ethic,
+                  communication: comm,
+                  consistency: consist,
+                  clutch_factor: rating
+                })
+                .eq('guild_id', feedbackRequest.guild_id)
+                .eq('evaluator_discord_id', interaction.user.id)
+                .eq('evaluated_discord_id', currentPlayer.discord_user_id)
+                .or(`club_match_id.eq.${feedbackRequest.club_match_id},draft_id.eq.${feedbackRequest.draft_id}`);
+              
+              // Mark as ext_rated
+              const finalTeammatesData = updatedTeammatesData.map(t => 
+                t.discord_user_id === currentPlayer.discord_user_id
+                  ? { ...t, ext_rated: true, ext_currently_rating: false }
+                  : t
+              );
+              
+              await supabase
+                .from('dm_feedback_requests')
+                .update({ teammates_data: finalTeammatesData })
+                .eq('id', feedbackRequestId);
+              
+              const allExtRated = finalTeammatesData.every(t => t.ext_rated);
+              
+              if (allExtRated) {
+                return interaction.followUp({ 
+                  content: `✅ Extended ratings complete for **${currentPlayer.ea_username || 'Player'}**!\n\n🎉 **All extended ratings submitted!** Thank you for the detailed evaluation.`, 
+                  flags: 64 
+                });
+              } else {
+                return interaction.followUp({ 
+                  content: `✅ Extended ratings saved for **${currentPlayer.ea_username || 'Player'}**!\n\n👉 Select the next player from the dropdown above.`, 
+                  flags: 64 
+                });
+              }
+            }
+          }
+          
+          return interaction.followUp({ 
+            content: `🎖️ ${categoryLabels[category]}: **${rating}/5** for ${currentlyRating.ea_username || 'Player'}`, 
+            flags: 64 
+          });
+        }
+        
+        return;
+      }
+      
+      return;
+    }
+    
+    // Handle DM button interactions
+    if (!interaction.guildId && interaction.isButton()) {
+      const id = interaction.customId;
+      
+      // Manager extended ratings button
+      if (id.startsWith('feedback_manager_')) {
+        const feedbackRequestId = id.replace('feedback_manager_', '');
+        
+        const { data: feedbackRequest } = await supabase
+          .from('dm_feedback_requests')
+          .select('*')
+          .eq('id', feedbackRequestId)
+          .single();
+        
+        if (!feedbackRequest) {
+          return interaction.reply({ content: '❌ Feedback request not found.', flags: 64 });
+        }
+        
+        // Check if user is a manager/captain in the guild
+        try {
+          const guild = await client.guilds.fetch(feedbackRequest.guild_id).catch(() => null);
+          if (!guild) {
+            return interaction.reply({ content: '❌ Could not verify your permissions.', flags: 64 });
+          }
+          
+          const member = await guild.members.fetch(interaction.user.id).catch(() => null);
+          if (!member || !isManager(member)) {
+            return interaction.reply({ 
+              content: '🎖️ **Manager Extended Ratings** are only available to Captains, Managers, and Admins.\n\nYou need one of these roles to access deeper player evaluations.', 
+              flags: 64 
+            });
+          }
+        } catch (err) {
+          return interaction.reply({ content: '❌ Could not verify your permissions.', flags: 64 });
+        }
+        
+        // Check if extended ratings already done
+        const teammatesData = feedbackRequest.teammates_data || [];
+        const allExtRated = teammatesData.every(t => t.ext_rated);
+        
+        if (allExtRated) {
+          return interaction.reply({ content: '✅ Extended ratings already submitted for all players!', flags: 64 });
+        }
+        
+        // Reset ext_currently_rating for first unrated player
+        const updatedTeammatesData = teammatesData.map((t, idx) => {
+          const firstUnratedIdx = teammatesData.findIndex(tm => !tm.ext_rated);
+          return {
+            ...t,
+            ext_currently_rating: idx === firstUnratedIdx && !t.ext_rated
+          };
+        });
+        
+        await supabase
+          .from('dm_feedback_requests')
+          .update({ teammates_data: updatedTeammatesData })
+          .eq('id', feedbackRequestId);
+        
+        // Build extended rating panel
+        const firstUnrated = updatedTeammatesData.find(t => t.ext_currently_rating);
+        
+        let description = `🎖️ **Manager Extended Evaluation**\n\nProvide detailed skill ratings for your teammates:\n\n`;
+        
+        for (const t of updatedTeammatesData) {
+          const name = t.ea_username || `Player ${t.discord_user_id.slice(-4)}`;
+          const pos = t.position_played || 'ANY';
+          if (t.ext_rated) {
+            description += `✅ **${name}** (${pos}): Extended ✓\n`;
+          } else if (t.ext_currently_rating) {
+            description += `👉 **${name}** (${pos}): Rating now...\n`;
+          } else {
+            description += `⬜ **${name}** (${pos}): Pending\n`;
+          }
+        }
+        
+        description += `\n**Rating ${firstUnrated?.ea_username || 'Player'}** - select skill levels:`;
+        
+        const extEmbed = new EmbedBuilder()
+          .setTitle('🎖️ Manager Extended Ratings')
+          .setColor(0xf1c40f)
+          .setDescription(description)
+          .setFooter({ text: 'Only captains and managers see these detailed options' });
+        
+        // Player select dropdown for extended ratings
+        const unratedExt = updatedTeammatesData.filter(t => !t.ext_rated);
+        const extPlayerSelect = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`feedback_ext_player_${feedbackRequestId}`)
+            .setPlaceholder('👤 Select player for extended rating')
+            .addOptions(unratedExt.slice(0, 25).map(t => ({
+              label: t.ea_username || `Player ${t.discord_user_id.slice(-4)}`,
+              description: `Position: ${t.position_played || 'ANY'}`,
+              value: t.discord_user_id
+            })))
+        );
+        
+        // Technical Skill dropdown
+        const techSelect = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`feedback_ext_tech_${feedbackRequestId}`)
+            .setPlaceholder('⚽ Technical Skill (1-5)')
+            .addOptions([
+              { label: '1 - Poor', value: '1', description: 'Basic ball control issues' },
+              { label: '2 - Below Avg', value: '2', description: 'Inconsistent technique' },
+              { label: '3 - Average', value: '3', description: 'Solid fundamentals' },
+              { label: '4 - Good', value: '4', description: 'Clean technique' },
+              { label: '5 - Elite', value: '5', description: 'Exceptional skill' }
+            ])
+        );
+        
+        // Game IQ dropdown
+        const iqSelect = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`feedback_ext_iq_${feedbackRequestId}`)
+            .setPlaceholder('🧠 Game IQ (1-5)')
+            .addOptions([
+              { label: '1 - Poor', value: '1', description: 'Poor positioning/decisions' },
+              { label: '2 - Below Avg', value: '2', description: 'Slow to read play' },
+              { label: '3 - Average', value: '3', description: 'Good awareness' },
+              { label: '4 - Good', value: '4', description: 'Smart player' },
+              { label: '5 - Elite', value: '5', description: 'Always one step ahead' }
+            ])
+        );
+        
+        // Work Ethic dropdown
+        const ethicSelect = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`feedback_ext_ethic_${feedbackRequestId}`)
+            .setPlaceholder('💪 Work Ethic (1-5)')
+            .addOptions([
+              { label: '1 - Lazy', value: '1', description: 'Minimal effort' },
+              { label: '2 - Low', value: '2', description: 'Inconsistent effort' },
+              { label: '3 - Average', value: '3', description: 'Does their job' },
+              { label: '4 - High', value: '4', description: 'Always working' },
+              { label: '5 - Relentless', value: '5', description: 'Never stops' }
+            ])
+        );
+        
+        // Communication dropdown
+        const commSelect = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`feedback_ext_comm_${feedbackRequestId}`)
+            .setPlaceholder('🎤 Communication (1-5)')
+            .addOptions([
+              { label: '1 - Silent', value: '1', description: 'No communication' },
+              { label: '2 - Quiet', value: '2', description: 'Rarely speaks up' },
+              { label: '3 - Average', value: '3', description: 'Communicates when needed' },
+              { label: '4 - Good', value: '4', description: 'Clear callouts' },
+              { label: '5 - Leader', value: '5', description: 'Vocal team leader' }
+            ])
+        );
+        
+        return interaction.reply({ 
+          embeds: [extEmbed], 
+          components: [extPlayerSelect, techSelect, iqSelect, ethicSelect, commSelect],
+          flags: 64 
+        });
+      }
+      
+      // Extended rating submit button
+      if (id.startsWith('feedback_ext_submit_')) {
+        const feedbackRequestId = id.replace('feedback_ext_submit_', '');
+        
+        await interaction.deferUpdate();
+        
+        const { data: feedbackRequest } = await supabase
+          .from('dm_feedback_requests')
+          .select('*')
+          .eq('id', feedbackRequestId)
+          .single();
+        
+        if (!feedbackRequest) {
+          return interaction.followUp({ content: '❌ Feedback request not found.', flags: 64 });
+        }
+        
+        const teammatesData = feedbackRequest.teammates_data || [];
+        const currentlyRating = teammatesData.find(t => t.ext_currently_rating);
+        
+        if (!currentlyRating) {
+          return interaction.followUp({ content: '⚠️ No player selected for extended rating.', flags: 64 });
+        }
+        
+        const tech = currentlyRating.ext_technical_skill;
+        const iq = currentlyRating.ext_game_iq;
+        const ethic = currentlyRating.ext_work_ethic;
+        const comm = currentlyRating.ext_communication;
+        const consist = currentlyRating.ext_consistency;
+        const clutch = currentlyRating.ext_clutch_factor;
+        
+        if (!tech || !iq || !ethic || !comm) {
+          return interaction.followUp({ 
+            content: '⚠️ Please complete all extended ratings:\n' +
+                     `• Technical: ${tech ? '✅' : '❌'}\n` +
+                     `• Game IQ: ${iq ? '✅' : '❌'}\n` +
+                     `• Work Ethic: ${ethic ? '✅' : '❌'}\n` +
+                     `• Communication: ${comm ? '✅' : '❌'}`,
+            flags: 64 
+          });
+        }
+        
+        // Update peer evaluation with extended ratings
+        await supabase
+          .from('peer_evaluations')
+          .update({
+            technical_skill: tech,
+            game_iq: iq,
+            work_ethic: ethic,
+            communication: comm,
+            consistency: consist || tech,
+            clutch_factor: clutch || tech
+          })
+          .eq('guild_id', feedbackRequest.guild_id)
+          .eq('evaluator_discord_id', interaction.user.id)
+          .eq('evaluated_discord_id', currentlyRating.discord_user_id)
+          .eq('club_match_id', feedbackRequest.club_match_id);
+        
+        // Mark as ext_rated
+        const updatedTeammatesData = teammatesData.map(t => 
+          t.discord_user_id === currentlyRating.discord_user_id
+            ? { ...t, ext_rated: true, ext_currently_rating: false }
+            : { ...t, ext_currently_rating: false }
+        );
+        
+        await supabase
+          .from('dm_feedback_requests')
+          .update({ teammates_data: updatedTeammatesData })
+          .eq('id', feedbackRequestId);
+        
+        const allExtRated = updatedTeammatesData.every(t => t.ext_rated);
+        
+        if (allExtRated) {
+          return interaction.followUp({ 
+            content: `✅ Extended ratings complete for **${currentlyRating.ea_username || 'Player'}**!\n\n🎉 **All extended ratings submitted!** Thank you for the detailed evaluation.`, 
+            flags: 64 
+          });
+        } else {
+          return interaction.followUp({ 
+            content: `✅ Extended ratings saved for **${currentlyRating.ea_username || 'Player'}**!\n\n👉 Click the dropdowns above to rate the next player.`, 
+            flags: 64 
+          });
+        }
+      }
+      
       return;
     }
 
@@ -9857,9 +10250,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const doneEmbed = new EmbedBuilder()
             .setTitle('✅ Feedback Complete!')
             .setColor(0x00ff00)
-            .setDescription(description + '\n\nThank you for rating your teammates!\n💚 = Prefer | 💛 = Neutral | 💔 = Avoid');
+            .setDescription(description + '\n\nThank you for rating your teammates!\n💚 = Prefer | 💛 = Neutral | 💔 = Avoid\n\n🎖️ **Captains & Managers:** Click below for extended ratings!');
           
-          return interaction.editReply({ embeds: [doneEmbed], components: [] });
+          // Add manager extended rating button
+          const managerButton = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`feedback_manager_${feedbackRequestId}`)
+              .setLabel('🎖️ Manager Extended Ratings')
+              .setStyle(ButtonStyle.Primary)
+          );
+          
+          return interaction.editReply({ embeds: [doneEmbed], components: [managerButton] });
         }
         
         // More players to rate - rebuild the panel
