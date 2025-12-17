@@ -41,7 +41,7 @@ export default function Leaderboard() {
   const [timePeriod, setTimePeriod] = useState("all");
   const [showWorst, setShowWorst] = useState(false);
   const [clubFilter, setClubFilter] = useState("all");
-  const [statsSource, setStatsSource] = useState<"all" | "members" | "games">("all");
+  const [statsSource, setStatsSource] = useState<"all" | "members" | "games">("members");
 
   const enabledClubs = (selectedGuild?.clubs || []).filter((club) => club.enabled);
 
@@ -101,15 +101,15 @@ export default function Leaderboard() {
                   ? "Players ranked from worst to best (min 3 games)" 
                   : clubFilter === "all"
                     ? statsSource === "members"
-                      ? "Career stats from EA member board (baseline sync)"
+                      ? "Career stats from EA member board (official totals)"
                       : statsSource === "games"
-                        ? "Stats from monitored matches only"
-                        : "Combined stats across every monitored club"
+                        ? "Stats from tracked matches only (detailed game data)"
+                        : "EA member stats with tracked game indicators"
                     : statsSource === "members"
-                      ? `EA member board stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter}`
+                      ? `EA career stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter}`
                       : statsSource === "games"
-                        ? `Monitored match stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter}`
-                        : `Combined stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter}`}
+                        ? `Tracked match stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter}`
+                        : `EA stats for ${enabledClubs.find(c => c.key === clubFilter)?.name || clubFilter} (with tracked games)`}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -141,13 +141,13 @@ export default function Leaderboard() {
               </SelectContent>
             </Select>
             <Select value={statsSource} onValueChange={(v) => setStatsSource(v as "all" | "members" | "games")}>
-              <SelectTrigger className="w-[180px] bg-card">
+              <SelectTrigger className="w-[200px] bg-card">
                 <SelectValue placeholder="Stats source" />
               </SelectTrigger>
               <SelectContent className="bg-card border z-50">
-                <SelectItem value="all">Combined Stats</SelectItem>
-                <SelectItem value="members">Members Board (EA)</SelectItem>
-                <SelectItem value="games">Game Stats Only</SelectItem>
+                <SelectItem value="members">EA Member Stats</SelectItem>
+                <SelectItem value="games">Tracked Games Only</SelectItem>
+                <SelectItem value="all">Combined View</SelectItem>
               </SelectContent>
             </Select>
             <Select value={timePeriod} onValueChange={setTimePeriod}>

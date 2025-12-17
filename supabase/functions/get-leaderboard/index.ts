@@ -9,11 +9,11 @@ const corsHeaders = {
 interface GetLeaderboardRequest {
   guild_id: string;
   type?: "overall" | "goals" | "assists" | "wins" | "form" | "reliability" | "avg_rating" | "saves" | "tackles" | "clean_sheets";
-  position?: string; // Filter by position
+  position?: string;
   limit?: number;
-  month_year?: string; // For monthly leaderboard, e.g., "2025-01"
-  club_key?: string; // Filter by specific club, or "all" for aggregate
-  stats_source?: "all" | "members" | "games"; // "members" = EA career stats, "games" = monitored match stats only
+  month_year?: string;
+  club_key?: string;
+  stats_source?: "all" | "members" | "games";
 }
 
 serve(async (req) => {
@@ -70,13 +70,58 @@ serve(async (req) => {
       ? (guildSettings?.clubs as Array<{ key: string; name: string; enabled: boolean }>).filter((c) => c.enabled)
       : [];
 
-    // If club_key is provided and not "all", get stats for that club
     let players: any[] = [];
     
+    // Get tracked games count for each player
+    const getTrackedGamesCounts = async (playerIds: string[], specificClubKey?: string) => {
+      let query = supabase
+        .from("player_stats")
+        .select("discord_user_id, ea_match_id")
+        .eq("guild_id", guild_id)
+        .eq("match_type", "club")
+        .in("discord_user_id", playerIds);
+
+      if (specificClubKey) {
+        // Get match IDs for this club
+        const { data: clubMatches } = await supabase
+          .from("club_matches")
+          .select("ea_match_id")
+          .eq("guild_id", guild_id)
+          .eq("club_key", specificClubKey);
+        
+        const clubMatchIds = (clubMatches || []).map(m => m.ea_match_id);
+        if (clubMatchIds.length > 0) {
+          query = query.in("ea_match_id", clubMatchIds);
+        } else {
+          return new Map<string, number>();
+        }
+      }
+
+      const { data: playerStats } = await query;
+      
+      // Count unique ea_match_ids per player (tracked games)
+      const trackedCounts = new Map<string, Set<string>>();
+      for (const stat of playerStats || []) {
+        if (!trackedCounts.has(stat.discord_user_id)) {
+          trackedCounts.set(stat.discord_user_id, new Set());
+        }
+        if (stat.ea_match_id) {
+          trackedCounts.get(stat.discord_user_id)!.add(stat.ea_match_id);
+        }
+      }
+      
+      const result = new Map<string, number>();
+      for (const [id, matches] of trackedCounts) {
+        result.set(id, matches.size);
+      }
+      return result;
+    };
+
     if (club_key && club_key !== "all") {
       console.log(`[get-leaderboard] Filtering by club: ${club_key}, source: ${stats_source}`);
       
       // For "members" source with specific club, use player_club_stats (EA member board data)
+      // This is the authoritative source for total games/stats from EA
       if (stats_source === "members") {
         console.log(`[get-leaderboard] Using player_club_stats for EA member board data`);
         
@@ -95,9 +140,14 @@ serve(async (req) => {
         
         if (clubStatsError) throw clubStatsError;
         
+        // Get tracked games counts for these players
+        const playerIds = (clubStats || []).map(p => p.discord_user_id);
+        const trackedCounts = await getTrackedGamesCounts(playerIds, club_key);
+        
         players = (clubStats || []).map(p => ({
           ...p,
           overall_rating: p.avg_match_rating ? Math.min(100, p.avg_match_rating * 10) : 50,
+          tracked_games: trackedCounts.get(p.discord_user_id) || 0,
           form_rating: null,
           reliability_score: 100,
           top_achievements: [],
@@ -107,8 +157,8 @@ serve(async (req) => {
           streak_type: null,
           club_keys: [club_key],
         }));
-      } else {
-        // For "games" or "all" source, aggregate from player_stats (monitored match data)
+      } else if (stats_source === "games") {
+        // For "games" source, show ONLY tracked match stats (not EA member board)
         const { data: clubPlayerStats, error: statsError } = await supabase
           .from("player_stats")
           .select(`
@@ -165,6 +215,8 @@ serve(async (req) => {
           const existing = playerAggregates.get(stat.discord_user_id) || {
             discord_user_id: stat.discord_user_id,
             games_played: 0,
+            tracked_games: 0,
+            tracked_match_ids: new Set<string>(),
             wins: 0,
             losses: 0,
             draws: 0,
@@ -195,6 +247,9 @@ serve(async (req) => {
           };
           
           existing.games_played += 1;
+          if (stat.ea_match_id) {
+            existing.tracked_match_ids.add(stat.ea_match_id);
+          }
           existing.goals += stat.goals || 0;
           existing.assists += stat.assists || 0;
           existing.clean_sheets += stat.clean_sheet ? 1 : 0;
@@ -243,6 +298,7 @@ serve(async (req) => {
             avg_match_rating: avgMatchRating,
             overall_rating: overallRating,
             primary_position: primaryPosition,
+            tracked_games: p.tracked_match_ids.size,
             form_rating: null,
             reliability_score: 100,
             top_achievements: [],
@@ -258,6 +314,41 @@ serve(async (req) => {
         if (position) {
           players = players.filter(p => p.primary_position === position);
         }
+      } else {
+        // stats_source === "all": EA member stats are authoritative, tracked games provide detail
+        // Use EA member stats as baseline, add tracked_games count
+        let query = supabase
+          .from("player_club_stats")
+          .select("*")
+          .eq("guild_id", guild_id)
+          .eq("club_key", club_key)
+          .gt("games_played", 0);
+        
+        if (position) {
+          query = query.eq("primary_position", position);
+        }
+        
+        const { data: clubStats, error: clubStatsError } = await query;
+        
+        if (clubStatsError) throw clubStatsError;
+        
+        // Get tracked games counts for these players
+        const playerIds = (clubStats || []).map(p => p.discord_user_id);
+        const trackedCounts = await getTrackedGamesCounts(playerIds, club_key);
+        
+        players = (clubStats || []).map(p => ({
+          ...p,
+          overall_rating: p.avg_match_rating ? Math.min(100, p.avg_match_rating * 10) : 50,
+          tracked_games: trackedCounts.get(p.discord_user_id) || 0,
+          form_rating: null,
+          reliability_score: 100,
+          top_achievements: [],
+          tournament_wins: 0,
+          league_wins: 0,
+          current_streak: 0,
+          streak_type: null,
+          club_keys: [club_key],
+        }));
       }
     } else if (stats_source === "games") {
       // Aggregate from player_stats only (monitored match data)
@@ -290,7 +381,8 @@ serve(async (req) => {
           offsides,
           seconds_played,
           position_played,
-          archetypeid
+          archetypeid,
+          ea_match_id
         `)
         .eq("guild_id", guild_id)
         .eq("match_type", "club");
@@ -304,6 +396,7 @@ serve(async (req) => {
         const existing = playerAggregates.get(stat.discord_user_id) || {
           discord_user_id: stat.discord_user_id,
           games_played: 0,
+          tracked_match_ids: new Set<string>(),
           wins: 0,
           losses: 0,
           draws: 0,
@@ -334,6 +427,9 @@ serve(async (req) => {
         };
         
         existing.games_played += 1;
+        if (stat.ea_match_id) {
+          existing.tracked_match_ids.add(stat.ea_match_id);
+        }
         existing.goals += stat.goals || 0;
         existing.assists += stat.assists || 0;
         existing.clean_sheets += stat.clean_sheet ? 1 : 0;
@@ -382,6 +478,7 @@ serve(async (req) => {
           avg_match_rating: avgMatchRating,
           overall_rating: overallRating,
           primary_position: primaryPosition,
+          tracked_games: p.tracked_match_ids.size,
           form_rating: null,
           reliability_score: 100,
           top_achievements: [],
@@ -399,7 +496,7 @@ serve(async (req) => {
       }
     } else {
       // Get from player_summary for aggregate leaderboard across all clubs
-      // stats_source === "all" or "members" both use player_summary
+      // For "all" or "members" source
       let query = supabase
         .from("player_summary")
         .select("*")
@@ -417,7 +514,15 @@ serve(async (req) => {
 
       const { data, error } = await query.limit(500);
       if (error) throw error;
-      players = data || [];
+      
+      // Get tracked games counts
+      const playerIds = (data || []).map(p => p.discord_user_id);
+      const trackedCounts = await getTrackedGamesCounts(playerIds);
+      
+      players = (data || []).map(p => ({
+        ...p,
+        tracked_games: trackedCounts.get(p.discord_user_id) || 0,
+      }));
     }
 
     // Get all profiles to map ea_ accounts to real Discord IDs
@@ -430,10 +535,8 @@ serve(async (req) => {
     const eaToDiscordMap = new Map<string, string>();
     for (const profile of allProfiles || []) {
       if (profile.ea_username && !profile.discord_user_id.startsWith('ea_')) {
-        // Normalize EA username for matching (lowercase, remove special chars variations)
         const normalized = profile.ea_username.toLowerCase().replace(/[\s\-_]/g, '');
         eaToDiscordMap.set(normalized, profile.discord_user_id);
-        // Also map the exact ea_username
         eaToDiscordMap.set(profile.ea_username.toLowerCase(), profile.discord_user_id);
       }
     }
@@ -488,6 +591,7 @@ serve(async (req) => {
       overall_rating: player.overall_rating,
       rating_tier: getRatingTier(player.overall_rating),
       games_played: player.games_played,
+      tracked_games: player.tracked_games || 0,
       wins: player.wins,
       losses: player.losses,
       draws: player.draws,
@@ -519,6 +623,7 @@ serve(async (req) => {
         leaderboard_type: type,
         position_filter: position || null,
         club_filter: club_key || "all",
+        stats_source,
         guild_scope: {
           guild_id,
           clubs: enabledClubs.map((c) => ({ key: c.key, name: c.name })),
@@ -579,7 +684,6 @@ function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
       const linkedId = eaToDiscordMap.get(normalized) || eaToDiscordMap.get(eaUsername.toLowerCase());
       if (linkedId) {
         // SKIP this ea_ record if the linked Discord ID already exists in the data
-        // This prevents double-counting stats from both ea_ and real Discord records
         if (realDiscordIdsInData.has(linkedId)) {
           console.log(`[aggregatePlayers] Skipping ea_ record ${canonicalId} - linked Discord ${linkedId} already has data`);
           continue;
@@ -608,6 +712,7 @@ function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
       goals: 0,
       assists: 0,
       games_played: 0,
+      tracked_games: 0,
       clean_sheets: 0,
       man_of_match: 0,
       shots: 0,
@@ -656,6 +761,7 @@ function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
     aggregate.goals += player.goals || 0;
     aggregate.assists += player.assists || 0;
     aggregate.games_played += player.games_played || 0;
+    aggregate.tracked_games += player.tracked_games || 0;
     aggregate.clean_sheets += player.clean_sheets || 0;
     aggregate.man_of_match += player.man_of_match || 0;
     aggregate.shots += player.shots || 0;
