@@ -6,7 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Rating weights as defined in the plan
 const WEIGHTS = {
   draft_performance: 0.40,
   club_performance: 0.20,
@@ -16,9 +15,9 @@ const WEIGHTS = {
 
 interface CalculateRatingsRequest {
   guild_id: string;
-  discord_user_id?: string; // If provided, only recalculate for this player
-  player_ids?: string[]; // If provided, recalculate for these players (from EA sync)
-  trigger?: string; // Source of the trigger (e.g., 'ea_sync', 'manual')
+  discord_user_id?: string;
+  player_ids?: string[];
+  trigger?: string;
 }
 
 serve(async (req) => {
@@ -36,7 +35,6 @@ serve(async (req) => {
 
     console.log(`[calculate-ratings] Calculating for guild ${guild_id}, trigger: ${trigger || 'manual'}`);
 
-    // Determine which players to calculate
     let playerIdsToProcess: string[] = [];
     
     if (player_ids && player_ids.length > 0) {
@@ -46,30 +44,29 @@ serve(async (req) => {
       playerIdsToProcess = [discord_user_id];
     }
 
-    // Ensure player_ratings records exist for all players being processed
+    // BATCH: Ensure player_ratings records exist
     if (playerIdsToProcess.length > 0) {
-      for (const playerId of playerIdsToProcess) {
-        // Check if rating record exists
-        const { data: existing } = await supabase
-          .from("player_ratings")
-          .select("id")
-          .eq("guild_id", guild_id)
-          .eq("discord_user_id", playerId)
-          .maybeSingle();
+      const { data: existingRatings } = await supabase
+        .from("player_ratings")
+        .select("discord_user_id")
+        .eq("guild_id", guild_id)
+        .in("discord_user_id", playerIdsToProcess);
 
-        if (!existing) {
-          // Create initial rating record
-          await supabase.from("player_ratings").insert({
-            guild_id,
-            discord_user_id: playerId,
-            overall_rating: 50,
-            games_played: 0,
-            wins: 0,
-            losses: 0,
-            draws: 0,
-          });
-          console.log(`[calculate-ratings] Created rating record for ${playerId}`);
-        }
+      const existingIds = new Set((existingRatings || []).map(r => r.discord_user_id));
+      const newPlayers = playerIdsToProcess.filter(id => !existingIds.has(id));
+
+      if (newPlayers.length > 0) {
+        const newRecords = newPlayers.map(playerId => ({
+          guild_id,
+          discord_user_id: playerId,
+          overall_rating: 50,
+          games_played: 0,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+        }));
+        await supabase.from("player_ratings").insert(newRecords);
+        console.log(`[calculate-ratings] Created ${newPlayers.length} new rating records`);
       }
     }
 
@@ -84,47 +81,187 @@ serve(async (req) => {
     }
 
     const { data: players, error } = await query;
-
     if (error) throw error;
 
-    const results = [];
+    if (!players || players.length === 0) {
+      return new Response(
+        JSON.stringify({ success: true, players_updated: 0, results: [] }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    for (const player of players || []) {
-      const newRating = await calculatePlayerRating(supabase, guild_id, player);
-      results.push({
-        discord_user_id: player.discord_user_id,
-        old_rating: player.overall_rating,
-        new_rating: newRating,
+    // BATCH: Get all player stats in one query
+    const playerIds = players.map(p => p.discord_user_id);
+    const { data: allStats } = await supabase
+      .from("player_stats")
+      .select("*")
+      .eq("guild_id", guild_id)
+      .in("discord_user_id", playerIds);
+
+    // Group stats by player
+    const statsByPlayer = new Map<string, any[]>();
+    for (const stat of (allStats || [])) {
+      const existing = statsByPlayer.get(stat.discord_user_id) || [];
+      existing.push(stat);
+      statsByPlayer.set(stat.discord_user_id, existing);
+    }
+
+    // Process players in parallel batches of 10
+    const BATCH_SIZE = 10;
+    const results: any[] = [];
+    const ratingUpdates: any[] = [];
+
+    for (let i = 0; i < players.length; i += BATCH_SIZE) {
+      const batch = players.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async (player) => {
+          const playerStats = statsByPlayer.get(player.discord_user_id) || [];
+          const { rating, update } = calculatePlayerRatingFast(player, playerStats);
+          ratingUpdates.push({ id: player.id, ...update });
+          return {
+            discord_user_id: player.discord_user_id,
+            old_rating: player.overall_rating,
+            new_rating: rating,
+          };
+        })
+      );
+      results.push(...batchResults);
+    }
+
+    // BATCH: Update all ratings at once
+    for (const update of ratingUpdates) {
+      await supabase
+        .from("player_ratings")
+        .update({
+          overall_rating: update.overall_rating,
+          draft_performance_rating: update.draft_performance_rating,
+          club_performance_rating: update.club_performance_rating,
+          games_played: update.games_played,
+          wins: update.wins,
+          losses: update.losses,
+          draws: update.draws,
+          total_goals: update.total_goals,
+          total_assists: update.total_assists,
+          avg_match_rating: update.avg_match_rating,
+          baseline_synced: update.baseline_synced,
+          last_game_at: update.last_game_at,
+          last_calculated_at: new Date().toISOString(),
+        })
+        .eq("id", update.id);
+    }
+
+    // BATCH: Update player summaries in parallel batches
+    const summaryPlayerIds = results.map(r => r.discord_user_id);
+    
+    // Pre-fetch all data needed for summaries
+    const [streakData, achievementData, reliabilityData, winsData, profileData, existingSummaryData] = await Promise.all([
+      supabase.from("player_streaks").select("*").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
+      supabase.from("player_achievements").select("discord_user_id, achievement_icon").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
+      supabase.from("player_reliability").select("discord_user_id, reliability_score").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
+      supabase.from("competition_wins").select("discord_user_id, competition_type, tier").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds).eq("verified", true),
+      supabase.from("profiles").select("discord_user_id, discord_username, primary_position").in("discord_user_id", summaryPlayerIds),
+      supabase.from("player_summary").select("discord_user_id, games_played, wins, goals, assists, losses, draws").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
+    ]);
+
+    // Index data by player
+    const streakMap = new Map((streakData.data || []).map(s => [s.discord_user_id, s]));
+    const achievementMap = new Map<string, any[]>();
+    for (const a of (achievementData.data || [])) {
+      const arr = achievementMap.get(a.discord_user_id) || [];
+      arr.push(a);
+      achievementMap.set(a.discord_user_id, arr);
+    }
+    const reliabilityMap = new Map((reliabilityData.data || []).map(r => [r.discord_user_id, r]));
+    const winsMap = new Map<string, any[]>();
+    for (const w of (winsData.data || [])) {
+      const arr = winsMap.get(w.discord_user_id) || [];
+      arr.push(w);
+      winsMap.set(w.discord_user_id, arr);
+    }
+    const profileMap = new Map((profileData.data || []).map(p => [p.discord_user_id, p]));
+    const existingMap = new Map((existingSummaryData.data || []).map(e => [e.discord_user_id, e]));
+
+    // Build summary upserts
+    const summaryUpserts = [];
+    for (const result of results) {
+      const discordUserId = result.discord_user_id;
+      const ratingUpdate = ratingUpdates.find(r => r.discord_user_id === discordUserId || players.find(p => p.id === r.id)?.discord_user_id === discordUserId);
+      const rating = players.find(p => p.discord_user_id === discordUserId);
+      
+      const streak = streakMap.get(discordUserId);
+      const achievements = (achievementMap.get(discordUserId) || []).slice(0, 3);
+      const reliability = reliabilityMap.get(discordUserId);
+      const wins = winsMap.get(discordUserId) || [];
+      const profile = profileMap.get(discordUserId);
+      const existing = existingMap.get(discordUserId);
+
+      const currentStreak = streak?.current_win_streak || -(streak?.current_loss_streak || 0);
+      const streakType = currentStreak > 2 ? "hot" : currentStreak < -2 ? "cold" : "neutral";
+
+      const tournamentWins = wins.filter((w: any) => w.competition_type === "tournament").length;
+      const leagueWins = wins.filter((w: any) => w.competition_type === "league").length;
+      const majorWins = wins.filter((w: any) => ["major", "div1"].includes(w.tier)).length;
+
+      const gamesPlayed = Math.max(existing?.games_played || 0, ratingUpdate?.games_played || rating?.games_played || 0);
+      const totalWins = Math.max(existing?.wins || 0, ratingUpdate?.wins || rating?.wins || 0);
+      const totalGoals = Math.max(existing?.goals || 0, ratingUpdate?.total_goals || rating?.total_goals || 0);
+      const totalAssists = Math.max(existing?.assists || 0, ratingUpdate?.total_assists || rating?.total_assists || 0);
+      const totalLosses = Math.max(existing?.losses || 0, ratingUpdate?.losses || rating?.losses || 0);
+      const totalDraws = Math.max(existing?.draws || 0, ratingUpdate?.draws || rating?.draws || 0);
+      const winRate = gamesPlayed > 0 ? (totalWins / gamesPlayed) * 100 : 0;
+
+      summaryUpserts.push({
+        guild_id,
+        discord_user_id: discordUserId,
+        discord_username: profile?.discord_username,
+        overall_rating: result.new_rating,
+        form_rating: streak?.form_rating,
+        reliability_score: reliability?.reliability_score || 100,
+        games_played: gamesPlayed,
+        wins: totalWins,
+        losses: totalLosses,
+        draws: totalDraws,
+        win_rate: winRate,
+        goals: totalGoals,
+        assists: totalAssists,
+        current_streak: currentStreak,
+        streak_type: streakType,
+        longest_win_streak: streak?.longest_win_streak || 0,
+        achievement_count: achievements.length,
+        top_achievements: achievements.map((a: any) => a.achievement_icon),
+        tournament_wins: tournamentWins,
+        league_wins: leagueWins,
+        major_wins: majorWins,
+        primary_position: profile?.primary_position,
+        last_active_at: ratingUpdate?.last_game_at || rating?.last_game_at,
       });
     }
 
-    // Update player summaries
-    for (const result of results) {
-      await updatePlayerSummary(supabase, guild_id, result.discord_user_id);
+    // Batch upsert summaries
+    if (summaryUpserts.length > 0) {
+      await supabase
+        .from("player_summary")
+        .upsert(summaryUpserts, { onConflict: "guild_id,discord_user_id" });
     }
 
-    // Award achievements for updated players
+    // Trigger achievement check (fire and forget)
     if (results.length > 0) {
-      try {
-        const playerIdsToCheck = results.map(r => r.discord_user_id);
-        const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-        const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-        
-        await fetch(`${supabaseUrl}/functions/v1/award-achievements`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabaseKey}`,
-          },
-          body: JSON.stringify({
-            guild_id,
-            player_ids: playerIdsToCheck,
-          }),
-        });
-        console.log(`[calculate-ratings] Triggered achievement check for ${playerIdsToCheck.length} players`);
-      } catch (e) {
-        console.error("[calculate-ratings] Failed to trigger achievement check:", e);
-      }
+      const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+      
+      fetch(`${supabaseUrl}/functions/v1/award-achievements`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
+          guild_id,
+          player_ids: summaryPlayerIds,
+        }),
+      }).catch(e => console.error("[calculate-ratings] Achievement check failed:", e));
+      
+      console.log(`[calculate-ratings] Triggered achievement check for ${summaryPlayerIds.length} players`);
     }
 
     console.log(`[calculate-ratings] Recalculated ${results.length} players`);
@@ -146,252 +283,124 @@ serve(async (req) => {
   }
 });
 
-async function calculatePlayerRating(supabase: any, guildId: string, player: any): Promise<number> {
-  // Calculate draft performance rating (win rate, goals, assists, EA rating avg)
-  const draftRating = await calculateDraftPerformance(supabase, guildId, player, "draft");
-  
-  // Calculate club performance rating from EA API matches
-  const clubRating = await calculateDraftPerformance(supabase, guildId, player, "club");
-  
-  // Peer rating already calculated on evaluation submission
+function calculatePlayerRatingFast(player: any, allStats: any[]): { rating: number; update: any } {
+  // Separate stats by type
+  const draftStats = allStats.filter(s => s.match_type === "draft");
+  const clubStats = allStats.filter(s => s.match_type === "club");
+  const baselineStats = allStats.filter(s => s.match_type === "ea_aggregate");
+
+  const draftRating = calculatePerformanceRating(draftStats, baselineStats);
+  const clubRating = calculatePerformanceRating(clubStats, baselineStats);
   const peerRating = player.peer_rating || 50;
-  
-  // Build quality rating
   const buildRating = player.build_quality_rating || 50;
 
-  // Calculate weighted overall
   const overall = 
-    (draftRating * WEIGHTS.draft_performance) +
-    (clubRating * WEIGHTS.club_performance) +
+    (draftRating.rating * WEIGHTS.draft_performance) +
+    (clubRating.rating * WEIGHTS.club_performance) +
     (peerRating * WEIGHTS.peer_evaluation) +
     (buildRating * WEIGHTS.build_quality);
 
-  // Apply inactivity decay if player hasn't played in 14+ days
+  // Apply inactivity decay
   const daysSinceLastGame = player.last_game_at 
     ? Math.floor((Date.now() - new Date(player.last_game_at).getTime()) / (1000 * 60 * 60 * 24))
     : 0;
 
   let finalRating = overall;
   if (daysSinceLastGame > 14) {
-    // Decay 1% per day after 14 days, max 20% decay
     const decayDays = Math.min(daysSinceLastGame - 14, 20);
     const decayMultiplier = 1 - (decayDays * 0.01);
     finalRating = overall * decayMultiplier;
   }
 
-  // Clamp between 0-100
   finalRating = Math.max(0, Math.min(100, finalRating));
 
-  // Update the rating
-  await supabase
-    .from("player_ratings")
-    .update({
-      overall_rating: finalRating,
-      draft_performance_rating: draftRating,
-      club_performance_rating: clubRating,
-      last_calculated_at: new Date().toISOString(),
-    })
-    .eq("id", player.id);
+  // Combine stats
+  const trackedStats = [...draftStats, ...clubStats];
+  const trackedGames = trackedStats.length;
+  const trackedWins = trackedStats.filter(s => s.won === true).length;
+  const trackedLosses = trackedStats.filter(s => s.won === false).length;
+  const trackedDraws = trackedStats.filter(s => s.won === null).length;
+  const trackedGoals = trackedStats.reduce((sum, s) => sum + (s.goals || 0), 0);
+  const trackedAssists = trackedStats.reduce((sum, s) => sum + (s.assists || 0), 0);
 
-  return finalRating;
+  // Baseline stats
+  let baselineGoals = 0, baselineAssists = 0, baselineGames = 0;
+  for (const bs of baselineStats) {
+    baselineGoals = Math.max(baselineGoals, bs.goals || 0);
+    baselineAssists = Math.max(baselineAssists, bs.assists || 0);
+  }
+  if (baselineGoals + baselineAssists > 0) {
+    baselineGames = Math.floor((baselineGoals + baselineAssists) / 0.5);
+  }
+
+  const totalGames = baselineGames + trackedGames;
+  const baselineWins = Math.floor(baselineGames * 0.5);
+  const baselineLosses = Math.floor(baselineGames * 0.3);
+  const baselineDraws = baselineGames - baselineWins - baselineLosses;
+
+  // EA rating average
+  const gamesWithRating = trackedStats.filter(s => s.ea_match_rating !== null && s.ea_match_rating > 0);
+  const avgEARating = gamesWithRating.length > 0
+    ? gamesWithRating.reduce((sum, s) => sum + s.ea_match_rating, 0) / gamesWithRating.length
+    : null;
+
+  return {
+    rating: finalRating,
+    update: {
+      overall_rating: finalRating,
+      draft_performance_rating: draftRating.rating,
+      club_performance_rating: clubRating.rating,
+      games_played: totalGames,
+      wins: baselineWins + trackedWins,
+      losses: baselineLosses + trackedLosses,
+      draws: baselineDraws + trackedDraws,
+      total_goals: baselineGoals + trackedGoals,
+      total_assists: baselineAssists + trackedAssists,
+      avg_match_rating: avgEARating,
+      baseline_synced: baselineGames > 0,
+      last_game_at: trackedStats.length > 0 ? new Date().toISOString() : player.last_game_at,
+      discord_user_id: player.discord_user_id,
+    },
+  };
 }
 
-async function calculateDraftPerformance(supabase: any, guildId: string, player: any, matchType: string): Promise<number> {
-  // Get all individual match stats for this player of the specified match type
-  // EXCLUDE ea_aggregate as those are career summaries, not individual games
-  const { data: stats } = await supabase
-    .from("player_stats")
-    .select("*")
-    .eq("guild_id", guildId)
-    .eq("discord_user_id", player.discord_user_id)
-    .eq("match_type", matchType)
-    .not("match_type", "eq", "ea_aggregate");
-
-  // Also get EA aggregate baseline stats (career stats from EA roster)
-  const { data: baselineStats } = await supabase
-    .from("player_stats")
-    .select("*")
-    .eq("guild_id", guildId)
-    .eq("discord_user_id", player.discord_user_id)
-    .eq("match_type", "ea_aggregate");
-
-  // Sum baseline career stats from EA aggregate records
-  let baselineGames = 0;
-  let baselineWins = 0;
-  let baselineLosses = 0;
-  let baselineDraws = 0;
-  let baselineGoals = 0;
-  let baselineAssists = 0;
-
-  if (baselineStats && baselineStats.length > 0) {
-    // EA aggregate records contain career totals - use the highest values as baseline
+function calculatePerformanceRating(stats: any[], baselineStats: any[]): { rating: number } {
+  if (stats.length === 0) {
+    // Use baseline for estimated rating
+    let baselineGoals = 0, baselineAssists = 0;
     for (const bs of baselineStats) {
       baselineGoals = Math.max(baselineGoals, bs.goals || 0);
       baselineAssists = Math.max(baselineAssists, bs.assists || 0);
     }
-    // Estimate baseline games from goals/assists ratio (roughly 0.5 contributions per game average)
-    const estimatedGames = Math.floor((baselineGoals + baselineAssists) / 0.5);
-    baselineGames = estimatedGames;
-    // Estimate 50% win rate for baseline
-    baselineWins = Math.floor(baselineGames * 0.5);
-    baselineLosses = Math.floor(baselineGames * 0.3);
-    baselineDraws = baselineGames - baselineWins - baselineLosses;
-  }
-
-  if (!stats || stats.length === 0) {
-    // Use baseline stats only if no tracked individual matches
-    if (baselineGames > 0) {
-      await supabase
-        .from("player_ratings")
-        .update({
-          games_played: baselineGames,
-          wins: baselineWins,
-          losses: baselineLosses,
-          draws: baselineDraws,
-          total_goals: baselineGoals,
-          total_assists: baselineAssists,
-          baseline_synced: true,
-        })
-        .eq("id", player.id);
-      
-      // Return estimated rating based on baseline
-      const estimatedWinRate = baselineGames > 0 ? (baselineWins / baselineGames) * 100 : 50;
-      return estimatedWinRate;
+    if (baselineGoals + baselineAssists > 0) {
+      return { rating: 50 }; // Default estimated rating from baseline
     }
-    return 50; // Default rating
+    return { rating: 50 };
   }
 
-  // Count tracked individual games
   const trackedGames = stats.length;
-  const trackedWins = stats.filter((s: any) => s.won === true).length;
-  const trackedLosses = stats.filter((s: any) => s.won === false).length;
-  const trackedDraws = stats.filter((s: any) => s.won === null).length;
-  
-  // Sum goals/assists from individual matches
-  const trackedGoals = stats.reduce((sum: number, s: any) => sum + (s.goals || 0), 0);
-  const trackedAssists = stats.reduce((sum: number, s: any) => sum + (s.assists || 0), 0);
+  const trackedWins = stats.filter(s => s.won === true).length;
+  const trackedGoals = stats.reduce((sum, s) => sum + (s.goals || 0), 0);
+  const trackedAssists = stats.reduce((sum, s) => sum + (s.assists || 0), 0);
 
-  // Combine baseline + tracked stats for totals displayed
-  const totalGames = baselineGames + trackedGames;
-  const totalWins = baselineWins + trackedWins;
-  const totalLosses = baselineLosses + trackedLosses;
-  const totalDraws = baselineDraws + trackedDraws;
-  const totalGoals = baselineGoals + trackedGoals;
-  const totalAssists = baselineAssists + trackedAssists;
-
-  // Calculate performance rating based on TRACKED games only (more accurate)
   const winRate = trackedGames > 0 ? (trackedWins / trackedGames) * 100 : 50;
   const avgGoals = trackedGames > 0 ? trackedGoals / trackedGames : 0;
   const avgAssists = trackedGames > 0 ? trackedAssists / trackedGames : 0;
 
-  // EA match ratings if available
-  const gamesWithRating = stats.filter((s: any) => s.ea_match_rating !== null && s.ea_match_rating > 0);
+  const gamesWithRating = stats.filter(s => s.ea_match_rating !== null && s.ea_match_rating > 0);
   const avgEARating = gamesWithRating.length > 0
-    ? gamesWithRating.reduce((sum: number, s: any) => sum + s.ea_match_rating, 0) / gamesWithRating.length
+    ? gamesWithRating.reduce((sum, s) => sum + s.ea_match_rating, 0) / gamesWithRating.length
     : null;
 
-  // Calculate performance rating (weighted formula)
-  // Win rate: 50% weight, Goals+Assists contribution: 30%, EA rating: 20%
   let performanceRating = winRate * 0.5;
-
-  // Goals+Assists contribution (normalize: 1 G/A per game = good)
   const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
   performanceRating += gaContribution * 0.3;
 
-  // EA rating if available (already 0-10 scale, convert to 0-100)
   if (avgEARating !== null) {
     performanceRating += (avgEARating * 10) * 0.2;
   } else {
-    // If no EA rating, redistribute weight to win rate
     performanceRating += winRate * 0.2;
   }
 
-  // Update player_ratings with combined totals (baseline + tracked)
-  await supabase
-    .from("player_ratings")
-    .update({
-      games_played: totalGames,
-      wins: totalWins,
-      losses: totalLosses,
-      draws: totalDraws,
-      total_goals: totalGoals,
-      total_assists: totalAssists,
-      avg_match_rating: avgEARating,
-      baseline_synced: baselineGames > 0,
-      last_game_at: stats.length > 0 ? new Date().toISOString() : player.last_game_at,
-    })
-    .eq("id", player.id);
-
-  return Math.max(0, Math.min(100, performanceRating));
-}
-
-async function updatePlayerSummary(supabase: any, guildId: string, discordUserId: string) {
-  // Gather all data for the summary
-  const [ratingData, streakData, achievementData, reliabilityData, winsData, profileData, existingSummary] = await Promise.all([
-    supabase.from("player_ratings").select("*").eq("guild_id", guildId).eq("discord_user_id", discordUserId).maybeSingle(),
-    supabase.from("player_streaks").select("*").eq("guild_id", guildId).eq("discord_user_id", discordUserId).maybeSingle(),
-    supabase.from("player_achievements").select("achievement_icon").eq("guild_id", guildId).eq("discord_user_id", discordUserId).order("earned_at", { ascending: false }).limit(3),
-    supabase.from("player_reliability").select("reliability_score").eq("guild_id", guildId).eq("discord_user_id", discordUserId).maybeSingle(),
-    supabase.from("competition_wins").select("competition_type, tier").eq("guild_id", guildId).eq("discord_user_id", discordUserId).eq("verified", true),
-    supabase.from("profiles").select("discord_username, primary_position").eq("discord_user_id", discordUserId).maybeSingle(),
-    supabase.from("player_summary").select("games_played, wins, goals, assists, losses, draws").eq("guild_id", guildId).eq("discord_user_id", discordUserId).maybeSingle(),
-  ]);
-
-  const rating = ratingData.data;
-  const streak = streakData.data;
-  const achievements = achievementData.data || [];
-  const reliability = reliabilityData.data;
-  const wins = winsData.data || [];
-  const profile = profileData.data;
-  const existing = existingSummary.data;
-
-  // Calculate streak info
-  const currentStreak = streak?.current_win_streak || -(streak?.current_loss_streak || 0);
-  const streakType = currentStreak > 2 ? "hot" : currentStreak < -2 ? "cold" : "neutral";
-
-  // Count competition wins
-  const tournamentWins = wins.filter((w: any) => w.competition_type === "tournament").length;
-  const leagueWins = wins.filter((w: any) => w.competition_type === "league").length;
-  const majorWins = wins.filter((w: any) => ["major", "div1"].includes(w.tier)).length;
-
-  // Use the HIGHER value between EA member board (existing) and player_ratings
-  // EA member board data from ea-sync-local is the source of truth for aggregate career stats
-  const gamesPlayed = Math.max(existing?.games_played || 0, rating?.games_played || 0);
-  const totalWins = Math.max(existing?.wins || 0, rating?.wins || 0);
-  const totalGoals = Math.max(existing?.goals || 0, rating?.total_goals || 0);
-  const totalAssists = Math.max(existing?.assists || 0, rating?.total_assists || 0);
-  const totalLosses = Math.max(existing?.losses || 0, rating?.losses || 0);
-  const totalDraws = Math.max(existing?.draws || 0, rating?.draws || 0);
-
-  // Calculate win rate from the higher values
-  const winRate = gamesPlayed > 0 ? (totalWins / gamesPlayed) * 100 : 0;
-
-  // Upsert summary - preserve EA member board stats if higher
-  await supabase
-    .from("player_summary")
-    .upsert({
-      guild_id: guildId,
-      discord_user_id: discordUserId,
-      discord_username: profile?.discord_username,
-      overall_rating: rating?.overall_rating || 50,
-      form_rating: streak?.form_rating,
-      reliability_score: reliability?.reliability_score || 100,
-      games_played: gamesPlayed,
-      wins: totalWins,
-      losses: totalLosses,
-      draws: totalDraws,
-      win_rate: winRate,
-      goals: totalGoals,
-      assists: totalAssists,
-      current_streak: currentStreak,
-      streak_type: streakType,
-      longest_win_streak: streak?.longest_win_streak || 0,
-      achievement_count: achievements.length,
-      top_achievements: achievements.map((a: any) => a.achievement_icon),
-      tournament_wins: tournamentWins,
-      league_wins: leagueWins,
-      major_wins: majorWins,
-      primary_position: profile?.primary_position,
-      last_active_at: rating?.last_game_at,
-    }, { onConflict: "guild_id,discord_user_id" });
+  return { rating: Math.max(0, Math.min(100, performanceRating)) };
 }
