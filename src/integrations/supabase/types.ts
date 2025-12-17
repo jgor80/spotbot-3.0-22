@@ -670,6 +670,7 @@ export type Database = {
           team_avg_rating: number | null
           team_id: string | null
           updated_at: string
+          vibe_chemistry_score: number | null
           win_probability: number | null
         }
         Insert: {
@@ -687,6 +688,7 @@ export type Database = {
           team_avg_rating?: number | null
           team_id?: string | null
           updated_at?: string
+          vibe_chemistry_score?: number | null
           win_probability?: number | null
         }
         Update: {
@@ -704,6 +706,7 @@ export type Database = {
           team_avg_rating?: number | null
           team_id?: string | null
           updated_at?: string
+          vibe_chemistry_score?: number | null
           win_probability?: number | null
         }
         Relationships: [
@@ -773,13 +776,16 @@ export type Database = {
           consistency: number | null
           created_at: string
           draft_id: string | null
+          enjoyment: number | null
           evaluated_discord_id: string
           evaluator_discord_id: string
           game_iq: number | null
           guild_id: string
           id: string
           overall_score: number | null
+          play_again: string | null
           position_played: string | null
+          team_energy: number | null
           technical_skill: number | null
           trust_weighted_score: number | null
           work_ethic: number | null
@@ -791,13 +797,16 @@ export type Database = {
           consistency?: number | null
           created_at?: string
           draft_id?: string | null
+          enjoyment?: number | null
           evaluated_discord_id: string
           evaluator_discord_id: string
           game_iq?: number | null
           guild_id: string
           id?: string
           overall_score?: number | null
+          play_again?: string | null
           position_played?: string | null
+          team_energy?: number | null
           technical_skill?: number | null
           trust_weighted_score?: number | null
           work_ethic?: number | null
@@ -809,13 +818,16 @@ export type Database = {
           consistency?: number | null
           created_at?: string
           draft_id?: string | null
+          enjoyment?: number | null
           evaluated_discord_id?: string
           evaluator_discord_id?: string
           game_iq?: number | null
           guild_id?: string
           id?: string
           overall_score?: number | null
+          play_again?: string | null
           position_played?: string | null
+          team_energy?: number | null
           technical_skill?: number | null
           trust_weighted_score?: number | null
           work_ethic?: number | null
@@ -1604,6 +1616,7 @@ export type Database = {
           top_achievements: string[]
           tournament_wins: number
           updated_at: string
+          vibe_score: number | null
           win_rate: number
           wins: number
         }
@@ -1655,6 +1668,7 @@ export type Database = {
           top_achievements?: string[]
           tournament_wins?: number
           updated_at?: string
+          vibe_score?: number | null
           win_rate?: number
           wins?: number
         }
@@ -1706,8 +1720,60 @@ export type Database = {
           top_achievements?: string[]
           tournament_wins?: number
           updated_at?: string
+          vibe_score?: number | null
           win_rate?: number
           wins?: number
+        }
+        Relationships: []
+      }
+      player_vibe_chemistry: {
+        Row: {
+          avg_enjoyment: number | null
+          avg_team_energy: number | null
+          avoid_count: number
+          games_together: number
+          guild_id: string
+          id: string
+          last_played_together: string | null
+          neutral_count: number
+          player_a_discord_id: string
+          player_b_discord_id: string
+          prefer_count: number
+          updated_at: string
+          vibe_score: number | null
+          vibe_status: string | null
+        }
+        Insert: {
+          avg_enjoyment?: number | null
+          avg_team_energy?: number | null
+          avoid_count?: number
+          games_together?: number
+          guild_id: string
+          id?: string
+          last_played_together?: string | null
+          neutral_count?: number
+          player_a_discord_id: string
+          player_b_discord_id: string
+          prefer_count?: number
+          updated_at?: string
+          vibe_score?: number | null
+          vibe_status?: string | null
+        }
+        Update: {
+          avg_enjoyment?: number | null
+          avg_team_energy?: number | null
+          avoid_count?: number
+          games_together?: number
+          guild_id?: string
+          id?: string
+          last_played_together?: string | null
+          neutral_count?: number
+          player_a_discord_id?: string
+          player_b_discord_id?: string
+          prefer_count?: number
+          updated_at?: string
+          vibe_score?: number | null
+          vibe_status?: string | null
         }
         Relationships: []
       }
