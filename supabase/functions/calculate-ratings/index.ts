@@ -427,6 +427,26 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
     ? gamesWithRating.reduce((sum, s) => sum + s.ea_match_rating, 0) / gamesWithRating.length
     : null;
 
+  // Position difficulty multipliers - harder positions get boosted to normalize ratings
+  // GK/Defenders get fewer chances to impact match rating, Forwards get more
+  const EA_RATING_MULTIPLIERS = {
+    GK: 1.15,        // Hardest to get high ratings - 15% boost
+    DEFENDER: 1.10,  // Hard to get high ratings - 10% boost
+    MIDFIELDER: 1.00, // Baseline - no adjustment
+    FORWARD: 0.90,   // Easiest to get high ratings - 10% reduction
+  };
+
+  // Apply position-based normalization to EA rating
+  const getPositionMultiplier = () => {
+    if (isGK) return EA_RATING_MULTIPLIERS.GK;
+    if (isDefender) return EA_RATING_MULTIPLIERS.DEFENDER;
+    if (isMidfielder) return EA_RATING_MULTIPLIERS.MIDFIELDER;
+    return EA_RATING_MULTIPLIERS.FORWARD;
+  };
+  
+  const positionMultiplier = getPositionMultiplier();
+  const normalizedEARating = avgEARating !== null ? Math.min(10, avgEARating * positionMultiplier) : null;
+
   let performanceRating: number;
 
   if (isGK) {
@@ -440,9 +460,9 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
     // Clean sheet rate
     performanceRating += cleanSheetRate * 0.20;
     
-    // EA rating heavily weighted (captures overall GK performance)
-    if (avgEARating !== null) {
-      performanceRating += (avgEARating * 10) * 0.40;
+    // EA rating heavily weighted (captures overall GK performance) - now normalized
+    if (normalizedEARating !== null) {
+      performanceRating += (normalizedEARating * 10) * 0.40;
     } else {
       // Fallback: blend clean sheets + goals conceded penalty
       const gcPenalty = Math.max(0, 100 - avgGoalsConceded * 30);
@@ -463,9 +483,9 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
     const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
     performanceRating += gaContribution * 0.05;
     
-    // EA rating heavily weighted
-    if (avgEARating !== null) {
-      performanceRating += (avgEARating * 10) * 0.25;
+    // EA rating heavily weighted - now normalized
+    if (normalizedEARating !== null) {
+      performanceRating += (normalizedEARating * 10) * 0.25;
     } else {
       // Fallback: use defensive + clean sheet blend
       performanceRating += (defensiveContribution * 0.5 + cleanSheetRate * 0.5) * 0.25;
@@ -484,8 +504,9 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
     // Slight clean sheet bonus for defensive mids
     performanceRating += cleanSheetRate * 0.10;
     
-    if (avgEARating !== null) {
-      performanceRating += (avgEARating * 10) * 0.10;
+    // EA rating - no normalization needed (baseline)
+    if (normalizedEARating !== null) {
+      performanceRating += (normalizedEARating * 10) * 0.10;
     } else {
       performanceRating += winRate * 0.10;
     }
@@ -495,8 +516,9 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
     const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
     performanceRating += gaContribution * 0.30;
 
-    if (avgEARating !== null) {
-      performanceRating += (avgEARating * 10) * 0.20;
+    // EA rating reduced for forwards (easier to get high ratings)
+    if (normalizedEARating !== null) {
+      performanceRating += (normalizedEARating * 10) * 0.20;
     } else {
       performanceRating += winRate * 0.20;
     }
