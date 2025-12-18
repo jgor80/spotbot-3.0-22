@@ -764,9 +764,10 @@ Deno.serve(async (req) => {
           
           // Also sync recent matches for match-by-match tracking
           if (syncType === 'full') {
-            // Fetch both division matches (matchType9) and cup/competition matches (matchType13)
+            // Fetch division matches (matchType9), cup/competition matches (matchType13), and friendly matches (matchType22)
             const divisionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType9')
             const competitionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType13')
+            const friendlyMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType22')
             
             // Process division matches
             const matches = divisionMatches
@@ -933,6 +934,10 @@ Deno.serve(async (req) => {
 
                       guildUpdatedPlayerIds.add(profile.discord_user_id)
                       await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id)
+                    }
+                  }
+                }
+              }
             }
             
             // Process competition/cup matches (matchType13) - these are tournament/league games
@@ -1077,7 +1082,146 @@ Deno.serve(async (req) => {
                 }
               }
             }
-          }
+            
+            // Process friendly matches (matchType22)
+            if (friendlyMatches && friendlyMatches.length > 0) {
+              console.log(`[sync-ea-stats] Processing ${friendlyMatches.length} friendly matches for ${club.name}`)
+              
+              const { data: existingFriendlyMatches } = await supabase
+                .from('club_matches')
+                .select('ea_match_id')
+                .eq('guild_id', guildId)
+                .eq('club_key', club.key)
+              
+              const existingFriendlyIds = new Set((existingFriendlyMatches || []).map((m: any) => m.ea_match_id))
+              
+              for (const matchData of friendlyMatches) {
+                const matchId = matchData.matchId?.toString()
+                if (!matchId || existingFriendlyIds.has(matchId)) {
+                  totalSkipped++
+                  continue
+                }
+                
+                const ourClubData = matchData.clubs?.[club.ea_club_id]
+                const opponentClubId = Object.keys(matchData.clubs || {}).find((id: string) => id !== club.ea_club_id)
+                const opponentClubData = opponentClubId ? matchData.clubs[opponentClubId] : null
+                
+                const scoreFor = parseInt(ourClubData?.goals || 0)
+                const scoreAgainst = parseInt(opponentClubData?.goals || 0)
+                
+                let result = 'draw'
+                if (scoreFor > scoreAgainst) result = 'win'
+                else if (scoreFor < scoreAgainst) result = 'loss'
+                
+                const playerStats: any[] = []
+                const players = matchData.players?.[club.ea_club_id] || {}
+                
+                for (const [, pStats] of Object.entries(players) as any) {
+                  // Calculate total saves from all save types
+                  const savesDiving = parseInt(pStats.ballDiveSaves || pStats.ballDivesaves || 0)
+                  const savesCross = parseInt(pStats.crossSaves || pStats.crosssaves || 0)
+                  const savesParry = parseInt(pStats.parrySaves || pStats.parrysaves || 0)
+                  const savesPunch = parseInt(pStats.punchSaves || pStats.punchsaves || 0)
+                  const savesReflex = parseInt(pStats.reflexSaves || pStats.reflexsaves || 0)
+                  const totalSaves = savesDiving + savesCross + savesParry + savesPunch + savesReflex
+                  
+                  // Clean sheet detection from EA data
+                  const isCleanSheet = pStats.cleansheetsany === '1' || pStats.cleansheetsdef === '1' || pStats.cleansheetsgk === '1'
+                  
+                  playerStats.push({
+                    ea_username: pStats.playername,
+                    goals: parseInt(pStats.goals || 0),
+                    assists: parseInt(pStats.assists || 0),
+                    rating: parseFloat(pStats.rating || 0),
+                    position: pStats.pos,
+                    motm: pStats.mom === '1',
+                    shots: parseInt(pStats.shots || 0),
+                    tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
+                    tackle_attempts: parseInt(pStats.tackleattempts || pStats.tackleAttempts || 0),
+                    passes_made: parseInt(pStats.passesmade || pStats.passesMade || 0),
+                    pass_attempts: parseInt(pStats.passattempts || pStats.passAttempts || 0),
+                    red_cards: pStats.redcards === '1',
+                    saves: totalSaves || parseInt(pStats.saves || pStats.gksaves || 0),
+                    saves_diving: savesDiving,
+                    saves_cross: savesCross,
+                    saves_parry: savesParry,
+                    saves_punch: savesPunch,
+                    saves_reflex: savesReflex,
+                    goals_conceded: parseInt(pStats.goalsconceded || pStats.goalsConceded || 0),
+                    clean_sheet: isCleanSheet,
+                    interceptions: parseInt(pStats.interceptions || 0),
+                    clearances: parseInt(pStats.clearances || 0),
+                    possession: parseFloat(pStats.possession || 0),
+                    dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
+                    fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
+                    offsides: parseInt(pStats.offsides || 0),
+                    archetypeid: pStats.archetypeid || pStats.archetypeId || null
+                  })
+                }
+                
+                const { error: insertError } = await supabase.from('club_matches').insert({
+                  guild_id: guildId,
+                  club_key: club.key,
+                  ea_match_id: matchId,
+                  match_type: 'friendly',
+                  result,
+                  score_for: scoreFor,
+                  score_against: scoreAgainst,
+                  opponent_club_name: opponentClubData?.details?.name || opponentClubData?.name || 'Unknown',
+                  opponent_club_id: opponentClubId,
+                  match_data: matchData,
+                  player_stats: playerStats
+                })
+                
+                if (!insertError) {
+                  totalSynced++
+                  existingFriendlyIds.add(matchId)
+                  
+                  // Record player stats for friendly matches
+                  for (const pStat of playerStats) {
+                    const { data: profile } = await supabase
+                      .from('profiles')
+                      .select('discord_user_id')
+                      .eq('ea_username', pStat.ea_username)
+                      .maybeSingle()
+                    
+                    if (profile && !profile.discord_user_id.startsWith('ea_')) {
+                      await supabase.from('player_stats').insert({
+                        guild_id: guildId,
+                        discord_user_id: profile.discord_user_id,
+                        ea_match_id: matchId,
+                        match_type: 'friendly',
+                        goals: pStat.goals,
+                        assists: pStat.assists,
+                        clean_sheet: pStat.clean_sheet || (pStat.position === 'GK' && scoreAgainst === 0),
+                        won: result === 'win',
+                        ea_match_rating: pStat.rating,
+                        position_played: pStat.position,
+                        man_of_match: pStat.motm,
+                        shots: pStat.shots,
+                        tackles: pStat.tackles,
+                        tackle_attempts: pStat.tackle_attempts,
+                        passes_made: pStat.passes_made,
+                        pass_attempts: pStat.pass_attempts,
+                        red_cards: pStat.red_cards,
+                        saves_diving: pStat.saves_diving,
+                        saves_cross: pStat.saves_cross,
+                        saves_parry: pStat.saves_parry,
+                        saves_punch: pStat.saves_punch,
+                        saves_reflex: pStat.saves_reflex,
+                        goals_conceded: pStat.goals_conceded,
+                        interceptions: pStat.interceptions,
+                        clearances: pStat.clearances,
+                        dribbles: pStat.dribbles,
+                        fouls: pStat.fouls,
+                        offsides: pStat.offsides,
+                        archetypeid: pStat.archetypeid
+                      })
+
+                      guildUpdatedPlayerIds.add(profile.discord_user_id)
+                      await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id)
+                    }
+                  }
                 }
               }
             }
