@@ -313,9 +313,14 @@ serve(async (req) => {
           };
         }).filter(p => p.games_played > 0);
         
-        // Apply position filter
+        // Apply position filter - for GK, filter by saves > 0 instead of position
         if (position) {
-          players = players.filter(p => p.primary_position === position);
+          const isGkFilter = position === 'GK' || position.toLowerCase() === 'goalkeeper';
+          if (isGkFilter) {
+            players = players.filter(p => (p.saves || 0) > 0);
+          } else {
+            players = players.filter(p => p.primary_position === position);
+          }
         }
       } else {
         // stats_source === "all": EA member stats are authoritative, tracked games provide detail
@@ -327,7 +332,9 @@ serve(async (req) => {
           .eq("club_key", club_key)
           .gt("games_played", 0);
         
-        if (position) {
+        // For GK, we'll filter by saves after fetching; for others, filter by position
+        const isGkFilter = position && (position === 'GK' || position.toLowerCase() === 'goalkeeper');
+        if (position && !isGkFilter) {
           query = query.eq("primary_position", position);
         }
         
@@ -352,6 +359,11 @@ serve(async (req) => {
           streak_type: null,
           club_keys: [club_key],
         }));
+        
+        // Apply GK filter by saves if needed (other positions already filtered at query level)
+        if (isGkFilter) {
+          players = players.filter(p => (p.saves || 0) > 0);
+        }
       }
     } else if (stats_source === "games") {
       // Aggregate from player_stats only (monitored match data)
@@ -496,9 +508,14 @@ serve(async (req) => {
         };
       }).filter(p => p.games_played > 0);
       
-      // Apply position filter
+      // Apply position filter - for GK, filter by saves > 0 instead of position
       if (position) {
-        players = players.filter(p => p.primary_position === position);
+        const isGkFilter = position === 'GK' || position.toLowerCase() === 'goalkeeper';
+        if (isGkFilter) {
+          players = players.filter(p => (p.saves || 0) > 0);
+        } else {
+          players = players.filter(p => p.primary_position === position);
+        }
       }
     } else {
       // Get from player_summary for aggregate leaderboard across all clubs
@@ -552,20 +569,24 @@ serve(async (req) => {
       });
       
       // Apply position filter after enrichment
-      // Map specific positions (GK) to category names (goalkeeper) if needed
+      // For GK, filter by saves > 0 instead of position
       if (position) {
-        const positionLower = position.toLowerCase();
-        const positionCategory = 
-          position === 'GK' ? 'goalkeeper' :
-          ['ST', 'CF', 'LW', 'RW', 'RS', 'LS', 'LF', 'RF'].includes(position) ? 'forward' :
-          ['CAM', 'CM', 'CDM', 'LM', 'RM', 'LCM', 'RCM', 'LAM', 'RAM'].includes(position) ? 'midfielder' :
-          ['CB', 'LB', 'RB', 'LWB', 'RWB', 'LCB', 'RCB', 'SW'].includes(position) ? 'defender' :
-          positionLower;
-        
-        players = players.filter(p => {
-          const playerPos = (p.primary_position || '').toLowerCase();
-          return playerPos === positionCategory || playerPos === positionLower || p.primary_position === position;
-        });
+        const isGkFilter = position === 'GK' || position.toLowerCase() === 'goalkeeper';
+        if (isGkFilter) {
+          players = players.filter(p => (p.saves || 0) > 0);
+        } else {
+          const positionLower = position.toLowerCase();
+          const positionCategory = 
+            ['ST', 'CF', 'LW', 'RW', 'RS', 'LS', 'LF', 'RF'].includes(position) ? 'forward' :
+            ['CAM', 'CM', 'CDM', 'LM', 'RM', 'LCM', 'RCM', 'LAM', 'RAM'].includes(position) ? 'midfielder' :
+            ['CB', 'LB', 'RB', 'LWB', 'RWB', 'LCB', 'RCB', 'SW'].includes(position) ? 'defender' :
+            positionLower;
+          
+          players = players.filter(p => {
+            const playerPos = (p.primary_position || '').toLowerCase();
+            return playerPos === positionCategory || playerPos === positionLower || p.primary_position === position;
+          });
+        }
       }
     }
 
