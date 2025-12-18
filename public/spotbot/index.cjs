@@ -3683,7 +3683,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
           feedbackRequestId = id.replace('feedback_again_', '');
         }
         
-        await interaction.deferUpdate();
+        try {
+          await interaction.deferUpdate();
+        } catch (e) {
+          // Interaction may have expired or already been handled
+          console.log('[Feedback] Interaction already handled or expired, continuing...');
+        }
         
         const { data: feedbackRequest } = await supabase
           .from('dm_feedback_requests')
