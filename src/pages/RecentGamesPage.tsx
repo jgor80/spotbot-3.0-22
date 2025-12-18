@@ -22,6 +22,7 @@ interface ClubMatch {
   score_for: number | null;
   score_against: number | null;
   opponent_club_name: string | null;
+  opponent_club_id: string | null;
   match_type: string;
   created_at: string;
   player_stats: any;
@@ -134,6 +135,51 @@ export default function RecentGamesPage() {
   const getClubName = (clubKey: string) => {
     const club = enabledClubs.find(c => c.key === clubKey);
     return club?.name || clubKey;
+  };
+
+  const getOpponentName = (match: ClubMatch) => {
+    // First try the direct column
+    if (match.opponent_club_name && match.opponent_club_name !== "Unknown") {
+      return match.opponent_club_name;
+    }
+    
+    // Parse from match_data.clubs
+    if (match.match_data?.clubs) {
+      const clubs = match.match_data.clubs;
+      const clubKeys = Object.keys(clubs);
+      
+      // Find the opponent club (not our club)
+      for (const key of clubKeys) {
+        const clubData = clubs[key];
+        // Check if this is the opponent (their result is opposite of ours, or check by ID)
+        if (key !== match.opponent_club_id) {
+          // This might be our club - check further
+          const opponentId = match.opponent_club_id;
+          if (opponentId && clubs[opponentId]) {
+            return clubs[opponentId].details?.name || clubs[opponentId].name || `Club ${opponentId}`;
+          }
+        }
+        // If we have opponent_club_id, use it directly
+        if (key === match.opponent_club_id) {
+          return clubData.details?.name || clubData.name || `Club ${key}`;
+        }
+      }
+      
+      // Fallback: find the club that lost when we won (or vice versa)
+      for (const key of clubKeys) {
+        const clubData = clubs[key];
+        const clubName = clubData.details?.name || clubData.name;
+        if (clubName) {
+          // Return the first club name that isn't ours
+          const ourClubName = getClubName(match.club_key);
+          if (clubName !== ourClubName) {
+            return clubName;
+          }
+        }
+      }
+    }
+    
+    return match.opponent_club_name || "Unknown Opponent";
   };
 
   const getPlayerCount = (playerStats: any) => {
@@ -271,7 +317,7 @@ export default function RecentGamesPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold">{getClubName(match.club_key)}</span>
                         <span className="text-muted-foreground">vs</span>
-                        <span className="font-medium">{match.opponent_club_name || "Unknown"}</span>
+                        <span className="font-medium">{getOpponentName(match)}</span>
                       </div>
                       <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
                         <div className="flex items-center gap-1">
@@ -328,7 +374,7 @@ export default function RecentGamesPage() {
                   <div className="flex items-center gap-4 text-sm text-muted-foreground pt-2">
                     <span className="font-medium text-foreground">{getClubName(selectedMatch.club_key)}</span>
                     <span>vs</span>
-                    <span>{selectedMatch.opponent_club_name || "Unknown"}</span>
+                    <span>{getOpponentName(selectedMatch)}</span>
                     <span>•</span>
                     <span>{format(new Date(selectedMatch.created_at), "MMM d, yyyy h:mm a")}</span>
                     {getMatchTypeBadge(selectedMatch.match_type)}
