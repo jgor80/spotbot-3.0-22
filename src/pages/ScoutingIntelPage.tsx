@@ -222,7 +222,7 @@ export default function ScoutingIntelPage() {
       
       const { data, error } = await supabase
         .from("club_matches")
-        .select("opponent_club_id, opponent_club_name, result")
+        .select("opponent_club_id, opponent_club_name, result, match_data")
         .eq("guild_id", selectedGuildId)
         .not("opponent_club_id", "is", null);
       
@@ -242,10 +242,17 @@ export default function ScoutingIntelPage() {
         const id = match.opponent_club_id;
         if (!id) continue;
         
+        // Get club name from match_data if opponent_club_name is Unknown
+        let clubName = match.opponent_club_name;
+        if (!clubName || clubName === "Unknown") {
+          const matchData = match.match_data as any;
+          clubName = matchData?.clubs?.[id]?.details?.name || "Unknown";
+        }
+        
         if (!records.has(id)) {
           records.set(id, {
             club_id: id,
-            club_name: match.opponent_club_name || "Unknown",
+            club_name: clubName,
             wins: 0,
             losses: 0,
             draws: 0,
