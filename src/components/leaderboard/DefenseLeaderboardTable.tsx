@@ -20,7 +20,7 @@ interface DefenseLeaderboardTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortKey = "rank" | "rating" | "games" | "tackles" | "tackle_pct" | "interceptions" | "clearances" | "fouls" | "clean_sheets" | "def_per_game";
+type SortKey = "rank" | "rating" | "games" | "tackles" | "interceptions" | "clearances" | "fouls" | "clean_sheets" | "goals_conceded" | "def_per_game";
 type SortDirection = "asc" | "desc";
 
 export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeaderboardTableProps) {
@@ -33,7 +33,8 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     } else {
       setSortKey(key);
-      setSortDirection(key === "rank" || key === "fouls" ? "asc" : "desc");
+      // Lower is better for rank, fouls, and goals conceded
+      setSortDirection(key === "rank" || key === "fouls" || key === "goals_conceded" ? "asc" : "desc");
     }
   };
 
@@ -68,9 +69,9 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
           aVal = a.tackles || 0;
           bVal = b.tackles || 0;
           break;
-        case "tackle_pct":
-          aVal = a.tackle_attempts > 0 ? (a.tackles / a.tackle_attempts) * 100 : 0;
-          bVal = b.tackle_attempts > 0 ? (b.tackles / b.tackle_attempts) * 100 : 0;
+        case "goals_conceded":
+          aVal = a.goals_conceded || 0;
+          bVal = b.goals_conceded || 0;
           break;
         case "interceptions":
           aVal = a.interceptions || 0;
@@ -141,7 +142,7 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
               <SortableHeader columnKey="rating" className="text-center">Rating</SortableHeader>
               <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
               <SortableHeader columnKey="tackles" className="text-center bg-primary/10 text-primary font-semibold">Tackles</SortableHeader>
-              <SortableHeader columnKey="tackle_pct" className="text-center hidden lg:table-cell">Tkl%</SortableHeader>
+              <SortableHeader columnKey="goals_conceded" className="text-center hidden lg:table-cell">GA</SortableHeader>
               <SortableHeader columnKey="interceptions" className="text-center">Int</SortableHeader>
               <SortableHeader columnKey="clearances" className="text-center hidden lg:table-cell">Clear</SortableHeader>
               <SortableHeader columnKey="fouls" className="text-center hidden xl:table-cell">Fouls</SortableHeader>
@@ -151,7 +152,6 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
           </TableHeader>
           <TableBody>
             {filteredAndSortedPlayers.map((player) => {
-              const tacklePct = player.tackle_attempts > 0 ? (player.tackles / player.tackle_attempts) * 100 : 0;
               const defPerGame = player.games_played > 0 
                 ? ((player.tackles || 0) + (player.interceptions || 0) + (player.clearances || 0)) / player.games_played 
                 : 0;
@@ -206,7 +206,7 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
                   <TableCell className="text-center"><RatingBadge rating={player.overall_rating} size="sm" /></TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.games_played}</TableCell>
                   <TableCell className="text-center font-bold text-primary">{player.tackles || 0}</TableCell>
-                  <TableCell className="text-center hidden lg:table-cell">{tacklePct.toFixed(0)}%</TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">{player.goals_conceded || 0}</TableCell>
                   <TableCell className="text-center">{player.interceptions || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{player.clearances || 0}</TableCell>
                   <TableCell className="text-center hidden xl:table-cell">{player.fouls || 0}</TableCell>
