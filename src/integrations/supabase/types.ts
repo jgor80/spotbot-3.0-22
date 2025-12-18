@@ -309,6 +309,10 @@ export type Database = {
           guild_id: string
           id: string
           match_type: string | null
+          pending_energy: number | null
+          pending_enjoyment: number | null
+          pending_performance: number | null
+          pending_player_id: string | null
           status: Database["public"]["Enums"]["feedback_status"]
           teammates_data: Json | null
           teammates_to_evaluate: string[]
@@ -324,6 +328,10 @@ export type Database = {
           guild_id: string
           id?: string
           match_type?: string | null
+          pending_energy?: number | null
+          pending_enjoyment?: number | null
+          pending_performance?: number | null
+          pending_player_id?: string | null
           status?: Database["public"]["Enums"]["feedback_status"]
           teammates_data?: Json | null
           teammates_to_evaluate?: string[]
@@ -339,6 +347,10 @@ export type Database = {
           guild_id?: string
           id?: string
           match_type?: string | null
+          pending_energy?: number | null
+          pending_enjoyment?: number | null
+          pending_performance?: number | null
+          pending_player_id?: string | null
           status?: Database["public"]["Enums"]["feedback_status"]
           teammates_data?: Json | null
           teammates_to_evaluate?: string[]

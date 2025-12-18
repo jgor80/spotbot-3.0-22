@@ -10108,20 +10108,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.followUp({ content: '⏰ **Feedback window expired!**', flags: 64 });
         }
         
-        // Store selected player in teammates_data - CLEAR pending values when switching players
+        // Store selected player at ROW level - clear pending values when switching players
         const teammatesData = feedbackRequest.teammates_data || [];
-        const updatedTeammatesData = teammatesData.map(t => ({
-          ...t,
-          currently_rating: t.discord_user_id === selectedPlayerId,
-          // Clear pending values when switching to prevent old ratings from carrying over
-          pending_performance: t.discord_user_id === selectedPlayerId ? null : t.pending_performance,
-          pending_enjoyment: t.discord_user_id === selectedPlayerId ? null : t.pending_enjoyment,
-          pending_energy: t.discord_user_id === selectedPlayerId ? null : t.pending_energy
-        }));
         
         await supabase
           .from('dm_feedback_requests')
-          .update({ teammates_data: updatedTeammatesData })
+          .update({ 
+            pending_player_id: selectedPlayerId,
+            pending_performance: null,
+            pending_enjoyment: null,
+            pending_energy: null
+          })
           .eq('id', feedbackRequestId);
         
         const selectedPlayer = teammatesData.find(t => t.discord_user_id === selectedPlayerId);
@@ -10155,35 +10152,28 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         
         const teammatesData = feedbackRequest.teammates_data || [];
-        let currentlyRating = teammatesData.find(t => t.currently_rating);
+        
+        // Get currently selected player from ROW level
+        let pendingPlayerId = feedbackRequest.pending_player_id;
+        let currentlyRating = pendingPlayerId ? teammatesData.find(t => t.discord_user_id === pendingPlayerId) : null;
         
         // Auto-select first unrated if none selected
         if (!currentlyRating) {
           currentlyRating = teammatesData.find(t => !t.rated);
+          pendingPlayerId = currentlyRating?.discord_user_id;
         }
         
         if (!currentlyRating) {
           return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
         }
         
-        // Build updated data - preserve existing pending values and set currently_rating
-        const updatedTeammatesData = teammatesData.map(t => {
-          if (t.discord_user_id === currentlyRating.discord_user_id) {
-            return { 
-              ...t, 
-              currently_rating: true,
-              pending_performance: rating,
-              // Preserve any existing pending values
-              pending_enjoyment: t.pending_enjoyment,
-              pending_energy: t.pending_energy
-            };
-          }
-          return { ...t, currently_rating: false };
-        });
-        
+        // Update ROW-level pending performance (atomic, no race condition)
         await supabase
           .from('dm_feedback_requests')
-          .update({ teammates_data: updatedTeammatesData })
+          .update({ 
+            pending_player_id: pendingPlayerId,
+            pending_performance: rating 
+          })
           .eq('id', feedbackRequestId);
         
         return interaction.followUp({ 
@@ -10215,35 +10205,28 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         
         const teammatesData = feedbackRequest.teammates_data || [];
-        let currentlyRating = teammatesData.find(t => t.currently_rating);
+        
+        // Get currently selected player from ROW level
+        let pendingPlayerId = feedbackRequest.pending_player_id;
+        let currentlyRating = pendingPlayerId ? teammatesData.find(t => t.discord_user_id === pendingPlayerId) : null;
         
         // Auto-select first unrated if none selected
         if (!currentlyRating) {
           currentlyRating = teammatesData.find(t => !t.rated);
+          pendingPlayerId = currentlyRating?.discord_user_id;
         }
         
         if (!currentlyRating) {
           return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
         }
         
-        // Build updated data - preserve existing pending values and set currently_rating
-        const updatedTeammatesData = teammatesData.map(t => {
-          if (t.discord_user_id === currentlyRating.discord_user_id) {
-            return { 
-              ...t, 
-              currently_rating: true,
-              pending_enjoyment: enjoyment,
-              // Preserve any existing pending values
-              pending_performance: t.pending_performance,
-              pending_energy: t.pending_energy
-            };
-          }
-          return { ...t, currently_rating: false };
-        });
-        
+        // Update ROW-level pending enjoyment (atomic, no race condition)
         await supabase
           .from('dm_feedback_requests')
-          .update({ teammates_data: updatedTeammatesData })
+          .update({ 
+            pending_player_id: pendingPlayerId,
+            pending_enjoyment: enjoyment 
+          })
           .eq('id', feedbackRequestId);
         
         return interaction.followUp({ 
@@ -10275,35 +10258,28 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         
         const teammatesData = feedbackRequest.teammates_data || [];
-        let currentlyRating = teammatesData.find(t => t.currently_rating);
+        
+        // Get currently selected player from ROW level
+        let pendingPlayerId = feedbackRequest.pending_player_id;
+        let currentlyRating = pendingPlayerId ? teammatesData.find(t => t.discord_user_id === pendingPlayerId) : null;
         
         // Auto-select first unrated if none selected
         if (!currentlyRating) {
           currentlyRating = teammatesData.find(t => !t.rated);
+          pendingPlayerId = currentlyRating?.discord_user_id;
         }
         
         if (!currentlyRating) {
           return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
         }
         
-        // Build updated data - preserve existing pending values and set currently_rating
-        const updatedTeammatesData = teammatesData.map(t => {
-          if (t.discord_user_id === currentlyRating.discord_user_id) {
-            return { 
-              ...t, 
-              currently_rating: true,
-              pending_energy: energy,
-              // Preserve any existing pending values
-              pending_performance: t.pending_performance,
-              pending_enjoyment: t.pending_enjoyment
-            };
-          }
-          return { ...t, currently_rating: false };
-        });
-        
+        // Update ROW-level pending energy (atomic, no race condition)
         await supabase
           .from('dm_feedback_requests')
-          .update({ teammates_data: updatedTeammatesData })
+          .update({ 
+            pending_player_id: pendingPlayerId,
+            pending_energy: energy 
+          })
           .eq('id', feedbackRequestId);
         
         return interaction.followUp({ 
@@ -10335,24 +10311,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         
         const teammatesData = feedbackRequest.teammates_data || [];
-        let currentlyRating = teammatesData.find(t => t.currently_rating);
+        
+        // Get currently selected player from ROW level
+        let pendingPlayerId = feedbackRequest.pending_player_id;
+        let currentlyRating = pendingPlayerId ? teammatesData.find(t => t.discord_user_id === pendingPlayerId) : null;
         
         // Auto-select first unrated if none selected
         if (!currentlyRating) {
           currentlyRating = teammatesData.find(t => !t.rated);
-          if (currentlyRating) {
-            currentlyRating.currently_rating = true;
-          }
+          pendingPlayerId = currentlyRating?.discord_user_id;
         }
         
         if (!currentlyRating) {
           return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
         }
         
-        // Check if all ratings are set
-        const performance = currentlyRating.pending_performance;
-        const enjoyment = currentlyRating.pending_enjoyment;
-        const energy = currentlyRating.pending_energy;
+        // Get pending ratings from ROW-level columns (not nested JSON)
+        const performance = feedbackRequest.pending_performance;
+        const enjoyment = feedbackRequest.pending_enjoyment;
+        const energy = feedbackRequest.pending_energy;
         
         if (!performance || !enjoyment || !energy) {
           return interaction.followUp({ 
@@ -10387,20 +10364,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
           play_again: playAgain
         });
         
-        // Mark player as rated and clear pending values
+        // Mark player as rated in teammates_data and clear ROW-level pending values
         const updatedTeammatesData = teammatesData.map(t => 
           t.discord_user_id === evaluatedUserId 
             ? { 
                 ...t, 
                 rated: true, 
                 given_rating: performance, 
-                vibe: { enjoyment, teamEnergy: energy, playAgain },
-                currently_rating: false,
-                pending_performance: null,
-                pending_enjoyment: null,
-                pending_energy: null
+                vibe: { enjoyment, teamEnergy: energy, playAgain }
               }
-            : { ...t, currently_rating: false }
+            : t
         );
         
         const allRated = updatedTeammatesData.every(t => t.rated);
@@ -10410,7 +10383,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .update({
             teammates_data: updatedTeammatesData,
             status: allRated ? 'completed' : 'pending',
-            completed_at: allRated ? new Date().toISOString() : null
+            completed_at: allRated ? new Date().toISOString() : null,
+            // Clear ROW-level pending values after submission
+            pending_player_id: null,
+            pending_performance: null,
+            pending_enjoyment: null,
+            pending_energy: null
           })
           .eq('id', feedbackRequestId);
         
