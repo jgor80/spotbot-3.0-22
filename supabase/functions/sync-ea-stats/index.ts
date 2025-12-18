@@ -828,6 +828,17 @@ Deno.serve(async (req) => {
                 const players = matchData.players?.[club.ea_club_id] || {}
                 
                 for (const [, pStats] of Object.entries(players) as any) {
+                  // Calculate total saves from all save types
+                  const savesDiving = parseInt(pStats.ballDiveSaves || pStats.ballDivesaves || 0)
+                  const savesCross = parseInt(pStats.crossSaves || pStats.crosssaves || 0)
+                  const savesParry = parseInt(pStats.parrySaves || pStats.parrysaves || 0)
+                  const savesPunch = parseInt(pStats.punchSaves || pStats.punchsaves || 0)
+                  const savesReflex = parseInt(pStats.reflexSaves || pStats.reflexsaves || 0)
+                  const totalSaves = savesDiving + savesCross + savesParry + savesPunch + savesReflex
+                  
+                  // Clean sheet detection from EA data
+                  const isCleanSheet = pStats.cleansheetsany === '1' || pStats.cleansheetsdef === '1' || pStats.cleansheetsgk === '1'
+                  
                   playerStats.push({
                     ea_username: pStats.playername,
                     goals: parseInt(pStats.goals || 0),
@@ -837,16 +848,26 @@ Deno.serve(async (req) => {
                     motm: pStats.mom === '1',
                     shots: parseInt(pStats.shots || 0),
                     tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
+                    tackle_attempts: parseInt(pStats.tackleattempts || pStats.tackleAttempts || 0),
                     passes_made: parseInt(pStats.passesmade || pStats.passesMade || 0),
                     pass_attempts: parseInt(pStats.passattempts || pStats.passAttempts || 0),
                     red_cards: pStats.redcards === '1',
-                    saves: parseInt(pStats.saves || pStats.gksaves || 0),
+                    // GK save breakdowns
+                    saves: totalSaves || parseInt(pStats.saves || pStats.gksaves || 0),
+                    saves_diving: savesDiving,
+                    saves_cross: savesCross,
+                    saves_parry: savesParry,
+                    saves_punch: savesPunch,
+                    saves_reflex: savesReflex,
+                    goals_conceded: parseInt(pStats.goalsconceded || pStats.goalsConceded || 0),
+                    clean_sheet: isCleanSheet,
                     interceptions: parseInt(pStats.interceptions || 0),
                     clearances: parseInt(pStats.clearances || 0),
                     possession: parseFloat(pStats.possession || 0),
                     dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
                     fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
-                    offsides: parseInt(pStats.offsides || 0)
+                    offsides: parseInt(pStats.offsides || 0),
+                    archetypeid: pStats.archetypeid || pStats.archetypeId || null
                   })
                 }
                 
@@ -884,16 +905,30 @@ Deno.serve(async (req) => {
                         match_type: 'club',
                         goals: pStat.goals,
                         assists: pStat.assists,
-                        clean_sheet: pStat.position === 'GK' && scoreAgainst === 0,
+                        clean_sheet: pStat.clean_sheet || (pStat.position === 'GK' && scoreAgainst === 0),
                         won: result === 'win',
                         ea_match_rating: pStat.rating,
                         position_played: pStat.position,
                         man_of_match: pStat.motm,
                         shots: pStat.shots,
                         tackles: pStat.tackles,
+                        tackle_attempts: pStat.tackle_attempts,
                         passes_made: pStat.passes_made,
                         pass_attempts: pStat.pass_attempts,
-                        red_cards: pStat.red_cards
+                        red_cards: pStat.red_cards,
+                        // GK save breakdowns
+                        saves_diving: pStat.saves_diving,
+                        saves_cross: pStat.saves_cross,
+                        saves_parry: pStat.saves_parry,
+                        saves_punch: pStat.saves_punch,
+                        saves_reflex: pStat.saves_reflex,
+                        goals_conceded: pStat.goals_conceded,
+                        interceptions: pStat.interceptions,
+                        clearances: pStat.clearances,
+                        dribbles: pStat.dribbles,
+                        fouls: pStat.fouls,
+                        offsides: pStat.offsides,
+                        archetypeid: pStat.archetypeid
                       })
 
                       guildUpdatedPlayerIds.add(profile.discord_user_id)
@@ -932,6 +967,17 @@ Deno.serve(async (req) => {
                 const players = matchData.players?.[club.ea_club_id] || {}
                 
                 for (const [, pStats] of Object.entries(players) as any) {
+                  // Calculate total saves from all save types
+                  const savesDiving = parseInt(pStats.ballDiveSaves || pStats.ballDivesaves || 0)
+                  const savesCross = parseInt(pStats.crossSaves || pStats.crosssaves || 0)
+                  const savesParry = parseInt(pStats.parrySaves || pStats.parrysaves || 0)
+                  const savesPunch = parseInt(pStats.punchSaves || pStats.punchsaves || 0)
+                  const savesReflex = parseInt(pStats.reflexSaves || pStats.reflexsaves || 0)
+                  const totalSaves = savesDiving + savesCross + savesParry + savesPunch + savesReflex
+                  
+                  // Clean sheet detection from EA data
+                  const isCleanSheet = pStats.cleansheetsany === '1' || pStats.cleansheetsdef === '1' || pStats.cleansheetsgk === '1'
+                  
                   playerStats.push({
                     ea_username: pStats.playername,
                     goals: parseInt(pStats.goals || 0),
@@ -941,16 +987,26 @@ Deno.serve(async (req) => {
                     motm: pStats.mom === '1',
                     shots: parseInt(pStats.shots || 0),
                     tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
+                    tackle_attempts: parseInt(pStats.tackleattempts || pStats.tackleAttempts || 0),
                     passes_made: parseInt(pStats.passesmade || pStats.passesMade || 0),
                     pass_attempts: parseInt(pStats.passattempts || pStats.passAttempts || 0),
                     red_cards: pStats.redcards === '1',
-                    saves: parseInt(pStats.saves || pStats.gksaves || 0),
+                    // GK save breakdowns
+                    saves: totalSaves || parseInt(pStats.saves || pStats.gksaves || 0),
+                    saves_diving: savesDiving,
+                    saves_cross: savesCross,
+                    saves_parry: savesParry,
+                    saves_punch: savesPunch,
+                    saves_reflex: savesReflex,
+                    goals_conceded: parseInt(pStats.goalsconceded || pStats.goalsConceded || 0),
+                    clean_sheet: isCleanSheet,
                     interceptions: parseInt(pStats.interceptions || 0),
                     clearances: parseInt(pStats.clearances || 0),
                     possession: parseFloat(pStats.possession || 0),
                     dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
                     fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
-                    offsides: parseInt(pStats.offsides || 0)
+                    offsides: parseInt(pStats.offsides || 0),
+                    archetypeid: pStats.archetypeid || pStats.archetypeId || null
                   })
                 }
                 
@@ -988,16 +1044,30 @@ Deno.serve(async (req) => {
                         match_type: 'competition', // Competition/cup match type
                         goals: pStat.goals,
                         assists: pStat.assists,
-                        clean_sheet: pStat.position === 'GK' && scoreAgainst === 0,
+                        clean_sheet: pStat.clean_sheet || (pStat.position === 'GK' && scoreAgainst === 0),
                         won: result === 'win',
                         ea_match_rating: pStat.rating,
                         position_played: pStat.position,
                         man_of_match: pStat.motm,
                         shots: pStat.shots,
                         tackles: pStat.tackles,
+                        tackle_attempts: pStat.tackle_attempts,
                         passes_made: pStat.passes_made,
                         pass_attempts: pStat.pass_attempts,
-                        red_cards: pStat.red_cards
+                        red_cards: pStat.red_cards,
+                        // GK save breakdowns
+                        saves_diving: pStat.saves_diving,
+                        saves_cross: pStat.saves_cross,
+                        saves_parry: pStat.saves_parry,
+                        saves_punch: pStat.saves_punch,
+                        saves_reflex: pStat.saves_reflex,
+                        goals_conceded: pStat.goals_conceded,
+                        interceptions: pStat.interceptions,
+                        clearances: pStat.clearances,
+                        dribbles: pStat.dribbles,
+                        fouls: pStat.fouls,
+                        offsides: pStat.offsides,
+                        archetypeid: pStat.archetypeid
                       })
 
                       guildUpdatedPlayerIds.add(profile.discord_user_id)

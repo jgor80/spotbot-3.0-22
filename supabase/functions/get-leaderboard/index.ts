@@ -171,6 +171,7 @@ serve(async (req) => {
             man_of_match,
             shots,
             tackles,
+            tackle_attempts,
             passes_made,
             pass_attempts,
             saves_diving,
@@ -212,7 +213,7 @@ serve(async (req) => {
         const playerAggregates = new Map<string, any>();
         
         for (const stat of filteredStats) {
-          const existing = playerAggregates.get(stat.discord_user_id) || {
+        const existing = playerAggregates.get(stat.discord_user_id) || {
             discord_user_id: stat.discord_user_id,
             games_played: 0,
             tracked_games: 0,
@@ -226,6 +227,7 @@ serve(async (req) => {
             man_of_match: 0,
             shots: 0,
             tackles: 0,
+            tackle_attempts: 0,
             passes_made: 0,
             pass_attempts: 0,
             saves: 0,
@@ -256,6 +258,7 @@ serve(async (req) => {
           existing.man_of_match += stat.man_of_match ? 1 : 0;
           existing.shots += stat.shots || 0;
           existing.tackles += stat.tackles || 0;
+          existing.tackle_attempts += stat.tackle_attempts || 0;
           existing.passes_made += stat.passes_made || 0;
           existing.pass_attempts += stat.pass_attempts || 0;
           existing.saves += (stat.saves_diving || 0) + (stat.saves_reflex || 0) + (stat.saves_parry || 0) + (stat.saves_cross || 0) + (stat.saves_punch || 0);
@@ -366,6 +369,7 @@ serve(async (req) => {
           man_of_match,
           shots,
           tackles,
+          tackle_attempts,
           passes_made,
           pass_attempts,
           saves_diving,
@@ -406,6 +410,7 @@ serve(async (req) => {
           man_of_match: 0,
           shots: 0,
           tackles: 0,
+          tackle_attempts: 0,
           passes_made: 0,
           pass_attempts: 0,
           saves: 0,
@@ -436,6 +441,7 @@ serve(async (req) => {
         existing.man_of_match += stat.man_of_match ? 1 : 0;
         existing.shots += stat.shots || 0;
         existing.tackles += stat.tackles || 0;
+        existing.tackle_attempts += stat.tackle_attempts || 0;
         existing.passes_made += stat.passes_made || 0;
         existing.pass_attempts += stat.pass_attempts || 0;
         existing.saves += (stat.saves_diving || 0) + (stat.saves_reflex || 0) + (stat.saves_parry || 0) + (stat.saves_cross || 0) + (stat.saves_punch || 0);
