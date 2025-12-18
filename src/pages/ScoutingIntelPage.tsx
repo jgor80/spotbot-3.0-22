@@ -98,6 +98,57 @@ export default function ScoutingIntelPage() {
     enabled: !!selectedGuildId,
   });
 
+  // Fetch head-to-head records against opponent clubs
+  const { data: headToHead } = useQuery({
+    queryKey: ["head-to-head", selectedGuildId],
+    queryFn: async () => {
+      if (!selectedGuildId) return [];
+      
+      const { data, error } = await supabase
+        .from("club_matches")
+        .select("opponent_club_id, opponent_club_name, result")
+        .eq("guild_id", selectedGuildId)
+        .not("opponent_club_id", "is", null);
+      
+      if (error) throw error;
+      
+      // Aggregate by opponent club
+      const records = new Map<string, { 
+        club_id: string; 
+        club_name: string; 
+        wins: number; 
+        losses: number; 
+        draws: number; 
+        total: number;
+      }>();
+      
+      for (const match of data || []) {
+        const id = match.opponent_club_id;
+        if (!id) continue;
+        
+        if (!records.has(id)) {
+          records.set(id, {
+            club_id: id,
+            club_name: match.opponent_club_name || "Unknown",
+            wins: 0,
+            losses: 0,
+            draws: 0,
+            total: 0
+          });
+        }
+        
+        const record = records.get(id)!;
+        record.total++;
+        if (match.result === "win") record.wins++;
+        else if (match.result === "loss") record.losses++;
+        else if (match.result === "draw") record.draws++;
+      }
+      
+      return Array.from(records.values()).sort((a, b) => b.total - a.total);
+    },
+    enabled: !!selectedGuildId,
+  });
+
   // Fetch own players for comparison
   const { data: ownPlayers } = useQuery({
     queryKey: ["own-players-compare", selectedGuildId],
@@ -275,6 +326,69 @@ export default function ScoutingIntelPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Head-to-Head Records */}
+        {headToHead && headToHead.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Trophy className="h-5 w-5 text-amber-500" />
+                Head-to-Head vs Opponent Clubs
+              </CardTitle>
+              <CardDescription>Your record against clubs you've faced</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Club</TableHead>
+                      <TableHead className="text-center">Matches</TableHead>
+                      <TableHead className="text-center text-emerald-500">Wins</TableHead>
+                      <TableHead className="text-center text-red-500">Losses</TableHead>
+                      <TableHead className="text-center text-muted-foreground">Draws</TableHead>
+                      <TableHead className="text-center">Win %</TableHead>
+                      <TableHead className="text-center">Record</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {headToHead.slice(0, 10).map((record) => {
+                      const winPct = record.total > 0 ? (record.wins / record.total) * 100 : 0;
+                      const isPositive = record.wins > record.losses;
+                      const isNegative = record.losses > record.wins;
+                      
+                      return (
+                        <TableRow key={record.club_id}>
+                          <TableCell className="font-medium">{record.club_name}</TableCell>
+                          <TableCell className="text-center font-mono">{record.total}</TableCell>
+                          <TableCell className="text-center font-mono text-emerald-500">{record.wins}</TableCell>
+                          <TableCell className="text-center font-mono text-red-500">{record.losses}</TableCell>
+                          <TableCell className="text-center font-mono text-muted-foreground">{record.draws}</TableCell>
+                          <TableCell className="text-center font-mono">
+                            <span className={isPositive ? "text-emerald-500" : isNegative ? "text-red-500" : ""}>
+                              {winPct.toFixed(0)}%
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="outline" className={
+                              isPositive 
+                                ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/30" 
+                                : isNegative 
+                                  ? "bg-red-500/10 text-red-500 border-red-500/30"
+                                  : "bg-muted"
+                            }>
+                              {isPositive ? "Winning" : isNegative ? "Losing" : "Even"}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Filters */}
         <Card>
