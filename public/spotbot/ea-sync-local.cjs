@@ -1830,6 +1830,91 @@ async function runSync() {
   console.log(`\n✅ Sync complete: ${totalSynced} matches synced, ${totalSkipped} skipped, ${clubsSynced} clubs updated\n`);
 }
 
+// Backfill scouted_players from existing club_matches
+async function backfillOpponentScouting() {
+  console.log('\n🔍 Starting opponent scouting backfill...\n');
+  
+  // Get all guilds with club stats (to know platform)
+  const { data: clubStats } = await supabase
+    .from('club_stats')
+    .select('guild_id, ea_club_id, ea_platform');
+  
+  if (!clubStats?.length) {
+    console.log('❌ No club stats found');
+    return;
+  }
+  
+  // Create a map of guild_id -> platform
+  const guildPlatforms = {};
+  const ourClubIds = new Set();
+  for (const cs of clubStats) {
+    guildPlatforms[cs.guild_id] = cs.ea_platform;
+    ourClubIds.add(cs.ea_club_id);
+  }
+  
+  // Get all unique opponent clubs from matches
+  const { data: matches } = await supabase
+    .from('club_matches')
+    .select('guild_id, opponent_club_id, match_data')
+    .not('opponent_club_id', 'is', null);
+  
+  if (!matches?.length) {
+    console.log('❌ No matches with opponent data found');
+    return;
+  }
+  
+  // Group by opponent club and count times faced
+  const opponentCounts = {};
+  for (const match of matches) {
+    const oppId = match.opponent_club_id;
+    if (!oppId || ourClubIds.has(oppId)) continue;
+    
+    const key = `${match.guild_id}:${oppId}`;
+    if (!opponentCounts[key]) {
+      opponentCounts[key] = {
+        guild_id: match.guild_id,
+        opponent_club_id: oppId,
+        platform: guildPlatforms[match.guild_id] || 'ps5',
+        times_faced: 0
+      };
+    }
+    opponentCounts[key].times_faced++;
+  }
+  
+  const uniqueOpponents = Object.values(opponentCounts);
+  console.log(`📊 Found ${uniqueOpponents.length} unique opponent clubs to scout\n`);
+  
+  let scoutedClubs = 0;
+  let totalPlayers = 0;
+  
+  for (const opp of uniqueOpponents) {
+    try {
+      // Scout the opponent club
+      const result = await scoutOpponentClub(opp.guild_id, opp.opponent_club_id, opp.platform, false);
+      
+      if (result.scouted > 0) {
+        // Update times_faced for all players in this club
+        await supabase
+          .from('scouted_players')
+          .update({ times_faced: opp.times_faced })
+          .eq('guild_id', opp.guild_id)
+          .eq('ea_club_id', opp.opponent_club_id);
+        
+        scoutedClubs++;
+        totalPlayers += result.scouted;
+        console.log(`  📈 Set times_faced=${opp.times_faced} for ${result.clubName || opp.opponent_club_id}`);
+      }
+      
+      // Small delay to avoid rate limiting
+      await new Promise(r => setTimeout(r, 500));
+    } catch (err) {
+      console.error(`  ❌ Error scouting ${opp.opponent_club_id}:`, err.message);
+    }
+  }
+  
+  console.log(`\n✅ Backfill complete: ${scoutedClubs} clubs, ${totalPlayers} players scouted\n`);
+}
+
 // Check if current time is within active hours (8 AM - 2 AM Central Time)
 function isActiveHours() {
   // Get current time in Central Time
@@ -1853,10 +1938,21 @@ function scheduledSync() {
   }
 }
 
-// Run immediately then every 10 minutes
-console.log('🚀 EA Sync Local started');
-console.log('📡 Running from your local IP to bypass EA cloud blocking');
-console.log('⏱️  Syncing every 10 minutes (active 8 AM - 2 AM CT)\n');
-
-scheduledSync();
-setInterval(scheduledSync, 600000); // 10 minutes = 600,000ms
+// Check for backfill command
+const args = process.argv.slice(2);
+if (args.includes('--backfill-scouting')) {
+  console.log('🚀 Running opponent scouting backfill...');
+  backfillOpponentScouting().then(() => {
+    console.log('✅ Backfill complete, exiting.');
+    process.exit(0);
+  });
+} else {
+  // Run immediately then every 10 minutes
+  console.log('🚀 EA Sync Local started');
+  console.log('📡 Running from your local IP to bypass EA cloud blocking');
+  console.log('⏱️  Syncing every 10 minutes (active 8 AM - 2 AM CT)');
+  console.log('💡 Run with --backfill-scouting to backfill opponent intel\n');
+  
+  scheduledSync();
+  setInterval(scheduledSync, 600000); // 10 minutes = 600,000ms
+}
