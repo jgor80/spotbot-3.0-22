@@ -392,6 +392,108 @@ async function fetchClubMembers(clubId, platform) {
   }
 }
 
+// Auto-scout opponent club and store their player data
+async function scoutOpponentClub(guildId, opponentClubId, platform, incrementTimesFaced = false) {
+  if (!opponentClubId) return { scouted: 0 };
+  
+  console.log(`🔍 Auto-scouting opponent club ${opponentClubId}...`);
+  
+  // Fetch club info first
+  const clubInfo = await fetchClubInfo(opponentClubId, platform);
+  const clubName = clubInfo?.name || `Club ${opponentClubId}`;
+  
+  // Fetch opponent members
+  const members = await fetchClubMembers(opponentClubId, platform);
+  
+  if (!members.length) {
+    console.log(`  ⚠️ No members found for opponent ${clubName}`);
+    return { scouted: 0, clubName };
+  }
+  
+  let scoutedCount = 0;
+  
+  for (const member of members) {
+    const eaUsername = member.name || member.playerName;
+    if (!eaUsername) continue;
+    
+    const gamesPlayed = parseInt(member.gamesPlayed || member.games || 0);
+    const goals = parseInt(member.goals || 0);
+    const assists = parseInt(member.assists || 0);
+    const wins = parseInt(member.wins || 0);
+    const losses = parseInt(member.losses || 0);
+    const draws = parseInt(member.draws || member.ties || 0);
+    const cleanSheets = parseInt(member.cleanSheetsDef || member.cleanSheetsGK || member.cleanSheets || 0);
+    const manOfMatch = parseInt(member.manOfTheMatch || member.motm || 0);
+    const avgRating = parseFloat(member.ratingAve || member.avgRating || 0) || null;
+    const position = member.favoritePosition || member.proPos || null;
+    const archetype = member.archetypeid || member.archetype || null;
+
+    const playerData = {
+      guild_id: guildId,
+      ea_club_id: opponentClubId,
+      ea_club_name: clubName,
+      ea_username: eaUsername,
+      ea_platform: platform,
+      games_played: gamesPlayed,
+      goals,
+      assists,
+      wins,
+      losses,
+      draws,
+      win_rate: gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0,
+      avg_match_rating: avgRating,
+      clean_sheets: cleanSheets,
+      man_of_match: manOfMatch,
+      primary_position: position,
+      archetypeid: archetype,
+      shots: parseInt(member.shots || 0),
+      tackles: parseInt(member.tackles || member.tacklesAttempted || 0),
+      passes_made: parseInt(member.passesMade || 0),
+      pass_attempts: parseInt(member.passesAttempted || 0),
+      saves: parseInt(member.saves || 0),
+      interceptions: parseInt(member.interceptions || 0),
+      clearances: parseInt(member.clearances || 0),
+      last_scouted_at: new Date().toISOString()
+    };
+
+    // Check if player already scouted
+    const { data: existing } = await supabase
+      .from('scouted_players')
+      .select('id, times_faced')
+      .eq('guild_id', guildId)
+      .eq('ea_club_id', opponentClubId)
+      .eq('ea_username', eaUsername)
+      .maybeSingle();
+
+    if (existing) {
+      // Update existing
+      const updateData = {
+        ...playerData,
+        times_faced: incrementTimesFaced ? (existing.times_faced || 0) + 1 : existing.times_faced || 0
+      };
+      
+      await supabase
+        .from('scouted_players')
+        .update(updateData)
+        .eq('id', existing.id);
+    } else {
+      // Insert new
+      await supabase
+        .from('scouted_players')
+        .insert({
+          ...playerData,
+          times_faced: incrementTimesFaced ? 1 : 0,
+          first_seen_at: new Date().toISOString()
+        });
+    }
+    
+    scoutedCount++;
+  }
+  
+  console.log(`  ✅ Scouted ${scoutedCount} players from ${clubName}`);
+  return { scouted: scoutedCount, clubName };
+}
+
 // Sync club stats to database
 async function syncClubStats(guildId, clubKey, clubId, platform) {
   const clubInfo = await fetchClubInfo(clubId, platform);
@@ -989,6 +1091,11 @@ async function syncMatches(guildId, clubKey, club) {
         clubMatchId = insertedMatch.id;
         synced++;
         console.log(`✅ New match ${matchId}: ${result} ${scoreFor}-${scoreAgainst}`);
+        
+        // Auto-scout opponent club when new match is detected
+        if (opponentClubId) {
+          await scoutOpponentClub(guildId, opponentClubId, club.ea_platform, true);
+        }
       }
     } else {
       skipped++;

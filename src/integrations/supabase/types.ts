@@ -1849,6 +1849,105 @@ export type Database = {
         }
         Relationships: []
       }
+      scouted_players: {
+        Row: {
+          archetypeid: string | null
+          assists: number | null
+          avg_match_rating: number | null
+          clean_sheets: number | null
+          clearances: number | null
+          created_at: string
+          draws: number | null
+          ea_club_id: string
+          ea_club_name: string | null
+          ea_platform: string | null
+          ea_username: string
+          first_seen_at: string | null
+          games_played: number | null
+          goals: number | null
+          guild_id: string
+          id: string
+          interceptions: number | null
+          last_scouted_at: string | null
+          losses: number | null
+          man_of_match: number | null
+          pass_attempts: number | null
+          passes_made: number | null
+          primary_position: string | null
+          saves: number | null
+          shots: number | null
+          tackles: number | null
+          times_faced: number | null
+          updated_at: string
+          win_rate: number | null
+          wins: number | null
+        }
+        Insert: {
+          archetypeid?: string | null
+          assists?: number | null
+          avg_match_rating?: number | null
+          clean_sheets?: number | null
+          clearances?: number | null
+          created_at?: string
+          draws?: number | null
+          ea_club_id: string
+          ea_club_name?: string | null
+          ea_platform?: string | null
+          ea_username: string
+          first_seen_at?: string | null
+          games_played?: number | null
+          goals?: number | null
+          guild_id: string
+          id?: string
+          interceptions?: number | null
+          last_scouted_at?: string | null
+          losses?: number | null
+          man_of_match?: number | null
+          pass_attempts?: number | null
+          passes_made?: number | null
+          primary_position?: string | null
+          saves?: number | null
+          shots?: number | null
+          tackles?: number | null
+          times_faced?: number | null
+          updated_at?: string
+          win_rate?: number | null
+          wins?: number | null
+        }
+        Update: {
+          archetypeid?: string | null
+          assists?: number | null
+          avg_match_rating?: number | null
+          clean_sheets?: number | null
+          clearances?: number | null
+          created_at?: string
+          draws?: number | null
+          ea_club_id?: string
+          ea_club_name?: string | null
+          ea_platform?: string | null
+          ea_username?: string
+          first_seen_at?: string | null
+          games_played?: number | null
+          goals?: number | null
+          guild_id?: string
+          id?: string
+          interceptions?: number | null
+          last_scouted_at?: string | null
+          losses?: number | null
+          man_of_match?: number | null
+          pass_attempts?: number | null
+          passes_made?: number | null
+          primary_position?: string | null
+          saves?: number | null
+          shots?: number | null
+          tackles?: number | null
+          times_faced?: number | null
+          updated_at?: string
+          win_rate?: number | null
+          wins?: number | null
+        }
+        Relationships: []
+      }
       scouting_lists: {
         Row: {
           created_at: string
