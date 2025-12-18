@@ -11838,7 +11838,7 @@ async function checkForNewMatches(guildId, clubKey) {
     const matches = await matchesStats({
       clubId: club.ea_club_id,
       platform: club.ea_platform,
-      matchType: 'matchType9' // Division matches
+      matchType: 'leagueMatch' // Division matches
     }).catch(err => {
       console.error(`[EA] Failed to fetch matches:`, err.message);
       return [];
@@ -12580,12 +12580,12 @@ async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
       matchesStats({
         clubId: club.ea_club_id,
         platform: club.ea_platform,
-        matchType: 'matchType9' // Division matches
+        matchType: 'leagueMatch' // Division matches
       }).catch(() => []),
       matchesStats({
         clubId: club.ea_club_id,
         platform: club.ea_platform,
-        matchType: 'matchType13' // Cup matches
+        matchType: 'playoffMatch' // Cup matches
       }).catch(() => [])
     ]);
     
