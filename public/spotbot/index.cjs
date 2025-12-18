@@ -3857,21 +3857,32 @@ client.on(Events.InteractionCreate, async (interaction) => {
             play_again: playAgain
           });
           
-          // Mark player as rated
-          const updatedTeammatesData = teammatesData.map(t => 
-            t.discord_user_id === evaluatedUserId 
-              ? { 
-                  ...t, 
-                  rated: true, 
-                  given_rating: performance, 
-                  vibe: { enjoyment, teamEnergy: energy, playAgain },
-                  currently_rating: false,
-                  pending_performance: null,
-                  pending_enjoyment: null,
-                  pending_energy: null
-                }
-              : { ...t, currently_rating: false }
-          );
+          // Mark player as rated and auto-select next unrated player
+          let nextUnratedIdx = -1;
+          const updatedTeammatesData = teammatesData.map((t, idx) => {
+            if (t.discord_user_id === evaluatedUserId) {
+              return { 
+                ...t, 
+                rated: true, 
+                given_rating: performance, 
+                vibe: { enjoyment, teamEnergy: energy, playAgain },
+                currently_rating: false,
+                pending_performance: null,
+                pending_enjoyment: null,
+                pending_energy: null
+              };
+            }
+            // Find next unrated player
+            if (!t.rated && t.discord_user_id !== evaluatedUserId && nextUnratedIdx === -1) {
+              nextUnratedIdx = idx;
+            }
+            return { ...t, currently_rating: false };
+          });
+          
+          // Set next unrated player as currently rating
+          if (nextUnratedIdx !== -1) {
+            updatedTeammatesData[nextUnratedIdx].currently_rating = true;
+          }
           
           const allRated = updatedTeammatesData.every(t => t.rated);
           
@@ -3917,14 +3928,116 @@ client.on(Events.InteractionCreate, async (interaction) => {
               flags: 64 
             });
           } else {
-            // Select next unrated player
+            // Rebuild and update the panel with new state
             const nextUnrated = updatedTeammatesData.find(t => !t.rated);
+            
+            // Build updated description
+            const matchType = feedbackRequest.match_type === 'club' ? 'Club Match' : 'Draft';
+            let description = `You recently played a **${matchType}**!\n\nRate each teammate's performance:\n\n`;
+            
+            for (const teammate of updatedTeammatesData) {
+              const position = teammate.position_played || 'ANY';
+              const name = teammate.ea_username || `Player`;
+              if (teammate.rated) {
+                const stars = '⭐'.repeat(teammate.given_rating);
+                const vEmoji = teammate.vibe?.playAgain === 'prefer' ? '💚' : teammate.vibe?.playAgain === 'avoid' ? '💔' : '💛';
+                description += `✅ **${name}** (${position}): ${stars} ${vEmoji}\n`;
+              } else if (teammate.currently_rating) {
+                description += `➡️ **${name}** (${position}): Rating now...\n`;
+              } else {
+                description += `⬜ **${name}** (${position}): Not rated yet\n`;
+              }
+            }
+            
             if (nextUnrated) {
-              nextUnrated.currently_rating = true;
-              await supabase
-                .from('dm_feedback_requests')
-                .update({ teammates_data: updatedTeammatesData })
-                .eq('id', feedbackRequestId);
+              description += `\n**Now rating: ${nextUnrated.ea_username || 'Teammate'}** (${nextUnrated.position_played || 'ANY'})`;
+            }
+            
+            // Calculate remaining time
+            const expiresAt = new Date(feedbackRequest.expires_at);
+            const remainingMs = expiresAt.getTime() - Date.now();
+            const remainingMins = Math.max(1, Math.floor(remainingMs / 60000));
+            
+            const embed = new EmbedBuilder()
+              .setTitle('⭐ Rate Your Teammates')
+              .setColor(0x5865f2)
+              .setDescription(description + '\n\n**Select a player and rate them using the dropdowns below:**')
+              .setFooter({ text: `⏰ Expires in ${remainingMins} minutes` });
+            
+            // Rebuild player select with only unrated teammates
+            const unratedTeammates = updatedTeammatesData.filter(t => !t.rated);
+            const playerSelectOptions = unratedTeammates.map(t => ({
+              label: t.ea_username || `Player ${t.discord_user_id.slice(-4)}`,
+              description: `Position: ${t.position_played || 'ANY'}`,
+              value: t.discord_user_id,
+              default: t.currently_rating
+            }));
+            
+            const playerSelect = new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId(`feedback_player_${feedbackRequestId}`)
+                .setPlaceholder('👤 Select a teammate to rate')
+                .addOptions(playerSelectOptions.slice(0, 25))
+            );
+            
+            // Rebuild rating dropdowns
+            const performanceSelect = new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId(`feedback_perf_${feedbackRequestId}`)
+                .setPlaceholder('⭐ Performance Rating (1-5)')
+                .addOptions([
+                  { label: '⭐ 1 - Poor', value: '1', description: 'Below expectations' },
+                  { label: '⭐⭐ 2 - Below Average', value: '2', description: 'Needs improvement' },
+                  { label: '⭐⭐⭐ 3 - Average', value: '3', description: 'Met expectations' },
+                  { label: '⭐⭐⭐⭐ 4 - Good', value: '4', description: 'Above average' },
+                  { label: '⭐⭐⭐⭐⭐ 5 - Excellent', value: '5', description: 'Outstanding performance' }
+                ])
+            );
+            
+            const enjoymentSelect = new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId(`feedback_enjoy_${feedbackRequestId}`)
+                .setPlaceholder('😊 Enjoyment Rating (1-5)')
+                .addOptions([
+                  { label: '😐 1 - Not fun', value: '1', description: 'Did not enjoy playing together' },
+                  { label: '🙂 2 - Somewhat', value: '2', description: 'Below average experience' },
+                  { label: '😊 3 - Fine', value: '3', description: 'Average experience' },
+                  { label: '😄 4 - Fun', value: '4', description: 'Good time playing together' },
+                  { label: '🤩 5 - Great!', value: '5', description: 'Loved playing with them' }
+                ])
+            );
+            
+            const energySelect = new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId(`feedback_energy_${feedbackRequestId}`)
+                .setPlaceholder('⚡ Team Energy (1-5)')
+                .addOptions([
+                  { label: '😴 1 - Low energy', value: '1', description: 'Brought the team down' },
+                  { label: '😶 2 - Quiet', value: '2', description: 'Not much contribution' },
+                  { label: '😊 3 - Neutral', value: '3', description: 'Average energy' },
+                  { label: '💪 4 - Positive', value: '4', description: 'Good team player' },
+                  { label: '🔥 5 - Hype!', value: '5', description: 'Energized the team' }
+                ])
+            );
+            
+            const playAgainSelect = new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId(`feedback_again_${feedbackRequestId}`)
+                .setPlaceholder('🔄 Play Again?')
+                .addOptions([
+                  { label: '👍 Prefer', value: 'prefer', description: 'Would love to team up again' },
+                  { label: '😐 Neutral', value: 'neutral', description: 'No preference' },
+                  { label: '👎 Avoid', value: 'avoid', description: 'Would rather not team up' }
+                ])
+            );
+            
+            try {
+              await interaction.message.edit({ 
+                embeds: [embed], 
+                components: [playerSelect, performanceSelect, enjoymentSelect, energySelect, playAgainSelect] 
+              });
+            } catch (editErr) {
+              console.error('[Feedback] Error updating panel:', editErr.message);
             }
             
             return interaction.followUp({ 
