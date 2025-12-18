@@ -3726,9 +3726,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         let currentlyRating = teammatesData.find(t => t.currently_rating);
         if (!currentlyRating) {
           currentlyRating = teammatesData.find(t => !t.rated);
-          if (currentlyRating) {
-            currentlyRating.currently_rating = true;
-          }
         }
         
         if (!currentlyRating) {
@@ -3738,9 +3735,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Performance rating dropdown
         if (id.startsWith('feedback_perf_')) {
           const rating = parseInt(interaction.values[0], 10);
-          const updatedTeammatesData = teammatesData.map(t => 
-            t.currently_rating ? { ...t, pending_performance: rating } : t
-          );
+          // Build updated data - preserve existing pending values and set currently_rating
+          const updatedTeammatesData = teammatesData.map(t => {
+            if (t.discord_user_id === currentlyRating.discord_user_id) {
+              return { 
+                ...t, 
+                currently_rating: true,
+                pending_performance: rating,
+                pending_enjoyment: t.pending_enjoyment,
+                pending_energy: t.pending_energy
+              };
+            }
+            return { ...t, currently_rating: false };
+          });
           
           await supabase
             .from('dm_feedback_requests')
@@ -3756,9 +3763,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Enjoyment rating dropdown
         if (id.startsWith('feedback_enjoy_')) {
           const enjoyment = parseInt(interaction.values[0], 10);
-          const updatedTeammatesData = teammatesData.map(t => 
-            t.currently_rating ? { ...t, pending_enjoyment: enjoyment } : t
-          );
+          // Build updated data - preserve existing pending values and set currently_rating
+          const updatedTeammatesData = teammatesData.map(t => {
+            if (t.discord_user_id === currentlyRating.discord_user_id) {
+              return { 
+                ...t, 
+                currently_rating: true,
+                pending_enjoyment: enjoyment,
+                pending_performance: t.pending_performance,
+                pending_energy: t.pending_energy
+              };
+            }
+            return { ...t, currently_rating: false };
+          });
           
           await supabase
             .from('dm_feedback_requests')
@@ -3774,9 +3791,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Team energy rating dropdown
         if (id.startsWith('feedback_energy_')) {
           const energy = parseInt(interaction.values[0], 10);
-          const updatedTeammatesData = teammatesData.map(t => 
-            t.currently_rating ? { ...t, pending_energy: energy } : t
-          );
+          // Build updated data - preserve existing pending values and set currently_rating
+          const updatedTeammatesData = teammatesData.map(t => {
+            if (t.discord_user_id === currentlyRating.discord_user_id) {
+              return { 
+                ...t, 
+                currently_rating: true,
+                pending_energy: energy,
+                pending_performance: t.pending_performance,
+                pending_enjoyment: t.pending_enjoyment
+              };
+            }
+            return { ...t, currently_rating: false };
+          });
           
           await supabase
             .from('dm_feedback_requests')
@@ -10129,18 +10156,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Auto-select first unrated if none selected
         if (!currentlyRating) {
           currentlyRating = teammatesData.find(t => !t.rated);
-          if (currentlyRating) {
-            currentlyRating.currently_rating = true;
-          }
         }
         
         if (!currentlyRating) {
           return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
         }
         
-        const updatedTeammatesData = teammatesData.map(t => 
-          t.currently_rating ? { ...t, pending_performance: rating } : t
-        );
+        // Build updated data - preserve existing pending values and set currently_rating
+        const updatedTeammatesData = teammatesData.map(t => {
+          if (t.discord_user_id === currentlyRating.discord_user_id) {
+            return { 
+              ...t, 
+              currently_rating: true,
+              pending_performance: rating,
+              // Preserve any existing pending values
+              pending_enjoyment: t.pending_enjoyment,
+              pending_energy: t.pending_energy
+            };
+          }
+          return { ...t, currently_rating: false };
+        });
         
         await supabase
           .from('dm_feedback_requests')
@@ -10181,18 +10216,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Auto-select first unrated if none selected
         if (!currentlyRating) {
           currentlyRating = teammatesData.find(t => !t.rated);
-          if (currentlyRating) {
-            currentlyRating.currently_rating = true;
-          }
         }
         
         if (!currentlyRating) {
           return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
         }
         
-        const updatedTeammatesData = teammatesData.map(t => 
-          t.currently_rating ? { ...t, pending_enjoyment: enjoyment } : t
-        );
+        // Build updated data - preserve existing pending values and set currently_rating
+        const updatedTeammatesData = teammatesData.map(t => {
+          if (t.discord_user_id === currentlyRating.discord_user_id) {
+            return { 
+              ...t, 
+              currently_rating: true,
+              pending_enjoyment: enjoyment,
+              // Preserve any existing pending values
+              pending_performance: t.pending_performance,
+              pending_energy: t.pending_energy
+            };
+          }
+          return { ...t, currently_rating: false };
+        });
         
         await supabase
           .from('dm_feedback_requests')
@@ -10233,18 +10276,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Auto-select first unrated if none selected
         if (!currentlyRating) {
           currentlyRating = teammatesData.find(t => !t.rated);
-          if (currentlyRating) {
-            currentlyRating.currently_rating = true;
-          }
         }
         
         if (!currentlyRating) {
           return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
         }
         
-        const updatedTeammatesData = teammatesData.map(t => 
-          t.currently_rating ? { ...t, pending_energy: energy } : t
-        );
+        // Build updated data - preserve existing pending values and set currently_rating
+        const updatedTeammatesData = teammatesData.map(t => {
+          if (t.discord_user_id === currentlyRating.discord_user_id) {
+            return { 
+              ...t, 
+              currently_rating: true,
+              pending_energy: energy,
+              // Preserve any existing pending values
+              pending_performance: t.pending_performance,
+              pending_enjoyment: t.pending_enjoyment
+            };
+          }
+          return { ...t, currently_rating: false };
+        });
         
         await supabase
           .from('dm_feedback_requests')
