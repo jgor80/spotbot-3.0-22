@@ -514,10 +514,7 @@ serve(async (req) => {
         query = query.eq("baseline_synced", true);
       }
 
-      if (position) {
-        query = query.eq("primary_position", position);
-      }
-
+      // Don't filter by position at DB level - we'll derive from player_stats and filter later
       const { data, error } = await query.limit(500);
       if (error) throw error;
       
@@ -525,10 +522,51 @@ serve(async (req) => {
       const playerIds = (data || []).map(p => p.discord_user_id);
       const trackedCounts = await getTrackedGamesCounts(playerIds);
       
-      players = (data || []).map(p => ({
-        ...p,
-        tracked_games: trackedCounts.get(p.discord_user_id) || 0,
-      }));
+      // Fetch position_played data from player_stats to derive primary_position
+      const { data: positionStats } = await supabase
+        .from("player_stats")
+        .select("discord_user_id, position_played")
+        .eq("guild_id", guild_id)
+        .eq("match_type", "club")
+        .in("discord_user_id", playerIds)
+        .not("position_played", "is", null);
+      
+      // Count positions per player
+      const playerPositionCounts = new Map<string, Record<string, number>>();
+      for (const stat of positionStats || []) {
+        if (!stat.position_played) continue;
+        const counts = playerPositionCounts.get(stat.discord_user_id) || {};
+        counts[stat.position_played] = (counts[stat.position_played] || 0) + 1;
+        playerPositionCounts.set(stat.discord_user_id, counts);
+      }
+      
+      players = (data || []).map(p => {
+        const positionCounts = playerPositionCounts.get(p.discord_user_id) || {};
+        const derivedPosition = getPrimaryPositionFromCounts(positionCounts) || p.primary_position;
+        return {
+          ...p,
+          tracked_games: trackedCounts.get(p.discord_user_id) || 0,
+          primary_position: derivedPosition,
+          position_counts: positionCounts,
+        };
+      });
+      
+      // Apply position filter after enrichment
+      // Map specific positions (GK) to category names (goalkeeper) if needed
+      if (position) {
+        const positionLower = position.toLowerCase();
+        const positionCategory = 
+          position === 'GK' ? 'goalkeeper' :
+          ['ST', 'CF', 'LW', 'RW', 'RS', 'LS', 'LF', 'RF'].includes(position) ? 'forward' :
+          ['CAM', 'CM', 'CDM', 'LM', 'RM', 'LCM', 'RCM', 'LAM', 'RAM'].includes(position) ? 'midfielder' :
+          ['CB', 'LB', 'RB', 'LWB', 'RWB', 'LCB', 'RCB', 'SW'].includes(position) ? 'defender' :
+          positionLower;
+        
+        players = players.filter(p => {
+          const playerPos = (p.primary_position || '').toLowerCase();
+          return playerPos === positionCategory || playerPos === positionLower || p.primary_position === position;
+        });
+      }
     }
 
     // Get all profiles to map ea_ accounts to real Discord IDs

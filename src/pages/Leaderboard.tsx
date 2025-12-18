@@ -29,10 +29,11 @@ const BOARD_TYPES = [
   { value: "goalkeeper", label: "Goalkeeper" },
 ];
 
-// Map EA positions to categories
-const FORWARD_POSITIONS = ['ST', 'CF', 'LW', 'RW', 'RS', 'LS'];
-const MIDFIELDER_POSITIONS = ['CAM', 'CM', 'CDM', 'LM', 'RM', 'LCM', 'RCM', 'LAM', 'RAM'];
-const DEFENDER_POSITIONS = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'LCB', 'RCB'];
+// Map EA positions to categories - EA API stores as lowercase categories
+const FORWARD_POSITIONS = ['ST', 'CF', 'LW', 'RW', 'RS', 'LS', 'forward', 'FORWARD'];
+const MIDFIELDER_POSITIONS = ['CAM', 'CM', 'CDM', 'LM', 'RM', 'LCM', 'RCM', 'LAM', 'RAM', 'midfielder', 'MIDFIELDER'];
+const DEFENDER_POSITIONS = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'LCB', 'RCB', 'defender', 'DEFENDER'];
+const GK_POSITIONS = ['GK', 'goalkeeper', 'GOALKEEPER'];
 
 export default function Leaderboard() {
   const { selectedGuildId, isLoading: guildLoading, selectedGuild } = useGuild();
@@ -90,7 +91,7 @@ export default function Leaderboard() {
       );
     } else if (boardType === "goalkeeper") {
       filtered = filtered.filter(p => 
-        p.primary_position === 'GK' || (p.saves || 0) > 0
+        GK_POSITIONS.includes(p.primary_position || '') || (p.saves || 0) > 0
       );
     }
     
