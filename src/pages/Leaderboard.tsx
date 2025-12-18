@@ -58,6 +58,12 @@ export default function Leaderboard() {
     return undefined;
   }, [boardType]);
   
+  // For positional boards, always use tracked game stats (position data comes from match records)
+  const effectiveStatsSource = useMemo(() => {
+    if (boardType !== "overall") return "games";
+    return statsSource;
+  }, [boardType, statsSource]);
+  
   const { data: players, isLoading: playersLoading, error } = useLeaderboard(
     selectedGuildId,
     activeTab,
@@ -65,7 +71,7 @@ export default function Leaderboard() {
     100,
     monthYear,
     clubFilter === "all" ? undefined : clubFilter,
-    statsSource
+    effectiveStatsSource
   );
 
   const processedPlayers = useMemo(() => {
@@ -160,13 +166,13 @@ export default function Leaderboard() {
                 {showWorst 
                   ? "Players ranked from worst to best (min 3 games)" 
                   : boardType === "forward" 
-                    ? "Goals, assists, shots, dribbles & shot conversion"
+                    ? "Goals, assists, shots, dribbles & shot conversion (tracked games)"
                     : boardType === "midfielder"
-                      ? "Passes, assists, tackles, interceptions & possession"
+                      ? "Passes, assists, tackles, interceptions & possession (tracked games)"
                       : boardType === "defender"
-                        ? "Tackles, interceptions, clearances & clean sheets"
+                        ? "Tackles, interceptions, clearances & clean sheets (tracked games)"
                         : boardType === "goalkeeper"
-                          ? "Saves breakdown, clean sheets & save percentage"
+                          ? "Saves breakdown, clean sheets & save percentage (tracked games)"
                           : clubFilter === "all"
                             ? statsSource === "members"
                               ? "Career stats from EA member board"
@@ -216,7 +222,11 @@ export default function Leaderboard() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={statsSource} onValueChange={(v) => setStatsSource(v as "all" | "members" | "games")}>
+            <Select 
+              value={boardType !== "overall" ? "games" : statsSource} 
+              onValueChange={(v) => setStatsSource(v as "all" | "members" | "games")}
+              disabled={boardType !== "overall"}
+            >
               <SelectTrigger className="w-[200px] bg-card">
                 <SelectValue placeholder="Stats source" />
               </SelectTrigger>
