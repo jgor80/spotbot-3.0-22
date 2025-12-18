@@ -10108,11 +10108,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.followUp({ content: '⏰ **Feedback window expired!**', flags: 64 });
         }
         
-        // Store selected player in teammates_data
+        // Store selected player in teammates_data - CLEAR pending values when switching players
         const teammatesData = feedbackRequest.teammates_data || [];
         const updatedTeammatesData = teammatesData.map(t => ({
           ...t,
-          currently_rating: t.discord_user_id === selectedPlayerId
+          currently_rating: t.discord_user_id === selectedPlayerId,
+          // Clear pending values when switching to prevent old ratings from carrying over
+          pending_performance: t.discord_user_id === selectedPlayerId ? null : t.pending_performance,
+          pending_enjoyment: t.discord_user_id === selectedPlayerId ? null : t.pending_enjoyment,
+          pending_energy: t.discord_user_id === selectedPlayerId ? null : t.pending_energy
         }));
         
         await supabase
@@ -10123,7 +10127,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const selectedPlayer = teammatesData.find(t => t.discord_user_id === selectedPlayerId);
         
         return interaction.followUp({ 
-          content: `✅ Selected **${selectedPlayer?.ea_username || 'Player'}** - now choose ratings from the dropdowns above!`, 
+          content: `✅ Selected **${selectedPlayer?.ea_username || 'Player'}** - ratings cleared. Choose ratings from the dropdowns above!`, 
           flags: 64 
         });
       }
