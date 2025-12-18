@@ -1926,6 +1926,240 @@ async function backfillOpponentScouting() {
   console.log(`\n✅ Backfill complete: ${scoutedClubs} clubs, ${totalPlayers} players scouted\n`);
 }
 
+// Backfill last 10 games for each club (avoiding duplicates)
+async function backfillMatchHistory() {
+  console.log('\n🔄 Backfilling match history (last 10 games per club)...\n');
+  
+  // Get all guilds and their clubs
+  const { data: guilds } = await supabase
+    .from('guild_settings')
+    .select('guild_id, clubs, name');
+  
+  if (!guilds?.length) {
+    console.log('❌ No guilds found');
+    return;
+  }
+  
+  let totalSynced = 0;
+  let totalSkipped = 0;
+  
+  for (const guild of guilds) {
+    const guildId = guild.guild_id;
+    const guildName = guild.name || guildId;
+    const clubs = guild.clubs || [];
+    
+    console.log(`\n📋 Processing guild: ${guildName}`);
+    
+    // Get all existing match IDs for this guild to avoid duplicates
+    const { data: existingMatches } = await supabase
+      .from('club_matches')
+      .select('ea_match_id')
+      .eq('guild_id', guildId);
+    
+    const existingMatchIds = new Set((existingMatches || []).map(m => m.ea_match_id));
+    console.log(`  📊 Found ${existingMatchIds.size} existing matches in DB`);
+    
+    for (const club of clubs) {
+      if (!club.enabled || !club.ea_club_id) continue;
+      
+      const clubName = club.name || club.key;
+      const platform = club.ea_platform || 'ps5';
+      const clubKey = club.key;
+      
+      console.log(`\n  ⚽ Fetching matches for ${clubName} (${club.ea_club_id})...`);
+      
+      try {
+        // Fetch all match types
+        const allMatches = await fetchAllMatches(club.ea_club_id, platform);
+        
+        if (!allMatches.length) {
+          console.log(`    ⚠️ No matches found from EA API`);
+          continue;
+        }
+        
+        // Sort by match ID (higher = more recent) and take last 10
+        const sortedMatches = allMatches.sort((a, b) => {
+          const idA = parseInt(a.matchId || 0);
+          const idB = parseInt(b.matchId || 0);
+          return idB - idA;
+        }).slice(0, 10);
+        
+        console.log(`    📥 Processing ${sortedMatches.length} most recent matches...`);
+        
+        let clubSynced = 0;
+        let clubSkipped = 0;
+        
+        for (const matchData of sortedMatches) {
+          const matchId = matchData.matchId?.toString();
+          if (!matchId) continue;
+          
+          // Skip if already exists
+          if (existingMatchIds.has(matchId)) {
+            clubSkipped++;
+            continue;
+          }
+          
+          // Process match data
+          const ourClubData = matchData.clubs?.[club.ea_club_id];
+          const opponentClubId = Object.keys(matchData.clubs || {}).find(id => id !== club.ea_club_id);
+          const opponentClubData = opponentClubId ? matchData.clubs[opponentClubId] : null;
+          
+          const scoreFor = parseInt(ourClubData?.goals || 0);
+          const scoreAgainst = parseInt(opponentClubData?.goals || 0);
+          
+          let result = 'draw';
+          if (scoreFor > scoreAgainst) result = 'win';
+          else if (scoreFor < scoreAgainst) result = 'loss';
+          
+          // Get opponent name from club data
+          const opponentName = opponentClubData?.details?.name || opponentClubData?.name || 'Unknown';
+          
+          // Extract player stats
+          const playerStats = [];
+          const players = matchData.players?.[club.ea_club_id] || {};
+          
+          for (const [playerId, pStats] of Object.entries(players)) {
+            playerStats.push({
+              ea_username: pStats.playername || pStats.name,
+              goals: parseInt(pStats.goals || 0),
+              assists: parseInt(pStats.assists || 0),
+              rating: parseFloat(pStats.rating || 0),
+              position: pStats.pos || pStats.position,
+              motm: pStats.mom === '1' || pStats.mom === 1,
+              shots: parseInt(pStats.shots || 0),
+              tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
+              tackle_attempts: parseInt(pStats.tackleattempts || 0),
+              passes_made: parseInt(pStats.passesmade || 0),
+              pass_attempts: parseInt(pStats.passattempts || 0),
+              red_cards: pStats.redcards === '1' || pStats.redcards === 1,
+              saves: parseInt(pStats.saves || 0),
+              interceptions: parseInt(pStats.interceptions || 0),
+              clearances: parseInt(pStats.clearances || 0),
+              dribbles: parseInt(pStats.dribblewon || 0),
+              fouls: parseInt(pStats.fouls || 0),
+              offsides: parseInt(pStats.offsides || 0),
+              archetypeid: pStats.archetypeid || null,
+              seconds_played: parseInt(pStats.secondsPlayed || 0),
+              saves_diving: parseInt(pStats.savesdiving || 0),
+              saves_reflex: parseInt(pStats.savesreflex || 0),
+              saves_parry: parseInt(pStats.savesparry || 0),
+              saves_cross: parseInt(pStats.savescross || 0),
+              saves_punch: parseInt(pStats.savespunch || 0),
+              goals_conceded: parseInt(pStats.goalsconceded || 0)
+            });
+          }
+          
+          // Determine match type from category
+          const matchType = matchData._matchCategory || 'division';
+          
+          // Insert match
+          const { data: insertedMatch, error: matchError } = await supabase
+            .from('club_matches')
+            .insert({
+              guild_id: guildId,
+              club_key: clubKey,
+              ea_match_id: matchId,
+              match_type: matchType,
+              result,
+              score_for: scoreFor,
+              score_against: scoreAgainst,
+              opponent_club_name: opponentName,
+              opponent_club_id: opponentClubId,
+              match_data: matchData,
+              player_stats: playerStats
+            })
+            .select('id')
+            .single();
+          
+          if (matchError) {
+            if (matchError.code === '23505') {
+              // Duplicate - already exists
+              clubSkipped++;
+            } else {
+              console.log(`    ❌ Error inserting match ${matchId}: ${matchError.message}`);
+            }
+            continue;
+          }
+          
+          clubSynced++;
+          existingMatchIds.add(matchId); // Track to avoid re-processing
+          
+          // Also insert player_stats for each player
+          for (const pStat of playerStats) {
+            // Find profile for this EA username
+            let { data: profile } = await supabase
+              .from('profiles')
+              .select('discord_user_id')
+              .eq('ea_username', pStat.ea_username)
+              .not('discord_user_id', 'like', 'ea_%')
+              .maybeSingle();
+            
+            if (!profile) continue;
+            
+            // Check if player stats already exist for this match
+            const { data: existingStats } = await supabase
+              .from('player_stats')
+              .select('id')
+              .eq('ea_match_id', matchId)
+              .eq('discord_user_id', profile.discord_user_id)
+              .maybeSingle();
+            
+            if (existingStats) continue;
+            
+            // Insert player stats
+            await supabase.from('player_stats').insert({
+              guild_id: guildId,
+              discord_user_id: profile.discord_user_id,
+              ea_match_id: matchId,
+              match_type: 'club',
+              goals: pStat.goals,
+              assists: pStat.assists,
+              clean_sheet: (pStat.position === 'GK' || pStat.position === 'goalkeeper') && scoreAgainst === 0,
+              won: result === 'win',
+              ea_match_rating: pStat.rating,
+              position_played: pStat.position,
+              man_of_match: pStat.motm,
+              shots: pStat.shots,
+              tackles: pStat.tackles,
+              tackle_attempts: pStat.tackle_attempts,
+              passes_made: pStat.passes_made,
+              pass_attempts: pStat.pass_attempts,
+              red_cards: pStat.red_cards,
+              interceptions: pStat.interceptions,
+              clearances: pStat.clearances,
+              dribbles: pStat.dribbles,
+              fouls: pStat.fouls,
+              offsides: pStat.offsides,
+              seconds_played: pStat.seconds_played,
+              archetypeid: pStat.archetypeid,
+              saves_diving: pStat.saves_diving,
+              saves_reflex: pStat.saves_reflex,
+              saves_parry: pStat.saves_parry,
+              saves_cross: pStat.saves_cross,
+              saves_punch: pStat.saves_punch,
+              goals_conceded: pStat.goals_conceded
+            });
+          }
+          
+          console.log(`    ✅ ${matchType}: ${result} ${scoreFor}-${scoreAgainst} vs ${opponentName}`);
+        }
+        
+        console.log(`    📊 ${clubName}: ${clubSynced} new, ${clubSkipped} already existed`);
+        totalSynced += clubSynced;
+        totalSkipped += clubSkipped;
+        
+        // Small delay between clubs to avoid rate limiting
+        await new Promise(r => setTimeout(r, 1000));
+        
+      } catch (err) {
+        console.error(`    ❌ Error fetching matches for ${clubName}:`, err.message);
+      }
+    }
+  }
+  
+  console.log(`\n✅ Backfill complete: ${totalSynced} new matches synced, ${totalSkipped} duplicates skipped\n`);
+}
+
 // Check if current time is within active hours (8 AM - 2 AM Central Time)
 function isActiveHours() {
   // Get current time in Central Time
@@ -1949,7 +2183,7 @@ function scheduledSync() {
   }
 }
 
-// Check for backfill command
+// Check for command line arguments
 const args = process.argv.slice(2);
 if (args.includes('--backfill-scouting')) {
   console.log('🚀 Running opponent scouting backfill...');
@@ -1957,12 +2191,19 @@ if (args.includes('--backfill-scouting')) {
     console.log('✅ Backfill complete, exiting.');
     process.exit(0);
   });
+} else if (args.includes('--backfill-matches')) {
+  console.log('🚀 Running match history backfill (last 10 games per club)...');
+  backfillMatchHistory().then(() => {
+    console.log('✅ Match backfill complete, exiting.');
+    process.exit(0);
+  });
 } else {
   // Run immediately then every 10 minutes
   console.log('🚀 EA Sync Local started');
   console.log('📡 Running from your local IP to bypass EA cloud blocking');
   console.log('⏱️  Syncing every 10 minutes (active 8 AM - 2 AM CT)');
-  console.log('💡 Run with --backfill-scouting to backfill opponent intel\n');
+  console.log('💡 Run with --backfill-scouting to backfill opponent intel');
+  console.log('💡 Run with --backfill-matches to backfill last 10 games per club\n');
   
   scheduledSync();
   setInterval(scheduledSync, 600000); // 10 minutes = 600,000ms
