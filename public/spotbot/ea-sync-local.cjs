@@ -286,94 +286,96 @@ const EA_HEADERS = {
   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
 };
 
-// Match type mappings - try string-based values first, then legacy numeric
-const MATCH_TYPE_CONFIG = {
-  division: ['leagueMatch', 'matchType9'],
-  competition: ['playoffMatch', 'matchType13'],
-  friendly: ['friendlyMatch', 'matchType22']
-};
-
-// Fetch match history using matchType parameter
-async function fetchMatchesByType(clubId, platform, matchTypeValue, category = 'division') {
+// Fetch ALL matches without filtering by type - EA API matchType values are unreliable
+async function fetchAllMatchesFromEA(clubId, platform) {
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
   
   try {
-    console.log(`[EA] Fetching ${category} matches (matchType=${matchTypeValue}) for club ${clubId}...`);
+    console.log(`[EA] Fetching all matches for club ${clubId} (no matchType filter)...`);
     
-    // Use matchType parameter (confirmed required by EA API)
+    // Fetch without matchType to get all recent matches
     const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
-      params: { platform: fcPlatform, clubIds: clubId, matchType: matchTypeValue, maxResultCount: 30 },
+      params: { platform: fcPlatform, clubIds: clubId, maxResultCount: 50 },
       headers: EA_HEADERS,
-      timeout: 10000
+      timeout: 15000
     });
     
     if (res.status !== 200) return [];
     
     let matches = res.data;
-    if (Array.isArray(matches) && matches.length > 0) {
-      console.log(`[EA] ✓ Got ${matches.length} ${category} matches using matchType=${matchTypeValue}`);
+    
+    // Handle different response formats
+    if (Array.isArray(matches)) {
+      console.log(`[EA] ✓ Got ${matches.length} total matches`);
       return matches;
     }
-    if (matches?.matches && matches.matches.length > 0) {
-      console.log(`[EA] ✓ Got ${matches.matches.length} ${category} matches using matchType=${matchTypeValue}`);
+    if (matches?.matches && Array.isArray(matches.matches)) {
+      console.log(`[EA] ✓ Got ${matches.matches.length} total matches`);
       return matches.matches;
     }
     
-    const vals = Object.values(matches).filter(v => v && typeof v === 'object');
+    // Some responses have matches keyed by match ID
+    const vals = Object.values(matches).filter(v => v && typeof v === 'object' && (v.matchId || v.timestamp));
     if (vals.length > 0) {
-      console.log(`[EA] ✓ Got ${vals.length} ${category} matches using matchType=${matchTypeValue}`);
+      console.log(`[EA] ✓ Got ${vals.length} total matches from object response`);
       return vals;
     }
     
+    console.log(`[EA] No matches found in response`);
     return [];
   } catch (err) {
     const status = err.response?.status;
-    const errorData = err.response?.data;
-    console.log(`[EA] matchType=${matchTypeValue} failed (${status || 'network'}): ${err.message}`);
-    if (errorData) {
-      console.log(`[EA] Error response: ${JSON.stringify(errorData).substring(0, 200)}`);
+    console.log(`[EA] Failed to fetch matches (${status || 'network'}): ${err.message}`);
+    if (err.response?.data) {
+      console.log(`[EA] Error: ${JSON.stringify(err.response.data).substring(0, 300)}`);
     }
     return [];
   }
 }
 
-// Fetch matches for a category with fallback match types
-async function fetchMatchesWithFallback(clubId, platform, category) {
-  const matchTypes = MATCH_TYPE_CONFIG[category] || ['matchType9'];
+// Categorize matches by type based on matchType field in the response data
+function categorizeMatches(matches) {
+  const division = [];
+  const cup = [];
+  const friendly = [];
   
-  for (const matchType of matchTypes) {
-    const matches = await fetchMatchesByType(clubId, platform, matchType, category);
-    if (matches.length > 0) {
-      // Tag matches with category
-      for (const m of matches) {
-        m._matchCategory = category;
-      }
-      return matches;
+  for (const match of matches) {
+    const matchType = match.matchType || match.gameType || '';
+    const matchTypeStr = String(matchType).toLowerCase();
+    
+    // Tag with category for later use
+    if (matchTypeStr.includes('league') || matchTypeStr === 'matchtype9' || matchTypeStr === '9') {
+      match._matchCategory = 'division';
+      division.push(match);
+    } else if (matchTypeStr.includes('playoff') || matchTypeStr.includes('cup') || matchTypeStr === 'matchtype13' || matchTypeStr === '13') {
+      match._matchCategory = 'competition';
+      cup.push(match);
+    } else if (matchTypeStr.includes('friendly') || matchTypeStr === 'matchtype22' || matchTypeStr === '22') {
+      match._matchCategory = 'friendly';
+      friendly.push(match);
+    } else {
+      // Unknown type - default to division (rivals) since that's most common
+      console.log(`[EA] Unknown matchType: "${matchType}", defaulting to division`);
+      match._matchCategory = 'division';
+      division.push(match);
     }
-    console.log(`[EA] ${matchType} returned no results, trying next fallback...`);
   }
   
-  console.log(`[EA] All ${category} match types exhausted, no matches found`);
-  return [];
+  console.log(`[EA] Categorized: ${division.length} division, ${cup.length} cup, ${friendly.length} friendly`);
+  return { division, cup, friendly };
 }
 
-// Fetch ALL match types (division, competition, friendly) with fallbacks
+// Fetch ALL match types and return combined array
 async function fetchAllMatches(clubId, platform) {
-  const allMatches = [];
+  const allMatches = await fetchAllMatchesFromEA(clubId, platform);
   
-  // Division/League matches
-  const divisionMatches = await fetchMatchesWithFallback(clubId, platform, 'division');
-  allMatches.push(...divisionMatches);
+  if (allMatches.length === 0) {
+    console.log(`[EA] No matches returned from EA API`);
+    return [];
+  }
   
-  // Competition/Cup matches
-  const cupMatches = await fetchMatchesWithFallback(clubId, platform, 'competition');
-  allMatches.push(...cupMatches);
-  
-  // Friendly matches
-  const friendlyMatches = await fetchMatchesWithFallback(clubId, platform, 'friendly');
-  allMatches.push(...friendlyMatches);
-  
-  console.log(`[EA] Total matches fetched: ${allMatches.length} (${divisionMatches.length} division, ${cupMatches.length} cup, ${friendlyMatches.length} friendly)`);
+  // Categorize but return all matches combined
+  categorizeMatches(allMatches);
   return allMatches;
 }
 
