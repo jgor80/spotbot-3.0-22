@@ -71,6 +71,26 @@ interface OwnPlayer {
 
 type SortField = "times_faced" | "games_played" | "goals" | "assists" | "win_rate" | "avg_match_rating";
 
+interface OpponentMatchStats {
+  ea_username: string;
+  ea_club_id: string;
+  ea_club_name: string | null;
+  games_vs_us: number;
+  goals_vs_us: number;
+  assists_vs_us: number;
+  wins_vs_us: number;
+  losses_vs_us: number;
+  draws_vs_us: number;
+  avg_rating_vs_us: number;
+  shots_vs_us: number;
+  tackles_vs_us: number;
+  passes_made_vs_us: number;
+  interceptions_vs_us: number;
+  saves_vs_us: number;
+  motm_vs_us: number;
+  positions_played: string[];
+}
+
 export default function ScoutingIntelPage() {
   const { selectedGuildId } = useGuild();
   const [clubFilter, setClubFilter] = useState<string>("all");
@@ -94,6 +114,102 @@ export default function ScoutingIntelPage() {
       
       if (error) throw error;
       return data as ScoutedPlayer[];
+    },
+    enabled: !!selectedGuildId,
+  });
+
+  // Fetch opponent player stats from actual matches
+  const { data: opponentMatchStats } = useQuery({
+    queryKey: ["opponent-match-stats", selectedGuildId],
+    queryFn: async () => {
+      if (!selectedGuildId) return [];
+      
+      const { data, error } = await supabase
+        .from("club_matches")
+        .select("match_data, opponent_club_id, opponent_club_name, result")
+        .eq("guild_id", selectedGuildId)
+        .not("match_data", "is", null)
+        .not("opponent_club_id", "is", null);
+      
+      if (error) throw error;
+      
+      // Aggregate opponent player stats
+      const playerStats = new Map<string, OpponentMatchStats>();
+      
+      for (const match of data || []) {
+        const matchData = match.match_data as any;
+        const opponentClubId = match.opponent_club_id;
+        if (!matchData?.players || !opponentClubId) continue;
+        
+        const opponentPlayers = matchData.players[opponentClubId];
+        if (!opponentPlayers) continue;
+        
+        // Get club name from match_data
+        const clubName = matchData.clubs?.[opponentClubId]?.details?.name || 
+                        matchData.clubs?.[opponentClubId]?.name || 
+                        match.opponent_club_name || "Unknown";
+        
+        // Determine if opponent won this match (invert our result)
+        const opponentWon = match.result === "loss";
+        const opponentLost = match.result === "win";
+        const isDraw = match.result === "draw";
+        
+        for (const [playerId, stats] of Object.entries(opponentPlayers)) {
+          const playerData = stats as any;
+          const playerName = playerData.playername || `Player ${playerId}`;
+          const key = `${opponentClubId}_${playerName}`;
+          
+          if (!playerStats.has(key)) {
+            playerStats.set(key, {
+              ea_username: playerName,
+              ea_club_id: opponentClubId,
+              ea_club_name: clubName,
+              games_vs_us: 0,
+              goals_vs_us: 0,
+              assists_vs_us: 0,
+              wins_vs_us: 0,
+              losses_vs_us: 0,
+              draws_vs_us: 0,
+              avg_rating_vs_us: 0,
+              shots_vs_us: 0,
+              tackles_vs_us: 0,
+              passes_made_vs_us: 0,
+              interceptions_vs_us: 0,
+              saves_vs_us: 0,
+              motm_vs_us: 0,
+              positions_played: [],
+            });
+          }
+          
+          const existing = playerStats.get(key)!;
+          existing.games_vs_us++;
+          existing.goals_vs_us += playerData.goals || 0;
+          existing.assists_vs_us += playerData.assists || 0;
+          existing.shots_vs_us += playerData.shots || 0;
+          existing.tackles_vs_us += playerData.tacklesmade || 0;
+          existing.passes_made_vs_us += playerData.passesmade || 0;
+          existing.interceptions_vs_us += playerData.interceptions || 0;
+          existing.saves_vs_us += (playerData.ballDiveSaves || 0) + (playerData.crossSaves || 0) + 
+                                  (playerData.parrySaves || 0) + (playerData.punchSaves || 0) + 
+                                  (playerData.reflexSaves || 0);
+          existing.motm_vs_us += playerData.mom || 0;
+          
+          if (opponentWon) existing.wins_vs_us++;
+          else if (opponentLost) existing.losses_vs_us++;
+          else if (isDraw) existing.draws_vs_us++;
+          
+          // Running average for rating
+          const rating = parseFloat(playerData.rating) || 0;
+          existing.avg_rating_vs_us = ((existing.avg_rating_vs_us * (existing.games_vs_us - 1)) + rating) / existing.games_vs_us;
+          
+          // Track positions
+          if (playerData.pos && !existing.positions_played.includes(playerData.pos)) {
+            existing.positions_played.push(playerData.pos);
+          }
+        }
+      }
+      
+      return Array.from(playerStats.values()).sort((a, b) => b.games_vs_us - a.games_vs_us);
     },
     enabled: !!selectedGuildId,
   });
@@ -379,6 +495,90 @@ export default function ScoutingIntelPage() {
                             }>
                               {isPositive ? "Winning" : isNegative ? "Losing" : "Even"}
                             </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Opponent Player Stats vs Your Guild */}
+        {opponentMatchStats && opponentMatchStats.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Crosshair className="h-5 w-5 text-red-500" />
+                Opponent Players vs Your Guild
+              </CardTitle>
+              <CardDescription>Detailed stats from actual games played against you</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[150px]">Player</TableHead>
+                      <TableHead>Club</TableHead>
+                      <TableHead className="text-center">Pos</TableHead>
+                      <TableHead className="text-center">Games</TableHead>
+                      <TableHead className="text-center">
+                        <Star className="h-4 w-4 mx-auto" />
+                      </TableHead>
+                      <TableHead className="text-center">
+                        <Goal className="h-4 w-4 mx-auto" />
+                      </TableHead>
+                      <TableHead className="text-center">
+                        <HandHelping className="h-4 w-4 mx-auto" />
+                      </TableHead>
+                      <TableHead className="text-center">Shots</TableHead>
+                      <TableHead className="text-center">Tackles</TableHead>
+                      <TableHead className="text-center">Passes</TableHead>
+                      <TableHead className="text-center">Saves</TableHead>
+                      <TableHead className="text-center">MOTM</TableHead>
+                      <TableHead className="text-center">W-L-D</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {opponentMatchStats.slice(0, 25).map((player, idx) => {
+                      const primaryPos = player.positions_played[0] || "-";
+                      return (
+                        <TableRow key={idx}>
+                          <TableCell className="font-medium">{player.ea_username}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {player.ea_club_name || "Unknown"}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge className={getPositionColor(primaryPos)}>
+                              {primaryPos}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center font-mono">{player.games_vs_us}</TableCell>
+                          <TableCell className="text-center font-mono">
+                            {player.avg_rating_vs_us > 0 ? player.avg_rating_vs_us.toFixed(1) : "-"}
+                          </TableCell>
+                          <TableCell className="text-center font-mono">{player.goals_vs_us}</TableCell>
+                          <TableCell className="text-center font-mono">{player.assists_vs_us}</TableCell>
+                          <TableCell className="text-center font-mono">{player.shots_vs_us}</TableCell>
+                          <TableCell className="text-center font-mono">{player.tackles_vs_us}</TableCell>
+                          <TableCell className="text-center font-mono">{player.passes_made_vs_us}</TableCell>
+                          <TableCell className="text-center font-mono">{player.saves_vs_us}</TableCell>
+                          <TableCell className="text-center font-mono">
+                            {player.motm_vs_us > 0 && (
+                              <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+                                {player.motm_vs_us}
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center font-mono text-sm">
+                            <span className="text-emerald-500">{player.wins_vs_us}</span>
+                            <span className="text-muted-foreground">-</span>
+                            <span className="text-red-500">{player.losses_vs_us}</span>
+                            <span className="text-muted-foreground">-</span>
+                            <span>{player.draws_vs_us}</span>
                           </TableCell>
                         </TableRow>
                       );
