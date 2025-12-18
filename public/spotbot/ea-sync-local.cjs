@@ -286,64 +286,75 @@ const EA_HEADERS = {
   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
 };
 
-// Fetch match history - tries multiple matchType formats
-async function fetchMatches(clubId, platform) {
+// Fetch match history for a specific match type
+async function fetchMatchesByType(clubId, platform, matchType) {
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
   
-  // EA API sometimes changes matchType format - try multiple options
-  const matchTypes = ['leagueMatch', 'gameType9', 'matchType9', 'league'];
-  
-  for (const matchType of matchTypes) {
-    try {
-      console.log(`[EA] Trying matchType: ${matchType}`);
-      const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
-        params: { platform: fcPlatform, clubIds: clubId, matchType, maxResultCount: 50 },
-        headers: EA_HEADERS,
-        timeout: 10000
-      });
-      
-      if (res.status !== 200) continue;
-      
-      let matches = res.data;
-      if (Array.isArray(matches) && matches.length > 0) {
-        console.log(`[EA] Success with matchType: ${matchType}`);
-        return matches;
-      }
-      if (matches?.matches && matches.matches.length > 0) {
-        console.log(`[EA] Success with matchType: ${matchType}`);
-        return matches.matches;
-      }
-      
-      const vals = Object.values(matches).filter(v => v && typeof v === 'object');
-      if (vals.length > 0) {
-        console.log(`[EA] Success with matchType: ${matchType}`);
-        return vals;
-      }
-    } catch (err) {
-      console.log(`[EA] matchType ${matchType} failed: ${err.message}`);
-    }
-  }
-  
-  // Also try without matchType param
   try {
-    console.log(`[EA] Trying without matchType param`);
+    console.log(`[EA] Fetching ${matchType} matches for club ${clubId}...`);
     const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
-      params: { platform: fcPlatform, clubIds: clubId, maxResultCount: 50 },
+      params: { platform: fcPlatform, clubIds: clubId, matchType, maxResultCount: 50 },
       headers: EA_HEADERS,
       timeout: 10000
     });
     
-    if (res.status === 200) {
-      let matches = res.data;
-      if (Array.isArray(matches)) return matches;
-      if (matches?.matches) return matches.matches;
-      return Object.values(matches).filter(v => v && typeof v === 'object');
+    if (res.status !== 200) return [];
+    
+    let matches = res.data;
+    if (Array.isArray(matches) && matches.length > 0) {
+      console.log(`[EA] Got ${matches.length} ${matchType} matches`);
+      return matches;
     }
+    if (matches?.matches && matches.matches.length > 0) {
+      console.log(`[EA] Got ${matches.matches.length} ${matchType} matches`);
+      return matches.matches;
+    }
+    
+    const vals = Object.values(matches).filter(v => v && typeof v === 'object');
+    if (vals.length > 0) {
+      console.log(`[EA] Got ${vals.length} ${matchType} matches`);
+      return vals;
+    }
+    
+    return [];
   } catch (err) {
-    console.log(`[EA] No matchType failed: ${err.message}`);
+    console.log(`[EA] ${matchType} failed: ${err.message}`);
+    return [];
+  }
+}
+
+// Fetch ALL match types (division, competition, friendly)
+async function fetchAllMatches(clubId, platform) {
+  const allMatches = [];
+  
+  // matchType9 = Division/League matches
+  const divisionMatches = await fetchMatchesByType(clubId, platform, 'matchType9');
+  for (const m of divisionMatches) {
+    m._matchCategory = 'division';
+    allMatches.push(m);
   }
   
-  return [];
+  // matchType13 = Competition/Cup matches
+  const cupMatches = await fetchMatchesByType(clubId, platform, 'matchType13');
+  for (const m of cupMatches) {
+    m._matchCategory = 'competition';
+    allMatches.push(m);
+  }
+  
+  // matchType22 = Friendly matches
+  const friendlyMatches = await fetchMatchesByType(clubId, platform, 'matchType22');
+  for (const m of friendlyMatches) {
+    m._matchCategory = 'friendly';
+    allMatches.push(m);
+  }
+  
+  console.log(`[EA] Total matches fetched: ${allMatches.length} (${divisionMatches.length} division, ${cupMatches.length} cup, ${friendlyMatches.length} friendly)`);
+  return allMatches;
+}
+
+// Legacy function for backward compatibility
+async function fetchMatches(clubId, platform) {
+  return fetchAllMatches(clubId, platform);
 }
 
 // Fetch club info
@@ -1073,7 +1084,7 @@ async function syncMatches(guildId, clubKey, club) {
           guild_id: guildId,
           club_key: clubKey,
           ea_match_id: matchId,
-          match_type: 'division',
+          match_type: matchData._matchCategory || 'division',
           result,
           score_for: scoreFor,
           score_against: scoreAgainst,
