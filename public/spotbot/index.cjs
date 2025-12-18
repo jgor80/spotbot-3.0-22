@@ -3556,6 +3556,387 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    // Handle DM button interactions for feedback
+    if (!interaction.guildId && interaction.isButton()) {
+      const id = interaction.customId;
+      
+      // Handle feedback button clicks in DMs
+      if (id.startsWith('feedback_btn_')) {
+        // Parse button ID: feedback_btn_<type>_<value>_<requestId>
+        const parts = id.replace('feedback_btn_', '').split('_');
+        const type = parts[0]; // perf, enjoy, energy, again, submit
+        const value = parts[1]; // rating value or play again value
+        const feedbackRequestId = parts.slice(2).join('_');
+        
+        try {
+          await interaction.deferUpdate();
+        } catch (e) {
+          console.log('[Feedback] Button interaction already handled or expired, continuing...');
+        }
+        
+        const { data: feedbackRequest } = await supabase
+          .from('dm_feedback_requests')
+          .select('*')
+          .eq('id', feedbackRequestId)
+          .single();
+        
+        if (!feedbackRequest) {
+          return interaction.followUp({ content: '❌ Feedback request not found.', flags: 64 });
+        }
+        
+        if (new Date(feedbackRequest.expires_at) < new Date()) {
+          try { await interaction.message.delete(); } catch {}
+          return interaction.followUp({ content: '⏰ **Feedback window expired!**', flags: 64 });
+        }
+        
+        let teammatesData = feedbackRequest.teammates_data || [];
+        
+        // Helper function to rebuild and update the feedback panel with BUTTONS
+        const rebuildFeedbackPanelBtn = async (updatedTeammatesData, feedbackReq, requestId) => {
+          const matchType = feedbackReq.match_type === 'club' ? 'Club Match' : 'Draft';
+          const currentlyRatingPlayer = updatedTeammatesData.find(t => t.currently_rating);
+          
+          let description = `You recently played a **${matchType}**!\n\n**Rate each teammate:**\n\n`;
+          
+          for (const teammate of updatedTeammatesData) {
+            const position = teammate.position_played || 'ANY';
+            const name = teammate.ea_username || `Player`;
+            if (teammate.rated) {
+              const stars = '⭐'.repeat(teammate.given_rating || 0);
+              const vEmoji = teammate.vibe?.playAgain === 'prefer' ? '💚' : teammate.vibe?.playAgain === 'avoid' ? '💔' : '💛';
+              description += `✅ **${name}** (${position}): ${stars} ${vEmoji}\n`;
+            } else if (teammate.currently_rating) {
+              const perf = teammate.pending_performance ? `⭐${teammate.pending_performance}` : '❓';
+              const enjoy = teammate.pending_enjoyment ? `😊${teammate.pending_enjoyment}` : '❓';
+              const energy = teammate.pending_energy ? `⚡${teammate.pending_energy}` : '❓';
+              const again = teammate.pending_play_again ? (teammate.pending_play_again === 'prefer' ? '💚' : teammate.pending_play_again === 'avoid' ? '💔' : '💛') : '❓';
+              description += `➡️ **${name}** (${position}): ${perf} ${enjoy} ${energy} ${again}\n`;
+            } else {
+              description += `⬜ **${name}** (${position}): Not rated\n`;
+            }
+          }
+          
+          const expiresAt = new Date(feedbackReq.expires_at);
+          const remainingMs = expiresAt.getTime() - Date.now();
+          const remainingMins = Math.max(1, Math.floor(remainingMs / 60000));
+          
+          const embed = new EmbedBuilder()
+            .setTitle('⭐ Rate Your Teammates')
+            .setColor(0x5865f2)
+            .setDescription(description)
+            .setFooter({ text: `⏰ Expires in ${remainingMins} minutes` });
+          
+          const components = [];
+          
+          const playerSelectOptions = updatedTeammatesData.map(t => ({
+            label: `${t.rated ? '✅ ' : ''}${t.ea_username || `Player ${t.discord_user_id.slice(-4)}`}`,
+            description: t.rated ? `Rated: ⭐${t.given_rating}` : `Position: ${t.position_played || 'ANY'}`,
+            value: t.discord_user_id,
+            default: t.currently_rating
+          }));
+          
+          const playerSelect = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(`feedback_player_${requestId}`)
+              .setPlaceholder('👤 Select a teammate to rate')
+              .addOptions(playerSelectOptions.slice(0, 25))
+          );
+          components.push(playerSelect);
+          
+          if (currentlyRatingPlayer) {
+            // Row 2: Performance rating buttons (1-5)
+            const perfRow = new ActionRowBuilder();
+            for (let i = 1; i <= 5; i++) {
+              const isSelected = currentlyRatingPlayer.pending_performance === i;
+              perfRow.addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`feedback_btn_perf_${i}_${requestId}`)
+                  .setLabel(`${i}`)
+                  .setEmoji('⭐')
+                  .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary)
+              );
+            }
+            components.push(perfRow);
+            
+            // Row 3: Enjoyment rating buttons (1-5)
+            const enjoyRow = new ActionRowBuilder();
+            for (let i = 1; i <= 5; i++) {
+              const isSelected = currentlyRatingPlayer.pending_enjoyment === i;
+              enjoyRow.addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`feedback_btn_enjoy_${i}_${requestId}`)
+                  .setLabel(`${i}`)
+                  .setEmoji('😊')
+                  .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary)
+              );
+            }
+            components.push(enjoyRow);
+            
+            // Row 4: Energy rating buttons (1-5)
+            const energyRow = new ActionRowBuilder();
+            for (let i = 1; i <= 5; i++) {
+              const isSelected = currentlyRatingPlayer.pending_energy === i;
+              energyRow.addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`feedback_btn_energy_${i}_${requestId}`)
+                  .setLabel(`${i}`)
+                  .setEmoji('⚡')
+                  .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary)
+              );
+            }
+            components.push(energyRow);
+            
+            // Row 5: Play Again buttons + Submit
+            const actionRow = new ActionRowBuilder();
+            const playAgainOptions = [
+              { value: 'prefer', label: 'Prefer', emoji: '💚' },
+              { value: 'neutral', label: 'Neutral', emoji: '💛' },
+              { value: 'avoid', label: 'Avoid', emoji: '💔' }
+            ];
+            
+            for (const opt of playAgainOptions) {
+              const isSelected = currentlyRatingPlayer.pending_play_again === opt.value;
+              actionRow.addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`feedback_btn_again_${opt.value}_${requestId}`)
+                  .setLabel(opt.label)
+                  .setEmoji(opt.emoji)
+                  .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary)
+              );
+            }
+            
+            const allRatingsSet = currentlyRatingPlayer.pending_performance && 
+                                  currentlyRatingPlayer.pending_enjoyment && 
+                                  currentlyRatingPlayer.pending_energy && 
+                                  currentlyRatingPlayer.pending_play_again;
+            
+            actionRow.addComponents(
+              new ButtonBuilder()
+                .setCustomId(`feedback_btn_submit_${requestId}`)
+                .setLabel('Submit')
+                .setEmoji('✅')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(!allRatingsSet)
+            );
+            
+            components.push(actionRow);
+          }
+          
+          try {
+            await interaction.message.edit({ embeds: [embed], components });
+          } catch (editErr) {
+            console.error('[Feedback] Error updating panel:', editErr.message);
+          }
+        };
+        
+        // Get currently rating player
+        let currentlyRating = teammatesData.find(t => t.currently_rating);
+        if (!currentlyRating) {
+          currentlyRating = teammatesData.find(t => !t.rated);
+          if (currentlyRating) {
+            teammatesData = teammatesData.map(t => ({
+              ...t,
+              currently_rating: t.discord_user_id === currentlyRating.discord_user_id
+            }));
+          }
+        }
+        
+        if (!currentlyRating && type !== 'submit') {
+          return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
+        }
+        
+        // Handle Submit button
+        if (type === 'submit') {
+          if (!currentlyRating) {
+            return interaction.followUp({ content: '⚠️ No player selected to submit!', flags: 64 });
+          }
+          
+          const performance = currentlyRating.pending_performance;
+          const enjoyment = currentlyRating.pending_enjoyment;
+          const energy = currentlyRating.pending_energy;
+          const playAgain = currentlyRating.pending_play_again;
+          
+          if (!performance || !enjoyment || !energy || !playAgain) {
+            return interaction.followUp({ content: '⚠️ Please set all 4 ratings before submitting!', flags: 64 });
+          }
+          
+          const evaluatedUserId = currentlyRating.discord_user_id;
+          const positionPlayed = currentlyRating.position_played || null;
+          const isEditing = currentlyRating.editing || currentlyRating.rated;
+          
+          // If editing, delete old evaluation first
+          if (isEditing) {
+            await supabase
+              .from('peer_evaluations')
+              .delete()
+              .eq('guild_id', feedbackRequest.guild_id)
+              .eq('evaluator_discord_id', interaction.user.id)
+              .eq('evaluated_discord_id', evaluatedUserId)
+              .or(`draft_id.eq.${feedbackRequest.draft_id},club_match_id.eq.${feedbackRequest.club_match_id}`);
+          }
+          
+          // Insert peer evaluation
+          await supabase.from('peer_evaluations').insert({
+            guild_id: feedbackRequest.guild_id,
+            draft_id: feedbackRequest.draft_id,
+            club_match_id: feedbackRequest.club_match_id,
+            evaluator_discord_id: interaction.user.id,
+            evaluated_discord_id: evaluatedUserId,
+            position_played: positionPlayed,
+            overall_score: performance,
+            technical_skill: performance,
+            game_iq: performance,
+            work_ethic: performance,
+            communication: performance,
+            consistency: performance,
+            clutch_factor: performance,
+            enjoyment: enjoyment,
+            team_energy: energy,
+            play_again: playAgain
+          });
+          
+          // Mark player as rated and auto-select next unrated player
+          let nextUnratedIdx = -1;
+          const updatedTeammatesData = teammatesData.map((t, idx) => {
+            if (t.discord_user_id === evaluatedUserId) {
+              return { 
+                ...t, 
+                rated: true, 
+                given_rating: performance, 
+                vibe: { enjoyment, teamEnergy: energy, playAgain },
+                currently_rating: false,
+                pending_performance: null,
+                pending_enjoyment: null,
+                pending_energy: null,
+                pending_play_again: null,
+                editing: false
+              };
+            }
+            if (!t.rated && t.discord_user_id !== evaluatedUserId && nextUnratedIdx === -1) {
+              nextUnratedIdx = idx;
+            }
+            return { ...t, currently_rating: false };
+          });
+          
+          if (nextUnratedIdx !== -1) {
+            updatedTeammatesData[nextUnratedIdx].currently_rating = true;
+          }
+          
+          const allRated = updatedTeammatesData.every(t => t.rated);
+          
+          await supabase
+            .from('dm_feedback_requests')
+            .update({
+              teammates_data: updatedTeammatesData,
+              status: allRated ? 'completed' : 'pending',
+              completed_at: allRated ? new Date().toISOString() : null
+            })
+            .eq('id', feedbackRequestId);
+          
+          // Trigger rating recalculation
+          callEdgeFunction('calculate-ratings', {
+            guild_id: feedbackRequest.guild_id,
+            discord_user_id: evaluatedUserId
+          }).catch(() => {});
+          
+          const playerName = currentlyRating.ea_username || 'Player';
+          const vibeEmoji = playAgain === 'prefer' ? '💚' : playAgain === 'avoid' ? '💔' : '💛';
+          
+          if (allRated) {
+            const matchType = feedbackRequest.match_type === 'club' ? 'Club Match' : 'Draft';
+            let description = `All teammates from the **${matchType}** have been rated!\n\n`;
+            for (const t of updatedTeammatesData) {
+              const stars = '⭐'.repeat(t.given_rating || 0);
+              const vEmoji = t.vibe?.playAgain === 'prefer' ? '💚' : t.vibe?.playAgain === 'avoid' ? '💔' : '💛';
+              description += `✅ **${t.ea_username || 'Player'}**: ${stars} ${vEmoji}\n`;
+            }
+            description += '\n*Select a player from dropdown to edit their rating.*';
+            
+            const embed = new EmbedBuilder()
+              .setTitle('✅ Feedback Complete!')
+              .setColor(0x57f287)
+              .setDescription(description);
+            
+            const playerSelectOptions = updatedTeammatesData.map(t => ({
+              label: `✅ ${t.ea_username || `Player ${t.discord_user_id.slice(-4)}`}`,
+              description: `Rated: ⭐${t.given_rating}`,
+              value: t.discord_user_id
+            }));
+            
+            const playerSelect = new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder()
+                .setCustomId(`feedback_player_${feedbackRequestId}`)
+                .setPlaceholder('📝 Edit a rating')
+                .addOptions(playerSelectOptions.slice(0, 25))
+            );
+            
+            try {
+              await interaction.message.edit({ embeds: [embed], components: [playerSelect] });
+            } catch {}
+            
+            return interaction.followUp({ 
+              content: `🎉 **All ratings submitted!** Thanks for your feedback!`, 
+              flags: 64 
+            });
+          }
+          
+          await rebuildFeedbackPanelBtn(updatedTeammatesData, feedbackRequest, feedbackRequestId);
+          
+          const nextPlayer = updatedTeammatesData.find(t => t.currently_rating);
+          return interaction.followUp({ 
+            content: `✅ Rated **${playerName}** ${'⭐'.repeat(performance)} ${vibeEmoji}! Now rating **${nextPlayer?.ea_username || 'next player'}**...`, 
+            flags: 64 
+          });
+        }
+        
+        // Handle rating button clicks (perf, enjoy, energy, again)
+        let updatedTeammatesData;
+        
+        if (type === 'perf') {
+          const rating = parseInt(value, 10);
+          updatedTeammatesData = teammatesData.map(t => {
+            if (t.discord_user_id === currentlyRating.discord_user_id) {
+              return { ...t, pending_performance: rating };
+            }
+            return t;
+          });
+        } else if (type === 'enjoy') {
+          const rating = parseInt(value, 10);
+          updatedTeammatesData = teammatesData.map(t => {
+            if (t.discord_user_id === currentlyRating.discord_user_id) {
+              return { ...t, pending_enjoyment: rating };
+            }
+            return t;
+          });
+        } else if (type === 'energy') {
+          const rating = parseInt(value, 10);
+          updatedTeammatesData = teammatesData.map(t => {
+            if (t.discord_user_id === currentlyRating.discord_user_id) {
+              return { ...t, pending_energy: rating };
+            }
+            return t;
+          });
+        } else if (type === 'again') {
+          updatedTeammatesData = teammatesData.map(t => {
+            if (t.discord_user_id === currentlyRating.discord_user_id) {
+              return { ...t, pending_play_again: value };
+            }
+            return t;
+          });
+        } else {
+          return;
+        }
+        
+        await supabase
+          .from('dm_feedback_requests')
+          .update({ teammates_data: updatedTeammatesData })
+          .eq('id', feedbackRequestId);
+        
+        await rebuildFeedbackPanelBtn(updatedTeammatesData, feedbackRequest, feedbackRequestId);
+        return;
+      }
+    }
+    
     // Handle DM interactions for ready check position selection
     if (!interaction.guildId && interaction.isStringSelectMenu()) {
       const id = interaction.customId;
@@ -3664,22 +4045,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
       
-      // Handle feedback dropdowns and buttons in DMs
-      if (id.startsWith('feedback_player_') || id.startsWith('feedback_perf_') || 
-          id.startsWith('feedback_enjoy_') || id.startsWith('feedback_energy_') || 
-          id.startsWith('feedback_again_') || id.startsWith('feedback_submit_') ||
-          id.startsWith('feedback_edit_')) {
-        
-        // Extract request ID from custom ID
-        let feedbackRequestId;
-        const prefixes = ['feedback_player_', 'feedback_perf_', 'feedback_enjoy_', 
-                         'feedback_energy_', 'feedback_again_', 'feedback_submit_', 'feedback_edit_'];
-        for (const prefix of prefixes) {
-          if (id.startsWith(prefix)) {
-            feedbackRequestId = id.replace(prefix, '');
-            break;
-          }
-        }
+      // Handle feedback player dropdown in DMs (for selecting player to rate)
+      if (id.startsWith('feedback_player_')) {
+        const feedbackRequestId = id.replace('feedback_player_', '');
         
         try {
           await interaction.deferUpdate();
@@ -3703,16 +4071,52 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
         
         let teammatesData = feedbackRequest.teammates_data || [];
+        const selectedPlayerId = interaction.values[0];
         
-        // Helper function to rebuild and update the feedback panel
-        const rebuildFeedbackPanel = async (updatedTeammatesData, feedbackReq, requestId) => {
+        // Clear pending ratings if switching to a different player who wasn't rated yet
+        const updatedTeammatesData = teammatesData.map(t => {
+          if (t.discord_user_id === selectedPlayerId) {
+            // If this player was already rated, load their ratings for editing
+            if (t.rated) {
+              return { 
+                ...t, 
+                currently_rating: true,
+                pending_performance: t.given_rating,
+                pending_enjoyment: t.vibe?.enjoyment,
+                pending_energy: t.vibe?.teamEnergy,
+                pending_play_again: t.vibe?.playAgain,
+                editing: true
+              };
+            }
+            return { ...t, currently_rating: true };
+          }
+          // Clear pending ratings for previously selected player if they weren't submitted
+          if (t.currently_rating && !t.rated && t.discord_user_id !== selectedPlayerId) {
+            return { 
+              ...t, 
+              currently_rating: false,
+              pending_performance: null,
+              pending_enjoyment: null,
+              pending_energy: null,
+              pending_play_again: null
+            };
+          }
+          return { ...t, currently_rating: false };
+        });
+        
+        await supabase
+          .from('dm_feedback_requests')
+          .update({ teammates_data: updatedTeammatesData })
+          .eq('id', feedbackRequestId);
+        
+        // Helper function to rebuild feedback panel with buttons
+        const rebuildFeedbackPanelForPlayer = async (tData, feedbackReq, requestId) => {
           const matchType = feedbackReq.match_type === 'club' ? 'Club Match' : 'Draft';
-          const currentlyRatingPlayer = updatedTeammatesData.find(t => t.currently_rating);
+          const currentlyRatingPlayer = tData.find(t => t.currently_rating);
           
-          // Build description showing all players with their status
           let description = `You recently played a **${matchType}**!\n\n**Rate each teammate:**\n\n`;
           
-          for (const teammate of updatedTeammatesData) {
+          for (const teammate of tData) {
             const position = teammate.position_played || 'ANY';
             const name = teammate.ea_username || `Player`;
             if (teammate.rated) {
@@ -3720,7 +4124,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
               const vEmoji = teammate.vibe?.playAgain === 'prefer' ? '💚' : teammate.vibe?.playAgain === 'avoid' ? '💔' : '💛';
               description += `✅ **${name}** (${position}): ${stars} ${vEmoji}\n`;
             } else if (teammate.currently_rating) {
-              // Show pending ratings for current player
               const perf = teammate.pending_performance ? `⭐${teammate.pending_performance}` : '❓';
               const enjoy = teammate.pending_enjoyment ? `😊${teammate.pending_enjoyment}` : '❓';
               const energy = teammate.pending_energy ? `⚡${teammate.pending_energy}` : '❓';
@@ -3731,7 +4134,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
             }
           }
           
-          // Calculate remaining time
           const expiresAt = new Date(feedbackReq.expires_at);
           const remainingMs = expiresAt.getTime() - Date.now();
           const remainingMins = Math.max(1, Math.floor(remainingMs / 60000));
@@ -3742,11 +4144,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
             .setDescription(description)
             .setFooter({ text: `⏰ Expires in ${remainingMins} minutes` });
           
-          // Build components
           const components = [];
           
-          // Player select dropdown - show all players (rated and unrated)
-          const playerSelectOptions = updatedTeammatesData.map(t => ({
+          const playerSelectOptions = tData.map(t => ({
             label: `${t.rated ? '✅ ' : ''}${t.ea_username || `Player ${t.discord_user_id.slice(-4)}`}`,
             description: t.rated ? `Rated: ⭐${t.given_rating}` : `Position: ${t.position_played || 'ANY'}`,
             value: t.discord_user_id,
@@ -3761,60 +4161,83 @@ client.on(Events.InteractionCreate, async (interaction) => {
           );
           components.push(playerSelect);
           
-          // Only show rating dropdowns if a player is currently selected
           if (currentlyRatingPlayer) {
-            // Performance rating dropdown
-            const performanceSelect = new ActionRowBuilder().addComponents(
-              new StringSelectMenuBuilder()
-                .setCustomId(`feedback_perf_${requestId}`)
-                .setPlaceholder(currentlyRatingPlayer.pending_performance ? `⭐ Performance: ${currentlyRatingPlayer.pending_performance}/5 ✓` : '⭐ Performance Rating (1-5)')
-                .addOptions([
-                  { label: '⭐ 1 - Poor', value: '1', description: 'Below expectations', default: currentlyRatingPlayer.pending_performance === 1 },
-                  { label: '⭐⭐ 2 - Below Average', value: '2', description: 'Needs improvement', default: currentlyRatingPlayer.pending_performance === 2 },
-                  { label: '⭐⭐⭐ 3 - Average', value: '3', description: 'Met expectations', default: currentlyRatingPlayer.pending_performance === 3 },
-                  { label: '⭐⭐⭐⭐ 4 - Good', value: '4', description: 'Above average', default: currentlyRatingPlayer.pending_performance === 4 },
-                  { label: '⭐⭐⭐⭐⭐ 5 - Excellent', value: '5', description: 'Outstanding performance', default: currentlyRatingPlayer.pending_performance === 5 }
-                ])
+            // Row 2: Performance rating buttons (1-5)
+            const perfRow = new ActionRowBuilder();
+            for (let i = 1; i <= 5; i++) {
+              const isSelected = currentlyRatingPlayer.pending_performance === i;
+              perfRow.addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`feedback_btn_perf_${i}_${requestId}`)
+                  .setLabel(`${i}`)
+                  .setEmoji('⭐')
+                  .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary)
+              );
+            }
+            components.push(perfRow);
+            
+            // Row 3: Enjoyment rating buttons (1-5)
+            const enjoyRow = new ActionRowBuilder();
+            for (let i = 1; i <= 5; i++) {
+              const isSelected = currentlyRatingPlayer.pending_enjoyment === i;
+              enjoyRow.addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`feedback_btn_enjoy_${i}_${requestId}`)
+                  .setLabel(`${i}`)
+                  .setEmoji('😊')
+                  .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary)
+              );
+            }
+            components.push(enjoyRow);
+            
+            // Row 4: Energy rating buttons (1-5)
+            const energyRow = new ActionRowBuilder();
+            for (let i = 1; i <= 5; i++) {
+              const isSelected = currentlyRatingPlayer.pending_energy === i;
+              energyRow.addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`feedback_btn_energy_${i}_${requestId}`)
+                  .setLabel(`${i}`)
+                  .setEmoji('⚡')
+                  .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary)
+              );
+            }
+            components.push(energyRow);
+            
+            // Row 5: Play Again buttons + Submit
+            const actionRow = new ActionRowBuilder();
+            const playAgainOptions = [
+              { value: 'prefer', label: 'Prefer', emoji: '💚' },
+              { value: 'neutral', label: 'Neutral', emoji: '💛' },
+              { value: 'avoid', label: 'Avoid', emoji: '💔' }
+            ];
+            
+            for (const opt of playAgainOptions) {
+              const isSelected = currentlyRatingPlayer.pending_play_again === opt.value;
+              actionRow.addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`feedback_btn_again_${opt.value}_${requestId}`)
+                  .setLabel(opt.label)
+                  .setEmoji(opt.emoji)
+                  .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary)
+              );
+            }
+            
+            const allRatingsSet = currentlyRatingPlayer.pending_performance && 
+                                  currentlyRatingPlayer.pending_enjoyment && 
+                                  currentlyRatingPlayer.pending_energy && 
+                                  currentlyRatingPlayer.pending_play_again;
+            
+            actionRow.addComponents(
+              new ButtonBuilder()
+                .setCustomId(`feedback_btn_submit_${requestId}`)
+                .setLabel('Submit')
+                .setEmoji('✅')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(!allRatingsSet)
             );
             
-            const enjoymentSelect = new ActionRowBuilder().addComponents(
-              new StringSelectMenuBuilder()
-                .setCustomId(`feedback_enjoy_${requestId}`)
-                .setPlaceholder(currentlyRatingPlayer.pending_enjoyment ? `😊 Enjoyment: ${currentlyRatingPlayer.pending_enjoyment}/5 ✓` : '😊 Enjoyment Rating (1-5)')
-                .addOptions([
-                  { label: '😐 1 - Not fun', value: '1', description: 'Did not enjoy playing together', default: currentlyRatingPlayer.pending_enjoyment === 1 },
-                  { label: '🙂 2 - Somewhat', value: '2', description: 'Below average experience', default: currentlyRatingPlayer.pending_enjoyment === 2 },
-                  { label: '😊 3 - Fine', value: '3', description: 'Average experience', default: currentlyRatingPlayer.pending_enjoyment === 3 },
-                  { label: '😄 4 - Fun', value: '4', description: 'Good time playing together', default: currentlyRatingPlayer.pending_enjoyment === 4 },
-                  { label: '🤩 5 - Great!', value: '5', description: 'Loved playing with them', default: currentlyRatingPlayer.pending_enjoyment === 5 }
-                ])
-            );
-            
-            const energySelect = new ActionRowBuilder().addComponents(
-              new StringSelectMenuBuilder()
-                .setCustomId(`feedback_energy_${requestId}`)
-                .setPlaceholder(currentlyRatingPlayer.pending_energy ? `⚡ Energy: ${currentlyRatingPlayer.pending_energy}/5 ✓` : '⚡ Team Energy (1-5)')
-                .addOptions([
-                  { label: '😴 1 - Low energy', value: '1', description: 'Brought the team down', default: currentlyRatingPlayer.pending_energy === 1 },
-                  { label: '😶 2 - Quiet', value: '2', description: 'Not much contribution', default: currentlyRatingPlayer.pending_energy === 2 },
-                  { label: '😊 3 - Neutral', value: '3', description: 'Average energy', default: currentlyRatingPlayer.pending_energy === 3 },
-                  { label: '💪 4 - Positive', value: '4', description: 'Good team player', default: currentlyRatingPlayer.pending_energy === 4 },
-                  { label: '🔥 5 - Hype!', value: '5', description: 'Energized the team', default: currentlyRatingPlayer.pending_energy === 5 }
-                ])
-            );
-            
-            const playAgainSelect = new ActionRowBuilder().addComponents(
-              new StringSelectMenuBuilder()
-                .setCustomId(`feedback_again_${requestId}`)
-                .setPlaceholder(currentlyRatingPlayer.pending_play_again ? `🔄 Play Again: ${currentlyRatingPlayer.pending_play_again} ✓` : '🔄 Play Again?')
-                .addOptions([
-                  { label: '👍 Prefer', value: 'prefer', description: 'Would love to team up again', default: currentlyRatingPlayer.pending_play_again === 'prefer' },
-                  { label: '😐 Neutral', value: 'neutral', description: 'No preference', default: currentlyRatingPlayer.pending_play_again === 'neutral' },
-                  { label: '👎 Avoid', value: 'avoid', description: 'Would rather not team up', default: currentlyRatingPlayer.pending_play_again === 'avoid' }
-                ])
-            );
-            
-            components.push(performanceSelect, enjoymentSelect, energySelect, playAgainSelect);
+            components.push(actionRow);
           }
           
           try {
@@ -3824,318 +4247,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
           }
         };
         
-        // Player select dropdown - switch player, clear pending if switching away from unsubmitted
-        if (id.startsWith('feedback_player_')) {
-          const selectedPlayerId = interaction.values[0];
-          const previouslyRating = teammatesData.find(t => t.currently_rating);
-          
-          // Clear pending ratings if switching to a different player who wasn't rated yet
-          const updatedTeammatesData = teammatesData.map(t => {
-            if (t.discord_user_id === selectedPlayerId) {
-              // If this player was already rated, load their ratings for editing
-              if (t.rated) {
-                return { 
-                  ...t, 
-                  currently_rating: true,
-                  pending_performance: t.given_rating,
-                  pending_enjoyment: t.vibe?.enjoyment,
-                  pending_energy: t.vibe?.teamEnergy,
-                  pending_play_again: t.vibe?.playAgain,
-                  editing: true
-                };
-              }
-              return { ...t, currently_rating: true };
-            }
-            // Clear pending ratings for previously selected player if they weren't submitted
-            if (t.currently_rating && !t.rated && t.discord_user_id !== selectedPlayerId) {
-              return { 
-                ...t, 
-                currently_rating: false,
-                pending_performance: null,
-                pending_enjoyment: null,
-                pending_energy: null,
-                pending_play_again: null
-              };
-            }
-            return { ...t, currently_rating: false };
-          });
-          
-          await supabase
-            .from('dm_feedback_requests')
-            .update({ teammates_data: updatedTeammatesData })
-            .eq('id', feedbackRequestId);
-          
-          await rebuildFeedbackPanel(updatedTeammatesData, feedbackRequest, feedbackRequestId);
-          
-          const selectedPlayer = updatedTeammatesData.find(t => t.discord_user_id === selectedPlayerId);
-          const action = selectedPlayer?.rated ? 'editing' : 'rating';
-          return interaction.followUp({ 
-            content: `✅ Now ${action} **${selectedPlayer?.ea_username || 'Player'}** - set all 4 ratings then they'll auto-submit!`, 
-            flags: 64 
-          });
-        }
+        await rebuildFeedbackPanelForPlayer(updatedTeammatesData, feedbackRequest, feedbackRequestId);
         
-        // Get currently rating player
-        let currentlyRating = teammatesData.find(t => t.currently_rating);
-        if (!currentlyRating) {
-          currentlyRating = teammatesData.find(t => !t.rated);
-          if (currentlyRating) {
-            teammatesData = teammatesData.map(t => ({
-              ...t,
-              currently_rating: t.discord_user_id === currentlyRating.discord_user_id
-            }));
-          }
-        }
-        
-        if (!currentlyRating) {
-          return interaction.followUp({ content: '⚠️ No teammates left to rate!', flags: 64 });
-        }
-        
-        // Performance rating dropdown
-        if (id.startsWith('feedback_perf_')) {
-          const rating = parseInt(interaction.values[0], 10);
-          const updatedTeammatesData = teammatesData.map(t => {
-            if (t.discord_user_id === currentlyRating.discord_user_id) {
-              return { ...t, pending_performance: rating };
-            }
-            return t;
-          });
-          
-          await supabase
-            .from('dm_feedback_requests')
-            .update({ teammates_data: updatedTeammatesData })
-            .eq('id', feedbackRequestId);
-          
-          // Check if all 4 ratings are set - auto submit
-          const updatedPlayer = updatedTeammatesData.find(t => t.discord_user_id === currentlyRating.discord_user_id);
-          if (updatedPlayer.pending_performance && updatedPlayer.pending_enjoyment && 
-              updatedPlayer.pending_energy && updatedPlayer.pending_play_again) {
-            // Auto-submit the rating
-            return await submitPlayerRating(interaction, feedbackRequest, feedbackRequestId, updatedTeammatesData, updatedPlayer, rebuildFeedbackPanel);
-          }
-          
-          await rebuildFeedbackPanel(updatedTeammatesData, feedbackRequest, feedbackRequestId);
-          return;
-        }
-        
-        // Enjoyment rating dropdown
-        if (id.startsWith('feedback_enjoy_')) {
-          const enjoyment = parseInt(interaction.values[0], 10);
-          const updatedTeammatesData = teammatesData.map(t => {
-            if (t.discord_user_id === currentlyRating.discord_user_id) {
-              return { ...t, pending_enjoyment: enjoyment };
-            }
-            return t;
-          });
-          
-          await supabase
-            .from('dm_feedback_requests')
-            .update({ teammates_data: updatedTeammatesData })
-            .eq('id', feedbackRequestId);
-          
-          // Check if all 4 ratings are set - auto submit
-          const updatedPlayer = updatedTeammatesData.find(t => t.discord_user_id === currentlyRating.discord_user_id);
-          if (updatedPlayer.pending_performance && updatedPlayer.pending_enjoyment && 
-              updatedPlayer.pending_energy && updatedPlayer.pending_play_again) {
-            return await submitPlayerRating(interaction, feedbackRequest, feedbackRequestId, updatedTeammatesData, updatedPlayer, rebuildFeedbackPanel);
-          }
-          
-          await rebuildFeedbackPanel(updatedTeammatesData, feedbackRequest, feedbackRequestId);
-          return;
-        }
-        
-        // Team energy rating dropdown
-        if (id.startsWith('feedback_energy_')) {
-          const energy = parseInt(interaction.values[0], 10);
-          const updatedTeammatesData = teammatesData.map(t => {
-            if (t.discord_user_id === currentlyRating.discord_user_id) {
-              return { ...t, pending_energy: energy };
-            }
-            return t;
-          });
-          
-          await supabase
-            .from('dm_feedback_requests')
-            .update({ teammates_data: updatedTeammatesData })
-            .eq('id', feedbackRequestId);
-          
-          // Check if all 4 ratings are set - auto submit
-          const updatedPlayer = updatedTeammatesData.find(t => t.discord_user_id === currentlyRating.discord_user_id);
-          if (updatedPlayer.pending_performance && updatedPlayer.pending_enjoyment && 
-              updatedPlayer.pending_energy && updatedPlayer.pending_play_again) {
-            return await submitPlayerRating(interaction, feedbackRequest, feedbackRequestId, updatedTeammatesData, updatedPlayer, rebuildFeedbackPanel);
-          }
-          
-          await rebuildFeedbackPanel(updatedTeammatesData, feedbackRequest, feedbackRequestId);
-          return;
-        }
-        
-        // Play Again dropdown
-        if (id.startsWith('feedback_again_')) {
-          const playAgain = interaction.values[0];
-          const updatedTeammatesData = teammatesData.map(t => {
-            if (t.discord_user_id === currentlyRating.discord_user_id) {
-              return { ...t, pending_play_again: playAgain };
-            }
-            return t;
-          });
-          
-          await supabase
-            .from('dm_feedback_requests')
-            .update({ teammates_data: updatedTeammatesData })
-            .eq('id', feedbackRequestId);
-          
-          // Check if all 4 ratings are set - auto submit
-          const updatedPlayer = updatedTeammatesData.find(t => t.discord_user_id === currentlyRating.discord_user_id);
-          if (updatedPlayer.pending_performance && updatedPlayer.pending_enjoyment && 
-              updatedPlayer.pending_energy && updatedPlayer.pending_play_again) {
-            return await submitPlayerRating(interaction, feedbackRequest, feedbackRequestId, updatedTeammatesData, updatedPlayer, rebuildFeedbackPanel);
-          }
-          
-          await rebuildFeedbackPanel(updatedTeammatesData, feedbackRequest, feedbackRequestId);
-          return;
-        }
-        
-        return;
-      }
-      
-      // Helper function to submit a player rating
-      async function submitPlayerRating(interaction, feedbackRequest, feedbackRequestId, teammatesData, playerToRate, rebuildFeedbackPanel) {
-        const performance = playerToRate.pending_performance;
-        const enjoyment = playerToRate.pending_enjoyment;
-        const energy = playerToRate.pending_energy;
-        const playAgain = playerToRate.pending_play_again;
-        const evaluatedUserId = playerToRate.discord_user_id;
-        const positionPlayed = playerToRate.position_played || null;
-        const isEditing = playerToRate.editing || playerToRate.rated;
-        
-        // If editing, delete old evaluation first
-        if (isEditing) {
-          await supabase
-            .from('peer_evaluations')
-            .delete()
-            .eq('guild_id', feedbackRequest.guild_id)
-            .eq('evaluator_discord_id', interaction.user.id)
-            .eq('evaluated_discord_id', evaluatedUserId)
-            .or(`draft_id.eq.${feedbackRequest.draft_id},club_match_id.eq.${feedbackRequest.club_match_id}`);
-        }
-        
-        // Insert peer evaluation
-        await supabase.from('peer_evaluations').insert({
-          guild_id: feedbackRequest.guild_id,
-          draft_id: feedbackRequest.draft_id,
-          club_match_id: feedbackRequest.club_match_id,
-          evaluator_discord_id: interaction.user.id,
-          evaluated_discord_id: evaluatedUserId,
-          position_played: positionPlayed,
-          overall_score: performance,
-          technical_skill: performance,
-          game_iq: performance,
-          work_ethic: performance,
-          communication: performance,
-          consistency: performance,
-          clutch_factor: performance,
-          enjoyment: enjoyment,
-          team_energy: energy,
-          play_again: playAgain
+        const selectedPlayer = updatedTeammatesData.find(t => t.discord_user_id === selectedPlayerId);
+        const action = selectedPlayer?.rated ? 'editing' : 'rating';
+        return interaction.followUp({ 
+          content: `✅ Now ${action} **${selectedPlayer?.ea_username || 'Player'}** - select ratings then click Submit!`, 
+          flags: 64 
         });
-        
-        // Mark player as rated and auto-select next unrated player
-        let nextUnratedIdx = -1;
-        const updatedTeammatesData = teammatesData.map((t, idx) => {
-          if (t.discord_user_id === evaluatedUserId) {
-            return { 
-              ...t, 
-              rated: true, 
-              given_rating: performance, 
-              vibe: { enjoyment, teamEnergy: energy, playAgain },
-              currently_rating: false,
-              pending_performance: null,
-              pending_enjoyment: null,
-              pending_energy: null,
-              pending_play_again: null,
-              editing: false
-            };
-          }
-          // Find next unrated player
-          if (!t.rated && t.discord_user_id !== evaluatedUserId && nextUnratedIdx === -1) {
-            nextUnratedIdx = idx;
-          }
-          return { ...t, currently_rating: false };
-        });
-        
-        // Set next unrated player as currently rating
-        if (nextUnratedIdx !== -1) {
-          updatedTeammatesData[nextUnratedIdx].currently_rating = true;
-        }
-        
-        const allRated = updatedTeammatesData.every(t => t.rated);
-        
-        await supabase
-          .from('dm_feedback_requests')
-          .update({
-            teammates_data: updatedTeammatesData,
-            status: allRated ? 'completed' : 'pending',
-            completed_at: allRated ? new Date().toISOString() : null
-          })
-          .eq('id', feedbackRequestId);
-        
-        // Trigger rating recalculation (fire and forget)
-        callEdgeFunction('calculate-ratings', {
-          guild_id: feedbackRequest.guild_id,
-          discord_user_id: evaluatedUserId
-        }).catch(() => {});
-        
-        const playerName = playerToRate.ea_username || 'Player';
-        const vibeEmoji = playAgain === 'prefer' ? '💚' : playAgain === 'avoid' ? '💔' : '💛';
-        
-        if (allRated) {
-          const matchType = feedbackRequest.match_type === 'club' ? 'Club Match' : 'Draft';
-          let description = `All teammates from the **${matchType}** have been rated!\n\n`;
-          for (const t of updatedTeammatesData) {
-            const stars = '⭐'.repeat(t.given_rating || 0);
-            const vEmoji = t.vibe?.playAgain === 'prefer' ? '💚' : t.vibe?.playAgain === 'avoid' ? '💔' : '💛';
-            description += `✅ **${t.ea_username || 'Player'}**: ${stars} ${vEmoji}\n`;
-          }
-          description += '\n*Click on a player to edit their rating if needed.*';
-          
-          const embed = new EmbedBuilder()
-            .setTitle('🎉 Feedback Complete!')
-            .setColor(0x57f287)
-            .setDescription(description)
-            .setFooter({ text: 'Thanks for rating your teammates!' });
-          
-          // Still show player select for editing
-          const playerSelectOptions = updatedTeammatesData.map(t => ({
-            label: `✅ ${t.ea_username || `Player ${t.discord_user_id.slice(-4)}`}`,
-            description: `Rated: ⭐${t.given_rating} - Click to edit`,
-            value: t.discord_user_id
-          }));
-          
-          const playerSelect = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder()
-              .setCustomId(`feedback_player_${feedbackRequestId}`)
-              .setPlaceholder('✏️ Edit a rating')
-              .addOptions(playerSelectOptions.slice(0, 25))
-          );
-          
-          try {
-            await interaction.message.edit({ embeds: [embed], components: [playerSelect] });
-          } catch {}
-          
-          return interaction.followUp({ 
-            content: `✅ ${isEditing ? 'Updated' : 'Rated'} **${playerName}**: ⭐${performance} ${vibeEmoji}\n\n🎉 **All teammates rated!** Thanks for your feedback!`, 
-            flags: 64 
-          });
-        } else {
-          await rebuildFeedbackPanel(updatedTeammatesData, feedbackRequest, feedbackRequestId);
-          
-          const nextUnrated = updatedTeammatesData.find(t => !t.rated);
-          return interaction.followUp({ 
-            content: `✅ ${isEditing ? 'Updated' : 'Rated'} **${playerName}**: ⭐${performance} ${vibeEmoji}\n\n👉 Now rating: **${nextUnrated?.ea_username || 'Next player'}**`, 
-            flags: 64 
-          });
-        }
       }
       
       // Handle extended manager feedback dropdowns in DMs
