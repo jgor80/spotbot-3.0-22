@@ -22,10 +22,18 @@ serve(async (req) => {
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
-    );
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error("[get-leaderboard] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+      return new Response(
+        JSON.stringify({ error: "Server configuration error", success: false }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { 
       guild_id, 
