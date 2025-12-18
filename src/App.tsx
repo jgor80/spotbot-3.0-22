@@ -11,6 +11,7 @@ import ProfilePage from "./pages/ProfilePage";
 import SettingsPage from "./pages/SettingsPage";
 import DraftsPage from "./pages/DraftsPage";
 import ScoutingPage from "./pages/ScoutingPage";
+import ScoutingIntelPage from "./pages/ScoutingIntelPage";
 import CompetitionsPage from "./pages/CompetitionsPage";
 import TeamsPage from "./pages/TeamsPage";
 import RatingsPage from "./pages/RatingsPage";
@@ -34,6 +35,7 @@ const App = () => (
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/drafts" element={<DraftsPage />} />
             <Route path="/scouting" element={<ScoutingPage />} />
+            <Route path="/scouting/intel" element={<ScoutingIntelPage />} />
             <Route path="/competitions" element={<CompetitionsPage />} />
             <Route path="/teams" element={<TeamsPage />} />
             <Route path="/ratings" element={<RatingsPage />} />

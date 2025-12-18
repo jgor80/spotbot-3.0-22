@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,8 @@ import {
   ListChecks,
   BarChart3,
   MessageSquare,
-  Bolt
+  Bolt,
+  Crosshair
 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RatingBadge } from "@/components/player/RatingBadge";
@@ -580,9 +582,17 @@ Focus on controlling midfield to limit their counter-attacks.
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="font-display text-3xl font-bold">Scouting Center</h1>
-          <p className="text-muted-foreground">Scout opponents, players, and analyze match history</p>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h1 className="font-display text-3xl font-bold">Scouting Center</h1>
+            <p className="text-muted-foreground">Scout opponents, players, and analyze match history</p>
+          </div>
+          <Link to="/scouting/intel">
+            <Button variant="outline" className="gap-2">
+              <Crosshair className="h-4 w-4" />
+              Opponent Intel Database
+            </Button>
+          </Link>
         </div>
 
         <Card className="bg-muted/40">
