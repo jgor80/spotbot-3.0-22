@@ -286,21 +286,23 @@ const EA_HEADERS = {
   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
 };
 
-// Match type mappings with fallback values
+// Match type mappings - prioritize new string-based values, fallback to legacy
 const MATCH_TYPE_CONFIG = {
-  division: ['matchType9', 'gameType9', 'leagueMatch'],
-  competition: ['matchType13', 'gameType13'],
-  friendly: ['matchType22', 'gameType22', 'friendlyMatch']
+  division: ['leagueMatch', 'matchType9'],
+  competition: ['playoffMatch', 'matchType13'],
+  friendly: ['friendlyMatch', 'matchType22']
 };
 
-// Fetch match history for a specific match type with retries and fallbacks
-async function fetchMatchesByType(clubId, platform, matchType, category = 'division') {
+// Fetch match history using gameType parameter (new EA API format)
+async function fetchMatchesByType(clubId, platform, matchTypeValue, category = 'division') {
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
   
   try {
-    console.log(`[EA] Fetching ${matchType} matches for club ${clubId}...`);
+    console.log(`[EA] Fetching ${category} matches (gameType=${matchTypeValue}) for club ${clubId}...`);
+    
+    // Try with gameType parameter first (new API format)
     const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
-      params: { platform: fcPlatform, clubIds: clubId, matchType, maxResultCount: 10 },
+      params: { platform: fcPlatform, clubIds: clubId, gameType: matchTypeValue, maxResultCount: 30 },
       headers: EA_HEADERS,
       timeout: 10000
     });
@@ -309,17 +311,17 @@ async function fetchMatchesByType(clubId, platform, matchType, category = 'divis
     
     let matches = res.data;
     if (Array.isArray(matches) && matches.length > 0) {
-      console.log(`[EA] Got ${matches.length} ${matchType} matches`);
+      console.log(`[EA] ✓ Got ${matches.length} ${category} matches using gameType=${matchTypeValue}`);
       return matches;
     }
     if (matches?.matches && matches.matches.length > 0) {
-      console.log(`[EA] Got ${matches.matches.length} ${matchType} matches`);
+      console.log(`[EA] ✓ Got ${matches.matches.length} ${category} matches using gameType=${matchTypeValue}`);
       return matches.matches;
     }
     
     const vals = Object.values(matches).filter(v => v && typeof v === 'object');
     if (vals.length > 0) {
-      console.log(`[EA] Got ${vals.length} ${matchType} matches`);
+      console.log(`[EA] ✓ Got ${vals.length} ${category} matches using gameType=${matchTypeValue}`);
       return vals;
     }
     
@@ -327,10 +329,37 @@ async function fetchMatchesByType(clubId, platform, matchType, category = 'divis
   } catch (err) {
     const status = err.response?.status;
     const errorData = err.response?.data;
-    console.log(`[EA] ${matchType} failed (${status || 'network'}): ${err.message}`);
+    console.log(`[EA] gameType=${matchTypeValue} failed (${status || 'network'}): ${err.message}`);
     if (errorData) {
       console.log(`[EA] Error response: ${JSON.stringify(errorData)}`);
     }
+    
+    // If gameType fails with 400, try legacy matchType parameter
+    if (status === 400 && matchTypeValue.startsWith('matchType')) {
+      try {
+        console.log(`[EA] Retrying with legacy matchType parameter...`);
+        const legacyRes = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
+          params: { platform: fcPlatform, clubIds: clubId, matchType: matchTypeValue, maxResultCount: 30 },
+          headers: EA_HEADERS,
+          timeout: 10000
+        });
+        
+        if (legacyRes.status === 200) {
+          let matches = legacyRes.data;
+          if (Array.isArray(matches) && matches.length > 0) {
+            console.log(`[EA] ✓ Got ${matches.length} ${category} matches using legacy matchType`);
+            return matches;
+          }
+          if (matches?.matches && matches.matches.length > 0) {
+            console.log(`[EA] ✓ Got ${matches.matches.length} ${category} matches using legacy matchType`);
+            return matches.matches;
+          }
+        }
+      } catch (legacyErr) {
+        console.log(`[EA] Legacy matchType also failed: ${legacyErr.message}`);
+      }
+    }
+    
     return [];
   }
 }
