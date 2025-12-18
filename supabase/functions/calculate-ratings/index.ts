@@ -7,10 +7,11 @@ const corsHeaders = {
 };
 
 const WEIGHTS = {
-  draft_performance: 0.15,      // Reduced from 40% - not many drafts
-  club_performance: 0.25,       // Division games - increased from 20%
-  competition_performance: 0.25, // Cup/friendly games (tournaments/leagues)
-  peer_evaluation: 0.20,        // Reduced from 25%
+  win_rate: 0.20,               // NEW: Direct win rate contribution
+  draft_performance: 0.10,      // Reduced from 15%
+  club_performance: 0.20,       // Reduced from 25%
+  competition_performance: 0.20, // Reduced from 25%
+  peer_evaluation: 0.15,        // Reduced from 20%
   build_quality: 0.15,          // Keep 15%
 };
 
@@ -297,7 +298,14 @@ function calculatePlayerRatingFast(player: any, allStats: any[]): { rating: numb
   const peerRating = player.peer_rating || 50;
   const buildRating = player.build_quality_rating || 50;
 
+  // Calculate direct win rate from all tracked games
+  const allTrackedStats = [...draftStats, ...clubStats, ...competitionStats];
+  const totalTrackedGames = allTrackedStats.length;
+  const totalTrackedWins = allTrackedStats.filter(s => s.won === true).length;
+  const directWinRate = totalTrackedGames > 0 ? (totalTrackedWins / totalTrackedGames) * 100 : 50;
+
   const overall = 
+    (directWinRate * WEIGHTS.win_rate) +
     (draftRating.rating * WEIGHTS.draft_performance) +
     (clubRating.rating * WEIGHTS.club_performance) +
     (competitionRating.rating * WEIGHTS.competition_performance) +
