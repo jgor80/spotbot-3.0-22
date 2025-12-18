@@ -28,6 +28,7 @@ interface DashboardLayoutProps {
 const navItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  { path: "/games", label: "Games", icon: Gamepad2 },
   { path: "/ratings", label: "Ratings", icon: Star },
   { path: "/teams", label: "Teams", icon: UsersRound },
   { path: "/lineup", label: "Lineup", icon: ClipboardList },
