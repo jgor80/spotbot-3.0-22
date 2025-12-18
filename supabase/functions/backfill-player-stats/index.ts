@@ -54,104 +54,140 @@ Deno.serve(async (req) => {
     
     console.log(`[backfill-player-stats] Processing ${matches.length} matches...`)
     
-    let totalUpdated = 0
+    // Fetch all profiles at once for EA username lookup
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('discord_user_id, ea_username')
+      .not('ea_username', 'is', null)
+    
+    const eaUsernameToDiscordId = new Map<string, string>()
+    profiles?.forEach(p => {
+      if (p.ea_username && !p.discord_user_id.startsWith('ea_')) {
+        eaUsernameToDiscordId.set(p.ea_username.toLowerCase(), p.discord_user_id)
+      }
+    })
+    
+    console.log(`[backfill-player-stats] Loaded ${eaUsernameToDiscordId.size} EA username mappings`)
+    
+    // Fetch all existing player_stats for the matches
+    const eaMatchIds = matches.map(m => m.ea_match_id)
+    const { data: existingStats } = await supabase
+      .from('player_stats')
+      .select('id, guild_id, discord_user_id, ea_match_id')
+      .in('ea_match_id', eaMatchIds)
+    
+    // Create lookup map: guild_id + discord_user_id + ea_match_id -> stat id
+    const statLookup = new Map<string, string>()
+    existingStats?.forEach(stat => {
+      const key = `${stat.guild_id}:${stat.discord_user_id}:${stat.ea_match_id}`
+      statLookup.set(key, stat.id)
+    })
+    
+    console.log(`[backfill-player-stats] Loaded ${statLookup.size} existing player_stats records`)
+    
+    // Collect all updates
+    const updates: Array<{id: string, data: any}> = []
     let totalSkipped = 0
-    const errors: string[] = []
     
     for (const match of matches) {
-      try {
-        const matchData = match.match_data as any
-        if (!matchData?.players) {
-          totalSkipped++
-          continue
-        }
+      const matchData = match.match_data as any
+      if (!matchData?.players) {
+        totalSkipped++
+        continue
+      }
+      
+      const clubIds = Object.keys(matchData.players || {})
+      
+      for (const clubId of clubIds) {
+        const players = matchData.players[clubId]
+        if (!players) continue
         
-        // Find our club's player data in the match
-        const clubIds = Object.keys(matchData.players || {})
-        
-        for (const clubId of clubIds) {
-          const players = matchData.players[clubId]
-          if (!players) continue
+        for (const [playerId, pStats] of Object.entries(players) as any) {
+          const eaUsername = pStats.playername
+          if (!eaUsername) continue
           
-          for (const [playerId, pStats] of Object.entries(players) as any) {
-            const eaUsername = pStats.playername
-            if (!eaUsername) continue
-            
-            // Find profile for this EA username
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('discord_user_id')
-              .eq('ea_username', eaUsername)
-              .maybeSingle()
-            
-            if (!profile || profile.discord_user_id.startsWith('ea_')) continue
-            
-            // Calculate detailed stats from EA match data
-            const savesDiving = parseInt(pStats.ballDiveSaves || pStats.ballDivesaves || 0)
-            const savesCross = parseInt(pStats.crossSaves || pStats.crosssaves || 0)
-            const savesParry = parseInt(pStats.parrySaves || pStats.parrysaves || 0)
-            const savesPunch = parseInt(pStats.punchSaves || pStats.punchsaves || 0)
-            const savesReflex = parseInt(pStats.reflexSaves || pStats.reflexsaves || 0)
-            const goalsConceeded = parseInt(pStats.goalsconceded || pStats.goalsConceded || 0)
-            const tackleAttempts = parseInt(pStats.tackleattempts || pStats.tackleAttempts || 0)
-            
-            // Clean sheet from EA data
-            const isCleanSheet = pStats.cleansheetsany === '1' || pStats.cleansheetsdef === '1' || pStats.cleansheetsgk === '1'
-            
-            // Find existing player_stats record for this match
-            const { data: existingStat } = await supabase
+          // Find discord user id from EA username
+          const discordUserId = eaUsernameToDiscordId.get(eaUsername.toLowerCase())
+          if (!discordUserId) continue
+          
+          // Find existing player_stats record
+          const lookupKey = `${match.guild_id}:${discordUserId}:${match.ea_match_id}`
+          const statId = statLookup.get(lookupKey)
+          
+          if (!statId) {
+            totalSkipped++
+            continue
+          }
+          
+          // Extract detailed stats from EA match data
+          const savesDiving = parseInt(pStats.ballDiveSaves || pStats.ballDivesaves || 0)
+          const savesCross = parseInt(pStats.crossSaves || pStats.crosssaves || 0)
+          const savesParry = parseInt(pStats.parrySaves || pStats.parrysaves || 0)
+          const savesPunch = parseInt(pStats.punchSaves || pStats.punchsaves || 0)
+          const savesReflex = parseInt(pStats.reflexSaves || pStats.reflexsaves || 0)
+          const goalsConceeded = parseInt(pStats.goalsconceded || pStats.goalsConceded || 0)
+          const tackleAttempts = parseInt(pStats.tackleattempts || pStats.tackleAttempts || 0)
+          const isCleanSheet = pStats.cleansheetsany === '1' || pStats.cleansheetsdef === '1' || pStats.cleansheetsgk === '1'
+          
+          const updateData: any = {
+            saves_diving: savesDiving,
+            saves_cross: savesCross,
+            saves_parry: savesParry,
+            saves_punch: savesPunch,
+            saves_reflex: savesReflex,
+            goals_conceded: goalsConceeded,
+            tackle_attempts: tackleAttempts,
+            interceptions: parseInt(pStats.interceptions || 0),
+            clearances: parseInt(pStats.clearances || 0),
+            dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
+            fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
+            offsides: parseInt(pStats.offsides || 0),
+            archetypeid: pStats.archetypeid || pStats.archetypeId || null
+          }
+          
+          if (isCleanSheet) {
+            updateData.clean_sheet = true
+          }
+          
+          updates.push({ id: statId, data: updateData })
+        }
+      }
+    }
+    
+    console.log(`[backfill-player-stats] Found ${updates.length} records to update, ${totalSkipped} skipped`)
+    
+    let totalUpdated = 0
+    const errors: string[] = []
+    
+    if (!dryRun && updates.length > 0) {
+      // Batch updates in chunks of 50
+      const chunkSize = 50
+      for (let i = 0; i < updates.length; i += chunkSize) {
+        const chunk = updates.slice(i, i + chunkSize)
+        
+        // Execute updates in parallel within chunk
+        const results = await Promise.all(
+          chunk.map(async ({ id, data }) => {
+            const { error } = await supabase
               .from('player_stats')
-              .select('id')
-              .eq('guild_id', match.guild_id)
-              .eq('discord_user_id', profile.discord_user_id)
-              .eq('ea_match_id', match.ea_match_id)
-              .maybeSingle()
-            
-            if (!existingStat) {
-              totalSkipped++
-              continue
-            }
-            
-            // Update with detailed stats
-            const updateData: any = {
-              saves_diving: savesDiving,
-              saves_cross: savesCross,
-              saves_parry: savesParry,
-              saves_punch: savesPunch,
-              saves_reflex: savesReflex,
-              goals_conceded: goalsConceeded,
-              tackle_attempts: tackleAttempts,
-              interceptions: parseInt(pStats.interceptions || 0),
-              clearances: parseInt(pStats.clearances || 0),
-              dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
-              fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
-              offsides: parseInt(pStats.offsides || 0),
-              archetypeid: pStats.archetypeid || pStats.archetypeId || null
-            }
-            
-            // Update clean_sheet if EA data has it
-            if (isCleanSheet) {
-              updateData.clean_sheet = true
-            }
-            
-            if (!dryRun) {
-              const { error: updateError } = await supabase
-                .from('player_stats')
-                .update(updateData)
-                .eq('id', existingStat.id)
-              
-              if (updateError) {
-                errors.push(`Failed to update stat ${existingStat.id}: ${updateError.message}`)
-                continue
-              }
-            }
-            
+              .update(data)
+              .eq('id', id)
+            return { id, error }
+          })
+        )
+        
+        for (const result of results) {
+          if (result.error) {
+            errors.push(`Failed to update ${result.id}: ${result.error.message}`)
+          } else {
             totalUpdated++
           }
         }
-      } catch (err) {
-        errors.push(`Error processing match ${match.ea_match_id}: ${err}`)
+        
+        console.log(`[backfill-player-stats] Progress: ${Math.min(i + chunkSize, updates.length)}/${updates.length}`)
       }
+    } else if (dryRun) {
+      totalUpdated = updates.length
     }
     
     console.log(`[backfill-player-stats] Completed: ${totalUpdated} updated, ${totalSkipped} skipped, ${errors.length} errors`)
@@ -160,6 +196,7 @@ Deno.serve(async (req) => {
       success: true,
       dry_run: dryRun,
       total_matches: matches.length,
+      records_to_update: updates.length,
       updated: totalUpdated,
       skipped: totalSkipped,
       errors: errors.length > 0 ? errors.slice(0, 10) : undefined
