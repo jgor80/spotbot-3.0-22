@@ -469,26 +469,40 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
       performanceRating += (cleanSheetRate * 0.5 + gcPenalty * 0.5) * 0.40;
     }
   } else if (isDefender) {
-    // Defender Rating: 25% win rate, 25% defensive actions, 20% clean sheets, 5% G+A, 25% EA rating
-    performanceRating = winRate * 0.25;
+    // Defender Rating: 20% win rate, 25% tackles/game, 20% GA/game (inverted), 20% clean sheets, 5% G+A (defensive only), 10% EA rating
+    performanceRating = winRate * 0.20;
     
-    // Defensive actions contribution (tackles + interceptions + clearances)
-    const defensiveContribution = Math.min(100, (avgTackles * 12) + (avgInterceptions * 15) + (avgClearances * 10));
-    performanceRating += defensiveContribution * 0.25;
+    // Tackles per game - highly weighted for defenders (scale: 0-5 tackles/game = 0-100)
+    const tacklesContribution = Math.min(100, avgTackles * 20);
+    performanceRating += tacklesContribution * 0.25;
     
-    // Clean sheet bonus (increased importance)
+    // Goals against per game - lower is better (scale: 0 GA = 100, 3+ GA = 0)
+    const gaPerGameScore = Math.max(0, 100 - (avgGoalsConceded * 33.33));
+    performanceRating += gaPerGameScore * 0.20;
+    
+    // Clean sheet rate - highly weighted for defenders
     performanceRating += cleanSheetRate * 0.20;
     
-    // Minimal offensive contribution
-    const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
-    performanceRating += gaContribution * 0.05;
+    // G+A only count when playing defensive positions (confirmed defensive role)
+    const DEFENSIVE_POSITIONS = ["CB", "LB", "RB", "LWB", "RWB", "SW", "LCB", "RCB"];
+    let defensiveGoals = 0, defensiveAssists = 0;
+    for (const s of stats) {
+      const pos = (s.position_played || "").toUpperCase();
+      if (DEFENSIVE_POSITIONS.includes(pos)) {
+        defensiveGoals += s.goals || 0;
+        defensiveAssists += s.assists || 0;
+      }
+    }
+    const defensiveGAPerGame = trackedGames > 0 ? (defensiveGoals + defensiveAssists) / trackedGames : 0;
+    const defGAContribution = Math.min(100, defensiveGAPerGame * 100);
+    performanceRating += defGAContribution * 0.05;
     
-    // EA rating heavily weighted - now normalized
+    // EA rating - reduced weight, normalized for position difficulty
     if (normalizedEARating !== null) {
-      performanceRating += (normalizedEARating * 10) * 0.25;
+      performanceRating += (normalizedEARating * 10) * 0.10;
     } else {
-      // Fallback: use defensive + clean sheet blend
-      performanceRating += (defensiveContribution * 0.5 + cleanSheetRate * 0.5) * 0.25;
+      // Fallback: use tackles + GA/game blend
+      performanceRating += (tacklesContribution * 0.5 + gaPerGameScore * 0.5) * 0.10;
     }
   } else if (isMidfielder) {
     // Midfielder Rating: 40% win rate, 20% G+A, 20% defensive, 10% clean sheets, 10% EA rating
