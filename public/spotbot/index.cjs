@@ -12289,14 +12289,18 @@ async function sendPendingFeedbackDMs(guildId, guild) {
       return result;
     }
     
-    // First, mark any expired feedback requests as expired
+    // First, delete any expired feedback requests (30+ minutes old)
     const now = new Date().toISOString();
-    await supabase
+    const { data: deletedRequests, error: deleteError } = await supabase
       .from('dm_feedback_requests')
-      .update({ status: 'expired' })
+      .delete()
       .eq('guild_id', guildId)
-      .eq('status', 'pending')
-      .lt('expires_at', now);
+      .lt('expires_at', now)
+      .select('id');
+    
+    if (deletedRequests?.length > 0) {
+      console.log(`[Feedback] Deleted ${deletedRequests.length} expired feedback requests`);
+    }
     
     // Get all pending feedback requests for this guild that haven't been DMed yet
     // Only get non-expired requests (30 min window from creation)

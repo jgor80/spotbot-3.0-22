@@ -19,6 +19,23 @@ serve(async (req) => {
     );
 
     const now = new Date();
+    
+    // ============================================
+    // CLEANUP: Delete expired feedback requests (30+ min old)
+    // ============================================
+    const { data: deletedFeedback, error: deleteError } = await supabase
+      .from("dm_feedback_requests")
+      .delete()
+      .lt("expires_at", now.toISOString())
+      .select("id");
+    
+    const deletedCount = deletedFeedback?.length || 0;
+    if (deletedCount > 0) {
+      console.log(`[send-reminders] Deleted ${deletedCount} expired feedback requests`);
+    }
+    if (deleteError) {
+      console.error(`[send-reminders] Error deleting expired feedback:`, deleteError.message);
+    }
     const in24Hours = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const in2Hours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
 
@@ -118,7 +135,7 @@ serve(async (req) => {
         .eq("id", event.id);
     }
 
-    console.log(`[send-reminders] 24h reminders: ${reminders24h.length}, 2h reminders: ${reminders2h.length}, auto-marked: ${autoMarked.length}`);
+    console.log(`[send-reminders] 24h reminders: ${reminders24h.length}, 2h reminders: ${reminders2h.length}, auto-marked: ${autoMarked.length}, deleted feedback: ${deletedCount}`);
 
     return new Response(
       JSON.stringify({
@@ -126,6 +143,7 @@ serve(async (req) => {
         reminders_24h: reminders24h,
         reminders_2h: reminders2h,
         auto_marked_unavailable: autoMarked,
+        expired_feedback_deleted: deletedCount,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

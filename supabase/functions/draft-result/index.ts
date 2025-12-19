@@ -435,7 +435,8 @@ async function updateChemistry(
 
 async function createFeedbackRequests(supabase: any, draft: any) {
   const allPlayers = [...draft.team_a_player_ids, ...draft.team_b_player_ids];
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  // 30 minute window for feedback (consistent with club matches)
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
   const feedbackRequests = allPlayers.map(playerId => {
     const isTeamA = draft.team_a_player_ids.includes(playerId);
@@ -445,6 +446,7 @@ async function createFeedbackRequests(supabase: any, draft: any) {
     return {
       guild_id: draft.guild_id,
       draft_id: draft.id,
+      match_type: "draft",
       evaluator_discord_id: playerId,
       teammates_to_evaluate: teammates,
       expires_at: expiresAt.toISOString(),
@@ -452,7 +454,7 @@ async function createFeedbackRequests(supabase: any, draft: any) {
   });
 
   await supabase.from("dm_feedback_requests").insert(feedbackRequests);
-  console.log(`[draft-result] Created ${feedbackRequests.length} feedback requests`);
+  console.log(`[draft-result] Created ${feedbackRequests.length} feedback requests (30 min window)`);
 }
 
 async function triggerAchievementCheck(supabase: any, guildId: string, playerIds: string[]) {
