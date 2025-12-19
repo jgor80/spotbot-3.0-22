@@ -29,7 +29,12 @@ import {
   Trophy,
   Flame,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Heart,
+  ThumbsUp,
+  ThumbsDown,
+  Minus,
+  Sparkles
 } from "lucide-react";
 import { RatingBadge } from "@/components/player/RatingBadge";
 
@@ -46,6 +51,9 @@ interface PeerEvaluation {
   clutch_factor: number | null;
   overall_score: number | null;
   trust_weighted_score: number | null;
+  enjoyment: number | null;
+  team_energy: number | null;
+  play_again: string | null;
   created_at: string;
 }
 
@@ -59,6 +67,20 @@ interface PositionStats {
   avgConsistency: number;
   avgClutchFactor: number;
   avgOverall: number;
+}
+
+interface PlayerPeerRating {
+  discord_user_id: string;
+  discord_username: string | null;
+  ea_username: string | null;
+  evalCount: number;
+  avgPerformance: number;
+  avgEnjoyment: number;
+  avgEnergy: number;
+  preferCount: number;
+  neutralCount: number;
+  avoidCount: number;
+  vibeScore: number;
 }
 
 interface PlayerRatingSummary {
@@ -173,6 +195,57 @@ export default function RatingsPage() {
     }).sort((a, b) => b.evaluationCount - a.evaluationCount);
   })();
 
+  // Calculate per-player peer ratings
+  const playerPeerRatings: PlayerPeerRating[] = (() => {
+    if (!evaluations || !playerSummaries) return [];
+    
+    const playerMap = new Map<string, PeerEvaluation[]>();
+    
+    evaluations.forEach(ev => {
+      const playerId = ev.evaluated_discord_id;
+      if (!playerMap.has(playerId)) {
+        playerMap.set(playerId, []);
+      }
+      playerMap.get(playerId)!.push(ev);
+    });
+
+    const profileMap = new Map(playerSummaries.map(p => [p.discord_user_id, p]));
+
+    return Array.from(playerMap.entries()).map(([discord_user_id, evals]) => {
+      const player = profileMap.get(discord_user_id);
+      
+      const avgNum = (field: keyof PeerEvaluation) => {
+        const valid = evals.filter(e => e[field] != null && typeof e[field] === 'number');
+        if (valid.length === 0) return 0;
+        return valid.reduce((sum, e) => sum + (e[field] as number), 0) / valid.length;
+      };
+      
+      const preferCount = evals.filter(e => e.play_again === 'prefer').length;
+      const neutralCount = evals.filter(e => e.play_again === 'neutral').length;
+      const avoidCount = evals.filter(e => e.play_again === 'avoid').length;
+      
+      // Vibe score: prefer=+1, neutral=0, avoid=-1, normalized to 0-100
+      const totalVotes = preferCount + neutralCount + avoidCount;
+      const vibeScore = totalVotes > 0 
+        ? ((preferCount - avoidCount) / totalVotes + 1) * 50 
+        : 50;
+
+      return {
+        discord_user_id,
+        discord_username: player?.discord_username || null,
+        ea_username: player?.ea_username || null,
+        evalCount: evals.length,
+        avgPerformance: avgNum("overall_score"),
+        avgEnjoyment: avgNum("enjoyment"),
+        avgEnergy: avgNum("team_energy"),
+        preferCount,
+        neutralCount,
+        avoidCount,
+        vibeScore,
+      };
+    }).sort((a, b) => b.evalCount - a.evalCount);
+  })();
+
   // Get evaluations for selected position
   const filteredEvaluations = selectedPosition
     ? evaluations?.filter(e => e.position_played === selectedPosition) || []
@@ -217,12 +290,198 @@ export default function RatingsPage() {
           <p className="text-muted-foreground">Peer evaluations by position and comprehensive player stats</p>
         </div>
 
-        <Tabs defaultValue="positions" className="space-y-4">
+        <Tabs defaultValue="peer-ratings" className="space-y-4">
           <TabsList>
+            <TabsTrigger value="peer-ratings">Peer Ratings</TabsTrigger>
             <TabsTrigger value="positions">By Position</TabsTrigger>
             <TabsTrigger value="all-players">All Players</TabsTrigger>
             <TabsTrigger value="evaluations">Recent Evaluations</TabsTrigger>
           </TabsList>
+
+          {/* Peer Ratings Summary */}
+          <TabsContent value="peer-ratings" className="space-y-4">
+            {evalsLoading || playersLoading ? (
+              <Skeleton className="h-96" />
+            ) : playerPeerRatings.length === 0 ? (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  No peer ratings yet. Ratings appear after players rate each other in Discord.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {/* Summary Stats */}
+                <div className="grid md:grid-cols-4 gap-4">
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-primary/10">
+                          <Users className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold">{playerPeerRatings.length}</p>
+                          <p className="text-sm text-muted-foreground">Players Rated</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-success/10">
+                          <Star className="h-5 w-5 text-success" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold">{evaluations?.length || 0}</p>
+                          <p className="text-sm text-muted-foreground">Total Evaluations</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-info/10">
+                          <Heart className="h-5 w-5 text-info" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold">
+                            {playerPeerRatings.length > 0 
+                              ? (playerPeerRatings.reduce((sum, p) => sum + p.avgEnjoyment, 0) / playerPeerRatings.length).toFixed(1)
+                              : "-"}
+                          </p>
+                          <p className="text-sm text-muted-foreground">Avg Enjoyment</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-warning/10">
+                          <Sparkles className="h-5 w-5 text-warning" />
+                        </div>
+                        <div>
+                          <p className="text-2xl font-bold">
+                            {playerPeerRatings.length > 0 
+                              ? (playerPeerRatings.reduce((sum, p) => sum + p.vibeScore, 0) / playerPeerRatings.length).toFixed(0)
+                              : "-"}%
+                          </p>
+                          <p className="text-sm text-muted-foreground">Avg Vibe Score</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Player Peer Ratings Table */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Heart className="h-5 w-5" />
+                      Player Peer Ratings
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Player</TableHead>
+                          <TableHead className="text-center">Evals</TableHead>
+                          <TableHead className="text-center">Performance</TableHead>
+                          <TableHead className="text-center">Enjoyment</TableHead>
+                          <TableHead className="text-center">Energy</TableHead>
+                          <TableHead className="text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <ThumbsUp className="h-4 w-4 text-success" />
+                            </div>
+                          </TableHead>
+                          <TableHead className="text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <Minus className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                          </TableHead>
+                          <TableHead className="text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <ThumbsDown className="h-4 w-4 text-destructive" />
+                            </div>
+                          </TableHead>
+                          <TableHead className="text-center">Vibe Score</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {playerPeerRatings.map((player) => (
+                          <TableRow key={player.discord_user_id}>
+                            <TableCell>
+                              <div>
+                                <span className="font-medium">
+                                  {player.ea_username || player.discord_username || "Unknown"}
+                                </span>
+                                {player.ea_username && player.discord_username && (
+                                  <span className="text-xs text-muted-foreground block">
+                                    {player.discord_username}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge variant="secondary">{player.evalCount}</Badge>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star
+                                    key={star}
+                                    className={`h-3 w-3 ${
+                                      star <= Math.round(player.avgPerformance)
+                                        ? "fill-primary text-primary"
+                                        : "text-muted"
+                                    }`}
+                                  />
+                                ))}
+                                <span className="ml-1 text-sm font-medium">
+                                  {player.avgPerformance.toFixed(1)}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <Heart className="h-4 w-4 text-pink-500" />
+                                <span className="font-medium">{player.avgEnjoyment.toFixed(1)}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <Zap className="h-4 w-4 text-yellow-500" />
+                                <span className="font-medium">{player.avgEnergy.toFixed(1)}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center text-success font-medium">
+                              {player.preferCount}
+                            </TableCell>
+                            <TableCell className="text-center text-muted-foreground">
+                              {player.neutralCount}
+                            </TableCell>
+                            <TableCell className="text-center text-destructive font-medium">
+                              {player.avoidCount}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge 
+                                variant={player.vibeScore >= 70 ? "default" : player.vibeScore >= 40 ? "secondary" : "destructive"}
+                                className={player.vibeScore >= 70 ? "bg-success" : ""}
+                              >
+                                {player.vibeScore.toFixed(0)}%
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </TabsContent>
 
           {/* Position-Based Analysis */}
           <TabsContent value="positions" className="space-y-4">
