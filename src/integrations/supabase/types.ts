@@ -1095,6 +1095,7 @@ export type Database = {
           discord_user_id: string
           discord_username: string | null
           draws: number | null
+          dribble_attempts: number | null
           dribbles: number | null
           ea_club_id: string | null
           fouls: number | null
@@ -1116,6 +1117,7 @@ export type Database = {
           saves_parry: number | null
           saves_punch: number | null
           saves_reflex: number | null
+          second_assists: number | null
           seconds_played: number | null
           shots: number | null
           tackle_attempts: number | null
@@ -1136,6 +1138,7 @@ export type Database = {
           discord_user_id: string
           discord_username?: string | null
           draws?: number | null
+          dribble_attempts?: number | null
           dribbles?: number | null
           ea_club_id?: string | null
           fouls?: number | null
@@ -1157,6 +1160,7 @@ export type Database = {
           saves_parry?: number | null
           saves_punch?: number | null
           saves_reflex?: number | null
+          second_assists?: number | null
           seconds_played?: number | null
           shots?: number | null
           tackle_attempts?: number | null
@@ -1177,6 +1181,7 @@ export type Database = {
           discord_user_id?: string
           discord_username?: string | null
           draws?: number | null
+          dribble_attempts?: number | null
           dribbles?: number | null
           ea_club_id?: string | null
           fouls?: number | null
@@ -1198,6 +1203,7 @@ export type Database = {
           saves_parry?: number | null
           saves_punch?: number | null
           saves_reflex?: number | null
+          second_assists?: number | null
           seconds_played?: number | null
           shots?: number | null
           tackle_attempts?: number | null
@@ -1258,6 +1264,7 @@ export type Database = {
           discord_user_id: string
           draft_performance_rating: number | null
           draws: number
+          dribble_attempts: number | null
           dribbles: number | null
           fouls: number | null
           games_played: number
@@ -1286,6 +1293,7 @@ export type Database = {
           total_clean_sheets: number
           total_goals: number
           total_motm: number
+          total_second_assists: number | null
           updated_at: string
           wins: number
         }
@@ -1299,6 +1307,7 @@ export type Database = {
           discord_user_id: string
           draft_performance_rating?: number | null
           draws?: number
+          dribble_attempts?: number | null
           dribbles?: number | null
           fouls?: number | null
           games_played?: number
@@ -1327,6 +1336,7 @@ export type Database = {
           total_clean_sheets?: number
           total_goals?: number
           total_motm?: number
+          total_second_assists?: number | null
           updated_at?: string
           wins?: number
         }
@@ -1340,6 +1350,7 @@ export type Database = {
           discord_user_id?: string
           draft_performance_rating?: number | null
           draws?: number
+          dribble_attempts?: number | null
           dribbles?: number | null
           fouls?: number | null
           games_played?: number
@@ -1368,6 +1379,7 @@ export type Database = {
           total_clean_sheets?: number
           total_goals?: number
           total_motm?: number
+          total_second_assists?: number | null
           updated_at?: string
           wins?: number
         }
@@ -1418,6 +1430,7 @@ export type Database = {
           created_at: string
           discord_user_id: string
           draft_id: string | null
+          dribble_attempts: number | null
           dribbles: number | null
           ea_match_id: string | null
           ea_match_rating: number | null
@@ -1441,6 +1454,7 @@ export type Database = {
           saves_parry: number | null
           saves_punch: number | null
           saves_reflex: number | null
+          second_assists: number | null
           seconds_played: number | null
           shots: number | null
           tackle_attempts: number | null
@@ -1456,6 +1470,7 @@ export type Database = {
           created_at?: string
           discord_user_id: string
           draft_id?: string | null
+          dribble_attempts?: number | null
           dribbles?: number | null
           ea_match_id?: string | null
           ea_match_rating?: number | null
@@ -1479,6 +1494,7 @@ export type Database = {
           saves_parry?: number | null
           saves_punch?: number | null
           saves_reflex?: number | null
+          second_assists?: number | null
           seconds_played?: number | null
           shots?: number | null
           tackle_attempts?: number | null
@@ -1494,6 +1510,7 @@ export type Database = {
           created_at?: string
           discord_user_id?: string
           draft_id?: string | null
+          dribble_attempts?: number | null
           dribbles?: number | null
           ea_match_id?: string | null
           ea_match_rating?: number | null
@@ -1517,6 +1534,7 @@ export type Database = {
           saves_parry?: number | null
           saves_punch?: number | null
           saves_reflex?: number | null
+          second_assists?: number | null
           seconds_played?: number | null
           shots?: number | null
           tackle_attempts?: number | null
@@ -1601,6 +1619,7 @@ export type Database = {
           discord_user_id: string
           discord_username: string | null
           draws: number | null
+          dribble_attempts: number | null
           dribbles: number | null
           form_rating: number | null
           fouls: number | null
@@ -1629,6 +1648,7 @@ export type Database = {
           saves_parry: number | null
           saves_punch: number | null
           saves_reflex: number | null
+          second_assists: number | null
           seconds_played: number | null
           shots: number | null
           streak_type: string | null
@@ -1653,6 +1673,7 @@ export type Database = {
           discord_user_id: string
           discord_username?: string | null
           draws?: number | null
+          dribble_attempts?: number | null
           dribbles?: number | null
           form_rating?: number | null
           fouls?: number | null
@@ -1681,6 +1702,7 @@ export type Database = {
           saves_parry?: number | null
           saves_punch?: number | null
           saves_reflex?: number | null
+          second_assists?: number | null
           seconds_played?: number | null
           shots?: number | null
           streak_type?: string | null
@@ -1705,6 +1727,7 @@ export type Database = {
           discord_user_id?: string
           discord_username?: string | null
           draws?: number | null
+          dribble_attempts?: number | null
           dribbles?: number | null
           form_rating?: number | null
           fouls?: number | null
@@ -1733,6 +1756,7 @@ export type Database = {
           saves_parry?: number | null
           saves_punch?: number | null
           saves_reflex?: number | null
+          second_assists?: number | null
           seconds_played?: number | null
           shots?: number | null
           streak_type?: string | null
@@ -1870,6 +1894,7 @@ export type Database = {
           clearances: number | null
           created_at: string
           draws: number | null
+          dribble_attempts: number | null
           ea_club_id: string
           ea_club_name: string | null
           ea_platform: string | null
@@ -1887,6 +1912,7 @@ export type Database = {
           passes_made: number | null
           primary_position: string | null
           saves: number | null
+          second_assists: number | null
           shots: number | null
           tackles: number | null
           times_faced: number | null
@@ -1902,6 +1928,7 @@ export type Database = {
           clearances?: number | null
           created_at?: string
           draws?: number | null
+          dribble_attempts?: number | null
           ea_club_id: string
           ea_club_name?: string | null
           ea_platform?: string | null
@@ -1919,6 +1946,7 @@ export type Database = {
           passes_made?: number | null
           primary_position?: string | null
           saves?: number | null
+          second_assists?: number | null
           shots?: number | null
           tackles?: number | null
           times_faced?: number | null
@@ -1934,6 +1962,7 @@ export type Database = {
           clearances?: number | null
           created_at?: string
           draws?: number | null
+          dribble_attempts?: number | null
           ea_club_id?: string
           ea_club_name?: string | null
           ea_platform?: string | null
@@ -1951,6 +1980,7 @@ export type Database = {
           passes_made?: number | null
           primary_position?: string | null
           saves?: number | null
+          second_assists?: number | null
           shots?: number | null
           tackles?: number | null
           times_faced?: number | null

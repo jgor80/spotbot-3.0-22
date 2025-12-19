@@ -36,7 +36,15 @@ const KNOWN_MEMBER_KEYS = new Set([
   'shots', 'tacklesmade', 'tackles', 'passesmade', 'passesMade', 'passattempts', 'passAttempts', 'saves',
   'gksaves', 'gkSaves', 'interceptions', 'clearances', 'name', 'playerName', 'proName', 'proOverall',
   'position', 'pos', 'redcards', 'redCards', 'yellowcards', 'yellowCards', 'goalsConceded', 'penalties',
-  'penaltiesTaken', 'dribblesCompleted', 'dribblesAttempted', 'offsides', 'foulsCommitted', 'minutesPlayed'
+  'penaltiesTaken', 'dribblesCompleted', 'dribblesAttempted', 'offsides', 'foulsCommitted', 'minutesPlayed',
+  // New fields for second assists and dribbles
+  'secondAssists', 'secondassists', 'secondAssist', 'secondassist',
+  'dribblewon', 'dribbleswon', 'dribblesWon', 'dribbles', 'dribbleattempts', 'dribbleAttempts',
+  // Additional known match player stat keys
+  'playername', 'rating', 'possession', 'cleansheetsany', 'cleansheetsdef', 'cleansheetsgk',
+  'tackleattempts', 'tackleAttempts', 'ballDiveSaves', 'ballDivesaves', 'crossSaves', 'crosssaves',
+  'parrySaves', 'parrysaves', 'punchSaves', 'punchsaves', 'reflexSaves', 'reflexsaves',
+  'foulcommited', 'fouls', 'archetypeid', 'archetypeId'
 ])
 
 // Fetch match history with player stats
@@ -189,6 +197,7 @@ type AggregatedPlayerStats = {
   draws: number
   goals: number
   assists: number
+  second_assists: number
   clean_sheets: number
   man_of_match: number
   rating_sum: number
@@ -199,6 +208,8 @@ type AggregatedPlayerStats = {
   saves: number
   interceptions: number
   clearances: number
+  dribbles: number
+  dribble_attempts: number
   position_counts: Record<string, number>
 }
 
@@ -217,6 +228,7 @@ function addOrUpdateAggregate(
     draws: number
     goals: number
     assists: number
+    secondAssists: number
     cleanSheets: number
     manOfMatch: number
     avgRating: number
@@ -227,6 +239,8 @@ function addOrUpdateAggregate(
     saves: number
     interceptions: number
     clearances: number
+    dribbles: number
+    dribbleAttempts: number
     normalizedPosition: string | null
   }
 ) {
@@ -241,6 +255,7 @@ function addOrUpdateAggregate(
     draws: 0,
     goals: 0,
     assists: 0,
+    second_assists: 0,
     clean_sheets: 0,
     man_of_match: 0,
     rating_sum: 0,
@@ -251,6 +266,8 @@ function addOrUpdateAggregate(
     saves: 0,
     interceptions: 0,
     clearances: 0,
+    dribbles: 0,
+    dribble_attempts: 0,
     position_counts: {},
   }
 
@@ -261,6 +278,7 @@ function addOrUpdateAggregate(
   aggregate.draws += stats.draws
   aggregate.goals += stats.goals
   aggregate.assists += stats.assists
+  aggregate.second_assists += stats.secondAssists
   aggregate.clean_sheets += stats.cleanSheets
   aggregate.man_of_match += stats.manOfMatch
   aggregate.rating_sum += stats.avgRating * stats.gamesPlayed
@@ -271,6 +289,8 @@ function addOrUpdateAggregate(
   aggregate.saves += stats.saves
   aggregate.interceptions += stats.interceptions
   aggregate.clearances += stats.clearances
+  aggregate.dribbles += stats.dribbles
+  aggregate.dribble_attempts += stats.dribbleAttempts
 
   if (stats.normalizedPosition) {
     aggregate.position_counts[stats.normalizedPosition] =
@@ -360,6 +380,14 @@ async function syncMemberStats(
       const saves = parseInt(member.saves || member.gksaves || member.gkSaves || 0)
       const interceptions = parseInt(member.interceptions || 0)
       const clearances = parseInt(member.clearances || 0)
+      
+      // New fields: second assists and dribbles
+      const secondAssists = parseInt(member.secondAssists || member.secondassists || member.secondAssist || member.secondassist || 0)
+      const dribbles = parseInt(member.dribblesCompleted || member.dribblewon || member.dribbleswon || member.dribbles || 0)
+      const dribbleAttempts = parseInt(member.dribblesAttempted || member.dribbleattempts || member.dribbleAttempts || 0)
+      
+      // Debug log to discover all EA member fields
+      console.log(`[sync-ea-stats] Member ${eaUsername} fields:`, JSON.stringify(Object.keys(member).sort()))
 
       const normalizedPosition = position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null
 
@@ -370,6 +398,7 @@ async function syncMemberStats(
         draws,
         goals,
         assists,
+        secondAssists,
         cleanSheets,
         manOfMatch,
         avgRating,
@@ -380,12 +409,14 @@ async function syncMemberStats(
         saves,
         interceptions,
         clearances,
+        dribbles,
+        dribbleAttempts,
         normalizedPosition,
       })
 
       updatedPlayerIds.push(profile.discord_user_id)
       synced++
-      console.log(`[sync-ea-stats] Collected ${eaUsername}: ${gamesPlayed}G ${wins}W ${goals}g ${assists}a`)
+      console.log(`[sync-ea-stats] Collected ${eaUsername}: ${gamesPlayed}G ${wins}W ${goals}g ${assists}a ${secondAssists}sa ${dribbles}dr`)
     }
 
     const unknownMemberKeys = [...discoveredMemberKeys].filter((key) => !KNOWN_MEMBER_KEYS.has(key))
@@ -486,6 +517,7 @@ async function persistAggregatedStats(
       draws: draws,
       total_goals: aggregate.goals,
       total_assists: aggregate.assists,
+      total_second_assists: aggregate.second_assists,
       total_clean_sheets: aggregate.clean_sheets,
       total_motm: aggregate.man_of_match,
       club_performance_rating: clubPerformanceRating,
@@ -497,6 +529,7 @@ async function persistAggregatedStats(
       saves: aggregate.saves,
       interceptions: aggregate.interceptions,
       clearances: aggregate.clearances,
+      dribble_attempts: aggregate.dribble_attempts,
       last_game_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
@@ -545,6 +578,7 @@ async function persistAggregatedStats(
       draws: draws,
       goals: aggregate.goals,
       assists: aggregate.assists,
+      second_assists: aggregate.second_assists,
       win_rate: winRate,
       overall_rating: clubPerformanceRating,
       avg_match_rating: avgRating,
@@ -555,6 +589,9 @@ async function persistAggregatedStats(
       passes_made: aggregate.passes_made,
       pass_attempts: aggregate.pass_attempts,
       saves: aggregate.saves,
+      dribbles: aggregate.dribbles,
+      dribble_attempts: aggregate.dribble_attempts,
+      interceptions: aggregate.interceptions,
       primary_position: primaryPosition,
       last_active_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -829,6 +866,9 @@ Deno.serve(async (req) => {
                 const players = matchData.players?.[club.ea_club_id] || {}
                 
                 for (const [, pStats] of Object.entries(players) as any) {
+                  // Debug log all player stat fields from EA
+                  console.log(`[sync-ea-stats] Match player ${pStats.playername} fields:`, JSON.stringify(Object.keys(pStats).sort()))
+                  
                   // Calculate total saves from all save types
                   const savesDiving = parseInt(pStats.ballDiveSaves || pStats.ballDivesaves || 0)
                   const savesCross = parseInt(pStats.crossSaves || pStats.crosssaves || 0)
@@ -840,10 +880,16 @@ Deno.serve(async (req) => {
                   // Clean sheet detection from EA data
                   const isCleanSheet = pStats.cleansheetsany === '1' || pStats.cleansheetsdef === '1' || pStats.cleansheetsgk === '1'
                   
+                  // New fields: second assists and dribble attempts
+                  const secondAssists = parseInt(pStats.secondAssists || pStats.secondassists || pStats.secondAssist || pStats.secondassist || 0)
+                  const dribbles = parseInt(pStats.dribblesCompleted || pStats.dribblewon || pStats.dribbleswon || pStats.dribbles || 0)
+                  const dribbleAttempts = parseInt(pStats.dribblesAttempted || pStats.dribbleattempts || pStats.dribbleAttempts || 0)
+                  
                   playerStats.push({
                     ea_username: pStats.playername,
                     goals: parseInt(pStats.goals || 0),
                     assists: parseInt(pStats.assists || 0),
+                    second_assists: secondAssists,
                     rating: parseFloat(pStats.rating || 0),
                     position: pStats.pos,
                     motm: pStats.mom === '1',
@@ -865,7 +911,8 @@ Deno.serve(async (req) => {
                     interceptions: parseInt(pStats.interceptions || 0),
                     clearances: parseInt(pStats.clearances || 0),
                     possession: parseFloat(pStats.possession || 0),
-                    dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
+                    dribbles: dribbles,
+                    dribble_attempts: dribbleAttempts,
                     fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
                     offsides: parseInt(pStats.offsides || 0),
                     archetypeid: pStats.archetypeid || pStats.archetypeId || null
@@ -906,6 +953,7 @@ Deno.serve(async (req) => {
                         match_type: 'club',
                         goals: pStat.goals,
                         assists: pStat.assists,
+                        second_assists: pStat.second_assists,
                         clean_sheet: pStat.clean_sheet || (pStat.position === 'GK' && scoreAgainst === 0),
                         won: result === 'win',
                         ea_match_rating: pStat.rating,
@@ -927,6 +975,7 @@ Deno.serve(async (req) => {
                         interceptions: pStat.interceptions,
                         clearances: pStat.clearances,
                         dribbles: pStat.dribbles,
+                        dribble_attempts: pStat.dribble_attempts,
                         fouls: pStat.fouls,
                         offsides: pStat.offsides,
                         archetypeid: pStat.archetypeid
@@ -983,10 +1032,16 @@ Deno.serve(async (req) => {
                   // Clean sheet detection from EA data
                   const isCleanSheet = pStats.cleansheetsany === '1' || pStats.cleansheetsdef === '1' || pStats.cleansheetsgk === '1'
                   
+                  // New fields: second assists and dribble attempts
+                  const secondAssists = parseInt(pStats.secondAssists || pStats.secondassists || pStats.secondAssist || pStats.secondassist || 0)
+                  const dribbles = parseInt(pStats.dribblesCompleted || pStats.dribblewon || pStats.dribbleswon || pStats.dribbles || 0)
+                  const dribbleAttempts = parseInt(pStats.dribblesAttempted || pStats.dribbleattempts || pStats.dribbleAttempts || 0)
+                  
                   playerStats.push({
                     ea_username: pStats.playername,
                     goals: parseInt(pStats.goals || 0),
                     assists: parseInt(pStats.assists || 0),
+                    second_assists: secondAssists,
                     rating: parseFloat(pStats.rating || 0),
                     position: pStats.pos,
                     motm: pStats.mom === '1',
@@ -1008,7 +1063,8 @@ Deno.serve(async (req) => {
                     interceptions: parseInt(pStats.interceptions || 0),
                     clearances: parseInt(pStats.clearances || 0),
                     possession: parseFloat(pStats.possession || 0),
-                    dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
+                    dribbles: dribbles,
+                    dribble_attempts: dribbleAttempts,
                     fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
                     offsides: parseInt(pStats.offsides || 0),
                     archetypeid: pStats.archetypeid || pStats.archetypeId || null
@@ -1049,6 +1105,7 @@ Deno.serve(async (req) => {
                         match_type: 'competition', // Competition/cup match type
                         goals: pStat.goals,
                         assists: pStat.assists,
+                        second_assists: pStat.second_assists,
                         clean_sheet: pStat.clean_sheet || (pStat.position === 'GK' && scoreAgainst === 0),
                         won: result === 'win',
                         ea_match_rating: pStat.rating,
@@ -1070,6 +1127,7 @@ Deno.serve(async (req) => {
                         interceptions: pStat.interceptions,
                         clearances: pStat.clearances,
                         dribbles: pStat.dribbles,
+                        dribble_attempts: pStat.dribble_attempts,
                         fouls: pStat.fouls,
                         offsides: pStat.offsides,
                         archetypeid: pStat.archetypeid
@@ -1128,10 +1186,16 @@ Deno.serve(async (req) => {
                   // Clean sheet detection from EA data
                   const isCleanSheet = pStats.cleansheetsany === '1' || pStats.cleansheetsdef === '1' || pStats.cleansheetsgk === '1'
                   
+                  // New fields: second assists and dribble attempts
+                  const secondAssists = parseInt(pStats.secondAssists || pStats.secondassists || pStats.secondAssist || pStats.secondassist || 0)
+                  const dribbles = parseInt(pStats.dribblesCompleted || pStats.dribblewon || pStats.dribbleswon || pStats.dribbles || 0)
+                  const dribbleAttempts = parseInt(pStats.dribblesAttempted || pStats.dribbleattempts || pStats.dribbleAttempts || 0)
+                  
                   playerStats.push({
                     ea_username: pStats.playername,
                     goals: parseInt(pStats.goals || 0),
                     assists: parseInt(pStats.assists || 0),
+                    second_assists: secondAssists,
                     rating: parseFloat(pStats.rating || 0),
                     position: pStats.pos,
                     motm: pStats.mom === '1',
@@ -1152,7 +1216,8 @@ Deno.serve(async (req) => {
                     interceptions: parseInt(pStats.interceptions || 0),
                     clearances: parseInt(pStats.clearances || 0),
                     possession: parseFloat(pStats.possession || 0),
-                    dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
+                    dribbles: dribbles,
+                    dribble_attempts: dribbleAttempts,
                     fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
                     offsides: parseInt(pStats.offsides || 0),
                     archetypeid: pStats.archetypeid || pStats.archetypeId || null
@@ -1193,6 +1258,7 @@ Deno.serve(async (req) => {
                         match_type: 'friendly',
                         goals: pStat.goals,
                         assists: pStat.assists,
+                        second_assists: pStat.second_assists,
                         clean_sheet: pStat.clean_sheet || (pStat.position === 'GK' && scoreAgainst === 0),
                         won: result === 'win',
                         ea_match_rating: pStat.rating,
@@ -1213,6 +1279,7 @@ Deno.serve(async (req) => {
                         interceptions: pStat.interceptions,
                         clearances: pStat.clearances,
                         dribbles: pStat.dribbles,
+                        dribble_attempts: pStat.dribble_attempts,
                         fouls: pStat.fouls,
                         offsides: pStat.offsides,
                         archetypeid: pStat.archetypeid
