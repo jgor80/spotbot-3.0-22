@@ -646,6 +646,7 @@ const guildQueues = new Map();
 const pendingReadyChecks = new Map(); // Map<uniqueId, { guildId, clubKey, vcId, userId, positions }>
 const activeDrafts = new Map(); // Map<guildId, draftData>
 const eaMonitoringIntervals = new Map(); // Map<guildId_clubKey, intervalId> for EA polling
+const pendingFeedbackRatings = new Map(); // Map<uniqueId, { performance, enjoyment, energy, playAgain }>
 
 // Scouting state (for select menu choices)
 const pendingScoutChoices = new Map(); // Map<userId, { query, results }>
@@ -3560,7 +3561,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.guildId && interaction.isButton()) {
       const id = interaction.customId;
       
-      // Handle feedback rate button clicks - opens modal for rating
+      // Handle feedback rate button clicks - shows select menu form
       if (id.startsWith('feedback_rate_')) {
         // Parse: feedback_rate_<playerId>_<requestId>
         const parts = id.replace('feedback_rate_', '').split('_');
@@ -3592,88 +3593,128 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const playerName = (teammate.ea_username || 'Player').slice(0, 40);
         const position = teammate.position_played || 'ANY';
         
-        // Build the rating modal
-        const modal = new ModalBuilder()
-          .setCustomId(`feedback_modal_${playerId}_${feedbackRequestId}`)
-          .setTitle(`Rate ${playerName} (${position})`);
+        // Generate unique key for this rating session
+        const ratingKey = `${interaction.user.id}_${playerId}_${feedbackRequestId}`;
         
-        // Performance Rating (1-5)
-        const perfInput = new TextInputBuilder()
-          .setCustomId('performance')
-          .setLabel('⭐ Performance Rating (1-5)')
-          .setPlaceholder('Enter 1-5 (1=Poor, 3=Average, 5=Excellent)')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMinLength(1)
-          .setMaxLength(1);
+        // Initialize or restore pending ratings (from existing ratings if editing)
+        const existingRatings = {
+          performance: teammate.given_rating || null,
+          enjoyment: teammate.vibe?.enjoyment || null,
+          energy: teammate.vibe?.teamEnergy || null,
+          playAgain: teammate.vibe?.playAgain || null
+        };
+        pendingFeedbackRatings.set(ratingKey, existingRatings);
         
-        if (teammate.given_rating) {
-          perfInput.setValue(String(teammate.given_rating));
-        }
+        // Build select menus for rating
+        const perfSelect = new StringSelectMenuBuilder()
+          .setCustomId(`feedback_perf_${playerId}_${feedbackRequestId}`)
+          .setPlaceholder('⭐ Performance Rating')
+          .addOptions([
+            { label: '1 - Poor', value: '1', emoji: '1️⃣', default: existingRatings.performance === 1 },
+            { label: '2 - Below Average', value: '2', emoji: '2️⃣', default: existingRatings.performance === 2 },
+            { label: '3 - Average', value: '3', emoji: '3️⃣', default: existingRatings.performance === 3 },
+            { label: '4 - Good', value: '4', emoji: '4️⃣', default: existingRatings.performance === 4 },
+            { label: '5 - Excellent', value: '5', emoji: '5️⃣', default: existingRatings.performance === 5 }
+          ]);
         
-        // Enjoyment Rating (1-5)
-        const enjoyInput = new TextInputBuilder()
-          .setCustomId('enjoyment')
-          .setLabel('😊 Enjoyment Rating (1-5)')
-          .setPlaceholder('1=Not fun, 3=Fine, 5=Great time!')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMinLength(1)
-          .setMaxLength(1);
+        const enjoySelect = new StringSelectMenuBuilder()
+          .setCustomId(`feedback_enjoy_${playerId}_${feedbackRequestId}`)
+          .setPlaceholder('😊 Enjoyment Rating')
+          .addOptions([
+            { label: '1 - Not Fun', value: '1', emoji: '😞', default: existingRatings.enjoyment === 1 },
+            { label: '2 - Meh', value: '2', emoji: '😐', default: existingRatings.enjoyment === 2 },
+            { label: '3 - Fine', value: '3', emoji: '🙂', default: existingRatings.enjoyment === 3 },
+            { label: '4 - Fun', value: '4', emoji: '😄', default: existingRatings.enjoyment === 4 },
+            { label: '5 - Great Time!', value: '5', emoji: '🤩', default: existingRatings.enjoyment === 5 }
+          ]);
         
-        if (teammate.vibe?.enjoyment) {
-          enjoyInput.setValue(String(teammate.vibe.enjoyment));
-        }
+        const energySelect = new StringSelectMenuBuilder()
+          .setCustomId(`feedback_energy_${playerId}_${feedbackRequestId}`)
+          .setPlaceholder('⚡ Team Energy')
+          .addOptions([
+            { label: '1 - Low Energy', value: '1', emoji: '😴', default: existingRatings.energy === 1 },
+            { label: '2 - Quiet', value: '2', emoji: '🤫', default: existingRatings.energy === 2 },
+            { label: '3 - Neutral', value: '3', emoji: '😐', default: existingRatings.energy === 3 },
+            { label: '4 - Energetic', value: '4', emoji: '💪', default: existingRatings.energy === 4 },
+            { label: '5 - Hype!', value: '5', emoji: '🔥', default: existingRatings.energy === 5 }
+          ]);
         
-        // Team Energy (1-5)
-        const energyInput = new TextInputBuilder()
-          .setCustomId('energy')
-          .setLabel('⚡ Team Energy (1-5)')
-          .setPlaceholder('1=Low energy, 3=Neutral, 5=Hype!')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMinLength(1)
-          .setMaxLength(1);
+        const againSelect = new StringSelectMenuBuilder()
+          .setCustomId(`feedback_again_${playerId}_${feedbackRequestId}`)
+          .setPlaceholder('🔄 Play Again?')
+          .addOptions([
+            { label: 'Prefer - Would love to!', value: 'prefer', emoji: '💚', default: existingRatings.playAgain === 'prefer' },
+            { label: 'Neutral - Don\'t mind', value: 'neutral', emoji: '💛', default: existingRatings.playAgain === 'neutral' },
+            { label: 'Avoid - Rather not', value: 'avoid', emoji: '💔', default: existingRatings.playAgain === 'avoid' }
+          ]);
         
-        if (teammate.vibe?.teamEnergy) {
-          energyInput.setValue(String(teammate.vibe.teamEnergy));
-        }
+        const submitBtn = new ButtonBuilder()
+          .setCustomId(`feedback_submit_${playerId}_${feedbackRequestId}`)
+          .setLabel('Submit Rating')
+          .setEmoji('✅')
+          .setStyle(ButtonStyle.Success);
         
-        // Play Again (prefer/neutral/avoid)
-        const againInput = new TextInputBuilder()
-          .setCustomId('playAgain')
-          .setLabel('🔄 Play Again? (prefer/neutral/avoid)')
-          .setPlaceholder('Type: prefer, neutral, or avoid')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMinLength(4)
-          .setMaxLength(7);
+        const cancelBtn = new ButtonBuilder()
+          .setCustomId(`feedback_cancel_${playerId}_${feedbackRequestId}`)
+          .setLabel('Cancel')
+          .setStyle(ButtonStyle.Secondary);
         
-        if (teammate.vibe?.playAgain) {
-          againInput.setValue(teammate.vibe.playAgain);
-        }
+        const embed = new EmbedBuilder()
+          .setTitle(`Rate ${playerName}`)
+          .setDescription(`**Position:** ${position}\n\nSelect your ratings below, then click **Submit Rating**.`)
+          .setColor(0x5865f2);
         
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(perfInput),
-          new ActionRowBuilder().addComponents(enjoyInput),
-          new ActionRowBuilder().addComponents(energyInput),
-          new ActionRowBuilder().addComponents(againInput)
-        );
-        
-        return interaction.showModal(modal);
+        return interaction.reply({
+          embeds: [embed],
+          components: [
+            new ActionRowBuilder().addComponents(perfSelect),
+            new ActionRowBuilder().addComponents(enjoySelect),
+            new ActionRowBuilder().addComponents(energySelect),
+            new ActionRowBuilder().addComponents(againSelect),
+            new ActionRowBuilder().addComponents(submitBtn, cancelBtn)
+          ],
+          ephemeral: true
+        });
       }
-    }
-    
-    // Handle modal submissions for feedback
-    if (!interaction.guildId && interaction.isModalSubmit()) {
-      const id = interaction.customId;
       
-      if (id.startsWith('feedback_modal_')) {
-        const parts = id.replace('feedback_modal_', '').split('_');
+      // Handle feedback cancel button
+      if (id.startsWith('feedback_cancel_')) {
+        const parts = id.replace('feedback_cancel_', '').split('_');
         const playerId = parts[0];
         const feedbackRequestId = parts.slice(1).join('_');
+        const ratingKey = `${interaction.user.id}_${playerId}_${feedbackRequestId}`;
+        pendingFeedbackRatings.delete(ratingKey);
+        return interaction.update({ content: 'Rating cancelled.', embeds: [], components: [] });
+      }
+      
+      // Handle feedback submit button
+      if (id.startsWith('feedback_submit_')) {
+        const parts = id.replace('feedback_submit_', '').split('_');
+        const playerId = parts[0];
+        const feedbackRequestId = parts.slice(1).join('_');
+        const ratingKey = `${interaction.user.id}_${playerId}_${feedbackRequestId}`;
         
-        await interaction.deferUpdate();
+        // Get pending selections from memory
+        const pending = pendingFeedbackRatings.get(ratingKey);
+        
+        if (!pending) {
+          return interaction.reply({ 
+            content: '❌ Rating session expired. Please click the player button again.', 
+            ephemeral: true 
+          });
+        }
+        
+        const { performance, enjoyment, energy, playAgain } = pending;
+        
+        // Check if all ratings are selected
+        if (!performance || !enjoyment || !energy || !playAgain) {
+          return interaction.reply({ 
+            content: '❌ Please select all 4 ratings before submitting!', 
+            ephemeral: true 
+          });
+        }
+        
+        await interaction.update({ content: '⏳ Saving rating...', embeds: [], components: [] });
         
         const { data: feedbackRequest } = await supabase
           .from('dm_feedback_requests')
@@ -3682,44 +3723,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .single();
         
         if (!feedbackRequest) {
-          return interaction.followUp({ content: '❌ Feedback request not found.', flags: 64 });
+          return interaction.editReply({ content: '❌ Feedback request not found.' });
         }
         
         if (new Date(feedbackRequest.expires_at) < new Date()) {
-          try { await interaction.message.delete(); } catch {}
-          return interaction.followUp({ content: '⏰ **Feedback window expired!**', flags: 64 });
+          return interaction.editReply({ content: '⏰ **Feedback window expired!**' });
         }
         
-        // Get values from modal
-        const performanceRaw = interaction.fields.getTextInputValue('performance');
-        const enjoymentRaw = interaction.fields.getTextInputValue('enjoyment');
-        const energyRaw = interaction.fields.getTextInputValue('energy');
-        const playAgainRaw = interaction.fields.getTextInputValue('playAgain').toLowerCase().trim();
-        
-        // Validate inputs
-        const performance = parseInt(performanceRaw, 10);
-        const enjoyment = parseInt(enjoymentRaw, 10);
-        const energy = parseInt(energyRaw, 10);
-        
-        if (isNaN(performance) || performance < 1 || performance > 5) {
-          return interaction.followUp({ content: '❌ Performance must be 1-5', flags: 64 });
-        }
-        if (isNaN(enjoyment) || enjoyment < 1 || enjoyment > 5) {
-          return interaction.followUp({ content: '❌ Enjoyment must be 1-5', flags: 64 });
-        }
-        if (isNaN(energy) || energy < 1 || energy > 5) {
-          return interaction.followUp({ content: '❌ Energy must be 1-5', flags: 64 });
-        }
-        if (!['prefer', 'neutral', 'avoid'].includes(playAgainRaw)) {
-          return interaction.followUp({ content: '❌ Play Again must be: prefer, neutral, or avoid', flags: 64 });
-        }
-        
-        const playAgain = playAgainRaw;
         let teammatesData = feedbackRequest.teammates_data || [];
         const teammate = teammatesData.find(t => t.discord_user_id === playerId);
         
         if (!teammate) {
-          return interaction.followUp({ content: '❌ Player not found.', flags: 64 });
+          return interaction.editReply({ content: '❌ Player not found.' });
         }
         
         const isEditing = teammate.rated;
@@ -3864,24 +3879,81 @@ client.on(Events.InteractionCreate, async (interaction) => {
           components.push(currentRow);
         }
         
+        // Clean up pending ratings
+        pendingFeedbackRatings.delete(ratingKey);
+        
+        // Try to send a new DM with the updated panel (since ephemeral can't edit the original)
         try {
-          await interaction.message.edit({ embeds: [embed], components });
+          const user = await client.users.fetch(interaction.user.id);
+          if (user) {
+            const dm = await user.createDM();
+            await dm.send({ embeds: [embed], components });
+          }
         } catch {}
         
         const playerName = teammate.ea_username || 'Player';
         const vibeEmoji = playAgain === 'prefer' ? '💚' : playAgain === 'avoid' ? '💔' : '💛';
         const action = isEditing ? 'Updated' : 'Rated';
         
-        return interaction.followUp({ 
-          content: `${action} **${playerName}** ${'⭐'.repeat(performance)} ${vibeEmoji}!${allRated ? ' 🎉 All teammates rated!' : ''}`, 
-          flags: 64 
+        return interaction.editReply({ 
+          content: `✅ ${action} **${playerName}** ${'⭐'.repeat(performance)} ${vibeEmoji}!${allRated ? ' 🎉 All teammates rated!' : ''}`,
+          embeds: [],
+          components: []
         });
       }
     }
     
-    // Handle DM interactions for ready check position selection
+    // Handle DM interactions for feedback select menus
     if (!interaction.guildId && interaction.isStringSelectMenu()) {
       const id = interaction.customId;
+      
+      // Handle feedback rating select menus
+      if (id.startsWith('feedback_perf_') || id.startsWith('feedback_enjoy_') || 
+          id.startsWith('feedback_energy_') || id.startsWith('feedback_again_')) {
+        
+        // Parse the custom ID to get playerId and feedbackRequestId
+        let prefix, playerId, feedbackRequestId;
+        if (id.startsWith('feedback_perf_')) {
+          prefix = 'feedback_perf_';
+        } else if (id.startsWith('feedback_enjoy_')) {
+          prefix = 'feedback_enjoy_';
+        } else if (id.startsWith('feedback_energy_')) {
+          prefix = 'feedback_energy_';
+        } else {
+          prefix = 'feedback_again_';
+        }
+        
+        const parts = id.replace(prefix, '').split('_');
+        playerId = parts[0];
+        feedbackRequestId = parts.slice(1).join('_');
+        
+        const ratingKey = `${interaction.user.id}_${playerId}_${feedbackRequestId}`;
+        const selectedValue = interaction.values[0];
+        
+        // Get or create pending ratings
+        let pending = pendingFeedbackRatings.get(ratingKey);
+        if (!pending) {
+          pending = { performance: null, enjoyment: null, energy: null, playAgain: null };
+          pendingFeedbackRatings.set(ratingKey, pending);
+        }
+        
+        // Update the appropriate field
+        if (id.startsWith('feedback_perf_')) {
+          pending.performance = parseInt(selectedValue, 10);
+        } else if (id.startsWith('feedback_enjoy_')) {
+          pending.enjoyment = parseInt(selectedValue, 10);
+        } else if (id.startsWith('feedback_energy_')) {
+          pending.energy = parseInt(selectedValue, 10);
+        } else if (id.startsWith('feedback_again_')) {
+          pending.playAgain = selectedValue;
+        }
+        
+        pendingFeedbackRatings.set(ratingKey, pending);
+        
+        // Just acknowledge - don't update the message
+        return interaction.deferUpdate();
+      }
+      
       if (id.startsWith('ready_check_position_')) {
         const uniqueId = id.replace('ready_check_position_', '');
         const pendingData = pendingReadyChecks.get(uniqueId);
