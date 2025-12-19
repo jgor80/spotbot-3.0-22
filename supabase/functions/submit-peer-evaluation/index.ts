@@ -273,14 +273,20 @@ serve(async (req) => {
         trust_score: Math.min(2.0, (trustScore || 1.0) + 0.01),
       }, { onConflict: "guild_id,discord_user_id" });
 
-    // Update the feedback request if this was from a draft
-    if (draft_id) {
-      const { data: feedbackRequest } = await supabase
+    // Update the feedback request if this was from a draft or club match
+    if (draft_id || club_match_id) {
+      let query = supabase
         .from("dm_feedback_requests")
         .select("*")
-        .eq("draft_id", draft_id)
-        .eq("evaluator_discord_id", evaluator_discord_id)
-        .maybeSingle();
+        .eq("evaluator_discord_id", evaluator_discord_id);
+      
+      if (draft_id) {
+        query = query.eq("draft_id", draft_id);
+      } else if (club_match_id) {
+        query = query.eq("club_match_id", club_match_id);
+      }
+
+      const { data: feedbackRequest } = await query.maybeSingle();
 
       if (feedbackRequest) {
         const remaining = feedbackRequest.teammates_to_evaluate.filter(
@@ -295,6 +301,8 @@ serve(async (req) => {
             completed_at: remaining.length === 0 ? new Date().toISOString() : null,
           })
           .eq("id", feedbackRequest.id);
+        
+        console.log(`[peer-eval] Updated feedback request ${feedbackRequest.id}, remaining: ${remaining.length}`);
       }
     }
 
