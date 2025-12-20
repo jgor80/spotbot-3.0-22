@@ -323,16 +323,17 @@ const EA_HEADERS = {
 
 // Fetch ALL matches without filtering by type - EA API matchType values are unreliable
 // Now with caching to avoid duplicate calls
-// Fetch matches for a specific match type
-async function fetchMatchesByType(clubId, platform, matchType) {
+// Fetch matches for a specific game type
+async function fetchMatchesByType(clubId, platform, gameType) {
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
   
   try {
     await humanDelay(); // Add human-like delay before API call
-    console.log(`[EA] Fetching ${matchType} matches for club ${clubId}...`);
+    console.log(`[EA] Fetching ${gameType} matches for club ${clubId}...`);
     
+    // EA API uses 'gameType' param with values like 'matchType9', 'matchType13'
     const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
-      params: { platform: fcPlatform, clubIds: clubId, matchType: matchType, maxResultCount: 20 },
+      params: { platform: fcPlatform, clubIds: clubId, gameType: gameType, maxResultCount: 20 },
       headers: EA_HEADERS,
       timeout: 15000
     });
@@ -355,7 +356,7 @@ async function fetchMatchesByType(clubId, platform, matchType) {
     }
   } catch (err) {
     const status = err.response?.status;
-    console.log(`[EA] Failed to fetch ${matchType} matches (${status || 'network'}): ${err.message}`);
+    console.log(`[EA] Failed to fetch ${gameType} matches (${status || 'network'}): ${err.message}`);
     return [];
   }
 }
@@ -369,19 +370,18 @@ async function fetchAllMatchesFromEA(clubId, platform) {
   
   console.log(`[EA] Fetching all match types for club ${clubId}...`);
   
-  // EA now requires matchType parameter - fetch each type separately
-  // 9 = Division/Rivals, 13 = Cup/Knockout, 22 = Friendly
-  const matchTypeConfigs = [
-    { type: 9, category: 'division' },
-    { type: 13, category: 'competition' },
-    { type: 22, category: 'friendly' }
+  // EA API uses 'gameType' param with string values like 'matchType9'
+  // matchType9 = Division/Rivals, matchType13 = Cup/Knockout
+  const gameTypeConfigs = [
+    { gameType: 'matchType9', category: 'division' },
+    { gameType: 'matchType13', category: 'competition' }
   ];
   const allMatches = [];
   
-  for (const { type, category } of matchTypeConfigs) {
-    const matches = await fetchMatchesByType(clubId, platform, type);
+  for (const { gameType, category } of gameTypeConfigs) {
+    const matches = await fetchMatchesByType(clubId, platform, gameType);
     if (matches.length > 0) {
-      console.log(`[EA] ✓ Got ${matches.length} type ${type} (${category}) matches`);
+      console.log(`[EA] ✓ Got ${matches.length} ${gameType} (${category}) matches`);
       // Tag matches with their category
       matches.forEach(m => m._matchCategory = category);
       allMatches.push(...matches);
