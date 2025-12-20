@@ -134,6 +134,20 @@ export default function RatingsPage() {
     enabled: !!selectedGuildId,
   });
 
+  // Fetch profiles for username lookup (covers players who may not have tracked games)
+  const { data: profiles } = useQuery({
+    queryKey: ["profiles-lookup", selectedGuildId],
+    queryFn: async () => {
+      if (!selectedGuildId) return [];
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("discord_user_id, discord_username, ea_username");
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedGuildId,
+  });
+
   // Fetch player stats from tracked games (unified with leaderboard)
   const { data: leaderboardPlayers, isLoading: playersLoading } = useLeaderboard(
     selectedGuildId,
@@ -224,9 +238,12 @@ export default function RatingsPage() {
     });
 
     const profileMap = new Map(playerSummaries.map(p => [p.discord_user_id, p]));
+    // Also create a profiles lookup map for fallback usernames
+    const profilesLookup = new Map((profiles || []).map(p => [p.discord_user_id, p]));
 
     return Array.from(playerMap.entries()).map(([discord_user_id, evals]) => {
       const player = profileMap.get(discord_user_id);
+      const profileFallback = profilesLookup.get(discord_user_id);
       
       const avgNum = (field: keyof PeerEvaluation) => {
         const valid = evals.filter(e => e[field] != null && typeof e[field] === 'number');
@@ -246,8 +263,8 @@ export default function RatingsPage() {
 
       return {
         discord_user_id,
-        discord_username: player?.discord_username || null,
-        ea_username: player?.ea_username || null,
+        discord_username: player?.discord_username || profileFallback?.discord_username || null,
+        ea_username: player?.ea_username || profileFallback?.ea_username || null,
         evalCount: evals.length,
         avgPerformance: avgNum("overall_score"),
         avgEnjoyment: avgNum("enjoyment"),
