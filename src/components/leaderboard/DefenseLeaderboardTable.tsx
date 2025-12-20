@@ -20,7 +20,7 @@ interface DefenseLeaderboardTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortKey = "rank" | "rating" | "games" | "tackles" | "interceptions" | "clearances" | "fouls" | "clean_sheets" | "ga_per_game" | "def_per_game" | "tackles_per_game" | "positions";
+type SortKey = "rank" | "rating" | "games" | "tackles" | "interceptions" | "clearances" | "fouls" | "clean_sheets" | "wins" | "win_rate" | "ga_per_game" | "def_per_game" | "tackles_per_game" | "positions";
 type SortDirection = "asc" | "desc";
 
 // Format position counts for display (short version)
@@ -106,6 +106,14 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
           aVal = a.clean_sheets || 0;
           bVal = b.clean_sheets || 0;
           break;
+        case "wins":
+          aVal = a.wins || 0;
+          bVal = b.wins || 0;
+          break;
+        case "win_rate":
+          aVal = a.win_rate || 0;
+          bVal = b.win_rate || 0;
+          break;
         case "def_per_game":
           aVal = a.games_played > 0 ? ((a.tackles || 0) + (a.interceptions || 0) + (a.clearances || 0)) / a.games_played : 0;
           bVal = b.games_played > 0 ? ((b.tackles || 0) + (b.interceptions || 0) + (b.clearances || 0)) / b.games_played : 0;
@@ -170,10 +178,11 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
               <SortableHeader columnKey="ga_per_game" className="text-center hidden lg:table-cell">GA/G</SortableHeader>
               <SortableHeader columnKey="interceptions" className="text-center">Int</SortableHeader>
               <SortableHeader columnKey="clearances" className="text-center hidden lg:table-cell">Clear</SortableHeader>
-              <SortableHeader columnKey="fouls" className="text-center hidden xl:table-cell">Fouls</SortableHeader>
               <SortableHeader columnKey="clean_sheets" className="text-center hidden md:table-cell">CS</SortableHeader>
+              <SortableHeader columnKey="wins" className="text-center hidden md:table-cell">Wins</SortableHeader>
+              <SortableHeader columnKey="win_rate" className="text-center hidden lg:table-cell">Win%</SortableHeader>
               <SortableHeader columnKey="tackles_per_game" className="text-center hidden lg:table-cell">Tkl/G</SortableHeader>
-              <SortableHeader columnKey="def_per_game" className="text-center hidden lg:table-cell">Def/G</SortableHeader>
+              <SortableHeader columnKey="def_per_game" className="text-center hidden xl:table-cell">Def/G</SortableHeader>
               <SortableHeader columnKey="positions" className="text-center hidden xl:table-cell">Positions</SortableHeader>
             </TableRow>
           </TableHeader>
@@ -240,10 +249,11 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
                   <TableCell className="text-center hidden lg:table-cell">{gaPerGame.toFixed(2)}</TableCell>
                   <TableCell className="text-center">{player.interceptions || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{player.clearances || 0}</TableCell>
-                  <TableCell className="text-center hidden xl:table-cell">{player.fouls || 0}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.clean_sheets || 0}</TableCell>
+                  <TableCell className="text-center hidden md:table-cell">{player.wins || 0}</TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">{(player.win_rate || 0).toFixed(0)}%</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{tacklesPerGame.toFixed(2)}</TableCell>
-                  <TableCell className="text-center hidden lg:table-cell">{defPerGame.toFixed(1)}</TableCell>
+                  <TableCell className="text-center hidden xl:table-cell">{defPerGame.toFixed(1)}</TableCell>
                   <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">
                     {positionsFull.length > 0 ? (
                       <TooltipProvider>

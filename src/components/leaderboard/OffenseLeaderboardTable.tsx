@@ -20,7 +20,7 @@ interface OffenseLeaderboardTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "shots" | "shot_conv" | "dribbles" | "offsides" | "ga_per_game" | "goals_per_game" | "positions";
+type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "shots" | "shot_conv" | "dribbles" | "wins" | "win_rate" | "ga_per_game" | "goals_per_game" | "positions";
 type SortDirection = "asc" | "desc";
 
 // Format position counts for display (short version)
@@ -101,9 +101,13 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
           aVal = a.dribbles || 0;
           bVal = b.dribbles || 0;
           break;
-        case "offsides":
-          aVal = a.offsides || 0;
-          bVal = b.offsides || 0;
+        case "wins":
+          aVal = a.wins || 0;
+          bVal = b.wins || 0;
+          break;
+        case "win_rate":
+          aVal = a.win_rate || 0;
+          bVal = b.win_rate || 0;
           break;
         case "ga_per_game":
           aVal = a.games_played > 0 ? (a.goals + a.assists) / a.games_played : 0;
@@ -169,7 +173,8 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
               <SortableHeader columnKey="assists" className="text-center">Assists</SortableHeader>
               <SortableHeader columnKey="shots" className="text-center hidden lg:table-cell">Shots</SortableHeader>
               <SortableHeader columnKey="shot_conv" className="text-center hidden lg:table-cell">Conv%</SortableHeader>
-              <SortableHeader columnKey="dribbles" className="text-center hidden xl:table-cell">Dribbles</SortableHeader>
+              <SortableHeader columnKey="wins" className="text-center hidden md:table-cell">Wins</SortableHeader>
+              <SortableHeader columnKey="win_rate" className="text-center hidden lg:table-cell">Win%</SortableHeader>
               <SortableHeader columnKey="goals_per_game" className="text-center hidden lg:table-cell">G/G</SortableHeader>
               <SortableHeader columnKey="ga_per_game" className="text-center hidden md:table-cell">G+A/G</SortableHeader>
               <SortableHeader columnKey="positions" className="text-center hidden xl:table-cell">Positions</SortableHeader>
@@ -236,7 +241,8 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
                   <TableCell className="text-center">{player.assists}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{player.shots || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{shotConv.toFixed(0)}%</TableCell>
-                  <TableCell className="text-center hidden xl:table-cell">{player.dribbles || 0}</TableCell>
+                  <TableCell className="text-center hidden md:table-cell">{player.wins || 0}</TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">{(player.win_rate || 0).toFixed(0)}%</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{goalsPerGame.toFixed(2)}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{gaPerGame.toFixed(2)}</TableCell>
                   <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">
