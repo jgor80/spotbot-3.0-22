@@ -472,10 +472,6 @@ async function fetchClubInfo(clubId, platform) {
     return null;
   }
 }
-    console.error(`[EA] Club info error:`, err.message);
-    return null;
-  }
-}
 
 // Fetch club members - now with caching
 async function fetchClubMembers(clubId, platform) {
