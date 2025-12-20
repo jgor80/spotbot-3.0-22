@@ -370,17 +370,19 @@ async function fetchAllMatchesFromEA(clubId, platform) {
   console.log(`[EA] Fetching all match types for club ${clubId}...`);
   
   // EA now requires matchType parameter - fetch each type separately
-  // matchType9 = Division/Rivals, matchType13 = Cup/Knockout, matchType22 = Friendly
-  const matchTypes = ['matchType9', 'matchType13', 'matchType22'];
+  // 9 = Division/Rivals, 13 = Cup/Knockout, 22 = Friendly
+  const matchTypeConfigs = [
+    { type: 9, category: 'division' },
+    { type: 13, category: 'competition' },
+    { type: 22, category: 'friendly' }
+  ];
   const allMatches = [];
   
-  for (const matchType of matchTypes) {
-    const matches = await fetchMatchesByType(clubId, platform, matchType);
+  for (const { type, category } of matchTypeConfigs) {
+    const matches = await fetchMatchesByType(clubId, platform, type);
     if (matches.length > 0) {
-      console.log(`[EA] ✓ Got ${matches.length} ${matchType} matches`);
+      console.log(`[EA] ✓ Got ${matches.length} type ${type} (${category}) matches`);
       // Tag matches with their category
-      const category = matchType === 'matchType9' ? 'division' : 
-                       matchType === 'matchType13' ? 'competition' : 'friendly';
       matches.forEach(m => m._matchCategory = category);
       allMatches.push(...matches);
     }
