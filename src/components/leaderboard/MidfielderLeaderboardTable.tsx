@@ -20,8 +20,17 @@ interface MidfielderLeaderboardTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "passes" | "pass_pct" | "tackles" | "interceptions" | "dribbles" | "fouls";
+type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "passes" | "pass_pct" | "tackles" | "interceptions" | "dribbles" | "fouls" | "passes_per_game" | "positions";
 type SortDirection = "asc" | "desc";
+
+// Format position counts for display
+function formatPositionCounts(positionCounts?: Record<string, number>): string {
+  if (!positionCounts || Object.keys(positionCounts).length === 0) return "-";
+  const sorted = Object.entries(positionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+  return sorted.map(([pos, count]) => `${pos} (${count})`).join(", ");
+}
 
 export function MidfielderLeaderboardTable({ players, onPlayerClick }: MidfielderLeaderboardTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("passes");
@@ -96,6 +105,14 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
           aVal = a.fouls || 0;
           bVal = b.fouls || 0;
           break;
+        case "passes_per_game":
+          aVal = a.games_played > 0 ? (a.passes_made || 0) / a.games_played : 0;
+          bVal = b.games_played > 0 ? (b.passes_made || 0) / b.games_played : 0;
+          break;
+        case "positions":
+          aVal = Object.keys(a.position_counts || {}).length;
+          bVal = Object.keys(b.position_counts || {}).length;
+          break;
         default:
           return 0;
       }
@@ -151,12 +168,15 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
               <SortableHeader columnKey="tackles" className="text-center hidden lg:table-cell">Tackles</SortableHeader>
               <SortableHeader columnKey="interceptions" className="text-center hidden lg:table-cell">Int</SortableHeader>
               <SortableHeader columnKey="dribbles" className="text-center hidden xl:table-cell">Dribbles</SortableHeader>
-              <SortableHeader columnKey="fouls" className="text-center hidden xl:table-cell">Fouls</SortableHeader>
+              <SortableHeader columnKey="passes_per_game" className="text-center hidden lg:table-cell">Pass/G</SortableHeader>
+              <SortableHeader columnKey="positions" className="text-center hidden xl:table-cell">Positions</SortableHeader>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredAndSortedPlayers.map((player) => {
               const passPct = player.pass_attempts > 0 ? ((player.passes_made || 0) / player.pass_attempts) * 100 : 0;
+              const passesPerGame = player.games_played > 0 ? (player.passes_made || 0) / player.games_played : 0;
+              const positionsDisplay = formatPositionCounts(player.position_counts);
 
               return (
                 <TableRow
@@ -214,7 +234,8 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
                   <TableCell className="text-center hidden lg:table-cell">{player.tackles || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{player.interceptions || 0}</TableCell>
                   <TableCell className="text-center hidden xl:table-cell">{player.dribbles || 0}</TableCell>
-                  <TableCell className="text-center hidden xl:table-cell">{player.fouls || 0}</TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">{passesPerGame.toFixed(1)}</TableCell>
+                  <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">{positionsDisplay}</TableCell>
                 </TableRow>
               );
             })}

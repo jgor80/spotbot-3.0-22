@@ -20,8 +20,17 @@ interface OffenseLeaderboardTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "shots" | "shot_conv" | "dribbles" | "offsides" | "ga_per_game";
+type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "shots" | "shot_conv" | "dribbles" | "offsides" | "ga_per_game" | "goals_per_game" | "positions";
 type SortDirection = "asc" | "desc";
+
+// Format position counts for display
+function formatPositionCounts(positionCounts?: Record<string, number>): string {
+  if (!positionCounts || Object.keys(positionCounts).length === 0) return "-";
+  const sorted = Object.entries(positionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+  return sorted.map(([pos, count]) => `${pos} (${count})`).join(", ");
+}
 
 export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeaderboardTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("goals");
@@ -92,6 +101,14 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
           aVal = a.games_played > 0 ? (a.goals + a.assists) / a.games_played : 0;
           bVal = b.games_played > 0 ? (b.goals + b.assists) / b.games_played : 0;
           break;
+        case "goals_per_game":
+          aVal = a.games_played > 0 ? a.goals / a.games_played : 0;
+          bVal = b.games_played > 0 ? b.goals / b.games_played : 0;
+          break;
+        case "positions":
+          aVal = Object.keys(a.position_counts || {}).length;
+          bVal = Object.keys(b.position_counts || {}).length;
+          break;
         default:
           return 0;
       }
@@ -145,14 +162,17 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
               <SortableHeader columnKey="shots" className="text-center hidden lg:table-cell">Shots</SortableHeader>
               <SortableHeader columnKey="shot_conv" className="text-center hidden lg:table-cell">Conv%</SortableHeader>
               <SortableHeader columnKey="dribbles" className="text-center hidden xl:table-cell">Dribbles</SortableHeader>
-              <SortableHeader columnKey="offsides" className="text-center hidden xl:table-cell">Offsides</SortableHeader>
+              <SortableHeader columnKey="goals_per_game" className="text-center hidden lg:table-cell">G/G</SortableHeader>
               <SortableHeader columnKey="ga_per_game" className="text-center hidden md:table-cell">G+A/G</SortableHeader>
+              <SortableHeader columnKey="positions" className="text-center hidden xl:table-cell">Positions</SortableHeader>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredAndSortedPlayers.map((player) => {
               const shotConv = player.shots > 0 ? (player.goals / player.shots) * 100 : 0;
               const gaPerGame = player.games_played > 0 ? (player.goals + player.assists) / player.games_played : 0;
+              const goalsPerGame = player.games_played > 0 ? player.goals / player.games_played : 0;
+              const positionsDisplay = formatPositionCounts(player.position_counts);
 
               return (
                 <TableRow
@@ -208,8 +228,9 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
                   <TableCell className="text-center hidden lg:table-cell">{player.shots || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{shotConv.toFixed(0)}%</TableCell>
                   <TableCell className="text-center hidden xl:table-cell">{player.dribbles || 0}</TableCell>
-                  <TableCell className="text-center hidden xl:table-cell">{player.offsides || 0}</TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">{goalsPerGame.toFixed(2)}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{gaPerGame.toFixed(2)}</TableCell>
+                  <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">{positionsDisplay}</TableCell>
                 </TableRow>
               );
             })}

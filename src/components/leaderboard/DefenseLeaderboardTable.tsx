@@ -20,8 +20,17 @@ interface DefenseLeaderboardTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortKey = "rank" | "rating" | "games" | "tackles" | "interceptions" | "clearances" | "fouls" | "clean_sheets" | "ga_per_game" | "def_per_game";
+type SortKey = "rank" | "rating" | "games" | "tackles" | "interceptions" | "clearances" | "fouls" | "clean_sheets" | "ga_per_game" | "def_per_game" | "tackles_per_game" | "positions";
 type SortDirection = "asc" | "desc";
+
+// Format position counts for display
+function formatPositionCounts(positionCounts?: Record<string, number>): string {
+  if (!positionCounts || Object.keys(positionCounts).length === 0) return "-";
+  const sorted = Object.entries(positionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+  return sorted.map(([pos, count]) => `${pos} (${count})`).join(", ");
+}
 
 export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeaderboardTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("tackles");
@@ -93,6 +102,14 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
           aVal = a.games_played > 0 ? ((a.tackles || 0) + (a.interceptions || 0) + (a.clearances || 0)) / a.games_played : 0;
           bVal = b.games_played > 0 ? ((b.tackles || 0) + (b.interceptions || 0) + (b.clearances || 0)) / b.games_played : 0;
           break;
+        case "tackles_per_game":
+          aVal = a.games_played > 0 ? (a.tackles || 0) / a.games_played : 0;
+          bVal = b.games_played > 0 ? (b.tackles || 0) / b.games_played : 0;
+          break;
+        case "positions":
+          aVal = Object.keys(a.position_counts || {}).length;
+          bVal = Object.keys(b.position_counts || {}).length;
+          break;
         default:
           return 0;
       }
@@ -147,7 +164,9 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
               <SortableHeader columnKey="clearances" className="text-center hidden lg:table-cell">Clear</SortableHeader>
               <SortableHeader columnKey="fouls" className="text-center hidden xl:table-cell">Fouls</SortableHeader>
               <SortableHeader columnKey="clean_sheets" className="text-center hidden md:table-cell">CS</SortableHeader>
+              <SortableHeader columnKey="tackles_per_game" className="text-center hidden lg:table-cell">Tkl/G</SortableHeader>
               <SortableHeader columnKey="def_per_game" className="text-center hidden lg:table-cell">Def/G</SortableHeader>
+              <SortableHeader columnKey="positions" className="text-center hidden xl:table-cell">Positions</SortableHeader>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -156,6 +175,8 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
               const defPerGame = player.games_played > 0 
                 ? ((player.tackles || 0) + (player.interceptions || 0) + (player.clearances || 0)) / player.games_played 
                 : 0;
+              const tacklesPerGame = player.games_played > 0 ? (player.tackles || 0) / player.games_played : 0;
+              const positionsDisplay = formatPositionCounts(player.position_counts);
 
               return (
                 <TableRow
@@ -212,7 +233,9 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
                   <TableCell className="text-center hidden lg:table-cell">{player.clearances || 0}</TableCell>
                   <TableCell className="text-center hidden xl:table-cell">{player.fouls || 0}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.clean_sheets || 0}</TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">{tacklesPerGame.toFixed(2)}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{defPerGame.toFixed(1)}</TableCell>
+                  <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">{positionsDisplay}</TableCell>
                 </TableRow>
               );
             })}

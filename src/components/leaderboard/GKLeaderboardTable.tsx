@@ -20,7 +20,7 @@ interface GKLeaderboardTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortKey = "rank" | "rating" | "games" | "saves" | "diving" | "reflex" | "cross" | "parry" | "punch" | "goals_conceded" | "clean_sheets" | "save_pct";
+type SortKey = "rank" | "rating" | "games" | "saves" | "diving" | "reflex" | "cross" | "parry" | "punch" | "goals_conceded" | "clean_sheets" | "save_pct" | "saves_per_game" | "cs_pct";
 type SortDirection = "asc" | "desc";
 
 export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTableProps) {
@@ -105,6 +105,14 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
           aVal = totalFacedA > 0 ? (totalSavesA / totalFacedA) * 100 : 0;
           bVal = totalFacedB > 0 ? (totalSavesB / totalFacedB) * 100 : 0;
           break;
+        case "saves_per_game":
+          aVal = a.games_played > 0 ? totalSavesA / a.games_played : 0;
+          bVal = b.games_played > 0 ? totalSavesB / b.games_played : 0;
+          break;
+        case "cs_pct":
+          aVal = a.games_played > 0 ? ((a.clean_sheets || 0) / a.games_played) * 100 : 0;
+          bVal = b.games_played > 0 ? ((b.clean_sheets || 0) / b.games_played) * 100 : 0;
+          break;
         default:
           return 0;
       }
@@ -160,7 +168,9 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
               <SortableHeader columnKey="parry" className="text-center hidden xl:table-cell">Parry</SortableHeader>
               <SortableHeader columnKey="goals_conceded" className="text-center hidden md:table-cell">GA</SortableHeader>
               <SortableHeader columnKey="clean_sheets" className="text-center">CS</SortableHeader>
+              <SortableHeader columnKey="saves_per_game" className="text-center hidden lg:table-cell">Sv/G</SortableHeader>
               <SortableHeader columnKey="save_pct" className="text-center hidden md:table-cell">Save%</SortableHeader>
+              <SortableHeader columnKey="cs_pct" className="text-center hidden lg:table-cell">CS%</SortableHeader>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -168,6 +178,8 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
               const totalSaves = player.saves || 0;
               const totalFaced = totalSaves + (player.goals_conceded || 0);
               const savePct = totalFaced > 0 ? (totalSaves / totalFaced) * 100 : 0;
+              const savesPerGame = player.games_played > 0 ? totalSaves / player.games_played : 0;
+              const csPct = player.games_played > 0 ? ((player.clean_sheets || 0) / player.games_played) * 100 : 0;
 
               return (
                 <TableRow
@@ -223,7 +235,9 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
                   <TableCell className="text-center hidden xl:table-cell">{player.saves_parry || 0}</TableCell>
                   <TableCell className="text-center hidden md:table-cell text-destructive">{player.goals_conceded || 0}</TableCell>
                   <TableCell className="text-center">{player.clean_sheets || 0}</TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">{savesPerGame.toFixed(1)}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{savePct.toFixed(0)}%</TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">{csPct.toFixed(0)}%</TableCell>
                 </TableRow>
               );
             })}

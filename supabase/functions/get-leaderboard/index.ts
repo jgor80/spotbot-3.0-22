@@ -763,6 +763,7 @@ serve(async (req) => {
       streak_type: player.streak_type,
       top_achievements: player.top_achievements,
       primary_position: player.primary_position,
+      position_counts: player.position_counts || {},
       tournament_wins: player.tournament_wins,
       league_wins: player.league_wins,
       club_keys: player.club_keys || [],
