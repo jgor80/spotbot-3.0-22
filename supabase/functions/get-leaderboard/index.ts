@@ -9,12 +9,48 @@ const corsHeaders = {
 interface GetLeaderboardRequest {
   guild_id: string;
   type?: "overall" | "goals" | "assists" | "wins" | "form" | "reliability" | "avg_rating" | "saves" | "tackles" | "clean_sheets";
-  position?: string;
+  position?: string; // For positional boards: "forward", "midfielder", "defender", "GK"
   limit?: number;
   month_year?: string;
   club_key?: string;
   stats_source?: "all" | "members" | "games";
   match_type?: "division" | "competition" | "friendly";
+}
+
+// Position category mappings for tracked games
+const FORWARD_POSITIONS = ['ST', 'CF', 'LW', 'RW', 'RS', 'LS', 'LF', 'RF', 'forward', 'FORWARD'];
+const MIDFIELDER_POSITIONS = ['CAM', 'CM', 'CDM', 'LM', 'RM', 'LCM', 'RCM', 'LAM', 'RAM', 'midfielder', 'MIDFIELDER'];
+const DEFENDER_POSITIONS = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'LCB', 'RCB', 'SW', 'defender', 'DEFENDER'];
+const GK_POSITIONS = ['GK', 'goalkeeper', 'GOALKEEPER'];
+
+function getPositionCategory(position: string | null): string | null {
+  if (!position) return null;
+  if (FORWARD_POSITIONS.includes(position)) return "forward";
+  if (MIDFIELDER_POSITIONS.includes(position)) return "midfielder";
+  if (DEFENDER_POSITIONS.includes(position)) return "defender";
+  if (GK_POSITIONS.includes(position)) return "goalkeeper";
+  return null;
+}
+
+function matchesPositionFilter(positionPlayed: string | null, filterPosition: string): boolean {
+  if (!positionPlayed) return false;
+  const category = getPositionCategory(positionPlayed);
+  const filterLower = filterPosition.toLowerCase();
+  
+  if (filterLower === "gk" || filterLower === "goalkeeper") {
+    return category === "goalkeeper";
+  }
+  if (filterLower === "forward") {
+    return category === "forward";
+  }
+  if (filterLower === "midfielder") {
+    return category === "midfielder";
+  }
+  if (filterLower === "defender") {
+    return category === "defender";
+  }
+  // Exact position match
+  return positionPlayed.toUpperCase() === filterPosition.toUpperCase();
 }
 
 serve(async (req) => {
@@ -383,7 +419,8 @@ serve(async (req) => {
       }
     } else if (stats_source === "games") {
       // Aggregate from player_stats only (monitored match data)
-      console.log(`[get-leaderboard] Aggregating from player_stats (games only), matchType: ${match_type || 'all'}`);
+      // For positional boards, filter by position_played BEFORE aggregating
+      console.log(`[get-leaderboard] Aggregating from player_stats (games only), matchType: ${match_type || 'all'}, position: ${position || 'all'}`);
       
       // If match_type filter is set, get the relevant match IDs first
       let matchTypeFilterIds: Set<string> | null = null;
@@ -434,11 +471,21 @@ serve(async (req) => {
       if (statsError) throw statsError;
       
       // Filter by match_type if set
-      const filteredPlayerStats = matchTypeFilterIds 
+      let filteredPlayerStats = matchTypeFilterIds 
         ? (allPlayerStats || []).filter(ps => ps.ea_match_id && matchTypeFilterIds!.has(ps.ea_match_id))
         : (allPlayerStats || []);
       
-      // Aggregate stats per player
+      // For positional boards, filter to only games at that position BEFORE aggregating
+      // This ensures stats shown are only from games played at that position
+      if (position) {
+        console.log(`[get-leaderboard] Pre-filtering by position: ${position}`);
+        filteredPlayerStats = filteredPlayerStats.filter(ps => 
+          matchesPositionFilter(ps.position_played, position)
+        );
+        console.log(`[get-leaderboard] After position filter: ${filteredPlayerStats.length} records`);
+      }
+      
+      // Aggregate stats per player (only from filtered games)
       const playerAggregates = new Map<string, any>();
       
       for (const stat of filteredPlayerStats) {
@@ -541,15 +588,8 @@ serve(async (req) => {
         };
       }).filter(p => p.games_played > 0);
       
-      // Apply position filter - for GK, filter by saves > 0 instead of position
-      if (position) {
-        const isGkFilter = position === 'GK' || position.toLowerCase() === 'goalkeeper';
-        if (isGkFilter) {
-          players = players.filter(p => (p.saves || 0) > 0);
-        } else {
-          players = players.filter(p => p.primary_position === position);
-        }
-      }
+      // Position filtering already done above before aggregation
+      // No additional filtering needed here
     } else {
       // Get from player_summary for aggregate leaderboard across all clubs
       // For "all" or "members" source
