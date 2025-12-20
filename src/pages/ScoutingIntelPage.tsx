@@ -129,7 +129,8 @@ export default function ScoutingIntelPage() {
         .select("match_data, opponent_club_id, opponent_club_name, result")
         .eq("guild_id", selectedGuildId)
         .not("match_data", "is", null)
-        .not("opponent_club_id", "is", null);
+        .not("opponent_club_id", "is", null)
+        .order("created_at", { ascending: false });
       
       if (error) throw error;
       
