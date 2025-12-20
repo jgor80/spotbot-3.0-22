@@ -6,7 +6,12 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 export async function fetchPlayerProfile(
   guildId: string,
   discordUserId: string,
-  options?: { includePositionBreakdown?: boolean; includeChemistry?: boolean; includeRecentGames?: boolean }
+  options?: { 
+    includePositionBreakdown?: boolean; 
+    includeChemistry?: boolean; 
+    includeVibeChemistry?: boolean;
+    includeRecentGames?: boolean 
+  }
 ): Promise<PlayerProfile | null> {
   const response = await fetch(`${SUPABASE_URL}/functions/v1/get-player-profile`, {
     method: "POST",
@@ -16,6 +21,7 @@ export async function fetchPlayerProfile(
       discord_user_id: discordUserId,
       include_position_breakdown: options?.includePositionBreakdown ?? true,
       include_chemistry: options?.includeChemistry ?? true,
+      include_vibe_chemistry: options?.includeVibeChemistry ?? true,
       include_recent_games: options?.includeRecentGames ?? true,
     }),
   });
@@ -25,7 +31,66 @@ export async function fetchPlayerProfile(
   }
 
   const data = await response.json();
-  return data.player;
+  
+  // Map the API response to match frontend types
+  const player = data.player;
+  if (!player) return null;
+  
+  return {
+    discord_user_id: player.discord_user_id,
+    discord_username: player.discord_username,
+    discord_avatar: player.discord_avatar,
+    primary_position: player.primary_position,
+    overall_rating: player.overall_rating,
+    games_played: player.games_played,
+    wins: player.wins,
+    losses: player.losses,
+    draws: player.draws,
+    win_rate: parseFloat(player.win_rate) || 0,
+    goals: player.goals,
+    assists: player.assists,
+    form_rating: player.form?.form_rating || null,
+    reliability_score: player.reliability?.score || null,
+    current_streak: player.form?.current_win_streak || player.form?.current_loss_streak || 0,
+    streak_type: player.form?.current_win_streak > 0 ? "win" : player.form?.current_loss_streak > 0 ? "loss" : null,
+    longest_win_streak: player.form?.longest_win_streak || 0,
+    achievements: player.achievements || [],
+    competition_wins: [
+      ...(player.competition_wins?.tournaments || []),
+      ...(player.competition_wins?.leagues || []),
+    ],
+    position_breakdown: player.position_breakdown?.map((p: any) => ({
+      position: p.position,
+      rating: p.rating,
+      games_at_position: p.games_at_position,
+      goals_at_position: p.goals_at_position,
+      assists_at_position: p.assists_at_position,
+    })) || [],
+    chemistry: player.top_chemistry?.map((c: any) => ({
+      partner_id: c.partner_discord_id,
+      partner_username: c.partner_username || null,
+      games_together: c.games_together,
+      wins_together: c.wins_together,
+      win_rate: c.win_rate / 100, // Convert percentage to decimal
+      synergy_score: c.synergy_score,
+    })) || [],
+    vibe_chemistry: player.vibe_chemistry?.map((v: any) => ({
+      partner_id: v.partner_discord_id,
+      partner_username: v.partner_username || null,
+      games_together: v.games_together,
+      vibe_score: v.vibe_score,
+      vibe_status: v.vibe_status,
+      prefer_count: v.prefer_count,
+      neutral_count: v.neutral_count,
+      avoid_count: v.avoid_count,
+      avg_enjoyment: v.avg_enjoyment,
+      avg_team_energy: v.avg_team_energy,
+      last_played_together: v.last_played_together,
+    })) || [],
+    recent_games: player.recent_games || [],
+    rating_tier: player.rating_tier,
+    baseline_synced: player.baseline_synced,
+  };
 }
 
 export async function fetchLeaderboard(
