@@ -36,11 +36,6 @@ const MATCH_TYPES = [
   { value: "friendly", label: "Friendly" },
 ];
 
-// Map EA positions to categories - EA API stores as lowercase categories
-const FORWARD_POSITIONS = ['ST', 'CF', 'LW', 'RW', 'RS', 'LS', 'forward', 'FORWARD'];
-const MIDFIELDER_POSITIONS = ['CAM', 'CM', 'CDM', 'LM', 'RM', 'LCM', 'RCM', 'LAM', 'RAM', 'midfielder', 'MIDFIELDER'];
-const DEFENDER_POSITIONS = ['CB', 'LB', 'RB', 'LWB', 'RWB', 'LCB', 'RCB', 'defender', 'DEFENDER'];
-const GK_POSITIONS = ['GK', 'goalkeeper', 'GOALKEEPER'];
 
 export default function Leaderboard() {
   const { selectedGuildId, isLoading: guildLoading, selectedGuild } = useGuild();
@@ -60,9 +55,12 @@ export default function Leaderboard() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   }, [timePeriod]);
 
+  // Pass position filter to edge function for positional boards
   const effectivePositionFilter = useMemo(() => {
-    if (boardType === "goalkeeper") return "GK";
-    // For positional boards, we filter client-side based on EA position categories
+    if (boardType === "goalkeeper") return "goalkeeper";
+    if (boardType === "forward") return "forward";
+    if (boardType === "midfielder") return "midfielder";
+    if (boardType === "defender") return "defender";
     return undefined;
   }, [boardType]);
   
@@ -88,32 +86,12 @@ export default function Leaderboard() {
     matchType
   );
 
+  // For positional boards, no client-side filtering needed - edge function handles it
+  // For overall board, just pass through
   const processedPlayers = useMemo(() => {
     if (!players) return [];
     
     let filtered = [...players];
-    
-    // Filter by EA position category
-    if (boardType === "forward") {
-      filtered = filtered.filter(p => 
-        FORWARD_POSITIONS.includes(p.primary_position || '') ||
-        (!p.primary_position && (p.goals > 0 || p.assists > 0))
-      );
-    } else if (boardType === "midfielder") {
-      filtered = filtered.filter(p => 
-        MIDFIELDER_POSITIONS.includes(p.primary_position || '') ||
-        (!p.primary_position && (p.passes_made || 0) > 0)
-      );
-    } else if (boardType === "defender") {
-      filtered = filtered.filter(p => 
-        DEFENDER_POSITIONS.includes(p.primary_position || '') ||
-        (!p.primary_position && ((p.tackles || 0) > 0 || (p.interceptions || 0) > 0))
-      );
-    } else if (boardType === "goalkeeper") {
-      filtered = filtered.filter(p => 
-        GK_POSITIONS.includes(p.primary_position || '') || (p.saves || 0) > 0
-      );
-    }
     
     if (showWorst) {
       filtered = filtered.filter(p => p.games_played >= 3);
@@ -123,7 +101,7 @@ export default function Leaderboard() {
     filtered = filtered.map((p, idx) => ({ ...p, rank: idx + 1 }));
     
     return filtered;
-  }, [players, showWorst, boardType]);
+  }, [players, showWorst]);
 
   const isLoading = guildLoading || playersLoading;
 
