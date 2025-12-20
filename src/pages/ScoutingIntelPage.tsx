@@ -524,75 +524,98 @@ export default function ScoutingIntelPage() {
               <CardDescription>Detailed stats from actual games played against you</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="min-w-[150px]">Player</TableHead>
-                      <TableHead>Club</TableHead>
-                      <TableHead className="text-center">Pos</TableHead>
-                      <TableHead className="text-center">Games</TableHead>
-                      <TableHead className="text-center">
-                        <Star className="h-4 w-4 mx-auto" />
-                      </TableHead>
-                      <TableHead className="text-center">
-                        <Goal className="h-4 w-4 mx-auto" />
-                      </TableHead>
-                      <TableHead className="text-center">
-                        <HandHelping className="h-4 w-4 mx-auto" />
-                      </TableHead>
-                      <TableHead className="text-center">Shots</TableHead>
-                      <TableHead className="text-center">Tackles</TableHead>
-                      <TableHead className="text-center">Passes</TableHead>
-                      <TableHead className="text-center">Saves</TableHead>
-                      <TableHead className="text-center">MOTM</TableHead>
-                      <TableHead className="text-center">W-L-D</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {opponentMatchStats.slice(0, 25).map((player, idx) => {
-                      const primaryPos = player.positions_played[0] || "-";
-                      return (
-                        <TableRow key={idx}>
-                          <TableCell className="font-medium">{player.ea_username}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
-                            {player.ea_club_name || "Unknown"}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <Badge className={getPositionColor(primaryPos)}>
-                              {primaryPos}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-center font-mono">{player.games_vs_us}</TableCell>
-                          <TableCell className="text-center font-mono">
-                            {player.avg_rating_vs_us > 0 ? player.avg_rating_vs_us.toFixed(1) : "-"}
-                          </TableCell>
-                          <TableCell className="text-center font-mono">{player.goals_vs_us}</TableCell>
-                          <TableCell className="text-center font-mono">{player.assists_vs_us}</TableCell>
-                          <TableCell className="text-center font-mono">{player.shots_vs_us}</TableCell>
-                          <TableCell className="text-center font-mono">{player.tackles_vs_us}</TableCell>
-                          <TableCell className="text-center font-mono">{player.passes_made_vs_us}</TableCell>
-                          <TableCell className="text-center font-mono">{player.saves_vs_us}</TableCell>
-                          <TableCell className="text-center font-mono">
-                            {player.motm_vs_us > 0 && (
-                              <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
-                                {player.motm_vs_us}
+              <ScrollArea className="w-full">
+                <div className="min-w-[800px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-b-2">
+                        <TableHead className="w-[160px] sticky left-0 bg-background">Player</TableHead>
+                        <TableHead className="w-[120px]">Club</TableHead>
+                        <TableHead className="text-center w-[60px]">Pos</TableHead>
+                        <TableHead className="text-center w-[60px]">GP</TableHead>
+                        <TableHead className="text-center w-[60px]">Rtg</TableHead>
+                        <TableHead className="text-center w-[50px]">G</TableHead>
+                        <TableHead className="text-center w-[50px]">A</TableHead>
+                        <TableHead className="text-center w-[60px]">W-L-D</TableHead>
+                        <TableHead className="text-center w-[60px]">MOTM</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {opponentMatchStats.slice(0, 30).map((player, idx) => {
+                        const primaryPos = player.positions_played[0] || "-";
+                        const hasHighImpact = player.goals_vs_us >= 3 || player.motm_vs_us >= 2;
+                        const winRatio = player.games_vs_us > 0 
+                          ? player.wins_vs_us / player.games_vs_us 
+                          : 0;
+                        
+                        return (
+                          <TableRow 
+                            key={idx} 
+                            className={hasHighImpact ? "bg-red-500/5" : ""}
+                          >
+                            <TableCell className="font-medium sticky left-0 bg-background">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate max-w-[120px]">{player.ea_username}</span>
+                                {hasHighImpact && (
+                                  <Badge variant="destructive" className="text-xs px-1">
+                                    Threat
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground truncate max-w-[120px]">
+                              {player.ea_club_name || "Unknown"}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge variant="outline" className={`${getPositionColor(primaryPos)} text-xs`}>
+                                {primaryPos}
                               </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center font-mono text-sm">
-                            <span className="text-emerald-500">{player.wins_vs_us}</span>
-                            <span className="text-muted-foreground">-</span>
-                            <span className="text-red-500">{player.losses_vs_us}</span>
-                            <span className="text-muted-foreground">-</span>
-                            <span>{player.draws_vs_us}</span>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+                            </TableCell>
+                            <TableCell className="text-center font-mono text-sm">{player.games_vs_us}</TableCell>
+                            <TableCell className="text-center font-mono text-sm">
+                              {player.avg_rating_vs_us > 0 ? (
+                                <span className={
+                                  player.avg_rating_vs_us >= 7.5 ? "text-emerald-500 font-medium" :
+                                  player.avg_rating_vs_us >= 7.0 ? "text-primary" : ""
+                                }>
+                                  {player.avg_rating_vs_us.toFixed(1)}
+                                </span>
+                              ) : "-"}
+                            </TableCell>
+                            <TableCell className="text-center font-mono text-sm">
+                              {player.goals_vs_us > 0 ? (
+                                <span className={player.goals_vs_us >= 3 ? "text-red-500 font-medium" : ""}>
+                                  {player.goals_vs_us}
+                                </span>
+                              ) : "-"}
+                            </TableCell>
+                            <TableCell className="text-center font-mono text-sm">
+                              {player.assists_vs_us > 0 ? player.assists_vs_us : "-"}
+                            </TableCell>
+                            <TableCell className="text-center font-mono text-xs">
+                              <span className={winRatio >= 0.6 ? "text-red-500" : winRatio <= 0.4 ? "text-emerald-500" : ""}>
+                                {player.wins_vs_us}-{player.losses_vs_us}-{player.draws_vs_us}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {player.motm_vs_us > 0 ? (
+                                <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+                                  {player.motm_vs_us}
+                                </Badge>
+                              ) : "-"}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </ScrollArea>
+              {opponentMatchStats.length > 30 && (
+                <p className="text-xs text-muted-foreground text-center mt-3">
+                  Showing top 30 of {opponentMatchStats.length} players
+                </p>
+              )}
             </CardContent>
           </Card>
         )}
