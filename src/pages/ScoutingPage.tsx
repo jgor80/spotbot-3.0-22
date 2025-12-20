@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useGuild } from "@/contexts/GuildContext";
 import { ScoutingLists } from "@/components/scouting/ScoutingLists";
 import { MatchDetailView } from "@/components/scouting/MatchDetailView";
+import { useLeaderboard } from "@/hooks/useLeaderboard";
 import {
   Search,
   Loader2, 
@@ -136,38 +137,25 @@ export default function ScoutingPage() {
   const [activeCommand, setActiveCommand] = useState<string | null>(null);
 
   // Fetch players for selection with EA usernames
-  const { data: players } = useQuery({
-    queryKey: ["players", selectedGuildId],
-    queryFn: async (): Promise<PlayerSummary[]> => {
-      if (!selectedGuildId) return [];
-      
-      // Fetch player summaries
-      const { data: summaryData, error: summaryError } = await supabase
-        .from("player_summary")
-        .select("discord_user_id, discord_username, overall_rating, primary_position")
-        .eq("guild_id", selectedGuildId)
-        .order("overall_rating", { ascending: false });
-      
-      if (summaryError) throw summaryError;
+  // Fetch players for selection using unified leaderboard hook (tracked games)
+  const { data: leaderboardPlayers } = useLeaderboard(
+    selectedGuildId,
+    "overall",
+    undefined,
+    200,
+    undefined,
+    undefined,
+    "games" // Use tracked games for unified stats
+  );
 
-      // Fetch EA usernames from profiles
-      const discordIds = (summaryData || []).map(p => p.discord_user_id);
-      const { data: profilesData } = await supabase
-        .from("profiles")
-        .select("discord_user_id, ea_username")
-        .in("discord_user_id", discordIds);
-
-      const eaUsernameMap = new Map(
-        (profilesData || []).map(p => [p.discord_user_id, p.ea_username])
-      );
-
-      return (summaryData || []).map(p => ({
-        ...p,
-        ea_username: eaUsernameMap.get(p.discord_user_id) || null,
-      }));
-    },
-    enabled: !!selectedGuildId,
-  });
+  // Map leaderboard players to PlayerSummary format
+  const players: PlayerSummary[] = (leaderboardPlayers || []).map(p => ({
+    discord_user_id: p.discord_user_id,
+    discord_username: p.discord_username || null,
+    ea_username: p.ea_username || null,
+    overall_rating: p.overall_rating,
+    primary_position: p.primary_position || null,
+  }));
 
   // Fetch saved scouting reports
   const { data: savedReports, refetch: refetchReports } = useQuery({
@@ -187,74 +175,44 @@ export default function ScoutingPage() {
     enabled: !!selectedGuildId,
   });
 
-  // Fetch aggregate stats for all players with EA usernames
-  const { data: aggregateStats, isLoading: aggregateLoading } = useQuery({
-    queryKey: ["aggregateStats", selectedGuildId],
-    queryFn: async (): Promise<AggregatePlayerStats[]> => {
-      if (!selectedGuildId) return [];
-      
-      // Fetch player summary
-      const { data: summaryData, error: summaryError } = await supabase
-        .from("player_summary")
-        .select(`
-          discord_user_id,
-          discord_username,
-          overall_rating,
-          primary_position,
-          games_played,
-          wins,
-          losses,
-          draws,
-          goals,
-          assists,
-          win_rate,
-          form_rating,
-          reliability_score,
-          achievement_count,
-          clean_sheets,
-          man_of_match,
-          avg_match_rating,
-          shots,
-          tackles,
-          passes_made,
-          pass_attempts,
-          saves
-        `)
-        .eq("guild_id", selectedGuildId)
-        .order("overall_rating", { ascending: false });
-      
-      if (summaryError) throw summaryError;
-      
-      // Fetch profiles for EA usernames
-      const discordIds = (summaryData || []).map(p => p.discord_user_id);
-      const { data: profilesData } = await supabase
-        .from("profiles")
-        .select("discord_user_id, ea_username, ea_platform")
-        .in("discord_user_id", discordIds);
-      
-      // Merge EA usernames into player stats
-      const profileMap = new Map(
-        (profilesData || []).map(p => [p.discord_user_id, p])
-      );
-      
-      return (summaryData || []).map(player => ({
-        ...player,
-        losses: player.losses || 0,
-        draws: player.draws || 0,
-        clean_sheets: player.clean_sheets || 0,
-        man_of_match: player.man_of_match || 0,
-        avg_match_rating: player.avg_match_rating || null,
-        shots: player.shots || 0,
-        tackles: player.tackles || 0,
-        passes_made: player.passes_made || 0,
-        pass_attempts: player.pass_attempts || 0,
-        saves: player.saves || 0,
-        ea_username: profileMap.get(player.discord_user_id)?.ea_username || null,
-        ea_platform: profileMap.get(player.discord_user_id)?.ea_platform || null
-      }));
-    },
-    enabled: !!selectedGuildId,
-  });
+  // Fetch aggregate stats from tracked games (unified with leaderboard)
+  const { data: leaderboardStats, isLoading: aggregateLoading } = useLeaderboard(
+    selectedGuildId,
+    "overall",
+    undefined,
+    200,
+    undefined,
+    undefined,
+    "games" // Use tracked games for unified stats
+  );
+
+  // Map leaderboard players to AggregatePlayerStats format
+  const aggregateStats: AggregatePlayerStats[] = (leaderboardStats || []).map(p => ({
+    discord_user_id: p.discord_user_id,
+    discord_username: p.discord_username || null,
+    overall_rating: p.overall_rating,
+    primary_position: p.primary_position || null,
+    games_played: p.games_played,
+    wins: p.wins,
+    losses: p.losses || 0,
+    draws: p.draws || 0,
+    goals: p.goals,
+    assists: p.assists,
+    win_rate: p.win_rate,
+    form_rating: p.form_rating || null,
+    reliability_score: p.reliability_score || null,
+    achievement_count: 0, // Not available from leaderboard
+    ea_username: p.ea_username || null,
+    ea_platform: null, // Not available from leaderboard
+    clean_sheets: p.clean_sheets || 0,
+    man_of_match: p.man_of_match || 0,
+    avg_match_rating: p.avg_match_rating || null,
+    shots: p.shots || 0,
+    tackles: p.tackles || 0,
+    passes_made: p.passes_made || 0,
+    pass_attempts: p.pass_attempts || 0,
+    saves: p.saves || 0,
+  }));
 
   // Fetch recent club matches for the current guild
   const { data: recentMatches, isLoading: matchesLoading } = useQuery({

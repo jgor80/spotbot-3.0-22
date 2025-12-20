@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { 
   Star, 
   Users, 
@@ -133,32 +134,45 @@ export default function RatingsPage() {
     enabled: !!selectedGuildId,
   });
 
-  // Fetch player summaries for comprehensive view
-  const { data: playerSummaries, isLoading: playersLoading } = useQuery({
-    queryKey: ["player-summaries", selectedGuildId],
-    queryFn: async () => {
-      if (!selectedGuildId) return [];
-      const { data: summaries, error: summaryError } = await supabase
-        .from("player_summary")
-        .select("*")
-        .eq("guild_id", selectedGuildId)
-        .order("overall_rating", { ascending: false });
-      if (summaryError) throw summaryError;
+  // Fetch player stats from tracked games (unified with leaderboard)
+  const { data: leaderboardPlayers, isLoading: playersLoading } = useLeaderboard(
+    selectedGuildId,
+    "overall",
+    undefined,
+    200,
+    undefined,
+    undefined,
+    "games" // Use tracked games for unified stats
+  );
 
-      // Get EA usernames from profiles
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("discord_user_id, ea_username");
-
-      const profileMap = new Map(profiles?.map(p => [p.discord_user_id, p.ea_username]) || []);
-
-      return summaries.map(s => ({
-        ...s,
-        ea_username: profileMap.get(s.discord_user_id) || null,
-      })) as PlayerRatingSummary[];
-    },
-    enabled: !!selectedGuildId,
-  });
+  // Map leaderboard players to PlayerRatingSummary format
+  const playerSummaries: PlayerRatingSummary[] = (leaderboardPlayers || []).map(p => ({
+    discord_user_id: p.discord_user_id,
+    discord_username: p.discord_username || null,
+    ea_username: p.ea_username || null,
+    overall_rating: p.overall_rating,
+    games_played: p.games_played,
+    wins: p.wins,
+    losses: p.losses || 0,
+    draws: p.draws || 0,
+    win_rate: p.win_rate,
+    goals: p.goals,
+    assists: p.assists,
+    clean_sheets: p.clean_sheets || null,
+    man_of_match: p.man_of_match || null,
+    avg_match_rating: p.avg_match_rating || null,
+    form_rating: p.form_rating || null,
+    reliability_score: p.reliability_score || null,
+    primary_position: p.primary_position || null,
+    shots: p.shots || null,
+    tackles: p.tackles || null,
+    passes_made: p.passes_made || null,
+    pass_attempts: p.pass_attempts || null,
+    saves: p.saves || null,
+    current_streak: p.current_streak || 0,
+    longest_win_streak: 0, // Not available from leaderboard
+    streak_type: p.streak_type || null,
+  }));
 
   // Calculate position-grouped stats
   const positionStats: PositionStats[] = (() => {

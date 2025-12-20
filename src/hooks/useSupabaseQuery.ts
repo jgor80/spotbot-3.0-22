@@ -131,33 +131,30 @@ export async function fetchLeaderboard(
 }
 
 export async function fetchAvailablePlayers(guildId: string): Promise<LeaderboardPlayer[]> {
-  // First get player summaries
-  const { data: summaryData, error: summaryError } = await supabase
-    .from("player_summary")
-    .select("*")
-    .eq("guild_id", guildId)
-    .order("overall_rating", { ascending: false });
+  // Use the leaderboard function with stats_source=games for unified tracked game stats
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/get-leaderboard`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      guild_id: guildId,
+      type: "overall",
+      limit: 500,
+      stats_source: "games", // Use tracked games for unified stats
+    }),
+  });
 
-  if (summaryError) throw summaryError;
+  if (!response.ok) {
+    throw new Error("Failed to fetch available players");
+  }
 
-  // Get EA usernames from profiles table
-  const discordIds = (summaryData || []).map(p => p.discord_user_id);
-  const { data: profilesData } = await supabase
-    .from("profiles")
-    .select("discord_user_id, ea_username")
-    .in("discord_user_id", discordIds);
-
-  const eaUsernameMap = new Map(
-    (profilesData || []).map(p => [p.discord_user_id, p.ea_username])
-  );
-
-  return (summaryData || []).map((player, index) => ({
+  const data = await response.json();
+  return (data.entries || data.leaderboard || []).map((player: any, index: number) => ({
     discord_user_id: player.discord_user_id,
     discord_username: player.discord_username,
-    ea_username: eaUsernameMap.get(player.discord_user_id) || null,
+    ea_username: player.ea_username || null,
     overall_rating: player.overall_rating,
     games_played: player.games_played,
-    tracked_games: 0,
+    tracked_games: player.tracked_games || 0,
     wins: player.wins,
     losses: player.losses || 0,
     draws: player.draws || 0,
@@ -188,8 +185,8 @@ export async function fetchAvailablePlayers(guildId: string): Promise<Leaderboar
     form_rating: player.form_rating,
     reliability_score: player.reliability_score,
     primary_position: player.primary_position,
-    rank: index + 1,
-    rating_tier: getRatingTier(player.overall_rating),
+    rank: player.rank || index + 1,
+    rating_tier: player.rating_tier || getRatingTier(player.overall_rating),
   }));
 }
 
