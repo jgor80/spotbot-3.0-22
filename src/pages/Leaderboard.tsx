@@ -49,7 +49,7 @@ export default function Leaderboard() {
   const [timePeriod, setTimePeriod] = useState("all");
   const [showWorst, setShowWorst] = useState(false);
   const [clubFilter, setClubFilter] = useState("all");
-  const [statsSource, setStatsSource] = useState<"all" | "members" | "games">("members");
+  const [statsSource, setStatsSource] = useState<"all" | "members" | "games">("games");
   const [matchType, setMatchType] = useState("all");
 
   const enabledClubs = (selectedGuild?.clubs || []).filter((club) => club.enabled);
