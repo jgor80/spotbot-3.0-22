@@ -436,43 +436,66 @@ serve(async (req) => {
         matchTypeFilterIds = new Set((filteredMatches || []).map(m => m.ea_match_id));
       }
       
-      // Fetch ALL player_stats - use range to bypass 1000 row default limit
-      const { data: allPlayerStats, error: statsError } = await supabase
+      // Fetch ALL player_stats - need pagination since Supabase limits to 1000 rows per request
+      // First, get count to know if we need pagination
+      const { count: totalCount } = await supabase
         .from("player_stats")
-        .select(`
-          discord_user_id,
-          goals,
-          assists,
-          won,
-          ea_match_rating,
-          clean_sheet,
-          man_of_match,
-          shots,
-          tackles,
-          tackle_attempts,
-          passes_made,
-          pass_attempts,
-          saves_diving,
-          saves_reflex,
-          saves_parry,
-          saves_cross,
-          saves_punch,
-          goals_conceded,
-          interceptions,
-          clearances,
-          dribbles,
-          fouls,
-          offsides,
-          seconds_played,
-          position_played,
-          archetypeid,
-          ea_match_id
-        `)
+        .select("*", { count: "exact", head: true })
         .eq("guild_id", guild_id)
-        .in("match_type", ["club", "friendly"])
-        .range(0, 9999);
+        .in("match_type", ["club", "friendly"]);
       
-      if (statsError) throw statsError;
+      console.log(`[get-leaderboard] Total player_stats count: ${totalCount}`);
+      
+      let allPlayerStats: any[] = [];
+      const pageSize = 1000;
+      const pages = Math.ceil((totalCount || 0) / pageSize);
+      
+      for (let page = 0; page < pages; page++) {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+        
+        const { data: pageData, error: pageError } = await supabase
+          .from("player_stats")
+          .select(`
+            discord_user_id,
+            goals,
+            assists,
+            won,
+            ea_match_rating,
+            clean_sheet,
+            man_of_match,
+            shots,
+            tackles,
+            tackle_attempts,
+            passes_made,
+            pass_attempts,
+            saves_diving,
+            saves_reflex,
+            saves_parry,
+            saves_cross,
+            saves_punch,
+            goals_conceded,
+            interceptions,
+            clearances,
+            dribbles,
+            fouls,
+            offsides,
+            seconds_played,
+            position_played,
+            archetypeid,
+            ea_match_id
+          `)
+          .eq("guild_id", guild_id)
+          .in("match_type", ["club", "friendly"])
+          .range(from, to);
+        
+        if (pageError) throw pageError;
+        allPlayerStats = allPlayerStats.concat(pageData || []);
+      }
+      
+      const statsError = null;
+      
+      console.log(`[get-leaderboard] Fetched ${(allPlayerStats || []).length} player_stats records`);
       
       // Filter by match_type if set
       let filteredPlayerStats = matchTypeFilterIds 
