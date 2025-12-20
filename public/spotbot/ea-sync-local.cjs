@@ -323,6 +323,43 @@ const EA_HEADERS = {
 
 // Fetch ALL matches without filtering by type - EA API matchType values are unreliable
 // Now with caching to avoid duplicate calls
+// Fetch matches for a specific match type
+async function fetchMatchesByType(clubId, platform, matchType) {
+  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  
+  try {
+    await humanDelay(); // Add human-like delay before API call
+    console.log(`[EA] Fetching ${matchType} matches for club ${clubId}...`);
+    
+    const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
+      params: { platform: fcPlatform, clubIds: clubId, matchType: matchType, maxResultCount: 20 },
+      headers: EA_HEADERS,
+      timeout: 15000
+    });
+    
+    if (res.status !== 200) {
+      return [];
+    }
+    
+    let matches = res.data;
+    
+    // Handle different response formats
+    if (Array.isArray(matches)) {
+      return matches;
+    } else if (matches?.matches && Array.isArray(matches.matches)) {
+      return matches.matches;
+    } else {
+      // Some responses have matches keyed by match ID
+      const vals = Object.values(matches).filter(v => v && typeof v === 'object' && (v.matchId || v.timestamp));
+      return vals;
+    }
+  } catch (err) {
+    const status = err.response?.status;
+    console.log(`[EA] Failed to fetch ${matchType} matches (${status || 'network'}): ${err.message}`);
+    return [];
+  }
+}
+
 async function fetchAllMatchesFromEA(clubId, platform) {
   // Check cache first
   if (apiCache.matches.has(clubId)) {
@@ -330,58 +367,30 @@ async function fetchAllMatchesFromEA(clubId, platform) {
     return apiCache.matches.get(clubId);
   }
   
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  console.log(`[EA] Fetching all match types for club ${clubId}...`);
   
-  try {
-    await humanDelay(); // Add human-like delay before API call
-    console.log(`[EA] Fetching all matches for club ${clubId} (no matchType filter)...`);
-    
-    // Fetch without matchType to get all recent matches
-    const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
-      params: { platform: fcPlatform, clubIds: clubId, maxResultCount: 50 },
-      headers: EA_HEADERS,
-      timeout: 15000
-    });
-    
-    if (res.status !== 200) {
-      apiCache.matches.set(clubId, []);
-      return [];
+  // EA now requires matchType parameter - fetch each type separately
+  // matchType9 = Division/Rivals, matchType13 = Cup/Knockout, matchType22 = Friendly
+  const matchTypes = ['matchType9', 'matchType13', 'matchType22'];
+  const allMatches = [];
+  
+  for (const matchType of matchTypes) {
+    const matches = await fetchMatchesByType(clubId, platform, matchType);
+    if (matches.length > 0) {
+      console.log(`[EA] ✓ Got ${matches.length} ${matchType} matches`);
+      // Tag matches with their category
+      const category = matchType === 'matchType9' ? 'division' : 
+                       matchType === 'matchType13' ? 'competition' : 'friendly';
+      matches.forEach(m => m._matchCategory = category);
+      allMatches.push(...matches);
     }
-    
-    let matches = res.data;
-    let result = [];
-    
-    // Handle different response formats
-    if (Array.isArray(matches)) {
-      console.log(`[EA] ✓ Got ${matches.length} total matches`);
-      result = matches;
-    } else if (matches?.matches && Array.isArray(matches.matches)) {
-      console.log(`[EA] ✓ Got ${matches.matches.length} total matches`);
-      result = matches.matches;
-    } else {
-      // Some responses have matches keyed by match ID
-      const vals = Object.values(matches).filter(v => v && typeof v === 'object' && (v.matchId || v.timestamp));
-      if (vals.length > 0) {
-        console.log(`[EA] ✓ Got ${vals.length} total matches from object response`);
-        result = vals;
-      } else {
-        console.log(`[EA] No matches found in response`);
-        result = [];
-      }
-    }
-    
-    // Cache the result
-    apiCache.matches.set(clubId, result);
-    return result;
-  } catch (err) {
-    const status = err.response?.status;
-    console.log(`[EA] Failed to fetch matches (${status || 'network'}): ${err.message}`);
-    if (err.response?.data) {
-      console.log(`[EA] Error: ${JSON.stringify(err.response.data).substring(0, 300)}`);
-    }
-    apiCache.matches.set(clubId, []);
-    return [];
   }
+  
+  console.log(`[EA] ✓ Total: ${allMatches.length} matches across all types`);
+  
+  // Cache the result
+  apiCache.matches.set(clubId, allMatches);
+  return allMatches;
 }
 
 // Categorize matches by type based on matchType field in the response data
