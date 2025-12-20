@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useGuild } from "@/contexts/GuildContext";
 import { 
@@ -15,9 +15,11 @@ import {
   XCircle,
   Swords,
   Trophy,
-  MessageSquare
+  MessageSquare,
+  Trash2
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, differenceInMinutes } from "date-fns";
+import { toast } from "sonner";
 
 interface Draft {
   id: string;
@@ -107,6 +109,46 @@ export default function DraftsPage() {
     },
     enabled: !!selectedGuildId,
   });
+
+  const queryClient = useQueryClient();
+
+  // Mutation to clear old feedback requests
+  const clearOldFeedbackMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedGuildId || !pendingFeedback) return 0;
+      
+      const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const oldRequestIds = pendingFeedback
+        .filter(f => new Date(f.created_at) < new Date(thirtyMinsAgo))
+        .map(f => f.id);
+      
+      if (oldRequestIds.length === 0) return 0;
+      
+      const { error } = await supabase
+        .from("dm_feedback_requests")
+        .update({ status: "expired" })
+        .in("id", oldRequestIds);
+      
+      if (error) throw error;
+      return oldRequestIds.length;
+    },
+    onSuccess: (count) => {
+      if (count > 0) {
+        toast.success(`Cleared ${count} old feedback request${count > 1 ? 's' : ''}`);
+        queryClient.invalidateQueries({ queryKey: ["pendingFeedback", selectedGuildId] });
+      } else {
+        toast.info("No feedback requests older than 30 minutes");
+      }
+    },
+    onError: (error) => {
+      toast.error("Failed to clear old requests");
+      console.error("Clear old feedback error:", error);
+    },
+  });
+
+  const oldFeedbackCount = pendingFeedback?.filter(f => 
+    differenceInMinutes(new Date(), new Date(f.created_at)) > 30
+  ).length || 0;
 
   const getResultForDraft = (draftId: string) => {
     return draftResults?.find(r => r.draft_id === draftId);
@@ -297,14 +339,32 @@ export default function DraftsPage() {
 
           <TabsContent value="feedback" className="space-y-4">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  Pending Feedback
-                </CardTitle>
-                <CardDescription>
-                  Feedback requests awaiting responses
-                </CardDescription>
+              <CardHeader className="flex flex-row items-start justify-between space-y-0">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5" />
+                    Pending Feedback
+                  </CardTitle>
+                  <CardDescription>
+                    Feedback requests awaiting responses
+                  </CardDescription>
+                </div>
+                {oldFeedbackCount > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => clearOldFeedbackMutation.mutate()}
+                    disabled={clearOldFeedbackMutation.isPending}
+                    className="flex items-center gap-2"
+                  >
+                    {clearOldFeedbackMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    Clear Old ({oldFeedbackCount})
+                  </Button>
+                )}
               </CardHeader>
               <CardContent>
                 {feedbackLoading ? (
@@ -313,31 +373,41 @@ export default function DraftsPage() {
                   </div>
                 ) : pendingFeedback && pendingFeedback.length > 0 ? (
                   <div className="space-y-3">
-                    {pendingFeedback.map((feedback) => (
-                      <div
-                        key={feedback.id}
-                        className="flex items-center justify-between p-4 rounded-lg bg-muted/30"
-                      >
-                        <div className="flex items-center gap-4">
-                          <Clock className="h-5 w-5 text-yellow-500" />
-                          <div>
-                            <p className="font-medium">
-                              Feedback Request
-                            </p>
-                            <p className="text-sm text-muted-foreground flex items-center gap-2">
-                              <Users className="h-3 w-3" />
-                              {feedback.evaluator_discord_id.slice(-6)}
-                              <span className="text-muted-foreground/50">•</span>
-                              <Calendar className="h-3 w-3" />
-                              {format(new Date(feedback.created_at), "MMM d, yyyy")}
-                            </p>
+                    {pendingFeedback.map((feedback) => {
+                      const ageMinutes = differenceInMinutes(new Date(), new Date(feedback.created_at));
+                      const isOld = ageMinutes > 30;
+                      return (
+                        <div
+                          key={feedback.id}
+                          className={`flex items-center justify-between p-4 rounded-lg ${isOld ? 'bg-red-500/10 border border-red-500/20' : 'bg-muted/30'}`}
+                        >
+                          <div className="flex items-center gap-4">
+                            <Clock className={`h-5 w-5 ${isOld ? 'text-red-500' : 'text-yellow-500'}`} />
+                            <div>
+                              <p className="font-medium">
+                                Feedback Request
+                              </p>
+                              <p className="text-sm text-muted-foreground flex items-center gap-2">
+                                <Users className="h-3 w-3" />
+                                {feedback.evaluator_discord_id.slice(-6)}
+                                <span className="text-muted-foreground/50">•</span>
+                                <Calendar className="h-3 w-3" />
+                                {format(new Date(feedback.created_at), "MMM d 'at' h:mm a")}
+                                {isOld && (
+                                  <>
+                                    <span className="text-muted-foreground/50">•</span>
+                                    <span className="text-red-500 text-xs">{ageMinutes}m old</span>
+                                  </>
+                                )}
+                              </p>
+                            </div>
                           </div>
+                          <Badge className={isOld ? "bg-red-500/10 text-red-500 border-red-500/20" : "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"}>
+                            {isOld ? 'Stale' : 'Pending'}
+                          </Badge>
                         </div>
-                        <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
-                          Pending
-                        </Badge>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="py-12 text-center text-muted-foreground">
