@@ -11,6 +11,7 @@ interface GetPlayerProfileRequest {
   discord_user_id: string;
   include_position_breakdown?: boolean;
   include_chemistry?: boolean;
+  include_vibe_chemistry?: boolean;
   include_recent_games?: boolean;
 }
 
@@ -30,6 +31,7 @@ serve(async (req) => {
       discord_user_id, 
       include_position_breakdown = true,
       include_chemistry = true,
+      include_vibe_chemistry = true,
       include_recent_games = true,
     }: GetPlayerProfileRequest = await req.json();
 
@@ -113,16 +115,89 @@ serve(async (req) => {
         .order("win_rate", { ascending: false })
         .limit(10);
       
-      // Normalize to show partner ID
-      chemistry = (data || []).map(c => ({
-        partner_discord_id: c.player_a_discord_id === discord_user_id 
+      // Get partner IDs
+      const chemPartnerIds = (data || []).map(c => 
+        c.player_a_discord_id === discord_user_id ? c.player_b_discord_id : c.player_a_discord_id
+      );
+      
+      // Get usernames for chemistry partners
+      let chemPartnerUsernames: Record<string, string> = {};
+      if (chemPartnerIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("discord_user_id, discord_username")
+          .in("discord_user_id", chemPartnerIds);
+        
+        chemPartnerUsernames = (profiles || []).reduce((acc, p) => {
+          acc[p.discord_user_id] = p.discord_username;
+          return acc;
+        }, {} as Record<string, string>);
+      }
+      
+      // Normalize to show partner ID with username
+      chemistry = (data || []).map(c => {
+        const partnerId = c.player_a_discord_id === discord_user_id 
           ? c.player_b_discord_id 
-          : c.player_a_discord_id,
-        games_together: c.games_together,
-        wins_together: c.wins_together,
-        win_rate: c.win_rate,
-        synergy_score: c.synergy_score,
-      }));
+          : c.player_a_discord_id;
+        return {
+          partner_discord_id: partnerId,
+          partner_username: chemPartnerUsernames[partnerId] || null,
+          games_together: c.games_together,
+          wins_together: c.wins_together,
+          win_rate: c.win_rate,
+          synergy_score: c.synergy_score,
+        };
+      });
+    }
+
+    // Fetch vibe chemistry (prefer/avoid relationships)
+    let vibeChemistry = null;
+    if (include_vibe_chemistry) {
+      const { data } = await supabase
+        .from("player_vibe_chemistry")
+        .select("*")
+        .eq("guild_id", guild_id)
+        .or(`player_a_discord_id.eq.${discord_user_id},player_b_discord_id.eq.${discord_user_id}`)
+        .gte("games_together", 2) // At least 2 games to show meaningful vibe data
+        .order("vibe_score", { ascending: false });
+      
+      // Normalize and enrich with usernames
+      const partnerIds = (data || []).map(v => 
+        v.player_a_discord_id === discord_user_id ? v.player_b_discord_id : v.player_a_discord_id
+      );
+      
+      // Get usernames for partners
+      let partnerUsernames: Record<string, string> = {};
+      if (partnerIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("discord_user_id, discord_username")
+          .in("discord_user_id", partnerIds);
+        
+        partnerUsernames = (profiles || []).reduce((acc, p) => {
+          acc[p.discord_user_id] = p.discord_username;
+          return acc;
+        }, {} as Record<string, string>);
+      }
+      
+      vibeChemistry = (data || []).map(v => {
+        const partnerId = v.player_a_discord_id === discord_user_id 
+          ? v.player_b_discord_id 
+          : v.player_a_discord_id;
+        return {
+          partner_discord_id: partnerId,
+          partner_username: partnerUsernames[partnerId] || null,
+          games_together: v.games_together,
+          vibe_score: v.vibe_score,
+          vibe_status: v.vibe_status,
+          prefer_count: v.prefer_count,
+          neutral_count: v.neutral_count,
+          avoid_count: v.avoid_count,
+          avg_enjoyment: v.avg_enjoyment,
+          avg_team_energy: v.avg_team_energy,
+          last_played_together: v.last_played_together,
+        };
+      });
     }
 
     let recentGames = null;
@@ -205,8 +280,11 @@ serve(async (req) => {
           // Position breakdown
           position_breakdown: positionBreakdown,
           
-          // Chemistry
+          // Chemistry (win rate based)
           top_chemistry: chemistry,
+          
+          // Vibe chemistry (prefer/avoid relationships)
+          vibe_chemistry: vibeChemistry,
           
           // Recent games
           recent_games: recentGames,

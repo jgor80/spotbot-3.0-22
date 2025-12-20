@@ -20,6 +20,7 @@ export interface PlayerProfile {
   competition_wins: CompetitionWin[];
   position_breakdown?: PositionRating[];
   chemistry?: PlayerChemistry[];
+  vibe_chemistry?: PlayerVibeChemistry[];
   recent_games?: RecentGame[];
   rating_tier: {
     name: string;
@@ -62,6 +63,20 @@ export interface PlayerChemistry {
   wins_together: number;
   win_rate: number;
   synergy_score: number | null;
+}
+
+export interface PlayerVibeChemistry {
+  partner_id: string;
+  partner_username: string | null;
+  games_together: number;
+  vibe_score: number | null;
+  vibe_status: string | null;
+  prefer_count: number;
+  neutral_count: number;
+  avoid_count: number;
+  avg_enjoyment: number | null;
+  avg_team_energy: number | null;
+  last_played_together: string | null;
 }
 
 export interface RecentGame {

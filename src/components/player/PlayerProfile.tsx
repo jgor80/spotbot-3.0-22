@@ -15,7 +15,12 @@ import {
   Calendar,
   Star,
   Database,
-  CheckCircle2
+  CheckCircle2,
+  Heart,
+  HeartOff,
+  ThumbsUp,
+  ThumbsDown,
+  Minus
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -217,10 +222,83 @@ export function PlayerProfileView({ player }: PlayerProfileProps) {
           </Card>
         </TabsContent>
 
-        <TabsContent value="chemistry">
+        <TabsContent value="chemistry" className="space-y-4">
+          {/* Vibe Chemistry - Who they prefer/avoid */}
           <Card>
             <CardHeader>
-              <CardTitle>Best Partners</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Heart className="h-5 w-5" />
+                Player Preferences
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {player.vibe_chemistry && player.vibe_chemistry.length > 0 ? (
+                <div className="space-y-3">
+                  {player.vibe_chemistry.map((vibe) => (
+                    <div key={vibe.partner_id} className="flex items-center gap-4 p-3 rounded-lg border">
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-full font-bold ${
+                        vibe.vibe_status === "great" ? "bg-success/20 text-success" :
+                        vibe.vibe_status === "good" ? "bg-primary/20 text-primary" :
+                        vibe.vibe_status === "avoid" ? "bg-destructive/20 text-destructive" :
+                        "bg-muted"
+                      }`}>
+                        {vibe.partner_username?.charAt(0).toUpperCase() || "?"}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium">{vibe.partner_username || "Unknown"}</p>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                          <span className="flex items-center gap-1">
+                            <ThumbsUp className="h-3 w-3 text-success" />
+                            {vibe.prefer_count}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Minus className="h-3 w-3" />
+                            {vibe.neutral_count}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <ThumbsDown className="h-3 w-3 text-destructive" />
+                            {vibe.avoid_count}
+                          </span>
+                          <span>• {vibe.games_together} games</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <Badge variant={
+                          vibe.vibe_status === "great" ? "default" :
+                          vibe.vibe_status === "good" ? "secondary" :
+                          vibe.vibe_status === "avoid" ? "destructive" :
+                          "outline"
+                        } className={
+                          vibe.vibe_status === "great" ? "bg-success text-success-foreground" :
+                          vibe.vibe_status === "good" ? "bg-primary/80" : ""
+                        }>
+                          {vibe.vibe_status === "great" && "🤝 Great"}
+                          {vibe.vibe_status === "good" && "👍 Good"}
+                          {vibe.vibe_status === "neutral" && "😐 Neutral"}
+                          {vibe.vibe_status === "avoid" && "⚠️ Avoid"}
+                        </Badge>
+                        {vibe.vibe_score !== null && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Vibe: {vibe.vibe_score.toFixed(0)}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-center py-4">No vibe data available yet</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Win Rate Chemistry */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Trophy className="h-5 w-5" />
+                Best Partners (Win Rate)
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {player.chemistry && player.chemistry.length > 0 ? (

@@ -10,6 +10,7 @@ export function usePlayerProfile(guildId: string | null, discordUserId: string |
       return fetchPlayerProfile(guildId, discordUserId, {
         includePositionBreakdown: true,
         includeChemistry: true,
+        includeVibeChemistry: true,
         includeRecentGames: true,
       });
     },
