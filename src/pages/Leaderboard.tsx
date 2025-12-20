@@ -29,6 +29,13 @@ const BOARD_TYPES = [
   { value: "goalkeeper", label: "Goalkeeper" },
 ];
 
+const MATCH_TYPES = [
+  { value: "all", label: "All Games" },
+  { value: "division", label: "Division" },
+  { value: "competition", label: "Cup/Competition" },
+  { value: "friendly", label: "Friendly" },
+];
+
 // Map EA positions to categories - EA API stores as lowercase categories
 const FORWARD_POSITIONS = ['ST', 'CF', 'LW', 'RW', 'RS', 'LS', 'forward', 'FORWARD'];
 const MIDFIELDER_POSITIONS = ['CAM', 'CM', 'CDM', 'LM', 'RM', 'LCM', 'RCM', 'LAM', 'RAM', 'midfielder', 'MIDFIELDER'];
@@ -43,6 +50,7 @@ export default function Leaderboard() {
   const [showWorst, setShowWorst] = useState(false);
   const [clubFilter, setClubFilter] = useState("all");
   const [statsSource, setStatsSource] = useState<"all" | "members" | "games">("members");
+  const [matchType, setMatchType] = useState("all");
 
   const enabledClubs = (selectedGuild?.clubs || []).filter((club) => club.enabled);
 
@@ -60,12 +68,14 @@ export default function Leaderboard() {
   
   // For positional boards, always use tracked game stats (position data comes from match records)
   // Also use tracked games for GK-specific tabs (saves, clean_sheets) since EA member board doesn't have this data
+  // Also force tracked games when match type filter is set (can't filter EA member stats by match type)
   const effectiveStatsSource = useMemo(() => {
+    if (matchType !== "all") return "games";
     if (boardType !== "overall") return "games";
     // For GK-related tabs on overall board, use tracked games since EA API doesn't provide saves data
     if (activeTab === "saves" || activeTab === "clean_sheets") return "games";
     return statsSource;
-  }, [boardType, statsSource, activeTab]);
+  }, [boardType, statsSource, activeTab, matchType]);
   
   const { data: players, isLoading: playersLoading, error } = useLeaderboard(
     selectedGuildId,
@@ -74,7 +84,8 @@ export default function Leaderboard() {
     100,
     monthYear,
     clubFilter === "all" ? undefined : clubFilter,
-    effectiveStatsSource
+    effectiveStatsSource,
+    matchType
   );
 
   const processedPlayers = useMemo(() => {
@@ -237,6 +248,18 @@ export default function Leaderboard() {
                 <SelectItem value="members">EA Member Stats</SelectItem>
                 <SelectItem value="games">Tracked Games Only</SelectItem>
                 <SelectItem value="all">Combined View</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={matchType} onValueChange={setMatchType}>
+              <SelectTrigger className="w-[160px] bg-card">
+                <SelectValue placeholder="Match type" />
+              </SelectTrigger>
+              <SelectContent className="bg-card border z-50">
+                {MATCH_TYPES.map((type) => (
+                  <SelectItem key={type.value} value={type.value}>
+                    {type.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={timePeriod} onValueChange={setTimePeriod}>

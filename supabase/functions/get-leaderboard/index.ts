@@ -14,6 +14,7 @@ interface GetLeaderboardRequest {
   month_year?: string;
   club_key?: string;
   stats_source?: "all" | "members" | "games";
+  match_type?: "division" | "competition" | "friendly";
 }
 
 serve(async (req) => {
@@ -43,9 +44,10 @@ serve(async (req) => {
       month_year,
       club_key,
       stats_source = "all",
+      match_type,
     }: GetLeaderboardRequest = await req.json();
 
-    console.log(`[get-leaderboard] Fetching ${type} leaderboard for guild ${guild_id}, club: ${club_key || 'all'}, source: ${stats_source}`);
+    console.log(`[get-leaderboard] Fetching ${type} leaderboard for guild ${guild_id}, club: ${club_key || 'all'}, source: ${stats_source}, matchType: ${match_type || 'all'}`);
 
     // If requesting monthly snapshot
     if (month_year) {
@@ -203,12 +205,18 @@ serve(async (req) => {
         
         if (statsError) throw statsError;
         
-        // Get club_matches to filter by club_key
-        const { data: clubMatches } = await supabase
+        // Get club_matches to filter by club_key and optionally match_type
+        let clubMatchesQuery = supabase
           .from("club_matches")
           .select("ea_match_id")
           .eq("guild_id", guild_id)
           .eq("club_key", club_key);
+        
+        if (match_type) {
+          clubMatchesQuery = clubMatchesQuery.eq("match_type", match_type);
+        }
+        
+        const { data: clubMatches } = await clubMatchesQuery;
         
         const clubMatchIds = new Set((clubMatches || []).map(m => m.ea_match_id));
         
@@ -375,7 +383,19 @@ serve(async (req) => {
       }
     } else if (stats_source === "games") {
       // Aggregate from player_stats only (monitored match data)
-      console.log(`[get-leaderboard] Aggregating from player_stats (games only)`);
+      console.log(`[get-leaderboard] Aggregating from player_stats (games only), matchType: ${match_type || 'all'}`);
+      
+      // If match_type filter is set, get the relevant match IDs first
+      let matchTypeFilterIds: Set<string> | null = null;
+      if (match_type) {
+        const { data: filteredMatches } = await supabase
+          .from("club_matches")
+          .select("ea_match_id")
+          .eq("guild_id", guild_id)
+          .eq("match_type", match_type);
+        
+        matchTypeFilterIds = new Set((filteredMatches || []).map(m => m.ea_match_id));
+      }
       
       const { data: allPlayerStats, error: statsError } = await supabase
         .from("player_stats")
@@ -409,14 +429,19 @@ serve(async (req) => {
           ea_match_id
         `)
         .eq("guild_id", guild_id)
-        .eq("match_type", "club");
+        .in("match_type", ["club", "friendly"]);
       
       if (statsError) throw statsError;
+      
+      // Filter by match_type if set
+      const filteredPlayerStats = matchTypeFilterIds 
+        ? (allPlayerStats || []).filter(ps => ps.ea_match_id && matchTypeFilterIds!.has(ps.ea_match_id))
+        : (allPlayerStats || []);
       
       // Aggregate stats per player
       const playerAggregates = new Map<string, any>();
       
-      for (const stat of allPlayerStats || []) {
+      for (const stat of filteredPlayerStats) {
         const existing = playerAggregates.get(stat.discord_user_id) || {
           discord_user_id: stat.discord_user_id,
           games_played: 0,
