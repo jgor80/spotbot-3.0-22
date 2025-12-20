@@ -23,13 +23,21 @@ interface MidfielderLeaderboardTableProps {
 type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "passes" | "pass_pct" | "tackles" | "interceptions" | "dribbles" | "fouls" | "passes_per_game" | "positions";
 type SortDirection = "asc" | "desc";
 
-// Format position counts for display
-function formatPositionCounts(positionCounts?: Record<string, number>): string {
+// Format position counts for display (short version)
+function formatPositionCountsShort(positionCounts?: Record<string, number>): string {
   if (!positionCounts || Object.keys(positionCounts).length === 0) return "-";
   const sorted = Object.entries(positionCounts)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
-  return sorted.map(([pos, count]) => `${pos} (${count})`).join(", ");
+    .slice(0, 2);
+  return sorted.map(([pos, count]) => `${pos}(${count})`).join(", ");
+}
+
+// Format position counts for tooltip (full version)
+function formatPositionCountsFull(positionCounts?: Record<string, number>): string[] {
+  if (!positionCounts || Object.keys(positionCounts).length === 0) return [];
+  return Object.entries(positionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([pos, count]) => `${pos}: ${count} games`);
 }
 
 export function MidfielderLeaderboardTable({ players, onPlayerClick }: MidfielderLeaderboardTableProps) {
@@ -176,7 +184,8 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
             {filteredAndSortedPlayers.map((player) => {
               const passPct = player.pass_attempts > 0 ? ((player.passes_made || 0) / player.pass_attempts) * 100 : 0;
               const passesPerGame = player.games_played > 0 ? (player.passes_made || 0) / player.games_played : 0;
-              const positionsDisplay = formatPositionCounts(player.position_counts);
+              const positionsShort = formatPositionCountsShort(player.position_counts);
+              const positionsFull = formatPositionCountsFull(player.position_counts);
 
               return (
                 <TableRow
@@ -235,7 +244,25 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
                   <TableCell className="text-center hidden lg:table-cell">{player.interceptions || 0}</TableCell>
                   <TableCell className="text-center hidden xl:table-cell">{player.dribbles || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{passesPerGame.toFixed(1)}</TableCell>
-                  <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">{positionsDisplay}</TableCell>
+                  <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">
+                    {positionsFull.length > 0 ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger className="cursor-help underline decoration-dotted">
+                            {positionsShort}
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <div className="text-sm space-y-1">
+                              <p className="font-semibold mb-1">Positions Played</p>
+                              {positionsFull.map((line, i) => (
+                                <p key={i}>{line}</p>
+                              ))}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : "-"}
+                  </TableCell>
                 </TableRow>
               );
             })}
