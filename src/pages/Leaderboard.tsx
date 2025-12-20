@@ -59,10 +59,13 @@ export default function Leaderboard() {
   }, [boardType]);
   
   // For positional boards, always use tracked game stats (position data comes from match records)
+  // Also use tracked games for GK-specific tabs (saves, clean_sheets) since EA member board doesn't have this data
   const effectiveStatsSource = useMemo(() => {
     if (boardType !== "overall") return "games";
+    // For GK-related tabs on overall board, use tracked games since EA API doesn't provide saves data
+    if (activeTab === "saves" || activeTab === "clean_sheets") return "games";
     return statsSource;
-  }, [boardType, statsSource]);
+  }, [boardType, statsSource, activeTab]);
   
   const { data: players, isLoading: playersLoading, error } = useLeaderboard(
     selectedGuildId,
