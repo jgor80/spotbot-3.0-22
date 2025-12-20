@@ -205,6 +205,7 @@ serve(async (req) => {
         }));
       } else if (stats_source === "games") {
         // For "games" source, show ONLY tracked match stats (not EA member board)
+        // Fetch ALL player_stats - use range to bypass 1000 row default limit
         const { data: clubPlayerStats, error: statsError } = await supabase
           .from("player_stats")
           .select(`
@@ -237,7 +238,8 @@ serve(async (req) => {
             ea_match_id
           `)
           .eq("guild_id", guild_id)
-          .eq("match_type", "club");
+          .eq("match_type", "club")
+          .range(0, 9999);
         
         if (statsError) throw statsError;
         
@@ -434,6 +436,7 @@ serve(async (req) => {
         matchTypeFilterIds = new Set((filteredMatches || []).map(m => m.ea_match_id));
       }
       
+      // Fetch ALL player_stats - use range to bypass 1000 row default limit
       const { data: allPlayerStats, error: statsError } = await supabase
         .from("player_stats")
         .select(`
@@ -466,7 +469,8 @@ serve(async (req) => {
           ea_match_id
         `)
         .eq("guild_id", guild_id)
-        .in("match_type", ["club", "friendly"]);
+        .in("match_type", ["club", "friendly"])
+        .range(0, 9999);
       
       if (statsError) throw statsError;
       
