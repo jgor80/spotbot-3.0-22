@@ -383,14 +383,6 @@ async function fetchAllMatchesFromEA(clubId, platform) {
     return [];
   }
 }
-    const status = err.response?.status;
-    console.log(`[EA] Failed to fetch matches (${status || 'network'}): ${err.message}`);
-    if (err.response?.data) {
-      console.log(`[EA] Error: ${JSON.stringify(err.response.data).substring(0, 300)}`);
-    }
-    return [];
-  }
-}
 
 // Categorize matches by type based on matchType field in the response data
 function categorizeMatches(matches) {
