@@ -1343,10 +1343,6 @@ async function syncMatches(guildId, clubKey, club) {
         .select('feedback_enabled')
         .eq('guild_id', guildId)
         .single();
-        .from('guild_settings')
-        .select('feedback_enabled')
-        .eq('guild_id', guildId)
-        .single();
       
       // Skip if feedback is disabled
       if (feedbackSettings && feedbackSettings.feedback_enabled === false) {
