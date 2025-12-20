@@ -284,6 +284,31 @@ const EA_PLATFORM_MAP = {
   'xboxone': 'common-gen4'
 };
 
+// === API CALL CACHE to reduce redundant calls ===
+// Reset at start of each sync cycle
+const apiCache = {
+  clubInfo: new Map(),      // clubId -> clubInfo data
+  clubMembers: new Map(),   // clubId -> members array
+  matches: new Map(),       // clubId -> matches array
+  scoutedOpponents: new Set(), // Set of opponentClubId already scouted this cycle
+  lastReset: 0
+};
+
+function resetApiCache() {
+  apiCache.clubInfo.clear();
+  apiCache.clubMembers.clear();
+  apiCache.matches.clear();
+  apiCache.scoutedOpponents.clear();
+  apiCache.lastReset = Date.now();
+  console.log('🔄 API cache cleared for new sync cycle');
+}
+
+// Add random delay to appear more human-like
+async function humanDelay(minMs = 500, maxMs = 2000) {
+  const delay = Math.floor(Math.random() * (maxMs - minMs)) + minMs;
+  await new Promise(r => setTimeout(r, delay));
+}
+
 const EA_HEADERS = {
   'accept': 'application/json',
   'accept-language': 'en-US,en;q=0.9',
@@ -297,10 +322,18 @@ const EA_HEADERS = {
 };
 
 // Fetch ALL matches without filtering by type - EA API matchType values are unreliable
+// Now with caching to avoid duplicate calls
 async function fetchAllMatchesFromEA(clubId, platform) {
+  // Check cache first
+  if (apiCache.matches.has(clubId)) {
+    console.log(`[EA] Using cached matches for club ${clubId}`);
+    return apiCache.matches.get(clubId);
+  }
+  
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
   
   try {
+    await humanDelay(); // Add human-like delay before API call
     console.log(`[EA] Fetching all matches for club ${clubId} (no matchType filter)...`);
     
     // Fetch without matchType to get all recent matches
@@ -310,30 +343,46 @@ async function fetchAllMatchesFromEA(clubId, platform) {
       timeout: 15000
     });
     
-    if (res.status !== 200) return [];
+    if (res.status !== 200) {
+      apiCache.matches.set(clubId, []);
+      return [];
+    }
     
     let matches = res.data;
+    let result = [];
     
     // Handle different response formats
     if (Array.isArray(matches)) {
       console.log(`[EA] ✓ Got ${matches.length} total matches`);
-      return matches;
-    }
-    if (matches?.matches && Array.isArray(matches.matches)) {
+      result = matches;
+    } else if (matches?.matches && Array.isArray(matches.matches)) {
       console.log(`[EA] ✓ Got ${matches.matches.length} total matches`);
-      return matches.matches;
+      result = matches.matches;
+    } else {
+      // Some responses have matches keyed by match ID
+      const vals = Object.values(matches).filter(v => v && typeof v === 'object' && (v.matchId || v.timestamp));
+      if (vals.length > 0) {
+        console.log(`[EA] ✓ Got ${vals.length} total matches from object response`);
+        result = vals;
+      } else {
+        console.log(`[EA] No matches found in response`);
+        result = [];
+      }
     }
     
-    // Some responses have matches keyed by match ID
-    const vals = Object.values(matches).filter(v => v && typeof v === 'object' && (v.matchId || v.timestamp));
-    if (vals.length > 0) {
-      console.log(`[EA] ✓ Got ${vals.length} total matches from object response`);
-      return vals;
-    }
-    
-    console.log(`[EA] No matches found in response`);
-    return [];
+    // Cache the result
+    apiCache.matches.set(clubId, result);
+    return result;
   } catch (err) {
+    const status = err.response?.status;
+    console.log(`[EA] Failed to fetch matches (${status || 'network'}): ${err.message}`);
+    if (err.response?.data) {
+      console.log(`[EA] Error: ${JSON.stringify(err.response.data).substring(0, 300)}`);
+    }
+    apiCache.matches.set(clubId, []);
+    return [];
+  }
+}
     const status = err.response?.status;
     console.log(`[EA] Failed to fetch matches (${status || 'network'}): ${err.message}`);
     if (err.response?.data) {
@@ -394,55 +443,97 @@ async function fetchMatches(clubId, platform) {
   return fetchAllMatches(clubId, platform);
 }
 
-// Fetch club info
+// Fetch club info - now with caching
 async function fetchClubInfo(clubId, platform) {
+  // Check cache first
+  if (apiCache.clubInfo.has(clubId)) {
+    console.log(`[EA] Using cached club info for ${clubId}`);
+    return apiCache.clubInfo.get(clubId);
+  }
+  
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
   
   try {
+    await humanDelay(); // Add human-like delay
     const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/info', {
       params: { platform: fcPlatform, clubIds: clubId },
       headers: EA_HEADERS,
       timeout: 10000
     });
     
-    if (res.status !== 200) return null;
+    if (res.status !== 200) {
+      apiCache.clubInfo.set(clubId, null);
+      return null;
+    }
     
     const data = res.data;
-    if (Array.isArray(data) && data.length > 0) return data[0];
-    if (data[clubId]) return data[clubId];
-    return data;
+    let result = null;
+    if (Array.isArray(data) && data.length > 0) result = data[0];
+    else if (data[clubId]) result = data[clubId];
+    else result = data;
+    
+    apiCache.clubInfo.set(clubId, result);
+    return result;
   } catch (err) {
+    console.error(`[EA] Club info error:`, err.message);
+    apiCache.clubInfo.set(clubId, null);
+    return null;
+  }
+}
     console.error(`[EA] Club info error:`, err.message);
     return null;
   }
 }
 
-// Fetch club members
+// Fetch club members - now with caching
 async function fetchClubMembers(clubId, platform) {
+  // Check cache first
+  if (apiCache.clubMembers.has(clubId)) {
+    console.log(`[EA] Using cached members for club ${clubId}`);
+    return apiCache.clubMembers.get(clubId);
+  }
+  
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
   
   try {
+    await humanDelay(); // Add human-like delay
     const res = await axios.get('https://proclubs.ea.com/api/fc/members/stats', {
       params: { platform: fcPlatform, clubId },
       headers: EA_HEADERS,
       timeout: 10000
     });
     
-    if (res.status !== 200) return [];
+    if (res.status !== 200) {
+      apiCache.clubMembers.set(clubId, []);
+      return [];
+    }
     
     const data = res.data;
-    if (data?.members) return data.members;
-    if (Array.isArray(data)) return data;
-    return Object.values(data).filter(v => v && typeof v === 'object');
+    let result = [];
+    if (data?.members) result = data.members;
+    else if (Array.isArray(data)) result = data;
+    else result = Object.values(data).filter(v => v && typeof v === 'object');
+    
+    apiCache.clubMembers.set(clubId, result);
+    return result;
   } catch (err) {
     console.error(`[EA] Club members error:`, err.message);
+    apiCache.clubMembers.set(clubId, []);
     return [];
   }
 }
 
 // Auto-scout opponent club and store their player data
+// Now with caching to avoid scouting same opponent multiple times per cycle
 async function scoutOpponentClub(guildId, opponentClubId, platform, incrementTimesFaced = false) {
   if (!opponentClubId) return { scouted: 0 };
+  
+  // Skip if already scouted this sync cycle
+  const cacheKey = `${guildId}:${opponentClubId}`;
+  if (apiCache.scoutedOpponents.has(cacheKey)) {
+    console.log(`  ⏭️ Already scouted opponent ${opponentClubId} this cycle, skipping...`);
+    return { scouted: 0, skipped: true };
+  }
   
   console.log(`🔍 Auto-scouting opponent club ${opponentClubId}...`);
   
@@ -537,6 +628,9 @@ async function scoutOpponentClub(guildId, opponentClubId, platform, incrementTim
     
     scoutedCount++;
   }
+  
+  // Mark as scouted for this cycle to avoid duplicate calls
+  apiCache.scoutedOpponents.add(cacheKey);
   
   console.log(`  ✅ Scouted ${scoutedCount} players from ${clubName}`);
   return { scouted: scoutedCount, clubName };
@@ -1011,6 +1105,7 @@ async function syncMemberStats(guildId, clubId, platform, clubName) {
 }
 
 // Process and sync matches (last 50 with deduplication)
+// Optimized to skip processing early if all matches are already synced
 async function syncMatches(guildId, clubKey, club) {
   const matches = await fetchMatches(club.ea_club_id, club.ea_platform);
   
@@ -1021,7 +1116,6 @@ async function syncMatches(guildId, clubKey, club) {
   
   // Process last 50 matches for comprehensive history
   const last50Matches = matches.slice(0, 50);
-  console.log(`📊 Processing last ${last50Matches.length} matches for ${club.name}`);
   
   // Get existing match IDs from club_matches
   const { data: existingMatches } = await supabase
@@ -1032,13 +1126,23 @@ async function syncMatches(guildId, clubKey, club) {
   
   const existingMatchIds = new Set((existingMatches || []).map(m => m.ea_match_id));
   
-  // Get existing player stats by ea_match_id for deduplication
+  // Early exit: if all matches already exist, skip processing entirely
   const matchIds = last50Matches.map(m => m.matchId?.toString()).filter(Boolean);
+  const newMatchIds = matchIds.filter(id => !existingMatchIds.has(id));
+  
+  if (newMatchIds.length === 0) {
+    console.log(`⏭️ All ${last50Matches.length} matches already synced for ${club.name}, skipping...`);
+    return { synced: 0, skipped: last50Matches.length, playerStats: 0, updatedPlayerIds: [] };
+  }
+  
+  console.log(`📊 Processing ${newMatchIds.length} new matches (${last50Matches.length - newMatchIds.length} already synced) for ${club.name}`);
+  
+  // Get existing player stats by ea_match_id for deduplication (only for new matches)
   const { data: existingPlayerStats } = await supabase
     .from('player_stats')
     .select('ea_match_id, discord_user_id')
     .eq('guild_id', guildId)
-    .in('ea_match_id', matchIds);
+    .in('ea_match_id', newMatchIds);
   
   const existingPlayerStatsSet = new Set(
     (existingPlayerStats || []).map(s => `${s.ea_match_id}:${s.discord_user_id}`)
@@ -1047,7 +1151,10 @@ async function syncMatches(guildId, clubKey, club) {
   let synced = 0, skipped = 0, playerStatsCount = 0;
   const updatedPlayerIds = []; // Track players who got new stats
   
-  for (const matchData of last50Matches) {
+  // Only process new matches (not in existingMatchIds)
+  const newMatches = last50Matches.filter(m => !existingMatchIds.has(m.matchId?.toString()));
+  
+  for (const matchData of newMatches) {
     const matchId = matchData.matchId?.toString();
     if (!matchId) {
       skipped++;
@@ -1110,43 +1217,44 @@ async function syncMatches(guildId, clubKey, club) {
       });
     }
     
-    // Insert/update match in club_matches (skip if exists)
-    const isNewMatch = !existingMatchIds.has(matchId);
+    // Insert match in club_matches (we already filtered to only new matches)
     let clubMatchId = null;
     
-    if (isNewMatch) {
-      const { data: insertedMatch, error: matchError } = await supabase
-        .from('club_matches')
-        .insert({
-          guild_id: guildId,
-          club_key: clubKey,
-          ea_match_id: matchId,
-          match_type: matchData._matchCategory || 'division',
-          result,
-          score_for: scoreFor,
-          score_against: scoreAgainst,
-          opponent_club_name: opponentClubData?.name || 'Unknown',
-          opponent_club_id: opponentClubId,
-          match_data: matchData,
-          player_stats: playerStats
-        })
-        .select('id')
-        .single();
-      
-      if (matchError) {
-        console.error(`[DB] Match insert error:`, matchError.message);
-      } else {
-        clubMatchId = insertedMatch.id;
-        synced++;
-        console.log(`✅ New match ${matchId}: ${result} ${scoreFor}-${scoreAgainst}`);
-        
-        // Auto-scout opponent club when new match is detected
-        if (opponentClubId) {
-          await scoutOpponentClub(guildId, opponentClubId, club.ea_platform, true);
-        }
+    const { data: insertedMatch, error: matchError } = await supabase
+      .from('club_matches')
+      .insert({
+        guild_id: guildId,
+        club_key: clubKey,
+        ea_match_id: matchId,
+        match_type: matchData._matchCategory || 'division',
+        result,
+        score_for: scoreFor,
+        score_against: scoreAgainst,
+        opponent_club_name: opponentClubData?.name || 'Unknown',
+        opponent_club_id: opponentClubId,
+        match_data: matchData,
+        player_stats: playerStats
+      })
+      .select('id')
+      .single();
+    
+    if (matchError) {
+      // Could be duplicate - skip silently
+      if (matchError.code === '23505') {
+        skipped++;
+        continue;
       }
-    } else {
-      skipped++;
+      console.error(`[DB] Match insert error:`, matchError.message);
+      continue;
+    }
+    
+    clubMatchId = insertedMatch.id;
+    synced++;
+    console.log(`✅ New match ${matchId}: ${result} ${scoreFor}-${scoreAgainst}`);
+    
+    // Auto-scout opponent club when new match is detected (uses cache to avoid duplicate calls)
+    if (opponentClubId) {
+      await scoutOpponentClub(guildId, opponentClubId, club.ea_platform, true);
     }
     
     // Record individual player stats with deduplication
@@ -1240,16 +1348,20 @@ async function syncMatches(guildId, clubKey, club) {
     }
     
     // Create feedback requests for new matches with multiple players
-    // First check if feedback is enabled for this guild
-    if (isNewMatch && clubMatchId && matchPlayerIds.length >= 2) {
-      const { data: guildSettings } = await supabase
+    // We know this is a new match since we pre-filtered the list
+    if (clubMatchId && matchPlayerIds.length >= 2) {
+      const { data: feedbackSettings } = await supabase
+        .from('guild_settings')
+        .select('feedback_enabled')
+        .eq('guild_id', guildId)
+        .single();
         .from('guild_settings')
         .select('feedback_enabled')
         .eq('guild_id', guildId)
         .single();
       
       // Skip if feedback is disabled
-      if (guildSettings && guildSettings.feedback_enabled === false) {
+      if (feedbackSettings && feedbackSettings.feedback_enabled === false) {
         console.log(`📨 Feedback disabled for guild ${guildId}, skipping...`);
       } else {
         console.log(`📨 Creating feedback requests for ${matchPlayerIds.length} players...`);
@@ -1613,6 +1725,10 @@ async function triggerRatingRecalculation(guildId, playerIds) {
 // Main sync loop
 async function runSync() {
   console.log('\n🔄 Starting EA sync...\n');
+  
+  // Reset API cache at start of each sync cycle to avoid stale data
+  // but still prevent redundant calls within this sync
+  resetApiCache();
   
   // Get all guilds with EA-linked clubs
   const { data: guildSettings, error } = await supabase
