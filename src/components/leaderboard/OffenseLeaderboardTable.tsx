@@ -23,13 +23,21 @@ interface OffenseLeaderboardTableProps {
 type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "shots" | "shot_conv" | "dribbles" | "offsides" | "ga_per_game" | "goals_per_game" | "positions";
 type SortDirection = "asc" | "desc";
 
-// Format position counts for display
-function formatPositionCounts(positionCounts?: Record<string, number>): string {
+// Format position counts for display (short version)
+function formatPositionCountsShort(positionCounts?: Record<string, number>): string {
   if (!positionCounts || Object.keys(positionCounts).length === 0) return "-";
   const sorted = Object.entries(positionCounts)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
-  return sorted.map(([pos, count]) => `${pos} (${count})`).join(", ");
+    .slice(0, 2);
+  return sorted.map(([pos, count]) => `${pos}(${count})`).join(", ");
+}
+
+// Format position counts for tooltip (full version)
+function formatPositionCountsFull(positionCounts?: Record<string, number>): string[] {
+  if (!positionCounts || Object.keys(positionCounts).length === 0) return [];
+  return Object.entries(positionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([pos, count]) => `${pos}: ${count} games`);
 }
 
 export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeaderboardTableProps) {
@@ -172,7 +180,8 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
               const shotConv = player.shots > 0 ? (player.goals / player.shots) * 100 : 0;
               const gaPerGame = player.games_played > 0 ? (player.goals + player.assists) / player.games_played : 0;
               const goalsPerGame = player.games_played > 0 ? player.goals / player.games_played : 0;
-              const positionsDisplay = formatPositionCounts(player.position_counts);
+              const positionsShort = formatPositionCountsShort(player.position_counts);
+              const positionsFull = formatPositionCountsFull(player.position_counts);
 
               return (
                 <TableRow
@@ -230,7 +239,25 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
                   <TableCell className="text-center hidden xl:table-cell">{player.dribbles || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{goalsPerGame.toFixed(2)}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{gaPerGame.toFixed(2)}</TableCell>
-                  <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">{positionsDisplay}</TableCell>
+                  <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">
+                    {positionsFull.length > 0 ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger className="cursor-help underline decoration-dotted">
+                            {positionsShort}
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <div className="text-sm space-y-1">
+                              <p className="font-semibold mb-1">Positions Played</p>
+                              {positionsFull.map((line, i) => (
+                                <p key={i}>{line}</p>
+                              ))}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : "-"}
+                  </TableCell>
                 </TableRow>
               );
             })}

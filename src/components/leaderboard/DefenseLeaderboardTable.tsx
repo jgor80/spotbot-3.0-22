@@ -23,13 +23,21 @@ interface DefenseLeaderboardTableProps {
 type SortKey = "rank" | "rating" | "games" | "tackles" | "interceptions" | "clearances" | "fouls" | "clean_sheets" | "ga_per_game" | "def_per_game" | "tackles_per_game" | "positions";
 type SortDirection = "asc" | "desc";
 
-// Format position counts for display
-function formatPositionCounts(positionCounts?: Record<string, number>): string {
+// Format position counts for display (short version)
+function formatPositionCountsShort(positionCounts?: Record<string, number>): string {
   if (!positionCounts || Object.keys(positionCounts).length === 0) return "-";
   const sorted = Object.entries(positionCounts)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
-  return sorted.map(([pos, count]) => `${pos} (${count})`).join(", ");
+    .slice(0, 2);
+  return sorted.map(([pos, count]) => `${pos}(${count})`).join(", ");
+}
+
+// Format position counts for tooltip (full version)
+function formatPositionCountsFull(positionCounts?: Record<string, number>): string[] {
+  if (!positionCounts || Object.keys(positionCounts).length === 0) return [];
+  return Object.entries(positionCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([pos, count]) => `${pos}: ${count} games`);
 }
 
 export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeaderboardTableProps) {
@@ -176,7 +184,8 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
                 ? ((player.tackles || 0) + (player.interceptions || 0) + (player.clearances || 0)) / player.games_played 
                 : 0;
               const tacklesPerGame = player.games_played > 0 ? (player.tackles || 0) / player.games_played : 0;
-              const positionsDisplay = formatPositionCounts(player.position_counts);
+              const positionsShort = formatPositionCountsShort(player.position_counts);
+              const positionsFull = formatPositionCountsFull(player.position_counts);
 
               return (
                 <TableRow
@@ -235,7 +244,25 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
                   <TableCell className="text-center hidden md:table-cell">{player.clean_sheets || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{tacklesPerGame.toFixed(2)}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{defPerGame.toFixed(1)}</TableCell>
-                  <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">{positionsDisplay}</TableCell>
+                  <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">
+                    {positionsFull.length > 0 ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger className="cursor-help underline decoration-dotted">
+                            {positionsShort}
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <div className="text-sm space-y-1">
+                              <p className="font-semibold mb-1">Positions Played</p>
+                              {positionsFull.map((line, i) => (
+                                <p key={i}>{line}</p>
+                              ))}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : "-"}
+                  </TableCell>
                 </TableRow>
               );
             })}
