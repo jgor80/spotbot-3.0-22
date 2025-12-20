@@ -87,11 +87,15 @@ export default function RecentGamesPage() {
       }
       
       const { data, error } = await query;
+      console.log("[RecentGamesPage] Query result:", { guildId: selectedGuildId, matchCount: data?.length, error });
       if (error) throw error;
       return data as ClubMatch[];
     },
     enabled: !!selectedGuildId,
   });
+
+  // Debug logging
+  console.log("[RecentGamesPage] State:", { selectedGuildId, isLoading, matchesLength: matches?.length, error });
 
   const getResultIcon = (result: string | null) => {
     switch (result) {
