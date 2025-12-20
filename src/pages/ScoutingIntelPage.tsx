@@ -94,6 +94,7 @@ interface OpponentMatchStats {
 export default function ScoutingIntelPage() {
   const { selectedGuildId } = useGuild();
   const [clubFilter, setClubFilter] = useState<string>("all");
+  const [matchTypeFilter, setMatchTypeFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<SortField>("times_faced");
   const [sortDesc, setSortDesc] = useState(true);
@@ -120,17 +121,24 @@ export default function ScoutingIntelPage() {
 
   // Fetch opponent player stats from actual matches
   const { data: opponentMatchStats } = useQuery({
-    queryKey: ["opponent-match-stats", selectedGuildId],
+    queryKey: ["opponent-match-stats", selectedGuildId, matchTypeFilter],
     queryFn: async () => {
       if (!selectedGuildId) return [];
       
-      const { data, error } = await supabase
+      let query = supabase
         .from("club_matches")
-        .select("match_data, opponent_club_id, opponent_club_name, result")
+        .select("match_data, opponent_club_id, opponent_club_name, result, match_type")
         .eq("guild_id", selectedGuildId)
         .not("match_data", "is", null)
         .not("opponent_club_id", "is", null)
         .order("created_at", { ascending: false });
+      
+      // Apply match type filter
+      if (matchTypeFilter !== "all") {
+        query = query.eq("match_type", matchTypeFilter);
+      }
+      
+      const { data, error } = await query;
       
       if (error) throw error;
       
@@ -217,15 +225,22 @@ export default function ScoutingIntelPage() {
 
   // Fetch head-to-head records against opponent clubs
   const { data: headToHead } = useQuery({
-    queryKey: ["head-to-head", selectedGuildId],
+    queryKey: ["head-to-head", selectedGuildId, matchTypeFilter],
     queryFn: async () => {
       if (!selectedGuildId) return [];
       
-      const { data, error } = await supabase
+      let query = supabase
         .from("club_matches")
-        .select("opponent_club_id, opponent_club_name, result, match_data")
+        .select("opponent_club_id, opponent_club_name, result, match_data, match_type")
         .eq("guild_id", selectedGuildId)
         .not("opponent_club_id", "is", null);
+      
+      // Apply match type filter
+      if (matchTypeFilter !== "all") {
+        query = query.eq("match_type", matchTypeFilter);
+      }
+      
+      const { data, error } = await query;
       
       if (error) throw error;
       
@@ -518,11 +533,27 @@ export default function ScoutingIntelPage() {
         {opponentMatchStats && opponentMatchStats.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Crosshair className="h-5 w-5 text-red-500" />
-                Opponent Players vs Your Guild
-              </CardTitle>
-              <CardDescription>Detailed stats from actual games played against you</CardDescription>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Crosshair className="h-5 w-5 text-red-500" />
+                    Opponent Players vs Your Guild
+                  </CardTitle>
+                  <CardDescription>Detailed stats from actual games played against you</CardDescription>
+                </div>
+                <Select value={matchTypeFilter} onValueChange={setMatchTypeFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <Filter className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Match type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Matches</SelectItem>
+                    <SelectItem value="division">Division</SelectItem>
+                    <SelectItem value="competition">Cup / Playoffs</SelectItem>
+                    <SelectItem value="friendly">Friendlies</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
               <ScrollArea className="w-full">
