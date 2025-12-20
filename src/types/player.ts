@@ -126,6 +126,7 @@ export interface LeaderboardPlayer {
   form_rating: number | null;
   reliability_score: number | null;
   primary_position: string | null;
+  position_counts?: Record<string, number>;
   current_streak?: number;
   streak_type?: string | null;
   club_keys?: string[];
