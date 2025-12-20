@@ -34,17 +34,11 @@ interface PeerEvaluationRequest {
   club_match_id?: string;
   position_played?: string;
   ratings: {
-    // Position-specific ratings (only one set will be provided based on position)
-    technical_skill?: number;  // GK only
-    passing_skill?: number;    // DEF, MID, ATT
-    goal_scoring?: number;     // MID, ATT
-    defensive_skill?: number;  // DEF, MID
-    // Universal ratings
-    game_iq: number;
-    work_ethic: number;
-    communication: number;
-    consistency: number;
-    clutch_factor: number;
+    // GK only - just performance
+    performance?: number;        // GK overall performance (1-5)
+    // Outfield players - offensive and defensive ability
+    offensive_ability?: number;  // Outfield only (1-5)
+    defensive_ability?: number;  // Outfield only (1-5)
   };
   // Vibe ratings
   vibe?: {
@@ -77,35 +71,28 @@ function validateRequest(body: any): string[] {
   if (!body.ratings || typeof body.ratings !== "object") {
     errors.push("ratings object is required");
   } else {
-    // Universal ratings that are always required
-    const universalRatings = ["game_iq", "work_ethic", "communication", "consistency", "clutch_factor"];
-    for (const field of universalRatings) {
-      const value = body.ratings[field];
-      if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 5) {
-        errors.push(`ratings.${field} must be an integer between 1 and 5`);
-      }
-    }
-    
-    // Position-specific validation
     const positionCategory = getPositionCategory(body.position_played);
     
     if (positionCategory === "GK") {
-      // GK requires technical_skill
-      if (body.ratings.technical_skill !== undefined) {
-        const val = body.ratings.technical_skill;
+      // GK only requires performance rating
+      if (body.ratings.performance !== undefined) {
+        const val = body.ratings.performance;
         if (typeof val !== "number" || !Number.isInteger(val) || val < 1 || val > 5) {
-          errors.push("ratings.technical_skill must be an integer between 1 and 5");
+          errors.push("ratings.performance must be an integer between 1 and 5");
         }
       }
     } else {
-      // Non-GK positions: validate position-specific skills if provided
-      const optionalSkills = ["passing_skill", "goal_scoring", "defensive_skill"];
-      for (const field of optionalSkills) {
-        if (body.ratings[field] !== undefined) {
-          const val = body.ratings[field];
-          if (typeof val !== "number" || !Number.isInteger(val) || val < 1 || val > 5) {
-            errors.push(`ratings.${field} must be an integer between 1 and 5`);
-          }
+      // Outfield players: validate offensive and defensive ability
+      if (body.ratings.offensive_ability !== undefined) {
+        const val = body.ratings.offensive_ability;
+        if (typeof val !== "number" || !Number.isInteger(val) || val < 1 || val > 5) {
+          errors.push("ratings.offensive_ability must be an integer between 1 and 5");
+        }
+      }
+      if (body.ratings.defensive_ability !== undefined) {
+        const val = body.ratings.defensive_ability;
+        if (typeof val !== "number" || !Number.isInteger(val) || val < 1 || val > 5) {
+          errors.push("ratings.defensive_ability must be an integer between 1 and 5");
         }
       }
     }
@@ -203,28 +190,32 @@ serve(async (req) => {
 
     const trustScore = trustData?.trust_score ?? 1.0;
 
-    // Calculate overall score based on position-specific weights
+    // Calculate overall score based on position-specific ratings
     let ratingSum = 0;
     let ratingCount = 0;
     
-    // Universal ratings
-    ratingSum += ratings.game_iq + ratings.work_ethic + ratings.communication + ratings.consistency + ratings.clutch_factor;
-    ratingCount += 5;
-    
-    // Position-specific ratings
-    if (positionCategory === "GK" && ratings.technical_skill) {
-      ratingSum += ratings.technical_skill;
-      ratingCount += 1;
+    if (positionCategory === "GK") {
+      // GK: just performance
+      if (ratings.performance) {
+        ratingSum += ratings.performance;
+        ratingCount += 1;
+      }
     } else {
-      if (ratings.passing_skill) { ratingSum += ratings.passing_skill; ratingCount += 1; }
-      if (ratings.goal_scoring) { ratingSum += ratings.goal_scoring; ratingCount += 1; }
-      if (ratings.defensive_skill) { ratingSum += ratings.defensive_skill; ratingCount += 1; }
+      // Outfield: offensive and defensive ability
+      if (ratings.offensive_ability) {
+        ratingSum += ratings.offensive_ability;
+        ratingCount += 1;
+      }
+      if (ratings.defensive_ability) {
+        ratingSum += ratings.defensive_ability;
+        ratingCount += 1;
+      }
     }
     
-    const overallScore = ratingSum / ratingCount;
+    const overallScore = ratingCount > 0 ? ratingSum / ratingCount : 3; // Default to 3 if no ratings
     const trustWeightedScore = overallScore * trustScore;
 
-    // Insert evaluation with position-specific data
+    // Insert evaluation with simplified position-specific data
     const evaluationData: any = {
       guild_id,
       evaluator_discord_id,
@@ -232,17 +223,10 @@ serve(async (req) => {
       draft_id,
       club_match_id,
       position_played,
-      // Position-specific skills
-      technical_skill: positionCategory === "GK" ? ratings.technical_skill : null,
-      passing_skill: ratings.passing_skill || null,
-      goal_scoring: ratings.goal_scoring || null,
-      defensive_skill: ratings.defensive_skill || null,
-      // Universal ratings
-      game_iq: ratings.game_iq,
-      work_ethic: ratings.work_ethic,
-      communication: ratings.communication,
-      consistency: ratings.consistency,
-      clutch_factor: ratings.clutch_factor,
+      // Store ratings in existing columns - map new fields to old columns
+      technical_skill: positionCategory === "GK" ? ratings.performance : null,
+      goal_scoring: ratings.offensive_ability || null,
+      defensive_skill: ratings.defensive_ability || null,
       overall_score: overallScore,
       trust_weighted_score: trustWeightedScore,
     };
