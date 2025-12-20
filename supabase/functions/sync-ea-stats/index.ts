@@ -203,13 +203,23 @@ type AggregatedPlayerStats = {
   rating_sum: number
   shots: number
   tackles: number
+  tackle_attempts: number
   passes_made: number
   pass_attempts: number
   saves: number
+  saves_diving: number
+  saves_reflex: number
+  saves_parry: number
+  saves_cross: number
+  saves_punch: number
+  goals_conceded: number
   interceptions: number
   clearances: number
   dribbles: number
   dribble_attempts: number
+  fouls: number
+  offsides: number
+  seconds_played: number
   position_counts: Record<string, number>
 }
 
@@ -261,13 +271,23 @@ function addOrUpdateAggregate(
     rating_sum: 0,
     shots: 0,
     tackles: 0,
+    tackle_attempts: 0,
     passes_made: 0,
     pass_attempts: 0,
     saves: 0,
+    saves_diving: 0,
+    saves_reflex: 0,
+    saves_parry: 0,
+    saves_cross: 0,
+    saves_punch: 0,
+    goals_conceded: 0,
     interceptions: 0,
     clearances: 0,
     dribbles: 0,
     dribble_attempts: 0,
+    fouls: 0,
+    offsides: 0,
+    seconds_played: 0,
     position_counts: {},
   }
 
@@ -524,12 +544,22 @@ async function persistAggregatedStats(
       avg_match_rating: avgRating,
       shots: aggregate.shots,
       tackles: aggregate.tackles,
+      tackle_attempts: aggregate.tackle_attempts,
       passes_made: aggregate.passes_made,
       pass_attempts: aggregate.pass_attempts,
       saves: aggregate.saves,
+      saves_diving: aggregate.saves_diving,
+      saves_reflex: aggregate.saves_reflex,
+      saves_parry: aggregate.saves_parry,
+      saves_cross: aggregate.saves_cross,
+      saves_punch: aggregate.saves_punch,
+      goals_conceded: aggregate.goals_conceded,
       interceptions: aggregate.interceptions,
       clearances: aggregate.clearances,
+      dribbles: aggregate.dribbles,
       dribble_attempts: aggregate.dribble_attempts,
+      fouls: aggregate.fouls,
+      offsides: aggregate.offsides,
       last_game_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
@@ -586,12 +616,23 @@ async function persistAggregatedStats(
       man_of_match: aggregate.man_of_match,
       shots: aggregate.shots,
       tackles: aggregate.tackles,
+      tackle_attempts: aggregate.tackle_attempts,
       passes_made: aggregate.passes_made,
       pass_attempts: aggregate.pass_attempts,
       saves: aggregate.saves,
+      saves_diving: aggregate.saves_diving,
+      saves_reflex: aggregate.saves_reflex,
+      saves_parry: aggregate.saves_parry,
+      saves_cross: aggregate.saves_cross,
+      saves_punch: aggregate.saves_punch,
+      goals_conceded: aggregate.goals_conceded,
       dribbles: aggregate.dribbles,
       dribble_attempts: aggregate.dribble_attempts,
+      fouls: aggregate.fouls,
+      offsides: aggregate.offsides,
+      seconds_played: aggregate.seconds_played,
       interceptions: aggregate.interceptions,
+      clearances: aggregate.clearances,
       primary_position: primaryPosition,
       last_active_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
@@ -708,6 +749,337 @@ async function updatePlayerFormFromRecentMatches(
       form_rating: formRating,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'guild_id,discord_user_id' })
+}
+
+// Sync tracked game stats from player_stats into player_club_stats per club
+async function syncTrackedGameStatsToClubStats(
+  supabase: any,
+  guildId: string,
+  clubKey: string
+) {
+  try {
+    // Get all tracked games for this club
+    const { data: clubMatches } = await supabase
+      .from('club_matches')
+      .select('ea_match_id')
+      .eq('guild_id', guildId)
+      .eq('club_key', clubKey);
+    
+    if (!clubMatches || clubMatches.length === 0) return 0;
+    
+    const clubMatchIds = clubMatches.map((m: any) => m.ea_match_id);
+    
+    // Get all player_stats for these matches
+    const { data: playerStats, error: statsError } = await supabase
+      .from('player_stats')
+      .select(`
+        discord_user_id,
+        goals,
+        assists,
+        second_assists,
+        won,
+        ea_match_rating,
+        clean_sheet,
+        man_of_match,
+        shots,
+        tackles,
+        tackle_attempts,
+        passes_made,
+        pass_attempts,
+        saves_diving,
+        saves_reflex,
+        saves_parry,
+        saves_cross,
+        saves_punch,
+        goals_conceded,
+        interceptions,
+        clearances,
+        dribbles,
+        dribble_attempts,
+        fouls,
+        offsides,
+        seconds_played,
+        position_played,
+        archetypeid,
+        ea_match_id
+      `)
+      .eq('guild_id', guildId)
+      .in('ea_match_id', clubMatchIds);
+    
+    if (statsError) {
+      console.error(`[sync-ea-stats] Error fetching player_stats for club ${clubKey}:`, statsError);
+      return 0;
+    }
+    
+    if (!playerStats || playerStats.length === 0) return 0;
+    
+    // Aggregate stats per player
+    const playerAggregates = new Map<string, any>();
+    
+    for (const stat of playerStats) {
+      const existing = playerAggregates.get(stat.discord_user_id) || {
+        discord_user_id: stat.discord_user_id,
+        games_played: 0,
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        goals: 0,
+        assists: 0,
+        second_assists: 0,
+        clean_sheets: 0,
+        man_of_match: 0,
+        shots: 0,
+        tackles: 0,
+        tackle_attempts: 0,
+        passes_made: 0,
+        pass_attempts: 0,
+        saves: 0,
+        saves_diving: 0,
+        saves_reflex: 0,
+        saves_parry: 0,
+        saves_cross: 0,
+        saves_punch: 0,
+        goals_conceded: 0,
+        interceptions: 0,
+        clearances: 0,
+        dribbles: 0,
+        dribble_attempts: 0,
+        fouls: 0,
+        offsides: 0,
+        seconds_played: 0,
+        rating_sum: 0,
+        position_counts: {} as Record<string, number>,
+        archetypeid: null,
+      };
+      
+      existing.games_played += 1;
+      existing.goals += stat.goals || 0;
+      existing.assists += stat.assists || 0;
+      existing.second_assists += stat.second_assists || 0;
+      existing.clean_sheets += stat.clean_sheet ? 1 : 0;
+      existing.man_of_match += stat.man_of_match ? 1 : 0;
+      existing.shots += stat.shots || 0;
+      existing.tackles += stat.tackles || 0;
+      existing.tackle_attempts += stat.tackle_attempts || 0;
+      existing.passes_made += stat.passes_made || 0;
+      existing.pass_attempts += stat.pass_attempts || 0;
+      existing.saves += (stat.saves_diving || 0) + (stat.saves_reflex || 0) + (stat.saves_parry || 0) + (stat.saves_cross || 0) + (stat.saves_punch || 0);
+      existing.saves_diving += stat.saves_diving || 0;
+      existing.saves_reflex += stat.saves_reflex || 0;
+      existing.saves_parry += stat.saves_parry || 0;
+      existing.saves_cross += stat.saves_cross || 0;
+      existing.saves_punch += stat.saves_punch || 0;
+      existing.goals_conceded += stat.goals_conceded || 0;
+      existing.interceptions += stat.interceptions || 0;
+      existing.clearances += stat.clearances || 0;
+      existing.dribbles += stat.dribbles || 0;
+      existing.dribble_attempts += stat.dribble_attempts || 0;
+      existing.fouls += stat.fouls || 0;
+      existing.offsides += stat.offsides || 0;
+      existing.seconds_played += stat.seconds_played || 0;
+      existing.rating_sum += stat.ea_match_rating || 0;
+      existing.archetypeid = existing.archetypeid || stat.archetypeid;
+      
+      if (stat.won === true) existing.wins += 1;
+      else if (stat.won === false) existing.losses += 1;
+      else existing.draws += 1;
+      
+      if (stat.position_played) {
+        existing.position_counts[stat.position_played] = (existing.position_counts[stat.position_played] || 0) + 1;
+      }
+      
+      playerAggregates.set(stat.discord_user_id, existing);
+    }
+    
+    // Update player_club_stats with aggregated tracked game stats
+    let updated = 0;
+    for (const [discordUserId, agg] of playerAggregates) {
+      const avgRating = agg.games_played > 0 ? agg.rating_sum / agg.games_played : 0;
+      const winRate = agg.games_played > 0 ? (agg.wins / agg.games_played) * 100 : 0;
+      const primaryPosition = getPrimaryPosition(agg.position_counts);
+      
+      // Check if player already has a record in player_club_stats
+      const { data: existingRecord } = await supabase
+        .from('player_club_stats')
+        .select('id, games_played, goals, assists, saves, clean_sheets')
+        .eq('guild_id', guildId)
+        .eq('club_key', clubKey)
+        .eq('discord_user_id', discordUserId)
+        .maybeSingle();
+      
+      const clubStatsData = {
+        guild_id: guildId,
+        club_key: clubKey,
+        discord_user_id: discordUserId,
+        games_played: agg.games_played,
+        wins: agg.wins,
+        losses: agg.losses,
+        draws: agg.draws,
+        goals: agg.goals,
+        assists: agg.assists,
+        second_assists: agg.second_assists,
+        clean_sheets: agg.clean_sheets,
+        man_of_match: agg.man_of_match,
+        avg_match_rating: avgRating,
+        win_rate: winRate,
+        shots: agg.shots,
+        tackles: agg.tackles,
+        tackle_attempts: agg.tackle_attempts,
+        passes_made: agg.passes_made,
+        pass_attempts: agg.pass_attempts,
+        saves: agg.saves,
+        saves_diving: agg.saves_diving,
+        saves_reflex: agg.saves_reflex,
+        saves_parry: agg.saves_parry,
+        saves_cross: agg.saves_cross,
+        saves_punch: agg.saves_punch,
+        goals_conceded: agg.goals_conceded,
+        interceptions: agg.interceptions,
+        clearances: agg.clearances,
+        dribbles: agg.dribbles,
+        dribble_attempts: agg.dribble_attempts,
+        fouls: agg.fouls,
+        offsides: agg.offsides,
+        seconds_played: agg.seconds_played,
+        primary_position: primaryPosition,
+        archetypeid: agg.archetypeid,
+        updated_at: new Date().toISOString(),
+      };
+      
+      if (existingRecord) {
+        // Update existing record - merge with EA member stats if they exist
+        const { error: updateError } = await supabase
+          .from('player_club_stats')
+          .update(clubStatsData)
+          .eq('id', existingRecord.id);
+        
+        if (!updateError) updated++;
+      } else {
+        // Insert new record
+        const { error: insertError } = await supabase
+          .from('player_club_stats')
+          .insert(clubStatsData);
+        
+        if (!insertError) updated++;
+      }
+    }
+    
+    console.log(`[sync-ea-stats] Updated ${updated} player_club_stats records for club ${clubKey} from tracked games`);
+    return updated;
+  } catch (err) {
+    console.error(`[sync-ea-stats] Error syncing tracked game stats to club stats:`, err);
+    return 0;
+  }
+}
+
+// Enrich player_summary with save breakdowns from tracked games
+// This is needed because EA member board only provides total saves, not breakdowns
+async function enrichPlayerSummaryWithTrackedStats(
+  supabase: any,
+  guildId: string,
+  playerIds: string[]
+) {
+  if (playerIds.length === 0) return 0;
+  
+  try {
+    // Get all tracked game stats for these players
+    const { data: playerStats, error: statsError } = await supabase
+      .from('player_stats')
+      .select(`
+        discord_user_id,
+        clean_sheet,
+        saves_diving,
+        saves_reflex,
+        saves_parry,
+        saves_cross,
+        saves_punch,
+        goals_conceded,
+        tackles,
+        tackle_attempts,
+        clearances,
+        interceptions,
+        fouls,
+        offsides,
+        seconds_played
+      `)
+      .eq('guild_id', guildId)
+      .in('discord_user_id', playerIds);
+    
+    if (statsError || !playerStats || playerStats.length === 0) return 0;
+    
+    // Aggregate stats per player
+    const playerAggregates = new Map<string, any>();
+    
+    for (const stat of playerStats) {
+      const existing = playerAggregates.get(stat.discord_user_id) || {
+        clean_sheets: 0,
+        saves: 0,
+        saves_diving: 0,
+        saves_reflex: 0,
+        saves_parry: 0,
+        saves_cross: 0,
+        saves_punch: 0,
+        goals_conceded: 0,
+        tackles: 0,
+        tackle_attempts: 0,
+        clearances: 0,
+        interceptions: 0,
+        fouls: 0,
+        offsides: 0,
+        seconds_played: 0,
+      };
+      
+      existing.clean_sheets += stat.clean_sheet ? 1 : 0;
+      existing.saves_diving += stat.saves_diving || 0;
+      existing.saves_reflex += stat.saves_reflex || 0;
+      existing.saves_parry += stat.saves_parry || 0;
+      existing.saves_cross += stat.saves_cross || 0;
+      existing.saves_punch += stat.saves_punch || 0;
+      existing.saves += (stat.saves_diving || 0) + (stat.saves_reflex || 0) + 
+                        (stat.saves_parry || 0) + (stat.saves_cross || 0) + (stat.saves_punch || 0);
+      existing.goals_conceded += stat.goals_conceded || 0;
+      existing.tackles += stat.tackles || 0;
+      existing.tackle_attempts += stat.tackle_attempts || 0;
+      existing.clearances += stat.clearances || 0;
+      existing.interceptions += stat.interceptions || 0;
+      existing.fouls += stat.fouls || 0;
+      existing.offsides += stat.offsides || 0;
+      existing.seconds_played += stat.seconds_played || 0;
+      
+      playerAggregates.set(stat.discord_user_id, existing);
+    }
+    
+    // Update player_summary with the aggregated tracked game stats
+    let updated = 0;
+    for (const [discordUserId, agg] of playerAggregates) {
+      // Only update save breakdowns if player has any saves (likely a GK)
+      if (agg.saves > 0) {
+        const { error: updateError } = await supabase
+          .from('player_summary')
+          .update({
+            saves: agg.saves,
+            saves_diving: agg.saves_diving,
+            saves_reflex: agg.saves_reflex,
+            saves_parry: agg.saves_parry,
+            saves_cross: agg.saves_cross,
+            saves_punch: agg.saves_punch,
+            goals_conceded: agg.goals_conceded,
+            clean_sheets: agg.clean_sheets,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('guild_id', guildId)
+          .eq('discord_user_id', discordUserId);
+        
+        if (!updateError) updated++;
+      }
+    }
+    
+    console.log(`[sync-ea-stats] Enriched ${updated} player_summary records with tracked game stats`);
+    return updated;
+  } catch (err) {
+    console.error(`[sync-ea-stats] Error enriching player_summary with tracked stats:`, err);
+    return 0;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -1294,6 +1666,9 @@ Deno.serve(async (req) => {
             }
           }
           
+          // Sync tracked game stats back to player_club_stats for this club
+          await syncTrackedGameStatsToClubStats(supabase, guildId, club.key)
+          
           guildsProcessed++
         } catch (clubErr) {
           console.error(`[sync-ea-stats] Error syncing club ${club.name}:`, clubErr)
@@ -1309,6 +1684,12 @@ Deno.serve(async (req) => {
       const formUpdateIds = Array.from(guildUpdatedPlayerIds)
       for (const playerId of formUpdateIds) {
         await updatePlayerFormFromRecentMatches(supabase, guildId, playerId)
+      }
+
+      // Enrich player_summary with save breakdowns from tracked games
+      // (EA member board only provides total saves, not breakdowns)
+      if (guildUpdatedPlayerIds.size > 0) {
+        await enrichPlayerSummaryWithTrackedStats(supabase, guildId, Array.from(guildUpdatedPlayerIds))
       }
 
       // Recalculate ratings for players touched within this guild using the aggregated totals
