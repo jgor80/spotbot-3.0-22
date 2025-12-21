@@ -2343,13 +2343,20 @@ if (args.includes('--backfill-scouting')) {
     console.log('✅ Match backfill complete, exiting.');
     process.exit(0);
   });
+} else if (args.includes('--auto-link')) {
+  console.log('🔗 Running EA to Discord auto-link...');
+  retroMatchUnlinkedProfiles().then((result) => {
+    console.log(`✅ Auto-link complete: matched ${result?.matched || 0}/${result?.total || 0} profiles, exiting.`);
+    process.exit(0);
+  });
 } else {
   // Run immediately then every 15 minutes
   console.log('🚀 EA Sync Local started');
   console.log('📡 Running from your local IP to bypass EA cloud blocking');
   console.log('⏱️  Syncing every 15 minutes (active 8 AM - 2 AM CT)');
   console.log('💡 Run with --backfill-scouting to backfill opponent intel');
-  console.log('💡 Run with --backfill-matches to backfill last 10 games per club\n');
+  console.log('💡 Run with --backfill-matches to backfill last 10 games per club');
+  console.log('💡 Run with --auto-link to manually link EA accounts to Discord\n');
   
   scheduledSync();
   setInterval(scheduledSync, 900000); // 15 minutes = 900,000ms
