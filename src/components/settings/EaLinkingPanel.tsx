@@ -14,7 +14,8 @@ import {
   Search,
   AlertTriangle,
   CheckCircle2,
-  User
+  User,
+  Wand2
 } from "lucide-react";
 import {
   Table,
@@ -44,6 +45,21 @@ interface DiscordMember {
   discord_user_id: string;
   discord_username: string | null;
   ea_username: string | null;
+}
+
+interface AutoLinkResult {
+  success: boolean;
+  message: string;
+  linked: number;
+  skipped: number;
+  noMatch: number;
+  details: Array<{
+    ea_username: string;
+    discord_username?: string;
+    similarity?: number;
+    status: string;
+    reason?: string;
+  }>;
 }
 
 export function EaLinkingPanel() {
@@ -131,6 +147,37 @@ export function EaLinkingPanel() {
       });
     },
   });
+
+  // Auto-link mutation
+  const autoLinkMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedGuildId) throw new Error("No guild selected");
+      
+      const { data, error } = await supabase.functions.invoke("auto-link-ea", {
+        body: { guild_id: selectedGuildId },
+      });
+      
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error);
+      return data as AutoLinkResult;
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Auto-Link Complete",
+        description: `Linked: ${data.linked}, Skipped: ${data.skipped}, No match: ${data.noMatch}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["unlinkedProfiles"] });
+      queryClient.invalidateQueries({ queryKey: ["availableMembers"] });
+      queryClient.invalidateQueries({ queryKey: ["leaderboard"] });
+    },
+    onError: (error) => {
+      toast({
+        title: "Auto-Link Failed",
+        description: (error as Error).message,
+        variant: "destructive",
+      });
+    },
+  });
   
   const filteredProfiles = unlinkedProfiles?.filter(p => 
     p.ea_username?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -160,13 +207,31 @@ export function EaLinkingPanel() {
     <>
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-500" />
-            Unlinked EA Accounts
-          </CardTitle>
-          <CardDescription>
-            These EA accounts have been detected but not linked to a Discord user. Link them to combine stats.
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-amber-500" />
+                Unlinked EA Accounts
+              </CardTitle>
+              <CardDescription>
+                These EA accounts have been detected but not linked to a Discord user. Link them to combine stats.
+              </CardDescription>
+            </div>
+            {unlinkedProfiles && unlinkedProfiles.length > 0 && (
+              <Button
+                onClick={() => autoLinkMutation.mutate()}
+                disabled={autoLinkMutation.isPending}
+                variant="secondary"
+              >
+                {autoLinkMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Wand2 className="h-4 w-4 mr-2" />
+                )}
+                Auto-Link
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2">
