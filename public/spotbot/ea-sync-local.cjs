@@ -77,19 +77,25 @@ async function fuzzyMatchEaToDiscord(supabase, guildId, eaUsername) {
   return null;
 }
 
+// Thresholds for tiered linking
+const AUTO_LINK_THRESHOLD = 0.75;  // ≥75% = auto-link immediately
+const SUGGEST_THRESHOLD = 0.50;    // 50-74% = save as suggestion for review
+// <50% = ignore
+
 // Retroactively match existing unlinked ea_ profiles to Discord members
+// Now with tiered thresholds and suggestion persistence
 async function retroMatchUnlinkedProfiles(guildId) {
   console.log(`\n🔄 Checking for unlinked EA profiles to auto-match...`);
   
   // Get all temp ea_ profiles for this guild
   const { data: tempProfiles } = await supabase
     .from('profiles')
-    .select('discord_user_id, ea_username, ea_platform')
+    .select('id, discord_user_id, ea_username, ea_platform')
     .like('discord_user_id', 'ea_%');
   
   if (!tempProfiles || tempProfiles.length === 0) {
     console.log(`  ✅ No unlinked EA profiles found`);
-    return { matched: 0, total: 0 };
+    return { matched: 0, suggested: 0, total: 0 };
   }
   
   console.log(`  📋 Found ${tempProfiles.length} unlinked EA profiles`);
@@ -105,10 +111,22 @@ async function retroMatchUnlinkedProfiles(guildId) {
   
   if (unlinkedMembers.length === 0) {
     console.log(`  ⚠️ No Discord members available for linking (all already linked)`);
-    return { matched: 0, total: tempProfiles.length };
+    return { matched: 0, suggested: 0, total: tempProfiles.length };
   }
+
+  // Get previously rejected suggestions to skip
+  const { data: rejectedSuggestions } = await supabase
+    .from('link_suggestions')
+    .select('ea_username, suggested_discord_id')
+    .eq('guild_id', guildId)
+    .eq('status', 'rejected');
+
+  const rejectedCombos = new Set(
+    (rejectedSuggestions || []).map(s => `${s.ea_username}:${s.suggested_discord_id}`)
+  );
   
   let matchedCount = 0;
+  let suggestedCount = 0;
   
   for (const tempProfile of tempProfiles) {
     const eaUsername = tempProfile.ea_username;
@@ -120,13 +138,19 @@ async function retroMatchUnlinkedProfiles(guildId) {
     
     const normalizedEa = normalizeUsername(eaUsername);
     
+    // Find best match
+    let matchedMember = null;
+    let bestSimilarity = 0;
+    let isExactMatch = false;
+    
     // Try exact normalized match first
-    let matchedMember = unlinkedMembers.find(
+    matchedMember = unlinkedMembers.find(
       m => m.discord_username && normalizeUsername(m.discord_username) === normalizedEa
     );
     
     if (matchedMember) {
-      console.log(`  🎯 Retro exact match: ${eaUsername} -> ${matchedMember.discord_username}`);
+      bestSimilarity = 1.0;
+      isExactMatch = true;
     } else {
       // Try fuzzy match on both raw and normalized
       const rawMatch = stringSimilarity.findBestMatch(
@@ -140,123 +164,163 @@ async function retroMatchUnlinkedProfiles(guildId) {
       
       // Use whichever match is better
       const bestMatch = rawMatch.bestMatch.rating >= normalizedMatch.bestMatch.rating ? rawMatch : normalizedMatch;
+      bestSimilarity = bestMatch.bestMatch.rating;
       
-      // Accept matches with > 35% similarity for retro-matching (more lenient)
-      if (bestMatch.bestMatch.rating >= 0.35) {
+      if (bestSimilarity >= SUGGEST_THRESHOLD) {
         matchedMember = unlinkedMembers.find(
           m => m.discord_username?.toLowerCase() === bestMatch.bestMatch.target || 
                normalizeUsername(m.discord_username) === bestMatch.bestMatch.target
         );
-        
-        if (matchedMember) {
-          console.log(`  🔗 Retro-linking: ${eaUsername} -> ${matchedMember.discord_username} (${(bestMatch.bestMatch.rating * 100).toFixed(0)}%)`);
-        }
       }
     }
     
-    // Only proceed if we found a match
-    if (!matchedMember) continue;
+    // Skip if no match or below suggestion threshold
+    if (!matchedMember || bestSimilarity < SUGGEST_THRESHOLD) continue;
+    
+    // Skip if this combo was previously rejected
+    if (rejectedCombos.has(`${eaUsername}:${matchedMember.discord_user_id}`)) {
+      console.log(`  ⏭️ Skipping rejected: ${eaUsername} -> ${matchedMember.discord_username}`);
+      continue;
+    }
     
     const tempDiscordId = tempProfile.discord_user_id;
     const realDiscordId = matchedMember.discord_user_id;
+    
+    // HIGH CONFIDENCE (≥75% or exact): Auto-link immediately
+    if (bestSimilarity >= AUTO_LINK_THRESHOLD || isExactMatch) {
+      console.log(`  🎯 Auto-linking: ${eaUsername} -> ${matchedMember.discord_username} (${(bestSimilarity * 100).toFixed(0)}%)`);
       
-    // Update the real Discord profile with EA info
-    await supabase
-      .from('profiles')
-      .update({ 
-        ea_username: eaUsername, 
-        ea_platform: tempProfile.ea_platform 
-      })
-      .eq('discord_user_id', realDiscordId);
-    
-    // Migrate player_stats
-    await supabase
-      .from('player_stats')
-      .update({ discord_user_id: realDiscordId })
-      .eq('discord_user_id', tempDiscordId);
-    
-    // Migrate player_ratings
-    const { data: tempRating } = await supabase
-      .from('player_ratings')
-      .select('id')
-      .eq('discord_user_id', tempDiscordId)
-      .maybeSingle();
-    
-    if (tempRating) {
-      const { data: existingRating } = await supabase
+      // Update the real Discord profile with EA info
+      await supabase
+        .from('profiles')
+        .update({ 
+          ea_username: eaUsername, 
+          ea_platform: tempProfile.ea_platform 
+        })
+        .eq('discord_user_id', realDiscordId);
+      
+      // Migrate player_stats
+      await supabase
+        .from('player_stats')
+        .update({ discord_user_id: realDiscordId })
+        .eq('discord_user_id', tempDiscordId);
+      
+      // Migrate player_ratings
+      const { data: tempRating } = await supabase
         .from('player_ratings')
         .select('id')
-        .eq('discord_user_id', realDiscordId)
+        .eq('discord_user_id', tempDiscordId)
         .maybeSingle();
       
-      if (!existingRating) {
-        await supabase
+      if (tempRating) {
+        const { data: existingRating } = await supabase
           .from('player_ratings')
-          .update({ discord_user_id: realDiscordId })
-          .eq('id', tempRating.id);
-      } else {
-        await supabase
-          .from('player_ratings')
-          .delete()
-          .eq('id', tempRating.id);
+          .select('id')
+          .eq('discord_user_id', realDiscordId)
+          .maybeSingle();
+        
+        if (!existingRating) {
+          await supabase
+            .from('player_ratings')
+            .update({ discord_user_id: realDiscordId })
+            .eq('id', tempRating.id);
+        } else {
+          await supabase
+            .from('player_ratings')
+            .delete()
+            .eq('id', tempRating.id);
+        }
       }
-    }
-    
-    // Migrate player_summary
-    const { data: tempSummary } = await supabase
-      .from('player_summary')
-      .select('id')
-      .eq('discord_user_id', tempDiscordId)
-      .maybeSingle();
-    
-    if (tempSummary) {
-      const { data: existingSummary } = await supabase
+      
+      // Migrate player_summary
+      const { data: tempSummary } = await supabase
         .from('player_summary')
         .select('id')
-        .eq('discord_user_id', realDiscordId)
+        .eq('discord_user_id', tempDiscordId)
         .maybeSingle();
       
-      if (!existingSummary) {
-        await supabase
+      if (tempSummary) {
+        const { data: existingSummary } = await supabase
           .from('player_summary')
-          .update({ discord_user_id: realDiscordId })
-          .eq('id', tempSummary.id);
+          .select('id')
+          .eq('discord_user_id', realDiscordId)
+          .maybeSingle();
+        
+        if (!existingSummary) {
+          await supabase
+            .from('player_summary')
+            .update({ discord_user_id: realDiscordId })
+            .eq('id', tempSummary.id);
+        } else {
+          await supabase
+            .from('player_summary')
+            .delete()
+            .eq('id', tempSummary.id);
+        }
+      }
+      
+      // Migrate position_preferences
+      await supabase
+        .from('position_preferences')
+        .update({ user_id: realDiscordId })
+        .eq('user_id', tempDiscordId);
+      
+      // Migrate player_club_stats
+      await supabase
+        .from('player_club_stats')
+        .update({ discord_user_id: realDiscordId })
+        .eq('discord_user_id', tempDiscordId);
+      
+      // Delete temp profile
+      await supabase
+        .from('profiles')
+        .delete()
+        .eq('discord_user_id', tempDiscordId);
+      
+      console.log(`  ✅ Migrated all data from ${tempDiscordId} to ${realDiscordId}`);
+      matchedCount++;
+      
+      // Remove from unlinked list so we don't double-match
+      const idx = unlinkedMembers.findIndex(m => m.discord_user_id === realDiscordId);
+      if (idx !== -1) unlinkedMembers.splice(idx, 1);
+    }
+    // MEDIUM CONFIDENCE (50-74%): Save as suggestion for admin review
+    else {
+      console.log(`  💡 Suggesting: ${eaUsername} -> ${matchedMember.discord_username} (${(bestSimilarity * 100).toFixed(0)}%)`);
+      
+      // Check if suggestion already exists
+      const { data: existingSuggestion } = await supabase
+        .from('link_suggestions')
+        .select('id, status')
+        .eq('guild_id', guildId)
+        .eq('ea_username', eaUsername)
+        .eq('suggested_discord_id', realDiscordId)
+        .maybeSingle();
+      
+      if (!existingSuggestion) {
+        // Create new suggestion
+        await supabase
+          .from('link_suggestions')
+          .insert({
+            guild_id: guildId,
+            temp_profile_id: tempProfile.id,
+            ea_username: eaUsername,
+            suggested_discord_id: realDiscordId,
+            suggested_discord_name: matchedMember.discord_username,
+            similarity_score: bestSimilarity,
+            status: 'pending'
+          });
+        
+        suggestedCount++;
+        console.log(`  📝 Saved suggestion for review`);
       } else {
-        await supabase
-          .from('player_summary')
-          .delete()
-          .eq('id', tempSummary.id);
+        console.log(`  ℹ️ Suggestion already exists (${existingSuggestion.status})`);
       }
     }
-    
-    // Migrate position_preferences
-    await supabase
-      .from('position_preferences')
-      .update({ user_id: realDiscordId })
-      .eq('user_id', tempDiscordId);
-    
-    // Migrate player_club_stats
-    await supabase
-      .from('player_club_stats')
-      .update({ discord_user_id: realDiscordId })
-      .eq('discord_user_id', tempDiscordId);
-    
-    // Delete temp profile
-    await supabase
-      .from('profiles')
-      .delete()
-      .eq('discord_user_id', tempDiscordId);
-    
-    console.log(`  ✅ Migrated all data from ${tempDiscordId} to ${realDiscordId}`);
-    matchedCount++;
-    
-    // Remove from unlinked list so we don't double-match
-    const idx = unlinkedMembers.findIndex(m => m.discord_user_id === realDiscordId);
-    if (idx !== -1) unlinkedMembers.splice(idx, 1);
   }
   
-  console.log(`  📊 Retro-matched ${matchedCount}/${tempProfiles.length} profiles`);
-  return { matched: matchedCount, total: tempProfiles.length };
+  console.log(`  📊 Results: ${matchedCount} auto-linked, ${suggestedCount} suggested for review (of ${tempProfiles.length} profiles)`);
+  return { matched: matchedCount, suggested: suggestedCount, total: tempProfiles.length };
 }
 
 // Load environment variables
