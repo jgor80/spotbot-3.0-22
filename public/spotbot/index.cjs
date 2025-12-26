@@ -6854,8 +6854,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.followUp({ content: `❌ Failed to link: ${upsertError.message}`, flags: 64 });
         }
         
-        // Migrate data from temp profile
-        const tempDiscordId = `ea_${suggestion.ea_username.toLowerCase()}`;
+        // Get temp profile ID - either stored in suggestion or construct it
+        // The temp_profile_id now stores the actual discord_user_id of the temp profile
+        let tempDiscordId = suggestion.temp_profile_id;
+        
+        // If temp_profile_id looks like a UUID (old format), try to find the actual temp profile
+        if (tempDiscordId && !tempDiscordId.startsWith('ea_')) {
+          // Old format - construct from EA username
+          tempDiscordId = `ea_${suggestion.ea_username.replace(/[\s\-]/g, '_')}`;
+        }
         
         // Migrate player_stats
         await supabase
@@ -6864,18 +6871,76 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .eq('discord_user_id', tempDiscordId)
           .eq('guild_id', guildId);
         
-        // Migrate player_ratings
+        // Migrate player_club_stats
         await supabase
-          .from('player_ratings')
+          .from('player_club_stats')
           .update({ discord_user_id: suggestion.suggested_discord_id })
           .eq('discord_user_id', tempDiscordId)
           .eq('guild_id', guildId);
         
-        // Migrate player_summary
-        await supabase
-          .from('player_summary')
-          .update({ discord_user_id: suggestion.suggested_discord_id })
+        // Migrate player_ratings (check for duplicates)
+        const { data: tempRating } = await supabase
+          .from('player_ratings')
+          .select('id')
           .eq('discord_user_id', tempDiscordId)
+          .eq('guild_id', guildId)
+          .maybeSingle();
+        
+        if (tempRating) {
+          const { data: existingRating } = await supabase
+            .from('player_ratings')
+            .select('id')
+            .eq('discord_user_id', suggestion.suggested_discord_id)
+            .eq('guild_id', guildId)
+            .maybeSingle();
+          
+          if (!existingRating) {
+            await supabase
+              .from('player_ratings')
+              .update({ discord_user_id: suggestion.suggested_discord_id })
+              .eq('id', tempRating.id);
+          } else {
+            await supabase
+              .from('player_ratings')
+              .delete()
+              .eq('id', tempRating.id);
+          }
+        }
+        
+        // Migrate player_summary (check for duplicates)
+        const { data: tempSummary } = await supabase
+          .from('player_summary')
+          .select('id')
+          .eq('discord_user_id', tempDiscordId)
+          .eq('guild_id', guildId)
+          .maybeSingle();
+        
+        if (tempSummary) {
+          const { data: existingSummary } = await supabase
+            .from('player_summary')
+            .select('id')
+            .eq('discord_user_id', suggestion.suggested_discord_id)
+            .eq('guild_id', guildId)
+            .maybeSingle();
+          
+          if (!existingSummary) {
+            await supabase
+              .from('player_summary')
+              .update({ discord_user_id: suggestion.suggested_discord_id })
+              .eq('id', tempSummary.id);
+          } else {
+            await supabase
+              .from('player_summary')
+              .delete()
+              .eq('id', tempSummary.id);
+          }
+        }
+        
+        // Migrate position_preferences
+        await supabase
+          .from('position_preferences')
+          .update({ user_id: suggestion.suggested_discord_id })
+          .eq('user_id', tempDiscordId)
           .eq('guild_id', guildId);
         
         // Delete temp profile
