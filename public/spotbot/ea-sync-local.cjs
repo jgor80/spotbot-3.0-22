@@ -82,12 +82,107 @@ const AUTO_LINK_THRESHOLD = 0.75;  // ≥75% = auto-link immediately
 const SUGGEST_THRESHOLD = 0.50;    // 50-74% = save as suggestion for review
 // <50% = ignore
 
+// Cleanup orphaned temp profiles where EA username is already linked to a real profile
+async function cleanupOrphanedProfiles(guildId) {
+  console.log(`\n🧹 Cleaning up orphaned temp profiles...`);
+  
+  // Get all temp ea_ profiles
+  const { data: tempProfiles } = await supabase
+    .from('profiles')
+    .select('id, discord_user_id, ea_username, ea_platform')
+    .like('discord_user_id', 'ea_%');
+  
+  if (!tempProfiles || tempProfiles.length === 0) {
+    console.log(`  ✅ No temp profiles found`);
+    return { cleaned: 0 };
+  }
+  
+  // Get all real Discord profiles with EA usernames
+  const { data: realProfiles } = await supabase
+    .from('profiles')
+    .select('discord_user_id, discord_username, ea_username')
+    .not('discord_user_id', 'like', 'ea_%')
+    .not('ea_username', 'is', null);
+  
+  // Create a map of EA username -> real Discord profile
+  const eaToRealMap = new Map();
+  for (const profile of (realProfiles || [])) {
+    if (profile.ea_username) {
+      eaToRealMap.set(profile.ea_username.toLowerCase(), profile);
+    }
+  }
+  
+  let cleanedCount = 0;
+  
+  for (const tempProfile of tempProfiles) {
+    const eaUsername = tempProfile.ea_username;
+    if (!eaUsername) continue;
+    
+    // Check if this EA username is already linked to a real profile
+    const realProfile = eaToRealMap.get(eaUsername.toLowerCase());
+    if (!realProfile) continue;
+    
+    const tempDiscordId = tempProfile.discord_user_id;
+    const realDiscordId = realProfile.discord_user_id;
+    
+    console.log(`  🔗 Found orphan: ${eaUsername} (temp: ${tempDiscordId} -> real: ${realDiscordId})`);
+    
+    // Migrate player_stats from temp to real
+    const { data: statsToMigrate } = await supabase
+      .from('player_stats')
+      .select('id')
+      .eq('discord_user_id', tempDiscordId);
+    
+    if (statsToMigrate && statsToMigrate.length > 0) {
+      await supabase
+        .from('player_stats')
+        .update({ discord_user_id: realDiscordId })
+        .eq('discord_user_id', tempDiscordId);
+      console.log(`    📊 Migrated ${statsToMigrate.length} player_stats records`);
+    }
+    
+    // Migrate player_club_stats
+    await supabase
+      .from('player_club_stats')
+      .update({ discord_user_id: realDiscordId })
+      .eq('discord_user_id', tempDiscordId);
+    
+    // Delete duplicate player_ratings (keep the real one)
+    await supabase
+      .from('player_ratings')
+      .delete()
+      .eq('discord_user_id', tempDiscordId);
+    
+    // Delete duplicate player_summary (keep the real one)
+    await supabase
+      .from('player_summary')
+      .delete()
+      .eq('discord_user_id', tempDiscordId);
+    
+    // Delete the orphaned temp profile
+    await supabase
+      .from('profiles')
+      .delete()
+      .eq('discord_user_id', tempDiscordId);
+    
+    console.log(`    ✅ Cleaned up orphan: ${eaUsername}`);
+    cleanedCount++;
+  }
+  
+  console.log(`  📊 Cleaned up ${cleanedCount} orphaned temp profiles`);
+  return { cleaned: cleanedCount };
+}
+
 // Retroactively match existing unlinked ea_ profiles to Discord members
 // Now with tiered thresholds and suggestion persistence
+// Matches against ALL Discord members (not just unlinked) to find potential links
 async function retroMatchUnlinkedProfiles(guildId) {
   console.log(`\n🔄 Checking for unlinked EA profiles to auto-match...`);
   
-  // Get all temp ea_ profiles for this guild
+  // First, cleanup orphaned profiles (where EA is already linked to real profile)
+  await cleanupOrphanedProfiles(guildId);
+  
+  // Get remaining temp ea_ profiles for this guild
   const { data: tempProfiles } = await supabase
     .from('profiles')
     .select('id, discord_user_id, ea_username, ea_platform')
@@ -100,19 +195,18 @@ async function retroMatchUnlinkedProfiles(guildId) {
   
   console.log(`  📋 Found ${tempProfiles.length} unlinked EA profiles`);
   
-  // Get all real Discord members (not temp ea_ profiles)
-  const { data: discordMembers } = await supabase
+  // Get ALL real Discord members (for suggestions we can suggest linking to members 
+  // who already have a different EA username - they might want to switch)
+  const { data: allDiscordMembers } = await supabase
     .from('profiles')
     .select('discord_user_id, discord_username, ea_username')
     .not('discord_user_id', 'like', 'ea_%');
   
-  // Filter to only members without EA link
-  const unlinkedMembers = (discordMembers || []).filter(m => !m.ea_username && m.discord_username);
+  // Separate linked and unlinked members
+  const unlinkedMembers = (allDiscordMembers || []).filter(m => !m.ea_username && m.discord_username);
+  const linkedMembers = (allDiscordMembers || []).filter(m => m.ea_username && m.discord_username);
   
-  if (unlinkedMembers.length === 0) {
-    console.log(`  ⚠️ No Discord members available for linking (all already linked)`);
-    return { matched: 0, suggested: 0, total: tempProfiles.length };
-  }
+  console.log(`  👥 Discord members: ${unlinkedMembers.length} unlinked, ${linkedMembers.length} linked`);
 
   // Get previously rejected suggestions to skip
   const { data: rejectedSuggestions } = await supabase
@@ -132,62 +226,100 @@ async function retroMatchUnlinkedProfiles(guildId) {
     const eaUsername = tempProfile.ea_username;
     if (!eaUsername) continue;
     
-    // Get Discord usernames for comparison
-    const usernames = unlinkedMembers.map(m => m.discord_username).filter(Boolean);
-    if (usernames.length === 0) continue;
-    
     const normalizedEa = normalizeUsername(eaUsername);
+    const tempDiscordId = tempProfile.discord_user_id;
     
-    // Find best match
+    // First try to match against unlinked members (for auto-link)
     let matchedMember = null;
     let bestSimilarity = 0;
     let isExactMatch = false;
     
-    // Try exact normalized match first
-    matchedMember = unlinkedMembers.find(
-      m => m.discord_username && normalizeUsername(m.discord_username) === normalizedEa
-    );
-    
-    if (matchedMember) {
-      bestSimilarity = 1.0;
-      isExactMatch = true;
-    } else {
-      // Try fuzzy match on both raw and normalized
-      const rawMatch = stringSimilarity.findBestMatch(
-        eaUsername.toLowerCase(), 
-        usernames.map(u => u.toLowerCase())
-      );
-      const normalizedMatch = stringSimilarity.findBestMatch(
-        normalizedEa, 
-        usernames.map(u => normalizeUsername(u))
+    if (unlinkedMembers.length > 0) {
+      const usernames = unlinkedMembers.map(m => m.discord_username).filter(Boolean);
+      
+      // Try exact normalized match first
+      matchedMember = unlinkedMembers.find(
+        m => m.discord_username && normalizeUsername(m.discord_username) === normalizedEa
       );
       
-      // Use whichever match is better
-      const bestMatch = rawMatch.bestMatch.rating >= normalizedMatch.bestMatch.rating ? rawMatch : normalizedMatch;
-      bestSimilarity = bestMatch.bestMatch.rating;
-      
-      if (bestSimilarity >= SUGGEST_THRESHOLD) {
-        matchedMember = unlinkedMembers.find(
-          m => m.discord_username?.toLowerCase() === bestMatch.bestMatch.target || 
-               normalizeUsername(m.discord_username) === bestMatch.bestMatch.target
+      if (matchedMember) {
+        bestSimilarity = 1.0;
+        isExactMatch = true;
+      } else if (usernames.length > 0) {
+        // Try fuzzy match on both raw and normalized
+        const rawMatch = stringSimilarity.findBestMatch(
+          eaUsername.toLowerCase(), 
+          usernames.map(u => u.toLowerCase())
         );
+        const normalizedMatch = stringSimilarity.findBestMatch(
+          normalizedEa, 
+          usernames.map(u => normalizeUsername(u))
+        );
+        
+        // Use whichever match is better
+        const bestMatch = rawMatch.bestMatch.rating >= normalizedMatch.bestMatch.rating ? rawMatch : normalizedMatch;
+        bestSimilarity = bestMatch.bestMatch.rating;
+        
+        if (bestSimilarity >= SUGGEST_THRESHOLD) {
+          matchedMember = unlinkedMembers.find(
+            m => m.discord_username?.toLowerCase() === bestMatch.bestMatch.target || 
+                 normalizeUsername(m.discord_username) === bestMatch.bestMatch.target
+          );
+        }
       }
     }
     
-    // Skip if no match or below suggestion threshold
+    // If no match found in unlinked, also check linked members for SUGGESTIONS only
+    // (they might want to switch their EA account)
+    if (!matchedMember && linkedMembers.length > 0) {
+      const linkedUsernames = linkedMembers.map(m => m.discord_username).filter(Boolean);
+      
+      // Try exact normalized match
+      let potentialMatch = linkedMembers.find(
+        m => m.discord_username && normalizeUsername(m.discord_username) === normalizedEa
+      );
+      
+      if (potentialMatch) {
+        // Don't auto-link, but save as high-confidence suggestion
+        bestSimilarity = 0.74; // Just below auto-link threshold
+        matchedMember = potentialMatch;
+      } else if (linkedUsernames.length > 0) {
+        const rawMatch = stringSimilarity.findBestMatch(
+          eaUsername.toLowerCase(), 
+          linkedUsernames.map(u => u.toLowerCase())
+        );
+        const normalizedMatch = stringSimilarity.findBestMatch(
+          normalizedEa, 
+          linkedUsernames.map(u => normalizeUsername(u))
+        );
+        
+        const bestMatch = rawMatch.bestMatch.rating >= normalizedMatch.bestMatch.rating ? rawMatch : normalizedMatch;
+        
+        if (bestMatch.bestMatch.rating >= SUGGEST_THRESHOLD) {
+          matchedMember = linkedMembers.find(
+            m => m.discord_username?.toLowerCase() === bestMatch.bestMatch.target || 
+                 normalizeUsername(m.discord_username) === bestMatch.bestMatch.target
+          );
+          // Cap at suggestion threshold for linked members (never auto-link)
+          bestSimilarity = Math.min(bestMatch.bestMatch.rating, 0.74);
+        }
+      }
+    }
+    
+    // Skip if no match found
     if (!matchedMember || bestSimilarity < SUGGEST_THRESHOLD) continue;
     
+    const realDiscordId = matchedMember.discord_user_id;
+    const isLinkedMember = !!matchedMember.ea_username;
+    
     // Skip if this combo was previously rejected
-    if (rejectedCombos.has(`${eaUsername}:${matchedMember.discord_user_id}`)) {
+    if (rejectedCombos.has(`${eaUsername}:${realDiscordId}`)) {
       console.log(`  ⏭️ Skipping rejected: ${eaUsername} -> ${matchedMember.discord_username}`);
       continue;
     }
     
-    const tempDiscordId = tempProfile.discord_user_id;
-    const realDiscordId = matchedMember.discord_user_id;
-    
-    // HIGH CONFIDENCE (≥75% or exact): Auto-link immediately
-    if (bestSimilarity >= AUTO_LINK_THRESHOLD || isExactMatch) {
+    // HIGH CONFIDENCE (≥75% or exact) AND unlinked member: Auto-link immediately
+    if ((bestSimilarity >= AUTO_LINK_THRESHOLD || isExactMatch) && !isLinkedMember) {
       console.log(`  🎯 Auto-linking: ${eaUsername} -> ${matchedMember.discord_username} (${(bestSimilarity * 100).toFixed(0)}%)`);
       
       // Update the real Discord profile with EA info
@@ -284,9 +416,10 @@ async function retroMatchUnlinkedProfiles(guildId) {
       const idx = unlinkedMembers.findIndex(m => m.discord_user_id === realDiscordId);
       if (idx !== -1) unlinkedMembers.splice(idx, 1);
     }
-    // MEDIUM CONFIDENCE (50-74%): Save as suggestion for admin review
+    // MEDIUM CONFIDENCE (50-74%) OR linked member: Save as suggestion for admin review
     else {
-      console.log(`  💡 Suggesting: ${eaUsername} -> ${matchedMember.discord_username} (${(bestSimilarity * 100).toFixed(0)}%)`);
+      const note = isLinkedMember ? ` (already linked to ${matchedMember.ea_username})` : '';
+      console.log(`  💡 Suggesting: ${eaUsername} -> ${matchedMember.discord_username} (${(bestSimilarity * 100).toFixed(0)}%)${note}`);
       
       // Check if suggestion already exists
       const { data: existingSuggestion } = await supabase
