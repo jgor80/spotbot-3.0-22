@@ -316,7 +316,8 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.DirectMessages
   ]
 });
 
@@ -608,6 +609,16 @@ const COMMANDS = [
   
   // Ratings Panel
   { name: 'ratingspanel', description: 'Create a ratings panel for viewing player ratings, leaderboards, and stats.' },
+
+  // Admin EA Account Linking
+  {
+    name: 'forcelink',
+    description: 'Force-link an EA username to a Discord user (admin only).',
+    options: [
+      { name: 'user', description: 'The Discord user to link.', type: 6, required: true },
+      { name: 'username', description: 'The EA FC Pro Clubs username.', type: 3, required: true }
+    ]
+  },
 
   // Scouting Commands (ScoutBot functionality)
   {
@@ -3492,6 +3503,93 @@ client.on(Events.GuildCreate, async (guild) => {
 });
 
 // =======================
+// NEW MEMBER WELCOME - EA LINKING PROMPT
+// =======================
+
+client.on(Events.GuildMemberAdd, async (member) => {
+  try {
+    console.log(`[Welcome] New member joined: ${member.user.username} in ${member.guild.name}`);
+    
+    // Check if guild has any clubs set up (indicates active SquadIQ usage)
+    const { data: guildSettings } = await supabase
+      .from('guild_settings')
+      .select('clubs, guild_id')
+      .eq('guild_id', member.guild.id)
+      .single();
+    
+    if (!guildSettings) {
+      console.log(`[Welcome] No guild settings for ${member.guild.name}, skipping welcome DM`);
+      return;
+    }
+    
+    const clubs = guildSettings.clubs || [];
+    const hasLinkedClubs = clubs.some(c => c.ea_club_id);
+    
+    if (!hasLinkedClubs) {
+      console.log(`[Welcome] No EA clubs linked for ${member.guild.name}, skipping welcome DM`);
+      return;
+    }
+    
+    // Check if this user already has an EA account linked
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('ea_username')
+      .eq('discord_user_id', member.user.id)
+      .single();
+    
+    if (existingProfile?.ea_username) {
+      console.log(`[Welcome] User ${member.user.username} already linked to ${existingProfile.ea_username}`);
+      return;
+    }
+    
+    // Send welcome DM with EA linking button
+    const welcomeEmbed = new EmbedBuilder()
+      .setTitle(`👋 Welcome to ${member.guild.name}!`)
+      .setColor(0x5865f2)
+      .setDescription(
+        `This server uses **SquadIQ** to track EA FC Pro Clubs stats, ratings, and more!\n\n` +
+        `To get started and have your stats tracked automatically, link your EA account now.`
+      )
+      .addFields(
+        { 
+          name: '📊 What you get', 
+          value: '• Personal stats tracked from Pro Clubs matches\n• Overall rating based on your performance\n• Appear on the server leaderboard\n• Join drafts and lineups', 
+          inline: false 
+        },
+        { 
+          name: '🎮 How to link', 
+          value: 'Click the button below to enter your EA FC Pro Clubs username.', 
+          inline: false 
+        }
+      )
+      .setFooter({ text: 'SquadIQ • Pro Clubs Stats Tracker' });
+    
+    const linkButton = new ButtonBuilder()
+      .setCustomId(`welcome_link_ea_${member.guild.id}`)
+      .setLabel('Link My EA Account')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('🎮');
+    
+    const skipButton = new ButtonBuilder()
+      .setCustomId(`welcome_skip_${member.guild.id}`)
+      .setLabel('Maybe Later')
+      .setStyle(ButtonStyle.Secondary);
+    
+    const row = new ActionRowBuilder().addComponents(linkButton, skipButton);
+    
+    try {
+      await member.send({ embeds: [welcomeEmbed], components: [row] });
+      console.log(`[Welcome] Sent welcome DM to ${member.user.username}`);
+    } catch (dmError) {
+      // User may have DMs disabled - this is fine
+      console.log(`[Welcome] Could not DM ${member.user.username}: ${dmError.message}`);
+    }
+  } catch (err) {
+    console.error(`[Welcome] Error handling new member:`, err);
+  }
+});
+
+// =======================
 // VOICE STATE UPDATE
 // =======================
 
@@ -3557,9 +3655,41 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
-    // Handle DM button interactions for feedback - modal-based approach
+    // Handle DM button interactions for feedback and welcome
     if (!interaction.guildId && interaction.isButton()) {
       const id = interaction.customId;
+      
+      // Handle welcome "Link My EA Account" button from new member DM
+      if (id.startsWith('welcome_link_ea_')) {
+        const targetGuildId = id.replace('welcome_link_ea_', '');
+        
+        // Show modal to enter EA username
+        const modal = new ModalBuilder()
+          .setCustomId(`welcome_link_modal_${targetGuildId}`)
+          .setTitle('Link Your EA Account');
+        
+        const usernameInput = new TextInputBuilder()
+          .setCustomId('ea_username')
+          .setLabel('Your EA FC Pro Clubs Username')
+          .setPlaceholder('Enter your exact in-game username')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMinLength(3)
+          .setMaxLength(50);
+        
+        modal.addComponents(new ActionRowBuilder().addComponents(usernameInput));
+        
+        return interaction.showModal(modal);
+      }
+      
+      // Handle welcome "Maybe Later" button
+      if (id.startsWith('welcome_skip_')) {
+        return interaction.update({
+          content: 'No problem! You can link your EA account anytime using the `/linkea` command in the server.',
+          embeds: [],
+          components: []
+        });
+      }
       
       // Handle feedback rate button clicks - shows select menu form
       if (id.startsWith('feedback_rate_')) {
@@ -6012,6 +6142,123 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .addFields(
             { name: '📊 What happens now?', value: 'Your goals, assists, ratings, and other stats from Pro Clubs matches will be tracked and contribute to your SquadIQ rating.', inline: false }
           );
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // =======================
+      // ADMIN FORCE LINK COMMAND
+      // =======================
+
+      if (cmd === 'forcelink') {
+        // Check permissions - admin, moderator, or manager only
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only admins, moderators, managers, or captains can use `/forcelink`.',
+            flags: 64
+          });
+        }
+
+        const targetUser = interaction.options.getUser('user');
+        const eaUsername = interaction.options.getString('username');
+
+        if (!targetUser || !eaUsername) {
+          return interaction.reply({
+            content: '❌ Please provide both a Discord user and an EA username.',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        // Check if target user already has a different EA account linked
+        const { data: existingProfile } = await supabase
+          .from('profiles')
+          .select('ea_username')
+          .eq('discord_user_id', targetUser.id)
+          .single();
+
+        const wasLinked = existingProfile?.ea_username;
+
+        // Update the target user's profile with the EA username
+        const { error } = await supabase
+          .from('profiles')
+          .upsert({
+            discord_user_id: targetUser.id,
+            ea_username: eaUsername,
+            discord_username: targetUser.username,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'discord_user_id' });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to link: ${error.message}` });
+        }
+
+        // Check for temp profile and migrate data if exists
+        const tempDiscordId = `ea_${eaUsername.toLowerCase()}`;
+        const { data: tempProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('discord_user_id', tempDiscordId)
+          .single();
+
+        let migratedStats = false;
+        if (tempProfile) {
+          // Migrate player_stats
+          await supabase
+            .from('player_stats')
+            .update({ discord_user_id: targetUser.id })
+            .eq('discord_user_id', tempDiscordId)
+            .eq('guild_id', guildId);
+
+          // Migrate player_ratings
+          await supabase
+            .from('player_ratings')
+            .update({ discord_user_id: targetUser.id })
+            .eq('discord_user_id', tempDiscordId)
+            .eq('guild_id', guildId);
+
+          // Migrate player_summary
+          await supabase
+            .from('player_summary')
+            .update({ discord_user_id: targetUser.id })
+            .eq('discord_user_id', tempDiscordId)
+            .eq('guild_id', guildId);
+
+          // Delete temp profile
+          await supabase
+            .from('profiles')
+            .delete()
+            .eq('discord_user_id', tempDiscordId);
+
+          migratedStats = true;
+        }
+
+        // Trigger rating recalculation
+        callEdgeFunction('calculate-ratings', {
+          guild_id: guildId,
+          discord_user_id: targetUser.id
+        }).catch(() => {});
+
+        const embed = new EmbedBuilder()
+          .setTitle('✅ EA Account Force-Linked')
+          .setColor(0x00ff00)
+          .addFields(
+            { name: 'Discord User', value: `<@${targetUser.id}>`, inline: true },
+            { name: 'EA Username', value: eaUsername, inline: true }
+          );
+
+        if (wasLinked && wasLinked !== eaUsername) {
+          embed.addFields({ name: '⚠️ Previous Link', value: `Was: \`${wasLinked}\``, inline: true });
+        }
+
+        if (migratedStats) {
+          embed.setDescription('📊 **Existing stats migrated!** Historical data for this EA username has been linked to the Discord account.');
+        } else {
+          embed.setDescription('The EA account is now linked. Future matches will be tracked automatically.');
+        }
+
+        embed.setFooter({ text: `Linked by ${interaction.user.username}` });
 
         return interaction.editReply({ embeds: [embed] });
       }
@@ -9260,6 +9507,49 @@ client.on(Events.InteractionCreate, async (interaction) => {
     // ----- Modals -----
     if (interaction.isModalSubmit()) {
       const id = interaction.customId;
+
+      // Handle welcome link EA modal from DM
+      if (id.startsWith('welcome_link_modal_')) {
+        const targetGuildId = id.replace('welcome_link_modal_', '');
+        const eaUsername = interaction.fields.getTextInputValue('ea_username').trim();
+        
+        if (!eaUsername) {
+          return interaction.reply({ content: '❌ Please enter a valid EA username.', ephemeral: true });
+        }
+        
+        await interaction.deferReply();
+        
+        // Update the user's profile with their EA username
+        const { error } = await supabase
+          .from('profiles')
+          .upsert({
+            discord_user_id: interaction.user.id,
+            ea_username: eaUsername,
+            discord_username: interaction.user.username,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'discord_user_id' });
+        
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to save EA username: ${error.message}` });
+        }
+        
+        // Trigger rating calculation
+        callEdgeFunction('calculate-ratings', {
+          guild_id: targetGuildId,
+          discord_user_id: interaction.user.id
+        }).catch(() => {});
+        
+        const embed = new EmbedBuilder()
+          .setTitle('✅ EA Account Linked!')
+          .setColor(0x00ff00)
+          .setDescription(
+            `Your EA username **${eaUsername}** is now linked to your Discord account!\n\n` +
+            `🎮 Your stats from Pro Clubs matches will now be automatically tracked.\n` +
+            `📊 Check your profile anytime with \`/profile\` in the server.`
+          );
+        
+        return interaction.editReply({ embeds: [embed] });
+      }
 
       if (id.startsWith('rename_club_modal_')) {
         const clubKey = id.substring('rename_club_modal_'.length);
