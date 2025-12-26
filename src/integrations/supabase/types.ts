@@ -738,6 +738,48 @@ export type Database = {
           },
         ]
       }
+      link_suggestions: {
+        Row: {
+          created_at: string
+          ea_username: string
+          guild_id: string
+          id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          similarity_score: number
+          status: string
+          suggested_discord_id: string
+          suggested_discord_name: string | null
+          temp_profile_id: string
+        }
+        Insert: {
+          created_at?: string
+          ea_username: string
+          guild_id: string
+          id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          similarity_score: number
+          status?: string
+          suggested_discord_id: string
+          suggested_discord_name?: string | null
+          temp_profile_id: string
+        }
+        Update: {
+          created_at?: string
+          ea_username?: string
+          guild_id?: string
+          id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          similarity_score?: number
+          status?: string
+          suggested_discord_id?: string
+          suggested_discord_name?: string | null
+          temp_profile_id?: string
+        }
+        Relationships: []
+      }
       monthly_snapshots: {
         Row: {
           assists: number

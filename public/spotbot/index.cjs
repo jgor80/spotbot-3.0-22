@@ -620,6 +620,12 @@ const COMMANDS = [
     ]
   },
 
+  // Review Pending Link Suggestions
+  {
+    name: 'reviewlinks',
+    description: 'Review pending EA-to-Discord link suggestions (admin only).'
+  },
+
   // Scouting Commands (ScoutBot functionality)
   {
     name: 'scoutclub',
@@ -6268,6 +6274,78 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       // =======================
+      // REVIEW LINK SUGGESTIONS COMMAND
+      // =======================
+
+      if (cmd === 'reviewlinks') {
+        // Check permissions - admin, moderator, or manager only
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only admins, moderators, managers, or captains can use `/reviewlinks`.',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        // Get pending suggestions for this guild
+        const { data: suggestions, error } = await supabase
+          .from('link_suggestions')
+          .select('*')
+          .eq('guild_id', guildId)
+          .eq('status', 'pending')
+          .order('similarity_score', { ascending: false })
+          .limit(10);
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to fetch suggestions: ${error.message}` });
+        }
+
+        if (!suggestions || suggestions.length === 0) {
+          return interaction.editReply({ 
+            content: '✅ No pending link suggestions to review! All EA accounts are either auto-linked or manually handled.' 
+          });
+        }
+
+        // Build embed with suggestions
+        const embed = new EmbedBuilder()
+          .setTitle('🔗 Pending EA Link Suggestions')
+          .setDescription(`Found **${suggestions.length}** pending suggestion(s) to review.\n\nThese are EA usernames that matched Discord users with 50-74% similarity and need manual approval.`)
+          .setColor(0xffaa00);
+
+        for (const suggestion of suggestions) {
+          embed.addFields({
+            name: `${suggestion.ea_username} → ${suggestion.suggested_discord_name || 'Unknown'}`,
+            value: `**Match:** ${Math.round(suggestion.similarity_score * 100)}%\n<@${suggestion.suggested_discord_id}>`,
+            inline: true
+          });
+        }
+
+        // Build action rows with approve/reject buttons for each suggestion
+        const components = [];
+        for (let i = 0; i < suggestions.length && i < 5; i++) {
+          const suggestion = suggestions[i];
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`link_approve_${suggestion.id}`)
+              .setLabel(`✅ ${suggestion.ea_username}`)
+              .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+              .setCustomId(`link_reject_${suggestion.id}`)
+              .setLabel(`❌ Reject`)
+              .setStyle(ButtonStyle.Danger)
+          );
+          components.push(row);
+        }
+
+        if (suggestions.length > 5) {
+          embed.setFooter({ text: `Showing first 5 of ${suggestions.length} suggestions. Run /reviewlinks again after processing.` });
+        }
+
+        return interaction.editReply({ embeds: [embed], components });
+      }
+
+      // =======================
       // SCOUTING COMMANDS (ScoutBot functionality)
       // =======================
 
@@ -6737,6 +6815,214 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (id === 'open_help') {
         return interaction.reply({ embeds: [buildHelpEmbed()], flags: 64 });
+      }
+
+      // =======================
+      // LINK SUGGESTION APPROVE/REJECT BUTTONS
+      // =======================
+
+      if (id.startsWith('link_approve_')) {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+        
+        const suggestionId = id.replace('link_approve_', '');
+        await interaction.deferUpdate();
+        
+        // Get the suggestion
+        const { data: suggestion, error: fetchError } = await supabase
+          .from('link_suggestions')
+          .select('*')
+          .eq('id', suggestionId)
+          .single();
+        
+        if (fetchError || !suggestion) {
+          return interaction.followUp({ content: '❌ Suggestion not found or already processed.', flags: 64 });
+        }
+        
+        // Update the real Discord profile with EA info
+        const { error: upsertError } = await supabase
+          .from('profiles')
+          .upsert({
+            discord_user_id: suggestion.suggested_discord_id,
+            ea_username: suggestion.ea_username,
+            discord_username: suggestion.suggested_discord_name,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'discord_user_id' });
+        
+        if (upsertError) {
+          return interaction.followUp({ content: `❌ Failed to link: ${upsertError.message}`, flags: 64 });
+        }
+        
+        // Migrate data from temp profile
+        const tempDiscordId = `ea_${suggestion.ea_username.toLowerCase()}`;
+        
+        // Migrate player_stats
+        await supabase
+          .from('player_stats')
+          .update({ discord_user_id: suggestion.suggested_discord_id })
+          .eq('discord_user_id', tempDiscordId)
+          .eq('guild_id', guildId);
+        
+        // Migrate player_ratings
+        await supabase
+          .from('player_ratings')
+          .update({ discord_user_id: suggestion.suggested_discord_id })
+          .eq('discord_user_id', tempDiscordId)
+          .eq('guild_id', guildId);
+        
+        // Migrate player_summary
+        await supabase
+          .from('player_summary')
+          .update({ discord_user_id: suggestion.suggested_discord_id })
+          .eq('discord_user_id', tempDiscordId)
+          .eq('guild_id', guildId);
+        
+        // Delete temp profile
+        await supabase
+          .from('profiles')
+          .delete()
+          .eq('discord_user_id', tempDiscordId);
+        
+        // Mark suggestion as approved
+        await supabase
+          .from('link_suggestions')
+          .update({ 
+            status: 'approved',
+            reviewed_at: new Date().toISOString(),
+            reviewed_by: interaction.user.id
+          })
+          .eq('id', suggestionId);
+        
+        // Trigger rating recalculation
+        callEdgeFunction('calculate-ratings', {
+          guild_id: guildId,
+          discord_user_id: suggestion.suggested_discord_id
+        }).catch(() => {});
+        
+        // Update the message to show remaining suggestions
+        const { data: remainingSuggestions } = await supabase
+          .from('link_suggestions')
+          .select('*')
+          .eq('guild_id', guildId)
+          .eq('status', 'pending')
+          .order('similarity_score', { ascending: false })
+          .limit(10);
+        
+        if (!remainingSuggestions || remainingSuggestions.length === 0) {
+          return interaction.editReply({
+            content: `✅ **Approved:** ${suggestion.ea_username} → <@${suggestion.suggested_discord_id}>\n\nNo more pending suggestions!`,
+            embeds: [],
+            components: []
+          });
+        }
+        
+        // Rebuild embed with remaining suggestions
+        const embed = new EmbedBuilder()
+          .setTitle('🔗 Pending EA Link Suggestions')
+          .setDescription(`✅ **Approved:** ${suggestion.ea_username} → ${suggestion.suggested_discord_name}\n\n**${remainingSuggestions.length}** suggestion(s) remaining.`)
+          .setColor(0x00ff00);
+        
+        for (const s of remainingSuggestions.slice(0, 5)) {
+          embed.addFields({
+            name: `${s.ea_username} → ${s.suggested_discord_name || 'Unknown'}`,
+            value: `**Match:** ${Math.round(s.similarity_score * 100)}%\n<@${s.suggested_discord_id}>`,
+            inline: true
+          });
+        }
+        
+        const components = [];
+        for (let i = 0; i < remainingSuggestions.length && i < 5; i++) {
+          const s = remainingSuggestions[i];
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`link_approve_${s.id}`)
+              .setLabel(`✅ ${s.ea_username}`)
+              .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+              .setCustomId(`link_reject_${s.id}`)
+              .setLabel(`❌ Reject`)
+              .setStyle(ButtonStyle.Danger)
+          );
+          components.push(row);
+        }
+        
+        return interaction.editReply({ embeds: [embed], components });
+      }
+
+      if (id.startsWith('link_reject_')) {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+        
+        const suggestionId = id.replace('link_reject_', '');
+        await interaction.deferUpdate();
+        
+        // Get the suggestion first for the message
+        const { data: suggestion } = await supabase
+          .from('link_suggestions')
+          .select('ea_username, suggested_discord_name')
+          .eq('id', suggestionId)
+          .single();
+        
+        // Mark suggestion as rejected (keeps it so it won't be suggested again)
+        await supabase
+          .from('link_suggestions')
+          .update({ 
+            status: 'rejected',
+            reviewed_at: new Date().toISOString(),
+            reviewed_by: interaction.user.id
+          })
+          .eq('id', suggestionId);
+        
+        // Update the message to show remaining suggestions
+        const { data: remainingSuggestions } = await supabase
+          .from('link_suggestions')
+          .select('*')
+          .eq('guild_id', guildId)
+          .eq('status', 'pending')
+          .order('similarity_score', { ascending: false })
+          .limit(10);
+        
+        if (!remainingSuggestions || remainingSuggestions.length === 0) {
+          return interaction.editReply({
+            content: `❌ **Rejected:** ${suggestion?.ea_username || 'Unknown'} → ${suggestion?.suggested_discord_name || 'Unknown'}\n\nNo more pending suggestions!`,
+            embeds: [],
+            components: []
+          });
+        }
+        
+        // Rebuild embed with remaining suggestions
+        const embed = new EmbedBuilder()
+          .setTitle('🔗 Pending EA Link Suggestions')
+          .setDescription(`❌ **Rejected:** ${suggestion?.ea_username || 'Unknown'}\n\n**${remainingSuggestions.length}** suggestion(s) remaining.`)
+          .setColor(0xff6b35);
+        
+        for (const s of remainingSuggestions.slice(0, 5)) {
+          embed.addFields({
+            name: `${s.ea_username} → ${s.suggested_discord_name || 'Unknown'}`,
+            value: `**Match:** ${Math.round(s.similarity_score * 100)}%\n<@${s.suggested_discord_id}>`,
+            inline: true
+          });
+        }
+        
+        const components = [];
+        for (let i = 0; i < remainingSuggestions.length && i < 5; i++) {
+          const s = remainingSuggestions[i];
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`link_approve_${s.id}`)
+              .setLabel(`✅ ${s.ea_username}`)
+              .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+              .setCustomId(`link_reject_${s.id}`)
+              .setLabel(`❌ Reject`)
+              .setStyle(ButtonStyle.Danger)
+          );
+          components.push(row);
+        }
+        
+        return interaction.editReply({ embeds: [embed], components });
       }
 
       // =======================
