@@ -1642,6 +1642,10 @@ function buildAdminComponents(guildId, clubKey, state) {
       .setLabel('Club Tools')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
+      .setCustomId(`fill_last_game_${clubKey}`)
+      .setLabel('⚡ Fill Last Game')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
       .setCustomId(`ea_tools_${clubKey}`)
       .setLabel(club?.monitoring_enabled ? '📊 EA Active' : '📊 EA Stats')
       .setStyle(club?.monitoring_enabled ? ButtonStyle.Success : ButtonStyle.Secondary)
@@ -9320,6 +9324,160 @@ client.on(Events.InteractionCreate, async (interaction) => {
           content: 'Choose a formation. Current players will be moved into the closest matching spots.',
           components: rows,
           flags: 64
+        });
+      }
+
+      // Fill from last game button
+      if (id.startsWith('fill_last_game_')) {
+        const clubKey = id.substring('fill_last_game_'.length);
+        
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only managers can use this feature.',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        // Get the club's EA info
+        const club = getClubByKey(clubs, clubKey);
+        if (!club?.ea_club_id) {
+          return interaction.editReply({
+            content: '❌ This club is not linked to an EA club. Use EA Tools → Link EA Club first.'
+          });
+        }
+
+        // Fetch last match for this club
+        const { data: lastMatch, error: matchError } = await supabase
+          .from('club_matches')
+          .select('*')
+          .eq('guild_id', guildId)
+          .eq('club_key', clubKey)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (matchError || !lastMatch) {
+          return interaction.editReply({
+            content: '❌ No recent matches found for this club. Sync EA history first.'
+          });
+        }
+
+        const playerStats = lastMatch.player_stats || [];
+        if (!playerStats.length) {
+          return interaction.editReply({
+            content: '❌ No player stats found in the last match.'
+          });
+        }
+
+        // Get EA usernames from the match
+        const eaUsernames = playerStats.map(p => p.ea_username).filter(Boolean);
+
+        // Look up Discord IDs for these EA usernames
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('discord_user_id, ea_username')
+          .in('ea_username', eaUsernames);
+
+        // Create a map of EA username (lowercase) to Discord ID
+        const eaToDiscord = {};
+        for (const profile of (profiles || [])) {
+          if (profile.ea_username && profile.discord_user_id && !profile.discord_user_id.startsWith('ea_')) {
+            eaToDiscord[profile.ea_username.toLowerCase()] = profile.discord_user_id;
+          }
+        }
+
+        // Reset the board first
+        const clubBoard = boardState[clubKey];
+        if (clubBoard?.slots) {
+          clubBoard.slots.forEach((slot, idx) => {
+            slot.open = true;
+            slot.takenBy = null;
+            ensureQueueState(guildId, clubKey, idx).length = 0;
+          });
+        }
+
+        // Assign players to slots based on their position from the match
+        const assigned = [];
+        const notLinked = [];
+        const noSlot = [];
+
+        for (const playerStat of playerStats) {
+          const eaUsername = playerStat.ea_username;
+          if (!eaUsername) continue;
+
+          const discordId = eaToDiscord[eaUsername.toLowerCase()];
+          if (!discordId) {
+            notLinked.push(eaUsername);
+            continue;
+          }
+
+          // Find an open slot for this player (use smart matching if possible)
+          const prefs = await getUserPrefs(guildId, discordId);
+          const prefsUpper = (prefs || []).map(p => p.toUpperCase());
+
+          let bestSlot = null;
+          let bestIndex = -1;
+          let bestPriority = Infinity;
+
+          for (let i = 0; i < clubBoard.slots.length; i++) {
+            const slot = clubBoard.slots[i];
+            if (!slot.open) continue;
+
+            if (prefsUpper.length > 0) {
+              const { match, priority } = getInferredMatch(slot.label, prefsUpper);
+              if (match && priority < bestPriority) {
+                bestPriority = priority;
+                bestSlot = slot;
+                bestIndex = i;
+              }
+            } else {
+              // No prefs, just take first open slot
+              if (!bestSlot) {
+                bestSlot = slot;
+                bestIndex = i;
+              }
+            }
+          }
+
+          if (bestSlot) {
+            bestSlot.open = false;
+            bestSlot.takenBy = discordId;
+            assigned.push({ username: eaUsername, position: bestSlot.label, discordId });
+            ensureQueueState(guildId, clubKey, bestIndex).length = 0;
+          } else {
+            noSlot.push(eaUsername);
+          }
+        }
+
+        await saveGuildSettings(guildId, state);
+        await refreshClubPanels(guildId, clubKey);
+
+        // Build response
+        const lines = [];
+        const matchDate = new Date(lastMatch.created_at).toLocaleString();
+        lines.push(`📋 **Filled from last game** (${matchDate})\n`);
+
+        if (assigned.length > 0) {
+          lines.push(`✅ **${assigned.length} player(s) assigned:**`);
+          for (const a of assigned) {
+            lines.push(`• <@${a.discordId}> → **${a.position}**`);
+          }
+        }
+
+        if (notLinked.length > 0) {
+          lines.push(`\n⚠️ **${notLinked.length} player(s) not linked to Discord:**`);
+          lines.push(notLinked.map(u => `• ${u}`).join('\n'));
+        }
+
+        if (noSlot.length > 0) {
+          lines.push(`\n❌ **${noSlot.length} player(s) couldn't be placed:**`);
+          lines.push(noSlot.join(', '));
+        }
+
+        return interaction.editReply({
+          content: lines.join('\n')
         });
       }
 
