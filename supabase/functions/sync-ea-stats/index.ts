@@ -14,7 +14,10 @@ const EA_PLATFORM_MAP: Record<string, string> = {
   'xboxone': 'common-gen4'
 }
 
-const EA_HEADERS = {
+// EA Session Cookie from environment (optional, for bypassing blocks)
+const EA_SESSION_COOKIE = Deno.env.get('EA_SESSION_COOKIE') || '';
+
+const EA_HEADERS: Record<string, string> = {
   'Accept': 'application/json',
   'Accept-Language': 'en-US,en;q=0.9',
   'Cache-Control': 'no-cache',
@@ -27,7 +30,12 @@ const EA_HEADERS = {
   'Sec-Fetch-Dest': 'empty',
   'Sec-Fetch-Mode': 'cors',
   'Sec-Fetch-Site': 'same-site',
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  ...(EA_SESSION_COOKIE && { 'Cookie': EA_SESSION_COOKIE })
+}
+
+if (EA_SESSION_COOKIE) {
+  console.log('[sync-ea-stats] EA session cookie configured')
 }
 
 const KNOWN_MEMBER_KEYS = new Set([
