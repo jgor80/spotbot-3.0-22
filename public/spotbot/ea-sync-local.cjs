@@ -481,13 +481,168 @@ const EA_PLATFORM_MAP = {
   'xboxone': 'common-gen4'
 };
 
-// === API CALL CACHE to reduce redundant calls ===
-// Reset at start of each sync cycle
+// === ROTATING USER-AGENT POOL ===
+// Rotate through realistic browser strings to avoid fingerprinting
+const USER_AGENT_POOL = [
+  // Chrome on Windows
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  // Chrome on Mac
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  // Firefox on Windows
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0',
+  // Firefox on Mac
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0',
+  // Edge on Windows
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
+  // Safari on Mac
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'
+];
+
+let currentUserAgentIndex = 0;
+
+function getNextUserAgent() {
+  const ua = USER_AGENT_POOL[currentUserAgentIndex];
+  currentUserAgentIndex = (currentUserAgentIndex + 1) % USER_AGENT_POOL.length;
+  return ua;
+}
+
+function getRandomUserAgent() {
+  return USER_AGENT_POOL[Math.floor(Math.random() * USER_AGENT_POOL.length)];
+}
+
+// === EXPONENTIAL BACKOFF ERROR TRACKING ===
+const errorTracking = {
+  consecutiveErrors: 0,
+  consecutive403Errors: 0,
+  lastErrorTime: 0,
+  backoffMs: 0,
+  totalRequestsToday: 0,
+  dayStartTime: Date.now()
+};
+
+// Backoff levels: 10s, 30s, 2min, 5min, 15min pause
+const BACKOFF_LEVELS = [10000, 30000, 120000, 300000, 900000];
+
+function getBackoffDelay() {
+  const level = Math.min(errorTracking.consecutiveErrors, BACKOFF_LEVELS.length - 1);
+  return BACKOFF_LEVELS[level];
+}
+
+async function applyBackoff() {
+  if (errorTracking.consecutiveErrors === 0) return;
+  
+  const delay = getBackoffDelay();
+  console.log(`⏳ Backoff: waiting ${(delay / 1000).toFixed(0)}s after ${errorTracking.consecutiveErrors} consecutive errors...`);
+  await new Promise(r => setTimeout(r, delay));
+}
+
+function recordSuccess() {
+  if (errorTracking.consecutiveErrors > 0) {
+    console.log(`✅ Request succeeded - resetting error counter (was ${errorTracking.consecutiveErrors})`);
+  }
+  errorTracking.consecutiveErrors = 0;
+  errorTracking.consecutive403Errors = 0;
+  errorTracking.backoffMs = 0;
+  errorTracking.totalRequestsToday++;
+}
+
+function recordError(statusCode) {
+  errorTracking.consecutiveErrors++;
+  errorTracking.lastErrorTime = Date.now();
+  
+  if (statusCode === 403) {
+    errorTracking.consecutive403Errors++;
+    console.log(`⚠️ 403 error #${errorTracking.consecutive403Errors} (total errors: ${errorTracking.consecutiveErrors})`);
+  }
+  
+  // Check for stale cookie
+  if (errorTracking.consecutive403Errors >= 3) {
+    console.log(`\n🍪❌ STALE COOKIE DETECTED: ${errorTracking.consecutive403Errors} consecutive 403 errors`);
+    console.log(`   Your EA session cookie may have expired.`);
+    console.log(`   Please refresh EA_SESSION_COOKIE from browser DevTools.\n`);
+  }
+}
+
+function shouldPauseDueToErrors() {
+  // Pause for 15 minutes after 5+ consecutive errors
+  return errorTracking.consecutiveErrors >= 5;
+}
+
+// === PERSISTENT CACHE LAYER ===
+// Cache with timestamps for freshness checking
+const fs = require('fs');
+const path = require('path');
+
+const CACHE_DIR = path.join(process.cwd(), '.ea-cache');
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function ensureCacheDir() {
+  if (!fs.existsSync(CACHE_DIR)) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+  }
+}
+
+function getCacheFilePath(type, key) {
+  ensureCacheDir();
+  return path.join(CACHE_DIR, `${type}_${key.replace(/[^a-zA-Z0-9]/g, '_')}.json`);
+}
+
+function getFromPersistentCache(type, key) {
+  try {
+    const filePath = getCacheFilePath(type, key);
+    if (!fs.existsSync(filePath)) return null;
+    
+    const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const age = Date.now() - content.timestamp;
+    
+    if (age > CACHE_TTL_MS) {
+      // Cache expired
+      return null;
+    }
+    
+    console.log(`📦 Cache hit: ${type}/${key} (${(age / 1000).toFixed(0)}s old)`);
+    return content.data;
+  } catch (err) {
+    return null;
+  }
+}
+
+function saveToPersistentCache(type, key, data) {
+  try {
+    const filePath = getCacheFilePath(type, key);
+    fs.writeFileSync(filePath, JSON.stringify({
+      timestamp: Date.now(),
+      data: data
+    }));
+  } catch (err) {
+    console.log(`⚠️ Failed to write cache: ${err.message}`);
+  }
+}
+
+function clearPersistentCache() {
+  try {
+    if (fs.existsSync(CACHE_DIR)) {
+      const files = fs.readdirSync(CACHE_DIR);
+      for (const file of files) {
+        fs.unlinkSync(path.join(CACHE_DIR, file));
+      }
+      console.log(`🧹 Cleared ${files.length} cached files`);
+    }
+  } catch (err) {
+    console.log(`⚠️ Failed to clear cache: ${err.message}`);
+  }
+}
+
+// === API CALL CACHE (in-memory for current cycle) ===
 const apiCache = {
-  clubInfo: new Map(),      // clubId -> clubInfo data
-  clubMembers: new Map(),   // clubId -> members array
-  matches: new Map(),       // clubId -> matches array
-  scoutedOpponents: new Set(), // Set of opponentClubId already scouted this cycle
+  clubInfo: new Map(),
+  clubMembers: new Map(),
+  matches: new Map(),
+  scoutedOpponents: new Set(),
   lastReset: 0
 };
 
@@ -497,44 +652,70 @@ function resetApiCache() {
   apiCache.matches.clear();
   apiCache.scoutedOpponents.clear();
   apiCache.lastReset = Date.now();
-  console.log('🔄 API cache cleared for new sync cycle');
+  // Don't clear persistent cache - let TTL handle expiration
+  console.log('🔄 In-memory API cache cleared for new sync cycle');
 }
 
-// Add random delay to appear more human-like (increased to avoid rate limiting)
-async function humanDelay(minMs = 2000, maxMs = 5000) {
+// === ENHANCED REQUEST JITTER ===
+// More variable delays to appear human-like
+async function humanDelay(minMs = 3000, maxMs = 8000) {
   const delay = Math.floor(Math.random() * (maxMs - minMs)) + minMs;
   await new Promise(r => setTimeout(r, delay));
 }
 
-// Longer delay between clubs
+// Occasional "reading time" - longer pauses simulating user reading data
+async function occasionalReadingPause() {
+  // 20% chance of a longer "reading" pause
+  if (Math.random() < 0.2) {
+    const readTime = Math.floor(Math.random() * 15000) + 15000; // 15-30 seconds
+    console.log(`👀 Simulating reading pause (${(readTime / 1000).toFixed(0)}s)...`);
+    await new Promise(r => setTimeout(r, readTime));
+  }
+}
+
+// Longer delay between clubs with more variance
 async function clubDelay() {
-  const delay = Math.floor(Math.random() * 5000) + 5000; // 5-10 seconds
-  console.log(`⏳ Waiting ${(delay/1000).toFixed(1)}s between clubs...`);
+  const delay = Math.floor(Math.random() * 8000) + 7000; // 7-15 seconds
+  console.log(`⏳ Waiting ${(delay / 1000).toFixed(1)}s between clubs...`);
   await new Promise(r => setTimeout(r, delay));
 }
 
-// EA Session Cookie from environment (get from browser DevTools)
+// Delay between different request types within same club
+async function requestTypeDelay() {
+  const delay = Math.floor(Math.random() * 5000) + 8000; // 8-13 seconds
+  await new Promise(r => setTimeout(r, delay));
+}
+
+// EA Session Cookie from environment
 const EA_SESSION_COOKIE = process.env.EA_SESSION_COOKIE || '';
 
-// Track consecutive 403 errors to trigger edge function fallback
+// Track consecutive 403 errors for edge function fallback
 let consecutive403Errors = 0;
 let useEdgeFallback = false;
 
-const EA_HEADERS = {
-  'accept': 'application/json',
-  'accept-language': 'en-US,en;q=0.9',
-  'content-type': 'application/json',
-  'origin': 'https://www.ea.com',
-  'referer': 'https://www.ea.com/',
-  'sec-ch-ua': '"Chromium";v="130", "Google Chrome";v="130", "Not_A Brand";v="99"',
-  'sec-ch-ua-mobile': '?0',
-  'sec-ch-ua-platform': '"Windows"',
-  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-  ...(EA_SESSION_COOKIE && { 'cookie': EA_SESSION_COOKIE })
-};
+// Build EA headers with rotating user-agent
+function buildEAHeaders() {
+  return {
+    'accept': 'application/json',
+    'accept-language': 'en-US,en;q=0.9',
+    'content-type': 'application/json',
+    'origin': 'https://www.ea.com',
+    'referer': 'https://www.ea.com/',
+    'sec-ch-ua': '"Chromium";v="131", "Google Chrome";v="131", "Not_A Brand";v="99"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'user-agent': getNextUserAgent(),
+    ...(EA_SESSION_COOKIE && { 'cookie': EA_SESSION_COOKIE })
+  };
+}
+
+// Static headers for backward compatibility (uses rotating UA internally)
+const EA_HEADERS = buildEAHeaders();
 
 if (EA_SESSION_COOKIE) {
   console.log('🍪 EA session cookie configured');
+  console.log(`🔄 User-Agent pool: ${USER_AGENT_POOL.length} browsers`);
+  console.log(`⏱️  Backoff levels: ${BACKOFF_LEVELS.map(ms => `${ms/1000}s`).join(' → ')}`);
 } else {
   console.log('⚠️ No EA_SESSION_COOKIE set - may get 403 errors');
 }
@@ -571,18 +752,38 @@ async function callEdgeFunctionSync(guildId, clubKey, clubId, platform) {
 async function fetchMatchesByType(clubId, platform, matchType) {
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
   
+  // Check persistent cache first
+  const cacheKey = `${clubId}_${matchType}`;
+  const cachedData = getFromPersistentCache('matches', cacheKey);
+  if (cachedData) {
+    return cachedData;
+  }
+  
+  // Apply backoff if we've had errors
+  await applyBackoff();
+  
+  // Check if we should pause due to too many errors
+  if (shouldPauseDueToErrors()) {
+    console.log(`🛑 Too many errors (${errorTracking.consecutiveErrors}) - pausing for 15 minutes...`);
+    await new Promise(r => setTimeout(r, 900000)); // 15 min pause
+    errorTracking.consecutiveErrors = 0; // Reset after pause
+  }
+  
   try {
     await humanDelay(); // Add human-like delay before API call
     console.log(`[EA] Fetching ${matchType} matches for club ${clubId}...`);
     
+    // Use fresh headers with rotating user-agent
+    const headers = buildEAHeaders();
+    
     const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/matches', {
       params: { platform: fcPlatform, clubIds: clubId, matchType: matchType, maxResultCount: 20 },
-      headers: EA_HEADERS,
+      headers: headers,
       timeout: 15000
     });
     
-    // Reset 403 counter on success
-    consecutive403Errors = 0;
+    // Record success
+    recordSuccess();
     
     if (res.status !== 200) {
       return [];
@@ -592,17 +793,24 @@ async function fetchMatchesByType(clubId, platform, matchType) {
     
     // Handle different response formats
     if (Array.isArray(matches)) {
+      // Cache and return
+      saveToPersistentCache('matches', cacheKey, matches);
       return matches;
     } else if (matches?.matches && Array.isArray(matches.matches)) {
+      saveToPersistentCache('matches', cacheKey, matches.matches);
       return matches.matches;
     } else {
       // Some responses have matches keyed by match ID
       const vals = Object.values(matches).filter(v => v && typeof v === 'object' && (v.matchId || v.timestamp));
+      saveToPersistentCache('matches', cacheKey, vals);
       return vals;
     }
   } catch (err) {
     const status = err.response?.status;
     console.log(`[EA] Failed to fetch ${matchType} matches (${status || 'network'}): ${err.message}`);
+    
+    // Track error with enhanced tracking
+    recordError(status);
     
     // Track 403 errors for fallback
     if (status === 403) {
@@ -618,15 +826,23 @@ async function fetchMatchesByType(clubId, platform, matchType) {
 }
 
 async function fetchAllMatchesFromEA(clubId, platform) {
-  // Check cache first
+  // Check in-memory cache first
   if (apiCache.matches.has(clubId)) {
     console.log(`[EA] Using cached matches for club ${clubId}`);
     return apiCache.matches.get(clubId);
   }
   
+  // Check persistent cache
+  const cachedData = getFromPersistentCache('allMatches', clubId);
+  if (cachedData) {
+    apiCache.matches.set(clubId, cachedData);
+    return cachedData;
+  }
+  
   console.log(`[EA] Fetching all match types for club ${clubId}...`);
   
   // EA API matchType string values (from working implementations)
+  // REQUEST BATCHING: Fetch one type at a time with delays between
   const matchTypeConfigs = [
     { matchType: 'leagueMatch', category: 'division' },
     { matchType: 'playoffMatch', category: 'competition' },
@@ -634,7 +850,14 @@ async function fetchAllMatchesFromEA(clubId, platform) {
   ];
   const allMatches = [];
   
-  for (const { matchType, category } of matchTypeConfigs) {
+  for (let i = 0; i < matchTypeConfigs.length; i++) {
+    const { matchType, category } = matchTypeConfigs[i];
+    
+    // Add delay between different match types (request batching)
+    if (i > 0) {
+      await requestTypeDelay();
+    }
+    
     const matches = await fetchMatchesByType(clubId, platform, matchType);
     if (matches.length > 0) {
       console.log(`[EA] ✓ Got ${matches.length} ${matchType} (${category}) matches`);
@@ -642,12 +865,16 @@ async function fetchAllMatchesFromEA(clubId, platform) {
       matches.forEach(m => m._matchCategory = category);
       allMatches.push(...matches);
     }
+    
+    // Occasional reading pause after fetching data
+    await occasionalReadingPause();
   }
   
   console.log(`[EA] ✓ Total: ${allMatches.length} matches across all types`);
   
-  // Cache the result
+  // Cache the result (both in-memory and persistent)
   apiCache.matches.set(clubId, allMatches);
+  saveToPersistentCache('allMatches', clubId, allMatches);
   return allMatches;
 }
 
@@ -702,26 +929,47 @@ async function fetchMatches(clubId, platform) {
   return fetchAllMatches(clubId, platform);
 }
 
-// Fetch club info - now with caching and 403 tracking
+// Fetch club info - now with enhanced caching, error tracking, and rotating UA
 async function fetchClubInfo(clubId, platform) {
-  // Check cache first
+  // Check in-memory cache first
   if (apiCache.clubInfo.has(clubId)) {
     console.log(`[EA] Using cached club info for ${clubId}`);
     return apiCache.clubInfo.get(clubId);
   }
   
+  // Check persistent cache
+  const cachedData = getFromPersistentCache('clubInfo', clubId);
+  if (cachedData) {
+    apiCache.clubInfo.set(clubId, cachedData);
+    return cachedData;
+  }
+  
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
   
+  // Apply backoff if we've had errors
+  await applyBackoff();
+  
+  // Check if we should pause
+  if (shouldPauseDueToErrors()) {
+    console.log(`🛑 Too many errors - pausing for 15 minutes...`);
+    await new Promise(r => setTimeout(r, 900000));
+    errorTracking.consecutiveErrors = 0;
+  }
+  
   try {
-    await humanDelay(); // Add human-like delay
+    await humanDelay();
+    
+    // Use fresh headers with rotating user-agent
+    const headers = buildEAHeaders();
+    
     const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/info', {
       params: { platform: fcPlatform, clubIds: clubId },
-      headers: EA_HEADERS,
+      headers: headers,
       timeout: 10000
     });
     
-    // Reset 403 counter on success
-    consecutive403Errors = 0;
+    // Record success
+    recordSuccess();
     
     if (res.status !== 200) {
       apiCache.clubInfo.set(clubId, null);
@@ -734,11 +982,16 @@ async function fetchClubInfo(clubId, platform) {
     else if (data[clubId]) result = data[clubId];
     else result = data;
     
+    // Cache both in-memory and persistent
     apiCache.clubInfo.set(clubId, result);
+    saveToPersistentCache('clubInfo', clubId, result);
     return result;
   } catch (err) {
     const status = err.response?.status;
     console.error(`[EA] Club info error:`, err.message);
+    
+    // Track error with enhanced tracking
+    recordError(status);
     
     // Track 403 errors for fallback
     if (status === 403) {
@@ -754,26 +1007,47 @@ async function fetchClubInfo(clubId, platform) {
   }
 }
 
-// Fetch club members - now with caching and 403 tracking
+// Fetch club members - now with enhanced caching, error tracking, and rotating UA
 async function fetchClubMembers(clubId, platform) {
-  // Check cache first
+  // Check in-memory cache first
   if (apiCache.clubMembers.has(clubId)) {
     console.log(`[EA] Using cached members for club ${clubId}`);
     return apiCache.clubMembers.get(clubId);
   }
   
+  // Check persistent cache
+  const cachedData = getFromPersistentCache('clubMembers', clubId);
+  if (cachedData) {
+    apiCache.clubMembers.set(clubId, cachedData);
+    return cachedData;
+  }
+  
   const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
   
+  // Apply backoff if we've had errors
+  await applyBackoff();
+  
+  // Check if we should pause
+  if (shouldPauseDueToErrors()) {
+    console.log(`🛑 Too many errors - pausing for 15 minutes...`);
+    await new Promise(r => setTimeout(r, 900000));
+    errorTracking.consecutiveErrors = 0;
+  }
+  
   try {
-    await humanDelay(); // Add human-like delay
+    await humanDelay();
+    
+    // Use fresh headers with rotating user-agent
+    const headers = buildEAHeaders();
+    
     const res = await axios.get('https://proclubs.ea.com/api/fc/members/stats', {
       params: { platform: fcPlatform, clubId },
-      headers: EA_HEADERS,
+      headers: headers,
       timeout: 10000
     });
     
-    // Reset 403 counter on success
-    consecutive403Errors = 0;
+    // Record success
+    recordSuccess();
     
     if (res.status !== 200) {
       apiCache.clubMembers.set(clubId, []);
@@ -786,11 +1060,16 @@ async function fetchClubMembers(clubId, platform) {
     else if (Array.isArray(data)) result = data;
     else result = Object.values(data).filter(v => v && typeof v === 'object');
     
+    // Cache both in-memory and persistent
     apiCache.clubMembers.set(clubId, result);
+    saveToPersistentCache('clubMembers', clubId, result);
     return result;
   } catch (err) {
     const status = err.response?.status;
     console.error(`[EA] Club members error:`, err.message);
+    
+    // Track error with enhanced tracking
+    recordError(status);
     
     // Track 403 errors for fallback
     if (status === 403) {
@@ -2638,6 +2917,17 @@ function scheduledSync() {
 
 // Check for command line arguments
 const args = process.argv.slice(2);
+
+// Handle --clear-cache flag
+if (args.includes('--clear-cache')) {
+  console.log('🧹 Clearing persistent cache...');
+  clearPersistentCache();
+  if (args.length === 1) {
+    console.log('✅ Cache cleared, exiting.');
+    process.exit(0);
+  }
+}
+
 if (args.includes('--backfill-scouting')) {
   console.log('🚀 Running opponent scouting backfill...');
   backfillOpponentScouting().then(() => {
@@ -2658,12 +2948,16 @@ if (args.includes('--backfill-scouting')) {
   });
 } else {
   // Run immediately then every 15 minutes
-  console.log('🚀 EA Sync Local started');
+  console.log('\n🚀 EA Sync Local started');
   console.log('📡 Running from your local IP to bypass EA cloud blocking');
   console.log('⏱️  Syncing every 15 minutes (active 9 AM - 3 AM CT)');
-  console.log('💡 Run with --backfill-scouting to backfill opponent intel');
-  console.log('💡 Run with --backfill-matches to backfill last 10 games per club');
-  console.log('💡 Run with --auto-link to manually link EA accounts to Discord\n');
+  console.log(`🔄 Anti-blocking: ${USER_AGENT_POOL.length} rotating UAs, exponential backoff, request jitter`);
+  console.log(`💾 Persistent cache: ${CACHE_TTL_MS / 1000 / 60} min TTL`);
+  console.log('\n💡 Command-line options:');
+  console.log('   --backfill-scouting  Backfill opponent intel');
+  console.log('   --backfill-matches   Backfill last 10 games per club');
+  console.log('   --auto-link          Manually link EA accounts to Discord');
+  console.log('   --clear-cache        Clear persistent cache\n');
   
   scheduledSync();
   setInterval(scheduledSync, 900000); // 15 minutes = 900,000ms
