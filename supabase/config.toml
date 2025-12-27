@@ -86,3 +86,6 @@ verify_jwt = false
 
 [functions.scout-opponent-club]
 verify_jwt = false
+
+[functions.auto-link-ea]
+verify_jwt = false

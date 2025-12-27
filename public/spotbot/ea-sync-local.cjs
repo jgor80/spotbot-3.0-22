@@ -500,11 +500,25 @@ function resetApiCache() {
   console.log('🔄 API cache cleared for new sync cycle');
 }
 
-// Add random delay to appear more human-like
-async function humanDelay(minMs = 500, maxMs = 2000) {
+// Add random delay to appear more human-like (increased to avoid rate limiting)
+async function humanDelay(minMs = 2000, maxMs = 5000) {
   const delay = Math.floor(Math.random() * (maxMs - minMs)) + minMs;
   await new Promise(r => setTimeout(r, delay));
 }
+
+// Longer delay between clubs
+async function clubDelay() {
+  const delay = Math.floor(Math.random() * 5000) + 5000; // 5-10 seconds
+  console.log(`⏳ Waiting ${(delay/1000).toFixed(1)}s between clubs...`);
+  await new Promise(r => setTimeout(r, delay));
+}
+
+// EA Session Cookie from environment (get from browser DevTools)
+const EA_SESSION_COOKIE = process.env.EA_SESSION_COOKIE || '';
+
+// Track consecutive 403 errors to trigger edge function fallback
+let consecutive403Errors = 0;
+let useEdgeFallback = false;
 
 const EA_HEADERS = {
   'accept': 'application/json',
@@ -515,8 +529,42 @@ const EA_HEADERS = {
   'sec-ch-ua': '"Chromium";v="130", "Google Chrome";v="130", "Not_A Brand";v="99"',
   'sec-ch-ua-mobile': '?0',
   'sec-ch-ua-platform': '"Windows"',
-  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  ...(EA_SESSION_COOKIE && { 'cookie': EA_SESSION_COOKIE })
 };
+
+if (EA_SESSION_COOKIE) {
+  console.log('🍪 EA session cookie configured');
+} else {
+  console.log('⚠️ No EA_SESSION_COOKIE set - may get 403 errors');
+}
+
+// Call the Supabase edge function as fallback when local EA calls fail
+async function callEdgeFunctionSync(guildId, clubKey, clubId, platform) {
+  console.log(`🌐 Calling edge function fallback for ${clubKey}...`);
+  
+  try {
+    const res = await axios.post(`${supabaseUrl}/functions/v1/sync-ea-stats`, {
+      sync_type: 'single_club',
+      guild_id: guildId,
+      club_key: clubKey,
+      club_id: clubId,
+      platform: platform
+    }, {
+      headers: {
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json'
+      },
+      timeout: 60000
+    });
+    
+    console.log(`✅ Edge function sync completed for ${clubKey}`);
+    return res.data;
+  } catch (err) {
+    console.error(`❌ Edge function fallback failed: ${err.message}`);
+    return null;
+  }
+}
 
 // Fetch matches for a specific match type
 // EA API uses 'matchType' param with string values like 'leagueMatch', 'playoffMatch'
@@ -532,6 +580,9 @@ async function fetchMatchesByType(clubId, platform, matchType) {
       headers: EA_HEADERS,
       timeout: 15000
     });
+    
+    // Reset 403 counter on success
+    consecutive403Errors = 0;
     
     if (res.status !== 200) {
       return [];
@@ -552,6 +603,16 @@ async function fetchMatchesByType(clubId, platform, matchType) {
   } catch (err) {
     const status = err.response?.status;
     console.log(`[EA] Failed to fetch ${matchType} matches (${status || 'network'}): ${err.message}`);
+    
+    // Track 403 errors for fallback
+    if (status === 403) {
+      consecutive403Errors++;
+      if (consecutive403Errors >= 2) {
+        console.log(`⚠️ ${consecutive403Errors} consecutive 403 errors - switching to edge function fallback`);
+        useEdgeFallback = true;
+      }
+    }
+    
     return [];
   }
 }
@@ -641,7 +702,7 @@ async function fetchMatches(clubId, platform) {
   return fetchAllMatches(clubId, platform);
 }
 
-// Fetch club info - now with caching
+// Fetch club info - now with caching and 403 tracking
 async function fetchClubInfo(clubId, platform) {
   // Check cache first
   if (apiCache.clubInfo.has(clubId)) {
@@ -659,6 +720,9 @@ async function fetchClubInfo(clubId, platform) {
       timeout: 10000
     });
     
+    // Reset 403 counter on success
+    consecutive403Errors = 0;
+    
     if (res.status !== 200) {
       apiCache.clubInfo.set(clubId, null);
       return null;
@@ -673,13 +737,24 @@ async function fetchClubInfo(clubId, platform) {
     apiCache.clubInfo.set(clubId, result);
     return result;
   } catch (err) {
+    const status = err.response?.status;
     console.error(`[EA] Club info error:`, err.message);
+    
+    // Track 403 errors for fallback
+    if (status === 403) {
+      consecutive403Errors++;
+      if (consecutive403Errors >= 2) {
+        console.log(`⚠️ ${consecutive403Errors} consecutive 403 errors - switching to edge function fallback`);
+        useEdgeFallback = true;
+      }
+    }
+    
     apiCache.clubInfo.set(clubId, null);
     return null;
   }
 }
 
-// Fetch club members - now with caching
+// Fetch club members - now with caching and 403 tracking
 async function fetchClubMembers(clubId, platform) {
   // Check cache first
   if (apiCache.clubMembers.has(clubId)) {
@@ -697,6 +772,9 @@ async function fetchClubMembers(clubId, platform) {
       timeout: 10000
     });
     
+    // Reset 403 counter on success
+    consecutive403Errors = 0;
+    
     if (res.status !== 200) {
       apiCache.clubMembers.set(clubId, []);
       return [];
@@ -711,7 +789,18 @@ async function fetchClubMembers(clubId, platform) {
     apiCache.clubMembers.set(clubId, result);
     return result;
   } catch (err) {
+    const status = err.response?.status;
     console.error(`[EA] Club members error:`, err.message);
+    
+    // Track 403 errors for fallback
+    if (status === 403) {
+      consecutive403Errors++;
+      if (consecutive403Errors >= 2) {
+        console.log(`⚠️ ${consecutive403Errors} consecutive 403 errors - switching to edge function fallback`);
+        useEdgeFallback = true;
+      }
+    }
+    
     apiCache.clubMembers.set(clubId, []);
     return [];
   }
@@ -1916,9 +2005,10 @@ async function triggerRatingRecalculation(guildId, playerIds) {
 async function runSync() {
   console.log('\n🔄 Starting EA sync...\n');
   
-  // Reset API cache at start of each sync cycle to avoid stale data
-  // but still prevent redundant calls within this sync
+  // Reset API cache and fallback state at start of each sync cycle
   resetApiCache();
+  consecutive403Errors = 0;
+  useEdgeFallback = false;
   
   // Get all guilds with EA-linked clubs
   const { data: guildSettings, error } = await supabase
@@ -1945,9 +2035,29 @@ async function runSync() {
     for (const club of enabledClubs) {
       console.log(`\n📊 Syncing ${club.name} (${club.ea_club_id})...`);
       
+      // Check if we should use edge function fallback
+      if (useEdgeFallback) {
+        console.log(`🌐 Using edge function fallback for ${club.name}`);
+        const result = await callEdgeFunctionSync(settings.guild_id, club.key, club.ea_club_id, club.ea_platform);
+        if (result) {
+          console.log(`✅ Edge function synced ${club.name}`);
+          clubsSynced++;
+        } else {
+          console.log(`⚠️ Edge function failed for ${club.name}`);
+        }
+        // Add delay between clubs
+        await clubDelay();
+        continue;
+      }
+      
       // Sync club stats
       await syncClubStats(settings.guild_id, club.key, club.ea_club_id, club.ea_platform);
       clubsSynced++;
+      
+      // Add delay between clubs to avoid rate limiting
+      if (enabledClubs.indexOf(club) < enabledClubs.length - 1) {
+        await clubDelay();
+      }
       
       // Fetch member stats (but don't update DB yet - collect for aggregation)
       console.log(`\n👥 Collecting member stats from ${club.name}...`);
