@@ -3114,6 +3114,9 @@ async function backfillMatchHistory() {
   console.log(`\n✅ Backfill complete: ${totalSynced} new matches synced, ${totalSkipped} duplicates skipped\n`);
 }
 
+// Sync interval: 15 minutes after each sync completes
+const SYNC_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+
 // Check if current time is within active hours (9 AM - 3 AM Central Time)
 function isActiveHours() {
   // Get current time in Central Time
@@ -3126,14 +3129,25 @@ function isActiveHours() {
   return hour >= 9 || hour < 3;
 }
 
-// Run sync if within active hours
-function scheduledSync() {
+// Schedule next sync after current one finishes
+function scheduleNextSync() {
+  const nextRunTime = new Date(Date.now() + SYNC_INTERVAL_MS);
+  console.log(`\n⏰ Next sync scheduled for: ${nextRunTime.toLocaleTimeString()}\n`);
+  setTimeout(scheduledSync, SYNC_INTERVAL_MS);
+}
+
+// Run sync if within active hours, then schedule next
+async function scheduledSync() {
   // Run maintenance tasks first
   runCacheMaintenance();
   forceGarbageCollection();
   
   if (isActiveHours()) {
-    runSync();
+    try {
+      await runSync();
+    } catch (err) {
+      console.error('❌ Sync failed with error:', err.message);
+    }
   } else {
     const now = new Date();
     const centralTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
@@ -3145,6 +3159,9 @@ function scheduledSync() {
     forceGarbageCollection();
     logMemoryUsage();
   }
+  
+  // Always schedule next sync after completion (whether sync ran or not)
+  scheduleNextSync();
 }
 
 // Handle uncaught errors to keep running
@@ -3215,10 +3232,11 @@ if (args.includes('--backfill-scouting')) {
   // Run immediately then every 15 minutes
   console.log('\n🚀 EA Sync Local started');
   console.log('📡 Running from your local IP to bypass EA cloud blocking');
-  console.log('⏱️  Syncing every 15 minutes (active 9 AM - 3 AM CT)');
+  console.log('⏱️  Syncing every 15 minutes AFTER completion (active 9 AM - 3 AM CT)');
   console.log(`🔄 Anti-blocking: ${USER_AGENT_POOL.length} rotating UAs, exponential backoff, request jitter`);
   console.log(`💾 Persistent cache: ${CACHE_TTL_MS / 1000 / 60} min TTL, max ${CACHE_MAX_SIZE_MB}MB / ${CACHE_MAX_FILES} files`);
   console.log(`🧹 Auto-cleanup: every ${CACHE_CLEANUP_INTERVAL_MS / 60000} min, GC hint every ${GC_INTERVAL_MS / 60000} min`);
+  console.log(`⏱️  Wait time: 15 minutes AFTER each sync completes (not from start)`);
   console.log('\n💡 Command-line options:');
   console.log('   --backfill-scouting  Backfill opponent intel');
   console.log('   --backfill-matches   Backfill last 10 games per club');
@@ -3229,8 +3247,9 @@ if (args.includes('--backfill-scouting')) {
   // Initial health check
   logMemoryUsage();
   
-  // Start scheduled tasks
+  // Start first sync immediately (will schedule next after completion)
   scheduledSync();
-  setInterval(scheduledSync, 900000); // 15 minutes = 900,000ms
+  
+  // Health check runs on interval (independent of sync)
   setInterval(healthCheck, 300000); // Health check every 5 minutes
 }
