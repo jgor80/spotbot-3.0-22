@@ -2613,16 +2613,16 @@ async function backfillMatchHistory() {
   console.log(`\n✅ Backfill complete: ${totalSynced} new matches synced, ${totalSkipped} duplicates skipped\n`);
 }
 
-// Check if current time is within active hours (8 AM - 2 AM Central Time)
+// Check if current time is within active hours (9 AM - 3 AM Central Time)
 function isActiveHours() {
   // Get current time in Central Time
   const now = new Date();
   const centralTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
   const hour = centralTime.getHours();
   
-  // Active from 8 AM (8) to 2 AM (2) next day
-  // So we're INACTIVE only between 2 AM and 8 AM (hours 2-7)
-  return hour >= 8 || hour < 2;
+  // Active from 9 AM (9) to 3 AM (3) next day
+  // So we're INACTIVE only between 3 AM and 9 AM (hours 3-8)
+  return hour >= 9 || hour < 3;
 }
 
 // Run sync if within active hours
@@ -2632,7 +2632,7 @@ function scheduledSync() {
   } else {
     const now = new Date();
     const centralTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
-    console.log(`\n💤 Outside active hours (${centralTime.toLocaleTimeString()}). Syncing resumes at 8 AM CT.\n`);
+    console.log(`\n💤 Outside active hours (${centralTime.toLocaleTimeString()}). Syncing resumes at 9 AM CT.\n`);
   }
 }
 
@@ -2660,7 +2660,7 @@ if (args.includes('--backfill-scouting')) {
   // Run immediately then every 15 minutes
   console.log('🚀 EA Sync Local started');
   console.log('📡 Running from your local IP to bypass EA cloud blocking');
-  console.log('⏱️  Syncing every 15 minutes (active 8 AM - 2 AM CT)');
+  console.log('⏱️  Syncing every 15 minutes (active 9 AM - 3 AM CT)');
   console.log('💡 Run with --backfill-scouting to backfill opponent intel');
   console.log('💡 Run with --backfill-matches to backfill last 10 games per club');
   console.log('💡 Run with --auto-link to manually link EA accounts to Discord\n');
