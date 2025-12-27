@@ -579,6 +579,20 @@ const path = require('path');
 
 const CACHE_DIR = path.join(process.cwd(), '.ea-cache');
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_MAX_SIZE_MB = 50; // Max cache size before auto-cleanup
+const CACHE_MAX_FILES = 500; // Max number of cache files
+const CACHE_CLEANUP_INTERVAL_MS = 30 * 60 * 1000; // Auto-cleanup every 30 minutes
+const GC_INTERVAL_MS = 60 * 60 * 1000; // Force garbage collection hint every hour
+
+// Track cache stats
+const cacheStats = {
+  hits: 0,
+  misses: 0,
+  writes: 0,
+  cleanups: 0,
+  lastCleanup: 0,
+  lastGC: 0
+};
 
 function ensureCacheDir() {
   if (!fs.existsSync(CACHE_DIR)) {
@@ -591,22 +605,224 @@ function getCacheFilePath(type, key) {
   return path.join(CACHE_DIR, `${type}_${key.replace(/[^a-zA-Z0-9]/g, '_')}.json`);
 }
 
+// Get cache directory size in MB
+function getCacheSizeMB() {
+  try {
+    if (!fs.existsSync(CACHE_DIR)) return 0;
+    
+    const files = fs.readdirSync(CACHE_DIR);
+    let totalSize = 0;
+    
+    for (const file of files) {
+      try {
+        const stats = fs.statSync(path.join(CACHE_DIR, file));
+        totalSize += stats.size;
+      } catch (e) {
+        // File may have been deleted
+      }
+    }
+    
+    return totalSize / (1024 * 1024);
+  } catch (err) {
+    return 0;
+  }
+}
+
+// Get number of cache files
+function getCacheFileCount() {
+  try {
+    if (!fs.existsSync(CACHE_DIR)) return 0;
+    return fs.readdirSync(CACHE_DIR).length;
+  } catch (err) {
+    return 0;
+  }
+}
+
+// Clean up expired cache files
+function cleanupExpiredCache() {
+  try {
+    if (!fs.existsSync(CACHE_DIR)) return { removed: 0 };
+    
+    const files = fs.readdirSync(CACHE_DIR);
+    let removed = 0;
+    const now = Date.now();
+    
+    for (const file of files) {
+      try {
+        const filePath = path.join(CACHE_DIR, file);
+        const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        const age = now - content.timestamp;
+        
+        // Remove if expired (older than 2x TTL for extra buffer)
+        if (age > CACHE_TTL_MS * 2) {
+          fs.unlinkSync(filePath);
+          removed++;
+        }
+      } catch (e) {
+        // If we can't read it, remove it
+        try {
+          fs.unlinkSync(path.join(CACHE_DIR, file));
+          removed++;
+        } catch (e2) {}
+      }
+    }
+    
+    return { removed };
+  } catch (err) {
+    return { removed: 0, error: err.message };
+  }
+}
+
+// Clean up oldest cache files to stay under limits
+function cleanupOldestCacheFiles(targetRemoval = 100) {
+  try {
+    if (!fs.existsSync(CACHE_DIR)) return { removed: 0 };
+    
+    const files = fs.readdirSync(CACHE_DIR);
+    const fileStats = [];
+    
+    for (const file of files) {
+      try {
+        const filePath = path.join(CACHE_DIR, file);
+        const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        fileStats.push({
+          file,
+          path: filePath,
+          timestamp: content.timestamp || 0
+        });
+      } catch (e) {
+        // If we can't read it, mark it for removal with old timestamp
+        fileStats.push({
+          file,
+          path: path.join(CACHE_DIR, file),
+          timestamp: 0
+        });
+      }
+    }
+    
+    // Sort by timestamp (oldest first) and remove oldest files
+    fileStats.sort((a, b) => a.timestamp - b.timestamp);
+    const toRemove = fileStats.slice(0, Math.min(targetRemoval, fileStats.length));
+    
+    let removed = 0;
+    for (const item of toRemove) {
+      try {
+        fs.unlinkSync(item.path);
+        removed++;
+      } catch (e) {}
+    }
+    
+    return { removed };
+  } catch (err) {
+    return { removed: 0, error: err.message };
+  }
+}
+
+// Automatic cache maintenance - call periodically
+function runCacheMaintenance(force = false) {
+  const now = Date.now();
+  
+  // Skip if ran recently (unless forced)
+  if (!force && (now - cacheStats.lastCleanup) < CACHE_CLEANUP_INTERVAL_MS) {
+    return;
+  }
+  
+  console.log('\n🧹 Running cache maintenance...');
+  cacheStats.lastCleanup = now;
+  cacheStats.cleanups++;
+  
+  // 1. Remove expired cache files
+  const expiredResult = cleanupExpiredCache();
+  if (expiredResult.removed > 0) {
+    console.log(`   ♻️  Removed ${expiredResult.removed} expired cache files`);
+  }
+  
+  // 2. Check size and file count limits
+  const sizeMB = getCacheSizeMB();
+  const fileCount = getCacheFileCount();
+  
+  console.log(`   📊 Cache: ${sizeMB.toFixed(2)} MB, ${fileCount} files`);
+  
+  // 3. Clean up if over limits
+  if (sizeMB > CACHE_MAX_SIZE_MB || fileCount > CACHE_MAX_FILES) {
+    console.log(`   ⚠️  Cache over limits (max: ${CACHE_MAX_SIZE_MB}MB / ${CACHE_MAX_FILES} files)`);
+    const oldestResult = cleanupOldestCacheFiles(Math.ceil(fileCount * 0.3)); // Remove ~30%
+    console.log(`   🗑️  Removed ${oldestResult.removed} oldest cache files`);
+  }
+  
+  // 4. Log cache stats
+  const hitRate = cacheStats.hits + cacheStats.misses > 0 
+    ? ((cacheStats.hits / (cacheStats.hits + cacheStats.misses)) * 100).toFixed(1)
+    : '0';
+  console.log(`   📈 Cache stats: ${cacheStats.hits} hits, ${cacheStats.misses} misses (${hitRate}% hit rate)`);
+  console.log('');
+}
+
+// Force garbage collection hint (if available)
+function forceGarbageCollection() {
+  const now = Date.now();
+  
+  // Skip if ran recently
+  if ((now - cacheStats.lastGC) < GC_INTERVAL_MS) {
+    return;
+  }
+  
+  cacheStats.lastGC = now;
+  
+  // Get memory usage before
+  const memBefore = process.memoryUsage();
+  
+  // Clear in-memory caches
+  apiCache.clubInfo.clear();
+  apiCache.clubMembers.clear();
+  apiCache.matches.clear();
+  apiCache.scoutedOpponents.clear();
+  
+  // Hint to Node.js to run GC (only works if --expose-gc flag is used)
+  if (global.gc) {
+    try {
+      global.gc();
+      const memAfter = process.memoryUsage();
+      const freedMB = ((memBefore.heapUsed - memAfter.heapUsed) / (1024 * 1024)).toFixed(2);
+      console.log(`🧹 GC: Freed ${freedMB} MB (heap: ${(memAfter.heapUsed / 1024 / 1024).toFixed(1)} MB)`);
+    } catch (e) {
+      console.log('⚠️  GC hint failed:', e.message);
+    }
+  } else {
+    // Even without --expose-gc, clearing caches helps
+    const memAfter = process.memoryUsage();
+    console.log(`🧹 Memory: ${(memAfter.heapUsed / 1024 / 1024).toFixed(1)} MB heap used`);
+  }
+}
+
+// Log memory usage
+function logMemoryUsage() {
+  const mem = process.memoryUsage();
+  console.log(`💾 Memory: heap ${(mem.heapUsed / 1024 / 1024).toFixed(1)}/${(mem.heapTotal / 1024 / 1024).toFixed(1)} MB, RSS ${(mem.rss / 1024 / 1024).toFixed(1)} MB`);
+}
+
 function getFromPersistentCache(type, key) {
   try {
     const filePath = getCacheFilePath(type, key);
-    if (!fs.existsSync(filePath)) return null;
+    if (!fs.existsSync(filePath)) {
+      cacheStats.misses++;
+      return null;
+    }
     
     const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     const age = Date.now() - content.timestamp;
     
     if (age > CACHE_TTL_MS) {
       // Cache expired
+      cacheStats.misses++;
       return null;
     }
     
+    cacheStats.hits++;
     console.log(`📦 Cache hit: ${type}/${key} (${(age / 1000).toFixed(0)}s old)`);
     return content.data;
   } catch (err) {
+    cacheStats.misses++;
     return null;
   }
 }
@@ -618,6 +834,7 @@ function saveToPersistentCache(type, key, data) {
       timestamp: Date.now(),
       data: data
     }));
+    cacheStats.writes++;
   } catch (err) {
     console.log(`⚠️ Failed to write cache: ${err.message}`);
   }
@@ -631,6 +848,11 @@ function clearPersistentCache() {
         fs.unlinkSync(path.join(CACHE_DIR, file));
       }
       console.log(`🧹 Cleared ${files.length} cached files`);
+      
+      // Reset stats
+      cacheStats.hits = 0;
+      cacheStats.misses = 0;
+      cacheStats.writes = 0;
     }
   } catch (err) {
     console.log(`⚠️ Failed to clear cache: ${err.message}`);
@@ -2906,13 +3128,56 @@ function isActiveHours() {
 
 // Run sync if within active hours
 function scheduledSync() {
+  // Run maintenance tasks first
+  runCacheMaintenance();
+  forceGarbageCollection();
+  
   if (isActiveHours()) {
     runSync();
   } else {
     const now = new Date();
     const centralTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
     console.log(`\n💤 Outside active hours (${centralTime.toLocaleTimeString()}). Syncing resumes at 9 AM CT.\n`);
+    
+    // During inactive hours, do aggressive cleanup
+    console.log('🧹 Running aggressive cleanup during inactive hours...');
+    runCacheMaintenance(true);
+    forceGarbageCollection();
+    logMemoryUsage();
   }
+}
+
+// Handle uncaught errors to keep running
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught exception:', err.message);
+  console.error(err.stack);
+  // Don't exit - try to keep running
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled rejection at:', promise, 'reason:', reason);
+  // Don't exit - try to keep running
+});
+
+// Periodic health check and maintenance (every 5 minutes)
+function healthCheck() {
+  const uptime = process.uptime();
+  const hours = Math.floor(uptime / 3600);
+  const minutes = Math.floor((uptime % 3600) / 60);
+  
+  console.log(`\n💓 Health check (uptime: ${hours}h ${minutes}m)`);
+  logMemoryUsage();
+  
+  const sizeMB = getCacheSizeMB();
+  const fileCount = getCacheFileCount();
+  console.log(`📦 Cache: ${sizeMB.toFixed(2)} MB, ${fileCount} files`);
+  
+  // Log error tracking stats
+  if (errorTracking.consecutiveErrors > 0) {
+    console.log(`⚠️  Error state: ${errorTracking.consecutiveErrors} consecutive errors, ${errorTracking.consecutive403Errors} 403s`);
+  }
+  
+  console.log('');
 }
 
 // Check for command line arguments
@@ -2952,13 +3217,20 @@ if (args.includes('--backfill-scouting')) {
   console.log('📡 Running from your local IP to bypass EA cloud blocking');
   console.log('⏱️  Syncing every 15 minutes (active 9 AM - 3 AM CT)');
   console.log(`🔄 Anti-blocking: ${USER_AGENT_POOL.length} rotating UAs, exponential backoff, request jitter`);
-  console.log(`💾 Persistent cache: ${CACHE_TTL_MS / 1000 / 60} min TTL`);
+  console.log(`💾 Persistent cache: ${CACHE_TTL_MS / 1000 / 60} min TTL, max ${CACHE_MAX_SIZE_MB}MB / ${CACHE_MAX_FILES} files`);
+  console.log(`🧹 Auto-cleanup: every ${CACHE_CLEANUP_INTERVAL_MS / 60000} min, GC hint every ${GC_INTERVAL_MS / 60000} min`);
   console.log('\n💡 Command-line options:');
   console.log('   --backfill-scouting  Backfill opponent intel');
   console.log('   --backfill-matches   Backfill last 10 games per club');
   console.log('   --auto-link          Manually link EA accounts to Discord');
-  console.log('   --clear-cache        Clear persistent cache\n');
+  console.log('   --clear-cache        Clear persistent cache');
+  console.log('\n💡 Pro tip: Run with --expose-gc for better memory management\n');
   
+  // Initial health check
+  logMemoryUsage();
+  
+  // Start scheduled tasks
   scheduledSync();
   setInterval(scheduledSync, 900000); // 15 minutes = 900,000ms
+  setInterval(healthCheck, 300000); // Health check every 5 minutes
 }
