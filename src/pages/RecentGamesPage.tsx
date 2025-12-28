@@ -74,26 +74,43 @@ export default function RecentGamesPage() {
     return selectedGuild.clubs.filter(c => c.enabled);
   }, [selectedGuild]);
 
+  // Fetch all matches with pagination to get complete history
   const { data: matches, isLoading, error } = useQuery({
     queryKey: ["recent-games", selectedGuildId, clubFilter],
     queryFn: async () => {
       if (!selectedGuildId) return [];
       
-      let query = supabase
-        .from("club_matches")
-        .select("*")
-        .eq("guild_id", selectedGuildId)
-        .order("created_at", { ascending: false })
-        .limit(100);
+      const allMatches: ClubMatch[] = [];
+      const pageSize = 1000; // Supabase max per request
+      let offset = 0;
+      let hasMore = true;
       
-      if (clubFilter !== "all") {
-        query = query.eq("club_key", clubFilter);
+      while (hasMore) {
+        let query = supabase
+          .from("club_matches")
+          .select("*")
+          .eq("guild_id", selectedGuildId)
+          .order("created_at", { ascending: false })
+          .range(offset, offset + pageSize - 1);
+        
+        if (clubFilter !== "all") {
+          query = query.eq("club_key", clubFilter);
+        }
+        
+        const { data, error } = await query;
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          allMatches.push(...(data as ClubMatch[]));
+          offset += pageSize;
+          hasMore = data.length === pageSize;
+        } else {
+          hasMore = false;
+        }
       }
       
-      const { data, error } = await query;
-      console.log("[RecentGamesPage] Query result:", { guildId: selectedGuildId, matchCount: data?.length, error });
-      if (error) throw error;
-      return data as ClubMatch[];
+      console.log("[RecentGamesPage] Fetched complete history:", { guildId: selectedGuildId, matchCount: allMatches.length });
+      return allMatches;
     },
     enabled: !!selectedGuildId,
   });
