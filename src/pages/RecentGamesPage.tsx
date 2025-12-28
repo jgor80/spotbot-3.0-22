@@ -270,15 +270,45 @@ export default function RecentGamesPage() {
     })) as PlayerStat[];
   };
 
-  // Filter matches by search query (opponent name)
+  // Get all player names from a match (both teams)
+  const getMatchPlayerNames = (match: ClubMatch): string[] => {
+    const names: string[] = [];
+    
+    // Get our team player names from player_stats
+    const teamStats = parsePlayerStats(match.player_stats);
+    teamStats.forEach(player => {
+      const name = getPlayerName(player);
+      if (name && name !== "Unknown Player") {
+        names.push(name.toLowerCase());
+      }
+    });
+    
+    // Get opponent player names from match_data
+    const opponentStats = parseOpponentStats(match);
+    opponentStats.forEach(player => {
+      const name = getPlayerName(player);
+      if (name && name !== "Unknown Player") {
+        names.push(name.toLowerCase());
+      }
+    });
+    
+    return names;
+  };
+
+  // Filter matches by search query (opponent name or player name)
   const filteredMatches = useMemo(() => {
     if (!matches) return [];
     if (!searchQuery.trim()) return matches;
     
     const query = searchQuery.toLowerCase();
     return matches.filter(match => {
+      // Check opponent team name
       const opponentName = getOpponentName(match).toLowerCase();
-      return opponentName.includes(query);
+      if (opponentName.includes(query)) return true;
+      
+      // Check player names
+      const playerNames = getMatchPlayerNames(match);
+      return playerNames.some(name => name.includes(query));
     });
   }, [matches, searchQuery]);
 
@@ -308,7 +338,7 @@ export default function RecentGamesPage() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search opponent..."
+                placeholder="Search team or player..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 w-full sm:w-[200px]"
