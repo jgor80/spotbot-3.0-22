@@ -10,8 +10,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
-import { Trophy, Minus, X, Users, Calendar, Target, Star, Goal, HandHelping, Shield, Footprints, ChevronRight } from "lucide-react";
+import { Trophy, Minus, X, Users, Calendar, Target, Star, Goal, HandHelping, Shield, Footprints, ChevronRight, Search } from "lucide-react";
 
 interface ClubMatch {
   id: string;
@@ -63,7 +65,9 @@ interface PlayerStat {
 export default function RecentGamesPage() {
   const { selectedGuildId, selectedGuild } = useGuild();
   const [clubFilter, setClubFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedMatch, setSelectedMatch] = useState<ClubMatch | null>(null);
+  const [statsTab, setStatsTab] = useState<string>("team");
 
   const enabledClubs = useMemo(() => {
     if (!selectedGuild?.clubs) return [];
@@ -209,6 +213,58 @@ export default function RecentGamesPage() {
     return player.ea_username || player.name || "Unknown Player";
   };
 
+  // Extract opponent player stats from match_data
+  const parseOpponentStats = (match: ClubMatch): PlayerStat[] => {
+    if (!match.match_data?.players) return [];
+    
+    const players = match.match_data.players;
+    const opponentClubId = match.opponent_club_id;
+    
+    if (!opponentClubId || !players[opponentClubId]) return [];
+    
+    const opponentPlayers = players[opponentClubId];
+    
+    return Object.entries(opponentPlayers).map(([playerId, playerData]: [string, any]) => ({
+      name: playerData.playername || playerData.commonname || `Player ${playerId}`,
+      ea_username: playerData.playername,
+      goals: parseInt(playerData.goals) || 0,
+      assists: parseInt(playerData.assists) || 0,
+      rating: parseFloat(playerData.rating) || 0,
+      ea_match_rating: parseFloat(playerData.rating) || 0,
+      position: playerData.pos,
+      position_played: playerData.pos,
+      tackles: parseInt(playerData.tackles) || 0,
+      passes_made: parseInt(playerData.passesmade) || 0,
+      pass_attempts: parseInt(playerData.passattempts) || 0,
+      shots: parseInt(playerData.shots) || 0,
+      saves_diving: parseInt(playerData.gksaves) || 0,
+      saves_reflex: 0,
+      saves_parry: 0,
+      saves_cross: 0,
+      saves_punch: 0,
+      interceptions: parseInt(playerData.interceptions) || 0,
+      clearances: parseInt(playerData.clearances) || 0,
+      dribbles: parseInt(playerData.dribblessucc) || 0,
+      fouls: parseInt(playerData.foulcommitted) || 0,
+      offsides: parseInt(playerData.offsides) || 0,
+      man_of_match: playerData.mom === "1",
+      goals_conceded: parseInt(playerData.goalsconceded) || 0,
+      possession: parseInt(playerData.poss) || 0,
+    })) as PlayerStat[];
+  };
+
+  // Filter matches by search query (opponent name)
+  const filteredMatches = useMemo(() => {
+    if (!matches) return [];
+    if (!searchQuery.trim()) return matches;
+    
+    const query = searchQuery.toLowerCase();
+    return matches.filter(match => {
+      const opponentName = getOpponentName(match).toLowerCase();
+      return opponentName.includes(query);
+    });
+  }, [matches, searchQuery]);
+
   if (!selectedGuildId) {
     return (
       <DashboardLayout>
@@ -231,28 +287,39 @@ export default function RecentGamesPage() {
             </p>
           </div>
           
-          <Select value={clubFilter} onValueChange={setClubFilter}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Filter by club" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Clubs</SelectItem>
-              {enabledClubs.map((club) => (
-                <SelectItem key={club.key} value={club.key}>
-                  {club.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search opponent..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 w-full sm:w-[200px]"
+              />
+            </div>
+            <Select value={clubFilter} onValueChange={setClubFilter}>
+              <SelectTrigger className="w-full sm:w-[200px]">
+                <SelectValue placeholder="Filter by club" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Clubs</SelectItem>
+                {enabledClubs.map((club) => (
+                  <SelectItem key={club.key} value={club.key}>
+                    {club.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* Stats Summary */}
-        {matches && matches.length > 0 && (
+        {filteredMatches && filteredMatches.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card>
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold text-emerald-500">
-                  {matches.filter(m => m.result === "win").length}
+                  {filteredMatches.filter(m => m.result === "win").length}
                 </div>
                 <p className="text-sm text-muted-foreground">Wins</p>
               </CardContent>
@@ -260,7 +327,7 @@ export default function RecentGamesPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold text-red-500">
-                  {matches.filter(m => m.result === "loss").length}
+                  {filteredMatches.filter(m => m.result === "loss").length}
                 </div>
                 <p className="text-sm text-muted-foreground">Losses</p>
               </CardContent>
@@ -268,7 +335,7 @@ export default function RecentGamesPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold text-amber-500">
-                  {matches.filter(m => m.result === "draw").length}
+                  {filteredMatches.filter(m => m.result === "draw").length}
                 </div>
                 <p className="text-sm text-muted-foreground">Draws</p>
               </CardContent>
@@ -276,9 +343,11 @@ export default function RecentGamesPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold">
-                  {matches.length}
+                  {filteredMatches.length}
                 </div>
-                <p className="text-sm text-muted-foreground">Total Games</p>
+                <p className="text-sm text-muted-foreground">
+                  {searchQuery ? "Matching" : "Total"} Games
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -297,13 +366,16 @@ export default function RecentGamesPage() {
               <p className="text-red-500">Error loading games: {(error as Error).message}</p>
             </CardContent>
           </Card>
-        ) : matches && matches.length > 0 ? (
+        ) : filteredMatches && filteredMatches.length > 0 ? (
           <div className="space-y-3">
-            {matches.map((match) => (
+            {filteredMatches.map((match) => (
               <Card 
                 key={match.id} 
                 className="hover:bg-muted/50 transition-colors cursor-pointer"
-                onClick={() => setSelectedMatch(match)}
+                onClick={() => {
+                  setSelectedMatch(match);
+                  setStatsTab("team");
+                }}
               >
                 <CardContent className="py-4">
                   <div className="flex flex-col md:flex-row md:items-center gap-4">
@@ -348,6 +420,16 @@ export default function RecentGamesPage() {
               </Card>
             ))}
           </div>
+        ) : searchQuery ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="font-semibold text-lg mb-2">No Matches Found</h3>
+              <p className="text-muted-foreground">
+                No games found against "{searchQuery}". Try a different search term.
+              </p>
+            </CardContent>
+          </Card>
         ) : (
           <Card>
             <CardContent className="py-12 text-center">
@@ -385,228 +467,413 @@ export default function RecentGamesPage() {
                   </div>
                 </DialogHeader>
 
-                <ScrollArea className="max-h-[60vh]">
-                  {parsePlayerStats(selectedMatch.player_stats).length > 0 ? (
-                    <div className="space-y-6">
-                      {/* Player Stats Table */}
-                      <div>
-                        <h3 className="font-semibold mb-3 flex items-center gap-2">
-                          <Users className="h-4 w-4" />
-                          Player Performance
-                        </h3>
-                        <div className="rounded-md border overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="min-w-[150px]">Player</TableHead>
-                                <TableHead className="text-center">Pos</TableHead>
-                                <TableHead className="text-center">
-                                  <Star className="h-4 w-4 mx-auto" />
-                                </TableHead>
-                                <TableHead className="text-center">
-                                  <Goal className="h-4 w-4 mx-auto" />
-                                </TableHead>
-                                <TableHead className="text-center">
-                                  <HandHelping className="h-4 w-4 mx-auto" />
-                                </TableHead>
-                                <TableHead className="text-center">Shots</TableHead>
-                                <TableHead className="text-center">Pass</TableHead>
-                                <TableHead className="text-center">Tackles</TableHead>
-                                <TableHead className="text-center">Int</TableHead>
-                                <TableHead className="text-center">Saves</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {parsePlayerStats(selectedMatch.player_stats).map((player, idx) => (
-                                <TableRow key={idx}>
-                                  <TableCell className="font-medium">
-                                    <div className="flex items-center gap-2">
-                                      {getPlayerName(player)}
-                                      {player.man_of_match && (
-                                        <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
-                                          MOTM
+                <Tabs value={statsTab} onValueChange={setStatsTab} className="w-full">
+                  <TabsList className="grid w-full grid-cols-2 mb-4">
+                    <TabsTrigger value="team">Your Team</TabsTrigger>
+                    <TabsTrigger value="opponent">
+                      Opponent ({parseOpponentStats(selectedMatch).length})
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <ScrollArea className="max-h-[55vh]">
+                    <TabsContent value="team" className="mt-0">
+                      {parsePlayerStats(selectedMatch.player_stats).length > 0 ? (
+                        <div className="space-y-6">
+                          {/* Player Stats Table */}
+                          <div>
+                            <h3 className="font-semibold mb-3 flex items-center gap-2">
+                              <Users className="h-4 w-4" />
+                              {getClubName(selectedMatch.club_key)} Performance
+                            </h3>
+                            <div className="rounded-md border overflow-x-auto">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="min-w-[150px]">Player</TableHead>
+                                    <TableHead className="text-center">Pos</TableHead>
+                                    <TableHead className="text-center">
+                                      <Star className="h-4 w-4 mx-auto" />
+                                    </TableHead>
+                                    <TableHead className="text-center">
+                                      <Goal className="h-4 w-4 mx-auto" />
+                                    </TableHead>
+                                    <TableHead className="text-center">
+                                      <HandHelping className="h-4 w-4 mx-auto" />
+                                    </TableHead>
+                                    <TableHead className="text-center">Shots</TableHead>
+                                    <TableHead className="text-center">Pass</TableHead>
+                                    <TableHead className="text-center">Tackles</TableHead>
+                                    <TableHead className="text-center">Int</TableHead>
+                                    <TableHead className="text-center">Saves</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {parsePlayerStats(selectedMatch.player_stats).map((player, idx) => (
+                                    <TableRow key={idx}>
+                                      <TableCell className="font-medium">
+                                        <div className="flex items-center gap-2">
+                                          {getPlayerName(player)}
+                                          {player.man_of_match && (
+                                            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+                                              MOTM
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        <Badge variant="outline" className="text-xs">
+                                          {player.position_played || player.position || "-"}
                                         </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.ea_match_rating || player.rating || "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.goals ?? "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.assists ?? "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.shots ?? "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono text-xs">
+                                        {player.passes_made !== undefined && player.pass_attempts !== undefined
+                                          ? `${player.passes_made}/${player.pass_attempts}`
+                                          : "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.tackles ?? "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.interceptions ?? "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {(player.saves || player.saves_diving || player.saves_reflex) 
+                                          ? (player.saves ?? ((player.saves_diving || 0) + (player.saves_reflex || 0) + (player.saves_parry || 0) + (player.saves_cross || 0) + (player.saves_punch || 0)))
+                                          : "-"}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </div>
+
+                          {/* Detailed Stats Cards */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {parsePlayerStats(selectedMatch.player_stats).map((player, idx) => (
+                              <Card key={idx} className="overflow-hidden">
+                                <CardContent className="p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold">{getPlayerName(player)}</span>
+                                      <Badge variant="outline" className="text-xs">
+                                        {player.position_played || player.position || "?"}
+                                      </Badge>
+                                    </div>
+                                    {player.man_of_match && (
+                                      <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">
+                                        <Star className="h-3 w-3 mr-1" />
+                                        MOTM
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  
+                                  <div className="grid grid-cols-3 gap-3 text-sm">
+                                    <div className="text-center p-2 bg-muted/50 rounded">
+                                      <div className="text-lg font-bold">{player.ea_match_rating || player.rating || "-"}</div>
+                                      <div className="text-xs text-muted-foreground">Rating</div>
+                                    </div>
+                                    <div className="text-center p-2 bg-muted/50 rounded">
+                                      <div className="text-lg font-bold text-emerald-500">{player.goals ?? 0}</div>
+                                      <div className="text-xs text-muted-foreground">Goals</div>
+                                    </div>
+                                    <div className="text-center p-2 bg-muted/50 rounded">
+                                      <div className="text-lg font-bold text-blue-500">{player.assists ?? 0}</div>
+                                      <div className="text-xs text-muted-foreground">Assists</div>
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
+                                    {player.shots !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-mono">{player.shots}</div>
+                                        <div className="text-muted-foreground">Shots</div>
+                                      </div>
+                                    )}
+                                    {player.tackles !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-mono">{player.tackles}</div>
+                                        <div className="text-muted-foreground">Tackles</div>
+                                      </div>
+                                    )}
+                                    {player.interceptions !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-mono">{player.interceptions}</div>
+                                        <div className="text-muted-foreground">Int</div>
+                                      </div>
+                                    )}
+                                    {player.clearances !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-mono">{player.clearances}</div>
+                                        <div className="text-muted-foreground">Clears</div>
+                                      </div>
+                                    )}
+                                    {player.dribbles !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-mono">{player.dribbles}</div>
+                                        <div className="text-muted-foreground">Dribbles</div>
+                                      </div>
+                                    )}
+                                    {player.fouls !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-mono">{player.fouls}</div>
+                                        <div className="text-muted-foreground">Fouls</div>
+                                      </div>
+                                    )}
+                                    {player.offsides !== undefined && (
+                                      <div className="text-center">
+                                        <div className="font-mono">{player.offsides}</div>
+                                        <div className="text-muted-foreground">Offsides</div>
+                                      </div>
+                                    )}
+                                    {(player.passes_made !== undefined) && (
+                                      <div className="text-center">
+                                        <div className="font-mono">{player.passes_made}/{player.pass_attempts || "?"}</div>
+                                        <div className="text-muted-foreground">Passes</div>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {(player.saves_diving || player.saves_reflex || player.saves_parry) && (
+                                    <div className="mt-3 pt-3 border-t">
+                                      <div className="text-xs text-muted-foreground mb-2">Goalkeeper Saves</div>
+                                      <div className="grid grid-cols-5 gap-2 text-xs">
+                                        <div className="text-center">
+                                          <div className="font-mono">{player.saves_diving || 0}</div>
+                                          <div className="text-muted-foreground">Diving</div>
+                                        </div>
+                                        <div className="text-center">
+                                          <div className="font-mono">{player.saves_reflex || 0}</div>
+                                          <div className="text-muted-foreground">Reflex</div>
+                                        </div>
+                                        <div className="text-center">
+                                          <div className="font-mono">{player.saves_parry || 0}</div>
+                                          <div className="text-muted-foreground">Parry</div>
+                                        </div>
+                                        <div className="text-center">
+                                          <div className="font-mono">{player.saves_cross || 0}</div>
+                                          <div className="text-muted-foreground">Cross</div>
+                                        </div>
+                                        <div className="text-center">
+                                          <div className="font-mono">{player.saves_punch || 0}</div>
+                                          <div className="text-muted-foreground">Punch</div>
+                                        </div>
+                                      </div>
+                                      {player.goals_conceded !== undefined && (
+                                        <div className="mt-2 text-center">
+                                          <span className="text-muted-foreground">Goals Conceded: </span>
+                                          <span className="font-mono">{player.goals_conceded}</span>
+                                        </div>
                                       )}
                                     </div>
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    <Badge variant="outline" className="text-xs">
-                                      {player.position_played || player.position || "-"}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-center font-mono">
-                                    {player.ea_match_rating || player.rating || "-"}
-                                  </TableCell>
-                                  <TableCell className="text-center font-mono">
-                                    {player.goals ?? "-"}
-                                  </TableCell>
-                                  <TableCell className="text-center font-mono">
-                                    {player.assists ?? "-"}
-                                  </TableCell>
-                                  <TableCell className="text-center font-mono">
-                                    {player.shots ?? "-"}
-                                  </TableCell>
-                                  <TableCell className="text-center font-mono text-xs">
-                                    {player.passes_made !== undefined && player.pass_attempts !== undefined
-                                      ? `${player.passes_made}/${player.pass_attempts}`
-                                      : "-"}
-                                  </TableCell>
-                                  <TableCell className="text-center font-mono">
-                                    {player.tackles ?? "-"}
-                                  </TableCell>
-                                  <TableCell className="text-center font-mono">
-                                    {player.interceptions ?? "-"}
-                                  </TableCell>
-                                  <TableCell className="text-center font-mono">
-                                    {(player.saves || player.saves_diving || player.saves_reflex) 
-                                      ? (player.saves ?? ((player.saves_diving || 0) + (player.saves_reflex || 0) + (player.saves_parry || 0) + (player.saves_cross || 0) + (player.saves_punch || 0)))
-                                      : "-"}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <p>No player stats available for your team.</p>
+                        </div>
+                      )}
+                    </TabsContent>
 
-                      {/* Detailed Stats Cards */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {parsePlayerStats(selectedMatch.player_stats).map((player, idx) => (
-                          <Card key={idx} className="overflow-hidden">
-                            <CardContent className="p-4">
-                              <div className="flex items-center justify-between mb-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-semibold">{getPlayerName(player)}</span>
-                                  <Badge variant="outline" className="text-xs">
-                                    {player.position_played || player.position || "?"}
-                                  </Badge>
-                                </div>
-                                {player.man_of_match && (
-                                  <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">
-                                    <Star className="h-3 w-3 mr-1" />
-                                    MOTM
-                                  </Badge>
-                                )}
-                              </div>
-                              
-                              <div className="grid grid-cols-3 gap-3 text-sm">
-                                {/* Rating */}
-                                <div className="text-center p-2 bg-muted/50 rounded">
-                                  <div className="text-lg font-bold">{player.ea_match_rating || player.rating || "-"}</div>
-                                  <div className="text-xs text-muted-foreground">Rating</div>
-                                </div>
-                                
-                                {/* Goals */}
-                                <div className="text-center p-2 bg-muted/50 rounded">
-                                  <div className="text-lg font-bold text-emerald-500">{player.goals ?? 0}</div>
-                                  <div className="text-xs text-muted-foreground">Goals</div>
-                                </div>
-                                
-                                {/* Assists */}
-                                <div className="text-center p-2 bg-muted/50 rounded">
-                                  <div className="text-lg font-bold text-blue-500">{player.assists ?? 0}</div>
-                                  <div className="text-xs text-muted-foreground">Assists</div>
-                                </div>
-                              </div>
+                    <TabsContent value="opponent" className="mt-0">
+                      {parseOpponentStats(selectedMatch).length > 0 ? (
+                        <div className="space-y-6">
+                          {/* Opponent Stats Table */}
+                          <div>
+                            <h3 className="font-semibold mb-3 flex items-center gap-2">
+                              <Shield className="h-4 w-4" />
+                              {getOpponentName(selectedMatch)} Performance
+                            </h3>
+                            <div className="rounded-md border overflow-x-auto">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="min-w-[150px]">Player</TableHead>
+                                    <TableHead className="text-center">Pos</TableHead>
+                                    <TableHead className="text-center">
+                                      <Star className="h-4 w-4 mx-auto" />
+                                    </TableHead>
+                                    <TableHead className="text-center">
+                                      <Goal className="h-4 w-4 mx-auto" />
+                                    </TableHead>
+                                    <TableHead className="text-center">
+                                      <HandHelping className="h-4 w-4 mx-auto" />
+                                    </TableHead>
+                                    <TableHead className="text-center">Shots</TableHead>
+                                    <TableHead className="text-center">Pass</TableHead>
+                                    <TableHead className="text-center">Tackles</TableHead>
+                                    <TableHead className="text-center">Int</TableHead>
+                                    <TableHead className="text-center">Saves</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {parseOpponentStats(selectedMatch).map((player, idx) => (
+                                    <TableRow key={idx}>
+                                      <TableCell className="font-medium">
+                                        <div className="flex items-center gap-2">
+                                          {getPlayerName(player)}
+                                          {player.man_of_match && (
+                                            <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-xs">
+                                              MOTM
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        <Badge variant="outline" className="text-xs">
+                                          {player.position_played || player.position || "-"}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.ea_match_rating || player.rating || "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.goals ?? "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.assists ?? "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.shots ?? "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono text-xs">
+                                        {player.passes_made !== undefined && player.pass_attempts !== undefined
+                                          ? `${player.passes_made}/${player.pass_attempts}`
+                                          : "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.tackles ?? "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.interceptions ?? "-"}
+                                      </TableCell>
+                                      <TableCell className="text-center font-mono">
+                                        {player.saves_diving || "-"}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </div>
 
-                              {/* Additional Stats */}
-                              <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
-                                {player.shots !== undefined && (
-                                  <div className="text-center">
-                                    <div className="font-mono">{player.shots}</div>
-                                    <div className="text-muted-foreground">Shots</div>
+                          {/* Opponent Detailed Stats Cards */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {parseOpponentStats(selectedMatch).map((player, idx) => (
+                              <Card key={idx} className="overflow-hidden border-red-500/20">
+                                <CardContent className="p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-semibold">{getPlayerName(player)}</span>
+                                      <Badge variant="outline" className="text-xs">
+                                        {player.position_played || player.position || "?"}
+                                      </Badge>
+                                    </div>
+                                    {player.man_of_match && (
+                                      <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">
+                                        <Star className="h-3 w-3 mr-1" />
+                                        MOTM
+                                      </Badge>
+                                    )}
                                   </div>
-                                )}
-                                {player.tackles !== undefined && (
-                                  <div className="text-center">
-                                    <div className="font-mono">{player.tackles}</div>
-                                    <div className="text-muted-foreground">Tackles</div>
+                                  
+                                  <div className="grid grid-cols-3 gap-3 text-sm">
+                                    <div className="text-center p-2 bg-muted/50 rounded">
+                                      <div className="text-lg font-bold">{player.ea_match_rating || player.rating || "-"}</div>
+                                      <div className="text-xs text-muted-foreground">Rating</div>
+                                    </div>
+                                    <div className="text-center p-2 bg-muted/50 rounded">
+                                      <div className="text-lg font-bold text-red-500">{player.goals ?? 0}</div>
+                                      <div className="text-xs text-muted-foreground">Goals</div>
+                                    </div>
+                                    <div className="text-center p-2 bg-muted/50 rounded">
+                                      <div className="text-lg font-bold text-orange-500">{player.assists ?? 0}</div>
+                                      <div className="text-xs text-muted-foreground">Assists</div>
+                                    </div>
                                   </div>
-                                )}
-                                {player.interceptions !== undefined && (
-                                  <div className="text-center">
-                                    <div className="font-mono">{player.interceptions}</div>
-                                    <div className="text-muted-foreground">Int</div>
-                                  </div>
-                                )}
-                                {player.clearances !== undefined && (
-                                  <div className="text-center">
-                                    <div className="font-mono">{player.clearances}</div>
-                                    <div className="text-muted-foreground">Clears</div>
-                                  </div>
-                                )}
-                                {player.dribbles !== undefined && (
-                                  <div className="text-center">
-                                    <div className="font-mono">{player.dribbles}</div>
-                                    <div className="text-muted-foreground">Dribbles</div>
-                                  </div>
-                                )}
-                                {player.fouls !== undefined && (
-                                  <div className="text-center">
-                                    <div className="font-mono">{player.fouls}</div>
-                                    <div className="text-muted-foreground">Fouls</div>
-                                  </div>
-                                )}
-                                {player.offsides !== undefined && (
-                                  <div className="text-center">
-                                    <div className="font-mono">{player.offsides}</div>
-                                    <div className="text-muted-foreground">Offsides</div>
-                                  </div>
-                                )}
-                                {(player.passes_made !== undefined) && (
-                                  <div className="text-center">
-                                    <div className="font-mono">{player.passes_made}/{player.pass_attempts || "?"}</div>
-                                    <div className="text-muted-foreground">Passes</div>
-                                  </div>
-                                )}
-                              </div>
 
-                              {/* GK Stats */}
-                              {(player.saves_diving || player.saves_reflex || player.saves_parry) && (
-                                <div className="mt-3 pt-3 border-t">
-                                  <div className="text-xs text-muted-foreground mb-2">Goalkeeper Saves</div>
-                                  <div className="grid grid-cols-5 gap-2 text-xs">
+                                  <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
                                     <div className="text-center">
-                                      <div className="font-mono">{player.saves_diving || 0}</div>
-                                      <div className="text-muted-foreground">Diving</div>
+                                      <div className="font-mono">{player.shots ?? 0}</div>
+                                      <div className="text-muted-foreground">Shots</div>
                                     </div>
                                     <div className="text-center">
-                                      <div className="font-mono">{player.saves_reflex || 0}</div>
-                                      <div className="text-muted-foreground">Reflex</div>
+                                      <div className="font-mono">{player.tackles ?? 0}</div>
+                                      <div className="text-muted-foreground">Tackles</div>
                                     </div>
                                     <div className="text-center">
-                                      <div className="font-mono">{player.saves_parry || 0}</div>
-                                      <div className="text-muted-foreground">Parry</div>
+                                      <div className="font-mono">{player.interceptions ?? 0}</div>
+                                      <div className="text-muted-foreground">Int</div>
                                     </div>
                                     <div className="text-center">
-                                      <div className="font-mono">{player.saves_cross || 0}</div>
-                                      <div className="text-muted-foreground">Cross</div>
+                                      <div className="font-mono">{player.clearances ?? 0}</div>
+                                      <div className="text-muted-foreground">Clears</div>
                                     </div>
                                     <div className="text-center">
-                                      <div className="font-mono">{player.saves_punch || 0}</div>
-                                      <div className="text-muted-foreground">Punch</div>
+                                      <div className="font-mono">{player.dribbles ?? 0}</div>
+                                      <div className="text-muted-foreground">Dribbles</div>
+                                    </div>
+                                    <div className="text-center">
+                                      <div className="font-mono">{player.fouls ?? 0}</div>
+                                      <div className="text-muted-foreground">Fouls</div>
+                                    </div>
+                                    <div className="text-center">
+                                      <div className="font-mono">{player.offsides ?? 0}</div>
+                                      <div className="text-muted-foreground">Offsides</div>
+                                    </div>
+                                    <div className="text-center">
+                                      <div className="font-mono">{player.possession ?? 0}%</div>
+                                      <div className="text-muted-foreground">Poss</div>
                                     </div>
                                   </div>
-                                  {player.goals_conceded !== undefined && (
-                                    <div className="mt-2 text-center">
-                                      <span className="text-muted-foreground">Goals Conceded: </span>
-                                      <span className="font-mono">{player.goals_conceded}</span>
+
+                                  {player.saves_diving > 0 && (
+                                    <div className="mt-3 pt-3 border-t">
+                                      <div className="text-xs text-muted-foreground mb-2">Goalkeeper</div>
+                                      <div className="grid grid-cols-2 gap-2 text-xs">
+                                        <div className="text-center">
+                                          <div className="font-mono">{player.saves_diving}</div>
+                                          <div className="text-muted-foreground">Saves</div>
+                                        </div>
+                                        <div className="text-center">
+                                          <div className="font-mono">{player.goals_conceded}</div>
+                                          <div className="text-muted-foreground">Conceded</div>
+                                        </div>
+                                      </div>
                                     </div>
                                   )}
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No player stats available for this match.</p>
-                    </div>
-                  )}
-                </ScrollArea>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <Shield className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <p>No opponent stats available for this match.</p>
+                          <p className="text-sm mt-2">Opponent data may not be stored in the match record.</p>
+                        </div>
+                      )}
+                    </TabsContent>
+                  </ScrollArea>
+                </Tabs>
               </>
             )}
           </DialogContent>
