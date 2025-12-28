@@ -87,11 +87,21 @@ async function fetchPlayerPersonas(eaUsername: string, platform: string): Promis
   return [...deduped.values()];
 }
 
-// Search for a player's club memberships
+// Search for a player's club memberships - try multiple search strategies
 async function searchPlayerClubs(eaUsername: string): Promise<any[]> {
   const clubs: any[] = [];
   const platforms = ['common-gen5', 'common-gen4'];
-  const searchTerms = new Set<string>([eaUsername, eaUsername.substring(0, 3)].filter(Boolean));
+  
+  // Generate multiple search terms from the username
+  const words = eaUsername.split(/[\s_\-]+/).filter(w => w.length >= 2);
+  const searchTerms = new Set<string>([
+    eaUsername,                           // Full username
+    eaUsername.substring(0, 3),           // First 3 chars
+    ...words,                             // Each word in the username
+    ...words.map(w => w.substring(0, 3)), // First 3 chars of each word
+  ].filter(term => term && term.length >= 2));
+
+  console.log(`[scout-player] Club search terms for "${eaUsername}":`, [...searchTerms]);
 
   for (const platform of platforms) {
     for (const term of searchTerms) {
@@ -103,13 +113,22 @@ async function searchPlayerClubs(eaUsername: string): Promise<any[]> {
           const data = await response.json();
           const clubList = Array.isArray(data) ? data : data?.clubs || [];
 
-          for (const club of clubList.slice(0, 15)) {
+          console.log(`[scout-player] Found ${clubList.length} clubs for term "${term}" on ${platform}`);
+
+          for (const club of clubList.slice(0, 20)) {
             const members = await fetchClubMembers(club.clubId?.toString(), platform);
-            const playerMember = members.find((m: any) =>
-              (m.name || m.playerName)?.toLowerCase() === eaUsername.toLowerCase()
-            );
+            
+            // Look for player with case-insensitive match and partial matches
+            const playerMember = members.find((m: any) => {
+              const memberName = (m.name || m.playerName || '').toLowerCase();
+              const searchName = eaUsername.toLowerCase();
+              return memberName === searchName || 
+                     memberName.includes(searchName) || 
+                     searchName.includes(memberName);
+            });
 
             if (playerMember) {
+              console.log(`[scout-player] Found player in club: ${club.name || club.clubName}`);
               clubs.push({
                 club_id: club.clubId?.toString(),
                 club_name: club.name || club.clubName,
@@ -125,7 +144,14 @@ async function searchPlayerClubs(eaUsername: string): Promise<any[]> {
     }
   }
 
-  return clubs;
+  // Deduplicate clubs by ID+platform
+  const seen = new Set<string>();
+  return clubs.filter(c => {
+    const key = `${c.platform}:${c.club_id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // Fetch club members
