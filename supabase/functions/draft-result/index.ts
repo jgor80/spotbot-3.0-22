@@ -434,6 +434,19 @@ async function updateChemistry(
 }
 
 async function createFeedbackRequests(supabase: any, draft: any) {
+  // Check if feedback is enabled for this guild
+  const { data: guildSettings } = await supabase
+    .from("guild_settings")
+    .select("feedback_enabled")
+    .eq("guild_id", draft.guild_id)
+    .single();
+
+  // Skip if feedback is disabled (default to true if no settings exist)
+  if (guildSettings && guildSettings.feedback_enabled === false) {
+    console.log(`[draft-result] Feedback disabled for guild ${draft.guild_id}, skipping feedback requests`);
+    return;
+  }
+
   const allPlayers = [...draft.team_a_player_ids, ...draft.team_b_player_ids];
   // 30 minute window for feedback (consistent with club matches)
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
