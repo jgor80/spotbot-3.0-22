@@ -5767,7 +5767,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const prefs = prefsMap.get(m.id) || [];
             return {
               discord_user_id: m.id,
-              username: m.user.username,
+              username: m.displayName || m.user.username,
               overall_rating: stats.overall_rating || 50,
               games_played: stats.games_played || 0,
               wins: stats.wins || 0,
@@ -7720,7 +7720,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const prefs = prefsMap.get(m.id) || [];
           return {
             discord_user_id: m.id,
-            username: m.user.username,
+            username: m.displayName || m.user.username,
             overall_rating: stats.overall_rating || 50,
             games_played: stats.games_played || 0,
             wins: stats.wins || 0,
@@ -7804,7 +7804,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const prefs = await getUserPrefs(guildId, m.id);
           prefs.forEach((pos, index) => {
             if (posMap[pos]) {
-              posMap[pos].push({ userId: m.id, rank: index + 1, username: m.user.username });
+              posMap[pos].push({ userId: m.id, rank: index + 1, username: m.displayName || m.user.username });
             }
           });
         }
@@ -7845,7 +7845,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (playersWithoutPrefs.length > 0) {
           embed.addFields({
             name: '⚠️ No Preferences Set',
-            value: playersWithoutPrefs.map(m => m.user.username).join(', '),
+            value: playersWithoutPrefs.map(m => m.displayName || m.user.username).join(', '),
             inline: false
           });
         }
