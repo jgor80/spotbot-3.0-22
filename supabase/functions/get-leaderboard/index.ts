@@ -615,6 +615,43 @@ serve(async (req) => {
         };
       }).filter(p => p.games_played > 0);
       
+      // Fetch discord_usernames from profiles for all aggregated players
+      const playerIds = players.map(p => p.discord_user_id);
+      const { data: profilesForGames } = await supabase
+        .from("profiles")
+        .select("discord_user_id, discord_username, ea_username")
+        .in("discord_user_id", playerIds);
+
+      const usernameMap = new Map<string, { discord_username: string | null; ea_username: string | null }>(
+        (profilesForGames || []).map(p => [p.discord_user_id, {
+          discord_username: p.discord_username,
+          ea_username: p.ea_username
+        }])
+      );
+
+      // Also try player_summary as fallback for usernames
+      const { data: summaryForGames } = await supabase
+        .from("player_summary")
+        .select("discord_user_id, discord_username")
+        .eq("guild_id", guild_id)
+        .in("discord_user_id", playerIds);
+
+      for (const s of summaryForGames || []) {
+        if (!usernameMap.has(s.discord_user_id) && s.discord_username) {
+          usernameMap.set(s.discord_user_id, { 
+            discord_username: s.discord_username, 
+            ea_username: null 
+          });
+        }
+      }
+
+      // Attach usernames to players
+      players = players.map(p => ({
+        ...p,
+        discord_username: usernameMap.get(p.discord_user_id)?.discord_username || null,
+        ea_username: usernameMap.get(p.discord_user_id)?.ea_username || null,
+      }));
+      
       // Position filtering already done above before aggregation
       // No additional filtering needed here
     } else {
