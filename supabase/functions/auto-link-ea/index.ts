@@ -86,11 +86,42 @@ const GAMING_PREFIXES = ['ttv', 'yt', 'twitch', 'fn', 'rno', 'faze', 'optic', 'n
 const GAMING_SUFFIXES = ['tv', 'yt', 'ttv', 'fn', 'gaming', 'esports', 'clan'];
 const CLAN_TAG_REGEX = /^\[.*?\]|^\{.*?\}|^\(.*?\)|<.*?>|\[.*?\]$|\{.*?\}$|\(.*?\)$/gi;
 
+// Common role prefixes found before | in Discord display names
+const ROLE_PREFIXES = ['owner', 'manager', 'captain', 'director', 'coach', 'admin', 'mod', 'moderator', 'staff', 'founder', 'co-owner', 'vp', 'gm', 'agm', 'lead', 'head'];
+
+// Extract the actual username from Discord display names that may have roles
+// e.g., "Owner | JohnDoe" -> "JohnDoe", "Captain | PlayerName" -> "PlayerName"
+function extractDiscordName(displayName: string): string {
+  if (!displayName) return '';
+  
+  // Check if there's a | separator
+  if (displayName.includes('|')) {
+    const parts = displayName.split('|').map(p => p.trim());
+    
+    // If first part looks like a role, use the second part
+    if (parts.length >= 2) {
+      const firstPartLower = parts[0].toLowerCase();
+      const isRolePrefix = ROLE_PREFIXES.some(role => 
+        firstPartLower === role || 
+        firstPartLower.includes(role)
+      );
+      
+      if (isRolePrefix) {
+        // Return the part after the | (could be multiple |, take the rest)
+        return parts.slice(1).join('|').trim();
+      }
+    }
+  }
+  
+  return displayName;
+}
+
 // Normalize username for better matching
 function normalizeUsername(username: string): string {
   if (!username) return '';
   
-  let normalized = username.toLowerCase();
+  // First extract the actual name from Discord display names with roles
+  let normalized = extractDiscordName(username).toLowerCase();
   
   // Remove clan tags [TAG], {TAG}, (TAG), <TAG>
   normalized = normalized.replace(CLAN_TAG_REGEX, '');
@@ -125,11 +156,15 @@ function normalizeUsername(username: string): string {
 function tokenizeUsername(username: string): string[] {
   if (!username) return [];
   
+  // First extract the actual name from Discord display names
+  const cleanName = extractDiscordName(username);
+  
   // Split on common separators
-  const tokens = username
+  const tokens = cleanName
     .toLowerCase()
-    .split(/[_\-\.\s]+/)
-    .filter(t => t.length >= 2);
+    .split(/[_\-\.\s|]+/)
+    .filter(t => t.length >= 2)
+    .filter(t => !ROLE_PREFIXES.includes(t)); // Filter out role words
   
   // Also add the full normalized version
   const normalized = normalizeUsername(username);
