@@ -6379,7 +6379,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .upsert({
             discord_user_id: interaction.user.id,
             ea_username: eaUsername,
-            discord_username: interaction.user.username,
+            discord_username: interaction.member?.displayName || interaction.user.username,
             updated_at: new Date().toISOString()
           }, { onConflict: 'discord_user_id' });
 
@@ -6438,7 +6438,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .upsert({
             discord_user_id: targetUser.id,
             ea_username: eaUsername,
-            discord_username: targetUser.username,
+            discord_username: (await interaction.guild?.members.fetch(targetUser.id).catch(() => null))?.displayName || targetUser.username,
             updated_at: new Date().toISOString()
           }, { onConflict: 'discord_user_id' });
 
@@ -7660,10 +7660,90 @@ client.on(Events.InteractionCreate, async (interaction) => {
             .setCustomId('squadiq_syncstats')
             .setLabel('Sync Stats')
             .setEmoji('🔄')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('squadiq_sync_nicknames')
+            .setLabel('Sync Nicknames')
+            .setEmoji('👥')
             .setStyle(ButtonStyle.Secondary)
         );
 
         return interaction.reply({ embeds: [embed], components: [eaButtons], flags: 64 });
+      }
+
+      // Sync server nicknames to profiles for better auto-linking
+      if (id === 'squadiq_sync_nicknames') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Admin only.', flags: 64 });
+        }
+        
+        await interaction.deferReply({ flags: 64 });
+        
+        try {
+          const guild = interaction.guild;
+          const members = await guild.members.fetch();
+          
+          let synced = 0;
+          let updated = 0;
+          
+          for (const [memberId, member] of members) {
+            if (member.user.bot) continue;
+            
+            const displayName = member.displayName || member.user.username;
+            
+            // Upsert profile with current display name
+            const { data: existing } = await supabase
+              .from('profiles')
+              .select('discord_username')
+              .eq('discord_user_id', memberId)
+              .maybeSingle();
+            
+            if (existing) {
+              // Only update if name changed
+              if (existing.discord_username !== displayName) {
+                await supabase
+                  .from('profiles')
+                  .update({ 
+                    discord_username: displayName,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('discord_user_id', memberId);
+                updated++;
+              }
+            } else {
+              // Create new profile
+              await supabase
+                .from('profiles')
+                .insert({
+                  discord_user_id: memberId,
+                  discord_username: displayName
+                });
+              synced++;
+            }
+          }
+          
+          // Also update player_summary discord_username to match
+          for (const [memberId, member] of members) {
+            if (member.user.bot) continue;
+            const displayName = member.displayName || member.user.username;
+            
+            await supabase
+              .from('player_summary')
+              .update({ discord_username: displayName })
+              .eq('discord_user_id', memberId)
+              .eq('guild_id', guildId);
+          }
+          
+          return interaction.editReply({
+            content: `✅ **Nickname Sync Complete!**\n\n` +
+              `• **${synced}** new profiles created\n` +
+              `• **${updated}** nicknames updated\n\n` +
+              `Server nicknames are now stored for better EA account matching.`
+          });
+        } catch (err) {
+          console.error('[sync_nicknames] Error:', err);
+          return interaction.editReply({ content: `❌ Error syncing nicknames: ${err.message}` });
+        }
       }
 
       // =======================
@@ -9620,7 +9700,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
                 .from('profiles')
                 .upsert({
                   discord_user_id: memberId,
-                  discord_username: member.user.username,
+                  discord_username: member.displayName || member.user.username,
                   link_dm_sent_at: new Date().toISOString(),
                   updated_at: new Date().toISOString()
                 }, { onConflict: 'discord_user_id' });
@@ -10013,7 +10093,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               .from('profiles')
               .insert({
                 discord_user_id: interaction.user.id,
-                discord_username: interaction.user.username,
+                discord_username: interaction.member?.displayName || interaction.user.username,
                 ea_username: eaUsername,
                 ea_platform: eaPlatform
               });
@@ -10849,7 +10929,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .upsert({
             discord_user_id: interaction.user.id,
             ea_username: eaUsername,
-            discord_username: interaction.user.username,
+            discord_username: interaction.member?.displayName || interaction.user.username,
             updated_at: new Date().toISOString()
           }, { onConflict: 'discord_user_id' });
         
@@ -11009,7 +11089,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .upsert({
             discord_user_id: interaction.user.id,
             ea_username: eaUsername,
-            discord_username: interaction.user.username,
+            discord_username: interaction.member?.displayName || interaction.user.username,
             updated_at: new Date().toISOString()
           }, { onConflict: 'discord_user_id' });
 
@@ -11449,7 +11529,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               .from('profiles')
               .insert({
                 discord_user_id: interaction.user.id,
-                discord_username: interaction.user.username,
+                discord_username: interaction.member?.displayName || interaction.user.username,
                 ea_username: eaUsername,
                 ea_platform: normalizedPlatform
               });
@@ -11718,7 +11798,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               .from('profiles')
               .insert({
                 discord_user_id: interaction.user.id,
-                discord_username: interaction.user.username,
+                discord_username: interaction.member?.displayName || interaction.user.username,
                 ea_username: eaUsername,
                 ea_platform: normalizedPlatform
               });
@@ -14750,18 +14830,18 @@ async function autoLinkEaAccounts(guildId, guild) {
       
       // Check guild members directly
       for (const [memberId, member] of guildMembers) {
-        const similarity = stringSimilarity(eaUsername.toLowerCase(), member.user.username.toLowerCase());
+      const similarity = stringSimilarity(eaUsername.toLowerCase(), member.user.username.toLowerCase());
         if (similarity > bestSimilarity && similarity >= 0.5) {
           bestSimilarity = similarity;
-          bestMatch = { discord_user_id: memberId, discord_username: member.user.username };
+          bestMatch = { discord_user_id: memberId, discord_username: member.displayName || member.user.username };
         }
         
-        // Also check display name
+        // Also check display name (server nickname) - prioritize this for matching
         if (member.displayName) {
           const displaySimilarity = stringSimilarity(eaUsername.toLowerCase(), member.displayName.toLowerCase());
           if (displaySimilarity > bestSimilarity && displaySimilarity >= 0.5) {
             bestSimilarity = displaySimilarity;
-            bestMatch = { discord_user_id: memberId, discord_username: member.user.username };
+            bestMatch = { discord_user_id: memberId, discord_username: member.displayName };
           }
         }
       }
