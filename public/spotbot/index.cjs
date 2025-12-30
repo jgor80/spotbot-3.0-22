@@ -5919,6 +5919,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       // =======================
       // PLAYER PROFILE & STATS COMMANDS
       // =======================
+
+      if (cmd === 'profile') {
         const targetUser = interaction.options.getUser('player') || interaction.user;
         
         await interaction.deferReply();
