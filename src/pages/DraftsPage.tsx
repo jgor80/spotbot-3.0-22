@@ -6,7 +6,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useGuild } from "@/contexts/GuildContext";
-import { DraftControlPanel } from "@/components/draft/DraftControlPanel";
 import { 
   Users, 
   Loader2, 
@@ -17,8 +16,7 @@ import {
   Swords,
   Trophy,
   MessageSquare,
-  Trash2,
-  Gamepad2
+  Trash2
 } from "lucide-react";
 import { format, differenceInMinutes } from "date-fns";
 import { toast } from "sonner";
@@ -182,12 +180,8 @@ export default function DraftsPage() {
           <p className="text-muted-foreground">Manage drafts and view history</p>
         </div>
 
-        <Tabs defaultValue="control" className="space-y-4">
+        <Tabs defaultValue="active" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="control" className="flex items-center gap-2">
-              <Gamepad2 className="h-4 w-4" />
-              Control Panel
-            </TabsTrigger>
             <TabsTrigger value="active" className="flex items-center gap-2">
               <Swords className="h-4 w-4" />
               Active Draft
@@ -206,10 +200,6 @@ export default function DraftsPage() {
               )}
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="control" className="space-y-4">
-            <DraftControlPanel />
-          </TabsContent>
 
           <TabsContent value="active" className="space-y-4">
             <Card>
