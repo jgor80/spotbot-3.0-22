@@ -2577,48 +2577,40 @@ function buildHelpEmbed() {
     .setTitle('📘 SquadIQ Complete Help')
     .setColor(0x5865f2)
     .setDescription(
-      '**📋 Spot Management**\n' +
-      '`/spotpanel` – Create admin control panel\n' +
-      '`/spots` – View spots read-only\n' +
-      '`/vcspots` – Link VC to club panel\n' +
-      '`/whoisplaying` – See who\'s in your VC club\n' +
-      '`/spotblock` – Block/unblock a user\n' +
-      '`/autoassign` – Toggle auto-assign\n\n' +
-      '**🎮 Preferences**\n' +
-      '`/pospanel` – Create preference panel\n' +
-      '`/myprefs` – Edit your preferences\n' +
-      '`/posboard` – See VC members\' prefs\n' +
-      '`/syncprefs` – Sync from Discord roles\n\n' +
+      '**📋 Spot Management** (Use Control Panel buttons)\n' +
+      '• Create control panel in your server\n' +
+      '• Click buttons to manage clubs, spots, formations\n' +
+      '• Link voice channels to club panels\n\n' +
+      '**🎮 Position Preferences**\n' +
+      '• Click "Set Preferences" in the preference panel\n' +
+      '• Select up to 6 positions ranked by preference\n\n' +
       '**⚔️ Drafts & Games**\n' +
-      '`/draft` – Start captain draft\n' +
-      '`/draftpick` – Pick a player\n' +
-      '`/draftresult` – Report result\n\n' +
+      '• Click "Start Draft" when in a voice channel with 4+ players\n' +
+      '• Click player buttons to pick during draft\n' +
+      '• Click "Report Result" button to record match scores\n\n' +
       '**🔍 Scouting (AI)**\n' +
-      '`/scoutclub` – AI scouting report\n' +
-      '`/clubmatches` – Match history\n' +
-      '`/matchpreview` – AI match preview\n\n' +
+      '• View opponent analysis in the scouting panel\n' +
+      '• AI-powered match previews and insights\n\n' +
       '**👤 Player Stats**\n' +
-      '`/profile` – View player profile\n' +
-      '`/leaderboard` – Server rankings\n' +
-      '`/mystats` – Your quick stats\n\n' +
+      '• Click "View Profile" to see player stats\n' +
+      '• View the leaderboard from the control panel\n\n' +
       '**🎮 EA Integration**\n' +
-      '`/setclub` – Link EA Pro Clubs\n' +
-      '`/linkea` – Link your EA username\n' +
-      '`/syncclub` – Manual stats sync\n\n' +
+      '• Click "Link EA Account" to connect your EA username\n' +
+      '• Stats sync automatically from Pro Clubs matches\n\n' +
       '**🏆 Competition**\n' +
-      '`/claimwin` – Claim a win\n' +
-      '`/pendingwins` – Review claims\n' +
-      '`/verifywin` – Approve/reject\n\n' +
-      '**📅 Events**\n' +
-      '`/event` – Create availability event\n' +
-      '`/available` – Mark availability\n\n' +
+      '• Submit wins via the competition panel\n' +
+      '• Admins can review and verify claims\n\n' +
+      '**📅 Events & Availability**\n' +
+      '• Respond to availability checks with Yes/No/Maybe buttons\n' +
+      '• View who is available for upcoming matches\n\n' +
       '**💡 Quick Tips**\n' +
       '🟢 Click open spot to claim\n' +
       '🔴 Click taken spot for actions\n' +
       '🔔 Waitlist for DM alerts\n' +
-      '✨ Auto-assign from VC prefs'
+      '✨ Auto-assign from VC prefs\n' +
+      '🎮 All features accessible via buttons!'
     )
-    .setFooter({ text: 'SquadIQ • Complete Squad Management System' });
+    .setFooter({ text: 'SquadIQ • All features button-accessible • No slash commands needed' });
 }
 
 // =======================
@@ -2746,36 +2738,35 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
     );
   embeds.push(statsEmbed);
   
-  // Quick actions reference
+  // Quick actions reference - button-based
   const actionsEmbed = new EmbedBuilder()
     .setTitle('🛠️ QUICK ACTIONS')
     .setColor(0xff6b35)
     .setDescription(
-      '**Use the buttons below or these commands:**\n\n' +
+      '**Use the buttons below to access all features:**\n\n' +
       '**📋 Spot Management**\n' +
-      '`/spotpanel` – Full spot control panel\n' +
-      '`/vcspots` – Link VC to spots\n' +
-      '`/autoassign` – Toggle auto-assignment\n\n' +
+      '• Click spot buttons to claim/free positions\n' +
+      '• Use dropdown to switch between clubs\n' +
+      '• Toggle auto-assign in club settings\n\n' +
       '**⚔️ Draft System**\n' +
-      '`/draft` – Start a captain draft\n' +
-      '`/draftresult` – Report match result\n\n' +
+      '• Click "Start Draft" when in a VC with 4+ players\n' +
+      '• Click player names to pick during draft\n' +
+      '• Click "Report Result" button when done\n\n' +
       '**🎮 EA Integration**\n' +
-      '`/setclub` – Link EA Pro Clubs\n' +
-      '`/syncclub` – Manual stats sync\n' +
-      '`/clubstats` – Check EA status\n\n' +
+      '• Click "Link EA Account" to connect your username\n' +
+      '• Stats sync automatically from Pro Clubs\n' +
+      '• Use EA Config button for admin settings\n\n' +
       '**🔍 Scouting & Analytics**\n' +
-      '`/scoutclub` – AI scouting report\n' +
-      '`/matchpreview` – AI match preview\n' +
-      '`/clubmatches` – Recent match history\n\n' +
+      '• AI-powered opponent analysis\n' +
+      '• Match previews and player insights\n\n' +
       '**👤 Player Management**\n' +
-      '`/profile` – View player profile\n' +
-      '`/leaderboard` – Server rankings\n' +
-      '`/syncprefs all` – Sync all roles to prefs\n\n' +
+      '• Click "View Profile" to see stats\n' +
+      '• Leaderboard button shows rankings\n' +
+      '• Sync prefs from Discord roles\n\n' +
       '**🏆 Competition Tracking**\n' +
-      '`/pendingwins` – Review win claims\n' +
-      '`/verifywin` – Approve/reject claims\n\n' +
+      '• Submit and verify competition wins\n\n' +
       '**📅 Events**\n' +
-      '`/event` – Create availability event'
+      '• Respond to availability with Yes/No/Maybe buttons'
     );
   embeds.push(actionsEmbed);
   
@@ -3727,10 +3718,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
       
       // Handle welcome "Maybe Later" button
       if (id.startsWith('welcome_skip_')) {
+        const targetGuildId = id.replace('welcome_skip_', '');
+        
+        // Give them a button to link later instead of telling them to use slash commands
+        const linkLaterButton = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`linkdm_linkea_${targetGuildId}`)
+            .setLabel('Link My EA Account')
+            .setEmoji('🎮')
+            .setStyle(ButtonStyle.Primary)
+        );
+        
         return interaction.update({
-          content: 'No problem! You can link your EA account anytime using the `/linkea` command in the server.',
+          content: 'No problem! You can link your EA account anytime by clicking the button below.',
           embeds: [],
-          components: []
+          components: [linkLaterButton]
         });
       }
       
@@ -4906,7 +4908,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const voiceChannel = interaction.member?.voice?.channel;
         if (!voiceChannel) {
           return interaction.reply({
-            content: 'You must be in a voice channel to use `/vcspots`.',
+            content: 'You must be in a voice channel to create a VC spots panel.',
             flags: 64
           });
         }
@@ -4914,7 +4916,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const enabledClubs = clubs.filter((c) => c.enabled);
         if (enabledClubs.length === 0) {
           return interaction.reply({
-            content: 'No enabled clubs are available. Use `/spotpanel` to add or enable clubs first.',
+            content: 'No enabled clubs are available. Create a control panel first to add or enable clubs.',
             flags: 64
           });
         }
@@ -4976,7 +4978,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const voiceChannel = interaction.member?.voice?.channel;
         if (!voiceChannel) {
           return interaction.reply({
-            content: 'Join the voice channel whose lineup you want to see, then run `/whoisplaying` again.',
+            content: 'Join the voice channel whose lineup you want to see first.',
             flags: 64
           });
         }
@@ -4992,7 +4994,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (!linkedClubKey) {
           return interaction.reply({
-            content: 'This voice channel is not linked to a SquadIQ club. Use `/vcspots` to link it first.',
+            content: 'This voice channel is not linked to a SquadIQ club. Ask an admin to link it in the control panel.',
             flags: 64
           });
         }
@@ -5084,7 +5086,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (cmd === 'posboard') {
         const voiceChannel = interaction.member?.voice?.channel;
         if (!voiceChannel) {
-          return interaction.reply({ content: 'You need to be in a voice channel to use `/posboard`.', flags: 64 });
+          return interaction.reply({ content: 'You need to be in a voice channel to see position preferences.', flags: 64 });
         }
 
         const members = [...voiceChannel.members.values()].filter(m => !m.user.bot);
@@ -5348,7 +5350,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Check for existing active draft
         if (activeDrafts.has(guildId)) {
           return interaction.reply({
-            content: '❌ A draft is already in progress. Use `/draftresult` to finish it first.',
+            content: '❌ A draft is already in progress. Report the result first before starting a new one.',
             flags: 64
           });
         }
@@ -5429,7 +5431,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const draftData = activeDrafts.get(guildId);
         if (!draftData) {
           return interaction.reply({
-            content: '❌ No active draft. Start one with `/draft` in a voice channel.',
+            content: '❌ No active draft. Join a voice channel with players and click "Start Draft" to begin.',
             flags: 64
           });
         }
@@ -5480,7 +5482,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
               { name: '🔴 Team A', value: data.team_a.map(id => `<@${id}>`).join('\n'), inline: true },
               { name: '🔵 Team B', value: data.team_b.map(id => `<@${id}>`).join('\n'), inline: true }
             )
-            .setDescription('Use `/draftresult <team_a_score> <team_b_score>` to report the match result!');
+            .setDescription('Click the button below to report the match result!');
+          
+          // Add report result button instead of telling them to use slash command
+          const reportButton = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('squadiq_draft_report')
+              .setLabel('Report Draft Result')
+              .setEmoji('📊')
+              .setStyle(ButtonStyle.Primary)
+          );
+          
+          completeEmbed.setFooter({ text: 'Both captains can report and confirm the result' });
           
           // Move players to team VCs if configured
           if (data.team_a_vc_id && data.team_b_vc_id) {
@@ -5576,7 +5589,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         activeDrafts.delete(guildId);
         return interaction.reply({
-          content: '🗑️ Draft cancelled. Start a new one with `/draft`.',
+          content: '🗑️ Draft cancelled. Click "Start Draft" in the control panel to begin a new one.',
         });
       }
 
@@ -6054,7 +6067,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               { name: '🖥️ Platform', value: EA_PLATFORM_NAMES[platform] || platform, inline: true },
               { name: '📊 Stats Channel', value: statsChannel ? `<#${statsChannel.id}>` : 'Not set', inline: true }
             )
-            .setDescription(`Now monitoring **${currentClub.name}** for division matches!\n\n📩 Match results will be auto-posted and stats recorded.\n🔄 **Syncing match history in background...**\n\n**Important:** Players need to use \`/linkea\` to connect their EA username for stats tracking.`);
+            .setDescription(`Now monitoring **${currentClub.name}** for division matches!\n\n📩 Match results will be auto-posted and stats recorded.\n🔄 **Syncing match history in background...**\n\n**Important:** Players can click the **Link EA Account** button in the control panel to connect their EA username for stats tracking.`);
 
           return interaction.editReply({ embeds: [embed] });
 
@@ -6096,7 +6109,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (!currentClub.ea_club_id) {
           return interaction.reply({
-            content: '❌ This club is not linked to EA yet. Use `/setclub` first.',
+            content: '❌ This club is not linked to EA yet. Link it in the EA Config panel first.',
             flags: 64
           });
         }
@@ -6128,7 +6141,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (!currentClub?.ea_club_id) {
           return interaction.reply({
-            content: '❌ This club is not linked to EA. Use `/setclub` first.',
+            content: '❌ This club is not linked to EA. Link it in the EA Config panel first.',
             flags: 64
           });
         }
@@ -6197,7 +6210,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Check permissions - admin, moderator, or manager only
         if (!isManager(interaction.member)) {
           return interaction.reply({
-            content: '❌ Only admins, moderators, managers, or captains can use `/forcelink`.',
+            content: '❌ Only admins, moderators, managers, or captains can force link accounts.',
             flags: 64
           });
         }
@@ -6314,7 +6327,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Check permissions - admin, moderator, or manager only
         if (!isManager(interaction.member)) {
           return interaction.reply({
-            content: '❌ Only admins, moderators, managers, or captains can use `/reviewlinks`.',
+            content: '❌ Only admins, moderators, managers, or captains can review link suggestions.',
             flags: 64
           });
         }
@@ -7191,7 +7204,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             '**No active draft**\n\n' +
             'To start a draft:\n' +
             '1️⃣ Join a voice channel with 4+ players\n' +
-            '2️⃣ Click **Start Draft** below or use `/draft`\n\n' +
+            '2️⃣ Click **Start Draft** below\n\n' +
             `**Your VC:** ${voiceChannel ? `${voiceChannel.name} (${vcMembers.length} players)` : 'Not in a voice channel'}`
           );
         
@@ -7258,16 +7271,63 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
 
         if (activeDrafts.has(guildId)) {
+          // Provide a button to report result instead of telling them to use slash command
+          const reportButton = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('squadiq_draft_report')
+              .setLabel('Report Draft Result')
+              .setEmoji('📊')
+              .setStyle(ButtonStyle.Primary)
+          );
+          
           return interaction.reply({
-            content: '❌ A draft is already in progress. Use `/draftresult` to finish it first.',
+            content: '❌ A draft is already in progress. Click the button below to report the result.',
+            components: [reportButton],
             flags: 64
           });
         }
 
-        return interaction.reply({
-          content: '⚔️ To start a draft, use `/draft` in a voice channel with your players.\n\nThis will randomly assign captains and begin the pick-em process!',
-          flags: 64
+        // Start the draft directly via button instead of telling them to use slash command
+        await interaction.deferReply({ flags: 64 });
+        
+        const voiceChannel2 = interaction.member?.voice?.channel;
+        const vcMembers2 = voiceChannel2 ? 
+          [...voiceChannel2.members.values()].filter(m => !m.user.bot) : [];
+        
+        if (vcMembers2.length < 4) {
+          return interaction.editReply({
+            content: '❌ You need at least 4 players in your voice channel to start a draft.'
+          });
+        }
+        
+        // Call the draft-start edge function directly
+        const result = await callEdgeFunction('draft-start', {
+          guild_id: guildId,
+          voice_channel_id: voiceChannel2.id,
+          player_ids: vcMembers2.map(m => m.id),
+          started_by_discord_id: interaction.user.id
         });
+        
+        if (result.error) {
+          return interaction.editReply({ content: `❌ ${result.error}` });
+        }
+        
+        activeDrafts.set(guildId, result.data);
+        
+        const embed = new EmbedBuilder()
+          .setTitle('⚔️ Draft Started!')
+          .setColor(0xff6b35)
+          .addFields(
+            { name: '🔴 Captain A', value: `<@${result.data.captain_a}>`, inline: true },
+            { name: '🔵 Captain B', value: `<@${result.data.captain_b}>`, inline: true },
+            { name: '⏳ First Pick', value: `<@${result.data.current_picker}>`, inline: true }
+          )
+          .setDescription(`**Available Players:**\n${result.data.available.map(id => `<@${id}>`).join(', ')}`);
+        
+        // Create pick buttons for available players
+        const pickComponents = buildDraftPickButtons(result.data.available, result.data.current_picker, interaction.user.id);
+        
+        return interaction.editReply({ embeds: [embed], components: pickComponents });
       }
 
       if (id === 'squadiq_leaderboard') {
@@ -7292,12 +7352,85 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (!isManager(interaction.member)) {
           return interaction.reply({ content: '❌ Admin only.', flags: 64 });
         }
-        return interaction.reply({
-          content: '🔄 **Sync Position Preferences**\n\n' +
-            'Use `/syncprefs all` to sync position preferences from Discord roles for all server members.\n\n' +
-            'This will match roles like `ST`, `GK`, `Striker`, `Goalkeeper`, etc. to position preferences.',
-          flags: 64
-        });
+        
+        // Execute the sync directly instead of telling them to use slash command
+        await interaction.deferReply({ flags: 64 });
+        
+        try {
+          const guild = interaction.guild;
+          const members = await guild.members.fetch();
+          
+          const positionRoleMap = {
+            'gk': 'GK', 'goalkeeper': 'GK',
+            'cb': 'CB', 'centre back': 'CB', 'center back': 'CB',
+            'lb': 'LB', 'left back': 'LB',
+            'rb': 'RB', 'right back': 'RB',
+            'lwb': 'LWB', 'left wing back': 'LWB',
+            'rwb': 'RWB', 'right wing back': 'RWB',
+            'cdm': 'CDM', 'defensive mid': 'CDM', 'dm': 'CDM',
+            'cm': 'CM', 'central mid': 'CM', 'midfielder': 'CM',
+            'cam': 'CAM', 'attacking mid': 'CAM', 'am': 'CAM',
+            'lm': 'LM', 'left mid': 'LM',
+            'rm': 'RM', 'right mid': 'RM',
+            'lw': 'LW', 'left wing': 'LW', 'left winger': 'LW',
+            'rw': 'RW', 'right wing': 'RW', 'right winger': 'RW',
+            'cf': 'CF', 'centre forward': 'CF', 'center forward': 'CF',
+            'st': 'ST', 'striker': 'ST', 'forward': 'ST'
+          };
+          
+          let synced = 0;
+          
+          for (const [memberId, member] of members) {
+            if (member.user.bot) continue;
+            
+            const prefs = [];
+            for (const role of member.roles.cache.values()) {
+              const roleLower = role.name.toLowerCase();
+              if (positionRoleMap[roleLower]) {
+                const pos = positionRoleMap[roleLower];
+                if (!prefs.includes(pos)) prefs.push(pos);
+              }
+            }
+            
+            if (prefs.length > 0) {
+              await supabase.from('position_preferences').upsert({
+                guild_id: guildId,
+                user_id: memberId,
+                preferences: prefs.slice(0, 6),
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'guild_id,user_id' });
+              synced++;
+            }
+          }
+          
+          return interaction.editReply({
+            content: `✅ Synced position preferences for **${synced}** members from their Discord roles!`
+          });
+        } catch (err) {
+          console.error('[syncprefs] Error:', err);
+          return interaction.editReply({ content: `❌ Error syncing preferences: ${err.message}` });
+        }
+      }
+      
+      // Handle "View My Profile" button
+      if (id === 'squadiq_myprofile') {
+        await interaction.deferReply({ flags: 64 });
+        
+        const { data: profile } = await supabase
+          .from('player_summary')
+          .select('*')
+          .eq('guild_id', guildId)
+          .eq('discord_user_id', interaction.user.id)
+          .maybeSingle();
+        
+        if (!profile) {
+          return interaction.editReply({
+            content: '❌ No profile found. Play some matches to get your stats tracked!'
+          });
+        }
+        
+        const embed = buildPlayerProfileEmbed(profile, interaction.user);
+        return interaction.editReply({ embeds: [embed] });
       }
 
       if (id === 'squadiq_eaconfig') {
@@ -7318,14 +7451,65 @@ client.on(Events.InteractionCreate, async (interaction) => {
             { name: '📊 Stats Channel', value: currentClub?.stats_channel_id ? `<#${currentClub.stats_channel_id}>` : 'Not set', inline: true }
           )
           .setDescription(
-            '**Commands:**\n' +
-            '`/setclub <name> <platform>` - Link EA club\n' +
-            '`/clubstats enable/disable` - Toggle monitoring\n' +
-            '`/syncclub` - Manual match sync\n' +
-            '`/linkea <username>` - Link player EA accounts'
+            '**Use the buttons below to manage EA integration:**'
           );
+        
+        // Add action buttons instead of listing slash commands
+        const eaButtons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('squadiq_link_ea_modal')
+            .setLabel('Link My EA Account')
+            .setEmoji('🎮')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId('squadiq_syncstats')
+            .setLabel('Sync Stats')
+            .setEmoji('🔄')
+            .setStyle(ButtonStyle.Secondary)
+        );
 
-        return interaction.reply({ embeds: [embed], flags: 64 });
+        return interaction.reply({ embeds: [embed], components: [eaButtons], flags: 64 });
+      }
+      
+      // Handle draft report button - show modal for scores
+      if (id === 'squadiq_draft_report') {
+        const draftData = activeDrafts.get(guildId);
+        
+        // Check if there's an active draft or recent one
+        if (!draftData) {
+          return interaction.reply({
+            content: '❌ No active draft found. Start a new draft first.',
+            flags: 64
+          });
+        }
+        
+        // Show modal for entering scores
+        const modal = new ModalBuilder()
+          .setCustomId('draft_report_modal')
+          .setTitle('Report Draft Result');
+        
+        const teamAScore = new TextInputBuilder()
+          .setCustomId('team_a_score')
+          .setLabel('Team A Score (Red Team)')
+          .setPlaceholder('Enter score (0-99)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(2);
+        
+        const teamBScore = new TextInputBuilder()
+          .setCustomId('team_b_score')
+          .setLabel('Team B Score (Blue Team)')
+          .setPlaceholder('Enter score (0-99)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(2);
+        
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(teamAScore),
+          new ActionRowBuilder().addComponents(teamBScore)
+        );
+        
+        return interaction.showModal(modal);
       }
 
       if (id === 'squadiq_syncstats') {
@@ -7541,7 +7725,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setDescription(
             '**Upcoming Events:**\n' + eventLines + '\n\n' +
             '**Create New Event:**\n' +
-            'Use `/event` command to create availability checks\n\n' +
+            'Click the button below to create availability checks\n\n' +
             '**Event Types:** Match, Training, Scrimmage, Tournament'
           )
           .setFooter({ text: 'Players respond with ✅ Yes / ❌ No / ❓ Maybe' });
@@ -9473,10 +9657,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
       
       // Auto-link dismiss button
       if (id === 'autolink_dismiss') {
+        // Get guild from the interaction context
+        const guildIdForLink = interaction.guildId || interaction.message?.guildId || '';
+        
+        const linkLaterButton = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`linkdm_linkea_${guildIdForLink}`)
+            .setLabel('Link My EA Account')
+            .setEmoji('🎮')
+            .setStyle(ButtonStyle.Primary)
+        );
+        
         return interaction.update({
-          content: 'No problem! You can always link your EA account later using `/linkea` in the server.',
+          content: 'No problem! You can link your EA account anytime by clicking the button below.',
           embeds: [],
-          components: []
+          components: [linkLaterButton]
         });
       }
 
@@ -10173,6 +10368,50 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isModalSubmit()) {
       const id = interaction.customId;
 
+      // Handle draft report modal
+      if (id === 'draft_report_modal') {
+        const teamAScoreStr = interaction.fields.getTextInputValue('team_a_score').trim();
+        const teamBScoreStr = interaction.fields.getTextInputValue('team_b_score').trim();
+        
+        const teamAScore = parseInt(teamAScoreStr, 10);
+        const teamBScore = parseInt(teamBScoreStr, 10);
+        
+        if (isNaN(teamAScore) || isNaN(teamBScore) || teamAScore < 0 || teamBScore < 0) {
+          return interaction.reply({ content: '❌ Please enter valid scores (0-99).', flags: 64 });
+        }
+        
+        await interaction.deferReply();
+        
+        const { data, error } = await callEdgeFunction('draft-result', {
+          guild_id: guildId,
+          discord_user_id: interaction.user.id,
+          team_a_score: teamAScore,
+          team_b_score: teamBScore
+        });
+        
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to report result: ${error}` });
+        }
+        
+        // Clear local cache
+        activeDrafts.delete(guildId);
+        
+        const winnerText = data.winner === 'A' ? '🔴 Team A' : data.winner === 'B' ? '🔵 Team B' : '🤝 Draw';
+        
+        const embed = new EmbedBuilder()
+          .setTitle('📊 Draft Result Recorded!')
+          .setColor(0x00ff00)
+          .addFields(
+            { name: '🔴 Team A', value: `${teamAScore}`, inline: true },
+            { name: '🔵 Team B', value: `${teamBScore}`, inline: true },
+            { name: '🏆 Winner', value: winnerText, inline: true }
+          )
+          .setDescription('Player ratings have been updated based on this result!')
+          .setFooter({ text: 'Reported by ' + interaction.user.username });
+        
+        return interaction.editReply({ embeds: [embed] });
+      }
+      
       // Handle welcome link EA modal from DM
       if (id.startsWith('welcome_link_modal_')) {
         const targetGuildId = id.replace('welcome_link_modal_', '');
@@ -10204,16 +10443,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
           discord_user_id: interaction.user.id
         }).catch(() => {});
         
+        // Provide a button to view profile instead of telling them to use slash command
+        const profileButton = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('squadiq_myprofile')
+            .setLabel('View My Profile')
+            .setEmoji('👤')
+            .setStyle(ButtonStyle.Primary)
+        );
+        
         const embed = new EmbedBuilder()
           .setTitle('✅ EA Account Linked!')
           .setColor(0x00ff00)
           .setDescription(
             `Your EA username **${eaUsername}** is now linked to your Discord account!\n\n` +
             `🎮 Your stats from Pro Clubs matches will now be automatically tracked.\n` +
-            `📊 Check your profile anytime with \`/profile\` in the server.`
+            `📊 Click the button below to view your profile anytime!`
           );
         
-        return interaction.editReply({ embeds: [embed] });
+        return interaction.editReply({ embeds: [embed], components: [profileButton] });
       }
 
       if (id.startsWith('rename_club_modal_')) {
@@ -10307,7 +10555,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               `Found and linked EA club automatically!\n\n` +
               `📩 Match results will be auto-posted and stats recorded.\n` +
               `🔄 **Syncing match history in background...**\n\n` +
-              `**Important:** Players need to use \`/linkea\` to connect their EA username for stats tracking.`
+              `**Important:** Players can link their EA username by clicking the **Link EA Account** button in the control panel.`
             );
 
           return interaction.editReply({ embeds: [embed] });
@@ -13730,7 +13978,7 @@ async function postMatchResult(guildId, channelId, matchInfo) {
       embed.addFields({ name: 'Assists', value: assistText, inline: true });
     }
     
-    embed.setFooter({ text: '📊 Stats recorded automatically! Use /linkea to connect your EA account.' });
+    embed.setFooter({ text: '📊 Stats recorded automatically! Click the Link EA Account button in your server panel to connect.' });
     
     await channel.send({ embeds: [embed] });
     
