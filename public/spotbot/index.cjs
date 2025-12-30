@@ -5561,7 +5561,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           activeDrafts.delete(guildId);
           embed.setFooter({ text: '🎉 Result confirmed! Stats recorded. DMs sent for peer evaluations.' });
         } else {
-          embed.setFooter({ text: `${data.confirmations}/${data.required_confirmations} confirmations. Others: use /draftresult with same score to confirm.` });
+          embed.setFooter({ text: `${data.confirmations}/${data.required_confirmations} confirmations needed. Other players: click "Report Draft Result" with the same score to confirm.` });
         }
 
         return interaction.editReply({ embeds: [embed] });
@@ -7304,8 +7304,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const result = await callEdgeFunction('draft-start', {
           guild_id: guildId,
           voice_channel_id: voiceChannel2.id,
-          player_ids: vcMembers2.map(m => m.id),
-          started_by_discord_id: interaction.user.id
+          player_discord_ids: vcMembers2.map(m => m.id)
         });
         
         if (result.error) {
@@ -10380,11 +10379,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.reply({ content: '❌ Please enter valid scores (0-99).', flags: 64 });
         }
         
+        // Get draft_id from active drafts cache
+        const draftData = activeDrafts.get(guildId);
+        if (!draftData || !draftData.draft_id) {
+          return interaction.reply({ 
+            content: '❌ No active draft found. The draft may have expired or already been reported.', 
+            flags: 64 
+          });
+        }
+        
         await interaction.deferReply();
         
         const { data, error } = await callEdgeFunction('draft-result', {
-          guild_id: guildId,
-          discord_user_id: interaction.user.id,
+          draft_id: draftData.draft_id,
+          reporter_discord_id: interaction.user.id,
           team_a_score: teamAScore,
           team_b_score: teamBScore
         });
@@ -10393,23 +10401,50 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.editReply({ content: `❌ Failed to report result: ${error}` });
         }
         
-        // Clear local cache
-        activeDrafts.delete(guildId);
+        const winnerText = data.winning_team === 'A' ? '🔴 Team A' : data.winning_team === 'B' ? '🔵 Team B' : '🤝 Draw';
         
-        const winnerText = data.winner === 'A' ? '🔴 Team A' : data.winner === 'B' ? '🔵 Team B' : '🤝 Draw';
-        
-        const embed = new EmbedBuilder()
-          .setTitle('📊 Draft Result Recorded!')
-          .setColor(0x00ff00)
-          .addFields(
-            { name: '🔴 Team A', value: `${teamAScore}`, inline: true },
-            { name: '🔵 Team B', value: `${teamBScore}`, inline: true },
-            { name: '🏆 Winner', value: winnerText, inline: true }
-          )
-          .setDescription('Player ratings have been updated based on this result!')
-          .setFooter({ text: 'Reported by ' + interaction.user.username });
-        
-        return interaction.editReply({ embeds: [embed] });
+        if (data.status === 'confirmed') {
+          // Only clear cache when fully confirmed
+          activeDrafts.delete(guildId);
+          
+          const embed = new EmbedBuilder()
+            .setTitle('🎉 Draft Result Confirmed!')
+            .setColor(0x00ff00)
+            .addFields(
+              { name: '🔴 Team A', value: `${teamAScore}`, inline: true },
+              { name: '🔵 Team B', value: `${teamBScore}`, inline: true },
+              { name: '🏆 Winner', value: winnerText, inline: true }
+            )
+            .setDescription('Stats have been recorded and ratings updated!')
+            .setFooter({ text: '📬 Feedback DMs sent to all participants' });
+          
+          return interaction.editReply({ embeds: [embed] });
+        } else {
+          // Result pending - need more confirmations
+          const confirmations = data.confirmations || 1;
+          const needed = data.required_confirmations || 2;
+          
+          const reportButton = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('squadiq_draft_report')
+              .setLabel('Confirm Result')
+              .setEmoji('✅')
+              .setStyle(ButtonStyle.Success)
+          );
+          
+          const embed = new EmbedBuilder()
+            .setTitle('📊 Result Reported - Awaiting Confirmation')
+            .setColor(0xffaa00)
+            .addFields(
+              { name: '🔴 Team A', value: `${teamAScore}`, inline: true },
+              { name: '🔵 Team B', value: `${teamBScore}`, inline: true },
+              { name: '📋 Confirmations', value: `${confirmations}/${needed}`, inline: true }
+            )
+            .setDescription('Other players need to confirm this result by clicking the button below and entering the same scores.')
+            .setFooter({ text: 'Reported by ' + interaction.user.username });
+          
+          return interaction.editReply({ embeds: [embed], components: [reportButton] });
+        }
       }
       
       // Handle welcome link EA modal from DM

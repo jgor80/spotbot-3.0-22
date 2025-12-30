@@ -128,6 +128,25 @@ serve(async (req) => {
           
           // Trigger achievement check
           await triggerAchievementCheck(supabase, draft.guild_id, [...draft.team_a_player_ids, ...draft.team_b_player_ids]);
+          
+          // Trigger rating recalculation for all participants
+          const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+          const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+          
+          fetch(`${supabaseUrl}/functions/v1/calculate-ratings`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({
+              guild_id: draft.guild_id,
+              player_ids: [...draft.team_a_player_ids, ...draft.team_b_player_ids],
+              trigger: "draft_result",
+            }),
+          }).catch(e => console.error("[draft-result] Rating calculation trigger failed:", e));
+          
+          console.log(`[draft-result] Rating recalculation triggered for ${[...draft.team_a_player_ids, ...draft.team_b_player_ids].length} players`);
         }
 
         return new Response(
