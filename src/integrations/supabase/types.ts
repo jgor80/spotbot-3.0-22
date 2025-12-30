@@ -595,6 +595,7 @@ export type Database = {
           feedback_enabled: boolean
           guild_id: string
           id: string
+          link_dm_enabled: boolean | null
           name: string | null
           updated_at: string
           vc_panels: Json
@@ -610,6 +611,7 @@ export type Database = {
           feedback_enabled?: boolean
           guild_id: string
           id?: string
+          link_dm_enabled?: boolean | null
           name?: string | null
           updated_at?: string
           vc_panels?: Json
@@ -625,6 +627,7 @@ export type Database = {
           feedback_enabled?: boolean
           guild_id?: string
           id?: string
+          link_dm_enabled?: boolean | null
           name?: string | null
           updated_at?: string
           vc_panels?: Json
@@ -1898,6 +1901,7 @@ export type Database = {
           ea_platform: string | null
           ea_username: string | null
           id: string
+          link_dm_sent_at: string | null
           primary_position: string | null
           updated_at: string
         }
@@ -1910,6 +1914,7 @@ export type Database = {
           ea_platform?: string | null
           ea_username?: string | null
           id?: string
+          link_dm_sent_at?: string | null
           primary_position?: string | null
           updated_at?: string
         }
@@ -1922,6 +1927,7 @@ export type Database = {
           ea_platform?: string | null
           ea_username?: string | null
           id?: string
+          link_dm_sent_at?: string | null
           primary_position?: string | null
           updated_at?: string
         }

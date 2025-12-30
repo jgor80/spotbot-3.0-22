@@ -12,11 +12,11 @@ interface AutoLinkRequest {
 
 // Thresholds for tiered linking
 const AUTO_LINK_THRESHOLD = 0.75;  // ≥75% = auto-link immediately
-const SUGGEST_THRESHOLD = 0.50;    // 50-74% = save as suggestion for review
-// <50% = ignore
+const SUGGEST_THRESHOLD = 0.35;    // 35-74% = save as suggestion for review (lowered from 0.50)
+// <35% = ignore
 
-// Simple string similarity function (Dice coefficient)
-function stringSimilarity(str1: string, str2: string): number {
+// Dice coefficient string similarity
+function diceSimilarity(str1: string, str2: string): number {
   if (str1 === str2) return 1;
   if (str1.length < 2 || str2.length < 2) return 0;
   
@@ -39,16 +39,131 @@ function stringSimilarity(str1: string, str2: string): number {
   return (2.0 * intersectionSize) / (str1.length + str2.length - 2);
 }
 
+// Levenshtein distance for better matching
+function levenshteinDistance(str1: string, str2: string): number {
+  const m = str1.length;
+  const n = str2.length;
+  
+  if (m === 0) return n;
+  if (n === 0) return m;
+  
+  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+    }
+  }
+  
+  return dp[m][n];
+}
+
+// Convert Levenshtein distance to similarity (0-1)
+function levenshteinSimilarity(str1: string, str2: string): number {
+  const maxLen = Math.max(str1.length, str2.length);
+  if (maxLen === 0) return 1;
+  return 1 - (levenshteinDistance(str1, str2) / maxLen);
+}
+
+// Combined string similarity using both algorithms
+function stringSimilarity(str1: string, str2: string): number {
+  const dice = diceSimilarity(str1, str2);
+  const lev = levenshteinSimilarity(str1, str2);
+  // Weight Levenshtein slightly higher as it handles transpositions better
+  return (dice * 0.4) + (lev * 0.6);
+}
+
+// Common gaming prefixes/suffixes to remove
+const GAMING_PREFIXES = ['ttv', 'yt', 'twitch', 'fn', 'rno', 'faze', 'optic', 'nrg', 'g2', 'c9', 'tsm', 'fnatic'];
+const GAMING_SUFFIXES = ['tv', 'yt', 'ttv', 'fn', 'gaming', 'esports', 'clan'];
+const CLAN_TAG_REGEX = /^\[.*?\]|^\{.*?\}|^\(.*?\)|<.*?>|\[.*?\]$|\{.*?\}$|\(.*?\)$/gi;
+
 // Normalize username for better matching
 function normalizeUsername(username: string): string {
   if (!username) return '';
-  return username
+  
+  let normalized = username.toLowerCase();
+  
+  // Remove clan tags [TAG], {TAG}, (TAG), <TAG>
+  normalized = normalized.replace(CLAN_TAG_REGEX, '');
+  
+  // Remove underscores, dashes, dots, spaces
+  normalized = normalized.replace(/[_\-\.\s]/g, '');
+  
+  // Remove trailing numbers
+  normalized = normalized.replace(/[0-9]+$/g, '');
+  
+  // Remove common gaming prefixes
+  for (const prefix of GAMING_PREFIXES) {
+    if (normalized.startsWith(prefix) && normalized.length > prefix.length + 2) {
+      normalized = normalized.substring(prefix.length);
+    }
+  }
+  
+  // Remove common gaming suffixes
+  for (const suffix of GAMING_SUFFIXES) {
+    if (normalized.endsWith(suffix) && normalized.length > suffix.length + 2) {
+      normalized = normalized.substring(0, normalized.length - suffix.length);
+    }
+  }
+  
+  // Remove trailing xxx patterns
+  normalized = normalized.replace(/x{2,}$/i, '');
+  
+  return normalized.trim();
+}
+
+// Tokenize username into parts for partial matching
+function tokenizeUsername(username: string): string[] {
+  if (!username) return [];
+  
+  // Split on common separators
+  const tokens = username
     .toLowerCase()
-    .replace(/[_\-\.]/g, '')         // Remove underscores, dashes, dots
-    .replace(/[0-9]+$/g, '')         // Remove trailing numbers
-    .replace(/^(ttv|yt|twitch)/i, '') // Remove common prefixes
-    .replace(/x{2,}$/i, '')          // Remove trailing xxx
-    .trim();
+    .split(/[_\-\.\s]+/)
+    .filter(t => t.length >= 2);
+  
+  // Also add the full normalized version
+  const normalized = normalizeUsername(username);
+  if (normalized && !tokens.includes(normalized)) {
+    tokens.push(normalized);
+  }
+  
+  return tokens;
+}
+
+// Check if any token from one username matches any token from another
+function tokenMatchScore(username1: string, username2: string): number {
+  const tokens1 = tokenizeUsername(username1);
+  const tokens2 = tokenizeUsername(username2);
+  
+  if (tokens1.length === 0 || tokens2.length === 0) return 0;
+  
+  let bestMatch = 0;
+  for (const t1 of tokens1) {
+    for (const t2 of tokens2) {
+      // Exact token match
+      if (t1 === t2) {
+        bestMatch = Math.max(bestMatch, 0.9);
+      } else {
+        // Partial token similarity
+        const sim = stringSimilarity(t1, t2);
+        if (sim > 0.8) {
+          bestMatch = Math.max(bestMatch, sim * 0.85);
+        }
+      }
+    }
+  }
+  
+  return bestMatch;
 }
 
 serve(async (req) => {
@@ -235,10 +350,11 @@ serve(async (req) => {
           break;
         }
 
-        // Calculate similarity
+        // Calculate similarity using multiple methods
         const rawSimilarity = stringSimilarity(eaUsername.toLowerCase(), discordUsername.toLowerCase());
         const normalizedSimilarity = stringSimilarity(normalizedEa, normalizeUsername(discordUsername));
-        const similarity = Math.max(rawSimilarity, normalizedSimilarity);
+        const tokenScore = tokenMatchScore(eaUsername, discordUsername);
+        const similarity = Math.max(rawSimilarity, normalizedSimilarity, tokenScore);
         
         if (similarity > bestSimilarity) {
           bestSimilarity = similarity;
@@ -263,7 +379,8 @@ serve(async (req) => {
 
           const rawSimilarity = stringSimilarity(eaUsername.toLowerCase(), discordUsername.toLowerCase());
           const normalizedSimilarity = stringSimilarity(normalizedEa, normalizeUsername(discordUsername));
-          const similarity = Math.min(Math.max(rawSimilarity, normalizedSimilarity), 0.74); // Cap for linked
+          const tokenScore = tokenMatchScore(eaUsername, discordUsername);
+          const similarity = Math.min(Math.max(rawSimilarity, normalizedSimilarity, tokenScore), 0.74); // Cap for linked
           
           if (similarity > bestSimilarity && similarity >= SUGGEST_THRESHOLD) {
             bestSimilarity = similarity;
