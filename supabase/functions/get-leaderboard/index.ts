@@ -457,6 +457,7 @@ serve(async (req) => {
         const { data: pageData, error: pageError } = await supabase
           .from("player_stats")
           .select(`
+            id,
             discord_user_id,
             goals,
             assists,
@@ -487,6 +488,7 @@ serve(async (req) => {
           `)
           .eq("guild_id", guild_id)
           .in("match_type", ["club", "friendly"])
+          .order("id", { ascending: true })
           .range(from, to);
         
         if (pageError) throw pageError;
@@ -496,6 +498,11 @@ serve(async (req) => {
       const statsError = null;
       
       console.log(`[get-leaderboard] Fetched ${(allPlayerStats || []).length} player_stats records`);
+      
+      // Debug: Check if specific player is in the fetched data
+      const testPlayerId = "501557839932948490";
+      const testPlayerRecords = allPlayerStats.filter(ps => ps.discord_user_id === testPlayerId);
+      console.log(`[get-leaderboard] DEBUG: Found ${testPlayerRecords.length} records for test player ${testPlayerId}`);
       
       // Filter by match_type if set
       let filteredPlayerStats = matchTypeFilterIds 
