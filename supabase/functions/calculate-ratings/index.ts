@@ -312,16 +312,36 @@ function calculatePlayerRatingFast(player: any, allStats: any[]): { rating: numb
     (peerRating * WEIGHTS.peer_evaluation) +
     (buildRating * WEIGHTS.build_quality);
 
+  // Apply games-played confidence factor
+  // Players with fewer games have their rating pulled toward baseline (50)
+  // Under 40 games = significant reduction, scaling up to full confidence at 40+ games
+  const GAMES_CONFIDENCE_THRESHOLD = 40;
+  const BASELINE_RATING = 50;
+  
+  // Use a curve that heavily penalizes low game counts:
+  // 0 games = 0% confidence (rating = 50)
+  // 10 games = 25% confidence
+  // 20 games = 50% confidence  
+  // 30 games = 75% confidence
+  // 40+ games = 100% confidence (full rating)
+  const gamesConfidence = Math.min(1, totalTrackedGames / GAMES_CONFIDENCE_THRESHOLD);
+  
+  // Blend the calculated rating with baseline based on confidence
+  // Low games = rating pulled heavily toward 50
+  const confidenceAdjustedRating = (overall * gamesConfidence) + (BASELINE_RATING * (1 - gamesConfidence));
+  
+  console.log(`[calculate-ratings] Player ${player.discord_user_id}: ${totalTrackedGames} games, confidence: ${(gamesConfidence * 100).toFixed(0)}%, raw: ${overall.toFixed(1)}, adjusted: ${confidenceAdjustedRating.toFixed(1)}`);
+
   // Apply inactivity decay
   const daysSinceLastGame = player.last_game_at 
     ? Math.floor((Date.now() - new Date(player.last_game_at).getTime()) / (1000 * 60 * 60 * 24))
     : 0;
 
-  let finalRating = overall;
+  let finalRating = confidenceAdjustedRating;
   if (daysSinceLastGame > 14) {
     const decayDays = Math.min(daysSinceLastGame - 14, 20);
     const decayMultiplier = 1 - (decayDays * 0.01);
-    finalRating = overall * decayMultiplier;
+    finalRating = confidenceAdjustedRating * decayMultiplier;
   }
 
   finalRating = Math.max(0, Math.min(100, finalRating));
