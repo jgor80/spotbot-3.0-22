@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useGuild } from "@/contexts/GuildContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -15,7 +16,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   User,
-  Wand2
+  Wand2,
+  Users
 } from "lucide-react";
 import {
   Table,
@@ -71,6 +73,7 @@ export function EaLinkingPanel() {
   const [targetDiscordId, setTargetDiscordId] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [memberSearchQuery, setMemberSearchQuery] = useState("");
+  const [showAllMembers, setShowAllMembers] = useState(false);
   
   // Fetch unlinked EA profiles (those with ea_ prefix)
   const { data: unlinkedProfiles, isLoading } = useQuery({
@@ -89,16 +92,22 @@ export function EaLinkingPanel() {
     enabled: !!selectedGuildId,
   });
   
-  // Fetch Discord members without EA links for the dropdown
+  // Fetch Discord members - conditionally filter by EA link status
   const { data: availableMembers } = useQuery({
-    queryKey: ["availableMembers", selectedGuildId],
+    queryKey: ["availableMembers", selectedGuildId, showAllMembers],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("profiles")
         .select("discord_user_id, discord_username, ea_username")
         .not("discord_user_id", "like", "ea_%")
-        .is("ea_username", null)
         .order("discord_username");
+      
+      // Only filter by EA username if not showing all members
+      if (!showAllMembers) {
+        query = query.is("ea_username", null);
+      }
+      
+      const { data, error } = await query;
       
       if (error) throw error;
       return data as DiscordMember[];
@@ -332,7 +341,20 @@ export function EaLinkingPanel() {
               </div>
               
               <div className="space-y-2">
-                <Label>Select Discord Member</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Select Discord Member</Label>
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <Label htmlFor="show-all-toggle" className="text-xs text-muted-foreground cursor-pointer">
+                      Show all members
+                    </Label>
+                    <Switch 
+                      id="show-all-toggle"
+                      checked={showAllMembers}
+                      onCheckedChange={setShowAllMembers}
+                    />
+                  </div>
+                </div>
                 <Select value={targetDiscordId} onValueChange={setTargetDiscordId}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Choose a Discord member..." />
@@ -348,7 +370,7 @@ export function EaLinkingPanel() {
                     </div>
                     {filteredMembers.length === 0 ? (
                       <div className="py-4 text-center text-sm text-muted-foreground">
-                        {memberSearchQuery ? "No matching members" : "No unlinked members available"}
+                        {memberSearchQuery ? "No matching members" : showAllMembers ? "No members found" : "No unlinked members available"}
                       </div>
                     ) : (
                       filteredMembers.map((member) => (
@@ -356,6 +378,11 @@ export function EaLinkingPanel() {
                           <div className="flex items-center gap-2">
                             <User className="h-4 w-4 text-muted-foreground" />
                             <span>{member.discord_username || member.discord_user_id}</span>
+                            {member.ea_username && (
+                              <Badge variant="outline" className="ml-1 text-xs">
+                                {member.ea_username}
+                              </Badge>
+                            )}
                           </div>
                         </SelectItem>
                       ))
@@ -363,7 +390,9 @@ export function EaLinkingPanel() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Only showing Discord members without an EA account linked
+                  {showAllMembers 
+                    ? "Showing all Discord members (including those with EA linked)" 
+                    : "Only showing Discord members without an EA account linked"}
                 </p>
               </div>
               

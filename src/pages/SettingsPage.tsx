@@ -14,6 +14,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ClubsManager } from "@/components/settings/ClubsManager";
 import { FeedbackSettingsCard } from "@/components/settings/FeedbackSettingsCard";
 import { EaLinkingPanel } from "@/components/settings/EaLinkingPanel";
+import { LinkSuggestionsPanel } from "@/components/settings/LinkSuggestionsPanel";
 import { BuildSubmissionPanel } from "@/components/settings/BuildSubmissionPanel";
 import { 
   Gamepad2, 
@@ -321,8 +322,9 @@ export default function SettingsPage() {
             <ClubsManager />
           </TabsContent>
 
-          <TabsContent value="ea-linking">
+          <TabsContent value="ea-linking" className="space-y-4">
             <EaLinkingPanel />
+            <LinkSuggestionsPanel />
           </TabsContent>
 
           <TabsContent value="players" className="space-y-6">
