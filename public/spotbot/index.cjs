@@ -464,6 +464,7 @@ const COMMANDS = [
   },
   { name: 'draftcancel', description: 'Cancel the current draft (captains/admins only).' },
   { name: 'draftreroll', description: 'Request to reroll captains (before picks begin). Requires both captains to agree.' },
+  { name: 'draftpanel', description: 'Create a draft control panel in this channel with player stats and position preferences.' },
 
   // Player Rating & Profile Commands
   { 
@@ -5719,10 +5720,205 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       // =======================
-      // PLAYER PROFILE & STATS COMMANDS
+      // DRAFT PANEL COMMAND
       // =======================
 
-      if (cmd === 'profile') {
+      if (cmd === 'draftpanel') {
+        await interaction.deferReply();
+
+        // Get voice channel members
+        const voiceChannel = interaction.member?.voice?.channel;
+        const vcMembers = voiceChannel ? 
+          [...voiceChannel.members.values()].filter(m => !m.user.bot) : [];
+
+        // Check for active draft
+        const { data: activeDraft } = await supabase
+          .from('drafts')
+          .select('*')
+          .eq('guild_id', guildId)
+          .in('status', ['pending', 'picking'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        // Fetch player stats for VC members
+        let vcPlayerStats = [];
+        if (vcMembers.length > 0) {
+          const vcMemberIds = vcMembers.map(m => m.id);
+          
+          const { data: playerSummaries } = await supabase
+            .from('player_summary')
+            .select('discord_user_id, discord_username, overall_rating, games_played, wins, goals, assists, win_rate, form_rating, current_streak, streak_type, primary_position')
+            .eq('guild_id', guildId)
+            .in('discord_user_id', vcMemberIds);
+
+          // Get position preferences for all VC members
+          const { data: posPrefs } = await supabase
+            .from('position_preferences')
+            .select('user_id, preferences')
+            .eq('guild_id', guildId)
+            .in('user_id', vcMemberIds);
+
+          const prefsMap = new Map((posPrefs || []).map(p => [p.user_id, p.preferences || []]));
+          const statsMap = new Map((playerSummaries || []).map(p => [p.discord_user_id, p]));
+
+          vcPlayerStats = vcMembers.map(m => {
+            const stats = statsMap.get(m.id) || {};
+            const prefs = prefsMap.get(m.id) || [];
+            return {
+              discord_user_id: m.id,
+              username: m.user.username,
+              overall_rating: stats.overall_rating || 50,
+              games_played: stats.games_played || 0,
+              wins: stats.wins || 0,
+              goals: stats.goals || 0,
+              assists: stats.assists || 0,
+              win_rate: stats.win_rate || 0,
+              form_rating: stats.form_rating || 50,
+              current_streak: stats.current_streak || 0,
+              streak_type: stats.streak_type || null,
+              primary_position: stats.primary_position || prefs[0] || '?',
+              position_prefs: prefs
+            };
+          });
+
+          // Sort by rating
+          vcPlayerStats.sort((a, b) => b.overall_rating - a.overall_rating);
+        }
+
+        // Build the panel embed
+        const panelEmbed = new EmbedBuilder()
+          .setTitle('⚔️ Draft Control Panel')
+          .setColor(0xff6b35);
+
+        // Active draft section
+        if (activeDraft) {
+          activeDrafts.set(guildId, activeDraft);
+          
+          const teamAPlayers = activeDraft.team_a_player_ids || [];
+          const teamBPlayers = activeDraft.team_b_player_ids || [];
+          const availablePlayers = activeDraft.available_players || [];
+          
+          panelEmbed.setDescription('**🔴 Active Draft In Progress**');
+          panelEmbed.addFields(
+            { name: '🔴 Team A', value: teamAPlayers.length > 0 ? teamAPlayers.map(id => `<@${id}>`).join('\n') : 'Empty', inline: true },
+            { name: '🔵 Team B', value: teamBPlayers.length > 0 ? teamBPlayers.map(id => `<@${id}>`).join('\n') : 'Empty', inline: true },
+            { name: '👥 Available', value: availablePlayers.length > 0 ? availablePlayers.slice(0, 8).map(p => `<@${p.discord_user_id || p}>`).join(', ') : 'None', inline: false }
+          );
+          
+          const currentPicker = activeDraft.current_picker === 'a' ? activeDraft.captain_a_discord_id : activeDraft.captain_b_discord_id;
+          panelEmbed.addFields({ name: '⏳ Current Pick', value: `<@${currentPicker}>'s turn (Pick #${activeDraft.pick_number || 1})`, inline: false });
+        } else {
+          panelEmbed.setDescription(
+            '**No active draft**\n\n' +
+            `**Your VC:** ${voiceChannel ? `🎙️ ${voiceChannel.name} (${vcMembers.length} players)` : '❌ Not in a voice channel'}\n\n` +
+            (vcMembers.length >= 4 ? '✅ Ready to start!' : `⚠️ Need ${4 - vcMembers.length} more player(s) to start`)
+          );
+        }
+
+        // VC Player Stats section (always show if in VC)
+        if (vcPlayerStats.length > 0) {
+          const statsLines = vcPlayerStats.slice(0, 11).map((p, i) => {
+            const streakEmoji = p.current_streak > 0 
+              ? (p.streak_type === 'win' ? `🔥${p.current_streak}` : `❄️${p.current_streak}`) 
+              : '';
+            const posDisplay = p.position_prefs.length > 0 
+              ? p.position_prefs.slice(0, 2).join('/') 
+              : p.primary_position;
+            return `\`${String(p.overall_rating).padStart(2)}\` **${p.username}** ${POSITION_META[posDisplay]?.emoji || '📍'}${posDisplay} • ${p.games_played}G ${p.wins}W ${p.goals}⚽ ${p.assists}🎯 ${streakEmoji}`;
+          }).join('\n');
+          
+          panelEmbed.addFields({ 
+            name: '📊 VC Player Stats (by Rating)', 
+            value: statsLines || 'No stats available',
+            inline: false 
+          });
+        }
+
+        // Recent drafts
+        const { data: recentDrafts } = await supabase
+          .from('drafts')
+          .select('id, created_at, status, captain_a_discord_id, captain_b_discord_id')
+          .eq('guild_id', guildId)
+          .order('created_at', { ascending: false })
+          .limit(3);
+
+        if (recentDrafts && recentDrafts.length > 0) {
+          const recentText = recentDrafts.map(d => {
+            const date = new Date(d.created_at).toLocaleDateString();
+            const statusEmoji = d.status === 'completed' ? '✅' : d.status === 'cancelled' ? '❌' : '⏳';
+            return `${statusEmoji} ${date} <@${d.captain_a_discord_id}> vs <@${d.captain_b_discord_id}>`;
+          }).join('\n');
+          panelEmbed.addFields({ name: '📜 Recent Drafts', value: recentText, inline: false });
+        }
+
+        // Build action buttons
+        const row1 = new ActionRowBuilder();
+        
+        if (activeDraft) {
+          row1.addComponents(
+            new ButtonBuilder()
+              .setCustomId('squadiq_draft_report')
+              .setLabel('Report Result')
+              .setEmoji('📝')
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId(`draft_reroll_${activeDraft.id}`)
+              .setLabel('Reroll Captains')
+              .setEmoji('🔄')
+              .setStyle(ButtonStyle.Secondary)
+              .setDisabled((activeDraft.pick_number || 1) > 1),
+            new ButtonBuilder()
+              .setCustomId(`draft_cancel_${activeDraft.id}`)
+              .setLabel('Cancel Draft')
+              .setEmoji('❌')
+              .setStyle(ButtonStyle.Danger)
+          );
+        } else {
+          row1.addComponents(
+            new ButtonBuilder()
+              .setCustomId('squadiq_draft')
+              .setLabel('Start Draft')
+              .setEmoji('⚔️')
+              .setStyle(ButtonStyle.Success)
+              .setDisabled(!voiceChannel || vcMembers.length < 4),
+            new ButtonBuilder()
+              .setCustomId('draftpanel_myprefs')
+              .setLabel('Set My Positions')
+              .setEmoji('📋')
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId('draftpanel_vcstats')
+              .setLabel('Refresh Stats')
+              .setEmoji('🔄')
+              .setStyle(ButtonStyle.Secondary)
+          );
+        }
+
+        const row2 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId('draftpanel_posboard')
+            .setLabel('Position Board')
+            .setEmoji('🧩')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('squadiq_leaderboard')
+            .setLabel('Leaderboard')
+            .setEmoji('🏆')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('squadiq_link_ea_modal')
+            .setLabel('Link EA')
+            .setEmoji('🎮')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+        return interaction.editReply({ embeds: [panelEmbed], components: [row1, row2] });
+      }
+
+      // =======================
+      // PLAYER PROFILE & STATS COMMANDS
+      // =======================
         const targetUser = interaction.options.getUser('player') || interaction.user;
         
         await interaction.deferReply();
@@ -7468,6 +7664,195 @@ client.on(Events.InteractionCreate, async (interaction) => {
         );
 
         return interaction.reply({ embeds: [embed], components: [eaButtons], flags: 64 });
+      }
+
+      // =======================
+      // DRAFT PANEL BUTTON HANDLERS
+      // =======================
+
+      // Position preferences button from draft panel
+      if (id === 'draftpanel_myprefs') {
+        const existing = await getUserPrefs(guildId, interaction.user.id);
+        const formationData = getFormationForUserVc(interaction.member, state);
+        
+        return interaction.reply({
+          embeds: [buildPrefsEmbed(existing, formationData?.formationName)],
+          components: buildPrefComponents(existing, formationData?.positions),
+          flags: 64
+        });
+      }
+
+      // Refresh VC stats button
+      if (id === 'draftpanel_vcstats') {
+        await interaction.deferReply({ flags: 64 });
+
+        const voiceChannel = interaction.member?.voice?.channel;
+        if (!voiceChannel) {
+          return interaction.editReply({ content: '❌ You need to be in a voice channel to see stats.' });
+        }
+
+        const vcMembers = [...voiceChannel.members.values()].filter(m => !m.user.bot);
+        if (vcMembers.length === 0) {
+          return interaction.editReply({ content: '❌ No players in your voice channel.' });
+        }
+
+        const vcMemberIds = vcMembers.map(m => m.id);
+
+        // Fetch player stats
+        const { data: playerSummaries } = await supabase
+          .from('player_summary')
+          .select('discord_user_id, discord_username, overall_rating, games_played, wins, goals, assists, win_rate, form_rating, current_streak, streak_type, primary_position, clean_sheets, man_of_match, saves')
+          .eq('guild_id', guildId)
+          .in('discord_user_id', vcMemberIds);
+
+        // Get position preferences
+        const { data: posPrefs } = await supabase
+          .from('position_preferences')
+          .select('user_id, preferences')
+          .eq('guild_id', guildId)
+          .in('user_id', vcMemberIds);
+
+        const prefsMap = new Map((posPrefs || []).map(p => [p.user_id, p.preferences || []]));
+        const statsMap = new Map((playerSummaries || []).map(p => [p.discord_user_id, p]));
+
+        const vcPlayerStats = vcMembers.map(m => {
+          const stats = statsMap.get(m.id) || {};
+          const prefs = prefsMap.get(m.id) || [];
+          return {
+            discord_user_id: m.id,
+            username: m.user.username,
+            overall_rating: stats.overall_rating || 50,
+            games_played: stats.games_played || 0,
+            wins: stats.wins || 0,
+            goals: stats.goals || 0,
+            assists: stats.assists || 0,
+            win_rate: stats.win_rate || 0,
+            clean_sheets: stats.clean_sheets || 0,
+            man_of_match: stats.man_of_match || 0,
+            saves: stats.saves || 0,
+            form_rating: stats.form_rating || 50,
+            current_streak: stats.current_streak || 0,
+            streak_type: stats.streak_type || null,
+            primary_position: stats.primary_position || prefs[0] || '?',
+            position_prefs: prefs
+          };
+        });
+
+        // Sort by rating
+        vcPlayerStats.sort((a, b) => b.overall_rating - a.overall_rating);
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📊 VC Player Stats – ${voiceChannel.name}`)
+          .setColor(0x5865f2)
+          .setDescription(`**${vcMembers.length}** players in voice channel\n\n` +
+            '`Rtg` **Player** Pos • Games Wins G⚽ A🎯 Streak');
+
+        const statsLines = vcPlayerStats.map((p, i) => {
+          const streakEmoji = p.current_streak > 0 
+            ? (p.streak_type === 'win' ? `🔥${p.current_streak}` : `❄️${p.current_streak}`) 
+            : '';
+          const posDisplay = p.position_prefs.length > 0 
+            ? p.position_prefs.slice(0, 2).join('/') 
+            : p.primary_position;
+          const posEmoji = POSITION_META[p.position_prefs[0] || p.primary_position]?.emoji || '📍';
+          
+          // Add extra stats for GKs
+          const extraStats = (posDisplay === 'GK' || p.primary_position === 'GK') 
+            ? ` CS:${p.clean_sheets} SV:${p.saves}` 
+            : '';
+          
+          return `\`${String(p.overall_rating).padStart(2)}\` **${p.username}** ${posEmoji}${posDisplay} • ${p.games_played}G ${p.wins}W ${p.goals}⚽ ${p.assists}🎯 ${streakEmoji}${extraStats}`;
+        }).join('\n');
+
+        embed.addFields({ name: 'Players (by Rating)', value: statsLines || 'No stats available' });
+
+        // Add aggregate stats
+        const totalGames = vcPlayerStats.reduce((sum, p) => sum + p.games_played, 0);
+        const avgRating = vcPlayerStats.length > 0 
+          ? Math.round(vcPlayerStats.reduce((sum, p) => sum + p.overall_rating, 0) / vcPlayerStats.length) 
+          : 50;
+        const totalGoals = vcPlayerStats.reduce((sum, p) => sum + p.goals, 0);
+        const totalAssists = vcPlayerStats.reduce((sum, p) => sum + p.assists, 0);
+
+        embed.addFields({
+          name: '📈 Lobby Summary',
+          value: `**Avg Rating:** ${avgRating} • **Total Games:** ${totalGames} • **Total Goals:** ${totalGoals} • **Total Assists:** ${totalAssists}`,
+          inline: false
+        });
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // Position board button from draft panel
+      if (id === 'draftpanel_posboard') {
+        await interaction.deferReply({ flags: 64 });
+
+        const voiceChannel = interaction.member?.voice?.channel;
+        if (!voiceChannel) {
+          return interaction.editReply({ content: '❌ You need to be in a voice channel to see position preferences.' });
+        }
+
+        const members = [...voiceChannel.members.values()].filter(m => !m.user.bot);
+        if (members.length === 0) {
+          return interaction.editReply({ content: '❌ No players in your voice channel.' });
+        }
+
+        const posMap = {};
+        POSITION_PREF_OPTIONS.forEach(p => posMap[p] = []);
+
+        for (const m of members) {
+          const prefs = await getUserPrefs(guildId, m.id);
+          prefs.forEach((pos, index) => {
+            if (posMap[pos]) {
+              posMap[pos].push({ userId: m.id, rank: index + 1, username: m.user.username });
+            }
+          });
+        }
+
+        // Group positions by category for cleaner display
+        const categories = {
+          'Goalkeepers': ['GK'],
+          'Defenders': ['CB', 'LB', 'RB', 'LWB', 'RWB'],
+          'Midfielders': ['CDM', 'CM', 'CAM', 'LM', 'RM'],
+          'Attackers': ['LW', 'RW', 'CF', 'ST']
+        };
+
+        const embed = new EmbedBuilder()
+          .setTitle('🧩 Position Preferences – Voice Channel')
+          .setColor(0x57f287)
+          .setDescription(`**${voiceChannel.name}** • ${members.length} player(s)`);
+
+        for (const [catName, positions] of Object.entries(categories)) {
+          const lines = [];
+          for (const pos of positions) {
+            const entries = posMap[pos].sort((a, b) => a.rank - b.rank);
+            if (entries.length > 0) {
+              const meta = POSITION_META[pos];
+              const playerList = entries.map(e => `${RANK_EMOJI[e.rank] || e.rank} ${e.username}`).join(', ');
+              lines.push(`${meta?.emoji || ''} **${pos}**: ${playerList}`);
+            }
+          }
+          if (lines.length > 0) {
+            embed.addFields({ name: catName, value: lines.join('\n'), inline: false });
+          }
+        }
+
+        // Add players without preferences
+        const playersWithPrefs = new Set();
+        Object.values(posMap).flat().forEach(e => playersWithPrefs.add(e.userId));
+        const playersWithoutPrefs = members.filter(m => !playersWithPrefs.has(m.id));
+        
+        if (playersWithoutPrefs.length > 0) {
+          embed.addFields({
+            name: '⚠️ No Preferences Set',
+            value: playersWithoutPrefs.map(m => m.user.username).join(', '),
+            inline: false
+          });
+        }
+
+        embed.setFooter({ text: 'Click "Set My Positions" to update your preferences' });
+
+        return interaction.editReply({ embeds: [embed] });
       }
       
       // Handle draft report button - show modal for scores
