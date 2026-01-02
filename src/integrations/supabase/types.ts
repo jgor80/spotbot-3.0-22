@@ -2187,6 +2187,45 @@ export type Database = {
         }
         Relationships: []
       }
+      twitch_notifications: {
+        Row: {
+          created_at: string
+          custom_message: string | null
+          guild_id: string
+          id: string
+          is_live: boolean | null
+          last_notified_at: string | null
+          notification_channel_id: string
+          subscription_id: string | null
+          twitch_username: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          custom_message?: string | null
+          guild_id: string
+          id?: string
+          is_live?: boolean | null
+          last_notified_at?: string | null
+          notification_channel_id: string
+          subscription_id?: string | null
+          twitch_username: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          custom_message?: string | null
+          guild_id?: string
+          id?: string
+          is_live?: boolean | null
+          last_notified_at?: string | null
+          notification_channel_id?: string
+          subscription_id?: string | null
+          twitch_username?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           discord_user_id: string

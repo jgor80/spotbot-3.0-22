@@ -89,3 +89,6 @@ verify_jwt = false
 
 [functions.auto-link-ea]
 verify_jwt = false
+
+[functions.twitch-webhook]
+verify_jwt = false
