@@ -1364,7 +1364,9 @@ async function getGuildState(guildId) {
   if (dbData) {
     state = {
       clubs: dbData.clubs || cloneDefaultClubs(),
-      boardState: dbData.board_state || createEmptyBoardState(dbData.clubs || cloneDefaultClubs()),
+      boardState: (dbData.board_state && Object.keys(dbData.board_state).length > 0)
+        ? dbData.board_state
+        : createEmptyBoardState(dbData.clubs || cloneDefaultClubs()),
       currentClubKey: dbData.current_club_key || 'club1',
       adminPanelChannelId: dbData.admin_panel_channel_id,
       adminPanelMessageId: dbData.admin_panel_message_id,
@@ -1581,7 +1583,14 @@ function buildEmbedForClub(guildId, clubKey, state) {
 }
 
 function buildButtons(guildId, clubKey, state) {
-  const clubBoard = state.boardState[clubKey];
+  let clubBoard = state.boardState[clubKey];
+  
+  // Initialize missing board for this club
+  if (!clubBoard || !clubBoard.slots) {
+    clubBoard = createEmptyBoardForFormation(DEFAULT_FORMATION);
+    state.boardState[clubKey] = clubBoard;
+  }
+  
   const rows = [];
   let currentRow = new ActionRowBuilder();
 
