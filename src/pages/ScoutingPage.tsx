@@ -32,7 +32,8 @@ import {
   BarChart3,
   MessageSquare,
   Bolt,
-  Crosshair
+  Crosshair,
+  Twitch
 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RatingBadge } from "@/components/player/RatingBadge";
@@ -604,6 +605,47 @@ Focus on controlling midfield to limit their counter-attacks.
                 {activeCommand === "form-leaderboard" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bolt className="h-4 w-4" />}
                 In-Form Leaderboard
               </Button>
+            </div>
+
+            <div className="border-t pt-3">
+              <p className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                <Twitch className="h-4 w-4 text-purple-500" />
+                Streaming Controls
+              </p>
+              <div className="grid md:grid-cols-3 gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCommandOutputs(prev => [...prev, { title: "/twitchsetup", content: "Use in Discord: /twitchsetup streamer:username channel:#channel\nSets up live notifications for a Twitch streamer." }]);
+                  }}
+                  className="w-full justify-start gap-2 border-purple-500/30 hover:bg-purple-500/10"
+                >
+                  <Twitch className="h-4 w-4 text-purple-500" />
+                  Twitch Setup
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCommandOutputs(prev => [...prev, { title: "/twitchlist", content: "Use in Discord: /twitchlist\nShows all configured Twitch notification channels." }]);
+                  }}
+                  className="w-full justify-start gap-2 border-purple-500/30 hover:bg-purple-500/10"
+                >
+                  <Twitch className="h-4 w-4 text-purple-500" />
+                  List Streamers
+                </Button>
+
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCommandOutputs(prev => [...prev, { title: "/twitchremove", content: "Use in Discord: /twitchremove streamer:username\nRemoves live notifications for a streamer." }]);
+                  }}
+                  className="w-full justify-start gap-2 border-purple-500/30 hover:bg-purple-500/10"
+                >
+                  <Twitch className="h-4 w-4 text-purple-500" />
+                  Remove Streamer
+                </Button>
+              </div>
             </div>
 
             {commandOutputs.length > 0 && (
