@@ -649,6 +649,28 @@ const COMMANDS = [
       { name: 'home', description: 'Home club name.', type: 3, required: true },
       { name: 'away', description: 'Away club name.', type: 3, required: true }
     ]
+  },
+
+  // Twitch Integration Commands
+  {
+    name: 'twitchsetup',
+    description: 'Set up Twitch live notifications in a channel.',
+    options: [
+      { name: 'username', description: 'Twitch username to monitor.', type: 3, required: true },
+      { name: 'channel', description: 'Discord channel to post notifications.', type: 7, required: true },
+      { name: 'message', description: 'Custom notification message (optional).', type: 3, required: false }
+    ]
+  },
+  {
+    name: 'twitchremove',
+    description: 'Remove Twitch live notifications for a streamer.',
+    options: [
+      { name: 'username', description: 'Twitch username to stop monitoring.', type: 3, required: true }
+    ]
+  },
+  {
+    name: 'twitchlist',
+    description: 'List all Twitch streamers being monitored in this server.'
   }
 ];
 
@@ -7048,6 +7070,163 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await saveGuildSettings(guildId, state);
 
         return;
+      }
+
+      // =======================
+      // TWITCH INTEGRATION COMMANDS
+      // =======================
+
+      if (cmd === 'twitchsetup') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only admins can set up Twitch notifications.',
+            flags: 64
+          });
+        }
+
+        const twitchUsername = interaction.options.getString('username');
+        const channel = interaction.options.getChannel('channel');
+        const customMessage = interaction.options.getString('message');
+
+        if (!channel || channel.type !== ChannelType.GuildText) {
+          return interaction.reply({
+            content: '❌ Please select a text channel for notifications.',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply();
+
+        try {
+          const response = await axios.post(
+            `${process.env.SUPABASE_URL}/functions/v1/twitch-webhook/setup`,
+            {
+              guild_id: guildId,
+              twitch_username: twitchUsername,
+              channel_id: channel.id,
+              custom_message: customMessage
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+              },
+              timeout: 30000
+            }
+          );
+
+          if (response.data.success) {
+            const twitchUser = response.data.twitch_user;
+            const embed = new EmbedBuilder()
+              .setColor(0x9146FF)
+              .setTitle('✅ Twitch Notifications Enabled')
+              .setDescription(`Now monitoring **${twitchUser.display_name}** for live streams!`)
+              .addFields(
+                { name: 'Twitch Username', value: twitchUser.login, inline: true },
+                { name: 'Notification Channel', value: `<#${channel.id}>`, inline: true }
+              )
+              .setThumbnail(twitchUser.profile_image_url)
+              .setFooter({ text: 'You will receive a notification when this streamer goes live' });
+
+            if (customMessage) {
+              embed.addFields({ name: 'Custom Message', value: customMessage, inline: false });
+            }
+
+            return interaction.editReply({ embeds: [embed] });
+          } else {
+            return interaction.editReply({ content: `❌ ${response.data.error || 'Failed to set up Twitch notifications.'}` });
+          }
+        } catch (error) {
+          console.error('[TwitchSetup] Error:', error.response?.data || error.message);
+          const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
+          return interaction.editReply({ content: `❌ Failed to set up Twitch notifications: ${errorMsg}` });
+        }
+      }
+
+      if (cmd === 'twitchremove') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only admins can remove Twitch notifications.',
+            flags: 64
+          });
+        }
+
+        const twitchUsername = interaction.options.getString('username');
+
+        await interaction.deferReply();
+
+        try {
+          const response = await axios.post(
+            `${process.env.SUPABASE_URL}/functions/v1/twitch-webhook/remove`,
+            {
+              guild_id: guildId,
+              twitch_username: twitchUsername
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+              },
+              timeout: 15000
+            }
+          );
+
+          if (response.data.success) {
+            return interaction.editReply({ content: `✅ Stopped monitoring **${twitchUsername}** for live streams.` });
+          } else {
+            return interaction.editReply({ content: `❌ ${response.data.error || 'Failed to remove Twitch notifications.'}` });
+          }
+        } catch (error) {
+          console.error('[TwitchRemove] Error:', error.response?.data || error.message);
+          return interaction.editReply({ content: `❌ Failed to remove Twitch notifications.` });
+        }
+      }
+
+      if (cmd === 'twitchlist') {
+        await interaction.deferReply();
+
+        try {
+          const response = await axios.get(
+            `${process.env.SUPABASE_URL}/functions/v1/twitch-webhook/list`,
+            {
+              params: { guild_id: guildId },
+              headers: {
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+              },
+              timeout: 15000
+            }
+          );
+
+          const notifications = response.data.notifications || [];
+
+          if (notifications.length === 0) {
+            return interaction.editReply({ content: '📺 No Twitch streamers are being monitored in this server.\n\nUse `/twitchsetup` to add one!' });
+          }
+
+          const embed = new EmbedBuilder()
+            .setColor(0x9146FF)
+            .setTitle('📺 Monitored Twitch Streamers')
+            .setDescription('These streamers will trigger notifications when they go live:')
+            .setFooter({ text: `${notifications.length} streamer(s) monitored` });
+
+          for (const n of notifications) {
+            const statusIcon = n.is_live ? '🔴 LIVE' : '⚫ Offline';
+            const lastNotified = n.last_notified_at 
+              ? `Last notified: <t:${Math.floor(new Date(n.last_notified_at).getTime() / 1000)}:R>`
+              : 'Never notified';
+            
+            embed.addFields({
+              name: `${statusIcon} ${n.twitch_username}`,
+              value: `Channel: <#${n.notification_channel_id}>\n${lastNotified}`,
+              inline: true
+            });
+          }
+
+          return interaction.editReply({ embeds: [embed] });
+        } catch (error) {
+          console.error('[TwitchList] Error:', error.response?.data || error.message);
+          return interaction.editReply({ content: `❌ Failed to fetch Twitch notifications list.` });
+        }
       }
     }
 
