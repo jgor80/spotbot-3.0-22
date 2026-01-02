@@ -7879,6 +7879,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.editReply({ content: '❌ No players in your voice channel.' });
         }
 
+        const vcMemberIds = members.map(m => m.id);
+
+        // Fetch position play history from player_stats
+        const { data: positionHistory } = await supabase
+          .from('player_stats')
+          .select('discord_user_id, position_played')
+          .eq('guild_id', guildId)
+          .in('discord_user_id', vcMemberIds)
+          .in('match_type', ['club', 'friendly']);
+
+        // Aggregate by player + position category
+        const playHistoryMap = new Map();
+        for (const row of positionHistory || []) {
+          if (!playHistoryMap.has(row.discord_user_id)) {
+            playHistoryMap.set(row.discord_user_id, { forward: 0, midfielder: 0, defender: 0, goalkeeper: 0 });
+          }
+          if (row.position_played) {
+            playHistoryMap.get(row.discord_user_id)[row.position_played]++;
+          }
+        }
+
         const posMap = {};
         POSITION_PREF_OPTIONS.forEach(p => posMap[p] = []);
 
@@ -7928,6 +7949,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
           embed.addFields({
             name: '⚠️ No Preferences Set',
             value: playersWithoutPrefs.map(m => m.displayName || m.user.username).join(', '),
+            inline: false
+          });
+        }
+
+        // Build "Most Played" section from EA stats
+        const posEmojis = { forward: '⚔️', midfielder: '🎯', defender: '🛡️', goalkeeper: '🧤' };
+        const mostPlayedLines = [];
+        for (const m of members) {
+          const history = playHistoryMap.get(m.id);
+          if (!history) continue;
+          
+          // Sort positions by games played
+          const sorted = Object.entries(history)
+            .filter(([pos, count]) => count > 0)
+            .sort((a, b) => b[1] - a[1]);
+          
+          if (sorted.length === 0) continue;
+          
+          const username = m.displayName || m.user.username;
+          
+          // Show top 2 categories with game counts
+          const top2 = sorted.slice(0, 2).map(([pos, count]) => 
+            `${posEmojis[pos]} ${pos.charAt(0).toUpperCase() + pos.slice(1)} (${count})`
+          ).join(' • ');
+          
+          mostPlayedLines.push(`**${username}**: ${top2}`);
+        }
+
+        if (mostPlayedLines.length > 0) {
+          embed.addFields({
+            name: '📊 Most Played (EA Stats)',
+            value: mostPlayedLines.join('\n'),
             inline: false
           });
         }
