@@ -15,7 +15,8 @@ import {
   Medal,
   UsersRound,
   Settings,
-  Star
+  Star,
+  MessageSquare
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ const navItems = [
   { path: "/lineup", label: "Lineup", icon: ClipboardList },
   { path: "/drafts", label: "Drafts", icon: Swords },
   { path: "/scouting", label: "Scouting", icon: Target },
+  { path: "/squadiq", label: "SquadIQ", icon: MessageSquare },
   { path: "/competitions", label: "Wins", icon: Medal },
   { path: "/profile", label: "Profile", icon: User },
   { path: "/settings", label: "Settings", icon: Settings },
