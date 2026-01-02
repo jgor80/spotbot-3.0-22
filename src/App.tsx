@@ -16,6 +16,7 @@ import CompetitionsPage from "./pages/CompetitionsPage";
 import TeamsPage from "./pages/TeamsPage";
 import RatingsPage from "./pages/RatingsPage";
 import RecentGamesPage from "./pages/RecentGamesPage";
+import SquadIQPanel from "./pages/SquadIQPanel";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/teams" element={<TeamsPage />} />
             <Route path="/ratings" element={<RatingsPage />} />
             <Route path="/games" element={<RecentGamesPage />} />
+            <Route path="/squadiq" element={<SquadIQPanel />} />
             <Route path="/players" element={<Leaderboard />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
