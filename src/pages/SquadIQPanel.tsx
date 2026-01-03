@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useGuild } from "@/contexts/GuildContext";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
+import { ManagerEvaluationForm } from "@/components/squadiq/ManagerEvaluationForm";
 import {
   MessageSquare,
   Loader2,
@@ -35,7 +36,8 @@ import {
   Zap,
   Award,
   Play,
-  Search
+  Search,
+  Crown
 } from "lucide-react";
 
 interface CommandOutput {
@@ -715,6 +717,24 @@ export default function SquadIQPanel() {
                       Remove
                     </Button>
                   </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* CAPTAIN'S CORNER */}
+              <AccordionItem value="captains-corner" className="border rounded-lg px-4 border-amber-500/30">
+                <AccordionTrigger className="hover:no-underline">
+                  <div className="flex items-center gap-2">
+                    <Crown className="h-5 w-5 text-amber-500" />
+                    <span className="font-semibold">Captain's Corner</span>
+                    <Badge variant="secondary" className="ml-2 bg-amber-500/20 text-amber-600">Performance Ratings</Badge>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pt-4">
+                  <ManagerEvaluationForm 
+                    guildId={selectedGuildId}
+                    evaluatorId="web-user" 
+                    players={players}
+                  />
                 </AccordionContent>
               </AccordionItem>
 
