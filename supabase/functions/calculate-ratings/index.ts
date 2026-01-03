@@ -7,12 +7,13 @@ const corsHeaders = {
 };
 
 const WEIGHTS = {
-  win_rate: 0.20,               // NEW: Direct win rate contribution
-  draft_performance: 0.10,      // Reduced from 15%
-  club_performance: 0.20,       // Reduced from 25%
-  competition_performance: 0.20, // Reduced from 25%
-  peer_evaluation: 0.15,        // Reduced from 20%
-  build_quality: 0.15,          // Keep 15%
+  win_rate: 0.18,                // Reduced from 0.20
+  draft_performance: 0.08,       // Reduced from 0.10
+  club_performance: 0.18,        // Reduced from 0.20
+  competition_performance: 0.18, // Reduced from 0.20
+  peer_evaluation: 0.10,         // Reduced from 0.15 - vibes/casual
+  manager_evaluation: 0.13,      // NEW - deep performance ratings
+  build_quality: 0.15,           // Keep 15%
 };
 
 interface CalculateRatingsRequest {
@@ -155,14 +156,15 @@ serve(async (req) => {
     // BATCH: Update player summaries in parallel batches
     const summaryPlayerIds = results.map(r => r.discord_user_id);
     
-    // Pre-fetch all data needed for summaries
-    const [streakData, achievementData, reliabilityData, winsData, profileData, existingSummaryData] = await Promise.all([
+    // Pre-fetch all data needed for summaries (including manager evaluations)
+    const [streakData, achievementData, reliabilityData, winsData, profileData, existingSummaryData, managerEvalData] = await Promise.all([
       supabase.from("player_streaks").select("*").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
       supabase.from("player_achievements").select("discord_user_id, achievement_icon").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
       supabase.from("player_reliability").select("discord_user_id, reliability_score").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
       supabase.from("competition_wins").select("discord_user_id, competition_type, tier").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds).eq("verified", true),
       supabase.from("profiles").select("discord_user_id, discord_username, primary_position").in("discord_user_id", summaryPlayerIds),
-      supabase.from("player_summary").select("discord_user_id, games_played, wins, goals, assists, losses, draws").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
+      supabase.from("player_summary").select("discord_user_id, games_played, wins, goals, assists, losses, draws, manager_rating").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
+      supabase.from("manager_evaluations").select("evaluated_discord_id, weighted_score, trust_weight").eq("guild_id", guild_id).in("evaluated_discord_id", summaryPlayerIds),
     ]);
 
     // Index data by player
@@ -182,6 +184,17 @@ serve(async (req) => {
     }
     const profileMap = new Map((profileData.data || []).map(p => [p.discord_user_id, p]));
     const existingMap = new Map((existingSummaryData.data || []).map(e => [e.discord_user_id, e]));
+    
+    // Index manager evaluations by player
+    const managerEvalMap = new Map<string, { totalWeightedScore: number; totalTrustWeight: number }>();
+    for (const ev of (managerEvalData.data || [])) {
+      const existing = managerEvalMap.get(ev.evaluated_discord_id) || { totalWeightedScore: 0, totalTrustWeight: 0 };
+      const score = ev.weighted_score || 3;
+      const trust = ev.trust_weight || 1;
+      existing.totalWeightedScore += score * trust;
+      existing.totalTrustWeight += trust;
+      managerEvalMap.set(ev.evaluated_discord_id, existing);
+    }
 
     // Build summary upserts
     const summaryUpserts = [];
@@ -212,6 +225,14 @@ serve(async (req) => {
       const totalDraws = Math.max(existing?.draws || 0, ratingUpdate?.draws || rating?.draws || 0);
       const winRate = gamesPlayed > 0 ? (totalWins / gamesPlayed) * 100 : 0;
 
+      // Calculate manager rating from evaluations
+      const managerEvalData = managerEvalMap.get(discordUserId);
+      let managerRating = existing?.manager_rating || null;
+      if (managerEvalData && managerEvalData.totalTrustWeight > 0) {
+        const avgScore = managerEvalData.totalWeightedScore / managerEvalData.totalTrustWeight;
+        managerRating = ((avgScore - 1) / 4) * 100; // 1->0, 5->100
+      }
+
       summaryUpserts.push({
         guild_id,
         discord_user_id: discordUserId,
@@ -236,6 +257,7 @@ serve(async (req) => {
         major_wins: majorWins,
         primary_position: profile?.primary_position,
         last_active_at: ratingUpdate?.last_game_at || rating?.last_game_at,
+        manager_rating: managerRating,
       });
     }
 
@@ -297,6 +319,7 @@ function calculatePlayerRatingFast(player: any, allStats: any[]): { rating: numb
   const competitionRating = calculatePerformanceRating(competitionStats, baselineStats);
   const peerRating = player.peer_rating || 50;
   const buildRating = player.build_quality_rating || 50;
+  const managerRating = player.manager_rating || 50; // NEW: Manager evaluation rating
 
   // Calculate direct win rate from all tracked games
   const allTrackedStats = [...draftStats, ...clubStats, ...competitionStats];
@@ -310,6 +333,7 @@ function calculatePlayerRatingFast(player: any, allStats: any[]): { rating: numb
     (clubRating.rating * WEIGHTS.club_performance) +
     (competitionRating.rating * WEIGHTS.competition_performance) +
     (peerRating * WEIGHTS.peer_evaluation) +
+    (managerRating * WEIGHTS.manager_evaluation) + // NEW: Manager evaluation contribution
     (buildRating * WEIGHTS.build_quality);
 
   // Apply games-played confidence factor

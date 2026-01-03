@@ -783,6 +783,123 @@ export type Database = {
         }
         Relationships: []
       }
+      manager_evaluations: {
+        Row: {
+          aerial_ability: number | null
+          club_match_id: string | null
+          command_of_area: number | null
+          created_at: string
+          creativity: number | null
+          defensive_awareness: number | null
+          defensive_positioning: number | null
+          distribution: number | null
+          draft_id: string | null
+          dribbling: number | null
+          evaluated_discord_id: string
+          evaluator_discord_id: string
+          evaluator_role: string
+          gk_positioning: number | null
+          guild_id: string
+          handling: number | null
+          id: string
+          marking: number | null
+          notes: string | null
+          off_ball_movement: number | null
+          one_on_ones: number | null
+          overall_performance: number
+          pace: number | null
+          passing: number | null
+          position_played: string
+          shooting: number | null
+          shot_stopping: number | null
+          strength: number | null
+          tackling: number | null
+          trust_weight: number | null
+          weighted_score: number | null
+        }
+        Insert: {
+          aerial_ability?: number | null
+          club_match_id?: string | null
+          command_of_area?: number | null
+          created_at?: string
+          creativity?: number | null
+          defensive_awareness?: number | null
+          defensive_positioning?: number | null
+          distribution?: number | null
+          draft_id?: string | null
+          dribbling?: number | null
+          evaluated_discord_id: string
+          evaluator_discord_id: string
+          evaluator_role: string
+          gk_positioning?: number | null
+          guild_id: string
+          handling?: number | null
+          id?: string
+          marking?: number | null
+          notes?: string | null
+          off_ball_movement?: number | null
+          one_on_ones?: number | null
+          overall_performance: number
+          pace?: number | null
+          passing?: number | null
+          position_played: string
+          shooting?: number | null
+          shot_stopping?: number | null
+          strength?: number | null
+          tackling?: number | null
+          trust_weight?: number | null
+          weighted_score?: number | null
+        }
+        Update: {
+          aerial_ability?: number | null
+          club_match_id?: string | null
+          command_of_area?: number | null
+          created_at?: string
+          creativity?: number | null
+          defensive_awareness?: number | null
+          defensive_positioning?: number | null
+          distribution?: number | null
+          draft_id?: string | null
+          dribbling?: number | null
+          evaluated_discord_id?: string
+          evaluator_discord_id?: string
+          evaluator_role?: string
+          gk_positioning?: number | null
+          guild_id?: string
+          handling?: number | null
+          id?: string
+          marking?: number | null
+          notes?: string | null
+          off_ball_movement?: number | null
+          one_on_ones?: number | null
+          overall_performance?: number
+          pace?: number | null
+          passing?: number | null
+          position_played?: string
+          shooting?: number | null
+          shot_stopping?: number | null
+          strength?: number | null
+          tackling?: number | null
+          trust_weight?: number | null
+          weighted_score?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manager_evaluations_club_match_id_fkey"
+            columns: ["club_match_id"]
+            isOneToOne: false
+            referencedRelation: "club_matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manager_evaluations_draft_id_fkey"
+            columns: ["draft_id"]
+            isOneToOne: false
+            referencedRelation: "drafts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       monthly_snapshots: {
         Row: {
           assists: number
@@ -1320,6 +1437,7 @@ export type Database = {
           last_calculated_at: string
           last_game_at: string | null
           losses: number
+          manager_rating: number | null
           offsides: number | null
           overall_rating: number
           pass_attempts: number | null
@@ -1363,6 +1481,7 @@ export type Database = {
           last_calculated_at?: string
           last_game_at?: string | null
           losses?: number
+          manager_rating?: number | null
           offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null
@@ -1406,6 +1525,7 @@ export type Database = {
           last_calculated_at?: string
           last_game_at?: string | null
           losses?: number
+          manager_rating?: number | null
           offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null
@@ -1680,6 +1800,7 @@ export type Database = {
           losses: number | null
           major_wins: number
           man_of_match: number | null
+          manager_rating: number | null
           offsides: number | null
           overall_rating: number
           pass_attempts: number | null
@@ -1734,6 +1855,7 @@ export type Database = {
           losses?: number | null
           major_wins?: number
           man_of_match?: number | null
+          manager_rating?: number | null
           offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null
@@ -1788,6 +1910,7 @@ export type Database = {
           losses?: number | null
           major_wins?: number
           man_of_match?: number | null
+          manager_rating?: number | null
           offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null

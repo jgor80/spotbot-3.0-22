@@ -92,3 +92,6 @@ verify_jwt = false
 
 [functions.twitch-webhook]
 verify_jwt = false
+
+[functions.submit-manager-evaluation]
+verify_jwt = false
