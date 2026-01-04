@@ -233,6 +233,7 @@ serve(async (req) => {
             draft_performance: rating.draft_performance_rating,
             club_performance: rating.club_performance_rating,
             peer_evaluation: rating.peer_rating,
+            manager_evaluation: rating.manager_rating,
             build_quality: rating.build_quality_rating,
           } : null,
           

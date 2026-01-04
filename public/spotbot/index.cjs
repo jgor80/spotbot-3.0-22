@@ -2909,6 +2909,21 @@ function buildAdminControlPanelButtons(state) {
   );
   rows.push(row4);
   
+  // Row 5: Captain's Corner
+  const row5 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('squadiq_rateperformance')
+      .setLabel("Captain's Corner")
+      .setEmoji('👑')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('squadiq_fullstats')
+      .setLabel('My Full Stats')
+      .setEmoji('📋')
+      .setStyle(ButtonStyle.Secondary)
+  );
+  rows.push(row5);
+  
   return rows;
 }
 
@@ -3243,9 +3258,24 @@ function buildRatingsPanelComponents() {
       .setEmoji('🏆')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
+      .setCustomId('ratingspanel_fullstats')
+      .setLabel('Full Stats')
+      .setEmoji('📋')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
       .setCustomId('ratingspanel_refresh')
       .setLabel('Refresh')
       .setEmoji('🔄')
+      .setStyle(ButtonStyle.Success)
+  );
+  rows.push(row2);
+  
+  // Row 3: Captain's Corner
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ratingspanel_rateperformance')
+      .setLabel('Rate Performance')
+      .setEmoji('👑')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setLabel('Web Dashboard')
@@ -3253,7 +3283,7 @@ function buildRatingsPanelComponents() {
       .setStyle(ButtonStyle.Link)
       .setURL('https://squadiq.lovable.app/leaderboard')
   );
-  rows.push(row2);
+  rows.push(row3);
   
   return rows;
 }
@@ -10091,28 +10121,40 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         const { error, data } = await callEdgeFunction('get-player-profile', {
           guild_id: guildId,
-          discord_user_id: interaction.user.id
+          discord_user_id: interaction.user.id,
+          include_position_breakdown: false,
+          include_chemistry: false,
+          include_vibe_chemistry: false,
+          include_recent_games: false
         });
 
         if (error) {
           return interaction.editReply({ content: `❌ Failed to fetch stats: ${error}` });
         }
 
-        const streakEmoji = data.streak_type === 'win' ? '🔥' : data.streak_type === 'loss' ? '❄️' : '➖';
-        const formText = data.last_5_results?.map(r => r === 'W' ? '🟢' : r === 'L' ? '🔴' : '⚪').join('') || 'No games yet';
+        const player = data?.player || data || {};
+        const form = player.form || {};
+        const ratingBreakdown = player.rating_breakdown || {};
+        
+        const streakEmoji = form.current_win_streak > 0 ? '🔥' : form.current_loss_streak > 0 ? '❄️' : '➖';
+        const streakVal = form.current_win_streak || form.current_loss_streak || 0;
+        const formText = form.last_5?.map(r => r === 'W' ? '🟢' : r === 'L' ? '🔴' : '⚪').join('') || 'No games yet';
 
         const embed = new EmbedBuilder()
           .setTitle(`📊 Your Stats`)
           .setColor(0x5865f2)
           .addFields(
-            { name: '⭐ Rating', value: `**${Math.round(data.overall_rating || 50)}**`, inline: true },
-            { name: '🎮 Games', value: `${data.games_played || 0}`, inline: true },
-            { name: '🏆 Wins', value: `${data.wins || 0} (${Math.round(data.win_rate || 0)}%)`, inline: true },
-            { name: '⚽ Goals', value: `${data.total_goals || 0}`, inline: true },
-            { name: '🎯 Assists', value: `${data.total_assists || 0}`, inline: true },
-            { name: `${streakEmoji} Streak`, value: `${data.current_streak || 0}`, inline: true },
+            { name: '⭐ Rating', value: `**${Math.round(player.overall_rating || 50)}**`, inline: true },
+            { name: '🎮 Games', value: `${player.games_played || 0}`, inline: true },
+            { name: '🏆 Wins', value: `${player.wins || 0} (${player.win_rate || 0}%)`, inline: true },
+            { name: '⚽ Goals', value: `${player.goals || 0}`, inline: true },
+            { name: '🎯 Assists', value: `${player.assists || 0}`, inline: true },
+            { name: `${streakEmoji} Streak`, value: `${streakVal || 0}`, inline: true },
+            { name: '👥 Peer Rating', value: `${Math.round(ratingBreakdown.peer_evaluation || 50)}`, inline: true },
+            { name: '👑 Manager Rating', value: `${Math.round(ratingBreakdown.manager_evaluation || 50)}`, inline: true },
             { name: '📈 Recent Form', value: formText, inline: false }
-          );
+          )
+          .setFooter({ text: 'Ratings are anonymous • No rater info shown' });
 
         return interaction.editReply({ embeds: [embed] });
       }
@@ -10185,6 +10227,407 @@ client.on(Events.InteractionCreate, async (interaction) => {
           embeds: [buildRatingsPanelEmbed(guildId)],
           components: buildRatingsPanelComponents()
         });
+        return;
+      }
+
+      // ===== CAPTAIN'S CORNER & FULL STATS HANDLERS =====
+
+      // Helper function to check captain/manager/owner role
+      async function checkCaptainRole(guildId, discordUserId) {
+        const { data } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('guild_id', guildId)
+          .eq('discord_user_id', discordUserId)
+          .in('role', ['owner', 'manager', 'captain']);
+        
+        if (!data || data.length === 0) {
+          return { isEligible: false, role: null };
+        }
+        
+        const roles = data.map(r => r.role);
+        if (roles.includes('owner')) return { isEligible: true, role: 'owner' };
+        if (roles.includes('manager')) return { isEligible: true, role: 'manager' };
+        return { isEligible: true, role: 'captain' };
+      }
+
+      // Full Stats button (both panels)
+      if (id === 'ratingspanel_fullstats' || id === 'squadiq_fullstats') {
+        await interaction.deferReply({ flags: 64 });
+
+        const { error, data } = await callEdgeFunction('get-player-profile', {
+          guild_id: guildId,
+          discord_user_id: interaction.user.id,
+          include_position_breakdown: true,
+          include_chemistry: true,
+          include_vibe_chemistry: true,
+          include_recent_games: false
+        });
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to fetch stats: ${error}` });
+        }
+
+        const player = data?.player || {};
+        const ratingBreakdown = player.rating_breakdown || {};
+        const form = player.form || {};
+        
+        // Build form text
+        const formText = form.last_5?.map(r => r === 'W' ? '🟢' : r === 'L' ? '🔴' : '⚪').join('') || 'No games yet';
+        const streakEmoji = form.current_win_streak > 0 ? '🔥' : form.current_loss_streak > 0 ? '❄️' : '➖';
+        const streakVal = form.current_win_streak || form.current_loss_streak || 0;
+
+        // Build rating breakdown text
+        const breakdownText = 
+          `⚔️ Draft: ${Math.round(ratingBreakdown.draft_performance || 50)}\n` +
+          `🏟️ Club: ${Math.round(ratingBreakdown.club_performance || 50)}\n` +
+          `👥 Peer: ${Math.round(ratingBreakdown.peer_evaluation || 50)}\n` +
+          `👑 Manager: ${Math.round(ratingBreakdown.manager_evaluation || 50)}\n` +
+          `🔧 Build: ${Math.round(ratingBreakdown.build_quality || 50)}`;
+
+        // Build game stats text
+        const statsText = 
+          `Games: ${player.games_played || 0}\n` +
+          `Wins: ${player.wins || 0} (${player.win_rate || 0}%)\n` +
+          `Goals: ${player.goals || 0}\n` +
+          `Assists: ${player.assists || 0}\n` +
+          `Clean Sheets: ${player.clean_sheets || 0}`;
+
+        // Build form text block
+        const formBlockText = 
+          `Form Rating: ${Math.round(form.form_rating || 50)}\n` +
+          `Last 5: ${formText}\n` +
+          `Streak: ${streakEmoji}${streakVal > 0 ? streakVal : ''}\n` +
+          `Best Streak: ${form.longest_win_streak || 0} 🔥`;
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📋 Full Profile: ${player.discord_username || 'Unknown'}`)
+          .setColor(0x5865f2)
+          .setDescription(`**${player.rating_tier?.icon || '⚙️'} ${player.rating_tier?.name || 'Iron'} Tier** • Overall: **${Math.round(player.overall_rating || 50)}**`)
+          .addFields(
+            { name: '📊 Rating Breakdown', value: breakdownText, inline: true },
+            { name: '🎮 Game Stats', value: statsText, inline: true },
+            { name: '📈 Current Form', value: formBlockText, inline: true }
+          );
+
+        // Add top chemistry partners
+        if (player.top_chemistry?.length > 0) {
+          const chemText = player.top_chemistry.slice(0, 3).map(c => 
+            `• ${c.partner_username || 'Unknown'}: ${Math.round(c.win_rate || 0)}% (${c.games_together}G)`
+          ).join('\n');
+          embed.addFields({ name: '🤝 Best Chemistry', value: chemText, inline: true });
+        }
+
+        // Add achievements count
+        embed.addFields({ 
+          name: '🏆 Achievements', 
+          value: `${player.achievements?.length || 0} earned`, 
+          inline: true 
+        });
+
+        embed.setFooter({ text: 'Peer & Manager ratings are anonymous • Use web dashboard for full details' });
+        embed.setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // Rate Performance / Captain's Corner button (both panels)
+      if (id === 'ratingspanel_rateperformance' || id === 'squadiq_rateperformance') {
+        const roleCheck = await checkCaptainRole(guildId, interaction.user.id);
+        
+        if (!roleCheck.isEligible) {
+          return interaction.reply({
+            content: '❌ **Captain\'s Corner** is only available to Captains, Managers, and Owners.\n\nThis feature allows leadership to provide detailed performance ratings for players.',
+            flags: 64
+          });
+        }
+
+        await interaction.deferReply({ flags: 64 });
+
+        // Get recent players
+        const { data: players } = await supabase
+          .from('player_summary')
+          .select('discord_user_id, discord_username, overall_rating, primary_position')
+          .eq('guild_id', guildId)
+          .order('updated_at', { ascending: false })
+          .limit(25);
+
+        if (!players || players.length === 0) {
+          return interaction.editReply({ 
+            content: '❌ No players found. Play some games first!' 
+          });
+        }
+
+        const trustWeight = roleCheck.role === 'owner' ? '2.0x' : roleCheck.role === 'manager' ? '1.5x' : '1.25x';
+
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('rateperf_player_select')
+          .setPlaceholder('Select a player to rate')
+          .addOptions(
+            players.map(p => ({
+              label: `${p.discord_username || 'Unknown'} (${Math.round(p.overall_rating || 50)} OVR)`,
+              value: p.discord_user_id,
+              description: p.primary_position ? `Position: ${p.primary_position}` : 'Position: Unknown',
+              emoji: '👤'
+            }))
+          );
+
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+
+        return interaction.editReply({
+          content: `👑 **Captain\'s Corner** - Performance Rating\n\n` +
+                   `You're rating as: **${roleCheck.role.charAt(0).toUpperCase() + roleCheck.role.slice(1)}** ` +
+                   `(${trustWeight} trust weight)\n\n` +
+                   `Select a player to rate:`,
+          components: [row]
+        });
+      }
+
+      // Player select for rate performance
+      if (id === 'rateperf_player_select') {
+        const playerId = interaction.values[0];
+        
+        // Get player name
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('discord_username')
+          .eq('discord_user_id', playerId)
+          .maybeSingle();
+        
+        const playerName = profile?.discord_username || 'Unknown';
+
+        // Store pending state in custom ID
+        const posMenu = new StringSelectMenuBuilder()
+          .setCustomId(`rateperf_position_${playerId}`)
+          .setPlaceholder('Select position played')
+          .addOptions([
+            { label: 'Goalkeeper (GK)', value: 'GK', emoji: '🧤' },
+            { label: 'Defender (CB/LB/RB)', value: 'DEF', emoji: '🧱' },
+            { label: 'Midfielder (CM/CAM/CDM)', value: 'MID', emoji: '🎯' },
+            { label: 'Attacker (ST/LW/RW)', value: 'ATT', emoji: '⚽' }
+          ]);
+
+        return interaction.update({
+          content: `👤 Rating **${playerName}**\n\nWhat position did they play?`,
+          components: [new ActionRowBuilder().addComponents(posMenu)]
+        });
+      }
+
+      // Position select for rate performance - shows modal
+      if (id.startsWith('rateperf_position_')) {
+        const playerId = id.replace('rateperf_position_', '');
+        const position = interaction.values[0];
+        
+        // Build position-specific modal
+        let modal;
+        if (position === 'GK') {
+          modal = new ModalBuilder()
+            .setCustomId(`rateperf_modal_GK_${playerId}`)
+            .setTitle('Rate Goalkeeper Performance')
+            .addComponents(
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('shot_stopping')
+                  .setLabel('Shot Stopping (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('positioning')
+                  .setLabel('Positioning (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('distribution')
+                  .setLabel('Distribution (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('command')
+                  .setLabel('Command of Area (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('overall')
+                  .setLabel('Overall Performance (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              )
+            );
+        } else if (position === 'ATT') {
+          modal = new ModalBuilder()
+            .setCustomId(`rateperf_modal_ATT_${playerId}`)
+            .setTitle('Rate Attacker Performance')
+            .addComponents(
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('shooting')
+                  .setLabel('Shooting (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('dribbling')
+                  .setLabel('Dribbling & Pace (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('movement')
+                  .setLabel('Movement & Creativity (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('passing')
+                  .setLabel('Passing (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('overall')
+                  .setLabel('Overall Performance (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              )
+            );
+        } else if (position === 'DEF') {
+          modal = new ModalBuilder()
+            .setCustomId(`rateperf_modal_DEF_${playerId}`)
+            .setTitle('Rate Defender Performance')
+            .addComponents(
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('tackling')
+                  .setLabel('Tackling (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('positioning')
+                  .setLabel('Positioning (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('aerial')
+                  .setLabel('Aerial & Strength (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('passing')
+                  .setLabel('Passing (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('overall')
+                  .setLabel('Overall Performance (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              )
+            );
+        } else {
+          // MID
+          modal = new ModalBuilder()
+            .setCustomId(`rateperf_modal_MID_${playerId}`)
+            .setTitle('Rate Midfielder Performance')
+            .addComponents(
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('passing')
+                  .setLabel('Passing & Vision (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('creativity')
+                  .setLabel('Creativity (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('defensive')
+                  .setLabel('Defensive Work (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('dribbling')
+                  .setLabel('Dribbling (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              ),
+              new ActionRowBuilder().addComponents(
+                new TextInputBuilder()
+                  .setCustomId('overall')
+                  .setLabel('Overall Performance (1-5)')
+                  .setPlaceholder('1 = Poor, 5 = Excellent')
+                  .setStyle(TextInputStyle.Short)
+                  .setRequired(true)
+                  .setMaxLength(1)
+              )
+            );
+        }
+
+        await interaction.showModal(modal);
         return;
       }
 
@@ -11154,8 +11597,112 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.editReply({ embeds: [embed], components: [reportButton] });
         }
       }
+
+      // Handle rate performance modal submissions
+      if (id.startsWith('rateperf_modal_')) {
+        const parts = id.split('_');
+        const position = parts[2]; // GK, ATT, DEF, MID
+        const playerId = parts.slice(3).join('_');
+
+        await interaction.deferReply({ flags: 64 });
+
+        // Get evaluator role
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('guild_id', guildId)
+          .eq('discord_user_id', interaction.user.id)
+          .in('role', ['owner', 'manager', 'captain']);
+
+        if (!roleData || roleData.length === 0) {
+          return interaction.editReply({ content: '❌ You no longer have permission to rate players.' });
+        }
+
+        const roles = roleData.map(r => r.role);
+        const evaluatorRole = roles.includes('owner') ? 'owner' : roles.includes('manager') ? 'manager' : 'captain';
+
+        // Parse ratings from modal fields
+        const parseRating = (fieldId) => {
+          try {
+            const val = parseInt(interaction.fields.getTextInputValue(fieldId), 10);
+            return (val >= 1 && val <= 5) ? val : null;
+          } catch {
+            return null;
+          }
+        };
+
+        const overall = parseRating('overall');
+        if (!overall) {
+          return interaction.editReply({ content: '❌ Please enter valid ratings (1-5 only).' });
+        }
+
+        // Build payload based on position
+        let payload = {
+          guild_id: guildId,
+          evaluator_discord_id: interaction.user.id,
+          evaluated_discord_id: playerId,
+          position_played: position,
+          overall_performance: overall
+        };
+
+        if (position === 'GK') {
+          payload.shot_stopping = parseRating('shot_stopping');
+          payload.gk_positioning = parseRating('positioning');
+          payload.distribution = parseRating('distribution');
+          payload.command_of_area = parseRating('command');
+        } else if (position === 'ATT') {
+          payload.shooting = parseRating('shooting');
+          payload.dribbling = parseRating('dribbling');
+          payload.pace = parseRating('dribbling'); // Combined
+          payload.off_ball_movement = parseRating('movement');
+          payload.creativity = parseRating('movement'); // Combined
+          payload.passing = parseRating('passing');
+        } else if (position === 'DEF') {
+          payload.tackling = parseRating('tackling');
+          payload.defensive_positioning = parseRating('positioning');
+          payload.aerial_ability = parseRating('aerial');
+          payload.strength = parseRating('aerial'); // Combined
+          payload.passing = parseRating('passing');
+        } else {
+          // MID
+          payload.passing = parseRating('passing');
+          payload.creativity = parseRating('creativity');
+          payload.defensive_awareness = parseRating('defensive');
+          payload.dribbling = parseRating('dribbling');
+        }
+
+        // Call the edge function
+        const { error, data } = await callEdgeFunction('submit-manager-evaluation', payload);
+
+        if (error) {
+          return interaction.editReply({ content: `❌ Failed to submit evaluation: ${error}` });
+        }
+
+        // Get player name for confirmation
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('discord_username')
+          .eq('discord_user_id', playerId)
+          .maybeSingle();
+
+        const trustWeight = evaluatorRole === 'owner' ? '2.0x' : evaluatorRole === 'manager' ? '1.5x' : '1.25x';
+
+        const embed = new EmbedBuilder()
+          .setTitle('✅ Performance Rating Submitted!')
+          .setColor(0x00ff00)
+          .addFields(
+            { name: 'Player', value: profile?.discord_username || 'Unknown', inline: true },
+            { name: 'Position', value: position, inline: true },
+            { name: 'Your Role', value: evaluatorRole.charAt(0).toUpperCase() + evaluatorRole.slice(1), inline: true },
+            { name: 'Overall Score', value: `${overall}/5 ⭐`, inline: true },
+            { name: 'Trust Weight', value: trustWeight, inline: true }
+          )
+          .setFooter({ text: 'Rating recorded • Player rating updated anonymously' })
+          .setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+      }
       
-      // Handle welcome link EA modal from DM
       if (id.startsWith('welcome_link_modal_')) {
         const targetGuildId = id.replace('welcome_link_modal_', '');
         const eaUsername = interaction.fields.getTextInputValue('ea_username').trim();
