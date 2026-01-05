@@ -6,11 +6,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Trust multipliers by role
-const TRUST_MULTIPLIERS = {
+// Trust multipliers by role (all players can rate, leadership gets more weight)
+const TRUST_MULTIPLIERS: Record<string, number> = {
   owner: 2.0,
   manager: 1.5,
   captain: 1.25,
+  moderator: 1.1,
+  scout: 1.1,
+  player: 1.0,
+  default: 0.75,
 };
 
 // Position categories
@@ -136,36 +140,31 @@ serve(async (req) => {
       );
     }
 
-    // Check evaluator's role
+    // Check evaluator's role (for trust weighting, not rejection - all players can rate)
     const { data: roleData, error: roleError } = await supabase
       .from("user_roles")
       .select("role")
       .eq("guild_id", data.guild_id)
-      .eq("discord_user_id", data.evaluator_discord_id)
-      .in("role", ["owner", "manager", "captain"]);
+      .eq("discord_user_id", data.evaluator_discord_id);
 
     if (roleError) {
       console.error("[submit-manager-evaluation] Role check error:", roleError);
-      return new Response(
-        JSON.stringify({ error: "Failed to verify evaluator role" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
 
-    if (!roleData || roleData.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "You must be a captain, manager, or owner to submit performance evaluations" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // Determine trust multiplier based on highest role (no rejection)
+    let evaluatorRole = "default";
+    let trustWeight = TRUST_MULTIPLIERS.default;
+
+    if (roleData && roleData.length > 0) {
+      const roles = roleData.map(r => r.role);
+      if (roles.includes("owner")) { evaluatorRole = "owner"; trustWeight = TRUST_MULTIPLIERS.owner; }
+      else if (roles.includes("manager")) { evaluatorRole = "manager"; trustWeight = TRUST_MULTIPLIERS.manager; }
+      else if (roles.includes("captain")) { evaluatorRole = "captain"; trustWeight = TRUST_MULTIPLIERS.captain; }
+      else if (roles.includes("moderator")) { evaluatorRole = "moderator"; trustWeight = TRUST_MULTIPLIERS.moderator; }
+      else if (roles.includes("scout")) { evaluatorRole = "scout"; trustWeight = TRUST_MULTIPLIERS.scout; }
+      else { evaluatorRole = "player"; trustWeight = TRUST_MULTIPLIERS.player; }
     }
 
-    // Get highest role for trust multiplier
-    const roles = roleData.map(r => r.role);
-    let evaluatorRole: "owner" | "manager" | "captain" = "captain";
-    if (roles.includes("owner")) evaluatorRole = "owner";
-    else if (roles.includes("manager")) evaluatorRole = "manager";
-
-    const trustWeight = TRUST_MULTIPLIERS[evaluatorRole];
     const weightedScore = calculateWeightedScore(data);
 
     console.log(`[submit-manager-evaluation] Role: ${evaluatorRole}, trust: ${trustWeight}, weighted score: ${weightedScore.toFixed(2)}`);
