@@ -4,7 +4,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { GuildProvider } from "@/contexts/GuildContext";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
+import AuthPage from "./pages/AuthPage";
 import Leaderboard from "./pages/Leaderboard";
 import LineupPage from "./pages/LineupPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -23,31 +26,34 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <GuildProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/leaderboard" element={<Leaderboard />} />
-            <Route path="/lineup" element={<LineupPage />} />
-            <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/drafts" element={<DraftsPage />} />
-            <Route path="/scouting" element={<ScoutingPage />} />
-            <Route path="/scouting/intel" element={<ScoutingIntelPage />} />
-            <Route path="/competitions" element={<CompetitionsPage />} />
-            <Route path="/teams" element={<TeamsPage />} />
-            <Route path="/ratings" element={<RatingsPage />} />
-            <Route path="/games" element={<RecentGamesPage />} />
-            <Route path="/squadiq" element={<SquadIQPanel />} />
-            <Route path="/players" element={<Leaderboard />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </GuildProvider>
+    <AuthProvider>
+      <GuildProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/auth" element={<AuthPage />} />
+              <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+              <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+              <Route path="/lineup" element={<ProtectedRoute><LineupPage /></ProtectedRoute>} />
+              <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+              <Route path="/drafts" element={<ProtectedRoute><DraftsPage /></ProtectedRoute>} />
+              <Route path="/scouting" element={<ProtectedRoute><ScoutingPage /></ProtectedRoute>} />
+              <Route path="/scouting/intel" element={<ProtectedRoute><ScoutingIntelPage /></ProtectedRoute>} />
+              <Route path="/competitions" element={<ProtectedRoute><CompetitionsPage /></ProtectedRoute>} />
+              <Route path="/teams" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
+              <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
+              <Route path="/games" element={<ProtectedRoute><RecentGamesPage /></ProtectedRoute>} />
+              <Route path="/squadiq" element={<ProtectedRoute><SquadIQPanel /></ProtectedRoute>} />
+              <Route path="/players" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </GuildProvider>
+    </AuthProvider>
   </QueryClientProvider>
 );
 
