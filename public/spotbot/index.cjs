@@ -10232,23 +10232,35 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       // ===== CAPTAIN'S CORNER & FULL STATS HANDLERS =====
 
-      // Helper function to check captain/manager/owner role
-      async function checkCaptainRole(guildId, discordUserId) {
+      // Helper function to get evaluator role and trust weight (all players can rate)
+      async function getEvaluatorRole(guildId, discordUserId) {
         const { data } = await supabase
           .from('user_roles')
           .select('role')
           .eq('guild_id', guildId)
-          .eq('discord_user_id', discordUserId)
-          .in('role', ['owner', 'manager', 'captain']);
+          .eq('discord_user_id', discordUserId);
+        
+        const trustWeights = {
+          owner: { weight: '2.0x', label: 'Owner' },
+          manager: { weight: '1.5x', label: 'Manager' },
+          captain: { weight: '1.25x', label: 'Captain' },
+          moderator: { weight: '1.1x', label: 'Moderator' },
+          scout: { weight: '1.1x', label: 'Scout' },
+          player: { weight: '1.0x', label: 'Player' },
+          default: { weight: '0.75x', label: 'Member' }
+        };
         
         if (!data || data.length === 0) {
-          return { isEligible: false, role: null };
+          return { role: 'default', ...trustWeights.default };
         }
         
         const roles = data.map(r => r.role);
-        if (roles.includes('owner')) return { isEligible: true, role: 'owner' };
-        if (roles.includes('manager')) return { isEligible: true, role: 'manager' };
-        return { isEligible: true, role: 'captain' };
+        if (roles.includes('owner')) return { role: 'owner', ...trustWeights.owner };
+        if (roles.includes('manager')) return { role: 'manager', ...trustWeights.manager };
+        if (roles.includes('captain')) return { role: 'captain', ...trustWeights.captain };
+        if (roles.includes('moderator')) return { role: 'moderator', ...trustWeights.moderator };
+        if (roles.includes('scout')) return { role: 'scout', ...trustWeights.scout };
+        return { role: 'player', ...trustWeights.player };
       }
 
       // Full Stats button (both panels)
@@ -10331,16 +10343,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.editReply({ embeds: [embed] });
       }
 
-      // Rate Performance / Captain's Corner button (both panels)
+      // Rate Performance / Captain's Corner button (both panels) - Open to all players
       if (id === 'ratingspanel_rateperformance' || id === 'squadiq_rateperformance') {
-        const roleCheck = await checkCaptainRole(guildId, interaction.user.id);
-        
-        if (!roleCheck.isEligible) {
-          return interaction.reply({
-            content: '❌ **Captain\'s Corner** is only available to Captains, Managers, and Owners.\n\nThis feature allows leadership to provide detailed performance ratings for players.',
-            flags: 64
-          });
-        }
+        const roleInfo = await getEvaluatorRole(guildId, interaction.user.id);
 
         await interaction.deferReply({ flags: 64 });
 
@@ -10358,8 +10363,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
           });
         }
 
-        const trustWeight = roleCheck.role === 'owner' ? '2.0x' : roleCheck.role === 'manager' ? '1.5x' : '1.25x';
-
         const selectMenu = new StringSelectMenuBuilder()
           .setCustomId('rateperf_player_select')
           .setPlaceholder('Select a player to rate')
@@ -10375,9 +10378,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const row = new ActionRowBuilder().addComponents(selectMenu);
 
         return interaction.editReply({
-          content: `👑 **Captain\'s Corner** - Performance Rating\n\n` +
-                   `You're rating as: **${roleCheck.role.charAt(0).toUpperCase() + roleCheck.role.slice(1)}** ` +
-                   `(${trustWeight} trust weight)\n\n` +
+          content: `👑 **Performance Rating**\n\n` +
+                   `You're rating as: **${roleInfo.label}** ` +
+                   `(${roleInfo.weight} trust weight)\n\n` +
+                   `💡 *Higher roles have more influence on final ratings*\n\n` +
                    `Select a player to rate:`,
           components: [row]
         });
