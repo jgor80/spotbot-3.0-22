@@ -1,5 +1,5 @@
 import { ReactNode, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { 
   LayoutDashboard, 
   Trophy, 
@@ -16,11 +16,13 @@ import {
   UsersRound,
   Settings,
   Star,
-  MessageSquare
+  MessageSquare,
+  LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { GuildSelector } from "@/components/GuildSelector";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -43,7 +45,14 @@ const navItems = [
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { user, signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/auth");
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -60,9 +69,20 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             </span>
           </Link>
 
-          {/* Guild Selector - visible on tablet+ */}
-          <div className="hidden sm:block">
+          {/* Guild Selector + User Info - visible on tablet+ */}
+          <div className="hidden sm:flex items-center gap-3">
             <GuildSelector />
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="max-w-[150px] truncate">{user?.email}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleSignOut}
+                title="Sign out"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
           {/* Mobile Menu Button */}
@@ -126,6 +146,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   </Link>
                 );
               })}
+            </div>
+            <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm">
+              <span className="text-muted-foreground truncate max-w-[200px]">{user?.email}</span>
+              <Button variant="outline" size="sm" onClick={handleSignOut}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
+              </Button>
             </div>
           </nav>
         )}
