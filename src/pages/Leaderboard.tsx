@@ -36,6 +36,14 @@ const MATCH_TYPES = [
   { value: "friendly", label: "Friendly" },
 ];
 
+const GAMES_PLAYED_FILTERS = [
+  { value: "0", label: "All Players" },
+  { value: "10", label: "10+ Games" },
+  { value: "25", label: "25+ Games" },
+  { value: "50", label: "50+ Games" },
+  { value: "100", label: "100+ Games" },
+];
+
 
 export default function Leaderboard() {
   const { selectedGuildId, isLoading: guildLoading, selectedGuild } = useGuild();
@@ -46,6 +54,7 @@ export default function Leaderboard() {
   const [clubFilter, setClubFilter] = useState("all");
   const [statsSource, setStatsSource] = useState<"all" | "members" | "games">("games");
   const [matchType, setMatchType] = useState("all");
+  const [minGamesPlayed, setMinGamesPlayed] = useState("0");
 
   const enabledClubs = (selectedGuild?.clubs || []).filter((club) => club.enabled);
 
@@ -93,6 +102,12 @@ export default function Leaderboard() {
     
     let filtered = [...players];
     
+    // Apply minimum games played filter
+    const minGames = parseInt(minGamesPlayed, 10);
+    if (minGames > 0) {
+      filtered = filtered.filter(p => p.games_played >= minGames);
+    }
+    
     if (showWorst) {
       filtered = filtered.filter(p => p.games_played >= 3);
       filtered = filtered.reverse();
@@ -101,7 +116,7 @@ export default function Leaderboard() {
     filtered = filtered.map((p, idx) => ({ ...p, rank: idx + 1 }));
     
     return filtered;
-  }, [players, showWorst]);
+  }, [players, showWorst, minGamesPlayed]);
 
   const isLoading = guildLoading || playersLoading;
 
@@ -248,6 +263,18 @@ export default function Leaderboard() {
                 {TIME_PERIODS.map((period) => (
                   <SelectItem key={period.value} value={period.value}>
                     {period.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={minGamesPlayed} onValueChange={setMinGamesPlayed}>
+              <SelectTrigger className="w-[140px] bg-card">
+                <SelectValue placeholder="Min games" />
+              </SelectTrigger>
+              <SelectContent className="bg-card border z-50">
+                {GAMES_PLAYED_FILTERS.map((filter) => (
+                  <SelectItem key={filter.value} value={filter.value}>
+                    {filter.label}
                   </SelectItem>
                 ))}
               </SelectContent>
