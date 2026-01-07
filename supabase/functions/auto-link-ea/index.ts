@@ -251,7 +251,7 @@ serve(async (req) => {
       }
     }
 
-    // Cleanup orphans
+    // Cleanup orphans - comprehensive migration across ALL tables and guilds
     for (const tempProfile of (allTempProfiles || [])) {
       const eaUsername = tempProfile.ea_username;
       if (!eaUsername) continue;
@@ -264,21 +264,91 @@ serve(async (req) => {
 
       console.log(`[auto-link-ea] Cleaning orphan: ${eaUsername} (${tempDiscordId} -> ${realDiscordId})`);
 
-      // Migrate player_stats
+      // Migrate player_stats (all guilds)
       await supabase
         .from("player_stats")
         .update({ discord_user_id: realDiscordId })
         .eq("discord_user_id", tempDiscordId);
 
-      // Migrate player_club_stats
+      // Migrate player_club_stats (all guilds)
       await supabase
         .from("player_club_stats")
         .update({ discord_user_id: realDiscordId })
         .eq("discord_user_id", tempDiscordId);
 
-      // Delete duplicates
-      await supabase.from("player_ratings").delete().eq("discord_user_id", tempDiscordId);
-      await supabase.from("player_summary").delete().eq("discord_user_id", tempDiscordId);
+      // Migrate player_streaks (all guilds)
+      await supabase
+        .from("player_streaks")
+        .update({ discord_user_id: realDiscordId })
+        .eq("discord_user_id", tempDiscordId);
+
+      // Migrate player_position_ratings (all guilds)
+      await supabase
+        .from("player_position_ratings")
+        .update({ discord_user_id: realDiscordId })
+        .eq("discord_user_id", tempDiscordId);
+
+      // Migrate position_preferences (all guilds) - note: uses user_id not discord_user_id
+      await supabase
+        .from("position_preferences")
+        .update({ user_id: realDiscordId })
+        .eq("user_id", tempDiscordId);
+
+      // For player_ratings: migrate or delete per guild
+      const { data: tempRatings } = await supabase
+        .from("player_ratings")
+        .select("id, guild_id")
+        .eq("discord_user_id", tempDiscordId);
+
+      for (const tempRating of (tempRatings || [])) {
+        const { data: existingRating } = await supabase
+          .from("player_ratings")
+          .select("id")
+          .eq("discord_user_id", realDiscordId)
+          .eq("guild_id", tempRating.guild_id)
+          .maybeSingle();
+
+        if (!existingRating) {
+          await supabase
+            .from("player_ratings")
+            .update({ discord_user_id: realDiscordId })
+            .eq("id", tempRating.id);
+        } else {
+          await supabase
+            .from("player_ratings")
+            .delete()
+            .eq("id", tempRating.id);
+        }
+      }
+
+      // For player_summary: migrate or delete per guild
+      const { data: tempSummaries } = await supabase
+        .from("player_summary")
+        .select("id, guild_id")
+        .eq("discord_user_id", tempDiscordId);
+
+      for (const tempSummary of (tempSummaries || [])) {
+        const { data: existingSummary } = await supabase
+          .from("player_summary")
+          .select("id")
+          .eq("discord_user_id", realDiscordId)
+          .eq("guild_id", tempSummary.guild_id)
+          .maybeSingle();
+
+        if (!existingSummary) {
+          await supabase
+            .from("player_summary")
+            .update({ discord_user_id: realDiscordId })
+            .eq("id", tempSummary.id);
+        } else {
+          await supabase
+            .from("player_summary")
+            .delete()
+            .eq("id", tempSummary.id);
+        }
+      }
+
+      // Delete the orphaned temp profile
       await supabase.from("profiles").delete().eq("discord_user_id", tempDiscordId);
 
       result.cleaned++;
@@ -534,6 +604,20 @@ serve(async (req) => {
         // Migrate player_club_stats
         await supabase
           .from("player_club_stats")
+          .update({ discord_user_id: realDiscordId })
+          .eq("discord_user_id", tempDiscordId)
+          .eq("guild_id", guild_id);
+
+        // Migrate player_streaks
+        await supabase
+          .from("player_streaks")
+          .update({ discord_user_id: realDiscordId })
+          .eq("discord_user_id", tempDiscordId)
+          .eq("guild_id", guild_id);
+
+        // Migrate player_position_ratings
+        await supabase
+          .from("player_position_ratings")
           .update({ discord_user_id: realDiscordId })
           .eq("discord_user_id", tempDiscordId)
           .eq("guild_id", guild_id);
