@@ -61,6 +61,7 @@ export default function CompetitionsPage() {
   const [tier, setTier] = useState("minor");
   const [teamName, setTeamName] = useState("");
   const [placedAt, setPlacedAt] = useState("");
+  const [adminDiscordId, setAdminDiscordId] = useState("");
 
   // Fetch verified wins
   const { data: verifiedWins, isLoading: winsLoading } = useQuery({
@@ -100,27 +101,30 @@ export default function CompetitionsPage() {
     enabled: !!selectedGuildId,
   });
 
-  // Submit win claim
+  // Submit win claim - using edge function
   const submitClaimMutation = useMutation({
     mutationFn: async () => {
       if (!selectedGuildId || !discordUserId || !competitionName) {
         throw new Error("Missing required fields");
       }
       
-      const { error } = await supabase
-        .from("pending_win_claims")
-        .insert({
+      const { data, error } = await supabase.functions.invoke("manage-competition-claims", {
+        body: {
+          action: "submit",
           guild_id: selectedGuildId,
-          claimed_by_discord_id: discordUserId,
+          discord_user_id: discordUserId.trim(),
           competition_name: competitionName,
           competition_type: competitionType,
-          tier: tier as "major" | "minor" | "community" | "div1" | "div2" | "div3" | "div4",
+          tier: tier,
           team_name: teamName || null,
           placed_at: placedAt || null,
-          status: "pending" as const,
-        });
+        },
+      });
       
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to submit claim");
+      
+      return data;
     },
     onSuccess: () => {
       toast({
@@ -143,35 +147,26 @@ export default function CompetitionsPage() {
     },
   });
 
-  // Approve claim
+  // Approve claim - using edge function
   const approveClaimMutation = useMutation({
     mutationFn: async (claimId: string) => {
-      const claim = pendingClaims?.find(c => c.id === claimId);
-      if (!claim || !selectedGuildId) throw new Error("Claim not found");
+      if (!selectedGuildId || !adminDiscordId.trim()) {
+        throw new Error("Missing admin Discord ID");
+      }
       
-      // Create verified win
-      const { error: insertError } = await supabase
-        .from("competition_wins")
-        .insert({
+      const { data, error } = await supabase.functions.invoke("manage-competition-claims", {
+        body: {
+          action: "approve",
           guild_id: selectedGuildId,
-          discord_user_id: claim.claimed_by_discord_id,
-          competition_name: claim.competition_name,
-          competition_type: claim.competition_type,
-          tier: claim.tier as "major" | "minor" | "community" | "div1" | "div2" | "div3" | "div4",
-          team_name: claim.team_name,
-          verified: true,
-          verified_at: new Date().toISOString(),
-        });
+          discord_user_id: adminDiscordId.trim(),
+          claim_id: claimId,
+        },
+      });
       
-      if (insertError) throw insertError;
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to approve claim");
       
-      // Update claim status
-      const { error: updateError } = await supabase
-        .from("pending_win_claims")
-        .update({ status: "approved", reviewed_at: new Date().toISOString() })
-        .eq("id", claimId);
-      
-      if (updateError) throw updateError;
+      return data;
     },
     onSuccess: () => {
       toast({
@@ -190,15 +185,26 @@ export default function CompetitionsPage() {
     },
   });
 
-  // Reject claim
+  // Reject claim - using edge function
   const rejectClaimMutation = useMutation({
     mutationFn: async (claimId: string) => {
-      const { error } = await supabase
-        .from("pending_win_claims")
-        .update({ status: "rejected", reviewed_at: new Date().toISOString() })
-        .eq("id", claimId);
+      if (!selectedGuildId || !adminDiscordId.trim()) {
+        throw new Error("Missing admin Discord ID");
+      }
+      
+      const { data, error } = await supabase.functions.invoke("manage-competition-claims", {
+        body: {
+          action: "reject",
+          guild_id: selectedGuildId,
+          discord_user_id: adminDiscordId.trim(),
+          claim_id: claimId,
+        },
+      });
       
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to reject claim");
+      
+      return data;
     },
     onSuccess: () => {
       toast({
@@ -397,7 +403,19 @@ export default function CompetitionsPage() {
                   Review and approve or reject win claims
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                {/* Admin Discord ID input for authorization */}
+                <div className="p-3 rounded-lg bg-muted/30 border">
+                  <label className="text-sm font-medium">Your Discord ID (for authorization)</label>
+                  <Input
+                    placeholder="123456789012345678"
+                    value={adminDiscordId}
+                    onChange={(e) => setAdminDiscordId(e.target.value)}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Required to approve or reject claims</p>
+                </div>
+
                 {claimsLoading ? (
                   <div className="flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -438,7 +456,7 @@ export default function CompetitionsPage() {
                             variant="outline"
                             className="text-green-500 hover:text-green-600 hover:bg-green-500/10"
                             onClick={() => approveClaimMutation.mutate(claim.id)}
-                            disabled={approveClaimMutation.isPending}
+                            disabled={approveClaimMutation.isPending || !adminDiscordId.trim()}
                           >
                             <CheckCircle2 className="h-4 w-4" />
                           </Button>
@@ -447,7 +465,7 @@ export default function CompetitionsPage() {
                             variant="outline"
                             className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
                             onClick={() => rejectClaimMutation.mutate(claim.id)}
-                            disabled={rejectClaimMutation.isPending}
+                            disabled={rejectClaimMutation.isPending || !adminDiscordId.trim()}
                           >
                             <XCircle className="h-4 w-4" />
                           </Button>
@@ -473,7 +491,7 @@ export default function CompetitionsPage() {
                   Verified Wins
                 </CardTitle>
                 <CardDescription>
-                  All verified tournament and league wins
+                  All verified competition wins for this server
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -486,7 +504,7 @@ export default function CompetitionsPage() {
                     {verifiedWins.map((win) => (
                       <div
                         key={win.id}
-                        className="flex items-center justify-between p-4 rounded-lg bg-muted/30"
+                        className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border"
                       >
                         <div className="flex items-center gap-4">
                           {getTierIcon(win.tier)}
@@ -528,6 +546,7 @@ export default function CompetitionsPage() {
                   <div className="py-12 text-center text-muted-foreground">
                     <Trophy className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>No verified wins yet</p>
+                    <p className="text-sm">Submit your first win to get started</p>
                   </div>
                 )}
               </CardContent>
