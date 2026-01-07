@@ -80,6 +80,7 @@ export function ScoutingLists({ currentUserId }: ScoutingListsProps) {
   const [newListPublic, setNewListPublic] = useState(false);
   const [addingPlayerToList, setAddingPlayerToList] = useState<string | null>(null);
   const [selectedPlayerToAdd, setSelectedPlayerToAdd] = useState("");
+  const [userDiscordId, setUserDiscordId] = useState(currentUserId || "");
 
   // Fetch scouting lists
   const { data: lists, isLoading: listsLoading } = useQuery({
@@ -117,23 +118,26 @@ export function ScoutingLists({ currentUserId }: ScoutingListsProps) {
     enabled: !!selectedGuildId,
   });
 
-  // Create list mutation
+  // Create list mutation - using edge function
   const createListMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedGuildId || !currentUserId) throw new Error("Missing guild or user");
+      if (!selectedGuildId || !userDiscordId.trim()) throw new Error("Missing guild or user");
       
-      const { error } = await supabase
-        .from("scouting_lists")
-        .insert({
+      const { data, error } = await supabase.functions.invoke("manage-scouting-lists", {
+        body: {
+          action: "create",
           guild_id: selectedGuildId,
-          created_by_discord_id: currentUserId,
+          discord_user_id: userDiscordId.trim(),
           name: newListName,
           description: newListDescription || null,
           is_public: newListPublic,
-          player_ids: []
-        });
+        },
+      });
       
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to create list");
+      
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["scoutingLists"] });
@@ -148,20 +152,28 @@ export function ScoutingLists({ currentUserId }: ScoutingListsProps) {
     }
   });
 
-  // Update list mutation
+  // Update list mutation - using edge function
   const updateListMutation = useMutation({
     mutationFn: async (list: Partial<ScoutingList> & { id: string }) => {
-      const { error } = await supabase
-        .from("scouting_lists")
-        .update({
+      if (!selectedGuildId || !userDiscordId.trim()) throw new Error("Missing guild or user");
+      
+      const { data, error } = await supabase.functions.invoke("manage-scouting-lists", {
+        body: {
+          action: "update",
+          guild_id: selectedGuildId,
+          discord_user_id: userDiscordId.trim(),
+          list_id: list.id,
           name: list.name,
           description: list.description,
           is_public: list.is_public,
-          player_ids: list.player_ids
-        })
-        .eq("id", list.id);
+          player_ids: list.player_ids,
+        },
+      });
       
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to update list");
+      
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["scoutingLists"] });
@@ -173,15 +185,24 @@ export function ScoutingLists({ currentUserId }: ScoutingListsProps) {
     }
   });
 
-  // Delete list mutation
+  // Delete list mutation - using edge function
   const deleteListMutation = useMutation({
     mutationFn: async (listId: string) => {
-      const { error } = await supabase
-        .from("scouting_lists")
-        .delete()
-        .eq("id", listId);
+      if (!selectedGuildId || !userDiscordId.trim()) throw new Error("Missing guild or user");
+      
+      const { data, error } = await supabase.functions.invoke("manage-scouting-lists", {
+        body: {
+          action: "delete",
+          guild_id: selectedGuildId,
+          discord_user_id: userDiscordId.trim(),
+          list_id: listId,
+        },
+      });
       
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to delete list");
+      
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["scoutingLists"] });
@@ -242,6 +263,24 @@ export function ScoutingLists({ currentUserId }: ScoutingListsProps) {
 
   return (
     <div className="space-y-4">
+      {/* Discord ID input for authorization */}
+      <Card className="p-4">
+        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <label className="text-sm font-medium">Your Discord ID (for authorization)</label>
+            <Input
+              placeholder="123456789012345678"
+              value={userDiscordId}
+              onChange={(e) => setUserDiscordId(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground max-w-xs">
+            Required to create, edit, or delete scouting lists
+          </p>
+        </div>
+      </Card>
+
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold">Scouting Lists</h3>
@@ -250,7 +289,7 @@ export function ScoutingLists({ currentUserId }: ScoutingListsProps) {
         
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button disabled={!userDiscordId.trim()}>
               <Plus className="h-4 w-4 mr-2" />
               New List
             </Button>
@@ -342,7 +381,7 @@ export function ScoutingLists({ currentUserId }: ScoutingListsProps) {
                       }
                     }}>
                       <DialogTrigger asChild>
-                        <Button variant="outline" size="sm" onClick={() => setAddingPlayerToList(list.id)}>
+                        <Button variant="outline" size="sm" onClick={() => setAddingPlayerToList(list.id)} disabled={!userDiscordId.trim()}>
                           <UserPlus className="h-4 w-4" />
                         </Button>
                       </DialogTrigger>
@@ -396,7 +435,7 @@ export function ScoutingLists({ currentUserId }: ScoutingListsProps) {
                     
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="text-destructive hover:text-destructive">
+                        <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" disabled={!userDiscordId.trim()}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </AlertDialogTrigger>
@@ -444,6 +483,7 @@ export function ScoutingLists({ currentUserId }: ScoutingListsProps) {
                           <button
                             onClick={() => removePlayerFromList(list.id, playerId)}
                             className="ml-1 hover:text-destructive transition-colors"
+                            disabled={!userDiscordId.trim()}
                           >
                             <X className="h-3 w-3" />
                           </button>

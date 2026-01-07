@@ -20,6 +20,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import { useGuild } from "@/contexts/GuildContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -166,6 +167,7 @@ export function ClubsManager() {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [adminDiscordId, setAdminDiscordId] = useState("");
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -241,7 +243,14 @@ export function ClubsManager() {
   };
 
   const saveChanges = async () => {
-    if (!selectedGuildId) return;
+    if (!selectedGuildId || !adminDiscordId.trim()) {
+      toast({
+        title: "Missing Discord ID",
+        description: "Please enter your Discord ID to authorize this action.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     // Check for duplicates before saving
     if (duplicateEaClubIds.size > 0) {
@@ -255,18 +264,16 @@ export function ClubsManager() {
 
     setIsSaving(true);
     try {
-      // Cast to satisfy Supabase Json type
-      const clubsJson = JSON.parse(JSON.stringify(clubs));
-      
-      const { error } = await supabase
-        .from("guild_settings")
-        .update({ 
-          clubs: clubsJson, 
-          updated_at: new Date().toISOString() 
-        })
-        .eq("guild_id", selectedGuildId);
+      const { data, error } = await supabase.functions.invoke("manage-guild-settings", {
+        body: {
+          guild_id: selectedGuildId,
+          discord_user_id: adminDiscordId.trim(),
+          clubs: clubs,
+        },
+      });
 
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to update settings");
 
       toast({
         title: "Clubs Updated",
@@ -308,7 +315,7 @@ export function ClubsManager() {
             </CardDescription>
           </div>
           {hasChanges && (
-            <Button onClick={saveChanges} disabled={isSaving}>
+            <Button onClick={saveChanges} disabled={isSaving || !adminDiscordId.trim()}>
               {isSaving ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
@@ -325,7 +332,19 @@ export function ClubsManager() {
           </div>
         )}
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        {/* Admin Discord ID input for authorization */}
+        <div className="p-3 rounded-lg bg-muted/30 border">
+          <label className="text-sm font-medium">Your Discord ID (for authorization)</label>
+          <Input
+            placeholder="123456789012345678"
+            value={adminDiscordId}
+            onChange={(e) => setAdminDiscordId(e.target.value)}
+            className="mt-1"
+          />
+          <p className="text-xs text-muted-foreground mt-1">Required to save changes</p>
+        </div>
+
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}

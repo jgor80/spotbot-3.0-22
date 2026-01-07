@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { useGuild } from "@/contexts/GuildContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -38,6 +39,7 @@ export function LinkSuggestionsPanel() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [adminDiscordId, setAdminDiscordId] = useState("");
   
   // Fetch pending suggestions
   const { data: suggestions, isLoading } = useQuery({
@@ -58,7 +60,7 @@ export function LinkSuggestionsPanel() {
     enabled: !!selectedGuildId,
   });
 
-  // Approve suggestion mutation
+  // Approve suggestion mutation - uses existing link-ea-account edge function
   const approveMutation = useMutation({
     mutationFn: async (suggestion: LinkSuggestion) => {
       if (!selectedGuildId) throw new Error("No guild selected");
@@ -76,15 +78,7 @@ export function LinkSuggestionsPanel() {
       if (error) throw error;
       if (!data.success) throw new Error(data.error);
       
-      // Update suggestion status
-      await supabase
-        .from("link_suggestions")
-        .update({ 
-          status: "approved",
-          reviewed_at: new Date().toISOString()
-        })
-        .eq("id", suggestion.id);
-      
+      // The link-ea-account function handles updating suggestion status via service role
       return data;
     },
     onSuccess: (_, suggestion) => {
@@ -107,18 +101,26 @@ export function LinkSuggestionsPanel() {
     },
   });
 
-  // Reject suggestion mutation
+  // Reject suggestion mutation - using edge function
   const rejectMutation = useMutation({
     mutationFn: async (suggestion: LinkSuggestion) => {
-      const { error } = await supabase
-        .from("link_suggestions")
-        .update({ 
-          status: "rejected",
-          reviewed_at: new Date().toISOString()
-        })
-        .eq("id", suggestion.id);
+      if (!selectedGuildId || !adminDiscordId.trim()) {
+        throw new Error("Missing admin Discord ID");
+      }
+      
+      const { data, error } = await supabase.functions.invoke("manage-link-suggestions", {
+        body: {
+          action: "reject",
+          guild_id: selectedGuildId,
+          discord_user_id: adminDiscordId.trim(),
+          suggestion_id: suggestion.id,
+        },
+      });
       
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to reject suggestion");
+      
+      return data;
     },
     onSuccess: (_, suggestion) => {
       toast({
@@ -163,7 +165,19 @@ export function LinkSuggestionsPanel() {
           Review suggested links between EA accounts and Discord members based on username similarity.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        {/* Admin Discord ID input for authorization */}
+        <div className="p-3 rounded-lg bg-muted/30 border">
+          <label className="text-sm font-medium">Your Discord ID (for authorization)</label>
+          <Input
+            placeholder="123456789012345678"
+            value={adminDiscordId}
+            onChange={(e) => setAdminDiscordId(e.target.value)}
+            className="mt-1"
+          />
+          <p className="text-xs text-muted-foreground mt-1">Required to approve or reject suggestions</p>
+        </div>
+
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -218,7 +232,7 @@ export function LinkSuggestionsPanel() {
                             size="sm"
                             variant="outline"
                             onClick={() => handleReject(suggestion)}
-                            disabled={processingId === suggestion.id}
+                            disabled={processingId === suggestion.id || !adminDiscordId.trim()}
                           >
                             {processingId === suggestion.id && rejectMutation.isPending ? (
                               <Loader2 className="h-4 w-4 animate-spin" />

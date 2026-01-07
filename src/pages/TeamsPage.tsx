@@ -87,6 +87,7 @@ export default function TeamsPage() {
   const [newTeamType, setNewTeamType] = useState("comp");
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [selectedPlayerRole, setSelectedPlayerRole] = useState("player");
+  const [adminDiscordId, setAdminDiscordId] = useState("");
 
   // Fetch teams
   const { data: teams, isLoading: teamsLoading } = useQuery({
@@ -142,23 +143,28 @@ export default function TeamsPage() {
     enabled: !!selectedGuildId,
   });
 
-  // Create team mutation
+  // Create team mutation - using edge function
   const createTeamMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedGuildId || !newTeamName.trim()) throw new Error("Missing required fields");
+      if (!selectedGuildId || !newTeamName.trim() || !adminDiscordId.trim()) {
+        throw new Error("Missing required fields");
+      }
       
-      const { error } = await supabase
-        .from("teams")
-        .insert({
+      const { data, error } = await supabase.functions.invoke("manage-teams", {
+        body: {
+          action: "create",
           guild_id: selectedGuildId,
-          name: newTeamName.trim(),
-          tag: newTeamTag.trim() || null,
+          discord_user_id: adminDiscordId.trim(),
+          team_name: newTeamName.trim(),
+          team_tag: newTeamTag.trim() || null,
           team_type: newTeamType,
-          active: true,
-          manager_discord_ids: []
-        });
+        },
+      });
       
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to create team");
+      
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["teams"] });
@@ -172,15 +178,26 @@ export default function TeamsPage() {
     }
   });
 
-  // Delete team mutation
+  // Delete team mutation - using edge function
   const deleteTeamMutation = useMutation({
     mutationFn: async (teamId: string) => {
-      const { error } = await supabase
-        .from("teams")
-        .delete()
-        .eq("id", teamId);
+      if (!selectedGuildId || !adminDiscordId.trim()) {
+        throw new Error("Missing admin Discord ID");
+      }
+      
+      const { data, error } = await supabase.functions.invoke("manage-teams", {
+        body: {
+          action: "delete",
+          guild_id: selectedGuildId,
+          discord_user_id: adminDiscordId.trim(),
+          team_id: teamId,
+        },
+      });
       
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to delete team");
+      
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["teams"] });
@@ -192,23 +209,31 @@ export default function TeamsPage() {
     }
   });
 
-  // Add player to team
+  // Add player to team - using edge function
   const addPlayerMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedTeam || !selectedPlayerId) throw new Error("Missing data");
+      if (!selectedTeam || !selectedPlayerId || !adminDiscordId.trim() || !selectedGuildId) {
+        throw new Error("Missing data");
+      }
       
       const player = players?.find(p => p.discord_user_id === selectedPlayerId);
       
-      const { error } = await supabase
-        .from("team_rosters")
-        .insert({
+      const { data, error } = await supabase.functions.invoke("manage-roster", {
+        body: {
+          action: "add",
+          guild_id: selectedGuildId,
+          discord_user_id: adminDiscordId.trim(),
           team_id: selectedTeam.id,
-          discord_user_id: selectedPlayerId,
+          player_discord_id: selectedPlayerId,
           role: selectedPlayerRole,
-          primary_position: player?.primary_position || null
-        });
+          primary_position: player?.primary_position || null,
+        },
+      });
       
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to add player");
+      
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["teamRoster"] });
@@ -221,15 +246,27 @@ export default function TeamsPage() {
     }
   });
 
-  // Remove player from team
+  // Remove player from team - using edge function
   const removePlayerMutation = useMutation({
     mutationFn: async (rosterId: string) => {
-      const { error } = await supabase
-        .from("team_rosters")
-        .delete()
-        .eq("id", rosterId);
+      if (!selectedTeam || !adminDiscordId.trim() || !selectedGuildId) {
+        throw new Error("Missing data");
+      }
+      
+      const { data, error } = await supabase.functions.invoke("manage-roster", {
+        body: {
+          action: "remove",
+          guild_id: selectedGuildId,
+          discord_user_id: adminDiscordId.trim(),
+          team_id: selectedTeam.id,
+          roster_id: rosterId,
+        },
+      });
       
       if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to remove player");
+      
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["teamRoster"] });
@@ -297,6 +334,15 @@ export default function TeamsPage() {
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
+                  <label className="text-sm font-medium">Your Discord ID *</label>
+                  <Input
+                    placeholder="123456789012345678"
+                    value={adminDiscordId}
+                    onChange={(e) => setAdminDiscordId(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">Required for authorization</p>
+                </div>
+                <div className="space-y-2">
                   <label className="text-sm font-medium">Team Name *</label>
                   <Input
                     placeholder="e.g., Rush Superstars"
@@ -337,7 +383,7 @@ export default function TeamsPage() {
                 </Button>
                 <Button 
                   onClick={() => createTeamMutation.mutate()}
-                  disabled={!newTeamName.trim() || createTeamMutation.isPending}
+                  disabled={!newTeamName.trim() || !adminDiscordId.trim() || createTeamMutation.isPending}
                 >
                   {createTeamMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                   Create Team
@@ -346,6 +392,24 @@ export default function TeamsPage() {
             </DialogContent>
           </Dialog>
         </div>
+
+        {/* Admin Discord ID input for operations */}
+        <Card className="p-4">
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <label className="text-sm font-medium">Your Discord ID (for authorization)</label>
+              <Input
+                placeholder="123456789012345678"
+                value={adminDiscordId}
+                onChange={(e) => setAdminDiscordId(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground max-w-xs">
+              Enter your Discord ID to authorize team management operations
+            </p>
+          </div>
+        </Card>
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Teams List */}
@@ -428,7 +492,7 @@ export default function TeamsPage() {
                     <div className="flex items-center gap-2">
                       <Dialog open={isAddPlayerOpen} onOpenChange={setIsAddPlayerOpen}>
                         <DialogTrigger asChild>
-                          <Button size="sm">
+                          <Button size="sm" disabled={!adminDiscordId.trim()}>
                             <UserPlus className="h-4 w-4 mr-2" />
                             Add Player
                           </Button>
@@ -478,19 +542,20 @@ export default function TeamsPage() {
                             <Button variant="outline" onClick={() => setIsAddPlayerOpen(false)}>
                               Cancel
                             </Button>
-                            <Button
+                            <Button 
                               onClick={() => addPlayerMutation.mutate()}
                               disabled={!selectedPlayerId || addPlayerMutation.isPending}
                             >
+                              {addPlayerMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                               Add Player
                             </Button>
                           </DialogFooter>
                         </DialogContent>
                       </Dialog>
-                      
+
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive">
+                          <Button variant="outline" size="sm" className="text-destructive" disabled={!adminDiscordId.trim()}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </AlertDialogTrigger>
@@ -498,7 +563,7 @@ export default function TeamsPage() {
                           <AlertDialogHeader>
                             <AlertDialogTitle>Delete Team</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Are you sure you want to delete "{selectedTeam.name}"? This will also remove all roster entries.
+                              Are you sure you want to delete {selectedTeam.name}? This action cannot be undone.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
@@ -517,7 +582,7 @@ export default function TeamsPage() {
                 </CardHeader>
                 <CardContent>
                   {rosterLoading ? (
-                    <div className="flex items-center justify-center py-12">
+                    <div className="flex items-center justify-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
                   ) : roster && roster.length > 0 ? (
@@ -527,7 +592,7 @@ export default function TeamsPage() {
                         return (
                           <div
                             key={member.id}
-                            className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
+                            className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border"
                           >
                             <div className="flex items-center gap-3">
                               {getRoleIcon(member.role)}
@@ -535,22 +600,24 @@ export default function TeamsPage() {
                                 <p className="font-medium">
                                   {player?.discord_username || member.discord_user_id}
                                 </p>
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                  <Badge variant="outline" className="text-xs">
-                                    {player?.overall_rating?.toFixed(1) || "?"}
-                                  </Badge>
-                                  {member.primary_position && (
-                                    <span>{member.primary_position}</span>
-                                  )}
+                                <p className="text-sm text-muted-foreground">
+                                  {member.primary_position || player?.primary_position || "No position"}
+                                  <span className="mx-2">•</span>
                                   <span className="capitalize">{member.role}</span>
-                                </div>
+                                  {player && (
+                                    <>
+                                      <span className="mx-2">•</span>
+                                      <span>{player.overall_rating.toFixed(1)} OVR</span>
+                                    </>
+                                  )}
+                                </p>
                               </div>
                             </div>
                             <Button
-                              size="sm"
                               variant="ghost"
+                              size="sm"
                               onClick={() => removePlayerMutation.mutate(member.id)}
-                              disabled={removePlayerMutation.isPending}
+                              disabled={removePlayerMutation.isPending || !adminDiscordId.trim()}
                             >
                               <X className="h-4 w-4" />
                             </Button>
@@ -559,21 +626,18 @@ export default function TeamsPage() {
                       })}
                     </div>
                   ) : (
-                    <div className="py-12 text-center text-muted-foreground">
+                    <div className="py-8 text-center text-muted-foreground">
                       <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
                       <p>No players in this team</p>
-                      <p className="text-sm">Add players to build your roster</p>
+                      <p className="text-sm">Add players using the button above</p>
                     </div>
                   )}
                 </CardContent>
               </>
             ) : (
-              <CardContent className="py-16">
-                <div className="text-center text-muted-foreground">
-                  <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="text-lg font-medium">Select a Team</p>
-                  <p className="text-sm">Choose a team from the list to view and manage its roster</p>
-                </div>
+              <CardContent className="py-16 text-center text-muted-foreground">
+                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Select a team to view details</p>
               </CardContent>
             )}
           </Card>
