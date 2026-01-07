@@ -33,6 +33,16 @@ serve(async (req) => {
       );
     }
 
+    // Validate discord_user_id is a valid Discord snowflake (numeric, 17-19 digits)
+    const discordIdRegex = /^\d{17,19}$/;
+    if (!discordIdRegex.test(discord_user_id)) {
+      console.error(`[link-ea-account] Invalid discord_user_id: ${discord_user_id} - must be a numeric Discord snowflake`);
+      return new Response(
+        JSON.stringify({ success: false, error: "Invalid discord_user_id - must be a valid Discord user ID (17-19 digit number)" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     console.log(`[link-ea-account] Linking Discord ${discord_user_id} to EA ${ea_username}`);
 
     // Check if there's a temp profile with this EA username
