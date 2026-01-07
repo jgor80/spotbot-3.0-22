@@ -4,7 +4,6 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { 
   Table, 
@@ -20,13 +19,7 @@ import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { 
   Star, 
   Users, 
-  Target, 
   TrendingUp, 
-  Shield, 
-  Brain, 
-  MessageSquare, 
-  Zap, 
-  Activity,
   Trophy,
   Flame,
   ChevronDown,
@@ -35,54 +28,10 @@ import {
   ThumbsUp,
   ThumbsDown,
   Minus,
-  Sparkles
+  Sparkles,
+  Zap
 } from "lucide-react";
 import { RatingBadge } from "@/components/player/RatingBadge";
-
-interface PeerEvaluation {
-  id: string;
-  evaluated_discord_id: string;
-  evaluator_discord_id: string;
-  position_played: string | null;
-  technical_skill: number | null;
-  game_iq: number | null;
-  work_ethic: number | null;
-  communication: number | null;
-  consistency: number | null;
-  clutch_factor: number | null;
-  overall_score: number | null;
-  trust_weighted_score: number | null;
-  enjoyment: number | null;
-  team_energy: number | null;
-  play_again: string | null;
-  created_at: string;
-}
-
-interface PositionStats {
-  position: string;
-  evaluationCount: number;
-  avgTechnicalSkill: number;
-  avgGameIq: number;
-  avgWorkEthic: number;
-  avgCommunication: number;
-  avgConsistency: number;
-  avgClutchFactor: number;
-  avgOverall: number;
-}
-
-interface PlayerPeerRating {
-  discord_user_id: string;
-  discord_username: string | null;
-  ea_username: string | null;
-  evalCount: number;
-  avgPerformance: number;
-  avgEnjoyment: number;
-  avgEnergy: number;
-  preferCount: number;
-  neutralCount: number;
-  avoidCount: number;
-  vibeScore: number;
-}
 
 interface PlayerRatingSummary {
   discord_user_id: string;
@@ -110,31 +59,59 @@ interface PlayerRatingSummary {
   current_streak: number;
   longest_win_streak: number;
   streak_type: string | null;
+  vibe_score: number | null;
+}
+
+interface PlayerVibeData {
+  discord_user_id: string;
+  discord_username: string | null;
+  ea_username: string | null;
+  vibe_score: number | null;
+  total_games_rated: number;
+  prefer_count: number;
+  neutral_count: number;
+  avoid_count: number;
+  avg_enjoyment: number;
+  avg_energy: number;
 }
 
 export default function RatingsPage() {
   const { selectedGuildId } = useGuild();
-  const [selectedPosition, setSelectedPosition] = useState<string | null>(null);
   const [sortField, setSortField] = useState<keyof PlayerRatingSummary>("overall_rating");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  // Fetch peer evaluations
-  const { data: evaluations, isLoading: evalsLoading } = useQuery({
-    queryKey: ["peer-evaluations", selectedGuildId],
+  // Fetch player summary with vibe scores - uses aggregated data only
+  const { data: playerSummaryData, isLoading: summaryLoading } = useQuery({
+    queryKey: ["player-summary-vibe", selectedGuildId],
     queryFn: async () => {
       if (!selectedGuildId) return [];
       const { data, error } = await supabase
-        .from("peer_evaluations")
-        .select("*")
+        .from("player_summary")
+        .select("discord_user_id, discord_username, vibe_score")
         .eq("guild_id", selectedGuildId)
-        .order("created_at", { ascending: false });
+        .not("vibe_score", "is", null);
       if (error) throw error;
-      return data as PeerEvaluation[];
+      return data || [];
     },
     enabled: !!selectedGuildId,
   });
 
-  // Fetch profiles for username lookup (covers players who may not have tracked games)
+  // Fetch aggregated vibe chemistry data (pair-wise aggregates, not raw evaluations)
+  const { data: vibeChemistryData, isLoading: vibeLoading } = useQuery({
+    queryKey: ["player-vibe-chemistry-aggregates", selectedGuildId],
+    queryFn: async () => {
+      if (!selectedGuildId) return [];
+      const { data, error } = await supabase
+        .from("player_vibe_chemistry")
+        .select("player_a_discord_id, player_b_discord_id, games_together, avg_enjoyment, avg_team_energy, prefer_count, neutral_count, avoid_count, vibe_score")
+        .eq("guild_id", selectedGuildId);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedGuildId,
+  });
+
+  // Fetch profiles for username lookup
   const { data: profiles } = useQuery({
     queryKey: ["profiles-lookup", selectedGuildId],
     queryFn: async () => {
@@ -156,131 +133,115 @@ export default function RatingsPage() {
     200,
     undefined,
     undefined,
-    "games" // Use tracked games for unified stats
+    "games"
   );
 
   // Map leaderboard players to PlayerRatingSummary format
-  const playerSummaries: PlayerRatingSummary[] = (leaderboardPlayers || []).map(p => ({
-    discord_user_id: p.discord_user_id,
-    discord_username: p.discord_username || null,
-    ea_username: p.ea_username || null,
-    overall_rating: p.overall_rating,
-    games_played: p.games_played,
-    wins: p.wins,
-    losses: p.losses || 0,
-    draws: p.draws || 0,
-    win_rate: p.win_rate,
-    goals: p.goals,
-    assists: p.assists,
-    clean_sheets: p.clean_sheets || null,
-    man_of_match: p.man_of_match || null,
-    avg_match_rating: p.avg_match_rating || null,
-    form_rating: p.form_rating || null,
-    reliability_score: p.reliability_score || null,
-    primary_position: p.primary_position || null,
-    shots: p.shots || null,
-    tackles: p.tackles || null,
-    passes_made: p.passes_made || null,
-    pass_attempts: p.pass_attempts || null,
-    saves: p.saves || null,
-    current_streak: p.current_streak || 0,
-    longest_win_streak: 0, // Not available from leaderboard
-    streak_type: p.streak_type || null,
-  }));
+  const playerSummaries: PlayerRatingSummary[] = (leaderboardPlayers || []).map(p => {
+    const vibeData = playerSummaryData?.find(v => v.discord_user_id === p.discord_user_id);
+    return {
+      discord_user_id: p.discord_user_id,
+      discord_username: p.discord_username || null,
+      ea_username: p.ea_username || null,
+      overall_rating: p.overall_rating,
+      games_played: p.games_played,
+      wins: p.wins,
+      losses: p.losses || 0,
+      draws: p.draws || 0,
+      win_rate: p.win_rate,
+      goals: p.goals,
+      assists: p.assists,
+      clean_sheets: p.clean_sheets || null,
+      man_of_match: p.man_of_match || null,
+      avg_match_rating: p.avg_match_rating || null,
+      form_rating: p.form_rating || null,
+      reliability_score: p.reliability_score || null,
+      primary_position: p.primary_position || null,
+      shots: p.shots || null,
+      tackles: p.tackles || null,
+      passes_made: p.passes_made || null,
+      pass_attempts: p.pass_attempts || null,
+      saves: p.saves || null,
+      current_streak: p.current_streak || 0,
+      longest_win_streak: 0,
+      streak_type: p.streak_type || null,
+      vibe_score: vibeData?.vibe_score || null,
+    };
+  });
 
-  // Calculate position-grouped stats
-  const positionStats: PositionStats[] = (() => {
-    if (!evaluations) return [];
+  // Calculate per-player vibe ratings from aggregated chemistry data
+  const playerVibeRatings: PlayerVibeData[] = (() => {
+    if (!vibeChemistryData || !profiles) return [];
     
-    const positionMap = new Map<string, PeerEvaluation[]>();
+    // Aggregate chemistry records per player
+    const playerMap = new Map<string, {
+      games: number;
+      prefer: number;
+      neutral: number;
+      avoid: number;
+      totalEnjoyment: number;
+      totalEnergy: number;
+      count: number;
+    }>();
     
-    evaluations.forEach(ev => {
-      const pos = ev.position_played || "Unknown";
-      if (!positionMap.has(pos)) {
-        positionMap.set(pos, []);
+    vibeChemistryData.forEach(record => {
+      // Each chemistry record represents the relationship between two players
+      // Aggregate for player_a
+      if (!playerMap.has(record.player_a_discord_id)) {
+        playerMap.set(record.player_a_discord_id, { games: 0, prefer: 0, neutral: 0, avoid: 0, totalEnjoyment: 0, totalEnergy: 0, count: 0 });
       }
-      positionMap.get(pos)!.push(ev);
+      const playerA = playerMap.get(record.player_a_discord_id)!;
+      playerA.games += record.games_together || 0;
+      playerA.prefer += record.prefer_count || 0;
+      playerA.neutral += record.neutral_count || 0;
+      playerA.avoid += record.avoid_count || 0;
+      if (record.avg_enjoyment) {
+        playerA.totalEnjoyment += record.avg_enjoyment;
+        playerA.count++;
+      }
+      if (record.avg_team_energy) {
+        playerA.totalEnergy += record.avg_team_energy;
+      }
+      
+      // Aggregate for player_b
+      if (!playerMap.has(record.player_b_discord_id)) {
+        playerMap.set(record.player_b_discord_id, { games: 0, prefer: 0, neutral: 0, avoid: 0, totalEnjoyment: 0, totalEnergy: 0, count: 0 });
+      }
+      const playerB = playerMap.get(record.player_b_discord_id)!;
+      playerB.games += record.games_together || 0;
+      playerB.prefer += record.prefer_count || 0;
+      playerB.neutral += record.neutral_count || 0;
+      playerB.avoid += record.avoid_count || 0;
+      if (record.avg_enjoyment) {
+        playerB.totalEnjoyment += record.avg_enjoyment;
+        playerB.count++;
+      }
+      if (record.avg_team_energy) {
+        playerB.totalEnergy += record.avg_team_energy;
+      }
     });
 
-    return Array.from(positionMap.entries()).map(([position, evals]) => {
-      const avg = (field: keyof PeerEvaluation) => {
-        const valid = evals.filter(e => e[field] != null);
-        if (valid.length === 0) return 0;
-        return valid.reduce((sum, e) => sum + (e[field] as number), 0) / valid.length;
-      };
-
-      return {
-        position,
-        evaluationCount: evals.length,
-        avgTechnicalSkill: avg("technical_skill"),
-        avgGameIq: avg("game_iq"),
-        avgWorkEthic: avg("work_ethic"),
-        avgCommunication: avg("communication"),
-        avgConsistency: avg("consistency"),
-        avgClutchFactor: avg("clutch_factor"),
-        avgOverall: avg("overall_score"),
-      };
-    }).sort((a, b) => b.evaluationCount - a.evaluationCount);
-  })();
-
-  // Calculate per-player peer ratings
-  const playerPeerRatings: PlayerPeerRating[] = (() => {
-    if (!evaluations || !playerSummaries) return [];
-    
-    const playerMap = new Map<string, PeerEvaluation[]>();
-    
-    evaluations.forEach(ev => {
-      const playerId = ev.evaluated_discord_id;
-      if (!playerMap.has(playerId)) {
-        playerMap.set(playerId, []);
-      }
-      playerMap.get(playerId)!.push(ev);
-    });
-
-    const profileMap = new Map(playerSummaries.map(p => [p.discord_user_id, p]));
-    // Also create a profiles lookup map for fallback usernames
     const profilesLookup = new Map((profiles || []).map(p => [p.discord_user_id, p]));
+    const summaryLookup = new Map((playerSummaryData || []).map(p => [p.discord_user_id, p]));
 
-    return Array.from(playerMap.entries()).map(([discord_user_id, evals]) => {
-      const player = profileMap.get(discord_user_id);
-      const profileFallback = profilesLookup.get(discord_user_id);
+    return Array.from(playerMap.entries()).map(([discord_user_id, data]) => {
+      const profile = profilesLookup.get(discord_user_id);
+      const summary = summaryLookup.get(discord_user_id);
       
-      const avgNum = (field: keyof PeerEvaluation) => {
-        const valid = evals.filter(e => e[field] != null && typeof e[field] === 'number');
-        if (valid.length === 0) return 0;
-        return valid.reduce((sum, e) => sum + (e[field] as number), 0) / valid.length;
-      };
-      
-      const preferCount = evals.filter(e => e.play_again === 'prefer').length;
-      const neutralCount = evals.filter(e => e.play_again === 'neutral').length;
-      const avoidCount = evals.filter(e => e.play_again === 'avoid').length;
-      
-      // Vibe score: prefer=+1, neutral=0, avoid=-1, normalized to 0-100
-      const totalVotes = preferCount + neutralCount + avoidCount;
-      const vibeScore = totalVotes > 0 
-        ? ((preferCount - avoidCount) / totalVotes + 1) * 50 
-        : 50;
-
       return {
         discord_user_id,
-        discord_username: player?.discord_username || profileFallback?.discord_username || null,
-        ea_username: player?.ea_username || profileFallback?.ea_username || null,
-        evalCount: evals.length,
-        avgPerformance: avgNum("overall_score"),
-        avgEnjoyment: avgNum("enjoyment"),
-        avgEnergy: avgNum("team_energy"),
-        preferCount,
-        neutralCount,
-        avoidCount,
-        vibeScore,
+        discord_username: profile?.discord_username || summary?.discord_username || null,
+        ea_username: profile?.ea_username || null,
+        vibe_score: summary?.vibe_score || null,
+        total_games_rated: data.games,
+        prefer_count: data.prefer,
+        neutral_count: data.neutral,
+        avoid_count: data.avoid,
+        avg_enjoyment: data.count > 0 ? data.totalEnjoyment / data.count : 0,
+        avg_energy: data.count > 0 ? data.totalEnergy / data.count : 0,
       };
-    }).sort((a, b) => b.evalCount - a.evalCount);
+    }).filter(p => p.total_games_rated > 0).sort((a, b) => (b.vibe_score || 0) - (a.vibe_score || 0));
   })();
-
-  // Get evaluations for selected position
-  const filteredEvaluations = selectedPosition
-    ? evaluations?.filter(e => e.position_played === selectedPosition) || []
-    : evaluations || [];
 
   // Sort players
   const sortedPlayers = [...(playerSummaries || [])].sort((a, b) => {
@@ -313,30 +274,30 @@ export default function RatingsPage() {
     );
   }
 
+  const isLoading = summaryLoading || vibeLoading || playersLoading;
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div>
           <h1 className="font-display text-3xl font-bold">Player Ratings</h1>
-          <p className="text-muted-foreground">Peer evaluations by position and comprehensive player stats</p>
+          <p className="text-muted-foreground">Player vibe scores and comprehensive stats</p>
         </div>
 
-        <Tabs defaultValue="peer-ratings" className="space-y-4">
+        <Tabs defaultValue="vibe-ratings" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="peer-ratings">Peer Ratings</TabsTrigger>
-            <TabsTrigger value="positions">By Position</TabsTrigger>
+            <TabsTrigger value="vibe-ratings">Vibe Ratings</TabsTrigger>
             <TabsTrigger value="all-players">All Players</TabsTrigger>
-            <TabsTrigger value="evaluations">Recent Evaluations</TabsTrigger>
           </TabsList>
 
-          {/* Peer Ratings Summary */}
-          <TabsContent value="peer-ratings" className="space-y-4">
-            {evalsLoading || playersLoading ? (
+          {/* Vibe Ratings Summary - Uses aggregated data only */}
+          <TabsContent value="vibe-ratings" className="space-y-4">
+            {isLoading ? (
               <Skeleton className="h-96" />
-            ) : playerPeerRatings.length === 0 ? (
+            ) : playerVibeRatings.length === 0 ? (
               <Card>
                 <CardContent className="py-8 text-center text-muted-foreground">
-                  No peer ratings yet. Ratings appear after players rate each other in Discord.
+                  No vibe ratings yet. Ratings appear after players rate each other in Discord.
                 </CardContent>
               </Card>
             ) : (
@@ -350,7 +311,7 @@ export default function RatingsPage() {
                           <Users className="h-5 w-5 text-primary" />
                         </div>
                         <div>
-                          <p className="text-2xl font-bold">{playerPeerRatings.length}</p>
+                          <p className="text-2xl font-bold">{playerVibeRatings.length}</p>
                           <p className="text-sm text-muted-foreground">Players Rated</p>
                         </div>
                       </div>
@@ -363,8 +324,10 @@ export default function RatingsPage() {
                           <Star className="h-5 w-5 text-success" />
                         </div>
                         <div>
-                          <p className="text-2xl font-bold">{evaluations?.length || 0}</p>
-                          <p className="text-sm text-muted-foreground">Total Evaluations</p>
+                          <p className="text-2xl font-bold">
+                            {playerVibeRatings.reduce((sum, p) => sum + p.total_games_rated, 0)}
+                          </p>
+                          <p className="text-sm text-muted-foreground">Total Games Rated</p>
                         </div>
                       </div>
                     </CardContent>
@@ -377,8 +340,8 @@ export default function RatingsPage() {
                         </div>
                         <div>
                           <p className="text-2xl font-bold">
-                            {playerPeerRatings.length > 0 
-                              ? (playerPeerRatings.reduce((sum, p) => sum + p.avgEnjoyment, 0) / playerPeerRatings.length).toFixed(1)
+                            {playerVibeRatings.length > 0 
+                              ? (playerVibeRatings.reduce((sum, p) => sum + p.avg_enjoyment, 0) / playerVibeRatings.length).toFixed(1)
                               : "-"}
                           </p>
                           <p className="text-sm text-muted-foreground">Avg Enjoyment</p>
@@ -394,9 +357,9 @@ export default function RatingsPage() {
                         </div>
                         <div>
                           <p className="text-2xl font-bold">
-                            {playerPeerRatings.length > 0 
-                              ? (playerPeerRatings.reduce((sum, p) => sum + p.vibeScore, 0) / playerPeerRatings.length).toFixed(0)
-                              : "-"}%
+                            {playerVibeRatings.length > 0 
+                              ? (playerVibeRatings.filter(p => p.vibe_score).reduce((sum, p) => sum + (p.vibe_score || 0), 0) / playerVibeRatings.filter(p => p.vibe_score).length).toFixed(0)
+                              : "-"}
                           </p>
                           <p className="text-sm text-muted-foreground">Avg Vibe Score</p>
                         </div>
@@ -405,12 +368,12 @@ export default function RatingsPage() {
                   </Card>
                 </div>
 
-                {/* Player Peer Ratings Table */}
+                {/* Player Vibe Ratings Table */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Heart className="h-5 w-5" />
-                      Player Peer Ratings
+                      Player Vibe Ratings
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="overflow-x-auto">
@@ -418,8 +381,7 @@ export default function RatingsPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Player</TableHead>
-                          <TableHead className="text-center">Evals</TableHead>
-                          <TableHead className="text-center">Performance</TableHead>
+                          <TableHead className="text-center">Games</TableHead>
                           <TableHead className="text-center">Enjoyment</TableHead>
                           <TableHead className="text-center">Energy</TableHead>
                           <TableHead className="text-center">
@@ -441,7 +403,7 @@ export default function RatingsPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {playerPeerRatings.map((player) => (
+                        {playerVibeRatings.map((player) => (
                           <TableRow key={player.discord_user_id}>
                             <TableCell>
                               <div>
@@ -456,53 +418,40 @@ export default function RatingsPage() {
                               </div>
                             </TableCell>
                             <TableCell className="text-center">
-                              <Badge variant="secondary">{player.evalCount}</Badge>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <div className="flex items-center justify-center gap-1">
-                                {[1, 2, 3, 4, 5].map((star) => (
-                                  <Star
-                                    key={star}
-                                    className={`h-3 w-3 ${
-                                      star <= Math.round(player.avgPerformance)
-                                        ? "fill-primary text-primary"
-                                        : "text-muted"
-                                    }`}
-                                  />
-                                ))}
-                                <span className="ml-1 text-sm font-medium">
-                                  {player.avgPerformance.toFixed(1)}
-                                </span>
-                              </div>
+                              <Badge variant="secondary">{player.total_games_rated}</Badge>
                             </TableCell>
                             <TableCell className="text-center">
                               <div className="flex items-center justify-center gap-1">
                                 <Heart className="h-4 w-4 text-pink-500" />
-                                <span className="font-medium">{player.avgEnjoyment.toFixed(1)}</span>
+                                <span className="font-medium">{player.avg_enjoyment.toFixed(1)}</span>
                               </div>
                             </TableCell>
                             <TableCell className="text-center">
                               <div className="flex items-center justify-center gap-1">
                                 <Zap className="h-4 w-4 text-yellow-500" />
-                                <span className="font-medium">{player.avgEnergy.toFixed(1)}</span>
+                                <span className="font-medium">{player.avg_energy.toFixed(1)}</span>
                               </div>
                             </TableCell>
                             <TableCell className="text-center text-success font-medium">
-                              {player.preferCount}
+                              {player.prefer_count}
                             </TableCell>
                             <TableCell className="text-center text-muted-foreground">
-                              {player.neutralCount}
+                              {player.neutral_count}
                             </TableCell>
                             <TableCell className="text-center text-destructive font-medium">
-                              {player.avoidCount}
+                              {player.avoid_count}
                             </TableCell>
                             <TableCell className="text-center">
-                              <Badge 
-                                variant={player.vibeScore >= 70 ? "default" : player.vibeScore >= 40 ? "secondary" : "destructive"}
-                                className={player.vibeScore >= 70 ? "bg-success" : ""}
-                              >
-                                {player.vibeScore.toFixed(0)}%
-                              </Badge>
+                              {player.vibe_score != null ? (
+                                <Badge 
+                                  variant={player.vibe_score >= 70 ? "default" : player.vibe_score >= 40 ? "secondary" : "destructive"}
+                                  className={player.vibe_score >= 70 ? "bg-success" : ""}
+                                >
+                                  {player.vibe_score.toFixed(0)}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -511,191 +460,6 @@ export default function RatingsPage() {
                   </CardContent>
                 </Card>
               </div>
-            )}
-          </TabsContent>
-
-          {/* Position-Based Analysis */}
-          <TabsContent value="positions" className="space-y-4">
-            {evalsLoading ? (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {[...Array(6)].map((_, i) => (
-                  <Skeleton key={i} className="h-48" />
-                ))}
-              </div>
-            ) : positionStats.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center text-muted-foreground">
-                  No peer evaluations with position data yet
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {positionStats.map((pos) => (
-                  <Card 
-                    key={pos.position} 
-                    className={`cursor-pointer transition-all hover:ring-2 hover:ring-primary/50 ${
-                      selectedPosition === pos.position ? "ring-2 ring-primary" : ""
-                    }`}
-                    onClick={() => setSelectedPosition(
-                      selectedPosition === pos.position ? null : pos.position
-                    )}
-                  >
-                    <CardHeader className="pb-2">
-                      <CardTitle className="flex items-center justify-between">
-                        <Badge variant="secondary" className="text-lg px-3 py-1">
-                          {pos.position}
-                        </Badge>
-                        <span className="text-sm text-muted-foreground">
-                          {pos.evaluationCount} evals
-                        </span>
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm flex items-center gap-2">
-                          <Target className="h-4 w-4 text-primary" />
-                          Technical
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <Progress value={pos.avgTechnicalSkill * 20} className="w-16 h-2" />
-                          <span className="text-sm font-medium w-8">
-                            {pos.avgTechnicalSkill.toFixed(1)}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm flex items-center gap-2">
-                          <Brain className="h-4 w-4 text-info" />
-                          Game IQ
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <Progress value={pos.avgGameIq * 20} className="w-16 h-2" />
-                          <span className="text-sm font-medium w-8">
-                            {pos.avgGameIq.toFixed(1)}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm flex items-center gap-2">
-                          <Activity className="h-4 w-4 text-success" />
-                          Work Ethic
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <Progress value={pos.avgWorkEthic * 20} className="w-16 h-2" />
-                          <span className="text-sm font-medium w-8">
-                            {pos.avgWorkEthic.toFixed(1)}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm flex items-center gap-2">
-                          <MessageSquare className="h-4 w-4 text-warning" />
-                          Comms
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <Progress value={pos.avgCommunication * 20} className="w-16 h-2" />
-                          <span className="text-sm font-medium w-8">
-                            {pos.avgCommunication.toFixed(1)}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm flex items-center gap-2">
-                          <Shield className="h-4 w-4 text-muted-foreground" />
-                          Consistency
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <Progress value={pos.avgConsistency * 20} className="w-16 h-2" />
-                          <span className="text-sm font-medium w-8">
-                            {pos.avgConsistency.toFixed(1)}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm flex items-center gap-2">
-                          <Zap className="h-4 w-4 text-primary" />
-                          Clutch
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <Progress value={pos.avgClutchFactor * 20} className="w-16 h-2" />
-                          <span className="text-sm font-medium w-8">
-                            {pos.avgClutchFactor.toFixed(1)}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="pt-2 border-t">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium">Avg Overall</span>
-                          <div className="flex items-center gap-1">
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <Star
-                                key={star}
-                                className={`h-4 w-4 ${
-                                  star <= Math.round(pos.avgOverall)
-                                    ? "fill-primary text-primary"
-                                    : "text-muted"
-                                }`}
-                              />
-                            ))}
-                            <span className="ml-2 font-bold">{pos.avgOverall.toFixed(1)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-
-            {selectedPosition && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Users className="h-5 w-5" />
-                    Evaluations at {selectedPosition}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Player</TableHead>
-                        <TableHead className="text-center">Tech</TableHead>
-                        <TableHead className="text-center">IQ</TableHead>
-                        <TableHead className="text-center">Work</TableHead>
-                        <TableHead className="text-center">Comms</TableHead>
-                        <TableHead className="text-center">Cons</TableHead>
-                        <TableHead className="text-center">Clutch</TableHead>
-                        <TableHead className="text-center">Overall</TableHead>
-                        <TableHead>Date</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredEvaluations.slice(0, 20).map((ev) => (
-                        <TableRow key={ev.id}>
-                          <TableCell className="font-medium">
-                            {ev.evaluated_discord_id.substring(0, 8)}...
-                          </TableCell>
-                          <TableCell className="text-center">{ev.technical_skill || "-"}</TableCell>
-                          <TableCell className="text-center">{ev.game_iq || "-"}</TableCell>
-                          <TableCell className="text-center">{ev.work_ethic || "-"}</TableCell>
-                          <TableCell className="text-center">{ev.communication || "-"}</TableCell>
-                          <TableCell className="text-center">{ev.consistency || "-"}</TableCell>
-                          <TableCell className="text-center">{ev.clutch_factor || "-"}</TableCell>
-                          <TableCell className="text-center">
-                            <Badge variant={ev.overall_score && ev.overall_score >= 4 ? "default" : "secondary"}>
-                              {ev.overall_score?.toFixed(1) || "-"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground text-sm">
-                            {new Date(ev.created_at).toLocaleDateString()}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
             )}
           </TabsContent>
 
@@ -790,10 +554,10 @@ export default function RatingsPage() {
                         </TableHead>
                         <TableHead 
                           className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("reliability_score")}
+                          onClick={() => handleSort("vibe_score")}
                         >
                           <div className="flex items-center justify-center gap-1">
-                            Rel <SortIcon field="reliability_score" />
+                            Vibe <SortIcon field="vibe_score" />
                           </div>
                         </TableHead>
                         <TableHead className="text-center">Streak</TableHead>
@@ -847,7 +611,14 @@ export default function RatingsPage() {
                             ) : "-"}
                           </TableCell>
                           <TableCell className="text-center">
-                            {player.reliability_score?.toFixed(0) || 100}%
+                            {player.vibe_score != null ? (
+                              <Badge 
+                                variant={player.vibe_score >= 70 ? "default" : player.vibe_score >= 40 ? "secondary" : "destructive"}
+                                className={player.vibe_score >= 70 ? "bg-success" : ""}
+                              >
+                                {player.vibe_score.toFixed(0)}
+                              </Badge>
+                            ) : "-"}
                           </TableCell>
                           <TableCell className="text-center">
                             {player.current_streak > 0 && (
@@ -874,82 +645,6 @@ export default function RatingsPage() {
                       ))}
                     </TableBody>
                   </Table>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-
-          {/* Recent Evaluations */}
-          <TabsContent value="evaluations">
-            {evalsLoading ? (
-              <Skeleton className="h-64" />
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Peer Evaluations</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {!evaluations || evaluations.length === 0 ? (
-                    <p className="text-center text-muted-foreground py-8">
-                      No peer evaluations yet
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {evaluations.slice(0, 30).map((ev) => (
-                        <div 
-                          key={ev.id} 
-                          className="flex items-center gap-4 p-3 rounded-lg border bg-card"
-                        >
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">
-                                Player {ev.evaluated_discord_id.substring(0, 8)}...
-                              </span>
-                              {ev.position_played && (
-                                <Badge variant="outline">{ev.position_played}</Badge>
-                              )}
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              Evaluated by {ev.evaluator_discord_id.substring(0, 8)}...
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm">
-                            <div className="text-center">
-                              <Target className="h-4 w-4 mx-auto text-primary" />
-                              <span>{ev.technical_skill || "-"}</span>
-                            </div>
-                            <div className="text-center">
-                              <Brain className="h-4 w-4 mx-auto text-info" />
-                              <span>{ev.game_iq || "-"}</span>
-                            </div>
-                            <div className="text-center">
-                              <MessageSquare className="h-4 w-4 mx-auto text-warning" />
-                              <span>{ev.communication || "-"}</span>
-                            </div>
-                            <div className="text-center">
-                              <Zap className="h-4 w-4 mx-auto text-primary" />
-                              <span>{ev.clutch_factor || "-"}</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <Star
-                                key={star}
-                                className={`h-4 w-4 ${
-                                  star <= Math.round(ev.overall_score || 0)
-                                    ? "fill-primary text-primary"
-                                    : "text-muted"
-                                }`}
-                              />
-                            ))}
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(ev.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             )}
