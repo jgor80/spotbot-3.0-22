@@ -195,6 +195,17 @@ export function EaLinkingPanel() {
   const handleLink = () => {
     if (!selectedProfile || !targetDiscordId.trim()) return;
     
+    // Validate Discord ID is a valid snowflake (17-19 digit number)
+    const discordIdRegex = /^\d{17,19}$/;
+    if (!discordIdRegex.test(targetDiscordId.trim())) {
+      toast({
+        title: "Invalid Discord ID",
+        description: "Discord User ID must be a 17-19 digit number",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     linkMutation.mutate({
       eaUsername: selectedProfile.ea_username,
       discordUserId: targetDiscordId.trim(),
