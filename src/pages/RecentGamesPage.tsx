@@ -13,7 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
-import { Trophy, Minus, X, Users, Calendar, Target, Star, Goal, HandHelping, Shield, Footprints, ChevronRight, Search } from "lucide-react";
+import { Trophy, Minus, X, Users, Calendar, Target, Star, Goal, HandHelping, Shield, Footprints, ChevronRight, Search, Clock } from "lucide-react";
+import { SessionsList } from "@/components/club/SessionsList";
 
 interface ClubMatch {
   id: string;
@@ -68,6 +69,7 @@ export default function RecentGamesPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedMatch, setSelectedMatch] = useState<ClubMatch | null>(null);
   const [statsTab, setStatsTab] = useState<string>("team");
+  const [viewMode, setViewMode] = useState<string>("matches");
 
   const enabledClubs = useMemo(() => {
     if (!selectedGuild?.clubs) return [];
@@ -335,6 +337,18 @@ export default function RecentGamesPage() {
           </div>
           
           <div className="flex flex-col sm:flex-row gap-3">
+            <Tabs value={viewMode} onValueChange={setViewMode} className="w-auto">
+              <TabsList>
+                <TabsTrigger value="matches" className="gap-1">
+                  <Target className="h-4 w-4" />
+                  Matches
+                </TabsTrigger>
+                <TabsTrigger value="sessions" className="gap-1">
+                  <Clock className="h-4 w-4" />
+                  Sessions
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -360,6 +374,11 @@ export default function RecentGamesPage() {
           </div>
         </div>
 
+        {/* Sessions View */}
+        {viewMode === "sessions" ? (
+          <SessionsList guildId={selectedGuildId} clubFilter={clubFilter} />
+        ) : (
+          <>
         {/* Stats Summary */}
         {filteredMatches && filteredMatches.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -487,6 +506,8 @@ export default function RecentGamesPage() {
               </p>
             </CardContent>
           </Card>
+        )}
+          </>
         )}
 
         {/* Match Detail Modal */}
