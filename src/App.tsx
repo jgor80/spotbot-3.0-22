@@ -9,7 +9,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import AuthPage from "./pages/AuthPage";
 import Leaderboard from "./pages/Leaderboard";
-import LineupPage from "./pages/LineupPage";
+
 import ProfilePage from "./pages/ProfilePage";
 import SettingsPage from "./pages/SettingsPage";
 import DraftsPage from "./pages/DraftsPage";
@@ -36,7 +36,7 @@ const App = () => (
               <Route path="/auth" element={<AuthPage />} />
               <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
               <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
-              <Route path="/lineup" element={<ProtectedRoute><LineupPage /></ProtectedRoute>} />
+              <Route path="/lineup" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
               <Route path="/drafts" element={<ProtectedRoute><DraftsPage /></ProtectedRoute>} />
