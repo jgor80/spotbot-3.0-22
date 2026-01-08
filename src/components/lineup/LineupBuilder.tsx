@@ -27,7 +27,7 @@ export function LineupBuilder({
   onSave,
   onSuggest 
 }: LineupBuilderProps) {
-  const [formation, setFormation] = useState<FormationType>("4-3-3");
+  const [formation, setFormation] = useState<FormationType>("4-3-3 FLAT");
   const [slots, setSlots] = useState<LineupSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [lineupName, setLineupName] = useState("");
