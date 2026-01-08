@@ -299,6 +299,7 @@ serve(async (req) => {
             seconds_played: 0,
             rating_sum: 0,
             position_counts: {} as Record<string, number>,
+            archetype_counts: {} as Record<string, number>,
             archetypeid: null,
           };
           
@@ -329,6 +330,9 @@ serve(async (req) => {
           existing.offsides += stat.offsides || 0;
           existing.seconds_played += stat.seconds_played || 0;
           existing.rating_sum += stat.ea_match_rating || 0;
+          if (stat.archetypeid) {
+            existing.archetype_counts[stat.archetypeid] = (existing.archetype_counts[stat.archetypeid] || 0) + 1;
+          }
           existing.archetypeid = existing.archetypeid || stat.archetypeid;
           
           if (stat.won === true) existing.wins += 1;
@@ -348,6 +352,7 @@ serve(async (req) => {
           const avgMatchRating = p.games_played > 0 ? p.rating_sum / p.games_played : 0;
           const overallRating = avgMatchRating ? Math.min(100, avgMatchRating * 10) : 50;
           const primaryPosition = getPrimaryPositionFromCounts(p.position_counts);
+          const mostUsedArchetype = getMostUsedArchetype(p.archetype_counts);
           
           return {
             ...p,
@@ -356,6 +361,7 @@ serve(async (req) => {
             overall_rating: overallRating,
             primary_position: primaryPosition,
             tracked_games: p.tracked_match_ids.size,
+            most_used_archetype: mostUsedArchetype,
             form_rating: null,
             reliability_score: 100,
             top_achievements: [],
@@ -573,6 +579,7 @@ serve(async (req) => {
           seconds_played: 0,
           rating_sum: 0,
           position_counts: {} as Record<string, number>,
+          archetype_counts: {} as Record<string, number>,
           archetypeid: null,
         };
         
@@ -603,6 +610,9 @@ serve(async (req) => {
         existing.offsides += stat.offsides || 0;
         existing.seconds_played += stat.seconds_played || 0;
         existing.rating_sum += stat.ea_match_rating || 0;
+        if (stat.archetypeid) {
+          existing.archetype_counts[stat.archetypeid] = (existing.archetype_counts[stat.archetypeid] || 0) + 1;
+        }
         existing.archetypeid = existing.archetypeid || stat.archetypeid;
         
         // Use club_matches result for accurate win/draw/loss counting
@@ -627,6 +637,7 @@ serve(async (req) => {
         const avgMatchRating = p.games_played > 0 ? p.rating_sum / p.games_played : 0;
         const overallRating = avgMatchRating ? Math.min(100, avgMatchRating * 10) : 50;
         const primaryPosition = getPrimaryPositionFromCounts(p.position_counts);
+        const mostUsedArchetype = getMostUsedArchetype(p.archetype_counts);
         
         return {
           ...p,
@@ -635,6 +646,7 @@ serve(async (req) => {
           overall_rating: overallRating,
           primary_position: primaryPosition,
           tracked_games: p.tracked_match_ids.size,
+          most_used_archetype: mostUsedArchetype,
           form_rating: null,
           reliability_score: 100,
           top_achievements: [],
@@ -859,6 +871,8 @@ serve(async (req) => {
       top_achievements: player.top_achievements,
       primary_position: player.primary_position,
       position_counts: player.position_counts || {},
+      most_used_archetype: player.most_used_archetype || null,
+      archetype_counts: player.archetype_counts || {},
       tournament_wins: player.tournament_wins,
       league_wins: player.league_wins,
       club_keys: player.club_keys || [],
@@ -992,6 +1006,8 @@ function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
       form_sum: 0,
       form_weight: 0,
       position_counts: {},
+      archetype_counts: {},
+      most_used_archetype: player.most_used_archetype || null,
       current_streak: player.current_streak,
       streak_type: player.streak_type,
       club_keys: [],
@@ -1070,6 +1086,12 @@ function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
 
 function getPrimaryPositionFromCounts(positionCounts: Record<string, number> = {}) {
   const entries = Object.entries(positionCounts || {});
+  if (entries.length === 0) return null;
+  return entries.sort((a, b) => b[1] - a[1])[0][0];
+}
+
+function getMostUsedArchetype(archetypeCounts: Record<string, number> = {}): string | null {
+  const entries = Object.entries(archetypeCounts || {});
   if (entries.length === 0) return null;
   return entries.sort((a, b) => b[1] - a[1])[0][0];
 }
