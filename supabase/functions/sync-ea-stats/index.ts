@@ -166,6 +166,7 @@ function calculateClubForm(matches: any[], clubId: string): {
   league_games: number;
   cup_games: number;
   friendly_games: number;
+  total_clean_sheets: number;
 } {
   // Sort matches by timestamp (most recent first)
   const sortedMatches = [...matches].sort((a, b) => {
@@ -181,6 +182,7 @@ function calculateClubForm(matches: any[], clubId: string): {
   let leagueGames = 0;
   let cupGames = 0;
   let friendlyGames = 0;
+  let totalCleanSheets = 0;
 
   for (const match of sortedMatches.slice(0, 10)) {
     const clubs = match.clubs || {};
@@ -199,6 +201,9 @@ function calculateClubForm(matches: any[], clubId: string): {
     else result = 'D';
 
     results.push(result);
+
+    // Count clean sheets
+    if (goalsAgainst === 0) totalCleanSheets++;
 
     // Count match types
     const matchType = match.matchType?.toLowerCase() || '';
@@ -238,7 +243,218 @@ function calculateClubForm(matches: any[], clubId: string): {
     league_games: leagueGames,
     cup_games: cupGames,
     friendly_games: friendlyGames,
+    total_clean_sheets: totalCleanSheets,
   };
+}
+
+// Session detection: find or create a session for a match
+// Sessions group matches played within 30 minutes of each other
+const SESSION_GAP_MINUTES = 30;
+
+async function findOrCreateSession(
+  supabase: any,
+  guildId: string,
+  clubKey: string,
+  matchTimestamp: number
+): Promise<string | null> {
+  try {
+    const matchDate = new Date(matchTimestamp * 1000);
+    const windowStart = new Date(matchDate.getTime() - SESSION_GAP_MINUTES * 60 * 1000);
+    const windowEnd = new Date(matchDate.getTime() + SESSION_GAP_MINUTES * 60 * 1000);
+
+    // Look for an existing session within the time window
+    const { data: existingSessions, error: findError } = await supabase
+      .from('club_sessions')
+      .select('id, started_at, ended_at')
+      .eq('guild_id', guildId)
+      .eq('club_key', clubKey)
+      .or(`and(started_at.lte.${windowEnd.toISOString()},ended_at.gte.${windowStart.toISOString()}),and(started_at.lte.${windowEnd.toISOString()},ended_at.is.null)`)
+      .order('started_at', { ascending: false })
+      .limit(1);
+
+    if (findError) {
+      console.error(`[sync-ea-stats] Error finding session:`, findError);
+      return null;
+    }
+
+    if (existingSessions && existingSessions.length > 0) {
+      const session = existingSessions[0];
+      // Update ended_at if this match extends the session
+      const sessionEnd = session.ended_at ? new Date(session.ended_at) : new Date(session.started_at);
+      if (matchDate > sessionEnd) {
+        await supabase
+          .from('club_sessions')
+          .update({ ended_at: matchDate.toISOString() })
+          .eq('id', session.id);
+      }
+      const sessionStart = new Date(session.started_at);
+      if (matchDate < sessionStart) {
+        await supabase
+          .from('club_sessions')
+          .update({ started_at: matchDate.toISOString() })
+          .eq('id', session.id);
+      }
+      return session.id;
+    }
+
+    // Create a new session
+    const { data: newSession, error: createError } = await supabase
+      .from('club_sessions')
+      .insert({
+        guild_id: guildId,
+        club_key: clubKey,
+        started_at: matchDate.toISOString(),
+        ended_at: matchDate.toISOString(),
+      })
+      .select('id')
+      .single();
+
+    if (createError) {
+      console.error(`[sync-ea-stats] Error creating session:`, createError);
+      return null;
+    }
+
+    console.log(`[sync-ea-stats] Created new session ${newSession.id} for ${clubKey}`);
+    return newSession.id;
+  } catch (err) {
+    console.error(`[sync-ea-stats] Error in findOrCreateSession:`, err);
+    return null;
+  }
+}
+
+// Update session aggregate stats after adding a match
+async function updateSessionStats(
+  supabase: any,
+  sessionId: string,
+  matchData: {
+    result: string;
+    scoreFor: number;
+    scoreAgainst: number;
+    playerStats: any[];
+    playerUsernames: string[];
+  }
+) {
+  try {
+    // Get current session data
+    const { data: session, error: fetchError } = await supabase
+      .from('club_sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .single();
+
+    if (fetchError || !session) {
+      console.error(`[sync-ea-stats] Error fetching session for update:`, fetchError);
+      return;
+    }
+
+    // Aggregate new values
+    const isCleanSheet = matchData.scoreAgainst === 0;
+    const existingPlayers = (session.players as string[]) || [];
+    const newPlayers = [...new Set([...existingPlayers, ...matchData.playerUsernames])];
+
+    // Sum up player stats
+    let totalShots = 0, totalShotsOnTarget = 0, totalPassesMade = 0, totalPassAttempts = 0;
+    let totalTackles = 0, totalTackleAttempts = 0, totalAssists = 0, redCards = 0;
+
+    for (const pStat of matchData.playerStats) {
+      totalShots += pStat.shots || 0;
+      totalShotsOnTarget += pStat.goals || 0; // Using goals as proxy for shots on target
+      totalPassesMade += pStat.passes_made || 0;
+      totalPassAttempts += pStat.pass_attempts || 0;
+      totalTackles += pStat.tackles || 0;
+      totalTackleAttempts += pStat.tackle_attempts || 0;
+      totalAssists += pStat.assists || 0;
+      if (pStat.red_cards) redCards++;
+    }
+
+    const { error: updateError } = await supabase
+      .from('club_sessions')
+      .update({
+        match_count: (session.match_count || 0) + 1,
+        wins: (session.wins || 0) + (matchData.result === 'win' ? 1 : 0),
+        draws: (session.draws || 0) + (matchData.result === 'draw' ? 1 : 0),
+        losses: (session.losses || 0) + (matchData.result === 'loss' ? 1 : 0),
+        goals_for: (session.goals_for || 0) + matchData.scoreFor,
+        goals_against: (session.goals_against || 0) + matchData.scoreAgainst,
+        total_shots: (session.total_shots || 0) + totalShots,
+        total_shots_on_target: (session.total_shots_on_target || 0) + totalShotsOnTarget,
+        total_passes_made: (session.total_passes_made || 0) + totalPassesMade,
+        total_pass_attempts: (session.total_pass_attempts || 0) + totalPassAttempts,
+        total_tackles: (session.total_tackles || 0) + totalTackles,
+        total_tackle_attempts: (session.total_tackle_attempts || 0) + totalTackleAttempts,
+        total_assists: (session.total_assists || 0) + totalAssists,
+        red_cards: (session.red_cards || 0) + redCards,
+        clean_sheets: (session.clean_sheets || 0) + (isCleanSheet ? 1 : 0),
+        players: newPlayers,
+        player_count: newPlayers.length,
+      })
+      .eq('id', sessionId);
+
+    if (updateError) {
+      console.error(`[sync-ea-stats] Error updating session stats:`, updateError);
+    }
+  } catch (err) {
+    console.error(`[sync-ea-stats] Error in updateSessionStats:`, err);
+  }
+}
+
+// Track division changes for promotions/relegations
+async function trackDivisionChange(
+  supabase: any,
+  guildId: string,
+  clubKey: string,
+  currentDivision: string | null
+) {
+  if (!currentDivision) return;
+
+  try {
+    // Get current club stats
+    const { data: clubStats, error: fetchError } = await supabase
+      .from('club_stats')
+      .select('previous_division, promotions, relegations')
+      .eq('guild_id', guildId)
+      .eq('club_key', clubKey)
+      .maybeSingle();
+
+    if (fetchError || !clubStats) return;
+
+    const previousDiv = clubStats.previous_division;
+    if (!previousDiv || previousDiv === currentDivision) {
+      // Just update the previous_division if not set
+      if (!previousDiv) {
+        await supabase
+          .from('club_stats')
+          .update({ previous_division: currentDivision })
+          .eq('guild_id', guildId)
+          .eq('club_key', clubKey);
+      }
+      return;
+    }
+
+    // Extract division numbers (assumes format like "Division 1", "Div 2", etc.)
+    const prevNum = parseInt(previousDiv.replace(/\D/g, '')) || 99;
+    const currNum = parseInt(currentDivision.replace(/\D/g, '')) || 99;
+
+    let updates: any = { previous_division: currentDivision };
+
+    if (currNum < prevNum) {
+      // Promoted (lower division number = higher division)
+      updates.promotions = (clubStats.promotions || 0) + 1;
+      console.log(`[sync-ea-stats] Club ${clubKey} promoted from ${previousDiv} to ${currentDivision}`);
+    } else if (currNum > prevNum) {
+      // Relegated
+      updates.relegations = (clubStats.relegations || 0) + 1;
+      console.log(`[sync-ea-stats] Club ${clubKey} relegated from ${previousDiv} to ${currentDivision}`);
+    }
+
+    await supabase
+      .from('club_stats')
+      .update(updates)
+      .eq('guild_id', guildId)
+      .eq('club_key', clubKey);
+  } catch (err) {
+    console.error(`[sync-ea-stats] Error tracking division change:`, err);
+  }
 }
 
 // Sync club stats to database
@@ -283,6 +499,7 @@ async function syncClubStats(supabase: any, guildId: string, clubKey: string, cl
       clubData.league_games = formData.league_games;
       clubData.cup_games = formData.cup_games;
       clubData.friendly_games = formData.friendly_games;
+      clubData.total_clean_sheets = formData.total_clean_sheets;
     }
     
     const { error } = await supabase
@@ -1413,6 +1630,10 @@ Deno.serve(async (req) => {
                   })
                 }
                 
+                // Find or create session for this match
+                const matchTimestamp = parseInt(matchData.timestamp || matchData.matchTime || Date.now() / 1000);
+                const sessionId = await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
+
                 const { error: insertError } = await supabase.from('club_matches').insert({
                   guild_id: guildId,
                   club_key: club.key,
@@ -1424,12 +1645,25 @@ Deno.serve(async (req) => {
                   opponent_club_name: opponentClubData?.name || 'Unknown',
                   opponent_club_id: opponentClubId,
                   match_data: matchData,
-                  player_stats: playerStats
+                  player_stats: playerStats,
+                  session_id: sessionId
                 })
                 
                 if (!insertError) {
                   totalSynced++
                   existingIds.add(matchId)
+                  
+                  // Update session stats
+                  if (sessionId) {
+                    const playerUsernames = playerStats.map(p => p.ea_username).filter(Boolean);
+                    await updateSessionStats(supabase, sessionId, {
+                      result,
+                      scoreFor,
+                      scoreAgainst,
+                      playerStats,
+                      playerUsernames
+                    });
+                  }
                   
                   // Record player stats
                   for (const pStat of playerStats) {
@@ -1481,6 +1715,11 @@ Deno.serve(async (req) => {
                   }
                 }
               }
+            }
+            
+            // Track division changes for promotions/relegations
+            if (clubStatsResult?.best_division) {
+              await trackDivisionChange(supabase, guildId, club.key, clubStatsResult.best_division);
             }
             
             // Process competition/cup matches (matchType13) - these are tournament/league games
@@ -1568,6 +1807,10 @@ Deno.serve(async (req) => {
                   })
                 }
                 
+                // Find or create session for this match
+                const matchTimestamp = parseInt(matchData.timestamp || matchData.matchTime || Date.now() / 1000);
+                const sessionId = await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
+
                 const { error: insertError } = await supabase.from('club_matches').insert({
                   guild_id: guildId,
                   club_key: club.key,
@@ -1579,12 +1822,25 @@ Deno.serve(async (req) => {
                   opponent_club_name: opponentClubData?.name || 'Unknown',
                   opponent_club_id: opponentClubId,
                   match_data: matchData,
-                  player_stats: playerStats
+                  player_stats: playerStats,
+                  session_id: sessionId
                 })
                 
                 if (!insertError) {
                   totalSynced++
                   existingCompIds.add(matchId)
+                  
+                  // Update session stats
+                  if (sessionId) {
+                    const playerUsernames = playerStats.map(p => p.ea_username).filter(Boolean);
+                    await updateSessionStats(supabase, sessionId, {
+                      result,
+                      scoreFor,
+                      scoreAgainst,
+                      playerStats,
+                      playerUsernames
+                    });
+                  }
                   
                   // Record player stats for competition matches
                   for (const pStat of playerStats) {

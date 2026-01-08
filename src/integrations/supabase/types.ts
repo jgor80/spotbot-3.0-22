@@ -199,6 +199,7 @@ export type Database = {
           result: string | null
           score_against: number | null
           score_for: number | null
+          session_id: string | null
         }
         Insert: {
           club_key: string
@@ -215,6 +216,7 @@ export type Database = {
           result?: string | null
           score_against?: number | null
           score_for?: number | null
+          session_id?: string | null
         }
         Update: {
           club_key?: string
@@ -231,6 +233,93 @@ export type Database = {
           result?: string | null
           score_against?: number | null
           score_for?: number | null
+          session_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "club_matches_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "club_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      club_sessions: {
+        Row: {
+          clean_sheets: number | null
+          club_key: string
+          created_at: string | null
+          draws: number | null
+          ended_at: string | null
+          goals_against: number | null
+          goals_for: number | null
+          guild_id: string
+          id: string
+          losses: number | null
+          match_count: number | null
+          player_count: number | null
+          players: Json | null
+          red_cards: number | null
+          started_at: string
+          total_assists: number | null
+          total_pass_attempts: number | null
+          total_passes_made: number | null
+          total_shots: number | null
+          total_shots_on_target: number | null
+          total_tackle_attempts: number | null
+          total_tackles: number | null
+          wins: number | null
+        }
+        Insert: {
+          clean_sheets?: number | null
+          club_key: string
+          created_at?: string | null
+          draws?: number | null
+          ended_at?: string | null
+          goals_against?: number | null
+          goals_for?: number | null
+          guild_id: string
+          id?: string
+          losses?: number | null
+          match_count?: number | null
+          player_count?: number | null
+          players?: Json | null
+          red_cards?: number | null
+          started_at: string
+          total_assists?: number | null
+          total_pass_attempts?: number | null
+          total_passes_made?: number | null
+          total_shots?: number | null
+          total_shots_on_target?: number | null
+          total_tackle_attempts?: number | null
+          total_tackles?: number | null
+          wins?: number | null
+        }
+        Update: {
+          clean_sheets?: number | null
+          club_key?: string
+          created_at?: string | null
+          draws?: number | null
+          ended_at?: string | null
+          goals_against?: number | null
+          goals_for?: number | null
+          guild_id?: string
+          id?: string
+          losses?: number | null
+          match_count?: number | null
+          player_count?: number | null
+          players?: Json | null
+          red_cards?: number | null
+          started_at?: string
+          total_assists?: number | null
+          total_pass_attempts?: number | null
+          total_passes_made?: number | null
+          total_shots?: number | null
+          total_shots_on_target?: number | null
+          total_tackle_attempts?: number | null
+          total_tackles?: number | null
+          wins?: number | null
         }
         Relationships: []
       }
@@ -255,10 +344,14 @@ export type Database = {
           league_games: number | null
           loss_streak: number | null
           losses: number | null
+          previous_division: string | null
+          promotions: number | null
           region: string | null
+          relegations: number | null
           reputation_tier: string | null
           skill_rating: number | null
           stadium_name: string | null
+          total_clean_sheets: number | null
           total_members: number | null
           unbeaten_streak: number | null
           updated_at: string
@@ -285,10 +378,14 @@ export type Database = {
           league_games?: number | null
           loss_streak?: number | null
           losses?: number | null
+          previous_division?: string | null
+          promotions?: number | null
           region?: string | null
+          relegations?: number | null
           reputation_tier?: string | null
           skill_rating?: number | null
           stadium_name?: string | null
+          total_clean_sheets?: number | null
           total_members?: number | null
           unbeaten_streak?: number | null
           updated_at?: string
@@ -315,10 +412,14 @@ export type Database = {
           league_games?: number | null
           loss_streak?: number | null
           losses?: number | null
+          previous_division?: string | null
+          promotions?: number | null
           region?: string | null
+          relegations?: number | null
           reputation_tier?: string | null
           skill_rating?: number | null
           stadium_name?: string | null
+          total_clean_sheets?: number | null
           total_members?: number | null
           unbeaten_streak?: number | null
           updated_at?: string
