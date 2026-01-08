@@ -167,7 +167,6 @@ export function ClubsManager() {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
-  const [adminDiscordId, setAdminDiscordId] = useState("");
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -243,10 +242,10 @@ export function ClubsManager() {
   };
 
   const saveChanges = async () => {
-    if (!selectedGuildId || !adminDiscordId.trim()) {
+    if (!selectedGuildId) {
       toast({
-        title: "Missing Discord ID",
-        description: "Please enter your Discord ID to authorize this action.",
+        title: "No Server Selected",
+        description: "Please select a server first.",
         variant: "destructive",
       });
       return;
@@ -267,7 +266,6 @@ export function ClubsManager() {
       const { data, error } = await supabase.functions.invoke("manage-guild-settings", {
         body: {
           guild_id: selectedGuildId,
-          discord_user_id: adminDiscordId.trim(),
           clubs: clubs,
         },
       });
@@ -315,7 +313,7 @@ export function ClubsManager() {
             </CardDescription>
           </div>
           {hasChanges && (
-            <Button onClick={saveChanges} disabled={isSaving || !adminDiscordId.trim()}>
+            <Button onClick={saveChanges} disabled={isSaving}>
               {isSaving ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : (
@@ -333,18 +331,6 @@ export function ClubsManager() {
         )}
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Admin Discord ID input for authorization */}
-        <div className="p-3 rounded-lg bg-muted/30 border">
-          <label className="text-sm font-medium">Your Discord ID (for authorization)</label>
-          <Input
-            placeholder="123456789012345678"
-            value={adminDiscordId}
-            onChange={(e) => setAdminDiscordId(e.target.value)}
-            className="mt-1"
-          />
-          <p className="text-xs text-muted-foreground mt-1">Required to save changes</p>
-        </div>
-
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
