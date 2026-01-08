@@ -329,7 +329,10 @@ export type Database = {
           club_key: string
           club_name: string | null
           created_at: string
+          crest_id: string | null
           cup_games: number | null
+          current_division: string | null
+          custom_kit_home: Json | null
           draws: number | null
           ea_club_id: string
           ea_platform: string
@@ -344,6 +347,8 @@ export type Database = {
           league_games: number | null
           loss_streak: number | null
           losses: number | null
+          overall_matches_played: number | null
+          playoff_achievements: Json | null
           previous_division: string | null
           promotions: number | null
           region: string | null
@@ -363,7 +368,10 @@ export type Database = {
           club_key: string
           club_name?: string | null
           created_at?: string
+          crest_id?: string | null
           cup_games?: number | null
+          current_division?: string | null
+          custom_kit_home?: Json | null
           draws?: number | null
           ea_club_id: string
           ea_platform: string
@@ -378,6 +386,8 @@ export type Database = {
           league_games?: number | null
           loss_streak?: number | null
           losses?: number | null
+          overall_matches_played?: number | null
+          playoff_achievements?: Json | null
           previous_division?: string | null
           promotions?: number | null
           region?: string | null
@@ -397,7 +407,10 @@ export type Database = {
           club_key?: string
           club_name?: string | null
           created_at?: string
+          crest_id?: string | null
           cup_games?: number | null
+          current_division?: string | null
+          custom_kit_home?: Json | null
           draws?: number | null
           ea_club_id?: string
           ea_platform?: string
@@ -412,6 +425,8 @@ export type Database = {
           league_games?: number | null
           loss_streak?: number | null
           losses?: number | null
+          overall_matches_played?: number | null
+          playoff_achievements?: Json | null
           previous_division?: string | null
           promotions?: number | null
           region?: string | null
@@ -2192,6 +2207,9 @@ export type Database = {
       }
       profiles: {
         Row: {
+          career_appearances: number | null
+          career_assists: number | null
+          career_goals: number | null
           created_at: string
           discord_avatar: string | null
           discord_user_id: string
@@ -2201,6 +2219,7 @@ export type Database = {
           ea_username: string | null
           id: string
           link_dm_sent_at: string | null
+          preferred_position: string | null
           primary_position: string | null
           updated_at: string
           xbox_gamertag: string | null
@@ -2209,6 +2228,9 @@ export type Database = {
           xbox_xuid: string | null
         }
         Insert: {
+          career_appearances?: number | null
+          career_assists?: number | null
+          career_goals?: number | null
           created_at?: string
           discord_avatar?: string | null
           discord_user_id: string
@@ -2218,6 +2240,7 @@ export type Database = {
           ea_username?: string | null
           id?: string
           link_dm_sent_at?: string | null
+          preferred_position?: string | null
           primary_position?: string | null
           updated_at?: string
           xbox_gamertag?: string | null
@@ -2226,6 +2249,9 @@ export type Database = {
           xbox_xuid?: string | null
         }
         Update: {
+          career_appearances?: number | null
+          career_assists?: number | null
+          career_goals?: number | null
           created_at?: string
           discord_avatar?: string | null
           discord_user_id?: string
@@ -2235,6 +2261,7 @@ export type Database = {
           ea_username?: string | null
           id?: string
           link_dm_sent_at?: string | null
+          preferred_position?: string | null
           primary_position?: string | null
           updated_at?: string
           xbox_gamertag?: string | null
