@@ -25,7 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses, getTacticalRoleBadgeClasses, formatTacticalRole } from "@/lib/archetypes";
+import { getTacticalRoleName, getTacticalRoleInfo, getTacticalRoleBadgeClasses, getPositionalCategoryBadgeClasses, formatPositionalCategory } from "@/lib/tacticalRoles";
 
 interface MatchPlayerStat {
   name: string;
@@ -242,8 +242,8 @@ export function MatchDetailView({ match }: MatchDetailViewProps) {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Player</TableHead>
+                    <TableHead className="text-center">Category</TableHead>
                     <TableHead className="text-center">Role</TableHead>
-                    <TableHead className="text-center">Archetype</TableHead>
                     <TableHead className="text-center">Rating</TableHead>
                     <TableHead className="text-center">G</TableHead>
                     <TableHead className="text-center">A</TableHead>
@@ -266,22 +266,22 @@ export function MatchDetailView({ match }: MatchDetailViewProps) {
                       </TableCell>
                       <TableCell className="text-center">
                         {(() => {
-                          const role = player.position;
-                          if (!role) return <span className="text-muted-foreground">-</span>;
+                          const category = player.position;
+                          if (!category) return <span className="text-muted-foreground">-</span>;
                           return (
-                            <Badge className={cn("text-xs capitalize", getTacticalRoleBadgeClasses(role))}>
-                              {formatTacticalRole(role)}
+                            <Badge className={cn("text-xs capitalize", getPositionalCategoryBadgeClasses(category))}>
+                              {formatPositionalCategory(category)}
                             </Badge>
                           );
                         })()}
                       </TableCell>
                       <TableCell className="text-center">
                         {(() => {
-                          const info = getArchetypeInfo(player.archetypeid);
-                          const name = getArchetypeName(player.archetypeid);
+                          const info = getTacticalRoleInfo(player.archetypeid);
+                          const name = getTacticalRoleName(player.archetypeid);
                           if (!name) return <span className="text-muted-foreground">-</span>;
                           return (
-                            <Badge className={cn("text-xs", getArchetypeBadgeClasses(info?.category || null))}>
+                            <Badge className={cn("text-xs", getTacticalRoleBadgeClasses(info?.category || null))}>
                               {name}
                             </Badge>
                           );
