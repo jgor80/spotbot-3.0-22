@@ -98,3 +98,6 @@ verify_jwt = false
 
 [functions.create-discord-account]
 verify_jwt = false
+
+[functions.check-xbox-presence]
+verify_jwt = false

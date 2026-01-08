@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      active_game_sessions: {
+        Row: {
+          club_key: string
+          created_at: string | null
+          detected_score: string | null
+          ended_at: string | null
+          guild_id: string
+          id: string
+          last_score: string | null
+          player_count: number
+          players: Json
+          started_at: string | null
+          status: string | null
+        }
+        Insert: {
+          club_key: string
+          created_at?: string | null
+          detected_score?: string | null
+          ended_at?: string | null
+          guild_id: string
+          id?: string
+          last_score?: string | null
+          player_count: number
+          players: Json
+          started_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          club_key?: string
+          created_at?: string | null
+          detected_score?: string | null
+          ended_at?: string | null
+          guild_id?: string
+          id?: string
+          last_score?: string | null
+          player_count?: number
+          players?: Json
+          started_at?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
       attendance_records: {
         Row: {
           actually_showed: boolean | null
@@ -2027,6 +2069,10 @@ export type Database = {
           link_dm_sent_at: string | null
           primary_position: string | null
           updated_at: string
+          xbox_gamertag: string | null
+          xbox_last_game: string | null
+          xbox_last_online: string | null
+          xbox_xuid: string | null
         }
         Insert: {
           created_at?: string
@@ -2040,6 +2086,10 @@ export type Database = {
           link_dm_sent_at?: string | null
           primary_position?: string | null
           updated_at?: string
+          xbox_gamertag?: string | null
+          xbox_last_game?: string | null
+          xbox_last_online?: string | null
+          xbox_xuid?: string | null
         }
         Update: {
           created_at?: string
@@ -2053,6 +2103,10 @@ export type Database = {
           link_dm_sent_at?: string | null
           primary_position?: string | null
           updated_at?: string
+          xbox_gamertag?: string | null
+          xbox_last_game?: string | null
+          xbox_last_online?: string | null
+          xbox_xuid?: string | null
         }
         Relationships: []
       }
@@ -2403,6 +2457,36 @@ export type Database = {
           guild_id?: string
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+        }
+        Relationships: []
+      }
+      xbox_detected_sessions: {
+        Row: {
+          created_at: string | null
+          detected_at: string | null
+          game_title: string | null
+          guild_id: string
+          id: string
+          player_count: number
+          players: Json
+        }
+        Insert: {
+          created_at?: string | null
+          detected_at?: string | null
+          game_title?: string | null
+          guild_id: string
+          id?: string
+          player_count: number
+          players: Json
+        }
+        Update: {
+          created_at?: string | null
+          detected_at?: string | null
+          game_title?: string | null
+          guild_id?: string
+          id?: string
+          player_count?: number
+          players?: Json
         }
         Relationships: []
       }
