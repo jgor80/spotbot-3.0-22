@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { Trophy, Minus, X, Users, Calendar, Target, Star, Goal, HandHelping, Shield, Footprints, ChevronRight, Search, Clock } from "lucide-react";
 import { SessionsList } from "@/components/club/SessionsList";
-import { getTacticalRoleName, getTacticalRoleInfo, getTacticalRoleBadgeClasses, getPositionalCategoryBadgeClasses, formatPositionalCategory } from "@/lib/tacticalRoles";
+import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses, getPositionalCategoryBadgeClasses, formatPositionalCategory } from "@/lib/archetypes";
 
 interface ClubMatch {
   id: string;
@@ -605,11 +605,11 @@ export default function RecentGamesPage() {
                                       </TableCell>
                                       <TableCell className="text-center">
                                         {(() => {
-                                          const info = getTacticalRoleInfo(player.archetypeid);
-                                          const name = getTacticalRoleName(player.archetypeid);
+                                          const info = getArchetypeInfo(player.archetypeid);
+                                          const name = getArchetypeName(player.archetypeid);
                                           if (!name) return <span className="text-muted-foreground">-</span>;
                                           return (
-                                            <Badge className={cn("text-xs", getTacticalRoleBadgeClasses(info?.category || null))}>
+                                            <Badge className={cn("text-xs", getArchetypeBadgeClasses(info?.category || null))}>
                                               {name}
                                             </Badge>
                                           );
