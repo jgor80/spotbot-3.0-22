@@ -65,6 +65,12 @@ interface PlayerRatingSummary {
   longest_win_streak: number;
   streak_type: string | null;
   vibe_score: number | null;
+  vibe_games_rated: number | null;
+  vibe_avg_enjoyment: number | null;
+  vibe_avg_energy: number | null;
+  vibe_prefer_count: number | null;
+  vibe_neutral_count: number | null;
+  vibe_avoid_count: number | null;
 }
 
 interface PlayerVibeData {
@@ -174,8 +180,11 @@ export default function RatingsPage() {
     "games"
   );
 
-  // Map leaderboard players to PlayerRatingSummary format
-  const playerSummaries: PlayerRatingSummary[] = (leaderboardPlayers || []).map(p => {
+  // Build vibeStatsLookup early so we can use it in playerSummaries
+  const vibeStatsLookupEarly = new Map<string, PlayerVibeData>();
+
+  // Map leaderboard players to PlayerRatingSummary format (vibe stats added after vibeRatings calculated)
+  const playerSummariesBase = (leaderboardPlayers || []).map(p => {
     const vibeData = playerSummaryData?.find(v => v.discord_user_id === p.discord_user_id);
     return {
       discord_user_id: p.discord_user_id,
@@ -204,6 +213,12 @@ export default function RatingsPage() {
       longest_win_streak: 0,
       streak_type: p.streak_type || null,
       vibe_score: vibeData?.vibe_score || null,
+      vibe_games_rated: null as number | null,
+      vibe_avg_enjoyment: null as number | null,
+      vibe_avg_energy: null as number | null,
+      vibe_prefer_count: null as number | null,
+      vibe_neutral_count: null as number | null,
+      vibe_avoid_count: null as number | null,
     };
   });
 
@@ -283,6 +298,20 @@ export default function RatingsPage() {
 
   // Create a lookup map for vibe stats by player ID
   const vibeStatsLookup = new Map(playerVibeRatings.map(v => [v.discord_user_id, v]));
+
+  // Merge vibe stats into player summaries for sorting
+  const playerSummaries: PlayerRatingSummary[] = playerSummariesBase.map(p => {
+    const vibeStats = vibeStatsLookup.get(p.discord_user_id);
+    return {
+      ...p,
+      vibe_games_rated: vibeStats?.total_games_rated || null,
+      vibe_avg_enjoyment: vibeStats?.avg_enjoyment || null,
+      vibe_avg_energy: vibeStats?.avg_energy || null,
+      vibe_prefer_count: vibeStats?.prefer_count || null,
+      vibe_neutral_count: vibeStats?.neutral_count || null,
+      vibe_avoid_count: vibeStats?.avoid_count || null,
+    };
+  });
 
   // Sort players
   const sortedPlayers = [...(playerSummaries || [])].sort((a, b) => {
@@ -661,22 +690,52 @@ export default function RatingsPage() {
                             Vibe <SortIcon field="vibe_score" />
                           </div>
                         </TableHead>
-                        <TableHead className="text-center">V.Games</TableHead>
-                        <TableHead className="text-center">Enjoy</TableHead>
-                        <TableHead className="text-center">Energy</TableHead>
-                        <TableHead className="text-center">
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 text-center"
+                          onClick={() => handleSort("vibe_games_rated")}
+                        >
                           <div className="flex items-center justify-center gap-1">
-                            <ThumbsUp className="h-3 w-3 text-success" />
+                            V.Games <SortIcon field="vibe_games_rated" />
                           </div>
                         </TableHead>
-                        <TableHead className="text-center">
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 text-center"
+                          onClick={() => handleSort("vibe_avg_enjoyment")}
+                        >
                           <div className="flex items-center justify-center gap-1">
-                            <Minus className="h-3 w-3 text-muted-foreground" />
+                            Enjoy <SortIcon field="vibe_avg_enjoyment" />
                           </div>
                         </TableHead>
-                        <TableHead className="text-center">
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 text-center"
+                          onClick={() => handleSort("vibe_avg_energy")}
+                        >
                           <div className="flex items-center justify-center gap-1">
-                            <ThumbsDown className="h-3 w-3 text-destructive" />
+                            Energy <SortIcon field="vibe_avg_energy" />
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 text-center"
+                          onClick={() => handleSort("vibe_prefer_count")}
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <ThumbsUp className="h-3 w-3 text-success" /> <SortIcon field="vibe_prefer_count" />
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 text-center"
+                          onClick={() => handleSort("vibe_neutral_count")}
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <Minus className="h-3 w-3 text-muted-foreground" /> <SortIcon field="vibe_neutral_count" />
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 text-center"
+                          onClick={() => handleSort("vibe_avoid_count")}
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <ThumbsDown className="h-3 w-3 text-destructive" /> <SortIcon field="vibe_avoid_count" />
                           </div>
                         </TableHead>
                         <TableHead className="text-center">Streak</TableHead>
@@ -740,26 +799,26 @@ export default function RatingsPage() {
                             ) : "-"}
                           </TableCell>
                           <TableCell className="text-center text-muted-foreground">
-                            {vibeStatsLookup.get(player.discord_user_id)?.total_games_rated || "-"}
+                            {player.vibe_games_rated || "-"}
                           </TableCell>
                           <TableCell className="text-center">
-                            {vibeStatsLookup.get(player.discord_user_id)?.avg_enjoyment 
-                              ? vibeStatsLookup.get(player.discord_user_id)!.avg_enjoyment.toFixed(1)
+                            {player.vibe_avg_enjoyment 
+                              ? player.vibe_avg_enjoyment.toFixed(1)
                               : "-"}
                           </TableCell>
                           <TableCell className="text-center">
-                            {vibeStatsLookup.get(player.discord_user_id)?.avg_energy 
-                              ? vibeStatsLookup.get(player.discord_user_id)!.avg_energy.toFixed(1)
+                            {player.vibe_avg_energy 
+                              ? player.vibe_avg_energy.toFixed(1)
                               : "-"}
                           </TableCell>
                           <TableCell className="text-center text-success">
-                            {vibeStatsLookup.get(player.discord_user_id)?.prefer_count || "-"}
+                            {player.vibe_prefer_count || "-"}
                           </TableCell>
                           <TableCell className="text-center text-muted-foreground">
-                            {vibeStatsLookup.get(player.discord_user_id)?.neutral_count || "-"}
+                            {player.vibe_neutral_count || "-"}
                           </TableCell>
                           <TableCell className="text-center text-destructive">
-                            {vibeStatsLookup.get(player.discord_user_id)?.avoid_count || "-"}
+                            {player.vibe_avoid_count || "-"}
                           </TableCell>
                           <TableCell className="text-center">
                             {player.current_streak > 0 && (
