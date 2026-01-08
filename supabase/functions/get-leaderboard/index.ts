@@ -499,10 +499,29 @@ serve(async (req) => {
       
       console.log(`[get-leaderboard] Fetched ${(allPlayerStats || []).length} player_stats records`);
       
-      // Debug: Check if specific player is in the fetched data
-      const testPlayerId = "501557839932948490";
-      const testPlayerRecords = allPlayerStats.filter(ps => ps.discord_user_id === testPlayerId);
-      console.log(`[get-leaderboard] DEBUG: Found ${testPlayerRecords.length} records for test player ${testPlayerId}`);
+      // Fetch club_matches to get accurate win/draw/loss results
+      // The player_stats.won boolean cannot distinguish draws from losses
+      const matchIds = [...new Set((allPlayerStats || []).map(ps => ps.ea_match_id).filter(Boolean))];
+      const matchResultMap = new Map<string, string>();
+      
+      if (matchIds.length > 0) {
+        // Fetch in batches to avoid query limits
+        const batchSize = 500;
+        for (let i = 0; i < matchIds.length; i += batchSize) {
+          const batchIds = matchIds.slice(i, i + batchSize);
+          const { data: matchResults } = await supabase
+            .from("club_matches")
+            .select("ea_match_id, result")
+            .in("ea_match_id", batchIds);
+          
+          for (const m of matchResults || []) {
+            if (m.ea_match_id && m.result) {
+              matchResultMap.set(m.ea_match_id, m.result);
+            }
+          }
+        }
+      }
+      console.log(`[get-leaderboard] Built match result map with ${matchResultMap.size} entries`);
       
       // Filter by match_type if set
       let filteredPlayerStats = matchTypeFilterIds 
@@ -586,9 +605,14 @@ serve(async (req) => {
         existing.rating_sum += stat.ea_match_rating || 0;
         existing.archetypeid = existing.archetypeid || stat.archetypeid;
         
-        if (stat.won === true) existing.wins += 1;
+        // Use club_matches result for accurate win/draw/loss counting
+        const matchResult = stat.ea_match_id ? matchResultMap.get(stat.ea_match_id) : null;
+        if (matchResult === 'win') existing.wins += 1;
+        else if (matchResult === 'loss') existing.losses += 1;
+        else if (matchResult === 'draw') existing.draws += 1;
+        // Fallback to won boolean if no match result found
+        else if (stat.won === true) existing.wins += 1;
         else if (stat.won === false) existing.losses += 1;
-        else existing.draws += 1;
         
         if (stat.position_played) {
           existing.position_counts[stat.position_played] = (existing.position_counts[stat.position_played] || 0) + 1;
