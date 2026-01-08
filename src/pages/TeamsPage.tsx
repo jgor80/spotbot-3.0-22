@@ -107,6 +107,7 @@ export default function TeamsPage() {
   const [lineupName, setLineupName] = useState("");
   const [lineupSearchQuery, setLineupSearchQuery] = useState("");
   const [isLineupLoading, setIsLineupLoading] = useState(false);
+  const [lineupTeamId, setLineupTeamId] = useState<string>("");
 
   // Available players for lineup
   const { data: availablePlayers, isLoading: playersLoading } = useAvailablePlayers(selectedGuildId);
@@ -388,6 +389,7 @@ export default function TeamsPage() {
     setSlots([]);
     setSelectedSlot(null);
     setLineupName("");
+    setLineupTeamId("");
   };
 
   const handleSaveLineup = async () => {
@@ -401,6 +403,16 @@ export default function TeamsPage() {
       return;
     }
 
+    if (!lineupTeamId) {
+      toast.error("Please select a team to save this lineup to");
+      return;
+    }
+
+    const selectedLineupTeam = teams?.find(t => t.id === lineupTeamId);
+    const defaultName = selectedLineupTeam 
+      ? `${selectedLineupTeam.name} Starting XI` 
+      : "Untitled Lineup";
+
     setIsLineupLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("create-lineup", {
@@ -408,7 +420,8 @@ export default function TeamsPage() {
           guild_id: selectedGuildId,
           created_by_discord_id: "web-user",
           formation,
-          name: lineupName || "Untitled Lineup",
+          name: lineupName || defaultName,
+          team_id: lineupTeamId,
           slots: slots.map(s => ({
             slot_index: s.slot_index,
             position: s.position,
@@ -421,7 +434,7 @@ export default function TeamsPage() {
       if (error) throw error;
       if (!data.success) throw new Error(data.error || "Failed to save lineup");
 
-      toast.success("Lineup saved!");
+      toast.success(`Starting XI saved for ${selectedLineupTeam?.name || "team"}!`);
       handleReset();
     } catch (error) {
       toast.error((error as Error).message);
@@ -807,29 +820,55 @@ export default function TeamsPage() {
                     </CardContent>
                   </Card>
 
-                  {/* Actions */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Input
-                      placeholder="Lineup name..."
-                      value={lineupName}
-                      onChange={(e) => setLineupName(e.target.value)}
-                      className="flex-1 min-w-[200px]"
-                    />
-                    <Button onClick={handleReset} variant="outline">
-                      <RotateCcw className="h-4 w-4 mr-2" />
-                      Reset
-                    </Button>
-                    <Button onClick={handleSaveLineup} disabled={slots.length < 11 || isLineupLoading}>
-                      {isLineupLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                      <Save className="h-4 w-4 mr-2" />
-                      Save
-                    </Button>
-                  </div>
+                  {/* Save to Team */}
+                  <Card className="p-4">
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div className="flex-1 min-w-[200px]">
+                        <label className="text-sm font-medium mb-1.5 block">Save as Starting XI for</label>
+                        <Select value={lineupTeamId} onValueChange={setLineupTeamId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a team..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {teams?.map((team) => (
+                              <SelectItem key={team.id} value={team.id}>
+                                {team.name} {team.tag && `[${team.tag}]`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex-1 min-w-[200px]">
+                        <label className="text-sm font-medium mb-1.5 block">Lineup Name (optional)</label>
+                        <Input
+                          placeholder={lineupTeamId ? `${teams?.find(t => t.id === lineupTeamId)?.name || ''} Starting XI` : "Lineup name..."}
+                          value={lineupName}
+                          onChange={(e) => setLineupName(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </Card>
 
-                  {/* Stats */}
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>Players: <strong className="text-foreground">{slots.length}/11</strong></span>
-                    <span>Avg Rating: <strong className="text-foreground">{avgRating.toFixed(1)}</strong></span>
+                  {/* Actions */}
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <span>Players: <strong className="text-foreground">{slots.length}/11</strong></span>
+                      <span>Avg Rating: <strong className="text-foreground">{avgRating.toFixed(1)}</strong></span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button onClick={handleReset} variant="outline">
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                        Reset
+                      </Button>
+                      <Button 
+                        onClick={handleSaveLineup} 
+                        disabled={slots.length < 11 || isLineupLoading || !lineupTeamId}
+                      >
+                        {isLineupLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                        <Save className="h-4 w-4 mr-2" />
+                        Save Starting XI
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
