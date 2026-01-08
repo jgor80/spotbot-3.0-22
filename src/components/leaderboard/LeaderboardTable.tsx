@@ -21,7 +21,7 @@ interface LeaderboardTableProps {
   highlightColumn?: "rating" | "goals" | "assists" | "wins" | "avg_rating" | "saves" | "tackles" | "clean_sheets";
 }
 
-type SortKey = "rank" | "rating" | "games" | "wins" | "win_rate" | "goals" | "assists" | "clean_sheets" | "motm" | "pass_pct" | "avg_rating" | "saves" | "tackles";
+type SortKey = "rank" | "rating" | "games" | "wins" | "win_rate" | "goals" | "assists" | "ga" | "clean_sheets" | "motm" | "pass_pct" | "shot_pct" | "tackle_pct" | "avg_rating" | "saves" | "tackles";
 type SortDirection = "asc" | "desc";
 
 export function LeaderboardTable({ players, onPlayerClick, highlightColumn }: LeaderboardTableProps) {
@@ -108,6 +108,18 @@ export function LeaderboardTable({ players, onPlayerClick, highlightColumn }: Le
           aVal = a.tackles || 0;
           bVal = b.tackles || 0;
           break;
+        case "ga":
+          aVal = a.goals + a.assists;
+          bVal = b.goals + b.assists;
+          break;
+        case "shot_pct":
+          aVal = (a.shots || 0) > 0 ? (a.goals / a.shots!) * 100 : 0;
+          bVal = (b.shots || 0) > 0 ? (b.goals / b.shots!) * 100 : 0;
+          break;
+        case "tackle_pct":
+          aVal = (a.tackle_attempts || 0) > 0 ? ((a.tackles || 0) / a.tackle_attempts!) * 100 : 0;
+          bVal = (b.tackle_attempts || 0) > 0 ? ((b.tackles || 0) / b.tackle_attempts!) * 100 : 0;
+          break;
         default:
           return 0;
       }
@@ -181,9 +193,11 @@ export function LeaderboardTable({ players, onPlayerClick, highlightColumn }: Le
             <SortableHeader columnKey="win_rate" className="text-center hidden lg:table-cell">Win%</SortableHeader>
             <SortableHeader columnKey="goals" className="text-center hidden sm:table-cell">Goals</SortableHeader>
             <SortableHeader columnKey="assists" className="text-center hidden sm:table-cell">Assists</SortableHeader>
+            <SortableHeader columnKey="ga" className="text-center hidden lg:table-cell">G+A</SortableHeader>
+            <SortableHeader columnKey="shot_pct" className="text-center hidden xl:table-cell">Shot%</SortableHeader>
+            <SortableHeader columnKey="pass_pct" className="text-center hidden xl:table-cell">Pass%</SortableHeader>
+            <SortableHeader columnKey="tackle_pct" className="text-center hidden xl:table-cell">Tkl%</SortableHeader>
             <SortableHeader columnKey="clean_sheets" className="text-center hidden lg:table-cell">CS</SortableHeader>
-            <SortableHeader columnKey="saves" className="text-center hidden xl:table-cell">Saves</SortableHeader>
-            <SortableHeader columnKey="tackles" className="text-center hidden xl:table-cell">Tackles</SortableHeader>
             <SortableHeader columnKey="motm" className="text-center hidden xl:table-cell">MotM</SortableHeader>
             <TableHead className="text-center">Form</TableHead>
           </TableRow>
@@ -293,14 +307,20 @@ export function LeaderboardTable({ players, onPlayerClick, highlightColumn }: Le
                 <TableCell className="text-center hidden sm:table-cell">
                   {player.assists}
                 </TableCell>
+                <TableCell className="text-center hidden lg:table-cell font-medium">
+                  {player.goals + player.assists}
+                </TableCell>
+                <TableCell className="text-center hidden xl:table-cell">
+                  {(player.shots || 0) > 0 ? ((player.goals / player.shots!) * 100).toFixed(0) : 0}%
+                </TableCell>
+                <TableCell className="text-center hidden xl:table-cell">
+                  {player.pass_attempts > 0 ? ((player.passes_made / player.pass_attempts) * 100).toFixed(0) : 0}%
+                </TableCell>
+                <TableCell className="text-center hidden xl:table-cell">
+                  {(player.tackle_attempts || 0) > 0 ? (((player.tackles || 0) / player.tackle_attempts!) * 100).toFixed(0) : 0}%
+                </TableCell>
                 <TableCell className="text-center hidden lg:table-cell">
                   {player.clean_sheets || 0}
-                </TableCell>
-                <TableCell className="text-center hidden xl:table-cell">
-                  {player.saves || 0}
-                </TableCell>
-                <TableCell className="text-center hidden xl:table-cell">
-                  {player.tackles || 0}
                 </TableCell>
                 <TableCell className="text-center hidden xl:table-cell">
                   {player.man_of_match || 0}

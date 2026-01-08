@@ -20,7 +20,7 @@ interface MidfielderLeaderboardTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "passes" | "pass_pct" | "tackles" | "interceptions" | "wins" | "win_rate" | "passes_per_game" | "positions";
+type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "ga" | "passes" | "pass_pct" | "tackles" | "tackle_pct" | "interceptions" | "wins" | "win_rate" | "passes_per_game" | "positions";
 type SortDirection = "asc" | "desc";
 
 // Format position counts for display (short version)
@@ -101,6 +101,14 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
           aVal = a.tackles || 0;
           bVal = b.tackles || 0;
           break;
+        case "tackle_pct":
+          aVal = (a.tackle_attempts || 0) > 0 ? ((a.tackles || 0) / a.tackle_attempts!) * 100 : 0;
+          bVal = (b.tackle_attempts || 0) > 0 ? ((b.tackles || 0) / b.tackle_attempts!) * 100 : 0;
+          break;
+        case "ga":
+          aVal = a.goals + a.assists;
+          bVal = b.goals + b.assists;
+          break;
         case "interceptions":
           aVal = a.interceptions || 0;
           bVal = b.interceptions || 0;
@@ -173,17 +181,18 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
               <SortableHeader columnKey="pass_pct" className="text-center hidden lg:table-cell">Pass%</SortableHeader>
               <SortableHeader columnKey="assists" className="text-center">Assists</SortableHeader>
               <SortableHeader columnKey="goals" className="text-center hidden md:table-cell">Goals</SortableHeader>
+              <SortableHeader columnKey="ga" className="text-center hidden lg:table-cell">G+A</SortableHeader>
               <SortableHeader columnKey="tackles" className="text-center hidden lg:table-cell">Tackles</SortableHeader>
+              <SortableHeader columnKey="tackle_pct" className="text-center hidden xl:table-cell">Tkl%</SortableHeader>
               <SortableHeader columnKey="wins" className="text-center hidden md:table-cell">W/D/L</SortableHeader>
               <SortableHeader columnKey="win_rate" className="text-center hidden lg:table-cell">Win%</SortableHeader>
-              <SortableHeader columnKey="passes_per_game" className="text-center hidden lg:table-cell">Pass/G</SortableHeader>
               <SortableHeader columnKey="positions" className="text-center hidden xl:table-cell">Positions</SortableHeader>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredAndSortedPlayers.map((player) => {
               const passPct = player.pass_attempts > 0 ? ((player.passes_made || 0) / player.pass_attempts) * 100 : 0;
-              const passesPerGame = player.games_played > 0 ? (player.passes_made || 0) / player.games_played : 0;
+              const tacklePct = (player.tackle_attempts || 0) > 0 ? ((player.tackles || 0) / player.tackle_attempts!) * 100 : 0;
               const positionsShort = formatPositionCountsShort(player.position_counts);
               const positionsFull = formatPositionCountsFull(player.position_counts);
 
@@ -240,7 +249,9 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
                   <TableCell className="text-center hidden lg:table-cell">{passPct.toFixed(0)}%</TableCell>
                   <TableCell className="text-center">{player.assists}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.goals}</TableCell>
+                  <TableCell className="text-center hidden lg:table-cell font-medium">{player.goals + player.assists}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{player.tackles || 0}</TableCell>
+                  <TableCell className="text-center hidden xl:table-cell">{tacklePct.toFixed(0)}%</TableCell>
                   <TableCell className="text-center hidden md:table-cell text-xs">
                     <span className="text-primary">{player.wins || 0}</span>
                     <span className="text-muted-foreground">/</span>
@@ -249,7 +260,6 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
                     <span className="text-destructive">{player.losses || 0}</span>
                   </TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{(player.win_rate || 0).toFixed(0)}%</TableCell>
-                  <TableCell className="text-center hidden lg:table-cell">{passesPerGame.toFixed(1)}</TableCell>
                   <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">
                     {positionsFull.length > 0 ? (
                       <TooltipProvider>

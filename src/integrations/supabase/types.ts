@@ -240,18 +240,29 @@ export type Database = {
           club_key: string
           club_name: string | null
           created_at: string
+          cup_games: number | null
           draws: number | null
           ea_club_id: string
           ea_platform: string
+          friendly_games: number | null
           goals_conceded: number | null
           goals_scored: number | null
           guild_id: string
           id: string
+          last_10_results: string[] | null
+          last_5_results: string[] | null
           last_synced_at: string | null
+          league_games: number | null
+          loss_streak: number | null
           losses: number | null
+          region: string | null
+          reputation_tier: string | null
           skill_rating: number | null
+          stadium_name: string | null
           total_members: number | null
+          unbeaten_streak: number | null
           updated_at: string
+          win_streak: number | null
           wins: number | null
         }
         Insert: {
@@ -259,18 +270,29 @@ export type Database = {
           club_key: string
           club_name?: string | null
           created_at?: string
+          cup_games?: number | null
           draws?: number | null
           ea_club_id: string
           ea_platform: string
+          friendly_games?: number | null
           goals_conceded?: number | null
           goals_scored?: number | null
           guild_id: string
           id?: string
+          last_10_results?: string[] | null
+          last_5_results?: string[] | null
           last_synced_at?: string | null
+          league_games?: number | null
+          loss_streak?: number | null
           losses?: number | null
+          region?: string | null
+          reputation_tier?: string | null
           skill_rating?: number | null
+          stadium_name?: string | null
           total_members?: number | null
+          unbeaten_streak?: number | null
           updated_at?: string
+          win_streak?: number | null
           wins?: number | null
         }
         Update: {
@@ -278,18 +300,29 @@ export type Database = {
           club_key?: string
           club_name?: string | null
           created_at?: string
+          cup_games?: number | null
           draws?: number | null
           ea_club_id?: string
           ea_platform?: string
+          friendly_games?: number | null
           goals_conceded?: number | null
           goals_scored?: number | null
           guild_id?: string
           id?: string
+          last_10_results?: string[] | null
+          last_5_results?: string[] | null
           last_synced_at?: string | null
+          league_games?: number | null
+          loss_streak?: number | null
           losses?: number | null
+          region?: string | null
+          reputation_tier?: string | null
           skill_rating?: number | null
+          stadium_name?: string | null
           total_members?: number | null
+          unbeaten_streak?: number | null
           updated_at?: string
+          win_streak?: number | null
           wins?: number | null
         }
         Relationships: []

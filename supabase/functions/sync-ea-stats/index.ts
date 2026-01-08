@@ -156,13 +156,103 @@ async function fetchClubMembers(clubId: string, platform: string) {
   }
 }
 
+// Calculate streaks and form from recent matches
+function calculateClubForm(matches: any[], clubId: string): {
+  win_streak: number;
+  loss_streak: number;
+  unbeaten_streak: number;
+  last_5_results: string[];
+  last_10_results: string[];
+  league_games: number;
+  cup_games: number;
+  friendly_games: number;
+} {
+  // Sort matches by timestamp (most recent first)
+  const sortedMatches = [...matches].sort((a, b) => {
+    const timeA = parseInt(a.timestamp || a.matchTime || 0);
+    const timeB = parseInt(b.timestamp || b.matchTime || 0);
+    return timeB - timeA;
+  });
+
+  const results: string[] = [];
+  let winStreak = 0;
+  let lossStreak = 0;
+  let unbeatenStreak = 0;
+  let leagueGames = 0;
+  let cupGames = 0;
+  let friendlyGames = 0;
+
+  for (const match of sortedMatches.slice(0, 10)) {
+    const clubs = match.clubs || {};
+    const ourClub = clubs[clubId];
+    if (!ourClub) continue;
+
+    // Determine result
+    const goalsFor = parseInt(ourClub.goals || 0);
+    const goalsAgainst = Object.entries(clubs)
+      .filter(([id]) => id !== clubId)
+      .reduce((sum, [, club]: [string, any]) => sum + parseInt(club.goals || 0), 0);
+
+    let result: string;
+    if (goalsFor > goalsAgainst) result = 'W';
+    else if (goalsFor < goalsAgainst) result = 'L';
+    else result = 'D';
+
+    results.push(result);
+
+    // Count match types
+    const matchType = match.matchType?.toLowerCase() || '';
+    if (matchType.includes('league') || matchType.includes('division') || matchType === 'matchtype9') {
+      leagueGames++;
+    } else if (matchType.includes('cup') || matchType.includes('knockout') || matchType === 'matchtype13') {
+      cupGames++;
+    } else {
+      friendlyGames++;
+    }
+  }
+
+  // Calculate current streaks (from most recent)
+  for (const r of results) {
+    if (r === 'W') {
+      if (lossStreak === 0 && results.indexOf(r) === results.findIndex(x => x === r)) winStreak++;
+      else break;
+    } else break;
+  }
+  for (const r of results) {
+    if (r === 'L') {
+      if (winStreak === 0 && results.indexOf(r) === results.findIndex(x => x === r)) lossStreak++;
+      else break;
+    } else break;
+  }
+  for (const r of results) {
+    if (r !== 'L') unbeatenStreak++;
+    else break;
+  }
+
+  return {
+    win_streak: winStreak,
+    loss_streak: lossStreak,
+    unbeaten_streak: unbeatenStreak,
+    last_5_results: results.slice(0, 5),
+    last_10_results: results.slice(0, 10),
+    league_games: leagueGames,
+    cup_games: cupGames,
+    friendly_games: friendlyGames,
+  };
+}
+
 // Sync club stats to database
-async function syncClubStats(supabase: any, guildId: string, clubKey: string, clubId: string, platform: string) {
+async function syncClubStats(supabase: any, guildId: string, clubKey: string, clubId: string, platform: string, recentMatches?: any[]) {
   try {
     const clubInfo = await fetchClubInfo(clubId, platform)
     if (!clubInfo) return null
+
+    // Calculate form from recent matches if provided
+    const formData = recentMatches && recentMatches.length > 0
+      ? calculateClubForm(recentMatches, clubId)
+      : null;
     
-    const clubData = {
+    const clubData: Record<string, any> = {
       guild_id: guildId,
       club_key: clubKey,
       ea_club_id: clubId,
@@ -176,7 +266,23 @@ async function syncClubStats(supabase: any, guildId: string, clubKey: string, cl
       total_members: parseInt(clubInfo.memberCount || clubInfo.members || 0),
       best_division: clubInfo.bestDivision || clubInfo.divisionName || null,
       club_name: clubInfo.name || clubInfo.clubName || null,
+      // New metadata fields
+      stadium_name: clubInfo.stadiumName || clubInfo.stadium || null,
+      region: clubInfo.region || clubInfo.customKit?.region || null,
+      reputation_tier: clubInfo.reputationTier || clubInfo.clubStar || null,
       last_synced_at: new Date().toISOString()
+    }
+
+    // Add form data if calculated
+    if (formData) {
+      clubData.win_streak = formData.win_streak;
+      clubData.loss_streak = formData.loss_streak;
+      clubData.unbeaten_streak = formData.unbeaten_streak;
+      clubData.last_5_results = formData.last_5_results;
+      clubData.last_10_results = formData.last_10_results;
+      clubData.league_games = formData.league_games;
+      clubData.cup_games = formData.cup_games;
+      clubData.friendly_games = formData.friendly_games;
     }
     
     const { error } = await supabase
@@ -188,7 +294,7 @@ async function syncClubStats(supabase: any, guildId: string, clubKey: string, cl
       return null
     }
     
-    console.log(`[sync-ea-stats] Synced club stats for ${clubData.club_name}: ${clubData.skill_rating} SR`)
+    console.log(`[sync-ea-stats] Synced club stats for ${clubData.club_name}: ${clubData.skill_rating} SR, form: ${formData?.last_5_results?.join('') || 'N/A'}`)
     return clubData
   } catch (err) {
     console.error(`[sync-ea-stats] Error syncing club stats:`, err)
@@ -1168,8 +1274,18 @@ Deno.serve(async (req) => {
             console.log(`[sync-ea-stats] Hidden endpoint probe results:`, hiddenProbeResults)
           }
 
-          // Sync club stats
-          const clubStatsResult = await syncClubStats(supabase, guildId, club.key, club.ea_club_id, club.ea_platform)
+          // Fetch matches first so we can calculate form for club stats
+          let allRecentMatches: any[] = [];
+          if (syncType === 'full') {
+            // Fetch division matches (matchType9), cup/competition matches (matchType13), and friendly matches (matchType22)
+            const divisionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType9')
+            const competitionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType13')
+            const friendlyMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType22')
+            allRecentMatches = [...divisionMatches, ...competitionMatches, ...friendlyMatches]
+          }
+
+          // Sync club stats with form data from recent matches
+          const clubStatsResult = await syncClubStats(supabase, guildId, club.key, club.ea_club_id, club.ea_platform, allRecentMatches)
           if (clubStatsResult) clubStatsSynced++
 
           // Sync member career stats (pulls from EA member list API)
@@ -1181,13 +1297,11 @@ Deno.serve(async (req) => {
           
           // Also sync recent matches for match-by-match tracking
           if (syncType === 'full') {
-            // Fetch division matches (matchType9), cup/competition matches (matchType13), and friendly matches (matchType22)
-            const divisionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType9')
-            const competitionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType13')
-            const friendlyMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType22')
-            
-            // Process division matches
-            const matches = divisionMatches
+            // Use division matches for primary processing
+            const matches = allRecentMatches.filter(m => 
+              (m.matchType?.includes?.('9') || m.matchType === 'matchType9') ||
+              !m.matchType // Include matches without explicit type
+            );
 
             if (matches && matches.length > 0) {
               // Surface every field we can see on the most recent match so we know what EA returns
@@ -1370,6 +1484,9 @@ Deno.serve(async (req) => {
             }
             
             // Process competition/cup matches (matchType13) - these are tournament/league games
+            const competitionMatches = allRecentMatches.filter(m => 
+              m.matchType?.includes?.('13') || m.matchType === 'matchType13'
+            );
             if (competitionMatches && competitionMatches.length > 0) {
               const { data: existingCompMatches } = await supabase
                 .from('club_matches')
@@ -1522,6 +1639,9 @@ Deno.serve(async (req) => {
             }
             
             // Process friendly matches (matchType22)
+            const friendlyMatches = allRecentMatches.filter(m => 
+              m.matchType?.includes?.('22') || m.matchType === 'matchType22'
+            );
             if (friendlyMatches && friendlyMatches.length > 0) {
               console.log(`[sync-ea-stats] Processing ${friendlyMatches.length} friendly matches for ${club.name}`)
               
