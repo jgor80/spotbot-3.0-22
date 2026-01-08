@@ -3207,11 +3207,6 @@ function buildEaPanelComponents(state) {
       .setEmoji('🎮')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
-      .setCustomId('eapanel_sendlinkdms')
-      .setLabel('Send Link DMs')
-      .setEmoji('📤')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
       .setCustomId('eapanel_status')
       .setLabel('View Status')
       .setEmoji('📊')
@@ -9937,126 +9932,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
-      // EA Panel - Send Link DMs button (admin only)
+      // EA Panel - Send Link DMs button (DISABLED - removed per user request)
       if (id === 'eapanel_sendlinkdms') {
-        if (!isManager(interaction.member)) {
-          return interaction.reply({ content: '❌ Only managers can send link DMs.', flags: 64 });
-        }
-
-        await interaction.deferReply({ flags: 64 });
-
-        try {
-          const guild = interaction.guild;
-          if (!guild) {
-            return interaction.editReply({ content: '❌ Could not access guild.' });
-          }
-
-          // Get all guild members
-          const members = await guild.members.fetch();
-          
-          // Get all profiles to check who already has EA linked
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('discord_user_id, ea_username, link_dm_sent_at')
-            .not('discord_user_id', 'like', 'ea_%');
-
-          const linkedUserIds = new Set(
-            (profiles || [])
-              .filter(p => p.ea_username)
-              .map(p => p.discord_user_id)
-          );
-
-          // Build map of when DM was last sent
-          const lastDmSent = new Map(
-            (profiles || [])
-              .filter(p => p.link_dm_sent_at)
-              .map(p => [p.discord_user_id, new Date(p.link_dm_sent_at)])
-          );
-
-          const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-          
-          let dmsSent = 0;
-          let skipped = 0;
-          let failed = 0;
-
-          for (const [memberId, member] of members) {
-            // Skip bots
-            if (member.user.bot) continue;
-            
-            // Skip if already linked
-            if (linkedUserIds.has(memberId)) {
-              skipped++;
-              continue;
-            }
-            
-            // Skip if DM was sent in last 7 days
-            const lastSent = lastDmSent.get(memberId);
-            if (lastSent && lastSent > sevenDaysAgo) {
-              skipped++;
-              continue;
-            }
-
-            try {
-              // Create the link button
-              const linkButton = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                  .setCustomId(`linkdm_linkea_${guildId}`)
-                  .setLabel('Link My EA Account')
-                  .setEmoji('🎮')
-                  .setStyle(ButtonStyle.Primary)
-              );
-
-              const embed = new EmbedBuilder()
-                .setTitle('🎮 Link Your EA Account')
-                .setColor(0x5865f2)
-                .setDescription(
-                  `Hey **${member.displayName}**!\n\n` +
-                  `We noticed you haven't linked your EA FC Pro Clubs account yet in **${guild.name}**.\n\n` +
-                  `Linking your account enables:\n` +
-                  `• 📊 Automatic stat tracking\n` +
-                  `• 📈 Personal ratings & leaderboard\n` +
-                  `• 🏆 Achievement tracking\n\n` +
-                  `Click the button below to link your account!`
-                )
-                .setFooter({ text: 'This is a one-time setup • Your stats will sync automatically' });
-
-              await member.send({ embeds: [embed], components: [linkButton] });
-              
-              // Update the profile with link_dm_sent_at
-              await supabase
-                .from('profiles')
-                .upsert({
-                  discord_user_id: memberId,
-                  discord_username: member.displayName || member.user.username,
-                  link_dm_sent_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString()
-                }, { onConflict: 'discord_user_id' });
-
-              dmsSent++;
-              
-              // Rate limit: wait 1 second between DMs
-              await new Promise(resolve => setTimeout(resolve, 1000));
-            } catch (dmError) {
-              // User has DMs disabled
-              failed++;
-            }
-          }
-
-          const embed = new EmbedBuilder()
-            .setTitle('📤 Link DMs Sent')
-            .setColor(0x5865f2)
-            .setDescription(
-              `**DMs Sent:** ${dmsSent}\n` +
-              `**Skipped:** ${skipped} (already linked or recently DMed)\n` +
-              `**Failed:** ${failed} (DMs disabled)`
-            )
-            .setFooter({ text: 'Users who receive DMs can link their EA account directly from the DM' });
-
-          return interaction.editReply({ embeds: [embed] });
-        } catch (error) {
-          console.error('[eapanel_sendlinkdms] Error:', error);
-          return interaction.editReply({ content: `❌ Error sending link DMs: ${error.message}` });
-        }
+        return interaction.reply({ content: '❌ This feature has been disabled.', flags: 64 });
       }
 
 
