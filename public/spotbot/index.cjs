@@ -11274,11 +11274,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Get EA usernames from the match
         const eaUsernames = playerStats.map(p => p.ea_username).filter(Boolean);
 
-        // Look up Discord IDs for these EA usernames
+        // Look up Discord IDs for these EA usernames (case-insensitive)
+        // Fetch all profiles with EA usernames and filter in code for case-insensitive matching
         const { data: profiles } = await supabase
           .from('profiles')
           .select('discord_user_id, ea_username')
-          .in('ea_username', eaUsernames);
+          .not('ea_username', 'is', null)
+          .not('discord_user_id', 'like', 'ea_%');
 
         // Create a map of EA username (lowercase) to Discord ID
         const eaToDiscord = {};
@@ -13865,11 +13867,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
           // Get EA usernames from the match
           const eaUsernames = playerStats.map(p => p.ea_username).filter(Boolean);
 
-          // Look up Discord IDs for these EA usernames
+          // Look up Discord IDs for these EA usernames (case-insensitive)
+          // Fetch all profiles with EA usernames and filter in code for case-insensitive matching
           const { data: profiles } = await supabase
             .from('profiles')
             .select('discord_user_id, ea_username')
-            .in('ea_username', eaUsernames);
+            .not('ea_username', 'is', null)
+            .not('discord_user_id', 'like', 'ea_%');
 
           // Create a map of EA username (lowercase) to Discord ID
           const eaToDiscord = {};
