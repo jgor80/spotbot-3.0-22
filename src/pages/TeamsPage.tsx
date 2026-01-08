@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
+import html2canvas from "html2canvas";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -51,7 +52,9 @@ import {
   Wand2,
   Save,
   RotateCcw,
-  Search
+  Search,
+  Download,
+  Image
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -108,6 +111,8 @@ export default function TeamsPage() {
   const [lineupSearchQuery, setLineupSearchQuery] = useState("");
   const [isLineupLoading, setIsLineupLoading] = useState(false);
   const [lineupTeamId, setLineupTeamId] = useState<string>("");
+  const [isExporting, setIsExporting] = useState(false);
+  const pitchRef = useRef<HTMLDivElement>(null);
 
   // Available players for lineup
   const { data: availablePlayers, isLoading: playersLoading } = useAvailablePlayers(selectedGuildId);
@@ -440,6 +445,39 @@ export default function TeamsPage() {
       toast.error((error as Error).message);
     } finally {
       setIsLineupLoading(false);
+    }
+  };
+
+  const handleExportImage = async () => {
+    if (!pitchRef.current) {
+      toast.error("Nothing to export");
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const canvas = await html2canvas(pitchRef.current, {
+        backgroundColor: null,
+        scale: 2,
+        useCORS: true,
+      });
+
+      const selectedLineupTeam = teams?.find(t => t.id === lineupTeamId);
+      const fileName = selectedLineupTeam 
+        ? `${selectedLineupTeam.name.replace(/\s+/g, "_")}_lineup.png`
+        : `lineup_${formation.replace(/\s+/g, "_")}.png`;
+
+      const link = document.createElement("a");
+      link.download = fileName;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+
+      toast.success("Lineup image downloaded!");
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("Failed to export image");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -798,6 +836,19 @@ export default function TeamsPage() {
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                       <CardTitle>Formation</CardTitle>
                       <div className="flex items-center gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={handleExportImage}
+                          disabled={slots.length === 0 || isExporting}
+                        >
+                          {isExporting ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : (
+                            <Download className="h-4 w-4 mr-2" />
+                          )}
+                          Export
+                        </Button>
                         <Select value={formation} onValueChange={(v) => setFormation(v as FormationType)}>
                           <SelectTrigger className="w-40">
                             <SelectValue />
@@ -811,12 +862,14 @@ export default function TeamsPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <FormationPitch
-                        formation={formation}
-                        slots={slots}
-                        onSlotClick={handleSlotClick}
-                        selectedSlot={selectedSlot}
-                      />
+                      <div ref={pitchRef}>
+                        <FormationPitch
+                          formation={formation}
+                          slots={slots}
+                          onSlotClick={handleSlotClick}
+                          selectedSlot={selectedSlot}
+                        />
+                      </div>
                     </CardContent>
                   </Card>
 
