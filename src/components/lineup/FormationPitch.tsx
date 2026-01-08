@@ -1,4 +1,5 @@
-import { FormationType, LineupSlot } from "@/types/player";
+import { LineupSlot } from "@/types/player";
+import { FormationType } from "@/types/formations";
 import { FORMATIONS, getPositionColor, getPositionRatingCategory } from "@/lib/formations";
 import { cn } from "@/lib/utils";
 

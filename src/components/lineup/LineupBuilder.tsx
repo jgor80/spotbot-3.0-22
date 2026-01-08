@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
-import { FormationType, LeaderboardPlayer, LineupSlot } from "@/types/player";
+import { LeaderboardPlayer, LineupSlot } from "@/types/player";
+import { FormationType } from "@/types/formations";
 import { FORMATION_OPTIONS, FORMATIONS } from "@/lib/formations";
 import { FormationPitch } from "./FormationPitch";
 import { PlayerCard } from "@/components/player/PlayerCard";
