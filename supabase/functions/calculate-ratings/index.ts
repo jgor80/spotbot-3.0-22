@@ -157,7 +157,7 @@ serve(async (req) => {
     const summaryPlayerIds = results.map(r => r.discord_user_id);
     
     // Pre-fetch all data needed for summaries (including manager evaluations)
-    const [streakData, achievementData, reliabilityData, winsData, profileData, existingSummaryData, managerEvalData] = await Promise.all([
+    const [streakData, achievementData, reliabilityData, winsData, profileData, existingSummaryData, managerEvalData, recentStatsData] = await Promise.all([
       supabase.from("player_streaks").select("*").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
       supabase.from("player_achievements").select("discord_user_id, achievement_icon").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
       supabase.from("player_reliability").select("discord_user_id, reliability_score").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
@@ -165,9 +165,52 @@ serve(async (req) => {
       supabase.from("profiles").select("discord_user_id, discord_username, primary_position").in("discord_user_id", summaryPlayerIds),
       supabase.from("player_summary").select("discord_user_id, games_played, wins, goals, assists, losses, draws, manager_rating").eq("guild_id", guild_id).in("discord_user_id", summaryPlayerIds),
       supabase.from("manager_evaluations").select("evaluated_discord_id, weighted_score, trust_weight").eq("guild_id", guild_id).in("evaluated_discord_id", summaryPlayerIds),
+      // Fetch recent club match results for form calculation
+      supabase.from("player_stats")
+        .select("discord_user_id, won, created_at")
+        .eq("guild_id", guild_id)
+        .eq("match_type", "club")
+        .in("discord_user_id", summaryPlayerIds)
+        .not("won", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(summaryPlayerIds.length * 10), // Get up to 10 games per player
     ]);
 
-    // Index data by player
+    // Build form rating from recent stats if player_streaks is empty
+    const recentStatsByPlayer = new Map<string, Array<{ won: boolean | null; created_at: string }>>();
+    for (const stat of (recentStatsData.data || [])) {
+      const existing = recentStatsByPlayer.get(stat.discord_user_id) || [];
+      if (existing.length < 10) { // Only keep last 10 per player
+        existing.push(stat);
+      }
+      recentStatsByPlayer.set(stat.discord_user_id, existing);
+    }
+
+    // Calculate form from recent stats
+    const calculatedFormMap = new Map<string, { form_rating: number; current_win_streak: number; current_loss_streak: number; last_5: string[] }>();
+    for (const [playerId, stats] of recentStatsByPlayer) {
+      const results = stats.map(s => s.won === true ? 'W' : s.won === false ? 'L' : 'D');
+      const last5 = results.slice(0, 5);
+      
+      // Form rating: W=3pts, D=1pt, L=0pt, max 15 pts = 100%
+      const formPoints = last5.reduce((sum, r) => sum + (r === 'W' ? 3 : r === 'D' ? 1 : 0), 0);
+      const formRating = Math.round((formPoints / 15) * 100);
+      
+      // Current streak
+      let currentWinStreak = 0;
+      let currentLossStreak = 0;
+      for (const r of results) {
+        if (r === 'W' && currentLossStreak === 0) currentWinStreak++;
+        else if (r === 'L' && currentWinStreak === 0) currentLossStreak++;
+        else break;
+      }
+      
+      calculatedFormMap.set(playerId, { form_rating: formRating, current_win_streak: currentWinStreak, current_loss_streak: currentLossStreak, last_5: last5 });
+    }
+
+    console.log(`[calculate-ratings] Calculated form for ${calculatedFormMap.size} players from ${recentStatsData.data?.length || 0} stats`);
+
+    // Index data by player - prefer player_streaks if exists, else use calculated
     const streakMap = new Map((streakData.data || []).map(s => [s.discord_user_id, s]));
     const achievementMap = new Map<string, any[]>();
     for (const a of (achievementData.data || [])) {
@@ -204,13 +247,18 @@ serve(async (req) => {
       const rating = players.find(p => p.discord_user_id === discordUserId);
       
       const streak = streakMap.get(discordUserId);
+      const calculatedForm = calculatedFormMap.get(discordUserId);
       const achievements = (achievementMap.get(discordUserId) || []).slice(0, 3);
       const reliability = reliabilityMap.get(discordUserId);
       const wins = winsMap.get(discordUserId) || [];
       const profile = profileMap.get(discordUserId);
       const existing = existingMap.get(discordUserId);
 
-      const currentStreak = streak?.current_win_streak || -(streak?.current_loss_streak || 0);
+      // Use calculated form if player_streaks is empty, otherwise prefer player_streaks
+      const formRating = streak?.form_rating ?? calculatedForm?.form_rating ?? null;
+      const winStreak = streak?.current_win_streak ?? calculatedForm?.current_win_streak ?? 0;
+      const lossStreak = streak?.current_loss_streak ?? calculatedForm?.current_loss_streak ?? 0;
+      const currentStreak = winStreak > 0 ? winStreak : -lossStreak;
       const streakType = currentStreak > 2 ? "hot" : currentStreak < -2 ? "cold" : "neutral";
 
       const tournamentWins = wins.filter((w: any) => w.competition_type === "tournament").length;
@@ -238,7 +286,7 @@ serve(async (req) => {
         discord_user_id: discordUserId,
         discord_username: profile?.discord_username,
         overall_rating: result.new_rating,
-        form_rating: streak?.form_rating,
+        form_rating: formRating,
         reliability_score: reliability?.reliability_score || 100,
         games_played: gamesPlayed,
         wins: totalWins,
