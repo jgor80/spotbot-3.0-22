@@ -32,19 +32,26 @@ export function useDiscordLink() {
   });
 
   const linkDiscordMutation = useMutation({
-    mutationFn: async (discordUserId: string) => {
+    mutationFn: async (discordUsername: string) => {
       if (!user?.id) throw new Error("Not authenticated");
       
-      // Validate Discord ID format
-      if (!/^\d{17,19}$/.test(discordUserId)) {
-        throw new Error("Invalid Discord User ID format");
+      // Look up the Discord user ID from the profiles table by username
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("discord_user_id")
+        .ilike("discord_username", discordUsername.trim())
+        .maybeSingle();
+      
+      if (profileError) throw profileError;
+      if (!profile) {
+        throw new Error("Discord username not found. Make sure you've played at least one tracked game.");
       }
 
       const { data, error } = await supabase
         .from("user_discord_links")
         .insert({
           auth_user_id: user.id,
-          discord_user_id: discordUserId,
+          discord_user_id: profile.discord_user_id,
           verified: false,
         })
         .select()

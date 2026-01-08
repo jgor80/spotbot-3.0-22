@@ -4,14 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useGuild } from "@/contexts/GuildContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayerProfile } from "@/hooks/usePlayerProfile";
+import { supabase } from "@/integrations/supabase/client";
 import { useDiscordLink } from "@/hooks/useDiscordLink";
 import { useSearchParams, Link } from "react-router-dom";
-import { Loader2, Link as LinkIcon, Unlink, User, Search, AlertCircle } from "lucide-react";
+import { Loader2, Link as LinkIcon, Unlink, User, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function ProfilePage() {
   const { selectedGuildId, isLoading: guildLoading } = useGuild();
@@ -21,8 +21,8 @@ export default function ProfilePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const userIdFromUrl = searchParams.get("user");
   
-  const [inputUserId, setInputUserId] = useState(userIdFromUrl || "");
-  const [discordIdInput, setDiscordIdInput] = useState("");
+  const [inputUsername, setInputUsername] = useState("");
+  const [discordUsernameInput, setDiscordUsernameInput] = useState("");
   const [showSearch, setShowSearch] = useState(!!userIdFromUrl);
   
   // Determine which Discord ID to use for profile
@@ -33,21 +33,32 @@ export default function ProfilePage() {
     profileDiscordId
   );
 
-  const handleSearch = () => {
-    if (inputUserId.trim()) {
-      setSearchParams({ user: inputUserId.trim() });
+  const handleSearch = async () => {
+    if (inputUsername.trim()) {
+      // Look up Discord user ID by username
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("discord_user_id")
+        .ilike("discord_username", inputUsername.trim())
+        .maybeSingle();
+      
+      if (profile?.discord_user_id) {
+        setSearchParams({ user: profile.discord_user_id });
+      } else {
+        toast.error("Discord username not found");
+      }
     }
   };
 
   const handleLinkDiscord = () => {
-    if (!discordIdInput.trim()) {
-      toast.error("Please enter your Discord User ID");
+    if (!discordUsernameInput.trim()) {
+      toast.error("Please enter your Discord username");
       return;
     }
-    linkDiscord(discordIdInput.trim(), {
+    linkDiscord(discordUsernameInput.trim(), {
       onSuccess: () => {
         toast.success("Discord account linked successfully!");
-        setDiscordIdInput("");
+        setDiscordUsernameInput("");
       },
       onError: (err) => {
         toast.error(err.message);
@@ -117,18 +128,15 @@ export default function ProfilePage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <Alert>
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>
-                      To find your Discord User ID: Enable Developer Mode in Discord Settings → App Settings → Advanced,
-                      then right-click your username and select "Copy User ID"
-                    </AlertDescription>
-                  </Alert>
+                  <p className="text-sm text-muted-foreground">
+                    Enter your Discord username (e.g., johndoe or johndoe#1234) to link your account.
+                    You must have played at least one tracked game for your username to be recognized.
+                  </p>
                   <div className="flex gap-2">
                     <Input
-                      placeholder="Enter your Discord User ID (e.g., 123456789012345678)"
-                      value={discordIdInput}
-                      onChange={(e) => setDiscordIdInput(e.target.value)}
+                      placeholder="Enter your Discord username"
+                      value={discordUsernameInput}
+                      onChange={(e) => setDiscordUsernameInput(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleLinkDiscord()}
                     />
                     <Button onClick={handleLinkDiscord} disabled={isLinking}>
@@ -180,16 +188,16 @@ export default function ProfilePage() {
                   Search Other Players
                 </CardTitle>
                 <CardDescription>
-                  Look up any player by their Discord User ID
+                  Look up any player by their Discord username
                 </CardDescription>
               </CardHeader>
               {showSearch && (
                 <CardContent>
                   <div className="flex gap-2">
                     <Input
-                      placeholder="Enter Discord User ID"
-                      value={inputUserId}
-                      onChange={(e) => setInputUserId(e.target.value)}
+                      placeholder="Enter Discord username"
+                      value={inputUsername}
+                      onChange={(e) => setInputUsername(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                     />
                     <Button onClick={handleSearch}>Search</Button>
@@ -198,7 +206,7 @@ export default function ProfilePage() {
                         variant="outline" 
                         onClick={() => {
                           setSearchParams({});
-                          setInputUserId("");
+                          setInputUsername("");
                         }}
                       >
                         Clear
