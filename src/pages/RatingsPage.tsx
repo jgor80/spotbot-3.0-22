@@ -470,23 +470,7 @@ export default function RatingsPage() {
                             onClick={() => handleSort("avg_overall")}
                           >
                             <div className="flex items-center justify-center gap-1">
-                              Overall <SortIcon field="avg_overall" />
-                            </div>
-                          </TableHead>
-                          <TableHead 
-                            className="cursor-pointer hover:bg-muted/50 text-center"
-                            onClick={() => handleSort("avg_technical")}
-                          >
-                            <div className="flex items-center justify-center gap-1">
-                              Tech <SortIcon field="avg_technical" />
-                            </div>
-                          </TableHead>
-                          <TableHead 
-                            className="cursor-pointer hover:bg-muted/50 text-center"
-                            onClick={() => handleSort("avg_game_iq")}
-                          >
-                            <div className="flex items-center justify-center gap-1">
-                              IQ <SortIcon field="avg_game_iq" />
+                              Perf <SortIcon field="avg_overall" />
                             </div>
                           </TableHead>
                           <TableHead 
@@ -571,12 +555,6 @@ export default function RatingsPage() {
                             </TableCell>
                             <TableCell className="text-center">
                               {player.avg_overall != null ? player.avg_overall.toFixed(1) : "-"}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {player.avg_technical != null ? player.avg_technical.toFixed(1) : "-"}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {player.avg_game_iq != null ? player.avg_game_iq.toFixed(1) : "-"}
                             </TableCell>
                             <TableCell className="text-center">
                               {player.avg_communication != null ? player.avg_communication.toFixed(1) : "-"}
