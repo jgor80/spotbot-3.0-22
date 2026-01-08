@@ -758,6 +758,47 @@ Your job: produce a concise, numbers-first match preview that:
 Keep under 3000 characters for Discord. Use markdown code blocks for tables.`;
 
 // =======================
+// POSITION BOARD HELPER
+// =======================
+
+async function buildPosboardEmbed(guildId, voiceChannel) {
+  const members = [...voiceChannel.members.values()].filter(m => !m.user.bot);
+  if (members.length === 0) {
+    return { embed: null, memberCount: 0 };
+  }
+
+  const posMap = {};
+  POSITION_PREF_OPTIONS.forEach(p => posMap[p] = []);
+
+  for (const m of members) {
+    const prefs = await getUserPrefs(guildId, m.id);
+    prefs.forEach((pos, index) => {
+      if (posMap[pos]) {
+        posMap[pos].push({ userId: m.id, rank: index + 1 });
+      }
+    });
+  }
+
+  const fields = POSITION_PREF_OPTIONS.map(pos => {
+    const entries = posMap[pos].sort((a, b) => a.rank - b.rank);
+    const meta = POSITION_META[pos];
+    const value = entries.length === 0
+      ? '*No data*'
+      : entries.map(e => `${RANK_EMOJI[e.rank] || e.rank} <@${e.userId}>`).join('\n');
+    return { name: `${meta?.emoji || ''} ${pos}`, value, inline: true };
+  });
+
+  const embed = new EmbedBuilder()
+    .setTitle('🧩 Position Board – Voice Channel')
+    .setColor(0x5865f2)
+    .setDescription(`Voice: ${voiceChannel} • **${members.length}** player(s)`)
+    .addFields(fields)
+    .setFooter({ text: 'Players without saved preferences not shown. • Click Refresh to update.' });
+
+  return { embed, memberCount: members.length };
+}
+
+// =======================
 // SCOUTING HELPER FUNCTIONS
 // =======================
 
@@ -5151,40 +5192,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.reply({ content: 'You need to be in a voice channel to see position preferences.', flags: 64 });
         }
 
-        const members = [...voiceChannel.members.values()].filter(m => !m.user.bot);
-        if (members.length === 0) {
+        const { embed, memberCount } = await buildPosboardEmbed(guildId, voiceChannel);
+        if (memberCount === 0) {
           return interaction.reply({ content: 'No players in your voice channel.', flags: 64 });
         }
 
-        const posMap = {};
-        POSITION_PREF_OPTIONS.forEach(p => posMap[p] = []);
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`posboard_refresh_${voiceChannel.id}`)
+            .setLabel('Refresh')
+            .setEmoji('🔄')
+            .setStyle(ButtonStyle.Secondary)
+        );
 
-        for (const m of members) {
-          const prefs = await getUserPrefs(guildId, m.id);
-          prefs.forEach((pos, index) => {
-            if (posMap[pos]) {
-              posMap[pos].push({ userId: m.id, rank: index + 1 });
-            }
-          });
-        }
-
-        const fields = POSITION_PREF_OPTIONS.map(pos => {
-          const entries = posMap[pos].sort((a, b) => a.rank - b.rank);
-          const meta = POSITION_META[pos];
-          const value = entries.length === 0
-            ? '*No data*'
-            : entries.map(e => `${RANK_EMOJI[e.rank] || e.rank} <@${e.userId}>`).join('\n');
-          return { name: `${meta?.emoji || ''} ${pos}`, value, inline: true };
-        });
-
-        const embed = new EmbedBuilder()
-          .setTitle('🧩 Position Board – Voice Channel')
-          .setColor(0x5865f2)
-          .setDescription(`Voice: ${voiceChannel} • **${members.length}** player(s)`)
-          .addFields(fields)
-          .setFooter({ text: 'Players without saved preferences not shown.' });
-
-        return interaction.reply({ embeds: [embed] });
+        return interaction.reply({ embeds: [embed], components: [row] });
       }
 
       if (cmd === 'posprefs') {
@@ -7277,6 +7298,39 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (id === 'open_help') {
         return interaction.reply({ embeds: [buildHelpEmbed()], flags: 64 });
+      }
+
+      // =======================
+      // POSITION BOARD REFRESH BUTTON
+      // =======================
+      if (id.startsWith('posboard_refresh_')) {
+        const voiceChannel = interaction.member?.voice?.channel;
+        if (!voiceChannel) {
+          return interaction.reply({ 
+            content: '❌ You need to be in a voice channel to refresh the position board.', 
+            flags: 64 
+          });
+        }
+
+        await interaction.deferUpdate();
+        
+        const { embed, memberCount } = await buildPosboardEmbed(guildId, voiceChannel);
+        if (memberCount === 0) {
+          return interaction.followUp({ 
+            content: 'No players in the voice channel.', 
+            flags: 64 
+          });
+        }
+
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`posboard_refresh_${voiceChannel.id}`)
+            .setLabel('Refresh')
+            .setEmoji('🔄')
+            .setStyle(ButtonStyle.Secondary)
+        );
+
+        return interaction.editReply({ embeds: [embed], components: [row] });
       }
 
       // =======================

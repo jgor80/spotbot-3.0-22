@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { 
   Table, 
   TableBody, 
@@ -13,7 +14,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { 
@@ -29,9 +30,11 @@ import {
   ThumbsDown,
   Minus,
   Sparkles,
-  Zap
+  Zap,
+  RefreshCw
 } from "lucide-react";
 import { RatingBadge } from "@/components/player/RatingBadge";
+import { toast } from "sonner";
 
 interface PlayerRatingSummary {
   discord_user_id: string;
@@ -79,6 +82,20 @@ export default function RatingsPage() {
   const { selectedGuildId } = useGuild();
   const [sortField, setSortField] = useState<keyof PlayerRatingSummary>("overall_rating");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const queryClient = useQueryClient();
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["leaderboard"] }),
+      queryClient.invalidateQueries({ queryKey: ["player-summary-vibe"] }),
+      queryClient.invalidateQueries({ queryKey: ["player-vibe-chemistry-aggregates"] }),
+      queryClient.invalidateQueries({ queryKey: ["profiles-lookup"] }),
+    ]);
+    toast.success("Ratings refreshed");
+    setIsRefreshing(false);
+  };
 
   // Fetch player summary with vibe scores - uses aggregated data only
   const { data: playerSummaryData, isLoading: summaryLoading } = useQuery({
@@ -279,9 +296,20 @@ export default function RatingsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="font-display text-3xl font-bold">Player Ratings</h1>
-          <p className="text-muted-foreground">Player vibe scores and comprehensive stats</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="font-display text-3xl font-bold">Player Ratings</h1>
+            <p className="text-muted-foreground">Player vibe scores and comprehensive stats</p>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleRefresh} 
+            disabled={isLoading || isRefreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
         </div>
 
         <Tabs defaultValue="vibe-ratings" className="space-y-4">
