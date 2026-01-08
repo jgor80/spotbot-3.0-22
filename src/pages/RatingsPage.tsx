@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useGuild } from "@/contexts/GuildContext";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -16,13 +15,9 @@ import {
 } from "@/components/ui/table";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { 
   Star, 
   Users, 
-  TrendingUp, 
-  Trophy,
-  Flame,
   ChevronDown,
   ChevronUp,
   Heart,
@@ -34,44 +29,8 @@ import {
   RefreshCw,
   Clock
 } from "lucide-react";
-import { RatingBadge } from "@/components/player/RatingBadge";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
-
-interface PlayerRatingSummary {
-  discord_user_id: string;
-  discord_username: string | null;
-  ea_username: string | null;
-  overall_rating: number;
-  games_played: number;
-  wins: number;
-  losses: number;
-  draws: number;
-  win_rate: number;
-  goals: number;
-  assists: number;
-  clean_sheets: number | null;
-  man_of_match: number | null;
-  avg_match_rating: number | null;
-  form_rating: number | null;
-  reliability_score: number | null;
-  primary_position: string | null;
-  shots: number | null;
-  tackles: number | null;
-  passes_made: number | null;
-  pass_attempts: number | null;
-  saves: number | null;
-  current_streak: number;
-  longest_win_streak: number;
-  streak_type: string | null;
-  vibe_score: number | null;
-  vibe_games_rated: number | null;
-  vibe_avg_enjoyment: number | null;
-  vibe_avg_energy: number | null;
-  vibe_prefer_count: number | null;
-  vibe_neutral_count: number | null;
-  vibe_avoid_count: number | null;
-}
 
 interface PlayerVibeData {
   discord_user_id: string;
@@ -86,9 +45,11 @@ interface PlayerVibeData {
   avg_energy: number;
 }
 
+type SortField = "ea_username" | "vibe_score" | "total_games_rated" | "avg_enjoyment" | "avg_energy" | "prefer_count" | "neutral_count" | "avoid_count";
+
 export default function RatingsPage() {
   const { selectedGuildId } = useGuild();
-  const [sortField, setSortField] = useState<keyof PlayerRatingSummary>("overall_rating");
+  const [sortField, setSortField] = useState<SortField>("vibe_score");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const queryClient = useQueryClient();
@@ -96,7 +57,6 @@ export default function RatingsPage() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["leaderboard"] }),
       queryClient.invalidateQueries({ queryKey: ["player-summary-vibe"] }),
       queryClient.invalidateQueries({ queryKey: ["player-vibe-chemistry-aggregates"] }),
       queryClient.invalidateQueries({ queryKey: ["profiles-lookup"] }),
@@ -167,59 +127,6 @@ export default function RatingsPage() {
       return data || [];
     },
     enabled: !!selectedGuildId,
-  });
-
-  // Fetch player stats from tracked games (unified with leaderboard)
-  const { data: leaderboardPlayers, isLoading: playersLoading } = useLeaderboard(
-    selectedGuildId,
-    "overall",
-    undefined,
-    200,
-    undefined,
-    undefined,
-    "games"
-  );
-
-  // Build vibeStatsLookup early so we can use it in playerSummaries
-  const vibeStatsLookupEarly = new Map<string, PlayerVibeData>();
-
-  // Map leaderboard players to PlayerRatingSummary format (vibe stats added after vibeRatings calculated)
-  const playerSummariesBase = (leaderboardPlayers || []).map(p => {
-    const vibeData = playerSummaryData?.find(v => v.discord_user_id === p.discord_user_id);
-    return {
-      discord_user_id: p.discord_user_id,
-      discord_username: p.discord_username || null,
-      ea_username: p.ea_username || null,
-      overall_rating: p.overall_rating,
-      games_played: p.games_played,
-      wins: p.wins,
-      losses: p.losses || 0,
-      draws: p.draws || 0,
-      win_rate: p.win_rate,
-      goals: p.goals,
-      assists: p.assists,
-      clean_sheets: p.clean_sheets || null,
-      man_of_match: p.man_of_match || null,
-      avg_match_rating: p.avg_match_rating || null,
-      form_rating: p.form_rating || null,
-      reliability_score: p.reliability_score || null,
-      primary_position: p.primary_position || null,
-      shots: p.shots || null,
-      tackles: p.tackles || null,
-      passes_made: p.passes_made || null,
-      pass_attempts: p.pass_attempts || null,
-      saves: p.saves || null,
-      current_streak: p.current_streak || 0,
-      longest_win_streak: 0,
-      streak_type: p.streak_type || null,
-      vibe_score: vibeData?.vibe_score || null,
-      vibe_games_rated: null as number | null,
-      vibe_avg_enjoyment: null as number | null,
-      vibe_avg_energy: null as number | null,
-      vibe_prefer_count: null as number | null,
-      vibe_neutral_count: null as number | null,
-      vibe_avoid_count: null as number | null,
-    };
   });
 
   // Calculate per-player vibe ratings from aggregated chemistry data
@@ -293,34 +200,28 @@ export default function RatingsPage() {
         avg_enjoyment: data.count > 0 ? data.totalEnjoyment / data.count : 0,
         avg_energy: data.count > 0 ? data.totalEnergy / data.count : 0,
       };
-    }).filter(p => p.total_games_rated > 0).sort((a, b) => (b.vibe_score || 0) - (a.vibe_score || 0));
+    }).filter(p => p.total_games_rated > 0);
   })();
 
-  // Create a lookup map for vibe stats by player ID
-  const vibeStatsLookup = new Map(playerVibeRatings.map(v => [v.discord_user_id, v]));
-
-  // Merge vibe stats into player summaries for sorting
-  const playerSummaries: PlayerRatingSummary[] = playerSummariesBase.map(p => {
-    const vibeStats = vibeStatsLookup.get(p.discord_user_id);
-    return {
-      ...p,
-      vibe_games_rated: vibeStats?.total_games_rated || null,
-      vibe_avg_enjoyment: vibeStats?.avg_enjoyment || null,
-      vibe_avg_energy: vibeStats?.avg_energy || null,
-      vibe_prefer_count: vibeStats?.prefer_count || null,
-      vibe_neutral_count: vibeStats?.neutral_count || null,
-      vibe_avoid_count: vibeStats?.avoid_count || null,
-    };
-  });
-
   // Sort players
-  const sortedPlayers = [...(playerSummaries || [])].sort((a, b) => {
-    const aVal = a[sortField] ?? 0;
-    const bVal = b[sortField] ?? 0;
+  const sortedPlayers = [...playerVibeRatings].sort((a, b) => {
+    let aVal: string | number | null;
+    let bVal: string | number | null;
+    
+    if (sortField === "ea_username") {
+      aVal = a.ea_username || a.discord_username || "";
+      bVal = b.ea_username || b.discord_username || "";
+      return sortDir === "desc" 
+        ? (bVal as string).localeCompare(aVal as string)
+        : (aVal as string).localeCompare(bVal as string);
+    }
+    
+    aVal = a[sortField] ?? 0;
+    bVal = b[sortField] ?? 0;
     return sortDir === "desc" ? (bVal > aVal ? 1 : -1) : (aVal > bVal ? 1 : -1);
   });
 
-  const handleSort = (field: keyof PlayerRatingSummary) => {
+  const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDir(sortDir === "desc" ? "asc" : "desc");
     } else {
@@ -329,7 +230,7 @@ export default function RatingsPage() {
     }
   };
 
-  const SortIcon = ({ field }: { field: keyof PlayerRatingSummary }) => {
+  const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return null;
     return sortDir === "desc" ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />;
   };
@@ -344,7 +245,7 @@ export default function RatingsPage() {
     );
   }
 
-  const isLoading = summaryLoading || vibeLoading || playersLoading;
+  const isLoading = summaryLoading || vibeLoading;
 
   return (
     <DashboardLayout>
@@ -352,7 +253,7 @@ export default function RatingsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="font-display text-3xl font-bold">Player Ratings</h1>
-            <p className="text-muted-foreground">Player vibe scores and comprehensive stats</p>
+            <p className="text-muted-foreground">Player vibe scores from peer feedback</p>
           </div>
           <Button 
             variant="outline" 
@@ -365,27 +266,19 @@ export default function RatingsPage() {
           </Button>
         </div>
 
-        <Tabs defaultValue="vibe-ratings" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="vibe-ratings">Vibe Ratings</TabsTrigger>
-            <TabsTrigger value="all-players">All Players</TabsTrigger>
-          </TabsList>
-
-          {/* Vibe Ratings Summary - Uses aggregated data only */}
-          <TabsContent value="vibe-ratings" className="space-y-4">
-            {isLoading ? (
-              <Skeleton className="h-96" />
+        {isLoading ? (
+          <Skeleton className="h-96" />
+        ) : (
+          <div className="space-y-4">
+            {playerVibeRatings.length === 0 ? (
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  No vibe ratings yet. Ratings appear after players rate each other in Discord.
+                </CardContent>
+              </Card>
             ) : (
-              <div className="space-y-4">
-                {playerVibeRatings.length === 0 ? (
-                  <Card>
-                    <CardContent className="py-8 text-center text-muted-foreground">
-                      No vibe ratings yet. Ratings appear after players rate each other in Discord.
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <>
-                    {/* Summary Stats */}
+              <>
+                {/* Summary Stats */}
                 <div className="grid md:grid-cols-4 gap-4">
                   <Card>
                     <CardContent className="pt-6">
@@ -440,7 +333,7 @@ export default function RatingsPage() {
                         </div>
                         <div>
                           <p className="text-2xl font-bold">
-                            {playerVibeRatings.length > 0 
+                            {playerVibeRatings.filter(p => p.vibe_score).length > 0 
                               ? (playerVibeRatings.filter(p => p.vibe_score).reduce((sum, p) => sum + (p.vibe_score || 0), 0) / playerVibeRatings.filter(p => p.vibe_score).length).toFixed(0)
                               : "-"}
                           </p>
@@ -463,30 +356,74 @@ export default function RatingsPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Player</TableHead>
-                          <TableHead className="text-center">Games</TableHead>
-                          <TableHead className="text-center">Enjoyment</TableHead>
-                          <TableHead className="text-center">Energy</TableHead>
-                          <TableHead className="text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <ThumbsUp className="h-4 w-4 text-success" />
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => handleSort("ea_username")}
+                          >
+                            <div className="flex items-center gap-1">
+                              Player <SortIcon field="ea_username" />
                             </div>
                           </TableHead>
-                          <TableHead className="text-center">
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("total_games_rated")}
+                          >
                             <div className="flex items-center justify-center gap-1">
-                              <Minus className="h-4 w-4 text-muted-foreground" />
+                              Games <SortIcon field="total_games_rated" />
                             </div>
                           </TableHead>
-                          <TableHead className="text-center">
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("avg_enjoyment")}
+                          >
                             <div className="flex items-center justify-center gap-1">
-                              <ThumbsDown className="h-4 w-4 text-destructive" />
+                              Enjoyment <SortIcon field="avg_enjoyment" />
                             </div>
                           </TableHead>
-                          <TableHead className="text-center">Vibe Score</TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("avg_energy")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              Energy <SortIcon field="avg_energy" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("prefer_count")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              <ThumbsUp className="h-4 w-4 text-success" /> <SortIcon field="prefer_count" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("neutral_count")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              <Minus className="h-4 w-4 text-muted-foreground" /> <SortIcon field="neutral_count" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("avoid_count")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              <ThumbsDown className="h-4 w-4 text-destructive" /> <SortIcon field="avoid_count" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("vibe_score")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              Vibe Score <SortIcon field="vibe_score" />
+                            </div>
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {playerVibeRatings.map((player) => (
+                        {sortedPlayers.map((player) => (
                           <TableRow key={player.discord_user_id}>
                             <TableCell>
                               <div>
@@ -542,314 +479,55 @@ export default function RatingsPage() {
                     </Table>
                   </CardContent>
                 </Card>
-                  </>
-                )}
-
-                {/* Recent Peer Vibe Ratings - Anonymous - Always show this card */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Clock className="h-5 w-5" />
-                      Recent Peer Vibe Ratings
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground">Anonymous feedback from recent matches</p>
-                  </CardHeader>
-                  <CardContent>
-                    {recentLoading ? (
-                      <Skeleton className="h-32" />
-                    ) : recentEvaluations && recentEvaluations.length > 0 ? (
-                      <div className="space-y-2">
-                        {recentEvaluations.map((evaluation) => (
-                          <div key={evaluation.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                            <span className="text-sm text-muted-foreground">
-                              {formatDistanceToNow(new Date(evaluation.created_at), { addSuffix: true })}
-                            </span>
-                            <div className="flex items-center gap-4">
-                              <div className="flex items-center gap-1">
-                                <Heart className="h-4 w-4 text-pink-500" />
-                                <span>{evaluation.enjoyment}/5</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Zap className="h-4 w-4 text-yellow-500" />
-                                <span>{evaluation.team_energy}/5</span>
-                              </div>
-                              <Badge variant={
-                                evaluation.play_again === "prefer" ? "default" : 
-                                evaluation.play_again === "avoid" ? "destructive" : "secondary"
-                              }>
-                                {evaluation.play_again === "prefer" ? "👍" : 
-                                 evaluation.play_again === "avoid" ? "👎" : "➖"}
-                              </Badge>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-center text-muted-foreground py-4">No recent ratings yet</p>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+              </>
             )}
-          </TabsContent>
 
-          {/* All Players Comprehensive View */}
-          <TabsContent value="all-players">
-            {playersLoading ? (
-              <Skeleton className="h-96" />
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5" />
-                    All Player Data ({sortedPlayers.length} players)
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => handleSort("ea_username")}
-                        >
+            {/* Recent Peer Vibe Ratings - Anonymous */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Recent Peer Vibe Ratings
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">Anonymous feedback from recent matches</p>
+              </CardHeader>
+              <CardContent>
+                {recentLoading ? (
+                  <Skeleton className="h-32" />
+                ) : recentEvaluations && recentEvaluations.length > 0 ? (
+                  <div className="space-y-2">
+                    {recentEvaluations.map((evaluation) => (
+                      <div key={evaluation.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                        <span className="text-sm text-muted-foreground">
+                          {formatDistanceToNow(new Date(evaluation.created_at), { addSuffix: true })}
+                        </span>
+                        <div className="flex items-center gap-4">
                           <div className="flex items-center gap-1">
-                            Player <SortIcon field="ea_username" />
+                            <Heart className="h-4 w-4 text-pink-500" />
+                            <span>{evaluation.enjoyment}/5</span>
                           </div>
-                        </TableHead>
-                        <TableHead>Pos</TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("overall_rating")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            Rating <SortIcon field="overall_rating" />
+                          <div className="flex items-center gap-1">
+                            <Zap className="h-4 w-4 text-yellow-500" />
+                            <span>{evaluation.team_energy}/5</span>
                           </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("games_played")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            GP <SortIcon field="games_played" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("wins")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            W <SortIcon field="wins" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("win_rate")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            W% <SortIcon field="win_rate" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("goals")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            G <SortIcon field="goals" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("assists")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            A <SortIcon field="assists" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("avg_match_rating")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            AvgR <SortIcon field="avg_match_rating" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("form_rating")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            Form <SortIcon field="form_rating" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("vibe_score")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            Vibe <SortIcon field="vibe_score" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("vibe_games_rated")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            V.Games <SortIcon field="vibe_games_rated" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("vibe_avg_enjoyment")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            Enjoy <SortIcon field="vibe_avg_enjoyment" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("vibe_avg_energy")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            Energy <SortIcon field="vibe_avg_energy" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("vibe_prefer_count")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            <ThumbsUp className="h-3 w-3 text-success" /> <SortIcon field="vibe_prefer_count" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("vibe_neutral_count")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            <Minus className="h-3 w-3 text-muted-foreground" /> <SortIcon field="vibe_neutral_count" />
-                          </div>
-                        </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-muted/50 text-center"
-                          onClick={() => handleSort("vibe_avoid_count")}
-                        >
-                          <div className="flex items-center justify-center gap-1">
-                            <ThumbsDown className="h-3 w-3 text-destructive" /> <SortIcon field="vibe_avoid_count" />
-                          </div>
-                        </TableHead>
-                        <TableHead className="text-center">Streak</TableHead>
-                        <TableHead className="text-center">CS</TableHead>
-                        <TableHead className="text-center">MOTM</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortedPlayers.map((player) => (
-                        <TableRow key={player.discord_user_id}>
-                          <TableCell>
-                            <div>
-                              <span className="font-medium">
-                                {player.ea_username || player.discord_username || "Unknown"}
-                              </span>
-                              {player.ea_username && player.discord_username && (
-                                <span className="text-xs text-muted-foreground block">
-                                  {player.discord_username}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {player.primary_position && (
-                              <Badge variant="outline" className="text-xs">
-                                {player.primary_position}
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            <RatingBadge rating={player.overall_rating} size="sm" />
-                          </TableCell>
-                          <TableCell className="text-center">{player.games_played}</TableCell>
-                          <TableCell className="text-center text-success">{player.wins}</TableCell>
-                          <TableCell className="text-center">
-                            {(player.win_rate * 100).toFixed(0)}%
-                          </TableCell>
-                          <TableCell className="text-center font-medium">{player.goals}</TableCell>
-                          <TableCell className="text-center">{player.assists}</TableCell>
-                          <TableCell className="text-center">
-                            {player.avg_match_rating?.toFixed(1) || "-"}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {player.form_rating ? (
-                              <Badge 
-                                variant={player.form_rating >= 60 ? "default" : "secondary"}
-                                className={player.form_rating >= 70 ? "bg-success" : ""}
-                              >
-                                {player.form_rating.toFixed(0)}
-                              </Badge>
-                            ) : "-"}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {player.vibe_score != null ? (
-                              <Badge 
-                                variant={player.vibe_score >= 70 ? "default" : player.vibe_score >= 40 ? "secondary" : "destructive"}
-                                className={player.vibe_score >= 70 ? "bg-success" : ""}
-                              >
-                                {player.vibe_score.toFixed(0)}
-                              </Badge>
-                            ) : "-"}
-                          </TableCell>
-                          <TableCell className="text-center text-muted-foreground">
-                            {player.vibe_games_rated || "-"}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {player.vibe_avg_enjoyment 
-                              ? player.vibe_avg_enjoyment.toFixed(1)
-                              : "-"}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {player.vibe_avg_energy 
-                              ? player.vibe_avg_energy.toFixed(1)
-                              : "-"}
-                          </TableCell>
-                          <TableCell className="text-center text-success">
-                            {player.vibe_prefer_count || "-"}
-                          </TableCell>
-                          <TableCell className="text-center text-muted-foreground">
-                            {player.vibe_neutral_count || "-"}
-                          </TableCell>
-                          <TableCell className="text-center text-destructive">
-                            {player.vibe_avoid_count || "-"}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {player.current_streak > 0 && (
-                              <div className="flex items-center justify-center gap-1">
-                                {player.streak_type === "win" ? (
-                                  <Flame className="h-4 w-4 text-primary" />
-                                ) : (
-                                  <span className="text-muted-foreground">❄</span>
-                                )}
-                                <span className="font-medium">{player.current_streak}</span>
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">{player.clean_sheets || 0}</TableCell>
-                          <TableCell className="text-center">
-                            {player.man_of_match ? (
-                              <div className="flex items-center justify-center">
-                                <Trophy className="h-4 w-4 text-warning" />
-                                <span className="ml-1">{player.man_of_match}</span>
-                              </div>
-                            ) : 0}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-        </Tabs>
+                          <Badge variant={
+                            evaluation.play_again === "prefer" ? "default" : 
+                            evaluation.play_again === "avoid" ? "destructive" : "secondary"
+                          }>
+                            {evaluation.play_again === "prefer" ? "👍" : 
+                             evaluation.play_again === "avoid" ? "👎" : "➖"}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-center text-muted-foreground py-4">No recent ratings yet</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );
