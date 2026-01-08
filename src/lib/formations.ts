@@ -1,4 +1,4 @@
-import { FormationPosition, FormationType } from "@/types/player";
+import { FormationPosition, FormationType } from "@/types/formations";
 
 export const FORMATIONS: Record<FormationType, FormationPosition[]> = {
   "4-5-1 ATTACK": [
