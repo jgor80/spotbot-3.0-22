@@ -2349,6 +2349,36 @@ export type Database = {
         }
         Relationships: []
       }
+      user_discord_links: {
+        Row: {
+          auth_user_id: string
+          created_at: string
+          discord_user_id: string
+          id: string
+          updated_at: string
+          verification_code: string | null
+          verified: boolean | null
+        }
+        Insert: {
+          auth_user_id: string
+          created_at?: string
+          discord_user_id: string
+          id?: string
+          updated_at?: string
+          verification_code?: string | null
+          verified?: boolean | null
+        }
+        Update: {
+          auth_user_id?: string
+          created_at?: string
+          discord_user_id?: string
+          id?: string
+          updated_at?: string
+          verification_code?: string | null
+          verified?: boolean | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           discord_user_id: string
