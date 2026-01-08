@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { Trophy, Minus, X, Users, Calendar, Target, Star, Goal, HandHelping, Shield, Footprints, ChevronRight, Search, Clock } from "lucide-react";
 import { SessionsList } from "@/components/club/SessionsList";
-import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses } from "@/lib/archetypes";
+import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses, getTacticalRoleBadgeClasses, formatTacticalRole } from "@/lib/archetypes";
 
 interface ClubMatch {
   id: string;
@@ -561,7 +561,7 @@ export default function RecentGamesPage() {
                                 <TableHeader>
                                   <TableRow>
                                     <TableHead className="min-w-[150px]">Player</TableHead>
-                                    <TableHead className="text-center">Pos</TableHead>
+                                    <TableHead className="text-center">Role</TableHead>
                                     <TableHead className="text-center">Archetype</TableHead>
                                     <TableHead className="text-center">
                                       <Star className="h-4 w-4 mx-auto" />
@@ -593,9 +593,15 @@ export default function RecentGamesPage() {
                                         </div>
                                       </TableCell>
                                       <TableCell className="text-center">
-                                        <Badge variant="outline" className="text-xs">
-                                          {player.position_played || player.position || "-"}
-                                        </Badge>
+                                        {(() => {
+                                          const role = player.position_played || player.position;
+                                          if (!role) return <span className="text-muted-foreground">-</span>;
+                                          return (
+                                            <Badge className={cn("text-xs capitalize", getTacticalRoleBadgeClasses(role))}>
+                                              {formatTacticalRole(role)}
+                                            </Badge>
+                                          );
+                                        })()}
                                       </TableCell>
                                       <TableCell className="text-center">
                                         {(() => {

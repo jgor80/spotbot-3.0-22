@@ -100,6 +100,7 @@ function average(num: number, den: number) {
 type MatchPlayerStat = {
   name: string
   position: string | null
+  archetypeid: string | null
   rating: number
   goals: number
   assists: number
@@ -231,6 +232,7 @@ Deno.serve(async (req) => {
         sanitizedPlayers.push({
           name: stat.ea_username || stat.playername || stat.name || 'Unknown Player',
           position: stat.position || stat.pos || stat.favoritePosition || null,
+          archetypeid: stat.archetypeid || stat.archetypeId || null,
           rating: safeNumber(stat.rating),
           goals: safeNumber(stat.goals),
           assists: safeNumber(stat.assists),
