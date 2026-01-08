@@ -135,6 +135,8 @@ export interface LeaderboardPlayer {
     name: string;
     icon: string;
   };
+  most_used_archetype?: string | null;
+  archetype_counts?: Record<string, number>;
 }
 
 export interface LineupSlot {
