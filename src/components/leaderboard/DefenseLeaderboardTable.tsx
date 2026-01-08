@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useMemo } from "react";
-import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses } from "@/lib/archetypes";
+import { getTacticalRoleName, getTacticalRoleInfo, getTacticalRoleBadgeClasses } from "@/lib/tacticalRoles";
 
 interface DefenseLeaderboardTableProps {
   players: LeaderboardPlayer[];
@@ -177,7 +177,7 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
             <TableRow className="bg-muted/50">
               <SortableHeader columnKey="rank" className="w-12 text-center">#</SortableHeader>
               <TableHead>Player</TableHead>
-              <TableHead className="text-center hidden lg:table-cell">Archetype</TableHead>
+              <TableHead className="text-center hidden lg:table-cell">Role</TableHead>
               <SortableHeader columnKey="rating" className="text-center">Rating</SortableHeader>
               <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
               <SortableHeader columnKey="tackles" className="text-center bg-primary/10 text-primary font-semibold">Tackles</SortableHeader>
@@ -247,12 +247,12 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
                   </TableCell>
                   <TableCell className="text-center hidden lg:table-cell">
                     {(() => {
-                      const archetypeId = player.most_used_archetype;
-                      const info = getArchetypeInfo(archetypeId);
-                      const name = getArchetypeName(archetypeId);
+                      const roleId = player.most_used_archetype;
+                      const info = getTacticalRoleInfo(roleId);
+                      const name = getTacticalRoleName(roleId);
                       if (!name) return <span className="text-muted-foreground">-</span>;
                       return (
-                        <Badge className={cn("text-xs", getArchetypeBadgeClasses(info?.category || null))}>
+                        <Badge className={cn("text-xs", getTacticalRoleBadgeClasses(info?.category || null))}>
                           {name}
                         </Badge>
                       );

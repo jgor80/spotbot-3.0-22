@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
 import { Trophy, Minus, X, Users, Calendar, Target, Star, Goal, HandHelping, Shield, Footprints, ChevronRight, Search, Clock } from "lucide-react";
 import { SessionsList } from "@/components/club/SessionsList";
-import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses, getTacticalRoleBadgeClasses, formatTacticalRole } from "@/lib/archetypes";
+import { getTacticalRoleName, getTacticalRoleInfo, getTacticalRoleBadgeClasses, getPositionalCategoryBadgeClasses, formatPositionalCategory } from "@/lib/tacticalRoles";
 
 interface ClubMatch {
   id: string;
@@ -561,8 +561,8 @@ export default function RecentGamesPage() {
                                 <TableHeader>
                                   <TableRow>
                                     <TableHead className="min-w-[150px]">Player</TableHead>
+                                    <TableHead className="text-center">Category</TableHead>
                                     <TableHead className="text-center">Role</TableHead>
-                                    <TableHead className="text-center">Archetype</TableHead>
                                     <TableHead className="text-center">
                                       <Star className="h-4 w-4 mx-auto" />
                                     </TableHead>
@@ -594,22 +594,22 @@ export default function RecentGamesPage() {
                                       </TableCell>
                                       <TableCell className="text-center">
                                         {(() => {
-                                          const role = player.position_played || player.position;
-                                          if (!role) return <span className="text-muted-foreground">-</span>;
+                                          const category = player.position_played || player.position;
+                                          if (!category) return <span className="text-muted-foreground">-</span>;
                                           return (
-                                            <Badge className={cn("text-xs capitalize", getTacticalRoleBadgeClasses(role))}>
-                                              {formatTacticalRole(role)}
+                                            <Badge className={cn("text-xs capitalize", getPositionalCategoryBadgeClasses(category))}>
+                                              {formatPositionalCategory(category)}
                                             </Badge>
                                           );
                                         })()}
                                       </TableCell>
                                       <TableCell className="text-center">
                                         {(() => {
-                                          const info = getArchetypeInfo(player.archetypeid);
-                                          const name = getArchetypeName(player.archetypeid);
+                                          const info = getTacticalRoleInfo(player.archetypeid);
+                                          const name = getTacticalRoleName(player.archetypeid);
                                           if (!name) return <span className="text-muted-foreground">-</span>;
                                           return (
-                                            <Badge className={cn("text-xs", getArchetypeBadgeClasses(info?.category || null))}>
+                                            <Badge className={cn("text-xs", getTacticalRoleBadgeClasses(info?.category || null))}>
                                               {name}
                                             </Badge>
                                           );
