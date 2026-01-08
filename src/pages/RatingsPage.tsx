@@ -31,10 +31,12 @@ import {
   Minus,
   Sparkles,
   Zap,
-  RefreshCw
+  RefreshCw,
+  Clock
 } from "lucide-react";
 import { RatingBadge } from "@/components/player/RatingBadge";
 import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 
 interface PlayerRatingSummary {
   discord_user_id: string;
@@ -92,10 +94,29 @@ export default function RatingsPage() {
       queryClient.invalidateQueries({ queryKey: ["player-summary-vibe"] }),
       queryClient.invalidateQueries({ queryKey: ["player-vibe-chemistry-aggregates"] }),
       queryClient.invalidateQueries({ queryKey: ["profiles-lookup"] }),
+      queryClient.invalidateQueries({ queryKey: ["recent-peer-evaluations"] }),
     ]);
     toast.success("Ratings refreshed");
     setIsRefreshing(false);
   };
+
+  // Fetch recent peer evaluations (anonymous - no user identifiers shown)
+  const { data: recentEvaluations, isLoading: recentLoading } = useQuery({
+    queryKey: ["recent-peer-evaluations", selectedGuildId],
+    queryFn: async () => {
+      if (!selectedGuildId) return [];
+      const { data, error } = await supabase
+        .from("peer_evaluations")
+        .select("id, enjoyment, team_energy, play_again, created_at")
+        .eq("guild_id", selectedGuildId)
+        .not("enjoyment", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(15);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedGuildId,
+  });
 
   // Fetch player summary with vibe scores - uses aggregated data only
   const { data: playerSummaryData, isLoading: summaryLoading } = useQuery({
@@ -485,6 +506,51 @@ export default function RatingsPage() {
                         ))}
                       </TableBody>
                     </Table>
+                  </CardContent>
+                </Card>
+
+                {/* Recent Peer Vibe Ratings - Anonymous */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Clock className="h-5 w-5" />
+                      Recent Peer Vibe Ratings
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">Anonymous feedback from recent matches</p>
+                  </CardHeader>
+                  <CardContent>
+                    {recentLoading ? (
+                      <Skeleton className="h-32" />
+                    ) : recentEvaluations && recentEvaluations.length > 0 ? (
+                      <div className="space-y-2">
+                        {recentEvaluations.map((evaluation) => (
+                          <div key={evaluation.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                            <span className="text-sm text-muted-foreground">
+                              {formatDistanceToNow(new Date(evaluation.created_at), { addSuffix: true })}
+                            </span>
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-1">
+                                <Heart className="h-4 w-4 text-pink-500" />
+                                <span>{evaluation.enjoyment}/5</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Zap className="h-4 w-4 text-yellow-500" />
+                                <span>{evaluation.team_energy}/5</span>
+                              </div>
+                              <Badge variant={
+                                evaluation.play_again === "prefer" ? "default" : 
+                                evaluation.play_again === "avoid" ? "destructive" : "secondary"
+                              }>
+                                {evaluation.play_again === "prefer" ? "👍" : 
+                                 evaluation.play_again === "avoid" ? "👎" : "➖"}
+                              </Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-center text-muted-foreground py-4">No recent ratings yet</p>
+                    )}
                   </CardContent>
                 </Card>
               </div>
