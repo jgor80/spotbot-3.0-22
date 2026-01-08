@@ -95,3 +95,6 @@ verify_jwt = false
 
 [functions.submit-manager-evaluation]
 verify_jwt = false
+
+[functions.create-discord-account]
+verify_jwt = false
