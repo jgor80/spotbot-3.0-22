@@ -45,9 +45,16 @@ interface PlayerVibeData {
   avg_energy: number;
   win_rate: number | null;
   games_played: number | null;
+  // Performance stats from peer evaluations
+  avg_overall: number | null;
+  avg_technical: number | null;
+  avg_game_iq: number | null;
+  avg_communication: number | null;
+  avg_work_ethic: number | null;
+  avg_clutch: number | null;
 }
 
-type SortField = "ea_username" | "vibe_score" | "total_games_rated" | "avg_enjoyment" | "avg_energy" | "prefer_count" | "neutral_count" | "avoid_count" | "win_rate";
+type SortField = "ea_username" | "vibe_score" | "total_games_rated" | "avg_enjoyment" | "avg_energy" | "prefer_count" | "neutral_count" | "avoid_count" | "win_rate" | "avg_overall" | "avg_technical" | "avg_game_iq" | "avg_communication" | "avg_work_ethic" | "avg_clutch";
 
 export default function RatingsPage() {
   const { selectedGuildId } = useGuild();
@@ -108,9 +115,8 @@ export default function RatingsPage() {
       if (!selectedGuildId) return [];
       const { data, error } = await supabase
         .from("peer_evaluations")
-        .select("evaluated_discord_id, enjoyment, team_energy, play_again")
-        .eq("guild_id", selectedGuildId)
-        .not("enjoyment", "is", null);
+        .select("evaluated_discord_id, enjoyment, team_energy, play_again, overall_score, technical_skill, game_iq, communication, work_ethic, clutch_factor")
+        .eq("guild_id", selectedGuildId);
       if (error) throw error;
       return data || [];
     },
@@ -137,26 +143,52 @@ export default function RatingsPage() {
     
     // Aggregate feedback per evaluated player
     const playerMap = new Map<string, {
-      ratings: number;
+      vibeRatings: number;
+      perfRatings: number;
       prefer: number;
       neutral: number;
       avoid: number;
       totalEnjoyment: number;
       totalEnergy: number;
+      totalOverall: number;
+      totalTechnical: number;
+      totalGameIq: number;
+      totalCommunication: number;
+      totalWorkEthic: number;
+      totalClutch: number;
     }>();
     
     playerFeedbackData.forEach(record => {
       const playerId = record.evaluated_discord_id;
       if (!playerMap.has(playerId)) {
-        playerMap.set(playerId, { ratings: 0, prefer: 0, neutral: 0, avoid: 0, totalEnjoyment: 0, totalEnergy: 0 });
+        playerMap.set(playerId, { 
+          vibeRatings: 0, perfRatings: 0, prefer: 0, neutral: 0, avoid: 0, 
+          totalEnjoyment: 0, totalEnergy: 0, totalOverall: 0, totalTechnical: 0, 
+          totalGameIq: 0, totalCommunication: 0, totalWorkEthic: 0, totalClutch: 0 
+        });
       }
       const player = playerMap.get(playerId)!;
-      player.ratings++;
-      player.totalEnjoyment += record.enjoyment || 0;
-      player.totalEnergy += record.team_energy || 0;
-      if (record.play_again === "prefer") player.prefer++;
-      else if (record.play_again === "avoid") player.avoid++;
-      else player.neutral++;
+      
+      // Vibe stats
+      if (record.enjoyment != null) {
+        player.vibeRatings++;
+        player.totalEnjoyment += record.enjoyment;
+        player.totalEnergy += record.team_energy || 0;
+        if (record.play_again === "prefer") player.prefer++;
+        else if (record.play_again === "avoid") player.avoid++;
+        else player.neutral++;
+      }
+      
+      // Performance stats
+      if (record.overall_score != null) {
+        player.perfRatings++;
+        player.totalOverall += record.overall_score;
+        player.totalTechnical += record.technical_skill || 0;
+        player.totalGameIq += record.game_iq || 0;
+        player.totalCommunication += record.communication || 0;
+        player.totalWorkEthic += record.work_ethic || 0;
+        player.totalClutch += record.clutch_factor || 0;
+      }
     });
 
     const profilesLookup = new Map((profiles || []).map(p => [p.discord_user_id, p]));
@@ -166,8 +198,8 @@ export default function RatingsPage() {
       const profile = profilesLookup.get(discord_user_id);
       const summary = summaryLookup.get(discord_user_id);
       
-      const avgEnjoyment = data.ratings > 0 ? data.totalEnjoyment / data.ratings : 0;
-      const avgEnergy = data.ratings > 0 ? data.totalEnergy / data.ratings : 0;
+      const avgEnjoyment = data.vibeRatings > 0 ? data.totalEnjoyment / data.vibeRatings : 0;
+      const avgEnergy = data.vibeRatings > 0 ? data.totalEnergy / data.vibeRatings : 0;
       const winRate = summary?.win_rate || null;
       
       // Calculate vibe score (0-100):
@@ -179,9 +211,9 @@ export default function RatingsPage() {
       const energyScore = (avgEnergy / 5) * 25;
       const totalVotes = data.prefer + data.neutral + data.avoid;
       const preferenceScore = totalVotes > 0 
-        ? ((data.prefer - data.avoid) / totalVotes + 1) / 2 * 25 // Normalize -1 to 1 → 0 to 25
-        : 12.5; // Neutral default
-      const winRateScore = winRate != null ? (winRate / 100) * 15 : 7.5; // Default to 50% if no data
+        ? ((data.prefer - data.avoid) / totalVotes + 1) / 2 * 25
+        : 12.5;
+      const winRateScore = winRate != null ? (winRate / 100) * 15 : 7.5;
       
       const vibeScore = Math.round(enjoymentScore + energyScore + preferenceScore + winRateScore);
       
@@ -190,7 +222,7 @@ export default function RatingsPage() {
         discord_username: profile?.discord_username || summary?.discord_username || null,
         ea_username: profile?.ea_username || null,
         vibe_score: vibeScore,
-        total_games_rated: data.ratings,
+        total_games_rated: data.vibeRatings + data.perfRatings,
         prefer_count: data.prefer,
         neutral_count: data.neutral,
         avoid_count: data.avoid,
@@ -198,6 +230,12 @@ export default function RatingsPage() {
         avg_energy: avgEnergy,
         win_rate: winRate,
         games_played: summary?.games_played || null,
+        avg_overall: data.perfRatings > 0 ? data.totalOverall / data.perfRatings : null,
+        avg_technical: data.perfRatings > 0 ? data.totalTechnical / data.perfRatings : null,
+        avg_game_iq: data.perfRatings > 0 ? data.totalGameIq / data.perfRatings : null,
+        avg_communication: data.perfRatings > 0 ? data.totalCommunication / data.perfRatings : null,
+        avg_work_ethic: data.perfRatings > 0 ? data.totalWorkEthic / data.perfRatings : null,
+        avg_clutch: data.perfRatings > 0 ? data.totalClutch / data.perfRatings : null,
       };
     }).filter(p => p.total_games_rated > 0);
   })();
@@ -424,7 +462,55 @@ export default function RatingsPage() {
                             onClick={() => handleSort("vibe_score")}
                           >
                             <div className="flex items-center justify-center gap-1">
-                              Vibe Score <SortIcon field="vibe_score" />
+                              Vibe <SortIcon field="vibe_score" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("avg_overall")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              Overall <SortIcon field="avg_overall" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("avg_technical")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              Tech <SortIcon field="avg_technical" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("avg_game_iq")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              IQ <SortIcon field="avg_game_iq" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("avg_communication")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              Comms <SortIcon field="avg_communication" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("avg_work_ethic")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              Work <SortIcon field="avg_work_ethic" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("avg_clutch")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              Clutch <SortIcon field="avg_clutch" />
                             </div>
                           </TableHead>
                         </TableRow>
@@ -482,6 +568,24 @@ export default function RatingsPage() {
                               >
                                 {player.vibe_score}
                               </Badge>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {player.avg_overall != null ? player.avg_overall.toFixed(1) : "-"}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {player.avg_technical != null ? player.avg_technical.toFixed(1) : "-"}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {player.avg_game_iq != null ? player.avg_game_iq.toFixed(1) : "-"}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {player.avg_communication != null ? player.avg_communication.toFixed(1) : "-"}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {player.avg_work_ethic != null ? player.avg_work_ethic.toFixed(1) : "-"}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {player.avg_clutch != null ? player.avg_clutch.toFixed(1) : "-"}
                             </TableCell>
                           </TableRow>
                         ))}
