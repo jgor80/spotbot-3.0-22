@@ -8,7 +8,7 @@ const corsHeaders = {
 
 interface UpdateGuildSettingsRequest {
   guild_id: string;
-  discord_user_id: string;
+  discord_user_id?: string;
   clubs?: Array<{
     key: string;
     name: string;
@@ -35,39 +35,41 @@ serve(async (req) => {
     const { guild_id, discord_user_id, clubs, feedback_enabled } = body;
 
     // Validate required fields
-    if (!guild_id || !discord_user_id) {
+    if (!guild_id) {
       return new Response(
         JSON.stringify({ success: false, error: "Missing required fields" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Check if user has admin/moderator role
-    // First, check if ANY roles exist for this guild - if not, allow operation (initial setup)
-    const { data: anyRoles, error: rolesError } = await supabase
-      .from("user_roles")
-      .select("id")
-      .eq("guild_id", guild_id)
-      .limit(1);
+    // Check if user has admin/moderator role (only if discord_user_id provided)
+    if (discord_user_id) {
+      // First, check if ANY roles exist for this guild - if not, allow operation (initial setup)
+      const { data: anyRoles, error: rolesError } = await supabase
+        .from("user_roles")
+        .select("id")
+        .eq("guild_id", guild_id)
+        .limit(1);
 
-    const hasNoRolesConfigured = !anyRoles || anyRoles.length === 0;
+      const hasNoRolesConfigured = !anyRoles || anyRoles.length === 0;
 
-    if (!hasNoRolesConfigured) {
-      // Roles exist, check if user has permission
-      const { data: hasRole } = await supabase.rpc("has_any_role", {
-        _guild_id: guild_id,
-        _discord_user_id: discord_user_id,
-        _roles: ["admin", "moderator"],
-      });
+      if (!hasNoRolesConfigured) {
+        // Roles exist, check if user has permission
+        const { data: hasRole } = await supabase.rpc("has_any_role", {
+          _guild_id: guild_id,
+          _discord_user_id: discord_user_id,
+          _roles: ["admin", "moderator"],
+        });
 
-      if (!hasRole) {
-        return new Response(
-          JSON.stringify({ success: false, error: "Insufficient permissions" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        if (!hasRole) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Insufficient permissions" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        console.log(`No roles configured for guild ${guild_id}, allowing operation`);
       }
-    } else {
-      console.log(`No roles configured for guild ${guild_id}, allowing operation`);
     }
 
     // Build update object
@@ -99,7 +101,7 @@ serve(async (req) => {
 
     if (error) throw error;
 
-    console.log(`Guild settings updated for ${guild_id} by ${discord_user_id}`);
+    console.log(`Guild settings updated for ${guild_id}${discord_user_id ? ` by ${discord_user_id}` : ''}`);
 
     return new Response(
       JSON.stringify({ success: true }),
