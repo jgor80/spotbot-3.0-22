@@ -25,7 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { getTacticalRoleName, getTacticalRoleInfo, getTacticalRoleBadgeClasses, getPositionalCategoryBadgeClasses, formatPositionalCategory } from "@/lib/tacticalRoles";
+import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses, getPositionalCategoryBadgeClasses, formatPositionalCategory } from "@/lib/archetypes";
 
 interface MatchPlayerStat {
   name: string;
@@ -277,11 +277,11 @@ export function MatchDetailView({ match }: MatchDetailViewProps) {
                       </TableCell>
                       <TableCell className="text-center">
                         {(() => {
-                          const info = getTacticalRoleInfo(player.archetypeid);
-                          const name = getTacticalRoleName(player.archetypeid);
+                          const info = getArchetypeInfo(player.archetypeid);
+                          const name = getArchetypeName(player.archetypeid);
                           if (!name) return <span className="text-muted-foreground">-</span>;
                           return (
-                            <Badge className={cn("text-xs", getTacticalRoleBadgeClasses(info?.category || null))}>
+                            <Badge className={cn("text-xs", getArchetypeBadgeClasses(info?.category || null))}>
                               {name}
                             </Badge>
                           );
