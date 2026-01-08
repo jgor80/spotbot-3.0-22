@@ -194,6 +194,7 @@ serve(async (req) => {
           ...p,
           overall_rating: p.avg_match_rating ? Math.min(100, p.avg_match_rating * 10) : 50,
           tracked_games: trackedCounts.get(p.discord_user_id) || 0,
+          most_used_archetype: p.archetypeid || null,
           form_rating: null,
           reliability_score: 100,
           top_achievements: [],
@@ -410,6 +411,7 @@ serve(async (req) => {
           ...p,
           overall_rating: p.avg_match_rating ? Math.min(100, p.avg_match_rating * 10) : 50,
           tracked_games: trackedCounts.get(p.discord_user_id) || 0,
+          most_used_archetype: p.archetypeid || null,
           form_rating: null,
           reliability_score: 100,
           top_achievements: [],
@@ -719,32 +721,42 @@ serve(async (req) => {
       const playerIds = (data || []).map(p => p.discord_user_id);
       const trackedCounts = await getTrackedGamesCounts(playerIds);
       
-      // Fetch position_played data from player_stats to derive primary_position
+      // Fetch position_played and archetypeid data from player_stats
       const { data: positionStats } = await supabase
         .from("player_stats")
-        .select("discord_user_id, position_played")
+        .select("discord_user_id, position_played, archetypeid")
         .eq("guild_id", guild_id)
         .eq("match_type", "club")
-        .in("discord_user_id", playerIds)
-        .not("position_played", "is", null);
+        .in("discord_user_id", playerIds);
       
-      // Count positions per player
+      // Count positions and archetypes per player
       const playerPositionCounts = new Map<string, Record<string, number>>();
+      const playerArchetypeCounts = new Map<string, Record<string, number>>();
       for (const stat of positionStats || []) {
-        if (!stat.position_played) continue;
-        const counts = playerPositionCounts.get(stat.discord_user_id) || {};
-        counts[stat.position_played] = (counts[stat.position_played] || 0) + 1;
-        playerPositionCounts.set(stat.discord_user_id, counts);
+        if (stat.position_played) {
+          const counts = playerPositionCounts.get(stat.discord_user_id) || {};
+          counts[stat.position_played] = (counts[stat.position_played] || 0) + 1;
+          playerPositionCounts.set(stat.discord_user_id, counts);
+        }
+        if (stat.archetypeid) {
+          const counts = playerArchetypeCounts.get(stat.discord_user_id) || {};
+          counts[stat.archetypeid] = (counts[stat.archetypeid] || 0) + 1;
+          playerArchetypeCounts.set(stat.discord_user_id, counts);
+        }
       }
       
       players = (data || []).map(p => {
         const positionCounts = playerPositionCounts.get(p.discord_user_id) || {};
+        const archetypeCounts = playerArchetypeCounts.get(p.discord_user_id) || {};
         const derivedPosition = getPrimaryPositionFromCounts(positionCounts) || p.primary_position;
+        const mostUsedArchetype = getMostUsedArchetype(archetypeCounts);
         return {
           ...p,
           tracked_games: trackedCounts.get(p.discord_user_id) || 0,
           primary_position: derivedPosition,
           position_counts: positionCounts,
+          archetype_counts: archetypeCounts,
+          most_used_archetype: mostUsedArchetype,
         };
       });
       
@@ -1056,6 +1068,16 @@ function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
       aggregate.form_weight += player.games_played || 1;
     }
 
+    // Merge archetype counts
+    if (player.archetype_counts) {
+      for (const [archId, count] of Object.entries(player.archetype_counts)) {
+        aggregate.archetype_counts[archId] = (aggregate.archetype_counts[archId] || 0) + (count as number);
+      }
+    } else if (player.archetypeid) {
+      // Fallback: count the single archetypeid from EA member board as if used for all games
+      aggregate.archetype_counts[player.archetypeid] = (aggregate.archetype_counts[player.archetypeid] || 0) + (player.games_played || 1);
+    }
+
     aggregate.position_counts = positionCounts;
     aggregate.club_keys = Array.from(clubKeys);
 
@@ -1070,6 +1092,7 @@ function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
     const overallRating = games > 0 ? agg.overall_sum / games : agg.overall_rating;
     const formRating = agg.form_weight > 0 ? agg.form_sum / agg.form_weight : agg.form_rating;
     const primaryPosition = getPrimaryPositionFromCounts(agg.position_counts) || agg.primary_position || null;
+    const mostUsedArchetype = getMostUsedArchetype(agg.archetype_counts) || agg.most_used_archetype || agg.archetypeid || null;
 
     return {
       ...agg,
@@ -1079,6 +1102,7 @@ function aggregatePlayers(players: any[], eaToDiscordMap: Map<string, string>) {
       overall_rating: overallRating,
       form_rating: formRating,
       primary_position: primaryPosition,
+      most_used_archetype: mostUsedArchetype,
       club_keys: agg.club_keys || [],
     };
   });
