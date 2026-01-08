@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,13 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useGuild } from "@/contexts/GuildContext";
+import { useAvailablePlayers } from "@/hooks/useAvailablePlayers";
+import { FormationType, LineupSlot, LeaderboardPlayer } from "@/types/player";
+import { FORMATION_OPTIONS, FORMATIONS } from "@/lib/formations";
+import { FormationPitch } from "@/components/lineup/FormationPitch";
+import { PlayerCard } from "@/components/player/PlayerCard";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -35,15 +42,19 @@ import {
   Plus,
   Shield,
   UserPlus,
-  Settings,
   Trash2,
   Crown,
   User,
   ChevronRight,
-  Edit,
-  X
+  X,
+  ClipboardList,
+  Wand2,
+  Save,
+  RotateCcw,
+  Search
 } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
 
 interface Team {
   id: string;
@@ -75,10 +86,11 @@ interface PlayerSummary {
 }
 
 export default function TeamsPage() {
-  const { selectedGuildId } = useGuild();
-  const { toast } = useToast();
+  const { selectedGuildId, isLoading: guildLoading } = useGuild();
+  const { toast: toastHook } = useToast();
   const queryClient = useQueryClient();
   
+  // Teams state
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isAddPlayerOpen, setIsAddPlayerOpen] = useState(false);
@@ -87,7 +99,18 @@ export default function TeamsPage() {
   const [newTeamType, setNewTeamType] = useState("comp");
   const [selectedPlayerId, setSelectedPlayerId] = useState("");
   const [selectedPlayerRole, setSelectedPlayerRole] = useState("player");
-  const [adminDiscordId, setAdminDiscordId] = useState("");
+
+  // Lineup state
+  const [formation, setFormation] = useState<FormationType>("4-3-3 FLAT");
+  const [slots, setSlots] = useState<LineupSlot[]>([]);
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const [lineupName, setLineupName] = useState("");
+  const [lineupSearchQuery, setLineupSearchQuery] = useState("");
+  const [isLineupLoading, setIsLineupLoading] = useState(false);
+
+  // Available players for lineup
+  const { data: availablePlayers, isLoading: playersLoading } = useAvailablePlayers(selectedGuildId);
+  const positions = FORMATIONS[formation];
 
   // Fetch teams
   const { data: teams, isLoading: teamsLoading } = useQuery({
@@ -125,7 +148,7 @@ export default function TeamsPage() {
     enabled: !!selectedTeam,
   });
 
-  // Fetch players for adding to team
+  // Fetch players for team management
   const { data: players } = useQuery({
     queryKey: ["players", selectedGuildId],
     queryFn: async (): Promise<PlayerSummary[]> => {
@@ -143,10 +166,10 @@ export default function TeamsPage() {
     enabled: !!selectedGuildId,
   });
 
-  // Create team mutation - using edge function
+  // Create team mutation
   const createTeamMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedGuildId || !newTeamName.trim() || !adminDiscordId.trim()) {
+      if (!selectedGuildId || !newTeamName.trim()) {
         throw new Error("Missing required fields");
       }
       
@@ -154,7 +177,6 @@ export default function TeamsPage() {
         body: {
           action: "create",
           guild_id: selectedGuildId,
-          discord_user_id: adminDiscordId.trim(),
           team_name: newTeamName.trim(),
           team_tag: newTeamTag.trim() || null,
           team_type: newTeamType,
@@ -171,25 +193,24 @@ export default function TeamsPage() {
       setIsCreateOpen(false);
       setNewTeamName("");
       setNewTeamTag("");
-      toast({ title: "Team Created", description: "Your team has been created successfully" });
+      toastHook({ title: "Team Created", description: "Your team has been created successfully" });
     },
     onError: (error) => {
-      toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+      toastHook({ title: "Error", description: (error as Error).message, variant: "destructive" });
     }
   });
 
-  // Delete team mutation - using edge function
+  // Delete team mutation
   const deleteTeamMutation = useMutation({
     mutationFn: async (teamId: string) => {
-      if (!selectedGuildId || !adminDiscordId.trim()) {
-        throw new Error("Missing admin Discord ID");
+      if (!selectedGuildId) {
+        throw new Error("Missing guild");
       }
       
       const { data, error } = await supabase.functions.invoke("manage-teams", {
         body: {
           action: "delete",
           guild_id: selectedGuildId,
-          discord_user_id: adminDiscordId.trim(),
           team_id: teamId,
         },
       });
@@ -202,17 +223,17 @@ export default function TeamsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["teams"] });
       setSelectedTeam(null);
-      toast({ title: "Team Deleted" });
+      toastHook({ title: "Team Deleted" });
     },
     onError: (error) => {
-      toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+      toastHook({ title: "Error", description: (error as Error).message, variant: "destructive" });
     }
   });
 
-  // Add player to team - using edge function
+  // Add player to team
   const addPlayerMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedTeam || !selectedPlayerId || !adminDiscordId.trim() || !selectedGuildId) {
+      if (!selectedTeam || !selectedPlayerId || !selectedGuildId) {
         throw new Error("Missing data");
       }
       
@@ -222,7 +243,6 @@ export default function TeamsPage() {
         body: {
           action: "add",
           guild_id: selectedGuildId,
-          discord_user_id: adminDiscordId.trim(),
           team_id: selectedTeam.id,
           player_discord_id: selectedPlayerId,
           role: selectedPlayerRole,
@@ -239,17 +259,17 @@ export default function TeamsPage() {
       queryClient.invalidateQueries({ queryKey: ["teamRoster"] });
       setIsAddPlayerOpen(false);
       setSelectedPlayerId("");
-      toast({ title: "Player Added" });
+      toastHook({ title: "Player Added" });
     },
     onError: (error) => {
-      toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+      toastHook({ title: "Error", description: (error as Error).message, variant: "destructive" });
     }
   });
 
-  // Remove player from team - using edge function
+  // Remove player from team
   const removePlayerMutation = useMutation({
     mutationFn: async (rosterId: string) => {
-      if (!selectedTeam || !adminDiscordId.trim() || !selectedGuildId) {
+      if (!selectedTeam || !selectedGuildId) {
         throw new Error("Missing data");
       }
       
@@ -257,7 +277,6 @@ export default function TeamsPage() {
         body: {
           action: "remove",
           guild_id: selectedGuildId,
-          discord_user_id: adminDiscordId.trim(),
           team_id: selectedTeam.id,
           roster_id: rosterId,
         },
@@ -270,15 +289,21 @@ export default function TeamsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["teamRoster"] });
-      toast({ title: "Player Removed" });
+      toastHook({ title: "Player Removed" });
     },
     onError: (error) => {
-      toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+      toastHook({ title: "Error", description: (error as Error).message, variant: "destructive" });
     }
   });
 
+  // Helper functions
   const getPlayerInfo = (discordUserId: string) => {
     return players?.find(p => p.discord_user_id === discordUserId);
+  };
+
+  const getPlayerDisplayName = (discordUserId: string) => {
+    const player = getPlayerInfo(discordUserId);
+    return player?.discord_username || "Unknown Player";
   };
 
   const getRoleIcon = (role: string) => {
@@ -309,339 +334,593 @@ export default function TeamsPage() {
     p => !roster?.some(r => r.discord_user_id === p.discord_user_id)
   ) || [];
 
+  // Lineup functions
+  const filteredLineupPlayers = useMemo(() => {
+    if (!availablePlayers) return [];
+    const assignedIds = new Set(slots.map(s => s.discord_user_id));
+    return availablePlayers.filter(p => {
+      if (assignedIds.has(p.discord_user_id)) return false;
+      if (!lineupSearchQuery) return true;
+      const query = lineupSearchQuery.toLowerCase();
+      return p.ea_username?.toLowerCase().includes(query) ||
+             p.discord_username?.toLowerCase().includes(query) ||
+             p.primary_position?.toLowerCase().includes(query);
+    });
+  }, [availablePlayers, slots, lineupSearchQuery]);
+
+  const handleSlotClick = (slotIndex: number) => {
+    if (selectedSlot === slotIndex) {
+      setSelectedSlot(null);
+    } else {
+      setSelectedSlot(slotIndex);
+    }
+  };
+
+  const handlePlayerSelect = (player: LeaderboardPlayer) => {
+    if (selectedSlot === null) {
+      toast.error("Please select a position first");
+      return;
+    }
+
+    const position = positions[selectedSlot].position;
+    const newSlot: LineupSlot = {
+      slot_index: selectedSlot,
+      position,
+      discord_user_id: player.discord_user_id,
+      discord_username: player.discord_username || undefined,
+      ea_username: player.ea_username || undefined,
+      rating: player.overall_rating,
+      is_substitute: false,
+    };
+
+    setSlots(prev => {
+      const filtered = prev.filter(s => s.slot_index !== selectedSlot);
+      return [...filtered, newSlot];
+    });
+    setSelectedSlot(null);
+  };
+
+  const handleRemoveLineupPlayer = (slotIndex: number) => {
+    setSlots(prev => prev.filter(s => s.slot_index !== slotIndex));
+  };
+
+  const handleReset = () => {
+    setSlots([]);
+    setSelectedSlot(null);
+    setLineupName("");
+  };
+
+  const handleSaveLineup = async () => {
+    if (slots.length < 11) {
+      toast.error("Please fill all 11 positions");
+      return;
+    }
+
+    if (!selectedGuildId) {
+      toast.error("No guild selected");
+      return;
+    }
+
+    setIsLineupLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-lineup", {
+        body: {
+          guild_id: selectedGuildId,
+          created_by_discord_id: "web-user",
+          formation,
+          name: lineupName || "Untitled Lineup",
+          slots: slots.map(s => ({
+            slot_index: s.slot_index,
+            position: s.position,
+            discord_user_id: s.discord_user_id,
+            is_substitute: s.is_substitute,
+          })),
+        },
+      });
+
+      if (error) throw error;
+      if (!data.success) throw new Error(data.error || "Failed to save lineup");
+
+      toast.success("Lineup saved!");
+      handleReset();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setIsLineupLoading(false);
+    }
+  };
+
+  const avgRating = slots.length > 0
+    ? slots.reduce((sum, s) => sum + (s.rating || 0), 0) / slots.length
+    : 0;
+
+  if (!selectedGuildId && !guildLoading) {
+    return (
+      <DashboardLayout>
+        <Card>
+          <CardHeader>
+            <CardTitle>No Server Selected</CardTitle>
+          </CardHeader>
+          <CardContent className="text-muted-foreground">
+            <p>Select a Discord server from the dropdown above to manage teams and lineups.</p>
+          </CardContent>
+        </Card>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="font-display text-3xl font-bold">Teams</h1>
-            <p className="text-muted-foreground">Manage teams and rosters for this server</p>
-          </div>
-          
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Team
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Team</DialogTitle>
-                <DialogDescription>
-                  Add a new team to this Discord server
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Your Discord ID *</label>
-                  <Input
-                    placeholder="123456789012345678"
-                    value={adminDiscordId}
-                    onChange={(e) => setAdminDiscordId(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">Required for authorization</p>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Team Name *</label>
-                  <Input
-                    placeholder="e.g., Rush Superstars"
-                    value={newTeamName}
-                    onChange={(e) => setNewTeamName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Team Tag</label>
-                  <Input
-                    placeholder="e.g., RS"
-                    value={newTeamTag}
-                    onChange={(e) => setNewTeamTag(e.target.value)}
-                    maxLength={5}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Team Type</label>
-                  <div className="flex gap-2">
-                    {["comp", "casual", "academy"].map((type) => (
-                      <Button
-                        key={type}
-                        type="button"
-                        variant={newTeamType === type ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setNewTeamType(type)}
-                        className="capitalize"
-                      >
-                        {type === "comp" ? "Competitive" : type}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={() => createTeamMutation.mutate()}
-                  disabled={!newTeamName.trim() || !adminDiscordId.trim() || createTeamMutation.isPending}
-                >
-                  {createTeamMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  Create Team
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+        <div>
+          <h1 className="font-display text-3xl font-bold">Teams & Lineups</h1>
+          <p className="text-muted-foreground">Manage teams, rosters, and build lineups</p>
         </div>
 
-        {/* Admin Discord ID input for operations */}
-        <Card className="p-4">
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
-              <label className="text-sm font-medium">Your Discord ID (for authorization)</label>
-              <Input
-                placeholder="123456789012345678"
-                value={adminDiscordId}
-                onChange={(e) => setAdminDiscordId(e.target.value)}
-                className="mt-1"
-              />
-            </div>
-            <p className="text-xs text-muted-foreground max-w-xs">
-              Enter your Discord ID to authorize team management operations
-            </p>
-          </div>
-        </Card>
+        <Tabs defaultValue="teams" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="teams" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Teams
+            </TabsTrigger>
+            <TabsTrigger value="lineup" className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4" />
+              Lineup Builder
+            </TabsTrigger>
+          </TabsList>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Teams List */}
-          <Card className="lg:col-span-1">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Teams
-              </CardTitle>
-              <CardDescription>
-                {teams?.length || 0} teams in this server
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {teamsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : teams && teams.length > 0 ? (
-                <div className="space-y-2">
-                  {teams.map((team) => (
-                    <button
-                      key={team.id}
-                      onClick={() => setSelectedTeam(team)}
-                      className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors text-left ${
-                        selectedTeam?.id === team.id
-                          ? "bg-primary/10 border border-primary/20"
-                          : "bg-muted/30 hover:bg-muted/50 border border-transparent"
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-                          <Users className="h-5 w-5 text-primary" />
-                        </div>
-                        <div>
-                          <p className="font-medium">{team.name}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            {team.tag && (
-                              <span className="text-xs text-muted-foreground">[{team.tag}]</span>
-                            )}
-                            {getTypeBadge(team.team_type)}
-                          </div>
-                        </div>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-8 text-center text-muted-foreground">
-                  <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
-                  <p>No teams yet</p>
-                  <p className="text-sm">Create your first team above</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Team Details & Roster */}
-          <Card className="lg:col-span-2">
-            {selectedTeam ? (
-              <>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="flex items-center gap-2">
-                        {selectedTeam.name}
-                        {selectedTeam.tag && (
-                          <span className="text-muted-foreground font-normal">[{selectedTeam.tag}]</span>
-                        )}
-                      </CardTitle>
-                      <CardDescription className="flex items-center gap-2 mt-1">
-                        {getTypeBadge(selectedTeam.team_type)}
-                        <span>•</span>
-                        <span>{roster?.length || 0} players</span>
-                        <span>•</span>
-                        <span>Created {format(new Date(selectedTeam.created_at), "MMM d, yyyy")}</span>
-                      </CardDescription>
+          {/* Teams Tab */}
+          <TabsContent value="teams" className="space-y-6">
+            <div className="flex items-center justify-end">
+              <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Team
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Create New Team</DialogTitle>
+                    <DialogDescription>
+                      Add a new team to this Discord server
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Team Name *</label>
+                      <Input
+                        placeholder="e.g., Rush Superstars"
+                        value={newTeamName}
+                        onChange={(e) => setNewTeamName(e.target.value)}
+                      />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Dialog open={isAddPlayerOpen} onOpenChange={setIsAddPlayerOpen}>
-                        <DialogTrigger asChild>
-                          <Button size="sm" disabled={!adminDiscordId.trim()}>
-                            <UserPlus className="h-4 w-4 mr-2" />
-                            Add Player
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Team Tag</label>
+                      <Input
+                        placeholder="e.g., RS"
+                        value={newTeamTag}
+                        onChange={(e) => setNewTeamTag(e.target.value)}
+                        maxLength={5}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Team Type</label>
+                      <div className="flex gap-2">
+                        {["comp", "casual", "academy"].map((type) => (
+                          <Button
+                            key={type}
+                            type="button"
+                            variant={newTeamType === type ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setNewTeamType(type)}
+                            className="capitalize"
+                          >
+                            {type === "comp" ? "Competitive" : type}
                           </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Add Player to {selectedTeam.name}</DialogTitle>
-                            <DialogDescription>
-                              Select a player to add to the team roster
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="space-y-4 py-4">
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium">Player</label>
-                              <select
-                                className="w-full p-2 rounded-md border bg-background"
-                                value={selectedPlayerId}
-                                onChange={(e) => setSelectedPlayerId(e.target.value)}
-                              >
-                                <option value="">Select player...</option>
-                                {playersNotInTeam.map((player) => (
-                                  <option key={player.discord_user_id} value={player.discord_user_id}>
-                                    {player.discord_username || player.discord_user_id} ({player.overall_rating.toFixed(1)})
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <div className="space-y-2">
-                              <label className="text-sm font-medium">Role</label>
-                              <div className="flex gap-2">
-                                {["player", "captain", "manager"].map((role) => (
-                                  <Button
-                                    key={role}
-                                    type="button"
-                                    variant={selectedPlayerRole === role ? "default" : "outline"}
-                                    size="sm"
-                                    onClick={() => setSelectedPlayerRole(role)}
-                                    className="capitalize"
-                                  >
-                                    {role}
-                                  </Button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                          <DialogFooter>
-                            <Button variant="outline" onClick={() => setIsAddPlayerOpen(false)}>
-                              Cancel
-                            </Button>
-                            <Button 
-                              onClick={() => addPlayerMutation.mutate()}
-                              disabled={!selectedPlayerId || addPlayerMutation.isPending}
-                            >
-                              {addPlayerMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                              Add Player
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="text-destructive" disabled={!adminDiscordId.trim()}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete Team</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to delete {selectedTeam.name}? This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => deleteTeamMutation.mutate(selectedTeam.id)}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                        ))}
+                      </div>
                     </div>
                   </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={() => createTeamMutation.mutate()}
+                      disabled={!newTeamName.trim() || createTeamMutation.isPending}
+                    >
+                      {createTeamMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                      Create Team
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* Teams List */}
+              <Card className="lg:col-span-1">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Teams
+                  </CardTitle>
+                  <CardDescription>
+                    {teams?.length || 0} teams in this server
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {rosterLoading ? (
+                  {teamsLoading ? (
                     <div className="flex items-center justify-center py-8">
                       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
-                  ) : roster && roster.length > 0 ? (
+                  ) : teams && teams.length > 0 ? (
                     <div className="space-y-2">
-                      {roster.map((member) => {
-                        const player = getPlayerInfo(member.discord_user_id);
-                        return (
-                          <div
-                            key={member.id}
-                            className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border"
-                          >
-                            <div className="flex items-center gap-3">
-                              {getRoleIcon(member.role)}
-                              <div>
-                                <p className="font-medium">
-                                  {player?.discord_username || member.discord_user_id}
-                                </p>
-                                <p className="text-sm text-muted-foreground">
-                                  {member.primary_position || player?.primary_position || "No position"}
-                                  <span className="mx-2">•</span>
-                                  <span className="capitalize">{member.role}</span>
-                                  {player && (
-                                    <>
-                                      <span className="mx-2">•</span>
-                                      <span>{player.overall_rating.toFixed(1)} OVR</span>
-                                    </>
-                                  )}
-                                </p>
+                      {teams.map((team) => (
+                        <button
+                          key={team.id}
+                          onClick={() => setSelectedTeam(team)}
+                          className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors text-left ${
+                            selectedTeam?.id === team.id
+                              ? "bg-primary/10 border border-primary/20"
+                              : "bg-muted/30 hover:bg-muted/50 border border-transparent"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+                              <Users className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-medium">{team.name}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {team.tag && (
+                                  <span className="text-xs text-muted-foreground">[{team.tag}]</span>
+                                )}
+                                {getTypeBadge(team.team_type)}
                               </div>
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removePlayerMutation.mutate(member.id)}
-                              disabled={removePlayerMutation.isPending || !adminDiscordId.trim()}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
                           </div>
-                        );
-                      })}
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      ))}
                     </div>
                   ) : (
                     <div className="py-8 text-center text-muted-foreground">
                       <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
-                      <p>No players in this team</p>
-                      <p className="text-sm">Add players using the button above</p>
+                      <p>No teams yet</p>
+                      <p className="text-sm">Create your first team above</p>
                     </div>
                   )}
                 </CardContent>
-              </>
+              </Card>
+
+              {/* Team Details & Roster */}
+              <Card className="lg:col-span-2">
+                {selectedTeam ? (
+                  <>
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardTitle className="flex items-center gap-2">
+                            {selectedTeam.name}
+                            {selectedTeam.tag && (
+                              <span className="text-muted-foreground font-normal">[{selectedTeam.tag}]</span>
+                            )}
+                          </CardTitle>
+                          <CardDescription className="flex items-center gap-2 mt-1">
+                            {getTypeBadge(selectedTeam.team_type)}
+                            <span>•</span>
+                            <span>{roster?.length || 0} players</span>
+                            <span>•</span>
+                            <span>Created {format(new Date(selectedTeam.created_at), "MMM d, yyyy")}</span>
+                          </CardDescription>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Dialog open={isAddPlayerOpen} onOpenChange={setIsAddPlayerOpen}>
+                            <DialogTrigger asChild>
+                              <Button size="sm">
+                                <UserPlus className="h-4 w-4 mr-2" />
+                                Add Player
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Add Player to {selectedTeam.name}</DialogTitle>
+                                <DialogDescription>
+                                  Select a player to add to the team roster
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4 py-4">
+                                <div className="space-y-2">
+                                  <label className="text-sm font-medium">Player</label>
+                                  <select
+                                    className="w-full p-2 rounded-md border bg-background"
+                                    value={selectedPlayerId}
+                                    onChange={(e) => setSelectedPlayerId(e.target.value)}
+                                  >
+                                    <option value="">Select player...</option>
+                                    {playersNotInTeam.map((player) => (
+                                      <option key={player.discord_user_id} value={player.discord_user_id}>
+                                        {player.discord_username || "Unknown"} ({player.overall_rating.toFixed(1)})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-sm font-medium">Role</label>
+                                  <div className="flex gap-2">
+                                    {["player", "captain", "manager"].map((role) => (
+                                      <Button
+                                        key={role}
+                                        type="button"
+                                        variant={selectedPlayerRole === role ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => setSelectedPlayerRole(role)}
+                                        className="capitalize"
+                                      >
+                                        {role}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </div>
+                              <DialogFooter>
+                                <Button variant="outline" onClick={() => setIsAddPlayerOpen(false)}>
+                                  Cancel
+                                </Button>
+                                <Button 
+                                  onClick={() => addPlayerMutation.mutate()}
+                                  disabled={!selectedPlayerId || addPlayerMutation.isPending}
+                                >
+                                  {addPlayerMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                                  Add Player
+                                </Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="outline" size="sm" className="text-destructive">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Team</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete {selectedTeam.name}? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteTeamMutation.mutate(selectedTeam.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      {rosterLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : roster && roster.length > 0 ? (
+                        <div className="space-y-2">
+                          {roster.map((member) => {
+                            const player = getPlayerInfo(member.discord_user_id);
+                            return (
+                              <div
+                                key={member.id}
+                                className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border"
+                              >
+                                <div className="flex items-center gap-3">
+                                  {getRoleIcon(member.role)}
+                                  <div>
+                                    <p className="font-medium">
+                                      {player?.discord_username || "Unknown Player"}
+                                    </p>
+                                    <p className="text-sm text-muted-foreground">
+                                      {member.primary_position || player?.primary_position || "No position"}
+                                      <span className="mx-2">•</span>
+                                      <span className="capitalize">{member.role}</span>
+                                      {player && (
+                                        <>
+                                          <span className="mx-2">•</span>
+                                          <span>{player.overall_rating.toFixed(1)} OVR</span>
+                                        </>
+                                      )}
+                                    </p>
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => removePlayerMutation.mutate(member.id)}
+                                  disabled={removePlayerMutation.isPending}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="py-8 text-center text-muted-foreground">
+                          <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                          <p>No players in this team</p>
+                          <p className="text-sm">Add players using the button above</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </>
+                ) : (
+                  <CardContent className="py-16 text-center text-muted-foreground">
+                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>Select a team to view details</p>
+                  </CardContent>
+                )}
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Lineup Builder Tab */}
+          <TabsContent value="lineup" className="space-y-6">
+            {guildLoading || playersLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : availablePlayers && availablePlayers.length > 0 ? (
+              <div className="grid lg:grid-cols-5 gap-6">
+                {/* Formation Pitch */}
+                <div className="lg:col-span-3 space-y-4">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                      <CardTitle>Formation</CardTitle>
+                      <div className="flex items-center gap-2">
+                        <Select value={formation} onValueChange={(v) => setFormation(v as FormationType)}>
+                          <SelectTrigger className="w-40">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {FORMATION_OPTIONS.map((f) => (
+                              <SelectItem key={f} value={f}>{f}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <FormationPitch
+                        formation={formation}
+                        slots={slots}
+                        onSlotClick={handleSlotClick}
+                        selectedSlot={selectedSlot}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  {/* Actions */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      placeholder="Lineup name..."
+                      value={lineupName}
+                      onChange={(e) => setLineupName(e.target.value)}
+                      className="flex-1 min-w-[200px]"
+                    />
+                    <Button onClick={handleReset} variant="outline">
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                      Reset
+                    </Button>
+                    <Button onClick={handleSaveLineup} disabled={slots.length < 11 || isLineupLoading}>
+                      {isLineupLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                      <Save className="h-4 w-4 mr-2" />
+                      Save
+                    </Button>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span>Players: <strong className="text-foreground">{slots.length}/11</strong></span>
+                    <span>Avg Rating: <strong className="text-foreground">{avgRating.toFixed(1)}</strong></span>
+                  </div>
+                </div>
+
+                {/* Player Pool */}
+                <div className="lg:col-span-2">
+                  <Card className="h-full">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center justify-between">
+                        <span>Available Players</span>
+                        <Badge variant="secondary">{filteredLineupPlayers.length}</Badge>
+                      </CardTitle>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Search players..."
+                          value={lineupSearchQuery}
+                          onChange={(e) => setLineupSearchQuery(e.target.value)}
+                          className="pl-9"
+                        />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <ScrollArea className="h-[500px] px-4 pb-4">
+                        <div className="space-y-2">
+                          {selectedSlot !== null && (
+                            <div className="sticky top-0 bg-card py-2 z-10 border-b">
+                              <p className="text-sm text-muted-foreground">
+                                Select player for <Badge variant="default">{positions[selectedSlot].position}</Badge>
+                              </p>
+                            </div>
+                          )}
+                          {filteredLineupPlayers.map((player) => (
+                            <PlayerCard
+                              key={player.discord_user_id}
+                              player={player}
+                              compact
+                              onClick={() => handlePlayerSelect(player)}
+                            />
+                          ))}
+                          {filteredLineupPlayers.length === 0 && (
+                            <p className="text-center text-muted-foreground py-8">
+                              No players available
+                            </p>
+                          )}
+                        </div>
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Selected Players */}
+                {slots.length > 0 && (
+                  <div className="lg:col-span-5">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Selected Players</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex flex-wrap gap-2">
+                          {slots.sort((a, b) => a.slot_index - b.slot_index).map((slot) => (
+                            <Badge 
+                              key={slot.slot_index} 
+                              variant="secondary"
+                              className="flex items-center gap-2 py-1.5 px-3"
+                            >
+                              <span className="font-bold">{slot.position}</span>
+                              <span>{slot.discord_username || slot.ea_username || "Unknown"}</span>
+                              <span className="text-primary font-bold">{slot.rating?.toFixed(0)}</span>
+                              <button
+                                onClick={() => handleRemoveLineupPlayer(slot.slot_index)}
+                                className="hover:text-destructive"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+              </div>
             ) : (
-              <CardContent className="py-16 text-center text-muted-foreground">
-                <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Select a team to view details</p>
-              </CardContent>
+              <Card>
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  No players found. Players need to play games before they can be added to lineups.
+                </CardContent>
+              </Card>
             )}
-          </Card>
-        </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </DashboardLayout>
   );
