@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useMemo } from "react";
-import { getTacticalRoleName, getTacticalRoleInfo, getTacticalRoleBadgeClasses } from "@/lib/tacticalRoles";
+import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses, inferPosition, getPrimaryPosition } from "@/lib/archetypes";
 
 interface MidfielderLeaderboardTableProps {
   players: LeaderboardPlayer[];
@@ -23,23 +23,6 @@ interface MidfielderLeaderboardTableProps {
 
 type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "ga" | "passes" | "pass_pct" | "tackles" | "tackle_pct" | "interceptions" | "wins" | "win_rate" | "passes_per_game" | "positions";
 type SortDirection = "asc" | "desc";
-
-// Format position counts for display (short version)
-function formatPositionCountsShort(positionCounts?: Record<string, number>): string {
-  if (!positionCounts || Object.keys(positionCounts).length === 0) return "-";
-  const sorted = Object.entries(positionCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 2);
-  return sorted.map(([pos, count]) => `${pos}(${count})`).join(", ");
-}
-
-// Format position counts for tooltip (full version)
-function formatPositionCountsFull(positionCounts?: Record<string, number>): string[] {
-  if (!positionCounts || Object.keys(positionCounts).length === 0) return [];
-  return Object.entries(positionCounts)
-    .sort((a, b) => b[1] - a[1])
-    .map(([pos, count]) => `${pos}: ${count} games`);
-}
 
 export function MidfielderLeaderboardTable({ players, onPlayerClick }: MidfielderLeaderboardTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("passes");
@@ -176,7 +159,8 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
             <TableRow className="bg-muted/50">
               <SortableHeader columnKey="rank" className="w-12 text-center">#</SortableHeader>
               <TableHead>Player</TableHead>
-              <TableHead className="text-center hidden lg:table-cell">Role</TableHead>
+              <TableHead className="text-center hidden lg:table-cell">Pos</TableHead>
+              <TableHead className="text-center hidden lg:table-cell">Build</TableHead>
               <SortableHeader columnKey="rating" className="text-center">Rating</SortableHeader>
               <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
               <SortableHeader columnKey="passes" className="text-center bg-primary/10 text-primary font-semibold">Passes</SortableHeader>
@@ -188,15 +172,17 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
               <SortableHeader columnKey="tackle_pct" className="text-center hidden xl:table-cell">Tkl%</SortableHeader>
               <SortableHeader columnKey="wins" className="text-center hidden md:table-cell">W/D/L</SortableHeader>
               <SortableHeader columnKey="win_rate" className="text-center hidden lg:table-cell">Win%</SortableHeader>
-              <SortableHeader columnKey="positions" className="text-center hidden xl:table-cell">Positions</SortableHeader>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredAndSortedPlayers.map((player) => {
               const passPct = player.pass_attempts > 0 ? ((player.passes_made || 0) / player.pass_attempts) * 100 : 0;
               const tacklePct = (player.tackle_attempts || 0) > 0 ? ((player.tackles || 0) / player.tackle_attempts!) * 100 : 0;
-              const positionsShort = formatPositionCountsShort(player.position_counts);
-              const positionsFull = formatPositionCountsFull(player.position_counts);
+              
+              const archetypeId = player.most_used_archetype;
+              const archetypeInfo = getArchetypeInfo(archetypeId);
+              const archetypeName = getArchetypeName(archetypeId);
+              const inferredPos = inferPosition(archetypeId) || getPrimaryPosition(player.position_counts);
 
               return (
                 <TableRow
@@ -224,9 +210,6 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
                       <div className="flex items-center gap-2">
                         <div>
                           <p className="font-medium">{player.ea_username || player.discord_username || "Unknown"}</p>
-                          {player.primary_position && (
-                            <Badge variant="outline" className="text-xs mt-0.5">{player.primary_position}</Badge>
-                          )}
                         </div>
                         {player.discord_user_id.startsWith('ea_') && (
                           <TooltipProvider>
@@ -246,17 +229,22 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
                     </div>
                   </TableCell>
                   <TableCell className="text-center hidden lg:table-cell">
-                    {(() => {
-                      const roleId = player.most_used_archetype;
-                      const info = getTacticalRoleInfo(roleId);
-                      const name = getTacticalRoleName(roleId);
-                      if (!name) return <span className="text-muted-foreground">-</span>;
-                      return (
-                        <Badge className={cn("text-xs", getTacticalRoleBadgeClasses(info?.category || null))}>
-                          {name}
-                        </Badge>
-                      );
-                    })()}
+                    {inferredPos ? (
+                      <Badge variant="outline" className="text-xs">
+                        {inferredPos}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">
+                    {archetypeName ? (
+                      <Badge className={cn("text-xs", getArchetypeBadgeClasses(archetypeInfo?.category || null))}>
+                        {archetypeName}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-center"><RatingBadge rating={player.overall_rating} size="sm" /></TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.games_played}</TableCell>
@@ -275,25 +263,6 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
                     <span className="text-destructive">{player.losses || 0}</span>
                   </TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{(player.win_rate || 0).toFixed(0)}%</TableCell>
-                  <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">
-                    {positionsFull.length > 0 ? (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger className="cursor-help underline decoration-dotted">
-                            {positionsShort}
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <div className="text-sm space-y-1">
-                              <p className="font-semibold mb-1">Positions Played</p>
-                              {positionsFull.map((line, i) => (
-                                <p key={i}>{line}</p>
-                              ))}
-                            </div>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : "-"}
-                  </TableCell>
                 </TableRow>
               );
             })}

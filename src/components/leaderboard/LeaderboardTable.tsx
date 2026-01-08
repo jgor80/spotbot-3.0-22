@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { TrendingUp, TrendingDown, Minus, AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useMemo } from "react";
-import { getTacticalRoleName, getTacticalRoleInfo, getTacticalRoleBadgeClasses } from "@/lib/tacticalRoles";
+import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses, inferPosition, getPrimaryPosition } from "@/lib/archetypes";
 
 interface LeaderboardTableProps {
   players: LeaderboardPlayer[];
@@ -187,7 +187,8 @@ export function LeaderboardTable({ players, onPlayerClick, highlightColumn }: Le
           <TableRow className="bg-muted/50">
             <SortableHeader columnKey="rank" className="w-12 text-center">#</SortableHeader>
             <TableHead>Player</TableHead>
-            <TableHead className="text-center hidden lg:table-cell">Role</TableHead>
+            <TableHead className="text-center hidden lg:table-cell">Pos</TableHead>
+            <TableHead className="text-center hidden lg:table-cell">Build</TableHead>
             <SortableHeader columnKey="rating" className="text-center">Rating</SortableHeader>
             <SortableHeader columnKey="avg_rating" className="text-center hidden lg:table-cell">Avg</SortableHeader>
             <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
@@ -209,6 +210,11 @@ export function LeaderboardTable({ players, onPlayerClick, highlightColumn }: Le
             const formTrend = player.form_rating 
               ? player.form_rating > 60 ? "up" : player.form_rating < 40 ? "down" : "neutral"
               : "neutral";
+
+            const archetypeId = player.most_used_archetype;
+            const archetypeInfo = getArchetypeInfo(archetypeId);
+            const archetypeName = getArchetypeName(archetypeId);
+            const inferredPos = inferPosition(archetypeId) || getPrimaryPosition(player.position_counts);
 
             return (
               <TableRow
@@ -241,11 +247,6 @@ export function LeaderboardTable({ players, onPlayerClick, highlightColumn }: Le
                         {player.ea_username && player.discord_username && (
                           <p className="text-xs text-muted-foreground">{player.discord_username}</p>
                         )}
-                        {player.primary_position && (
-                          <Badge variant="outline" className="text-xs mt-0.5">
-                            {player.primary_position}
-                          </Badge>
-                        )}
                       </div>
                       {player.discord_user_id.startsWith('ea_') && (
                         <TooltipProvider>
@@ -265,17 +266,22 @@ export function LeaderboardTable({ players, onPlayerClick, highlightColumn }: Le
                   </div>
                 </TableCell>
                 <TableCell className="text-center hidden lg:table-cell">
-                  {(() => {
-                    const roleId = player.most_used_archetype;
-                    const info = getTacticalRoleInfo(roleId);
-                    const name = getTacticalRoleName(roleId);
-                    if (!name) return <span className="text-muted-foreground">-</span>;
-                    return (
-                      <Badge className={cn("text-xs", getTacticalRoleBadgeClasses(info?.category || null))}>
-                        {name}
-                      </Badge>
-                    );
-                  })()}
+                  {inferredPos ? (
+                    <Badge variant="outline" className="text-xs">
+                      {inferredPos}
+                    </Badge>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-center hidden lg:table-cell">
+                  {archetypeName ? (
+                    <Badge className={cn("text-xs", getArchetypeBadgeClasses(archetypeInfo?.category || null))}>
+                      {archetypeName}
+                    </Badge>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
                 </TableCell>
                 <TableCell className="text-center">
                   <RatingBadge rating={player.overall_rating} size="sm" />

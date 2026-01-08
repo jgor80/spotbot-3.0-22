@@ -14,7 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useMemo } from "react";
-import { getTacticalRoleName, getTacticalRoleInfo, getTacticalRoleBadgeClasses } from "@/lib/tacticalRoles";
+import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses } from "@/lib/archetypes";
 
 interface GKLeaderboardTableProps {
   players: LeaderboardPlayer[];
@@ -168,7 +168,7 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
             <TableRow className="bg-muted/50">
               <SortableHeader columnKey="rank" className="w-12 text-center">#</SortableHeader>
               <TableHead>Player</TableHead>
-              <TableHead className="text-center hidden lg:table-cell">Role</TableHead>
+              <TableHead className="text-center hidden lg:table-cell">Build</TableHead>
               <SortableHeader columnKey="rating" className="text-center">Rating</SortableHeader>
               <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
               <SortableHeader columnKey="saves" className="text-center bg-primary/10 text-primary font-semibold">Saves</SortableHeader>
@@ -192,6 +192,10 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
               const savePct = totalFaced > 0 ? (totalSaves / totalFaced) * 100 : 0;
               const savesPerGame = player.games_played > 0 ? totalSaves / player.games_played : 0;
               const csPct = player.games_played > 0 ? ((player.clean_sheets || 0) / player.games_played) * 100 : 0;
+              
+              const archetypeId = player.most_used_archetype;
+              const archetypeInfo = getArchetypeInfo(archetypeId);
+              const archetypeName = getArchetypeName(archetypeId);
 
               return (
                 <TableRow
@@ -239,17 +243,13 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
                     </div>
                   </TableCell>
                   <TableCell className="text-center hidden lg:table-cell">
-                    {(() => {
-                      const roleId = player.most_used_archetype;
-                      const info = getTacticalRoleInfo(roleId);
-                      const name = getTacticalRoleName(roleId);
-                      if (!name) return <span className="text-muted-foreground">-</span>;
-                      return (
-                        <Badge className={cn("text-xs", getTacticalRoleBadgeClasses(info?.category || null))}>
-                          {name}
-                        </Badge>
-                      );
-                    })()}
+                    {archetypeName ? (
+                      <Badge className={cn("text-xs", getArchetypeBadgeClasses(archetypeInfo?.category || null))}>
+                        {archetypeName}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-center"><RatingBadge rating={player.overall_rating} size="sm" /></TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.games_played}</TableCell>
