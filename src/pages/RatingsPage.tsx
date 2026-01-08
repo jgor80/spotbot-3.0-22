@@ -36,16 +36,18 @@ interface PlayerVibeData {
   discord_user_id: string;
   discord_username: string | null;
   ea_username: string | null;
-  vibe_score: number | null;
+  vibe_score: number;
   total_games_rated: number;
   prefer_count: number;
   neutral_count: number;
   avoid_count: number;
   avg_enjoyment: number;
   avg_energy: number;
+  win_rate: number | null;
+  games_played: number | null;
 }
 
-type SortField = "ea_username" | "vibe_score" | "total_games_rated" | "avg_enjoyment" | "avg_energy" | "prefer_count" | "neutral_count" | "avoid_count";
+type SortField = "ea_username" | "vibe_score" | "total_games_rated" | "avg_enjoyment" | "avg_energy" | "prefer_count" | "neutral_count" | "avoid_count" | "win_rate";
 
 export default function RatingsPage() {
   const { selectedGuildId } = useGuild();
@@ -84,16 +86,15 @@ export default function RatingsPage() {
     enabled: !!selectedGuildId,
   });
 
-  // Fetch player summary with vibe scores - uses aggregated data only
+  // Fetch player summary with stats
   const { data: playerSummaryData, isLoading: summaryLoading } = useQuery({
     queryKey: ["player-summary-vibe", selectedGuildId],
     queryFn: async () => {
       if (!selectedGuildId) return [];
       const { data, error } = await supabase
         .from("player_summary")
-        .select("discord_user_id, discord_username, vibe_score")
-        .eq("guild_id", selectedGuildId)
-        .not("vibe_score", "is", null);
+        .select("discord_user_id, discord_username, win_rate, games_played")
+        .eq("guild_id", selectedGuildId);
       if (error) throw error;
       return data || [];
     },
@@ -165,17 +166,38 @@ export default function RatingsPage() {
       const profile = profilesLookup.get(discord_user_id);
       const summary = summaryLookup.get(discord_user_id);
       
+      const avgEnjoyment = data.ratings > 0 ? data.totalEnjoyment / data.ratings : 0;
+      const avgEnergy = data.ratings > 0 ? data.totalEnergy / data.ratings : 0;
+      const winRate = summary?.win_rate || null;
+      
+      // Calculate vibe score (0-100):
+      // - Enjoyment: 35% weight (1-5 scale → 0-35)
+      // - Energy: 25% weight (1-5 scale → 0-25)
+      // - Preference ratio: 25% weight (prefer vs avoid → 0-25)
+      // - Win rate: 15% weight (0-100% → 0-15)
+      const enjoymentScore = (avgEnjoyment / 5) * 35;
+      const energyScore = (avgEnergy / 5) * 25;
+      const totalVotes = data.prefer + data.neutral + data.avoid;
+      const preferenceScore = totalVotes > 0 
+        ? ((data.prefer - data.avoid) / totalVotes + 1) / 2 * 25 // Normalize -1 to 1 → 0 to 25
+        : 12.5; // Neutral default
+      const winRateScore = winRate != null ? (winRate / 100) * 15 : 7.5; // Default to 50% if no data
+      
+      const vibeScore = Math.round(enjoymentScore + energyScore + preferenceScore + winRateScore);
+      
       return {
         discord_user_id,
         discord_username: profile?.discord_username || summary?.discord_username || null,
         ea_username: profile?.ea_username || null,
-        vibe_score: summary?.vibe_score || null,
+        vibe_score: vibeScore,
         total_games_rated: data.ratings,
         prefer_count: data.prefer,
         neutral_count: data.neutral,
         avoid_count: data.avoid,
-        avg_enjoyment: data.ratings > 0 ? data.totalEnjoyment / data.ratings : 0,
-        avg_energy: data.ratings > 0 ? data.totalEnergy / data.ratings : 0,
+        avg_enjoyment: avgEnjoyment,
+        avg_energy: avgEnergy,
+        win_rate: winRate,
+        games_played: summary?.games_played || null,
       };
     }).filter(p => p.total_games_rated > 0);
   })();
@@ -391,6 +413,14 @@ export default function RatingsPage() {
                           </TableHead>
                           <TableHead 
                             className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("win_rate")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              Win% <SortIcon field="win_rate" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
                             onClick={() => handleSort("vibe_score")}
                           >
                             <div className="flex items-center justify-center gap-1">
@@ -439,16 +469,19 @@ export default function RatingsPage() {
                               {player.avoid_count}
                             </TableCell>
                             <TableCell className="text-center">
-                              {player.vibe_score != null ? (
-                                <Badge 
-                                  variant={player.vibe_score >= 70 ? "default" : player.vibe_score >= 40 ? "secondary" : "destructive"}
-                                  className={player.vibe_score >= 70 ? "bg-success" : ""}
-                                >
-                                  {player.vibe_score.toFixed(0)}
-                                </Badge>
+                              {player.win_rate != null ? (
+                                <span className="font-medium">{player.win_rate.toFixed(0)}%</span>
                               ) : (
                                 <span className="text-muted-foreground">-</span>
                               )}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge 
+                                variant={player.vibe_score >= 70 ? "default" : player.vibe_score >= 40 ? "secondary" : "destructive"}
+                                className={player.vibe_score >= 70 ? "bg-success" : ""}
+                              >
+                                {player.vibe_score}
+                              </Badge>
                             </TableCell>
                           </TableRow>
                         ))}
