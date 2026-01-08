@@ -24,10 +24,13 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import ReactMarkdown from "react-markdown";
 import { supabase } from "@/integrations/supabase/client";
+import { cn } from "@/lib/utils";
+import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses, getTacticalRoleBadgeClasses, formatTacticalRole } from "@/lib/archetypes";
 
 interface MatchPlayerStat {
   name: string;
   position: string | null;
+  archetypeid: string | null;
   rating: number;
   goals: number;
   assists: number;
@@ -239,7 +242,8 @@ export function MatchDetailView({ match }: MatchDetailViewProps) {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Player</TableHead>
-                    <TableHead className="text-center">Pos</TableHead>
+                    <TableHead className="text-center">Role</TableHead>
+                    <TableHead className="text-center">Archetype</TableHead>
                     <TableHead className="text-center">Rating</TableHead>
                     <TableHead className="text-center">G</TableHead>
                     <TableHead className="text-center">A</TableHead>
@@ -261,9 +265,27 @@ export function MatchDetailView({ match }: MatchDetailViewProps) {
                         </div>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="outline" className="text-xs">
-                          {player.position || "N/A"}
-                        </Badge>
+                        {(() => {
+                          const role = player.position;
+                          if (!role) return <span className="text-muted-foreground">-</span>;
+                          return (
+                            <Badge className={cn("text-xs capitalize", getTacticalRoleBadgeClasses(role))}>
+                              {formatTacticalRole(role)}
+                            </Badge>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {(() => {
+                          const info = getArchetypeInfo(player.archetypeid);
+                          const name = getArchetypeName(player.archetypeid);
+                          if (!name) return <span className="text-muted-foreground">-</span>;
+                          return (
+                            <Badge className={cn("text-xs", getArchetypeBadgeClasses(info?.category || null))}>
+                              {name}
+                            </Badge>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-center">
                         <span className={`font-bold ${getRatingColor(player.rating)}`}>
