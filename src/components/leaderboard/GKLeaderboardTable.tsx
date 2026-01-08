@@ -176,7 +176,7 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
               <SortableHeader columnKey="parry" className="text-center hidden xl:table-cell">Parry</SortableHeader>
               <SortableHeader columnKey="goals_conceded" className="text-center hidden md:table-cell">GA</SortableHeader>
               <SortableHeader columnKey="clean_sheets" className="text-center">CS</SortableHeader>
-              <SortableHeader columnKey="wins" className="text-center hidden md:table-cell">Wins</SortableHeader>
+              <SortableHeader columnKey="wins" className="text-center hidden md:table-cell">W/D/L</SortableHeader>
               <SortableHeader columnKey="win_rate" className="text-center hidden lg:table-cell">Win%</SortableHeader>
               <SortableHeader columnKey="saves_per_game" className="text-center hidden lg:table-cell">Sv/G</SortableHeader>
               <SortableHeader columnKey="save_pct" className="text-center hidden md:table-cell">Save%</SortableHeader>
@@ -245,7 +245,13 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
                   <TableCell className="text-center hidden xl:table-cell">{player.saves_parry || 0}</TableCell>
                   <TableCell className="text-center hidden md:table-cell text-destructive">{player.goals_conceded || 0}</TableCell>
                   <TableCell className="text-center">{player.clean_sheets || 0}</TableCell>
-                  <TableCell className="text-center hidden md:table-cell">{player.wins || 0}</TableCell>
+                  <TableCell className="text-center hidden md:table-cell text-xs">
+                    <span className="text-primary">{player.wins || 0}</span>
+                    <span className="text-muted-foreground">/</span>
+                    <span className="text-muted-foreground">{player.draws || 0}</span>
+                    <span className="text-muted-foreground">/</span>
+                    <span className="text-destructive">{player.losses || 0}</span>
+                  </TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{(player.win_rate || 0).toFixed(0)}%</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{savesPerGame.toFixed(1)}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{savePct.toFixed(0)}%</TableCell>

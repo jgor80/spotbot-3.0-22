@@ -127,6 +127,8 @@ export async function fetchLeaderboard(
   return (data.entries || data.leaderboard || []).map((player: any) => ({
     ...player,
     ea_username: player.ea_username || null,
+    draws: player.draws || 0,
+    losses: player.losses || 0,
   }));
 }
 

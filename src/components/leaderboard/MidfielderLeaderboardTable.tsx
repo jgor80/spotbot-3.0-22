@@ -174,7 +174,7 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
               <SortableHeader columnKey="assists" className="text-center">Assists</SortableHeader>
               <SortableHeader columnKey="goals" className="text-center hidden md:table-cell">Goals</SortableHeader>
               <SortableHeader columnKey="tackles" className="text-center hidden lg:table-cell">Tackles</SortableHeader>
-              <SortableHeader columnKey="wins" className="text-center hidden md:table-cell">Wins</SortableHeader>
+              <SortableHeader columnKey="wins" className="text-center hidden md:table-cell">W/D/L</SortableHeader>
               <SortableHeader columnKey="win_rate" className="text-center hidden lg:table-cell">Win%</SortableHeader>
               <SortableHeader columnKey="passes_per_game" className="text-center hidden lg:table-cell">Pass/G</SortableHeader>
               <SortableHeader columnKey="positions" className="text-center hidden xl:table-cell">Positions</SortableHeader>
@@ -241,7 +241,13 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
                   <TableCell className="text-center">{player.assists}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.goals}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{player.tackles || 0}</TableCell>
-                  <TableCell className="text-center hidden md:table-cell">{player.wins || 0}</TableCell>
+                  <TableCell className="text-center hidden md:table-cell text-xs">
+                    <span className="text-primary">{player.wins || 0}</span>
+                    <span className="text-muted-foreground">/</span>
+                    <span className="text-muted-foreground">{player.draws || 0}</span>
+                    <span className="text-muted-foreground">/</span>
+                    <span className="text-destructive">{player.losses || 0}</span>
+                  </TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{(player.win_rate || 0).toFixed(0)}%</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{passesPerGame.toFixed(1)}</TableCell>
                   <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">
