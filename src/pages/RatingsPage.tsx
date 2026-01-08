@@ -343,15 +343,17 @@ export default function RatingsPage() {
           <TabsContent value="vibe-ratings" className="space-y-4">
             {isLoading ? (
               <Skeleton className="h-96" />
-            ) : playerVibeRatings.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center text-muted-foreground">
-                  No vibe ratings yet. Ratings appear after players rate each other in Discord.
-                </CardContent>
-              </Card>
             ) : (
               <div className="space-y-4">
-                {/* Summary Stats */}
+                {playerVibeRatings.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-8 text-center text-muted-foreground">
+                      No vibe ratings yet. Ratings appear after players rate each other in Discord.
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <>
+                    {/* Summary Stats */}
                 <div className="grid md:grid-cols-4 gap-4">
                   <Card>
                     <CardContent className="pt-6">
@@ -508,8 +510,10 @@ export default function RatingsPage() {
                     </Table>
                   </CardContent>
                 </Card>
+                  </>
+                )}
 
-                {/* Recent Peer Vibe Ratings - Anonymous */}
+                {/* Recent Peer Vibe Ratings - Anonymous - Always show this card */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
