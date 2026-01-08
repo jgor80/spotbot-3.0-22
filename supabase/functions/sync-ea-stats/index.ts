@@ -52,8 +52,25 @@ const KNOWN_MEMBER_KEYS = new Set([
   'playername', 'rating', 'possession', 'cleansheetsany', 'cleansheetsdef', 'cleansheetsgk',
   'tackleattempts', 'tackleAttempts', 'ballDiveSaves', 'ballDivesaves', 'crossSaves', 'crosssaves',
   'parrySaves', 'parrysaves', 'punchSaves', 'punchsaves', 'reflexSaves', 'reflexsaves',
-  'foulcommited', 'fouls', 'archetypeid', 'archetypeId'
+  'foulcommited', 'fouls', 'archetypeid', 'archetypeId',
+  // Career stats fields
+  'preferredPosition', 'careerGoals', 'careerAssists', 'careerAppearances'
 ])
+
+// ===== FALLBACK PATH EXTRACTION UTILITY =====
+// Per EA data map: "If path is an array, try in order until found"
+function getNestedValue(obj: any, path: string): any {
+  if (!obj || !path) return null;
+  return path.split('.').reduce((current, key) => current?.[key], obj);
+}
+
+function extractWithFallback(obj: any, paths: string[]): any {
+  for (const path of paths) {
+    const value = getNestedValue(obj, path);
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return null;
+}
 
 // Fetch match history with player stats
 // matchType9 = Division games, matchType13 = Cup/Knockout games (competitions/friendlies)
@@ -129,6 +146,106 @@ async function fetchClubInfo(clubId: string, platform: string) {
   } catch (err) {
     console.error(`[EA] Error fetching club info for ${clubId}:`, err)
     return null
+  }
+}
+
+// Fetch club seasonal stats (current division, skill rating for current season)
+async function fetchClubSeasonalStats(clubId: string, platform: string) {
+  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  
+  try {
+    const response = await fetch(`https://proclubs.ea.com/api/fc/clubs/seasonalStats?platform=${fcPlatform}&clubIds=${clubId}`, {
+      headers: EA_HEADERS
+    })
+    
+    if (!response.ok) {
+      console.error(`[EA] Club seasonal stats request failed: ${response.status}`)
+      return null
+    }
+    
+    const data = await response.json()
+    // Per data map: jsonpaths: ["$.clubs[0]", "$[0]", "$"]
+    if (Array.isArray(data) && data.length > 0) return data[0]
+    if (data?.clubs?.[0]) return data.clubs[0]
+    if (data[clubId]) return data[clubId]
+    return data
+  } catch (err) {
+    console.error(`[EA] Error fetching club seasonal stats for ${clubId}:`, err)
+    return null
+  }
+}
+
+// Fetch club overall/career stats
+async function fetchClubOverallStats(clubId: string, platform: string) {
+  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  
+  try {
+    const response = await fetch(`https://proclubs.ea.com/api/fc/clubs/overallStats?platform=${fcPlatform}&clubIds=${clubId}`, {
+      headers: EA_HEADERS
+    })
+    
+    if (!response.ok) {
+      console.error(`[EA] Club overall stats request failed: ${response.status}`)
+      return null
+    }
+    
+    const data = await response.json()
+    if (Array.isArray(data) && data.length > 0) return data[0]
+    if (data?.clubs?.[0]) return data.clubs[0]
+    if (data[clubId]) return data[clubId]
+    return data
+  } catch (err) {
+    console.error(`[EA] Error fetching club overall stats for ${clubId}:`, err)
+    return null
+  }
+}
+
+// Fetch club playoff achievements/trophies
+async function fetchClubPlayoffAchievements(clubId: string, platform: string) {
+  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  
+  try {
+    // Note: This endpoint uses clubId (singular) not clubIds
+    const response = await fetch(`https://proclubs.ea.com/api/fc/club/playoffAchievements?platform=${fcPlatform}&clubId=${clubId}`, {
+      headers: EA_HEADERS
+    })
+    
+    if (!response.ok) {
+      console.error(`[EA] Club playoff achievements request failed: ${response.status}`)
+      return null
+    }
+    
+    const data = await response.json()
+    return data
+  } catch (err) {
+    console.error(`[EA] Error fetching club playoff achievements for ${clubId}:`, err)
+    return null
+  }
+}
+
+// Fetch member career stats (preferred position, career totals)
+async function fetchMemberCareerStats(clubId: string, platform: string) {
+  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  
+  try {
+    const response = await fetch(`https://proclubs.ea.com/api/fc/members/career/stats?platform=${fcPlatform}&clubId=${clubId}`, {
+      headers: EA_HEADERS
+    })
+    
+    if (!response.ok) {
+      console.error(`[EA] Member career stats request failed: ${response.status}`)
+      return []
+    }
+    
+    const data = await response.json()
+    // Per data map: jsonpaths: ["$.members", "$.players", "$"]
+    if (data?.members && Array.isArray(data.members)) return data.members
+    if (data?.players && Array.isArray(data.players)) return data.players
+    if (Array.isArray(data)) return data
+    return Object.values(data).filter(v => v && typeof v === 'object')
+  } catch (err) {
+    console.error(`[EA] Error fetching member career stats for ${clubId}:`, err)
+    return []
   }
 }
 
@@ -460,32 +577,62 @@ async function trackDivisionChange(
 // Sync club stats to database
 async function syncClubStats(supabase: any, guildId: string, clubKey: string, clubId: string, platform: string, recentMatches?: any[]) {
   try {
+    // Fetch all available club data from EA API endpoints
     const clubInfo = await fetchClubInfo(clubId, platform)
     if (!clubInfo) return null
+
+    // NEW: Fetch seasonal stats for current division (not just best)
+    const seasonalStats = await fetchClubSeasonalStats(clubId, platform)
+    
+    // NEW: Fetch overall stats for total matches played
+    const overallStats = await fetchClubOverallStats(clubId, platform)
+    
+    // NEW: Fetch playoff achievements/trophies
+    const playoffData = await fetchClubPlayoffAchievements(clubId, platform)
 
     // Calculate form from recent matches if provided
     const formData = recentMatches && recentMatches.length > 0
       ? calculateClubForm(recentMatches, clubId)
       : null;
     
+    // Extract data using fallback paths per EA data map
     const clubData: Record<string, any> = {
       guild_id: guildId,
       club_key: clubKey,
       ea_club_id: clubId,
       ea_platform: platform,
-      skill_rating: parseInt(clubInfo.skillRating || clubInfo.skill_rating || 0),
-      wins: parseInt(clubInfo.wins || 0),
-      draws: parseInt(clubInfo.draws || clubInfo.ties || 0),
-      losses: parseInt(clubInfo.losses || 0),
-      goals_scored: parseInt(clubInfo.goals || clubInfo.goalsFor || 0),
-      goals_conceded: parseInt(clubInfo.goalsAgainst || 0),
-      total_members: parseInt(clubInfo.memberCount || clubInfo.members || 0),
-      best_division: clubInfo.bestDivision || clubInfo.divisionName || null,
-      club_name: clubInfo.name || clubInfo.clubName || null,
-      // New metadata fields
-      stadium_name: clubInfo.stadiumName || clubInfo.stadium || null,
-      region: clubInfo.region || clubInfo.customKit?.region || null,
-      reputation_tier: clubInfo.reputationTier || clubInfo.clubStar || null,
+      
+      // From club_info endpoint with fallback paths
+      club_name: extractWithFallback(clubInfo, ['name', 'clubName']) || null,
+      crest_id: extractWithFallback(clubInfo, ['crestId', 'crest_id']) || null,
+      region: extractWithFallback(clubInfo, ['region', 'customKit.region']) || null,
+      custom_kit_home: extractWithFallback(clubInfo, ['customKit.home', 'customKit']) || null,
+      total_members: parseInt(extractWithFallback(clubInfo, ['memberCount', 'members']) || 0),
+      best_division: extractWithFallback(clubInfo, ['bestDivision', 'divisionName']) || null,
+      stadium_name: extractWithFallback(clubInfo, ['stadiumName', 'stadium']) || null,
+      reputation_tier: extractWithFallback(clubInfo, ['reputationTier', 'clubStar']) || null,
+      
+      // From seasonal stats endpoint with fallback paths
+      current_division: extractWithFallback(seasonalStats, ['division', 'currentDivision']) || null,
+      skill_rating: parseInt(extractWithFallback(seasonalStats, ['skillRating', 'skill_rating']) || 
+                            extractWithFallback(clubInfo, ['skillRating', 'skill_rating']) || 0),
+      wins: parseInt(extractWithFallback(seasonalStats, ['wins']) || 
+                    extractWithFallback(clubInfo, ['wins']) || 0),
+      draws: parseInt(extractWithFallback(seasonalStats, ['ties', 'draws']) || 
+                     extractWithFallback(clubInfo, ['draws', 'ties']) || 0),
+      losses: parseInt(extractWithFallback(seasonalStats, ['losses']) || 
+                      extractWithFallback(clubInfo, ['losses']) || 0),
+      
+      // From overall stats endpoint with fallback paths
+      overall_matches_played: parseInt(extractWithFallback(overallStats, ['gamesPlayed', 'matchesPlayed']) || 0),
+      goals_scored: parseInt(extractWithFallback(overallStats, ['goals', 'goalsFor']) || 
+                            extractWithFallback(clubInfo, ['goals', 'goalsFor']) || 0),
+      goals_conceded: parseInt(extractWithFallback(overallStats, ['goalsAgainst']) || 
+                              extractWithFallback(clubInfo, ['goalsAgainst']) || 0),
+      
+      // Playoff achievements (stored as JSONB)
+      playoff_achievements: extractWithFallback(playoffData, ['achievements', 'trophies', 'playoffAchievements']) || null,
+      
       last_synced_at: new Date().toISOString()
     }
 
@@ -511,7 +658,7 @@ async function syncClubStats(supabase: any, guildId: string, clubKey: string, cl
       return null
     }
     
-    console.log(`[sync-ea-stats] Synced club stats for ${clubData.club_name}: ${clubData.skill_rating} SR, form: ${formData?.last_5_results?.join('') || 'N/A'}`)
+    console.log(`[sync-ea-stats] Synced club stats for ${clubData.club_name}: ${clubData.skill_rating} SR, div: ${clubData.current_division || 'N/A'}, form: ${formData?.last_5_results?.join('') || 'N/A'}`)
     return clubData
   } catch (err) {
     console.error(`[sync-ea-stats] Error syncing club stats:`, err)
@@ -680,10 +827,21 @@ async function syncMemberStats(
   aggregates: Map<string, AggregatedPlayerStats>
 ) {
   try {
+    // Fetch season stats from members endpoint
     const members = await fetchClubMembers(clubId, platform)
     if (!members || members.length === 0) {
       console.log(`[sync-ea-stats] No members found for ${clubName}`)
       return { synced: 0, updatedPlayerIds: [], unknownMemberKeys: [] as string[] }
+    }
+
+    // NEW: Fetch career stats for preferred position and career totals
+    const careerMembers = await fetchMemberCareerStats(clubId, platform)
+    
+    // Create lookup map for career data by player name (lowercase for matching)
+    const careerLookup = new Map<string, any>()
+    for (const m of careerMembers || []) {
+      const name = extractWithFallback(m, ['name', 'playerName', 'personaName'])
+      if (name) careerLookup.set(name.toLowerCase(), m)
     }
 
     let synced = 0
@@ -699,8 +857,11 @@ async function syncMemberStats(
     
     for (const member of members) {
       trackDiscoveredMemberKeys(member, discoveredMemberKeys)
-      const eaUsername = member.name || member.playerName
+      const eaUsername = extractWithFallback(member, ['name', 'playerName', 'personaName'])
       if (!eaUsername) continue
+      
+      // Get career data for this member (if available)
+      const careerData = careerLookup.get(eaUsername.toLowerCase())
       
       // Find profile for this EA username
       const { data: profile } = await supabase
@@ -711,31 +872,58 @@ async function syncMemberStats(
       
       if (!profile || profile.discord_user_id.startsWith('ea_')) continue
       
-      // Extract aggregate stats from EA member data
-      const goals = parseInt(member.goals || 0)
-      const assists = parseInt(member.assists || 0)
-      const gamesPlayed = parseInt(member.gamesPlayed || member.matches || 0)
-      const wins = parseInt(member.wins || 0)
-      const losses = parseInt(member.losses || 0)
+      // Extract preferred position from career stats using fallback paths per data map
+      const preferredPosition = extractWithFallback(careerData, ['favoritePosition', 'preferredPosition', 'pos']) ||
+                                extractWithFallback(member, ['favoritePosition', 'proPos', 'pos'])
+      
+      // Extract career stats using fallback paths
+      const careerGoals = parseInt(extractWithFallback(careerData, ['goals', 'stats.goals', 'career.goals']) || 0)
+      const careerAssists = parseInt(extractWithFallback(careerData, ['assists', 'stats.assists', 'career.assists']) || 0)
+      const careerAppearances = parseInt(extractWithFallback(careerData, ['gamesPlayed', 'appearances', 'stats.gamesPlayed']) || 0)
+      
+      // Update profile with preferred position and career stats from EA
+      if (preferredPosition || careerGoals || careerAssists || careerAppearances) {
+        const profileUpdate: Record<string, any> = {}
+        if (preferredPosition) profileUpdate.preferred_position = preferredPosition
+        if (careerGoals) profileUpdate.career_goals = careerGoals
+        if (careerAssists) profileUpdate.career_assists = careerAssists
+        if (careerAppearances) profileUpdate.career_appearances = careerAppearances
+        
+        if (Object.keys(profileUpdate).length > 0) {
+          await supabase
+            .from('profiles')
+            .update(profileUpdate)
+            .eq('discord_user_id', profile.discord_user_id)
+          
+          console.log(`[sync-ea-stats] Updated profile for ${eaUsername}: preferred_position=${preferredPosition}, career=${careerGoals}g ${careerAssists}a ${careerAppearances}apps`)
+        }
+      }
+      
+      // Extract aggregate stats from EA member season data
+      const goals = parseInt(extractWithFallback(member, ['goals']) || 0)
+      const assists = parseInt(extractWithFallback(member, ['assists']) || 0)
+      const gamesPlayed = parseInt(extractWithFallback(member, ['gamesPlayed', 'matches']) || 0)
+      const wins = parseInt(extractWithFallback(member, ['wins']) || 0)
+      const losses = parseInt(extractWithFallback(member, ['losses']) || 0)
       const draws = gamesPlayed - wins - losses
-      const avgRating = parseFloat(member.ratingAve || member.avgRating || 0)
-      const cleanSheets = parseInt(member.cleanSheetsDef || member.cleanSheetsGK || member.cleanSheets || 0)
-      const manOfMatch = parseInt(member.manOfTheMatch || member.mom || 0)
-      const position = member.favoritePosition || member.proPos || null
+      const avgRating = parseFloat(extractWithFallback(member, ['ratingAve', 'avgRating']) || 0)
+      const cleanSheets = parseInt(extractWithFallback(member, ['cleanSheetsDef', 'cleanSheetsGK', 'cleanSheets']) || 0)
+      const manOfMatch = parseInt(extractWithFallback(member, ['manOfTheMatch', 'mom']) || 0)
+      const position = extractWithFallback(member, ['favoritePosition', 'proPos']) || null
 
-      // Extended stats from EA API
-      const shots = parseInt(member.shots || 0)
-      const tackles = parseInt(member.tacklesmade || member.tackles || 0)
-      const passesMade = parseInt(member.passesmade || member.passesMade || 0)
-      const passAttempts = parseInt(member.passattempts || member.passAttempts || 0)
-      const saves = parseInt(member.saves || member.gksaves || member.gkSaves || 0)
-      const interceptions = parseInt(member.interceptions || 0)
-      const clearances = parseInt(member.clearances || 0)
+      // Extended stats from EA API using fallback paths
+      const shots = parseInt(extractWithFallback(member, ['shots']) || 0)
+      const tackles = parseInt(extractWithFallback(member, ['tacklesmade', 'tackles']) || 0)
+      const passesMade = parseInt(extractWithFallback(member, ['passesmade', 'passesMade']) || 0)
+      const passAttempts = parseInt(extractWithFallback(member, ['passattempts', 'passAttempts']) || 0)
+      const saves = parseInt(extractWithFallback(member, ['saves', 'gksaves', 'gkSaves']) || 0)
+      const interceptions = parseInt(extractWithFallback(member, ['interceptions']) || 0)
+      const clearances = parseInt(extractWithFallback(member, ['clearances']) || 0)
       
       // New fields: second assists and dribbles
-      const secondAssists = parseInt(member.secondAssists || member.secondassists || member.secondAssist || member.secondassist || 0)
-      const dribbles = parseInt(member.dribblesCompleted || member.dribblewon || member.dribbleswon || member.dribbles || 0)
-      const dribbleAttempts = parseInt(member.dribblesAttempted || member.dribbleattempts || member.dribbleAttempts || 0)
+      const secondAssists = parseInt(extractWithFallback(member, ['secondAssists', 'secondassists', 'secondAssist', 'secondassist']) || 0)
+      const dribbles = parseInt(extractWithFallback(member, ['dribblesCompleted', 'dribblewon', 'dribbleswon', 'dribbles']) || 0)
+      const dribbleAttempts = parseInt(extractWithFallback(member, ['dribblesAttempted', 'dribbleattempts', 'dribbleAttempts']) || 0)
       
       // Debug log to discover all EA member fields
       console.log(`[sync-ea-stats] Member ${eaUsername} fields:`, JSON.stringify(Object.keys(member).sort()))
@@ -1556,25 +1744,34 @@ Deno.serve(async (req) => {
               const existingIds = new Set((existingMatches || []).map((m: any) => m.ea_match_id))
               
               for (const matchData of matches) {
-                const matchId = matchData.matchId?.toString()
+                // Use fallback paths per EA data map for match ID and timestamp
+                const matchId = extractWithFallback(matchData, ['matchId', 'id', 'gameId'])?.toString()
                 if (!matchId || existingIds.has(matchId)) {
                   totalSkipped++
                   continue
                 }
                 
+                // Extract club data using fallback paths
+                const homeClubId = extractWithFallback(matchData, ['home.clubId', 'clubs.home.clubId', 'homeId'])
+                const awayClubId = extractWithFallback(matchData, ['away.clubId', 'clubs.away.clubId', 'awayId'])
                 const ourClubData = matchData.clubs?.[club.ea_club_id]
                 const opponentClubId = Object.keys(matchData.clubs || {}).find((id: string) => id !== club.ea_club_id)
                 const opponentClubData = opponentClubId ? matchData.clubs[opponentClubId] : null
                 
-                const scoreFor = parseInt(ourClubData?.goals || 0)
-                const scoreAgainst = parseInt(opponentClubData?.goals || 0)
+                // Extract scores using fallback paths
+                const scoreFor = parseInt(extractWithFallback(ourClubData, ['goals']) || 
+                                         extractWithFallback(matchData, ['home.goals', 'homeGoals', 'score.home']) || 0)
+                const scoreAgainst = parseInt(extractWithFallback(opponentClubData, ['goals']) || 
+                                             extractWithFallback(matchData, ['away.goals', 'awayGoals', 'score.away']) || 0)
                 
                 let result = 'draw'
                 if (scoreFor > scoreAgainst) result = 'win'
                 else if (scoreFor < scoreAgainst) result = 'loss'
                 
                 const playerStats: any[] = []
-                const players = matchData.players?.[club.ea_club_id] || {}
+                // Use fallback paths for players data
+                const players = extractWithFallback(matchData, ['players', 'playerStats', 'participants'])?.[club.ea_club_id] || 
+                               matchData.players?.[club.ea_club_id] || {}
                 
                 for (const [, pStats] of Object.entries(players) as any) {
                   // Debug log all player stat fields from EA
@@ -1630,8 +1827,8 @@ Deno.serve(async (req) => {
                   })
                 }
                 
-                // Find or create session for this match
-                const matchTimestamp = parseInt(matchData.timestamp || matchData.matchTime || Date.now() / 1000);
+                // Find or create session for this match using fallback paths for timestamp
+                const matchTimestamp = parseInt(extractWithFallback(matchData, ['timestamp', 'matchTimestamp', 'time', 'matchTime']) || Date.now() / 1000);
                 const sessionId = await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
 
                 const { error: insertError } = await supabase.from('club_matches').insert({
