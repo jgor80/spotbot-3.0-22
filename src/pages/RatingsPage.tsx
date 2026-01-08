@@ -281,6 +281,9 @@ export default function RatingsPage() {
     }).filter(p => p.total_games_rated > 0).sort((a, b) => (b.vibe_score || 0) - (a.vibe_score || 0));
   })();
 
+  // Create a lookup map for vibe stats by player ID
+  const vibeStatsLookup = new Map(playerVibeRatings.map(v => [v.discord_user_id, v]));
+
   // Sort players
   const sortedPlayers = [...(playerSummaries || [])].sort((a, b) => {
     const aVal = a[sortField] ?? 0;
@@ -658,6 +661,24 @@ export default function RatingsPage() {
                             Vibe <SortIcon field="vibe_score" />
                           </div>
                         </TableHead>
+                        <TableHead className="text-center">V.Games</TableHead>
+                        <TableHead className="text-center">Enjoy</TableHead>
+                        <TableHead className="text-center">Energy</TableHead>
+                        <TableHead className="text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <ThumbsUp className="h-3 w-3 text-success" />
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <Minus className="h-3 w-3 text-muted-foreground" />
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <ThumbsDown className="h-3 w-3 text-destructive" />
+                          </div>
+                        </TableHead>
                         <TableHead className="text-center">Streak</TableHead>
                         <TableHead className="text-center">CS</TableHead>
                         <TableHead className="text-center">MOTM</TableHead>
@@ -717,6 +738,28 @@ export default function RatingsPage() {
                                 {player.vibe_score.toFixed(0)}
                               </Badge>
                             ) : "-"}
+                          </TableCell>
+                          <TableCell className="text-center text-muted-foreground">
+                            {vibeStatsLookup.get(player.discord_user_id)?.total_games_rated || "-"}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {vibeStatsLookup.get(player.discord_user_id)?.avg_enjoyment 
+                              ? vibeStatsLookup.get(player.discord_user_id)!.avg_enjoyment.toFixed(1)
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {vibeStatsLookup.get(player.discord_user_id)?.avg_energy 
+                              ? vibeStatsLookup.get(player.discord_user_id)!.avg_energy.toFixed(1)
+                              : "-"}
+                          </TableCell>
+                          <TableCell className="text-center text-success">
+                            {vibeStatsLookup.get(player.discord_user_id)?.prefer_count || "-"}
+                          </TableCell>
+                          <TableCell className="text-center text-muted-foreground">
+                            {vibeStatsLookup.get(player.discord_user_id)?.neutral_count || "-"}
+                          </TableCell>
+                          <TableCell className="text-center text-destructive">
+                            {vibeStatsLookup.get(player.discord_user_id)?.avoid_count || "-"}
                           </TableCell>
                           <TableCell className="text-center">
                             {player.current_streak > 0 && (
