@@ -20,7 +20,7 @@ interface DefenseLeaderboardTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortKey = "rank" | "rating" | "games" | "tackles" | "interceptions" | "clearances" | "fouls" | "clean_sheets" | "wins" | "win_rate" | "ga_per_game" | "def_per_game" | "tackles_per_game" | "positions";
+type SortKey = "rank" | "rating" | "games" | "tackles" | "tackle_pct" | "interceptions" | "clearances" | "fouls" | "clean_sheets" | "wins" | "win_rate" | "ga_per_game" | "def_per_game" | "tackles_per_game" | "positions";
 type SortDirection = "asc" | "desc";
 
 // Format position counts for display (short version)
@@ -85,6 +85,10 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
         case "tackles":
           aVal = a.tackles || 0;
           bVal = b.tackles || 0;
+          break;
+        case "tackle_pct":
+          aVal = (a.tackle_attempts || 0) > 0 ? ((a.tackles || 0) / a.tackle_attempts!) * 100 : 0;
+          bVal = (b.tackle_attempts || 0) > 0 ? ((b.tackles || 0) / b.tackle_attempts!) * 100 : 0;
           break;
         case "ga_per_game":
           aVal = a.games_played > 0 ? (a.goals_conceded || 0) / a.games_played : 0;
@@ -175,24 +179,20 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
               <SortableHeader columnKey="rating" className="text-center">Rating</SortableHeader>
               <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
               <SortableHeader columnKey="tackles" className="text-center bg-primary/10 text-primary font-semibold">Tackles</SortableHeader>
-              <SortableHeader columnKey="ga_per_game" className="text-center hidden lg:table-cell">GA/G</SortableHeader>
+              <SortableHeader columnKey="tackle_pct" className="text-center hidden lg:table-cell">Tkl%</SortableHeader>
               <SortableHeader columnKey="interceptions" className="text-center">Int</SortableHeader>
               <SortableHeader columnKey="clearances" className="text-center hidden lg:table-cell">Clear</SortableHeader>
               <SortableHeader columnKey="clean_sheets" className="text-center hidden md:table-cell">CS</SortableHeader>
+              <SortableHeader columnKey="ga_per_game" className="text-center hidden xl:table-cell">GA/G</SortableHeader>
               <SortableHeader columnKey="wins" className="text-center hidden md:table-cell">W/D/L</SortableHeader>
               <SortableHeader columnKey="win_rate" className="text-center hidden lg:table-cell">Win%</SortableHeader>
-              <SortableHeader columnKey="tackles_per_game" className="text-center hidden lg:table-cell">Tkl/G</SortableHeader>
-              <SortableHeader columnKey="def_per_game" className="text-center hidden xl:table-cell">Def/G</SortableHeader>
               <SortableHeader columnKey="positions" className="text-center hidden xl:table-cell">Positions</SortableHeader>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredAndSortedPlayers.map((player) => {
               const gaPerGame = player.games_played > 0 ? (player.goals_conceded || 0) / player.games_played : 0;
-              const defPerGame = player.games_played > 0 
-                ? ((player.tackles || 0) + (player.interceptions || 0) + (player.clearances || 0)) / player.games_played 
-                : 0;
-              const tacklesPerGame = player.games_played > 0 ? (player.tackles || 0) / player.games_played : 0;
+              const tacklePct = (player.tackle_attempts || 0) > 0 ? ((player.tackles || 0) / player.tackle_attempts!) * 100 : 0;
               const positionsShort = formatPositionCountsShort(player.position_counts);
               const positionsFull = formatPositionCountsFull(player.position_counts);
 
@@ -246,10 +246,11 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
                   <TableCell className="text-center"><RatingBadge rating={player.overall_rating} size="sm" /></TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.games_played}</TableCell>
                   <TableCell className="text-center font-bold text-primary">{player.tackles || 0}</TableCell>
-                  <TableCell className="text-center hidden lg:table-cell">{gaPerGame.toFixed(2)}</TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">{tacklePct.toFixed(0)}%</TableCell>
                   <TableCell className="text-center">{player.interceptions || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{player.clearances || 0}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.clean_sheets || 0}</TableCell>
+                  <TableCell className="text-center hidden xl:table-cell">{gaPerGame.toFixed(2)}</TableCell>
                   <TableCell className="text-center hidden md:table-cell text-xs">
                     <span className="text-primary">{player.wins || 0}</span>
                     <span className="text-muted-foreground">/</span>
@@ -258,8 +259,6 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
                     <span className="text-destructive">{player.losses || 0}</span>
                   </TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{(player.win_rate || 0).toFixed(0)}%</TableCell>
-                  <TableCell className="text-center hidden lg:table-cell">{tacklesPerGame.toFixed(2)}</TableCell>
-                  <TableCell className="text-center hidden xl:table-cell">{defPerGame.toFixed(1)}</TableCell>
                   <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">
                     {positionsFull.length > 0 ? (
                       <TooltipProvider>
