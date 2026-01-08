@@ -11649,45 +11649,60 @@ client.on(Events.InteractionCreate, async (interaction) => {
         
         await interaction.deferReply();
         
-        // Update the user's profile with their EA username
-        const { error } = await supabase
-          .from('profiles')
-          .upsert({
+        const discordUsername = interaction.member?.displayName || interaction.user.username;
+        
+        // Call the create-discord-account edge function to:
+        // 1. Create a website account with Discord username
+        // 2. Link Discord to the account
+        // 3. Link EA account to the profile
+        try {
+          const result = await callEdgeFunction('create-discord-account', {
+            guild_id: targetGuildId,
             discord_user_id: interaction.user.id,
+            discord_username: discordUsername,
             ea_username: eaUsername,
-            discord_username: interaction.member?.displayName || interaction.user.username,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'discord_user_id' });
-        
-        if (error) {
-          return interaction.editReply({ content: `❌ Failed to save EA username: ${error.message}` });
-        }
-        
-        // Trigger rating calculation
-        callEdgeFunction('calculate-ratings', {
-          guild_id: targetGuildId,
-          discord_user_id: interaction.user.id
-        }).catch(() => {});
-        
-        // Provide a button to view profile instead of telling them to use slash command
-        const profileButton = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId('squadiq_myprofile')
-            .setLabel('View My Profile')
-            .setEmoji('👤')
-            .setStyle(ButtonStyle.Primary)
-        );
-        
-        const embed = new EmbedBuilder()
-          .setTitle('✅ EA Account Linked!')
-          .setColor(0x00ff00)
-          .setDescription(
-            `Your EA username **${eaUsername}** is now linked to your Discord account!\n\n` +
-            `🎮 Your stats from Pro Clubs matches will now be automatically tracked.\n` +
-            `📊 Click the button below to view your profile anytime!`
+            ea_platform: 'ps5'
+          });
+          
+          if (!result.success) {
+            return interaction.editReply({ content: `❌ Failed to link account: ${result.error}` });
+          }
+          
+          // Provide a button to view profile
+          const profileButton = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('squadiq_myprofile')
+              .setLabel('View My Profile')
+              .setEmoji('👤')
+              .setStyle(ButtonStyle.Primary)
           );
-        
-        return interaction.editReply({ embeds: [embed], components: [profileButton] });
+          
+          let description = `Your EA username **${eaUsername}** is now linked to your Discord account!\n\n` +
+            `🎮 Your stats from Pro Clubs matches will now be automatically tracked.\n` +
+            `📊 Click the button below to view your profile anytime!`;
+          
+          // If a new account was created, include the login credentials
+          if (result.account_created && result.password) {
+            description = `✨ **Website Account Created!**\n\n` +
+              `📧 **Username:** \`${discordUsername}_${interaction.user.id}@spotbot.local\`\n` +
+              `🔑 **Password:** \`${result.password}\`\n\n` +
+              `⚠️ **Save these credentials!** You can use them to log into the SpotBot website.\n\n` +
+              `━━━━━━━━━━━━━━━\n\n` +
+              `Your EA username **${eaUsername}** is now linked!\n` +
+              `🎮 Your stats from Pro Clubs matches will now be automatically tracked.`;
+          }
+          
+          const embed = new EmbedBuilder()
+            .setTitle('✅ Account Linked!')
+            .setColor(0x00ff00)
+            .setDescription(description);
+          
+          return interaction.editReply({ embeds: [embed], components: [profileButton] });
+          
+        } catch (err) {
+          console.error('[welcome_link_modal] Error:', err);
+          return interaction.editReply({ content: `❌ Failed to create account: ${err.message}` });
+        }
       }
 
       if (id.startsWith('rename_club_modal_')) {
