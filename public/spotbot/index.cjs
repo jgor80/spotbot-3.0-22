@@ -671,6 +671,15 @@ const COMMANDS = [
   {
     name: 'twitchlist',
     description: 'List all Twitch streamers being monitored in this server.'
+  },
+
+  // Xbox Presence Tracking
+  {
+    name: 'linkxbox',
+    description: 'Link your Xbox gamertag for presence tracking and game detection.',
+    options: [
+      { name: 'gamertag', description: 'Your Xbox gamertag (exactly as it appears).', type: 3, required: true }
+    ]
   }
 ];
 
@@ -687,6 +696,7 @@ const pendingReadyChecks = new Map(); // Map<uniqueId, { guildId, clubKey, vcId,
 const activeDrafts = new Map(); // Map<guildId, draftData>
 const eaMonitoringIntervals = new Map(); // Map<guildId_clubKey, intervalId> for EA polling
 const pendingFeedbackRatings = new Map(); // Map<uniqueId, { performance, enjoyment, energy, playAgain }>
+const activeGameSessions = new Map(); // Map<guildId_clubKey, { started_at, player_count, detected_score }>
 
 // Scouting state (for select menu choices)
 const pendingScoutChoices = new Map(); // Map<userId, { query, results }>
@@ -1621,6 +1631,27 @@ function buildEmbedForClub(guildId, clubKey, state) {
     linkedVcText += '\n✨ **Auto-assign enabled**';
   }
 
+  // Build game timer section if game in progress
+  let gameTimerText = '';
+  const sessionKey = `${guildId}_${clubKey}`;
+  const activeSession = activeGameSessions.get(sessionKey);
+  
+  if (activeSession && activeSession.status === 'in_progress') {
+    const elapsed = Date.now() - new Date(activeSession.started_at).getTime();
+    const minutes = Math.floor(elapsed / 60000);
+    const seconds = Math.floor((elapsed % 60000) / 1000);
+    
+    // EA FC game = ~12 min halves = ~24 min total
+    const estimatedRemaining = Math.max(0, 24 - minutes);
+    const halfIndicator = minutes < 12 ? '1st Half' : '2nd Half';
+    
+    gameTimerText = `\n\n🎮 **GAME IN PROGRESS**\n` +
+      `⏱️ ${minutes}:${seconds.toString().padStart(2, '0')} elapsed (${halfIndicator})\n` +
+      `⏳ Est. ~${estimatedRemaining} min remaining\n` +
+      `📊 Score: ${activeSession.detected_score || '0-0'}\n` +
+      `👥 Players Detected: ${activeSession.player_count || 0}`;
+  }
+
   // Build formation info section
   let formationSection = '';
   if (formationInfo) {
@@ -1630,6 +1661,7 @@ function buildEmbedForClub(guildId, clubKey, state) {
   // Build description with clear sections
   const description = [
     `${statusEmoji} **${statusText}** • ${filled}/${clubBoard.slots.length} players assigned`,
+    gameTimerText,
     '',
     '**━━━━━━━━━━━━━━━━━━━━━━**',
     ...lines,
@@ -1641,7 +1673,7 @@ function buildEmbedForClub(guildId, clubKey, state) {
   return new EmbedBuilder()
     .setTitle(`⚽ Club: ${club.name.toUpperCase()}`)
     .setDescription(description)
-    .setColor(openCount === 0 ? 0x00ff00 : openCount <= 3 ? 0xffcc00 : 0x5865f2)
+    .setColor(activeSession ? 0xff6b35 : (openCount === 0 ? 0x00ff00 : openCount <= 3 ? 0xffcc00 : 0x5865f2))
     .setFooter({ text: `Formation: ${formationName} • 🟢 = claim spot • 🔴 = quick actions • 🔔 = waitlist` });
 }
 
@@ -3570,6 +3602,9 @@ client.once(Events.ClientReady, async (c) => {
     
     // Start background polling for pending feedback DMs (created by local sync script)
     startFeedbackDMPolling(c);
+    
+    // Start Xbox presence polling for game detection
+    startXboxPresencePolling(c);
   } catch (err) {
     console.error('❌ Failed to register commands:', err);
   }
@@ -6475,6 +6510,83 @@ client.on(Events.InteractionCreate, async (interaction) => {
           );
 
         return interaction.editReply({ embeds: [embed] });
+      }
+
+      // =======================
+      // LINK XBOX COMMAND
+      // =======================
+
+      if (cmd === 'linkxbox') {
+        const gamertag = interaction.options.getString('gamertag');
+
+        await interaction.deferReply({ flags: 64 });
+
+        const openXblApiKey = process.env.OPENXBL_API_KEY;
+        if (!openXblApiKey) {
+          return interaction.editReply({ content: '❌ Xbox integration not configured. Contact an admin.' });
+        }
+
+        try {
+          // Search for the gamertag via OpenXBL
+          const searchResponse = await axios.get(`https://xbl.io/api/v2/search/${encodeURIComponent(gamertag)}`, {
+            headers: {
+              'X-Authorization': openXblApiKey,
+              'Accept': 'application/json'
+            },
+            timeout: 10000
+          });
+
+          const results = searchResponse.data?.people || [];
+          if (results.length === 0) {
+            return interaction.editReply({ 
+              content: `❌ Could not find Xbox gamertag **${gamertag}**. Make sure you typed it exactly as it appears on Xbox.` 
+            });
+          }
+
+          // Find exact match or best match
+          const exactMatch = results.find(p => 
+            p.gamertag?.toLowerCase() === gamertag.toLowerCase()
+          );
+          const match = exactMatch || results[0];
+          const xuid = match.xuid;
+          const foundGamertag = match.gamertag;
+
+          // Save to profiles
+          const { error } = await supabase
+            .from('profiles')
+            .upsert({
+              discord_user_id: interaction.user.id,
+              xbox_gamertag: foundGamertag,
+              xbox_xuid: xuid,
+              discord_username: interaction.member?.displayName || interaction.user.username,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'discord_user_id' });
+
+          if (error) {
+            console.error('[linkxbox] Error saving profile:', error);
+            return interaction.editReply({ content: `❌ Failed to save Xbox gamertag: ${error.message}` });
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle('✅ Xbox Gamertag Linked!')
+            .setColor(0x107c10) // Xbox green
+            .setDescription(`Your Xbox gamertag **${foundGamertag}** is now linked to your Discord account.`)
+            .addFields(
+              { name: '🎮 XUID', value: `\`${xuid}\``, inline: true },
+              { name: '📊 What happens now?', value: 'When you claim a spot and play EA FC, we\'ll detect your game session and show a live timer on the spot panel!', inline: false }
+            )
+            .setFooter({ text: 'Xbox presence tracking enabled' });
+
+          console.log(`[linkxbox] Linked ${interaction.user.username} to Xbox gamertag: ${foundGamertag} (XUID: ${xuid})`);
+          return interaction.editReply({ embeds: [embed] });
+
+        } catch (err) {
+          console.error('[linkxbox] Error:', err.message);
+          if (err.response?.status === 429) {
+            return interaction.editReply({ content: '❌ Rate limited by Xbox API. Please try again in a few minutes.' });
+          }
+          return interaction.editReply({ content: `❌ Failed to lookup Xbox gamertag: ${err.message}` });
+        }
       }
 
       // =======================
@@ -14862,6 +14974,18 @@ async function promptUnlinkedPlayersToLink(guildId, club, playerStats) {
       }
       
       if (potentialMatch) {
+        // NEW CHECK: Skip if this Discord user already has an EA account linked
+        const { data: discordProfile } = await supabase
+          .from('profiles')
+          .select('ea_username')
+          .eq('discord_user_id', potentialMatch.id)
+          .maybeSingle();
+        
+        if (discordProfile?.ea_username) {
+          console.log(`[AutoLink] Skip DM - ${potentialMatch.user.username} already linked to ${discordProfile.ea_username}`);
+          continue;
+        }
+        
         // Check if we've already DMed this user recently (avoid spam)
         const recentDmKey = `autolink_${potentialMatch.id}`;
         const now = Date.now();
@@ -15794,6 +15918,92 @@ function buildDraftResultEmbed(result) {
       { name: 'Status', value: result.status === 'confirmed' ? '✅ Confirmed' : '⏳ Pending confirmation', inline: true }
     )
     .setFooter({ text: result.status === 'confirmed' ? 'Stats recorded!' : 'Waiting for more confirmations...' });
+}
+
+// =======================
+// XBOX PRESENCE POLLING
+// Polls Xbox Live presence for players with claimed spots
+// =======================
+
+let xboxPollingInterval = null;
+
+function startXboxPresencePolling(discordClient) {
+  if (xboxPollingInterval) {
+    console.log(`[Xbox] Polling already running, skipping...`);
+    return;
+  }
+  
+  const openXblApiKey = process.env.OPENXBL_API_KEY;
+  if (!openXblApiKey) {
+    console.log(`[Xbox] OPENXBL_API_KEY not set, skipping presence polling`);
+    return;
+  }
+  
+  console.log(`[Xbox] Starting presence polling (every 3 minutes)`);
+  
+  async function pollXboxPresence() {
+    try {
+      for (const [guildId, state] of guildStates) {
+        if (!state.boardState) continue;
+        
+        // Get players who have claimed spots
+        const spotPlayers = [];
+        for (const [clubKey, clubBoard] of Object.entries(state.boardState)) {
+          if (!clubBoard?.slots) continue;
+          for (const slot of clubBoard.slots) {
+            if (!slot.open && slot.takenBy && slot.takenBy !== '__NOT_IN_VC__') {
+              spotPlayers.push({
+                discord_user_id: slot.takenBy,
+                club_key: clubKey,
+                position: slot.label
+              });
+            }
+          }
+        }
+        
+        if (spotPlayers.length === 0) continue;
+        
+        // Call edge function to check Xbox presence
+        const { data, error } = await supabase.functions.invoke('check-xbox-presence', {
+          body: { guild_id: guildId, spot_players: spotPlayers }
+        });
+        
+        if (error) {
+          console.error(`[Xbox] Error checking presence for ${guildId}:`, error);
+          continue;
+        }
+        
+        if (data?.activeSession) {
+          const sessionKey = `${guildId}_${data.club_key}`;
+          activeGameSessions.set(sessionKey, data.activeSession);
+          console.log(`[Xbox] Game session active for ${guildId}/${data.club_key}: ${data.activeSession.player_count} players`);
+          
+          // Refresh panels to show timer
+          await refreshClubPanels(guildId, data.club_key);
+        }
+        
+        if (data?.gameEnded) {
+          const sessionKey = `${guildId}_${data.club_key}`;
+          activeGameSessions.delete(sessionKey);
+          console.log(`[Xbox] Game ended for ${guildId}/${data.club_key} - resetting spots`);
+          
+          // Reset spots when game ends
+          if (state.boardState[data.club_key]) {
+            await resetClubSpots(state.boardState, data.club_key);
+            await refreshClubPanels(guildId, data.club_key);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`[Xbox] Polling error:`, err);
+    }
+  }
+  
+  // Poll every 3 minutes
+  xboxPollingInterval = setInterval(pollXboxPresence, 3 * 60 * 1000);
+  
+  // Run first poll after 30 seconds (allow bot to fully initialize)
+  setTimeout(pollXboxPresence, 30 * 1000);
 }
 
 // =======================
