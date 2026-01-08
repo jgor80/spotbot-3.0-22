@@ -37,24 +37,18 @@ interface PlayerVibeData {
   discord_username: string | null;
   ea_username: string | null;
   vibe_score: number;
-  total_games_rated: number;
+  total_ratings: number;
   prefer_count: number;
   neutral_count: number;
   avoid_count: number;
-  avg_enjoyment: number;
-  avg_energy: number;
+  avg_performance: number | null;
+  avg_enjoyment: number | null;
+  avg_energy: number | null;
   win_rate: number | null;
   games_played: number | null;
-  // Performance stats from peer evaluations
-  avg_overall: number | null;
-  avg_technical: number | null;
-  avg_game_iq: number | null;
-  avg_communication: number | null;
-  avg_work_ethic: number | null;
-  avg_clutch: number | null;
 }
 
-type SortField = "ea_username" | "vibe_score" | "total_games_rated" | "avg_enjoyment" | "avg_energy" | "prefer_count" | "neutral_count" | "avoid_count" | "win_rate" | "avg_overall" | "avg_technical" | "avg_game_iq" | "avg_communication" | "avg_work_ethic" | "avg_clutch";
+type SortField = "ea_username" | "vibe_score" | "total_ratings" | "avg_performance" | "avg_enjoyment" | "avg_energy" | "prefer_count" | "neutral_count" | "avoid_count" | "win_rate";
 
 export default function RatingsPage() {
   const { selectedGuildId } = useGuild();
@@ -115,7 +109,7 @@ export default function RatingsPage() {
       if (!selectedGuildId) return [];
       const { data, error } = await supabase
         .from("peer_evaluations")
-        .select("evaluated_discord_id, enjoyment, team_energy, play_again, overall_score, technical_skill, game_iq, communication, work_ethic, clutch_factor")
+        .select("evaluated_discord_id, enjoyment, team_energy, play_again, overall_score")
         .eq("guild_id", selectedGuildId);
       if (error) throw error;
       return data || [];
@@ -137,58 +131,61 @@ export default function RatingsPage() {
     enabled: !!selectedGuildId,
   });
 
-  // Calculate per-player vibe ratings from peer evaluations
+  // Calculate per-player ratings from peer evaluations
   const playerVibeRatings: PlayerVibeData[] = (() => {
     if (!playerFeedbackData || !profiles) return [];
     
-    // Aggregate feedback per evaluated player
+    // Aggregate feedback per evaluated player - count each evaluation once
     const playerMap = new Map<string, {
-      vibeRatings: number;
-      perfRatings: number;
+      ratings: number;
       prefer: number;
       neutral: number;
       avoid: number;
+      totalPerformance: number;
+      perfCount: number;
       totalEnjoyment: number;
+      enjoymentCount: number;
       totalEnergy: number;
-      totalOverall: number;
-      totalTechnical: number;
-      totalGameIq: number;
-      totalCommunication: number;
-      totalWorkEthic: number;
-      totalClutch: number;
+      energyCount: number;
     }>();
     
     playerFeedbackData.forEach(record => {
       const playerId = record.evaluated_discord_id;
       if (!playerMap.has(playerId)) {
         playerMap.set(playerId, { 
-          vibeRatings: 0, perfRatings: 0, prefer: 0, neutral: 0, avoid: 0, 
-          totalEnjoyment: 0, totalEnergy: 0, totalOverall: 0, totalTechnical: 0, 
-          totalGameIq: 0, totalCommunication: 0, totalWorkEthic: 0, totalClutch: 0 
+          ratings: 0, prefer: 0, neutral: 0, avoid: 0, 
+          totalPerformance: 0, perfCount: 0,
+          totalEnjoyment: 0, enjoymentCount: 0,
+          totalEnergy: 0, energyCount: 0
         });
       }
       const player = playerMap.get(playerId)!;
       
-      // Vibe stats
-      if (record.enjoyment != null) {
-        player.vibeRatings++;
-        player.totalEnjoyment += record.enjoyment;
-        player.totalEnergy += record.team_energy || 0;
-        if (record.play_again === "prefer") player.prefer++;
-        else if (record.play_again === "avoid") player.avoid++;
-        else player.neutral++;
+      // Count this as one rating
+      player.ratings++;
+      
+      // Performance (overall_score)
+      if (record.overall_score != null) {
+        player.totalPerformance += record.overall_score;
+        player.perfCount++;
       }
       
-      // Performance stats
-      if (record.overall_score != null) {
-        player.perfRatings++;
-        player.totalOverall += record.overall_score;
-        player.totalTechnical += record.technical_skill || 0;
-        player.totalGameIq += record.game_iq || 0;
-        player.totalCommunication += record.communication || 0;
-        player.totalWorkEthic += record.work_ethic || 0;
-        player.totalClutch += record.clutch_factor || 0;
+      // Enjoyment
+      if (record.enjoyment != null) {
+        player.totalEnjoyment += record.enjoyment;
+        player.enjoymentCount++;
       }
+      
+      // Energy
+      if (record.team_energy != null) {
+        player.totalEnergy += record.team_energy;
+        player.energyCount++;
+      }
+      
+      // Play again preference
+      if (record.play_again === "prefer") player.prefer++;
+      else if (record.play_again === "avoid") player.avoid++;
+      else if (record.play_again === "neutral") player.neutral++;
     });
 
     const profilesLookup = new Map((profiles || []).map(p => [p.discord_user_id, p]));
@@ -198,8 +195,9 @@ export default function RatingsPage() {
       const profile = profilesLookup.get(discord_user_id);
       const summary = summaryLookup.get(discord_user_id);
       
-      const avgEnjoyment = data.vibeRatings > 0 ? data.totalEnjoyment / data.vibeRatings : 0;
-      const avgEnergy = data.vibeRatings > 0 ? data.totalEnergy / data.vibeRatings : 0;
+      const avgEnjoyment = data.enjoymentCount > 0 ? data.totalEnjoyment / data.enjoymentCount : null;
+      const avgEnergy = data.energyCount > 0 ? data.totalEnergy / data.energyCount : null;
+      const avgPerformance = data.perfCount > 0 ? data.totalPerformance / data.perfCount : null;
       const winRate = summary?.win_rate || null;
       
       // Calculate vibe score (0-100):
@@ -207,8 +205,8 @@ export default function RatingsPage() {
       // - Energy: 25% weight (1-5 scale → 0-25)
       // - Preference ratio: 25% weight (prefer vs avoid → 0-25)
       // - Win rate: 15% weight (0-100% → 0-15)
-      const enjoymentScore = (avgEnjoyment / 5) * 35;
-      const energyScore = (avgEnergy / 5) * 25;
+      const enjoymentScore = avgEnjoyment != null ? (avgEnjoyment / 5) * 35 : 17.5;
+      const energyScore = avgEnergy != null ? (avgEnergy / 5) * 25 : 12.5;
       const totalVotes = data.prefer + data.neutral + data.avoid;
       const preferenceScore = totalVotes > 0 
         ? ((data.prefer - data.avoid) / totalVotes + 1) / 2 * 25
@@ -222,22 +220,17 @@ export default function RatingsPage() {
         discord_username: profile?.discord_username || summary?.discord_username || null,
         ea_username: profile?.ea_username || null,
         vibe_score: vibeScore,
-        total_games_rated: data.vibeRatings + data.perfRatings,
+        total_ratings: data.ratings,
         prefer_count: data.prefer,
         neutral_count: data.neutral,
         avoid_count: data.avoid,
+        avg_performance: avgPerformance,
         avg_enjoyment: avgEnjoyment,
         avg_energy: avgEnergy,
         win_rate: winRate,
         games_played: summary?.games_played || null,
-        avg_overall: data.perfRatings > 0 ? data.totalOverall / data.perfRatings : null,
-        avg_technical: data.perfRatings > 0 ? data.totalTechnical / data.perfRatings : null,
-        avg_game_iq: data.perfRatings > 0 ? data.totalGameIq / data.perfRatings : null,
-        avg_communication: data.perfRatings > 0 ? data.totalCommunication / data.perfRatings : null,
-        avg_work_ethic: data.perfRatings > 0 ? data.totalWorkEthic / data.perfRatings : null,
-        avg_clutch: data.perfRatings > 0 ? data.totalClutch / data.perfRatings : null,
       };
-    }).filter(p => p.total_games_rated > 0);
+    }).filter(p => p.total_ratings > 0);
   })();
 
   // Sort players
@@ -338,7 +331,7 @@ export default function RatingsPage() {
                         </div>
                         <div>
                           <p className="text-2xl font-bold">
-                            {playerVibeRatings.reduce((sum, p) => sum + p.total_games_rated, 0)}
+                            {playerVibeRatings.reduce((sum, p) => sum + p.total_ratings, 0)}
                           </p>
                           <p className="text-sm text-muted-foreground">Total Games Rated</p>
                         </div>
@@ -353,8 +346,8 @@ export default function RatingsPage() {
                         </div>
                         <div>
                           <p className="text-2xl font-bold">
-                            {playerVibeRatings.length > 0 
-                              ? (playerVibeRatings.reduce((sum, p) => sum + p.avg_enjoyment, 0) / playerVibeRatings.length).toFixed(1)
+                            {playerVibeRatings.filter(p => p.avg_enjoyment != null).length > 0 
+                              ? (playerVibeRatings.filter(p => p.avg_enjoyment != null).reduce((sum, p) => sum + (p.avg_enjoyment || 0), 0) / playerVibeRatings.filter(p => p.avg_enjoyment != null).length).toFixed(1)
                               : "-"}
                           </p>
                           <p className="text-sm text-muted-foreground">Avg Enjoyment</p>
@@ -403,10 +396,18 @@ export default function RatingsPage() {
                           </TableHead>
                           <TableHead 
                             className="cursor-pointer hover:bg-muted/50 text-center"
-                            onClick={() => handleSort("total_games_rated")}
+                            onClick={() => handleSort("total_ratings")}
                           >
                             <div className="flex items-center justify-center gap-1">
-                              Games <SortIcon field="total_games_rated" />
+                              Ratings <SortIcon field="total_ratings" />
+                            </div>
+                          </TableHead>
+                          <TableHead 
+                            className="cursor-pointer hover:bg-muted/50 text-center"
+                            onClick={() => handleSort("avg_performance")}
+                          >
+                            <div className="flex items-center justify-center gap-1">
+                              Perf <SortIcon field="avg_performance" />
                             </div>
                           </TableHead>
                           <TableHead 
@@ -465,38 +466,6 @@ export default function RatingsPage() {
                               Vibe <SortIcon field="vibe_score" />
                             </div>
                           </TableHead>
-                          <TableHead 
-                            className="cursor-pointer hover:bg-muted/50 text-center"
-                            onClick={() => handleSort("avg_overall")}
-                          >
-                            <div className="flex items-center justify-center gap-1">
-                              Perf <SortIcon field="avg_overall" />
-                            </div>
-                          </TableHead>
-                          <TableHead 
-                            className="cursor-pointer hover:bg-muted/50 text-center"
-                            onClick={() => handleSort("avg_communication")}
-                          >
-                            <div className="flex items-center justify-center gap-1">
-                              Comms <SortIcon field="avg_communication" />
-                            </div>
-                          </TableHead>
-                          <TableHead 
-                            className="cursor-pointer hover:bg-muted/50 text-center"
-                            onClick={() => handleSort("avg_work_ethic")}
-                          >
-                            <div className="flex items-center justify-center gap-1">
-                              Work <SortIcon field="avg_work_ethic" />
-                            </div>
-                          </TableHead>
-                          <TableHead 
-                            className="cursor-pointer hover:bg-muted/50 text-center"
-                            onClick={() => handleSort("avg_clutch")}
-                          >
-                            <div className="flex items-center justify-center gap-1">
-                              Clutch <SortIcon field="avg_clutch" />
-                            </div>
-                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -515,18 +484,21 @@ export default function RatingsPage() {
                               </div>
                             </TableCell>
                             <TableCell className="text-center">
-                              <Badge variant="secondary">{player.total_games_rated}</Badge>
+                              <Badge variant="secondary">{player.total_ratings}</Badge>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {player.avg_performance != null ? player.avg_performance.toFixed(1) : "-"}
                             </TableCell>
                             <TableCell className="text-center">
                               <div className="flex items-center justify-center gap-1">
                                 <Heart className="h-4 w-4 text-pink-500" />
-                                <span className="font-medium">{player.avg_enjoyment.toFixed(1)}</span>
+                                <span className="font-medium">{player.avg_enjoyment != null ? player.avg_enjoyment.toFixed(1) : "-"}</span>
                               </div>
                             </TableCell>
                             <TableCell className="text-center">
                               <div className="flex items-center justify-center gap-1">
                                 <Zap className="h-4 w-4 text-yellow-500" />
-                                <span className="font-medium">{player.avg_energy.toFixed(1)}</span>
+                                <span className="font-medium">{player.avg_energy != null ? player.avg_energy.toFixed(1) : "-"}</span>
                               </div>
                             </TableCell>
                             <TableCell className="text-center text-success font-medium">
@@ -552,18 +524,6 @@ export default function RatingsPage() {
                               >
                                 {player.vibe_score}
                               </Badge>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {player.avg_overall != null ? player.avg_overall.toFixed(1) : "-"}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {player.avg_communication != null ? player.avg_communication.toFixed(1) : "-"}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {player.avg_work_ethic != null ? player.avg_work_ethic.toFixed(1) : "-"}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {player.avg_clutch != null ? player.avg_clutch.toFixed(1) : "-"}
                             </TableCell>
                           </TableRow>
                         ))}
