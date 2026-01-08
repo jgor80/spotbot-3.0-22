@@ -43,17 +43,31 @@ serve(async (req) => {
     }
 
     // Check if user has admin/moderator role
-    const { data: hasRole } = await supabase.rpc("has_any_role", {
-      _guild_id: guild_id,
-      _discord_user_id: discord_user_id,
-      _roles: ["admin", "moderator"],
-    });
+    // First, check if ANY roles exist for this guild - if not, allow operation (initial setup)
+    const { data: anyRoles, error: rolesError } = await supabase
+      .from("user_roles")
+      .select("id")
+      .eq("guild_id", guild_id)
+      .limit(1);
 
-    if (!hasRole) {
-      return new Response(
-        JSON.stringify({ success: false, error: "Insufficient permissions" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    const hasNoRolesConfigured = !anyRoles || anyRoles.length === 0;
+
+    if (!hasNoRolesConfigured) {
+      // Roles exist, check if user has permission
+      const { data: hasRole } = await supabase.rpc("has_any_role", {
+        _guild_id: guild_id,
+        _discord_user_id: discord_user_id,
+        _roles: ["admin", "moderator"],
+      });
+
+      if (!hasRole) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Insufficient permissions" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    } else {
+      console.log(`No roles configured for guild ${guild_id}, allowing operation`);
     }
 
     // Build update object
