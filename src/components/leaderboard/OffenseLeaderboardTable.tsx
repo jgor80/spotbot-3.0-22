@@ -11,10 +11,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { TrendingUp, TrendingDown, Minus, AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Search } from "lucide-react";
+import { AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useMemo } from "react";
-import { getTacticalRoleName, getTacticalRoleInfo, getTacticalRoleBadgeClasses } from "@/lib/tacticalRoles";
+import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses, inferPosition, getPrimaryPosition } from "@/lib/archetypes";
 
 interface OffenseLeaderboardTableProps {
   players: LeaderboardPlayer[];
@@ -172,7 +172,8 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
             <TableRow className="bg-muted/50">
               <SortableHeader columnKey="rank" className="w-12 text-center">#</SortableHeader>
               <TableHead>Player</TableHead>
-              <TableHead className="text-center hidden lg:table-cell">Role</TableHead>
+              <TableHead className="text-center hidden lg:table-cell">Pos</TableHead>
+              <TableHead className="text-center hidden lg:table-cell">Build</TableHead>
               <SortableHeader columnKey="rating" className="text-center">Rating</SortableHeader>
               <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
               <SortableHeader columnKey="goals" className="text-center bg-primary/10 text-primary font-semibold">Goals</SortableHeader>
@@ -184,7 +185,6 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
               <SortableHeader columnKey="win_rate" className="text-center hidden lg:table-cell">Win%</SortableHeader>
               <SortableHeader columnKey="goals_per_game" className="text-center hidden lg:table-cell">G/G</SortableHeader>
               <SortableHeader columnKey="ga_per_game" className="text-center hidden md:table-cell">G+A/G</SortableHeader>
-              <SortableHeader columnKey="positions" className="text-center hidden xl:table-cell">Positions</SortableHeader>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -192,8 +192,11 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
               const shotConv = player.shots > 0 ? (player.goals / player.shots) * 100 : 0;
               const gaPerGame = player.games_played > 0 ? (player.goals + player.assists) / player.games_played : 0;
               const goalsPerGame = player.games_played > 0 ? player.goals / player.games_played : 0;
-              const positionsShort = formatPositionCountsShort(player.position_counts);
-              const positionsFull = formatPositionCountsFull(player.position_counts);
+              
+              const archetypeId = player.most_used_archetype;
+              const archetypeInfo = getArchetypeInfo(archetypeId);
+              const archetypeName = getArchetypeName(archetypeId);
+              const inferredPos = inferPosition(archetypeId) || getPrimaryPosition(player.position_counts);
 
               return (
                 <TableRow
@@ -221,9 +224,6 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
                       <div className="flex items-center gap-2">
                         <div>
                           <p className="font-medium">{player.ea_username || player.discord_username || "Unknown"}</p>
-                          {player.primary_position && (
-                            <Badge variant="outline" className="text-xs mt-0.5">{player.primary_position}</Badge>
-                          )}
                         </div>
                         {player.discord_user_id.startsWith('ea_') && (
                           <TooltipProvider>
@@ -243,17 +243,22 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
                     </div>
                   </TableCell>
                   <TableCell className="text-center hidden lg:table-cell">
-                    {(() => {
-                      const roleId = player.most_used_archetype;
-                      const info = getTacticalRoleInfo(roleId);
-                      const name = getTacticalRoleName(roleId);
-                      if (!name) return <span className="text-muted-foreground">-</span>;
-                      return (
-                        <Badge className={cn("text-xs", getTacticalRoleBadgeClasses(info?.category || null))}>
-                          {name}
-                        </Badge>
-                      );
-                    })()}
+                    {inferredPos ? (
+                      <Badge variant="outline" className="text-xs">
+                        {inferredPos}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">
+                    {archetypeName ? (
+                      <Badge className={cn("text-xs", getArchetypeBadgeClasses(archetypeInfo?.category || null))}>
+                        {archetypeName}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-center"><RatingBadge rating={player.overall_rating} size="sm" /></TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.games_played}</TableCell>
@@ -272,25 +277,6 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
                   <TableCell className="text-center hidden lg:table-cell">{(player.win_rate || 0).toFixed(0)}%</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{goalsPerGame.toFixed(2)}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{gaPerGame.toFixed(2)}</TableCell>
-                  <TableCell className="text-center hidden xl:table-cell text-xs text-muted-foreground">
-                    {positionsFull.length > 0 ? (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger className="cursor-help underline decoration-dotted">
-                            {positionsShort}
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <div className="text-sm space-y-1">
-                              <p className="font-semibold mb-1">Positions Played</p>
-                              {positionsFull.map((line, i) => (
-                                <p key={i}>{line}</p>
-                              ))}
-                            </div>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : "-"}
-                  </TableCell>
                 </TableRow>
               );
             })}
