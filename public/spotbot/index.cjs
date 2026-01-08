@@ -14908,7 +14908,12 @@ async function createClubMatchFeedbackRequests(guildId, eaMatchId, playerStats) 
 }
 
 // Auto-link: DM unlinked players prompting them to link their EA account
+// DISABLED: Causing spam on resets - users should use /linkea command instead
 async function promptUnlinkedPlayersToLink(guildId, club, playerStats) {
+  // Feature disabled - return immediately
+  console.log(`[AutoLink] DM feature disabled - skipping ${playerStats?.length || 0} players`);
+  return;
+  
   try {
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     if (!guild) return;
