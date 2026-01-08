@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { AlertTriangle, ArrowUp, ArrowDown, ArrowUpDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useMemo } from "react";
+import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses } from "@/lib/archetypes";
 
 interface MidfielderLeaderboardTableProps {
   players: LeaderboardPlayer[];
@@ -175,6 +176,7 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
             <TableRow className="bg-muted/50">
               <SortableHeader columnKey="rank" className="w-12 text-center">#</SortableHeader>
               <TableHead>Player</TableHead>
+              <TableHead className="text-center hidden lg:table-cell">Archetype</TableHead>
               <SortableHeader columnKey="rating" className="text-center">Rating</SortableHeader>
               <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
               <SortableHeader columnKey="passes" className="text-center bg-primary/10 text-primary font-semibold">Passes</SortableHeader>
@@ -242,6 +244,19 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
                         )}
                       </div>
                     </div>
+                  </TableCell>
+                  <TableCell className="text-center hidden lg:table-cell">
+                    {(() => {
+                      const archetypeId = player.most_used_archetype;
+                      const info = getArchetypeInfo(archetypeId);
+                      const name = getArchetypeName(archetypeId);
+                      if (!name) return <span className="text-muted-foreground">-</span>;
+                      return (
+                        <Badge className={cn("text-xs", getArchetypeBadgeClasses(info?.category || null))}>
+                          {name}
+                        </Badge>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="text-center"><RatingBadge rating={player.overall_rating} size="sm" /></TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.games_played}</TableCell>
