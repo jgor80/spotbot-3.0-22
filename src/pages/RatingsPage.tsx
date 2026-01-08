@@ -58,7 +58,7 @@ export default function RatingsPage() {
     setIsRefreshing(true);
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["player-summary-vibe"] }),
-      queryClient.invalidateQueries({ queryKey: ["player-vibe-chemistry-aggregates"] }),
+      queryClient.invalidateQueries({ queryKey: ["player-feedback-aggregates"] }),
       queryClient.invalidateQueries({ queryKey: ["profiles-lookup"] }),
       queryClient.invalidateQueries({ queryKey: ["recent-peer-evaluations"] }),
     ]);
@@ -100,15 +100,16 @@ export default function RatingsPage() {
     enabled: !!selectedGuildId,
   });
 
-  // Fetch aggregated vibe chemistry data (pair-wise aggregates, not raw evaluations)
-  const { data: vibeChemistryData, isLoading: vibeLoading } = useQuery({
-    queryKey: ["player-vibe-chemistry-aggregates", selectedGuildId],
+  // Fetch aggregated feedback per player directly from peer_evaluations
+  const { data: playerFeedbackData, isLoading: vibeLoading } = useQuery({
+    queryKey: ["player-feedback-aggregates", selectedGuildId],
     queryFn: async () => {
       if (!selectedGuildId) return [];
       const { data, error } = await supabase
-        .from("player_vibe_chemistry")
-        .select("player_a_discord_id, player_b_discord_id, games_together, avg_enjoyment, avg_team_energy, prefer_count, neutral_count, avoid_count, vibe_score")
-        .eq("guild_id", selectedGuildId);
+        .from("peer_evaluations")
+        .select("evaluated_discord_id, enjoyment, team_energy, play_again")
+        .eq("guild_id", selectedGuildId)
+        .not("enjoyment", "is", null);
       if (error) throw error;
       return data || [];
     },
@@ -129,56 +130,32 @@ export default function RatingsPage() {
     enabled: !!selectedGuildId,
   });
 
-  // Calculate per-player vibe ratings from aggregated chemistry data
+  // Calculate per-player vibe ratings from peer evaluations
   const playerVibeRatings: PlayerVibeData[] = (() => {
-    if (!vibeChemistryData || !profiles) return [];
+    if (!playerFeedbackData || !profiles) return [];
     
-    // Aggregate chemistry records per player
+    // Aggregate feedback per evaluated player
     const playerMap = new Map<string, {
-      games: number;
+      ratings: number;
       prefer: number;
       neutral: number;
       avoid: number;
       totalEnjoyment: number;
       totalEnergy: number;
-      count: number;
     }>();
     
-    vibeChemistryData.forEach(record => {
-      // Each chemistry record represents the relationship between two players
-      // Aggregate for player_a
-      if (!playerMap.has(record.player_a_discord_id)) {
-        playerMap.set(record.player_a_discord_id, { games: 0, prefer: 0, neutral: 0, avoid: 0, totalEnjoyment: 0, totalEnergy: 0, count: 0 });
+    playerFeedbackData.forEach(record => {
+      const playerId = record.evaluated_discord_id;
+      if (!playerMap.has(playerId)) {
+        playerMap.set(playerId, { ratings: 0, prefer: 0, neutral: 0, avoid: 0, totalEnjoyment: 0, totalEnergy: 0 });
       }
-      const playerA = playerMap.get(record.player_a_discord_id)!;
-      playerA.games += record.games_together || 0;
-      playerA.prefer += record.prefer_count || 0;
-      playerA.neutral += record.neutral_count || 0;
-      playerA.avoid += record.avoid_count || 0;
-      if (record.avg_enjoyment) {
-        playerA.totalEnjoyment += record.avg_enjoyment;
-        playerA.count++;
-      }
-      if (record.avg_team_energy) {
-        playerA.totalEnergy += record.avg_team_energy;
-      }
-      
-      // Aggregate for player_b
-      if (!playerMap.has(record.player_b_discord_id)) {
-        playerMap.set(record.player_b_discord_id, { games: 0, prefer: 0, neutral: 0, avoid: 0, totalEnjoyment: 0, totalEnergy: 0, count: 0 });
-      }
-      const playerB = playerMap.get(record.player_b_discord_id)!;
-      playerB.games += record.games_together || 0;
-      playerB.prefer += record.prefer_count || 0;
-      playerB.neutral += record.neutral_count || 0;
-      playerB.avoid += record.avoid_count || 0;
-      if (record.avg_enjoyment) {
-        playerB.totalEnjoyment += record.avg_enjoyment;
-        playerB.count++;
-      }
-      if (record.avg_team_energy) {
-        playerB.totalEnergy += record.avg_team_energy;
-      }
+      const player = playerMap.get(playerId)!;
+      player.ratings++;
+      player.totalEnjoyment += record.enjoyment || 0;
+      player.totalEnergy += record.team_energy || 0;
+      if (record.play_again === "prefer") player.prefer++;
+      else if (record.play_again === "avoid") player.avoid++;
+      else player.neutral++;
     });
 
     const profilesLookup = new Map((profiles || []).map(p => [p.discord_user_id, p]));
@@ -193,12 +170,12 @@ export default function RatingsPage() {
         discord_username: profile?.discord_username || summary?.discord_username || null,
         ea_username: profile?.ea_username || null,
         vibe_score: summary?.vibe_score || null,
-        total_games_rated: data.games,
+        total_games_rated: data.ratings,
         prefer_count: data.prefer,
         neutral_count: data.neutral,
         avoid_count: data.avoid,
-        avg_enjoyment: data.count > 0 ? data.totalEnjoyment / data.count : 0,
-        avg_energy: data.count > 0 ? data.totalEnergy / data.count : 0,
+        avg_enjoyment: data.ratings > 0 ? data.totalEnjoyment / data.ratings : 0,
+        avg_energy: data.ratings > 0 ? data.totalEnergy / data.ratings : 0,
       };
     }).filter(p => p.total_games_rated > 0);
   })();
