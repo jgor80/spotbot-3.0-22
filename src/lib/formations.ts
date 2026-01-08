@@ -388,3 +388,12 @@ export function getPositionColor(position: string): string {
   if (["CM", "CDM", "CAM", "LM", "RM", "LAM", "RAM", "CF"].includes(position)) return "hsl(var(--primary))";
   return "hsl(var(--destructive))";
 }
+
+// Maps formation positions to rating category from player_position_ratings
+export function getPositionRatingCategory(position: string): string {
+  if (position === "GK") return "GK";
+  if (["CB", "LB", "RB", "LWB", "RWB"].includes(position)) return "CB";
+  if (["CM", "CDM", "CAM", "LM", "RM", "LAM", "RAM", "CF"].includes(position)) return "MIDFIELDER";
+  // Attackers: ST, LW, RW, CF, etc.
+  return "FORWARD";
+}

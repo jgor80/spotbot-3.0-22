@@ -1,7 +1,12 @@
 import { FormationType, LineupSlot } from "@/types/player";
-import { FORMATIONS, getPositionColor } from "@/lib/formations";
-import { RatingBadge } from "@/components/player/RatingBadge";
+import { FORMATIONS, getPositionColor, getPositionRatingCategory } from "@/lib/formations";
 import { cn } from "@/lib/utils";
+
+interface PositionRating {
+  discord_user_id: string;
+  position: string;
+  rating: number;
+}
 
 interface FormationPitchProps {
   formation: FormationType;
@@ -9,6 +14,7 @@ interface FormationPitchProps {
   onSlotClick?: (slotIndex: number) => void;
   selectedSlot?: number | null;
   interactive?: boolean;
+  positionRatings?: PositionRating[];
 }
 
 export function FormationPitch({ 
@@ -16,9 +22,19 @@ export function FormationPitch({
   slots, 
   onSlotClick, 
   selectedSlot,
-  interactive = true 
+  interactive = true,
+  positionRatings = []
 }: FormationPitchProps) {
   const positions = FORMATIONS[formation];
+
+  // Get the position-specific rating for a player at a given formation position
+  const getPlayerPositionRating = (discordUserId: string, formationPosition: string): number | null => {
+    const ratingCategory = getPositionRatingCategory(formationPosition);
+    const posRating = positionRatings.find(
+      pr => pr.discord_user_id === discordUserId && pr.position === ratingCategory
+    );
+    return posRating?.rating ?? null;
+  };
 
   return (
     <div className="relative w-full aspect-[3/4] bg-gradient-to-b from-primary/20 to-primary/10 rounded-xl border-2 border-primary/30 overflow-hidden">
@@ -42,6 +58,14 @@ export function FormationPitch({
         const slot = slots.find(s => s.slot_index === index);
         const isSelected = selectedSlot === index;
         const isEmpty = !slot;
+        
+        // Get position-specific rating or fall back to overall rating
+        const displayRating = slot 
+          ? getPlayerPositionRating(slot.discord_user_id, pos.position) ?? slot.rating
+          : undefined;
+        
+        // Get full display name
+        const displayName = slot?.discord_username || slot?.ea_username || "?";
 
         return (
           <div
@@ -52,44 +76,40 @@ export function FormationPitch({
           >
             <div
               className={cn(
-                "flex flex-col items-center gap-1 transition-all",
+                "flex flex-col items-center gap-0.5 transition-all",
                 interactive && "cursor-pointer hover:scale-110",
                 isSelected && "scale-110"
               )}
             >
+              {/* Rating badge on top */}
+              {slot && displayRating !== undefined && (
+                <div className="bg-background/90 text-foreground text-[10px] font-bold px-1.5 py-0.5 rounded-t shadow-sm border border-b-0 border-border/50">
+                  {Math.round(displayRating)}
+                </div>
+              )}
+              
               {/* Player circle */}
               <div
                 className={cn(
                   "relative flex items-center justify-center rounded-full border-2 shadow-lg transition-all",
                   isEmpty
                     ? "h-10 w-10 md:h-12 md:w-12 border-dashed border-muted-foreground/50 bg-background/50"
-                    : "h-12 w-12 md:h-14 md:w-14 border-background bg-card",
+                    : "h-10 w-10 md:h-12 md:w-12 border-background",
                   isSelected && "ring-2 ring-accent ring-offset-2 ring-offset-background"
                 )}
                 style={{ 
                   backgroundColor: isEmpty ? undefined : getPositionColor(pos.position),
                 }}
               >
-                {slot ? (
-                  <div className="flex flex-col items-center">
-                    <span className="text-xs font-bold text-primary-foreground truncate max-w-[40px]">
-                      {(slot.ea_username || slot.discord_username)?.slice(0, 4) || "?"}
-                    </span>
-                    {slot.rating !== undefined && (
-                      <span className="text-[10px] font-bold text-primary-foreground/80">
-                        {Math.round(slot.rating)}
-                      </span>
-                    )}
-                  </div>
-                ) : (
+                {!slot && (
                   <span className="text-lg text-muted-foreground">+</span>
                 )}
               </div>
 
-              {/* Position label */}
-              <span className="text-[10px] font-bold text-foreground/80 bg-background/80 px-1.5 py-0.5 rounded">
-                {pos.position}
-              </span>
+              {/* Player name label */}
+              <div className="bg-background/90 text-foreground text-[9px] md:text-[10px] font-semibold px-1.5 py-0.5 rounded shadow-sm max-w-[70px] md:max-w-[90px] truncate text-center border border-border/50">
+                {slot ? displayName : pos.position}
+              </div>
             </div>
           </div>
         );

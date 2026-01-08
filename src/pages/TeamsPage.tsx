@@ -118,6 +118,23 @@ export default function TeamsPage() {
   const { data: availablePlayers, isLoading: playersLoading } = useAvailablePlayers(selectedGuildId);
   const positions = FORMATIONS[formation];
 
+  // Fetch position ratings for all players in the guild
+  const { data: positionRatings } = useQuery({
+    queryKey: ["positionRatings", selectedGuildId],
+    queryFn: async () => {
+      if (!selectedGuildId) return [];
+      
+      const { data, error } = await supabase
+        .from("player_position_ratings")
+        .select("discord_user_id, position, rating")
+        .eq("guild_id", selectedGuildId);
+      
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedGuildId,
+  });
+
   // Fetch teams
   const { data: teams, isLoading: teamsLoading } = useQuery({
     queryKey: ["teams", selectedGuildId],
@@ -868,6 +885,7 @@ export default function TeamsPage() {
                           slots={slots}
                           onSlotClick={handleSlotClick}
                           selectedSlot={selectedSlot}
+                          positionRatings={positionRatings || []}
                         />
                       </div>
                     </CardContent>
