@@ -21,7 +21,7 @@ interface OffenseLeaderboardTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "second_assists" | "ga" | "shots" | "shot_conv" | "dribbles" | "wins" | "win_rate" | "ga_per_game" | "goals_per_game" | "positions";
+type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "ga" | "shots" | "shot_conv" | "dribbles" | "wins" | "win_rate" | "ga_per_game" | "goals_per_game" | "positions";
 type SortDirection = "asc" | "desc";
 
 // Format position counts for display (short version)
@@ -89,10 +89,6 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
         case "assists":
           aVal = a.assists;
           bVal = b.assists;
-          break;
-        case "second_assists":
-          aVal = a.second_assists || 0;
-          bVal = b.second_assists || 0;
           break;
         case "shots":
           aVal = a.shots || 0;
@@ -182,7 +178,6 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
               <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
               <SortableHeader columnKey="goals" className="text-center bg-primary/10 text-primary font-semibold">Goals</SortableHeader>
               <SortableHeader columnKey="assists" className="text-center">Ast</SortableHeader>
-              <SortableHeader columnKey="second_assists" className="text-center hidden md:table-cell">2nd</SortableHeader>
               <SortableHeader columnKey="ga" className="text-center hidden md:table-cell">G+A</SortableHeader>
               <SortableHeader columnKey="shots" className="text-center hidden lg:table-cell">Shots</SortableHeader>
               <SortableHeader columnKey="shot_conv" className="text-center hidden lg:table-cell">Shot%</SortableHeader>
@@ -269,7 +264,6 @@ export function OffenseLeaderboardTable({ players, onPlayerClick }: OffenseLeade
                   <TableCell className="text-center hidden md:table-cell">{player.games_played}</TableCell>
                   <TableCell className="text-center font-bold text-primary">{player.goals}</TableCell>
                   <TableCell className="text-center">{player.assists}</TableCell>
-                  <TableCell className="text-center hidden md:table-cell">{player.second_assists || 0}</TableCell>
                   <TableCell className="text-center font-medium hidden md:table-cell">{player.goals + player.assists}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{player.shots || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{shotConv.toFixed(0)}%</TableCell>

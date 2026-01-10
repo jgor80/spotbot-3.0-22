@@ -5,6 +5,56 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// EA Event Code mapping (Opta-style event IDs used by EA)
+// These are encoded in match_event_aggregate fields as "eventId:count" pairs
+const EA_EVENT_CODES: Record<number, string> = {
+  1: 'passes',           // Pass events
+  3: 'takeOns',          // Dribble attempts (take-ons)
+  7: 'tackleEvents',     // Tackle events
+  8: 'interceptions',    // Interceptions
+  12: 'clearances',      // Clearances
+  16: 'goals',           // Goal events
+  44: 'aerialDuels',     // Aerial duels
+  49: 'ballRecoveries',  // Ball recoveries
+  50: 'secondAssists',   // Second assists (pre-assists)
+  61: 'blocks',          // Blocks
+}
+
+// Parse event aggregate strings to extract hidden stats
+function parseEventAggregate(
+  agg0?: string,
+  agg1?: string,
+  agg2?: string,
+  agg3?: string
+): Record<string, number> {
+  const result: Record<string, number> = {}
+  
+  const combined = [agg0, agg1, agg2, agg3]
+    .filter((s): s is string => Boolean(s) && typeof s === 'string')
+    .join(',')
+  
+  if (!combined) return result
+  
+  const pairs = combined.split(',').filter(Boolean)
+  
+  for (const pair of pairs) {
+    const [eventIdStr, countStr] = pair.split(':')
+    if (!eventIdStr || !countStr) continue
+    
+    const eventId = parseInt(eventIdStr, 10)
+    const count = parseInt(countStr, 10)
+    
+    if (isNaN(eventId) || isNaN(count)) continue
+    
+    const eventName = EA_EVENT_CODES[eventId]
+    if (eventName) {
+      result[eventName] = (result[eventName] || 0) + count
+    }
+  }
+  
+  return result
+}
+
 // Backfill player_stats with detailed GK and defensive stats from club_matches match_data
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -119,7 +169,22 @@ Deno.serve(async (req) => {
             continue
           }
           
-          // Extract detailed stats from EA match data
+          // Parse event aggregates to extract hidden stats
+          const eventStats = parseEventAggregate(
+            pStats.match_event_aggregate_0,
+            pStats.match_event_aggregate_1,
+            pStats.match_event_aggregate_2,
+            pStats.match_event_aggregate_3
+          )
+          
+          // Extract detailed stats - prefer event aggregates over direct fields
+          const interceptions = eventStats.interceptions || parseInt(pStats.interceptions || 0)
+          const clearances = eventStats.clearances || parseInt(pStats.clearances || 0)
+          const secondAssists = eventStats.secondAssists || parseInt(pStats.secondAssists || pStats.secondassists || 0)
+          const dribbles = eventStats.takeOns || parseInt(pStats.dribblewon || pStats.dribbles || 0)
+          const ballRecoveries = eventStats.ballRecoveries || 0
+          
+          // Extract detailed GK stats
           const savesDiving = parseInt(pStats.ballDiveSaves || pStats.ballDivesaves || 0)
           const savesCross = parseInt(pStats.crossSaves || pStats.crosssaves || 0)
           const savesParry = parseInt(pStats.parrySaves || pStats.parrysaves || 0)
@@ -137,9 +202,10 @@ Deno.serve(async (req) => {
             saves_reflex: savesReflex,
             goals_conceded: goalsConceeded,
             tackle_attempts: tackleAttempts,
-            interceptions: parseInt(pStats.interceptions || 0),
-            clearances: parseInt(pStats.clearances || 0),
-            dribbles: parseInt(pStats.dribblewon || pStats.dribbles || 0),
+            interceptions: interceptions,
+            clearances: clearances,
+            second_assists: secondAssists,
+            dribbles: dribbles,
             fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
             offsides: parseInt(pStats.offsides || 0),
             archetypeid: pStats.archetypeid || pStats.archetypeId || null
