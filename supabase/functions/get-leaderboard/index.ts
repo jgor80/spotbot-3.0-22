@@ -11,10 +11,33 @@ interface GetLeaderboardRequest {
   type?: "overall" | "goals" | "assists" | "wins" | "form" | "reliability" | "avg_rating" | "saves" | "tackles" | "clean_sheets";
   position?: string; // For positional boards: "forward", "midfielder", "defender", "GK"
   limit?: number;
-  month_year?: string;
+  month_year?: string; // Legacy: YYYY-MM format for monthly snapshots
+  time_period?: "week" | "month"; // New: filter by game timestamp
   club_key?: string;
   stats_source?: "all" | "members" | "games";
   match_type?: "division" | "competition" | "friendly";
+}
+
+// Calculate date range for time period filtering
+function getTimePeriodDateRange(period: "week" | "month"): { start: Date; end: Date } {
+  const now = new Date();
+  const end = now;
+  let start: Date;
+  
+  if (period === "week") {
+    // Start of current week (Monday)
+    start = new Date(now);
+    const day = start.getDay();
+    const diff = start.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
+    start.setDate(diff);
+    start.setHours(0, 0, 0, 0);
+  } else {
+    // Start of current month
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+    start.setHours(0, 0, 0, 0);
+  }
+  
+  return { start, end };
 }
 
 // Position category mappings for tracked games
@@ -78,12 +101,43 @@ serve(async (req) => {
       position,
       limit = 10,
       month_year,
+      time_period,
       club_key,
       stats_source = "all",
       match_type,
     }: GetLeaderboardRequest = await req.json();
 
-    console.log(`[get-leaderboard] Fetching ${type} leaderboard for guild ${guild_id}, club: ${club_key || 'all'}, source: ${stats_source}, matchType: ${match_type || 'all'}`);
+    console.log(`[get-leaderboard] Fetching ${type} leaderboard for guild ${guild_id}, club: ${club_key || 'all'}, source: ${stats_source}, matchType: ${match_type || 'all'}, timePeriod: ${time_period || 'all'}`);
+    
+    // Calculate date range for time period filtering (uses game timestamp from club_matches.created_at)
+    let timePeriodMatchIds: Set<string> | null = null;
+    if (time_period) {
+      const { start, end } = getTimePeriodDateRange(time_period);
+      console.log(`[get-leaderboard] Time period filter: ${time_period}, from ${start.toISOString()} to ${end.toISOString()}`);
+      
+      // Get match IDs within this time period based on match timestamp
+      const { data: timeFilteredMatches } = await supabase
+        .from("club_matches")
+        .select("ea_match_id, created_at")
+        .eq("guild_id", guild_id)
+        .gte("created_at", start.toISOString())
+        .lte("created_at", end.toISOString());
+      
+      timePeriodMatchIds = new Set((timeFilteredMatches || []).map(m => m.ea_match_id));
+      console.log(`[get-leaderboard] Found ${timePeriodMatchIds.size} matches in time period`);
+      
+      // If no matches in time period, return empty result early
+      if (timePeriodMatchIds.size === 0) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            leaderboard_type: time_period,
+            entries: [],
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     // If requesting monthly snapshot
     if (month_year) {
@@ -257,13 +311,19 @@ serve(async (req) => {
         
         const { data: clubMatches } = await clubMatchesQuery;
         
-        const clubMatchIds = new Set((clubMatches || []).map(m => m.ea_match_id));
+        let clubMatchIds = new Set((clubMatches || []).map(m => m.ea_match_id));
         
-        // Filter player_stats to only those matches for this club
+        // Apply time period filter if set
+        if (timePeriodMatchIds) {
+          clubMatchIds = new Set([...clubMatchIds].filter(id => timePeriodMatchIds!.has(id)));
+          console.log(`[get-leaderboard] After time period filter: ${clubMatchIds.size} matches`);
+        }
+        
+        // Filter player_stats to only those matches for this club (and time period if set)
         const filteredStats = (clubPlayerStats || []).filter(ps => 
           ps.ea_match_id && clubMatchIds.has(ps.ea_match_id)
         );
-        
+
         // Aggregate stats per player
         const playerAggregates = new Map<string, any>();
         
@@ -535,6 +595,14 @@ serve(async (req) => {
       let filteredPlayerStats = matchTypeFilterIds 
         ? (allPlayerStats || []).filter(ps => ps.ea_match_id && matchTypeFilterIds!.has(ps.ea_match_id))
         : (allPlayerStats || []);
+      
+      // Apply time period filter if set (filter by game timestamp)
+      if (timePeriodMatchIds) {
+        filteredPlayerStats = filteredPlayerStats.filter(ps => 
+          ps.ea_match_id && timePeriodMatchIds!.has(ps.ea_match_id)
+        );
+        console.log(`[get-leaderboard] After time period filter: ${filteredPlayerStats.length} records`);
+      }
       
       // For positional boards, filter to only games at that position BEFORE aggregating
       // This ensures stats shown are only from games played at that position

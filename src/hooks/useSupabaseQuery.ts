@@ -98,7 +98,7 @@ export async function fetchLeaderboard(
   type: string = "overall",
   position?: string,
   limit: number = 50,
-  monthYear?: string,
+  timePeriod?: string,
   clubKey?: string,
   statsSource?: "all" | "members" | "games",
   matchType?: string
@@ -111,7 +111,7 @@ export async function fetchLeaderboard(
       type,
       position,
       limit,
-      month_year: monthYear,
+      time_period: timePeriod,
       club_key: clubKey,
       stats_source: statsSource,
       match_type: matchType === "all" ? undefined : matchType,
