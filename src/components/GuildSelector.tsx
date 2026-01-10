@@ -28,7 +28,7 @@ export function GuildSelector() {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Server className="h-4 w-4" />
-        <span>No servers</span>
+        <span>No servers – link Discord</span>
       </div>
     );
   }
