@@ -58,10 +58,10 @@ export default function Leaderboard() {
 
   const enabledClubs = (selectedGuild?.clubs || []).filter((club) => club.enabled);
 
-  const monthYear = useMemo(() => {
+  // Pass time_period directly to edge function for filtering by game timestamp
+  const timePeriodFilter = useMemo(() => {
     if (timePeriod === "all") return undefined;
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return timePeriod; // "week" or "month"
   }, [timePeriod]);
 
   // Pass position filter to edge function for positional boards
@@ -76,20 +76,22 @@ export default function Leaderboard() {
   // For positional boards, always use tracked game stats (position data comes from match records)
   // Also use tracked games for GK-specific tabs (saves, clean_sheets) since EA member board doesn't have this data
   // Also force tracked games when match type filter is set (can't filter EA member stats by match type)
+  // Also force tracked games when time period is set (can only filter by game timestamp with tracked games)
   const effectiveStatsSource = useMemo(() => {
+    if (timePeriod !== "all") return "games"; // Time period filter requires tracked games
     if (matchType !== "all") return "games";
     if (boardType !== "overall") return "games";
     // For GK-related tabs on overall board, use tracked games since EA API doesn't provide saves data
     if (activeTab === "saves" || activeTab === "clean_sheets") return "games";
     return statsSource;
-  }, [boardType, statsSource, activeTab, matchType]);
+  }, [boardType, statsSource, activeTab, matchType, timePeriod]);
   
   const { data: players, isLoading: playersLoading, error } = useLeaderboard(
     selectedGuildId,
     activeTab,
     effectivePositionFilter,
     100,
-    monthYear,
+    timePeriodFilter,
     clubFilter === "all" ? undefined : clubFilter,
     effectiveStatsSource,
     matchType
