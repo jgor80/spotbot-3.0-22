@@ -2621,6 +2621,24 @@ export type Database = {
         }
         Relationships: []
       }
+      web_admins: {
+        Row: {
+          auth_user_id: string
+          created_at: string | null
+          id: string
+        }
+        Insert: {
+          auth_user_id: string
+          created_at?: string | null
+          id?: string
+        }
+        Update: {
+          auth_user_id?: string
+          created_at?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
       xbox_detected_sessions: {
         Row: {
           created_at: string | null
@@ -2670,6 +2688,10 @@ export type Database = {
           _guild_id: string
           _role: Database["public"]["Enums"]["app_role"]
         }
+        Returns: boolean
+      }
+      user_has_guild_access: {
+        Args: { check_guild_id: string }
         Returns: boolean
       }
     }
