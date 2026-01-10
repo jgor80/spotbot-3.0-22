@@ -8679,6 +8679,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
             .setEmoji('➕')
             .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
+            .setCustomId('squadiq_club_remove')
+            .setLabel('Remove Club')
+            .setEmoji('🗑️')
+            .setStyle(ButtonStyle.Danger),
+          new ButtonBuilder()
             .setLabel('Manage on Web')
             .setEmoji('🌐')
             .setStyle(ButtonStyle.Link)
@@ -8845,7 +8850,44 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.showModal(modal);
       }
 
-      // Send Feedback DMs button - sends pending feedback requests via DM
+      // Remove Club button from SquadIQ Teams Panel
+      if (id === 'squadiq_club_remove') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only captains, managers, owners, or admins can remove clubs.',
+            flags: 64
+          });
+        }
+
+        const state = await getGuildState(guildId);
+        const clubs = state.clubs || [];
+        const enabledClubs = clubs.filter(c => c.enabled);
+
+        if (enabledClubs.length <= 1) {
+          return interaction.reply({
+            content: '❌ You must keep at least one club enabled.',
+            flags: 64
+          });
+        }
+
+        const select = new StringSelectMenuBuilder()
+          .setCustomId('squadiq_club_remove_select')
+          .setPlaceholder('Select club to remove')
+          .addOptions(
+            enabledClubs.map(club => ({
+              label: club.name,
+              value: club.key,
+              description: `Remove ${club.name} from this server`
+            }))
+          );
+
+        return interaction.reply({
+          content: '🗑️ **Remove Club**\nSelect which club to disable:',
+          components: [new ActionRowBuilder().addComponents(select)],
+          flags: 64
+        });
+      }
+
       if (id === 'squadiq_send_feedback_dms') {
         if (!isManager(interaction.member)) {
           return interaction.reply({ content: '❌ Admin only.', flags: 64 });
@@ -11120,7 +11162,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .addOptions(
             { label: 'Rename club', value: 'rename', description: 'Change the club name' },
             { label: 'Add club', value: 'add', description: 'Enable another club slot' },
-            { label: 'Remove club', value: 'remove', description: 'Disable this club' },
             { label: 'Set voice channel for this club', value: 'set_vc', description: 'Link a VC' },
             { label: autoEnabled ? 'Disable auto-assign' : 'Enable auto-assign', value: 'toggle_auto', description: autoEnabled ? 'Turn off auto-assignment' : 'Auto-assign when joining VC' },
             { label: 'Fill from last game', value: 'fill_last_game', description: 'Auto-fill spots with players from last match' },
@@ -13707,6 +13748,59 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return;
         }
         return;
+      }
+
+      // SquadIQ Club Remove select handler
+      if (id === 'squadiq_club_remove_select') {
+        const clubKey = interaction.values[0];
+
+        if (!isManager(interaction.member)) {
+          return interaction.reply({
+            content: '❌ Only captains, managers, owners, or admins can remove clubs.',
+            flags: 64
+          });
+        }
+
+        const club = getClubByKey(clubs, clubKey);
+        if (!club) {
+          return interaction.update({ content: '❌ Unknown club selected.', components: [] });
+        }
+
+        if (!club.enabled) {
+          return interaction.update({ content: '❌ This club cannot be removed.', components: [] });
+        }
+
+        const enabledCount = clubs.filter((c) => c.enabled).length;
+        if (enabledCount <= 1) {
+          return interaction.update({ content: '❌ You must keep at least one club enabled.', components: [] });
+        }
+
+        const clubBoard = boardState[clubKey];
+        if (clubBoard?.slots) {
+          const hasTaken = clubBoard.slots.some((slot) => !slot.open);
+          if (hasTaken) {
+            return interaction.update({
+              content: '❌ This club still has taken spots. Free all spots first before removing it.',
+              components: []
+            });
+          }
+        }
+
+        club.enabled = false;
+        resetClubSpots(boardState, clubKey);
+        if (state.clubVcLinks) {
+          state.clubVcLinks[clubKey] = null;
+        }
+
+        if (state.currentClubKey === clubKey) {
+          const firstEnabled = clubs.find((c) => c.enabled);
+          if (firstEnabled) state.currentClubKey = firstEnabled.key;
+        }
+
+        await saveGuildSettings(guildId, state);
+        await refreshClubPanels(guildId, state.currentClubKey);
+
+        return interaction.update({ content: `✅ Removed club **${club.name}**.`, components: [] });
       }
 
       // Club tools select
