@@ -1475,6 +1475,20 @@ async function getGuildState(guildId) {
   return state;
 }
 
+/**
+ * Force refresh guild state from database (invalidates cache)
+ * Use this when settings are changed externally (e.g., web panel)
+ */
+async function refreshGuildState(guildId) {
+  if (!guildId) return null;
+  
+  // Clear the cached state
+  guildStates.delete(guildId);
+  
+  // Reload from database
+  return getGuildState(guildId);
+}
+
 function getClubByKey(clubs, key) {
   return clubs.find((c) => c.key === key);
 }
@@ -11166,7 +11180,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             { label: autoEnabled ? 'Disable auto-assign' : 'Enable auto-assign', value: 'toggle_auto', description: autoEnabled ? 'Turn off auto-assignment' : 'Auto-assign when joining VC' },
             { label: 'Fill from last game', value: 'fill_last_game', description: 'Auto-fill spots with players from last match' },
             { label: 'Reset all spots (this club)', value: 'reset', description: 'Free all positions' },
-            { label: 'Refresh panel', value: 'refresh', description: 'Update the panel display' }
+            { label: 'Sync & refresh', value: 'refresh', description: 'Reload clubs from web and refresh panel' }
           );
 
         const row = new ActionRowBuilder().addComponents(select);
@@ -13917,8 +13931,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
 
         if (choice === 'refresh') {
-          await refreshClubPanels(guildId, clubKey);
-          return interaction.update({ content: 'Panel refreshed.', components: [] });
+          // Reload club settings from database (syncs changes from web panel)
+          const newState = await refreshGuildState(guildId);
+          const newClubs = newState?.clubs || clubs;
+          const firstEnabledClub = newClubs.find(c => c.enabled) || newClubs[0];
+          const refreshedClubKey = firstEnabledClub?.key || clubKey;
+          
+          await refreshClubPanels(guildId, refreshedClubKey);
+          return interaction.update({ 
+            content: `✅ Synced club settings from database and refreshed panel. Now showing **${newClubs.filter(c => c.enabled).length}** enabled club(s).`, 
+            components: [] 
+          });
         }
 
         if (choice === 'fill_last_game') {
