@@ -104,6 +104,8 @@ export interface LeaderboardPlayer {
   assists: number;
   second_assists: number;
   clean_sheets: number;
+  clean_sheets_def?: number;  // Defender clean sheets (from EA cleansheetsdef)
+  clean_sheets_gk?: number;   // Goalkeeper clean sheets (from EA cleansheetsgk)
   man_of_match: number;
   avg_match_rating: number | null;
   shots: number;

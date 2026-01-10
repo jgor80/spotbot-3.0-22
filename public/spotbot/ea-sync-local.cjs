@@ -82,9 +82,9 @@ async function fuzzyMatchEaToDiscord(supabase, guildId, eaUsername) {
 const EA_EVENT_CODES = {
   1: 'passes',           // Pass events
   3: 'takeOns',          // Dribble attempts (take-ons)
+  6: 'clearances',       // Clearances (confirmed for defenders - 422+ occurrences)
   7: 'tackleEvents',     // Tackle events
-  8: 'interceptions',    // Interceptions
-  12: 'clearances',      // Clearances
+  8: 'interceptions',    // Interceptions (confirmed - 460+ occurrences)
   16: 'goals',           // Goal events
   44: 'aerialDuels',     // Aerial duels
   49: 'ballRecoveries',  // Ball recoveries
@@ -2073,9 +2073,10 @@ async function syncMatches(guildId, clubKey, club) {
         saves_punch: parseInt(pStats.savespunch || pStats.gkSavesPunch || pStats.gksavespunch || pStats.punches || 0),
         // GK goals conceded
         goals_conceded: parseInt(pStats.goalsconceded || pStats.goalsAgainst || 0),
-        // Clean sheet tracking for GK (already calculated separately but capture raw too)
+        // Position-specific clean sheet tracking from EA API
         cleansheetsgk: pStats.cleansheetsgk === '1' || pStats.cleansheetsgk === 1,
-        cleansheetsdef: pStats.cleansheetsdef === '1' || pStats.cleansheetsdef === 1
+        cleansheetsdef: pStats.cleansheetsdef === '1' || pStats.cleansheetsdef === 1,
+        cleansheetsany: pStats.cleansheetsany === '1' || pStats.cleansheetsany === 1
       });
     }
     
@@ -2152,6 +2153,11 @@ async function syncMatches(guildId, clubKey, club) {
       if (existingPlayerStatsSet.has(statsKey)) continue;
       
       // Insert player stats with ea_match_id for future deduplication - comprehensive stats
+      // Position-specific clean sheets from EA data
+      const isCleanSheetDef = pStat.cleansheetsdef || pStat.cleansheetsany;
+      const isCleanSheetGK = pStat.cleansheetsgk || pStat.cleansheetsany;
+      const isCleanSheet = isCleanSheetDef || isCleanSheetGK;
+      
       const { error: statsError } = await supabase.from('player_stats').insert({
         guild_id: guildId,
         discord_user_id: profile.discord_user_id,
@@ -2159,7 +2165,9 @@ async function syncMatches(guildId, clubKey, club) {
         match_type: 'club',
         goals: pStat.goals,
         assists: pStat.assists,
-        clean_sheet: (pStat.position === 'GK' || pStat.position === 'goalkeeper') && scoreAgainst === 0,
+        clean_sheet: isCleanSheet,
+        clean_sheet_def: isCleanSheetDef,
+        clean_sheet_gk: isCleanSheetGK,
         won: result === 'win',
         ea_match_rating: pStat.rating,
         position_played: pStat.position,

@@ -91,8 +91,9 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
           bVal = b.fouls || 0;
           break;
         case "clean_sheets":
-          aVal = a.clean_sheets || 0;
-          bVal = b.clean_sheets || 0;
+          // Use defender-specific clean sheets if available, fallback to combined
+          aVal = a.clean_sheets_def ?? a.clean_sheets ?? 0;
+          bVal = b.clean_sheets_def ?? b.clean_sheets ?? 0;
           break;
         case "wins":
           aVal = a.wins || 0;
@@ -252,7 +253,7 @@ export function DefenseLeaderboardTable({ players, onPlayerClick }: DefenseLeade
                   <TableCell className="text-center hidden lg:table-cell">{tacklePct.toFixed(0)}%</TableCell>
                   <TableCell className="text-center">{player.interceptions || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{player.clearances || 0}</TableCell>
-                  <TableCell className="text-center hidden md:table-cell">{player.clean_sheets || 0}</TableCell>
+                  <TableCell className="text-center hidden md:table-cell">{player.clean_sheets_def ?? player.clean_sheets ?? 0}</TableCell>
                   <TableCell className="text-center hidden xl:table-cell">{gaPerGame.toFixed(2)}</TableCell>
                   <TableCell className="text-center hidden md:table-cell text-xs">
                     <span className="text-primary">{player.wins || 0}</span>
