@@ -267,6 +267,7 @@ serve(async (req) => {
             discord_user_id,
             goals,
             assists,
+            second_assists,
             won,
             ea_match_rating,
             clean_sheet,
@@ -338,6 +339,7 @@ serve(async (req) => {
             draws: 0,
             goals: 0,
             assists: 0,
+            second_assists: 0,
             clean_sheets: 0,
             man_of_match: 0,
             shots: 0,
@@ -370,6 +372,7 @@ serve(async (req) => {
           }
           existing.goals += stat.goals || 0;
           existing.assists += stat.assists || 0;
+          existing.second_assists += stat.second_assists || 0;
           existing.clean_sheets += stat.clean_sheet ? 1 : 0;
           existing.man_of_match += stat.man_of_match ? 1 : 0;
           existing.shots += stat.shots || 0;
@@ -923,6 +926,7 @@ serve(async (req) => {
       win_rate: player.win_rate,
       goals: player.goals,
       assists: player.assists,
+      second_assists: player.second_assists || 0,
       clean_sheets: player.clean_sheets || 0,
       man_of_match: player.man_of_match || 0,
       avg_match_rating: player.avg_match_rating,

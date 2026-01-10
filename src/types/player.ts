@@ -102,6 +102,7 @@ export interface LeaderboardPlayer {
   win_rate: number;
   goals: number;
   assists: number;
+  second_assists: number;
   clean_sheets: number;
   man_of_match: number;
   avg_match_rating: number | null;

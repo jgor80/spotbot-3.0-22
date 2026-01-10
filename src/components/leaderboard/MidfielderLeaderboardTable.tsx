@@ -21,7 +21,7 @@ interface MidfielderLeaderboardTableProps {
   onPlayerClick?: (playerId: string) => void;
 }
 
-type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "ga" | "passes" | "pass_pct" | "tackles" | "tackle_pct" | "interceptions" | "wins" | "win_rate" | "passes_per_game" | "positions";
+type SortKey = "rank" | "rating" | "games" | "goals" | "assists" | "second_assists" | "ga" | "passes" | "pass_pct" | "tackles" | "tackle_pct" | "interceptions" | "wins" | "win_rate" | "passes_per_game" | "positions";
 type SortDirection = "asc" | "desc";
 
 export function MidfielderLeaderboardTable({ players, onPlayerClick }: MidfielderLeaderboardTableProps) {
@@ -72,6 +72,10 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
         case "assists":
           aVal = a.assists;
           bVal = b.assists;
+          break;
+        case "second_assists":
+          aVal = a.second_assists || 0;
+          bVal = b.second_assists || 0;
           break;
         case "passes":
           aVal = a.passes_made || 0;
@@ -165,7 +169,8 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
               <SortableHeader columnKey="games" className="text-center hidden md:table-cell">Games</SortableHeader>
               <SortableHeader columnKey="passes" className="text-center bg-primary/10 text-primary font-semibold">Passes</SortableHeader>
               <SortableHeader columnKey="pass_pct" className="text-center hidden lg:table-cell">Pass%</SortableHeader>
-              <SortableHeader columnKey="assists" className="text-center">Assists</SortableHeader>
+              <SortableHeader columnKey="assists" className="text-center">Ast</SortableHeader>
+              <SortableHeader columnKey="second_assists" className="text-center hidden md:table-cell">2nd</SortableHeader>
               <SortableHeader columnKey="goals" className="text-center hidden md:table-cell">Goals</SortableHeader>
               <SortableHeader columnKey="ga" className="text-center hidden lg:table-cell">G+A</SortableHeader>
               <SortableHeader columnKey="tackles" className="text-center hidden lg:table-cell">Tackles</SortableHeader>
@@ -251,6 +256,7 @@ export function MidfielderLeaderboardTable({ players, onPlayerClick }: Midfielde
                   <TableCell className="text-center font-bold text-primary">{player.passes_made || 0}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{passPct.toFixed(0)}%</TableCell>
                   <TableCell className="text-center">{player.assists}</TableCell>
+                  <TableCell className="text-center hidden md:table-cell">{player.second_assists || 0}</TableCell>
                   <TableCell className="text-center hidden md:table-cell">{player.goals}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell font-medium">{player.goals + player.assists}</TableCell>
                   <TableCell className="text-center hidden lg:table-cell">{player.tackles || 0}</TableCell>
