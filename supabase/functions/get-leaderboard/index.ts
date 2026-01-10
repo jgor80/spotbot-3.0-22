@@ -330,6 +330,17 @@ serve(async (req) => {
         // Aggregate stats per player
         const playerAggregates = new Map<string, any>();
         
+        // Helper to check if a position is defensive (for inferring clean sheets)
+        const isDefensivePosition = (pos: string | null): boolean => {
+          if (!pos) return false;
+          return ['CB', 'LB', 'RB', 'LWB', 'RWB', 'LCB', 'RCB', 'SW', 'CDM'].includes(pos.toUpperCase());
+        };
+        
+        const isGkPosition = (pos: string | null): boolean => {
+          if (!pos) return false;
+          return ['GK'].includes(pos.toUpperCase());
+        };
+        
         for (const stat of filteredStats) {
         const existing = playerAggregates.get(stat.discord_user_id) || {
             discord_user_id: stat.discord_user_id,
@@ -378,8 +389,21 @@ serve(async (req) => {
           existing.assists += stat.assists || 0;
           existing.second_assists += stat.second_assists || 0;
           existing.clean_sheets += stat.clean_sheet ? 1 : 0;
-          existing.clean_sheets_def += stat.clean_sheet_def ? 1 : 0;
-          existing.clean_sheets_gk += stat.clean_sheet_gk ? 1 : 0;
+          
+          // Infer clean sheets from position + goals_conceded if not explicitly set
+          const isCleanSheet = (stat.goals_conceded === 0 || stat.goals_conceded === null);
+          if (stat.clean_sheet_def === true) {
+            existing.clean_sheets_def += 1;
+          } else if (stat.clean_sheet_def === null && isDefensivePosition(stat.position_played) && isCleanSheet) {
+            existing.clean_sheets_def += 1;
+          }
+          
+          if (stat.clean_sheet_gk === true) {
+            existing.clean_sheets_gk += 1;
+          } else if (stat.clean_sheet_gk === null && isGkPosition(stat.position_played) && isCleanSheet) {
+            existing.clean_sheets_gk += 1;
+          }
+          
           existing.man_of_match += stat.man_of_match ? 1 : 0;
           existing.shots += stat.shots || 0;
           existing.tackles += stat.tackles || 0;
@@ -628,6 +652,17 @@ serve(async (req) => {
       // Aggregate stats per player (only from filtered games)
       const playerAggregates = new Map<string, any>();
       
+      // Helper to check if a position is defensive (for inferring clean sheets)
+      const isDefensivePosition = (pos: string | null): boolean => {
+        if (!pos) return false;
+        return ['CB', 'LB', 'RB', 'LWB', 'RWB', 'LCB', 'RCB', 'SW', 'CDM'].includes(pos.toUpperCase());
+      };
+      
+      const isGkPosition = (pos: string | null): boolean => {
+        if (!pos) return false;
+        return ['GK'].includes(pos.toUpperCase());
+      };
+      
       for (const stat of filteredPlayerStats) {
         const existing = playerAggregates.get(stat.discord_user_id) || {
           discord_user_id: stat.discord_user_id,
@@ -673,8 +708,21 @@ serve(async (req) => {
         existing.goals += stat.goals || 0;
         existing.assists += stat.assists || 0;
         existing.clean_sheets += stat.clean_sheet ? 1 : 0;
-        existing.clean_sheets_def += stat.clean_sheet_def ? 1 : 0;
-        existing.clean_sheets_gk += stat.clean_sheet_gk ? 1 : 0;
+        
+        // Infer clean sheets from position + goals_conceded if not explicitly set
+        const isCleanSheet = (stat.goals_conceded === 0 || stat.goals_conceded === null);
+        if (stat.clean_sheet_def === true) {
+          existing.clean_sheets_def += 1;
+        } else if (stat.clean_sheet_def === null && isDefensivePosition(stat.position_played) && isCleanSheet) {
+          existing.clean_sheets_def += 1;
+        }
+        
+        if (stat.clean_sheet_gk === true) {
+          existing.clean_sheets_gk += 1;
+        } else if (stat.clean_sheet_gk === null && isGkPosition(stat.position_played) && isCleanSheet) {
+          existing.clean_sheets_gk += 1;
+        }
+        
         existing.man_of_match += stat.man_of_match ? 1 : 0;
         existing.shots += stat.shots || 0;
         existing.tackles += stat.tackles || 0;
