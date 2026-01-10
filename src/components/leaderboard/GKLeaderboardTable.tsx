@@ -97,8 +97,9 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
           bVal = b.goals_conceded || 0;
           break;
         case "clean_sheets":
-          aVal = a.clean_sheets || 0;
-          bVal = b.clean_sheets || 0;
+          // Use GK-specific clean sheets if available, fallback to combined
+          aVal = a.clean_sheets_gk ?? a.clean_sheets ?? 0;
+          bVal = b.clean_sheets_gk ?? b.clean_sheets ?? 0;
           break;
         case "wins":
           aVal = a.wins || 0;
@@ -119,8 +120,9 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
           bVal = b.games_played > 0 ? totalSavesB / b.games_played : 0;
           break;
         case "cs_pct":
-          aVal = a.games_played > 0 ? ((a.clean_sheets || 0) / a.games_played) * 100 : 0;
-          bVal = b.games_played > 0 ? ((b.clean_sheets || 0) / b.games_played) * 100 : 0;
+          // Use GK-specific clean sheets for percentage calculation
+          aVal = a.games_played > 0 ? (((a.clean_sheets_gk ?? a.clean_sheets) || 0) / a.games_played) * 100 : 0;
+          bVal = b.games_played > 0 ? (((b.clean_sheets_gk ?? b.clean_sheets) || 0) / b.games_played) * 100 : 0;
           break;
         default:
           return 0;
@@ -191,7 +193,9 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
               const totalFaced = totalSaves + (player.goals_conceded || 0);
               const savePct = totalFaced > 0 ? (totalSaves / totalFaced) * 100 : 0;
               const savesPerGame = player.games_played > 0 ? totalSaves / player.games_played : 0;
-              const csPct = player.games_played > 0 ? ((player.clean_sheets || 0) / player.games_played) * 100 : 0;
+              // Use GK-specific clean sheets if available
+              const gkCleanSheets = player.clean_sheets_gk ?? player.clean_sheets ?? 0;
+              const csPct = player.games_played > 0 ? (gkCleanSheets / player.games_played) * 100 : 0;
               
               const archetypeId = player.most_used_archetype;
               const archetypeInfo = getArchetypeInfo(archetypeId);
@@ -259,7 +263,7 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
                   <TableCell className="text-center hidden xl:table-cell">{player.saves_cross || 0}</TableCell>
                   <TableCell className="text-center hidden xl:table-cell">{player.saves_parry || 0}</TableCell>
                   <TableCell className="text-center hidden md:table-cell text-destructive">{player.goals_conceded || 0}</TableCell>
-                  <TableCell className="text-center">{player.clean_sheets || 0}</TableCell>
+                  <TableCell className="text-center">{gkCleanSheets}</TableCell>
                   <TableCell className="text-center hidden md:table-cell text-xs">
                     <span className="text-primary">{player.wins || 0}</span>
                     <span className="text-muted-foreground">/</span>

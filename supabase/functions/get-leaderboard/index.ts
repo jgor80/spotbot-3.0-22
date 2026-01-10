@@ -271,6 +271,8 @@ serve(async (req) => {
             won,
             ea_match_rating,
             clean_sheet,
+            clean_sheet_def,
+            clean_sheet_gk,
             man_of_match,
             shots,
             tackles,
@@ -341,6 +343,8 @@ serve(async (req) => {
             assists: 0,
             second_assists: 0,
             clean_sheets: 0,
+            clean_sheets_def: 0,
+            clean_sheets_gk: 0,
             man_of_match: 0,
             shots: 0,
             tackles: 0,
@@ -374,6 +378,8 @@ serve(async (req) => {
           existing.assists += stat.assists || 0;
           existing.second_assists += stat.second_assists || 0;
           existing.clean_sheets += stat.clean_sheet ? 1 : 0;
+          existing.clean_sheets_def += stat.clean_sheet_def ? 1 : 0;
+          existing.clean_sheets_gk += stat.clean_sheet_gk ? 1 : 0;
           existing.man_of_match += stat.man_of_match ? 1 : 0;
           existing.shots += stat.shots || 0;
           existing.tackles += stat.tackles || 0;
@@ -535,6 +541,8 @@ serve(async (req) => {
             won,
             ea_match_rating,
             clean_sheet,
+            clean_sheet_def,
+            clean_sheet_gk,
             man_of_match,
             shots,
             tackles,
@@ -631,6 +639,8 @@ serve(async (req) => {
           goals: 0,
           assists: 0,
           clean_sheets: 0,
+          clean_sheets_def: 0,
+          clean_sheets_gk: 0,
           man_of_match: 0,
           shots: 0,
           tackles: 0,
@@ -663,6 +673,8 @@ serve(async (req) => {
         existing.goals += stat.goals || 0;
         existing.assists += stat.assists || 0;
         existing.clean_sheets += stat.clean_sheet ? 1 : 0;
+        existing.clean_sheets_def += stat.clean_sheet_def ? 1 : 0;
+        existing.clean_sheets_gk += stat.clean_sheet_gk ? 1 : 0;
         existing.man_of_match += stat.man_of_match ? 1 : 0;
         existing.shots += stat.shots || 0;
         existing.tackles += stat.tackles || 0;

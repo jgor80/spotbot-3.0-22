@@ -10,9 +10,9 @@ const corsHeaders = {
 const EA_EVENT_CODES: Record<number, string> = {
   1: 'passes',           // Pass events
   3: 'takeOns',          // Dribble attempts (take-ons)
+  6: 'clearances',       // Clearances (confirmed for defenders - 422+ occurrences)
   7: 'tackleEvents',     // Tackle events
-  8: 'interceptions',    // Interceptions
-  12: 'clearances',      // Clearances
+  8: 'interceptions',    // Interceptions (confirmed - 460+ occurrences)
   16: 'goals',           // Goal events
   44: 'aerialDuels',     // Aerial duels
   49: 'ballRecoveries',  // Ball recoveries
@@ -192,7 +192,11 @@ Deno.serve(async (req) => {
           const savesReflex = parseInt(pStats.reflexSaves || pStats.reflexsaves || 0)
           const goalsConceeded = parseInt(pStats.goalsconceded || pStats.goalsConceded || 0)
           const tackleAttempts = parseInt(pStats.tackleattempts || pStats.tackleAttempts || 0)
-          const isCleanSheet = pStats.cleansheetsany === '1' || pStats.cleansheetsdef === '1' || pStats.cleansheetsgk === '1'
+          
+          // Position-specific clean sheets from EA API
+          const isCleanSheetDef = pStats.cleansheetsdef === '1' || pStats.cleansheetsany === '1'
+          const isCleanSheetGK = pStats.cleansheetsgk === '1' || pStats.cleansheetsany === '1'
+          const isCleanSheet = isCleanSheetDef || isCleanSheetGK
           
           const updateData: any = {
             saves_diving: savesDiving,
@@ -208,11 +212,10 @@ Deno.serve(async (req) => {
             dribbles: dribbles,
             fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
             offsides: parseInt(pStats.offsides || 0),
-            archetypeid: pStats.archetypeid || pStats.archetypeId || null
-          }
-          
-          if (isCleanSheet) {
-            updateData.clean_sheet = true
+            archetypeid: pStats.archetypeid || pStats.archetypeId || null,
+            clean_sheet: isCleanSheet,
+            clean_sheet_def: isCleanSheetDef,
+            clean_sheet_gk: isCleanSheetGK
           }
           
           updates.push({ id: statId, data: updateData })

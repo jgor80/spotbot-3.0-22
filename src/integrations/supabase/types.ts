@@ -1782,6 +1782,8 @@ export type Database = {
           archetypeid: string | null
           assists: number
           clean_sheet: boolean | null
+          clean_sheet_def: boolean | null
+          clean_sheet_gk: boolean | null
           clearances: number | null
           created_at: string
           discord_user_id: string
@@ -1822,6 +1824,8 @@ export type Database = {
           archetypeid?: string | null
           assists?: number
           clean_sheet?: boolean | null
+          clean_sheet_def?: boolean | null
+          clean_sheet_gk?: boolean | null
           clearances?: number | null
           created_at?: string
           discord_user_id: string
@@ -1862,6 +1866,8 @@ export type Database = {
           archetypeid?: string | null
           assists?: number
           clean_sheet?: boolean | null
+          clean_sheet_def?: boolean | null
+          clean_sheet_gk?: boolean | null
           clearances?: number | null
           created_at?: string
           discord_user_id?: string

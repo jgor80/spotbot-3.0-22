@@ -64,9 +64,9 @@ const KNOWN_MEMBER_KEYS = new Set([
 const EA_EVENT_CODES: Record<number, string> = {
   1: 'passes',           // Pass events
   3: 'takeOns',          // Dribble attempts (take-ons)
+  6: 'clearances',       // Clearances (confirmed for defenders - 422+ occurrences)
   7: 'tackleEvents',     // Tackle events (may differ from tacklesmade)
-  8: 'interceptions',    // Interceptions
-  12: 'clearances',      // Clearances
+  8: 'interceptions',    // Interceptions (confirmed - 460+ occurrences)
   16: 'goals',           // Goal events
   44: 'aerialDuels',     // Aerial duels
   49: 'ballRecoveries',  // Ball recoveries
