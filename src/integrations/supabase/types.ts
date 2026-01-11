@@ -747,6 +747,99 @@ export type Database = {
         }
         Relationships: []
       }
+      event_code_mappings: {
+        Row: {
+          category: string | null
+          confidence: string
+          correlation_stats: Json | null
+          derive: boolean | null
+          event_code: number
+          label: string
+          notes: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          category?: string | null
+          confidence: string
+          correlation_stats?: Json | null
+          derive?: boolean | null
+          event_code: number
+          label: string
+          notes?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          category?: string | null
+          confidence?: string
+          correlation_stats?: Json | null
+          derive?: boolean | null
+          event_code?: number
+          label?: string
+          notes?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      event_code_occurrences: {
+        Row: {
+          assists: number | null
+          count: number
+          created_at: string | null
+          discord_user_id: string | null
+          ea_match_id: string
+          ea_username: string
+          event_code: number
+          goals: number | null
+          guild_id: string
+          id: string
+          pass_attempts: number | null
+          passes_made: number | null
+          position_played: string | null
+          rating: number | null
+          saves: number | null
+          shots: number | null
+          tackles: number | null
+        }
+        Insert: {
+          assists?: number | null
+          count?: number
+          created_at?: string | null
+          discord_user_id?: string | null
+          ea_match_id: string
+          ea_username: string
+          event_code: number
+          goals?: number | null
+          guild_id: string
+          id?: string
+          pass_attempts?: number | null
+          passes_made?: number | null
+          position_played?: string | null
+          rating?: number | null
+          saves?: number | null
+          shots?: number | null
+          tackles?: number | null
+        }
+        Update: {
+          assists?: number | null
+          count?: number
+          created_at?: string | null
+          discord_user_id?: string | null
+          ea_match_id?: string
+          ea_username?: string
+          event_code?: number
+          goals?: number | null
+          guild_id?: string
+          id?: string
+          pass_attempts?: number | null
+          passes_made?: number | null
+          position_played?: string | null
+          rating?: number | null
+          saves?: number | null
+          shots?: number | null
+          tackles?: number | null
+        }
+        Relationships: []
+      }
       guild_queues: {
         Row: {
           club_key: string
