@@ -101,3 +101,9 @@ verify_jwt = false
 
 [functions.check-xbox-presence]
 verify_jwt = false
+
+[functions.normalize-event-aggregates]
+verify_jwt = false
+
+[functions.analyze-event-codes]
+verify_jwt = false

@@ -7,17 +7,21 @@ const corsHeaders = {
 
 // EA Event Code mapping (Opta-style event IDs used by EA)
 // These are encoded in match_event_aggregate fields as "eventId:count" pairs
+// VALIDATED: Code 50 is GK saves (diving), NOT second_assists - confirmed via correlation
 const EA_EVENT_CODES: Record<number, string> = {
   1: 'passes',           // Pass events
   3: 'takeOns',          // Dribble attempts (take-ons)
   6: 'clearances',       // Clearances (confirmed for defenders - 422+ occurrences)
-  7: 'tackleEvents',     // Tackle events
+  7: 'tackleEvents',     // Tackle events (may differ from tacklesmade)
   8: 'interceptions',    // Interceptions (confirmed - 460+ occurrences)
+  10: 'savesStandard',   // GK saves (standard type) - confirmed via correlation
+  13: 'shots',           // Shot attempts - validated vs boxscore
   16: 'goals',           // Goal events
   44: 'aerialDuels',     // Aerial duels
   49: 'ballRecoveries',  // Ball recoveries
-  50: 'secondAssists',   // Second assists (pre-assists)
+  50: 'savesDiving',     // GK diving saves (subtype) - FIX: was incorrectly mapped to secondAssists
   61: 'blocks',          // Blocks
+  267: 'goodDirectionSaves', // GK good direction saves - matches goodDirectionSaves field
 }
 
 // Parse event aggregate strings to extract hidden stats
