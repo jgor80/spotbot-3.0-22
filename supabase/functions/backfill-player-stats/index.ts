@@ -7,21 +7,45 @@ const corsHeaders = {
 
 // EA Event Code mapping (Opta-style event IDs used by EA)
 // These are encoded in match_event_aggregate fields as "eventId:count" pairs
-// VALIDATED: Code 50 is GK saves (diving), NOT second_assists - confirmed via correlation
+// Updated: 2026-01-11 via analyze-event-codes discovery
 const EA_EVENT_CODES: Record<number, string> = {
-  1: 'passes',           // Pass events
-  3: 'takeOns',          // Dribble attempts (take-ons)
-  6: 'clearances',       // Clearances (confirmed for defenders - 422+ occurrences)
-  7: 'tackleEvents',     // Tackle events (may differ from tacklesmade)
-  8: 'interceptions',    // Interceptions (confirmed - 460+ occurrences)
-  10: 'savesStandard',   // GK saves (standard type) - confirmed via correlation
-  13: 'shots',           // Shot attempts - validated vs boxscore
-  16: 'goals',           // Goal events
-  44: 'aerialDuels',     // Aerial duels
-  49: 'ballRecoveries',  // Ball recoveries
-  50: 'savesDiving',     // GK diving saves (subtype) - FIX: was incorrectly mapped to secondAssists
-  61: 'blocks',          // Blocks
-  267: 'goodDirectionSaves', // GK good direction saves - matches goodDirectionSaves field
+  // Defensive stats
+  0: 'tackleAttempts',     // Discovered: r=0.93 with tackles
+  6: 'clearances',         // Confirmed: 100% correlation
+  7: 'tackleEvents',       // Tackle events
+  8: 'interceptions',      // Confirmed: 100% correlation
+  49: 'ballRecoveries',    // Ball recoveries
+  61: 'blocks',            // Blocks
+  163: 'ballRecoveriesLoose', // Discovered: r=0.81 with tackles
+  164: 'recoveriesOppHalf',   // Discovered: r=0.97 with tackles
+  
+  // Passing stats
+  1: 'passes',             // Pass events
+  174: 'forwardPasses',    // Discovered: r=0.65 with passes_made
+  176: 'possessionGains',  // Discovered: r=0.80 with passes_made
+  215: 'passAttempts',     // Discovered: r=1.0 with passes
+  
+  // Attacking stats
+  3: 'takeOns',            // Dribble attempts (take-ons)
+  13: 'shots',             // Confirmed: 100% correlation
+  16: 'goals',             // Goal events
+  106: 'aerialDuelsWon',   // Discovered: r=0.98 with goals
+  217: 'shotsOffTarget',   // Discovered: r=0.70 with shots
+  
+  // Duel stats
+  44: 'aerialDuels',       // Aerial duels total
+  100: 'groundDuelsTotal', // Ground duels total
+  101: 'groundDuelsWon',   // Ground duels won
+  105: 'aerialDuelsTotal', // Aerial duels total
+  107: 'looseBallDuels',   // Loose ball duels
+  
+  // GK stats
+  10: 'savesStandard',     // Confirmed: 100% correlation with saves
+  50: 'savesDiving',       // GK diving saves
+  267: 'goodDirectionSaves', // Confirmed: 100% correlation
+  
+  // Meta
+  113: 'matchPlayed',      // Match played marker
 }
 
 // Parse event aggregate strings to extract hidden stats
