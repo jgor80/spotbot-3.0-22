@@ -5,14 +5,24 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Categorize position for analysis
+// Categorize position for analysis - handles both full names and abbreviations
 function categorizePosition(pos: string | null): string {
   if (!pos) return 'unknown'
+  const lower = pos.toLowerCase()
+  
+  // Handle full position names from EA match data
+  if (lower === 'goalkeeper') return 'gk'
+  if (lower === 'defender') return 'defender'
+  if (lower === 'midfielder') return 'midfielder'
+  if (lower === 'forward') return 'forward'
+  
+  // Handle abbreviations (for legacy/other sources)
   const upper = pos.toUpperCase()
   if (upper === 'GK') return 'gk'
   if (['CB', 'LB', 'RB', 'LWB', 'RWB', 'LCB', 'RCB', 'SW'].includes(upper)) return 'defender'
   if (['CDM', 'CM', 'CAM', 'LM', 'RM', 'LCM', 'RCM'].includes(upper)) return 'midfielder'
   if (['ST', 'CF', 'LW', 'RW', 'LF', 'RF', 'LS', 'RS'].includes(upper)) return 'forward'
+  
   return 'unknown'
 }
 
@@ -66,9 +76,26 @@ Deno.serve(async (req) => {
     
     const guildId = requestBody.guild_id
     const dryRun = requestBody.dry_run === true
-    const limit = requestBody.limit || 1000
+    const clearExisting = requestBody.clear_existing === true
+    const offset = requestBody.offset || 0
+    const batchSize = requestBody.batch_size || 500
     
-    console.log(`[normalize-event-aggregates] Starting${dryRun ? ' (DRY RUN)' : ''}...`)
+    console.log(`[normalize-event-aggregates] Starting${dryRun ? ' (DRY RUN)' : ''} offset=${offset} batch=${batchSize}...`)
+    
+    // Clear existing data if requested (only on first batch)
+    if (clearExisting && offset === 0) {
+      console.log('[normalize-event-aggregates] Clearing existing event_code_occurrences data...')
+      const { error: deleteError, count: deletedCount } = await supabase
+        .from('event_code_occurrences')
+        .delete()
+        .gte('id', '00000000-0000-0000-0000-000000000000')
+      
+      if (deleteError) {
+        console.error('[normalize-event-aggregates] Failed to clear existing data:', deleteError)
+      } else {
+        console.log(`[normalize-event-aggregates] Cleared existing data`)
+      }
+    }
     
     // Fetch profiles for EA username mapping
     const { data: profiles } = await supabase
@@ -85,12 +112,13 @@ Deno.serve(async (req) => {
     
     console.log(`[normalize-event-aggregates] Loaded ${eaUsernameToDiscordId.size} EA username mappings`)
     
-    // Get all club_matches with match_data
+    // Get club_matches with match_data using pagination
     let query = supabase
       .from('club_matches')
       .select('id, guild_id, club_key, ea_match_id, match_data')
       .not('match_data', 'is', null)
-      .limit(limit)
+      .order('id')
+      .range(offset, offset + batchSize - 1)
     
     if (guildId) {
       query = query.eq('guild_id', guildId)
@@ -105,14 +133,19 @@ Deno.serve(async (req) => {
     if (!matches || matches.length === 0) {
       return new Response(JSON.stringify({ 
         success: true, 
-        message: 'No matches to process',
-        processed: 0 
+        message: 'No more matches to process',
+        processed: 0,
+        pagination: {
+          offset: offset,
+          batch_size: batchSize,
+          has_more: false
+        }
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
     
-    console.log(`[normalize-event-aggregates] Processing ${matches.length} matches...`)
+    console.log(`[normalize-event-aggregates] Processing ${matches.length} matches (offset ${offset})...`)
     
     // Collect all occurrences
     const occurrences: Array<{
@@ -238,7 +271,9 @@ Deno.serve(async (req) => {
       .map(([code, total]) => ({ code, total }))
       .sort((a, b) => b.total - a.total)
     
-    console.log(`[normalize-event-aggregates] Completed: ${inserted} inserted, ${errors.length} errors`)
+    const hasMore = matches.length === batchSize
+    
+    console.log(`[normalize-event-aggregates] Completed: ${inserted} inserted, ${errors.length} errors, hasMore=${hasMore}`)
     
     return new Response(JSON.stringify({
       success: true,
@@ -249,7 +284,13 @@ Deno.serve(async (req) => {
       inserted: inserted,
       unique_event_codes: eventCodeTotals.size,
       event_code_summary: eventCodeSummary.slice(0, 50), // Top 50
-      errors: errors.length > 0 ? errors.slice(0, 10) : undefined
+      errors: errors.length > 0 ? errors.slice(0, 10) : undefined,
+      pagination: {
+        offset: offset,
+        batch_size: batchSize,
+        has_more: hasMore,
+        next_offset: hasMore ? offset + batchSize : null
+      }
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
