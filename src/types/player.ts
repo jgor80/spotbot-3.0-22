@@ -140,6 +140,11 @@ export interface LeaderboardPlayer {
   };
   most_used_archetype?: string | null;
   archetype_counts?: Record<string, number>;
+  // New discovered stats
+  ball_recoveries: number;
+  forward_passes: number;
+  possession_gains: number;
+  shots_off_target: number;
 }
 
 export interface LineupSlot {
