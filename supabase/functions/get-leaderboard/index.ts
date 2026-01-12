@@ -699,6 +699,11 @@ serve(async (req) => {
           position_counts: {} as Record<string, number>,
           archetype_counts: {} as Record<string, number>,
           archetypeid: null,
+          // New discovered stats
+          ball_recoveries: 0,
+          forward_passes: 0,
+          possession_gains: 0,
+          shots_off_target: 0,
         };
         
         existing.games_played += 1;
@@ -742,6 +747,11 @@ serve(async (req) => {
         existing.fouls += stat.fouls || 0;
         existing.offsides += stat.offsides || 0;
         existing.seconds_played += stat.seconds_played || 0;
+        // New discovered stats
+        existing.ball_recoveries += stat.ball_recoveries || 0;
+        existing.forward_passes += stat.forward_passes || 0;
+        existing.possession_gains += stat.possession_gains || 0;
+        existing.shots_off_target += stat.shots_off_target || 0;
         existing.rating_sum += stat.ea_match_rating || 0;
         if (stat.archetypeid) {
           existing.archetype_counts[stat.archetypeid] = (existing.archetype_counts[stat.archetypeid] || 0) + 1;

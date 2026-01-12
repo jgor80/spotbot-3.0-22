@@ -1533,6 +1533,7 @@ export type Database = {
           archetypeid: string | null
           assists: number | null
           avg_match_rating: number | null
+          ball_recoveries: number | null
           baseline_synced: boolean | null
           clean_sheets: number | null
           clearances: number | null
@@ -1544,6 +1545,7 @@ export type Database = {
           dribble_attempts: number | null
           dribbles: number | null
           ea_club_id: string | null
+          forward_passes: number | null
           fouls: number | null
           games_played: number | null
           goals: number | null
@@ -1556,6 +1558,7 @@ export type Database = {
           offsides: number | null
           pass_attempts: number | null
           passes_made: number | null
+          possession_gains: number | null
           primary_position: string | null
           saves: number | null
           saves_cross: number | null
@@ -1566,6 +1569,7 @@ export type Database = {
           second_assists: number | null
           seconds_played: number | null
           shots: number | null
+          shots_off_target: number | null
           tackle_attempts: number | null
           tackles: number | null
           updated_at: string
@@ -1576,6 +1580,7 @@ export type Database = {
           archetypeid?: string | null
           assists?: number | null
           avg_match_rating?: number | null
+          ball_recoveries?: number | null
           baseline_synced?: boolean | null
           clean_sheets?: number | null
           clearances?: number | null
@@ -1587,6 +1592,7 @@ export type Database = {
           dribble_attempts?: number | null
           dribbles?: number | null
           ea_club_id?: string | null
+          forward_passes?: number | null
           fouls?: number | null
           games_played?: number | null
           goals?: number | null
@@ -1599,6 +1605,7 @@ export type Database = {
           offsides?: number | null
           pass_attempts?: number | null
           passes_made?: number | null
+          possession_gains?: number | null
           primary_position?: string | null
           saves?: number | null
           saves_cross?: number | null
@@ -1609,6 +1616,7 @@ export type Database = {
           second_assists?: number | null
           seconds_played?: number | null
           shots?: number | null
+          shots_off_target?: number | null
           tackle_attempts?: number | null
           tackles?: number | null
           updated_at?: string
@@ -1619,6 +1627,7 @@ export type Database = {
           archetypeid?: string | null
           assists?: number | null
           avg_match_rating?: number | null
+          ball_recoveries?: number | null
           baseline_synced?: boolean | null
           clean_sheets?: number | null
           clearances?: number | null
@@ -1630,6 +1639,7 @@ export type Database = {
           dribble_attempts?: number | null
           dribbles?: number | null
           ea_club_id?: string | null
+          forward_passes?: number | null
           fouls?: number | null
           games_played?: number | null
           goals?: number | null
@@ -1642,6 +1652,7 @@ export type Database = {
           offsides?: number | null
           pass_attempts?: number | null
           passes_made?: number | null
+          possession_gains?: number | null
           primary_position?: string | null
           saves?: number | null
           saves_cross?: number | null
@@ -1652,6 +1663,7 @@ export type Database = {
           second_assists?: number | null
           seconds_played?: number | null
           shots?: number | null
+          shots_off_target?: number | null
           tackle_attempts?: number | null
           tackles?: number | null
           updated_at?: string
@@ -1702,6 +1714,7 @@ export type Database = {
       player_ratings: {
         Row: {
           avg_match_rating: number | null
+          ball_recoveries: number | null
           baseline_synced: boolean | null
           build_quality_rating: number | null
           clearances: number | null
@@ -1712,6 +1725,7 @@ export type Database = {
           draws: number
           dribble_attempts: number | null
           dribbles: number | null
+          forward_passes: number | null
           fouls: number | null
           games_played: number
           goals_conceded: number | null
@@ -1727,6 +1741,7 @@ export type Database = {
           pass_attempts: number | null
           passes_made: number | null
           peer_rating: number | null
+          possession_gains: number | null
           saves: number | null
           saves_cross: number | null
           saves_diving: number | null
@@ -1734,6 +1749,7 @@ export type Database = {
           saves_punch: number | null
           saves_reflex: number | null
           shots: number | null
+          shots_off_target: number | null
           tackle_attempts: number | null
           tackles: number | null
           total_assists: number
@@ -1746,6 +1762,7 @@ export type Database = {
         }
         Insert: {
           avg_match_rating?: number | null
+          ball_recoveries?: number | null
           baseline_synced?: boolean | null
           build_quality_rating?: number | null
           clearances?: number | null
@@ -1756,6 +1773,7 @@ export type Database = {
           draws?: number
           dribble_attempts?: number | null
           dribbles?: number | null
+          forward_passes?: number | null
           fouls?: number | null
           games_played?: number
           goals_conceded?: number | null
@@ -1771,6 +1789,7 @@ export type Database = {
           pass_attempts?: number | null
           passes_made?: number | null
           peer_rating?: number | null
+          possession_gains?: number | null
           saves?: number | null
           saves_cross?: number | null
           saves_diving?: number | null
@@ -1778,6 +1797,7 @@ export type Database = {
           saves_punch?: number | null
           saves_reflex?: number | null
           shots?: number | null
+          shots_off_target?: number | null
           tackle_attempts?: number | null
           tackles?: number | null
           total_assists?: number
@@ -1790,6 +1810,7 @@ export type Database = {
         }
         Update: {
           avg_match_rating?: number | null
+          ball_recoveries?: number | null
           baseline_synced?: boolean | null
           build_quality_rating?: number | null
           clearances?: number | null
@@ -1800,6 +1821,7 @@ export type Database = {
           draws?: number
           dribble_attempts?: number | null
           dribbles?: number | null
+          forward_passes?: number | null
           fouls?: number | null
           games_played?: number
           goals_conceded?: number | null
@@ -1815,6 +1837,7 @@ export type Database = {
           pass_attempts?: number | null
           passes_made?: number | null
           peer_rating?: number | null
+          possession_gains?: number | null
           saves?: number | null
           saves_cross?: number | null
           saves_diving?: number | null
@@ -1822,6 +1845,7 @@ export type Database = {
           saves_punch?: number | null
           saves_reflex?: number | null
           shots?: number | null
+          shots_off_target?: number | null
           tackle_attempts?: number | null
           tackles?: number | null
           total_assists?: number
@@ -1874,6 +1898,7 @@ export type Database = {
         Row: {
           archetypeid: string | null
           assists: number
+          ball_recoveries: number | null
           clean_sheet: boolean | null
           clean_sheet_def: boolean | null
           clean_sheet_gk: boolean | null
@@ -1885,6 +1910,7 @@ export type Database = {
           dribbles: number | null
           ea_match_id: string | null
           ea_match_rating: number | null
+          forward_passes: number | null
           fouls: number | null
           goals: number
           goals_conceded: number | null
@@ -1898,6 +1924,7 @@ export type Database = {
           passes_made: number | null
           position_played: string | null
           possession: number | null
+          possession_gains: number | null
           recorded_at: string
           red_cards: boolean | null
           saves_cross: number | null
@@ -1908,6 +1935,7 @@ export type Database = {
           second_assists: number | null
           seconds_played: number | null
           shots: number | null
+          shots_off_target: number | null
           tackle_attempts: number | null
           tackles: number | null
           team: string | null
@@ -1916,6 +1944,7 @@ export type Database = {
         Insert: {
           archetypeid?: string | null
           assists?: number
+          ball_recoveries?: number | null
           clean_sheet?: boolean | null
           clean_sheet_def?: boolean | null
           clean_sheet_gk?: boolean | null
@@ -1927,6 +1956,7 @@ export type Database = {
           dribbles?: number | null
           ea_match_id?: string | null
           ea_match_rating?: number | null
+          forward_passes?: number | null
           fouls?: number | null
           goals?: number
           goals_conceded?: number | null
@@ -1940,6 +1970,7 @@ export type Database = {
           passes_made?: number | null
           position_played?: string | null
           possession?: number | null
+          possession_gains?: number | null
           recorded_at?: string
           red_cards?: boolean | null
           saves_cross?: number | null
@@ -1950,6 +1981,7 @@ export type Database = {
           second_assists?: number | null
           seconds_played?: number | null
           shots?: number | null
+          shots_off_target?: number | null
           tackle_attempts?: number | null
           tackles?: number | null
           team?: string | null
@@ -1958,6 +1990,7 @@ export type Database = {
         Update: {
           archetypeid?: string | null
           assists?: number
+          ball_recoveries?: number | null
           clean_sheet?: boolean | null
           clean_sheet_def?: boolean | null
           clean_sheet_gk?: boolean | null
@@ -1969,6 +2002,7 @@ export type Database = {
           dribbles?: number | null
           ea_match_id?: string | null
           ea_match_rating?: number | null
+          forward_passes?: number | null
           fouls?: number | null
           goals?: number
           goals_conceded?: number | null
@@ -1982,6 +2016,7 @@ export type Database = {
           passes_made?: number | null
           position_played?: string | null
           possession?: number | null
+          possession_gains?: number | null
           recorded_at?: string
           red_cards?: boolean | null
           saves_cross?: number | null
@@ -1992,6 +2027,7 @@ export type Database = {
           second_assists?: number | null
           seconds_played?: number | null
           shots?: number | null
+          shots_off_target?: number | null
           tackle_attempts?: number | null
           tackles?: number | null
           team?: string | null
