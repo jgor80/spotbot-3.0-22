@@ -1539,6 +1539,7 @@ export type Database = {
           clearances: number | null
           club_key: string
           created_at: string
+          defensive_actions: number | null
           discord_user_id: string
           discord_username: string | null
           draws: number | null
@@ -1548,8 +1549,10 @@ export type Database = {
           forward_passes: number | null
           fouls: number | null
           games_played: number | null
+          gk_claims: number | null
           goals: number | null
           goals_conceded: number | null
+          goals_inside_box: number | null
           guild_id: string
           id: string
           interceptions: number | null
@@ -1557,6 +1560,7 @@ export type Database = {
           man_of_match: number | null
           offsides: number | null
           pass_attempts: number | null
+          passes_completed: number | null
           passes_made: number | null
           possession_gains: number | null
           primary_position: string | null
@@ -1570,7 +1574,9 @@ export type Database = {
           seconds_played: number | null
           shots: number | null
           shots_off_target: number | null
+          shots_on_target: number | null
           tackle_attempts: number | null
+          tackle_success: number | null
           tackles: number | null
           updated_at: string
           win_rate: number | null
@@ -1586,6 +1592,7 @@ export type Database = {
           clearances?: number | null
           club_key: string
           created_at?: string
+          defensive_actions?: number | null
           discord_user_id: string
           discord_username?: string | null
           draws?: number | null
@@ -1595,8 +1602,10 @@ export type Database = {
           forward_passes?: number | null
           fouls?: number | null
           games_played?: number | null
+          gk_claims?: number | null
           goals?: number | null
           goals_conceded?: number | null
+          goals_inside_box?: number | null
           guild_id: string
           id?: string
           interceptions?: number | null
@@ -1604,6 +1613,7 @@ export type Database = {
           man_of_match?: number | null
           offsides?: number | null
           pass_attempts?: number | null
+          passes_completed?: number | null
           passes_made?: number | null
           possession_gains?: number | null
           primary_position?: string | null
@@ -1617,7 +1627,9 @@ export type Database = {
           seconds_played?: number | null
           shots?: number | null
           shots_off_target?: number | null
+          shots_on_target?: number | null
           tackle_attempts?: number | null
+          tackle_success?: number | null
           tackles?: number | null
           updated_at?: string
           win_rate?: number | null
@@ -1633,6 +1645,7 @@ export type Database = {
           clearances?: number | null
           club_key?: string
           created_at?: string
+          defensive_actions?: number | null
           discord_user_id?: string
           discord_username?: string | null
           draws?: number | null
@@ -1642,8 +1655,10 @@ export type Database = {
           forward_passes?: number | null
           fouls?: number | null
           games_played?: number | null
+          gk_claims?: number | null
           goals?: number | null
           goals_conceded?: number | null
+          goals_inside_box?: number | null
           guild_id?: string
           id?: string
           interceptions?: number | null
@@ -1651,6 +1666,7 @@ export type Database = {
           man_of_match?: number | null
           offsides?: number | null
           pass_attempts?: number | null
+          passes_completed?: number | null
           passes_made?: number | null
           possession_gains?: number | null
           primary_position?: string | null
@@ -1664,7 +1680,9 @@ export type Database = {
           seconds_played?: number | null
           shots?: number | null
           shots_off_target?: number | null
+          shots_on_target?: number | null
           tackle_attempts?: number | null
+          tackle_success?: number | null
           tackles?: number | null
           updated_at?: string
           win_rate?: number | null
@@ -1720,6 +1738,7 @@ export type Database = {
           clearances: number | null
           club_performance_rating: number | null
           created_at: string
+          defensive_actions: number | null
           discord_user_id: string
           draft_performance_rating: number | null
           draws: number
@@ -1728,7 +1747,9 @@ export type Database = {
           forward_passes: number | null
           fouls: number | null
           games_played: number
+          gk_claims: number | null
           goals_conceded: number | null
+          goals_inside_box: number | null
           guild_id: string
           id: string
           interceptions: number | null
@@ -1739,6 +1760,7 @@ export type Database = {
           offsides: number | null
           overall_rating: number
           pass_attempts: number | null
+          passes_completed: number | null
           passes_made: number | null
           peer_rating: number | null
           possession_gains: number | null
@@ -1750,7 +1772,9 @@ export type Database = {
           saves_reflex: number | null
           shots: number | null
           shots_off_target: number | null
+          shots_on_target: number | null
           tackle_attempts: number | null
+          tackle_success: number | null
           tackles: number | null
           total_assists: number
           total_clean_sheets: number
@@ -1768,6 +1792,7 @@ export type Database = {
           clearances?: number | null
           club_performance_rating?: number | null
           created_at?: string
+          defensive_actions?: number | null
           discord_user_id: string
           draft_performance_rating?: number | null
           draws?: number
@@ -1776,7 +1801,9 @@ export type Database = {
           forward_passes?: number | null
           fouls?: number | null
           games_played?: number
+          gk_claims?: number | null
           goals_conceded?: number | null
+          goals_inside_box?: number | null
           guild_id: string
           id?: string
           interceptions?: number | null
@@ -1787,6 +1814,7 @@ export type Database = {
           offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null
+          passes_completed?: number | null
           passes_made?: number | null
           peer_rating?: number | null
           possession_gains?: number | null
@@ -1798,7 +1826,9 @@ export type Database = {
           saves_reflex?: number | null
           shots?: number | null
           shots_off_target?: number | null
+          shots_on_target?: number | null
           tackle_attempts?: number | null
+          tackle_success?: number | null
           tackles?: number | null
           total_assists?: number
           total_clean_sheets?: number
@@ -1816,6 +1846,7 @@ export type Database = {
           clearances?: number | null
           club_performance_rating?: number | null
           created_at?: string
+          defensive_actions?: number | null
           discord_user_id?: string
           draft_performance_rating?: number | null
           draws?: number
@@ -1824,7 +1855,9 @@ export type Database = {
           forward_passes?: number | null
           fouls?: number | null
           games_played?: number
+          gk_claims?: number | null
           goals_conceded?: number | null
+          goals_inside_box?: number | null
           guild_id?: string
           id?: string
           interceptions?: number | null
@@ -1835,6 +1868,7 @@ export type Database = {
           offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null
+          passes_completed?: number | null
           passes_made?: number | null
           peer_rating?: number | null
           possession_gains?: number | null
@@ -1846,7 +1880,9 @@ export type Database = {
           saves_reflex?: number | null
           shots?: number | null
           shots_off_target?: number | null
+          shots_on_target?: number | null
           tackle_attempts?: number | null
+          tackle_success?: number | null
           tackles?: number | null
           total_assists?: number
           total_clean_sheets?: number
@@ -1904,6 +1940,7 @@ export type Database = {
           clean_sheet_gk: boolean | null
           clearances: number | null
           created_at: string
+          defensive_actions: number | null
           discord_user_id: string
           draft_id: string | null
           dribble_attempts: number | null
@@ -1912,8 +1949,10 @@ export type Database = {
           ea_match_rating: number | null
           forward_passes: number | null
           fouls: number | null
+          gk_claims: number | null
           goals: number
           goals_conceded: number | null
+          goals_inside_box: number | null
           guild_id: string
           id: string
           interceptions: number | null
@@ -1921,6 +1960,7 @@ export type Database = {
           match_type: string
           offsides: number | null
           pass_attempts: number | null
+          passes_completed: number | null
           passes_made: number | null
           position_played: string | null
           possession: number | null
@@ -1936,7 +1976,9 @@ export type Database = {
           seconds_played: number | null
           shots: number | null
           shots_off_target: number | null
+          shots_on_target: number | null
           tackle_attempts: number | null
+          tackle_success: number | null
           tackles: number | null
           team: string | null
           won: boolean | null
@@ -1950,6 +1992,7 @@ export type Database = {
           clean_sheet_gk?: boolean | null
           clearances?: number | null
           created_at?: string
+          defensive_actions?: number | null
           discord_user_id: string
           draft_id?: string | null
           dribble_attempts?: number | null
@@ -1958,8 +2001,10 @@ export type Database = {
           ea_match_rating?: number | null
           forward_passes?: number | null
           fouls?: number | null
+          gk_claims?: number | null
           goals?: number
           goals_conceded?: number | null
+          goals_inside_box?: number | null
           guild_id: string
           id?: string
           interceptions?: number | null
@@ -1967,6 +2012,7 @@ export type Database = {
           match_type?: string
           offsides?: number | null
           pass_attempts?: number | null
+          passes_completed?: number | null
           passes_made?: number | null
           position_played?: string | null
           possession?: number | null
@@ -1982,7 +2028,9 @@ export type Database = {
           seconds_played?: number | null
           shots?: number | null
           shots_off_target?: number | null
+          shots_on_target?: number | null
           tackle_attempts?: number | null
+          tackle_success?: number | null
           tackles?: number | null
           team?: string | null
           won?: boolean | null
@@ -1996,6 +2044,7 @@ export type Database = {
           clean_sheet_gk?: boolean | null
           clearances?: number | null
           created_at?: string
+          defensive_actions?: number | null
           discord_user_id?: string
           draft_id?: string | null
           dribble_attempts?: number | null
@@ -2004,8 +2053,10 @@ export type Database = {
           ea_match_rating?: number | null
           forward_passes?: number | null
           fouls?: number | null
+          gk_claims?: number | null
           goals?: number
           goals_conceded?: number | null
+          goals_inside_box?: number | null
           guild_id?: string
           id?: string
           interceptions?: number | null
@@ -2013,6 +2064,7 @@ export type Database = {
           match_type?: string
           offsides?: number | null
           pass_attempts?: number | null
+          passes_completed?: number | null
           passes_made?: number | null
           position_played?: string | null
           possession?: number | null
@@ -2028,7 +2080,9 @@ export type Database = {
           seconds_played?: number | null
           shots?: number | null
           shots_off_target?: number | null
+          shots_on_target?: number | null
           tackle_attempts?: number | null
+          tackle_success?: number | null
           tackles?: number | null
           team?: string | null
           won?: boolean | null

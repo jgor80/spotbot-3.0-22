@@ -293,7 +293,17 @@ serve(async (req) => {
             seconds_played,
             position_played,
             archetypeid,
-            ea_match_id
+            ea_match_id,
+            ball_recoveries,
+            forward_passes,
+            possession_gains,
+            shots_off_target,
+            passes_completed,
+            shots_on_target,
+            tackle_success,
+            gk_claims,
+            goals_inside_box,
+            defensive_actions
           `)
           .eq("guild_id", guild_id)
           .eq("match_type", "club")
@@ -379,6 +389,17 @@ serve(async (req) => {
             position_counts: {} as Record<string, number>,
             archetype_counts: {} as Record<string, number>,
             archetypeid: null,
+            // New discovered stats
+            ball_recoveries: 0,
+            forward_passes: 0,
+            possession_gains: 0,
+            shots_off_target: 0,
+            passes_completed: 0,
+            shots_on_target: 0,
+            tackle_success: 0,
+            gk_claims: 0,
+            goals_inside_box: 0,
+            defensive_actions: 0,
           };
           
           existing.games_played += 1;
@@ -424,6 +445,18 @@ serve(async (req) => {
           existing.offsides += stat.offsides || 0;
           existing.seconds_played += stat.seconds_played || 0;
           existing.rating_sum += stat.ea_match_rating || 0;
+          // New discovered stats aggregation
+          existing.ball_recoveries += stat.ball_recoveries || 0;
+          existing.forward_passes += stat.forward_passes || 0;
+          existing.possession_gains += stat.possession_gains || 0;
+          existing.shots_off_target += stat.shots_off_target || 0;
+          existing.passes_completed += stat.passes_completed || 0;
+          existing.shots_on_target += stat.shots_on_target || 0;
+          existing.tackle_success += stat.tackle_success || 0;
+          existing.gk_claims += stat.gk_claims || 0;
+          existing.goals_inside_box += stat.goals_inside_box || 0;
+          existing.defensive_actions += stat.defensive_actions || 0;
+          
           if (stat.archetypeid) {
             existing.archetype_counts[stat.archetypeid] = (existing.archetype_counts[stat.archetypeid] || 0) + 1;
           }

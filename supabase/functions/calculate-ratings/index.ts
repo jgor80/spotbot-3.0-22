@@ -492,10 +492,22 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
   const trackedInterceptions = stats.reduce((sum, s) => sum + (s.interceptions || 0), 0);
   const trackedClearances = stats.reduce((sum, s) => sum + (s.clearances || 0), 0);
   const trackedCleanSheets = stats.filter(s => s.clean_sheet === true).length;
+  const trackedTackleSuccess = stats.reduce((sum, s) => sum + (s.tackle_success || 0), 0);
+  const trackedDefensiveActions = stats.reduce((sum, s) => sum + (s.defensive_actions || 0), 0);
   
   // GK stats
   const trackedSaves = stats.reduce((sum, s) => sum + (s.saves || 0) + (s.saves_diving || 0) + (s.saves_reflex || 0) + (s.saves_parry || 0) + (s.saves_cross || 0) + (s.saves_punch || 0), 0);
   const trackedGoalsConceded = stats.reduce((sum, s) => sum + (s.goals_conceded || 0), 0);
+  const trackedGkClaims = stats.reduce((sum, s) => sum + (s.gk_claims || 0), 0);
+  
+  // Attacking accuracy stats
+  const trackedShots = stats.reduce((sum, s) => sum + (s.shots || 0), 0);
+  const trackedShotsOnTarget = stats.reduce((sum, s) => sum + (s.shots_on_target || 0), 0);
+  const trackedGoalsInsideBox = stats.reduce((sum, s) => sum + (s.goals_inside_box || 0), 0);
+  
+  // Passing accuracy stats
+  const trackedPassesMade = stats.reduce((sum, s) => sum + (s.passes_made || 0), 0);
+  const trackedPassesCompleted = stats.reduce((sum, s) => sum + (s.passes_completed || 0), 0);
 
   // Determine primary position from stats
   const positionCounts: Record<string, number> = {};
@@ -521,6 +533,12 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
   const avgSaves = trackedGames > 0 ? trackedSaves / trackedGames : 0;
   const cleanSheetRate = trackedGames > 0 ? (trackedCleanSheets / trackedGames) * 100 : 0;
   const avgGoalsConceded = trackedGames > 0 ? trackedGoalsConceded / trackedGames : 0;
+  
+  // NEW: Calculate accuracy percentages
+  const shotAccuracy = trackedShots > 0 ? (trackedShotsOnTarget / trackedShots) * 100 : 50;
+  const passAccuracy = trackedPassesMade > 0 ? (trackedPassesCompleted / trackedPassesMade) * 100 : 50;
+  const tackleSuccessRate = trackedTackles > 0 ? (trackedTackleSuccess / trackedTackles) * 100 : 50;
+  const avgGkClaims = trackedGames > 0 ? trackedGkClaims / trackedGames : 0;
 
   const gamesWithRating = stats.filter(s => s.ea_match_rating !== null && s.ea_match_rating > 0);
   const avgEARating = gamesWithRating.length > 0
@@ -550,15 +568,19 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
   let performanceRating: number;
 
   if (isGK) {
-    // GK Rating: 25% win rate, 15% saves, 20% clean sheets, 40% EA rating (heavily weighted due to limited data)
-    performanceRating = winRate * 0.25;
+    // GK Rating: 20% win rate, 15% saves, 15% clean sheets, 10% GK claims, 40% EA rating
+    performanceRating = winRate * 0.20;
     
-    // Saves contribution (reduced weight since data is sparse)
+    // Saves contribution
     const savesContribution = Math.min(100, avgSaves * 20);
     performanceRating += savesContribution * 0.15;
     
     // Clean sheet rate
-    performanceRating += cleanSheetRate * 0.20;
+    performanceRating += cleanSheetRate * 0.15;
+    
+    // NEW: GK claims - proactive saves (scale: 0-3 claims/game = 0-100)
+    const claimsContribution = Math.min(100, avgGkClaims * 33);
+    performanceRating += claimsContribution * 0.10;
     
     // EA rating heavily weighted (captures overall GK performance) - now normalized
     if (normalizedEARating !== null) {
@@ -569,19 +591,26 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
       performanceRating += (cleanSheetRate * 0.5 + gcPenalty * 0.5) * 0.40;
     }
   } else if (isDefender) {
-    // Defender Rating: 20% win rate, 25% tackles/game, 20% GA/game (inverted), 20% clean sheets, 5% G+A (defensive only), 10% EA rating
-    performanceRating = winRate * 0.20;
+    // Defender Rating: 15% win rate, 20% tackles, 10% tackle success rate, 15% GA/game, 20% clean sheets, 5% G+A, 5% interceptions, 10% EA rating
+    performanceRating = winRate * 0.15;
     
-    // Tackles per game - highly weighted for defenders (scale: 0-5 tackles/game = 0-100)
+    // Tackles per game (scale: 0-5 tackles/game = 0-100)
     const tacklesContribution = Math.min(100, avgTackles * 20);
-    performanceRating += tacklesContribution * 0.25;
+    performanceRating += tacklesContribution * 0.20;
+    
+    // NEW: Tackle success rate - quality of tackles
+    performanceRating += tackleSuccessRate * 0.10;
     
     // Goals against per game - lower is better (scale: 0 GA = 100, 3+ GA = 0)
     const gaPerGameScore = Math.max(0, 100 - (avgGoalsConceded * 33.33));
-    performanceRating += gaPerGameScore * 0.20;
+    performanceRating += gaPerGameScore * 0.15;
     
     // Clean sheet rate - highly weighted for defenders
     performanceRating += cleanSheetRate * 0.20;
+    
+    // Interceptions contribution
+    const interceptionsContribution = Math.min(100, avgInterceptions * 25);
+    performanceRating += interceptionsContribution * 0.05;
     
     // G+A only count when playing defensive positions (confirmed defensive role)
     const DEFENSIVE_POSITIONS = ["CB", "LB", "RB", "LWB", "RWB", "SW", "LCB", "RCB"];
@@ -601,22 +630,28 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
     if (normalizedEARating !== null) {
       performanceRating += (normalizedEARating * 10) * 0.10;
     } else {
-      // Fallback: use tackles + GA/game blend
       performanceRating += (tacklesContribution * 0.5 + gaPerGameScore * 0.5) * 0.10;
     }
   } else if (isMidfielder) {
-    // Midfielder Rating: 40% win rate, 20% G+A, 20% defensive, 10% clean sheets, 10% EA rating
-    performanceRating = winRate * 0.40;
+    // Midfielder Rating: 30% win rate, 20% G+A, 15% defensive, 10% pass accuracy, 10% clean sheets, 5% interceptions, 10% EA rating
+    performanceRating = winRate * 0.30;
     
     const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
     performanceRating += gaContribution * 0.20;
     
     // Midfielders should contribute defensively too
     const defensiveContribution = Math.min(100, (avgTackles * 12) + (avgInterceptions * 15));
-    performanceRating += defensiveContribution * 0.20;
+    performanceRating += defensiveContribution * 0.15;
     
-    // Slight clean sheet bonus for defensive mids
+    // NEW: Pass accuracy - key for midfielders
+    performanceRating += passAccuracy * 0.10;
+    
+    // Clean sheet bonus for defensive mids
     performanceRating += cleanSheetRate * 0.10;
+    
+    // Interceptions
+    const interceptionsContribution = Math.min(100, avgInterceptions * 20);
+    performanceRating += interceptionsContribution * 0.05;
     
     // EA rating - no normalization needed (baseline)
     if (normalizedEARating !== null) {
@@ -625,10 +660,14 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
       performanceRating += winRate * 0.10;
     }
   } else {
-    // Attacker/Default Rating: 50% win rate, 30% G+A, 20% EA rating (original formula)
-    performanceRating = winRate * 0.50;
+    // Attacker/Default Rating: 40% win rate, 25% G+A, 15% shot accuracy, 20% EA rating
+    performanceRating = winRate * 0.40;
+    
     const gaContribution = Math.min(100, (avgGoals + avgAssists) * 50);
-    performanceRating += gaContribution * 0.30;
+    performanceRating += gaContribution * 0.25;
+    
+    // NEW: Shot accuracy - finishing quality (scale shots on target %)
+    performanceRating += shotAccuracy * 0.15;
 
     // EA rating reduced for forwards (easier to get high ratings)
     if (normalizedEARating !== null) {

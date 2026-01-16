@@ -145,6 +145,13 @@ export interface LeaderboardPlayer {
   forward_passes: number;
   possession_gains: number;
   shots_off_target: number;
+  // Newly discovered high-confidence stats
+  passes_completed: number;
+  shots_on_target: number;
+  tackle_success: number;
+  gk_claims: number;
+  goals_inside_box: number;
+  defensive_actions: number;
 }
 
 export interface LineupSlot {

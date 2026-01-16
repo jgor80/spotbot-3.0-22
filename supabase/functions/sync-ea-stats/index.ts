@@ -70,21 +70,34 @@ const EA_EVENT_CODES: Record<number, string> = {
   8: 'interceptions',      // Confirmed: 100% correlation
   49: 'ballRecoveries',    // Ball recoveries
   61: 'blocks',            // Blocks
+  121: 'tackleSuccess',    // Discovered: r=0.698 with tackles - successful tackles
+  158: 'defensiveActions', // Discovered: combined defensive actions
   163: 'ballRecoveriesLoose', // Discovered: r=0.81 with tackles
   164: 'recoveriesOppHalf',   // Discovered: r=0.97 with tackles
+  229: 'successfulTackles',   // Discovered: r=0.690 with tackles (mirror of 121)
   
   // Passing stats
   1: 'passes',             // Pass events
+  24: 'passesCompleted',   // Discovered: r=0.525 with passes_made
+  30: 'passesAttempted',   // Discovered: r=0.477 with passes_made
   174: 'forwardPasses',    // Discovered: r=0.65 with passes_made
   176: 'possessionGains',  // Discovered: r=0.80 with passes_made
   215: 'passAttempts',     // Discovered: r=1.0 with passes
   
   // Attacking stats
   3: 'takeOns',            // Dribble attempts (take-ons)
+  11: 'assistEvents',      // Discovered: r=0.943 with assists
+  12: 'goalsOpenPlay',     // Discovered: r=0.42 with goals
   13: 'shots',             // Confirmed: 100% correlation
+  14: 'shotsInBox',        // Discovered: r=0.60 with shots
   16: 'goals',             // Goal events
   106: 'aerialDuelsWon',   // Discovered: r=0.98 with goals
+  118: 'assistChances',    // Discovered: r=0.41 with assists - chances created
+  131: 'goalsInsideBox',   // Discovered: goals from inside box
+  177: 'shotsOnTarget',    // Discovered: r=0.495 with shots
+  214: 'goalsDirect',      // Discovered: r=0.978 with goals
   217: 'shotsOffTarget',   // Discovered: r=0.70 with shots
+  218: 'shotAttempts',     // Discovered: total shot attempts
   
   // Duel stats
   44: 'aerialDuels',       // Aerial duels total
@@ -96,6 +109,7 @@ const EA_EVENT_CODES: Record<number, string> = {
   // GK stats
   10: 'savesStandard',     // Confirmed: 100% correlation with saves
   50: 'savesDiving',       // GK diving saves
+  99: 'gkClaims',          // Discovered: GK catches/claims
   267: 'goodDirectionSaves', // Confirmed: 100% correlation
   
   // Meta
