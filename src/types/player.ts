@@ -152,6 +152,16 @@ export interface LeaderboardPlayer {
   gk_claims: number;
   goals_inside_box: number;
   defensive_actions: number;
+  // NEW: Validated stats from 2026-01-18 screenshot analysis
+  through_balls: number;
+  progressive_carries: number;
+  touches_in_box: number;
+  pressing_actions: number;
+  dribble_success: number;
+  big_chances: number;
+  forward_runs: number;
+  offensive_duels: number;
+  defensive_duels: number;
 }
 
 export interface LineupSlot {

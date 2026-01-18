@@ -303,7 +303,16 @@ serve(async (req) => {
             tackle_success,
             gk_claims,
             goals_inside_box,
-            defensive_actions
+            defensive_actions,
+            through_balls,
+            progressive_carries,
+            touches_in_box,
+            pressing_actions,
+            dribble_success,
+            big_chances,
+            forward_runs,
+            offensive_duels,
+            defensive_duels
           `)
           .eq("guild_id", guild_id)
           .eq("match_type", "club")
@@ -400,6 +409,16 @@ serve(async (req) => {
             gk_claims: 0,
             goals_inside_box: 0,
             defensive_actions: 0,
+            // NEW: Validated stats from 2026-01-18 screenshot analysis
+            through_balls: 0,
+            progressive_carries: 0,
+            touches_in_box: 0,
+            pressing_actions: 0,
+            dribble_success: 0,
+            big_chances: 0,
+            forward_runs: 0,
+            offensive_duels: 0,
+            defensive_duels: 0,
           };
           
           existing.games_played += 1;
@@ -456,6 +475,16 @@ serve(async (req) => {
           existing.gk_claims += stat.gk_claims || 0;
           existing.goals_inside_box += stat.goals_inside_box || 0;
           existing.defensive_actions += stat.defensive_actions || 0;
+          // NEW: Validated stats from 2026-01-18 screenshot analysis
+          existing.through_balls += stat.through_balls || 0;
+          existing.progressive_carries += stat.progressive_carries || 0;
+          existing.touches_in_box += stat.touches_in_box || 0;
+          existing.pressing_actions += stat.pressing_actions || 0;
+          existing.dribble_success += stat.dribble_success || 0;
+          existing.big_chances += stat.big_chances || 0;
+          existing.forward_runs += stat.forward_runs || 0;
+          existing.offensive_duels += stat.offensive_duels || 0;
+          existing.defensive_duels += stat.defensive_duels || 0;
           
           if (stat.archetypeid) {
             existing.archetype_counts[stat.archetypeid] = (existing.archetype_counts[stat.archetypeid] || 0) + 1;

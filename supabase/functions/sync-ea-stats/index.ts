@@ -61,7 +61,7 @@ const KNOWN_MEMBER_KEYS = new Set([
 
 // EA Event Code mapping (Opta-style event IDs used by EA)
 // These are encoded in match_event_aggregate fields as "eventId:count" pairs
-// Updated: 2026-01-11 via analyze-event-codes discovery
+// Updated: 2026-01-18 via analyze-event-codes discovery + screenshot validation
 const EA_EVENT_CODES: Record<number, string> = {
   // Defensive stats
   0: 'tackleAttempts',     // Discovered: r=0.93 with tackles
@@ -70,16 +70,29 @@ const EA_EVENT_CODES: Record<number, string> = {
   8: 'interceptions',      // Confirmed: 100% correlation
   49: 'ballRecoveries',    // Ball recoveries
   61: 'blocks',            // Blocks
+  109: 'successfulChallenges', // NEW: rating_corr: 0.426, tackle_corr: 0.357
   121: 'tackleSuccess',    // Discovered: r=0.698 with tackles - successful tackles
+  143: 'ballPressure',     // NEW: pass_corr: 0.546, high volume
+  145: 'pressingActions',  // NEW: goal_corr: 0.301, rating_corr: 0.247
+  151: 'defensiveTouch',   // NEW: goal_corr: 0.178
   158: 'defensiveActions', // Discovered: combined defensive actions
   163: 'ballRecoveriesLoose', // Discovered: r=0.81 with tackles
   164: 'recoveriesOppHalf',   // Discovered: r=0.97 with tackles
   229: 'successfulTackles',   // Discovered: r=0.690 with tackles (mirror of 121)
+  266: 'defensivePositioning', // NEW: tackle_corr: 0.234, defender-only
   
   // Passing stats
   1: 'passes',             // Pass events
   24: 'passesCompleted',   // Discovered: r=0.525 with passes_made
+  25: 'keyTouches',        // NEW: avg 2.54/match, pass_corr: 0.136
+  26: 'backwardPasses',    // NEW: avg 5.29/match, pass_corr: 0.533
+  27: 'shortPasses',       // NEW: avg 1.50/match, pass_corr: 0.189
   30: 'passesAttempted',   // Discovered: r=0.477 with passes_made
+  31: 'receivingUnderPressure', // NEW: avg 2.87/match
+  33: 'keyPassAttempts',   // NEW: avg 1.17/match
+  35: 'throughBalls',      // NEW: avg 1.85/match, playmaker-heavy
+  37: 'passIntoBox',       // NEW: avg 1.62/match
+  119: 'finalThirdPasses', // NEW: goal_corr: 0.330, rating_corr: 0.279
   174: 'forwardPasses',    // Discovered: r=0.65 with passes_made
   176: 'possessionGains',  // Discovered: r=0.80 with passes_made
   215: 'passAttempts',     // Discovered: r=1.0 with passes
@@ -91,13 +104,22 @@ const EA_EVENT_CODES: Record<number, string> = {
   13: 'shots',             // Confirmed: 100% correlation
   14: 'shotsInBox',        // Discovered: r=0.60 with shots
   16: 'goals',             // Goal events
+  32: 'dribbleSuccess',    // NEW: goal_corr: 0.332, rating_corr: 0.321
+  34: 'progressiveCarries', // NEW: pass_corr: 0.558, rating_corr: 0.097
+  36: 'keyDribbles',       // NEW: goal_corr: 0.324, rating_corr: 0.332
   106: 'aerialDuelsWon',   // Discovered: r=0.98 with goals
+  112: 'touchesInBox',     // NEW: goal_corr: 0.299, rating_corr: 0.313
+  114: 'attackingThirdEntries', // NEW: rating_corr: 0.351, assist_corr: 0.248
   118: 'assistChances',    // Discovered: r=0.41 with assists - chances created
   131: 'goalsInsideBox',   // Discovered: goals from inside box
   177: 'shotsOnTarget',    // Discovered: r=0.495 with shots
+  178: 'bigChances',       // NEW: goal_corr: 0.320, rating_corr: 0.278
+  183: 'chancesCreated',   // NEW: goal_corr: 0.273, rating_corr: 0.246
+  212: 'shotEvents',       // NEW: goal_corr: 0.283
   214: 'goalsDirect',      // Discovered: r=0.978 with goals
   217: 'shotsOffTarget',   // Discovered: r=0.70 with shots
   218: 'shotAttempts',     // Discovered: total shot attempts
+  265: 'forwardRuns',      // NEW: goal_corr: 0.234, forward-only
   
   // Duel stats
   44: 'aerialDuels',       // Aerial duels total
@@ -105,9 +127,16 @@ const EA_EVENT_CODES: Record<number, string> = {
   101: 'groundDuelsWon',   // Ground duels won
   105: 'aerialDuelsTotal', // Aerial duels total
   107: 'looseBallDuels',   // Loose ball duels
+  152: 'offensiveDuels',   // NEW: assist_corr: 0.333, rating_corr: 0.303
+  157: 'defensiveDuels',   // NEW: rating_corr: 0.200
+  
+  // Possession stats
+  182: 'possessionTouches', // NEW: pass_corr: 0.588, high volume
+  219: 'ballReceipts',     // NEW: avg 7.14/match, universal
   
   // GK stats
   10: 'savesStandard',     // Confirmed: 100% correlation with saves
+  28: 'gkSavesParry',      // NEW: save_corr: 0.228, GK-heavy distribution
   50: 'savesDiving',       // GK diving saves
   99: 'gkClaims',          // Discovered: GK catches/claims
   267: 'goodDirectionSaves', // Confirmed: 100% correlation

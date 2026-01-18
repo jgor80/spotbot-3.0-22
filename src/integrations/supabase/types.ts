@@ -1535,18 +1535,22 @@ export type Database = {
           avg_match_rating: number | null
           ball_recoveries: number | null
           baseline_synced: boolean | null
+          big_chances: number | null
           clean_sheets: number | null
           clearances: number | null
           club_key: string
           created_at: string
           defensive_actions: number | null
+          defensive_duels: number | null
           discord_user_id: string
           discord_username: string | null
           draws: number | null
           dribble_attempts: number | null
+          dribble_success: number | null
           dribbles: number | null
           ea_club_id: string | null
           forward_passes: number | null
+          forward_runs: number | null
           fouls: number | null
           games_played: number | null
           gk_claims: number | null
@@ -1558,12 +1562,15 @@ export type Database = {
           interceptions: number | null
           losses: number | null
           man_of_match: number | null
+          offensive_duels: number | null
           offsides: number | null
           pass_attempts: number | null
           passes_completed: number | null
           passes_made: number | null
           possession_gains: number | null
+          pressing_actions: number | null
           primary_position: string | null
+          progressive_carries: number | null
           saves: number | null
           saves_cross: number | null
           saves_diving: number | null
@@ -1578,6 +1585,8 @@ export type Database = {
           tackle_attempts: number | null
           tackle_success: number | null
           tackles: number | null
+          through_balls: number | null
+          touches_in_box: number | null
           updated_at: string
           win_rate: number | null
           wins: number | null
@@ -1588,18 +1597,22 @@ export type Database = {
           avg_match_rating?: number | null
           ball_recoveries?: number | null
           baseline_synced?: boolean | null
+          big_chances?: number | null
           clean_sheets?: number | null
           clearances?: number | null
           club_key: string
           created_at?: string
           defensive_actions?: number | null
+          defensive_duels?: number | null
           discord_user_id: string
           discord_username?: string | null
           draws?: number | null
           dribble_attempts?: number | null
+          dribble_success?: number | null
           dribbles?: number | null
           ea_club_id?: string | null
           forward_passes?: number | null
+          forward_runs?: number | null
           fouls?: number | null
           games_played?: number | null
           gk_claims?: number | null
@@ -1611,12 +1624,15 @@ export type Database = {
           interceptions?: number | null
           losses?: number | null
           man_of_match?: number | null
+          offensive_duels?: number | null
           offsides?: number | null
           pass_attempts?: number | null
           passes_completed?: number | null
           passes_made?: number | null
           possession_gains?: number | null
+          pressing_actions?: number | null
           primary_position?: string | null
+          progressive_carries?: number | null
           saves?: number | null
           saves_cross?: number | null
           saves_diving?: number | null
@@ -1631,6 +1647,8 @@ export type Database = {
           tackle_attempts?: number | null
           tackle_success?: number | null
           tackles?: number | null
+          through_balls?: number | null
+          touches_in_box?: number | null
           updated_at?: string
           win_rate?: number | null
           wins?: number | null
@@ -1641,18 +1659,22 @@ export type Database = {
           avg_match_rating?: number | null
           ball_recoveries?: number | null
           baseline_synced?: boolean | null
+          big_chances?: number | null
           clean_sheets?: number | null
           clearances?: number | null
           club_key?: string
           created_at?: string
           defensive_actions?: number | null
+          defensive_duels?: number | null
           discord_user_id?: string
           discord_username?: string | null
           draws?: number | null
           dribble_attempts?: number | null
+          dribble_success?: number | null
           dribbles?: number | null
           ea_club_id?: string | null
           forward_passes?: number | null
+          forward_runs?: number | null
           fouls?: number | null
           games_played?: number | null
           gk_claims?: number | null
@@ -1664,12 +1686,15 @@ export type Database = {
           interceptions?: number | null
           losses?: number | null
           man_of_match?: number | null
+          offensive_duels?: number | null
           offsides?: number | null
           pass_attempts?: number | null
           passes_completed?: number | null
           passes_made?: number | null
           possession_gains?: number | null
+          pressing_actions?: number | null
           primary_position?: string | null
+          progressive_carries?: number | null
           saves?: number | null
           saves_cross?: number | null
           saves_diving?: number | null
@@ -1684,6 +1709,8 @@ export type Database = {
           tackle_attempts?: number | null
           tackle_success?: number | null
           tackles?: number | null
+          through_balls?: number | null
+          touches_in_box?: number | null
           updated_at?: string
           win_rate?: number | null
           wins?: number | null
@@ -1734,17 +1761,21 @@ export type Database = {
           avg_match_rating: number | null
           ball_recoveries: number | null
           baseline_synced: boolean | null
+          big_chances: number | null
           build_quality_rating: number | null
           clearances: number | null
           club_performance_rating: number | null
           created_at: string
           defensive_actions: number | null
+          defensive_duels: number | null
           discord_user_id: string
           draft_performance_rating: number | null
           draws: number
           dribble_attempts: number | null
+          dribble_success: number | null
           dribbles: number | null
           forward_passes: number | null
+          forward_runs: number | null
           fouls: number | null
           games_played: number
           gk_claims: number | null
@@ -1757,6 +1788,7 @@ export type Database = {
           last_game_at: string | null
           losses: number
           manager_rating: number | null
+          offensive_duels: number | null
           offsides: number | null
           overall_rating: number
           pass_attempts: number | null
@@ -1764,6 +1796,8 @@ export type Database = {
           passes_made: number | null
           peer_rating: number | null
           possession_gains: number | null
+          pressing_actions: number | null
+          progressive_carries: number | null
           saves: number | null
           saves_cross: number | null
           saves_diving: number | null
@@ -1776,11 +1810,13 @@ export type Database = {
           tackle_attempts: number | null
           tackle_success: number | null
           tackles: number | null
+          through_balls: number | null
           total_assists: number
           total_clean_sheets: number
           total_goals: number
           total_motm: number
           total_second_assists: number | null
+          touches_in_box: number | null
           updated_at: string
           wins: number
         }
@@ -1788,17 +1824,21 @@ export type Database = {
           avg_match_rating?: number | null
           ball_recoveries?: number | null
           baseline_synced?: boolean | null
+          big_chances?: number | null
           build_quality_rating?: number | null
           clearances?: number | null
           club_performance_rating?: number | null
           created_at?: string
           defensive_actions?: number | null
+          defensive_duels?: number | null
           discord_user_id: string
           draft_performance_rating?: number | null
           draws?: number
           dribble_attempts?: number | null
+          dribble_success?: number | null
           dribbles?: number | null
           forward_passes?: number | null
+          forward_runs?: number | null
           fouls?: number | null
           games_played?: number
           gk_claims?: number | null
@@ -1811,6 +1851,7 @@ export type Database = {
           last_game_at?: string | null
           losses?: number
           manager_rating?: number | null
+          offensive_duels?: number | null
           offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null
@@ -1818,6 +1859,8 @@ export type Database = {
           passes_made?: number | null
           peer_rating?: number | null
           possession_gains?: number | null
+          pressing_actions?: number | null
+          progressive_carries?: number | null
           saves?: number | null
           saves_cross?: number | null
           saves_diving?: number | null
@@ -1830,11 +1873,13 @@ export type Database = {
           tackle_attempts?: number | null
           tackle_success?: number | null
           tackles?: number | null
+          through_balls?: number | null
           total_assists?: number
           total_clean_sheets?: number
           total_goals?: number
           total_motm?: number
           total_second_assists?: number | null
+          touches_in_box?: number | null
           updated_at?: string
           wins?: number
         }
@@ -1842,17 +1887,21 @@ export type Database = {
           avg_match_rating?: number | null
           ball_recoveries?: number | null
           baseline_synced?: boolean | null
+          big_chances?: number | null
           build_quality_rating?: number | null
           clearances?: number | null
           club_performance_rating?: number | null
           created_at?: string
           defensive_actions?: number | null
+          defensive_duels?: number | null
           discord_user_id?: string
           draft_performance_rating?: number | null
           draws?: number
           dribble_attempts?: number | null
+          dribble_success?: number | null
           dribbles?: number | null
           forward_passes?: number | null
+          forward_runs?: number | null
           fouls?: number | null
           games_played?: number
           gk_claims?: number | null
@@ -1865,6 +1914,7 @@ export type Database = {
           last_game_at?: string | null
           losses?: number
           manager_rating?: number | null
+          offensive_duels?: number | null
           offsides?: number | null
           overall_rating?: number
           pass_attempts?: number | null
@@ -1872,6 +1922,8 @@ export type Database = {
           passes_made?: number | null
           peer_rating?: number | null
           possession_gains?: number | null
+          pressing_actions?: number | null
+          progressive_carries?: number | null
           saves?: number | null
           saves_cross?: number | null
           saves_diving?: number | null
@@ -1884,11 +1936,13 @@ export type Database = {
           tackle_attempts?: number | null
           tackle_success?: number | null
           tackles?: number | null
+          through_balls?: number | null
           total_assists?: number
           total_clean_sheets?: number
           total_goals?: number
           total_motm?: number
           total_second_assists?: number | null
+          touches_in_box?: number | null
           updated_at?: string
           wins?: number
         }
@@ -1935,19 +1989,23 @@ export type Database = {
           archetypeid: string | null
           assists: number
           ball_recoveries: number | null
+          big_chances: number | null
           clean_sheet: boolean | null
           clean_sheet_def: boolean | null
           clean_sheet_gk: boolean | null
           clearances: number | null
           created_at: string
           defensive_actions: number | null
+          defensive_duels: number | null
           discord_user_id: string
           draft_id: string | null
           dribble_attempts: number | null
+          dribble_success: number | null
           dribbles: number | null
           ea_match_id: string | null
           ea_match_rating: number | null
           forward_passes: number | null
+          forward_runs: number | null
           fouls: number | null
           gk_claims: number | null
           goals: number
@@ -1958,6 +2016,7 @@ export type Database = {
           interceptions: number | null
           man_of_match: boolean | null
           match_type: string
+          offensive_duels: number | null
           offsides: number | null
           pass_attempts: number | null
           passes_completed: number | null
@@ -1965,6 +2024,8 @@ export type Database = {
           position_played: string | null
           possession: number | null
           possession_gains: number | null
+          pressing_actions: number | null
+          progressive_carries: number | null
           recorded_at: string
           red_cards: boolean | null
           saves_cross: number | null
@@ -1981,25 +2042,31 @@ export type Database = {
           tackle_success: number | null
           tackles: number | null
           team: string | null
+          through_balls: number | null
+          touches_in_box: number | null
           won: boolean | null
         }
         Insert: {
           archetypeid?: string | null
           assists?: number
           ball_recoveries?: number | null
+          big_chances?: number | null
           clean_sheet?: boolean | null
           clean_sheet_def?: boolean | null
           clean_sheet_gk?: boolean | null
           clearances?: number | null
           created_at?: string
           defensive_actions?: number | null
+          defensive_duels?: number | null
           discord_user_id: string
           draft_id?: string | null
           dribble_attempts?: number | null
+          dribble_success?: number | null
           dribbles?: number | null
           ea_match_id?: string | null
           ea_match_rating?: number | null
           forward_passes?: number | null
+          forward_runs?: number | null
           fouls?: number | null
           gk_claims?: number | null
           goals?: number
@@ -2010,6 +2077,7 @@ export type Database = {
           interceptions?: number | null
           man_of_match?: boolean | null
           match_type?: string
+          offensive_duels?: number | null
           offsides?: number | null
           pass_attempts?: number | null
           passes_completed?: number | null
@@ -2017,6 +2085,8 @@ export type Database = {
           position_played?: string | null
           possession?: number | null
           possession_gains?: number | null
+          pressing_actions?: number | null
+          progressive_carries?: number | null
           recorded_at?: string
           red_cards?: boolean | null
           saves_cross?: number | null
@@ -2033,25 +2103,31 @@ export type Database = {
           tackle_success?: number | null
           tackles?: number | null
           team?: string | null
+          through_balls?: number | null
+          touches_in_box?: number | null
           won?: boolean | null
         }
         Update: {
           archetypeid?: string | null
           assists?: number
           ball_recoveries?: number | null
+          big_chances?: number | null
           clean_sheet?: boolean | null
           clean_sheet_def?: boolean | null
           clean_sheet_gk?: boolean | null
           clearances?: number | null
           created_at?: string
           defensive_actions?: number | null
+          defensive_duels?: number | null
           discord_user_id?: string
           draft_id?: string | null
           dribble_attempts?: number | null
+          dribble_success?: number | null
           dribbles?: number | null
           ea_match_id?: string | null
           ea_match_rating?: number | null
           forward_passes?: number | null
+          forward_runs?: number | null
           fouls?: number | null
           gk_claims?: number | null
           goals?: number
@@ -2062,6 +2138,7 @@ export type Database = {
           interceptions?: number | null
           man_of_match?: boolean | null
           match_type?: string
+          offensive_duels?: number | null
           offsides?: number | null
           pass_attempts?: number | null
           passes_completed?: number | null
@@ -2069,6 +2146,8 @@ export type Database = {
           position_played?: string | null
           possession?: number | null
           possession_gains?: number | null
+          pressing_actions?: number | null
+          progressive_carries?: number | null
           recorded_at?: string
           red_cards?: boolean | null
           saves_cross?: number | null
@@ -2085,6 +2164,8 @@ export type Database = {
           tackle_success?: number | null
           tackles?: number | null
           team?: string | null
+          through_balls?: number | null
+          touches_in_box?: number | null
           won?: boolean | null
         }
         Relationships: [

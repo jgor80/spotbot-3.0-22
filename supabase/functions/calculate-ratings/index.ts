@@ -487,7 +487,6 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
   const trackedGoals = stats.reduce((sum, s) => sum + (s.goals || 0), 0);
   const trackedAssists = stats.reduce((sum, s) => sum + (s.assists || 0), 0);
 
-  // Defensive stats
   const trackedTackles = stats.reduce((sum, s) => sum + (s.tackles || 0), 0);
   const trackedInterceptions = stats.reduce((sum, s) => sum + (s.interceptions || 0), 0);
   const trackedClearances = stats.reduce((sum, s) => sum + (s.clearances || 0), 0);
@@ -508,6 +507,17 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
   // Passing accuracy stats
   const trackedPassesMade = stats.reduce((sum, s) => sum + (s.passes_made || 0), 0);
   const trackedPassesCompleted = stats.reduce((sum, s) => sum + (s.passes_completed || 0), 0);
+  
+  // NEW: Validated stats from 2026-01-18 screenshot analysis
+  const trackedThroughBalls = stats.reduce((sum, s) => sum + (s.through_balls || 0), 0);
+  const trackedProgressiveCarries = stats.reduce((sum, s) => sum + (s.progressive_carries || 0), 0);
+  const trackedTouchesInBox = stats.reduce((sum, s) => sum + (s.touches_in_box || 0), 0);
+  const trackedPressingActions = stats.reduce((sum, s) => sum + (s.pressing_actions || 0), 0);
+  const trackedDribbleSuccess = stats.reduce((sum, s) => sum + (s.dribble_success || 0), 0);
+  const trackedBigChances = stats.reduce((sum, s) => sum + (s.big_chances || 0), 0);
+  const trackedForwardRuns = stats.reduce((sum, s) => sum + (s.forward_runs || 0), 0);
+  const trackedOffensiveDuels = stats.reduce((sum, s) => sum + (s.offensive_duels || 0), 0);
+  const trackedDefensiveDuels = stats.reduce((sum, s) => sum + (s.defensive_duels || 0), 0);
 
   // Determine primary position from stats
   const positionCounts: Record<string, number> = {};
@@ -539,6 +549,15 @@ function calculatePerformanceRating(stats: any[], baselineStats: any[]): { ratin
   const passAccuracy = trackedPassesMade > 0 ? (trackedPassesCompleted / trackedPassesMade) * 100 : 50;
   const tackleSuccessRate = trackedTackles > 0 ? (trackedTackleSuccess / trackedTackles) * 100 : 50;
   const avgGkClaims = trackedGames > 0 ? trackedGkClaims / trackedGames : 0;
+  
+  // NEW: Validated per-game averages (2026-01-18)
+  const avgThroughBalls = trackedGames > 0 ? trackedThroughBalls / trackedGames : 0;
+  const avgProgressiveCarries = trackedGames > 0 ? trackedProgressiveCarries / trackedGames : 0;
+  const avgTouchesInBox = trackedGames > 0 ? trackedTouchesInBox / trackedGames : 0;
+  const avgPressingActions = trackedGames > 0 ? trackedPressingActions / trackedGames : 0;
+  const avgDribbleSuccess = trackedGames > 0 ? trackedDribbleSuccess / trackedGames : 0;
+  const avgBigChances = trackedGames > 0 ? trackedBigChances / trackedGames : 0;
+  const avgForwardRuns = trackedGames > 0 ? trackedForwardRuns / trackedGames : 0;
 
   const gamesWithRating = stats.filter(s => s.ea_match_rating !== null && s.ea_match_rating > 0);
   const avgEARating = gamesWithRating.length > 0
