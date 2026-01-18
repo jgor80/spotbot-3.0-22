@@ -80,6 +80,7 @@ async function fuzzyMatchEaToDiscord(supabase, guildId, eaUsername) {
 // EA Event Code mapping (Opta-style event IDs used by EA)
 // These are encoded in match_event_aggregate fields as "eventId:count" pairs
 const EA_EVENT_CODES = {
+  // Core stats (well-established)
   1: 'passes',           // Pass events
   3: 'takeOns',          // Dribble attempts (take-ons)
   6: 'clearances',       // Clearances (confirmed for defenders - 422+ occurrences)
@@ -90,6 +91,45 @@ const EA_EVENT_CODES = {
   49: 'ballRecoveries',  // Ball recoveries
   50: 'secondAssists',   // Second assists (pre-assists)
   61: 'blocks',          // Blocks
+  
+  // Defensive metrics (validated Jan 2026)
+  109: 'successfulChallenges', // rating_corr: 0.426, tackle_corr: 0.357
+  143: 'ballPressure',         // pass_corr: 0.546, high volume
+  145: 'pressingActions',      // goal_corr: 0.301, rating_corr: 0.247
+  151: 'defensiveTouch',       // goal_corr: 0.178
+  266: 'defensivePositioning', // tackle_corr: 0.234, defender-only
+  
+  // Passing subtypes (validated Jan 2026)
+  25: 'keyTouches',            // avg 2.54/match, pass_corr: 0.136
+  26: 'backwardPasses',        // avg 5.29/match, pass_corr: 0.533
+  27: 'shortPasses',           // avg 1.50/match, pass_corr: 0.189
+  31: 'receivingUnderPressure',// avg 2.87/match
+  33: 'keyPassAttempts',       // avg 1.17/match
+  35: 'throughBalls',          // avg 1.85/match, playmaker-heavy
+  37: 'passIntoBox',           // avg 1.62/match
+  119: 'finalThirdPasses',     // goal_corr: 0.330, rating_corr: 0.279
+  
+  // Attacking metrics (validated Jan 2026)
+  32: 'dribbleSuccess',        // goal_corr: 0.332, rating_corr: 0.321
+  34: 'progressiveCarries',    // pass_corr: 0.558, rating_corr: 0.097
+  36: 'keyDribbles',           // goal_corr: 0.324, rating_corr: 0.332
+  112: 'touchesInBox',         // goal_corr: 0.299, rating_corr: 0.313
+  114: 'attackingThirdEntries',// rating_corr: 0.351, assist_corr: 0.248
+  178: 'bigChances',           // goal_corr: 0.320, rating_corr: 0.278
+  183: 'chancesCreated',       // goal_corr: 0.273, rating_corr: 0.246
+  212: 'shotEvents',           // goal_corr: 0.283
+  265: 'forwardRuns',          // goal_corr: 0.234, forward-only
+  
+  // Possession metrics (validated Jan 2026)
+  182: 'possessionTouches',    // pass_corr: 0.588, high volume
+  219: 'ballReceipts',         // avg 7.14/match, universal
+  
+  // Duel metrics (validated Jan 2026)
+  152: 'offensiveDuels',       // assist_corr: 0.333, rating_corr: 0.303
+  157: 'defensiveDuels',       // rating_corr: 0.200
+  
+  // GK specific (validated Jan 2026)
+  28: 'gkSavesParry',          // save_corr: 0.228, GK-heavy distribution
 };
 
 // Track unknown event codes for discovery
