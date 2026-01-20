@@ -919,6 +919,10 @@ export type Database = {
           guild_id: string
           id: string
           last_match_at: string | null
+          lfg_expires_at: string | null
+          lfg_message: string | null
+          lfg_status: string | null
+          lfg_updated_at: string | null
           losses: number | null
           matches_played: number | null
           peak_elo: number | null
@@ -941,6 +945,10 @@ export type Database = {
           guild_id: string
           id?: string
           last_match_at?: string | null
+          lfg_expires_at?: string | null
+          lfg_message?: string | null
+          lfg_status?: string | null
+          lfg_updated_at?: string | null
           losses?: number | null
           matches_played?: number | null
           peak_elo?: number | null
@@ -963,6 +971,10 @@ export type Database = {
           guild_id?: string
           id?: string
           last_match_at?: string | null
+          lfg_expires_at?: string | null
+          lfg_message?: string | null
+          lfg_status?: string | null
+          lfg_updated_at?: string | null
           losses?: number | null
           matches_played?: number | null
           peak_elo?: number | null

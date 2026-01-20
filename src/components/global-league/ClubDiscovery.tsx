@@ -8,9 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Swords, Filter } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Search, Swords, Filter, Wifi, Radio } from "lucide-react";
 import { ClubProfileCard } from "./ClubProfileCard";
+import { LfgClubsList } from "./LfgClubsList";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface DiscoverableClub {
   id: string;
@@ -28,6 +31,8 @@ interface DiscoverableClub {
   current_streak: number;
   status: string;
   last_match_at: string | null;
+  lfg_status?: string;
+  lfg_message?: string;
 }
 
 const PLATFORMS = [
@@ -42,6 +47,7 @@ export function ClubDiscovery() {
   const [platform, setPlatform] = useState("all");
   const [eloRange, setEloRange] = useState([800, 1600]);
   const [showFilters, setShowFilters] = useState(false);
+  const [showLfgOnly, setShowLfgOnly] = useState(false);
   const [selectedClub, setSelectedClub] = useState<DiscoverableClub | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -90,12 +96,19 @@ export function ClubDiscovery() {
 
   return (
     <div className="space-y-4">
+      {/* LFG Quick View */}
+      <LfgClubsList 
+        platform={platform} 
+        eloMin={eloRange[0]} 
+        eloMax={eloRange[1]} 
+      />
+
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <CardTitle className="flex items-center gap-2">
               <Search className="h-5 w-5" />
-              Find Opponents
+              All Clubs
             </CardTitle>
             <div className="flex gap-2">
               <div className="relative flex-1 sm:flex-initial">
@@ -149,6 +162,16 @@ export function ClubDiscovery() {
                   className="mt-2"
                 />
               </div>
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium flex items-center gap-2">
+                  <Wifi className="h-4 w-4 text-green-500" />
+                  Show only LFG clubs
+                </label>
+                <Switch
+                  checked={showLfgOnly}
+                  onCheckedChange={setShowLfgOnly}
+                />
+              </div>
             </div>
           </CardContent>
         )}
@@ -168,19 +191,46 @@ export function ClubDiscovery() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {clubs.map((club) => {
+          {clubs
+            .filter(club => !showLfgOnly || (club.lfg_status && club.lfg_status !== "offline"))
+            .map((club) => {
             const activity = getActivityStatus(club.last_match_at);
+            const isLfg = club.lfg_status && club.lfg_status !== "offline";
+            const isReady = club.lfg_status === "ready";
             
             return (
               <Card
                 key={club.id}
-                className="hover:border-primary/50 transition-colors cursor-pointer"
+                className={cn(
+                  "hover:border-primary/50 transition-colors cursor-pointer",
+                  isReady && "border-green-500/50 bg-green-500/5",
+                  club.lfg_status === "looking" && "border-yellow-500/50 bg-yellow-500/5"
+                )}
                 onClick={() => setSelectedClub(selectedClub?.id === club.id ? null : club)}
               >
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between mb-3">
                     <div>
-                      <h3 className="font-bold">{club.club_name}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold">{club.club_name}</h3>
+                        {isLfg && (
+                          <Badge 
+                            variant="outline" 
+                            className={cn(
+                              "text-xs px-1.5",
+                              isReady 
+                                ? "bg-green-500/20 text-green-500 border-green-500/50" 
+                                : "bg-yellow-500/20 text-yellow-500 border-yellow-500/50"
+                            )}
+                          >
+                            {isReady ? (
+                              <><Wifi className="h-3 w-3 mr-1" /> READY</>
+                            ) : (
+                              <><Radio className="h-3 w-3 mr-1" /> LFG</>
+                            )}
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-sm text-muted-foreground">{club.guild_name}</p>
                     </div>
                     <Badge className={activity.color}>{activity.label}</Badge>
