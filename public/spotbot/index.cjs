@@ -682,6 +682,56 @@ const COMMANDS = [
     options: [
       { name: 'gamertag', description: 'Your Xbox gamertag (exactly as it appears).', type: 3, required: true }
     ]
+  },
+
+  // Global League Commands
+  {
+    name: 'globalleague',
+    description: 'Manage your club in the Global Clubs League.',
+    options: [
+      {
+        name: 'action',
+        description: 'What action to perform.',
+        type: 3,
+        required: true,
+        choices: [
+          { name: 'Join Global League', value: 'join' },
+          { name: 'Leave Global League', value: 'leave' },
+          { name: 'View My Club Profile', value: 'profile' },
+          { name: 'View Global Standings', value: 'standings' },
+          { name: 'Discover Clubs', value: 'discover' },
+          { name: 'Set Status (Active/Inactive)', value: 'status' }
+        ]
+      },
+      {
+        name: 'status_value',
+        description: 'Set your club status (for status action).',
+        type: 3,
+        required: false,
+        choices: [
+          { name: 'Active', value: 'active' },
+          { name: 'Inactive', value: 'inactive' }
+        ]
+      },
+      {
+        name: 'platform',
+        description: 'Filter by platform (for standings/discover).',
+        type: 3,
+        required: false,
+        choices: [
+          { name: 'All Platforms', value: 'all' },
+          { name: 'PlayStation 5', value: 'ps5' },
+          { name: 'Xbox Series X|S', value: 'xbox-series-xs' },
+          { name: 'PC', value: 'pc' }
+        ]
+      },
+      {
+        name: 'search',
+        description: 'Search for a club by name (for standings/discover).',
+        type: 3,
+        required: false
+      }
+    ]
   }
 ];
 
@@ -7514,6 +7564,272 @@ client.on(Events.InteractionCreate, async (interaction) => {
         } catch (error) {
           console.error('[TwitchList] Error:', error.response?.data || error.message);
           return interaction.editReply({ content: `❌ Failed to fetch Twitch notifications list.` });
+        }
+      }
+
+      // =======================
+      // GLOBAL LEAGUE COMMAND
+      // =======================
+      if (cmd === 'globalleague') {
+        const action = interaction.options.getString('action');
+        const statusValue = interaction.options.getString('status_value');
+        const platformFilter = interaction.options.getString('platform');
+        const searchQuery = interaction.options.getString('search');
+        
+        // Get current club info
+        const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
+        
+        if (action === 'join') {
+          if (!isManager(interaction.member)) {
+            return interaction.reply({
+              content: '❌ Only managers can register the club in the Global League.',
+              flags: 64
+            });
+          }
+          
+          if (!currentClub?.ea_club_id) {
+            return interaction.reply({
+              content: '❌ Your club must be linked to EA FC first. Use `/setclub` to link your club.',
+              flags: 64
+            });
+          }
+          
+          await interaction.deferReply();
+          
+          const { error, data } = await callEdgeFunction('manage-global-league', {
+            action: 'join',
+            guild_id: guildId,
+            club_key: state.currentClubKey,
+            discord_user_id: interaction.user.id
+          });
+          
+          if (error) {
+            return interaction.editReply({ content: `❌ ${error}` });
+          }
+          
+          const embed = new EmbedBuilder()
+            .setColor(0x00ff00)
+            .setTitle('🌍 Welcome to the Global League!')
+            .setDescription(`**${data.club.club_name}** has been registered in the Global Clubs League!`)
+            .addFields(
+              { name: '🏆 Starting ELO', value: `${data.club.elo_rating}`, inline: true },
+              { name: '📊 Current Rank', value: `#${data.club.rank}`, inline: true },
+              { name: '🎮 Platform', value: data.club.ea_platform, inline: true }
+            )
+            .setFooter({ text: 'Play friendlies against other registered clubs to climb the ladder!' });
+          
+          return interaction.editReply({ embeds: [embed] });
+        }
+        
+        if (action === 'leave') {
+          if (!isManager(interaction.member)) {
+            return interaction.reply({
+              content: '❌ Only managers can remove the club from the Global League.',
+              flags: 64
+            });
+          }
+          
+          await interaction.deferReply();
+          
+          const { error } = await callEdgeFunction('manage-global-league', {
+            action: 'leave',
+            guild_id: guildId,
+            club_key: state.currentClubKey
+          });
+          
+          if (error) {
+            return interaction.editReply({ content: `❌ ${error}` });
+          }
+          
+          return interaction.editReply({ content: '✅ Your club has been removed from the Global League.' });
+        }
+        
+        if (action === 'profile') {
+          await interaction.deferReply();
+          
+          const { error, data } = await callEdgeFunction('manage-global-league', {
+            action: 'get-profile',
+            guild_id: guildId,
+            club_key: state.currentClubKey
+          });
+          
+          if (error) {
+            return interaction.editReply({ content: `❌ ${error}` });
+          }
+          
+          const winRate = data.matches_played > 0 
+            ? ((data.wins / data.matches_played) * 100).toFixed(1) 
+            : '0.0';
+          
+          const streakText = data.current_streak > 0 
+            ? `🔥 ${data.current_streak}W streak`
+            : data.current_streak < 0 
+              ? `❄️ ${Math.abs(data.current_streak)}L streak`
+              : 'No streak';
+          
+          const embed = new EmbedBuilder()
+            .setColor(0x5865f2)
+            .setTitle(`🌍 ${data.club_name} - Global League Profile`)
+            .addFields(
+              { name: '🏆 ELO Rating', value: `${data.elo_rating} (Peak: ${data.peak_elo})`, inline: true },
+              { name: '📊 Rank', value: `#${data.rank} of ${data.total_clubs}`, inline: true },
+              { name: '🎮 Platform', value: data.ea_platform, inline: true },
+              { name: '📈 Record', value: `${data.wins}W - ${data.draws}D - ${data.losses}L`, inline: true },
+              { name: '⚽ Goal Diff', value: `${data.goal_difference > 0 ? '+' : ''}${data.goal_difference}`, inline: true },
+              { name: '🎯 Win Rate', value: `${winRate}%`, inline: true },
+              { name: '🔥 Streak', value: streakText, inline: true },
+              { name: '📅 Status', value: data.status === 'active' ? '✅ Active' : '⏸️ Inactive', inline: true }
+            );
+          
+          if (data.recent_matches && data.recent_matches.length > 0) {
+            const matchLines = data.recent_matches.slice(0, 5).map(m => {
+              const isHome = m.home_club_id === data.id;
+              const opponent = isHome ? m.away_club?.club_name : m.home_club?.club_name;
+              const score = isHome 
+                ? `${m.home_score}-${m.away_score}` 
+                : `${m.away_score}-${m.home_score}`;
+              const result = m.winner_club_id === data.id 
+                ? '✅' 
+                : m.winner_club_id === null 
+                  ? '🟡' 
+                  : '❌';
+              return `${result} vs ${opponent || 'Unknown'} (${score})`;
+            });
+            embed.addFields({ name: '📜 Recent Matches', value: matchLines.join('\n') || 'No matches yet', inline: false });
+          }
+          
+          return interaction.editReply({ embeds: [embed] });
+        }
+        
+        if (action === 'standings') {
+          await interaction.deferReply();
+          
+          const body = {
+            limit: 25,
+            offset: 0
+          };
+          
+          if (platformFilter && platformFilter !== 'all') {
+            body.platform = EA_PLATFORM_MAP[platformFilter] || platformFilter;
+          }
+          
+          if (searchQuery) {
+            body.search = searchQuery;
+          }
+          
+          const { error, data } = await callEdgeFunction('get-global-leaderboard', body);
+          
+          if (error) {
+            return interaction.editReply({ content: `❌ ${error}` });
+          }
+          
+          if (!data.clubs || data.clubs.length === 0) {
+            return interaction.editReply({ content: '📊 No clubs found in the Global League yet. Be the first to `/globalleague join`!' });
+          }
+          
+          const lines = data.clubs.map((club, i) => {
+            const rankEmoji = club.rank === 1 ? '🥇' : club.rank === 2 ? '🥈' : club.rank === 3 ? '🥉' : `${club.rank}.`;
+            const winRate = club.matches_played > 0 
+              ? ((club.wins / club.matches_played) * 100).toFixed(0) 
+              : '0';
+            return `${rankEmoji} **${club.club_name}** • ${club.elo_rating} ELO • ${club.wins}W-${club.draws}D-${club.losses}L (${winRate}%)`;
+          });
+          
+          const embed = new EmbedBuilder()
+            .setColor(0xffd700)
+            .setTitle('🌍 Global Clubs League Standings')
+            .setDescription(lines.join('\n'))
+            .setFooter({ text: `Showing ${data.clubs.length} of ${data.total} clubs` });
+          
+          return interaction.editReply({ embeds: [embed] });
+        }
+        
+        if (action === 'discover') {
+          await interaction.deferReply();
+          
+          const body = {
+            limit: 20,
+            offset: 0
+          };
+          
+          if (platformFilter && platformFilter !== 'all') {
+            body.platform = EA_PLATFORM_MAP[platformFilter] || platformFilter;
+          }
+          
+          if (searchQuery) {
+            body.search = searchQuery;
+          }
+          
+          const { error, data } = await callEdgeFunction('get-global-leaderboard', body);
+          
+          if (error) {
+            return interaction.editReply({ content: `❌ ${error}` });
+          }
+          
+          // Get our own club to filter out
+          const { data: ourClub } = await callEdgeFunction('manage-global-league', {
+            action: 'get-club-by-guild',
+            guild_id: guildId,
+            club_key: state.currentClubKey
+          });
+          
+          // Filter out our own club
+          const otherClubs = (data.clubs || []).filter(c => {
+            if (ourClub?.registered && ourClub.club?.id === c.id) return false;
+            return true;
+          });
+          
+          if (otherClubs.length === 0) {
+            return interaction.editReply({ content: '🔍 No other clubs found to challenge. Check back later!' });
+          }
+          
+          const lines = otherClubs.slice(0, 15).map(club => {
+            const statusIcon = club.status === 'active' ? '🟢' : '🟡';
+            const winRate = club.matches_played > 0 
+              ? ((club.wins / club.matches_played) * 100).toFixed(0) 
+              : '0';
+            return `${statusIcon} **${club.club_name}** (${club.guild_name})\n   └ ${club.elo_rating} ELO • ${club.matches_played} matches • ${winRate}% WR`;
+          });
+          
+          const embed = new EmbedBuilder()
+            .setColor(0x00bfff)
+            .setTitle('🔍 Discover Clubs to Challenge')
+            .setDescription(lines.join('\n\n'))
+            .setFooter({ text: 'Play friendlies against these clubs to update league standings!' });
+          
+          return interaction.editReply({ embeds: [embed] });
+        }
+        
+        if (action === 'status') {
+          if (!isManager(interaction.member)) {
+            return interaction.reply({
+              content: '❌ Only managers can change the club status.',
+              flags: 64
+            });
+          }
+          
+          if (!statusValue) {
+            return interaction.reply({
+              content: '❌ Please specify a status: `/globalleague status status_value:active` or `inactive`',
+              flags: 64
+            });
+          }
+          
+          await interaction.deferReply();
+          
+          const { error } = await callEdgeFunction('manage-global-league', {
+            action: 'update-status',
+            guild_id: guildId,
+            club_key: state.currentClubKey,
+            status: statusValue
+          });
+          
+          if (error) {
+            return interaction.editReply({ content: `❌ ${error}` });
+          }
+          
+          const statusEmoji = statusValue === 'active' ? '✅' : '⏸️';
+          return interaction.editReply({ content: `${statusEmoji} Club status updated to **${statusValue}**. ${statusValue === 'inactive' ? 'You won\'t appear in discovery until you\'re active again.' : ''}` });
         }
       }
     }

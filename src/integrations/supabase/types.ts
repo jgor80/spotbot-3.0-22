@@ -840,6 +840,224 @@ export type Database = {
         }
         Relationships: []
       }
+      global_league_challenges: {
+        Row: {
+          accepted_time: string | null
+          challenged_club_id: string | null
+          challenger_club_id: string | null
+          created_at: string | null
+          expires_at: string | null
+          id: string
+          match_id: string | null
+          message: string | null
+          proposed_times: Json | null
+          responded_at: string | null
+          status: string | null
+        }
+        Insert: {
+          accepted_time?: string | null
+          challenged_club_id?: string | null
+          challenger_club_id?: string | null
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          match_id?: string | null
+          message?: string | null
+          proposed_times?: Json | null
+          responded_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          accepted_time?: string | null
+          challenged_club_id?: string | null
+          challenger_club_id?: string | null
+          created_at?: string | null
+          expires_at?: string | null
+          id?: string
+          match_id?: string | null
+          message?: string | null
+          proposed_times?: Json | null
+          responded_at?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "global_league_challenges_challenged_club_id_fkey"
+            columns: ["challenged_club_id"]
+            isOneToOne: false
+            referencedRelation: "global_league_clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "global_league_challenges_challenger_club_id_fkey"
+            columns: ["challenger_club_id"]
+            isOneToOne: false
+            referencedRelation: "global_league_clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "global_league_challenges_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "global_league_matches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      global_league_clubs: {
+        Row: {
+          club_key: string
+          club_name: string
+          created_at: string | null
+          current_streak: number | null
+          draws: number | null
+          ea_club_id: string
+          ea_platform: string
+          elo_rating: number | null
+          goals_against: number | null
+          goals_for: number | null
+          guild_id: string
+          id: string
+          last_match_at: string | null
+          losses: number | null
+          matches_played: number | null
+          peak_elo: number | null
+          registered_by_discord_id: string
+          status: string | null
+          updated_at: string | null
+          wins: number | null
+        }
+        Insert: {
+          club_key: string
+          club_name: string
+          created_at?: string | null
+          current_streak?: number | null
+          draws?: number | null
+          ea_club_id: string
+          ea_platform: string
+          elo_rating?: number | null
+          goals_against?: number | null
+          goals_for?: number | null
+          guild_id: string
+          id?: string
+          last_match_at?: string | null
+          losses?: number | null
+          matches_played?: number | null
+          peak_elo?: number | null
+          registered_by_discord_id: string
+          status?: string | null
+          updated_at?: string | null
+          wins?: number | null
+        }
+        Update: {
+          club_key?: string
+          club_name?: string
+          created_at?: string | null
+          current_streak?: number | null
+          draws?: number | null
+          ea_club_id?: string
+          ea_platform?: string
+          elo_rating?: number | null
+          goals_against?: number | null
+          goals_for?: number | null
+          guild_id?: string
+          id?: string
+          last_match_at?: string | null
+          losses?: number | null
+          matches_played?: number | null
+          peak_elo?: number | null
+          registered_by_discord_id?: string
+          status?: string | null
+          updated_at?: string | null
+          wins?: number | null
+        }
+        Relationships: []
+      }
+      global_league_matches: {
+        Row: {
+          away_club_id: string | null
+          away_elo_before: number | null
+          away_elo_change: number | null
+          away_score: number | null
+          completed_at: string | null
+          confirmed_by_discord_id: string | null
+          created_at: string | null
+          ea_match_id: string | null
+          home_club_id: string | null
+          home_elo_before: number | null
+          home_elo_change: number | null
+          home_score: number | null
+          id: string
+          notes: string | null
+          scheduled_at: string
+          scheduled_by_discord_id: string
+          status: string | null
+          winner_club_id: string | null
+        }
+        Insert: {
+          away_club_id?: string | null
+          away_elo_before?: number | null
+          away_elo_change?: number | null
+          away_score?: number | null
+          completed_at?: string | null
+          confirmed_by_discord_id?: string | null
+          created_at?: string | null
+          ea_match_id?: string | null
+          home_club_id?: string | null
+          home_elo_before?: number | null
+          home_elo_change?: number | null
+          home_score?: number | null
+          id?: string
+          notes?: string | null
+          scheduled_at: string
+          scheduled_by_discord_id: string
+          status?: string | null
+          winner_club_id?: string | null
+        }
+        Update: {
+          away_club_id?: string | null
+          away_elo_before?: number | null
+          away_elo_change?: number | null
+          away_score?: number | null
+          completed_at?: string | null
+          confirmed_by_discord_id?: string | null
+          created_at?: string | null
+          ea_match_id?: string | null
+          home_club_id?: string | null
+          home_elo_before?: number | null
+          home_elo_change?: number | null
+          home_score?: number | null
+          id?: string
+          notes?: string | null
+          scheduled_at?: string
+          scheduled_by_discord_id?: string
+          status?: string | null
+          winner_club_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "global_league_matches_away_club_id_fkey"
+            columns: ["away_club_id"]
+            isOneToOne: false
+            referencedRelation: "global_league_clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "global_league_matches_home_club_id_fkey"
+            columns: ["home_club_id"]
+            isOneToOne: false
+            referencedRelation: "global_league_clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "global_league_matches_winner_club_id_fkey"
+            columns: ["winner_club_id"]
+            isOneToOne: false
+            referencedRelation: "global_league_clubs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       guild_queues: {
         Row: {
           club_key: string
