@@ -1,5 +1,5 @@
 import { useState } from "react";
-import DashboardLayout from "@/components/layout/DashboardLayout";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { TournamentsList } from "@/components/tournaments/TournamentsList";
 import { CreateTournamentForm } from "@/components/tournaments/CreateTournamentForm";
 import { TournamentDetail } from "@/components/tournaments/TournamentDetail";
