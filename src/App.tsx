@@ -20,6 +20,7 @@ import TeamsPage from "./pages/TeamsPage";
 import RatingsPage from "./pages/RatingsPage";
 import RecentGamesPage from "./pages/RecentGamesPage";
 import SquadIQPanel from "./pages/SquadIQPanel";
+import GlobalLeaguePage from "./pages/GlobalLeaguePage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -47,6 +48,7 @@ const App = () => (
               <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
               <Route path="/games" element={<ProtectedRoute><RecentGamesPage /></ProtectedRoute>} />
               <Route path="/squadiq" element={<ProtectedRoute><SquadIQPanel /></ProtectedRoute>} />
+              <Route path="/global-league" element={<ProtectedRoute><GlobalLeaguePage /></ProtectedRoute>} />
               <Route path="/players" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
