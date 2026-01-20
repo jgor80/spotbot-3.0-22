@@ -359,6 +359,8 @@ const DEFAULT_CLUBS = [
 // All positions available across formations (derived from formations.json)
 // Valid positions: GK, CB, LB, RB, LWB, RWB, CDM, CM, CAM, LM, RM, LW, RW, CF, ST
 const POSITION_PREF_OPTIONS = ['GK', 'CB', 'LB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'CF', 'ST'];
+// Refined positions for position board display (simplified for clarity)
+const POSBOARD_POSITIONS = ['ST', 'CAM', 'RW', 'LW', 'CDM', 'LB', 'RB', 'CB', 'GK'];
 const PREFS_LIMIT = 6;
 
 const POSITION_META = Object.freeze({
@@ -771,39 +773,59 @@ Keep under 3000 characters for Discord. Use markdown code blocks for tables.`;
 // POSITION BOARD HELPER
 // =======================
 
+// Position mapping for posboard: maps related positions to refined display positions
+const POSBOARD_POSITION_MAPPING = {
+  ST: ['ST', 'CF'],           // Striker includes CF
+  CAM: ['CAM', 'CM'],         // CAM includes CM
+  RW: ['RW', 'RM', 'RWB'],    // Right Wing includes RM, RWB
+  LW: ['LW', 'LM', 'LWB'],    // Left Wing includes LM, LWB
+  CDM: ['CDM'],               // CDM only
+  LB: ['LB'],                 // LB only
+  RB: ['RB'],                 // RB only
+  CB: ['CB'],                 // CB only
+  GK: ['GK']                  // GK only
+};
+
 async function buildPosboardEmbed(guildId, voiceChannel) {
   const members = [...voiceChannel.members.values()].filter(m => !m.user.bot);
   if (members.length === 0) {
     return { embed: null, memberCount: 0 };
   }
 
+  // Initialize position map for refined posboard positions
   const posMap = {};
-  POSITION_PREF_OPTIONS.forEach(p => posMap[p] = []);
+  POSBOARD_POSITIONS.forEach(p => posMap[p] = []);
 
   for (const m of members) {
     const prefs = await getUserPrefs(guildId, m.id);
     prefs.forEach((pos, index) => {
-      if (posMap[pos]) {
-        posMap[pos].push({ userId: m.id, rank: index + 1 });
+      // Map the player's pref to the refined posboard position
+      for (const [displayPos, mappedPositions] of Object.entries(POSBOARD_POSITION_MAPPING)) {
+        if (mappedPositions.includes(pos)) {
+          // Avoid duplicates: only add if not already in this display position
+          if (!posMap[displayPos].some(e => e.userId === m.id)) {
+            posMap[displayPos].push({ userId: m.id, rank: index + 1, originalPos: pos });
+          }
+        }
       }
     });
   }
 
-  const fields = POSITION_PREF_OPTIONS.map(pos => {
+  const fields = POSBOARD_POSITIONS.map(pos => {
     const entries = posMap[pos].sort((a, b) => a.rank - b.rank);
     const meta = POSITION_META[pos];
     const value = entries.length === 0
-      ? '*No data*'
+      ? '*—*'
       : entries.map(e => `${RANK_EMOJI[e.rank] || e.rank} <@${e.userId}>`).join('\n');
     return { name: `${meta?.emoji || ''} ${pos}`, value, inline: true };
   });
 
   const embed = new EmbedBuilder()
-    .setTitle('🧩 Position Board – Voice Channel')
+    .setTitle('🧩 Position Board')
     .setColor(0x5865f2)
-    .setDescription(`Voice: ${voiceChannel} • **${members.length}** player(s)`)
+    .setDescription(`🔊 ${voiceChannel} • **${members.length}** player(s)`)
     .addFields(fields)
-    .setFooter({ text: 'Players without saved preferences not shown. • Click Refresh to update.' });
+    .setFooter({ text: 'Set your preferences with the button below • Refresh to update' });
 
   return { embed, memberCount: members.length };
 }
@@ -5246,7 +5268,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
             .setCustomId(`posboard_refresh_${voiceChannel.id}`)
             .setLabel('Refresh')
             .setEmoji('🔄')
-            .setStyle(ButtonStyle.Secondary)
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('posboard_setprefs')
+            .setLabel('Set My Preferences')
+            .setEmoji('⚙️')
+            .setStyle(ButtonStyle.Primary)
         );
 
         return interaction.reply({ embeds: [embed], components: [row] });
@@ -7448,10 +7475,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
             .setCustomId(`posboard_refresh_${voiceChannel.id}`)
             .setLabel('Refresh')
             .setEmoji('🔄')
-            .setStyle(ButtonStyle.Secondary)
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('posboard_setprefs')
+            .setLabel('Set My Preferences')
+            .setEmoji('⚙️')
+            .setStyle(ButtonStyle.Primary)
         );
 
         return interaction.editReply({ embeds: [embed], components: [row] });
+      }
+
+      // =======================
+      // POSITION BOARD SET PREFERENCES BUTTON
+      // =======================
+      if (id === 'posboard_setprefs') {
+        const existing = await getUserPrefs(guildId, interaction.user.id);
+        const formationData = getFormationForUserVc(interaction.member, state);
+        
+        return interaction.reply({
+          embeds: [buildPrefsEmbed(existing, formationData?.formationName)],
+          components: buildPrefComponents(existing, formationData?.positions),
+          flags: 64
+        });
       }
 
       // =======================
