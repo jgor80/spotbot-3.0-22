@@ -649,7 +649,26 @@ serve(async (req) => {
             seconds_played,
             position_played,
             archetypeid,
-            ea_match_id
+            ea_match_id,
+            ball_recoveries,
+            forward_passes,
+            possession_gains,
+            shots_off_target,
+            passes_completed,
+            shots_on_target,
+            tackle_success,
+            gk_claims,
+            goals_inside_box,
+            defensive_actions,
+            through_balls,
+            progressive_carries,
+            touches_in_box,
+            pressing_actions,
+            dribble_success,
+            big_chances,
+            forward_runs,
+            offensive_duels,
+            defensive_duels
           `)
           .eq("guild_id", guild_id)
           .in("match_type", ["club", "friendly"])
