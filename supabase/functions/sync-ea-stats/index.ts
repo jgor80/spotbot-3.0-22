@@ -1944,6 +1944,27 @@ Deno.serve(async (req) => {
                   const dribbleAttempts = parseInt(pStats.dribblesAttempted || pStats.dribbleattempts || pStats.dribbleAttempts || 0)
                   const ballRecoveries = eventStats.ballRecoveries || 0
                   
+                  // NEW: Extract validated stats from 2026-01-18 event code discovery
+                  const throughBalls = eventStats.throughBalls || 0
+                  const progressiveCarries = eventStats.progressiveCarries || 0
+                  const touchesInBox = eventStats.touchesInBox || 0
+                  const pressingActions = eventStats.pressingActions || 0
+                  const dribbleSuccess = eventStats.dribbleSuccess || 0
+                  const bigChances = eventStats.bigChances || eventStats.chancesCreated || 0
+                  const forwardRuns = eventStats.forwardRuns || 0
+                  const offensiveDuels = eventStats.offensiveDuels || 0
+                  const defensiveDuels = eventStats.defensiveDuels || 0
+                  const gkClaims = eventStats.gkClaims || 0
+                  const gkSavesParry = eventStats.gkSavesParry || 0
+                  const forwardPasses = eventStats.forwardPasses || 0
+                  const possessionGains = eventStats.possessionGains || 0
+                  const shotsOnTarget = eventStats.shotsOnTarget || 0
+                  const shotsOffTarget = eventStats.shotsOffTarget || 0
+                  const passesCompleted = eventStats.passesCompleted || 0
+                  const tackleSuccess = eventStats.tackleSuccess || eventStats.successfulTackles || 0
+                  const goalsInsideBox = eventStats.goalsInsideBox || 0
+                  const defensiveActions = eventStats.defensiveActions || 0
+                  
                   playerStats.push({
                     ea_username: pStats.playername,
                     goals: parseInt(pStats.goals || 0),
@@ -1975,7 +1996,26 @@ Deno.serve(async (req) => {
                     dribble_attempts: dribbleAttempts,
                     fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
                     offsides: parseInt(pStats.offsides || 0),
-                    archetypeid: pStats.archetypeid || pStats.archetypeId || null
+                    archetypeid: pStats.archetypeid || pStats.archetypeId || null,
+                    // NEW: Validated event code stats (2026-01-18)
+                    through_balls: throughBalls,
+                    progressive_carries: progressiveCarries,
+                    touches_in_box: touchesInBox,
+                    pressing_actions: pressingActions,
+                    dribble_success: dribbleSuccess,
+                    big_chances: bigChances,
+                    forward_runs: forwardRuns,
+                    offensive_duels: offensiveDuels,
+                    defensive_duels: defensiveDuels,
+                    gk_claims: gkClaims,
+                    forward_passes: forwardPasses,
+                    possession_gains: possessionGains,
+                    shots_on_target: shotsOnTarget,
+                    shots_off_target: shotsOffTarget,
+                    passes_completed: passesCompleted,
+                    tackle_success: tackleSuccess,
+                    goals_inside_box: goalsInsideBox,
+                    defensive_actions: defensiveActions
                   })
                 }
                 
@@ -2055,7 +2095,27 @@ Deno.serve(async (req) => {
                         dribble_attempts: pStat.dribble_attempts,
                         fouls: pStat.fouls,
                         offsides: pStat.offsides,
-                        archetypeid: pStat.archetypeid
+                        archetypeid: pStat.archetypeid,
+                        ball_recoveries: pStat.ball_recoveries,
+                        // NEW: Validated event code stats (2026-01-18)
+                        through_balls: pStat.through_balls,
+                        progressive_carries: pStat.progressive_carries,
+                        touches_in_box: pStat.touches_in_box,
+                        pressing_actions: pStat.pressing_actions,
+                        dribble_success: pStat.dribble_success,
+                        big_chances: pStat.big_chances,
+                        forward_runs: pStat.forward_runs,
+                        offensive_duels: pStat.offensive_duels,
+                        defensive_duels: pStat.defensive_duels,
+                        gk_claims: pStat.gk_claims,
+                        forward_passes: pStat.forward_passes,
+                        possession_gains: pStat.possession_gains,
+                        shots_on_target: pStat.shots_on_target,
+                        shots_off_target: pStat.shots_off_target,
+                        passes_completed: pStat.passes_completed,
+                        tackle_success: pStat.tackle_success,
+                        goals_inside_box: pStat.goals_inside_box,
+                        defensive_actions: pStat.defensive_actions
                       })
 
                       guildUpdatedPlayerIds.add(profile.discord_user_id)
@@ -2106,6 +2166,14 @@ Deno.serve(async (req) => {
                 const players = matchData.players?.[club.ea_club_id] || {}
                 
                 for (const [, pStats] of Object.entries(players) as any) {
+                  // Parse event aggregates to extract hidden stats
+                  const eventStats = parseEventAggregate(
+                    pStats.match_event_aggregate_0,
+                    pStats.match_event_aggregate_1,
+                    pStats.match_event_aggregate_2,
+                    pStats.match_event_aggregate_3
+                  )
+                  
                   // Calculate total saves from all save types
                   const savesDiving = parseInt(pStats.ballDiveSaves || pStats.ballDivesaves || 0)
                   const savesCross = parseInt(pStats.crossSaves || pStats.crosssaves || 0)
@@ -2117,10 +2185,33 @@ Deno.serve(async (req) => {
                   // Clean sheet detection from EA data
                   const isCleanSheet = pStats.cleansheetsany === '1' || pStats.cleansheetsdef === '1' || pStats.cleansheetsgk === '1'
                   
-                  // New fields: second assists and dribble attempts
-                  const secondAssists = parseInt(pStats.secondAssists || pStats.secondassists || pStats.secondAssist || pStats.secondassist || 0)
-                  const dribbles = parseInt(pStats.dribblesCompleted || pStats.dribblewon || pStats.dribbleswon || pStats.dribbles || 0)
+                  // Extract stats from event aggregates
+                  const secondAssists = eventStats.secondAssists || parseInt(pStats.secondAssists || pStats.secondassists || 0)
+                  const dribbles = eventStats.takeOns || parseInt(pStats.dribblesCompleted || pStats.dribblewon || pStats.dribbles || 0)
                   const dribbleAttempts = parseInt(pStats.dribblesAttempted || pStats.dribbleattempts || pStats.dribbleAttempts || 0)
+                  const interceptions = eventStats.interceptions || parseInt(pStats.interceptions || 0)
+                  const clearances = eventStats.clearances || parseInt(pStats.clearances || 0)
+                  const ballRecoveries = eventStats.ballRecoveries || 0
+                  
+                  // NEW: Extract validated stats from event codes
+                  const throughBalls = eventStats.throughBalls || 0
+                  const progressiveCarries = eventStats.progressiveCarries || 0
+                  const touchesInBox = eventStats.touchesInBox || 0
+                  const pressingActions = eventStats.pressingActions || 0
+                  const dribbleSuccess = eventStats.dribbleSuccess || 0
+                  const bigChances = eventStats.bigChances || eventStats.chancesCreated || 0
+                  const forwardRuns = eventStats.forwardRuns || 0
+                  const offensiveDuels = eventStats.offensiveDuels || 0
+                  const defensiveDuels = eventStats.defensiveDuels || 0
+                  const gkClaims = eventStats.gkClaims || 0
+                  const forwardPasses = eventStats.forwardPasses || 0
+                  const possessionGains = eventStats.possessionGains || 0
+                  const shotsOnTarget = eventStats.shotsOnTarget || 0
+                  const shotsOffTarget = eventStats.shotsOffTarget || 0
+                  const passesCompleted = eventStats.passesCompleted || 0
+                  const tackleSuccess = eventStats.tackleSuccess || eventStats.successfulTackles || 0
+                  const goalsInsideBox = eventStats.goalsInsideBox || 0
+                  const defensiveActions = eventStats.defensiveActions || 0
                   
                   playerStats.push({
                     ea_username: pStats.playername,
@@ -2145,14 +2236,34 @@ Deno.serve(async (req) => {
                     saves_reflex: savesReflex,
                     goals_conceded: parseInt(pStats.goalsconceded || pStats.goalsConceded || 0),
                     clean_sheet: isCleanSheet,
-                    interceptions: parseInt(pStats.interceptions || 0),
-                    clearances: parseInt(pStats.clearances || 0),
+                    interceptions: interceptions,
+                    clearances: clearances,
+                    ball_recoveries: ballRecoveries,
                     possession: parseFloat(pStats.possession || 0),
                     dribbles: dribbles,
                     dribble_attempts: dribbleAttempts,
                     fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
                     offsides: parseInt(pStats.offsides || 0),
-                    archetypeid: pStats.archetypeid || pStats.archetypeId || null
+                    archetypeid: pStats.archetypeid || pStats.archetypeId || null,
+                    // NEW: Validated event code stats
+                    through_balls: throughBalls,
+                    progressive_carries: progressiveCarries,
+                    touches_in_box: touchesInBox,
+                    pressing_actions: pressingActions,
+                    dribble_success: dribbleSuccess,
+                    big_chances: bigChances,
+                    forward_runs: forwardRuns,
+                    offensive_duels: offensiveDuels,
+                    defensive_duels: defensiveDuels,
+                    gk_claims: gkClaims,
+                    forward_passes: forwardPasses,
+                    possession_gains: possessionGains,
+                    shots_on_target: shotsOnTarget,
+                    shots_off_target: shotsOffTarget,
+                    passes_completed: passesCompleted,
+                    tackle_success: tackleSuccess,
+                    goals_inside_box: goalsInsideBox,
+                    defensive_actions: defensiveActions
                   })
                 }
                 
@@ -2232,7 +2343,27 @@ Deno.serve(async (req) => {
                         dribble_attempts: pStat.dribble_attempts,
                         fouls: pStat.fouls,
                         offsides: pStat.offsides,
-                        archetypeid: pStat.archetypeid
+                        archetypeid: pStat.archetypeid,
+                        ball_recoveries: pStat.ball_recoveries,
+                        // NEW: Validated event code stats
+                        through_balls: pStat.through_balls,
+                        progressive_carries: pStat.progressive_carries,
+                        touches_in_box: pStat.touches_in_box,
+                        pressing_actions: pStat.pressing_actions,
+                        dribble_success: pStat.dribble_success,
+                        big_chances: pStat.big_chances,
+                        forward_runs: pStat.forward_runs,
+                        offensive_duels: pStat.offensive_duels,
+                        defensive_duels: pStat.defensive_duels,
+                        gk_claims: pStat.gk_claims,
+                        forward_passes: pStat.forward_passes,
+                        possession_gains: pStat.possession_gains,
+                        shots_on_target: pStat.shots_on_target,
+                        shots_off_target: pStat.shots_off_target,
+                        passes_completed: pStat.passes_completed,
+                        tackle_success: pStat.tackle_success,
+                        goals_inside_box: pStat.goals_inside_box,
+                        defensive_actions: pStat.defensive_actions
                       })
 
                       guildUpdatedPlayerIds.add(profile.discord_user_id)
@@ -2280,6 +2411,14 @@ Deno.serve(async (req) => {
                 const players = matchData.players?.[club.ea_club_id] || {}
                 
                 for (const [, pStats] of Object.entries(players) as any) {
+                  // Parse event aggregates to extract hidden stats
+                  const eventStats = parseEventAggregate(
+                    pStats.match_event_aggregate_0,
+                    pStats.match_event_aggregate_1,
+                    pStats.match_event_aggregate_2,
+                    pStats.match_event_aggregate_3
+                  )
+                  
                   // Calculate total saves from all save types
                   const savesDiving = parseInt(pStats.ballDiveSaves || pStats.ballDivesaves || 0)
                   const savesCross = parseInt(pStats.crossSaves || pStats.crosssaves || 0)
@@ -2291,10 +2430,33 @@ Deno.serve(async (req) => {
                   // Clean sheet detection from EA data
                   const isCleanSheet = pStats.cleansheetsany === '1' || pStats.cleansheetsdef === '1' || pStats.cleansheetsgk === '1'
                   
-                  // New fields: second assists and dribble attempts
-                  const secondAssists = parseInt(pStats.secondAssists || pStats.secondassists || pStats.secondAssist || pStats.secondassist || 0)
-                  const dribbles = parseInt(pStats.dribblesCompleted || pStats.dribblewon || pStats.dribbleswon || pStats.dribbles || 0)
+                  // Extract stats from event aggregates
+                  const secondAssists = eventStats.secondAssists || parseInt(pStats.secondAssists || pStats.secondassists || 0)
+                  const dribbles = eventStats.takeOns || parseInt(pStats.dribblesCompleted || pStats.dribblewon || pStats.dribbles || 0)
                   const dribbleAttempts = parseInt(pStats.dribblesAttempted || pStats.dribbleattempts || pStats.dribbleAttempts || 0)
+                  const interceptions = eventStats.interceptions || parseInt(pStats.interceptions || 0)
+                  const clearances = eventStats.clearances || parseInt(pStats.clearances || 0)
+                  const ballRecoveries = eventStats.ballRecoveries || 0
+                  
+                  // NEW: Extract validated stats from event codes
+                  const throughBalls = eventStats.throughBalls || 0
+                  const progressiveCarries = eventStats.progressiveCarries || 0
+                  const touchesInBox = eventStats.touchesInBox || 0
+                  const pressingActions = eventStats.pressingActions || 0
+                  const dribbleSuccess = eventStats.dribbleSuccess || 0
+                  const bigChances = eventStats.bigChances || eventStats.chancesCreated || 0
+                  const forwardRuns = eventStats.forwardRuns || 0
+                  const offensiveDuels = eventStats.offensiveDuels || 0
+                  const defensiveDuels = eventStats.defensiveDuels || 0
+                  const gkClaims = eventStats.gkClaims || 0
+                  const forwardPasses = eventStats.forwardPasses || 0
+                  const possessionGains = eventStats.possessionGains || 0
+                  const shotsOnTarget = eventStats.shotsOnTarget || 0
+                  const shotsOffTarget = eventStats.shotsOffTarget || 0
+                  const passesCompleted = eventStats.passesCompleted || 0
+                  const tackleSuccess = eventStats.tackleSuccess || eventStats.successfulTackles || 0
+                  const goalsInsideBox = eventStats.goalsInsideBox || 0
+                  const defensiveActions = eventStats.defensiveActions || 0
                   
                   playerStats.push({
                     ea_username: pStats.playername,
@@ -2318,14 +2480,34 @@ Deno.serve(async (req) => {
                     saves_reflex: savesReflex,
                     goals_conceded: parseInt(pStats.goalsconceded || pStats.goalsConceded || 0),
                     clean_sheet: isCleanSheet,
-                    interceptions: parseInt(pStats.interceptions || 0),
-                    clearances: parseInt(pStats.clearances || 0),
+                    interceptions: interceptions,
+                    clearances: clearances,
+                    ball_recoveries: ballRecoveries,
                     possession: parseFloat(pStats.possession || 0),
                     dribbles: dribbles,
                     dribble_attempts: dribbleAttempts,
                     fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
                     offsides: parseInt(pStats.offsides || 0),
-                    archetypeid: pStats.archetypeid || pStats.archetypeId || null
+                    archetypeid: pStats.archetypeid || pStats.archetypeId || null,
+                    // NEW: Validated event code stats
+                    through_balls: throughBalls,
+                    progressive_carries: progressiveCarries,
+                    touches_in_box: touchesInBox,
+                    pressing_actions: pressingActions,
+                    dribble_success: dribbleSuccess,
+                    big_chances: bigChances,
+                    forward_runs: forwardRuns,
+                    offensive_duels: offensiveDuels,
+                    defensive_duels: defensiveDuels,
+                    gk_claims: gkClaims,
+                    forward_passes: forwardPasses,
+                    possession_gains: possessionGains,
+                    shots_on_target: shotsOnTarget,
+                    shots_off_target: shotsOffTarget,
+                    passes_completed: passesCompleted,
+                    tackle_success: tackleSuccess,
+                    goals_inside_box: goalsInsideBox,
+                    defensive_actions: defensiveActions
                   })
                 }
                 
@@ -2387,7 +2569,27 @@ Deno.serve(async (req) => {
                         dribble_attempts: pStat.dribble_attempts,
                         fouls: pStat.fouls,
                         offsides: pStat.offsides,
-                        archetypeid: pStat.archetypeid
+                        archetypeid: pStat.archetypeid,
+                        ball_recoveries: pStat.ball_recoveries,
+                        // NEW: Validated event code stats
+                        through_balls: pStat.through_balls,
+                        progressive_carries: pStat.progressive_carries,
+                        touches_in_box: pStat.touches_in_box,
+                        pressing_actions: pStat.pressing_actions,
+                        dribble_success: pStat.dribble_success,
+                        big_chances: pStat.big_chances,
+                        forward_runs: pStat.forward_runs,
+                        offensive_duels: pStat.offensive_duels,
+                        defensive_duels: pStat.defensive_duels,
+                        gk_claims: pStat.gk_claims,
+                        forward_passes: pStat.forward_passes,
+                        possession_gains: pStat.possession_gains,
+                        shots_on_target: pStat.shots_on_target,
+                        shots_off_target: pStat.shots_off_target,
+                        passes_completed: pStat.passes_completed,
+                        tackle_success: pStat.tackle_success,
+                        goals_inside_box: pStat.goals_inside_box,
+                        defensive_actions: pStat.defensive_actions
                       })
 
                       guildUpdatedPlayerIds.add(profile.discord_user_id)
