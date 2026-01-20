@@ -786,17 +786,36 @@ const POSBOARD_POSITION_MAPPING = {
   GK: ['GK']                  // GK only
 };
 
-async function buildPosboardEmbed(guildId, voiceChannel) {
-  const members = [...voiceChannel.members.values()].filter(m => !m.user.bot);
-  if (members.length === 0) {
-    return { embed: null, memberCount: 0 };
+// Build posboard embed for one or multiple voice channels
+async function buildPosboardEmbed(guildId, voiceChannels) {
+  // Normalize to array
+  const channels = Array.isArray(voiceChannels) ? voiceChannels : [voiceChannels];
+  
+  // Collect all unique members from all channels
+  const allMembers = [];
+  const seenIds = new Set();
+  const channelNames = [];
+  
+  for (const vc of channels) {
+    if (!vc) continue;
+    channelNames.push(vc.name);
+    for (const m of vc.members.values()) {
+      if (!m.user.bot && !seenIds.has(m.id)) {
+        seenIds.add(m.id);
+        allMembers.push(m);
+      }
+    }
+  }
+  
+  if (allMembers.length === 0) {
+    return { embed: null, memberCount: 0, channelIds: channels.map(c => c?.id).filter(Boolean) };
   }
 
   // Initialize position map for refined posboard positions
   const posMap = {};
   POSBOARD_POSITIONS.forEach(p => posMap[p] = []);
 
-  for (const m of members) {
+  for (const m of allMembers) {
     const prefs = await getUserPrefs(guildId, m.id);
     prefs.forEach((pos, index) => {
       // Map the player's pref to the refined posboard position
@@ -820,14 +839,47 @@ async function buildPosboardEmbed(guildId, voiceChannel) {
     return { name: `${meta?.emoji || ''} ${pos}`, value, inline: true };
   });
 
+  // Build description based on number of channels
+  const description = channels.length === 1
+    ? `🔊 ${channels[0]} • **${allMembers.length}** player(s)`
+    : `🔊 **${channels.length} VCs**: ${channelNames.join(', ')} • **${allMembers.length}** player(s)`;
+
   const embed = new EmbedBuilder()
     .setTitle('🧩 Position Board')
     .setColor(0x5865f2)
-    .setDescription(`🔊 ${voiceChannel} • **${members.length}** player(s)`)
+    .setDescription(description)
     .addFields(fields)
-    .setFooter({ text: 'Set your preferences with the button below • Refresh to update' });
+    .setFooter({ text: 'Select VCs below • Set your preferences • Refresh to update' });
 
-  return { embed, memberCount: members.length };
+  return { embed, memberCount: allMembers.length, channelIds: channels.map(c => c?.id).filter(Boolean) };
+}
+
+// Build VC selector for posboard (multi-select)
+function buildPosboardVcSelect(guild, selectedVcIds = []) {
+  const voiceChannels = guild.channels.cache
+    .filter(c => c.type === 2) // Voice channel type
+    .sort((a, b) => a.position - b.position)
+    .first(25); // Discord limit
+  
+  if (voiceChannels.length === 0) {
+    return null;
+  }
+  
+  const options = [...voiceChannels].map(vc => ({
+    label: vc.name.substring(0, 100),
+    value: vc.id,
+    emoji: '🔊',
+    default: selectedVcIds.includes(vc.id)
+  }));
+  
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('posboard_vc_select')
+      .setPlaceholder('Select voice channel(s)...')
+      .setMinValues(1)
+      .setMaxValues(Math.min(options.length, 5)) // Allow up to 5 VCs
+      .addOptions(options)
+  );
 }
 
 // =======================
@@ -5254,29 +5306,66 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (cmd === 'posboard') {
         const voiceChannel = interaction.member?.voice?.channel;
-        if (!voiceChannel) {
-          return interaction.reply({ content: 'You need to be in a voice channel to see position preferences.', flags: 64 });
+        const guild = interaction.guild;
+        
+        // Default to user's current VC if they're in one
+        const initialVcs = voiceChannel ? [voiceChannel] : [];
+        const selectedVcIds = initialVcs.map(vc => vc.id);
+        
+        // Build VC selector
+        const vcSelectRow = buildPosboardVcSelect(guild, selectedVcIds);
+        
+        if (!voiceChannel && !vcSelectRow) {
+          return interaction.reply({ content: 'No voice channels available in this server.', flags: 64 });
         }
-
-        const { embed, memberCount } = await buildPosboardEmbed(guildId, voiceChannel);
-        if (memberCount === 0) {
-          return interaction.reply({ content: 'No players in your voice channel.', flags: 64 });
+        
+        // If user is in a VC, show their VC's posboard; otherwise show selector only
+        if (voiceChannel) {
+          const { embed, memberCount, channelIds } = await buildPosboardEmbed(guildId, initialVcs);
+          
+          const buttonRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`posboard_refresh_${channelIds.join(',')}`)
+              .setLabel('Refresh')
+              .setEmoji('🔄')
+              .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+              .setCustomId('posboard_setprefs')
+              .setLabel('Set My Preferences')
+              .setEmoji('⚙️')
+              .setStyle(ButtonStyle.Primary)
+          );
+          
+          const components = vcSelectRow ? [vcSelectRow, buttonRow] : [buttonRow];
+          
+          if (memberCount === 0) {
+            const emptyEmbed = new EmbedBuilder()
+              .setTitle('🧩 Position Board')
+              .setColor(0x5865f2)
+              .setDescription('Select voice channel(s) above to view position preferences.')
+              .setFooter({ text: 'You can select multiple VCs to combine players' });
+            return interaction.reply({ embeds: [emptyEmbed], components });
+          }
+          
+          return interaction.reply({ embeds: [embed], components });
+        } else {
+          // User not in VC - show selector with instructions
+          const emptyEmbed = new EmbedBuilder()
+            .setTitle('🧩 Position Board')
+            .setColor(0x5865f2)
+            .setDescription('Select voice channel(s) below to view position preferences.')
+            .setFooter({ text: 'You can select multiple VCs to combine players' });
+          
+          const buttonRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('posboard_setprefs')
+              .setLabel('Set My Preferences')
+              .setEmoji('⚙️')
+              .setStyle(ButtonStyle.Primary)
+          );
+          
+          return interaction.reply({ embeds: [emptyEmbed], components: [vcSelectRow, buttonRow] });
         }
-
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId(`posboard_refresh_${voiceChannel.id}`)
-            .setLabel('Refresh')
-            .setEmoji('🔄')
-            .setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder()
-            .setCustomId('posboard_setprefs')
-            .setLabel('Set My Preferences')
-            .setEmoji('⚙️')
-            .setStyle(ButtonStyle.Primary)
-        );
-
-        return interaction.reply({ embeds: [embed], components: [row] });
       }
 
       if (cmd === 'posprefs') {
@@ -7452,27 +7541,31 @@ client.on(Events.InteractionCreate, async (interaction) => {
       // POSITION BOARD REFRESH BUTTON
       // =======================
       if (id.startsWith('posboard_refresh_')) {
-        const voiceChannel = interaction.member?.voice?.channel;
-        if (!voiceChannel) {
+        const vcIdsStr = id.replace('posboard_refresh_', '');
+        const vcIds = vcIdsStr.split(',').filter(Boolean);
+        const guild = interaction.guild;
+        
+        // Fetch voice channels by IDs
+        const voiceChannels = vcIds
+          .map(vcId => guild.channels.cache.get(vcId))
+          .filter(vc => vc && vc.type === 2);
+        
+        if (voiceChannels.length === 0) {
           return interaction.reply({ 
-            content: '❌ You need to be in a voice channel to refresh the position board.', 
+            content: '❌ No valid voice channels found. Please select VCs again.', 
             flags: 64 
           });
         }
 
         await interaction.deferUpdate();
         
-        const { embed, memberCount } = await buildPosboardEmbed(guildId, voiceChannel);
-        if (memberCount === 0) {
-          return interaction.followUp({ 
-            content: 'No players in the voice channel.', 
-            flags: 64 
-          });
-        }
-
-        const row = new ActionRowBuilder().addComponents(
+        const { embed, memberCount, channelIds } = await buildPosboardEmbed(guildId, voiceChannels);
+        
+        const vcSelectRow = buildPosboardVcSelect(guild, channelIds);
+        
+        const buttonRow = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
-            .setCustomId(`posboard_refresh_${voiceChannel.id}`)
+            .setCustomId(`posboard_refresh_${channelIds.join(',')}`)
             .setLabel('Refresh')
             .setEmoji('🔄')
             .setStyle(ButtonStyle.Secondary),
@@ -7482,8 +7575,71 @@ client.on(Events.InteractionCreate, async (interaction) => {
             .setEmoji('⚙️')
             .setStyle(ButtonStyle.Primary)
         );
+        
+        const components = vcSelectRow ? [vcSelectRow, buttonRow] : [buttonRow];
+        
+        if (memberCount === 0) {
+          const emptyEmbed = new EmbedBuilder()
+            .setTitle('🧩 Position Board')
+            .setColor(0x5865f2)
+            .setDescription('No players in the selected voice channel(s).')
+            .setFooter({ text: 'Select different VCs or wait for players to join' });
+          return interaction.editReply({ embeds: [emptyEmbed], components });
+        }
 
-        return interaction.editReply({ embeds: [embed], components: [row] });
+        return interaction.editReply({ embeds: [embed], components });
+      }
+
+      // =======================
+      // POSITION BOARD VC SELECT (multi-select)
+      // =======================
+      if (id === 'posboard_vc_select') {
+        const selectedVcIds = interaction.values;
+        const guild = interaction.guild;
+        
+        // Fetch voice channels by IDs
+        const voiceChannels = selectedVcIds
+          .map(vcId => guild.channels.cache.get(vcId))
+          .filter(vc => vc && vc.type === 2);
+        
+        if (voiceChannels.length === 0) {
+          return interaction.reply({ 
+            content: '❌ No valid voice channels selected.', 
+            flags: 64 
+          });
+        }
+
+        await interaction.deferUpdate();
+        
+        const { embed, memberCount, channelIds } = await buildPosboardEmbed(guildId, voiceChannels);
+        
+        const vcSelectRow = buildPosboardVcSelect(guild, channelIds);
+        
+        const buttonRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`posboard_refresh_${channelIds.join(',')}`)
+            .setLabel('Refresh')
+            .setEmoji('🔄')
+            .setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder()
+            .setCustomId('posboard_setprefs')
+            .setLabel('Set My Preferences')
+            .setEmoji('⚙️')
+            .setStyle(ButtonStyle.Primary)
+        );
+        
+        const components = vcSelectRow ? [vcSelectRow, buttonRow] : [buttonRow];
+        
+        if (memberCount === 0) {
+          const emptyEmbed = new EmbedBuilder()
+            .setTitle('🧩 Position Board')
+            .setColor(0x5865f2)
+            .setDescription('No players in the selected voice channel(s).')
+            .setFooter({ text: 'Select different VCs or wait for players to join' });
+          return interaction.editReply({ embeds: [emptyEmbed], components });
+        }
+
+        return interaction.editReply({ embeds: [embed], components });
       }
 
       // =======================
