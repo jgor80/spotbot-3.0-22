@@ -3,7 +3,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useGuild } from "@/contexts/GuildContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { 
   Building2, 
@@ -13,13 +12,14 @@ import {
   Target,
   Shield,
   Calendar,
-  ExternalLink
 } from "lucide-react";
 import { format } from "date-fns";
+import { LfgToggle } from "./LfgToggle";
 
 interface MyClubData {
   id: string;
   club_name: string;
+  club_key: string;
   guild_id: string;
   ea_platform: string;
   elo_rating: number;
@@ -34,6 +34,9 @@ interface MyClubData {
   status: string;
   last_match_at: string | null;
   created_at: string;
+  lfg_status?: string;
+  lfg_message?: string;
+  lfg_expires_at?: string | null;
 }
 
 export function MyClubProfile() {
@@ -205,6 +208,13 @@ export function MyClubProfile() {
           </div>
         </CardContent>
       </Card>
+
+      <LfgToggle
+        currentStatus={myClub.lfg_status || "offline"}
+        currentMessage={myClub.lfg_message || ""}
+        expiresAt={myClub.lfg_expires_at}
+        clubKey={myClub.club_key || "club1"}
+      />
 
       <Card className="bg-muted/30">
         <CardContent className="pt-6">

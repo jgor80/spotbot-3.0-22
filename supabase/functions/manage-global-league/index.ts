@@ -7,11 +7,17 @@ const corsHeaders = {
 };
 
 interface ManageGlobalLeagueRequest {
-  action: "join" | "leave" | "update-status" | "get-profile" | "get-club-by-guild";
+  action: "join" | "leave" | "update-status" | "get-profile" | "get-club-by-guild" | "set-lfg-status" | "get-lfg-clubs";
   guild_id: string;
   club_key?: string;
   discord_user_id?: string;
   status?: "active" | "inactive";
+  lfg_status?: "offline" | "looking" | "ready" | "in_match";
+  lfg_message?: string;
+  expires_in_hours?: number;
+  platform?: string;
+  elo_min?: number;
+  elo_max?: number;
 }
 
 serve(async (req) => {
@@ -25,7 +31,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body: ManageGlobalLeagueRequest = await req.json();
-    const { action, guild_id, club_key, discord_user_id, status } = body;
+    const { action, guild_id, club_key, discord_user_id, status, lfg_status, lfg_message, expires_in_hours, platform, elo_min, elo_max } = body;
 
     if (!guild_id) {
       return new Response(
@@ -329,6 +335,133 @@ serve(async (req) => {
               ...globalClub,
               rank: (rank || 0) + 1,
             },
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      case "set-lfg-status": {
+        if (!club_key) {
+          return new Response(
+            JSON.stringify({ error: "club_key is required" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Get club stats to find EA club ID
+        const { data: clubStats } = await supabase
+          .from("club_stats")
+          .select("ea_club_id, ea_platform")
+          .eq("guild_id", guild_id)
+          .eq("club_key", club_key)
+          .single();
+
+        if (!clubStats) {
+          return new Response(
+            JSON.stringify({ error: "Club not found" }),
+            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Calculate expiry time (default 2 hours, max 8 hours)
+        const hoursToExpire = Math.min(expires_in_hours || 2, 8);
+        const expiresAt = lfg_status === "offline" 
+          ? null 
+          : new Date(Date.now() + hoursToExpire * 60 * 60 * 1000).toISOString();
+
+        const { data: updatedClub, error: updateError } = await supabase
+          .from("global_league_clubs")
+          .update({
+            lfg_status: lfg_status || "offline",
+            lfg_message: lfg_status === "offline" ? null : (lfg_message || null),
+            lfg_updated_at: new Date().toISOString(),
+            lfg_expires_at: expiresAt,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("ea_club_id", clubStats.ea_club_id)
+          .eq("ea_platform", clubStats.ea_platform)
+          .select()
+          .single();
+
+        if (updateError) {
+          console.error("Error updating LFG status:", updateError);
+          return new Response(
+            JSON.stringify({ error: "Failed to update LFG status" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: lfg_status === "offline" 
+              ? "You are now offline" 
+              : `You are now ${lfg_status}${expiresAt ? ` (expires in ${hoursToExpire}h)` : ""}`,
+            club: updatedClub,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      case "get-lfg-clubs": {
+        // Build query for clubs that are looking for games
+        let query = supabase
+          .from("global_league_clubs")
+          .select("*")
+          .neq("lfg_status", "offline")
+          .eq("status", "active")
+          .or(`lfg_expires_at.is.null,lfg_expires_at.gt.${new Date().toISOString()}`);
+
+        // Filter by platform if specified
+        if (platform && platform !== "all") {
+          query = query.eq("ea_platform", platform);
+        }
+
+        // Filter by ELO range
+        if (elo_min !== undefined) {
+          query = query.gte("elo_rating", elo_min);
+        }
+        if (elo_max !== undefined) {
+          query = query.lte("elo_rating", elo_max);
+        }
+
+        // Order by status (ready first) then by update time
+        query = query.order("lfg_status", { ascending: true })
+          .order("lfg_updated_at", { ascending: false })
+          .limit(50);
+
+        const { data: lfgClubs, error: fetchError } = await query;
+
+        if (fetchError) {
+          console.error("Error fetching LFG clubs:", fetchError);
+          return new Response(
+            JSON.stringify({ error: "Failed to fetch LFG clubs" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Get guild names for all clubs
+        const guildIds = [...new Set(lfgClubs?.map((c) => c.guild_id) || [])];
+        const { data: guildSettings } = await supabase
+          .from("guild_settings")
+          .select("guild_id, name")
+          .in("guild_id", guildIds);
+
+        const guildNameMap = new Map(guildSettings?.map((g) => [g.guild_id, g.name]) || []);
+
+        // Enhance clubs with guild names and time remaining
+        const enhancedClubs = (lfgClubs || []).map((club) => ({
+          ...club,
+          guild_name: guildNameMap.get(club.guild_id) || club.guild_id,
+          expires_in_minutes: club.lfg_expires_at 
+            ? Math.max(0, Math.floor((new Date(club.lfg_expires_at).getTime() - Date.now()) / 60000))
+            : null,
+        }));
+
+        return new Response(
+          JSON.stringify({
+            clubs: enhancedClubs,
+            total: enhancedClubs.length,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
