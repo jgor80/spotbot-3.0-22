@@ -3025,6 +3025,321 @@ export type Database = {
         }
         Relationships: []
       }
+      tournament_matches: {
+        Row: {
+          away_score: number | null
+          away_team_id: string | null
+          completed_at: string | null
+          confirmed_by_discord_id: string | null
+          created_at: string
+          ea_match_id: string | null
+          group_name: string | null
+          home_score: number | null
+          home_team_id: string | null
+          id: string
+          match_number: number | null
+          next_match_id: string | null
+          next_match_position: string | null
+          reported_by_discord_id: string | null
+          result_source: string | null
+          round_number: number | null
+          scheduled_at: string | null
+          stage: string
+          tournament_id: string
+          updated_at: string
+          winner_team_id: string | null
+        }
+        Insert: {
+          away_score?: number | null
+          away_team_id?: string | null
+          completed_at?: string | null
+          confirmed_by_discord_id?: string | null
+          created_at?: string
+          ea_match_id?: string | null
+          group_name?: string | null
+          home_score?: number | null
+          home_team_id?: string | null
+          id?: string
+          match_number?: number | null
+          next_match_id?: string | null
+          next_match_position?: string | null
+          reported_by_discord_id?: string | null
+          result_source?: string | null
+          round_number?: number | null
+          scheduled_at?: string | null
+          stage?: string
+          tournament_id: string
+          updated_at?: string
+          winner_team_id?: string | null
+        }
+        Update: {
+          away_score?: number | null
+          away_team_id?: string | null
+          completed_at?: string | null
+          confirmed_by_discord_id?: string | null
+          created_at?: string
+          ea_match_id?: string | null
+          group_name?: string | null
+          home_score?: number | null
+          home_team_id?: string | null
+          id?: string
+          match_number?: number | null
+          next_match_id?: string | null
+          next_match_position?: string | null
+          reported_by_discord_id?: string | null
+          result_source?: string | null
+          round_number?: number | null
+          scheduled_at?: string | null
+          stage?: string
+          tournament_id?: string
+          updated_at?: string
+          winner_team_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tournament_matches_away_team_id_fkey"
+            columns: ["away_team_id"]
+            isOneToOne: false
+            referencedRelation: "tournament_teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tournament_matches_home_team_id_fkey"
+            columns: ["home_team_id"]
+            isOneToOne: false
+            referencedRelation: "tournament_teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tournament_matches_next_match_id_fkey"
+            columns: ["next_match_id"]
+            isOneToOne: false
+            referencedRelation: "tournament_matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tournament_matches_tournament_id_fkey"
+            columns: ["tournament_id"]
+            isOneToOne: false
+            referencedRelation: "tournaments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tournament_matches_winner_team_id_fkey"
+            columns: ["winner_team_id"]
+            isOneToOne: false
+            referencedRelation: "tournament_teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tournament_standings: {
+        Row: {
+          draws: number
+          goal_difference: number
+          goals_against: number
+          goals_for: number
+          group_name: string
+          id: string
+          losses: number
+          played: number
+          points: number
+          position: number | null
+          qualified: boolean | null
+          team_id: string
+          tournament_id: string
+          updated_at: string
+          wins: number
+        }
+        Insert: {
+          draws?: number
+          goal_difference?: number
+          goals_against?: number
+          goals_for?: number
+          group_name: string
+          id?: string
+          losses?: number
+          played?: number
+          points?: number
+          position?: number | null
+          qualified?: boolean | null
+          team_id: string
+          tournament_id: string
+          updated_at?: string
+          wins?: number
+        }
+        Update: {
+          draws?: number
+          goal_difference?: number
+          goals_against?: number
+          goals_for?: number
+          group_name?: string
+          id?: string
+          losses?: number
+          played?: number
+          points?: number
+          position?: number | null
+          qualified?: boolean | null
+          team_id?: string
+          tournament_id?: string
+          updated_at?: string
+          wins?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tournament_standings_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "tournament_teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tournament_standings_tournament_id_fkey"
+            columns: ["tournament_id"]
+            isOneToOne: false
+            referencedRelation: "tournaments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tournament_teams: {
+        Row: {
+          club_id: string
+          created_at: string
+          final_position: number | null
+          group_name: string | null
+          id: string
+          invited_at: string
+          invited_by_discord_id: string | null
+          responded_at: string | null
+          seed: number | null
+          status: string
+          tournament_id: string
+          updated_at: string
+        }
+        Insert: {
+          club_id: string
+          created_at?: string
+          final_position?: number | null
+          group_name?: string | null
+          id?: string
+          invited_at?: string
+          invited_by_discord_id?: string | null
+          responded_at?: string | null
+          seed?: number | null
+          status?: string
+          tournament_id: string
+          updated_at?: string
+        }
+        Update: {
+          club_id?: string
+          created_at?: string
+          final_position?: number | null
+          group_name?: string | null
+          id?: string
+          invited_at?: string
+          invited_by_discord_id?: string | null
+          responded_at?: string | null
+          seed?: number | null
+          status?: string
+          tournament_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tournament_teams_club_id_fkey"
+            columns: ["club_id"]
+            isOneToOne: false
+            referencedRelation: "global_league_clubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tournament_teams_tournament_id_fkey"
+            columns: ["tournament_id"]
+            isOneToOne: false
+            referencedRelation: "tournaments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tournaments: {
+        Row: {
+          created_at: string
+          created_by_discord_id: string
+          description: string | null
+          elo_range_max: number | null
+          elo_range_min: number | null
+          ends_at: string | null
+          format: string
+          group_matches_per_team: number
+          guild_id: string
+          id: string
+          max_teams: number
+          min_teams: number
+          name: string
+          platform: string | null
+          prize_description: string | null
+          registration_closes_at: string | null
+          registration_opens_at: string | null
+          rules: string | null
+          starts_at: string | null
+          status: string
+          teams_per_group: number
+          time_slot: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by_discord_id: string
+          description?: string | null
+          elo_range_max?: number | null
+          elo_range_min?: number | null
+          ends_at?: string | null
+          format?: string
+          group_matches_per_team?: number
+          guild_id: string
+          id?: string
+          max_teams?: number
+          min_teams?: number
+          name: string
+          platform?: string | null
+          prize_description?: string | null
+          registration_closes_at?: string | null
+          registration_opens_at?: string | null
+          rules?: string | null
+          starts_at?: string | null
+          status?: string
+          teams_per_group?: number
+          time_slot?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by_discord_id?: string
+          description?: string | null
+          elo_range_max?: number | null
+          elo_range_min?: number | null
+          ends_at?: string | null
+          format?: string
+          group_matches_per_team?: number
+          guild_id?: string
+          id?: string
+          max_teams?: number
+          min_teams?: number
+          name?: string
+          platform?: string | null
+          prize_description?: string | null
+          registration_closes_at?: string | null
+          registration_opens_at?: string | null
+          rules?: string | null
+          starts_at?: string | null
+          status?: string
+          teams_per_group?: number
+          time_slot?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       twitch_notifications: {
         Row: {
           created_at: string
