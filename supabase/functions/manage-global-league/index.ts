@@ -210,38 +210,32 @@ serve(async (req) => {
       }
 
       case "get-profile": {
-        if (!club_key) {
-          return new Response(
-            JSON.stringify({ error: "club_key is required" }),
-            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-
+        // Get club stats for this guild (use provided club_key or default to club1)
         const { data: clubStats } = await supabase
           .from("club_stats")
           .select("ea_club_id, ea_platform")
           .eq("guild_id", guild_id)
-          .eq("club_key", club_key)
+          .eq("club_key", club_key || "club1")
           .single();
 
         if (!clubStats) {
           return new Response(
-            JSON.stringify({ error: "Club not found" }),
-            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            JSON.stringify({ club: null }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
-        const { data: globalClub, error: fetchError } = await supabase
+        const { data: globalClub } = await supabase
           .from("global_league_clubs")
           .select("*")
           .eq("ea_club_id", clubStats.ea_club_id)
           .eq("ea_platform", clubStats.ea_platform)
           .single();
 
-        if (fetchError || !globalClub) {
+        if (!globalClub) {
           return new Response(
-            JSON.stringify({ error: "Club not registered in Global League" }),
-            { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            JSON.stringify({ club: null }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
@@ -279,12 +273,14 @@ serve(async (req) => {
 
         return new Response(
           JSON.stringify({
-            ...globalClub,
-            rank: (rank || 0) + 1,
-            total_clubs: totalClubs || 0,
-            guild_name: guildSettings?.name || globalClub.guild_id,
-            recent_matches: recentMatches || [],
-            goal_difference: globalClub.goals_for - globalClub.goals_against,
+            club: {
+              ...globalClub,
+              rank: (rank || 0) + 1,
+              total_clubs: totalClubs || 0,
+              guild_name: guildSettings?.name || globalClub.guild_id,
+              recent_matches: recentMatches || [],
+              goal_difference: globalClub.goals_for - globalClub.goals_against,
+            }
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
