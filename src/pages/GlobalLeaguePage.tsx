@@ -5,8 +5,12 @@ import { ClubDiscovery } from "@/components/global-league/ClubDiscovery";
 import { ChallengeManager } from "@/components/global-league/ChallengeManager";
 import { MyClubProfile } from "@/components/global-league/MyClubProfile";
 import { Globe, Trophy, Search, Swords, Building2 } from "lucide-react";
+import { useGlobalLeagueRealtime } from "@/hooks/useGlobalLeagueRealtime";
 
 export default function GlobalLeaguePage() {
+  // Enable real-time updates for the global league
+  useGlobalLeagueRealtime({ enabled: true });
+
   return (
     <DashboardLayout>
       <div className="space-y-6">

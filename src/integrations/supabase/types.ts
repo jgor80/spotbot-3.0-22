@@ -1073,6 +1073,69 @@ export type Database = {
           },
         ]
       }
+      global_league_matches_archive: {
+        Row: {
+          away_club_id: string | null
+          away_elo_before: number | null
+          away_elo_change: number | null
+          away_score: number | null
+          completed_at: string | null
+          confirmed_by_discord_id: string | null
+          created_at: string | null
+          ea_match_id: string | null
+          home_club_id: string | null
+          home_elo_before: number | null
+          home_elo_change: number | null
+          home_score: number | null
+          id: string
+          notes: string | null
+          scheduled_at: string
+          scheduled_by_discord_id: string
+          status: string | null
+          winner_club_id: string | null
+        }
+        Insert: {
+          away_club_id?: string | null
+          away_elo_before?: number | null
+          away_elo_change?: number | null
+          away_score?: number | null
+          completed_at?: string | null
+          confirmed_by_discord_id?: string | null
+          created_at?: string | null
+          ea_match_id?: string | null
+          home_club_id?: string | null
+          home_elo_before?: number | null
+          home_elo_change?: number | null
+          home_score?: number | null
+          id?: string
+          notes?: string | null
+          scheduled_at: string
+          scheduled_by_discord_id: string
+          status?: string | null
+          winner_club_id?: string | null
+        }
+        Update: {
+          away_club_id?: string | null
+          away_elo_before?: number | null
+          away_elo_change?: number | null
+          away_score?: number | null
+          completed_at?: string | null
+          confirmed_by_discord_id?: string | null
+          created_at?: string | null
+          ea_match_id?: string | null
+          home_club_id?: string | null
+          home_elo_before?: number | null
+          home_elo_change?: number | null
+          home_score?: number | null
+          id?: string
+          notes?: string | null
+          scheduled_at?: string
+          scheduled_by_discord_id?: string
+          status?: string | null
+          winner_club_id?: string | null
+        }
+        Relationships: []
+      }
       guild_queues: {
         Row: {
           club_key: string
@@ -3510,6 +3573,9 @@ export type Database = {
       }
     }
     Functions: {
+      archive_old_club_matches: { Args: never; Returns: number }
+      archive_old_global_league_matches: { Args: never; Returns: number }
+      cleanup_old_event_occurrences: { Args: never; Returns: number }
       has_any_role: {
         Args: {
           _discord_user_id: string

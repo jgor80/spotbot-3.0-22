@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 interface ManageGlobalLeagueRequest {
-  action: "join" | "leave" | "update-status" | "get-profile" | "get-club-by-guild" | "set-lfg-status" | "get-lfg-clubs";
+  action: "join" | "leave" | "update-status" | "get-profile" | "get-club-by-guild" | "set-lfg-status" | "get-lfg-clubs" | "cleanup-expired-lfg";
   guild_id: string;
   club_key?: string;
   discord_user_id?: string;
@@ -462,6 +462,40 @@ serve(async (req) => {
           JSON.stringify({
             clubs: enhancedClubs,
             total: enhancedClubs.length,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      case "cleanup-expired-lfg": {
+        // Batch cleanup of expired LFG statuses - can be called by cron or manually
+        const now = new Date().toISOString();
+        
+        const { data: expiredClubs, error: updateError } = await supabase
+          .from("global_league_clubs")
+          .update({
+            lfg_status: "offline",
+            lfg_message: null,
+            lfg_expires_at: null,
+            updated_at: now,
+          })
+          .lt("lfg_expires_at", now)
+          .neq("lfg_status", "offline")
+          .select("id, club_name");
+
+        if (updateError) {
+          console.error("Error cleaning up expired LFG:", updateError);
+          return new Response(
+            JSON.stringify({ error: "Failed to cleanup expired LFG statuses" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: `Cleaned up ${expiredClubs?.length || 0} expired LFG statuses`,
+            cleaned_count: expiredClubs?.length || 0,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
