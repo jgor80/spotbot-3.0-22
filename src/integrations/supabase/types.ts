@@ -917,6 +917,7 @@ export type Database = {
           goals_against: number | null
           goals_for: number | null
           guild_id: string
+          guild_name: string | null
           id: string
           last_match_at: string | null
           lfg_expires_at: string | null
@@ -943,6 +944,7 @@ export type Database = {
           goals_against?: number | null
           goals_for?: number | null
           guild_id: string
+          guild_name?: string | null
           id?: string
           last_match_at?: string | null
           lfg_expires_at?: string | null
@@ -969,6 +971,7 @@ export type Database = {
           goals_against?: number | null
           goals_for?: number | null
           guild_id?: string
+          guild_name?: string | null
           id?: string
           last_match_at?: string | null
           lfg_expires_at?: string | null
@@ -3486,7 +3489,25 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      global_league_discord_standings: {
+        Row: {
+          avg_elo: number | null
+          best_club_name: string | null
+          best_elo: number | null
+          club_count: number | null
+          draws: number | null
+          goals_against: number | null
+          goals_for: number | null
+          guild_id: string | null
+          guild_name: string | null
+          last_updated: string | null
+          losses: number | null
+          total_elo: number | null
+          total_matches: number | null
+          wins: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_any_role: {

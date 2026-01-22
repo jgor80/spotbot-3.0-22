@@ -6,13 +6,18 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Cache headers for CDN/browser caching
+const cacheHeaders = {
+  "Cache-Control": "public, max-age=60, stale-while-revalidate=300",
+};
+
 interface GetLeaderboardRequest {
   limit?: number;
   offset?: number;
   platform?: string;
   status?: string;
   search?: string;
-  view?: "clubs" | "discord"; // NEW: Switch between club view and discord aggregate view
+  view?: "clubs" | "discord";
 }
 
 serve(async (req) => {
@@ -36,11 +41,11 @@ serve(async (req) => {
     } = body;
 
     if (view === "discord") {
-      // Aggregate standings by Discord server (guild)
+      // Use optimized materialized view for Discord standings
       return await getDiscordLeaderboard(supabase, { limit, offset, platform, status, search });
     }
 
-    // Default: Club-level leaderboard
+    // Default: Club-level leaderboard (now uses denormalized guild_name)
     let query = supabase
       .from("global_league_clubs")
       .select("*")
@@ -82,22 +87,11 @@ serve(async (req) => {
 
     const { count: totalCount } = await countQuery;
 
-    // Get guild names for all clubs
-    const guildIds = [...new Set(clubs?.map(c => c.guild_id) || [])];
-    const { data: guildSettings } = await supabase
-      .from("guild_settings")
-      .select("guild_id, name")
-      .in("guild_id", guildIds);
-
-    const guildNameMap = new Map(
-      guildSettings?.map(g => [g.guild_id, g.name]) || []
-    );
-
-    // Calculate rank and add guild names
+    // Calculate rank - guild_name is now denormalized in the table
     const rankedClubs = clubs?.map((club, index) => ({
       ...club,
       rank: offset + index + 1,
-      guild_name: guildNameMap.get(club.guild_id) || club.guild_id,
+      guild_name: club.guild_name || club.guild_id,
       goal_difference: club.goals_for - club.goals_against,
       form: calculateForm(club),
     })) || [];
@@ -109,7 +103,7 @@ serve(async (req) => {
         limit,
         offset,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...corsHeaders, ...cacheHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("Error in get-global-leaderboard:", error);
@@ -120,12 +114,98 @@ serve(async (req) => {
   }
 });
 
-// NEW: Get Discord server aggregate leaderboard
+// OPTIMIZED: Query materialized view instead of aggregating in JS
 async function getDiscordLeaderboard(
   supabase: any,
   { limit, offset, platform, status, search }: Omit<GetLeaderboardRequest, "view">
 ) {
-  // Fetch all active clubs
+  const safeOffset = offset ?? 0;
+  const safeLimit = limit ?? 50;
+
+  // Query the pre-computed materialized view
+  let query = supabase
+    .from("global_league_discord_standings")
+    .select("*")
+    .order("best_elo", { ascending: false });
+
+  if (search) {
+    query = query.or(`guild_name.ilike.%${search}%,best_club_name.ilike.%${search}%`);
+  }
+
+  const { data: standings, error } = await query;
+
+  if (error) {
+    console.error("Error fetching discord standings:", error);
+    // Fallback to legacy aggregation if materialized view fails
+    return await getDiscordLeaderboardLegacy(supabase, { limit, offset, platform, status, search });
+  }
+
+  // If platform filter is set, we need to get clubs to check platforms
+  // (The materialized view aggregates all clubs regardless of platform)
+  let filteredStandings = standings || [];
+
+  if (platform) {
+    // Get guild IDs that have clubs on the specified platform
+    const { data: guildIdsWithPlatform } = await supabase
+      .from("global_league_clubs")
+      .select("guild_id")
+      .eq("ea_platform", platform)
+      .eq("status", status);
+
+    const validGuildIds = new Set(guildIdsWithPlatform?.map((g: any) => g.guild_id) || []);
+    filteredStandings = filteredStandings.filter((s: any) => validGuildIds.has(s.guild_id));
+  }
+
+  const total = filteredStandings.length;
+  const paged = filteredStandings.slice(safeOffset, safeOffset + safeLimit);
+
+  // For each Discord, fetch their clubs for the expandable view
+  const guildIds = paged.map((s: any) => s.guild_id);
+  
+  const { data: clubsData } = await supabase
+    .from("global_league_clubs")
+    .select("guild_id, club_name, elo_rating, matches_played")
+    .in("guild_id", guildIds)
+    .eq("status", status)
+    .order("elo_rating", { ascending: false });
+
+  // Group clubs by guild_id
+  const clubsByGuild = new Map<string, Array<{ club_name: string; elo_rating: number; matches_played: number }>>();
+  for (const club of clubsData || []) {
+    if (!clubsByGuild.has(club.guild_id)) {
+      clubsByGuild.set(club.guild_id, []);
+    }
+    clubsByGuild.get(club.guild_id)!.push({
+      club_name: club.club_name,
+      elo_rating: club.elo_rating,
+      matches_played: club.matches_played,
+    });
+  }
+
+  // Add ranks and clubs to standings
+  const ranked = paged.map((d: any, index: number) => ({
+    ...d,
+    rank: safeOffset + index + 1,
+    goal_difference: d.goals_for - d.goals_against,
+    clubs: clubsByGuild.get(d.guild_id) || [],
+  }));
+
+  return new Response(
+    JSON.stringify({
+      discords: ranked,
+      total,
+      limit: safeLimit,
+      offset: safeOffset,
+    }),
+    { headers: { ...corsHeaders, ...cacheHeaders, "Content-Type": "application/json" } }
+  );
+}
+
+// Legacy fallback function (in case materialized view isn't available)
+async function getDiscordLeaderboardLegacy(
+  supabase: any,
+  { limit, offset, platform, status, search }: Omit<GetLeaderboardRequest, "view">
+) {
   let query = supabase
     .from("global_league_clubs")
     .select("*")
@@ -148,6 +228,7 @@ async function getDiscordLeaderboard(
   // Aggregate by guild_id
   const discordMap = new Map<string, {
     guild_id: string;
+    guild_name: string;
     total_elo: number;
     avg_elo: number;
     best_elo: number;
@@ -168,6 +249,7 @@ async function getDiscordLeaderboard(
     if (!existing) {
       discordMap.set(club.guild_id, {
         guild_id: club.guild_id,
+        guild_name: club.guild_name || club.guild_id,
         total_elo: club.elo_rating || 1200,
         avg_elo: club.elo_rating || 1200,
         best_elo: club.elo_rating || 1200,
@@ -200,35 +282,20 @@ async function getDiscordLeaderboard(
     }
   }
 
-  // Get guild names
-  const guildIds = Array.from(discordMap.keys());
-  const { data: guildSettings } = await supabase
-    .from("guild_settings")
-    .select("guild_id, name")
-    .in("guild_id", guildIds);
-
-  const guildNameMap = new Map(
-    guildSettings?.map((g: any) => [g.guild_id, g.name]) || []
-  );
-
-  // Convert to array and sort by best ELO (primary) or avg ELO
   let discordStandings = Array.from(discordMap.values()).map((d) => ({
     ...d,
-    guild_name: (guildNameMap.get(d.guild_id) as string) || d.guild_id,
     goal_difference: d.goals_for - d.goals_against,
   }));
 
-  // Filter by search
   if (search) {
     const searchLower = search.toLowerCase();
     discordStandings = discordStandings.filter(
       (d) =>
-        (d.guild_name as string).toLowerCase().includes(searchLower) ||
+        d.guild_name.toLowerCase().includes(searchLower) ||
         d.clubs.some((c) => c.club_name.toLowerCase().includes(searchLower))
     );
   }
 
-  // Sort by best_elo descending
   discordStandings.sort((a, b) => b.best_elo - a.best_elo);
 
   const total = discordStandings.length;
@@ -236,7 +303,6 @@ async function getDiscordLeaderboard(
   const safeLimit = limit ?? 50;
   const paged = discordStandings.slice(safeOffset, safeOffset + safeLimit);
 
-  // Add ranks
   const ranked = paged.map((d, index) => ({
     ...d,
     rank: safeOffset + index + 1,
@@ -246,8 +312,8 @@ async function getDiscordLeaderboard(
     JSON.stringify({
       discords: ranked,
       total,
-      limit,
-      offset,
+      limit: safeLimit,
+      offset: safeOffset,
     }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } }
   );
