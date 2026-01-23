@@ -89,7 +89,7 @@ serve(async (req) => {
           .eq("guild_id", guild_id)
           .single();
 
-        // Register the club
+        // Register the club with denormalized guild_name
         const { data: newClub, error: insertError } = await supabase
           .from("global_league_clubs")
           .insert({
@@ -98,6 +98,7 @@ serve(async (req) => {
             ea_club_id: clubStats.ea_club_id,
             ea_platform: clubStats.ea_platform,
             club_name: clubStats.club_name || "Unknown Club",
+            guild_name: guildSettings?.name || guild_id,
             registered_by_discord_id: discord_user_id,
           })
           .select()

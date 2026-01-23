@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronRight } from "lucide-react";
@@ -21,7 +21,7 @@ export function VirtualDiscordsTable({
   const [expandedGuilds, setExpandedGuilds] = useState<Set<string>>(new Set());
 
   // Calculate row heights dynamically based on expansion
-  const getItemSize = (index: number) => {
+  const getItemSize = useCallback((index: number) => {
     if (index >= discords.length) return 56; // loader row
     const discord = discords[index];
     const isExpanded = expandedGuilds.has(discord.guild_id);
@@ -29,12 +29,12 @@ export function VirtualDiscordsTable({
       return 56 + discord.clubs.length * 28 + 16; // base + clubs + padding
     }
     return 56;
-  };
+  }, [discords, expandedGuilds]);
 
   const rowVirtualizer = useVirtualizer({
     count: hasNextPage ? discords.length + 1 : discords.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 56,
+    estimateSize: getItemSize,
     getItemKey: (index) => discords[index]?.guild_id || `loader-${index}`,
     overscan: 10,
   });
@@ -47,7 +47,7 @@ export function VirtualDiscordsTable({
     fetchNextPage();
   }
 
-  const toggleExpand = (guildId: string) => {
+  const toggleExpand = useCallback((guildId: string) => {
     setExpandedGuilds((prev) => {
       const next = new Set(prev);
       if (next.has(guildId)) {
@@ -57,9 +57,7 @@ export function VirtualDiscordsTable({
       }
       return next;
     });
-    // Force re-measure after toggle
-    rowVirtualizer.measure();
-  };
+  }, []);
 
   const getRankBadge = (rank: number) => {
     if (rank === 1) return <Badge className="bg-yellow-500 text-yellow-950">🥇 1st</Badge>;
