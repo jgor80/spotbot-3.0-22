@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState } from "react";
+import { useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
@@ -32,20 +32,8 @@ export function VirtualClubsTable({
 
   // Infinite scroll trigger
   const lastItem = items[items.length - 1];
-  const loadMore = useCallback(() => {
-    if (
-      lastItem &&
-      lastItem.index >= clubs.length - 5 &&
-      hasNextPage &&
-      !isFetchingNextPage
-    ) {
-      fetchNextPage();
-    }
-  }, [lastItem, clubs.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
-
-  // Check for load more on scroll
   if (lastItem && lastItem.index >= clubs.length - 5 && hasNextPage && !isFetchingNextPage) {
-    loadMore();
+    fetchNextPage();
   }
 
   const getRankBadge = (rank: number) => {
