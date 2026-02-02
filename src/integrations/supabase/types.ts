@@ -657,9 +657,13 @@ export type Database = {
       drafts: {
         Row: {
           available_player_ids: string[]
+          captain_a_confirmed: boolean | null
           captain_a_discord_id: string
+          captain_b_confirmed: boolean | null
           captain_b_discord_id: string
           completed_at: string | null
+          confirmation_expires_at: string | null
+          confirmation_message_id: string | null
           created_at: string
           current_picker: string | null
           guild_id: string
@@ -676,9 +680,13 @@ export type Database = {
         }
         Insert: {
           available_player_ids?: string[]
+          captain_a_confirmed?: boolean | null
           captain_a_discord_id: string
+          captain_b_confirmed?: boolean | null
           captain_b_discord_id: string
           completed_at?: string | null
+          confirmation_expires_at?: string | null
+          confirmation_message_id?: string | null
           created_at?: string
           current_picker?: string | null
           guild_id: string
@@ -695,9 +703,13 @@ export type Database = {
         }
         Update: {
           available_player_ids?: string[]
+          captain_a_confirmed?: boolean | null
           captain_a_discord_id?: string
+          captain_b_confirmed?: boolean | null
           captain_b_discord_id?: string
           completed_at?: string | null
+          confirmation_expires_at?: string | null
+          confirmation_message_id?: string | null
           created_at?: string
           current_picker?: string | null
           guild_id?: string

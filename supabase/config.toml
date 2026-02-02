@@ -107,3 +107,6 @@ verify_jwt = false
 
 [functions.analyze-event-codes]
 verify_jwt = false
+
+[functions.draft-confirm-captain]
+verify_jwt = false
