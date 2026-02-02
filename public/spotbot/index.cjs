@@ -732,6 +732,20 @@ const COMMANDS = [
         required: false
       }
     ]
+  },
+
+  // Apply Friendly to Draft Command
+  {
+    name: 'applyfriendly',
+    description: 'Link EA friendly match stats to a completed draft.',
+    options: [
+      {
+        name: 'draft_id',
+        description: 'Specific draft ID (uses most recent if not provided).',
+        type: 3,
+        required: false
+      }
+    ]
   }
 ];
 
@@ -754,6 +768,7 @@ const activeGameSessions = new Map(); // Map<guildId_clubKey, { started_at, play
 const pendingScoutChoices = new Map(); // Map<userId, { query, results }>
 const pendingMatchesChoices = new Map(); // Map<userId, { query, results }>
 const pendingPreviewChoices = new Map(); // Map<userId, { homeQuery, awayQuery, homeResults, awayResults, homeIndex, awayIndex }>
+const pendingFriendlyApply = new Map(); // Map<uniqueId, { guildId, draftId, friendlies }>
 
 // FC Platform labels for scouting
 const FC_PLATFORM_LABELS = {
@@ -7947,6 +7962,127 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.editReply({ content: `${statusEmoji} Club status updated to **${statusValue}**. ${statusValue === 'inactive' ? 'You won\'t appear in discovery until you\'re active again.' : ''}` });
         }
       }
+
+      // =======================
+      // APPLY FRIENDLY TO DRAFT COMMAND
+      // =======================
+      if (cmd === 'applyfriendly') {
+        await interaction.deferReply();
+        
+        const specifiedDraftId = interaction.options.getString('draft_id');
+        let targetDraftId = specifiedDraftId;
+        
+        // If no draft_id provided, find the most recent completed draft without EA stats
+        if (!targetDraftId) {
+          const { data: recentDrafts } = await supabase
+            .from('drafts')
+            .select(`
+              id,
+              completed_at,
+              team_a_player_ids,
+              team_b_player_ids,
+              draft_results (ea_match_id, team_a_score, team_b_score)
+            `)
+            .eq('guild_id', guildId)
+            .eq('status', 'completed')
+            .order('completed_at', { ascending: false })
+            .limit(5);
+          
+          // Find first draft without EA match linked
+          const unlinkedDraft = recentDrafts?.find(d => 
+            !d.draft_results?.[0]?.ea_match_id
+          );
+          
+          if (!unlinkedDraft) {
+            return interaction.editReply({ 
+              content: '❌ No recent completed drafts without EA stats found. All recent drafts already have EA matches linked!' 
+            });
+          }
+          
+          targetDraftId = unlinkedDraft.id;
+        }
+        
+        // Call edge function to list matching friendlies
+        const { error, data } = await callEdgeFunction('apply-friendly-to-draft', {
+          guild_id: guildId,
+          draft_id: targetDraftId,
+          action: 'list'
+        });
+        
+        if (error) {
+          return interaction.editReply({ content: `❌ ${error}` });
+        }
+        
+        if (!data.matching_friendlies || data.matching_friendlies.length === 0) {
+          const windowEnd = new Date(data.window.end);
+          const now = new Date();
+          
+          if (now < windowEnd) {
+            const minutesLeft = Math.round((windowEnd - now) / 60000);
+            return interaction.editReply({
+              content: `⏳ No matching friendly matches found yet.\n\n` +
+                `Play a friendly match within the next **${minutesLeft} minutes** (2-hour window from draft completion) and it will appear here.\n\n` +
+                `Draft completed: <t:${Math.floor(new Date(data.draft.completed_at).getTime() / 1000)}:R>`
+            });
+          } else {
+            return interaction.editReply({
+              content: `❌ No matching friendlies found within the 2-hour window after draft completion.\n\n` +
+                `The window closed <t:${Math.floor(windowEnd.getTime() / 1000)}:R>.\n` +
+                `To link stats, a friendly must be played within 2 hours of draft completion with at least 50% of draft players.`
+            });
+          }
+        }
+        
+        // Store the pending selection state
+        const uniqueId = `${interaction.user.id}_${Date.now()}`;
+        pendingFriendlyApply.set(uniqueId, {
+          guildId,
+          draftId: targetDraftId,
+          friendlies: data.matching_friendlies
+        });
+        
+        // Build select menu with matching friendlies
+        const options = data.matching_friendlies.slice(0, 25).map((m, i) => {
+          const resultEmoji = m.result === 'win' ? '✅' : m.result === 'loss' ? '❌' : '🟡';
+          const time = new Date(m.played_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          const label = `${resultEmoji} ${m.score_for}-${m.score_against} vs ${(m.opponent_club_name || 'Unknown').substring(0, 30)}`;
+          const description = `${time} • ${m.matching_players}/${data.draft.all_players.length} players (${m.match_percentage}% match)`;
+          
+          return {
+            label: label.substring(0, 100),
+            description: description.substring(0, 100),
+            value: `${uniqueId}:${m.ea_match_id}`,
+            emoji: m.match_percentage >= 80 ? '🎯' : '🎮'
+          };
+        });
+        
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('applyfriendly_select')
+          .setPlaceholder('Select a friendly match to link...')
+          .addOptions(options);
+        
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+        
+        const draftScore = data.draft.team_a_score !== undefined 
+          ? `Score: 🔴 ${data.draft.team_a_score} - ${data.draft.team_b_score} 🔵`
+          : '';
+        
+        const embed = new EmbedBuilder()
+          .setTitle('🎮 Link EA Stats to Draft')
+          .setColor(0x5865f2)
+          .setDescription(
+            `**Draft completed:** <t:${Math.floor(new Date(data.draft.completed_at).getTime() / 1000)}:R>\n` +
+            (draftScore ? `**${draftScore}**\n\n` : '\n') +
+            `Found **${data.matching_friendlies.length}** matching friendly match(es) within the 2-hour window.\n\n` +
+            `Select a match below to link its EA stats to this draft.`
+          )
+          .setFooter({ text: `Showing friendlies played within 2 hours of draft completion with 50%+ player match` });
+        
+        // Auto-expire after 5 minutes
+        setTimeout(() => pendingFriendlyApply.delete(uniqueId), 300000);
+        
+        return interaction.editReply({ embeds: [embed], components: [row] });
+      }
     }
 
     // ----- Buttons -----
@@ -10073,6 +10209,81 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const row2 = new ActionRowBuilder().addComponents(teamBScore);
         modal.addComponents(row1, row2);
         return interaction.showModal(modal);
+      }
+
+      // Apply Friendly to Draft button
+      if (id.startsWith('applyfriendly_btn_')) {
+        const draftId = id.replace('applyfriendly_btn_', '');
+        
+        await interaction.deferReply({ flags: 64 });
+        
+        // Call edge function to list matching friendlies
+        const { error, data } = await callEdgeFunction('apply-friendly-to-draft', {
+          guild_id: guildId,
+          draft_id: draftId,
+          action: 'list'
+        });
+        
+        if (error) {
+          return interaction.editReply({ content: `❌ ${error}` });
+        }
+        
+        if (!data.matching_friendlies || data.matching_friendlies.length === 0) {
+          const windowEnd = new Date(data.window.end);
+          const now = new Date();
+          
+          if (now < windowEnd) {
+            const minutesLeft = Math.round((windowEnd - now) / 60000);
+            return interaction.editReply({
+              content: `⏳ No matching friendly matches found yet.\n\n` +
+                `Play a friendly match within the next **${minutesLeft} minutes** (2-hour window from draft completion) and run \`/applyfriendly\` to link it.\n\n` +
+                `Draft completed: <t:${Math.floor(new Date(data.draft.completed_at).getTime() / 1000)}:R>`
+            });
+          } else {
+            return interaction.editReply({
+              content: `❌ No matching friendlies found within the 2-hour window after draft completion.\n\n` +
+                `The window closed <t:${Math.floor(windowEnd.getTime() / 1000)}:R>.`
+            });
+          }
+        }
+        
+        // Store the pending selection state
+        const uniqueId = `${interaction.user.id}_${Date.now()}`;
+        pendingFriendlyApply.set(uniqueId, {
+          guildId,
+          draftId,
+          friendlies: data.matching_friendlies
+        });
+        
+        // Build select menu with matching friendlies
+        const options = data.matching_friendlies.slice(0, 25).map((m, i) => {
+          const resultEmoji = m.result === 'win' ? '✅' : m.result === 'loss' ? '❌' : '🟡';
+          const time = new Date(m.played_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          const label = `${resultEmoji} ${m.score_for}-${m.score_against} vs ${(m.opponent_club_name || 'Unknown').substring(0, 30)}`;
+          const description = `${time} • ${m.matching_players}/${data.draft.all_players.length} players (${m.match_percentage}% match)`;
+          
+          return {
+            label: label.substring(0, 100),
+            description: description.substring(0, 100),
+            value: `${uniqueId}:${m.ea_match_id}`,
+            emoji: m.match_percentage >= 80 ? '🎯' : '🎮'
+          };
+        });
+        
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('applyfriendly_select')
+          .setPlaceholder('Select a friendly match to link...')
+          .addOptions(options);
+        
+        const row = new ActionRowBuilder().addComponents(selectMenu);
+        
+        // Auto-expire after 5 minutes
+        setTimeout(() => pendingFriendlyApply.delete(uniqueId), 300000);
+        
+        return interaction.editReply({
+          content: `🎮 Found **${data.matching_friendlies.length}** matching friendly match(es). Select one to link its EA stats:`,
+          components: [row]
+        });
       }
 
       // Draft cancel button
@@ -12762,6 +12973,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         
         if (data.status === 'confirmed') {
           // Only clear cache when fully confirmed
+          const draftId = draftData.draft_id;
           activeDrafts.delete(guildId);
           
           const embed = new EmbedBuilder()
@@ -12773,9 +12985,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
               { name: '🏆 Winner', value: winnerText, inline: true }
             )
             .setDescription('Stats have been recorded and ratings updated!')
-            .setFooter({ text: '📬 Feedback DMs sent to all participants' });
+            .setFooter({ text: '📬 Feedback DMs sent to all participants • Use /applyfriendly to link EA stats' });
           
-          return interaction.editReply({ embeds: [embed] });
+          // Add button to link EA friendly stats
+          const applyFriendlyRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`applyfriendly_btn_${draftId}`)
+              .setLabel('Link EA Stats')
+              .setEmoji('🎮')
+              .setStyle(ButtonStyle.Primary)
+          );
+          
+          return interaction.editReply({ embeds: [embed], components: [applyFriendlyRow] });
         } else {
           // Result pending - need more confirmations
           const confirmations = data.confirmations || 1;
@@ -14560,6 +14781,82 @@ client.on(Events.InteractionCreate, async (interaction) => {
           embeds: [embed], 
           components: [playerSelect, performanceSelect, enjoymentSelect, energySelect, playAgainSelect] 
         });
+      }
+
+      // =======================
+      // APPLY FRIENDLY TO DRAFT SELECT MENU
+      // =======================
+      if (id === 'applyfriendly_select') {
+        const selectedValue = interaction.values[0]; // format: uniqueId:ea_match_id
+        const [uniqueId, eaMatchId] = selectedValue.split(':');
+        
+        const pendingData = pendingFriendlyApply.get(uniqueId);
+        if (!pendingData) {
+          return interaction.reply({
+            content: '❌ Selection expired. Please run `/applyfriendly` again.',
+            flags: 64
+          });
+        }
+        
+        await interaction.deferUpdate();
+        
+        // Find the selected friendly details
+        const selectedFriendly = pendingData.friendlies.find(f => f.ea_match_id === eaMatchId);
+        if (!selectedFriendly) {
+          return interaction.editReply({
+            content: '❌ Selected match not found. Please try again.',
+            embeds: [],
+            components: []
+          });
+        }
+        
+        // Show processing message
+        await interaction.editReply({
+          content: `⏳ Linking EA stats from **${selectedFriendly.score_for}-${selectedFriendly.score_against}** vs ${selectedFriendly.opponent_club_name || 'opponent'}...`,
+          embeds: [],
+          components: []
+        });
+        
+        // Call edge function to apply the friendly
+        const { error, data } = await callEdgeFunction('apply-friendly-to-draft', {
+          guild_id: pendingData.guildId,
+          draft_id: pendingData.draftId,
+          ea_match_id: eaMatchId,
+          action: 'apply',
+          requester_discord_id: interaction.user.id
+        });
+        
+        // Clean up pending state
+        pendingFriendlyApply.delete(uniqueId);
+        
+        if (error) {
+          return interaction.editReply({
+            content: `❌ Failed to link stats: ${error}`,
+            embeds: [],
+            components: []
+          });
+        }
+        
+        // Build success embed with stats
+        const statsLines = (data.stats_applied || []).slice(0, 10).map(p => {
+          const pos = p.position || '?';
+          const rating = p.rating ? `${p.rating.toFixed(1)}★` : '';
+          const goals = p.goals > 0 ? `${p.goals}⚽` : '';
+          const assists = p.assists > 0 ? `${p.assists}🎯` : '';
+          return `<@${p.discord_user_id}> • ${pos} ${rating} ${goals} ${assists}`.trim();
+        });
+        
+        const embed = new EmbedBuilder()
+          .setTitle('✅ EA Stats Linked to Draft!')
+          .setColor(0x00ff00)
+          .setDescription(
+            `**Match:** ${data.match_result === 'win' ? '✅' : data.match_result === 'loss' ? '❌' : '🟡'} ${data.match_score}\n\n` +
+            `**Players Updated:** ${data.players_updated}\n\n` +
+            (statsLines.length > 0 ? `**Stats Applied:**\n${statsLines.join('\n')}` : '')
+          )
+          .setFooter({ text: 'Player ratings will be recalculated' });
+        
+        return interaction.editReply({ content: null, embeds: [embed], components: [] });
       }
 
       // =======================
