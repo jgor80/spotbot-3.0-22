@@ -227,7 +227,9 @@ serve(async (req) => {
 
     console.log(`[draft-start] Selected captains: ${captainA} vs ${captainB}`);
 
-    // Create the draft with optional team VCs
+    // Create the draft in "pending" status - captains must confirm before picking begins
+    const confirmationExpiresAt = new Date(Date.now() + 60000).toISOString(); // 60 seconds
+    
     const { data: draft, error: draftError } = await supabase
       .from("drafts")
       .insert({
@@ -239,10 +241,13 @@ serve(async (req) => {
         team_b_player_ids: [captainB],
         available_player_ids: availablePlayers,
         current_picker: "a",
-        status: "picking",
+        status: "pending", // Changed from "picking" - requires captain confirmation
         started_at: new Date().toISOString(),
         team_a_vc_id: team_a_vc_id || null,
         team_b_vc_id: team_b_vc_id || null,
+        captain_a_confirmed: false,
+        captain_b_confirmed: false,
+        confirmation_expires_at: confirmationExpiresAt,
       })
       .select()
       .single();
@@ -280,15 +285,20 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         draft_id: draft.id,
+        status: "pending", // Indicate draft needs captain confirmation
+        requires_captain_confirmation: true,
+        confirmation_expires_at: confirmationExpiresAt,
         captain_a: {
           ...(playerData.get(captainA) || { overall_rating: 50 }),
           discord_user_id: captainA,
           games_played: captainAData?.games_played || 0,
+          confirmed: false,
         },
         captain_b: {
           ...(playerData.get(captainB) || { overall_rating: 50 }),
           discord_user_id: captainB,
           games_played: captainBData?.games_played || 0,
+          confirmed: false,
         },
         available_players: availableWithRatings,
         current_picker: "a",

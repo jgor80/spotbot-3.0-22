@@ -3709,6 +3709,121 @@ async function movePlayersToTeamVCs(guild, teamAPlayerIds, teamBPlayerIds, teamA
 const pendingCaptainRerolls = new Map();
 
 // =======================
+// DRAFT CONFIRMATION HELPERS
+// =======================
+
+/**
+ * Transition draft from pending to picking phase after both captains confirm
+ * @param {Interaction} interaction - Discord interaction
+ * @param {Object} draftData - Draft data from activeDrafts
+ * @param {string} guildId - Guild ID
+ */
+async function transitionToPicking(interaction, draftData, guildId) {
+  const currentPicker = draftData.current_picker === 'a' 
+    ? draftData.captain_a.discord_user_id 
+    : draftData.captain_b.discord_user_id;
+  
+  const embed = new EmbedBuilder()
+    .setTitle('⚔️ DRAFT IN PROGRESS')
+    .setColor(0xff6b35)
+    .setDescription(`**Pick #${draftData.pick_number || 1}** – <@${currentPicker}>'s turn to pick!`)
+    .addFields(
+      { 
+        name: '🔴 Team A', 
+        value: `Captain: <@${draftData.captain_a.discord_user_id}>`, 
+        inline: true 
+      },
+      { 
+        name: '🔵 Team B', 
+        value: `Captain: <@${draftData.captain_b.discord_user_id}>`, 
+        inline: true 
+      }
+    );
+  
+  // Add available players
+  const availableList = (draftData.available_players || []).slice(0, 15).map(p => {
+    const rating = p.overall_rating || 50;
+    const pos = p.top_position || '?';
+    const streakEmoji = p.current_streak > 0 
+      ? (p.streak_type === 'win' ? `🔥${p.current_streak}` : `❄️${p.current_streak}`) 
+      : '';
+    return `<@${p.discord_user_id}> (${rating}) [${pos}] ${streakEmoji}`;
+  }).join('\n');
+  
+  embed.addFields({ 
+    name: '👥 Available Players', 
+    value: availableList || 'None', 
+    inline: false 
+  });
+  
+  // Build pick buttons for available players
+  const pickButtons = buildDraftPickButtonRows(draftData.available_players || [], draftData.draft_id, currentPicker);
+  
+  // Add control buttons
+  const controlRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`draft_report_${draftData.draft_id}`)
+      .setLabel('Report Result')
+      .setEmoji('📊')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`draft_reroll_${draftData.draft_id}`)
+      .setLabel('Reroll Captains')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`draft_cancel_${draftData.draft_id}`)
+      .setLabel('Cancel Draft')
+      .setEmoji('🗑️')
+      .setStyle(ButtonStyle.Danger)
+  );
+  
+  // Combine all button rows (max 5 rows total)
+  const allComponents = [...pickButtons.slice(0, 4), controlRow];
+  
+  await interaction.editReply({ embeds: [embed], components: allComponents });
+  
+  console.log(`[Draft] Draft ${draftData.draft_id} transitioned to picking phase`);
+}
+
+/**
+ * Build action rows with buttons for each available player to pick
+ * @param {Array} availablePlayers - Array of available player objects
+ * @param {string} draftId - Draft ID
+ * @param {string} currentPickerId - Discord ID of current picker
+ * @returns {ActionRowBuilder[]} - Array of action rows with pick buttons
+ */
+function buildDraftPickButtonRows(availablePlayers, draftId, currentPickerId) {
+  const rows = [];
+  const players = (availablePlayers || []).slice(0, 20); // Max 20 players (4 rows of 5)
+  
+  for (let i = 0; i < players.length; i += 5) {
+    const rowPlayers = players.slice(i, i + 5);
+    const row = new ActionRowBuilder();
+    
+    for (const player of rowPlayers) {
+      const playerId = player.discord_user_id || player;
+      const rating = player.overall_rating || 50;
+      const pos = player.top_position || '?';
+      
+      // Truncate name if needed (button labels max 80 chars)
+      const label = `${pos} (${rating})`;
+      
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`draft_pick_${draftId}_${playerId}`)
+          .setLabel(label)
+          .setStyle(ButtonStyle.Secondary)
+      );
+    }
+    
+    rows.push(row);
+  }
+  
+  return rows;
+}
+
+// =======================
 // READY & COMMAND REG
 // =======================
 
@@ -8397,11 +8512,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
 
         // Start the draft directly via button instead of telling them to use slash command
-        await interaction.deferReply({ flags: 64 });
+        await interaction.deferReply();
         
-        const voiceChannel2 = interaction.member?.voice?.channel;
-        const vcMembers2 = voiceChannel2 ? 
-          [...voiceChannel2.members.values()].filter(m => !m.user.bot) : [];
+        // CRITICAL: Force fresh VC member fetch to avoid stale cache
+        const freshChannel = await interaction.guild.channels.fetch(voiceChannel.id, { force: true });
+        const vcMembers2 = freshChannel.members ? 
+          [...freshChannel.members.values()].filter(m => !m.user.bot) : [];
         
         if (vcMembers2.length < 4) {
           return interaction.editReply({
@@ -8412,7 +8528,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Call the draft-start edge function directly
         const result = await callEdgeFunction('draft-start', {
           guild_id: guildId,
-          voice_channel_id: voiceChannel2.id,
+          voice_channel_id: freshChannel.id,
           player_discord_ids: vcMembers2.map(m => m.id)
         });
         
@@ -8420,22 +8536,104 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.editReply({ content: `❌ ${result.error}` });
         }
         
-        activeDrafts.set(guildId, result.data);
+        // Store draft data with pending status
+        activeDrafts.set(guildId, {
+          ...result.data,
+          voice_channel_id: freshChannel.id,
+          confirmation_started_at: Date.now()
+        });
         
-        const embed = new EmbedBuilder()
-          .setTitle('⚔️ Draft Started!')
+        // NEW: Show captain confirmation embed instead of immediately starting picks
+        const confirmEmbed = new EmbedBuilder()
+          .setTitle('⚔️ DRAFT - CAPTAIN CONFIRMATION')
           .setColor(0xff6b35)
-          .addFields(
-            { name: '🔴 Captain A', value: `<@${result.data.captain_a}>`, inline: true },
-            { name: '🔵 Captain B', value: `<@${result.data.captain_b}>`, inline: true },
-            { name: '⏳ First Pick', value: `<@${result.data.current_picker}>`, inline: true }
+          .setDescription(
+            '**Captains must confirm before the draft begins!**\n\n' +
+            'Both captains have **60 seconds** to accept their role.\n' +
+            'If a captain declines or times out, new captains will be selected.'
           )
-          .setDescription(`**Available Players:**\n${result.data.available.map(id => `<@${id}>`).join(', ')}`);
+          .addFields(
+            { 
+              name: '🔴 Captain A', 
+              value: `<@${result.data.captain_a.discord_user_id}> - ⏳ Waiting...`, 
+              inline: true 
+            },
+            { 
+              name: '🔵 Captain B', 
+              value: `<@${result.data.captain_b.discord_user_id}> - ⏳ Waiting...`, 
+              inline: true 
+            },
+            { 
+              name: '👥 Available Players', 
+              value: `${result.data.available_players.length} players ready`, 
+              inline: true 
+            }
+          )
+          .setFooter({ text: '⏱️ Captains have 60 seconds to accept' });
         
-        // Create pick buttons for available players
-        const pickComponents = buildDraftPickButtons(result.data.available, result.data.current_picker, interaction.user.id);
+        // Captain confirmation buttons
+        const confirmButtons = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`draft_confirm_a_${result.data.draft_id}`)
+            .setLabel('✅ Accept Captain (Team A)')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`draft_confirm_b_${result.data.draft_id}`)
+            .setLabel('✅ Accept Captain (Team B)')
+            .setStyle(ButtonStyle.Primary),
+          new ButtonBuilder()
+            .setCustomId(`draft_decline_${result.data.draft_id}`)
+            .setLabel('❌ Decline')
+            .setStyle(ButtonStyle.Danger)
+        );
         
-        return interaction.editReply({ embeds: [embed], components: pickComponents });
+        const confirmMessage = await interaction.editReply({ 
+          embeds: [confirmEmbed], 
+          components: [confirmButtons] 
+        });
+        
+        // Store message ID for updating
+        activeDrafts.get(guildId).confirmation_message_id = confirmMessage.id;
+        activeDrafts.get(guildId).confirmation_channel_id = interaction.channelId;
+        
+        // Set up 60-second timeout for captain confirmation
+        setTimeout(async () => {
+          const currentDraft = activeDrafts.get(guildId);
+          if (currentDraft && currentDraft.draft_id === result.data.draft_id && currentDraft.status === 'pending') {
+            // Check if both captains confirmed
+            const captainAConfirmed = currentDraft.captain_a?.confirmed || false;
+            const captainBConfirmed = currentDraft.captain_b?.confirmed || false;
+            
+            if (!captainAConfirmed || !captainBConfirmed) {
+              // Timeout - cancel the draft
+              await supabase.from('drafts').update({ 
+                status: 'cancelled',
+                completed_at: new Date().toISOString()
+              }).eq('id', result.data.draft_id);
+              
+              activeDrafts.delete(guildId);
+              
+              try {
+                const channel = await interaction.guild.channels.fetch(currentDraft.confirmation_channel_id);
+                const timeoutEmbed = new EmbedBuilder()
+                  .setTitle('⚔️ DRAFT CANCELLED - Timeout')
+                  .setColor(0xff0000)
+                  .setDescription(
+                    '**Captain confirmation timed out!**\n\n' +
+                    `🔴 Captain A: ${captainAConfirmed ? '✅ Confirmed' : '❌ Did not confirm'}\n` +
+                    `🔵 Captain B: ${captainBConfirmed ? '✅ Confirmed' : '❌ Did not confirm'}\n\n` +
+                    'Click **Start Draft** to try again with new captains.'
+                  );
+                
+                await channel.send({ embeds: [timeoutEmbed] });
+              } catch (err) {
+                console.error('[Draft] Error sending timeout message:', err);
+              }
+            }
+          }
+        }, 60000); // 60 second timeout
+        
+        return;
       }
 
       if (id === 'squadiq_leaderboard') {
@@ -9464,7 +9662,392 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.showModal(modal);
       }
 
-      // Draft report result button
+      // =======================
+      // CAPTAIN CONFIRMATION BUTTON HANDLERS
+      // =======================
+
+      // Captain A confirms
+      if (id.startsWith('draft_confirm_a_')) {
+        const draftId = id.substring('draft_confirm_a_'.length);
+        const draftData = activeDrafts.get(guildId);
+        
+        if (!draftData || draftData.draft_id !== draftId) {
+          return interaction.reply({ content: '❌ This draft is no longer active.', flags: 64 });
+        }
+        
+        // Only Captain A can click this
+        if (interaction.user.id !== draftData.captain_a.discord_user_id) {
+          return interaction.reply({ 
+            content: `❌ Only <@${draftData.captain_a.discord_user_id}> can accept as Captain A.`, 
+            flags: 64 
+          });
+        }
+        
+        await interaction.deferUpdate();
+        
+        // Call edge function to confirm
+        const { error, data } = await callEdgeFunction('draft-confirm-captain', {
+          draft_id: draftId,
+          captain_discord_id: interaction.user.id,
+          action: 'confirm'
+        });
+        
+        if (error) {
+          return interaction.followUp({ content: `❌ ${error}`, flags: 64 });
+        }
+        
+        // Update local draft data
+        draftData.captain_a.confirmed = true;
+        draftData.captain_a_confirmed = true;
+        
+        if (data.both_confirmed) {
+          // Both confirmed - transition to picking phase
+          draftData.status = 'picking';
+          await transitionToPicking(interaction, draftData, guildId);
+        } else {
+          // Update embed to show confirmation
+          const confirmEmbed = new EmbedBuilder()
+            .setTitle('⚔️ DRAFT - CAPTAIN CONFIRMATION')
+            .setColor(0xff6b35)
+            .setDescription(
+              '**Captains must confirm before the draft begins!**\n\n' +
+              'Waiting for Captain B to confirm...'
+            )
+            .addFields(
+              { 
+                name: '🔴 Captain A', 
+                value: `<@${draftData.captain_a.discord_user_id}> - ✅ Confirmed!`, 
+                inline: true 
+              },
+              { 
+                name: '🔵 Captain B', 
+                value: `<@${draftData.captain_b.discord_user_id}> - ⏳ Waiting...`, 
+                inline: true 
+              },
+              { 
+                name: '👥 Available Players', 
+                value: `${draftData.available_players.length} players ready`, 
+                inline: true 
+              }
+            )
+            .setFooter({ text: '⏱️ Waiting for Captain B...' });
+          
+          const confirmButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`draft_confirm_a_${draftId}`)
+              .setLabel('✅ Captain A Confirmed')
+              .setStyle(ButtonStyle.Success)
+              .setDisabled(true),
+            new ButtonBuilder()
+              .setCustomId(`draft_confirm_b_${draftId}`)
+              .setLabel('✅ Accept Captain (Team B)')
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId(`draft_decline_${draftId}`)
+              .setLabel('❌ Decline')
+              .setStyle(ButtonStyle.Danger)
+          );
+          
+          await interaction.editReply({ embeds: [confirmEmbed], components: [confirmButtons] });
+        }
+        return;
+      }
+
+      // Captain B confirms
+      if (id.startsWith('draft_confirm_b_')) {
+        const draftId = id.substring('draft_confirm_b_'.length);
+        const draftData = activeDrafts.get(guildId);
+        
+        if (!draftData || draftData.draft_id !== draftId) {
+          return interaction.reply({ content: '❌ This draft is no longer active.', flags: 64 });
+        }
+        
+        // Only Captain B can click this
+        if (interaction.user.id !== draftData.captain_b.discord_user_id) {
+          return interaction.reply({ 
+            content: `❌ Only <@${draftData.captain_b.discord_user_id}> can accept as Captain B.`, 
+            flags: 64 
+          });
+        }
+        
+        await interaction.deferUpdate();
+        
+        // Call edge function to confirm
+        const { error, data } = await callEdgeFunction('draft-confirm-captain', {
+          draft_id: draftId,
+          captain_discord_id: interaction.user.id,
+          action: 'confirm'
+        });
+        
+        if (error) {
+          return interaction.followUp({ content: `❌ ${error}`, flags: 64 });
+        }
+        
+        // Update local draft data
+        draftData.captain_b.confirmed = true;
+        draftData.captain_b_confirmed = true;
+        
+        if (data.both_confirmed) {
+          // Both confirmed - transition to picking phase
+          draftData.status = 'picking';
+          await transitionToPicking(interaction, draftData, guildId);
+        } else {
+          // Update embed to show confirmation
+          const confirmEmbed = new EmbedBuilder()
+            .setTitle('⚔️ DRAFT - CAPTAIN CONFIRMATION')
+            .setColor(0xff6b35)
+            .setDescription(
+              '**Captains must confirm before the draft begins!**\n\n' +
+              'Waiting for Captain A to confirm...'
+            )
+            .addFields(
+              { 
+                name: '🔴 Captain A', 
+                value: `<@${draftData.captain_a.discord_user_id}> - ⏳ Waiting...`, 
+                inline: true 
+              },
+              { 
+                name: '🔵 Captain B', 
+                value: `<@${draftData.captain_b.discord_user_id}> - ✅ Confirmed!`, 
+                inline: true 
+              },
+              { 
+                name: '👥 Available Players', 
+                value: `${draftData.available_players.length} players ready`, 
+                inline: true 
+              }
+            )
+            .setFooter({ text: '⏱️ Waiting for Captain A...' });
+          
+          const confirmButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`draft_confirm_a_${draftId}`)
+              .setLabel('✅ Accept Captain (Team A)')
+              .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+              .setCustomId(`draft_confirm_b_${draftId}`)
+              .setLabel('✅ Captain B Confirmed')
+              .setStyle(ButtonStyle.Primary)
+              .setDisabled(true),
+            new ButtonBuilder()
+              .setCustomId(`draft_decline_${draftId}`)
+              .setLabel('❌ Decline')
+              .setStyle(ButtonStyle.Danger)
+          );
+          
+          await interaction.editReply({ embeds: [confirmEmbed], components: [confirmButtons] });
+        }
+        return;
+      }
+
+      // Captain declines
+      if (id.startsWith('draft_decline_')) {
+        const draftId = id.substring('draft_decline_'.length);
+        const draftData = activeDrafts.get(guildId);
+        
+        if (!draftData || draftData.draft_id !== draftId) {
+          return interaction.reply({ content: '❌ This draft is no longer active.', flags: 64 });
+        }
+        
+        // Only captains can decline
+        const isCaptainA = interaction.user.id === draftData.captain_a.discord_user_id;
+        const isCaptainB = interaction.user.id === draftData.captain_b.discord_user_id;
+        
+        if (!isCaptainA && !isCaptainB) {
+          return interaction.reply({ 
+            content: '❌ Only captains can decline their role.', 
+            flags: 64 
+          });
+        }
+        
+        await interaction.deferUpdate();
+        
+        // Call edge function to decline
+        const { error, data } = await callEdgeFunction('draft-confirm-captain', {
+          draft_id: draftId,
+          captain_discord_id: interaction.user.id,
+          action: 'decline'
+        });
+        
+        if (error) {
+          return interaction.followUp({ content: `❌ ${error}`, flags: 64 });
+        }
+        
+        // Draft is cancelled
+        activeDrafts.delete(guildId);
+        
+        const declineEmbed = new EmbedBuilder()
+          .setTitle('⚔️ DRAFT CANCELLED')
+          .setColor(0xff0000)
+          .setDescription(
+            `**<@${interaction.user.id}> declined to be captain.**\n\n` +
+            'Click **Start Draft** to try again with new captains.'
+          );
+        
+        await interaction.editReply({ embeds: [declineEmbed], components: [] });
+        return;
+      }
+
+      // =======================
+      // DRAFT PICK BUTTON HANDLERS
+      // =======================
+      
+      // Player pick button clicked during draft
+      if (id.startsWith('draft_pick_')) {
+        // Format: draft_pick_{draftId}_{playerId}
+        const parts = id.split('_');
+        if (parts.length < 4) {
+          return interaction.reply({ content: '❌ Invalid pick button.', flags: 64 });
+        }
+        
+        const draftId = parts[2];
+        const pickedPlayerId = parts.slice(3).join('_'); // Handle IDs that might have underscores
+        const draftData = activeDrafts.get(guildId);
+        
+        if (!draftData || draftData.draft_id !== draftId) {
+          return interaction.reply({ content: '❌ This draft is no longer active.', flags: 64 });
+        }
+        
+        if (draftData.status !== 'picking') {
+          return interaction.reply({ content: '❌ Draft is not in picking phase.', flags: 64 });
+        }
+        
+        // Determine current picker
+        const currentPickerTeam = draftData.current_picker;
+        const currentPickerId = currentPickerTeam === 'a' 
+          ? draftData.captain_a.discord_user_id 
+          : draftData.captain_b.discord_user_id;
+        
+        // Only current picker can pick
+        if (interaction.user.id !== currentPickerId) {
+          return interaction.reply({ 
+            content: `❌ It's <@${currentPickerId}>'s turn to pick.`, 
+            flags: 64 
+          });
+        }
+        
+        await interaction.deferUpdate();
+        
+        // Call the draft-pick edge function
+        const { error, data } = await callEdgeFunction('draft-pick', {
+          draft_id: draftId,
+          captain_discord_id: interaction.user.id,
+          picked_player_discord_id: pickedPlayerId
+        });
+        
+        if (error) {
+          return interaction.followUp({ content: `❌ ${error}`, flags: 64 });
+        }
+        
+        // Update local draft data
+        activeDrafts.set(guildId, {
+          ...draftData,
+          ...data,
+          captain_a: draftData.captain_a,
+          captain_b: draftData.captain_b
+        });
+        
+        const updatedDraft = activeDrafts.get(guildId);
+        
+        // Check if draft is complete
+        if (data.draft_complete || (data.available_players || []).length === 0) {
+          const completeEmbed = new EmbedBuilder()
+            .setTitle('⚔️ DRAFT COMPLETE!')
+            .setColor(0x00ff00)
+            .addFields(
+              { 
+                name: '🔴 Team A', 
+                value: (data.team_a_player_ids || []).map(id => `<@${id}>`).join('\n') || 'Empty', 
+                inline: true 
+              },
+              { 
+                name: '🔵 Team B', 
+                value: (data.team_b_player_ids || []).map(id => `<@${id}>`).join('\n') || 'Empty', 
+                inline: true 
+              }
+            )
+            .setDescription('**Good luck!** Report the result when the match is over.')
+            .setFooter({ text: 'Click "Report Result" to record the score' });
+          
+          const resultButtons = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`draft_report_${draftId}`)
+              .setLabel('Report Result')
+              .setEmoji('📊')
+              .setStyle(ButtonStyle.Success)
+          );
+          
+          await interaction.editReply({ embeds: [completeEmbed], components: [resultButtons] });
+          
+          // Move players to team VCs if configured
+          if (draftData.team_a_vc_id && draftData.team_b_vc_id) {
+            await movePlayersToTeamVCs(
+              interaction.guild,
+              data.team_a_player_ids || [],
+              data.team_b_player_ids || [],
+              draftData.team_a_vc_id,
+              draftData.team_b_vc_id
+            );
+          }
+        } else {
+          // Continue picking - show updated embed
+          const nextPickerId = data.current_picker === 'a' 
+            ? draftData.captain_a.discord_user_id 
+            : draftData.captain_b.discord_user_id;
+          
+          const embed = new EmbedBuilder()
+            .setTitle('⚔️ DRAFT IN PROGRESS')
+            .setColor(0xff6b35)
+            .setDescription(`**Pick #${data.pick_number || 1}** – <@${nextPickerId}>'s turn to pick!`)
+            .addFields(
+              { 
+                name: '🔴 Team A', 
+                value: (data.team_a_player_ids || []).map(id => `<@${id}>`).join('\n') || 'Empty', 
+                inline: true 
+              },
+              { 
+                name: '🔵 Team B', 
+                value: (data.team_b_player_ids || []).map(id => `<@${id}>`).join('\n') || 'Empty', 
+                inline: true 
+              }
+            );
+          
+          // Add available players
+          const availableList = (data.available_players || []).slice(0, 15).map(p => {
+            const rating = p.overall_rating || 50;
+            const pos = p.top_position || '?';
+            return `<@${p.discord_user_id}> (${rating}) [${pos}]`;
+          }).join('\n');
+          
+          embed.addFields({ 
+            name: '👥 Available Players', 
+            value: availableList || 'None', 
+            inline: false 
+          });
+          
+          // Rebuild pick buttons for remaining players
+          const pickButtons = buildDraftPickButtonRows(data.available_players || [], draftId, nextPickerId);
+          
+          const controlRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`draft_report_${draftId}`)
+              .setLabel('Report Result')
+              .setEmoji('📊')
+              .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+              .setCustomId(`draft_cancel_${draftId}`)
+              .setLabel('Cancel Draft')
+              .setEmoji('🗑️')
+              .setStyle(ButtonStyle.Danger)
+          );
+          
+          const allComponents = [...pickButtons.slice(0, 4), controlRow];
+          
+          await interaction.editReply({ embeds: [embed], components: allComponents });
+        }
+        
+        return;
+      }
       if (id.startsWith('draft_report_')) {
         const draftId = id.substring('draft_report_'.length);
         
