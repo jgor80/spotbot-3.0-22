@@ -32,7 +32,6 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 - **send-reminders** (`supabase/functions/send-reminders/index.ts`)
 - **link-ea-account** (`supabase/functions/link-ea-account/index.ts`)
 - **verify-ea-username** (`supabase/functions/verify-ea-username/index.ts`)
-- **get-service-key** (`supabase/functions/get-service-key/index.ts`)
 
 ## Peer feedback and probability tools
 - **submit-peer-evaluation** (`supabase/functions/submit-peer-evaluation/index.ts`)
