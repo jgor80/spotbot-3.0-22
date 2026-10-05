@@ -109,12 +109,13 @@ export function GKLeaderboardTable({ players, onPlayerClick }: GKLeaderboardTabl
           aVal = a.win_rate || 0;
           bVal = b.win_rate || 0;
           break;
-        case "save_pct":
+        case "save_pct": {
           const totalFacedA = totalSavesA + (a.goals_conceded || 0);
           const totalFacedB = totalSavesB + (b.goals_conceded || 0);
           aVal = totalFacedA > 0 ? (totalSavesA / totalFacedA) * 100 : 0;
           bVal = totalFacedB > 0 ? (totalSavesB / totalFacedB) * 100 : 0;
           break;
+        }
         case "saves_per_game":
           aVal = a.games_played > 0 ? totalSavesA / a.games_played : 0;
           bVal = b.games_played > 0 ? totalSavesB / b.games_played : 0;

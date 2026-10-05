@@ -357,8 +357,8 @@ export default function ScoutingIntelPage() {
     
     // Sort
     filtered = [...filtered].sort((a, b) => {
-      let aVal = a[sortField] ?? 0;
-      let bVal = b[sortField] ?? 0;
+      const aVal = a[sortField] ?? 0;
+      const bVal = b[sortField] ?? 0;
       return sortDesc ? (bVal as number) - (aVal as number) : (aVal as number) - (bVal as number);
     });
     

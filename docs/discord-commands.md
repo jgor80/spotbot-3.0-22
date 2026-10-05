@@ -21,6 +21,7 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 - **claim-competition-win** (`supabase/functions/claim-competition-win/index.ts`)
 - **create-lineup** (`supabase/functions/create-lineup/index.ts`)
 - **get-lineup** (`supabase/functions/get-lineup/index.ts`)
+- **announce-lineup** (`supabase/functions/announce-lineup/index.ts`): posts a saved lineup to a Discord channel (web Save & Announce, bot `/teamsheet`)
 - **draft-start / draft-pick / draft-result** (respective `supabase/functions/draft-*/index.ts`)
 - **suggest-optimal-lineup** (`supabase/functions/suggest-optimal-lineup/index.ts`)
 - **event-create** (`supabase/functions/event-create/index.ts`)

@@ -4,14 +4,16 @@
   "description": "SquadIQ Spots Discord Bot",
   "main": "index.cjs",
   "scripts": {
-    "start": "node index.cjs"
+    "start": "node index.cjs",
+    "sync": "node ea-sync-local.cjs"
   },
   "dependencies": {
     "discord.js": "^14.14.1",
     "@supabase/supabase-js": "^2.39.0",
     "axios": "^1.6.0",
     "openai": "^4.56.0",
-    "string-similarity": "^4.0.4"
+    "string-similarity": "^4.0.4",
+    "dotenv": "^16.4.5"
   },
   "engines": {
     "node": ">=18.0.0"
