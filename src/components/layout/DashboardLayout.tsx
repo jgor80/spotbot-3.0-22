@@ -17,7 +17,8 @@ import {
   Star,
   MessageSquare,
   LogOut,
-  Globe
+  Globe,
+  Lightbulb
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ const navItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { path: "/games", label: "Games", icon: Gamepad2 },
+  { path: "/insights", label: "Insights", icon: Lightbulb },
   { path: "/ratings", label: "Ratings", icon: Star },
   { path: "/teams", label: "Teams & Lineups", icon: UsersRound },
   { path: "/drafts", label: "Drafts", icon: Swords },
