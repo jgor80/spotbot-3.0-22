@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { toFcPlatform } from "../_shared/ea.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,16 +11,6 @@ interface VerifyRequest {
   platform: string;
 }
 
-// Platform mapping for EA API
-const platformMap: Record<string, string> = {
-  ps5: "ps5",
-  ps4: "ps4",
-  xbsx: "xbsx",
-  xone: "xone",
-  pc: "pc",
-  playstation: "ps5",
-  xbox: "xbsx",
-};
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -38,11 +29,11 @@ serve(async (req) => {
 
     console.log(`[verify-ea-username] Verifying ${username} on ${platform}`);
 
-    const normalizedPlatform = platformMap[platform.toLowerCase()] || platform.toLowerCase();
+    const normalizedPlatform = platform.toLowerCase();
 
     // Try to find the player via EA Pro Clubs search
     // First, search for clubs that might contain this player
-    const searchUrl = `https://proclubs.ea.com/api/fc/allTimeLeaderboard/search?platform=${normalizedPlatform}&clubName=${encodeURIComponent(username)}`;
+    const searchUrl = `https://proclubs.ea.com/api/fc/allTimeLeaderboard/search?platform=${toFcPlatform(normalizedPlatform)}&clubName=${encodeURIComponent(username)}`;
     
     let verified = false;
     let personaId: string | null = null;

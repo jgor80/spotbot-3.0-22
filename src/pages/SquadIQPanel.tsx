@@ -404,6 +404,7 @@ export default function SquadIQPanel() {
                           <SelectItem value="ps5">PS5</SelectItem>
                           <SelectItem value="xbox-series-xs">Xbox</SelectItem>
                           <SelectItem value="pc">PC</SelectItem>
+                          <SelectItem value="switch">Switch</SelectItem>
                         </SelectContent>
                       </Select>
                       <Button 

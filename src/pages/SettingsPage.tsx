@@ -449,9 +449,8 @@ export default function SettingsPage() {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="ps5">PlayStation 5</SelectItem>
-                                <SelectItem value="ps4">PlayStation 4</SelectItem>
                                 <SelectItem value="xbsx">Xbox Series X|S</SelectItem>
-                                <SelectItem value="xone">Xbox One</SelectItem>
+                                <SelectItem value="switch">Nintendo Switch</SelectItem>
                                 <SelectItem value="pc">PC</SelectItem>
                               </SelectContent>
                             </Select>

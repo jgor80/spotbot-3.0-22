@@ -43,14 +43,14 @@ if (openaiApiKey) {
 // EA FC API CONFIGURATION
 // =======================
 
-// Platform mapping from Discord choices to EA API values
-const EA_PLATFORM_MAP = {
-  'ps5': 'common-gen5',
-  'xbox-series-xs': 'common-gen5',
-  'pc': 'common-gen5',
-  'ps4': 'common-gen4',
-  'xboxone': 'common-gen4'
-};
+// Platform mapping from Discord choices to EA API values (FC27: gen5 + Switch, no gen4)
+const {
+  FC_PLATFORMS,
+  toFcPlatform,
+  fromFcPlatform,
+  regionLabel,
+  findExactClubMatch
+} = require('./ea-fc27.cjs');
 
 // Headers to avoid Akamai blocking
 const EA_HEADERS = {
@@ -73,7 +73,7 @@ const EA_HEADERS = {
  */
 async function searchClub(options) {
   const { name, platform } = options;
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  const fcPlatform = toFcPlatform(platform);
   
   console.log(`[EA] Searching for club "${name}" on platform ${platform} -> ${fcPlatform}`);
   
@@ -119,7 +119,7 @@ async function searchClub(options) {
       results.push({
         clubId,
         name: info.name || info.clubName || info.clubname || name,
-        region: info.regionName || info.region || info.countryName || null,
+        region: regionLabel(info),
         division: info.division || info.leagueDivision || info.bestDivision || null,
         platform: fcPlatform,
         raw: info
@@ -142,7 +142,7 @@ async function searchClub(options) {
  */
 async function matchesStats(options) {
   const { clubId, platform, matchType = 'leagueMatch' } = options;
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  const fcPlatform = toFcPlatform(platform);
   
   console.log(`[EA] Fetching ${matchType} for club ${clubId} on ${fcPlatform}`);
   
@@ -186,7 +186,7 @@ async function matchesStats(options) {
  */
 async function fetchClubInfo(options) {
   const { clubId, platform } = options;
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  const fcPlatform = toFcPlatform(platform);
   
   try {
     const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/info', {
@@ -222,7 +222,7 @@ async function fetchClubInfo(options) {
  */
 async function fetchClubMembers(options) {
   const { clubId, platform } = options;
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  const fcPlatform = toFcPlatform(platform);
   
   try {
     const res = await axios.get('https://proclubs.ea.com/api/fc/members/stats', {
@@ -567,15 +567,12 @@ const COMMANDS = [
   // EA FC Pro Clubs Integration Commands
   {
     name: 'setclub',
-    description: 'Link your club to EA FC Pro Clubs for automatic stats tracking.',
+    description: 'Link or relink your club to EA FC Pro Clubs by name (also fixes FC27 club IDs).',
     options: [
       { name: 'name', description: 'Your EA FC Pro Clubs team name.', type: 3, required: true },
-      { name: 'platform', description: 'Your gaming platform.', type: 3, required: true, choices: [
-        { name: 'PlayStation 5', value: 'ps5' },
-        { name: 'PlayStation 4', value: 'ps4' },
-        { name: 'Xbox Series X|S', value: 'xbox-series-xs' },
-        { name: 'Xbox One', value: 'xboxone' },
-        { name: 'PC', value: 'pc' }
+      { name: 'platform', description: 'Your platform (optional, searches all if left blank).', type: 3, required: false, choices: [
+        { name: 'PS5 / Xbox Series X|S / PC', value: 'ps5' },
+        { name: 'Nintendo Switch', value: 'switch' }
       ]},
       { name: 'stats_channel', description: 'Channel to post match results (optional).', type: 7, required: false }
     ]
@@ -772,8 +769,8 @@ const pendingFriendlyApply = new Map(); // Map<uniqueId, { guildId, draftId, fri
 
 // FC Platform labels for scouting
 const FC_PLATFORM_LABELS = {
-  'common-gen5': 'Gen 5 (PS5 / Xbox Series / PC)',
-  'common-gen4': 'Gen 4 (PS4 / Xbox One)'
+  'common-gen5': 'PS5 / Xbox Series / PC',
+  'nx': 'Nintendo Switch'
 };
 
 // =======================
@@ -990,7 +987,6 @@ async function searchClubsAcrossPlatforms(query) {
   const q = (query || '').trim();
   if (!q) return [];
 
-  const FC_PLATFORMS = ['common-gen5', 'common-gen4'];
   const results = [];
 
   console.log('[Scout] Searching "%s" on platforms: %s', q, FC_PLATFORMS.join(', '));
@@ -1033,7 +1029,7 @@ async function searchClubsAcrossPlatforms(query) {
             fcPlatform,
             clubId,
             name: info.name || info.clubName || info.clubname || q,
-            region: info.regionName || info.region || info.countryName || null,
+            region: regionLabel(info),
             division: info.division || info.leagueDivision || info.bestDivision || null,
             raw: info
           });
@@ -6637,23 +6633,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
 
         const clubName = interaction.options.getString('name');
-        const platform = interaction.options.getString('platform');
+        const requestedPlatform = interaction.options.getString('platform');
         const statsChannel = interaction.options.getChannel('stats_channel');
 
         await interaction.deferReply({ flags: 64 });
 
         try {
-          // Search for the club on EA
-          const clubs = await searchClub({ name: clubName, platform });
+          // Search for the club on EA (all FC27 platforms unless one was picked)
+          const found = await searchClubByNameAllPlatforms(clubName, requestedPlatform);
           
-          if (!clubs || clubs.length === 0) {
+          if (!found) {
+            const where = requestedPlatform ? (EA_PLATFORM_NAMES[requestedPlatform] || requestedPlatform) : 'any platform';
             return interaction.editReply({
-              content: `❌ Could not find a club named **${clubName}** on ${EA_PLATFORM_NAMES[platform] || platform}.\n\nMake sure the name is exactly as it appears in EA FC Pro Clubs.`
+              content: `❌ Could not find a club named **${clubName}** on ${where}.\n\nMake sure the name is exactly as it appears in EA FC Pro Clubs.`
             });
           }
 
-          // Use the first (best) match
-          const eaClub = clubs[0];
+          const { club: eaClub, platform } = found;
           const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
           
           if (!currentClub) {
@@ -6663,7 +6659,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
           // Update the club with EA data
           currentClub.ea_club_id = eaClub.clubId?.toString();
           currentClub.ea_platform = platform;
-          currentClub.stats_channel_id = statsChannel?.id || null;
+          currentClub.ea_club_name = eaClub.name || clubName;
+          currentClub.ea_fc_version = EA_FC_VERSION;
+          if (statsChannel || !currentClub.stats_channel_id) {
+            currentClub.stats_channel_id = statsChannel?.id || null;
+          }
           currentClub.monitoring_enabled = true;
           currentClub.last_match_id = null;
 
@@ -7840,7 +7840,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           };
           
           if (platformFilter && platformFilter !== 'all') {
-            body.platform = EA_PLATFORM_MAP[platformFilter] || platformFilter;
+            body.platform = toFcPlatform(platformFilter);
           }
           
           if (searchQuery) {
@@ -7883,7 +7883,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           };
           
           if (platformFilter && platformFilter !== 'all') {
-            body.platform = EA_PLATFORM_MAP[platformFilter] || platformFilter;
+            body.platform = toFcPlatform(platformFilter);
           }
           
           if (searchQuery) {
@@ -9787,8 +9787,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         
         const platformInput = new TextInputBuilder()
           .setCustomId('ea_platform')
-          .setLabel('Platform (ps5/xbox/pc)')
-          .setPlaceholder('ps5, xbox, or pc')
+          .setLabel('Platform (ps5/xbox/pc/switch)')
+          .setPlaceholder('ps5, xbox, pc, or switch')
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
         
@@ -11261,8 +11261,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         const platformInput = new TextInputBuilder()
           .setCustomId('ea_platform')
-          .setLabel('Platform (ps5, ps4, xbox, pc)')
-          .setPlaceholder('ps5, ps4, xbox, or pc')
+          .setLabel('Platform (ps5, xbox, pc, switch)')
+          .setPlaceholder('ps5, xbox, pc, or switch')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setValue('ps5');
@@ -11349,8 +11349,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         const platformInput = new TextInputBuilder()
           .setCustomId('ea_platform')
-          .setLabel('Platform (ps5, ps4, xbox, pc)')
-          .setPlaceholder('ps5, ps4, xbox, or pc')
+          .setLabel('Platform (ps5, xbox, pc, switch)')
+          .setPlaceholder('ps5, xbox, pc, or switch')
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setValue(existingProfile?.ea_platform || 'ps5');
@@ -13221,45 +13221,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Auto-search for EA club - try next-gen platforms first
         await interaction.deferReply({ flags: 64 });
         
-        const nextGenPlatforms = ['ps5', 'xbox-series-xs', 'pc'];
-        const oldGenPlatforms = ['ps4', 'xboxone'];
-        let foundClub = null;
-        let foundPlatform = null;
-
-        // Try next-gen platforms first
-        for (const platform of nextGenPlatforms) {
-          try {
-            const clubs = await searchClub({ name: newName, platform });
-            if (clubs && clubs.length > 0) {
-              foundClub = clubs[0];
-              foundPlatform = platform;
-              break;
-            }
-          } catch (err) {
-            console.log(`[EA] Search failed for ${platform}:`, err.message);
-          }
-        }
-
-        // If not found on next-gen, try old-gen
-        if (!foundClub) {
-          for (const platform of oldGenPlatforms) {
-            try {
-              const clubs = await searchClub({ name: newName, platform });
-              if (clubs && clubs.length > 0) {
-                foundClub = clubs[0];
-                foundPlatform = platform;
-                break;
-              }
-            } catch (err) {
-              console.log(`[EA] Search failed for ${platform}:`, err.message);
-            }
-          }
-        }
+        const found = await searchClubByNameAllPlatforms(newName);
+        const foundClub = found?.club || null;
+        const foundPlatform = found?.platform || null;
 
         if (foundClub && foundPlatform) {
           // Auto-link the EA club
           currentClub.ea_club_id = foundClub.clubId?.toString();
           currentClub.ea_platform = foundPlatform;
+          currentClub.ea_club_name = foundClub.name || newName;
+          currentClub.ea_fc_version = EA_FC_VERSION;
           currentClub.monitoring_enabled = true;
           currentClub.last_match_id = null;
 
@@ -13353,11 +13324,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.reply({ content: '❌ Club name cannot be empty.', flags: 64 });
         }
 
-        const validPlatforms = ['ps5', 'ps4', 'xbox', 'xbox-series-xs', 'xboxone', 'pc'];
-        const normalizedPlatform = platform === 'xbox' ? 'xbox-series-xs' : platform;
+        const validPlatforms = ['ps5', 'xbox', 'xbox-series-xs', 'pc', 'switch'];
+        const normalizedPlatform = platform === 'xbox' ? 'xbox-series-xs' : (platform === 'nx' ? 'switch' : platform);
         
         if (!validPlatforms.includes(platform) && !validPlatforms.includes(normalizedPlatform)) {
-          return interaction.reply({ content: '❌ Invalid platform. Use: ps5, ps4, xbox, or pc', flags: 64 });
+          return interaction.reply({ content: '❌ Invalid platform. Use: ps5, xbox, pc, or switch', flags: 64 });
         }
 
         await interaction.deferReply({ flags: 64 });
@@ -13371,7 +13342,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             });
           }
 
-          const eaClub = clubs[0];
+          const eaClub = findExactClubMatch(clubs, clubName) || clubs[0];
           const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
 
           if (!currentClub) {
@@ -13380,6 +13351,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
           currentClub.ea_club_id = eaClub.clubId?.toString();
           currentClub.ea_platform = normalizedPlatform;
+          currentClub.ea_club_name = eaClub.name || clubName;
+          currentClub.ea_fc_version = EA_FC_VERSION;
           currentClub.monitoring_enabled = true;
           currentClub.last_match_id = null;
 
@@ -13725,14 +13698,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const eaPlatform = interaction.fields.getTextInputValue('ea_platform').trim().toLowerCase();
         
         // Validate platform
-        const validPlatforms = ['ps5', 'ps4', 'xbox', 'xbox-series-xs', 'xboxone', 'pc'];
+        const validPlatforms = ['ps5', 'xbox', 'xbox-series-xs', 'pc', 'switch'];
         let normalizedPlatform = eaPlatform;
         if (eaPlatform === 'xbox') normalizedPlatform = 'xbox-series-xs';
         if (eaPlatform === 'playstation' || eaPlatform === 'ps') normalizedPlatform = 'ps5';
+        if (eaPlatform === 'nx' || eaPlatform === 'nintendo') normalizedPlatform = 'switch';
         
         if (!validPlatforms.includes(normalizedPlatform) && !validPlatforms.includes(eaPlatform)) {
           return interaction.reply({
-            content: '❌ Invalid platform. Use: ps5, ps4, xbox, or pc',
+            content: '❌ Invalid platform. Use: ps5, xbox, pc, or switch',
             flags: 64
           });
         }
@@ -13921,14 +13895,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const eaPlatform = interaction.fields.getTextInputValue('ea_platform').trim().toLowerCase();
 
         // Validate platform
-        const validPlatforms = ['ps5', 'ps4', 'xbox', 'xbox-series-xs', 'xboxone', 'pc'];
+        const validPlatforms = ['ps5', 'xbox', 'xbox-series-xs', 'pc', 'switch'];
         let normalizedPlatform = eaPlatform;
         if (eaPlatform === 'xbox') normalizedPlatform = 'xbox-series-xs';
         if (eaPlatform === 'playstation' || eaPlatform === 'ps') normalizedPlatform = 'ps5';
+        if (eaPlatform === 'nx' || eaPlatform === 'nintendo') normalizedPlatform = 'switch';
 
         if (!validPlatforms.includes(normalizedPlatform) && !validPlatforms.includes(eaPlatform)) {
           return interaction.reply({
-            content: '❌ Invalid platform. Use: ps5, ps4, xbox, or pc',
+            content: '❌ Invalid platform. Use: ps5, xbox, pc, or switch',
             flags: 64
           });
         }
@@ -13945,8 +13920,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
             });
           }
 
-          // Use the first (best) match
-          const eaClub = results[0];
+          // Prefer an exact name match, otherwise the first (best) result
+          const eaClub = findExactClubMatch(results, eaClubName) || results[0];
           const club = state.clubs?.find(c => c.key === clubKey);
 
           if (!club) {
@@ -13956,6 +13931,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
           // Update the club with EA info
           club.ea_club_id = eaClub.clubId;
           club.ea_platform = normalizedPlatform;
+          club.ea_club_name = eaClub.name || eaClubName;
+          club.ea_fc_version = EA_FC_VERSION;
           club.monitoring_enabled = true;
           club.last_match_id = null;
 
@@ -13994,14 +13971,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const eaPlatform = interaction.fields.getTextInputValue('ea_platform').trim().toLowerCase();
 
         // Validate platform
-        const validPlatforms = ['ps5', 'ps4', 'xbox', 'xbox-series-xs', 'xboxone', 'pc'];
+        const validPlatforms = ['ps5', 'xbox', 'xbox-series-xs', 'pc', 'switch'];
         let normalizedPlatform = eaPlatform;
         if (eaPlatform === 'xbox') normalizedPlatform = 'xbox-series-xs';
         if (eaPlatform === 'playstation' || eaPlatform === 'ps') normalizedPlatform = 'ps5';
+        if (eaPlatform === 'nx' || eaPlatform === 'nintendo') normalizedPlatform = 'switch';
 
         if (!validPlatforms.includes(normalizedPlatform) && !validPlatforms.includes(eaPlatform)) {
           return interaction.reply({
-            content: '❌ Invalid platform. Use: ps5, ps4, xbox, or pc',
+            content: '❌ Invalid platform. Use: ps5, xbox, pc, or switch',
             flags: 64
           });
         }
@@ -15585,8 +15563,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
           const platformInput = new TextInputBuilder()
             .setCustomId('ea_platform')
-            .setLabel('Platform (ps5, ps4, xbox, pc)')
-            .setPlaceholder('ps5, ps4, xbox, or pc')
+            .setLabel('Platform (ps5, xbox, pc, switch)')
+            .setPlaceholder('ps5, xbox, pc, or switch')
             .setStyle(TextInputStyle.Short)
             .setRequired(true)
             .setValue(club.ea_platform || 'ps5');
@@ -15621,8 +15599,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
           const platformInput = new TextInputBuilder()
             .setCustomId('ea_platform')
-            .setLabel('Platform (ps5, ps4, xbox, pc)')
-            .setPlaceholder('ps5, ps4, xbox, or pc')
+            .setLabel('Platform (ps5, xbox, pc, switch)')
+            .setPlaceholder('ps5, xbox, pc, or switch')
             .setStyle(TextInputStyle.Short)
             .setRequired(true)
             .setValue(existingProfile?.ea_platform || 'ps5');
@@ -16113,11 +16091,67 @@ async function callEdgeFunction(functionName, body, timeoutMs = 120000) {
 // Platform display names for embeds
 const EA_PLATFORM_NAMES = {
   'ps5': 'PlayStation 5',
-  'ps4': 'PlayStation 4',
   'xbox-series-xs': 'Xbox Series X|S',
-  'xboxone': 'Xbox One',
-  'pc': 'PC'
+  'pc': 'PC',
+  'switch': 'Nintendo Switch',
+  // Pre-FC27 values still stored on some clubs (queried on gen5 now)
+  'ps4': 'PlayStation 4',
+  'xboxone': 'Xbox One'
 };
+
+// Clubs linked with this version have FC27 club IDs; older ones get relinked by name once
+const EA_FC_VERSION = 'fc27';
+const eaRelinkAttempted = new Set();
+
+// Search every FC27 platform (or just the requested one) and prefer an exact name match.
+// Returns { club, platform } where platform is the value stored on the club, or null.
+async function searchClubByNameAllPlatforms(name, requestedPlatform = null, { exactOnly = false } = {}) {
+  const fcPlatforms = requestedPlatform ? [toFcPlatform(requestedPlatform)] : FC_PLATFORMS;
+  let fallback = null;
+  for (const fcPlatform of fcPlatforms) {
+    let clubs = [];
+    try {
+      clubs = await searchClub({ name, platform: fcPlatform });
+    } catch (err) {
+      console.log(`[EA] Search failed for ${fcPlatform}:`, err.message);
+      continue;
+    }
+    const platform = requestedPlatform || fromFcPlatform(fcPlatform);
+    const exact = findExactClubMatch(clubs, name);
+    if (exact) return { club: exact, platform };
+    if (!fallback && clubs.length > 0) fallback = { club: clubs[0], platform };
+  }
+  return exactOnly ? null : fallback;
+}
+
+// FC27 scrambled club IDs. Re-find a club linked before FC27 by its EA name and update its ID.
+// Only relinks on an exact name match so a club is never moved to a lookalike.
+async function relinkClubForFc27(guildId, clubKey) {
+  const monitorKey = `${guildId}_${clubKey}`;
+  if (eaRelinkAttempted.has(monitorKey)) return null;
+  eaRelinkAttempted.add(monitorKey);
+
+  const state = await getGuildState(guildId);
+  const club = state?.clubs?.find(c => c.key === clubKey);
+  if (!club?.ea_club_id || club.ea_fc_version === EA_FC_VERSION) return null;
+
+  const searchName = club.ea_club_name || club.name;
+  const found = await searchClubByNameAllPlatforms(searchName, null, { exactOnly: true });
+  if (!found) {
+    console.log(`[EA] FC27 relink: no exact match for "${searchName}" (${monitorKey}); use /setclub to relink`);
+    return null;
+  }
+
+  const oldId = club.ea_club_id;
+  club.ea_club_id = found.club.clubId?.toString();
+  club.ea_platform = found.platform;
+  club.ea_club_name = found.club.name || searchName;
+  club.ea_fc_version = EA_FC_VERSION;
+  if (oldId !== club.ea_club_id) club.last_match_id = null;
+  await saveGuildSettings(guildId, state);
+  console.log(`[EA] FC27 relink: "${searchName}" ${oldId} -> ${club.ea_club_id} (${found.platform})`);
+  return club;
+}
 
 // Start EA monitoring for a specific club
 async function startEaMonitoring(guildId, clubKey) {
@@ -16158,9 +16192,16 @@ async function checkForNewMatches(guildId, clubKey) {
     const state = await getGuildState(guildId);
     if (!state) return;
     
-    const club = state.clubs?.find(c => c.key === clubKey);
+    let club = state.clubs?.find(c => c.key === clubKey);
     if (!club?.ea_club_id || !club?.ea_platform || !club?.monitoring_enabled) {
       return;
+    }
+
+    if (club.ea_fc_version !== EA_FC_VERSION) {
+      const relinked = await relinkClubForFc27(guildId, clubKey);
+      if (relinked) {
+        return checkForNewMatches(guildId, clubKey);
+      }
     }
     
     console.log(`[EA] Checking matches for ${club.name} (${club.ea_club_id})`);
