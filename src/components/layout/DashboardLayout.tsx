@@ -11,13 +11,11 @@ import {
   Gamepad2,
   Swords,
   Target,
-  Medal,
   UsersRound,
   Settings,
   Star,
   MessageSquare,
   LogOut,
-  Globe,
   Lightbulb
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -39,8 +37,6 @@ const navItems = [
   { path: "/drafts", label: "Drafts", icon: Swords },
   { path: "/scouting", label: "Scouting", icon: Target },
   { path: "/squadiq", label: "SquadIQ", icon: MessageSquare },
-  { path: "/global-league", label: "Global League", icon: Globe },
-  { path: "/tournaments", label: "Tournaments", icon: Medal },
   { path: "/competitions", label: "Wins", icon: Trophy },
   { path: "/profile", label: "Profile", icon: User },
   { path: "/settings", label: "Settings", icon: Settings },
