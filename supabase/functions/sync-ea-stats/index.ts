@@ -273,9 +273,13 @@ const EA_FC_VERSION = 'fc27'
 async function relinkClubForFc27(club: any): Promise<{ changed: boolean; confirmed: boolean }> {
   const searchName = club.ea_club_name || club.name
   if (!searchName) return { changed: false, confirmed: false }
-  for (const fcPlatform of FC_PLATFORMS) {
+  const searches = FC_PLATFORMS.flatMap((fcPlatform) => [
+    { fcPlatform, url: `https://proclubs.ea.com/api/fc/allTimeLeaderboard/search?platform=${fcPlatform}&clubName=${encodeURIComponent(searchName)}` },
+    // New FC27 clubs may not be on the all-time leaderboard yet; the plain club search still finds them
+    { fcPlatform, url: `https://proclubs.ea.com/api/fc/clubs/search?platform=${fcPlatform}&clubName=${encodeURIComponent(searchName)}` },
+  ])
+  for (const { fcPlatform, url } of searches) {
     try {
-      const url = `https://proclubs.ea.com/api/fc/allTimeLeaderboard/search?platform=${fcPlatform}&clubName=${encodeURIComponent(searchName)}`
       const response = await eaFetch(url, { headers: EA_HEADERS })
       if (!response.ok) {
         console.warn(`[EA] FC27 relink search for "${searchName}" on ${fcPlatform}: HTTP ${response.status}`)
@@ -287,7 +291,7 @@ async function relinkClubForFc27(club: any): Promise<{ changed: boolean; confirm
       const exact = results.find((r: any) => normalizeClubName(r?.clubInfo?.name || r?.name) === normalizeClubName(searchName))
       if (!exact) {
         const names = results.slice(0, 5).map((r: any) => `${r?.clubInfo?.name || r?.name} (${r?.clubId ?? r?.clubInfo?.clubId})`)
-        console.log(`[EA] FC27 relink search "${searchName}" on ${fcPlatform}: ${results.length} results${names.length ? `: ${names.join(', ')}` : ''}`)
+        console.log(`[EA] FC27 relink search "${searchName}" via ${url.split('/api/fc/')[1].split('?')[0]} on ${fcPlatform}: ${results.length} results${names.length ? `: ${names.join(', ')}` : ''}`)
         continue
       }
       const newId = String(exact.clubId ?? exact.clubInfo?.clubId ?? '')
