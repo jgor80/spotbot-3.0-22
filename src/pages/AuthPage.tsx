@@ -102,7 +102,7 @@ export default function AuthPage() {
           </div>
           <CardTitle className="text-2xl font-bold">GafferBot</CardTitle>
           <CardDescription>
-            Sign in to access player ratings and evaluations
+            Sign in to run your club: lineups, stats and match night
           </CardDescription>
         </CardHeader>
         <CardContent>

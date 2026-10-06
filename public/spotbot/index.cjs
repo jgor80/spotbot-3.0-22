@@ -24,6 +24,8 @@ const { createClient } = require('@supabase/supabase-js');
 const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.cjs');
 const { createSquads, SQUAD_COMMANDS } = require('./squads.cjs');
 const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
+const { parseWhen: parseEventWhen } = require('./event-time.cjs');
+const embedStyle = require('./embed-style.cjs');
 const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
 const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
 const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
@@ -353,6 +355,8 @@ const clubEvents = createEvents({
   canManageClub: squads.canManageClub,
   dashboardUrl: process.env.DASHBOARD_URL
 });
+
+embedStyle.install({ loadBranding: async (guildId) => (await clubEvents.serverPrefs(guildId)).branding });
 
 const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub });
 
@@ -2930,7 +2934,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
   
   // Header embed with branding
   const headerEmbed = new EmbedBuilder()
-    .setTitle('🎮 GAFFERBOT CONTROL CENTER')
+    .setTitle('🎮 GafferBot Control Center')
     .setColor(0x5865f2)
     .setDescription(
       '**Your central hub for squad management, drafts, and player analytics.**\n\n' +
@@ -2953,7 +2957,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
   }
   
   const clubStatusEmbed = new EmbedBuilder()
-    .setTitle('⚽ CLUB STATUS')
+    .setTitle('⚽ Club Status')
     .setColor(filledSlots === totalSlots ? 0x00ff00 : filledSlots > 0 ? 0xffcc00 : 0x5865f2)
     .addFields(
       { name: '🏟️ Club', value: club?.name || 'None', inline: true },
@@ -3031,7 +3035,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
   // Stats overview embed
   const feedbackEnabled = state?.feedbackEnabled !== false;
   const statsEmbed = new EmbedBuilder()
-    .setTitle('📊 SYSTEM STATUS')
+    .setTitle('📊 System Status')
     .setColor(0x00d4aa)
     .addFields(
       { name: '👥 Players Registered', value: `${playerCount}`, inline: true },
@@ -3048,7 +3052,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
   
   // Quick actions reference - button-based
   const actionsEmbed = new EmbedBuilder()
-    .setTitle('🛠️ QUICK ACTIONS')
+    .setTitle('🛠️ Quick Actions')
     .setColor(0xff6b35)
     .setDescription(
       '**Use the buttons below to access all features:**\n\n' +
@@ -3789,7 +3793,7 @@ async function transitionToPicking(interaction, draftData, guildId) {
     : draftData.captain_b.discord_user_id;
   
   const embed = new EmbedBuilder()
-    .setTitle('⚔️ DRAFT IN PROGRESS')
+    .setTitle('⚔️ Draft In Progress')
     .setColor(0xff6b35)
     .setDescription(`**Pick #${draftData.pick_number || 1}** – <@${currentPicker}>'s turn to pick!`)
     .addFields(
@@ -3894,6 +3898,7 @@ function buildDraftPickButtonRows(availablePlayers, draftId, currentPickerId) {
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`✅ GafferBot logged in as ${c.user.tag}`);
+  embedStyle.setFooterIcon(c.user.displayAvatarURL({ size: 64 }));
 
   try {
     // One-time cleanup: Remove all guild-specific commands to fix duplicates
@@ -4133,7 +4138,8 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 // MAIN INTERACTION HANDLER
 // =======================
 
-client.on(Events.InteractionCreate, async (interaction) => {
+// Every embed sent while handling the interaction picks up the server's /brand style (embed-style.cjs)
+client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(interaction.guildId, async () => {
   try {
     // Events: /event, /available, autocomplete, and board buttons (also used from reminder DMs)
     if (await clubEvents.handleInteraction(interaction)) return;
@@ -8475,7 +8481,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         
         // NEW: Show captain confirmation embed instead of immediately starting picks
         const confirmEmbed = new EmbedBuilder()
-          .setTitle('⚔️ DRAFT - CAPTAIN CONFIRMATION')
+          .setTitle('⚔️ Draft · Captain Confirmation')
           .setColor(0xff6b35)
           .setDescription(
             '**Captains must confirm before the draft begins!**\n\n' +
@@ -9433,6 +9439,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       // Create Event modal trigger
+      if (id === 'squadiq_event_list') {
+        await interaction.deferReply({ flags: 64 });
+        return interaction.editReply(await clubEvents.buildEventList(guildId));
+      }
+
       if (id === 'squadiq_event_create') {
         if (!isManager(interaction.member)) {
           return interaction.reply({ content: '❌ Admin only.', flags: 64 });
@@ -9637,7 +9648,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         } else {
           // Update embed to show confirmation
           const confirmEmbed = new EmbedBuilder()
-            .setTitle('⚔️ DRAFT - CAPTAIN CONFIRMATION')
+            .setTitle('⚔️ Draft · Captain Confirmation')
             .setColor(0xff6b35)
             .setDescription(
               '**Captains must confirm before the draft begins!**\n\n' +
@@ -9724,7 +9735,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         } else {
           // Update embed to show confirmation
           const confirmEmbed = new EmbedBuilder()
-            .setTitle('⚔️ DRAFT - CAPTAIN CONFIRMATION')
+            .setTitle('⚔️ Draft · Captain Confirmation')
             .setColor(0xff6b35)
             .setDescription(
               '**Captains must confirm before the draft begins!**\n\n' +
@@ -9807,7 +9818,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         activeDrafts.delete(guildId);
         
         const declineEmbed = new EmbedBuilder()
-          .setTitle('⚔️ DRAFT CANCELLED')
+          .setTitle('⚔️ Draft Cancelled')
           .setColor(0xff0000)
           .setDescription(
             `**<@${interaction.user.id}> declined to be captain.**\n\n` +
@@ -9882,7 +9893,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Check if draft is complete
         if (data.draft_complete || (data.available_players || []).length === 0) {
           const completeEmbed = new EmbedBuilder()
-            .setTitle('⚔️ DRAFT COMPLETE!')
+            .setTitle('⚔️ Draft Complete!')
             .setColor(0x00ff00)
             .addFields(
               { 
@@ -9926,7 +9937,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             : draftData.captain_b.discord_user_id;
           
           const embed = new EmbedBuilder()
-            .setTitle('⚔️ DRAFT IN PROGRESS')
+            .setTitle('⚔️ Draft In Progress')
             .setColor(0xff6b35)
             .setDescription(`**Pick #${data.pick_number || 1}** – <@${nextPickerId}>'s turn to pick!`)
             .addFields(
@@ -11882,6 +11893,46 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       // Scout Player select menu handler
+      if (id === 'scoutpanel_list_select') {
+        const listId = interaction.values[0];
+        await interaction.deferReply({ flags: 64 });
+        const { data: list } = await supabase
+          .from('scouting_lists')
+          .select('name, description, player_ids, is_public, created_by_discord_id')
+          .eq('guild_id', guildId)
+          .eq('id', listId)
+          .maybeSingle();
+        if (!list || (!list.is_public && list.created_by_discord_id !== interaction.user.id)) {
+          return interaction.editReply({ content: '❌ That list is gone or private.' });
+        }
+        const ids = list.player_ids || [];
+        const { data: players } = ids.length
+          ? await supabase
+              .from('player_summary')
+              .select('discord_user_id, discord_username, primary_position, overall_rating')
+              .eq('guild_id', guildId)
+              .in('discord_user_id', ids)
+          : { data: [] };
+        const byId = new Map((players || []).map((p) => [p.discord_user_id, p]));
+        const lines = ids.slice(0, 40).map((pid, i) => {
+          const p = byId.get(pid);
+          if (!p) return `${i + 1}. <@${pid}>`;
+          const ovr = p.overall_rating ? ` · ${Math.round(p.overall_rating)} OVR` : '';
+          return `${i + 1}. <@${pid}> · ${p.primary_position || 'ANY'}${ovr}`;
+        });
+        const embed = new EmbedBuilder()
+          .setTitle(`📋 ${list.name}`)
+          .setColor(0x5865f2)
+          .setDescription(
+            [list.description, lines.length ? lines.join('\n') : 'No players on this list yet. Add them from the dashboard Scouting page.']
+              .filter(Boolean)
+              .join('\n\n')
+              .slice(0, 4000)
+          )
+          .setFooter({ text: `${ids.length} player${ids.length === 1 ? '' : 's'} · ${list.is_public ? 'Public' : 'Private'}` });
+        return interaction.editReply({ embeds: [embed] });
+      }
+
       if (id === 'scoutpanel_scoutplayer_select') {
         const playerId = interaction.values[0];
         
@@ -12835,12 +12886,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .eq('discord_user_id', interaction.user.id)
           .in('role', ['owner', 'manager', 'captain']);
 
-        if (!roleData || roleData.length === 0) {
-          return interaction.editReply({ content: '❌ You no longer have permission to rate players.' });
-        }
-
-        const roles = roleData.map(r => r.role);
-        const evaluatorRole = roles.includes('owner') ? 'owner' : roles.includes('manager') ? 'manager' : 'captain';
+        // Every player can rate; the role only sets how much the rating counts.
+        const roles = (roleData || []).map(r => r.role);
+        const evaluatorRole = roles.includes('owner') ? 'owner' : roles.includes('manager') ? 'manager' : roles.includes('captain') ? 'captain' : 'player';
 
         // Parse ratings from modal fields
         const parseRating = (fieldId) => {
@@ -12906,7 +12954,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .eq('discord_user_id', playerId)
           .maybeSingle();
 
-        const trustWeight = evaluatorRole === 'owner' ? '2.0x' : evaluatorRole === 'manager' ? '1.5x' : '1.25x';
+        const trustWeight = evaluatorRole === 'owner' ? '2.0x' : evaluatorRole === 'manager' ? '1.5x' : evaluatorRole === 'captain' ? '1.25x' : '1.0x';
 
         const embed = new EmbedBuilder()
           .setTitle('✅ Performance Rating Submitted!')
@@ -13862,46 +13910,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.deferReply({ flags: 64 });
 
         try {
-          // Parse the date
-          const scheduledAt = new Date(eventDate);
-          if (isNaN(scheduledAt.getTime())) {
-            return interaction.editReply({ content: '❌ Invalid date format. Use YYYY-MM-DD HH:MM' });
+          // Post through the events module so the board gets working buttons, reminders and a timezone.
+          const { timezone } = await clubEvents.serverPrefs(guildId);
+          const scheduledAt = parseEventWhen(eventDate, timezone);
+          if (!scheduledAt) {
+            return interaction.editReply({ content: '❌ I could not read that date. Try `2026-10-15 20:00` or `thu 9pm`.' });
           }
-
-          const { data: event, error } = await supabase
-            .from('availability_events')
-            .insert({
+          const typeKey = eventType.toLowerCase().replace(/^scrimmage$/, 'scrim').replace(/^practice$/, 'training');
+          const event = await clubEvents.postEvent(
+            {
               guild_id: guildId,
               title: eventTitle,
-              event_type: eventType,
+              event_type: ['league', 'friendly', 'scrim', 'training', 'tryout', 'tournament', 'match'].includes(typeKey) ? typeKey : 'match',
               scheduled_at: scheduledAt.toISOString(),
               created_by_discord_id: interaction.user.id,
               channel_id: interaction.channel?.id
-            })
-            .select()
-            .single();
-
-          if (error) {
-            return interaction.editReply({ content: `❌ Failed to create event: ${error.message}` });
-          }
-
-          const embed = new EmbedBuilder()
-            .setTitle(`📅 ${eventTitle}`)
-            .setColor(0x5865f2)
-            .setDescription(`**Type:** ${eventType}\n**When:** ${scheduledAt.toLocaleString()}\n\nRespond with your availability!`)
-            .setFooter({ text: 'Click a button to respond' });
-
-          const buttons = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`event_yes_${event.id}`).setLabel('✅ Available').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId(`event_no_${event.id}`).setLabel('❌ Unavailable').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId(`event_maybe_${event.id}`).setLabel('❓ Maybe').setStyle(ButtonStyle.Secondary)
+            },
+            interaction.channel
           );
-
-          await interaction.editReply({
-            content: '✅ Event created!',
-            embeds: [embed],
-            components: [buttons]
-          });
+          return interaction.editReply({ content: `✅ **${event.title}** is posted in this channel. Players answer on the board.` });
         } catch (err) {
           console.error('[Event Create Modal] Error:', err);
           return interaction.editReply({ content: `❌ Error: ${err.message}` });
@@ -15862,7 +15889,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     console.error('❌ Error handling interaction:', err);
     await replyWithError(interaction);
   }
-});
+}));
 
 // =======================
 // EDGE FUNCTION HELPER
@@ -17422,7 +17449,7 @@ function buildDraftEmbed(draftData, guild) {
   const currentPicker = draftData.current_picker === 'a' ? draftData.captain_a_discord_id : draftData.captain_b_discord_id;
   
   return new EmbedBuilder()
-    .setTitle('⚔️ DRAFT IN PROGRESS')
+    .setTitle('⚔️ Draft In Progress')
     .setColor(0xff6b35)
     .addFields(
       { name: `🔴 Team A (Captain: <@${draftData.captain_a_discord_id}>)`, value: teamALines, inline: true },

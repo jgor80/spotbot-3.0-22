@@ -1375,6 +1375,7 @@ function createEvents(deps) {
     handleInteraction,
     start,
     buildEventList,
+    postEvent,
     serverPrefs,
     forgetPrefs,
     loadEvent,

@@ -71,9 +71,9 @@ function Lift({ value, hasBaseline }: { value: number; hasBaseline: boolean }) {
 function StatTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <Card>
-      <CardContent className="p-4">
+      <CardContent className="p-3 sm:p-4">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-2xl font-bold mt-1">{value}</p>
+        <p className="mt-1 font-display text-xl font-bold sm:text-2xl">{value}</p>
         {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
       </CardContent>
     </Card>
@@ -137,12 +137,12 @@ export default function InsightsPage() {
       <div className="space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Club Insights</h1>
-            <p className="text-muted-foreground text-sm">What works and what doesn't, from your synced EA matches.</p>
+            <h1 className="font-display text-2xl font-bold leading-tight md:text-3xl">Tactical Insights</h1>
+            <p className="mt-1 text-sm text-muted-foreground md:text-base">What works and what doesn't, from your synced EA matches.</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap">
             <Select value={clubKey} onValueChange={setClubKey}>
-              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All clubs</SelectItem>
                 {selectedGuild?.clubs.map((c) => (
@@ -151,13 +151,13 @@ export default function InsightsPage() {
               </SelectContent>
             </Select>
             <Select value={matchType} onValueChange={setMatchType}>
-              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {MATCH_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={range} onValueChange={setRange}>
-              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-32"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {RANGES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
               </SelectContent>

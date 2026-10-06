@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import html2canvas from "html2canvas";
-import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { DashboardLayout, PageHeader } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -124,9 +124,10 @@ export default function TeamsPage() {
   // The event board's Build Lineup link opens /teams?event=<id>
   const [searchParams] = useSearchParams();
   const [lineupEventId, setLineupEventId] = useState<string>(searchParams.get("event") || "");
-  const [activeTab, setActiveTab] = useState(searchParams.get("event") ? "lineup" : "teams");
+  const [activeTab, setActiveTab] = useState(searchParams.get("tab") === "teams" ? "teams" : "lineup");
   const [isFillingFromEvent, setIsFillingFromEvent] = useState(false);
   const pitchRef = useRef<HTMLDivElement>(null);
+  const poolRef = useRef<HTMLDivElement>(null);
 
   // Available players for lineup
   const { data: availablePlayers, isLoading: playersLoading } = useAvailablePlayers(selectedGuildId);
@@ -390,6 +391,10 @@ export default function TeamsPage() {
       setSelectedSlot(null);
     } else {
       setSelectedSlot(slotIndex);
+      // On phones the player list sits below the pitch, so bring it into view
+      if (window.matchMedia("(max-width: 1023px)").matches) {
+        poolRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }
   };
 
@@ -686,20 +691,17 @@ export default function TeamsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="font-display text-3xl font-bold">Teams & Lineups</h1>
-          <p className="text-muted-foreground">Manage teams, rosters, and build lineups</p>
-        </div>
+        <PageHeader title="Lineup Builder" description="Pick the XI for the next game, post it to Discord, and manage your squads." />
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="teams" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Teams
-            </TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2 sm:inline-flex sm:w-auto">
             <TabsTrigger value="lineup" className="flex items-center gap-2">
               <ClipboardList className="h-4 w-4" />
-              Lineup Builder
+              Lineup
+            </TabsTrigger>
+            <TabsTrigger value="teams" className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Squads
             </TabsTrigger>
           </TabsList>
 
@@ -1012,13 +1014,13 @@ export default function TeamsPage() {
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : availablePlayers && availablePlayers.length > 0 ? (
-              <div className="grid lg:grid-cols-5 gap-6">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-5 lg:items-start">
                 {/* Formation Pitch */}
                 <div className="lg:col-span-3 space-y-4">
                   <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 p-4 pb-2 sm:p-6 sm:pb-2">
                       <CardTitle>Formation</CardTitle>
-                      <div className="flex items-center gap-2">
+                      <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
                         <Button
                           variant="outline"
                           size="sm"
@@ -1030,7 +1032,8 @@ export default function TeamsPage() {
                           ) : (
                             <Headphones className="h-4 w-4 mr-2" />
                           )}
-                          Fill from Voice
+                          <span className="sm:hidden">Voice</span>
+                          <span className="hidden sm:inline">Fill from Voice</span>
                         </Button>
                         {lineupEventId && (
                           <Button
@@ -1044,7 +1047,8 @@ export default function TeamsPage() {
                             ) : (
                               <CalendarCheck className="h-4 w-4 mr-2" />
                             )}
-                            Fill from Availability
+                            <span className="sm:hidden">Availability</span>
+                            <span className="hidden sm:inline">Fill from Availability</span>
                           </Button>
                         )}
                         <Button 
@@ -1061,7 +1065,7 @@ export default function TeamsPage() {
                           Export
                         </Button>
                         <Select value={formation} onValueChange={(v) => setFormation(v as FormationType)}>
-                          <SelectTrigger className="w-40">
+                          <SelectTrigger className="order-first col-span-2 w-full sm:order-none sm:w-40">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -1072,8 +1076,8 @@ export default function TeamsPage() {
                         </Select>
                       </div>
                     </CardHeader>
-                    <CardContent>
-                      <div ref={pitchRef}>
+                    <CardContent className="p-4 pt-2 sm:p-6 sm:pt-2">
+                      <div ref={pitchRef} className="mx-auto max-w-[540px]">
                         <FormationPitch
                           formation={formation}
                           slots={slots}
@@ -1156,8 +1160,8 @@ export default function TeamsPage() {
                 </div>
 
                 {/* Player Pool */}
-                <div className="lg:col-span-2">
-                  <Card className="h-full">
+                <div ref={poolRef} className="scroll-mt-20 lg:sticky lg:top-24 lg:col-span-2">
+                  <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="flex items-center justify-between">
                         <span>Available Players</span>
@@ -1174,7 +1178,7 @@ export default function TeamsPage() {
                       </div>
                     </CardHeader>
                     <CardContent className="p-0">
-                      <ScrollArea className="h-[500px] px-4 pb-4">
+                      <ScrollArea className="h-[420px] px-4 pb-4 lg:h-[calc(100vh-15rem)]">
                         <div className="space-y-2">
                           {selectedSlot !== null && (
                             <div className="sticky top-0 bg-card py-2 z-10 border-b">

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link as RouterLink } from "react-router-dom";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -274,23 +275,6 @@ export default function GafferBotPanel() {
     });
   };
 
-  // === LINEUP COMMANDS ===
-  const handleSuggestLineup = async () => {
-    await runCommand("Suggest Lineup", async () => {
-      const { data, error } = await supabase.functions.invoke("suggest-optimal-lineup", {
-        body: { guild_id: selectedGuildId }
-      });
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
-      
-      appendOutput(
-        "⚽ Optimal Lineup",
-        data.message || "Lineup suggestion generated based on available players and position preferences."
-      );
-      toast({ title: "Lineup Suggested", description: "AI-optimized lineup ready" });
-    });
-  };
-
   // === TWITCH COMMANDS ===
   const handleTwitchInfo = (action: "setup" | "list" | "remove") => {
     const messages: Record<string, string> = {
@@ -317,7 +301,7 @@ export default function GafferBotPanel() {
   const handleCreateEvent = () => {
     appendOutput(
       "📅 Create Event",
-      `Use in Discord: /event title:"${eventTitle || "<title>"}" date:"${eventDate || "2024-01-15 20:00"}" type:league\nCreates an availability event for the team.`
+      `Use in Discord: /event new when:"${eventDate || "thu 9pm"}" title:"${eventTitle || "<title>"}" type:league\nPosts an availability board for the team.`
     );
   };
 
@@ -569,13 +553,12 @@ export default function GafferBotPanel() {
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="space-y-3 pt-2">
-                  <Button 
-                    onClick={handleSuggestLineup}
-                    disabled={activeCommand === "Suggest Lineup"}
-                    className="w-full gap-2"
-                  >
-                    {activeCommand === "Suggest Lineup" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                    AI Suggest Optimal Lineup
+                  {/* Suggestions need the night's available players, which the Lineup Builder has */}
+                  <Button asChild className="w-full gap-2">
+                    <RouterLink to="/teams">
+                      <Sparkles className="h-4 w-4" />
+                      Open Lineup Builder
+                    </RouterLink>
                   </Button>
                   <p className="text-xs text-muted-foreground">
                     Discord-only: /draft, /draftpick, /draftresult, /draftpanel
