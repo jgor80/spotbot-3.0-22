@@ -39,6 +39,7 @@ const { createDossier } = require('./dossier.cjs');
 const { createStreamKit, OVERLAY_SUBCOMMAND } = require('./stream-kit.cjs');
 const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
+const permCheck = require('./perm-check.cjs');
 const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
 
 installProcessGuards();
@@ -1795,14 +1796,8 @@ function getVcPanelByMessage(state, messageId) {
 function isManager(member) {
   if (!member) return false;
 
-  try {
-    const perms = member.permissions;
-    if (perms && typeof perms.has === 'function') {
-      if (perms.has(PermissionsBitField.Flags.ManageGuild)) return true;
-    }
-  } catch (err) {
-    console.warn('⚠️ isManager permissions check failed:', err);
-  }
+  // Server admins (Administrator or Manage Server) always count, cached member or not
+  if (permCheck.isServerAdmin(member)) return true;
 
   if (!member.roles?.cache) return false;
 

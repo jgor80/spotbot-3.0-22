@@ -28,6 +28,20 @@ function canPingRole(channel, me, role) {
   return !!channel?.permissionsFor(me)?.has(F.MentionEveryone);
 }
 
+// Is this member a server admin (Administrator or Manage Server)? Works for cached members and for
+// the raw interaction member Discord sends when the guild isn't cached (permissions is a bitfield string).
+function isServerAdmin(member) {
+  const perms = member?.permissions;
+  if (!perms) return false;
+  try {
+    if (typeof perms.has === 'function') return perms.has(F.Administrator) || perms.has(F.ManageGuild);
+    const bits = BigInt(perms);
+    return (bits & F.Administrator) !== 0n || (bits & F.ManageGuild) !== 0n;
+  } catch {
+    return false;
+  }
+}
+
 function missingPermsMessage(channel, missing) {
   return (
     `❌ I can't post in <#${channel.id}>. I'm missing **${missing.join('**, **')}** there.\n` +
@@ -35,4 +49,4 @@ function missingPermsMessage(channel, missing) {
   );
 }
 
-module.exports = { missingChannelPerms, canPingRole, missingPermsMessage, POST_PERMS };
+module.exports = { missingChannelPerms, canPingRole, missingPermsMessage, isServerAdmin, POST_PERMS };
