@@ -33,6 +33,12 @@ const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
 const { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES } = require('./club-stats.cjs');
+const { createPremium, premiumCommands } = require('./premium.cjs');
+const { createBroadcast, BROADCAST_SUBCOMMANDS } = require('./broadcast.cjs');
+const { createDossier } = require('./dossier.cjs');
+const { createStreamKit, OVERLAY_SUBCOMMAND } = require('./stream-kit.cjs');
+const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
+const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -385,6 +391,25 @@ const autopilot = createAutopilot({
   loadTeam: squads.loadTeam,
   dashboardUrl: process.env.DASHBOARD_URL
 });
+
+// GafferBot Premium: the per-server switch, then the features behind it (all under /premium, plus /scout opponent)
+const premium = createPremium({ supabase });
+const premiumDeps = {
+  supabase,
+  premium,
+  events: clubEvents,
+  autopilot,
+  getGuildState,
+  canManageClub: squads.canManageClub,
+  loadMatches: managerHub.loadMatches,
+  fetchClubMembers,
+  dashboardUrl: process.env.DASHBOARD_URL
+};
+const broadcast = createBroadcast(premiumDeps);
+const dossier = createDossier({ ...premiumDeps, searchClub, matchesStats });
+const streamKit = createStreamKit(premiumDeps);
+const statRoles = createStatRoles(premiumDeps);
+const coach = createCoach({ ...premiumDeps, openai });
 
 const client = new Client({
   intents: [
@@ -814,7 +839,8 @@ const COMMANDS = [
   ...RECRUIT_COMMANDS,
   ...SCOUT_COMMANDS,
   ...TRIAL_COMMANDS,
-  ...LFC_COMMANDS
+  ...LFC_COMMANDS,
+  ...premiumCommands(BROADCAST_SUBCOMMANDS, OVERLAY_SUBCOMMAND, TROPHIES_SUBCOMMAND, COACH_SUBCOMMAND)
 ];
 
 // =======================
@@ -3896,6 +3922,9 @@ client.once(Events.ClientReady, async (c) => {
     // Start Xbox presence polling for game detection
     startXboxPresencePolling(c);
 
+    // Premium: watch Discord App Subscription changes
+    premium.start(c);
+
     // Recurring events, deadline reminders and closing finished events
     clubEvents.start(c);
 
@@ -4109,6 +4138,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (await clubSetup.handleInteraction(interaction)) return;
     // /help, /clubstats members/top/form/matches, /linkea name search
     if (await clubStats.handleInteraction(interaction)) return;
+    // Premium: /premium (status, cards, totw, overlay, trophies, coach) and /scout opponent
+    if (await premium.handleInteraction(interaction)) return;
+    if (await broadcast.handleInteraction(interaction)) return;
+    if (await streamKit.handleInteraction(interaction)) return;
+    if (await statRoles.handleInteraction(interaction)) return;
+    if (await coach.handleInteraction(interaction)) return;
+    if (await dossier.handleInteraction(interaction)) return;
     // Recruitment: /fa, /recruit, /scout, Reach Out (incl. the player's DM buttons) and alert buttons
     if (await scouting.handleInteraction(interaction)) return;
     if (await trials.handleInteraction(interaction)) return;
