@@ -285,7 +285,11 @@ async function relinkClubForFc27(club: any): Promise<{ changed: boolean; confirm
       const data = await response.json()
       const results: any[] = Array.isArray(data) ? data : Object.values(data || {})
       const exact = results.find((r: any) => normalizeClubName(r?.clubInfo?.name || r?.name) === normalizeClubName(searchName))
-      if (!exact) continue
+      if (!exact) {
+        const names = results.slice(0, 5).map((r: any) => `${r?.clubInfo?.name || r?.name} (${r?.clubId ?? r?.clubInfo?.clubId})`)
+        console.log(`[EA] FC27 relink search "${searchName}" on ${fcPlatform}: ${results.length} results${names.length ? `: ${names.join(', ')}` : ''}`)
+        continue
+      }
       const newId = String(exact.clubId ?? exact.clubInfo?.clubId ?? '')
       if (!newId) continue
       const oldId = String(club.ea_club_id)
