@@ -273,11 +273,10 @@ const EA_FC_VERSION = 'fc27'
 async function relinkClubForFc27(club: any): Promise<{ changed: boolean; confirmed: boolean }> {
   const searchName = club.ea_club_name || club.name
   if (!searchName) return { changed: false, confirmed: false }
-  const searches = FC_PLATFORMS.flatMap((fcPlatform) => [
-    { fcPlatform, url: `https://proclubs.ea.com/api/fc/allTimeLeaderboard/search?platform=${fcPlatform}&clubName=${encodeURIComponent(searchName)}` },
-    // New FC27 clubs may not be on the all-time leaderboard yet; the plain club search still finds them
-    { fcPlatform, url: `https://proclubs.ea.com/api/fc/clubs/search?platform=${fcPlatform}&clubName=${encodeURIComponent(searchName)}` },
-  ])
+  const searches = FC_PLATFORMS.map((fcPlatform) => ({
+    fcPlatform,
+    url: `https://proclubs.ea.com/api/fc/allTimeLeaderboard/search?platform=${fcPlatform}&clubName=${encodeURIComponent(searchName)}`,
+  }))
   for (const { fcPlatform, url } of searches) {
     try {
       const response = await eaFetch(url, { headers: EA_HEADERS })
