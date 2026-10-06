@@ -93,6 +93,61 @@ const EVENT_COMMANDS = [
       },
       {
         type: 1,
+        name: 'edit',
+        description: 'Change an event\'s time, title, deadline or details. The board updates in place.',
+        options: [
+          { name: 'event', description: 'The event.', type: 3, required: true, autocomplete: true },
+          { name: 'when', description: 'New kick-off, e.g. "thu 9pm" or "21/09 18:00".', type: 3, required: false, autocomplete: true },
+          { name: 'title', description: 'New title.', type: 3, required: false },
+          { name: 'deadline', description: 'Answer by, e.g. "2h" before kick-off or "wed 6pm".', type: 3, required: false },
+          { name: 'description', description: 'New details, e.g. opponent or lobby code.', type: 3, required: false },
+        ],
+      },
+      {
+        type: 1,
+        name: 'close',
+        description: 'Stop taking answers for an event (leaders can still mark players).',
+        options: [{ name: 'event', description: 'The event.', type: 3, required: true, autocomplete: true }],
+      },
+      {
+        type: 1,
+        name: 'reopen',
+        description: 'Take answers again for an event you closed.',
+        options: [{ name: 'event', description: 'The event.', type: 3, required: true, autocomplete: true }],
+      },
+      {
+        type: 1,
+        name: 'post',
+        description: 'Post the event board again here (or in a channel), e.g. after it scrolled away.',
+        options: [
+          { name: 'event', description: 'The event.', type: 3, required: true, autocomplete: true },
+          { name: 'channel', description: 'Where to post (defaults to here).', type: 7, required: false, channel_types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
+        ],
+      },
+      {
+        type: 1,
+        name: 'mark',
+        description: "Set or clear a player's answer for them.",
+        options: [
+          { name: 'event', description: 'The event.', type: 3, required: true, autocomplete: true },
+          { name: 'user', description: 'The player.', type: 6, required: true },
+          {
+            name: 'answer',
+            description: 'Their answer.',
+            type: 3,
+            required: true,
+            choices: [
+              { name: 'Available', value: 'yes' },
+              { name: 'Maybe', value: 'maybe' },
+              { name: "Can't make it", value: 'no' },
+              { name: 'Clear their answer', value: 'clear' },
+            ],
+          },
+          { name: 'position', description: 'Position they will play (for position sign-ups).', type: 3, required: false },
+        ],
+      },
+      {
+        type: 1,
         name: 'timezone',
         description: 'Set the timezone plain times like "9pm" are read in.',
         options: [{ name: 'zone', description: 'e.g. Europe/London, America/Chicago.', type: 3, required: true, autocomplete: true }],
@@ -169,7 +224,7 @@ function whenExamples(tz) {
 }
 
 function createEvents(deps) {
-  const { supabase, getGuildState, isManager, dashboardUrl } = deps;
+  const { supabase, getGuildState, saveGuildSettings, isManager, dashboardUrl } = deps;
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
   let client = null;
   let ticking = false;
@@ -212,6 +267,26 @@ function createEvents(deps) {
       .eq('event_id', eventId)
       .order('responded_at', { ascending: true });
     return (data || []).filter((r) => r.response !== 'no_response');
+  }
+
+  // Events a leader closed to new answers, kept on the club in the saved server settings
+  // (like autopilot's settings), so no extra column is needed
+  async function isLocked(event) {
+    if (!event.club_key) return false;
+    const state = await getGuildState(event.guild_id);
+    const club = state?.clubs?.find((c) => c.key === event.club_key);
+    return (club?.locked_events || []).includes(event.id);
+  }
+
+  async function setLocked(event, locked) {
+    const state = await getGuildState(event.guild_id);
+    const club = state?.clubs?.find((c) => c.key === event.club_key);
+    if (!club || !saveGuildSettings) throw new Error('Only club events can be closed to answers.');
+    const ids = new Set(club.locked_events || []);
+    if (locked) ids.add(event.id);
+    else ids.delete(event.id);
+    club.locked_events = [...ids].slice(-50);
+    await saveGuildSettings(event.guild_id, state);
   }
 
   async function clubFor(guildId, clubKey) {
@@ -264,10 +339,12 @@ function createEvents(deps) {
     const { expected, out } = await expectedPlayers(event);
     const deadline = event.deadline_at ? new Date(event.deadline_at) : null;
     const kickoff = T.unix(event.scheduled_at);
+    const locked = !event.closed && (await isLocked(event));
 
     const lines = [`🗓️ <t:${kickoff}:F> (<t:${kickoff}:R>)`, `${info.emoji} ${info.label}${club ? ` · ${club.name}` : ''}`];
     if (event.cancelled) lines.unshift('**❌ Cancelled**');
     else if (event.closed) lines.unshift('**Finished.** Answers are closed.');
+    else if (locked) lines.unshift('🔒 **Answers are closed.** Ask a club leader if yours needs changing.');
     else if (deadline) {
       lines.push(
         deadline > new Date()
@@ -312,7 +389,7 @@ function createEvents(deps) {
     }
 
     const waiting = expected.filter((id) => !answered.has(id));
-    if (waiting.length && !event.closed) {
+    if (waiting.length && !event.closed && !locked) {
       embed.addFields({ name: `⏳ No answer yet (${waiting.length})`, value: truncate(waiting.map((id) => `<@${id}>`).join(' ')) });
     }
     const outLeft = out.filter((o) => !answered.has(o.id));
@@ -324,7 +401,7 @@ function createEvents(deps) {
     }
 
     const components = [];
-    if (!event.closed) {
+    if (!event.closed && !locked) {
       components.push(
         new ActionRowBuilder().addComponents(
           Object.entries(RESPONSES).map(([key, r]) =>
@@ -581,6 +658,7 @@ function createEvents(deps) {
     const event = await loadEvent(eventId);
     if (!event) return interaction.reply({ content: '❌ That event no longer exists.', flags: 64 });
     if (event.closed) return interaction.reply({ content: `❌ **${event.title}** is ${event.cancelled ? 'cancelled' : 'finished'}.`, flags: 64 });
+    if (await isLocked(event)) return interaction.reply({ content: `🔒 Answers for **${event.title}** are closed. Ask a club leader if yours needs changing.`, flags: 64 });
 
     if (response === 'yes' && event.position_signup) {
       const current = await usualPositions(event, interaction.user.id);
@@ -608,7 +686,7 @@ function createEvents(deps) {
 
   async function handlePositionPick(interaction, eventId) {
     const event = await loadEvent(eventId);
-    if (!event || event.closed) return interaction.update({ content: '❌ That event is closed.', components: [] });
+    if (!event || event.closed || (await isLocked(event))) return interaction.update({ content: '❌ That event is closed.', components: [] });
     const picked = POSITIONS.filter((p) => interaction.values.includes(p)).slice(0, MAX_SIGNUP_POSITIONS);
     try {
       await saveResponse(event, interaction.user.id, 'yes', picked.join(','));
@@ -765,6 +843,149 @@ function createEvents(deps) {
         .catch(() => {});
     }
     return interaction.editReply({ content: `✅ Cancelled **${event.title}**${notified ? ` and pinged the ${notified} who said they could play` : ''}.` });
+  }
+
+  // ---------- Leader tools: edit, close/reopen, re-post, mark a player ----------
+
+  // The open event picked in the command, if this member may run it. Replies and returns null otherwise.
+  async function leaderEvent(interaction, { allowClosed = false } = {}) {
+    const event = await loadEvent(interaction.options.getString('event'));
+    if (!event || event.guild_id !== interaction.guildId) {
+      await interaction.reply({ content: '❌ Pick an event from the list.', flags: 64 });
+      return null;
+    }
+    if (event.closed && !allowClosed) {
+      await interaction.reply({ content: `❌ **${event.title}** is already ${event.cancelled ? 'cancelled' : 'finished'}.`, flags: 64 });
+      return null;
+    }
+    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    if (!(club ? await canManageClub(interaction.member, club) : isManager(interaction.member))) {
+      await interaction.reply({ content: `❌ Only ${club ? `${club.name}'s` : 'club'} leaders can change events.`, flags: 64 });
+      return null;
+    }
+    return event;
+  }
+
+  async function handleEdit(interaction) {
+    const event = await leaderEvent(interaction);
+    if (!event) return;
+    const { timezone: tz } = await serverPrefs(event.guild_id);
+    const update = {};
+    const changes = [];
+    const whenText = interaction.options.getString('when');
+    let kickoff = new Date(event.scheduled_at);
+    if (whenText) {
+      const at = T.parseWhen(whenText, tz);
+      if (!at) return interaction.reply({ content: `❌ I couldn't read "${whenText}". ${whenExamples(tz)}`, flags: 64 });
+      if (at.getTime() < Date.now() - 5 * 60000) return interaction.reply({ content: `❌ <t:${T.unix(at)}:F> is in the past.`, flags: 64 });
+      if (at.getTime() !== kickoff.getTime()) {
+        update.scheduled_at = at.toISOString();
+        update.reminder_24h_sent = false;
+        update.reminder_2h_sent = false;
+        // Keep the same answer-by gap before kick-off
+        if (event.deadline_at) update.deadline_at = new Date(new Date(event.deadline_at).getTime() + (at - kickoff)).toISOString();
+        update.deadline_reminder_sent = false;
+        changes.push(`🗓️ moved to <t:${T.unix(at)}:F>`);
+        kickoff = at;
+      }
+    }
+    const deadlineText = interaction.options.getString('deadline');
+    if (deadlineText) {
+      const deadline = T.parseDeadline(deadlineText, kickoff, tz);
+      if (!deadline) return interaction.reply({ content: `❌ I couldn't read the deadline "${deadlineText}". Use "2h" (before kick-off) or a time like "wed 6pm".`, flags: 64 });
+      update.deadline_at = (deadline > kickoff ? kickoff : deadline).toISOString();
+      update.deadline_reminder_sent = false;
+      changes.push(`⏰ answer by <t:${T.unix(update.deadline_at)}:f>`);
+    }
+    const title = interaction.options.getString('title');
+    if (title) {
+      update.title = title.slice(0, 100);
+      changes.push(`title is now **${update.title}**`);
+    }
+    const description = interaction.options.getString('description');
+    if (description) {
+      update.description = description.slice(0, 1000);
+      changes.push('details updated');
+    }
+    if (!changes.length) return interaction.reply({ content: 'Nothing to change. Pick at least one of when, title, deadline or description.', flags: 64 });
+
+    await interaction.deferReply({ flags: 64 });
+    update.updated_at = new Date().toISOString();
+    const { error } = await supabase.from('availability_events').update(update).eq('id', event.id);
+    if (error) return interaction.editReply({ content: `❌ ${error.message}` });
+    const updated = { ...event, ...update };
+    const board = await fetchBoardMessage(updated);
+    if (board) {
+      await board.edit(await buildBoard(updated)).catch(() => {});
+      // A new kick-off time matters to everyone who said they'd play
+      if (update.scheduled_at) {
+        const players = (await loadResponses(event.id)).filter((r) => r.response !== 'no').map((r) => r.discord_user_id);
+        await board
+          .reply({ content: `🕒 **${updated.title}** ${changes[0]}.${players.length ? ` ${players.map((id) => `<@${id}>`).join(' ')}` : ''}`, allowedMentions: { users: players.slice(0, 100) } })
+          .catch(() => {});
+      }
+    }
+    return interaction.editReply({ content: `✅ **${updated.title}**: ${changes.join(', ')}.${board ? '' : ' (The board message is gone; `/event post` puts it back.)'}` });
+  }
+
+  async function handleLock(interaction, locked) {
+    const event = await leaderEvent(interaction);
+    if (!event) return;
+    if ((await isLocked(event)) === locked) {
+      return interaction.reply({ content: `**${event.title}** is already ${locked ? 'closed to answers' : 'taking answers'}.`, flags: 64 });
+    }
+    await interaction.deferReply({ flags: 64 });
+    try {
+      await setLocked(event, locked);
+    } catch (err) {
+      return interaction.editReply({ content: `❌ ${err.message}` });
+    }
+    await refreshBoard(event);
+    return interaction.editReply({
+      content: locked
+        ? `🔒 **${event.title}** is closed to answers. Use \`/event mark\` to change someone's, or \`/event reopen\`.`
+        : `🔓 **${event.title}** is taking answers again.`,
+    });
+  }
+
+  async function handleRepost(interaction) {
+    const event = await leaderEvent(interaction);
+    if (!event) return;
+    const channel = interaction.options.getChannel('channel') || interaction.channel;
+    const missing = missingChannelPerms(channel, interaction.guild.members.me);
+    if (missing.length) return interaction.reply({ content: missingPermsMessage(channel, missing), flags: 64 });
+    await interaction.deferReply({ flags: 64 });
+    const old = await fetchBoardMessage(event);
+    const message = await channel.send(await buildBoard(event)).catch((err) => ({ error: err }));
+    if (message.error) return interaction.editReply({ content: `❌ Couldn't post there: ${message.error.message}` });
+    await supabase.from('availability_events').update({ channel_id: channel.id, message_id: message.id, updated_at: new Date().toISOString() }).eq('id', event.id);
+    if (old) await old.delete().catch(() => old.edit({ content: `➡️ This board moved: ${message.url}`, embeds: [], components: [] }).catch(() => {}));
+    return interaction.editReply({ content: `✅ Posted **${event.title}** in <#${channel.id}>. Answers carry over.` });
+  }
+
+  async function handleMark(interaction) {
+    const event = await leaderEvent(interaction);
+    if (!event) return;
+    const user = interaction.options.getUser('user');
+    if (user.bot) return interaction.reply({ content: '❌ Bots can\'t answer events.', flags: 64 });
+    const answer = interaction.options.getString('answer');
+    await interaction.deferReply({ flags: 64 });
+    if (answer === 'clear') {
+      await supabase.from('player_availability').delete().eq('event_id', event.id).eq('discord_user_id', user.id);
+    } else {
+      const position = interaction.options.getString('position');
+      const picked = position ? position.toUpperCase().split(/[\s,/]+/).filter((p) => POSITIONS.includes(p)).slice(0, MAX_SIGNUP_POSITIONS).join(',') : null;
+      try {
+        await saveResponse(event, user.id, answer, picked || null);
+      } catch (err) {
+        return interaction.editReply({ content: `❌ ${err.message}` });
+      }
+    }
+    await refreshBoard(event);
+    return interaction.editReply({
+      content: answer === 'clear' ? `✅ Cleared <@${user.id}>'s answer for **${event.title}**.` : `${RESPONSES[answer].emoji} <@${user.id}> is down as **${RESPONSES[answer].label}** for **${event.title}**.`,
+      allowedMentions: { parse: [] },
+    });
   }
 
   // ---------- Presets ----------
@@ -1063,6 +1284,7 @@ function createEvents(deps) {
       const end = new Date(event.scheduled_at).getTime() + (event.duration_minutes || 90) * 60000;
       if (end > now.getTime()) continue;
       await supabase.from('availability_events').update({ closed: true, updated_at: now.toISOString() }).eq('id', event.id);
+      if (await isLocked(event).catch(() => false)) await setLocked(event, false).catch(() => {});
       const closed = { ...event, closed: true };
       for (const hook of afterClose) await hook(closed).catch((err) => console.warn(`[events] close hook failed: ${err.message}`));
       await refreshBoard(closed);
@@ -1109,6 +1331,11 @@ function createEvents(deps) {
     else if (sub === 'new') await handleNew(interaction);
     else if (sub === 'list') await interaction.reply({ ...(await buildEventList(interaction.guildId)), flags: 64 });
     else if (sub === 'cancel') await handleCancel(interaction);
+    else if (sub === 'edit') await handleEdit(interaction);
+    else if (sub === 'close') await handleLock(interaction, true);
+    else if (sub === 'reopen') await handleLock(interaction, false);
+    else if (sub === 'post') await handleRepost(interaction);
+    else if (sub === 'mark') await handleMark(interaction);
     else if (sub === 'timezone') await handleTimezone(interaction);
     else if (sub === 'remind') {
       const event = await loadEvent(interaction.options.getString('event'));

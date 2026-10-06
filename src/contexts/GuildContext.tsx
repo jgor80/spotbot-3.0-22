@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Guild {
   guild_id: string;
@@ -27,7 +28,10 @@ export function GuildProvider({ children }: { children: ReactNode }) {
   const [guilds, setGuilds] = useState<Guild[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
 
+  // Refetch when the signed-in user changes: before sign-in the list comes back empty.
   useEffect(() => {
     async function fetchGuilds() {
       try {
@@ -63,10 +67,10 @@ export function GuildProvider({ children }: { children: ReactNode }) {
 
         setGuilds(guildList);
 
-        // Auto-select first guild if none selected
-        if (!selectedGuildId && guildList.length > 0) {
-          setSelectedGuildId(guildList[0].guild_id);
-        }
+        // Keep the saved server if it's still listed, otherwise pick the first one
+        setSelectedGuildId((current) =>
+          guildList.some((g) => g.guild_id === current) ? current : guildList[0]?.guild_id ?? current
+        );
       } catch (err) {
         console.error("Failed to fetch guilds:", err);
       } finally {
@@ -75,7 +79,7 @@ export function GuildProvider({ children }: { children: ReactNode }) {
     }
 
     fetchGuilds();
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     if (selectedGuildId) {

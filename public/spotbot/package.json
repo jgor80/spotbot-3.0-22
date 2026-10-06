@@ -5,7 +5,7 @@
   "main": "index.cjs",
   "scripts": {
     "start": "node index.cjs",
-    "sync": "node ea-sync-local.cjs"
+    "sync": "node local/ea-sync-local.cjs"
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",

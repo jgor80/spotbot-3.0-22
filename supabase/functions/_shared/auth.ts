@@ -28,3 +28,25 @@ export function createAdminClient(): AdminClient {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
   );
 }
+
+const rejectHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Content-Type": "application/json",
+};
+
+// For functions deployed with verify_jwt = false: returns a 401/403 response unless the caller is the bot
+// (service-role key) or, when allowed, a signed-in web user. The public anon key alone is never enough.
+export async function rejectUnlessCaller(
+  req: Request,
+  opts: { botOnly?: boolean } = {},
+): Promise<Response | null> {
+  const caller = await identifyCaller(req, createAdminClient());
+  if (!caller) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: rejectHeaders });
+  }
+  if (opts.botOnly && caller.kind !== "bot") {
+    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: rejectHeaders });
+  }
+  return null;
+}

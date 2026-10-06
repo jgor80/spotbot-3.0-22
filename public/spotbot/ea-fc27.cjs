@@ -1,4 +1,4 @@
-// Shared EA FC Pro Clubs helpers for FC27, used by index.cjs and ea-sync-local.cjs.
+// Shared EA FC Pro Clubs helpers for FC27, used by index.cjs and local/ea-sync-local.cjs.
 // FC27 removed the common-gen4 (PS4 / Xbox One) namespace: requests to it return HTTP 400.
 // Keep this in sync with supabase/functions/_shared/ea.ts.
 

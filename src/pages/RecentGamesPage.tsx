@@ -300,8 +300,9 @@ export default function RecentGamesPage() {
     return names;
   };
 
-  // Filter matches by search query (opponent name or player name)
-  const filteredMatches = useMemo(() => {
+  // Filter matches by search query (opponent name or player name). Not memoised: it's cheap, and the
+  // name helpers read the selected server's clubs, so a memo keyed on matches alone could go stale.
+  const filterMatches = (): ClubMatch[] => {
     if (!matches) return [];
     if (!searchQuery.trim()) return matches;
     
@@ -315,7 +316,8 @@ export default function RecentGamesPage() {
       const playerNames = getMatchPlayerNames(match);
       return playerNames.some(name => name.includes(query));
     });
-  }, [matches, searchQuery]);
+  };
+  const filteredMatches = filterMatches();
 
   if (!selectedGuildId) {
     return (

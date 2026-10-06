@@ -27,7 +27,7 @@ The web dashboard has four main views (Match Night, Lineup Builder, Club Stats, 
 |---|---|
 | `src/` | Web dashboard (Vite, React, TypeScript, shadcn/ui). Edited in Lovable and here. |
 | `public/spotbot/index.cjs` | The Discord bot (single file). |
-| `public/spotbot/ea-sync-local.cjs` | Optional local EA sync worker (runs from a home connection when EA blocks cloud IPs). |
+| `public/spotbot/local/ea-sync-local.cjs` | Optional fallback EA sync worker for your own machine. Not needed to run the bot and not shipped in the Railway image. |
 | `public/spotbot/ea-fc27.cjs` | EA platform and region helpers shared by the bot and local sync. |
 | `supabase/functions/` | Edge functions (Deno). Shared code is in `supabase/functions/_shared/`. |
 | `supabase/migrations/` | Database schema. |
@@ -75,9 +75,9 @@ The bot registers its slash commands on start, so adding or removing a command o
 
 EA issued new club IDs for FC27. Run `/setclub name:<exact EA club name>` (platform is optional: PS5 / Xbox Series / PC share one platform, Switch is separate). Clubs linked in an earlier FC are relinked automatically once when the bot starts monitoring them, but only if the club name matches exactly. Otherwise run `/setclub` again.
 
-## Local EA sync (optional)
+## Local EA sync (optional fallback)
 
-EA often blocks requests from cloud hosts. `ea-sync-local.cjs` runs on your own machine, syncs every 15 minutes between 9 AM and 3 AM Central, and writes matches, member stats and ratings to Supabase.
+You don't need a local machine: the `sync-ea-stats` edge function syncs EA on a schedule and when someone presses Sync, and both it and the bot retry when EA throttles cloud IPs (403/429), telling users if EA is still refusing. Use `local/ea-sync-local.cjs` only as a fallback if EA keeps blocking the cloud for long stretches. It runs on your own machine, syncs every 15 minutes between 9 AM and 3 AM Central, and writes matches, member stats and ratings to Supabase.
 
 ```sh
 cd public/spotbot
