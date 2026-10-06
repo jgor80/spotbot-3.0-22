@@ -59,6 +59,11 @@ const STATUS = {
   off: { label: 'Remove my listing', emoji: '⚪' },
 };
 
+// Current EA FC season start (override with FC_SEASON_START). Older games count LEGACY_WEIGHT as much.
+const SEASON_START = process.env.FC_SEASON_START || '2026-09-25T00:00:00Z';
+const SEASON_LABEL = process.env.FC_SEASON_LABEL || 'FC27';
+const LEGACY_WEIGHT = 0.25;
+const MIN_CURRENT_GAMES = 5;
 const LISTING_DAYS = 30;
 const RECONTACT_DAYS = 7;
 const MAX_CONTACTS_PER_DAY = 15;
@@ -202,19 +207,30 @@ function createRecruitment(deps) {
 
   // ---------- Stats ----------
 
-  // GafferBot stats across every server the player has played in, weighted by games
+  // GafferBot stats across every server, split into this EA FC season and older seasons.
+  // Older seasons stay visible as history but count LEGACY_WEIGHT as much in the scout score.
   async function statsFor(discordIds) {
     const result = new Map();
     const ids = [...new Set(discordIds.filter(Boolean))];
     if (!ids.length) return result;
-    const { data } = await supabase
-      .from('player_summary')
-      .select('discord_user_id, games_played, avg_match_rating, goals, assists, passes_made, pass_attempts, tackles, clean_sheets, man_of_match, primary_position')
-      .in('discord_user_id', ids);
-    for (const row of data || []) {
+    const blank = () => ({ games: 0, ratingSum: 0, ratedGames: 0, goals: 0, assists: 0, passesMade: 0, passAttempts: 0, tackles: 0, cleanSheets: 0, motm: 0 });
+    const [{ data: totals }, { data: current }] = await Promise.all([
+      supabase
+        .from('player_summary')
+        .select('discord_user_id, games_played, avg_match_rating, goals, assists, passes_made, pass_attempts, tackles, clean_sheets, man_of_match')
+        .in('discord_user_id', ids),
+      supabase
+        .from('player_stats')
+        .select('discord_user_id, ea_match_rating, goals, assists, passes_made, pass_attempts, tackles, clean_sheet, man_of_match')
+        .in('discord_user_id', ids)
+        .gte('created_at', SEASON_START)
+        .limit(5000),
+    ]);
+    const all = new Map();
+    for (const row of totals || []) {
       const games = row.games_played || 0;
       if (!games) continue;
-      const s = result.get(row.discord_user_id) || { games: 0, ratingSum: 0, ratedGames: 0, goals: 0, assists: 0, passesMade: 0, passAttempts: 0, tackles: 0, cleanSheets: 0, motm: 0 };
+      const s = all.get(row.discord_user_id) || blank();
       s.games += games;
       if (row.avg_match_rating > 0) {
         s.ratingSum += row.avg_match_rating * games;
@@ -227,20 +243,70 @@ function createRecruitment(deps) {
       s.tackles += row.tackles || 0;
       s.cleanSheets += row.clean_sheets || 0;
       s.motm += row.man_of_match || 0;
-      result.set(row.discord_user_id, s);
+      all.set(row.discord_user_id, s);
     }
-    for (const s of result.values()) {
+    const cur = new Map();
+    for (const r of current || []) {
+      const s = cur.get(r.discord_user_id) || blank();
+      s.games += 1;
+      if (r.ea_match_rating > 0) {
+        s.ratingSum += Number(r.ea_match_rating);
+        s.ratedGames += 1;
+      }
+      s.goals += r.goals || 0;
+      s.assists += r.assists || 0;
+      s.passesMade += r.passes_made || 0;
+      s.passAttempts += r.pass_attempts || 0;
+      s.tackles += r.tackles || 0;
+      s.cleanSheets += r.clean_sheet ? 1 : 0;
+      s.motm += r.man_of_match ? 1 : 0;
+      cur.set(r.discord_user_id, s);
+    }
+    const finish = (s) => {
       s.rating = s.ratedGames ? s.ratingSum / s.ratedGames : null;
       s.passPct = s.passAttempts ? (100 * s.passesMade) / s.passAttempts : null;
+      return s;
+    };
+    for (const id of new Set([...all.keys(), ...cur.keys()])) {
+      const c = finish(cur.get(id) || blank());
+      const t = all.get(id) || blank();
+      const legacy = blank();
+      for (const k of Object.keys(legacy)) legacy[k] = Math.max(0, (t[k] || 0) - (c[k] || 0));
+      finish(legacy);
+      // Weighted blend: each older game counts LEGACY_WEIGHT of a current game
+      const w = (k) => c[k] + legacy[k] * LEGACY_WEIGHT;
+      const s = finish({
+        games: c.games + legacy.games,
+        ratingSum: w('ratingSum'),
+        ratedGames: w('ratedGames'),
+        goals: c.goals + legacy.goals,
+        assists: c.assists + legacy.assists,
+        passesMade: w('passesMade'),
+        passAttempts: w('passAttempts'),
+        tackles: c.tackles + legacy.tackles,
+        cleanSheets: c.cleanSheets + legacy.cleanSheets,
+        motm: c.motm + legacy.motm,
+      });
+      s.current = c;
+      s.legacy = legacy;
+      s.baselineOnly = c.games < MIN_CURRENT_GAMES && legacy.games > 0;
+      result.set(id, s);
     }
     return result;
   }
 
   function statsLine(s) {
     if (!s) return 'No GafferBot match stats yet';
-    const parts = [`⭐ ${fmtRating(s.rating)} avg`, `${s.games} games`, `${s.goals}G ${s.assists}A`];
-    if (s.passPct != null) parts.push(`${Math.round(s.passPct)}% passing`);
-    if (s.tackles) parts.push(`${(s.tackles / s.games).toFixed(1)} tackles/game`);
+    const c = s.current;
+    const parts = [`⭐ ${fmtRating(s.rating)} scout score`];
+    if (c?.games) {
+      parts.push(`${SEASON_LABEL}: ${c.games} games, ${fmtRating(c.rating)} avg, ${c.goals}G ${c.assists}A`);
+      if (c.passPct != null) parts.push(`${Math.round(c.passPct)}% passing`);
+      if (c.tackles) parts.push(`${(c.tackles / c.games).toFixed(1)} tkl/g`);
+    } else {
+      parts.push(`no ${SEASON_LABEL} games yet`);
+    }
+    if (s.legacy?.games) parts.push(`📦 history: ${s.legacy.games} games, ${fmtRating(s.legacy.rating)} avg${s.baselineOnly ? ' (baseline)' : ''}`);
     return parts.join(' · ');
   }
 
