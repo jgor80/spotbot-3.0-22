@@ -50,7 +50,7 @@ const EVENT_COMMANDS = [
         name: 'new',
         description: 'Post an event with Available / Maybe / Out buttons.',
         options: [
-          { name: 'when', description: 'Kick-off, e.g. "thu 9pm", "tomorrow 20:00", "2026-10-08 21:00".', type: 3, required: false },
+          { name: 'when', description: 'Kick-off, e.g. "thu 9pm", "tomorrow 20:00", "21/09 18:00". Pick the preview to confirm.', type: 3, required: false, autocomplete: true },
           { name: 'title', description: 'Event title (defaults to club + type).', type: 3, required: false },
           {
             name: 'type',
@@ -165,7 +165,7 @@ function messageLink(guildId, channelId, messageId) {
 }
 
 function whenExamples(tz) {
-  return `Try "thu 9pm", "tomorrow 20:00", "in 2h" or "2026-10-08 21:00" (read as ${tz}; change it with \`/event timezone\`).`;
+  return `Try "thu 9pm", "tomorrow 20:00", "21/09 18:00", "21 sep 8pm" or "in 2h" (read as ${tz} time; change it with \`/event timezone\`). As you type, the box above the keyboard shows how I read it.`;
 }
 
 function createEvents(deps) {
@@ -918,6 +918,33 @@ function createEvents(deps) {
 
   // ---------- Autocomplete ----------
 
+  // Live preview for the kick-off box: shows how the text will be read (works on mobile, where
+  // Discord has no date picker), and offers common picks when it's empty. A picked choice sends
+  // the unix time, which parseWhen reads back exactly.
+  async function whenChoices(guildId, typed) {
+    const { timezone: tz } = await serverPrefs(guildId);
+    const fmt = new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const label = (d) => `${fmt.format(d)} (${tz})`;
+    const now = new Date();
+    const text = String(typed || '').trim();
+    if (text) {
+      const at = T.parseWhen(text, tz, now);
+      if (at && at.getTime() > now.getTime() - 5 * 60000) return [{ name: `✅ ${label(at)}`.slice(0, 100), value: String(T.unix(at)) }];
+      if (at) return [{ name: `⚠️ ${label(at)} is in the past`.slice(0, 100), value: text.slice(0, 100) }];
+      return [{ name: `❓ Can't read "${text}" yet. Try 21/09 18:00, thu 9pm or tomorrow 20:00`.slice(0, 100), value: text.slice(0, 100) }];
+    }
+    const picks = ['tonight 21:00', 'tomorrow 20:00', ...[1, 2, 3, 4, 5, 6].map((d) => `${T.WEEKDAYS[(T.localParts(now, tz).weekday + d + 1) % 7]} 20:00`)];
+    const seen = new Set();
+    const choices = [];
+    for (const p of picks) {
+      const at = T.parseWhen(p, tz, now);
+      if (!at || at <= now || seen.has(T.unix(at))) continue;
+      seen.add(T.unix(at));
+      choices.push({ at, name: label(at), value: String(T.unix(at)) });
+    }
+    return choices.sort((a, b) => a.at - b.at).map(({ name, value }) => ({ name, value }));
+  }
+
   async function handleAutocomplete(interaction) {
     const focused = interaction.options.getFocused(true);
     const q = String(focused.value || '').toLowerCase();
@@ -937,6 +964,8 @@ function createEvents(deps) {
     } else if (focused.name === 'series') {
       const { data } = await supabase.from('event_series').select('id, title, interval_weeks').eq('guild_id', guildId).eq('active', true);
       choices = (data || []).map((s) => ({ name: `${s.title} (every ${s.interval_weeks === 1 ? 'week' : `${s.interval_weeks} weeks`})`.slice(0, 100), value: s.id }));
+    } else if (focused.name === 'when') {
+      return interaction.respond(await whenChoices(guildId, focused.value)).catch(() => {});
     } else if (focused.name === 'zone') {
       choices = T.allTimeZones()
         .filter((z) => z.toLowerCase().includes(q.replace(/\s+/g, '_')))

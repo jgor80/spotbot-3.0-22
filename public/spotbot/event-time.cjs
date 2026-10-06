@@ -1,8 +1,12 @@
-// Date parsing for events: "thu 9pm", "tomorrow 20:00", "2026-10-08 21:30", "in 2h", Discord
-// <t:...> timestamps. Plain dates are read in the server's timezone, so "9pm" means 9pm there.
+// Date parsing for events: "thu 9pm", "tomorrow 20:00", "21/09/26 1800", "21 sep 8pm",
+// "2026-10-08 21:30", "in 2h", Discord <t:...> timestamps. Plain dates are read in the server's
+// timezone, so "9pm" means 9pm there. Numeric dates are day-first unless the server's timezone is
+// in the Americas (month-first), and either way when one number can only be the day.
 
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const DEFAULT_TIME = { hour: 20, minute: 0 };
 
 function isValidTimeZone(tz) {
   if (!tz) return false;
@@ -72,17 +76,21 @@ function addLocalDays(date, days, tz) {
 
 // "21:00", "9pm", "9:30 pm", "2130" -> { hour, minute }
 function parseTimeOfDay(text) {
-  const t = text.trim().toLowerCase().replace(/\s+/g, '');
-  let m = t.match(/^(\d{1,2})(?::(\d{2}))?(am|pm)$/);
+  const t = text.trim().toLowerCase().replace(/\s+/g, '').replace(/^(at|@)/, '');
+  if (t === 'noon' || t === 'midday') return { hour: 12, minute: 0 };
+  if (t === 'midnight') return { hour: 0, minute: 0 };
+  let m = t.match(/^(\d{1,2})(?:[:.]?(\d{2}))?([ap])\.?m?\.?$/);
   if (m) {
     let hour = Number(m[1]);
     const minute = Number(m[2] || 0);
     if (hour < 1 || hour > 12 || minute > 59) return null;
-    if (m[3] === 'pm' && hour !== 12) hour += 12;
-    if (m[3] === 'am' && hour === 12) hour = 0;
+    if (m[3] === 'p' && hour !== 12) hour += 12;
+    if (m[3] === 'a' && hour === 12) hour = 0;
     return { hour, minute };
   }
-  m = t.match(/^(\d{1,2})[:.h](\d{2})$/) || t.match(/^(\d{2})(\d{2})$/);
+  m = t.match(/^(\d{1,2})h$/);
+  if (m && Number(m[1]) <= 23) return { hour: Number(m[1]), minute: 0 };
+  m = t.match(/^(\d{1,2})[:.h](\d{2})(?:hrs?)?$/) || t.match(/^(\d{2})(\d{2})(?:hrs?)?$/) || t.match(/^(\d)(\d{2})$/);
   if (m) {
     const hour = Number(m[1]);
     const minute = Number(m[2]);
@@ -116,6 +124,70 @@ function addDaysAt(parts, days, time, tz) {
   return zonedToUtc(base.getUTCFullYear(), base.getUTCMonth() + 1, base.getUTCDate(), time.hour, time.minute, tz);
 }
 
+// Month-first only for US-style regions; everyone else writes the day first.
+function monthFirst(tz) {
+  return /^America\//.test(tz || '') && !/^America\/(Sao_Paulo|Argentina|Montevideo|Santiago|Bogota|Lima|Caracas|Asuncion|La_Paz)/.test(tz);
+}
+
+function parseMonthName(word) {
+  const w = String(word || '').toLowerCase().replace(/\.$/, '');
+  if (w.length < 3) return -1;
+  const i = MONTHS.findIndex((mo) => w.startsWith(mo));
+  return i === -1 ? -1 : i + 1;
+}
+
+function fullYear(y) {
+  if (y === undefined) return null;
+  const n = Number(y);
+  return y.length <= 2 ? 2000 + n : n;
+}
+
+function validDate(year, month, day) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+}
+
+// "21/09/26", "21/09/2026", "21-09", "9/21" (Americas), "21 sep", "sep 21st", "21st september 2026".
+// Returns { date: {year, month, day}, rest } with the leftover text (the time), or null.
+function parseCalendarDate(text, tz, today) {
+  let m = text.match(/^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2}|\d{4}))?(?=\s|$)\s*(.*)$/);
+  let day, month, year;
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (a > 12 && b <= 12) [day, month] = [a, b];
+    else if (b > 12 && a <= 12) [day, month] = [b, a];
+    else if (monthFirst(tz)) [day, month] = [b, a];
+    else [day, month] = [a, b];
+    year = fullYear(m[3]);
+    text = m[4];
+  } else {
+    m = text.match(/^(\d{1,2})(?:st|nd|rd|th)?(?: of)? ([a-z]+\.?)(?: (\d{4}))?(?=\s|$)\s*(.*)$/);
+    if (m && parseMonthName(m[2]) !== -1) {
+      day = Number(m[1]);
+      month = parseMonthName(m[2]);
+      year = m[3] ? Number(m[3]) : null;
+      text = m[4];
+    } else {
+      m = text.match(/^([a-z]+\.?) (\d{1,2})(?:st|nd|rd|th)?(?: (\d{4}))?(?=\s|$)\s*(.*)$/);
+      if (!m || parseMonthName(m[1]) === -1) return null;
+      month = parseMonthName(m[1]);
+      day = Number(m[2]);
+      year = m[3] ? Number(m[3]) : null;
+      text = m[4];
+    }
+  }
+  if (!year) {
+    // No year: this year, unless that date is months gone ("05/01" typed in December)
+    year = today.year;
+    const daysAgo = (Date.UTC(today.year, today.month - 1, today.day) - Date.UTC(year, month - 1, day)) / DAY_MS;
+    if (daysAgo > 60) year += 1;
+  }
+  if (!validDate(year, month, day)) return null;
+  return { date: { year, month, day }, rest: text.trim() };
+}
+
 // Parse a kickoff time. Returns a Date or null.
 function parseWhen(input, tz = 'UTC', now = new Date()) {
   if (!input) return null;
@@ -138,20 +210,36 @@ function parseWhen(input, tz = 'UTC', now = new Date()) {
   }
 
   // ISO-ish date: 2026-10-08 21:00 / 2026-10-08T21:00 / 2026-10-08 9pm
-  m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ t](.+))?$/);
+  m = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ t](.+))?$/);
   if (m) {
-    const time = m[4] ? parseTimeOfDay(m[4]) : { hour: 20, minute: 0 };
+    if (!validDate(Number(m[1]), Number(m[2]), Number(m[3]))) return null;
+    const time = m[4] ? parseTimeOfDay(m[4]) : DEFAULT_TIME;
     if (!time) return null;
     const d = zonedToUtc(Number(m[1]), Number(m[2]), Number(m[3]), time.hour, time.minute, tz);
     return isNaN(d.getTime()) ? null : d;
   }
 
-  // Day/month: 8/10 21:00 is ambiguous across regions, so ask for ISO or a weekday instead
   const today = localParts(now, tz);
+
+  // Time first, date after: "8pm 21/09", "1800 on 21/09/26", "20:00 tomorrow"
+  m = text.match(/^(\S+(?: ?[ap]\.?m\.?)?) (?:on )?(.+)$/);
+  if (m && parseTimeOfDay(m[1]) && !parseTimeOfDay(m[2])) {
+    const flipped = parseWhen(`${m[2]} ${m[1]}`, tz, now);
+    if (flipped) return flipped;
+  }
+
+  // Calendar dates: "21/09/26 1800", "21/09/2026 at 18:00", "21 sep 8pm", "sep 21"
+  const cal = parseCalendarDate(text, tz, today);
+  if (cal) {
+    const time = cal.rest ? parseTimeOfDay(cal.rest) : DEFAULT_TIME;
+    if (!time) return null;
+    return zonedToUtc(cal.date.year, cal.date.month, cal.date.day, time.hour, time.minute, tz);
+  }
+
   const [first, ...rest] = text.split(' ');
   const restText = rest.join(' ');
 
-  if (first === 'today' || first === 'tonight' || first === 'tomorrow' || first === 'tmrw' || first === 'tmr') {
+  if (first === 'today' || first === 'tonight' || first === 'tomorrow' || first === 'tmrw' || first === 'tmr' || first === 'tmrrw' || first === 'tomoz') {
     const time = restText ? parseTimeOfDay(restText) : first === 'tonight' ? { hour: 21, minute: 0 } : null;
     if (!time) return null;
     const isTomorrow = first !== 'today' && first !== 'tonight';
@@ -224,6 +312,7 @@ module.exports = {
   parseWeekday,
   nextWeekdayAt,
   parseWhen,
+  parseCalendarDate,
   parseOffsetMinutes,
   parseDeadline,
   describeOffset,
