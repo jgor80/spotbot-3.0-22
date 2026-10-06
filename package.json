@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "build:bot-lib": "esbuild src/lib/clubInsights.ts --bundle --format=cjs --platform=node --target=node18 --outfile=public/spotbot/club-insights.cjs --banner:js=\"// Generated from src/lib/clubInsights.ts by npm run build:bot-lib. Do not edit by hand.\"",
     "lint": "eslint .",
     "preview": "vite preview"
   },

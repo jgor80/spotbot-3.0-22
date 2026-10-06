@@ -416,7 +416,7 @@ export default function TeamsPage() {
     const assigned = new Set(slots.map(s => s.discord_user_id));
     const candidates = availablePlayers.filter(p => userIds.includes(p.discord_user_id) && !assigned.has(p.discord_user_id));
     if (candidates.length === 0) {
-      toast.info("Everyone in that voice channel is already on the pitch");
+      toast.info("Everyone there is already on the pitch");
       return;
     }
 
@@ -453,7 +453,7 @@ export default function TeamsPage() {
     });
     setSlots(prev => [...prev, ...newSlots]);
     const open = positions.length - slots.length - newSlots.length;
-    toast.success(`Placed ${newSlots.length} players from voice${open > 0 ? `, ${open} spots still open` : ""}`);
+    toast.success(`Placed ${newSlots.length} players${open > 0 ? `, ${open} spots still open` : ""}`);
   };
 
   const handleFillFromVoice = async () => {
@@ -471,7 +471,7 @@ export default function TeamsPage() {
       if (data?.error) throw new Error(data.error);
       const channels = (data?.channels || []) as { id: string; name: string; user_ids: string[] }[];
       if (channels.length === 0) {
-        toast.info("Nobody from your player list is in a voice channel right now");
+        toast.info("Nobody from your player list is in voice or checked in to tonight's roll call");
       } else if (channels.length === 1) {
         await fillFromVoiceChannel(channels[0].user_ids);
       } else {
@@ -1151,8 +1151,8 @@ export default function TeamsPage() {
       <Dialog open={!!voiceChoices} onOpenChange={(open) => !open && setVoiceChoices(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Fill from which voice channel?</DialogTitle>
-            <DialogDescription>Players from your list are in more than one channel.</DialogDescription>
+            <DialogTitle>Fill from where?</DialogTitle>
+            <DialogDescription>Players from your list are in more than one voice channel or checked in to the roll call.</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             {voiceChoices?.map((c) => (
@@ -1165,7 +1165,7 @@ export default function TeamsPage() {
                   await fillFromVoiceChannel(c.user_ids);
                 }}
               >
-                <span>🔊 {c.name}</span>
+                <span>{c.id === "checkins" ? "📞" : "🔊"} {c.name}</span>
                 <Badge variant="secondary">{c.user_ids.length}</Badge>
               </Button>
             ))}

@@ -21,6 +21,7 @@ const {
 } = require('discord.js');
 
 const { createClient } = require('@supabase/supabase-js');
+const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.cjs');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -311,6 +312,16 @@ if (!supabaseUrl || !supabaseKey) {
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+const managerHub = createManagerHub({
+  supabase,
+  callEdgeFunction,
+  getGuildState,
+  isManager,
+  syncClubHistory,
+  buildLeaderboardEmbed,
+  dashboardUrl: process.env.DASHBOARD_URL
+});
 
 const client = new Client({
   intents: [
@@ -620,9 +631,10 @@ const COMMANDS = [
   },
   {
     name: 'clubstats',
-    description: 'Toggle or check EA stats monitoring for the current club.',
+    description: 'Show club stats, or toggle and check EA stats monitoring.',
     options: [
-      { name: 'action', description: 'Enable, disable, or check status.', type: 3, required: true, choices: [
+      { name: 'action', description: 'Leave blank to show club stats.', type: 3, required: false, choices: [
+        { name: 'Show club stats', value: 'stats' },
         { name: 'Enable monitoring', value: 'enable' },
         { name: 'Disable monitoring', value: 'disable' },
         { name: 'Show status', value: 'status' }
@@ -751,7 +763,8 @@ const COMMANDS = [
     name: 'positionpanel',
     description: 'Post a panel where members pick their position and get the matching role.',
     default_member_permissions: String(PermissionsBitField.Flags.ManageRoles)
-  }
+  },
+  ...HUB_COMMANDS
 ];
 
 // =======================
@@ -5282,6 +5295,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isChatInputCommand()) {
       const cmd = interaction.commandName;
 
+      if (await managerHub.handleCommand(interaction, cmd)) return;
+
       if (cmd === 'spotpanel') {
         await interaction.reply({
           embeds: [buildEmbedForClub(guildId, state.currentClubKey, state)],
@@ -6706,15 +6721,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       if (cmd === 'clubstats') {
+        const action = interaction.options.getString('action') || 'stats';
+        const currentClub = resolveClub(state, interaction.member);
+
+        if (action === 'stats') {
+          if (!currentClub) {
+            return interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+          }
+          await interaction.deferReply();
+          try {
+            return interaction.editReply(await managerHub.buildStats(guildId, currentClub));
+          } catch (err) {
+            return interaction.editReply({ content: `❌ Could not load stats: ${err.message}` });
+          }
+        }
+
         if (!isManager(interaction.member)) {
           return interaction.reply({
             content: '❌ Only managers can manage EA stats monitoring.',
             flags: 64
           });
         }
-
-        const action = interaction.options.getString('action');
-        const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
 
         if (!currentClub) {
           return interaction.reply({ content: '❌ No current club selected.', flags: 64 });
@@ -6822,7 +6849,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           });
         }
 
-        const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
+        const currentClub = resolveClub(state, interaction.member);
 
         if (!currentClub?.ea_club_id) {
           return interaction.reply({
@@ -7904,6 +7931,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     // ----- Buttons -----
     if (interaction.isButton()) {
       const id = interaction.customId;
+
+      if (await managerHub.handleButton(interaction)) return;
 
       if (id === 'open_prefs') {
         const existing = await getUserPrefs(guildId, interaction.user.id);
@@ -14033,6 +14062,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     // ----- Select Menus -----
     if (interaction.isStringSelectMenu()) {
       const id = interaction.customId;
+
+      if (await managerHub.handleSelect(interaction)) return;
 
       // Position role panel: swap the member's position role
       if (id === POSITION_ROLE_SELECT_ID) {

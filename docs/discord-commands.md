@@ -2,6 +2,12 @@
 
 This project exposes Discord-facing commands through Supabase Edge Functions. Use this list to confirm coverage (including spot availability/preference flows) and find the entry points in code.
 
+## Manager Hub (`public/spotbot/manager-hub.cjs`)
+- **/manager**: posts and pins the hub. Buttons: Call Session (posts an In / Late / Out roll call stored as an availability event), Team Sheet (latest lineup with Announce Lineup), Sync Matches (pulls EA matches and refreshes the hub), Club Stats (with a Goals / Assists / Ratings / Form leaderboard picker) and Tactical Insights.
+- **/insights**: duo and trio chemistry, formation win rates, win vs. loss gaps and takeaways for your club.
+- **/clubstats**: with no action, shows the club stats card; the enable / disable / status actions still manage EA monitoring.
+- Insights math is shared with the web Insights page: `public/spotbot/club-insights.cjs` is generated from `src/lib/clubInsights.ts` with `npm run build:bot-lib`.
+
 ## Availability & "Spot" management
 - **spotpanel** (`public/spotbot/index.cjs`): creates the SquadIQ control panel for managing club spots from Discord.
 - **availability-response** (`supabase/functions/availability-response/index.ts`): records a player's "yes / no / maybe" response for an event.
