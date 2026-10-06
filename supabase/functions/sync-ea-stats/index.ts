@@ -253,11 +253,11 @@ async function fetchMatches(clubId: string, platform: string, matchType: string,
     }
     
     const data = await response.json()
-    console.log(`[EA] Matches response type: ${typeof data}, isArray: ${Array.isArray(data)}`)
-    
     const matches: any[] = Array.isArray(data)
       ? data
       : data?.matches || Object.values(data).filter(v => v && typeof v === 'object')
+    const newest = matches.reduce((t: number, m: any) => Math.max(t, Number(m?.timestamp) || 0), 0)
+    console.log(`[EA] ${matchType} for ${clubId}: ${matches.length} matches${newest ? `, newest ${new Date(newest * 1000).toISOString()}` : ''}`)
     return matches.map((m: any) => ({ ...m, _matchCategory: category }))
   } catch (err) {
     console.error(`[EA] Error fetching matches for ${clubId}:`, err)
