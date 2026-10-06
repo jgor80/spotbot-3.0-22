@@ -27,6 +27,7 @@ const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
 const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
 const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
 const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
+const { createAutopilot, AUTOPILOT_COMMANDS } = require('./autopilot.cjs');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -332,7 +333,7 @@ const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isMana
 
 const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents });
 
-const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction });
+const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState });
 
 const managerHub = createManagerHub({
   supabase,
@@ -344,6 +345,21 @@ const managerHub = createManagerHub({
   buildLeaderboardEmbed,
   dashboardUrl: process.env.DASHBOARD_URL,
   buildEventList: clubEvents.buildEventList
+});
+
+// Voice check-ins, the auto-drafted XI, match recaps, sub requests on drop-outs and the Monday digest
+const autopilot = createAutopilot({
+  supabase,
+  events: clubEvents,
+  matchNight,
+  getGuildState,
+  saveGuildSettings,
+  isManager,
+  canManageClub: squads.canManageClub,
+  callEdgeFunction,
+  loadMatches: managerHub.loadMatches,
+  loadTeam: squads.loadTeam,
+  dashboardUrl: process.env.DASHBOARD_URL
 });
 
 const client = new Client({
@@ -767,6 +783,7 @@ const COMMANDS = [
   ...EVENT_COMMANDS,
   ...ROSTER_COMMANDS,
   ...MATCHNIGHT_COMMANDS,
+  ...AUTOPILOT_COMMANDS,
   ...SETUP_COMMANDS
 ];
 
@@ -4030,6 +4047,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
 // =======================
 
 client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+  autopilot.onVoiceStateUpdate(oldState, newState).catch((err) => console.warn('[autopilot] voice update failed:', err.message));
   try {
     const guildId = oldState.guild?.id || newState.guild?.id;
     if (!guildId) return;
@@ -4095,6 +4113,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (await clubEvents.handleInteraction(interaction)) return;
     // Match night: /checkin, /sub, /reliability, check-in and sub request buttons
     if (await matchNight.handleInteraction(interaction)) return;
+    // Autopilot: /autopilot panel, suggested XI Publish / Tweak
+    if (await autopilot.handleInteraction(interaction)) return;
     // /setup checklist and /brand
     if (await clubSetup.handleInteraction(interaction)) return;
 
@@ -16195,8 +16215,8 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
     club.last_match_id = matchId;
     await saveGuildSettings(guildId, state);
     
-    // Post result to stats channel
-    if (club.stats_channel_id) {
+    // Post result to stats channel (autopilot posts a fuller recap when it is on)
+    if (club.stats_channel_id && !autopilot.postsRecaps(club)) {
       await postMatchResult(guildId, club.stats_channel_id, {
         result, scoreFor, scoreAgainst, opponentName, playerStats, clubName: club.name, matchId
       });
