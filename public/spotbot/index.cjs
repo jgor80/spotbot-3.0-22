@@ -22,6 +22,7 @@ const {
 
 const { createClient } = require('@supabase/supabase-js');
 const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.cjs');
+const { createSquads, SQUAD_COMMANDS } = require('./squads.cjs');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -313,11 +314,14 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+const squads = createSquads({ supabase, getGuildState, saveGuildSettings, isManager });
+
 const managerHub = createManagerHub({
   supabase,
   callEdgeFunction,
   getGuildState,
   isManager,
+  canManageClub: squads.canManageClub,
   syncClubHistory,
   buildLeaderboardEmbed,
   dashboardUrl: process.env.DASHBOARD_URL
@@ -764,7 +768,8 @@ const COMMANDS = [
     description: 'Post a panel where members pick their position and get the matching role.',
     default_member_permissions: String(PermissionsBitField.Flags.ManageRoles)
   },
-  ...HUB_COMMANDS
+  ...HUB_COMMANDS,
+  ...SQUAD_COMMANDS
 ];
 
 // =======================
@@ -5296,6 +5301,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const cmd = interaction.commandName;
 
       if (await managerHub.handleCommand(interaction, cmd)) return;
+      if (await squads.handleCommand(interaction, cmd)) return;
 
       if (cmd === 'spotpanel') {
         await interaction.reply({
@@ -6785,8 +6791,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       if (cmd === 'teamsheet') {
-        if (!isManager(interaction.member)) {
-          return interaction.reply({ content: '❌ Only managers can post team sheets.', flags: 64 });
+        const sheetClub = resolveClub(state, interaction.member);
+        if (!(sheetClub ? await squads.canManageClub(interaction.member, sheetClub) : isManager(interaction.member))) {
+          return interaction.reply({ content: '❌ Only club leaders can post team sheets.', flags: 64 });
         }
 
         const teamName = interaction.options.getString('team');
@@ -6796,7 +6803,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         await interaction.deferReply({ flags: 64 });
 
-        let teamId = null;
+        let teamId = sheetClub?.team_id || null;
         if (teamName) {
           const { data: team } = await supabase
             .from('teams')
@@ -6842,14 +6849,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       if (cmd === 'syncclub') {
-        if (!isManager(interaction.member)) {
+        const currentClub = resolveClub(state, interaction.member);
+        if (!(currentClub ? await squads.canManageClub(interaction.member, currentClub) : isManager(interaction.member))) {
           return interaction.reply({
-            content: '❌ Only managers can manually sync club data.',
+            content: '❌ Only club leaders can manually sync club data.',
             flags: 64
           });
         }
-
-        const currentClub = resolveClub(state, interaction.member);
 
         if (!currentClub?.ea_club_id) {
           return interaction.reply({
@@ -7933,6 +7939,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const id = interaction.customId;
 
       if (await managerHub.handleButton(interaction)) return;
+      if (await squads.handleButton(interaction)) return;
 
       if (id === 'open_prefs') {
         const existing = await getUserPrefs(guildId, interaction.user.id);

@@ -8,6 +8,12 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 - **/clubstats**: with no action, shows the club stats card; the enable / disable / status actions still manage EA monitoring.
 - Insights math is shared with the web Insights page: `public/spotbot/club-insights.cjs` is generated from `src/lib/clubInsights.ts` with `npm run build:bot-lib`.
 
+## Squads and club leaders (`public/spotbot/squads.cjs`)
+- **/squad link team:<name>**: links the club for your voice channel (or the current club) to a squad from the Teams table, creating it if needed. That squad's lineups feed the hub's Team Sheet and `/teamsheet`.
+- **/squad captain user** (server admins) and **/squad manager user** (admins or the captain, toggles): name the club's leaders. Once a club has named leaders, only they and server admins can run its hub actions, `/teamsheet`, `/syncclub` and `/lfg`, and only they (or web admins) can publish its lineups from the web. Clubs with nobody named keep the old rule: any manager role.
+- **/squad info**: shows the link and leaders.
+- **/lfg [when] [note]**: posts a "looking for a friendly" card. A leader of another club on the server presses Accept (from their club's voice channel) and both contacts are pinged.
+
 ## Availability & "Spot" management
 - **spotpanel** (`public/spotbot/index.cjs`): creates the SquadIQ control panel for managing club spots from Discord.
 - **availability-response** (`supabase/functions/availability-response/index.ts`): records a player's "yes / no / maybe" response for an event.

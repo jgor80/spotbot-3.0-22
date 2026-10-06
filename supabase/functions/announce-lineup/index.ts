@@ -10,7 +10,7 @@
 //
 // Callers: a signed-in web app user (JWT) or the Discord bot (service role key).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createAdminClient, identifyCaller } from "../_shared/auth.ts";
+import { createAdminClient, identifyCaller, type Caller } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -146,7 +146,29 @@ async function rollCallCheckins(supabase: any, guildId: string): Promise<string[
   return (responses || []).map((r: any) => r.discord_user_id);
 }
 
-async function announce(supabase: any, body: any) {
+// Once a squad has a named captain or managers, only they (or a web admin) can announce from the web
+async function webCallerMayAnnounce(supabase: any, userId: string, teamId: string | null): Promise<boolean> {
+  if (!teamId) return true;
+  const { data: team } = await supabase
+    .from("teams")
+    .select("captain_discord_id, manager_discord_ids")
+    .eq("id", teamId)
+    .maybeSingle();
+  const leaders = [team?.captain_discord_id, ...(team?.manager_discord_ids || [])].filter(Boolean);
+  if (!leaders.length) return true;
+
+  const { data: admin } = await supabase.from("web_admins").select("id").eq("auth_user_id", userId).maybeSingle();
+  if (admin) return true;
+  const { data: link } = await supabase
+    .from("user_discord_links")
+    .select("discord_user_id")
+    .eq("auth_user_id", userId)
+    .eq("verified", true)
+    .maybeSingle();
+  return !!link && leaders.includes(link.discord_user_id);
+}
+
+async function announce(supabase: any, body: any, caller: Caller) {
   const { lineup_id, channel_id } = body;
   const mentionPlayers = body.mention_players !== false;
   const dmPlayers = body.dm_players === true;
@@ -161,6 +183,9 @@ async function announce(supabase: any, body: any) {
     .eq("id", lineup_id)
     .maybeSingle();
   if (lineupError || !lineup) return json({ error: "Lineup not found" }, 404);
+  if (caller.kind === "user" && !(await webCallerMayAnnounce(supabase, caller.userId, lineup.team_id))) {
+    return json({ error: "Only this squad's captain or managers can announce its lineup" }, 403);
+  }
 
   // Only post into a channel that belongs to the lineup's server
   const channelRes = await discord(`/channels/${channel_id}`);
@@ -333,7 +358,7 @@ serve(async (req) => {
       return await voiceChannels(supabase, body.guild_id, body.user_ids);
     }
     if (body.action === "announce") {
-      return await announce(supabase, body);
+      return await announce(supabase, body, caller);
     }
     return json({ error: "Unknown action" }, 400);
   } catch (error) {
