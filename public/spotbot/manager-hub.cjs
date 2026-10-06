@@ -80,6 +80,7 @@ function createManagerHub(deps) {
     syncClubHistory,
     buildLeaderboardEmbed,
     dashboardUrl,
+    buildEventList,
   } = deps;
   // Squad leaders when the club has them, otherwise any manager role
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
@@ -161,6 +162,13 @@ function createManagerHub(deps) {
         new ButtonBuilder().setCustomId(`hub_ins:${k}`).setLabel('Tactical Insights').setEmoji('💡').setStyle(ButtonStyle.Secondary)
       ),
     ];
+    if (buildEventList) {
+      rows.push(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`hub_events:${k}`).setLabel('Events').setEmoji('📅').setStyle(ButtonStyle.Secondary)
+        )
+      );
+    }
     const picker = clubPicker('hub_club', activeClubs(state), k);
     if (picker) rows.push(picker);
 
@@ -540,6 +548,10 @@ function createManagerHub(deps) {
         } catch (err) {
           await interaction.editReply({ content: `❌ Could not load stats: ${err.message}` });
         }
+        return true;
+      case 'hub_events':
+        await interaction.deferReply({ flags: 64 });
+        await interaction.editReply(await buildEventList(interaction.guildId));
         return true;
       case 'hub_ins':
         await interaction.deferReply({ flags: 64 });

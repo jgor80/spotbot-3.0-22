@@ -14,7 +14,30 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 - **/squad info**: shows the link and leaders.
 - **/lfg [when] [note]**: posts a "looking for a friendly" card. A leader of another club on the server presses Accept (from their club's voice channel) and both contacts are pinged.
 
+## Events and availability (`public/spotbot/events.cjs`)
+- **/event new when:"thu 9pm"**: posts an event board with Available / Maybe / Can't make it buttons. The board updates live and names who is in, maybe and out, who on the roster has not answered, and who is injured or away. Options: `title`, `type` (League match, Friendly, Scrim, Training, Tryout, Tournament), `preset`, `deadline` ("2h" before kick-off or a time like "wed 6pm"; default 1h before), `repeat` (weekly or every 2 weeks), `ping` role, `channel`, `positions` (players pick up to 3 positions when they sign up; on by default for tryouts), `club`, `description`.
+- Times are read in the server timezone (`/event timezone`). Accepted: "thu 9pm", "tomorrow 20:00", "tonight", "in 2h", "2026-10-08 21:00", or a Discord `<t:...>` timestamp. Everyone sees times in their own timezone.
+- **Reminders**: before the deadline the bot DMs everyone who has not answered (with the same buttons), and pings anyone with DMs closed under the board. Managers can nudge early with the board's Remind button or `/event remind`.
+- **Recurring**: `repeat` creates a series; the bot posts each next event a day after the previous kick-off. `/event series list` and `/event series stop`.
+- **Presets**: `/event preset save` (title, type, usual day and time, deadline, ping role, channel, position sign-up), `/event preset list`, `/event preset delete`, then `/event new preset:<name>`. Up to 25 per server.
+- **/event list** shows upcoming events with counts and links; the hub's Events button shows the same. **/event cancel** cancels and pings everyone who said they could play.
+- **/available**: your next five events with your answers and buttons, in one place.
+- Events close automatically after kick-off plus their duration.
+
+## Match night (`public/spotbot/matchnight.cjs`)
+- **Check-in** opens automatically 30 minutes before kick-off, under the event board. It pings the starting XI (the lineup saved for the event, else the club's latest lineup from the last day, else everyone who said yes or maybe) and shows a live squad status: Checked in, Running late, Dropped out, and Not checked in yet, each with their lineup position.
+- **/checkin**: managers open check-in early; players check themselves in.
+- **Subs**: a starter who taps Can't make it on the check-in triggers a sub request for their position. Managers use the check-in's Request sub button (pick who to replace or a position) or **/sub [position] [replacing] [note]**. The request pings players who said yes or maybe but aren't starting (else the event's ping role). The first to tap I can cover gets the spot, is swapped into the lineup and checked in; a second tap is told it's covered.
+- **Reliability**: when an event with a check-in closes, attendance is recorded and show-up rates are recomputed over the last 20 events. Only a firm "Available" counts as a promise, and dropping out on the check-in counts as notice, not a no-show. **/reliability [player]** lists the rates, and the event board flags players under 75% (after 3 events).
+
+## Roster (`public/spotbot/roster.cjs`)
+- **/roster add user [position] [secondary] [role] [status]**, **/roster remove user**, **/roster status user status [note]** (Active, Trial, Injured, Away, Inactive; injured, away and inactive players are not chased for availability).
+- **/roster import role**: adds everyone with a role; position roles (from `/positionpanel`) fill in their positions.
+- **/roster view [by] [position]**: the roster grouped by position (main players and cover), by status, or filtered to one position. Players without a roster position fall back to their `/myprefs` or position roles. The footer flags key positions nobody covers.
+- The roster belongs to the club's squad (`/squad link`); one named after the club is created on first use.
+
 ## Availability & "Spot" management
+- **/positionpanel**: members pick up to 3 positions and get the matching roles.
 - **spotpanel** (`public/spotbot/index.cjs`): creates the GafferBot control panel for managing club spots from Discord.
 - **availability-response** (`supabase/functions/availability-response/index.ts`): records a player's "yes / no / maybe" response for an event.
 - **get-event-availability** (`supabase/functions/get-event-availability/index.ts`): fetches the response breakdown for a specific event so you can see who has a spot.

@@ -1,0 +1,1140 @@
+// Club events: /event (new, list, cancel, remind, presets, recurring series, timezone) and /available.
+// Each event posts a live availability board that names who is in, maybe, out and who still owes
+// an answer. The scheduler posts recurring events, reminds non-responders before the deadline and
+// closes events after they finish.
+
+const {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  ChannelType,
+} = require('discord.js');
+const { resolveClub, activeClubs } = require('./manager-hub.cjs');
+const { missingChannelPerms, canPingRole, missingPermsMessage } = require('./perm-check.cjs');
+const T = require('./event-time.cjs');
+
+const POSITIONS = ['GK', 'LB', 'CB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'CF', 'ST'];
+const EVENT_TYPES = {
+  league: { label: 'League match', emoji: '🏆', color: 0xf1c40f },
+  friendly: { label: 'Friendly', emoji: '🤝', color: 0x57f287 },
+  scrim: { label: 'Scrim', emoji: '⚔️', color: 0xeb459e },
+  training: { label: 'Training', emoji: '🏃', color: 0x3498db },
+  tryout: { label: 'Tryout', emoji: '🎯', color: 0xe67e22 },
+  tournament: { label: 'Tournament', emoji: '🏟️', color: 0x9b59b6 },
+  match: { label: 'Match', emoji: '⚽', color: 0x5865f2 },
+  practice: { label: 'Training', emoji: '🏃', color: 0x3498db },
+  draft: { label: 'Draft night', emoji: '🎲', color: 0x5865f2 },
+};
+const RESPONSES = {
+  yes: { label: 'Available', emoji: '✅', style: ButtonStyle.Success },
+  maybe: { label: 'Maybe', emoji: '❓', style: ButtonStyle.Secondary },
+  no: { label: "Can't make it", emoji: '❌', style: ButtonStyle.Danger },
+};
+const ROSTER_OUT = { injured: '🚑', away: '✈️', inactive: '💤' };
+const DEFAULT_DEADLINE_MINUTES = 60;
+const REMIND_LEAD_MS = 3 * 60 * 60 * 1000;
+const MANUAL_REMIND_COOLDOWN_MS = 15 * 60 * 1000;
+const MAX_PRESETS = 25;
+const MAX_SIGNUP_POSITIONS = 3;
+const PREFS_TTL_MS = 5 * 60 * 1000;
+
+const EVENT_COMMANDS = [
+  {
+    name: 'event',
+    description: 'Schedule club events and collect availability.',
+    options: [
+      {
+        type: 1,
+        name: 'new',
+        description: 'Post an event with Available / Maybe / Out buttons.',
+        options: [
+          { name: 'when', description: 'Kick-off, e.g. "thu 9pm", "tomorrow 20:00", "2026-10-08 21:00".', type: 3, required: false },
+          { name: 'title', description: 'Event title (defaults to club + type).', type: 3, required: false },
+          {
+            name: 'type',
+            description: 'Event type.',
+            type: 3,
+            required: false,
+            choices: ['league', 'friendly', 'scrim', 'training', 'tryout', 'tournament', 'match'].map((v) => ({ name: EVENT_TYPES[v].label, value: v })),
+          },
+          { name: 'preset', description: 'Start from a saved preset.', type: 3, required: false, autocomplete: true },
+          { name: 'deadline', description: 'Answer by, e.g. "2h" before kick-off or "wed 6pm". Default 1h before.', type: 3, required: false },
+          {
+            name: 'repeat',
+            description: 'Post this event again automatically.',
+            type: 3,
+            required: false,
+            choices: [
+              { name: 'Weekly', value: '1' },
+              { name: 'Every 2 weeks', value: '2' },
+            ],
+          },
+          { name: 'ping', description: 'Role to ping and remind (used when the club has no roster).', type: 8, required: false },
+          { name: 'channel', description: 'Where to post (defaults to here).', type: 7, required: false, channel_types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
+          { name: 'positions', description: 'Ask players which position they are signing up for (on by default for tryouts).', type: 5, required: false },
+          { name: 'club', description: 'Which club (only needed on servers with several).', type: 3, required: false, autocomplete: true },
+          { name: 'description', description: 'Details, e.g. opponent or lobby code.', type: 3, required: false },
+        ],
+      },
+      { type: 1, name: 'list', description: 'Upcoming events and recurring series.' },
+      {
+        type: 1,
+        name: 'cancel',
+        description: 'Cancel an event and tell everyone who said they could play.',
+        options: [{ name: 'event', description: 'The event.', type: 3, required: true, autocomplete: true }],
+      },
+      {
+        type: 1,
+        name: 'remind',
+        description: 'Nudge everyone who has not answered yet.',
+        options: [{ name: 'event', description: 'The event.', type: 3, required: true, autocomplete: true }],
+      },
+      {
+        type: 1,
+        name: 'timezone',
+        description: 'Set the timezone plain times like "9pm" are read in.',
+        options: [{ name: 'zone', description: 'e.g. Europe/London, America/Chicago.', type: 3, required: true, autocomplete: true }],
+      },
+      {
+        type: 2,
+        name: 'preset',
+        description: 'Saved event templates.',
+        options: [
+          {
+            type: 1,
+            name: 'save',
+            description: 'Save (or overwrite) a preset.',
+            options: [
+              { name: 'name', description: 'Preset name, e.g. "League night".', type: 3, required: true },
+              { name: 'title', description: 'Event title.', type: 3, required: true },
+              {
+                name: 'type',
+                description: 'Event type.',
+                type: 3,
+                required: false,
+                choices: ['league', 'friendly', 'scrim', 'training', 'tryout', 'tournament', 'match'].map((v) => ({ name: EVENT_TYPES[v].label, value: v })),
+              },
+              { name: 'time', description: 'Usual kick-off, e.g. "21:00" or "thu 21:00".', type: 3, required: false },
+              { name: 'deadline', description: 'Answer by, before kick-off, e.g. "2h".', type: 3, required: false },
+              { name: 'ping', description: 'Role to ping.', type: 8, required: false },
+              { name: 'channel', description: 'Channel to post in.', type: 7, required: false, channel_types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
+              { name: 'positions', description: 'Ask for a position when players sign up.', type: 5, required: false },
+              { name: 'description', description: 'Details.', type: 3, required: false },
+            ],
+          },
+          { type: 1, name: 'list', description: 'Show saved presets.' },
+          {
+            type: 1,
+            name: 'delete',
+            description: 'Delete a preset.',
+            options: [{ name: 'name', description: 'The preset.', type: 3, required: true, autocomplete: true }],
+          },
+        ],
+      },
+      {
+        type: 2,
+        name: 'series',
+        description: 'Recurring events.',
+        options: [
+          { type: 1, name: 'list', description: 'Show recurring events.' },
+          {
+            type: 1,
+            name: 'stop',
+            description: 'Stop a recurring event (already posted ones stay).',
+            options: [{ name: 'series', description: 'The series.', type: 3, required: true, autocomplete: true }],
+          },
+        ],
+      },
+    ],
+  },
+  { name: 'available', description: 'Answer your upcoming events in one place.' },
+];
+
+function truncate(text, max = 1024) {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function typeInfo(type) {
+  return EVENT_TYPES[type] || EVENT_TYPES.match;
+}
+
+function messageLink(guildId, channelId, messageId) {
+  return `https://discord.com/channels/${guildId}/${channelId}/${messageId}`;
+}
+
+function whenExamples(tz) {
+  return `Try "thu 9pm", "tomorrow 20:00", "in 2h" or "2026-10-08 21:00" (read as ${tz}; change it with \`/event timezone\`).`;
+}
+
+function createEvents(deps) {
+  const { supabase, getGuildState, isManager, dashboardUrl } = deps;
+  const canManageClub = deps.canManageClub || (async (member) => isManager(member));
+  let client = null;
+  let ticking = false;
+  const prefsCache = new Map();
+  const memberFetchAt = new Map();
+  const manualRemindAt = new Map();
+  // Set by matchnight.cjs: show-up rates worth flagging next to a player's answer
+  let reliabilityLookup = async () => new Map();
+
+  // ---------- Server preferences ----------
+
+  async function serverPrefs(guildId) {
+    const cached = prefsCache.get(guildId);
+    if (cached && Date.now() - cached.at < PREFS_TTL_MS) return cached.value;
+    const { data } = await supabase.from('guild_settings').select('timezone, branding').eq('guild_id', guildId).maybeSingle();
+    const value = {
+      timezone: T.isValidTimeZone(data?.timezone) ? data.timezone : 'UTC',
+      branding: data?.branding || {},
+    };
+    prefsCache.set(guildId, { at: Date.now(), value });
+    return value;
+  }
+
+  function forgetPrefs(guildId) {
+    prefsCache.delete(guildId);
+  }
+
+  // ---------- Lookups ----------
+
+  async function loadEvent(eventId) {
+    if (!/^[0-9a-f-]{36}$/i.test(eventId || '')) return null;
+    const { data } = await supabase.from('availability_events').select('*').eq('id', eventId).maybeSingle();
+    return data;
+  }
+
+  async function loadResponses(eventId) {
+    const { data } = await supabase
+      .from('player_availability')
+      .select('discord_user_id, response, responded_at, position')
+      .eq('event_id', eventId)
+      .order('responded_at', { ascending: true });
+    return (data || []).filter((r) => r.response !== 'no_response');
+  }
+
+  async function clubFor(guildId, clubKey) {
+    const state = await getGuildState(guildId);
+    return activeClubs(state).find((c) => c.key === clubKey) || null;
+  }
+
+  async function rosterFor(club) {
+    if (!club?.team_id) return [];
+    const { data } = await supabase
+      .from('team_rosters')
+      .select('discord_user_id, role, status, primary_position')
+      .eq('team_id', club.team_id);
+    return data || [];
+  }
+
+  // Who should answer: the club roster when it has one, otherwise members of the ping role.
+  // Injured, away and inactive players are listed but not chased.
+  async function expectedPlayers(event) {
+    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    const roster = await rosterFor(club);
+    if (roster.length) {
+      const expected = roster.filter((r) => !ROSTER_OUT[r.status]).map((r) => r.discord_user_id);
+      const out = roster.filter((r) => ROSTER_OUT[r.status]).map((r) => ({ id: r.discord_user_id, status: r.status }));
+      return { expected, out, source: 'roster' };
+    }
+    if (event.ping_role_id && client) {
+      const guild = client.guilds.cache.get(event.guild_id);
+      const role = guild?.roles.cache.get(event.ping_role_id);
+      if (role) {
+        // Role members come from the member cache; fill it at most every 10 minutes
+        const last = memberFetchAt.get(guild.id) || 0;
+        if (Date.now() - last > 10 * 60 * 1000) {
+          memberFetchAt.set(guild.id, Date.now());
+          await guild.members.fetch().catch(() => {});
+        }
+        return { expected: role.members.filter((m) => !m.user.bot).map((m) => m.id), out: [], source: 'role' };
+      }
+    }
+    return { expected: [], out: [], source: 'none' };
+  }
+
+  // ---------- Board ----------
+
+  async function buildBoard(event) {
+    const prefs = await serverPrefs(event.guild_id);
+    const info = typeInfo(event.event_type);
+    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    const responses = await loadResponses(event.id);
+    const { expected, out } = await expectedPlayers(event);
+    const deadline = event.deadline_at ? new Date(event.deadline_at) : null;
+    const kickoff = T.unix(event.scheduled_at);
+
+    const lines = [`🗓️ <t:${kickoff}:F> (<t:${kickoff}:R>)`, `${info.emoji} ${info.label}${club ? ` · ${club.name}` : ''}`];
+    if (event.cancelled) lines.unshift('**❌ Cancelled**');
+    else if (event.closed) lines.unshift('**Finished.** Answers are closed.');
+    else if (deadline) {
+      lines.push(
+        deadline > new Date()
+          ? `⏰ Answer by <t:${T.unix(deadline)}:f> (<t:${T.unix(deadline)}:R>)`
+          : '⏰ The deadline has passed. Late answers still count but are marked.'
+      );
+    }
+    if (event.series_id) lines.push('🔁 Repeats automatically');
+    if (event.position_signup) lines.push(`🎯 Pick up to ${MAX_SIGNUP_POSITIONS} positions when you tap Available`);
+    if (event.description) lines.push('', event.description);
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${info.emoji} ${event.title}`)
+      .setColor(event.cancelled ? 0x99aab5 : Number(prefs.branding.color) || info.color)
+      .setDescription(truncate(lines.join('\n'), 4000))
+      .setFooter({ text: `${prefs.branding.footer || 'GafferBot'} · event ${event.id.slice(0, 8)}` });
+
+    const answered = new Set(responses.map((r) => r.discord_user_id));
+    const flagged = await reliabilityLookup(
+      event.guild_id,
+      responses.filter((r) => r.response !== 'no').map((r) => r.discord_user_id)
+    ).catch(() => new Map());
+    const label = (r) => {
+      const late = deadline && r.responded_at && new Date(r.responded_at) > deadline ? ' *(late)*' : '';
+      const pos = r.position ? ` ${r.position.split(',').join('/')}` : '';
+      const shows = r.response !== 'no' && flagged.has(r.discord_user_id) ? ` ⚠️ ${flagged.get(r.discord_user_id)}% show-up` : '';
+      return `<@${r.discord_user_id}>${pos}${late}${shows}`;
+    };
+    for (const [key, r] of Object.entries(RESPONSES)) {
+      const list = responses.filter((x) => x.response === key);
+      embed.addFields({ name: `${r.emoji} ${r.label} (${list.length})`, value: truncate(list.map(label).join('\n') || '–'), inline: true });
+    }
+
+    if (event.position_signup) {
+      const counts = {};
+      for (const r of responses) {
+        if (r.response !== 'yes' || !r.position) continue;
+        for (const p of r.position.split(',')) counts[p] = (counts[p] || 0) + 1;
+      }
+      const byPos = POSITIONS.filter((p) => counts[p]).map((p) => `${p} ${counts[p]}`).join(' · ');
+      if (byPos) embed.addFields({ name: 'By position', value: byPos });
+    }
+
+    const waiting = expected.filter((id) => !answered.has(id));
+    if (waiting.length && !event.closed) {
+      embed.addFields({ name: `⏳ No answer yet (${waiting.length})`, value: truncate(waiting.map((id) => `<@${id}>`).join(' ')) });
+    }
+    const outLeft = out.filter((o) => !answered.has(o.id));
+    if (outLeft.length) {
+      embed.addFields({
+        name: `Unavailable on the roster (${outLeft.length})`,
+        value: truncate(outLeft.map((o) => `${ROSTER_OUT[o.status]} <@${o.id}>`).join(' ')),
+      });
+    }
+
+    const components = [];
+    if (!event.closed) {
+      components.push(
+        new ActionRowBuilder().addComponents(
+          Object.entries(RESPONSES).map(([key, r]) =>
+            new ButtonBuilder().setCustomId(`ev_r:${key}:${event.id}`).setLabel(r.label).setEmoji(r.emoji).setStyle(r.style)
+          )
+        )
+      );
+      const tools = [new ButtonBuilder().setCustomId(`ev_remind:${event.id}`).setLabel('Remind').setEmoji('🔔').setStyle(ButtonStyle.Secondary)];
+      if (dashboardUrl) {
+        tools.push(
+          new ButtonBuilder()
+            .setURL(`${dashboardUrl.replace(/\/$/, '')}/teams?event=${event.id}`)
+            .setLabel('Build Lineup')
+            .setStyle(ButtonStyle.Link)
+        );
+      }
+      components.push(new ActionRowBuilder().addComponents(tools));
+    }
+    return { embeds: [embed], components };
+  }
+
+  async function fetchBoardMessage(event) {
+    if (!client || !event.channel_id || !event.message_id) return null;
+    const channel = await client.channels.fetch(event.channel_id).catch(() => null);
+    if (!channel?.messages) return null;
+    return channel.messages.fetch(event.message_id).catch(() => null);
+  }
+
+  async function refreshBoard(event) {
+    const message = await fetchBoardMessage(event);
+    if (!message) return false;
+    await message.edit(await buildBoard(event)).catch((err) => console.warn(`[events] board edit failed: ${err.message}`));
+    return true;
+  }
+
+  // ---------- Create ----------
+
+  async function postEvent(fields, channel) {
+    const { data: event, error } = await supabase.from('availability_events').insert(fields).select().single();
+    if (error) throw new Error(error.message);
+    try {
+      const role = fields.ping_role_id ? channel.guild.roles.cache.get(fields.ping_role_id) : null;
+      const message = await channel.send({
+        content: role ? `${role}` : undefined,
+        ...(await buildBoard(event)),
+        allowedMentions: { roles: role ? [role.id] : [] },
+      });
+      await supabase.from('availability_events').update({ message_id: message.id }).eq('id', event.id);
+      event.message_id = message.id;
+    } catch (err) {
+      await supabase.from('availability_events').delete().eq('id', event.id);
+      throw err;
+    }
+    return event;
+  }
+
+  async function loadPreset(guildId, name) {
+    if (!name) return null;
+    const { data } = await supabase.from('event_presets').select('*').eq('guild_id', guildId).ilike('name', name).maybeSingle();
+    return data;
+  }
+
+  function presetKickoff(preset, tz) {
+    if (!preset?.time_of_day) return null;
+    const time = T.parseTimeOfDay(preset.time_of_day);
+    if (!time) return null;
+    if (preset.weekday !== null && preset.weekday !== undefined) return T.nextWeekdayAt(preset.weekday, time, tz);
+    return T.parseWhen(preset.time_of_day, tz);
+  }
+
+  async function handleNew(interaction) {
+    const guildId = interaction.guildId;
+    const state = await getGuildState(guildId);
+    const clubKey = interaction.options.getString('club');
+    const club = resolveClub(state, interaction.member, clubKey);
+    if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+    if (!(await canManageClub(interaction.member, club))) {
+      return interaction.reply({ content: `❌ Only ${club.name}'s leaders can create events.`, flags: 64 });
+    }
+
+    const { timezone: tz } = await serverPrefs(guildId);
+    const presetName = interaction.options.getString('preset');
+    const preset = await loadPreset(guildId, presetName);
+    if (presetName && !preset) return interaction.reply({ content: `❌ No preset called **${presetName}**. See \`/event preset list\`.`, flags: 64 });
+
+    const whenText = interaction.options.getString('when');
+    const kickoff = whenText ? T.parseWhen(whenText, tz) : presetKickoff(preset, tz);
+    if (!kickoff) {
+      return interaction.reply({
+        content: whenText ? `❌ I couldn't read "${whenText}". ${whenExamples(tz)}` : `❌ Tell me when it kicks off. ${whenExamples(tz)}`,
+        flags: 64,
+      });
+    }
+    const now = new Date();
+    if (kickoff.getTime() < now.getTime() - 5 * 60000) {
+      return interaction.reply({ content: `❌ <t:${T.unix(kickoff)}:F> is in the past. ${whenExamples(tz)}`, flags: 64 });
+    }
+
+    const type = interaction.options.getString('type') || preset?.event_type || 'match';
+    const title = (interaction.options.getString('title') || preset?.title || `${club.name} ${typeInfo(type).label}`).slice(0, 100);
+    const deadlineText = interaction.options.getString('deadline');
+    let deadline;
+    if (deadlineText) {
+      deadline = T.parseDeadline(deadlineText, kickoff, tz);
+      if (!deadline) return interaction.reply({ content: `❌ I couldn't read the deadline "${deadlineText}". Use "2h" (before kick-off) or a time like "wed 6pm".`, flags: 64 });
+    } else {
+      const minutes = preset?.deadline_minutes ?? DEFAULT_DEADLINE_MINUTES;
+      deadline = new Date(kickoff.getTime() - minutes * 60000);
+    }
+    if (deadline > kickoff) deadline = kickoff;
+    if (deadline < now) deadline = kickoff;
+
+    const role = interaction.options.getRole('ping') || (preset?.ping_role_id ? interaction.guild.roles.cache.get(preset.ping_role_id) : null);
+    const channelOpt = interaction.options.getChannel('channel');
+    const channel =
+      channelOpt ||
+      (preset?.channel_id ? await interaction.guild.channels.fetch(preset.channel_id).catch(() => null) : null) ||
+      interaction.channel;
+    const me = interaction.guild.members.me;
+    const missing = missingChannelPerms(channel, me);
+    if (missing.length) return interaction.reply({ content: missingPermsMessage(channel, missing), flags: 64 });
+    if (role && !canPingRole(channel, me, role)) {
+      return interaction.reply({
+        content: `❌ I can't ping ${role} in <#${channel.id}>. Make the role mentionable or give me **Mention @everyone, @here and All Roles** there.`,
+        flags: 64,
+      });
+    }
+
+    const positionsOpt = interaction.options.getBoolean('positions');
+    const positionSignup = positionsOpt ?? (preset ? preset.position_signup : type === 'tryout');
+    const description = (interaction.options.getString('description') || preset?.description || '').slice(0, 1000) || null;
+    const repeatWeeks = Number(interaction.options.getString('repeat') || 0);
+    const durationMinutes = preset?.duration_minutes || 90;
+
+    await interaction.deferReply({ flags: 64 });
+
+    let seriesId = null;
+    if (repeatWeeks) {
+      const { data: series, error } = await supabase
+        .from('event_series')
+        .insert({
+          guild_id: guildId,
+          club_key: club.key,
+          title,
+          event_type: type,
+          description,
+          channel_id: channel.id,
+          ping_role_id: role?.id || null,
+          interval_weeks: repeatWeeks,
+          next_at: T.addLocalDays(kickoff, 7 * repeatWeeks, tz).toISOString(),
+          timezone: tz,
+          duration_minutes: durationMinutes,
+          deadline_minutes: Math.round((kickoff - deadline) / 60000),
+          post_hours_before: repeatWeeks * 168 - 24,
+          position_signup: positionSignup,
+          created_by_discord_id: interaction.user.id,
+        })
+        .select('id')
+        .single();
+      if (error) return interaction.editReply({ content: `❌ Could not save the repeat: ${error.message}` });
+      seriesId = series.id;
+    }
+
+    let event;
+    try {
+      event = await postEvent(
+        {
+          guild_id: guildId,
+          club_key: club.key,
+          team_id: club.team_id || null,
+          series_id: seriesId,
+          title,
+          description,
+          event_type: type,
+          scheduled_at: kickoff.toISOString(),
+          deadline_at: deadline.toISOString(),
+          duration_minutes: durationMinutes,
+          ping_role_id: role?.id || null,
+          position_signup: positionSignup,
+          created_by_discord_id: interaction.user.id,
+          channel_id: channel.id,
+        },
+        channel
+      );
+    } catch (err) {
+      if (seriesId) await supabase.from('event_series').delete().eq('id', seriesId);
+      return interaction.editReply({ content: `❌ Could not post the event: ${err.message}` });
+    }
+
+    const { source } = await expectedPlayers(event);
+    const notes = [
+      `✅ Posted **${title}** in <#${channel.id}>: ${messageLink(guildId, channel.id, event.message_id)}`,
+      `Kick-off <t:${T.unix(kickoff)}:F>, answers due <t:${T.unix(deadline)}:R>.`,
+      source === 'none'
+        ? 'Tip: add players with `/roster add` (or pick a role with `ping`) so the board shows who has not answered and I can remind them.'
+        : 'I will DM anyone who has not answered before the deadline.',
+    ];
+    if (repeatWeeks) notes.push(`🔁 I'll post the next one ${repeatWeeks === 1 ? 'every week' : 'every 2 weeks'}, a day after the previous kick-off. Stop it with \`/event series stop\`.`);
+    return interaction.editReply({ content: notes.join('\n') });
+  }
+
+  // ---------- Respond ----------
+
+  function positionPicker(eventId, current = []) {
+    return new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`ev_pos:${eventId}`)
+        .setPlaceholder(`Which positions can you play? (up to ${MAX_SIGNUP_POSITIONS})`)
+        .setMinValues(1)
+        .setMaxValues(MAX_SIGNUP_POSITIONS)
+        .addOptions(POSITIONS.map((p) => ({ label: p, value: p, default: current.includes(p) })))
+    );
+  }
+
+  async function saveResponse(event, userId, response, position = null) {
+    const { error } = await supabase.from('player_availability').upsert(
+      {
+        event_id: event.id,
+        discord_user_id: userId,
+        response,
+        position: response === 'yes' ? position : null,
+        responded_at: new Date().toISOString(),
+        auto_marked: false,
+      },
+      { onConflict: 'event_id,discord_user_id' }
+    );
+    if (error) throw new Error(error.message);
+  }
+
+  // The player's usual positions, best first: roster, then /myprefs
+  async function usualPositions(event, userId) {
+    const found = [];
+    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    if (club?.team_id) {
+      const { data } = await supabase
+        .from('team_rosters')
+        .select('primary_position, secondary_position')
+        .eq('team_id', club.team_id)
+        .eq('discord_user_id', userId)
+        .maybeSingle();
+      found.push(data?.primary_position, data?.secondary_position);
+    }
+    const { data: prefs } = await supabase
+      .from('position_preferences')
+      .select('preferences')
+      .eq('guild_id', event.guild_id)
+      .eq('user_id', userId)
+      .maybeSingle();
+    found.push(...(prefs?.preferences || []));
+    return [...new Set(found.filter((p) => POSITIONS.includes(p)))].slice(0, MAX_SIGNUP_POSITIONS);
+  }
+
+  async function handleResponse(interaction, response, eventId) {
+    const event = await loadEvent(eventId);
+    if (!event) return interaction.reply({ content: '❌ That event no longer exists.', flags: 64 });
+    if (event.closed) return interaction.reply({ content: `❌ **${event.title}** is ${event.cancelled ? 'cancelled' : 'finished'}.`, flags: 64 });
+
+    if (response === 'yes' && event.position_signup) {
+      const current = await usualPositions(event, interaction.user.id);
+      return interaction.reply({
+        content: `🎯 **${event.title}**: which positions are you signing up for? Pick up to ${MAX_SIGNUP_POSITIONS}.`,
+        components: [positionPicker(event.id, current)],
+        flags: 64,
+      });
+    }
+
+    const onBoard = interaction.message?.id && interaction.message.id === event.message_id;
+    if (onBoard) await interaction.deferUpdate();
+    else await interaction.deferReply({ flags: 64 });
+    try {
+      await saveResponse(event, interaction.user.id, response);
+    } catch (err) {
+      return onBoard ? interaction.followUp({ content: `❌ ${err.message}`, flags: 64 }) : interaction.editReply({ content: `❌ ${err.message}` });
+    }
+    if (onBoard) await interaction.editReply(await buildBoard(event));
+    else {
+      await refreshBoard(event);
+      await interaction.editReply({ content: `${RESPONSES[response].emoji} You're down as **${RESPONSES[response].label}** for **${event.title}**.` });
+    }
+  }
+
+  async function handlePositionPick(interaction, eventId) {
+    const event = await loadEvent(eventId);
+    if (!event || event.closed) return interaction.update({ content: '❌ That event is closed.', components: [] });
+    const picked = POSITIONS.filter((p) => interaction.values.includes(p)).slice(0, MAX_SIGNUP_POSITIONS);
+    try {
+      await saveResponse(event, interaction.user.id, 'yes', picked.join(','));
+    } catch (err) {
+      return interaction.update({ content: `❌ ${err.message}`, components: [] });
+    }
+    await interaction.update({ content: `✅ You're signed up for **${event.title}** at **${picked.join(', ')}**.`, components: [] });
+    await refreshBoard(event);
+  }
+
+  // ---------- Reminders ----------
+
+  async function sendReminder(event, { manual = false } = {}) {
+    const responses = await loadResponses(event.id);
+    const answered = new Set(responses.map((r) => r.discord_user_id));
+    const { expected, source } = await expectedPlayers(event);
+    const waiting = expected.filter((id) => !answered.has(id));
+    const kickoff = T.unix(event.scheduled_at);
+    const due = event.deadline_at ? T.unix(event.deadline_at) : kickoff;
+    const link = event.message_id ? messageLink(event.guild_id, event.channel_id, event.message_id) : null;
+
+    let dmSent = 0;
+    let dmFailed = 0;
+    for (const userId of waiting) {
+      try {
+        const user = await client.users.fetch(userId);
+        await user.send({
+          content: `⏰ **${event.title}** kicks off <t:${kickoff}:F>. Can you play? Please answer by <t:${due}:R>.${link ? `\n${link}` : ''}`,
+          components: [
+            new ActionRowBuilder().addComponents(
+              Object.entries(RESPONSES).map(([key, r]) =>
+                new ButtonBuilder().setCustomId(`ev_r:${key}:${event.id}`).setLabel(r.label).setEmoji(r.emoji).setStyle(r.style)
+              )
+            ),
+          ],
+        });
+        dmSent++;
+      } catch {
+        dmFailed++;
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+
+    // One channel nudge under the board for anyone with DMs closed (and as a visible reminder)
+    const board = await fetchBoardMessage(event);
+    if (board && (waiting.length || source === 'none')) {
+      const content = waiting.length
+        ? `⏰ Still waiting on ${waiting.map((id) => `<@${id}>`).join(' ')}. Answer on the post above by <t:${due}:R>.`
+        : `⏰ Answers for **${event.title}** close <t:${due}:R>. Tap a button on the post above.`;
+      await board.reply({ content: truncate(content, 2000), allowedMentions: { users: waiting.slice(0, 100) } }).catch(() => {});
+    }
+    if (!manual) await supabase.from('availability_events').update({ deadline_reminder_sent: true }).eq('id', event.id);
+    return { waiting: waiting.length, dmSent, dmFailed, source };
+  }
+
+  async function handleRemindButton(interaction, eventId) {
+    const event = await loadEvent(eventId);
+    if (!event || event.closed) return interaction.reply({ content: '❌ That event is closed.', flags: 64 });
+    return remindNow(interaction, event);
+  }
+
+  async function remindNow(interaction, event) {
+    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    const allowed = club ? await canManageClub(interaction.member, club) : isManager(interaction.member);
+    if (!allowed) return interaction.reply({ content: '❌ Only club leaders can send reminders.', flags: 64 });
+    const last = manualRemindAt.get(event.id) || 0;
+    if (Date.now() - last < MANUAL_REMIND_COOLDOWN_MS) {
+      return interaction.reply({ content: `⏳ A reminder went out <t:${Math.floor(last / 1000)}:R>. Try again in a few minutes.`, flags: 64 });
+    }
+    manualRemindAt.set(event.id, Date.now());
+    await interaction.deferReply({ flags: 64 });
+    const result = await sendReminder(event, { manual: true });
+    if (result.source === 'none') {
+      return interaction.editReply({ content: 'Posted a reminder under the board. Add a roster with `/roster add` (or a ping role) and I can DM the players who have not answered.' });
+    }
+    return interaction.editReply({
+      content: result.waiting
+        ? `🔔 Reminded ${result.waiting} player(s): ${result.dmSent} by DM${result.dmFailed ? `, ${result.dmFailed} have DMs closed and were pinged in the channel` : ''}.`
+        : '✅ Everyone has answered already.',
+    });
+  }
+
+  // ---------- List / cancel ----------
+
+  async function upcomingEvents(guildId, limit = 10) {
+    const { data } = await supabase
+      .from('availability_events')
+      .select('*')
+      .eq('guild_id', guildId)
+      .eq('closed', false)
+      .not('club_key', 'is', null)
+      .gte('scheduled_at', new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString())
+      .order('scheduled_at', { ascending: true })
+      .limit(limit);
+    return data || [];
+  }
+
+  async function buildEventList(guildId) {
+    const events = await upcomingEvents(guildId);
+    const embed = new EmbedBuilder().setTitle('📅 Upcoming events').setColor(0x5865f2);
+    if (!events.length) {
+      embed.setDescription('Nothing scheduled. Create one with `/event new when:"thu 9pm"`.');
+    } else {
+      const ids = events.map((e) => e.id);
+      const { data: responses } = await supabase.from('player_availability').select('event_id, response').in('event_id', ids);
+      const count = (id, r) => (responses || []).filter((x) => x.event_id === id && x.response === r).length;
+      embed.setDescription(
+        truncate(
+          events
+            .map((e) => {
+              const link = e.message_id ? ` · [board](${messageLink(guildId, e.channel_id, e.message_id)})` : '';
+              return `${typeInfo(e.event_type).emoji} **${e.title}** <t:${T.unix(e.scheduled_at)}:F>\n✅ ${count(e.id, 'yes')} ❓ ${count(e.id, 'maybe')} ❌ ${count(e.id, 'no')}${link}`;
+            })
+            .join('\n\n'),
+          4000
+        )
+      );
+    }
+    const { data: series } = await supabase.from('event_series').select('*').eq('guild_id', guildId).eq('active', true).order('next_at');
+    if (series?.length) {
+      embed.addFields({
+        name: '🔁 Recurring',
+        value: truncate(
+          series.map((s) => `**${s.title}** every ${s.interval_weeks === 1 ? 'week' : `${s.interval_weeks} weeks`}, next <t:${T.unix(s.next_at)}:F>`).join('\n')
+        ),
+      });
+    }
+    return { embeds: [embed] };
+  }
+
+  async function handleCancel(interaction) {
+    const event = await loadEvent(interaction.options.getString('event'));
+    if (!event || event.guild_id !== interaction.guildId) return interaction.reply({ content: '❌ Pick an event from the list.', flags: 64 });
+    if (event.closed) return interaction.reply({ content: `❌ **${event.title}** is already ${event.cancelled ? 'cancelled' : 'finished'}.`, flags: 64 });
+    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    if (!(club ? await canManageClub(interaction.member, club) : isManager(interaction.member))) {
+      return interaction.reply({ content: '❌ Only club leaders can cancel events.', flags: 64 });
+    }
+    await interaction.deferReply({ flags: 64 });
+    await supabase.from('availability_events').update({ cancelled: true, closed: true, updated_at: new Date().toISOString() }).eq('id', event.id);
+    const updated = { ...event, cancelled: true, closed: true };
+    const board = await fetchBoardMessage(updated);
+    let notified = 0;
+    if (board) {
+      await board.edit(await buildBoard(updated)).catch(() => {});
+      const responses = await loadResponses(event.id);
+      const players = responses.filter((r) => r.response !== 'no').map((r) => r.discord_user_id);
+      notified = players.length;
+      await board
+        .reply({
+          content: `❌ **${event.title}** (<t:${T.unix(event.scheduled_at)}:F>) is cancelled.${players.length ? ` ${players.map((id) => `<@${id}>`).join(' ')}` : ''}`,
+          allowedMentions: { users: players.slice(0, 100) },
+        })
+        .catch(() => {});
+    }
+    return interaction.editReply({ content: `✅ Cancelled **${event.title}**${notified ? ` and pinged the ${notified} who said they could play` : ''}.` });
+  }
+
+  // ---------- Presets ----------
+
+  async function handlePreset(interaction, sub) {
+    const guildId = interaction.guildId;
+    if (sub === 'list') {
+      const { data } = await supabase.from('event_presets').select('*').eq('guild_id', guildId).order('name');
+      const embed = new EmbedBuilder().setTitle('🗂️ Event presets').setColor(0x5865f2);
+      embed.setDescription(
+        data?.length
+          ? truncate(
+              data
+                .map((p) => {
+                  const day = p.weekday !== null && p.weekday !== undefined ? `${T.WEEKDAYS[p.weekday]} ` : '';
+                  const bits = [typeInfo(p.event_type).label, p.time_of_day ? `${day}${p.time_of_day}` : null, p.deadline_minutes ? `answers ${T.describeOffset(p.deadline_minutes)} before` : null, p.ping_role_id ? `<@&${p.ping_role_id}>` : null, p.position_signup ? 'position sign-up' : null].filter(Boolean);
+                  return `**${p.name}**: ${p.title} (${bits.join(', ')})`;
+                })
+                .join('\n'),
+              4000
+            )
+          : 'No presets yet. Save one with `/event preset save`, then use it with `/event new preset:<name>`.'
+      );
+      return interaction.reply({ embeds: [embed], flags: 64 });
+    }
+
+    if (!isManager(interaction.member)) return interaction.reply({ content: '❌ Only managers can change presets.', flags: 64 });
+
+    if (sub === 'delete') {
+      const name = interaction.options.getString('name');
+      const { data } = await supabase.from('event_presets').delete().eq('guild_id', guildId).ilike('name', name).select('id');
+      return interaction.reply({ content: data?.length ? `🗑️ Deleted preset **${name}**.` : `❌ No preset called **${name}**.`, flags: 64 });
+    }
+
+    // save
+    const name = interaction.options.getString('name').trim().slice(0, 50);
+    const timeText = interaction.options.getString('time');
+    let weekday = null;
+    let timeOfDay = null;
+    if (timeText) {
+      const [first, ...rest] = timeText.trim().split(/\s+/);
+      const wd = T.parseWeekday(first);
+      const time = T.parseTimeOfDay(wd === -1 ? timeText : rest.join(' '));
+      if (!time) return interaction.reply({ content: `❌ I couldn't read the time "${timeText}". Use "21:00" or "thu 21:00".`, flags: 64 });
+      weekday = wd === -1 ? null : wd;
+      timeOfDay = T.formatTimeOfDay(time);
+    }
+    const deadlineText = interaction.options.getString('deadline');
+    const deadlineMinutes = deadlineText ? T.parseOffsetMinutes(deadlineText) : null;
+    if (deadlineText && deadlineMinutes === null) {
+      return interaction.reply({ content: '❌ Preset deadlines are a time before kick-off, like "2h" or "90m".', flags: 64 });
+    }
+    const { count } = await supabase.from('event_presets').select('id', { count: 'exact', head: true }).eq('guild_id', guildId);
+    const { data: existing } = await supabase.from('event_presets').select('id').eq('guild_id', guildId).ilike('name', name).maybeSingle();
+    if (!existing && (count || 0) >= MAX_PRESETS) {
+      return interaction.reply({ content: `❌ You have ${MAX_PRESETS} presets already. Delete one first.`, flags: 64 });
+    }
+    const type = interaction.options.getString('type') || 'match';
+    const row = {
+      guild_id: guildId,
+      name,
+      title: interaction.options.getString('title').slice(0, 100),
+      event_type: type,
+      description: interaction.options.getString('description')?.slice(0, 1000) || null,
+      weekday,
+      time_of_day: timeOfDay,
+      deadline_minutes: deadlineMinutes,
+      channel_id: interaction.options.getChannel('channel')?.id || null,
+      ping_role_id: interaction.options.getRole('ping')?.id || null,
+      position_signup: interaction.options.getBoolean('positions') ?? type === 'tryout',
+      created_by_discord_id: interaction.user.id,
+    };
+    const { error } = existing
+      ? await supabase.from('event_presets').update(row).eq('id', existing.id)
+      : await supabase.from('event_presets').insert(row);
+    if (error) return interaction.reply({ content: `❌ ${error.message}`, flags: 64 });
+    return interaction.reply({
+      content: `✅ Saved preset **${name}**. Post it with \`/event new preset:${name}\`${timeOfDay ? '' : ' when:"thu 9pm"'}.`,
+      flags: 64,
+    });
+  }
+
+  // ---------- Series ----------
+
+  async function handleSeries(interaction, sub) {
+    const guildId = interaction.guildId;
+    if (sub === 'list') return interaction.reply({ ...(await buildEventList(guildId)), flags: 64 });
+    const { data: series } = await supabase.from('event_series').select('*').eq('id', interaction.options.getString('series')).eq('guild_id', guildId).maybeSingle();
+    if (!series) return interaction.reply({ content: '❌ Pick a series from the list.', flags: 64 });
+    const club = series.club_key ? await clubFor(guildId, series.club_key) : null;
+    if (!(club ? await canManageClub(interaction.member, club) : isManager(interaction.member))) {
+      return interaction.reply({ content: '❌ Only club leaders can stop a series.', flags: 64 });
+    }
+    await supabase.from('event_series').update({ active: false, updated_at: new Date().toISOString() }).eq('id', series.id);
+    return interaction.reply({ content: `⏹️ Stopped **${series.title}**. Events already posted stay up.`, flags: 64 });
+  }
+
+  // ---------- /available ----------
+
+  async function handleAvailable(interaction) {
+    const events = (await upcomingEvents(interaction.guildId, 5)).filter((e) => new Date(e.scheduled_at) > new Date());
+    if (!events.length) return interaction.reply({ content: 'No upcoming events right now.', flags: 64 });
+    const { data: mine } = await supabase
+      .from('player_availability')
+      .select('event_id, response, position')
+      .eq('discord_user_id', interaction.user.id)
+      .in('event_id', events.map((e) => e.id));
+    const byEvent = new Map((mine || []).map((r) => [r.event_id, r]));
+    const embed = new EmbedBuilder()
+      .setTitle('📅 Your upcoming events')
+      .setColor(0x5865f2)
+      .setDescription(
+        events
+          .map((e, i) => {
+            const r = byEvent.get(e.id);
+            const answer = r && RESPONSES[r.response] ? `${RESPONSES[r.response].emoji} ${RESPONSES[r.response].label}${r.position ? ` (${r.position.split(',').join('/')})` : ''}` : '⏳ Not answered';
+            return `**${i + 1}. ${e.title}** <t:${T.unix(e.scheduled_at)}:F>\n${answer}`;
+          })
+          .join('\n\n')
+      );
+    const rows = events.map((e, i) =>
+      new ActionRowBuilder().addComponents(
+        Object.entries(RESPONSES).map(([key, r]) =>
+          new ButtonBuilder()
+            .setCustomId(`ev_r:${key}:${e.id}`)
+            .setLabel(key === 'yes' ? `${i + 1}. ${r.label}` : r.label)
+            .setEmoji(r.emoji)
+            .setStyle(r.style)
+        )
+      )
+    );
+    return interaction.reply({ embeds: [embed], components: rows, flags: 64 });
+  }
+
+  // ---------- Timezone ----------
+
+  async function handleTimezone(interaction) {
+    if (!isManager(interaction.member)) return interaction.reply({ content: '❌ Only managers can change the timezone.', flags: 64 });
+    const zone = interaction.options.getString('zone').trim();
+    const match = T.allTimeZones().find((z) => z.toLowerCase() === zone.toLowerCase()) || (T.isValidTimeZone(zone) ? zone : null);
+    if (!match) return interaction.reply({ content: `❌ "${zone}" isn't a timezone I know. Pick one from the list, e.g. Europe/London.`, flags: 64 });
+    const { error } = await supabase.from('guild_settings').upsert({ guild_id: interaction.guildId, timezone: match }, { onConflict: 'guild_id' });
+    if (error) return interaction.reply({ content: `❌ ${error.message}`, flags: 64 });
+    forgetPrefs(interaction.guildId);
+    const p = T.localParts(new Date(), match);
+    return interaction.reply({
+      content: `✅ Times like "9pm" now mean 9pm in **${match}** (it's ${T.formatTimeOfDay(p)} there now). Everyone still sees event times in their own timezone.`,
+      flags: 64,
+    });
+  }
+
+  // ---------- Autocomplete ----------
+
+  async function handleAutocomplete(interaction) {
+    const focused = interaction.options.getFocused(true);
+    const q = String(focused.value || '').toLowerCase();
+    const guildId = interaction.guildId;
+    let choices = [];
+
+    if (focused.name === 'club') {
+      const state = await getGuildState(guildId);
+      choices = activeClubs(state).map((c) => ({ name: c.name.slice(0, 100), value: c.key }));
+    } else if (focused.name === 'preset' || (focused.name === 'name' && interaction.options.getSubcommand() === 'delete')) {
+      const { data } = await supabase.from('event_presets').select('name').eq('guild_id', guildId).order('name');
+      choices = (data || []).map((p) => ({ name: p.name, value: p.name }));
+    } else if (focused.name === 'event') {
+      const { timezone } = await serverPrefs(guildId);
+      const fmt = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      choices = (await upcomingEvents(guildId, 25)).map((e) => ({ name: `${e.title} · ${fmt.format(new Date(e.scheduled_at))}`.slice(0, 100), value: e.id }));
+    } else if (focused.name === 'series') {
+      const { data } = await supabase.from('event_series').select('id, title, interval_weeks').eq('guild_id', guildId).eq('active', true);
+      choices = (data || []).map((s) => ({ name: `${s.title} (every ${s.interval_weeks === 1 ? 'week' : `${s.interval_weeks} weeks`})`.slice(0, 100), value: s.id }));
+    } else if (focused.name === 'zone') {
+      choices = T.allTimeZones()
+        .filter((z) => z.toLowerCase().includes(q.replace(/\s+/g, '_')))
+        .slice(0, 25)
+        .map((z) => ({ name: z, value: z }));
+      return interaction.respond(choices).catch(() => {});
+    } else {
+      return false;
+    }
+    await interaction.respond(choices.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 25)).catch(() => {});
+    return true;
+  }
+
+  // ---------- Scheduler ----------
+
+  async function postDueSeries(now) {
+    const horizon = new Date(now.getTime() + 5 * 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: series } = await supabase.from('event_series').select('*').eq('active', true).lte('next_at', horizon);
+    for (const s of series || []) {
+      const guild = client.guilds.cache.get(s.guild_id);
+      if (!guild) continue;
+      let nextAt = new Date(s.next_at);
+      // Skip occurrences that were missed while the bot was down
+      while (nextAt <= now) nextAt = T.addLocalDays(nextAt, 7 * s.interval_weeks, s.timezone);
+      if (nextAt.getTime() - s.post_hours_before * 3600000 > now.getTime()) {
+        if (nextAt.getTime() !== new Date(s.next_at).getTime()) {
+          await supabase.from('event_series').update({ next_at: nextAt.toISOString() }).eq('id', s.id);
+        }
+        continue;
+      }
+
+      // Advance first so a failure can't post the same occurrence twice
+      const after = T.addLocalDays(nextAt, 7 * s.interval_weeks, s.timezone);
+      await supabase.from('event_series').update({ next_at: after.toISOString(), updated_at: now.toISOString() }).eq('id', s.id);
+
+      const { data: existing } = await supabase.from('availability_events').select('id').eq('series_id', s.id).eq('scheduled_at', nextAt.toISOString()).maybeSingle();
+      if (existing) continue;
+      const channel = await guild.channels.fetch(s.channel_id).catch(() => null);
+      if (!channel || missingChannelPerms(channel, guild.members.me).length) {
+        console.warn(`[events] series ${s.id}: can't post in ${s.channel_id}`);
+        continue;
+      }
+      const club = s.club_key ? await clubFor(s.guild_id, s.club_key) : null;
+      let deadline = s.deadline_minutes !== null ? new Date(nextAt.getTime() - s.deadline_minutes * 60000) : new Date(nextAt.getTime() - DEFAULT_DEADLINE_MINUTES * 60000);
+      if (deadline < now) deadline = nextAt;
+      await postEvent(
+        {
+          guild_id: s.guild_id,
+          club_key: s.club_key,
+          team_id: club?.team_id || null,
+          series_id: s.id,
+          title: s.title,
+          description: s.description,
+          event_type: s.event_type,
+          scheduled_at: nextAt.toISOString(),
+          deadline_at: deadline.toISOString(),
+          duration_minutes: s.duration_minutes,
+          ping_role_id: s.ping_role_id,
+          position_signup: s.position_signup,
+          created_by_discord_id: s.created_by_discord_id,
+          channel_id: s.channel_id,
+        },
+        channel
+      ).catch((err) => console.warn(`[events] series ${s.id} post failed: ${err.message}`));
+    }
+  }
+
+  async function sendDueReminders(now) {
+    const { data: events } = await supabase
+      .from('availability_events')
+      .select('*')
+      .eq('closed', false)
+      .eq('deadline_reminder_sent', false)
+      .not('deadline_at', 'is', null)
+      .gt('deadline_at', now.toISOString())
+      .lte('deadline_at', new Date(now.getTime() + REMIND_LEAD_MS).toISOString());
+    for (const event of events || []) {
+      if (!client.guilds.cache.has(event.guild_id)) continue;
+      // Give fresh events half the time to their deadline before chasing anyone
+      const deadline = new Date(event.deadline_at).getTime();
+      const created = new Date(event.created_at).getTime();
+      if (now.getTime() < created + (deadline - created) / 2) continue;
+      await sendReminder(event).catch((err) => console.warn(`[events] reminder ${event.id} failed: ${err.message}`));
+    }
+  }
+
+  async function closeFinished(now) {
+    const { data: events } = await supabase
+      .from('availability_events')
+      .select('*')
+      .eq('closed', false)
+      .not('club_key', 'is', null)
+      .lte('scheduled_at', now.toISOString());
+    for (const event of events || []) {
+      const end = new Date(event.scheduled_at).getTime() + (event.duration_minutes || 90) * 60000;
+      if (end > now.getTime()) continue;
+      await supabase.from('availability_events').update({ closed: true, updated_at: now.toISOString() }).eq('id', event.id);
+      const closed = { ...event, closed: true };
+      for (const hook of afterClose) await hook(closed).catch((err) => console.warn(`[events] close hook failed: ${err.message}`));
+      await refreshBoard(closed);
+    }
+  }
+
+  const tickHooks = [];
+  const afterClose = [];
+
+  async function tick() {
+    if (ticking || !client) return;
+    ticking = true;
+    const now = new Date();
+    try {
+      await postDueSeries(now);
+      await sendDueReminders(now);
+      for (const hook of tickHooks) await hook(now);
+      await closeFinished(now);
+    } catch (err) {
+      console.error('[events] scheduler error:', err);
+    } finally {
+      ticking = false;
+    }
+  }
+
+  function start(discordClient) {
+    client = discordClient;
+    setInterval(tick, 60 * 1000);
+    setTimeout(tick, 10 * 1000);
+  }
+
+  // ---------- Routing ----------
+
+  async function handleCommand(interaction, cmd) {
+    if (cmd === 'available') {
+      await handleAvailable(interaction);
+      return true;
+    }
+    if (cmd !== 'event') return false;
+    const group = interaction.options.getSubcommandGroup(false);
+    const sub = interaction.options.getSubcommand();
+    if (group === 'preset') await handlePreset(interaction, sub);
+    else if (group === 'series') await handleSeries(interaction, sub);
+    else if (sub === 'new') await handleNew(interaction);
+    else if (sub === 'list') await interaction.reply({ ...(await buildEventList(interaction.guildId)), flags: 64 });
+    else if (sub === 'cancel') await handleCancel(interaction);
+    else if (sub === 'timezone') await handleTimezone(interaction);
+    else if (sub === 'remind') {
+      const event = await loadEvent(interaction.options.getString('event'));
+      if (!event || event.guild_id !== interaction.guildId || event.closed) await interaction.reply({ content: '❌ Pick an open event from the list.', flags: 64 });
+      else await remindNow(interaction, event);
+    }
+    return true;
+  }
+
+  // Buttons and selects work in the server and in reminder DMs
+  async function handleComponent(interaction) {
+    const [action, a, b] = interaction.customId.split(':');
+    if (!action.startsWith('ev_')) return false;
+    if (action === 'ev_r' && RESPONSES[a]) await handleResponse(interaction, a, b);
+    else if (action === 'ev_pos') await handlePositionPick(interaction, a);
+    else if (action === 'ev_remind') await handleRemindButton(interaction, a);
+    else return false;
+    return true;
+  }
+
+  async function handleInteraction(interaction) {
+    if (interaction.isAutocomplete()) {
+      if (interaction.commandName !== 'event') return false;
+      await handleAutocomplete(interaction);
+      return true;
+    }
+    if (interaction.isChatInputCommand()) {
+      if (!interaction.guildId) return false;
+      return handleCommand(interaction, interaction.commandName);
+    }
+    if (interaction.isButton() || interaction.isStringSelectMenu()) return handleComponent(interaction);
+    return false;
+  }
+
+  return {
+    commands: EVENT_COMMANDS,
+    handleInteraction,
+    start,
+    buildEventList,
+    serverPrefs,
+    forgetPrefs,
+    loadEvent,
+    loadResponses,
+    expectedPlayers,
+    fetchBoardMessage,
+    refreshBoard,
+    clubFor,
+    runScheduler: tick,
+    setReliabilityLookup: (fn) => {
+      reliabilityLookup = fn;
+    },
+    onTick: (fn) => tickHooks.push(fn),
+    onClose: (fn) => afterClose.push(fn),
+    getClient: () => client,
+  };
+}
+
+module.exports = { createEvents, EVENT_COMMANDS, POSITIONS, EVENT_TYPES };
