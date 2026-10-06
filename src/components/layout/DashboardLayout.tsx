@@ -11,17 +11,22 @@ import {
   Gamepad2,
   Swords,
   Target,
-  Medal,
   UsersRound,
   Settings,
   Star,
   MessageSquare,
   LogOut,
-  Globe,
-  Lightbulb
+  Lightbulb,
+  ChevronDown
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { GuildSelector } from "@/components/GuildSelector";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -29,22 +34,32 @@ interface DashboardLayoutProps {
   children: ReactNode;
 }
 
-const navItems = [
-  { path: "/", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
+// The four views a manager uses on match night
+const primaryNavItems = [
+  { path: "/", label: "Match Night", icon: LayoutDashboard },
+  { path: "/teams", label: "Lineup Builder", icon: UsersRound },
+  { path: "/leaderboard", label: "Club Stats", icon: Trophy },
+  { path: "/insights", label: "Tactical Insights", icon: Lightbulb },
+];
+
+const moreNavItems = [
   { path: "/games", label: "Games", icon: Gamepad2 },
-  { path: "/insights", label: "Insights", icon: Lightbulb },
   { path: "/ratings", label: "Ratings", icon: Star },
-  { path: "/teams", label: "Teams & Lineups", icon: UsersRound },
   { path: "/drafts", label: "Drafts", icon: Swords },
   { path: "/scouting", label: "Scouting", icon: Target },
   { path: "/squadiq", label: "SquadIQ", icon: MessageSquare },
-  { path: "/global-league", label: "Global League", icon: Globe },
-  { path: "/tournaments", label: "Tournaments", icon: Medal },
   { path: "/competitions", label: "Wins", icon: Trophy },
   { path: "/profile", label: "Profile", icon: User },
   { path: "/settings", label: "Settings", icon: Settings },
 ];
+
+const navLinkClass = (isActive: boolean) =>
+  cn(
+    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+    isActive
+      ? "bg-primary text-primary-foreground"
+      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+  );
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const location = useLocation();
@@ -102,24 +117,30 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         {/* Desktop Navigation - wraps into multiple rows */}
         <nav className="hidden lg:block container pb-2">
           <div className="flex flex-wrap items-center gap-1">
-            {navItems.map((item) => {
-              const isActive = location.pathname === item.path;
-              return (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                  )}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
+            {primaryNavItems.map((item) => (
+              <Link key={item.path} to={item.path} className={navLinkClass(location.pathname === item.path)}>
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            ))}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={navLinkClass(moreNavItems.some((item) => item.path === location.pathname))}
+              >
+                More
+                <ChevronDown className="h-4 w-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {moreNavItems.map((item) => (
+                  <DropdownMenuItem key={item.path} asChild>
+                    <Link to={item.path} className="flex items-center gap-2">
+                      <item.icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </nav>
 
@@ -129,27 +150,21 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             <div className="mb-4 sm:hidden">
               <GuildSelector />
             </div>
-            <div className="flex flex-wrap gap-2">
-              {navItems.map((item) => {
-                const isActive = location.pathname === item.path;
-                return (
+            {[primaryNavItems, moreNavItems].map((group, i) => (
+              <div key={i} className={cn("flex flex-wrap gap-2", i > 0 && "mt-3 pt-3 border-t")}>
+                {group.map((item) => (
                   <Link
                     key={item.path}
                     to={item.path}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={cn(
-                      "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                    )}
+                    className={navLinkClass(location.pathname === item.path)}
                   >
                     <item.icon className="h-4 w-4" />
                     {item.label}
                   </Link>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            ))}
             <div className="mt-4 pt-4 border-t flex items-center justify-between text-sm">
               <span className="text-muted-foreground truncate max-w-[200px]">{user?.email}</span>
               <Button variant="outline" size="sm" onClick={handleSignOut}>

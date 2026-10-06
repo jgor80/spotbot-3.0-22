@@ -1,77 +1,108 @@
-# Welcome to your Lovable project
+# Spotbot / SquadIQ
 
-## Project info
+Club management for EA SPORTS FC Pro Clubs Discord servers: a Discord bot plus the SquadIQ web dashboard, backed by Supabase.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+What it does:
 
-## How can I edit this code?
+- **Spots and availability**: live spot panels per club (`/spotpanel`, `/spots`, `/vcspots`) and availability for events.
+- **Team sheets**: build a lineup on the web (Lineup Builder), save it, and announce it in Discord with a pitch graphic, pings for the starting XI and optional DMs. `/teamsheet` posts the latest lineup from Discord.
+- **Club stats and insights**: EA match sync, the Games page, and the Insights page (record, form, duo and trio chemistry, player impact, win vs. loss gaps, formations).
+- **Captains drafts**: `/draft`, then `/applyfriendly` links the EA friendly you played to the draft so everyone gets stats.
+- **Position roles**: `/positionpanel` posts a panel where members pick their primary and secondary positions.
+- **Twitch and Xbox**: go-live alerts (`/twitchsetup`) and Xbox presence (`/linkxbox`).
 
-There are several ways of editing your application.
+The web dashboard has four main views (Match Night, Lineup Builder, Club Stats, Tactical Insights); everything else is under **More**.
 
-**Use Lovable**
+## Repository layout
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+| Path | What it is |
+|---|---|
+| `src/` | Web dashboard (Vite, React, TypeScript, shadcn/ui). Edited in Lovable and here. |
+| `public/spotbot/index.cjs` | The Discord bot (single file). |
+| `public/spotbot/ea-sync-local.cjs` | Optional local EA sync worker (runs from a home connection when EA blocks cloud IPs). |
+| `public/spotbot/ea-fc27.cjs` | EA platform and region helpers shared by the bot and local sync. |
+| `supabase/functions/` | Edge functions (Deno). Shared code is in `supabase/functions/_shared/`. |
+| `supabase/migrations/` | Database schema. |
+| `docs/discord-commands.md` | Command and edge function reference. |
 
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Web dashboard
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+npm install
+npm run dev      # local dev server
+npm run build    # production build
+npm run lint     # ESLint for src/ (edge functions are checked with deno, see below)
 ```
 
-**Edit a file directly in GitHub**
+The dashboard reads `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` and `VITE_SUPABASE_PROJECT_ID` from `.env`. These are public values (the anon key), not secrets.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Discord bot
 
-**Use GitHub Codespaces**
+The bot is deployed with Nixpacks (`nixpacks.toml`): it installs `public/spotbot` dependencies and starts `node public/spotbot/index.cjs`. To run it yourself:
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```sh
+cd public/spotbot
+npm install
+BOT_TOKEN=... SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm start
+```
 
-## What technologies are used for this project?
+Bot environment variables:
 
-This project is built with:
+| Variable | Required | Used for |
+|---|---|---|
+| `BOT_TOKEN` | yes | Discord bot token |
+| `SUPABASE_URL` | yes | e.g. `https://<project-ref>.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | Server-side database access. Never put this in the web app or a public file. |
+| `OPENAI_API_KEY` | no | Scouting reports |
+| `OPENXBL_API_KEY` | no | Xbox presence |
+| `EA_SESSION_COOKIE` | no | Helps when EA blocks requests |
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+The bot registers its slash commands on start, so adding or removing a command only needs a restart.
 
-## How can I deploy this project?
+### Linking a club for FC27
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+EA issued new club IDs for FC27. Run `/setclub name:<exact EA club name>` (platform is optional: PS5 / Xbox Series / PC share one platform, Switch is separate). Clubs linked in an earlier FC are relinked automatically once when the bot starts monitoring them, but only if the club name matches exactly. Otherwise run `/setclub` again.
 
-## Can I connect a custom domain to my Lovable project?
+## Local EA sync (optional)
 
-Yes, you can!
+EA often blocks requests from cloud hosts. `ea-sync-local.cjs` runs on your own machine, syncs every 15 minutes between 9 AM and 3 AM Central, and writes matches, member stats and ratings to Supabase.
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+```sh
+cd public/spotbot
+npm install
+cat > .env <<'EOF'
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service role key>
+# optional
+EA_SESSION_COOKIE=
+EOF
+npm run sync
+```
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Keep `.env` out of git.
 
-## Discord command reference
+## Edge functions
 
-See [docs/discord-commands.md](docs/discord-commands.md) for the full list of bot/Edge Function commands, including spot availability/preferences and detailed scouting endpoints.
+Edge functions run on Supabase (Deno). Secrets they read, set in the Supabase dashboard under Edge Functions → Secrets:
+
+| Secret | Used by |
+|---|---|
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | All functions (provided by Supabase automatically) |
+| `DISCORD_BOT_TOKEN` | `announce-lineup`, `twitch-webhook` (the same token as the bot's `BOT_TOKEN`) |
+| `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_WEBHOOK_SECRET` | `twitch-webhook` |
+| `OPENXBL_API_KEY` | `check-xbox-presence` |
+| `OPENAI_API_KEY`, `LOVABLE_API_KEY` | AI analysis functions |
+| `EA_SESSION_COOKIE`, `EA_PROBE_HIDDEN` | `sync-ea-stats` (optional) |
+
+Functions that the web app calls with a user session, or the bot calls with the service-role key, check the caller with `_shared/auth.ts`.
+
+To type-check a function locally:
+
+```sh
+npx deno check supabase/functions/<name>/index.ts
+```
+
+## Security
+
+- The service-role key bypasses all database security. Only the bot, the local sync and edge functions may hold it.
+- If the key is ever exposed, rotate it in the Supabase dashboard and update the bot host, your local `.env`, and anything else that uses it.
