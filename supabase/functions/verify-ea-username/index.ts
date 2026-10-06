@@ -44,7 +44,7 @@ serve(async (req) => {
     // Method 3: Check gamertag format validity
     if (!verified) {
       // Platform-specific gamertag validation
-      let isValidFormat = false;
+      let isValidFormat = /^[a-zA-Z0-9_\-\s.]{3,24}$/.test(username);
       
       if (normalizedPlatform === "pc") {
         // Origin/EA App usernames: 4-16 chars
