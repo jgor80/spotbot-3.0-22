@@ -24,6 +24,12 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 - **/available**: your next five events with your answers and buttons, in one place.
 - Events close automatically after kick-off plus their duration.
 
+## Match night (`public/spotbot/matchnight.cjs`)
+- **Check-in** opens automatically 30 minutes before kick-off, under the event board. It pings the starting XI (the lineup saved for the event, else the club's latest lineup from the last day, else everyone who said yes or maybe) and shows a live squad status: Checked in, Running late, Dropped out, and Not checked in yet, each with their lineup position.
+- **/checkin**: managers open check-in early; players check themselves in.
+- **Subs**: a starter who taps Can't make it on the check-in triggers a sub request for their position. Managers use the check-in's Request sub button (pick who to replace or a position) or **/sub [position] [replacing] [note]**. The request pings players who said yes or maybe but aren't starting (else the event's ping role). The first to tap I can cover gets the spot, is swapped into the lineup and checked in; a second tap is told it's covered.
+- **Reliability**: when an event with a check-in closes, attendance is recorded and show-up rates are recomputed over the last 20 events. Only a firm "Available" counts as a promise, and dropping out on the check-in counts as notice, not a no-show. **/reliability [player]** lists the rates, and the event board flags players under 75% (after 3 events).
+
 ## Roster (`public/spotbot/roster.cjs`)
 - **/roster add user [position] [secondary] [role] [status]**, **/roster remove user**, **/roster status user status [note]** (Active, Trial, Injured, Away, Inactive; injured, away and inactive players are not chased for availability).
 - **/roster import role**: adds everyone with a role; position roles (from `/positionpanel`) fill in their positions.

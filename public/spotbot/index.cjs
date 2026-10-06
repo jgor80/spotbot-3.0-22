@@ -25,6 +25,7 @@ const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.c
 const { createSquads, SQUAD_COMMANDS } = require('./squads.cjs');
 const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
 const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
+const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -327,6 +328,8 @@ const clubEvents = createEvents({
 });
 
 const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub });
+
+const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub });
 
 const managerHub = createManagerHub({
   supabase,
@@ -759,7 +762,8 @@ const COMMANDS = [
   ...HUB_COMMANDS,
   ...SQUAD_COMMANDS,
   ...EVENT_COMMANDS,
-  ...ROSTER_COMMANDS
+  ...ROSTER_COMMANDS,
+  ...MATCHNIGHT_COMMANDS
 ];
 
 // =======================
@@ -4084,6 +4088,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
   try {
     // Events: /event, /available, autocomplete, and board buttons (also used from reminder DMs)
     if (await clubEvents.handleInteraction(interaction)) return;
+    // Match night: /checkin, /sub, /reliability, check-in and sub request buttons
+    if (await matchNight.handleInteraction(interaction)) return;
 
     // Handle DM button interactions for feedback and welcome
     if (!interaction.guildId && interaction.isButton()) {

@@ -176,6 +176,8 @@ function createEvents(deps) {
   const prefsCache = new Map();
   const memberFetchAt = new Map();
   const manualRemindAt = new Map();
+  // Set by matchnight.cjs: show-up rates worth flagging next to a player's answer
+  let reliabilityLookup = async () => new Map();
 
   // ---------- Server preferences ----------
 
@@ -284,10 +286,15 @@ function createEvents(deps) {
       .setFooter({ text: `${prefs.branding.footer || 'GafferBot'} · event ${event.id.slice(0, 8)}` });
 
     const answered = new Set(responses.map((r) => r.discord_user_id));
+    const flagged = await reliabilityLookup(
+      event.guild_id,
+      responses.filter((r) => r.response !== 'no').map((r) => r.discord_user_id)
+    ).catch(() => new Map());
     const label = (r) => {
       const late = deadline && r.responded_at && new Date(r.responded_at) > deadline ? ' *(late)*' : '';
       const pos = r.position ? ` ${r.position.split(',').join('/')}` : '';
-      return `<@${r.discord_user_id}>${pos}${late}`;
+      const shows = r.response !== 'no' && flagged.has(r.discord_user_id) ? ` ⚠️ ${flagged.get(r.discord_user_id)}% show-up` : '';
+      return `<@${r.discord_user_id}>${pos}${late}${shows}`;
     };
     for (const [key, r] of Object.entries(RESPONSES)) {
       const list = responses.filter((x) => x.response === key);
@@ -1121,6 +1128,9 @@ function createEvents(deps) {
     refreshBoard,
     clubFor,
     runScheduler: tick,
+    setReliabilityLookup: (fn) => {
+      reliabilityLookup = fn;
+    },
     onTick: (fn) => tickHooks.push(fn),
     onClose: (fn) => afterClose.push(fn),
     getClient: () => client,
