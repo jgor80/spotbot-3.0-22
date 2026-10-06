@@ -24,6 +24,7 @@ const RatingsPage = lazy(() => import("./pages/RatingsPage"));
 const RecentGamesPage = lazy(() => import("./pages/RecentGamesPage"));
 const InsightsPage = lazy(() => import("./pages/InsightsPage"));
 const SquadIQPanel = lazy(() => import("./pages/SquadIQPanel"));
+const StreamOverlay = lazy(() => import("./pages/StreamOverlay"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -45,6 +46,8 @@ const App = () => (
             <Suspense fallback={<PageLoading />}>
               <Routes>
                 <Route path="/auth" element={<AuthPage />} />
+                {/* OBS browser source for /premium overlay: public, token in the URL */}
+                <Route path="/overlay/:token" element={<StreamOverlay />} />
                 <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                 <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
                 <Route path="/lineup" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
