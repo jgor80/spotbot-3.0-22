@@ -14,6 +14,10 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 - **/squad info**: shows the link and leaders.
 - **/lfg [when] [note]**: posts a "looking for a friendly" card. A leader of another club on the server presses Accept (from their club's voice channel) and both contacts are pinged.
 
+## Setup and branding (`public/spotbot/club-setup.cjs`)
+- **/setup**: a checklist (EA club, squad, roster, timezone, first event) with the one next command to run, plus permission diagnostics: server permissions (Manage Roles, Mention roles, Change Nickname), whether the bot's role sits below the position roles, and the channel permissions the bot is missing in this channel and every channel it has posted events or lineups in. When the bot joins a server it posts a short welcome pointing at `/setup`.
+- **/brand** (server admins): `color` (hex), `footer`, `lineup_title` (`{team}` is replaced), `logo_url` (crest on team sheets), `nickname` and `avatar` (the bot's name and picture in this server only), `reset`. Colours and footer apply to event boards and team sheets; a preview is shown.
+
 ## Events and availability (`public/spotbot/events.cjs`)
 - **/event new when:"thu 9pm"**: posts an event board with Available / Maybe / Can't make it buttons. The board updates live and names who is in, maybe and out, who on the roster has not answered, and who is injured or away. Options: `title`, `type` (League match, Friendly, Scrim, Training, Tryout, Tournament), `preset`, `deadline` ("2h" before kick-off or a time like "wed 6pm"; default 1h before), `repeat` (weekly or every 2 weeks), `ping` role, `channel`, `positions` (players pick up to 3 positions when they sign up; on by default for tryouts), `club`, `description`.
 - Times are read in the server timezone (`/event timezone`). Accepted: "thu 9pm", "tomorrow 20:00", "tonight", "in 2h", "2026-10-08 21:00", or a Discord `<t:...>` timestamp. Everyone sees times in their own timezone.
@@ -56,7 +60,7 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 - **claim-competition-win** (`supabase/functions/claim-competition-win/index.ts`)
 - **create-lineup** (`supabase/functions/create-lineup/index.ts`)
 - **get-lineup** (`supabase/functions/get-lineup/index.ts`)
-- **announce-lineup** (`supabase/functions/announce-lineup/index.ts`): posts a saved lineup to a Discord channel (web Save & Announce, bot `/teamsheet`)
+- **announce-lineup** (`supabase/functions/announce-lineup/index.ts`): posts a saved lineup to a Discord channel (web Save & Announce, bot `/teamsheet`). Re-publishing a squad's lineup (same event, or within a day, same channel) edits the earlier team sheet and replies with who came in, dropped out or moved, pinging only them. A sub filled from a check-in updates the published sheet the same way. Uses the server's `/brand` colour, footer, title and crest, and shows the event's kick-off when the lineup is saved for an event.
 - **draft-start / draft-pick / draft-result** (respective `supabase/functions/draft-*/index.ts`)
 - **suggest-optimal-lineup** (`supabase/functions/suggest-optimal-lineup/index.ts`)
 - **event-create** (`supabase/functions/event-create/index.ts`)

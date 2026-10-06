@@ -6,7 +6,9 @@
 //   -> { channels: [{ id, name, user_ids }] }  who is in which voice channel right now,
 //      plus { id: "checkins" } for players who answered In or Late to tonight's roll call
 // POST { action: "announce", lineup_id, channel_id, mention_players?, dm_players?, message?, image_base64? }
-//   -> { success, message_id, channel_id, dm_sent, dm_failed }
+//   -> { success, message_id, channel_id, updated, changes, dm_sent, dm_failed }
+//   Re-publishing a squad's lineup (same event, or within a day) edits the earlier team sheet and
+//   posts who came in, dropped out or moved, instead of a second team sheet.
 //
 // Callers: a signed-in web app user (JWT) or the Discord bot (service role key).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -168,6 +170,44 @@ async function webCallerMayAnnounce(supabase: any, userId: string, teamId: strin
   return !!link && leaders.includes(link.discord_user_id);
 }
 
+type AnnouncedSlot = { discord_user_id: string; position: string; is_substitute: boolean };
+
+// The message to update instead of posting a new one: this lineup's own announcement, or the
+// last announcement for the same squad (same event, or within the last day) in this channel.
+async function previousAnnouncement(supabase: any, lineup: any, channelId: string) {
+  if (lineup.message_id && lineup.channel_id === channelId) {
+    return { message_id: lineup.message_id, announced_slots: lineup.announced_slots as AnnouncedSlot[] | null };
+  }
+  if (!lineup.team_id && !lineup.event_id) return null;
+  let query = supabase
+    .from("lineups")
+    .select("id, message_id, announced_slots")
+    .eq("guild_id", lineup.guild_id)
+    .eq("channel_id", channelId)
+    .neq("id", lineup.id)
+    .not("message_id", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (lineup.event_id) query = query.eq("event_id", lineup.event_id);
+  else query = query.eq("team_id", lineup.team_id).gte("updated_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+  const { data } = await query.maybeSingle();
+  return data ? { message_id: data.message_id, announced_slots: data.announced_slots as AnnouncedSlot[] | null } : null;
+}
+
+// Who came in, who dropped out and who moved since the last announcement
+function lineupChanges(before: AnnouncedSlot[] | null, after: AnnouncedSlot[]) {
+  if (!before) return null;
+  const starters = (slots: AnnouncedSlot[]) => new Map(slots.filter((s) => !s.is_substitute).map((s) => [s.discord_user_id, s.position]));
+  const was = starters(before);
+  const now = starters(after);
+  const added = [...now].filter(([id]) => !was.has(id)).map(([id, position]) => ({ id, position }));
+  const removed = [...was].filter(([id]) => !now.has(id)).map(([id, position]) => ({ id, position }));
+  const moved = [...now]
+    .filter(([id, position]) => was.has(id) && was.get(id) !== position)
+    .map(([id, position]) => ({ id, from: was.get(id)!, position }));
+  return { added, removed, moved, any: added.length + removed.length + moved.length > 0 };
+}
+
 async function announce(supabase: any, body: any, caller: Caller) {
   const { lineup_id, channel_id } = body;
   const mentionPlayers = body.mention_players !== false;
@@ -179,7 +219,7 @@ async function announce(supabase: any, body: any, caller: Caller) {
 
   const { data: lineup, error: lineupError } = await supabase
     .from("lineups")
-    .select("id, guild_id, team_id, name, formation, team_avg_rating, share_code")
+    .select("id, guild_id, team_id, event_id, name, formation, team_avg_rating, share_code, channel_id, message_id, announced_slots")
     .eq("id", lineup_id)
     .maybeSingle();
   if (lineupError || !lineup) return json({ error: "Lineup not found" }, 404);
@@ -211,11 +251,22 @@ async function announce(supabase: any, body: any, caller: Caller) {
     (players || []).map((p: any) => [p.discord_user_id, p.discord_username]),
   );
 
-  let teamName: string | null = null;
+  let team: any = null;
   if (lineup.team_id) {
-    const { data: team } = await supabase.from("teams").select("name").eq("id", lineup.team_id).maybeSingle();
-    teamName = team?.name || null;
+    const { data } = await supabase.from("teams").select("name, logo_url").eq("id", lineup.team_id).maybeSingle();
+    team = data;
   }
+  const teamName: string | null = team?.name || null;
+
+  let event: any = null;
+  if (lineup.event_id) {
+    const { data } = await supabase.from("availability_events").select("title, scheduled_at").eq("id", lineup.event_id).maybeSingle();
+    event = data;
+  }
+
+  // Per-server look: accent colour, footer, title template and logo (set with /brand)
+  const { data: settings } = await supabase.from("guild_settings").select("branding").eq("guild_id", lineup.guild_id).maybeSingle();
+  const branding = settings?.branding || {};
 
   const starters = (slots || []).filter((s: any) => !s.is_substitute);
   const subs = (slots || []).filter((s: any) => s.is_substitute);
@@ -237,64 +288,139 @@ async function announce(supabase: any, body: any, caller: Caller) {
     });
   }
 
-  const title = lineup.name || `${teamName || "Club"} Starting XI`;
+  const defaultTitle = typeof branding.lineup_title === "string" && branding.lineup_title
+    ? branding.lineup_title.replace("{team}", teamName || "Club").slice(0, 200)
+    : `${teamName || "Club"} Starting XI`;
+  const title = lineup.name || defaultTitle;
+  const kickoff = event?.scheduled_at ? Math.floor(new Date(event.scheduled_at).getTime() / 1000) : null;
+
+  const previous = await previousAnnouncement(supabase, lineup, channel_id);
+  let previousMessage: any = null;
+  if (previous?.message_id) {
+    const res = await discord(`/channels/${channel_id}/messages/${previous.message_id}`);
+    if (res.ok) previousMessage = await res.json();
+    else await res.body?.cancel();
+  }
+
+  // Keep the earlier note when re-publishing without a new one
+  const previousNote = previousMessage?.embeds?.[0]?.fields?.find((f: any) => f.name === "📝 Note")?.value || "";
+  const noteText = note || previousNote;
+  if (noteText) fields.push({ name: "📝 Note", value: noteText, inline: false });
+
+  const accent = Number(branding.color);
   const embed: Record<string, unknown> = {
     title: `📋 ${title}`,
     description: [
+      kickoff ? `**${event.title}** · kick-off <t:${kickoff}:F> (<t:${kickoff}:R>)` : null,
       `**Formation:** ${lineup.formation}`,
       lineup.team_avg_rating ? `**Avg rating:** ${Number(lineup.team_avg_rating).toFixed(1)}` : null,
-      note || null,
     ].filter(Boolean).join("\n"),
-    color: 0x22c55e,
+    color: Number.isInteger(accent) && accent >= 0 && accent <= 0xffffff ? accent : 0x22c55e,
     fields,
     timestamp: new Date().toISOString(),
-    footer: { text: "Team sheet from GafferBot" },
+    footer: { text: typeof branding.footer === "string" && branding.footer ? branding.footer.slice(0, 100) : "Team sheet from GafferBot" },
   };
+  const logo = team?.logo_url || branding.logo_url;
+  if (typeof logo === "string" && /^https:\/\//.test(logo)) embed.thumbnail = { url: logo };
 
+  const announcedSlots: AnnouncedSlot[] = (slots || []).map((s: any) => ({
+    discord_user_id: s.discord_user_id,
+    position: s.position,
+    is_substitute: s.is_substitute,
+  }));
   const discordStarterIds = starters.map((s: any) => s.discord_user_id).filter((id: string) => DISCORD_ID_REGEX.test(id));
-  const payload: Record<string, unknown> = {
-    content: mentionPlayers && discordStarterIds.length
-      ? `You're in the starting XI: ${discordStarterIds.map((id: string) => `<@${id}>`).join(" ")}`
-      : undefined,
-    embeds: [embed],
-    allowed_mentions: { parse: [], users: mentionPlayers ? discordStarterIds.slice(0, 100) : [] },
-  };
+  const changes = previousMessage ? lineupChanges(previous!.announced_slots, announcedSlots) : null;
 
-  let postRes: Response;
   const imageBytes = decodeImage(body.image_base64);
-  if (imageBytes) {
-    embed.image = { url: "attachment://lineup.png" };
-    const form = new FormData();
-    form.append("payload_json", JSON.stringify(payload));
-    form.append("files[0]", new Blob([imageBytes as BlobPart], { type: "image/png" }), "lineup.png");
-    postRes = await discord(`/channels/${channel_id}/messages`, { method: "POST", body: form });
-  } else {
-    postRes = await discord(`/channels/${channel_id}/messages`, {
-      method: "POST",
+  const send = async (method: "POST" | "PATCH", path: string, payload: Record<string, unknown>) => {
+    if (imageBytes) {
+      embed.image = { url: "attachment://lineup.png" };
+      // On an edit, replace the old image with the new one
+      if (method === "PATCH") payload.attachments = [{ id: 0, filename: "lineup.png" }];
+      const form = new FormData();
+      form.append("payload_json", JSON.stringify(payload));
+      form.append("files[0]", new Blob([imageBytes as BlobPart], { type: "image/png" }), "lineup.png");
+      return await discord(path, { method, body: form });
+    }
+    return await discord(path, {
+      method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+  };
+
+  let message: any = null;
+  let updated = false;
+  if (previousMessage) {
+    // Keep the old pitch graphic if no new one was sent
+    if (!imageBytes && previousMessage.embeds?.[0]?.image) embed.image = { url: "attachment://lineup.png" };
+    const editRes = await send("PATCH", `/channels/${channel_id}/messages/${previousMessage.id}`, {
+      content: mentionPlayers && discordStarterIds.length ? `Starting XI: ${discordStarterIds.map((id: string) => `<@${id}>`).join(" ")}` : "",
+      embeds: [embed],
+      allowed_mentions: { parse: [] },
+    });
+    if (editRes.ok) {
+      message = await editRes.json();
+      updated = true;
+    } else {
+      console.error(`[announce-lineup] edit failed ${editRes.status}: ${await editRes.text()}`);
+      delete embed.image;
+    }
   }
 
-  if (!postRes.ok) {
-    const text = await postRes.text();
-    console.error(`[announce-lineup] post failed ${postRes.status}: ${text}`);
-    return json({ error: "Discord rejected the post. Check the bot can send messages in that channel." }, 502);
+  if (!message) {
+    const postRes = await send("POST", `/channels/${channel_id}/messages`, {
+      content: mentionPlayers && discordStarterIds.length
+        ? `You're in the starting XI: ${discordStarterIds.map((id: string) => `<@${id}>`).join(" ")}`
+        : undefined,
+      embeds: [embed],
+      allowed_mentions: { parse: [], users: mentionPlayers ? discordStarterIds.slice(0, 100) : [] },
+    });
+    if (!postRes.ok) {
+      const text = await postRes.text();
+      console.error(`[announce-lineup] post failed ${postRes.status}: ${text}`);
+      return json({ error: "Discord rejected the post. Check the bot can send messages in that channel (/setup checks)." }, 502);
+    }
+    message = await postRes.json();
   }
-  const message = await postRes.json();
+
+  // Tell the players what changed, under the updated team sheet
+  let notifyIds = discordStarterIds;
+  if (updated && changes) {
+    notifyIds = [...changes.added.map((c) => c.id), ...changes.moved.map((c) => c.id)].filter((id) => DISCORD_ID_REGEX.test(id));
+    if (changes.any) {
+      const who = (id: string) => playerLabel(id, nameById.get(id));
+      const lines = [
+        ...changes.added.map((c) => `✅ In: ${who(c.id)} (${c.position})`),
+        ...changes.removed.map((c) => `❌ Out: ${who(c.id)} (${c.position})`),
+        ...changes.moved.map((c) => `🔁 ${who(c.id)}: ${c.from} → ${c.position}`),
+      ];
+      const pings = mentionPlayers ? [...notifyIds, ...changes.removed.map((c) => c.id)].filter((id) => DISCORD_ID_REGEX.test(id)) : [];
+      const replyRes = await discord(`/channels/${channel_id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: `🔄 **Lineup updated**\n${lines.join("\n")}`.slice(0, 2000),
+          message_reference: { message_id: message.id, fail_if_not_exists: false },
+          allowed_mentions: { parse: [], users: pings.slice(0, 100) },
+        }),
+      });
+      await replyRes.body?.cancel();
+    }
+  }
 
   await supabase
     .from("lineups")
-    .update({ channel_id, message_id: message.id, updated_at: new Date().toISOString() })
+    .update({ channel_id, message_id: message.id, announced_slots: announcedSlots, updated_at: new Date().toISOString() })
     .eq("id", lineup_id);
 
-  // Optional DM to each starter with their position and a link to the post
+  // Optional DM to each starter (on an update, only the ones who came in or moved)
   let dmSent = 0;
   let dmFailed = 0;
   if (dmPlayers) {
     const link = `https://discord.com/channels/${lineup.guild_id}/${channel_id}/${message.id}`;
     for (const s of starters) {
-      if (!DISCORD_ID_REGEX.test(s.discord_user_id)) continue;
+      if (!notifyIds.includes(s.discord_user_id)) continue;
       try {
         const dmChannel = await discord(`/users/@me/channels`, {
           method: "POST",
@@ -307,7 +433,7 @@ async function announce(supabase: any, body: any, caller: Caller) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            content: `📋 You're starting at **${s.position}** for **${teamName || title}** (${lineup.formation}).\n${link}`,
+            content: `📋 You're starting at **${s.position}** for **${teamName || title}** (${lineup.formation})${kickoff ? `, kick-off <t:${kickoff}:F>` : ""}.\n${link}`,
           }),
         });
         if (!dm.ok) throw new Error(String(dm.status));
@@ -320,7 +446,15 @@ async function announce(supabase: any, body: any, caller: Caller) {
     }
   }
 
-  return json({ success: true, message_id: message.id, channel_id, dm_sent: dmSent, dm_failed: dmFailed });
+  return json({
+    success: true,
+    message_id: message.id,
+    channel_id,
+    updated,
+    changes: changes && changes.any ? { added: changes.added.length, removed: changes.removed.length, moved: changes.moved.length } : null,
+    dm_sent: dmSent,
+    dm_failed: dmFailed,
+  });
 }
 
 function decodeImage(value: unknown): Uint8Array | null {

@@ -1,4 +1,5 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import html2canvas from "html2canvas";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,7 +59,8 @@ import {
   Search,
   Download,
   Image,
-  Headphones
+  Headphones,
+  CalendarCheck
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -119,6 +121,11 @@ export default function TeamsPage() {
   const [isFillingFromVoice, setIsFillingFromVoice] = useState(false);
   const [voiceChoices, setVoiceChoices] = useState<{ id: string; name: string; user_ids: string[] }[] | null>(null);
   const [savedLineup, setSavedLineup] = useState<{ id: string; name: string } | null>(null);
+  // The event board's Build Lineup link opens /teams?event=<id>
+  const [searchParams] = useSearchParams();
+  const [lineupEventId, setLineupEventId] = useState<string>(searchParams.get("event") || "");
+  const [activeTab, setActiveTab] = useState(searchParams.get("event") ? "lineup" : "teams");
+  const [isFillingFromEvent, setIsFillingFromEvent] = useState(false);
   const pitchRef = useRef<HTMLDivElement>(null);
 
   // Available players for lineup
@@ -410,8 +417,35 @@ export default function TeamsPage() {
     setSelectedSlot(null);
   };
 
-  // Fill the empty slots with the players in a voice channel, best position fits first
-  const fillFromVoiceChannel = async (userIds: string[]) => {
+  // Upcoming events this lineup can be saved against
+  const { data: upcomingEvents } = useQuery({
+    queryKey: ["upcomingEvents", selectedGuildId],
+    queryFn: async () => {
+      if (!selectedGuildId) return [];
+      const { data, error } = await supabase
+        .from("availability_events")
+        .select("id, title, scheduled_at, team_id")
+        .eq("guild_id", selectedGuildId)
+        .eq("closed", false)
+        .not("club_key", "is", null)
+        .gte("scheduled_at", new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString())
+        .order("scheduled_at", { ascending: true })
+        .limit(20);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedGuildId,
+  });
+
+  // Picking an event picks its squad too
+  useEffect(() => {
+    const event = upcomingEvents?.find(e => e.id === lineupEventId);
+    if (event?.team_id && !lineupTeamId) setLineupTeamId(event.team_id);
+  }, [lineupEventId, upcomingEvents, lineupTeamId]);
+
+  // Fill the empty slots with the players in a voice channel, best position fits first.
+  // signedUpPositions (from an event's position sign-up) win over saved preferences.
+  const fillFromVoiceChannel = async (userIds: string[], signedUpPositions?: Map<string, string[]>) => {
     if (!selectedGuildId || !availablePlayers) return;
     const assigned = new Set(slots.map(s => s.discord_user_id));
     const candidates = availablePlayers.filter(p => userIds.includes(p.discord_user_id) && !assigned.has(p.discord_user_id));
@@ -432,7 +466,9 @@ export default function TeamsPage() {
       candidates.map(p => ({
         discord_user_id: p.discord_user_id,
         overall_rating: p.overall_rating,
-        preferences: prefsByUser.get(p.discord_user_id) || (p.primary_position ? [p.primary_position] : []),
+        preferences: signedUpPositions?.get(p.discord_user_id)
+          || prefsByUser.get(p.discord_user_id)
+          || (p.primary_position ? [p.primary_position] : []),
       })),
       positionRatings || [],
       new Set(slots.map(s => s.slot_index)),
@@ -484,6 +520,32 @@ export default function TeamsPage() {
     }
   };
 
+  // Fill from the players who said Available for the chosen event
+  const handleFillFromEvent = async () => {
+    if (!lineupEventId) return;
+    setIsFillingFromEvent(true);
+    try {
+      const { data, error } = await supabase
+        .from("player_availability")
+        .select("discord_user_id, position")
+        .eq("event_id", lineupEventId)
+        .eq("response", "yes");
+      if (error) throw error;
+      if (!data?.length) {
+        toast.info("Nobody has said they're available for this event yet");
+        return;
+      }
+      const signedUp = new Map(
+        data.filter(r => r.position).map(r => [r.discord_user_id, (r.position as string).split(",")]),
+      );
+      await fillFromVoiceChannel(data.map(r => r.discord_user_id), signedUp);
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setIsFillingFromEvent(false);
+    }
+  };
+
   const handleRemoveLineupPlayer = (slotIndex: number) => {
     setSlots(prev => prev.filter(s => s.slot_index !== slotIndex));
   };
@@ -524,6 +586,7 @@ export default function TeamsPage() {
           formation,
           name: lineupName || defaultName,
           team_id: lineupTeamId,
+          event_id: lineupEventId || undefined,
           slots: slots.map(s => ({
             slot_index: s.slot_index,
             position: s.position,
@@ -628,7 +691,7 @@ export default function TeamsPage() {
           <p className="text-muted-foreground">Manage teams, rosters, and build lineups</p>
         </div>
 
-        <Tabs defaultValue="teams" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList>
             <TabsTrigger value="teams" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
@@ -969,6 +1032,21 @@ export default function TeamsPage() {
                           )}
                           Fill from Voice
                         </Button>
+                        {lineupEventId && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleFillFromEvent}
+                            disabled={isFillingFromEvent || slots.length >= positions.length}
+                          >
+                            {isFillingFromEvent ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                              <CalendarCheck className="h-4 w-4 mr-2" />
+                            )}
+                            Fill from Availability
+                          </Button>
+                        )}
                         <Button 
                           variant="outline" 
                           size="sm"
@@ -1025,6 +1103,24 @@ export default function TeamsPage() {
                           </SelectContent>
                         </Select>
                       </div>
+                      {!!upcomingEvents?.length && (
+                        <div className="flex-1 min-w-[200px]">
+                          <label className="text-sm font-medium mb-1.5 block">For event (optional)</label>
+                          <Select value={lineupEventId || "none"} onValueChange={(v) => setLineupEventId(v === "none" ? "" : v)}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="No event" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No event</SelectItem>
+                              {upcomingEvents.map((e) => (
+                                <SelectItem key={e.id} value={e.id}>
+                                  {e.title} · {format(new Date(e.scheduled_at), "EEE d MMM, HH:mm")}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                       <div className="flex-1 min-w-[200px]">
                         <label className="text-sm font-medium mb-1.5 block">Lineup Name (optional)</label>
                         <Input

@@ -88,7 +88,12 @@ export function AnnounceLineupDialog({
       const dmNote = dmPlayers
         ? ` DMs sent to ${result.dm_sent}${result.dm_failed ? ` (${result.dm_failed} had DMs closed)` : ""}.`
         : "";
-      toast.success(`Lineup posted in Discord.${dmNote}`);
+      // Re-publishing a squad's lineup edits the earlier team sheet and lists the changes
+      const changes = result.changes as { added: number; removed: number; moved: number } | null;
+      const changeNote = changes
+        ? ` ${[changes.added && `${changes.added} in`, changes.removed && `${changes.removed} out`, changes.moved && `${changes.moved} moved`].filter(Boolean).join(", ")}.`
+        : "";
+      toast.success(`${result.updated ? "Team sheet updated in Discord." : "Lineup posted in Discord."}${changeNote}${dmNote}`);
       setMessage("");
       onOpenChange(false);
     } catch (err) {
