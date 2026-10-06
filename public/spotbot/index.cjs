@@ -23,6 +23,8 @@ const {
 const { createClient } = require('@supabase/supabase-js');
 const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.cjs');
 const { createSquads, SQUAD_COMMANDS } = require('./squads.cjs');
+const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
+const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -316,6 +318,16 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const squads = createSquads({ supabase, getGuildState, saveGuildSettings, isManager });
 
+const clubEvents = createEvents({
+  supabase,
+  getGuildState,
+  isManager,
+  canManageClub: squads.canManageClub,
+  dashboardUrl: process.env.DASHBOARD_URL
+});
+
+const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub });
+
 const managerHub = createManagerHub({
   supabase,
   callEdgeFunction,
@@ -324,7 +336,8 @@ const managerHub = createManagerHub({
   canManageClub: squads.canManageClub,
   syncClubHistory,
   buildLeaderboardEmbed,
-  dashboardUrl: process.env.DASHBOARD_URL
+  dashboardUrl: process.env.DASHBOARD_URL,
+  buildEventList: clubEvents.buildEventList
 });
 
 const client = new Client({
@@ -420,30 +433,31 @@ const POSITION_INFERENCE = Object.freeze({
 });
 
 // Competitive position roles: /positionpanel posts a dropdown and the bot gives
-// each member one role named after the position code. Names match
+// each member up to three roles named after the position codes. Names match
 // POSITION_PREF_OPTIONS so /syncprefs picks them up.
 const POSITION_ROLE_OPTIONS = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST'];
 const POSITION_ROLE_SELECT_ID = 'posrole_select';
 const POSITION_ROLE_CLEAR = 'none';
+const POSITION_ROLE_MAX = 3;
 
 function buildPositionRolePanel() {
   const embed = new EmbedBuilder()
     .setTitle('🎯 Pick Your Position')
-    .setDescription('Choose your competitive position below and you will get the matching role. Picking again swaps it; choose **Clear my position** to remove it.')
+    .setDescription(`Choose up to ${POSITION_ROLE_MAX} competitive positions below and you will get the matching roles. Picking again replaces your choice; choose **Clear my positions** to remove them.`)
     .setColor(0x5865f2);
 
   const select = new StringSelectMenuBuilder()
     .setCustomId(POSITION_ROLE_SELECT_ID)
-    .setPlaceholder('Select your position')
+    .setPlaceholder(`Select up to ${POSITION_ROLE_MAX} positions`)
     .setMinValues(1)
-    .setMaxValues(1)
+    .setMaxValues(POSITION_ROLE_MAX)
     .addOptions([
       ...POSITION_ROLE_OPTIONS.map((pos) => ({
         label: `${pos} · ${POSITION_META[pos].label}`,
         value: pos,
         emoji: { name: POSITION_META[pos].emoji }
       })),
-      { label: 'Clear my position', value: POSITION_ROLE_CLEAR, emoji: { name: '✖️' } }
+      { label: 'Clear my positions', value: POSITION_ROLE_CLEAR, emoji: { name: '✖️' } }
     ]);
 
   return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)] };
@@ -548,33 +562,7 @@ const COMMANDS = [
   },
   { name: 'mystats', description: 'Quick view of your own stats and current form.' },
 
-  // Availability & Event Commands
-  { 
-    name: 'event', 
-    description: 'Create an availability event.',
-    options: [
-      { name: 'title', description: 'Event title.', type: 3, required: true },
-      { name: 'date', description: 'Date and time (e.g., "2024-01-15 20:00").', type: 3, required: true },
-      { name: 'type', description: 'Event type.', type: 3, required: false, choices: [
-        { name: 'League Match', value: 'league' },
-        { name: 'Tournament', value: 'tournament' },
-        { name: 'Draft Night', value: 'draft' },
-        { name: 'Practice', value: 'practice' }
-      ]},
-      { name: 'description', description: 'Event description.', type: 3, required: false }
-    ]
-  },
-  { 
-    name: 'available', 
-    description: 'Mark your availability for an event.',
-    options: [
-      { name: 'response', description: 'Your availability.', type: 3, required: true, choices: [
-        { name: 'Yes', value: 'yes' },
-        { name: 'No', value: 'no' },
-        { name: 'Maybe', value: 'maybe' }
-      ]}
-    ]
-  },
+  // Events (/event, /available) are defined in events.cjs
   { 
     name: 'attendance', 
     description: 'Mark attendance after an event (managers only).',
@@ -769,7 +757,9 @@ const COMMANDS = [
     default_member_permissions: String(PermissionsBitField.Flags.ManageRoles)
   },
   ...HUB_COMMANDS,
-  ...SQUAD_COMMANDS
+  ...SQUAD_COMMANDS,
+  ...EVENT_COMMANDS,
+  ...ROSTER_COMMANDS
 ];
 
 // =======================
@@ -3895,6 +3885,9 @@ client.once(Events.ClientReady, async (c) => {
     
     // Start Xbox presence polling for game detection
     startXboxPresencePolling(c);
+
+    // Recurring events, deadline reminders and closing finished events
+    clubEvents.start(c);
   } catch (err) {
     console.error('❌ Failed to register commands:', err);
   }
@@ -4089,6 +4082,9 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    // Events: /event, /available, autocomplete, and board buttons (also used from reminder DMs)
+    if (await clubEvents.handleInteraction(interaction)) return;
+
     // Handle DM button interactions for feedback and welcome
     if (!interaction.guildId && interaction.isButton()) {
       const id = interaction.customId;
@@ -5302,6 +5298,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (await managerHub.handleCommand(interaction, cmd)) return;
       if (await squads.handleCommand(interaction, cmd)) return;
+      if (await roster.handleCommand(interaction, cmd)) return;
 
       if (cmd === 'spotpanel') {
         await interaction.reply({
@@ -6440,76 +6437,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
       // =======================
       // AVAILABILITY & EVENT COMMANDS
       // =======================
-
-      if (cmd === 'event') {
-        if (!isManager(interaction.member)) {
-          return interaction.reply({
-            content: '❌ Only managers can create events.',
-            flags: 64
-          });
-        }
-
-        const title = interaction.options.getString('title');
-        const dateStr = interaction.options.getString('date');
-        const eventType = interaction.options.getString('type') || 'practice';
-        const description = interaction.options.getString('description');
-
-        // Parse date
-        const scheduledAt = new Date(dateStr);
-        if (isNaN(scheduledAt.getTime())) {
-          return interaction.reply({
-            content: '❌ Invalid date format. Use: YYYY-MM-DD HH:MM (e.g., 2024-01-15 20:00)',
-            flags: 64
-          });
-        }
-
-        await interaction.deferReply();
-
-        const { error, data } = await callEdgeFunction('event-create', {
-          guild_id: guildId,
-          created_by_discord_id: interaction.user.id,
-          title,
-          scheduled_at: scheduledAt.toISOString(),
-          event_type: eventType,
-          description,
-          channel_id: interaction.channelId
-        });
-
-        if (error) {
-          return interaction.editReply({ content: `❌ Failed to create event: ${error}` });
-        }
-
-        const eventEmbed = new EmbedBuilder()
-          .setTitle(`📅 ${title}`)
-          .setColor(0x5865f2)
-          .addFields(
-            { name: '📆 Date', value: scheduledAt.toLocaleString(), inline: true },
-            { name: '🏷️ Type', value: eventType, inline: true },
-            { name: '✅ Available', value: '0', inline: true },
-            { name: '❌ Unavailable', value: '0', inline: true },
-            { name: '❓ Maybe', value: '0', inline: true }
-          )
-          .setDescription(description || 'React below to mark your availability!')
-          .setFooter({ text: `Event ID: ${data.event_id}` });
-
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`avail_yes_${data.event_id}`).setLabel('✅ Available').setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId(`avail_no_${data.event_id}`).setLabel('❌ Unavailable').setStyle(ButtonStyle.Danger),
-          new ButtonBuilder().setCustomId(`avail_maybe_${data.event_id}`).setLabel('❓ Maybe').setStyle(ButtonStyle.Secondary)
-        );
-
-        return interaction.editReply({ embeds: [eventEmbed], components: [row] });
-      }
-
-      if (cmd === 'available') {
-        const response = interaction.options.getString('response');
-        
-        // This would need context of which event - simplified version
-        return interaction.reply({
-          content: `Use the buttons on an event post to mark availability, or react to event messages!`,
-          flags: 64
-        });
-      }
 
       if (cmd === 'attendance') {
         if (!isManager(interaction.member)) {
@@ -14072,26 +13999,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
       if (await managerHub.handleSelect(interaction)) return;
 
-      // Position role panel: swap the member's position role
+      // Position role panel: set the member's position roles (up to POSITION_ROLE_MAX)
       if (id === POSITION_ROLE_SELECT_ID) {
-        const choice = interaction.values[0];
+        const clearing = interaction.values.includes(POSITION_ROLE_CLEAR);
+        const chosen = clearing ? [] : interaction.values.filter((v) => POSITION_ROLE_OPTIONS.includes(v)).slice(0, POSITION_ROLE_MAX);
         // Re-render the panel so the dropdown resets for the next pick
         await interaction.update(buildPositionRolePanel());
         try {
           const roles = await ensurePositionRoles(interaction.guild);
           const member = await interaction.guild.members.fetch(interaction.user.id);
           const toRemove = POSITION_ROLE_OPTIONS
-            .filter((pos) => pos !== choice && member.roles.cache.has(roles[pos].id))
+            .filter((pos) => !chosen.includes(pos) && member.roles.cache.has(roles[pos].id))
             .map((pos) => roles[pos].id);
           if (toRemove.length) await member.roles.remove(toRemove, 'Position panel');
-          if (choice === POSITION_ROLE_CLEAR) {
-            return interaction.followUp({ content: '✅ Your position role was removed.', flags: 64 });
+          if (!chosen.length) {
+            return interaction.followUp({ content: '✅ Your position roles were removed.', flags: 64 });
           }
-          if (!member.roles.cache.has(roles[choice].id)) await member.roles.add(roles[choice], 'Position panel');
-          return interaction.followUp({ content: `✅ You are now **${choice}** ${POSITION_META[choice].emoji}`, flags: 64 });
+          const toAdd = chosen.filter((pos) => !member.roles.cache.has(roles[pos].id)).map((pos) => roles[pos].id);
+          if (toAdd.length) await member.roles.add(toAdd, 'Position panel');
+          const label = chosen.map((pos) => `**${pos}** ${POSITION_META[pos].emoji}`).join(', ');
+          return interaction.followUp({ content: `✅ Your positions: ${label}`, flags: 64 });
         } catch (err) {
           console.error('Position role update failed:', err);
-          return interaction.followUp({ content: '❌ I could not update your role. An admin needs to move my role above the position roles.', flags: 64 });
+          return interaction.followUp({ content: '❌ I could not update your roles. An admin needs to move my role above the position roles.', flags: 64 });
         }
       }
 

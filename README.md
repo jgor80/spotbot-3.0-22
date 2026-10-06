@@ -6,11 +6,13 @@ What it does:
 
 - **Manager Hub**: `/manager` posts a pinned hub with Call Session (In / Late / Out roll call), Team Sheet, Sync Matches, Club Stats and Tactical Insights buttons. `/insights` and `/clubstats` show the same cards directly. A server with one club never sees a club picker; with several, the hub follows the club linked to your voice channel.
 - **Squads and league servers**: `/squad` links each club to a squad (First XI, Academy) and names its captain and managers, who then own that club's hub, team sheet and syncs. `/lfg` matches clubs on the same server for friendlies.
-- **Spots and availability**: live spot panels per club (`/spotpanel`, `/spots`, `/vcspots`) and availability for events.
+- **Events and availability**: `/event new when:"thu 9pm"` posts a live board (Available / Maybe / Out) that names who still owes an answer, with deadlines, automatic DM reminders, weekly series, presets and tryout position sign-ups. `/available` answers all your upcoming events in one place.
+- **Roster**: `/roster` tracks each player's positions and status (active, trial, injured, away). `/roster view` lists players by position, and `/roster import` adds everyone with a role.
+- **Spots**: live spot panels per club (`/spotpanel`, `/spots`, `/vcspots`).
 - **Team sheets**: build a lineup on the web (Lineup Builder), save it, and announce it in Discord with a pitch graphic, pings for the starting XI and optional DMs. `/teamsheet` posts the latest lineup from Discord.
 - **Club stats and insights**: EA match sync, the Games page, and the Insights page (record, form, duo and trio chemistry, player impact, win vs. loss gaps, formations).
 - **Captains drafts**: `/draft`, then `/applyfriendly` links the EA friendly you played to the draft so everyone gets stats.
-- **Position roles**: `/positionpanel` posts a panel where members pick their primary and secondary positions.
+- **Position roles**: `/positionpanel` posts a panel where members pick up to three positions and get the matching roles.
 - **Twitch and Xbox**: go-live alerts (`/twitchsetup`) and Xbox presence (`/linkxbox`).
 
 The web dashboard has four main views (Match Night, Lineup Builder, Club Stats, Tactical Insights); everything else is under **More**.
