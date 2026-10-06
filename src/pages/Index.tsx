@@ -8,6 +8,7 @@ import { useGuildStats } from "@/hooks/useGuildStats";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Link } from "react-router-dom";
+import { SyncMatchesButton } from "@/components/club/SyncMatchesButton";
 
 interface Team {
   id: string;
@@ -80,11 +81,14 @@ export default function Dashboard() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="font-display text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">
-            {selectedGuild ? `Welcome to ${selectedGuild.name}` : "Welcome to SquadIQ"}
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="font-display text-3xl font-bold">Match Night</h1>
+            <p className="text-muted-foreground">
+              {selectedGuild ? `Welcome to ${selectedGuild.name}` : "Welcome to SquadIQ"}
+            </p>
+          </div>
+          {selectedGuildId && <SyncMatchesButton guildId={selectedGuildId} />}
         </div>
 
         {!selectedGuildId && !guildLoading ? (
