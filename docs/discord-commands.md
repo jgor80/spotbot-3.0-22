@@ -6,6 +6,12 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 - **/manager**: posts and pins the hub. Buttons: Call Session (posts an In / Late / Out roll call stored as an availability event), Team Sheet (latest lineup with Announce Lineup), Sync Matches (pulls EA matches and refreshes the hub), Club Stats (with a Goals / Assists / Ratings / Form leaderboard picker) and Tactical Insights.
 - **/insights**: duo and trio chemistry, formation win rates, win vs. loss gaps and takeaways for your club.
 - **/clubstats**: with no action, shows the club stats card; the enable / disable / status actions still manage EA monitoring.
+
+## Help, club views and EA linking (`public/spotbot/club-stats.cjs`)
+- **/help**: a short guide with a 3-step first-time setup (`/setclub`, `/linkea`, `/setup`), the main commands by area, and a **Stats explained** button (GP, Rtg, Pass%, MOTM, CS and why EA's numbers can differ from the in-game summary). Replaces `/spothelp`; the panel Help buttons show the same thing.
+- **/clubstats action:Members | Top players | In form | Recent matches [stat]**: built from saved matches, no EA call. Members lists everyone who has played with GP, G, A and rating, marking who is linked to Discord. Top players ranks by the chosen `stat` (averages need 3+ games). In form ranks average rating over the last 10 matches.
+- **/linkea username**: autocompletes from the club's saved matches and EA's member list (searchable, so no 25-option cap), saves EA's exact spelling, refuses a name another member holds (a manager moves it with `/forcelink`), and folds in stats saved before linking.
+- **/setclub**: with no exact name match, shows a picker of what EA found instead of linking the first lookalike; with nothing found, explains that EA only lists a club after its first FC27 league match. EA outages are reported as such.
 - Insights math is shared with the web Insights page: `public/spotbot/club-insights.cjs` is generated from `src/lib/clubInsights.ts` with `npm run build:bot-lib`.
 
 ## Squads and club leaders (`public/spotbot/squads.cjs`)
@@ -15,7 +21,7 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 - **/lfg [when] [note]**: posts a "looking for a friendly" card. A leader of another club on the server presses Accept (from their club's voice channel) and both contacts are pinged.
 
 ## Setup and branding (`public/spotbot/club-setup.cjs`)
-- **/setup**: a checklist (EA club, squad, roster, timezone, first event) with the one next command to run, plus permission diagnostics: server permissions (Manage Roles, Mention roles, Change Nickname), whether the bot's role sits below the position roles, and the channel permissions the bot is missing in this channel and every channel it has posted events or lineups in. When the bot joins a server it posts a short welcome pointing at `/setup`.
+- **/setup**: a checklist (EA club, squad, roster, timezone, first event) with the one next command to run, plus permission diagnostics: server permissions (Manage Roles, Mention roles, Change Nickname), whether the bot's role sits below the position roles, commands an admin turned off in Server Settings → Integrations (and admin-only ones), linked clubs whose match recaps have no channel, and the channel permissions the bot is missing in this channel and every channel it has posted events or lineups in. When the bot joins a server it posts a short welcome pointing at `/setup`.
 - **/brand** (server admins): `color` (hex), `footer`, `lineup_title` (`{team}` is replaced), `logo_url` (crest on team sheets), `nickname` and `avatar` (the bot's name and picture in this server only), `reset`. Colours and footer apply to event boards and team sheets; a preview is shown.
 
 ## Events and availability (`public/spotbot/events.cjs`)

@@ -32,6 +32,7 @@ const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
 const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
+const { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES } = require('./club-stats.cjs');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -101,6 +102,13 @@ async function searchClub(options) {
     
     console.log(`[EA] Search response status: ${res.status}`);
     
+    // EA answers a search with no results as 200 + []; anything else means EA itself failed,
+    // which must not be reported to the manager as "club not found"
+    if (res.status === 403 || res.status === 429 || res.status >= 500) {
+      const err = new Error(`EA's servers aren't answering searches right now (HTTP ${res.status}). Try again in a minute.`);
+      err.eaUnavailable = true;
+      throw err;
+    }
     if (res.status !== 200 || !res.data) {
       return [];
     }
@@ -348,6 +356,9 @@ const trials = createTrials({ supabase, getGuildState, recruitment, roster, even
 const recruitCards = createRecruitCards({ supabase, getGuildState, recruitment });
 roster.setExtraFields(recruitCards.gapFields);
 
+// /help, /clubstats members|top|form|matches and the EA-name lookup behind /linkea
+const clubStats = createClubStats({ supabase, getGuildState, fetchClubMembers, dashboardUrl: process.env.DASHBOARD_URL });
+
 const managerHub = createManagerHub({
   supabase,
   callEdgeFunction,
@@ -518,7 +529,7 @@ const COMMANDS = [
   { name: 'spotpanel', description: 'Create the global control panel for club spots.' },
   { name: 'spots', description: 'Show a read-only board with club dropdown.' },
   { name: 'vcspots', description: 'Create/update a live club spot panel linked to your current voice channel.' },
-  { name: 'spothelp', description: 'Shows the GafferBot manual & quick commands.' },
+  { name: 'help', description: 'How to get started, what each command does, and what the stats mean.' },
   {
     name: 'spotblock',
     description: 'Block or unblock a user from moving players.',
@@ -658,14 +669,16 @@ const COMMANDS = [
   },
   {
     name: 'clubstats',
-    description: 'Show club stats, or toggle and check EA stats monitoring.',
+    description: 'Club stats, members, top players, in-form players and recent matches.',
     options: [
       { name: 'action', description: 'Leave blank to show club stats.', type: 3, required: false, choices: [
         { name: 'Show club stats', value: 'stats' },
+        ...CLUBSTATS_ACTION_CHOICES,
         { name: 'Enable monitoring', value: 'enable' },
         { name: 'Disable monitoring', value: 'disable' },
         { name: 'Show status', value: 'status' }
-      ]}
+      ]},
+      { name: 'stat', description: 'For "Top players": which stat to rank by (default goals + assists).', type: 3, required: false, choices: TOP_STAT_CHOICES }
     ]
   },
   { name: 'syncclub', description: 'Manually sync recent matches from EA FC Pro Clubs.' },
@@ -683,7 +696,7 @@ const COMMANDS = [
     name: 'linkea',
     description: 'Link your EA username to your Discord account for stats tracking.',
     options: [
-      { name: 'username', description: 'Your EA FC Pro Clubs username.', type: 3, required: true }
+      { name: 'username', description: 'Start typing and pick your name from your club\'s EA players.', type: 3, required: true, autocomplete: true }
     ]
   },
 
@@ -2881,51 +2894,6 @@ async function setClubFormation(interaction, guildId, clubKey, formationName) {
 }
 
 // =======================
-// HELP EMBED BUILDER
-// =======================
-
-function buildHelpEmbed() {
-  return new EmbedBuilder()
-    .setTitle('📘 GafferBot Complete Help')
-    .setColor(0x5865f2)
-    .setDescription(
-      '**📋 Spot Management** (Use Control Panel buttons)\n' +
-      '• Create control panel in your server\n' +
-      '• Click buttons to manage clubs, spots, formations\n' +
-      '• Link voice channels to club panels\n\n' +
-      '**🎮 Position Preferences**\n' +
-      '• Click "Set Preferences" in the preference panel\n' +
-      '• Select up to 6 positions ranked by preference\n\n' +
-      '**⚔️ Drafts & Games**\n' +
-      '• Click "Start Draft" when in a voice channel with 4+ players\n' +
-      '• Click player buttons to pick during draft\n' +
-      '• Click "Report Result" button to record match scores\n\n' +
-      '**🔍 Scouting (AI)**\n' +
-      '• View opponent analysis in the scouting panel\n' +
-      '• AI-powered match previews and insights\n\n' +
-      '**👤 Player Stats**\n' +
-      '• Click "View Profile" to see player stats\n' +
-      '• View the leaderboard from the control panel\n\n' +
-      '**🎮 EA Integration**\n' +
-      '• Click "Link EA Account" to connect your EA username\n' +
-      '• Stats sync automatically from Pro Clubs matches\n\n' +
-      '**🏆 Competition**\n' +
-      '• Submit wins via the competition panel\n' +
-      '• Admins can review and verify claims\n\n' +
-      '**📅 Events & Availability**\n' +
-      '• Respond to availability checks with Yes/No/Maybe buttons\n' +
-      '• View who is available for upcoming matches\n\n' +
-      '**💡 Quick Tips**\n' +
-      '🟢 Click open spot to claim\n' +
-      '🔴 Click taken spot for actions\n' +
-      '🔔 Waitlist for DM alerts\n' +
-      '✨ Auto-assign from VC prefs\n' +
-      '🎮 All features accessible via buttons!'
-    )
-    .setFooter({ text: 'GafferBot • All features button-accessible • No slash commands needed' });
-}
-
-// =======================
 // ADMIN CONTROL PANEL BUILDERS
 // =======================
 
@@ -4139,6 +4107,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (await autopilot.handleInteraction(interaction)) return;
     // /setup checklist and /brand
     if (await clubSetup.handleInteraction(interaction)) return;
+    // /help, /clubstats members/top/form/matches, /linkea name search
+    if (await clubStats.handleInteraction(interaction)) return;
     // Recruitment: /fa, /recruit, /scout, Reach Out (incl. the player's DM buttons) and alert buttons
     if (await scouting.handleInteraction(interaction)) return;
     if (await trials.handleInteraction(interaction)) return;
@@ -5421,10 +5391,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
         });
       }
 
-      if (cmd === 'spothelp') {
-        return interaction.reply({ embeds: [buildHelpEmbed()], flags: 64 });
-      }
-
       if (cmd === 'spotblock') {
         if (!isManager(interaction.member)) {
           return interaction.reply({
@@ -6655,22 +6621,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.deferReply({ flags: 64 });
 
         try {
-          // Search for the club on EA (all FC27 platforms unless one was picked)
-          const found = await searchClubByNameAllPlatforms(clubName, requestedPlatform);
-          
-          if (!found) {
-            const where = requestedPlatform ? (EA_PLATFORM_NAMES[requestedPlatform] || requestedPlatform) : 'any platform';
-            return interaction.editReply({
-              content: `❌ Could not find a club named **${clubName}** on ${where}.\n\nMake sure the name is exactly as it appears in EA FC Pro Clubs.`
-            });
-          }
-
-          const { club: eaClub, platform } = found;
           const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
-          
           if (!currentClub) {
             return interaction.editReply({ content: '❌ No current club selected. Use the spot panel first.' });
           }
+
+          // Search for the club on EA (all FC27 platforms unless one was picked)
+          const { exact: found, candidates, failed } = await searchClubCandidates(clubName, requestedPlatform);
+          if (!found) {
+            if (failed) return interaction.editReply({ content: clubSearchFailedMessage(failed) });
+            if (candidates.length) return interaction.editReply(clubPickerReply(clubName, candidates, currentClub.key, statsChannel?.id));
+            const where = requestedPlatform ? (EA_PLATFORM_NAMES[requestedPlatform] || requestedPlatform) : 'any platform';
+            return interaction.editReply({ content: clubNotFoundMessage(clubName, where) });
+          }
+
+          const { club: eaClub, platform } = found;
 
           // Update the club with EA data
           currentClub.ea_club_id = eaClub.clubId?.toString();
@@ -6709,7 +6674,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         } catch (err) {
           console.error('[EA] Error in /setclub:', err);
-          return interaction.editReply({ content: `❌ Failed to search EA: ${err.message}` });
+          return interaction.editReply({ content: clubSearchFailedMessage(err) });
         }
       }
 
@@ -6757,7 +6722,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (!currentClub.ea_club_id) {
           return interaction.reply({
-            content: '❌ This club is not linked to EA yet. Link it in the EA Config panel first.',
+            content: '❌ This club is not linked to EA yet. A manager can run `/setclub` to link it.',
             flags: 64
           });
         }
@@ -6846,7 +6811,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (!currentClub?.ea_club_id) {
           return interaction.reply({
-            content: '❌ This club is not linked to EA. Link it in the EA Config panel first.',
+            content: '❌ This club is not linked to EA yet. A manager can run `/setclub` to link it.',
             flags: 64
           });
         }
@@ -6878,33 +6843,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       if (cmd === 'linkea') {
-        const eaUsername = interaction.options.getString('username');
-
         await interaction.deferReply({ flags: 64 });
-
-        // Update the user's profile with their EA username
-        const { error } = await supabase
-          .from('profiles')
-          .upsert({
-            discord_user_id: interaction.user.id,
-            ea_username: eaUsername,
-            discord_username: interaction.member?.displayName || interaction.user.username,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'discord_user_id' });
-
-        if (error) {
-          return interaction.editReply({ content: `❌ Failed to save EA username: ${error.message}` });
-        }
-
-        const embed = new EmbedBuilder()
-          .setTitle('✅ EA Account Linked!')
-          .setColor(0x00ff00)
-          .setDescription(`Your EA username **${eaUsername}** is now linked to your Discord account.\n\nWhen your club plays division matches, your stats will be automatically recorded!`)
-          .addFields(
-            { name: '📊 What happens now?', value: 'Your goals, assists, ratings, and other stats from Pro Clubs matches will be tracked and contribute to your GafferBot rating.', inline: false }
-          );
-
-        return interaction.editReply({ embeds: [embed] });
+        return interaction.editReply(await linkOwnEaAccount(interaction, interaction.options.getString('username')));
       }
 
       // =======================
@@ -7032,45 +6972,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
           return interaction.editReply({ content: `❌ Failed to link: ${error.message}` });
         }
 
-        // Check for temp profile and migrate data if exists
-        const tempDiscordId = `ea_${eaUsername.toLowerCase()}`;
-        const { data: tempProfile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('discord_user_id', tempDiscordId)
-          .single();
-
-        let migratedStats = false;
-        if (tempProfile) {
-          // Migrate player_stats
-          await supabase
-            .from('player_stats')
-            .update({ discord_user_id: targetUser.id })
-            .eq('discord_user_id', tempDiscordId)
-            .eq('guild_id', guildId);
-
-          // Migrate player_ratings
-          await supabase
-            .from('player_ratings')
-            .update({ discord_user_id: targetUser.id })
-            .eq('discord_user_id', tempDiscordId)
-            .eq('guild_id', guildId);
-
-          // Migrate player_summary
-          await supabase
-            .from('player_summary')
-            .update({ discord_user_id: targetUser.id })
-            .eq('discord_user_id', tempDiscordId)
-            .eq('guild_id', guildId);
-
-          // Delete temp profile
-          await supabase
-            .from('profiles')
-            .delete()
-            .eq('discord_user_id', tempDiscordId);
-
-          migratedStats = true;
+        // An EA name maps to one Discord account: take it off any old account (e.g. a player who
+        // switched Discord accounts), then fold in stats saved before anyone linked it
+        const previousOwner = await eaNameOwner(eaUsername, targetUser.id);
+        if (previousOwner) {
+          await supabase.from('profiles').update({ ea_username: null, updated_at: new Date().toISOString() }).eq('discord_user_id', previousOwner.discord_user_id);
         }
+        const migratedStats = await migrateTempEaProfile(guildId, targetUser.id, eaUsername);
+        clubStats.forgetNames(guildId);
 
         // Trigger rating recalculation
         callEdgeFunction('calculate-ratings', {
@@ -7088,6 +6997,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (wasLinked && wasLinked !== eaUsername) {
           embed.addFields({ name: '⚠️ Previous Link', value: `Was: \`${wasLinked}\``, inline: true });
+        }
+        if (previousOwner) {
+          embed.addFields({ name: '🔁 Moved from', value: `<@${previousOwner.discord_user_id}> no longer has this EA name.`, inline: false });
         }
 
         if (migratedStats) {
@@ -7940,7 +7852,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       if (id === 'open_help') {
-        return interaction.reply({ embeds: [buildHelpEmbed()], flags: 64 });
+        return interaction.reply({ ...clubStats.helpMessage(), flags: 64 });
       }
 
       // =======================
@@ -9277,7 +9189,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       if (id === 'squadiq_help') {
-        return interaction.reply({ embeds: [buildHelpEmbed()], flags: 64 });
+        return interaction.reply({ ...clubStats.helpMessage(), flags: 64 });
       }
 
       // Auto-Link EA Accounts button - triggers fuzzy matching for all unlinked profiles
@@ -11123,7 +11035,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
         if (!currentClub?.ea_club_id) {
-          return interaction.reply({ content: '❌ No EA club linked. Use Link Club first.', flags: 64 });
+          return interaction.reply({ content: '❌ No EA club linked yet. A manager can run `/setclub` to link it.', flags: 64 });
         }
 
         await interaction.deferReply({ flags: 64 });
@@ -13124,30 +13036,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
 
         await interaction.deferReply({ flags: 64 });
-
-        // Update the user's profile with their EA username
-        const { error } = await supabase
-          .from('profiles')
-          .upsert({
-            discord_user_id: interaction.user.id,
-            ea_username: eaUsername,
-            discord_username: interaction.member?.displayName || interaction.user.username,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'discord_user_id' });
-
-        if (error) {
-          return interaction.editReply({ content: `❌ Failed to save EA username: ${error.message}` });
-        }
-
-        const embed = new EmbedBuilder()
-          .setTitle('✅ EA Account Linked!')
-          .setColor(0x00ff00)
-          .setDescription(`Your EA username **${eaUsername}** is now linked to your Discord account.\n\nWhen your club plays division matches, your stats will be automatically recorded!`)
-          .addFields(
-            { name: '📊 What happens now?', value: 'Your goals, assists, ratings, and other stats from Pro Clubs matches will be tracked and contribute to your GafferBot rating.', inline: false }
-          );
-
-        return interaction.editReply({ embeds: [embed] });
+        return interaction.editReply(await linkOwnEaAccount(interaction, eaUsername));
       }
 
       // EA Panel - Link Club Modal
@@ -13174,18 +13063,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         try {
           const clubs = await searchClub({ name: clubName, platform: normalizedPlatform });
-
-          if (!clubs || clubs.length === 0) {
-            return interaction.editReply({
-              content: `❌ Could not find a club named **${clubName}** on ${EA_PLATFORM_NAMES[normalizedPlatform] || normalizedPlatform}.\n\nMake sure the name is exactly as it appears in EA FC Pro Clubs.`
-            });
-          }
-
-          const eaClub = findExactClubMatch(clubs, clubName) || clubs[0];
           const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
 
           if (!currentClub) {
             return interaction.editReply({ content: '❌ No current club selected.' });
+          }
+
+          if (!clubs || clubs.length === 0) {
+            return interaction.editReply({ content: clubNotFoundMessage(clubName, EA_PLATFORM_NAMES[normalizedPlatform] || normalizedPlatform) });
+          }
+
+          const eaClub = findExactClubMatch(clubs, clubName);
+          if (!eaClub) {
+            return interaction.editReply(clubPickerReply(clubName, clubs.map(club => ({ club, platform: normalizedPlatform })), currentClub.key, null));
           }
 
           currentClub.ea_club_id = eaClub.clubId?.toString();
@@ -13219,7 +13109,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         } catch (err) {
           console.error('[EA] Error in eapanel_link_modal:', err);
-          return interaction.editReply({ content: `❌ Failed to search EA: ${err.message}` });
+          return interaction.editReply({ content: clubSearchFailedMessage(err) });
         }
       }
 
@@ -13754,13 +13644,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
           const results = await searchClub({ name: eaClubName, platform: normalizedPlatform });
 
           if (!results || results.length === 0) {
-            return interaction.editReply({
-              content: `❌ Could not find a club named **${eaClubName}** on ${EA_PLATFORM_NAMES[normalizedPlatform] || normalizedPlatform}.\n\nMake sure the name is exactly as it appears in EA FC Pro Clubs.`
-            });
+            return interaction.editReply({ content: clubNotFoundMessage(eaClubName, EA_PLATFORM_NAMES[normalizedPlatform] || normalizedPlatform) });
           }
 
-          // Prefer an exact name match, otherwise the first (best) result
-          const eaClub = findExactClubMatch(results, eaClubName) || results[0];
+          // Exact name match only; otherwise let the manager pick rather than linking a lookalike
+          const eaClub = findExactClubMatch(results, eaClubName);
+          if (!eaClub) {
+            return interaction.editReply(clubPickerReply(eaClubName, results.map(club => ({ club, platform: normalizedPlatform })), clubKey, null));
+          }
           const club = state.clubs?.find(c => c.key === clubKey);
 
           if (!club) {
@@ -13800,7 +13691,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         } catch (err) {
           console.error('[Link EA Club Modal] Error:', err);
-          return interaction.editReply({ content: `❌ Error linking EA club: ${err.message}` });
+          return interaction.editReply({ content: err.eaUnavailable ? clubSearchFailedMessage(err) : `❌ Error linking EA club: ${err.message}` });
         }
       }
 
@@ -14058,6 +13949,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
       const id = interaction.customId;
 
       if (await managerHub.handleSelect(interaction)) return;
+
+      // Picked an EA club after a search with no exact name match (/setclub, EA panel)
+      if (id.startsWith('eaclub_pick:')) {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only managers can link clubs.', flags: 64 });
+        }
+        const [, clubKey, statsChannelId] = id.split(':');
+        const [platform, clubId] = interaction.values[0].split(':');
+        const picked = interaction.component.options.find(o => o.value === interaction.values[0]);
+        await interaction.deferUpdate();
+        const club = await linkEaClub(interaction.guildId, clubKey, { clubId, name: picked?.label }, platform, statsChannelId || null);
+        if (!club) return interaction.editReply({ content: '❌ That club is no longer set up in this server.', components: [] });
+        await refreshClubPanels(interaction.guildId, clubKey).catch(() => {});
+        return interaction.editReply({
+          content: `✅ **${club.name}** is linked to EA club **${picked?.label}** (${EA_PLATFORM_NAMES[platform] || platform}). Syncing match history now; results post as games finish.\nNext: players run \`/linkea\` so their stats count.`,
+          components: []
+        });
+      }
 
       // Position role panel: set the member's position roles (up to POSITION_ROLE_MAX)
       if (id === POSITION_ROLE_SELECT_ID) {
@@ -15956,6 +15865,79 @@ async function callEdgeFunction(functionName, body, timeoutMs = 120000) {
 // EA FC PRO CLUBS INTEGRATION
 // =======================
 
+// The other real Discord account (not an ea_ placeholder) already linked to this EA name, if any
+async function eaNameOwner(eaUsername, exceptDiscordId) {
+  const pattern = String(eaUsername).trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+  const { data } = await supabase.from('profiles').select('discord_user_id, ea_username').ilike('ea_username', pattern);
+  return (data || []).find(p => p.discord_user_id !== exceptDiscordId && !String(p.discord_user_id).startsWith('ea_')) || null;
+}
+
+// Stats saved for an EA name before anyone linked it live on an ea_<name> placeholder profile.
+// Move them to the real account and drop the placeholder, so the name maps to one profile.
+async function migrateTempEaProfile(guildId, discordUserId, eaUsername) {
+  const tempDiscordId = `ea_${String(eaUsername).trim().toLowerCase()}`;
+  const { data: tempProfile } = await supabase.from('profiles').select('discord_user_id').eq('discord_user_id', tempDiscordId).maybeSingle();
+  if (!tempProfile) return false;
+  for (const table of ['player_stats', 'player_ratings', 'player_summary']) {
+    let q = supabase.from(table).update({ discord_user_id: discordUserId }).eq('discord_user_id', tempDiscordId);
+    if (guildId) q = q.eq('guild_id', guildId);
+    await q;
+  }
+  await supabase.from('profiles').delete().eq('discord_user_id', tempDiscordId);
+  return true;
+}
+
+// /linkea and the Link EA Account button. Uses EA's spelling when the name is one of this
+// server's players (stats are matched on the exact name), and refuses a name another member holds.
+async function linkOwnEaAccount(interaction, typedName) {
+  const guildId = interaction.guildId;
+  let eaUsername = String(typedName || '').trim().slice(0, 64);
+  if (!eaUsername) return { content: '❌ EA username cannot be empty.' };
+
+  const { match, any } = guildId ? await clubStats.matchKnownName(guildId, eaUsername) : { match: null, any: false };
+  if (match) eaUsername = match.name;
+
+  const owner = await eaNameOwner(eaUsername, interaction.user.id);
+  if (owner) {
+    return {
+      content:
+        `❌ **${eaUsername}** is already linked to <@${owner.discord_user_id}>.\n` +
+        'If that\'s your old Discord account, ask a manager to run `/forcelink` to move it to this one.'
+    };
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .upsert({
+      discord_user_id: interaction.user.id,
+      ea_username: eaUsername,
+      discord_username: interaction.member?.displayName || interaction.user.username,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'discord_user_id' });
+  if (error) return { content: `❌ Failed to save EA username: ${error.message}` };
+
+  const migrated = await migrateTempEaProfile(guildId, interaction.user.id, eaUsername).catch(() => false);
+  if (guildId) clubStats.forgetNames(guildId);
+
+  const embed = new EmbedBuilder()
+    .setTitle('✅ EA Account Linked!')
+    .setColor(0x00ff00)
+    .setDescription(
+      `Your EA username **${eaUsername}** is now linked to your Discord account.` +
+      (match ? `\nFound you in **${match.club}**${match.games ? ` (${match.games} games)` : ''}.` : '') +
+      (migrated ? '\n📊 Stats from games you played before linking are now on your profile.' : '')
+    );
+  if (!match && any) {
+    embed.setColor(0xf59e0b).addFields({
+      name: '⚠️ Check the spelling',
+      value: 'I haven\'t seen this name in your club\'s matches or EA\'s member list. Stats only count when it matches your EA name exactly. Run `/linkea` again and pick your name from the list as you type.'
+    });
+  } else {
+    embed.addFields({ name: '📊 What happens now?', value: 'Your goals, assists and ratings from club matches are tracked from now on. See them with `/mystats`.' });
+  }
+  return { embeds: [embed] };
+}
+
 // Platform display names for embeds
 const EA_PLATFORM_NAMES = {
   'ps5': 'PlayStation 5',
@@ -15974,22 +15956,94 @@ const eaRelinkAttempted = new Set();
 // Search every FC27 platform (or just the requested one) and prefer an exact name match.
 // Returns { club, platform } where platform is the value stored on the club, or null.
 async function searchClubByNameAllPlatforms(name, requestedPlatform = null, { exactOnly = false } = {}) {
+  const { exact, candidates } = await searchClubCandidates(name, requestedPlatform);
+  if (exact) return exact;
+  return exactOnly || !candidates.length ? null : candidates[0];
+}
+
+// Every club EA returns for a name on each FC27 platform (or the requested one).
+// exact is the exact name match, if any; failed is set when EA itself errored on every platform.
+async function searchClubCandidates(name, requestedPlatform = null) {
   const fcPlatforms = requestedPlatform ? [toFcPlatform(requestedPlatform)] : FC_PLATFORMS;
-  let fallback = null;
+  const candidates = [];
+  let errors = 0;
+  let lastError = null;
   for (const fcPlatform of fcPlatforms) {
     let clubs = [];
     try {
       clubs = await searchClub({ name, platform: fcPlatform });
     } catch (err) {
       console.log(`[EA] Search failed for ${fcPlatform}:`, err.message);
+      errors += 1;
+      lastError = err;
       continue;
     }
     const platform = requestedPlatform || fromFcPlatform(fcPlatform);
     const exact = findExactClubMatch(clubs, name);
-    if (exact) return { club: exact, platform };
-    if (!fallback && clubs.length > 0) fallback = { club: clubs[0], platform };
+    if (exact) return { exact: { club: exact, platform }, candidates: [], failed: null };
+    for (const club of clubs) candidates.push({ club, platform });
   }
-  return exactOnly ? null : fallback;
+  return { exact: null, candidates, failed: errors === fcPlatforms.length ? lastError : null };
+}
+
+// Why a club can't be found, in words a manager can act on
+function clubNotFoundMessage(name, where = 'any platform') {
+  return (
+    `❌ EA has no FC27 club called **${name}** on ${where} yet.\n\n` +
+    '**Most common reason:** EA only creates a club\'s online record after it plays its **first league match in FC27**. New club, or not played since FC27 came out? Play one league match, wait a few minutes, then run `/setclub` again.\n' +
+    '• Type the name exactly as it shows in game (spaces count, capitals don\'t).\n' +
+    '• Clubs from FC26 or older don\'t carry over: EA gave every club a new ID for FC27.\n' +
+    '• Not sure of the spelling? Type part of it and I\'ll list what EA finds.'
+  );
+}
+
+function clubSearchFailedMessage(err) {
+  return `⚠️ ${err?.eaUnavailable ? err.message : `Couldn't reach EA's servers (${err?.message || 'unknown error'}). Try again in a minute.`}\nThis is EA's side, not your club name.`;
+}
+
+// No exact match: let the manager pick from what EA found, instead of linking a lookalike
+function clubPickerReply(name, candidates, clubKey, statsChannelId) {
+  const seen = new Set();
+  const options = [];
+  for (const { club, platform } of candidates) {
+    const value = `${platform}:${club.clubId}`;
+    if (seen.has(value) || options.length >= 25) continue;
+    seen.add(value);
+    const bits = [EA_PLATFORM_NAMES[platform] || platform, club.region, club.division ? `Div ${club.division}` : null].filter(Boolean);
+    options.push({ label: String(club.name || name).slice(0, 100), value, description: bits.join(' · ').slice(0, 100) || undefined });
+  }
+  const more = candidates.length > options.length ? ` Showing the first ${options.length}; type more of the name to narrow it down.` : '';
+  return {
+    content: `🔎 No club is called exactly **${name}**, but EA found ${candidates.length === 1 ? 'this one' : 'these'}. Pick yours to link it.${more}\n-# Yours isn't here? EA only lists a club after its first FC27 league match.`,
+    components: [
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`eaclub_pick:${clubKey}:${statsChannelId || ''}`)
+          .setPlaceholder('Pick your EA club')
+          .addOptions(options)
+      )
+    ]
+  };
+}
+
+// Save an EA club on a server club and start tracking it
+async function linkEaClub(guildId, clubKey, eaClub, platform, statsChannelId = null) {
+  const state = await getGuildState(guildId);
+  const club = state?.clubs?.find(c => c.key === clubKey);
+  if (!club) return null;
+  club.ea_club_id = eaClub.clubId?.toString();
+  club.ea_platform = platform;
+  club.ea_club_name = eaClub.name;
+  club.ea_fc_version = EA_FC_VERSION;
+  if (statsChannelId || !club.stats_channel_id) club.stats_channel_id = statsChannelId || null;
+  club.monitoring_enabled = true;
+  club.last_match_id = null;
+  await saveGuildSettings(guildId, state);
+  startEaMonitoring(guildId, club.key);
+  syncClubHistory(guildId, club.key)
+    .then(result => console.log(`[EA] Initial sync for ${club.name}: ${result.synced} matches added`))
+    .catch(err => console.error('[EA] Initial sync error:', err));
+  return club;
 }
 
 // FC27 scrambled club IDs. Re-find a club linked before FC27 by its EA name and update its ID.

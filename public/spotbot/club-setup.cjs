@@ -44,6 +44,47 @@ function parseColor(text) {
   return parseInt(hex, 16);
 }
 
+// Commands a server admin has switched off in Server Settings → Integrations, in plain words.
+// Discord stores these as per-command overrides; the guild id stands for @everyone and
+// guild id - 1 for "all channels". Overrides on the bot itself apply to every command.
+async function commandAccessLines(guild) {
+  const app = guild.client.application;
+  let overrides;
+  try {
+    overrides = await app.commands.permissions.fetch({ guild: guild.id });
+  } catch (err) {
+    return { lines: [], error: err.message };
+  }
+  const commands = await app.commands.fetch().catch(() => null);
+  const allChannels = (BigInt(guild.id) - 1n).toString();
+  const lines = [];
+  for (const [commandId, perms] of overrides) {
+    const label = commandId === app.id ? '**All GafferBot commands**' : commands?.get(commandId) ? `\`/${commands.get(commandId).name}\`` : null;
+    if (!label) continue;
+    const denied = perms.filter((p) => !p.permission);
+    if (!denied.length) continue;
+    const where = denied.map((p) => {
+      if (p.id === guild.id) return 'everyone';
+      if (p.id === allChannels) return 'every channel';
+      if (p.type === 1) return `<@&${p.id}>`;
+      if (p.type === 2) return `<@${p.id}>`;
+      return `<#${p.id}>`;
+    });
+    const allowed = perms.filter((p) => p.permission).length;
+    lines.push(`🚫 ${label} turned off for ${where.join(', ')}${allowed ? ` (allowed for ${allowed} role/channel${allowed === 1 ? '' : 's'})` : ''}`);
+  }
+  return { lines, error: null };
+}
+
+// Commands that need a Discord permission by default, so members without it won't see them
+function restrictedByDefault(guild) {
+  const names = [];
+  for (const cmd of guild.client.application.commands.cache.values()) {
+    if (cmd.defaultMemberPermissions && cmd.defaultMemberPermissions.bitfield !== 0n) names.push(`\`/${cmd.name}\``);
+  }
+  return names;
+}
+
 function createClubSetup(deps) {
   const { supabase, getGuildState, events } = deps;
 
@@ -117,6 +158,25 @@ function createClubSetup(deps) {
       channelLines.push(missing.length ? `❌ <#${id}>: missing ${missing.join(', ')}` : `✅ <#${id}>`);
     }
 
+    // Match recaps that have nowhere to go would otherwise be dropped without a word
+    const recapGaps = [];
+    for (const club of linked) {
+      if ((club.autopilot?.off || []).includes('recaps') || club.autopilot?.channel_id || club.stats_channel_id) continue;
+      const { count } = await supabase.from('availability_events').select('id', { count: 'exact', head: true }).eq('guild_id', guild.id).eq('club_key', club.key).not('channel_id', 'is', null);
+      if (!count) recapGaps.push(club.name);
+    }
+    if (recapGaps.length) problems.push(`⚠️ Match recaps for ${recapGaps.join(', ')} have no channel. Pick one with \`/autopilot\`.`);
+
+    const access = await commandAccessLines(guild);
+    const restricted = restrictedByDefault(guild);
+    const accessText = [
+      ...access.lines,
+      access.error ? `Couldn't read command settings (${access.error}).` : null,
+      !access.lines.length && !access.error ? '✅ No commands turned off' : null,
+      restricted.length ? `ℹ️ Admins only by default: ${restricted.join(', ')}` : null,
+      'Change who can use what in **Server Settings → Integrations → GafferBot**.',
+    ].filter(Boolean).join('\n');
+
     const embed = new EmbedBuilder()
       .setTitle('🛠️ GafferBot setup')
       .setColor(Number(prefs.branding.color) || 0x5865f2)
@@ -126,9 +186,10 @@ function createClubSetup(deps) {
       )
       .addFields(
         { name: 'Channels I post in', value: channelLines.join('\n').slice(0, 1024) || '–' },
-        { name: 'Server permissions', value: problems.join('\n').slice(0, 1024) || '✅ Nothing missing' }
+        { name: 'Server permissions', value: problems.join('\n').slice(0, 1024) || '✅ Nothing missing' },
+        { name: 'Who can use commands', value: accessText.slice(0, 1024) }
       )
-      .setFooter({ text: 'Missing a channel permission? Edit the channel → Permissions → add my role and allow what is listed.' });
+      .setFooter({ text: `Bot online · ${Math.max(0, Math.round(guild.client.ws.ping))}ms latency · Missing a channel permission? Edit the channel → Permissions → add my role.` });
     return interaction.editReply({ embeds: [embed] });
   }
 
