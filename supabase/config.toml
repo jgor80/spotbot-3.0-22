@@ -113,3 +113,6 @@ verify_jwt = false
 
 [functions.announce-lineup]
 verify_jwt = false
+
+[functions.stream-overlay]
+verify_jwt = false

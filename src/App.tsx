@@ -21,6 +21,7 @@ import RatingsPage from "./pages/RatingsPage";
 import RecentGamesPage from "./pages/RecentGamesPage";
 import InsightsPage from "./pages/InsightsPage";
 import SquadIQPanel from "./pages/SquadIQPanel";
+import StreamOverlay from "./pages/StreamOverlay";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,6 +36,8 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               <Route path="/auth" element={<AuthPage />} />
+              {/* OBS browser source for /premium overlay: public, token in the URL */}
+              <Route path="/overlay/:token" element={<StreamOverlay />} />
               <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
               <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
               <Route path="/lineup" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
