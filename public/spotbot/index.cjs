@@ -25,6 +25,7 @@ const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.c
 const { createSquads, SQUAD_COMMANDS } = require('./squads.cjs');
 const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
 const { parseWhen: parseEventWhen } = require('./event-time.cjs');
+const embedStyle = require('./embed-style.cjs');
 const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
 const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
 const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
@@ -354,6 +355,8 @@ const clubEvents = createEvents({
   canManageClub: squads.canManageClub,
   dashboardUrl: process.env.DASHBOARD_URL
 });
+
+embedStyle.install({ loadBranding: async (guildId) => (await clubEvents.serverPrefs(guildId)).branding });
 
 const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub });
 
@@ -2931,7 +2934,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
   
   // Header embed with branding
   const headerEmbed = new EmbedBuilder()
-    .setTitle('🎮 GAFFERBOT CONTROL CENTER')
+    .setTitle('🎮 GafferBot Control Center')
     .setColor(0x5865f2)
     .setDescription(
       '**Your central hub for squad management, drafts, and player analytics.**\n\n' +
@@ -2954,7 +2957,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
   }
   
   const clubStatusEmbed = new EmbedBuilder()
-    .setTitle('⚽ CLUB STATUS')
+    .setTitle('⚽ Club Status')
     .setColor(filledSlots === totalSlots ? 0x00ff00 : filledSlots > 0 ? 0xffcc00 : 0x5865f2)
     .addFields(
       { name: '🏟️ Club', value: club?.name || 'None', inline: true },
@@ -3032,7 +3035,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
   // Stats overview embed
   const feedbackEnabled = state?.feedbackEnabled !== false;
   const statsEmbed = new EmbedBuilder()
-    .setTitle('📊 SYSTEM STATUS')
+    .setTitle('📊 System Status')
     .setColor(0x00d4aa)
     .addFields(
       { name: '👥 Players Registered', value: `${playerCount}`, inline: true },
@@ -3049,7 +3052,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
   
   // Quick actions reference - button-based
   const actionsEmbed = new EmbedBuilder()
-    .setTitle('🛠️ QUICK ACTIONS')
+    .setTitle('🛠️ Quick Actions')
     .setColor(0xff6b35)
     .setDescription(
       '**Use the buttons below to access all features:**\n\n' +
@@ -3790,7 +3793,7 @@ async function transitionToPicking(interaction, draftData, guildId) {
     : draftData.captain_b.discord_user_id;
   
   const embed = new EmbedBuilder()
-    .setTitle('⚔️ DRAFT IN PROGRESS')
+    .setTitle('⚔️ Draft In Progress')
     .setColor(0xff6b35)
     .setDescription(`**Pick #${draftData.pick_number || 1}** – <@${currentPicker}>'s turn to pick!`)
     .addFields(
@@ -3895,6 +3898,7 @@ function buildDraftPickButtonRows(availablePlayers, draftId, currentPickerId) {
 
 client.once(Events.ClientReady, async (c) => {
   console.log(`✅ GafferBot logged in as ${c.user.tag}`);
+  embedStyle.setFooterIcon(c.user.displayAvatarURL({ size: 64 }));
 
   try {
     // One-time cleanup: Remove all guild-specific commands to fix duplicates
@@ -4134,7 +4138,8 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 // MAIN INTERACTION HANDLER
 // =======================
 
-client.on(Events.InteractionCreate, async (interaction) => {
+// Every embed sent while handling the interaction picks up the server's /brand style (embed-style.cjs)
+client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(interaction.guildId, async () => {
   try {
     // Events: /event, /available, autocomplete, and board buttons (also used from reminder DMs)
     if (await clubEvents.handleInteraction(interaction)) return;
@@ -8476,7 +8481,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         
         // NEW: Show captain confirmation embed instead of immediately starting picks
         const confirmEmbed = new EmbedBuilder()
-          .setTitle('⚔️ DRAFT - CAPTAIN CONFIRMATION')
+          .setTitle('⚔️ Draft · Captain Confirmation')
           .setColor(0xff6b35)
           .setDescription(
             '**Captains must confirm before the draft begins!**\n\n' +
@@ -9643,7 +9648,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         } else {
           // Update embed to show confirmation
           const confirmEmbed = new EmbedBuilder()
-            .setTitle('⚔️ DRAFT - CAPTAIN CONFIRMATION')
+            .setTitle('⚔️ Draft · Captain Confirmation')
             .setColor(0xff6b35)
             .setDescription(
               '**Captains must confirm before the draft begins!**\n\n' +
@@ -9730,7 +9735,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         } else {
           // Update embed to show confirmation
           const confirmEmbed = new EmbedBuilder()
-            .setTitle('⚔️ DRAFT - CAPTAIN CONFIRMATION')
+            .setTitle('⚔️ Draft · Captain Confirmation')
             .setColor(0xff6b35)
             .setDescription(
               '**Captains must confirm before the draft begins!**\n\n' +
@@ -9813,7 +9818,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         activeDrafts.delete(guildId);
         
         const declineEmbed = new EmbedBuilder()
-          .setTitle('⚔️ DRAFT CANCELLED')
+          .setTitle('⚔️ Draft Cancelled')
           .setColor(0xff0000)
           .setDescription(
             `**<@${interaction.user.id}> declined to be captain.**\n\n` +
@@ -9888,7 +9893,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         // Check if draft is complete
         if (data.draft_complete || (data.available_players || []).length === 0) {
           const completeEmbed = new EmbedBuilder()
-            .setTitle('⚔️ DRAFT COMPLETE!')
+            .setTitle('⚔️ Draft Complete!')
             .setColor(0x00ff00)
             .addFields(
               { 
@@ -9932,7 +9937,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             : draftData.captain_b.discord_user_id;
           
           const embed = new EmbedBuilder()
-            .setTitle('⚔️ DRAFT IN PROGRESS')
+            .setTitle('⚔️ Draft In Progress')
             .setColor(0xff6b35)
             .setDescription(`**Pick #${data.pick_number || 1}** – <@${nextPickerId}>'s turn to pick!`)
             .addFields(
@@ -15884,7 +15889,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     console.error('❌ Error handling interaction:', err);
     await replyWithError(interaction);
   }
-});
+}));
 
 // =======================
 // EDGE FUNCTION HELPER
@@ -17444,7 +17449,7 @@ function buildDraftEmbed(draftData, guild) {
   const currentPicker = draftData.current_picker === 'a' ? draftData.captain_a_discord_id : draftData.captain_b_discord_id;
   
   return new EmbedBuilder()
-    .setTitle('⚔️ DRAFT IN PROGRESS')
+    .setTitle('⚔️ Draft In Progress')
     .setColor(0xff6b35)
     .addFields(
       { name: `🔴 Team A (Captain: <@${draftData.captain_a_discord_id}>)`, value: teamALines, inline: true },

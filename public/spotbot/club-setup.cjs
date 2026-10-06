@@ -252,6 +252,7 @@ function createClubSetup(deps) {
     const { error } = await supabase.from('guild_settings').upsert({ guild_id: guild.id, branding }, { onConflict: 'guild_id' });
     if (error) return interaction.editReply({ content: `❌ ${error.message}` });
     events.forgetPrefs(guild.id);
+    require('./embed-style.cjs').forget(guild.id);
 
     const preview = new EmbedBuilder()
       .setTitle(`📋 ${(branding.lineup_title || '{team} Starting XI').replace('{team}', 'Your Club')}`)
