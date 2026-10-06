@@ -162,13 +162,13 @@ function createManagerHub(deps) {
         new ButtonBuilder().setCustomId(`hub_ins:${k}`).setLabel('Tactical Insights').setEmoji('💡').setStyle(ButtonStyle.Secondary)
       ),
     ];
+    const more = [];
     if (buildEventList) {
-      rows.push(
-        new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`hub_events:${k}`).setLabel('Events').setEmoji('📅').setStyle(ButtonStyle.Secondary)
-        )
-      );
+      more.push(new ButtonBuilder().setCustomId(`hub_events:${k}`).setLabel('Events').setEmoji('📅').setStyle(ButtonStyle.Secondary));
     }
+    // Handled by autopilot.cjs
+    more.push(new ButtonBuilder().setCustomId(`ap_panel:${k}`).setLabel('Autopilot').setEmoji('🤖').setStyle(ButtonStyle.Secondary));
+    rows.push(new ActionRowBuilder().addComponents(more));
     const picker = clubPicker('hub_club', activeClubs(state), k);
     if (picker) rows.push(picker);
 
@@ -595,7 +595,7 @@ function createManagerHub(deps) {
     return false;
   }
 
-  return { commands: HUB_COMMANDS, handleCommand, handleButton, handleSelect, buildStats, resolveClub };
+  return { commands: HUB_COMMANDS, handleCommand, handleButton, handleSelect, buildStats, resolveClub, loadMatches };
 }
 
 module.exports = { createManagerHub, resolveClub, activeClubs, HUB_COMMANDS };
