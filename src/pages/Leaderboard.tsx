@@ -163,15 +163,15 @@ export default function Leaderboard() {
         <div className="flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="font-display text-3xl font-bold">
-                {showWorst ? "Bottom Performers" : 
-                  boardType === "forward" ? "Forward Leaderboard" :
-                  boardType === "midfielder" ? "Midfielder Leaderboard" :
-                  boardType === "defender" ? "Defender Leaderboard" :
-                  boardType === "goalkeeper" ? "Goalkeeper Leaderboard" :
-                  "Leaderboard"}
+              <h1 className="font-display text-2xl font-bold leading-tight md:text-3xl">
+                {showWorst ? "Club Stats: bottom performers" :
+                  boardType === "forward" ? "Club Stats: forwards" :
+                  boardType === "midfielder" ? "Club Stats: midfielders" :
+                  boardType === "defender" ? "Club Stats: defenders" :
+                  boardType === "goalkeeper" ? "Club Stats: goalkeepers" :
+                  "Club Stats"}
               </h1>
-              <p className="text-muted-foreground">
+              <p className="mt-1 text-sm text-muted-foreground md:text-base">
                 {showWorst 
                   ? "Players ranked from worst to best (min 3 games)" 
                   : boardType === "forward" 
@@ -205,9 +205,9 @@ export default function Leaderboard() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-3">
             <Select value={boardType} onValueChange={setBoardType}>
-              <SelectTrigger className="w-[150px] bg-card">
+              <SelectTrigger className="w-full bg-card sm:w-[150px]">
                 <SelectValue placeholder="Board type" />
               </SelectTrigger>
               <SelectContent className="bg-card border z-50">
@@ -219,7 +219,7 @@ export default function Leaderboard() {
               </SelectContent>
             </Select>
             <Select value={clubFilter} onValueChange={setClubFilter}>
-              <SelectTrigger className="w-[180px] bg-card">
+              <SelectTrigger className="w-full bg-card sm:w-[180px]">
                 <SelectValue placeholder="Select club" />
               </SelectTrigger>
               <SelectContent className="bg-card border z-50">
@@ -236,7 +236,7 @@ export default function Leaderboard() {
               onValueChange={(v) => setStatsSource(v as "all" | "members" | "games")}
               disabled={boardType !== "overall"}
             >
-              <SelectTrigger className="w-[200px] bg-card">
+              <SelectTrigger className="w-full bg-card sm:w-[200px]">
                 <SelectValue placeholder="Stats source" />
               </SelectTrigger>
               <SelectContent className="bg-card border z-50">
@@ -246,7 +246,7 @@ export default function Leaderboard() {
               </SelectContent>
             </Select>
             <Select value={matchType} onValueChange={setMatchType}>
-              <SelectTrigger className="w-[160px] bg-card">
+              <SelectTrigger className="w-full bg-card sm:w-[160px]">
                 <SelectValue placeholder="Match type" />
               </SelectTrigger>
               <SelectContent className="bg-card border z-50">
@@ -258,7 +258,7 @@ export default function Leaderboard() {
               </SelectContent>
             </Select>
             <Select value={timePeriod} onValueChange={setTimePeriod}>
-              <SelectTrigger className="w-[140px] bg-card">
+              <SelectTrigger className="w-full bg-card sm:w-[140px]">
                 <SelectValue placeholder="Time period" />
               </SelectTrigger>
               <SelectContent className="bg-card border z-50">
@@ -270,7 +270,7 @@ export default function Leaderboard() {
               </SelectContent>
             </Select>
             <Select value={minGamesPlayed} onValueChange={setMinGamesPlayed}>
-              <SelectTrigger className="w-[140px] bg-card">
+              <SelectTrigger className="w-full bg-card sm:w-[140px]">
                 <SelectValue placeholder="Min games" />
               </SelectTrigger>
               <SelectContent className="bg-card border z-50">
@@ -284,24 +284,10 @@ export default function Leaderboard() {
           </div>
         </div>
 
-        {selectedGuild && (
-          <Card className="bg-muted/30">
-            <CardContent className="pt-6 space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Discord server: <span className="font-medium text-foreground">{selectedGuild.name}</span>
-              </p>
-              <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-xs text-muted-foreground">Enabled clubs:</span>
-                {enabledClubs.length > 0 ? (
-                  enabledClubs.map((club) => (
-                    <Badge key={club.key} variant="secondary" className="text-xs">
-                      {club.name || club.key}
-                    </Badge>
-                  ))
-                ) : (
-                  <Badge variant="outline" className="text-xs">No clubs configured</Badge>
-                )}
-              </div>
+        {selectedGuild && enabledClubs.length === 0 && (
+          <Card className="border-dashed">
+            <CardContent className="py-4 text-sm text-muted-foreground">
+              No EA club is linked to this server yet. Run <code>/setclub</code> in Discord to start tracking matches.
             </CardContent>
           </Card>
         )}
@@ -317,7 +303,7 @@ export default function Leaderboard() {
           </Card>
         ) : boardType === "overall" ? (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="flex-wrap h-auto gap-1">
+            <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto sm:w-auto sm:flex-wrap">
               <TabsTrigger value="overall">Overall</TabsTrigger>
               <TabsTrigger value="goals">Goals</TabsTrigger>
               <TabsTrigger value="assists">Assists</TabsTrigger>

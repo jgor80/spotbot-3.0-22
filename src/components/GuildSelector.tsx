@@ -11,7 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Server, ChevronDown, Search, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function GuildSelector() {
+export function GuildSelector({ className }: { className?: string }) {
   const { selectedGuildId, setSelectedGuildId, guilds, filteredGuilds, isLoading, searchQuery, setSearchQuery, selectedGuild } = useGuild();
   const [open, setOpen] = useState(false);
 
@@ -40,7 +40,7 @@ export function GuildSelector() {
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-[220px] justify-between bg-card border-border hover:bg-muted"
+          className={cn("w-[220px] justify-between bg-card border-border hover:bg-muted", className)}
         >
           <div className="flex items-center gap-2 truncate">
             <Server className="h-4 w-4 shrink-0 text-primary" />
