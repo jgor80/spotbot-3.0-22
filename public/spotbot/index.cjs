@@ -41,6 +41,7 @@ const { createDossier } = require('./dossier.cjs');
 const { createStreamKit, OVERLAY_SUBCOMMAND } = require('./stream-kit.cjs');
 const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
+const { createAutoLink } = require('./auto-link.cjs');
 const permCheck = require('./perm-check.cjs');
 const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
 
@@ -364,6 +365,7 @@ const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents 
 
 const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState });
 
+const autoLink = createAutoLink({ supabase, getGuildState });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
 
 const scouting = createScouting({ supabase, getGuildState, recruitment });
@@ -391,6 +393,7 @@ const managerHub = createManagerHub({
 // Voice check-ins, the auto-drafted XI, match recaps, sub requests on drop-outs and the Monday digest
 const autopilot = createAutopilot({
   supabase,
+  autoLink,
   events: clubEvents,
   matchNight,
   getGuildState,
@@ -3993,6 +3996,8 @@ client.on(Events.GuildCreate, async (guild) => {
 client.on(Events.GuildMemberAdd, async (member) => {
   try {
     console.log(`[Welcome] New member joined: ${member.user.username} in ${member.guild.name}`);
+    // Known players are enrolled automatically; likely gamertag matches get an "Is this you?" DM
+    if (await autoLink.onMemberJoin(member).catch((err) => { console.warn('[auto-link] join failed:', err.message); return false; })) return;
     
     // Check if guild has any clubs set up (indicates active GafferBot usage)
     const { data: guildSettings } = await supabase
@@ -4119,6 +4124,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 
     // User joined a voice channel - check for auto-assign
     if (newState.channelId && (!oldState.channelId || oldState.channelId !== newState.channelId)) {
+      if (!oldState.channelId) autoLink.onVoiceJoin(newState.member).catch((err) => console.warn('[auto-link] voice failed:', err.message));
       for (const [clubKey, vcId] of Object.entries(state.clubVcLinks || {})) {
         if (vcId === newState.channelId && state.autoAssign?.[clubKey]) {
           const assigned = await autoAssignPlayer(guildId, userId, clubKey, state);
@@ -4142,6 +4148,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(interaction.guildId, async () => {
   try {
     // Events: /event, /available, autocomplete, and board buttons (also used from reminder DMs)
+    if (await autoLink.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;
     // Match night: /checkin, /sub, /reliability, check-in and sub request buttons
     if (await matchNight.handleInteraction(interaction)) return;

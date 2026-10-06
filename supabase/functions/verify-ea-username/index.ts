@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { toFcPlatform } from "../_shared/ea.ts";
 import { rejectUnlessCaller } from "../_shared/auth.ts";
 
 const corsHeaders = {
@@ -36,71 +35,16 @@ serve(async (req) => {
 
     const normalizedPlatform = platform.toLowerCase();
 
-    // Try to find the player via EA Pro Clubs search
-    // First, search for clubs that might contain this player
-    const searchUrl = `https://proclubs.ea.com/api/fc/allTimeLeaderboard/search?platform=${toFcPlatform(normalizedPlatform)}&clubName=${encodeURIComponent(username)}`;
-    
+    // EA has no player search, and its club search rejects cloud requests, so a gamertag is
+    // accepted when it looks valid. Stats attach as soon as it appears in a synced match.
     let verified = false;
-    let personaId: string | null = null;
+    const personaId: string | null = null;
     let personaName: string | null = null;
-
-    try {
-      // Method 1: Search club leaderboard for similar names
-      const searchResponse = await fetch(searchUrl, {
-        headers: {
-          "Accept": "application/json",
-          "User-Agent": "Mozilla/5.0",
-        },
-      });
-
-      if (searchResponse.ok) {
-        const searchData = await searchResponse.json();
-        
-        // Check if any club matches or contains the username
-        if (searchData && Array.isArray(searchData)) {
-          const matchingClub = searchData.find((club: { name?: string }) => 
-            club.name?.toLowerCase().includes(username.toLowerCase()) ||
-            username.toLowerCase().includes(club.name?.toLowerCase() || "")
-          );
-          
-          if (matchingClub) {
-            verified = true;
-            personaName = username;
-            console.log(`[verify-ea-username] Found matching club: ${matchingClub.name}`);
-          }
-        }
-      }
-    } catch (searchError) {
-      console.log(`[verify-ea-username] Club search failed: ${searchError}`);
-    }
-
-    // Method 2: Try member career stats endpoint
-    if (!verified) {
-      try {
-        // For direct username verification, we use a different approach
-        // The EA API doesn't have a direct username search, but we can verify
-        // by checking if stats exist for common club patterns
-        
-        // Since we can't directly verify usernames without club context,
-        // we'll do a soft verification based on format
-        const usernamePattern = /^[a-zA-Z0-9_\-\s]{3,24}$/;
-        
-        if (usernamePattern.test(username)) {
-          // Accept usernames that match valid EA username format
-          // Full verification will happen when they play a game
-          verified = true;
-          personaName = username;
-          console.log(`[verify-ea-username] Username format valid, soft verified`);
-        }
-      } catch (memberError) {
-        console.log(`[verify-ea-username] Member verification failed: ${memberError}`);
-      }
-    }
 
     // Method 3: Check gamertag format validity
     if (!verified) {
       // Platform-specific gamertag validation
-      let isValidFormat = false;
+      let isValidFormat = /^[a-zA-Z0-9_\-\s.]{3,24}$/.test(username);
       
       if (normalizedPlatform === "pc") {
         // Origin/EA App usernames: 4-16 chars
