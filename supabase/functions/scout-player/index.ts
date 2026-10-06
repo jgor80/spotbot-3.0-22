@@ -1,6 +1,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { FC_PLATFORMS, toFcPlatform } from '../_shared/ea.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,13 +9,6 @@ const corsHeaders = {
 };
 
 // EA API Configuration
-const EA_PLATFORM_MAP: Record<string, string> = {
-  'ps5': 'common-gen5',
-  'xbox-series-xs': 'common-gen5',
-  'pc': 'common-gen5',
-  'ps4': 'common-gen4',
-  'xboxone': 'common-gen4'
-};
 
 const EA_HEADERS = {
   'Accept': 'application/json',
@@ -90,7 +84,7 @@ async function fetchPlayerPersonas(eaUsername: string, platform: string): Promis
 // Search for a player's club memberships - try multiple search strategies
 async function searchPlayerClubs(eaUsername: string): Promise<any[]> {
   const clubs: any[] = [];
-  const platforms = ['common-gen5', 'common-gen4'];
+  const platforms = FC_PLATFORMS;
   
   // Generate multiple search terms from the username
   const words = eaUsername.split(/[\s_\-]+/).filter(w => w.length >= 2);
@@ -268,10 +262,9 @@ serve(async (req) => {
       
       // Search EA API for all clubs this player is in
       const platforms = [
-        ea_platform ? (EA_PLATFORM_MAP[ea_platform] || ea_platform) : null,
-        'common-gen5',
-        'common-gen4'
-      ].filter(Boolean) as string[];
+        ea_platform ? toFcPlatform(ea_platform) : null,
+        ...FC_PLATFORMS
+      ].filter((p, i, arr) => p && arr.indexOf(p) === i) as string[];
 
       // Probe EA directly for persona info so we can scout players outside tracked clubs
       for (const platform of platforms) {
@@ -296,7 +289,7 @@ serve(async (req) => {
         for (const club of clubs) {
           if (!club.ea_club_id || !club.ea_platform) continue;
 
-          const fcPlatform = EA_PLATFORM_MAP[club.ea_platform] || club.ea_platform;
+          const fcPlatform = toFcPlatform(club.ea_platform);
           const playerStats = await fetchPlayerFromClub(club.ea_club_id, fcPlatform, normalizedEaUsername);
 
           if (playerStats) {
@@ -513,7 +506,7 @@ serve(async (req) => {
           for (const club of clubs) {
             if (!club.ea_club_id || !club.ea_platform) continue;
             
-            const fcPlatform = EA_PLATFORM_MAP[club.ea_platform] || club.ea_platform;
+            const fcPlatform = toFcPlatform(club.ea_platform);
             const playerStats = await fetchPlayerFromClub(club.ea_club_id, fcPlatform, profile.ea_username);
             
             if (playerStats) {

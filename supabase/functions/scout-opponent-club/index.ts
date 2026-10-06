@@ -1,18 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { toFcPlatform } from '../_shared/ea.ts'
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const EA_PLATFORM_MAP: Record<string, string> = {
-  'ps5': 'common-gen5',
-  'xbox-series-xs': 'common-gen5',
-  'pc': 'common-gen5',
-  'ps4': 'common-gen4',
-  'xboxone': 'common-gen4'
-};
 
 const EA_HEADERS = {
   'accept': 'application/json',
@@ -24,7 +18,7 @@ const EA_HEADERS = {
 };
 
 async function fetchClubMembers(clubId: string, platform: string) {
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  const fcPlatform = toFcPlatform(platform);
   
   try {
     const url = `https://proclubs.ea.com/api/fc/members/stats?platform=${fcPlatform}&clubId=${clubId}`;
@@ -50,7 +44,7 @@ async function fetchClubMembers(clubId: string, platform: string) {
 }
 
 async function fetchClubInfo(clubId: string, platform: string) {
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  const fcPlatform = toFcPlatform(platform);
   
   try {
     const url = `https://proclubs.ea.com/api/fc/clubs/info?platform=${fcPlatform}&clubIds=${clubId}`;

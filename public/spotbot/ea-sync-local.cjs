@@ -573,14 +573,8 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// EA API Configuration
-const EA_PLATFORM_MAP = {
-  'ps5': 'common-gen5',
-  'xbox-series-xs': 'common-gen5',
-  'pc': 'common-gen5',
-  'ps4': 'common-gen4',
-  'xboxone': 'common-gen4'
-};
+// EA API Configuration (FC27: gen5 + Switch, no gen4)
+const { toFcPlatform } = require('./ea-fc27.cjs');
 
 // === ROTATING USER-AGENT POOL ===
 // Rotate through realistic browser strings to avoid fingerprinting
@@ -1073,7 +1067,7 @@ async function callEdgeFunctionSync(guildId, clubKey, clubId, platform) {
 // Fetch matches for a specific match type
 // EA API uses 'matchType' param with string values like 'leagueMatch', 'playoffMatch'
 async function fetchMatchesByType(clubId, platform, matchType) {
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  const fcPlatform = toFcPlatform(platform);
   
   // Check persistent cache first
   const cacheKey = `${clubId}_${matchType}`;
@@ -1267,7 +1261,7 @@ async function fetchClubInfo(clubId, platform) {
     return cachedData;
   }
   
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  const fcPlatform = toFcPlatform(platform);
   
   // Apply backoff if we've had errors
   await applyBackoff();
@@ -1345,7 +1339,7 @@ async function fetchClubMembers(clubId, platform) {
     return cachedData;
   }
   
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform;
+  const fcPlatform = toFcPlatform(platform);
   
   // Apply backoff if we've had errors
   await applyBackoff();

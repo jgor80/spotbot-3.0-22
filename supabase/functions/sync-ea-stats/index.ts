@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { decodeRegionId, toFcPlatform } from '../_shared/ea.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -6,13 +7,6 @@ const corsHeaders = {
 }
 
 // EA API Configuration
-const EA_PLATFORM_MAP: Record<string, string> = {
-  'ps5': 'common-gen5',
-  'xbox-series-xs': 'common-gen5',
-  'pc': 'common-gen5',
-  'ps4': 'common-gen4',
-  'xboxone': 'common-gen4'
-}
 
 // EA Session Cookie from environment (optional, for bypassing blocks)
 const EA_SESSION_COOKIE = Deno.env.get('EA_SESSION_COOKIE') || '';
@@ -212,10 +206,11 @@ function extractWithFallback(obj: any, paths: string[]): any {
   return null;
 }
 
-// Fetch match history with player stats
-// matchType9 = Division games, matchType13 = Cup/Knockout games (competitions/friendlies)
-async function fetchMatches(clubId: string, platform: string, matchType: string = 'matchType9') {
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+// Fetch match history with player stats.
+// matchType is the EA query value (leagueMatch, playoffMatch, friendlyMatch). Each match is tagged
+// with _matchCategory because FC27 responses don't reliably say which type they are.
+async function fetchMatches(clubId: string, platform: string, matchType: string, category: string) {
+  const fcPlatform = toFcPlatform(platform)
   const url = `https://proclubs.ea.com/api/fc/clubs/matches?platform=${fcPlatform}&clubIds=${clubId}&matchType=${matchType}&maxResultCount=10`
   
   try {
@@ -230,9 +225,10 @@ async function fetchMatches(clubId: string, platform: string, matchType: string 
     const data = await response.json()
     console.log(`[EA] Matches response type: ${typeof data}, isArray: ${Array.isArray(data)}`)
     
-    if (Array.isArray(data)) return data
-    if (data?.matches) return data.matches
-    return Object.values(data).filter(v => v && typeof v === 'object')
+    const matches: any[] = Array.isArray(data)
+      ? data
+      : data?.matches || Object.values(data).filter(v => v && typeof v === 'object')
+    return matches.map((m: any) => ({ ...m, _matchCategory: category }))
   } catch (err) {
     console.error(`[EA] Error fetching matches for ${clubId}:`, err)
     return []
@@ -241,7 +237,7 @@ async function fetchMatches(clubId: string, platform: string, matchType: string 
 
 // Probe potential/undocumented EA endpoints when requested
 async function probeHiddenEndpoints(platform: string, clubId: string) {
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  const fcPlatform = toFcPlatform(platform)
   const candidates = [
     { name: 'club_seasonal_stats', url: `https://proclubs.ea.com/api/fc/clubs/seasonalStats?platform=${fcPlatform}&clubId=${clubId}` },
     { name: 'club_leaderboard', url: `https://proclubs.ea.com/api/fc/clubs/leaderboard?platform=${fcPlatform}&clubId=${clubId}&type=world` },
@@ -267,7 +263,7 @@ async function probeHiddenEndpoints(platform: string, clubId: string) {
 
 // Fetch club info (skill rating, record, goals)
 async function fetchClubInfo(clubId: string, platform: string) {
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  const fcPlatform = toFcPlatform(platform)
   
   try {
     const response = await fetch(`https://proclubs.ea.com/api/fc/clubs/info?platform=${fcPlatform}&clubIds=${clubId}`, {
@@ -291,7 +287,7 @@ async function fetchClubInfo(clubId: string, platform: string) {
 
 // Fetch club seasonal stats (current division, skill rating for current season)
 async function fetchClubSeasonalStats(clubId: string, platform: string) {
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  const fcPlatform = toFcPlatform(platform)
   
   try {
     const response = await fetch(`https://proclubs.ea.com/api/fc/clubs/seasonalStats?platform=${fcPlatform}&clubIds=${clubId}`, {
@@ -317,7 +313,7 @@ async function fetchClubSeasonalStats(clubId: string, platform: string) {
 
 // Fetch club overall/career stats
 async function fetchClubOverallStats(clubId: string, platform: string) {
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  const fcPlatform = toFcPlatform(platform)
   
   try {
     const response = await fetch(`https://proclubs.ea.com/api/fc/clubs/overallStats?platform=${fcPlatform}&clubIds=${clubId}`, {
@@ -342,7 +338,7 @@ async function fetchClubOverallStats(clubId: string, platform: string) {
 
 // Fetch club playoff achievements/trophies
 async function fetchClubPlayoffAchievements(clubId: string, platform: string) {
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  const fcPlatform = toFcPlatform(platform)
   
   try {
     // Note: This endpoint uses clubId (singular) not clubIds
@@ -365,7 +361,7 @@ async function fetchClubPlayoffAchievements(clubId: string, platform: string) {
 
 // Fetch member career stats (preferred position, career totals)
 async function fetchMemberCareerStats(clubId: string, platform: string) {
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  const fcPlatform = toFcPlatform(platform)
   
   try {
     const response = await fetch(`https://proclubs.ea.com/api/fc/members/career/stats?platform=${fcPlatform}&clubId=${clubId}`, {
@@ -391,7 +387,7 @@ async function fetchMemberCareerStats(clubId: string, platform: string) {
 
 // Fetch club member list with stats
 async function fetchClubMembers(clubId: string, platform: string) {
-  const fcPlatform = EA_PLATFORM_MAP[platform] || platform
+  const fcPlatform = toFcPlatform(platform)
   
   try {
     const response = await fetch(`https://proclubs.ea.com/api/fc/members/stats?platform=${fcPlatform}&clubId=${clubId}`, {
@@ -652,9 +648,9 @@ function calculateClubForm(matches: any[], clubId: string): {
 
     // Count match types
     const matchType = match.matchType?.toLowerCase() || '';
-    if (matchType.includes('league') || matchType.includes('division') || matchType === 'matchtype9') {
+    if (match._matchCategory === 'division' || matchType.includes('league') || matchType.includes('division') || matchType === 'matchtype9') {
       leagueGames++;
-    } else if (matchType.includes('cup') || matchType.includes('knockout') || matchType === 'matchtype13') {
+    } else if (match._matchCategory === 'competition' || matchType.includes('cup') || matchType.includes('knockout') || matchType === 'matchtype13') {
       cupGames++;
     } else {
       friendlyGames++;
@@ -933,7 +929,7 @@ async function syncClubStats(supabase: any, guildId: string, clubKey: string, cl
       // From club_info endpoint with fallback paths
       club_name: extractWithFallback(clubInfo, ['name', 'clubName']) || null,
       crest_id: extractWithFallback(clubInfo, ['crestId', 'crest_id']) || null,
-      region: extractWithFallback(clubInfo, ['region', 'customKit.region']) || null,
+      region: extractWithFallback(clubInfo, ['region', 'customKit.region']) || decodeRegionId(extractWithFallback(clubInfo, ['regionId', 'customKit.regionId'])) || null,
       custom_kit_home: extractWithFallback(clubInfo, ['customKit.home', 'customKit']) || null,
       total_members: parseInt(extractWithFallback(clubInfo, ['memberCount', 'members']) || 0),
       best_division: extractWithFallback(clubInfo, ['bestDivision', 'divisionName']) || null,
@@ -2010,10 +2006,10 @@ Deno.serve(async (req) => {
           // Fetch matches first so we can calculate form for club stats
           let allRecentMatches: any[] = [];
           if (syncType === 'full') {
-            // Fetch division matches (matchType9), cup/competition matches (matchType13), and friendly matches (matchType22)
-            const divisionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType9')
-            const competitionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType13')
-            const friendlyMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'matchType22')
+            // Fetch division, cup/competition, and friendly matches
+            const divisionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'leagueMatch', 'division')
+            const competitionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'playoffMatch', 'competition')
+            const friendlyMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'friendlyMatch', 'friendly')
             allRecentMatches = [...divisionMatches, ...competitionMatches, ...friendlyMatches]
           }
 
@@ -2031,10 +2027,7 @@ Deno.serve(async (req) => {
           // Also sync recent matches for match-by-match tracking
           if (syncType === 'full') {
             // Use division matches for primary processing
-            const matches = allRecentMatches.filter(m => 
-              (m.matchType?.includes?.('9') || m.matchType === 'matchType9') ||
-              !m.matchType // Include matches without explicit type
-            );
+            const matches = allRecentMatches.filter(m => m._matchCategory === 'division');
 
             if (matches && matches.length > 0) {
               // Surface every field we can see on the most recent match so we know what EA returns
@@ -2319,10 +2312,8 @@ Deno.serve(async (req) => {
               await trackDivisionChange(supabase, guildId, club.key, clubStatsResult.best_division);
             }
             
-            // Process competition/cup matches (matchType13) - these are tournament/league games
-            const competitionMatches = allRecentMatches.filter(m => 
-              m.matchType?.includes?.('13') || m.matchType === 'matchType13'
-            );
+            // Process competition/cup matches - these are tournament/league games
+            const competitionMatches = allRecentMatches.filter(m => m._matchCategory === 'competition');
             if (competitionMatches && competitionMatches.length > 0) {
               const { data: existingCompMatches } = await supabase
                 .from('club_matches')
@@ -2562,10 +2553,8 @@ Deno.serve(async (req) => {
               }
             }
             
-            // Process friendly matches (matchType22)
-            const friendlyMatches = allRecentMatches.filter(m => 
-              m.matchType?.includes?.('22') || m.matchType === 'matchType22'
-            );
+            // Process friendly matches
+            const friendlyMatches = allRecentMatches.filter(m => m._matchCategory === 'friendly');
             if (friendlyMatches && friendlyMatches.length > 0) {
               console.log(`[sync-ea-stats] Processing ${friendlyMatches.length} friendly matches for ${club.name}`)
               

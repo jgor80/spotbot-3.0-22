@@ -758,9 +758,10 @@ Focus on controlling midfield to limit their counter-attacks.
                         <SelectValue placeholder="Platform" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="ps5">PS5 / PS4</SelectItem>
+                        <SelectItem value="ps5">PlayStation</SelectItem>
                         <SelectItem value="xbox-series-xs">Xbox</SelectItem>
                         <SelectItem value="pc">PC</SelectItem>
+                        <SelectItem value="switch">Switch</SelectItem>
                       </SelectContent>
                     </Select>
                     <Button
@@ -867,9 +868,8 @@ Focus on controlling midfield to limit their counter-attacks.
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ps5">PS5</SelectItem>
-                      <SelectItem value="ps4">PS4</SelectItem>
                       <SelectItem value="xbsx">Xbox X|S</SelectItem>
-                      <SelectItem value="xone">Xbox One</SelectItem>
+                      <SelectItem value="switch">Nintendo Switch</SelectItem>
                       <SelectItem value="pc">PC</SelectItem>
                     </SelectContent>
                   </Select>
@@ -1146,9 +1146,8 @@ Focus on controlling midfield to limit their counter-attacks.
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ps5">PS5</SelectItem>
-                      <SelectItem value="ps4">PS4</SelectItem>
                       <SelectItem value="xbsx">Xbox X|S</SelectItem>
-                      <SelectItem value="xone">Xbox One</SelectItem>
+                      <SelectItem value="switch">Nintendo Switch</SelectItem>
                       <SelectItem value="pc">PC</SelectItem>
                     </SelectContent>
                   </Select>
