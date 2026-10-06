@@ -33,6 +33,9 @@ const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
 const { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES } = require('./club-stats.cjs');
+const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
+
+installProcessGuards();
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -394,6 +397,7 @@ const client = new Client({
     GatewayIntentBits.DirectMessages
   ]
 });
+installClientGuards(client);
 
 // =======================
 // FORMATION DEFINITIONS (loaded from JSON for efficiency)
@@ -3880,9 +3884,14 @@ client.once(Events.ClientReady, async (c) => {
     }
     console.log(`🧹 Guild command cleanup complete`);
     
-    // Register commands globally only (not per-guild to avoid duplicates)
-    await c.application.commands.set(COMMANDS);
-    console.log(`✅ Commands registered globally for ${c.guilds.cache.size} guilds`);
+    // Register commands globally only (not per-guild to avoid duplicates).
+    // A registration failure must not stop the background jobs below from starting.
+    try {
+      await c.application.commands.set(prepareCommandsForRegistration(COMMANDS));
+      console.log(`✅ Commands registered globally for ${c.guilds.cache.size} guilds`);
+    } catch (err) {
+      console.error('❌ Failed to register commands:', err);
+    }
     
     // Sync guild names to database
     await syncGuildNames(c);
@@ -3904,7 +3913,7 @@ client.once(Events.ClientReady, async (c) => {
     scouting.start(c);
     trials.start(c);
   } catch (err) {
-    console.error('❌ Failed to register commands:', err);
+    console.error('❌ Startup error:', err);
   }
 });
 
@@ -15815,12 +15824,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
   } catch (err) {
+    if (isIgnorableDiscordError(err)) return;
     console.error('❌ Error handling interaction:', err);
-    if (!interaction.replied && !interaction.deferred) {
-      try {
-        await interaction.reply({ content: 'An error occurred.', flags: 64 });
-      } catch (e) {}
-    }
+    await replyWithError(interaction);
   }
 });
 
