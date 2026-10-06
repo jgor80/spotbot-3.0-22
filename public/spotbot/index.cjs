@@ -24,6 +24,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.cjs');
 const { createSquads, SQUAD_COMMANDS } = require('./squads.cjs');
 const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
+const { parseWhen: parseEventWhen } = require('./event-time.cjs');
 const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
 const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
 const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
@@ -9433,6 +9434,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       // Create Event modal trigger
+      if (id === 'squadiq_event_list') {
+        await interaction.deferReply({ flags: 64 });
+        return interaction.editReply(await clubEvents.buildEventList(guildId));
+      }
+
       if (id === 'squadiq_event_create') {
         if (!isManager(interaction.member)) {
           return interaction.reply({ content: '❌ Admin only.', flags: 64 });
@@ -11882,6 +11888,46 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       // Scout Player select menu handler
+      if (id === 'scoutpanel_list_select') {
+        const listId = interaction.values[0];
+        await interaction.deferReply({ flags: 64 });
+        const { data: list } = await supabase
+          .from('scouting_lists')
+          .select('name, description, player_ids, is_public, created_by_discord_id')
+          .eq('guild_id', guildId)
+          .eq('id', listId)
+          .maybeSingle();
+        if (!list || (!list.is_public && list.created_by_discord_id !== interaction.user.id)) {
+          return interaction.editReply({ content: '❌ That list is gone or private.' });
+        }
+        const ids = list.player_ids || [];
+        const { data: players } = ids.length
+          ? await supabase
+              .from('player_summary')
+              .select('discord_user_id, discord_username, primary_position, overall_rating')
+              .eq('guild_id', guildId)
+              .in('discord_user_id', ids)
+          : { data: [] };
+        const byId = new Map((players || []).map((p) => [p.discord_user_id, p]));
+        const lines = ids.slice(0, 40).map((pid, i) => {
+          const p = byId.get(pid);
+          if (!p) return `${i + 1}. <@${pid}>`;
+          const ovr = p.overall_rating ? ` · ${Math.round(p.overall_rating)} OVR` : '';
+          return `${i + 1}. <@${pid}> · ${p.primary_position || 'ANY'}${ovr}`;
+        });
+        const embed = new EmbedBuilder()
+          .setTitle(`📋 ${list.name}`)
+          .setColor(0x5865f2)
+          .setDescription(
+            [list.description, lines.length ? lines.join('\n') : 'No players on this list yet. Add them from the dashboard Scouting page.']
+              .filter(Boolean)
+              .join('\n\n')
+              .slice(0, 4000)
+          )
+          .setFooter({ text: `${ids.length} player${ids.length === 1 ? '' : 's'} · ${list.is_public ? 'Public' : 'Private'}` });
+        return interaction.editReply({ embeds: [embed] });
+      }
+
       if (id === 'scoutpanel_scoutplayer_select') {
         const playerId = interaction.values[0];
         
@@ -12835,12 +12881,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .eq('discord_user_id', interaction.user.id)
           .in('role', ['owner', 'manager', 'captain']);
 
-        if (!roleData || roleData.length === 0) {
-          return interaction.editReply({ content: '❌ You no longer have permission to rate players.' });
-        }
-
-        const roles = roleData.map(r => r.role);
-        const evaluatorRole = roles.includes('owner') ? 'owner' : roles.includes('manager') ? 'manager' : 'captain';
+        // Every player can rate; the role only sets how much the rating counts.
+        const roles = (roleData || []).map(r => r.role);
+        const evaluatorRole = roles.includes('owner') ? 'owner' : roles.includes('manager') ? 'manager' : roles.includes('captain') ? 'captain' : 'player';
 
         // Parse ratings from modal fields
         const parseRating = (fieldId) => {
@@ -12906,7 +12949,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .eq('discord_user_id', playerId)
           .maybeSingle();
 
-        const trustWeight = evaluatorRole === 'owner' ? '2.0x' : evaluatorRole === 'manager' ? '1.5x' : '1.25x';
+        const trustWeight = evaluatorRole === 'owner' ? '2.0x' : evaluatorRole === 'manager' ? '1.5x' : evaluatorRole === 'captain' ? '1.25x' : '1.0x';
 
         const embed = new EmbedBuilder()
           .setTitle('✅ Performance Rating Submitted!')
@@ -13862,46 +13905,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.deferReply({ flags: 64 });
 
         try {
-          // Parse the date
-          const scheduledAt = new Date(eventDate);
-          if (isNaN(scheduledAt.getTime())) {
-            return interaction.editReply({ content: '❌ Invalid date format. Use YYYY-MM-DD HH:MM' });
+          // Post through the events module so the board gets working buttons, reminders and a timezone.
+          const { timezone } = await clubEvents.serverPrefs(guildId);
+          const scheduledAt = parseEventWhen(eventDate, timezone);
+          if (!scheduledAt) {
+            return interaction.editReply({ content: '❌ I could not read that date. Try `2026-10-15 20:00` or `thu 9pm`.' });
           }
-
-          const { data: event, error } = await supabase
-            .from('availability_events')
-            .insert({
+          const typeKey = eventType.toLowerCase().replace(/^scrimmage$/, 'scrim').replace(/^practice$/, 'training');
+          const event = await clubEvents.postEvent(
+            {
               guild_id: guildId,
               title: eventTitle,
-              event_type: eventType,
+              event_type: ['league', 'friendly', 'scrim', 'training', 'tryout', 'tournament', 'match'].includes(typeKey) ? typeKey : 'match',
               scheduled_at: scheduledAt.toISOString(),
               created_by_discord_id: interaction.user.id,
               channel_id: interaction.channel?.id
-            })
-            .select()
-            .single();
-
-          if (error) {
-            return interaction.editReply({ content: `❌ Failed to create event: ${error.message}` });
-          }
-
-          const embed = new EmbedBuilder()
-            .setTitle(`📅 ${eventTitle}`)
-            .setColor(0x5865f2)
-            .setDescription(`**Type:** ${eventType}\n**When:** ${scheduledAt.toLocaleString()}\n\nRespond with your availability!`)
-            .setFooter({ text: 'Click a button to respond' });
-
-          const buttons = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`event_yes_${event.id}`).setLabel('✅ Available').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId(`event_no_${event.id}`).setLabel('❌ Unavailable').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId(`event_maybe_${event.id}`).setLabel('❓ Maybe').setStyle(ButtonStyle.Secondary)
+            },
+            interaction.channel
           );
-
-          await interaction.editReply({
-            content: '✅ Event created!',
-            embeds: [embed],
-            components: [buttons]
-          });
+          return interaction.editReply({ content: `✅ **${event.title}** is posted in this channel. Players answer on the board.` });
         } catch (err) {
           console.error('[Event Create Modal] Error:', err);
           return interaction.editReply({ content: `❌ Error: ${err.message}` });
