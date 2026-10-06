@@ -3065,6 +3065,42 @@ export type Database = {
         }
         Relationships: []
       }
+      premium_servers: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          expires_at: string | null
+          granted_by: string | null
+          guild_id: string
+          note: string | null
+          overlay_token: string | null
+          plan: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          expires_at?: string | null
+          granted_by?: string | null
+          guild_id: string
+          note?: string | null
+          overlay_token?: string | null
+          plan?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          expires_at?: string | null
+          granted_by?: string | null
+          guild_id?: string
+          note?: string | null
+          overlay_token?: string | null
+          plan?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           career_appearances: number | null
