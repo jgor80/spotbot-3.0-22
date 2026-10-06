@@ -230,6 +230,7 @@ export type Database = {
           opponent_club_name: string | null
           player_stats: Json | null
           processed_at: string | null
+          recruit_scanned_at: string | null
           result: string | null
           score_against: number | null
           score_for: number | null
@@ -247,6 +248,7 @@ export type Database = {
           opponent_club_name?: string | null
           player_stats?: Json | null
           processed_at?: string | null
+          recruit_scanned_at?: string | null
           result?: string | null
           score_against?: number | null
           score_for?: number | null
@@ -264,6 +266,7 @@ export type Database = {
           opponent_club_name?: string | null
           player_stats?: Json | null
           processed_at?: string | null
+          recruit_scanned_at?: string | null
           result?: string | null
           score_against?: number | null
           score_for?: number | null
@@ -1037,6 +1040,57 @@ export type Database = {
           post_hours_before?: number
           timezone?: string
           title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      free_agents: {
+        Row: {
+          created_at: string
+          discord_user_id: string
+          ea_username: string | null
+          ea_verified: boolean
+          home_guild_id: string | null
+          id: string
+          no_contact: boolean
+          notes: string | null
+          platform: string | null
+          position: string
+          secondary_position: string | null
+          status: string
+          timezone: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          discord_user_id: string
+          ea_username?: string | null
+          ea_verified?: boolean
+          home_guild_id?: string | null
+          id?: string
+          no_contact?: boolean
+          notes?: string | null
+          platform?: string | null
+          position: string
+          secondary_position?: string | null
+          status?: string
+          timezone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          discord_user_id?: string
+          ea_username?: string | null
+          ea_verified?: boolean
+          home_guild_id?: string | null
+          id?: string
+          no_contact?: boolean
+          notes?: string | null
+          platform?: string | null
+          position?: string
+          secondary_position?: string | null
+          status?: string
+          timezone?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -2496,6 +2550,30 @@ export type Database = {
         }
         Relationships: []
       }
+      player_resumes: {
+        Row: {
+          code: string
+          created_at: string
+          discord_user_id: string
+          ea_username: string | null
+          stats: Json
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          discord_user_id: string
+          ea_username?: string | null
+          stats: Json
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          discord_user_id?: string
+          ea_username?: string | null
+          stats?: Json
+        }
+        Relationships: []
+      }
       player_stats: {
         Row: {
           archetypeid: string | null
@@ -3050,6 +3128,149 @@ export type Database = {
           xbox_last_game?: string | null
           xbox_last_online?: string | null
           xbox_xuid?: string | null
+        }
+        Relationships: []
+      }
+      recruit_contacts: {
+        Row: {
+          club_key: string | null
+          club_name: string | null
+          created_at: string
+          free_agent_id: string | null
+          guild_id: string
+          id: string
+          invite_url: string | null
+          manager_discord_id: string
+          message: string | null
+          player_discord_id: string
+          position: string | null
+          responded_at: string | null
+          status: string
+        }
+        Insert: {
+          club_key?: string | null
+          club_name?: string | null
+          created_at?: string
+          free_agent_id?: string | null
+          guild_id: string
+          id?: string
+          invite_url?: string | null
+          manager_discord_id: string
+          message?: string | null
+          player_discord_id: string
+          position?: string | null
+          responded_at?: string | null
+          status?: string
+        }
+        Update: {
+          club_key?: string | null
+          club_name?: string | null
+          created_at?: string
+          free_agent_id?: string | null
+          guild_id?: string
+          id?: string
+          invite_url?: string | null
+          manager_discord_id?: string
+          message?: string | null
+          player_discord_id?: string
+          position?: string | null
+          responded_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recruit_contacts_free_agent_id_fkey"
+            columns: ["free_agent_id"]
+            isOneToOne: false
+            referencedRelation: "free_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recruit_settings: {
+        Row: {
+          alert_min_rating: number
+          alerts_enabled: boolean
+          channel_id: string | null
+          created_at: string
+          guild_id: string
+          invite_channel_id: string | null
+          trialist_role_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          alert_min_rating?: number
+          alerts_enabled?: boolean
+          channel_id?: string | null
+          created_at?: string
+          guild_id: string
+          invite_channel_id?: string | null
+          trialist_role_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          alert_min_rating?: number
+          alerts_enabled?: boolean
+          channel_id?: string | null
+          created_at?: string
+          guild_id?: string
+          invite_channel_id?: string | null
+          trialist_role_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      scout_watchlist: {
+        Row: {
+          added_by_discord_id: string
+          club_key: string | null
+          created_at: string
+          discord_user_id: string | null
+          ea_key: string
+          ea_username: string
+          guild_id: string
+          id: string
+          last_alert_at: string | null
+          last_known_club_id: string | null
+          last_known_club_name: string | null
+          note: string | null
+          position: string | null
+          source: string
+          source_match_id: string | null
+        }
+        Insert: {
+          added_by_discord_id: string
+          club_key?: string | null
+          created_at?: string
+          discord_user_id?: string | null
+          ea_key: string
+          ea_username: string
+          guild_id: string
+          id?: string
+          last_alert_at?: string | null
+          last_known_club_id?: string | null
+          last_known_club_name?: string | null
+          note?: string | null
+          position?: string | null
+          source?: string
+          source_match_id?: string | null
+        }
+        Update: {
+          added_by_discord_id?: string
+          club_key?: string | null
+          created_at?: string
+          discord_user_id?: string | null
+          ea_key?: string
+          ea_username?: string
+          guild_id?: string
+          id?: string
+          last_alert_at?: string | null
+          last_known_club_id?: string | null
+          last_known_club_name?: string | null
+          note?: string | null
+          position?: string | null
+          source?: string
+          source_match_id?: string | null
         }
         Relationships: []
       }
@@ -3690,6 +3911,115 @@ export type Database = {
           status?: string
           teams_per_group?: number
           time_slot?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      trial_invites: {
+        Row: {
+          created_at: string
+          discord_user_id: string
+          event_id: string
+        }
+        Insert: {
+          created_at?: string
+          discord_user_id: string
+          event_id: string
+        }
+        Update: {
+          created_at?: string
+          discord_user_id?: string
+          event_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trial_invites_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "availability_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trial_reports: {
+        Row: {
+          created_at: string
+          due_at: string
+          event_id: string
+          guild_id: string
+          sent_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          due_at: string
+          event_id: string
+          guild_id: string
+          sent_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          due_at?: string
+          event_id?: string
+          guild_id?: string
+          sent_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trial_reports_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: true
+            referencedRelation: "availability_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trialists: {
+        Row: {
+          club_key: string | null
+          created_at: string
+          decided_at: string | null
+          decided_by_discord_id: string | null
+          discord_user_id: string
+          ea_username: string | null
+          guild_id: string
+          id: string
+          notes: string | null
+          platform: string | null
+          positions: string[]
+          status: string
+          trial_count: number
+          updated_at: string
+        }
+        Insert: {
+          club_key?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by_discord_id?: string | null
+          discord_user_id: string
+          ea_username?: string | null
+          guild_id: string
+          id?: string
+          notes?: string | null
+          platform?: string | null
+          positions?: string[]
+          status?: string
+          trial_count?: number
+          updated_at?: string
+        }
+        Update: {
+          club_key?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by_discord_id?: string | null
+          discord_user_id?: string
+          ea_username?: string | null
+          guild_id?: string
+          id?: string
+          notes?: string | null
+          platform?: string | null
+          positions?: string[]
+          status?: string
+          trial_count?: number
           updated_at?: string
         }
         Relationships: []
