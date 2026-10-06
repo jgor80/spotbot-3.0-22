@@ -64,7 +64,7 @@ function SyncNowCard({ guildId }: { guildId: string | null }) {
 
       toast({
         title: "EA Sync Complete",
-        description: `Synced ${data?.memberStatsSynced || 0} players, ${data?.clubStatsSynced || 0} clubs, ${data?.totalSynced || 0} matches.`,
+        description: `Synced ${data?.member_stats_synced || 0} players, ${data?.club_stats_synced || 0} clubs, ${data?.synced || 0} matches.`,
       });
     } catch (error) {
       toast({

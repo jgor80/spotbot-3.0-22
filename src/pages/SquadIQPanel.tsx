@@ -252,7 +252,7 @@ export default function SquadIQPanel() {
       
       appendOutput(
         "🔄 EA Sync",
-        `Synced ${data.matches_synced || 0} matches, ${data.players_updated || 0} players updated.`
+        `Synced ${data.synced || 0} matches, ${data.member_stats_synced || 0} players updated.`
       );
       toast({ title: "EA Sync Complete", description: "Stats updated from EA servers" });
     });

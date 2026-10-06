@@ -1756,13 +1756,19 @@ Deno.serve(async (req) => {
     } catch { /* ignore parse errors */ }
 
     const probeHidden = Boolean(requestBody?.probe_hidden) || Deno.env.get('EA_PROBE_HIDDEN') === 'true'
+
+    // The scheduled run syncs every monitored club; the web and bot can ask for one guild or club
+    const onlyGuildId = typeof requestBody?.guild_id === 'string' && /^\d{17,19}$/.test(requestBody.guild_id) ? requestBody.guild_id : null
+    const onlyClubKey = onlyGuildId && typeof requestBody?.club_key === 'string' ? requestBody.club_key : null
     
     console.log(`[sync-ea-stats] Starting ${syncType} EA sync...`)
     
     // Get all guild settings with EA-linked clubs
-    const { data: guildSettings, error: settingsError } = await supabase
+    let settingsQuery = supabase
       .from('guild_settings')
       .select('guild_id, clubs')
+    if (onlyGuildId) settingsQuery = settingsQuery.eq('guild_id', onlyGuildId)
+    const { data: guildSettings, error: settingsError } = await settingsQuery
     
     if (settingsError) {
       throw new Error(`Failed to fetch guild settings: ${settingsError.message}`)
@@ -1802,7 +1808,9 @@ Deno.serve(async (req) => {
       if (!clubs || !Array.isArray(clubs)) continue
       
       for (const club of clubs) {
-        if (!club.ea_club_id || !club.ea_platform || !club.monitoring_enabled) {
+        if (onlyClubKey && club.key !== onlyClubKey) continue
+        // A manual sync for one guild still runs when automatic monitoring is off
+        if (!club.ea_club_id || !club.ea_platform || (!onlyGuildId && !club.monitoring_enabled)) {
           continue
         }
         
