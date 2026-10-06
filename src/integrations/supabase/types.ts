@@ -99,87 +99,94 @@ export type Database = {
       }
       availability_events: {
         Row: {
+          cancelled: boolean
           channel_id: string | null
+          checkin_message_id: string | null
+          checkin_opened_at: string | null
           closed: boolean
+          club_key: string | null
           created_at: string
           created_by_discord_id: string
+          deadline_at: string | null
+          deadline_reminder_sent: boolean
           description: string | null
           duration_minutes: number | null
           event_type: string
           guild_id: string
           id: string
           message_id: string | null
+          ping_role_id: string | null
+          position_signup: boolean
           reminder_24h_sent: boolean
           reminder_2h_sent: boolean
           scheduled_at: string
+          series_id: string | null
           team_id: string | null
           title: string
           updated_at: string
-          club_key: string | null
-          series_id: string | null
-          deadline_at: string | null
-          ping_role_id: string | null
-          position_signup: boolean
-          deadline_reminder_sent: boolean
-          checkin_message_id: string | null
-          checkin_opened_at: string | null
-          cancelled: boolean
         }
         Insert: {
+          cancelled?: boolean
           channel_id?: string | null
+          checkin_message_id?: string | null
+          checkin_opened_at?: string | null
           closed?: boolean
+          club_key?: string | null
           created_at?: string
           created_by_discord_id: string
+          deadline_at?: string | null
+          deadline_reminder_sent?: boolean
           description?: string | null
           duration_minutes?: number | null
           event_type?: string
           guild_id: string
           id?: string
           message_id?: string | null
+          ping_role_id?: string | null
+          position_signup?: boolean
           reminder_24h_sent?: boolean
           reminder_2h_sent?: boolean
           scheduled_at: string
+          series_id?: string | null
           team_id?: string | null
           title: string
           updated_at?: string
-          club_key?: string | null
-          series_id?: string | null
-          deadline_at?: string | null
-          ping_role_id?: string | null
-          position_signup?: boolean
-          deadline_reminder_sent?: boolean
-          checkin_message_id?: string | null
-          checkin_opened_at?: string | null
-          cancelled?: boolean
         }
         Update: {
+          cancelled?: boolean
           channel_id?: string | null
+          checkin_message_id?: string | null
+          checkin_opened_at?: string | null
           closed?: boolean
+          club_key?: string | null
           created_at?: string
           created_by_discord_id?: string
+          deadline_at?: string | null
+          deadline_reminder_sent?: boolean
           description?: string | null
           duration_minutes?: number | null
           event_type?: string
           guild_id?: string
           id?: string
           message_id?: string | null
+          ping_role_id?: string | null
+          position_signup?: boolean
           reminder_24h_sent?: boolean
           reminder_2h_sent?: boolean
           scheduled_at?: string
+          series_id?: string | null
           team_id?: string | null
           title?: string
           updated_at?: string
-          club_key?: string | null
-          series_id?: string | null
-          deadline_at?: string | null
-          ping_role_id?: string | null
-          position_signup?: boolean
-          deadline_reminder_sent?: boolean
-          checkin_message_id?: string | null
-          checkin_opened_at?: string | null
-          cancelled?: boolean
         }
         Relationships: [
+          {
+            foreignKeyName: "availability_events_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "event_series"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "availability_events_team_id_fkey"
             columns: ["team_id"]
@@ -808,7 +815,15 @@ export type Database = {
           id?: string
           status?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "event_checkins_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "availability_events"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       event_code_mappings: {
         Row: {
@@ -1354,6 +1369,7 @@ export type Database = {
           admin_panel_channel_id: string | null
           admin_panel_message_id: string | null
           board_state: Json
+          branding: Json
           club_vc_links: Json
           clubs: Json
           created_at: string
@@ -1363,15 +1379,15 @@ export type Database = {
           id: string
           link_dm_enabled: boolean | null
           name: string | null
+          timezone: string
           updated_at: string
           vc_panels: Json
-          timezone: string
-          branding: Json
         }
         Insert: {
           admin_panel_channel_id?: string | null
           admin_panel_message_id?: string | null
           board_state?: Json
+          branding?: Json
           club_vc_links?: Json
           clubs?: Json
           created_at?: string
@@ -1381,15 +1397,15 @@ export type Database = {
           id?: string
           link_dm_enabled?: boolean | null
           name?: string | null
+          timezone?: string
           updated_at?: string
           vc_panels?: Json
-          timezone?: string
-          branding?: Json
         }
         Update: {
           admin_panel_channel_id?: string | null
           admin_panel_message_id?: string | null
           board_state?: Json
+          branding?: Json
           club_vc_links?: Json
           clubs?: Json
           created_at?: string
@@ -1399,10 +1415,9 @@ export type Database = {
           id?: string
           link_dm_enabled?: boolean | null
           name?: string | null
+          timezone?: string
           updated_at?: string
           vc_panels?: Json
-          timezone?: string
-          branding?: Json
         }
         Relationships: []
       }
@@ -1443,6 +1458,7 @@ export type Database = {
       }
       lineups: {
         Row: {
+          announced_slots: Json | null
           channel_id: string | null
           created_at: string
           created_by_discord_id: string
@@ -1459,9 +1475,9 @@ export type Database = {
           updated_at: string
           vibe_chemistry_score: number | null
           win_probability: number | null
-          announced_slots: Json | null
         }
         Insert: {
+          announced_slots?: Json | null
           channel_id?: string | null
           created_at?: string
           created_by_discord_id: string
@@ -1478,9 +1494,9 @@ export type Database = {
           updated_at?: string
           vibe_chemistry_score?: number | null
           win_probability?: number | null
-          announced_slots?: Json | null
         }
         Update: {
+          announced_slots?: Json | null
           channel_id?: string | null
           created_at?: string
           created_by_discord_id?: string
@@ -1497,7 +1513,6 @@ export type Database = {
           updated_at?: string
           vibe_chemistry_score?: number | null
           win_probability?: number | null
-          announced_slots?: Json | null
         }
         Relationships: [
           {
@@ -1897,30 +1912,30 @@ export type Database = {
           discord_user_id: string
           event_id: string
           id: string
+          note: string | null
+          position: string | null
           responded_at: string | null
           response: Database["public"]["Enums"]["availability_response"]
-          position: string | null
-          note: string | null
         }
         Insert: {
           auto_marked?: boolean
           discord_user_id: string
           event_id: string
           id?: string
+          note?: string | null
+          position?: string | null
           responded_at?: string | null
           response?: Database["public"]["Enums"]["availability_response"]
-          position?: string | null
-          note?: string | null
         }
         Update: {
           auto_marked?: boolean
           discord_user_id?: string
           event_id?: string
           id?: string
+          note?: string | null
+          position?: string | null
           responded_at?: string | null
           response?: Database["public"]["Enums"]["availability_response"]
-          position?: string | null
-          note?: string | null
         }
         Relationships: [
           {
@@ -3261,41 +3276,56 @@ export type Database = {
           requested_by_discord_id?: string
           status?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "sub_requests_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "availability_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sub_requests_lineup_id_fkey"
+            columns: ["lineup_id"]
+            isOneToOne: false
+            referencedRelation: "lineups"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       team_rosters: {
         Row: {
           discord_user_id: string
           id: string
           joined_at: string
+          note: string | null
           primary_position: string | null
           role: string
-          team_id: string
-          status: string
           secondary_position: string | null
-          note: string | null
+          status: string
+          team_id: string
         }
         Insert: {
           discord_user_id: string
           id?: string
           joined_at?: string
+          note?: string | null
           primary_position?: string | null
           role?: string
-          team_id: string
-          status?: string
           secondary_position?: string | null
-          note?: string | null
+          status?: string
+          team_id: string
         }
         Update: {
           discord_user_id?: string
           id?: string
           joined_at?: string
+          note?: string | null
           primary_position?: string | null
           role?: string
-          team_id?: string
-          status?: string
           secondary_position?: string | null
-          note?: string | null
+          status?: string
+          team_id?: string
         }
         Relationships: [
           {
