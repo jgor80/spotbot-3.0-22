@@ -1,6 +1,127 @@
 # Discord Command Coverage
 
-This project exposes Discord-facing commands through Supabase Edge Functions. Use this list to confirm coverage (including spot availability/preference flows) and find the entry points in code.
+## Slash commands and panels (`public/spotbot/panels.cjs`)
+GafferBot registers four slash commands:
+- **/manager** (leaders): the Manager Hub. Its **More tools** menu opens each area (Events, Match Night, Lineups & Spots, Drafts, Stats & Scouting, Roster & Squad, Recruiting, Premium, Admin) as a private menu of buttons.
+- **/me** (everyone): the Player Hub, only visible to the person who ran it. Admins can post a shared copy with **/manager → Admin → Post Player Hub**.
+- **/help** and **/setup**.
+
+Every other former command is a panel button. A button that needs input opens a form: players, channels and roles are dropdowns, fixed choices are dropdowns, and lists the old command autocompleted (events, presets, watchlist, EA names) are filled in when the form opens. On submit the button runs the same handler the slash command used (`commandProxy` in panels.cjs), so the behaviour described below is unchanged; the sections below still use the old command names as the names of those actions. Area buttons only work for captains, managers and admins (`isManager`), and actions that used Discord's default permissions (Brand: Manage Server, Position Roles Panel: Manage Roles) check that permission on the button. The old definitions stay in index.cjs as `ACTION_SCHEMAS`, which the forms are built from.
+
+| Old command | Now | Who |
+|---|---|---|
+| `/mystats` | /me → My Stats | Everyone |
+| `/profile` | /me → My Profile | Everyone |
+| `/leaderboard` | /me → Leaderboard | Everyone |
+| `/available` | /me → My Events | Everyone |
+| `/checkin` | /me → Check In | Everyone |
+| `/sub` | /me → Need a Sub | Everyone |
+| `/whoisplaying` | /me → Who's Playing | Everyone |
+| `/myprefs` | /me → My Positions | Everyone |
+| `/syncprefs` | /me → Positions From Roles | Everyone |
+| `/reliability` | /me → My Reliability | Everyone |
+| `/linkea` | /me → Link EA | Everyone |
+| `/linkxbox` | /me → Link Xbox | Everyone |
+| `/fa` | /me → Free Agent | Everyone |
+| `/fa` | /me → Free Agent Details | Everyone |
+| `/lfc card` | /me → Resume Card | Everyone |
+| `/lfc verify` | /me → Check a Resume | Everyone |
+| `/apply` | /me → Apply to Trial | Everyone |
+| `/claimwin` | /me → Claim a Win | Everyone |
+| `/event new` | /manager → Events → New Event | Leaders |
+| `/event new` | /manager → Events → Event From Preset | Leaders |
+| `/event list` | /manager → Events → Upcoming | Leaders |
+| `/event edit` | /manager → Events → Edit Event | Leaders |
+| `/event post` | /manager → Events → Repost Board | Leaders |
+| `/event remind` | /manager → Events → Remind | Leaders |
+| `/event mark` | /manager → Events → Mark a Player | Leaders |
+| `/event close` | /manager → Events → Close Answers | Leaders |
+| `/event reopen` | /manager → Events → Reopen Answers | Leaders |
+| `/event cancel` | /manager → Events → Cancel Event | Leaders |
+| `/event timezone` | /manager → Events → Timezone | Leaders |
+| `/event preset list` | /manager → Events → Presets | Leaders |
+| `/event preset save` | /manager → Events → Save Preset | Leaders |
+| `/event preset delete` | /manager → Events → Delete Preset | Leaders |
+| `/event series list` | /manager → Events → Repeating Events | Leaders |
+| `/event series stop` | /manager → Events → Stop Repeating | Leaders |
+| `/checkin` | /manager → Match Night → Open Check-in | Leaders |
+| `/sub` | /manager → Match Night → Find a Sub | Leaders |
+| `/reliability` | /manager → Match Night → Reliability | Leaders |
+| `/attendance` | /manager → Match Night → Attendance | Leaders |
+| `/lfg` | /manager → Match Night → Find a Friendly | Leaders |
+| `/autopilot` | /manager → Match Night → Autopilot | Leaders |
+| `/teamsheet` | /manager → Lineups & Spots → Team Sheet | Leaders |
+| `/spotpanel` | /manager → Lineups & Spots → Spots Panel | Leaders |
+| `/spots` | /manager → Lineups & Spots → Spots Board | Leaders |
+| `/vcspots` | /manager → Lineups & Spots → Voice Spots | Leaders |
+| `/whoisplaying` | /manager → Lineups & Spots → Who's Playing | Leaders |
+| `/spotblock` | /manager → Lineups & Spots → Block Mover | Leaders |
+| `/autoassign` | /manager → Lineups & Spots → Auto-assign | Leaders |
+| `/pospanel` | /manager → Lineups & Spots → Prefs Panel | Leaders |
+| `/posboard` | /manager → Lineups & Spots → Voice Prefs | Leaders |
+| `/posprefs` | /manager → Lineups & Spots → All Prefs | Leaders |
+| `/syncprefs` | /manager → Lineups & Spots → Prefs From Roles | Leaders |
+| `/positionpanel` | /manager → Lineups & Spots → Position Roles Panel | Leaders |
+| `/draft` | /manager → Drafts → Start Draft | Leaders |
+| `/draftpanel` | /manager → Drafts → Draft Panel | Leaders |
+| `/draftpick` | /manager → Drafts → Pick Player | Leaders |
+| `/draftresult` | /manager → Drafts → Report Result | Leaders |
+| `/draftreroll` | /manager → Drafts → Reroll Captains | Leaders |
+| `/draftcancel` | /manager → Drafts → Cancel Draft | Leaders |
+| `/applyfriendly` | /manager → Drafts → Apply Friendly Stats | Leaders |
+| `/clubstats` | /manager → Stats & Scouting → Club Stats | Leaders |
+| `/syncclub` | /manager → Stats & Scouting → Sync Matches | Leaders |
+| `/insights` | /manager → Stats & Scouting → Insights | Leaders |
+| `/leaderboard` | /manager → Stats & Scouting → Leaderboard | Leaders |
+| `/profile` | /manager → Stats & Scouting → Player Profile | Leaders |
+| `/ratingspanel` | /manager → Stats & Scouting → Ratings Panel | Leaders |
+| `/scoutclub` | /manager → Stats & Scouting → Scout a Club | Leaders |
+| `/clubmatches` | /manager → Stats & Scouting → Club Matches | Leaders |
+| `/matchpreview` | /manager → Stats & Scouting → Match Preview | Leaders |
+| `/scoutpanel` | /manager → Stats & Scouting → Scouting Panel | Leaders |
+| `/roster view` | /manager → Roster & Squad → View Roster | Leaders |
+| `/roster add` | /manager → Roster & Squad → Add Player | Leaders |
+| `/roster player` | /manager → Roster & Squad → Player Details | Leaders |
+| `/roster status` | /manager → Roster & Squad → Set Status | Leaders |
+| `/roster remove` | /manager → Roster & Squad → Remove Player | Leaders |
+| `/roster import` | /manager → Roster & Squad → Import Role | Leaders |
+| `/squad info` | /manager → Roster & Squad → Squad Info | Leaders |
+| `/squad link` | /manager → Roster & Squad → Link Squad | Leaders |
+| `/squad captain` | /manager → Roster & Squad → Set Captain | Leaders |
+| `/squad manager` | /manager → Roster & Squad → Add/Remove Manager | Leaders |
+| `/forcelink` | /manager → Roster & Squad → Link Player to EA | Leaders |
+| `/reviewlinks` | /manager → Roster & Squad → Review EA Links | Leaders |
+| `/recruit search` | /manager → Recruiting → Search Free Agents | Leaders |
+| `/recruit gaps` | /manager → Recruiting → Squad Gaps | Leaders |
+| `/recruit post` | /manager → Recruiting → Recruitment Poster | Leaders |
+| `/recruit applypanel` | /manager → Recruiting → Apply Button | Leaders |
+| `/recruit setup` | /manager → Recruiting → Recruiting Setup | Leaders |
+| `/scout opponent` | /manager → Recruiting → Opponent Dossier | Leaders |
+| `/scout watchlist` | /manager → Recruiting → Watchlist | Leaders |
+| `/scout add` | /manager → Recruiting → Watch a Player | Leaders |
+| `/scout remove` | /manager → Recruiting → Unwatch | Leaders |
+| `/premium status` | /manager → Premium → Premium Status | Leaders |
+| `/premium cards` | /manager → Premium → Player Cards | Leaders |
+| `/premium totw` | /manager → Premium → Team of the Week | Leaders |
+| `/premium overlay` | /manager → Premium → Stream Overlay | Leaders |
+| `/premium trophies` | /manager → Premium → Trophies | Leaders |
+| `/premium coach` | /manager → Premium → Assistant Coach | Leaders |
+| `/premium on` | /manager → Premium → Owner: Premium On | Leaders |
+| `/premium off` | /manager → Premium → Owner: Premium Off | Leaders |
+| `/setclub` | /manager → Admin → Link EA Club | Leaders |
+| `/squadiq` | /manager → Admin → Control Panel | Leaders |
+| `/refreshpanel` | /manager → Admin → Refresh Panel | Leaders |
+| `/eapanel` | /manager → Admin → EA Panel | Leaders |
+| `/brand` | /manager → Admin → Brand | Leaders |
+| `/brand` | /manager → Admin → Bot Avatar | Leaders |
+| `/brand` | /manager → Admin → Reset Brand | Leaders |
+| `/twitchsetup` | /manager → Admin → Twitch Alert | Leaders |
+| `/twitchremove` | /manager → Admin → Remove Twitch | Leaders |
+| `/twitchlist` | /manager → Admin → Twitch List | Leaders |
+| `/pendingwins` | /manager → Admin → Pending Wins | Leaders |
+| `/verifywin` | /manager → Admin → Verify a Win | Leaders |
+
+The bot also calls Supabase Edge Functions. Use this list to confirm coverage (including spot availability/preference flows) and find the entry points in code.
 
 ## Manager Hub (`public/spotbot/manager-hub.cjs`)
 - **/manager**: posts and pins the hub. Buttons: Call Session (posts an In / Late / Out roll call stored as an availability event), Team Sheet (latest lineup with Announce Lineup), Sync Matches (pulls EA matches and refreshes the hub), Club Stats (with a Goals / Assists / Ratings / Form leaderboard picker) and Tactical Insights.

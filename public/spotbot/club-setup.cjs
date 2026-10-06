@@ -8,9 +8,9 @@ const { activeClubs } = require('./manager-hub.cjs');
 
 const F = PermissionsBitField.Flags;
 const SERVER_PERMS = [
-  [F.ManageRoles, 'Manage Roles', 'position roles from /positionpanel'],
+  [F.ManageRoles, 'Manage Roles', 'position roles from /manager → Lineups & Spots → Position Roles Panel'],
   [F.MentionEveryone, 'Mention @everyone, @here and All Roles', 'pinging a role that is not mentionable'],
-  [F.ChangeNickname, 'Change Nickname', '/brand nickname'],
+  [F.ChangeNickname, 'Change Nickname', '/manager → Admin → Brand (nickname)'],
 ];
 const POSITION_ROLE_NAMES = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST'];
 const MAX_AVATAR_BYTES = 8 * 1024 * 1024;
@@ -110,23 +110,23 @@ function createClubSetup(deps) {
     const steps = [
       {
         done: linked.length > 0,
-        text: linked.length ? `Club linked to EA: ${linked.map((c) => c.name).join(', ')}` : 'Link your EA club: `/setclub name:<your EA club name>`',
+        text: linked.length ? `Club linked to EA: ${linked.map((c) => c.name).join(', ')}` : 'Link your EA club: **/manager → Admin → Link EA Club**',
       },
       {
         done: withSquad.length > 0,
-        text: withSquad.length ? 'Squad set up' : 'Name your squad and leaders: `/squad link team:First XI`, then `/squad captain`',
+        text: withSquad.length ? 'Squad set up' : 'Name your squad and leaders: **/manager → Roster & Squad → Link Squad** (e.g. First XI), then **Set Captain**',
       },
       {
         done: rosterSize > 0,
-        text: rosterSize ? `Roster: ${rosterSize} players` : 'Add players: `/roster import role:@YourTeamRole` (or `/roster add`)',
+        text: rosterSize ? `Roster: ${rosterSize} players` : 'Add players: **/manager → Roster & Squad → Import Role** with your team role (or **Add Player**)',
       },
       {
         done: prefs.timezone !== 'UTC',
-        text: prefs.timezone !== 'UTC' ? `Timezone: ${prefs.timezone}` : 'Set your timezone so "9pm" means your 9pm: `/event timezone`',
+        text: prefs.timezone !== 'UTC' ? `Timezone: ${prefs.timezone}` : 'Set your timezone so "9pm" means your 9pm: **/manager → Events → Timezone**',
       },
       {
         done: (eventCount || 0) > 0,
-        text: eventCount ? 'Events: running' : 'Post your first event: `/event new when:"thu 9pm" type:League match`',
+        text: eventCount ? 'Events: running' : 'Post your first event: **/manager → Events → New Event** (e.g. "thu 9pm", League match)',
       },
     ];
     const next = steps.find((s) => !s.done);
@@ -165,7 +165,7 @@ function createClubSetup(deps) {
       const { count } = await supabase.from('availability_events').select('id', { count: 'exact', head: true }).eq('guild_id', guild.id).eq('club_key', club.key).not('channel_id', 'is', null);
       if (!count) recapGaps.push(club.name);
     }
-    if (recapGaps.length) problems.push(`⚠️ Match recaps for ${recapGaps.join(', ')} have no channel. Pick one with \`/autopilot\`.`);
+    if (recapGaps.length) problems.push(`⚠️ Match recaps for ${recapGaps.join(', ')} have no channel. Pick one with **/manager → Match Night → Autopilot**.`);
 
     const access = await commandAccessLines(guild);
     const restricted = restrictedByDefault(guild);
@@ -291,7 +291,7 @@ function createClubSetup(deps) {
             .setColor(0x5865f2)
             .setDescription(
               'Start with **`/setup`**. It shows what to do next and checks my permissions.\n\n' +
-                'The usual path: `/setclub` → `/roster import` → `/event timezone` → `/event new when:"thu 9pm"` → `/manager`.'
+                'The usual path, all from `/manager`: **Admin → Link EA Club**, **Roster & Squad → Import Role**, **Events → Timezone**, then **Events → New Event**.'
             ),
         ],
       })

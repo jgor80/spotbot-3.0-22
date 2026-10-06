@@ -81,7 +81,7 @@ function createSquads(deps) {
   async function squadInfoEmbed(club, team) {
     const embed = new EmbedBuilder().setTitle(`🛡️ ${club.name}`).setColor(0x5865f2);
     if (!team) {
-      return embed.setDescription('Not linked to a squad yet. Run `/squad link` to link it, then name a captain with `/squad captain`.');
+      return embed.setDescription('Not linked to a squad yet. Run **/manager → Roster & Squad → Link Squad** to link it, then name a captain with **/manager → Roster & Squad → Set Captain**.');
     }
     return embed.addFields(
       { name: 'Squad', value: team.name, inline: true },
@@ -95,7 +95,7 @@ function createSquads(deps) {
     const state = await getGuildState(interaction.guildId);
     const club = resolveClub(state, interaction.member);
     if (!club) {
-      await interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+      await interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
       return;
     }
     const team = await loadTeam(club);
@@ -146,7 +146,7 @@ function createSquads(deps) {
     }
 
     if (!team) {
-      await interaction.reply({ content: '❌ Link this club to a squad first with `/squad link`.', flags: 64 });
+      await interaction.reply({ content: '❌ Link this club to a squad first with **/manager → Roster & Squad → Link Squad**.', flags: 64 });
       return;
     }
     const user = interaction.options.getUser('user');
@@ -203,7 +203,7 @@ function createSquads(deps) {
     const state = await getGuildState(interaction.guildId);
     const club = resolveClub(state, interaction.member);
     if (!club) {
-      await interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+      await interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
       return;
     }
     if (!(await canManageClub(interaction.member, club))) {
@@ -275,7 +275,7 @@ function createSquads(deps) {
       components: [],
     });
     await interaction.followUp({
-      content: `🤝 <@${posterId}> <@${interaction.user.id}>: ${posting?.name || 'your club'} vs ${opponent.name} is on. Sort out the invite in DMs. After the game, \`/syncclub\` pulls in the stats.`,
+      content: `🤝 <@${posterId}> <@${interaction.user.id}>: ${posting?.name || 'your club'} vs ${opponent.name} is on. Sort out the invite in DMs. After the game, **/manager → Stats & Scouting → Sync Matches** pulls in the stats.`,
       allowedMentions: { users: [posterId, interaction.user.id] },
     });
   }

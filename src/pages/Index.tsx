@@ -209,7 +209,7 @@ export default function Dashboard() {
               <>
                 <h2 className="mt-2 font-display text-2xl font-bold">Nothing scheduled</h2>
                 <p className="mt-1 text-sm opacity-90">
-                  Post a board in Discord with <code className="rounded bg-black/20 px-1">/event new</code> and answers show up here.
+                  Post a board in Discord with <code className="rounded bg-black/20 px-1">/manager → Events → New Event</code> and answers show up here.
                 </p>
               </>
             )}

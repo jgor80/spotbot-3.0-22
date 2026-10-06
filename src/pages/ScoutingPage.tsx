@@ -616,7 +616,7 @@ Focus on controlling midfield to limit their counter-attacks.
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setCommandOutputs(prev => [...prev, { title: "/twitchsetup", content: "Use in Discord: /twitchsetup streamer:username channel:#channel\nSets up live notifications for a Twitch streamer." }]);
+                    setCommandOutputs(prev => [...prev, { title: "Twitch Alert", content: "In Discord: /manager → Admin → Twitch Alert\nSets up live notifications for a Twitch streamer." }]);
                   }}
                   className="w-full justify-start gap-2 border-purple-500/30 hover:bg-purple-500/10"
                 >
@@ -627,7 +627,7 @@ Focus on controlling midfield to limit their counter-attacks.
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setCommandOutputs(prev => [...prev, { title: "/twitchlist", content: "Use in Discord: /twitchlist\nShows all configured Twitch notification channels." }]);
+                    setCommandOutputs(prev => [...prev, { title: "Twitch List", content: "In Discord: /manager → Admin → Twitch List\nShows all configured Twitch notification channels." }]);
                   }}
                   className="w-full justify-start gap-2 border-purple-500/30 hover:bg-purple-500/10"
                 >
@@ -638,7 +638,7 @@ Focus on controlling midfield to limit their counter-attacks.
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setCommandOutputs(prev => [...prev, { title: "/twitchremove", content: "Use in Discord: /twitchremove streamer:username\nRemoves live notifications for a streamer." }]);
+                    setCommandOutputs(prev => [...prev, { title: "Remove Twitch", content: "In Discord: /manager → Admin → Remove Twitch\nRemoves live notifications for a streamer." }]);
                   }}
                   className="w-full justify-start gap-2 border-purple-500/30 hover:bg-purple-500/10"
                 >

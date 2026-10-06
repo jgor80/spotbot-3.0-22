@@ -220,7 +220,7 @@ function messageLink(guildId, channelId, messageId) {
 }
 
 function whenExamples(tz) {
-  return `Try "thu 9pm", "tomorrow 20:00", "21/09 18:00", "21 sep 8pm" or "in 2h" (read as ${tz} time; change it with \`/event timezone\`). As you type, the box above the keyboard shows how I read it.`;
+  return `Try "thu 9pm", "tomorrow 20:00", "21/09 18:00", "21 sep 8pm" or "in 2h" (read as ${tz} time; change it with **/manager → Events → Timezone**). As you type, the box above the keyboard shows how I read it.`;
 }
 
 function createEvents(deps) {
@@ -477,7 +477,7 @@ function createEvents(deps) {
     const state = await getGuildState(guildId);
     const clubKey = interaction.options.getString('club');
     const club = resolveClub(state, interaction.member, clubKey);
-    if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+    if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
     if (!(await canManageClub(interaction.member, club))) {
       return interaction.reply({ content: `❌ Only ${club.name}'s leaders can create events.`, flags: 64 });
     }
@@ -485,7 +485,7 @@ function createEvents(deps) {
     const { timezone: tz } = await serverPrefs(guildId);
     const presetName = interaction.options.getString('preset');
     const preset = await loadPreset(guildId, presetName);
-    if (presetName && !preset) return interaction.reply({ content: `❌ No preset called **${presetName}**. See \`/event preset list\`.`, flags: 64 });
+    if (presetName && !preset) return interaction.reply({ content: `❌ No preset called **${presetName}**. See **/manager → Events → Presets**.`, flags: 64 });
 
     const whenText = interaction.options.getString('when');
     const kickoff = whenText ? T.parseWhen(whenText, tz) : presetKickoff(preset, tz);
@@ -596,10 +596,10 @@ function createEvents(deps) {
       `✅ Posted **${title}** in <#${channel.id}>: ${messageLink(guildId, channel.id, event.message_id)}`,
       `Kick-off <t:${T.unix(kickoff)}:F>, answers due <t:${T.unix(deadline)}:R>.`,
       source === 'none'
-        ? 'Tip: add players with `/roster add` (or pick a role with `ping`) so the board shows who has not answered and I can remind them.'
+        ? 'Tip: add players with **/manager → Roster & Squad → Add Player** (or pick a role with `ping`) so the board shows who has not answered and I can remind them.'
         : 'I will DM anyone who has not answered before the deadline.',
     ];
-    if (repeatWeeks) notes.push(`🔁 I'll post the next one ${repeatWeeks === 1 ? 'every week' : 'every 2 weeks'}, a day after the previous kick-off. Stop it with \`/event series stop\`.`);
+    if (repeatWeeks) notes.push(`🔁 I'll post the next one ${repeatWeeks === 1 ? 'every week' : 'every 2 weeks'}, a day after the previous kick-off. Stop it with **/manager → Events → Stop Repeating**.`);
     return interaction.editReply({ content: notes.join('\n') });
   }
 
@@ -760,7 +760,7 @@ function createEvents(deps) {
     await interaction.deferReply({ flags: 64 });
     const result = await sendReminder(event, { manual: true });
     if (result.source === 'none') {
-      return interaction.editReply({ content: 'Posted a reminder under the board. Add a roster with `/roster add` (or a ping role) and I can DM the players who have not answered.' });
+      return interaction.editReply({ content: 'Posted a reminder under the board. Add a roster with **/manager → Roster & Squad → Add Player** (or a ping role) and I can DM the players who have not answered.' });
     }
     return interaction.editReply({
       content: result.waiting
@@ -788,7 +788,7 @@ function createEvents(deps) {
     const events = await upcomingEvents(guildId);
     const embed = new EmbedBuilder().setTitle('📅 Upcoming events').setColor(0x5865f2);
     if (!events.length) {
-      embed.setDescription('Nothing scheduled. Create one with `/event new when:"thu 9pm"`.');
+      embed.setDescription('Nothing scheduled. Create one with **/manager → Events → New Event**.');
     } else {
       const ids = events.map((e) => e.id);
       const { data: responses } = await supabase.from('player_availability').select('event_id, response').in('event_id', ids);
@@ -925,7 +925,7 @@ function createEvents(deps) {
           .catch(() => {});
       }
     }
-    return interaction.editReply({ content: `✅ **${updated.title}**: ${changes.join(', ')}.${board ? '' : ' (The board message is gone; `/event post` puts it back.)'}` });
+    return interaction.editReply({ content: `✅ **${updated.title}**: ${changes.join(', ')}.${board ? '' : ' (The board message is gone; **/manager → Events → Repost Board** puts it back.)'}` });
   }
 
   async function handleLock(interaction, locked) {
@@ -943,7 +943,7 @@ function createEvents(deps) {
     await refreshBoard(event);
     return interaction.editReply({
       content: locked
-        ? `🔒 **${event.title}** is closed to answers. Use \`/event mark\` to change someone's, or \`/event reopen\`.`
+        ? `🔒 **${event.title}** is closed to answers. Use **/manager → Events → Mark a Player** to change someone's, or **Reopen Answers**.`
         : `🔓 **${event.title}** is taking answers again.`,
     });
   }
@@ -1007,7 +1007,7 @@ function createEvents(deps) {
                 .join('\n'),
               4000
             )
-          : 'No presets yet. Save one with `/event preset save`, then use it with `/event new preset:<name>`.'
+          : 'No presets yet. Save one with **/manager → Events → Save Preset**, then use it with **/manager → Events → Event From Preset**.'
       );
       return interaction.reply({ embeds: [embed], flags: 64 });
     }
@@ -1063,7 +1063,7 @@ function createEvents(deps) {
       : await supabase.from('event_presets').insert(row);
     if (error) return interaction.reply({ content: `❌ ${error.message}`, flags: 64 });
     return interaction.reply({
-      content: `✅ Saved preset **${name}**. Post it with \`/event new preset:${name}\`${timeOfDay ? '' : ' when:"thu 9pm"'}.`,
+      content: `✅ Saved preset **${name}**. Post it with **/manager → Events → Event From Preset**${timeOfDay ? '' : ' (add a time like "thu 9pm")'}.`,
       flags: 64,
     });
   }

@@ -23,6 +23,7 @@ const {
 const { createClient } = require('@supabase/supabase-js');
 const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.cjs');
 const { createSquads, SQUAD_COMMANDS } = require('./squads.cjs');
+const { createPanels, PANEL_COMMANDS } = require('./panels.cjs');
 const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
 const { parseWhen: parseEventWhen } = require('./event-time.cjs');
 const embedStyle = require('./embed-style.cjs');
@@ -561,7 +562,9 @@ async function ensurePositionRoles(guild) {
 // COMMANDS
 // =======================
 
-const COMMANDS = [
+// Every former slash command. Only the entry points below are registered with Discord; the rest are
+// panel actions (panels.cjs), and these definitions describe the forms those actions open.
+const ACTION_SCHEMAS = [
   // Spot Management Commands
   { name: 'spotpanel', description: 'Create the global control panel for club spots.' },
   { name: 'spots', description: 'Show a read-only board with club dropdown.' },
@@ -854,6 +857,10 @@ const COMMANDS = [
   ...LFC_COMMANDS,
   ...premiumCommands(BROADCAST_SUBCOMMANDS, OVERLAY_SUBCOMMAND, TROPHIES_SUBCOMMAND, COACH_SUBCOMMAND)
 ];
+
+// The slash commands people see: /manager (club tools), /me (player hub), /help and /setup
+const ENTRY_COMMANDS = new Set(['manager', 'help', 'setup']);
+const COMMANDS = [...ACTION_SCHEMAS.filter((c) => ENTRY_COMMANDS.has(c.name)), ...PANEL_COMMANDS];
 
 // =======================
 // CACHES & STATE
@@ -4139,8 +4146,15 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 // =======================
 
 // Every embed sent while handling the interaction picks up the server's /brand style (embed-style.cjs)
-client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(interaction.guildId, async () => {
+// Panel buttons and forms re-enter routeInteraction as the old slash command (panels.cjs)
+const panels = createPanels({ schemas: ACTION_SCHEMAS, isManager, dispatch: (interaction) => routeInteraction(interaction) });
+
+client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(interaction.guildId, () => routeInteraction(interaction)));
+
+async function routeInteraction(interaction) {
   try {
+    // Panels: /me, the Tools areas on /manager, and every panel action button and form
+    if (await panels.handleInteraction(interaction)) return;
     // Events: /event, /available, autocomplete, and board buttons (also used from reminder DMs)
     if (await clubEvents.handleInteraction(interaction)) return;
     // Match night: /checkin, /sub, /reliability, check-in and sub request buttons
@@ -5443,7 +5457,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
       if (cmd === 'spotblock') {
         if (!isManager(interaction.member)) {
           return interaction.reply({
-            content: 'Only captains, managers, owners, media, or admins can use /spotblock.',
+            content: 'Only captains, managers, owners, media, or admins can use /manager → Lineups & Spots → Block Mover.',
             flags: 64
           });
         }
@@ -5847,7 +5861,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
             .setDescription(
               `Found **${matchedPositions.length}** position role(s) on your account!\n\n` +
               `**Your preferences are now:**\n${summary}\n\n` +
-              `_Use \`/myprefs\` to reorder or adjust these._`
+              `_Use **/me → My Positions** to reorder or adjust these._`
             );
 
           return interaction.editReply({ embeds: [embed] });
@@ -6212,7 +6226,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
           .setColor(0xffcc00)
           .setDescription(
             `<@${interaction.user.id}> has requested to reroll captains.\n\n` +
-            `<@${otherCaptain}> - use \`/draftreroll\` or click the button to agree.`
+            `<@${otherCaptain}> - use **/manager → Drafts → Reroll Captains** or click the button to agree.`
           )
           .setFooter({ text: 'Request expires in 60 seconds' });
 
@@ -6646,7 +6660,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
           .setTitle('📋 Pending Win Claims')
           .setColor(0xffcc00)
           .setDescription(lines.join('\n'))
-          .setFooter({ text: 'Use /verifywin <claim_id> <approve/reject> to review' });
+          .setFooter({ text: 'Review with /manager → Admin → Verify a Win and the claim ID' });
 
         return interaction.editReply({ embeds: [embed] });
       }
@@ -6733,7 +6747,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
 
         if (action === 'stats') {
           if (!currentClub) {
-            return interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+            return interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
           }
           await interaction.deferReply();
           try {
@@ -6771,7 +6785,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
 
         if (!currentClub.ea_club_id) {
           return interaction.reply({
-            content: '❌ This club is not linked to EA yet. A manager can run `/setclub` to link it.',
+            content: '❌ This club is not linked to EA yet. A manager can run **/manager → Admin → Link EA Club** to link it.',
             flags: 64
           });
         }
@@ -6860,7 +6874,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
 
         if (!currentClub?.ea_club_id) {
           return interaction.reply({
-            content: '❌ This club is not linked to EA yet. A manager can run `/setclub` to link it.',
+            content: '❌ This club is not linked to EA yet. A manager can run **/manager → Admin → Link EA Club** to link it.',
             flags: 64
           });
         }
@@ -7128,7 +7142,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
         }
 
         if (suggestions.length > 5) {
-          embed.setFooter({ text: `Showing first 5 of ${suggestions.length} suggestions. Run /reviewlinks again after processing.` });
+          embed.setFooter({ text: `Showing first 5 of ${suggestions.length} suggestions. Run /manager → Roster & Squad → Review EA Links again after processing.` });
         }
 
         return interaction.editReply({ embeds: [embed], components });
@@ -7714,7 +7728,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
           const notifications = response.data.notifications || [];
 
           if (notifications.length === 0) {
-            return interaction.editReply({ content: '📺 No Twitch streamers are being monitored in this server.\n\nUse `/twitchsetup` to add one!' });
+            return interaction.editReply({ content: '📺 No Twitch streamers are being monitored in this server.\n\nUse **/manager → Admin → Twitch Alert** to add one!' });
           }
 
           const embed = new EmbedBuilder()
@@ -9212,7 +9226,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
           .setTitle('📋 Pending Win Claims')
           .setColor(0xffcc00)
           .setDescription(lines.join('\n'))
-          .setFooter({ text: 'Use /verifywin <claim_id> <approve/reject> to review' });
+          .setFooter({ text: 'Review with /manager → Admin → Verify a Win and the claim ID' });
 
         return interaction.editReply({ embeds: [embed] });
       }
@@ -10041,7 +10055,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
             const minutesLeft = Math.round((windowEnd - now) / 60000);
             return interaction.editReply({
               content: `⏳ No matching friendly matches found yet.\n\n` +
-                `Play a friendly match within the next **${minutesLeft} minutes** (2-hour window from draft completion) and run \`/applyfriendly\` to link it.\n\n` +
+                `Play a friendly match within the next **${minutesLeft} minutes** (2-hour window from draft completion) and press **/manager → Drafts → Apply Friendly Stats** to link it.\n\n` +
                 `Draft completed: <t:${Math.floor(new Date(data.draft.completed_at).getTime() / 1000)}:R>`
             });
           } else {
@@ -11089,7 +11103,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
 
         const currentClub = state.clubs?.find(c => c.key === state.currentClubKey);
         if (!currentClub?.ea_club_id) {
-          return interaction.reply({ content: '❌ No EA club linked yet. A manager can run `/setclub` to link it.', flags: 64 });
+          return interaction.reply({ content: '❌ No EA club linked yet. A manager can run **/manager → Admin → Link EA Club** to link it.', flags: 64 });
         }
 
         await interaction.deferReply({ flags: 64 });
@@ -12150,7 +12164,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
             new EmbedBuilder()
               .setTitle('✅ Preferences Saved')
               .setColor(0x57f287)
-              .setDescription(summary + '\n\nYou can update anytime via `/myprefs` or the panel.')
+              .setDescription(summary + '\n\nYou can update anytime via **/me → My Positions** or the panel.')
           ],
           components: []
         });
@@ -12830,7 +12844,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
               { name: '🏆 Winner', value: winnerText, inline: true }
             )
             .setDescription('Stats have been recorded and ratings updated!')
-            .setFooter({ text: '📬 Feedback DMs sent to all participants • Use /applyfriendly to link EA stats' });
+            .setFooter({ text: '📬 Feedback DMs sent to all participants • Use /manager → Drafts → Apply Friendly Stats to link EA stats' });
           
           // Add button to link EA friendly stats
           const applyFriendlyRow = new ActionRowBuilder().addComponents(
@@ -13112,7 +13126,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
             .setDescription(
               `Club renamed to **${newName}**.\n\n` +
               `⚠️ Could not find an EA club with this name on any platform.\n` +
-              `Use \`/setclub ${newName} <platform>\` to manually link your EA club.`
+              `Use **/manager → Admin → Link EA Club** with "${newName}" to link your EA club by hand.`
             );
 
           return interaction.editReply({ embeds: [embed] });
@@ -13503,7 +13517,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
               { name: '🏆 Wins', value: `${summary.wins || 0}`, inline: true },
               { name: '📈 Form', value: summary.form_rating ? `${Math.round(summary.form_rating)}` : 'N/A', inline: true }
             )
-            .setFooter({ text: `Use /profile @player for full profile • Web: squadiq.lovable.app` });
+            .setFooter({ text: `Full profiles: /manager → Stats & Scouting → Player Profile • Web: squadiq.lovable.app` });
 
           return interaction.editReply({ embeds: [embed] });
         } catch (err) {
@@ -13776,7 +13790,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
               { name: '📡 Monitoring', value: '🟢 Active', inline: true }
             )
             .setDescription('EA stats will now be automatically tracked every 2 minutes!')
-            .setFooter({ text: 'Players need to link their EA accounts with /linkea to receive personal stats' });
+            .setFooter({ text: 'Players need to link their EA accounts with /me → Link EA to receive personal stats' });
 
           return interaction.editReply({ embeds: [embed] });
 
@@ -14033,7 +14047,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
         if (!club) return interaction.editReply({ content: '❌ That club is no longer set up in this server.', components: [] });
         await refreshClubPanels(interaction.guildId, clubKey).catch(() => {});
         return interaction.editReply({
-          content: `✅ **${club.name}** is linked to EA club **${picked?.label}** (${EA_PLATFORM_NAMES[platform] || platform}). Syncing match history now; results post as games finish.\nNext: players run \`/linkea\` so their stats count.`,
+          content: `✅ **${club.name}** is linked to EA club **${picked?.label}** (${EA_PLATFORM_NAMES[platform] || platform}). Syncing match history now; results post as games finish.\nNext: players run **/me → Link EA** so their stats count.`,
           components: []
         });
       }
@@ -14617,7 +14631,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
         const pendingData = pendingFriendlyApply.get(uniqueId);
         if (!pendingData) {
           return interaction.reply({
-            content: '❌ Selection expired. Please run `/applyfriendly` again.',
+            content: '❌ Selection expired. Please run **/manager → Drafts → Apply Friendly Stats** again.',
             flags: 64
           });
         }
@@ -14695,7 +14709,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
 
         if (!scoutState) {
           return interaction.reply({
-            content: 'No pending club selection found. Please run `/scoutclub` again.',
+            content: 'No pending club selection found. Please run **/manager → Stats & Scouting → Scout a Club** again.',
             flags: 64
           });
         }
@@ -14704,7 +14718,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
         const chosen = scoutState.results[index];
         if (!chosen) {
           return interaction.reply({
-            content: 'Invalid club selection. Please run `/scoutclub` again.',
+            content: 'Invalid club selection. Please run **/manager → Stats & Scouting → Scout a Club** again.',
             flags: 64
           });
         }
@@ -14754,7 +14768,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
 
         if (!matchesState) {
           return interaction.reply({
-            content: 'No pending club selection found. Please run `/clubmatches` again.',
+            content: 'No pending club selection found. Please run **/manager → Stats & Scouting → Club Matches** again.',
             flags: 64
           });
         }
@@ -14763,7 +14777,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
         const chosen = matchesState.results[index];
         if (!chosen) {
           return interaction.reply({
-            content: 'Invalid club selection. Please run `/clubmatches` again.',
+            content: 'Invalid club selection. Please run **/manager → Stats & Scouting → Club Matches** again.',
             flags: 64
           });
         }
@@ -14804,7 +14818,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
 
         if (!previewState) {
           return interaction.reply({
-            content: 'No pending match preview selection found. Please run `/matchpreview` again.',
+            content: 'No pending match preview selection found. Please run **/manager → Stats & Scouting → Match Preview** again.',
             flags: 64
           });
         }
@@ -14814,7 +14828,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
 
         if (Number.isNaN(index)) {
           return interaction.reply({
-            content: 'Invalid selection. Please run `/matchpreview` again.',
+            content: 'Invalid selection. Please run **/manager → Stats & Scouting → Match Preview** again.',
             flags: 64
           });
         }
@@ -14822,7 +14836,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
         if (isHome) {
           if (!previewState.homeResults[index]) {
             return interaction.reply({
-              content: 'Invalid home club selection. Please run `/matchpreview` again.',
+              content: 'Invalid home club selection. Please run **/manager → Stats & Scouting → Match Preview** again.',
               flags: 64
             });
           }
@@ -14830,7 +14844,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
         } else {
           if (!previewState.awayResults[index]) {
             return interaction.reply({
-              content: 'Invalid away club selection. Please run `/matchpreview` again.',
+              content: 'Invalid away club selection. Please run **/manager → Stats & Scouting → Match Preview** again.',
               flags: 64
             });
           }
@@ -15889,7 +15903,7 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
     console.error('❌ Error handling interaction:', err);
     await replyWithError(interaction);
   }
-}));
+}
 
 // =======================
 // EDGE FUNCTION HELPER
@@ -15969,7 +15983,7 @@ async function linkOwnEaAccount(interaction, typedName) {
     return {
       content:
         `❌ **${eaUsername}** is already linked to <@${owner.discord_user_id}>.\n` +
-        'If that\'s your old Discord account, ask a manager to run `/forcelink` to move it to this one.'
+        'If that\'s your old Discord account, ask a manager to run **/manager → Roster & Squad → Link Player to EA** to move it to this one.'
     };
   }
 
@@ -15997,10 +16011,10 @@ async function linkOwnEaAccount(interaction, typedName) {
   if (!match && any) {
     embed.setColor(0xf59e0b).addFields({
       name: '⚠️ Check the spelling',
-      value: 'I haven\'t seen this name in your club\'s matches or EA\'s member list. Stats only count when it matches your EA name exactly. Run `/linkea` again and pick your name from the list as you type.'
+      value: 'I haven\'t seen this name in your club\'s matches or EA\'s member list. Stats only count when it matches your EA name exactly. Run **/me → Link EA** again and pick your name from the list as you type.'
     });
   } else {
-    embed.addFields({ name: '📊 What happens now?', value: 'Your goals, assists and ratings from club matches are tracked from now on. See them with `/mystats`.' });
+    embed.addFields({ name: '📊 What happens now?', value: 'Your goals, assists and ratings from club matches are tracked from now on. See them with **/me → My Stats**.' });
   }
   return { embeds: [embed] };
 }
@@ -16057,7 +16071,7 @@ async function searchClubCandidates(name, requestedPlatform = null) {
 function clubNotFoundMessage(name, where = 'any platform') {
   return (
     `❌ EA has no FC27 club called **${name}** on ${where} yet.\n\n` +
-    '**Most common reason:** EA only creates a club\'s online record after it plays its **first league match in FC27**. New club, or not played since FC27 came out? Play one league match, wait a few minutes, then run `/setclub` again.\n' +
+    '**Most common reason:** EA only creates a club\'s online record after it plays its **first league match in FC27**. New club, or not played since FC27 came out? Play one league match, wait a few minutes, then run **/manager → Admin → Link EA Club** again.\n' +
     '• Type the name exactly as it shows in game (spaces count, capitals don\'t).\n' +
     '• Clubs from FC26 or older don\'t carry over: EA gave every club a new ID for FC27.\n' +
     '• Not sure of the spelling? Type part of it and I\'ll list what EA finds.'
@@ -17457,7 +17471,7 @@ function buildDraftEmbed(draftData, guild) {
       { name: '👥 Available Players', value: availableLines, inline: false }
     )
     .setDescription(`**Pick #${draftData.pick_number || 1}** – <@${currentPicker}>'s turn to pick!`)
-    .setFooter({ text: 'Use /draftpick @player to pick • /draftresult to report score' });
+    .setFooter({ text: 'Pick with /manager → Drafts → Pick Player • report the score with Report Result' });
 }
 
 function buildDraftResultEmbed(result) {

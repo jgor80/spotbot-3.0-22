@@ -395,7 +395,7 @@ function createBroadcast(deps) {
     }
     const state = await getGuildState(interaction.guildId);
     const club = pickClub(state, interaction);
-    if (!club) return interaction.editReply({ content: '❌ No club is set up yet. Run `/setclub` first.' });
+    if (!club) return interaction.editReply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.' });
     const msg = await buildCards(interaction.guildId, club, {
       period: interaction.options.getString('period') || 'month',
       player: interaction.options.getString('player'),

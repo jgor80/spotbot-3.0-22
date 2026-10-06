@@ -170,7 +170,7 @@ export default function InsightsPage() {
         ) : overview.played === 0 ? (
           <Card>
             <CardContent className="py-10 text-center text-muted-foreground">
-              No synced matches yet for this filter. Link your club with <code>/setclub</code> and play a few games.
+              No synced matches yet for this filter. Link your club in Discord with <code>/manager → Admin → Link EA Club</code> and play a few games.
             </CardContent>
           </Card>
         ) : (

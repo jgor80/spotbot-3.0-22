@@ -130,20 +130,20 @@ function createRecruitCards(deps) {
   }
 
   async function handleGaps(interaction, club) {
-    if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+    if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
     if (!(await recruitment.canRecruit(interaction.member, club))) return interaction.reply({ content: '❌ Only managers can see the gap radar.', flags: 64 });
     await interaction.deferReply({ flags: 64 });
     const radar = await gapRadar(interaction.guildId, club);
     const embed = new EmbedBuilder().setTitle(`📡 Gap radar: ${club.name}`).setColor(0xe67e22);
     if (radar.noRoster || !radar.activeCount) {
-      embed.setDescription('No active roster yet. Add players with `/roster add` or `/roster import` and I can spot the gaps.');
+      embed.setDescription('No active roster yet. Add players with **/manager → Roster & Squad → Add Player** or **/manager → Roster & Squad → Import Role** and I can spot the gaps.');
       return interaction.editReply({ embeds: [embed] });
     }
     embed.setDescription(
       (radar.gaps.length ? radar.gaps.map(gapLine).join('\n') : '✅ No gaps: every area has enough reliable cover.') +
         `\n\n${radar.activeCount} active players · ${radar.upcoming} event${radar.upcoming === 1 ? '' : 's'} in the next 2 weeks`
     );
-    embed.setFooter({ text: 'Main position counts fully, second position as half. Reliability comes from check-ins (/reliability).' });
+    embed.setFooter({ text: 'Main position counts fully, second position as half. Reliability comes from check-ins (/manager → Match Night → Reliability).' });
     const components = radar.gaps.length
       ? [
           new ActionRowBuilder().addComponents(
@@ -176,7 +176,7 @@ function createRecruitCards(deps) {
   }
 
   async function handlePost(interaction, club) {
-    if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+    if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
     if (!(await recruitment.canRecruit(interaction.member, club))) return interaction.reply({ content: '❌ Only managers can post a recruitment poster.', flags: 64 });
     const channel = interaction.options.getChannel('channel') || interaction.channel;
     const missing = missingChannelPerms(channel, interaction.guild.members.me);
@@ -205,7 +205,7 @@ function createRecruitCards(deps) {
       .setTitle(`📣 ${club.name} are recruiting`)
       .setColor(Number.isInteger(branding.color) ? branding.color : 0x22c55e)
       .setDescription(`**Looking for: ${positions}**${notes ? `\n${notes}` : ''}`)
-      .setFooter({ text: `${branding.footer || 'GafferBot'} · Free agents: list yourself with /fa` });
+      .setFooter({ text: `${branding.footer || 'GafferBot'} · Free agents: list yourself with /me → Free Agent` });
     const logo = branding.logo_url || interaction.guild.iconURL();
     if (logo) embed.setThumbnail(logo);
     if (division) embed.addFields({ name: 'Division', value: division, inline: true });
@@ -230,7 +230,7 @@ function createRecruitCards(deps) {
       .join('\n');
     return interaction.editReply({
       content:
-        `✅ Poster posted in ${channel}.${invite ? '' : " I couldn't make an invite (I need **Create Invite**; set a channel with `/recruit setup invite_channel:`)."}` +
+        `✅ Poster posted in ${channel}.${invite ? '' : " I couldn't make an invite (I need **Create Invite**; set an invite channel in **/manager → Recruiting → Recruiting Setup**)."}` +
         `\nCopy this for league Discords or Reddit:\n\`\`\`\n${text.replace(/\*\*/g, '')}\n\`\`\``,
     });
   }
@@ -286,7 +286,7 @@ function createRecruitCards(deps) {
         { name: 'Man of the Match', value: String(s.motm), inline: true }
       )
       .setFooter({
-        text: `${verifiedTag ? '✅ Verified by GafferBot' : '⚠️ Gamertag not linked'} · code ${code} · check it with /lfc verify · issued ${new Date(issuedAt).toISOString().slice(0, 10)}`,
+        text: `${verifiedTag ? '✅ Verified by GafferBot' : '⚠️ Gamertag not linked'} · code ${code} · check it with /me → Check a Resume · issued ${new Date(issuedAt).toISOString().slice(0, 10)}`,
       });
     if (s.cleanSheets != null) embed.addFields({ name: 'Goalkeeping', value: `${s.cleanSheets} clean sheets · ${s.saves} saves`, inline: true });
     return embed;
@@ -316,7 +316,7 @@ function createRecruitCards(deps) {
     ]);
     if (!stats) {
       return interaction.editReply({
-        content: "I don't have any synced EA matches for you yet. Link your gamertag with `/linkea` and play with a GafferBot club; your resume fills in from there.",
+        content: "I don't have any synced EA matches for you yet. Link your gamertag with **/me → Link EA** and play with a GafferBot club; your resume fills in from there.",
       });
     }
     const name = profile?.ea_username || interaction.user.username;
@@ -327,10 +327,10 @@ function createRecruitCards(deps) {
     if (error) return interaction.editReply({ content: recruitment.tablesMissing(error) ? recruitment.NOT_READY : `❌ ${error.message}` });
     const embed = resumeEmbed(name, stats, code, now, verified);
     const [listing] = await recruitment.findListings({ discordIds: [userId] });
-    if (listing) embed.addFields({ name: '📣 Free agent', value: `${recruitment.positionsText(listing)} · managers can reach out via \`/recruit search\`` });
+    if (listing) embed.addFields({ name: '📣 Free agent', value: `${recruitment.positionsText(listing)} · managers can reach out via **/manager → Recruiting → Search Free Agents**` });
     await interaction.editReply({ embeds: [embed] });
     if (!listing) {
-      await interaction.followUp({ content: 'Looking for a club? `/fa` lists you in the free agent pool every GafferBot server can search.', flags: 64 }).catch(() => {});
+      await interaction.followUp({ content: 'Looking for a club? **/me → Free Agent** lists you in the free agent pool every GafferBot server can search.', flags: 64 }).catch(() => {});
     }
   }
 

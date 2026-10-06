@@ -178,7 +178,7 @@ function createRoster(deps) {
     const roster = await loadRoster(teamId);
     const embed = new EmbedBuilder().setTitle(`📋 ${club.name} roster`).setColor(0x5865f2);
     if (!roster.length) {
-      return embed.setDescription('Nobody on the roster yet. Add players with `/roster add`, or everyone with a role using `/roster import`.');
+      return embed.setDescription('Nobody on the roster yet. Add players with **/manager → Roster & Squad → Add Player**, or everyone with a role using **/manager → Roster & Squad → Import Role**.');
     }
     const missing = roster.filter((r) => !r.primary_position).map((r) => r.discord_user_id);
     const fallback = await fallbackPositions(guild, missing);
@@ -243,11 +243,11 @@ function createRoster(deps) {
     const sub = interaction.options.getSubcommand();
     const state = await getGuildState(interaction.guildId);
     const club = resolveClub(state, interaction.member);
-    if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+    if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
 
     if (sub === 'view') {
       if (!club.team_id) {
-        return interaction.reply({ content: `${club.name} has no roster yet. Add players with \`/roster add\` or \`/roster import\`.`, flags: 64 });
+        return interaction.reply({ content: `${club.name} has no roster yet. Add players with **/manager → Roster & Squad → Add Player** or **Import Role**.`, flags: 64 });
       }
       await interaction.deferReply();
       const by = interaction.options.getString('by') || 'position';
@@ -295,7 +295,7 @@ function createRoster(deps) {
         content:
           `✅ Added ${rows.length} players from ${role} to ${club.name}` +
           `${withPos ? ` (${withPos} with positions from their position roles)` : ''}.` +
-          `${role.members.size > MAX_IMPORT ? ` I stopped at ${MAX_IMPORT}; run it again for the rest.` : ''} See \`/roster view\`.`,
+          `${role.members.size > MAX_IMPORT ? ` I stopped at ${MAX_IMPORT}; run it again for the rest.` : ''} See **/manager → Roster & Squad → View Roster**.`,
       });
     }
 
@@ -310,7 +310,7 @@ function createRoster(deps) {
       const { data } = await supabase.from('team_rosters').update({ status: 'inactive' }).eq('team_id', teamId).eq('discord_user_id', user.id).select('id');
       return interaction.editReply({
         content: data?.length
-          ? `💤 <@${user.id}> is now **Inactive** on ${club.name}: off the event boards and reminders, history kept. \`/roster status\` brings them back; \`delete:True\` removes them fully.`
+          ? `💤 <@${user.id}> is now **Inactive** on ${club.name}: off the event boards and reminders, history kept. **/manager → Roster & Squad → Set Status** brings them back; **Remove Player** with Delete set to Yes removes them fully.`
           : `<@${user.id}> wasn't on the roster.`,
       });
     }
@@ -383,11 +383,11 @@ function createRoster(deps) {
         { name: 'Role', value: ROLES[entry.role] || entry.role || 'Player', inline: true }
       );
     } else {
-      embed.setDescription(`Not on ${club.name}'s roster. Add them with \`/roster add\`.`);
+      embed.setDescription(`Not on ${club.name}'s roster. Add them with **/manager → Roster & Squad → Add Player**.`);
     }
     const ea = profile?.ea_username;
     if (!ea) {
-      embed.addFields({ name: 'EA stats', value: 'No EA name linked. They can run `/linkea` and pick their name.' });
+      embed.addFields({ name: 'EA stats', value: 'No EA name linked. They can run **/me → Link EA** and pick their name.' });
     } else {
       const totals = aggregate(toInsightMatches(rows || [])).find((t) => t.name.toLowerCase() === ea.trim().toLowerCase());
       embed.addFields({
@@ -410,7 +410,7 @@ function createRoster(deps) {
         value: truncate(events.map((e) => `${icon[byEvent.get(e.id)] || '⬜'} ${e.title} · <t:${Math.floor(new Date(e.scheduled_at).getTime() / 1000)}:d>`).join('\n')),
       });
     }
-    embed.setFooter({ text: 'Only you can see this · show-up rates: /reliability' });
+    embed.setFooter({ text: 'Only you can see this · show-up rates: /manager → Match Night → Reliability' });
     return { embeds: [embed], allowedMentions: { parse: [] } };
   }
 

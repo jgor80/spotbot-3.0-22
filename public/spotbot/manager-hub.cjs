@@ -18,6 +18,7 @@ const {
   playerKey,
   winPct,
 } = require('./club-insights.cjs');
+const { areaSelect } = require('./panels.cjs');
 
 const HUB_COLOR = 0x5865f2;
 const MATCH_LIMIT = 200;
@@ -35,7 +36,7 @@ const LEADERBOARD_TYPES = [
 ];
 
 const HUB_COMMANDS = [
-  { name: 'manager', description: 'Post the Manager Hub: roll call, team sheet, sync, club stats and insights.' },
+  { name: 'manager', description: 'Manager Hub: roll call, team sheet, sync and stats, plus every club tool by area.' },
   { name: 'insights', description: 'Show pairing chemistry, formation win rates and win vs. loss gaps for your club.' },
 ];
 
@@ -132,7 +133,7 @@ function createManagerHub(deps) {
       .setTitle(`🧭 ${club.name} Manager Hub`)
       .setColor(HUB_COLOR)
       .setDescription(
-        'Run match night from here: call the session, publish the team sheet, sync EA matches and check what is working.'
+        'Run match night from here: call the session, publish the team sheet, sync EA matches and check what is working. Everything else is in the **More tools** menu at the bottom.'
       )
       .addFields(
         { name: 'Record', value: o.played ? `${o.wins}W ${o.draws}D ${o.losses}L (${fmtPct(o.winPct)})` : 'No matches synced yet', inline: true },
@@ -149,7 +150,7 @@ function createManagerHub(deps) {
       });
     }
     if (!club.ea_club_id) {
-      embed.addFields({ name: 'EA link', value: 'Not linked yet. Run `/setclub` with your EA club name.' });
+      embed.addFields({ name: 'EA link', value: 'Not linked yet. Run **/manager → Admin → Link EA Club** with your EA club name.' });
     }
 
     const k = club.key;
@@ -171,6 +172,8 @@ function createManagerHub(deps) {
     rows.push(new ActionRowBuilder().addComponents(more));
     const picker = clubPicker('hub_club', activeClubs(state), k);
     if (picker) rows.push(picker);
+    // Every other club tool, by area (panels.cjs)
+    rows.push(areaSelect());
 
     return { embeds: [embed], components: rows };
   }
@@ -221,7 +224,7 @@ function createManagerHub(deps) {
     const embed = new EmbedBuilder()
       .setTitle(`📊 ${club.name} Club Stats`)
       .setColor(0x57f287)
-      .setDescription(o.played ? `Last ${o.played} synced matches` : 'No matches synced yet. Press Sync Matches on the hub or run `/syncclub`.')
+      .setDescription(o.played ? `Last ${o.played} synced matches` : 'No matches synced yet. Press Sync Matches on the hub or run **/manager → Stats & Scouting → Sync Matches**.')
       .addFields(
         { name: 'Record', value: `${o.wins}W ${o.draws}D ${o.losses}L`, inline: true },
         { name: 'Win rate', value: fmtPct(o.winPct), inline: true },
@@ -439,7 +442,7 @@ function createManagerHub(deps) {
     if (cmd !== 'manager' && cmd !== 'insights') return false;
     const { state, club } = await withClub(interaction);
     if (!club) {
-      await interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+      await interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
       return true;
     }
 
@@ -527,7 +530,7 @@ function createManagerHub(deps) {
       case 'hub_sync': {
         if (!(await canManageClub(interaction.member, club))) return managerOnly(interaction, club).then(() => true);
         if (!club.ea_club_id) {
-          await interaction.reply({ content: '❌ This club is not linked to EA. Run `/setclub` first.', flags: 64 });
+          await interaction.reply({ content: '❌ This club is not linked to EA. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
           return true;
         }
         await interaction.deferUpdate();

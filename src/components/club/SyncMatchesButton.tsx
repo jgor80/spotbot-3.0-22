@@ -26,7 +26,7 @@ export function SyncMatchesButton({ guildId, clubKey }: SyncMatchesButtonProps) 
       if (data?.ea_throttled && !data?.synced) {
         toast.warning(data.warning ?? "EA servers are throttling requests right now. Try again in a minute.");
       } else if (!data?.club_stats_synced && !data?.synced) {
-        toast.info("No EA-linked club to sync. Link one with /setclub in Discord.");
+        toast.info("No EA-linked club to sync. Link one in Discord with /manager → Admin → Link EA Club.");
       } else {
         toast.success(`Synced ${data.synced ?? 0} new matches and ${data.member_stats_synced ?? 0} players.`);
       }

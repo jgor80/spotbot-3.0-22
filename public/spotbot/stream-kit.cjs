@@ -62,7 +62,7 @@ function createStreamKit(deps) {
     const wanted = (interaction.options.getString('club') || '').trim().toLowerCase();
     const club =
       (wanted && activeClubs(state).find((c) => c.key === wanted || (c.name || '').toLowerCase() === wanted)) || resolveClub(state, interaction.member);
-    if (!club) return interaction.editReply({ content: '❌ No club is set up yet. Run `/setclub` first.' });
+    if (!club) return interaction.editReply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.' });
     if (!(await canManageClub(interaction.member, club))) return interaction.editReply({ content: `❌ Only ${club.name}'s leaders can get the overlay link.` });
     const token = await premium.overlayToken(interaction.guildId, interaction.options.getBoolean('new_link') === true);
     if (!token) return interaction.editReply({ content: '❌ The overlay needs the premium_servers table. Ask the bot owner to apply the Premium migration.' });
@@ -73,7 +73,7 @@ function createStreamKit(deps) {
       .setDescription(
         `Add this as a **Browser Source** in OBS or Streamlabs (1920×1080, transparent background):\n\`\`\`${url}\`\`\`` +
           "It shows your latest team sheet on a mini pitch and updates every 30 seconds as EA matches sync: tonight's rating, goals and assists per player, and the session score.\n\n" +
-          'Treat the link like a password. `/premium overlay new_link:true` makes a new one and stops this one working.',
+          'Treat the link like a password. **/manager → Premium → Stream Overlay** with New link set to Yes makes a new one and stops this one working.',
       );
     return interaction.editReply({ embeds: [embed] });
   }

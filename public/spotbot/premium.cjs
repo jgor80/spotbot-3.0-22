@@ -17,11 +17,11 @@ const PREMIUM_COLOR = 0xf5b301;
 
 // What premium unlocks, for /premium and the upsell message
 const PREMIUM_FEATURES = [
-  ['🖼️', 'Matchday graphics', 'Recap images after every match, FUT-style squad cards (/premium cards) and a Team of the Week poster (/premium totw).'],
-  ['🕵️', 'Opponent dossier', '/scout opponent: formation shape, danger men and weak spots from their recent EA games.'],
-  ['📺', 'Streamer kit', 'An OBS browser source with the XI and live ratings (/premium overlay), plus big-moment alerts with live streams.'],
-  ['🏆', 'Stat trophies', 'Roles that move on their own: Club Legend, Golden Boot, Playmaker, Golden Glove, In-Form (/premium trophies).'],
-  ['🧠', 'Assistant coach', 'A plain-English debrief after each session: pairings, late-night drop-off, who to rotate (/premium coach).'],
+  ['🖼️', 'Matchday graphics', 'Recap images after every match, FUT-style squad cards (/manager → Premium → Player Cards) and a Team of the Week poster (/manager → Premium → Team of the Week).'],
+  ['🕵️', 'Opponent dossier', '/manager → Recruiting → Opponent Dossier: formation shape, danger men and weak spots from their recent EA games.'],
+  ['📺', 'Streamer kit', 'An OBS browser source with the XI and live ratings (/manager → Premium → Stream Overlay), plus big-moment alerts with live streams.'],
+  ['🏆', 'Stat trophies', 'Roles that move on their own: Club Legend, Golden Boot, Playmaker, Golden Glove, In-Form (/manager → Premium → Trophies).'],
+  ['🧠', 'Assistant coach', 'A plain-English debrief after each session: pairings, late-night drop-off, who to rotate (/manager → Premium → Assistant Coach).'],
 ];
 
 // /premium carries every premium feature as a subcommand; feature modules pass theirs in

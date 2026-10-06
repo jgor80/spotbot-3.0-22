@@ -180,7 +180,7 @@ function createStatRoles(deps) {
       const who = holders[kind].map((k) => (ids?.get(k) ? `<@${ids.get(k)}>` : `${names.get(k) || k} (not linked)`));
       embed.addFields({ name: t.name, value: `${who.length ? who.slice(0, 10).join(', ') : 'Nobody yet'}\n-# ${t.help}`, inline: true });
     }
-    embed.setFooter({ text: 'Roles update after every synced match. Players need /linkea to receive them.' });
+    embed.setFooter({ text: 'Roles update after every synced match. Players need /me → Link EA to receive them.' });
     return embed;
   }
 
@@ -191,7 +191,7 @@ function createStatRoles(deps) {
     const wanted = (interaction.options.getString('club') || '').trim().toLowerCase();
     const club =
       (wanted && activeClubs(state).find((c) => c.key === wanted || (c.name || '').toLowerCase() === wanted)) || resolveClub(state, interaction.member);
-    if (!club) return interaction.editReply({ content: '❌ No club is set up yet. Run `/setclub` first.' });
+    if (!club) return interaction.editReply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.' });
     if (interaction.options.getBoolean('refresh')) {
       if (!(await canManageClub(interaction.member, club)))
         return interaction.editReply({ content: `❌ Only ${club.name}'s leaders can refresh the trophies.` });

@@ -236,7 +236,7 @@ function createCoach(deps) {
     const wanted = (interaction.options.getString('club') || '').trim().toLowerCase();
     const club =
       (wanted && activeClubs(state).find((c) => c.key === wanted || (c.name || '').toLowerCase() === wanted)) || resolveClub(state, interaction.member);
-    if (!club) return interaction.editReply({ content: '❌ No club is set up yet. Run `/setclub` first.' });
+    if (!club) return interaction.editReply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.' });
     const matches = loadMatches ? await loadMatches(interaction.guildId, club.key).catch(() => []) : [];
     const nights = toSessions(matches);
     const latest = nights[nights.length - 1];
