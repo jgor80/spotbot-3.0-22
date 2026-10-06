@@ -4,6 +4,8 @@
 
 const { EmbedBuilder, PermissionsBitField } = require('discord.js');
 const { resolveClub } = require('./manager-hub.cjs');
+const { toInsightMatches } = require('./club-insights.cjs');
+const { aggregate } = require('./club-stats.cjs');
 
 const POSITIONS = ['GK', 'LB', 'CB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'CF', 'ST'];
 const LINES = [
@@ -69,7 +71,16 @@ const ROSTER_COMMANDS = [
       {
         type: 1,
         name: 'remove',
-        description: 'Remove a player from the roster.',
+        description: 'Move a player to Inactive (keeps their history), or delete them from the roster.',
+        options: [
+          { name: 'user', description: 'The player.', type: 6, required: true },
+          { name: 'delete', description: 'Delete them from the roster instead of setting Inactive.', type: 5, required: false },
+        ],
+      },
+      {
+        type: 1,
+        name: 'player',
+        description: "Leaders only: a player's roster details, EA stats and recent answers.",
         options: [{ name: 'user', description: 'The player.', type: 6, required: true }],
       },
       {
@@ -292,9 +303,19 @@ function createRoster(deps) {
     if (user.bot) return interaction.editReply({ content: '❌ Bots can\'t be on the roster.' });
 
     if (sub === 'remove') {
-      const { data } = await supabase.from('team_rosters').delete().eq('team_id', teamId).eq('discord_user_id', user.id).select('id');
-      return interaction.editReply({ content: data?.length ? `✅ Removed <@${user.id}> from ${club.name}.` : `<@${user.id}> wasn't on the roster.` });
+      if (interaction.options.getBoolean('delete')) {
+        const { data } = await supabase.from('team_rosters').delete().eq('team_id', teamId).eq('discord_user_id', user.id).select('id');
+        return interaction.editReply({ content: data?.length ? `✅ Deleted <@${user.id}> from ${club.name}'s roster.` : `<@${user.id}> wasn't on the roster.` });
+      }
+      const { data } = await supabase.from('team_rosters').update({ status: 'inactive' }).eq('team_id', teamId).eq('discord_user_id', user.id).select('id');
+      return interaction.editReply({
+        content: data?.length
+          ? `💤 <@${user.id}> is now **Inactive** on ${club.name}: off the event boards and reminders, history kept. \`/roster status\` brings them back; \`delete:True\` removes them fully.`
+          : `<@${user.id}> wasn't on the roster.`,
+      });
     }
+
+    if (sub === 'player') return interaction.editReply(await playerCard(interaction.guildId, club, teamId, user));
 
     const { data: current } = await supabase.from('team_rosters').select('*').eq('team_id', teamId).eq('discord_user_id', user.id).maybeSingle();
 
@@ -329,6 +350,68 @@ function createRoster(deps) {
     return interaction.editReply({
       content: `✅ <@${user.id}> ${current ? 'updated on' : 'added to'} ${club.name}${pos.length ? ` (${pos.join('/')})` : ''}.`,
     });
+  }
+
+  // Leaders' private view of one player: roster entry, EA stats from saved matches, recent answers
+  async function playerCard(guildId, club, teamId, user) {
+    const [{ data: entry }, { data: profile }, { data: rows }, { data: events }] = await Promise.all([
+      supabase.from('team_rosters').select('*').eq('team_id', teamId).eq('discord_user_id', user.id).maybeSingle(),
+      supabase.from('profiles').select('ea_username').eq('discord_user_id', user.id).maybeSingle(),
+      supabase
+        .from('club_matches')
+        .select('id, result, score_for, score_against, created_at, opponent_club_name, player_stats, match_data, match_type')
+        .eq('guild_id', guildId)
+        .eq('club_key', club.key)
+        .order('created_at', { ascending: false })
+        .limit(50),
+      supabase
+        .from('availability_events')
+        .select('id, title, scheduled_at')
+        .eq('guild_id', guildId)
+        .eq('club_key', club.key)
+        .lte('scheduled_at', new Date(Date.now() + 14 * 86400000).toISOString())
+        .order('scheduled_at', { ascending: false })
+        .limit(8),
+    ]);
+    const embed = new EmbedBuilder().setTitle(`🔎 ${user.displayName || user.username} · ${club.name}`).setColor(0x5865f2).setThumbnail(user.displayAvatarURL());
+    if (entry) {
+      const s = STATUSES[entry.status] || STATUSES.active;
+      const pos = [entry.primary_position, entry.secondary_position].filter(Boolean).join(' / ') || 'not set';
+      embed.addFields(
+        { name: 'Status', value: `${s.emoji} ${s.label}${entry.note ? ` (${entry.note})` : ''}`, inline: true },
+        { name: 'Positions', value: pos, inline: true },
+        { name: 'Role', value: ROLES[entry.role] || entry.role || 'Player', inline: true }
+      );
+    } else {
+      embed.setDescription(`Not on ${club.name}'s roster. Add them with \`/roster add\`.`);
+    }
+    const ea = profile?.ea_username;
+    if (!ea) {
+      embed.addFields({ name: 'EA stats', value: 'No EA name linked. They can run `/linkea` and pick their name.' });
+    } else {
+      const totals = aggregate(toInsightMatches(rows || [])).find((t) => t.name.toLowerCase() === ea.trim().toLowerCase());
+      embed.addFields({
+        name: `EA stats as ${ea} (last ${(rows || []).length} club matches)`,
+        value: totals
+          ? `${totals.games} GP · ${totals.goals} G · ${totals.assists} A · ${totals.rating ? totals.rating.toFixed(1) : '–'} Rtg · ${totals.motm} MOTM${totals.pass_attempts ? ` · ${Math.round((100 * totals.passes_made) / totals.pass_attempts)}% Pass` : ''}`
+          : 'No club matches under this name yet. If they have played, the name may be misspelt.',
+      });
+    }
+    if (events?.length) {
+      const { data: answers } = await supabase
+        .from('player_availability')
+        .select('event_id, response')
+        .eq('discord_user_id', user.id)
+        .in('event_id', events.map((e) => e.id));
+      const byEvent = new Map((answers || []).map((a) => [a.event_id, a.response]));
+      const icon = { yes: '✅', maybe: '❓', no: '❌' };
+      embed.addFields({
+        name: 'Recent events',
+        value: truncate(events.map((e) => `${icon[byEvent.get(e.id)] || '⬜'} ${e.title} · <t:${Math.floor(new Date(e.scheduled_at).getTime() / 1000)}:d>`).join('\n')),
+      });
+    }
+    embed.setFooter({ text: 'Only you can see this · show-up rates: /reliability' });
+    return { embeds: [embed], allowedMentions: { parse: [] } };
   }
 
   async function handleCommand(interaction, cmd) {

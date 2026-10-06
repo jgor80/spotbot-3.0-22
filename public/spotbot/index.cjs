@@ -341,6 +341,7 @@ const squads = createSquads({ supabase, getGuildState, saveGuildSettings, isMana
 const clubEvents = createEvents({
   supabase,
   getGuildState,
+  saveGuildSettings,
   isManager,
   canManageClub: squads.canManageClub,
   dashboardUrl: process.env.DASHBOARD_URL

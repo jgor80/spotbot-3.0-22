@@ -8,7 +8,7 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 - **/clubstats**: with no action, shows the club stats card; the enable / disable / status actions still manage EA monitoring.
 
 ## Help, club views and EA linking (`public/spotbot/club-stats.cjs`)
-- **/help**: a short guide with a 3-step first-time setup (`/setclub`, `/linkea`, `/setup`), the main commands by area, and a **Stats explained** button (GP, Rtg, Pass%, MOTM, CS and why EA's numbers can differ from the in-game summary). Replaces `/spothelp`; the panel Help buttons show the same thing.
+- **/help**: TeamSheet-style help: one short page per area (Getting started with the 3-step setup, Events & availability, Match night, Roster & players, Club & stats, Squad & recruiting, Setup & admin, Stats explained), switched with a picker. Each page lists commands with one line each. Replaces `/spothelp`; the panel Help buttons open it too.
 - **/clubstats action:Members | Top players | In form | Recent matches [stat]**: built from saved matches, no EA call. Members lists everyone who has played with GP, G, A and rating, marking who is linked to Discord. Top players ranks by the chosen `stat` (averages need 3+ games). In form ranks average rating over the last 10 matches.
 - **/linkea username**: autocompletes from the club's saved matches and EA's member list (searchable, so no 25-option cap), saves EA's exact spelling, refuses a name another member holds (a manager moves it with `/forcelink`), and folds in stats saved before linking.
 - **/setclub**: with no exact name match, shows a picker of what EA found instead of linking the first lookalike; with nothing found, explains that EA only lists a club after its first FC27 league match. EA outages are reported as such.
@@ -26,11 +26,12 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 
 ## Events and availability (`public/spotbot/events.cjs`)
 - **/event new when:"thu 9pm"**: posts an event board with Available / Maybe / Can't make it buttons. The board updates live and names who is in, maybe and out, who on the roster has not answered, and who is injured or away. Options: `title`, `type` (League match, Friendly, Scrim, Training, Tryout, Tournament), `preset`, `deadline` ("2h" before kick-off or a time like "wed 6pm"; default 1h before), `repeat` (weekly or every 2 weeks), `ping` role, `channel`, `positions` (players pick up to 3 positions when they sign up; on by default for tryouts), `club`, `description`.
-- Times are read in the server timezone (`/event timezone`). Accepted: "thu 9pm", "tomorrow 20:00", "tonight", "in 2h", "2026-10-08 21:00", or a Discord `<t:...>` timestamp. Everyone sees times in their own timezone.
+- Times are read in the server timezone (`/event timezone`). Accepted: "thu 9pm", "tomorrow 20:00", "tonight", "in 2h", "2026-10-08 21:00", or a Discord `<t:...>` timestamp. Everyone sees times in their own timezone. Also "21/09/26 1800", "21 sep 8pm" and "1800 tomorrow": numeric dates are day-first unless the server timezone is in the Americas. The `when` box previews how the text is read while you type.
 - **Reminders**: before the deadline the bot DMs everyone who has not answered (with the same buttons), and pings anyone with DMs closed under the board. Managers can nudge early with the board's Remind button or `/event remind`.
 - **Recurring**: `repeat` creates a series; the bot posts each next event a day after the previous kick-off. `/event series list` and `/event series stop`.
 - **Presets**: `/event preset save` (title, type, usual day and time, deadline, ping role, channel, position sign-up), `/event preset list`, `/event preset delete`, then `/event new preset:<name>`. Up to 25 per server.
 - **/event list** shows upcoming events with counts and links; the hub's Events button shows the same. **/event cancel** cancels and pings everyone who said they could play.
+- **Leader tools**: **/event edit event [when] [title] [deadline] [description]** updates the board in place (moving kick-off keeps the deadline gap, resets reminders, and pings everyone who said they could play); **/event close** / **/event reopen** stop or restart answers (the lock is kept on the club in guild_settings.clubs[].locked_events); **/event post event [channel]** re-posts the board and removes the old one; **/event mark event user answer [position]** sets or clears a player's answer.
 - **/available**: your next five events with your answers and buttons, in one place.
 - Events close automatically after kick-off plus their duration.
 
@@ -50,6 +51,7 @@ Jobs the bot runs by itself for each club, all on by default. **/autopilot** (or
 
 ## Roster (`public/spotbot/roster.cjs`)
 - **/roster add user [position] [secondary] [role] [status]**, **/roster remove user**, **/roster status user status [note]** (Active, Trial, Injured, Away, Inactive; injured, away and inactive players are not chased for availability).
+- **/roster remove user** now sets the player Inactive (off boards and reminders, history kept); `delete:True` removes them. **/roster player user** (leaders, private): roster status, positions and role, EA stats from the last 50 club matches, and their answers to recent events.
 - **/roster import role**: adds everyone with a role; position roles (from `/positionpanel`) fill in their positions.
 - **/roster view [by] [position]**: the roster grouped by position (main players and cover), by status, or filtered to one position. Players without a roster position fall back to their `/myprefs` or position roles. The footer flags key positions nobody covers.
 - The roster belongs to the club's squad (`/squad link`); one named after the club is created on first use.
