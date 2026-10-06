@@ -61,10 +61,13 @@ Bot environment variables:
 | `BOT_TOKEN` | yes | Discord bot token |
 | `SUPABASE_URL` | yes | e.g. `https://<project-ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Server-side database access. Never put this in the web app or a public file. |
-| `OPENAI_API_KEY` | no | Scouting reports |
+| `OPENAI_API_KEY` | no | Scouting reports and the Premium assistant coach's wording |
 | `OPENXBL_API_KEY` | no | Xbox presence |
 | `EA_SESSION_COOKIE` | no | Helps when EA blocks requests |
-| `DASHBOARD_URL` | no | Your web dashboard address; adds an "Open Lineup Builder" link to the hub's Team Sheet |
+| `DASHBOARD_URL` | no | Your web dashboard address; adds an "Open Lineup Builder" link to the hub's Team Sheet and is the base of the /premium overlay link |
+| `BOT_OWNER_IDS` | no | Comma-separated Discord user ids allowed to run `/premium on` and `/premium off` |
+| `PREMIUM_GUILDS` | no | Comma-separated server ids that always have Premium (testing) |
+| `DISCORD_PREMIUM_SKU_ID` | no | The SKU of a Discord App Subscription; servers holding it get Premium and non-premium servers see Discord's Subscribe button |
 
 The bot registers its slash commands on start, so adding or removing a command only needs a restart.
 
