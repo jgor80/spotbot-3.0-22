@@ -3,7 +3,8 @@
 // POST { action: "channels", guild_id }
 //   -> { channels: [{ id, name, parent }], default_channel_id }
 // POST { action: "voice", guild_id, user_ids }
-//   -> { channels: [{ id, name, user_ids }] }  who is in which voice channel right now
+//   -> { channels: [{ id, name, user_ids }] }  who is in which voice channel right now,
+//      plus { id: "checkins" } for players who answered In or Late to tonight's roll call
 // POST { action: "announce", lineup_id, channel_id, mention_players?, dm_players?, message?, image_base64? }
 //   -> { success, message_id, channel_id, dm_sent, dm_failed }
 //
@@ -84,7 +85,7 @@ async function listChannels(supabase: any, guildId: string) {
 }
 
 // Discord's REST API only answers voice state per user, so look each candidate up
-async function voiceChannels(guildId: string, userIds: string[]) {
+async function voiceChannels(supabase: any, guildId: string, userIds: string[]) {
   const ids = Array.from(new Set(userIds.filter((id) => DISCORD_ID_REGEX.test(id)))).slice(0, 60);
   const byChannel = new Map<string, string[]>();
   const queue = [...ids];
@@ -118,7 +119,31 @@ async function voiceChannels(guildId: string, userIds: string[]) {
   const channels = Array.from(byChannel.entries())
     .map(([id, members]) => ({ id, name: names.get(id) || "Voice", user_ids: members }))
     .sort((a, b) => b.user_ids.length - a.user_ids.length);
+
+  const checkins = await rollCallCheckins(supabase, guildId);
+  if (checkins.length) channels.push({ id: "checkins", name: "Tonight's roll call (In and Late)", user_ids: checkins });
   return json({ channels });
+}
+
+// Players who said In or Late to a roll call started in the last 12 hours
+async function rollCallCheckins(supabase: any, guildId: string): Promise<string[]> {
+  const since = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+  const { data: event } = await supabase
+    .from("availability_events")
+    .select("id")
+    .eq("guild_id", guildId)
+    .eq("closed", false)
+    .gte("scheduled_at", since)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!event) return [];
+  const { data: responses } = await supabase
+    .from("player_availability")
+    .select("discord_user_id")
+    .eq("event_id", event.id)
+    .in("response", ["yes", "maybe"]);
+  return (responses || []).map((r: any) => r.discord_user_id);
 }
 
 async function announce(supabase: any, body: any) {
@@ -305,7 +330,7 @@ serve(async (req) => {
     if (body.action === "voice") {
       if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) return json({ error: "guild_id is required" }, 400);
       if (!Array.isArray(body.user_ids)) return json({ error: "user_ids is required" }, 400);
-      return await voiceChannels(body.guild_id, body.user_ids);
+      return await voiceChannels(supabase, body.guild_id, body.user_ids);
     }
     if (body.action === "announce") {
       return await announce(supabase, body);
