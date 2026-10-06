@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { decodeRegionId, toFcPlatform } from '../_shared/ea.ts'
+import { decodeRegionId, toFcPlatform, FC_PLATFORMS, normalizeClubName } from '../_shared/ea.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -263,6 +263,45 @@ async function fetchMatches(clubId: string, platform: string, matchType: string,
     console.error(`[EA] Error fetching matches for ${clubId}:`, err)
     return []
   }
+}
+
+// Matches public/spotbot/index.cjs: clubs marked with this version already have FC27 club IDs
+const EA_FC_VERSION = 'fc27'
+
+// Look a club up by its exact name on gen5 and Switch. Updates the club object in place.
+// changed: the EA club ID moved. confirmed: the ID was already right, so stop checking.
+async function relinkClubForFc27(club: any): Promise<{ changed: boolean; confirmed: boolean }> {
+  const searchName = club.ea_club_name || club.name
+  if (!searchName) return { changed: false, confirmed: false }
+  for (const fcPlatform of FC_PLATFORMS) {
+    try {
+      const url = `https://proclubs.ea.com/api/fc/allTimeLeaderboard/search?platform=${fcPlatform}&clubName=${encodeURIComponent(searchName)}`
+      const response = await eaFetch(url, { headers: EA_HEADERS })
+      if (!response.ok) {
+        console.warn(`[EA] FC27 relink search for "${searchName}" on ${fcPlatform}: HTTP ${response.status}`)
+        await response.body?.cancel()
+        continue
+      }
+      const data = await response.json()
+      const results: any[] = Array.isArray(data) ? data : Object.values(data || {})
+      const exact = results.find((r: any) => normalizeClubName(r?.clubInfo?.name || r?.name) === normalizeClubName(searchName))
+      if (!exact) continue
+      const newId = String(exact.clubId ?? exact.clubInfo?.clubId ?? '')
+      if (!newId) continue
+      const oldId = String(club.ea_club_id)
+      club.ea_club_id = newId
+      club.ea_platform = fcPlatform === 'nx' ? 'switch' : (club.ea_platform === 'switch' ? 'ps5' : club.ea_platform || 'ps5')
+      club.ea_club_name = exact.clubInfo?.name || exact.name || searchName
+      club.ea_fc_version = EA_FC_VERSION
+      if (oldId !== newId) club.last_match_id = null
+      console.log(`[EA] FC27 relink: "${searchName}" ${oldId} -> ${newId} (${fcPlatform})`)
+      return { changed: oldId !== newId, confirmed: true }
+    } catch (err) {
+      console.warn(`[EA] FC27 relink search failed for "${searchName}" on ${fcPlatform}:`, err)
+    }
+  }
+  console.log(`[EA] FC27 relink: no exact EA match for "${searchName}" yet`)
+  return { changed: false, confirmed: false }
 }
 
 // Probe potential/undocumented EA endpoints when requested
@@ -1823,6 +1862,7 @@ Deno.serve(async (req) => {
     let memberStatsSynced = 0
     const unmappedMemberKeys = new Set<string>()
     let hiddenProbeResults: { name: string; status: number; ok: boolean }[] = []
+    const relinkedClubs: { guild_id: string; club: string; ea_club_id: string }[] = []
     const lastGameSnapshots: {
       guild_id: string
       club_key: string
@@ -1845,7 +1885,20 @@ Deno.serve(async (req) => {
         if (!club.ea_club_id || !club.ea_platform || (!onlyGuildId && !club.monitoring_enabled)) {
           continue
         }
-        
+
+        // FC27 gave every club a new ID: clubs linked before FC27 are re-found by exact name once
+        if (club.ea_fc_version !== EA_FC_VERSION) {
+          const relink = await relinkClubForFc27(club)
+          if (relink.changed || relink.confirmed) {
+            const { error: saveError } = await supabase
+              .from('guild_settings')
+              .update({ clubs })
+              .eq('guild_id', guildId)
+            if (saveError) console.error(`[sync-ea-stats] Failed to save FC27 relink for ${club.name}:`, saveError.message)
+          }
+          if (relink.changed) relinkedClubs.push({ guild_id: guildId, club: club.name, ea_club_id: club.ea_club_id })
+        }
+
         console.log(`[sync-ea-stats] Syncing ${club.name} (${club.ea_club_id}) for guild ${guildId}`)
         
         try {
