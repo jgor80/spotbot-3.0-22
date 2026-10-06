@@ -28,6 +28,8 @@ const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
 const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
 const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
 const { createAutopilot, AUTOPILOT_COMMANDS } = require('./autopilot.cjs');
+const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
+const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -334,6 +336,10 @@ const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isMana
 const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents });
 
 const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState });
+
+const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
+
+const scouting = createScouting({ supabase, getGuildState, recruitment });
 
 const managerHub = createManagerHub({
   supabase,
@@ -784,7 +790,9 @@ const COMMANDS = [
   ...ROSTER_COMMANDS,
   ...MATCHNIGHT_COMMANDS,
   ...AUTOPILOT_COMMANDS,
-  ...SETUP_COMMANDS
+  ...SETUP_COMMANDS,
+  ...RECRUIT_COMMANDS,
+  ...SCOUT_COMMANDS
 ];
 
 // =======================
@@ -3913,6 +3921,10 @@ client.once(Events.ClientReady, async (c) => {
 
     // Recurring events, deadline reminders and closing finished events
     clubEvents.start(c);
+
+    // Recruitment: reach-out DMs, standout-opponent alerts and watchlist pings
+    recruitment.start(c);
+    scouting.start(c);
   } catch (err) {
     console.error('❌ Failed to register commands:', err);
   }
@@ -4117,6 +4129,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (await autopilot.handleInteraction(interaction)) return;
     // /setup checklist and /brand
     if (await clubSetup.handleInteraction(interaction)) return;
+    // Recruitment: /fa, /recruit, /scout, Reach Out (incl. the player's DM buttons) and alert buttons
+    if (await scouting.handleInteraction(interaction)) return;
+    if (await recruitment.handleInteraction(interaction)) return;
 
     // Handle DM button interactions for feedback and welcome
     if (!interaction.guildId && interaction.isButton()) {
