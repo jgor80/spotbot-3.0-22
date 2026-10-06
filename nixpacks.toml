@@ -4,6 +4,12 @@ providers = ["node"]
 [variables]
 NIXPACKS_NODE_VERSION = "20"
 
+# Pin the toolchain explicitly. The repo-root bun.lock (from Lovable) makes
+# Nixpacks add bun plus the default nodejs alongside nodejs_20, and the two
+# Node packages' npm files collide during nix-env. The bot only needs Node 20.
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
 [phases.install]
 cmds = ["cd public/spotbot && npm install"]
 
