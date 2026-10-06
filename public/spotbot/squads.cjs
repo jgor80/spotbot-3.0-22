@@ -10,6 +10,7 @@ const {
   PermissionsBitField,
 } = require('discord.js');
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
+const T = require('./event-time.cjs');
 
 const SQUAD_COMMANDS = [
   {
@@ -41,7 +42,7 @@ const SQUAD_COMMANDS = [
     name: 'lfg',
     description: 'Look for a friendly or scrim against another club on this server.',
     options: [
-      { name: 'when', description: 'When you want to play, e.g. "9pm" or "now".', type: 3, required: false },
+      { name: 'when', description: 'When you want to play, e.g. "9pm", "thu 21:00" or "now". Shown in each reader\'s local time.', type: 3, required: false },
       { name: 'note', description: 'Anything else, e.g. "need a GK" or "best of 3".', type: 3, required: false },
     ],
   },
@@ -216,13 +217,17 @@ function createSquads(deps) {
       await interaction.reply({ content: `❌ Only ${club.name}'s leaders can look for games.`, flags: 64 });
       return;
     }
-    const when = interaction.options.getString('when') || 'now';
+    const whenText = interaction.options.getString('when') || 'now';
+    // Show a parsed time as a Discord timestamp so every server sees it in their own timezone
+    const { data: prefs } = await supabase.from('guild_settings').select('timezone').eq('guild_id', interaction.guildId).maybeSingle();
+    const at = whenText.trim().toLowerCase() === 'now' ? null : T.parseWhen(whenText, T.isValidTimeZone(prefs?.timezone) ? prefs.timezone : 'UTC');
+    const when = at ? `<t:${T.unix(at)}:F> (<t:${T.unix(at)}:R>)` : whenText.slice(0, 100);
     const note = interaction.options.getString('note');
 
     const embed = new EmbedBuilder()
       .setTitle(`⚔️ ${club.name} is looking for a friendly`)
       .setColor(0xeb459e)
-      .addFields({ name: 'When', value: when.slice(0, 100), inline: true }, { name: 'Contact', value: `<@${interaction.user.id}>`, inline: true })
+      .addFields({ name: 'When', value: when, inline: true }, { name: 'Contact', value: `<@${interaction.user.id}>`, inline: true })
       .setTimestamp(new Date());
     if (note) embed.setDescription(note.slice(0, 500));
 
