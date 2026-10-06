@@ -2729,6 +2729,7 @@ Deno.serve(async (req) => {
       success: true,
       synced: totalSynced,
       skipped: totalSkipped,
+      relinked_clubs: relinkedClubs,
       club_stats_synced: clubStatsSynced,
       member_stats_synced: memberStatsSynced,
       guilds_processed: guildsProcessed,
