@@ -30,6 +30,8 @@ const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
 const { createAutopilot, AUTOPILOT_COMMANDS } = require('./autopilot.cjs');
 const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
 const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
+const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
+const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -340,6 +342,11 @@ const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, c
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
 
 const scouting = createScouting({ supabase, getGuildState, recruitment });
+
+const trials = createTrials({ supabase, getGuildState, recruitment, roster, events: clubEvents });
+
+const recruitCards = createRecruitCards({ supabase, getGuildState, recruitment });
+roster.setExtraFields(recruitCards.gapFields);
 
 const managerHub = createManagerHub({
   supabase,
@@ -792,7 +799,9 @@ const COMMANDS = [
   ...AUTOPILOT_COMMANDS,
   ...SETUP_COMMANDS,
   ...RECRUIT_COMMANDS,
-  ...SCOUT_COMMANDS
+  ...SCOUT_COMMANDS,
+  ...TRIAL_COMMANDS,
+  ...LFC_COMMANDS
 ];
 
 // =======================
@@ -3925,6 +3934,7 @@ client.once(Events.ClientReady, async (c) => {
     // Recruitment: reach-out DMs, standout-opponent alerts and watchlist pings
     recruitment.start(c);
     scouting.start(c);
+    trials.start(c);
   } catch (err) {
     console.error('❌ Failed to register commands:', err);
   }
@@ -4131,6 +4141,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (await clubSetup.handleInteraction(interaction)) return;
     // Recruitment: /fa, /recruit, /scout, Reach Out (incl. the player's DM buttons) and alert buttons
     if (await scouting.handleInteraction(interaction)) return;
+    if (await trials.handleInteraction(interaction)) return;
+    if (await recruitCards.handleInteraction(interaction)) return;
     if (await recruitment.handleInteraction(interaction)) return;
 
     // Handle DM button interactions for feedback and welcome
