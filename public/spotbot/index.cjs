@@ -404,6 +404,47 @@ const POSITION_INFERENCE = Object.freeze({
   ST: ['CF', 'CAM', 'RW', 'LW']
 });
 
+// Competitive position roles: /positionpanel posts a dropdown and the bot gives
+// each member one role named after the position code. Names match
+// POSITION_PREF_OPTIONS so /syncprefs picks them up.
+const POSITION_ROLE_OPTIONS = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST'];
+const POSITION_ROLE_SELECT_ID = 'posrole_select';
+const POSITION_ROLE_CLEAR = 'none';
+
+function buildPositionRolePanel() {
+  const embed = new EmbedBuilder()
+    .setTitle('🎯 Pick Your Position')
+    .setDescription('Choose your competitive position below and you will get the matching role. Picking again swaps it; choose **Clear my position** to remove it.')
+    .setColor(0x5865f2);
+
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(POSITION_ROLE_SELECT_ID)
+    .setPlaceholder('Select your position')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions([
+      ...POSITION_ROLE_OPTIONS.map((pos) => ({
+        label: `${pos} · ${POSITION_META[pos].label}`,
+        value: pos,
+        emoji: { name: POSITION_META[pos].emoji }
+      })),
+      { label: 'Clear my position', value: POSITION_ROLE_CLEAR, emoji: { name: '✖️' } }
+    ]);
+
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)] };
+}
+
+// Finds the guild's role for each position code, creating any that are missing.
+async function ensurePositionRoles(guild) {
+  await guild.roles.fetch();
+  const roles = {};
+  for (const pos of POSITION_ROLE_OPTIONS) {
+    roles[pos] = guild.roles.cache.find((r) => r.name.toUpperCase() === pos)
+      || await guild.roles.create({ name: pos, mentionable: true, reason: 'SquadIQ position roles' });
+  }
+  return roles;
+}
+
 // =======================
 // COMMANDS
 // =======================
@@ -746,6 +787,13 @@ const COMMANDS = [
         required: false
       }
     ]
+  },
+
+  // Position Role Panel Command
+  {
+    name: 'positionpanel',
+    description: 'Post a panel where members pick their position and get the matching role.',
+    default_member_permissions: String(PermissionsBitField.Flags.ManageRoles)
   }
 ];
 
@@ -7964,6 +8012,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
 
       // =======================
+      // POSITION ROLE PANEL COMMAND
+      // =======================
+      if (cmd === 'positionpanel') {
+        if (!interaction.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+          return interaction.reply({ content: '❌ I need the **Manage Roles** permission to hand out position roles.', flags: 64 });
+        }
+        try {
+          await ensurePositionRoles(interaction.guild);
+        } catch (err) {
+          console.error('Failed to create position roles:', err);
+          return interaction.reply({ content: '❌ I could not create the position roles. Check that I have **Manage Roles**.', flags: 64 });
+        }
+        await interaction.channel.send(buildPositionRolePanel());
+        return interaction.reply({ content: '✅ Position panel posted. Make sure my role sits above the position roles in Server Settings → Roles.', flags: 64 });
+      }
+
+      // =======================
       // APPLY FRIENDLY TO DRAFT COMMAND
       // =======================
       if (cmd === 'applyfriendly') {
@@ -14239,6 +14304,29 @@ client.on(Events.InteractionCreate, async (interaction) => {
     // ----- Select Menus -----
     if (interaction.isStringSelectMenu()) {
       const id = interaction.customId;
+
+      // Position role panel: swap the member's position role
+      if (id === POSITION_ROLE_SELECT_ID) {
+        const choice = interaction.values[0];
+        // Re-render the panel so the dropdown resets for the next pick
+        await interaction.update(buildPositionRolePanel());
+        try {
+          const roles = await ensurePositionRoles(interaction.guild);
+          const member = await interaction.guild.members.fetch(interaction.user.id);
+          const toRemove = POSITION_ROLE_OPTIONS
+            .filter((pos) => pos !== choice && member.roles.cache.has(roles[pos].id))
+            .map((pos) => roles[pos].id);
+          if (toRemove.length) await member.roles.remove(toRemove, 'Position panel');
+          if (choice === POSITION_ROLE_CLEAR) {
+            return interaction.followUp({ content: '✅ Your position role was removed.', flags: 64 });
+          }
+          if (!member.roles.cache.has(roles[choice].id)) await member.roles.add(roles[choice], 'Position panel');
+          return interaction.followUp({ content: `✅ You are now **${choice}** ${POSITION_META[choice].emoji}`, flags: 64 });
+        } catch (err) {
+          console.error('Position role update failed:', err);
+          return interaction.followUp({ content: '❌ I could not update your role. An admin needs to move my role above the position roles.', flags: 64 });
+        }
+      }
 
       // =======================
       // FEEDBACK DROPDOWN HANDLERS
