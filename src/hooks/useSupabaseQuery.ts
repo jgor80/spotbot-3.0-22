@@ -1,7 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
 import { LeaderboardPlayer, PlayerProfile } from "@/types/player";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+// Edge functions reject anonymous calls, so go through the client: it sends the signed-in user's token.
+async function callFunction<T = any>(name: string, body: Record<string, unknown>, failure: string): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(name, { body });
+  if (error) throw new Error(failure);
+  return data as T;
+}
 
 export async function fetchPlayerProfile(
   guildId: string,
@@ -13,24 +18,14 @@ export async function fetchPlayerProfile(
     includeRecentGames?: boolean 
   }
 ): Promise<PlayerProfile | null> {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/get-player-profile`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const data = await callFunction("get-player-profile", {
       guild_id: guildId,
       discord_user_id: discordUserId,
       include_position_breakdown: options?.includePositionBreakdown ?? true,
       include_chemistry: options?.includeChemistry ?? true,
       include_vibe_chemistry: options?.includeVibeChemistry ?? true,
       include_recent_games: options?.includeRecentGames ?? true,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to fetch player profile");
-  }
-
-  const data = await response.json();
+    }, "Failed to fetch player profile");
   
   // Map the API response to match frontend types
   const player = data.player;
@@ -103,10 +98,7 @@ export async function fetchLeaderboard(
   statsSource?: "all" | "members" | "games",
   matchType?: string
 ): Promise<LeaderboardPlayer[]> {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/get-leaderboard`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const data = await callFunction("get-leaderboard", {
       guild_id: guildId,
       type,
       position,
@@ -115,14 +107,7 @@ export async function fetchLeaderboard(
       club_key: clubKey,
       stats_source: statsSource,
       match_type: matchType === "all" ? undefined : matchType,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to fetch leaderboard");
-  }
-
-  const data = await response.json();
+    }, "Failed to fetch leaderboard");
   // Map entries to expected format (API returns 'entries' not 'leaderboard')
   return (data.entries || data.leaderboard || []).map((player: any) => ({
     ...player,
@@ -134,22 +119,12 @@ export async function fetchLeaderboard(
 
 export async function fetchAvailablePlayers(guildId: string): Promise<LeaderboardPlayer[]> {
   // Use the leaderboard function with stats_source=games for unified tracked game stats
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/get-leaderboard`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const data = await callFunction("get-leaderboard", {
       guild_id: guildId,
       type: "overall",
       limit: 500,
       stats_source: "games", // Use tracked games for unified stats
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to fetch available players");
-  }
-
-  const data = await response.json();
+    }, "Failed to fetch available players");
   return (data.entries || data.leaderboard || []).map((player: any, index: number) => ({
     discord_user_id: player.discord_user_id,
     discord_username: player.discord_username,
@@ -200,24 +175,14 @@ export async function createLineup(
   name?: string,
   eventId?: string
 ) {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/create-lineup`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  return callFunction("create-lineup", {
       guild_id: guildId,
       created_by_discord_id: createdBy,
       formation,
       slots,
       name,
       event_id: eventId,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to create lineup");
-  }
-
-  return response.json();
+    }, "Failed to create lineup");
 }
 
 export async function suggestOptimalLineup(
@@ -226,22 +191,12 @@ export async function suggestOptimalLineup(
   formation: string,
   priority: "balanced" | "rating" | "form" | "chemistry" = "balanced"
 ) {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/suggest-optimal-lineup`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  return callFunction("suggest-optimal-lineup", {
       guild_id: guildId,
       available_player_ids: availablePlayerIds,
       formation,
       priority,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to get lineup suggestion");
-  }
-
-  return response.json();
+    }, "Failed to get lineup suggestion");
 }
 
 function getRatingTier(rating: number): { name: string; icon: string } {
