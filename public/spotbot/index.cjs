@@ -26,6 +26,7 @@ const { createSquads, SQUAD_COMMANDS } = require('./squads.cjs');
 const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
 const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
 const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
+const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -329,7 +330,9 @@ const clubEvents = createEvents({
 
 const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub });
 
-const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub });
+const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents });
+
+const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction });
 
 const managerHub = createManagerHub({
   supabase,
@@ -763,7 +766,8 @@ const COMMANDS = [
   ...SQUAD_COMMANDS,
   ...EVENT_COMMANDS,
   ...ROSTER_COMMANDS,
-  ...MATCHNIGHT_COMMANDS
+  ...MATCHNIGHT_COMMANDS,
+  ...SETUP_COMMANDS
 ];
 
 // =======================
@@ -3931,6 +3935,7 @@ client.on(Events.GuildCreate, async (guild) => {
   } catch (err) {
     console.error('⚠️ Failed to sync new guild', guild.id, err);
   }
+  await clubSetup.welcome(guild);
 });
 
 // =======================
@@ -4090,6 +4095,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (await clubEvents.handleInteraction(interaction)) return;
     // Match night: /checkin, /sub, /reliability, check-in and sub request buttons
     if (await matchNight.handleInteraction(interaction)) return;
+    // /setup checklist and /brand
+    if (await clubSetup.handleInteraction(interaction)) return;
 
     // Handle DM button interactions for feedback and welcome
     if (!interaction.guildId && interaction.isButton()) {

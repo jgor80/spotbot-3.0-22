@@ -48,7 +48,7 @@ function truncate(text, max = 1024) {
 }
 
 function createMatchNight(deps) {
-  const { supabase, events, isManager } = deps;
+  const { supabase, events, isManager, callEdgeFunction } = deps;
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
 
   // ---------- Data ----------
@@ -305,6 +305,13 @@ function createMatchNight(deps) {
         await supabase.from('lineup_slots').delete().eq('lineup_id', request.lineup_id).eq('discord_user_id', interaction.user.id).eq('is_substitute', true);
         await supabase.from('lineup_slots').update({ discord_user_id: interaction.user.id }).eq('id', slot.id);
         swapped = true;
+      }
+    }
+    // Update the published team sheet so everyone sees the swap
+    if (swapped && callEdgeFunction) {
+      const { data: lineup } = await supabase.from('lineups').select('channel_id, message_id').eq('id', request.lineup_id).maybeSingle();
+      if (lineup?.message_id) {
+        await callEdgeFunction('announce-lineup', { action: 'announce', lineup_id: request.lineup_id, channel_id: lineup.channel_id, mention_players: true }, 30000);
       }
     }
     if (request.event_id) {

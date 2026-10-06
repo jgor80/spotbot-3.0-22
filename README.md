@@ -10,7 +10,8 @@ What it does:
 - **Match night**: check-in opens 30 minutes before kick-off with a live list of who's here, late, out or missing. Drop-outs trigger sub requests the first taker fills (swapped into the lineup), and `/reliability` shows show-up rates built from real check-ins.
 - **Roster**: `/roster` tracks each player's positions and status (active, trial, injured, away). `/roster view` lists players by position, and `/roster import` adds everyone with a role.
 - **Spots**: live spot panels per club (`/spotpanel`, `/spots`, `/vcspots`).
-- **Team sheets**: build a lineup on the web (Lineup Builder), save it, and announce it in Discord with a pitch graphic, pings for the starting XI and optional DMs. `/teamsheet` posts the latest lineup from Discord.
+- **Team sheets**: build a lineup on the web (Lineup Builder), save it for an event, and announce it in Discord with a pitch graphic, pings for the starting XI and optional DMs. Fill from Availability places everyone who said yes (using their sign-up positions), and the event board's Build Lineup button opens the builder with the event picked. Re-publishing edits the same team sheet and lists who's in, out or moved. `/teamsheet` posts the latest lineup from Discord.
+- **Setup and branding**: `/setup` shows the next step and any missing permissions. `/brand` sets colours, the team sheet title, a crest, and the bot's nickname and avatar in your server.
 - **Club stats and insights**: EA match sync, the Games page, and the Insights page (record, form, duo and trio chemistry, player impact, win vs. loss gaps, formations).
 - **Captains drafts**: `/draft`, then `/applyfriendly` links the EA friendly you played to the draft so everyone gets stats.
 - **Position roles**: `/positionpanel` posts a panel where members pick up to three positions and get the matching roles.
