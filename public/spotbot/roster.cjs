@@ -107,6 +107,8 @@ function isServerAdmin(member) {
 function createRoster(deps) {
   const { supabase, getGuildState, saveGuildSettings, isManager } = deps;
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
+  // Extra fields under the by-position view, e.g. the recruitment gap radar
+  let extraFields = null;
 
   // A roster belongs to the club's squad; create one named after the club the first time
   async function ensureTeam(guildId, state, club) {
@@ -237,7 +239,12 @@ function createRoster(deps) {
         return interaction.reply({ content: `${club.name} has no roster yet. Add players with \`/roster add\` or \`/roster import\`.`, flags: 64 });
       }
       await interaction.deferReply();
-      const embed = await buildRosterView(interaction.guild, club, club.team_id, interaction.options.getString('by') || 'position', interaction.options.getString('position'));
+      const by = interaction.options.getString('by') || 'position';
+      const embed = await buildRosterView(interaction.guild, club, club.team_id, by, interaction.options.getString('position'));
+      if (extraFields && by === 'position' && !interaction.options.getString('position')) {
+        const fields = await extraFields(interaction.guildId, club).catch(() => []);
+        if (fields.length) embed.addFields(fields.slice(0, 25 - (embed.data.fields?.length || 0)));
+      }
       return interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } });
     }
 
@@ -330,7 +337,15 @@ function createRoster(deps) {
     return true;
   }
 
-  return { commands: ROSTER_COMMANDS, handleCommand, ensureTeam, loadRoster };
+  return {
+    commands: ROSTER_COMMANDS,
+    handleCommand,
+    ensureTeam,
+    loadRoster,
+    setExtraFields: (fn) => {
+      extraFields = fn;
+    },
+  };
 }
 
 module.exports = { createRoster, ROSTER_COMMANDS };

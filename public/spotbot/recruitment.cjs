@@ -114,7 +114,29 @@ const RECRUIT_COMMANDS = [
           { name: 'invite_channel', description: 'Channel that invites sent to players open on.', type: 7, required: false, channel_types: [ChannelType.GuildText] },
           { name: 'alerts', description: 'Post standout-opponent alerts after synced matches.', type: 5, required: false },
           { name: 'min_rating', description: 'Opponent match rating that triggers an alert (default 8.0).', type: 10, required: false, min_value: 6, max_value: 10 },
+          { name: 'trialist_role', description: 'Role given to players who /apply (removed on promote or release).', type: 8, required: false },
         ],
+      },
+      {
+        type: 1,
+        name: 'post',
+        description: 'Post a recruitment poster: crest, record, match nights, open positions and an invite.',
+        options: [
+          { name: 'positions', description: 'e.g. "CB, GK" (defaults to the gaps in your squad).', type: 3, required: false, max_length: 100 },
+          { name: 'notes', description: 'e.g. "Comp club, VFL Div 2, 3 nights a week".', type: 3, required: false, max_length: 300 },
+          { name: 'channel', description: 'Where to post it (defaults to here).', type: 7, required: false, channel_types: [ChannelType.GuildText] },
+        ],
+      },
+      {
+        type: 1,
+        name: 'gaps',
+        description: 'Positional gap radar: positions your squad is thin at, weighted by reliability.',
+      },
+      {
+        type: 1,
+        name: 'applypanel',
+        description: 'Post an "Apply to trial" button (e.g. in #welcome) that runs /apply.',
+        options: [{ name: 'channel', description: 'Where to post it (defaults to here).', type: 7, required: false, channel_types: [ChannelType.GuildText] }],
       },
     ],
   },
@@ -155,7 +177,7 @@ function createRecruitment(deps) {
     const cached = settingsCache.get(guildId);
     if (cached && Date.now() - cached.at < SETTINGS_TTL_MS) return cached.value;
     const { data } = await supabase.from('recruit_settings').select('*').eq('guild_id', guildId).maybeSingle();
-    const value = data || { guild_id: guildId, channel_id: null, invite_channel_id: null, alerts_enabled: true, alert_min_rating: 8.0 };
+    const value = data || { guild_id: guildId, channel_id: null, invite_channel_id: null, alerts_enabled: true, alert_min_rating: 8.0, trialist_role_id: null };
     settingsCache.set(guildId, { at: Date.now(), value });
     return value;
   }
@@ -360,11 +382,15 @@ function createRecruitment(deps) {
     return new Set((data || []).map((r) => r.discord_user_id));
   }
 
-  async function handleSearch(interaction, club) {
-    const position = interaction.options.getString('position');
-    const minRating = interaction.options.getNumber('min_rating');
-    const tz = interaction.options.getString('timezone');
-    const platform = interaction.options.getString('platform');
+  // Search filters come from /recruit search, or from another button (e.g. the gap radar)
+  async function handleSearch(interaction, club, params) {
+    const opt = interaction.options;
+    const { position, minRating, tz, platform } = params || {
+      position: opt.getString('position'),
+      minRating: opt.getNumber('min_rating'),
+      tz: opt.getString('timezone'),
+      platform: opt.getString('platform'),
+    };
     await interaction.deferReply({ flags: 64 });
 
     const since = new Date(Date.now() - LISTING_DAYS * DAY_MS).toISOString();
@@ -460,7 +486,11 @@ function createRecruitment(deps) {
     const inviteChannel = interaction.options.getChannel('invite_channel');
     const alerts = interaction.options.getBoolean('alerts');
     const minRating = interaction.options.getNumber('min_rating');
+    const trialistRole = interaction.options.getRole('trialist_role');
     const me = interaction.guild.members.me;
+    if (trialistRole && (trialistRole.managed || !me.permissions.has(PermissionsBitField.Flags.ManageRoles) || trialistRole.position >= me.roles.highest.position)) {
+      return interaction.editReply({ content: `❌ I can't hand out ${trialistRole}. I need **Manage Roles**, and my role must be above it in the role list.` });
+    }
     if (channel) {
       const missing = missingChannelPerms(channel, me);
       if (missing.length) return interaction.editReply({ content: `❌ I can't post in ${channel}. I'm missing **${missing.join('**, **')}** there.` });
@@ -476,6 +506,7 @@ function createRecruitment(deps) {
       alert_min_rating: minRating ?? current.alert_min_rating ?? 8.0,
       updated_at: new Date().toISOString(),
     };
+    if (trialistRole) row.trialist_role_id = trialistRole.id;
     const { error } = await supabase.from('recruit_settings').upsert(row, { onConflict: 'guild_id' });
     if (error) return interaction.editReply({ content: tablesMissing(error) ? NOT_READY : `❌ ${error.message}` });
     settingsCache.delete(interaction.guildId);
@@ -483,6 +514,7 @@ function createRecruitment(deps) {
       `📣 Alerts and replies: ${row.channel_id ? `<#${row.channel_id}>` : 'not set (replies are DMed to the manager; standout alerts need a channel)'}`,
       `🔎 Standout-opponent alerts: ${row.alerts_enabled ? `on, for match ratings of ${Number(row.alert_min_rating).toFixed(1)}+, 90%+ passing or 5+ tackles` : 'off'}`,
       `✉️ Player invites open on: ${row.invite_channel_id ? `<#${row.invite_channel_id}>` : 'the server\'s system channel (or the first channel I can invite to)'}`,
+      `🧪 Trialist role: ${trialistRole ? `${trialistRole}` : current.trialist_role_id ? `<@&${current.trialist_role_id}>` : 'not set (players who /apply are added to the roster as Trial)'}`,
     ];
     return interaction.editReply({ content: `✅ Recruitment settings saved.\n${lines.join('\n')}` });
   }
@@ -613,7 +645,8 @@ function createRecruitment(deps) {
     });
   }
 
-  async function inviteFor(guild) {
+  // A single-use invite for one player by default; the recruitment poster asks for a reusable one
+  async function inviteFor(guild, opts = {}) {
     const settings = await getSettings(guild.id);
     const me = guild.members.me;
     const can = (ch) => ch && ch.type === ChannelType.GuildText && ch.permissionsFor(me)?.has(PermissionsBitField.Flags.CreateInstantInvite);
@@ -626,7 +659,7 @@ function createRecruitment(deps) {
     const channel = candidates.find(can);
     if (!channel) return null;
     const invite = await channel
-      .createInvite({ maxAge: INVITE_DAYS * 24 * 60 * 60, maxUses: 1, unique: true, reason: 'GafferBot recruitment: free agent accepted a reach-out' })
+      .createInvite({ maxAge: INVITE_DAYS * 24 * 60 * 60, maxUses: 1, unique: true, reason: 'GafferBot recruitment: free agent accepted a reach-out', ...opts })
       .catch(() => null);
     return invite?.url || null;
   }
@@ -752,7 +785,9 @@ function createRecruitment(deps) {
     start,
     getSettings,
     canRecruit,
+    search: handleSearch,
     postToGuild,
+    inviteFor,
     statsFor,
     statsLine,
     findListings,
