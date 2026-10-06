@@ -5,10 +5,13 @@ Club management for EA SPORTS FC Pro Clubs Discord servers: a Discord bot plus t
 What it does:
 
 - **Spots and availability**: live spot panels per club (`/spotpanel`, `/spots`, `/vcspots`) and availability for events.
-- **Team sheets**: build a lineup on the web (Teams & Lineups), save it, and announce it in Discord with a pitch graphic, pings for the starting XI and optional DMs. `/teamsheet` posts the latest lineup from Discord.
+- **Team sheets**: build a lineup on the web (Lineup Builder), save it, and announce it in Discord with a pitch graphic, pings for the starting XI and optional DMs. `/teamsheet` posts the latest lineup from Discord.
 - **Club stats and insights**: EA match sync, the Games page, and the Insights page (record, form, duo and trio chemistry, player impact, win vs. loss gaps, formations).
 - **Captains drafts**: `/draft`, then `/applyfriendly` links the EA friendly you played to the draft so everyone gets stats.
+- **Position roles**: `/positionpanel` posts a panel where members pick their primary and secondary positions.
 - **Twitch and Xbox**: go-live alerts (`/twitchsetup`) and Xbox presence (`/linkxbox`).
+
+The web dashboard has four main views (Match Night, Lineup Builder, Club Stats, Tactical Insights); everything else is under **More**.
 
 ## Repository layout
 
