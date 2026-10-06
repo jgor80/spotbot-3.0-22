@@ -134,6 +134,65 @@ function createRoster(deps) {
     return teamId;
   }
 
+  // ---------- Automatic team selection from position roles ----------
+  // Anyone holding a position role (ST, CB, ...) joins the club roster with those positions.
+  // One club: that club. Several clubs: the clubs whose name appears in one of the member's roles.
+  // A club opts out with club.auto_roster = false. Positions a manager set by hand are kept.
+  function positionsFromRoles(member) {
+    return POSITIONS.filter((pos) => member.roles.cache.some((r) => r.name.toUpperCase() === pos));
+  }
+
+  function clubsForMember(state, member) {
+    const clubs = (state?.clubs || []).filter((c) => c.enabled !== false && c.auto_roster !== false);
+    if (clubs.length <= 1) return clubs;
+    const roleNames = member.roles.cache.map((r) => r.name.toLowerCase());
+    return clubs.filter((c) => c.name && roleNames.some((n) => n.includes(String(c.name).toLowerCase())));
+  }
+
+  async function syncMemberPositions(member, state) {
+    if (!member || member.user?.bot) return 0;
+    const positions = positionsFromRoles(member);
+    if (!positions.length) return 0;
+    state = state || (await getGuildState(member.guild.id));
+    let added = 0;
+    for (const club of clubsForMember(state, member)) {
+      const teamId = await ensureTeam(member.guild.id, state, club);
+      const { data: current } = await supabase
+        .from('team_rosters')
+        .select('id, primary_position, secondary_position')
+        .eq('team_id', teamId)
+        .eq('discord_user_id', member.id)
+        .maybeSingle();
+      if (!current) {
+        const { error } = await supabase.from('team_rosters').insert({
+          team_id: teamId,
+          discord_user_id: member.id,
+          role: 'player',
+          status: 'active',
+          primary_position: positions[0],
+          secondary_position: positions[1] || null,
+        });
+        if (!error) added++;
+      } else if (!current.primary_position) {
+        await supabase.from('team_rosters').update({ primary_position: positions[0], secondary_position: current.secondary_position || positions[1] || null }).eq('id', current.id);
+      }
+    }
+    return added;
+  }
+
+  // Whole-server pass, e.g. on startup, so players who already had roles are picked up
+  async function syncGuildPositions(guild) {
+    const state = await getGuildState(guild.id).catch(() => null);
+    if (!(state?.clubs || []).length) return 0;
+    await guild.members.fetch().catch(() => {});
+    let added = 0;
+    for (const member of guild.members.cache.values()) {
+      if (positionsFromRoles(member).length) added += await syncMemberPositions(member, state).catch(() => 0);
+    }
+    if (added) console.log(`[roster] ${guild.name}: added ${added} player(s) from position roles`);
+    return added;
+  }
+
   async function loadRoster(teamId) {
     const { data } = await supabase
       .from('team_rosters')
@@ -419,6 +478,8 @@ function createRoster(deps) {
     handleCommand,
     ensureTeam,
     loadRoster,
+    syncMemberPositions,
+    syncGuildPositions,
     setExtraFields: (fn) => {
       extraFields = fn;
     },

@@ -3900,6 +3900,10 @@ function buildDraftPickButtonRows(availablePlayers, draftId, currentPickerId) {
 // =======================
 
 client.once(Events.ClientReady, async (c) => {
+  // Pick up players who already hold position roles (runs in the background, one server at a time)
+  setTimeout(async () => {
+    for (const guild of c.guilds.cache.values()) await roster.syncGuildPositions(guild).catch(() => {});
+  }, 30 * 1000);
   console.log(`✅ GafferBot logged in as ${c.user.tag}`);
   embedStyle.setFooterIcon(c.user.displayAvatarURL({ size: 64 }));
 
@@ -4076,6 +4080,14 @@ client.on(Events.GuildMemberAdd, async (member) => {
   } catch (err) {
     console.error(`[Welcome] Error handling new member:`, err);
   }
+});
+
+// Position role added (e.g. from /positionpanel or a server admin) -> player joins the club roster
+client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+  const had = new Set(oldMember.roles?.cache?.keys?.() || []);
+  const gained = newMember.roles.cache.some((r) => !had.has(r.id) && POSITION_ROLE_OPTIONS.includes(r.name.toUpperCase()));
+  if (!gained) return;
+  roster.syncMemberPositions(newMember).catch((err) => console.warn('[roster] auto-add failed:', err.message));
 });
 
 // =======================
