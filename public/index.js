@@ -756,7 +756,7 @@ const COMMANDS = [
   },
   {
     name: 'spothelp',
-    description: 'DMs you the SquadIQ Spots manual & quick commands.'
+    description: 'DMs you the GafferBot manual & quick commands.'
   },
   {
     name: 'pospanel',
@@ -1300,7 +1300,7 @@ async function handleSlotOpened(guildId, clubKey, slotIndex, slotLabel) {
       if (!member) continue;
 
       await member.send({
-        content: `⚽ Good news! The **${slotLabel}** spot opened up in **${clubName}**.\nJump into VC and claim it on the SquadIQ panel!`
+        content: `⚽ Good news! The **${slotLabel}** spot opened up in **${clubName}**.\nJump into VC and claim it on the GafferBot panel!`
       });
     } catch {
       // ignore DM failures
@@ -1580,7 +1580,7 @@ async function sendReadyCheck(interaction, clubKey) {
     });
   }
 
-  const panelLink = interaction.message?.url || 'the SquadIQ panel';
+  const panelLink = interaction.message?.url || 'the GafferBot panel';
 
   let sent = 0;
   for (const m of members) {
@@ -1956,7 +1956,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       // /spothelp - DM the manual
       if (cmd === 'spothelp') {
         const helpEmbed = new EmbedBuilder()
-          .setTitle('📘 SquadIQ Spots Help')
+          .setTitle('📘 GafferBot Help')
           .setColor(0x5865f2)
           .setDescription(
             '**Core commands**\n' +
@@ -1981,7 +1981,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         try {
           await interaction.user.send({ embeds: [helpEmbed] });
           return interaction.reply({
-            content: "I've DMed you the SquadIQ Spots manual ✅",
+            content: "I've DMed you the GafferBot manual ✅",
             ephemeral: true
           });
         } catch {

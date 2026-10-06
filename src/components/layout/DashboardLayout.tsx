@@ -47,7 +47,7 @@ const moreNavItems = [
   { path: "/ratings", label: "Ratings", icon: Star },
   { path: "/drafts", label: "Drafts", icon: Swords },
   { path: "/scouting", label: "Scouting", icon: Target },
-  { path: "/squadiq", label: "SquadIQ", icon: MessageSquare },
+  { path: "/squadiq", label: "Bot Panel", icon: MessageSquare },
   { path: "/competitions", label: "Wins", icon: Trophy },
   { path: "/profile", label: "Profile", icon: User },
   { path: "/settings", label: "Settings", icon: Settings },
@@ -83,7 +83,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               <Zap className="h-4 w-4 text-primary-foreground" />
             </div>
             <span className="font-display text-lg font-bold tracking-tight">
-              SquadIQ
+              GafferBot
             </span>
           </Link>
 

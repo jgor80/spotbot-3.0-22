@@ -1,6 +1,6 @@
-# Spotbot / SquadIQ
+# GafferBot
 
-Club management for EA SPORTS FC Pro Clubs Discord servers: a Discord bot plus the SquadIQ web dashboard, backed by Supabase.
+Club management for EA SPORTS FC Pro Clubs Discord servers: the GafferBot Discord bot plus its web dashboard, backed by Supabase.
 
 What it does:
 

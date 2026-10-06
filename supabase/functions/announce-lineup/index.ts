@@ -248,7 +248,7 @@ async function announce(supabase: any, body: any, caller: Caller) {
     color: 0x22c55e,
     fields,
     timestamp: new Date().toISOString(),
-    footer: { text: "Team sheet from SquadIQ" },
+    footer: { text: "Team sheet from GafferBot" },
   };
 
   const discordStarterIds = starters.map((s: any) => s.discord_user_id).filter((id: string) => DISCORD_ID_REGEX.test(id));

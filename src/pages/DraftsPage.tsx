@@ -254,14 +254,14 @@ export default function DraftsPage() {
                     </div>
 
                     <p className="text-sm text-muted-foreground text-center">
-                      Use the SpotBot Discord bot to manage the draft
+                      Use the GafferBot Discord bot to manage the draft
                     </p>
                   </div>
                 ) : (
                   <div className="py-12 text-center text-muted-foreground">
                     <Swords className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>No active draft</p>
-                    <p className="text-sm mt-1">Start a draft using SpotBot in Discord</p>
+                    <p className="text-sm mt-1">Start a draft using GafferBot in Discord</p>
                   </div>
                 )}
               </CardContent>

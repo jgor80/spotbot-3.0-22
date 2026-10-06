@@ -1,7 +1,7 @@
 {
   "name": "squadiq-spots",
   "version": "1.0.0",
-  "description": "SquadIQ Spots Discord Bot",
+  "description": "GafferBot Discord Bot",
   "main": "index.cjs",
   "scripts": {
     "start": "node index.cjs",

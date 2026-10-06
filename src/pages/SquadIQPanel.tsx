@@ -46,7 +46,7 @@ interface CommandOutput {
   timestamp: Date;
 }
 
-export default function SquadIQPanel() {
+export default function GafferBotPanel() {
   const { selectedGuildId } = useGuild();
   const { toast } = useToast();
   
@@ -325,7 +325,7 @@ export default function SquadIQPanel() {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center h-64">
-          <p className="text-muted-foreground">Please select a server to access SquadIQ Panel.</p>
+          <p className="text-muted-foreground">Please select a server to access GafferBot Panel.</p>
         </div>
       </DashboardLayout>
     );
@@ -337,7 +337,7 @@ export default function SquadIQPanel() {
         <div>
           <h1 className="font-display text-3xl font-bold flex items-center gap-3">
             <MessageSquare className="h-8 w-8 text-primary" />
-            SquadIQ Command Center
+            GafferBot Command Center
           </h1>
           <p className="text-muted-foreground">
             Run all Discord bot commands from one place — no slash commands needed

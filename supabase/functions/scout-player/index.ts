@@ -645,7 +645,7 @@ ADDITIONAL METRICS:
 - Goals per game: ${goalsPerGame}
 - Assists per game: ${assistsPerGame}
 - Total goal contributions: ${totalGoalContributions}
-- Data source: ${playerData.source === 'ea_api' ? 'EA FC Pro Clubs API (external lookup)' : 'SquadIQ Database (Discord member)'}
+- Data source: ${playerData.source === 'ea_api' ? 'EA FC Pro Clubs API (external lookup)' : 'GafferBot Database (Discord member)'}
 - Is Discord member: ${discordPlayerFound}
 - Clubs tracked: ${eaClubStats.length}
 
