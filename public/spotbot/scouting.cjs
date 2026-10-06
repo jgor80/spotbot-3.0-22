@@ -5,6 +5,7 @@
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { resolveClub } = require('./manager-hub.cjs');
+const { DOSSIER_SUBCOMMAND } = require('./dossier.cjs');
 
 const SCAN_EVERY_MS = 2 * 60 * 1000;
 const SCAN_WINDOW_MS = 6 * 60 * 60 * 1000; // never alert on old matches, e.g. after downtime
@@ -21,8 +22,10 @@ const POSITIONS = ['GK', 'LB', 'CB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM
 const SCOUT_COMMANDS = [
   {
     name: 'scout',
-    description: 'Your recruitment watchlist: players you are keeping an eye on.',
+    description: 'Scout opponents (Premium dossier) and keep a watchlist of players you like.',
     options: [
+      // Handled by dossier.cjs
+      DOSSIER_SUBCOMMAND,
       { type: 1, name: 'watchlist', description: 'Show the watchlist, with anyone now listed as a free agent.' },
       {
         type: 1,
