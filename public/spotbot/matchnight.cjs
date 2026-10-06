@@ -48,7 +48,7 @@ function truncate(text, max = 1024) {
 }
 
 function createMatchNight(deps) {
-  const { supabase, events, isManager, callEdgeFunction } = deps;
+  const { supabase, events, isManager, callEdgeFunction, getGuildState } = deps;
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
 
   // ---------- Data ----------
@@ -220,15 +220,30 @@ function createMatchNight(deps) {
 
   // ---------- Subs ----------
 
-  // Players worth pinging for a sub: said yes or maybe but aren't starting, and haven't dropped out
-  async function subCandidates(event, lineup) {
+  // Players worth pinging for a sub: the bench, anyone who said maybe, and players who play the
+  // position (a /positionpanel role or a saved preference). Never starters, anyone who dropped out
+  // or said no, and at most 25 so a sub call is never a mass ping.
+  async function subCandidates(event, lineup, position) {
     const responses = await events.loadResponses(event.id);
     const checkins = await loadCheckins(event.id);
-    const out = new Set(checkins.filter((c) => c.status === 'out').map((c) => c.discord_user_id));
-    const starting = new Set((lineup?.slots || []).filter((s) => !s.is_substitute).map((s) => s.discord_user_id));
-    return responses
-      .filter((r) => (r.response === 'yes' || r.response === 'maybe') && !starting.has(r.discord_user_id) && !out.has(r.discord_user_id))
-      .map((r) => r.discord_user_id);
+    const skip = new Set([
+      ...checkins.filter((c) => c.status === 'out').map((c) => c.discord_user_id),
+      ...responses.filter((r) => r.response === 'no').map((r) => r.discord_user_id),
+      ...(lineup?.slots || []).filter((s) => !s.is_substitute).map((s) => s.discord_user_id),
+    ]);
+    const ids = [
+      ...(lineup?.slots || []).filter((s) => s.is_substitute).map((s) => s.discord_user_id),
+      ...responses.filter((r) => r.response === 'yes' || r.response === 'maybe').map((r) => r.discord_user_id),
+    ];
+    if (position) {
+      const guild = events.getClient()?.guilds.cache.get(event.guild_id);
+      const role = guild?.roles.cache.find((r) => r.name.toUpperCase() === position);
+      if (role) ids.push(...role.members.filter((m) => !m.user.bot).map((m) => m.id));
+      const { data: prefs } = await supabase.from('position_preferences').select('user_id, preferences').eq('guild_id', event.guild_id).contains('preferences', [position]);
+      // Keep it to players who list it in their top three, and who are still on the server
+      ids.push(...(prefs || []).filter((p) => (p.preferences || []).slice(0, 3).includes(position) && (!guild || guild.members.cache.has(p.user_id))).map((p) => p.user_id));
+    }
+    return [...new Set(ids)].filter((id) => /^\d{17,19}$/.test(id) && !skip.has(id)).slice(0, 25);
   }
 
   async function postSubRequest(channel, event, { position, replacing, requestedBy, lineupId, note }) {
@@ -249,7 +264,7 @@ function createMatchNight(deps) {
     if (error) throw new Error(error.message);
 
     const lineup = await lineupFor(event);
-    const pingIds = (await subCandidates(event, lineup)).filter((id) => id !== replacing);
+    const pingIds = (await subCandidates(event, lineup, position)).filter((id) => id !== replacing);
     const rolePing = !pingIds.length && event.ping_role_id ? event.ping_role_id : null;
     const kickoff = T.unix(event.scheduled_at);
     const embed = new EmbedBuilder()
@@ -330,14 +345,21 @@ function createMatchNight(deps) {
       ],
       components: [],
     });
+    // Ping the sub with where to go: the club voice channel and the event's details (lobby code etc.)
+    const event = request.event_id ? await events.loadEvent(request.event_id) : null;
+    const state = event?.club_key && getGuildState ? await getGuildState(event.guild_id) : null;
+    const vcId = state?.clubVcLinks?.[event.club_key];
+    const botId = events.getClient()?.user?.id;
+    const notify = [interaction.user.id, request.requested_by_discord_id].filter((id) => id && id !== botId);
     await interaction.followUp({
-      content: `🙌 <@${interaction.user.id}> is covering${request.position ? ` ${request.position}` : ''}. <@${request.requested_by_discord_id}>`,
-      allowedMentions: { users: [request.requested_by_discord_id] },
+      content:
+        `🙌 <@${interaction.user.id}> is covering${request.position ? ` ${request.position}` : ''}.` +
+        (request.requested_by_discord_id !== botId ? ` <@${request.requested_by_discord_id}>` : '') +
+        (vcId ? `\n🎧 Jump in <#${vcId}> for the lobby.` : '') +
+        (event?.description ? `\n📌 ${event.description.slice(0, 500)}` : ''),
+      allowedMentions: { users: [...new Set(notify)] },
     });
-    if (request.event_id) {
-      const event = await events.loadEvent(request.event_id);
-      if (event) await refreshCheckin(event);
-    }
+    if (event) await refreshCheckin(event);
   }
 
   async function cancelSub(interaction, requestId) {
@@ -608,7 +630,7 @@ function createMatchNight(deps) {
 
   events.setReliabilityLookup(lowReliability);
 
-  return { commands: MATCHNIGHT_COMMANDS, handleInteraction, lowReliability, openCheckin };
+  return { commands: MATCHNIGHT_COMMANDS, handleInteraction, lowReliability, openCheckin, lineupFor, loadCheckins, refreshCheckin, postSubRequest };
 }
 
 module.exports = { createMatchNight, MATCHNIGHT_COMMANDS };
