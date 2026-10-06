@@ -15,6 +15,8 @@ import { LineupSlot, LeaderboardPlayer } from "@/types/player";
 import { FormationType } from "@/types/formations";
 import { FORMATION_OPTIONS, FORMATIONS } from "@/lib/formations";
 import { FormationPitch } from "@/components/lineup/FormationPitch";
+import { AnnounceLineupDialog } from "@/components/lineup/AnnounceLineupDialog";
+import { autofillLineup } from "@/lib/lineupAutofill";
 import { PlayerCard } from "@/components/player/PlayerCard";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -55,7 +57,8 @@ import {
   RotateCcw,
   Search,
   Download,
-  Image
+  Image,
+  Headphones
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -113,6 +116,9 @@ export default function TeamsPage() {
   const [isLineupLoading, setIsLineupLoading] = useState(false);
   const [lineupTeamId, setLineupTeamId] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
+  const [isFillingFromVoice, setIsFillingFromVoice] = useState(false);
+  const [voiceChoices, setVoiceChoices] = useState<{ id: string; name: string; user_ids: string[] }[] | null>(null);
+  const [savedLineup, setSavedLineup] = useState<{ id: string; name: string } | null>(null);
   const pitchRef = useRef<HTMLDivElement>(null);
 
   // Available players for lineup
@@ -404,6 +410,80 @@ export default function TeamsPage() {
     setSelectedSlot(null);
   };
 
+  // Fill the empty slots with the players in a voice channel, best position fits first
+  const fillFromVoiceChannel = async (userIds: string[]) => {
+    if (!selectedGuildId || !availablePlayers) return;
+    const assigned = new Set(slots.map(s => s.discord_user_id));
+    const candidates = availablePlayers.filter(p => userIds.includes(p.discord_user_id) && !assigned.has(p.discord_user_id));
+    if (candidates.length === 0) {
+      toast.info("Everyone in that voice channel is already on the pitch");
+      return;
+    }
+
+    const { data: prefs } = await supabase
+      .from("position_preferences")
+      .select("user_id, preferences")
+      .eq("guild_id", selectedGuildId)
+      .in("user_id", candidates.map(p => p.discord_user_id));
+    const prefsByUser = new Map((prefs || []).map(p => [p.user_id, p.preferences || []]));
+
+    const picks = autofillLineup(
+      positions.map(p => p.position),
+      candidates.map(p => ({
+        discord_user_id: p.discord_user_id,
+        overall_rating: p.overall_rating,
+        preferences: prefsByUser.get(p.discord_user_id) || (p.primary_position ? [p.primary_position] : []),
+      })),
+      positionRatings || [],
+      new Set(slots.map(s => s.slot_index)),
+    );
+
+    const byId = new Map(candidates.map(p => [p.discord_user_id, p]));
+    const newSlots: LineupSlot[] = Array.from(picks.entries()).map(([slotIndex, userId]) => {
+      const player = byId.get(userId)!;
+      return {
+        slot_index: slotIndex,
+        position: positions[slotIndex].position,
+        discord_user_id: userId,
+        discord_username: player.discord_username || undefined,
+        ea_username: player.ea_username || undefined,
+        rating: player.overall_rating,
+        is_substitute: false,
+      };
+    });
+    setSlots(prev => [...prev, ...newSlots]);
+    const open = positions.length - slots.length - newSlots.length;
+    toast.success(`Placed ${newSlots.length} players from voice${open > 0 ? `, ${open} spots still open` : ""}`);
+  };
+
+  const handleFillFromVoice = async () => {
+    if (!selectedGuildId || !availablePlayers?.length) return;
+    setIsFillingFromVoice(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("announce-lineup", {
+        body: {
+          action: "voice",
+          guild_id: selectedGuildId,
+          user_ids: availablePlayers.map(p => p.discord_user_id),
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const channels = (data?.channels || []) as { id: string; name: string; user_ids: string[] }[];
+      if (channels.length === 0) {
+        toast.info("Nobody from your player list is in a voice channel right now");
+      } else if (channels.length === 1) {
+        await fillFromVoiceChannel(channels[0].user_ids);
+      } else {
+        setVoiceChoices(channels);
+      }
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setIsFillingFromVoice(false);
+    }
+  };
+
   const handleRemoveLineupPlayer = (slotIndex: number) => {
     setSlots(prev => prev.filter(s => s.slot_index !== slotIndex));
   };
@@ -441,7 +521,6 @@ export default function TeamsPage() {
       const { data, error } = await supabase.functions.invoke("create-lineup", {
         body: {
           guild_id: selectedGuildId,
-          created_by_discord_id: "web-user",
           formation,
           name: lineupName || defaultName,
           team_id: lineupTeamId,
@@ -458,11 +537,34 @@ export default function TeamsPage() {
       if (!data.success) throw new Error(data.error || "Failed to save lineup");
 
       toast.success(`Starting XI saved for ${selectedLineupTeam?.name || "team"}!`);
-      handleReset();
+      // Offer to announce it; the builder resets once the dialog closes
+      setSavedLineup({ id: data.lineup_id, name: lineupName || defaultName });
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
       setIsLineupLoading(false);
+    }
+  };
+
+  const capturePitchImage = async (): Promise<string | null> => {
+    if (!pitchRef.current) return null;
+    try {
+      const canvas = await html2canvas(pitchRef.current, {
+        backgroundColor: null,
+        scale: 2,
+        useCORS: true,
+      });
+      return canvas.toDataURL("image/png");
+    } catch (error) {
+      console.error("Pitch capture error:", error);
+      return null;
+    }
+  };
+
+  const handleAnnounceOpenChange = (open: boolean) => {
+    if (!open) {
+      setSavedLineup(null);
+      handleReset();
     }
   };
 
@@ -854,6 +956,19 @@ export default function TeamsPage() {
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                       <CardTitle>Formation</CardTitle>
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleFillFromVoice}
+                          disabled={isFillingFromVoice || slots.length >= positions.length}
+                        >
+                          {isFillingFromVoice ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : (
+                            <Headphones className="h-4 w-4 mr-2" />
+                          )}
+                          Fill from Voice
+                        </Button>
                         <Button 
                           variant="outline" 
                           size="sm"
@@ -938,7 +1053,7 @@ export default function TeamsPage() {
                       >
                         {isLineupLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                         <Save className="h-4 w-4 mr-2" />
-                        Save Starting XI
+                        Publish Lineup
                       </Button>
                     </div>
                   </div>
@@ -1033,6 +1148,40 @@ export default function TeamsPage() {
           </TabsContent>
         </Tabs>
       </div>
+      <Dialog open={!!voiceChoices} onOpenChange={(open) => !open && setVoiceChoices(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Fill from which voice channel?</DialogTitle>
+            <DialogDescription>Players from your list are in more than one channel.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {voiceChoices?.map((c) => (
+              <Button
+                key={c.id}
+                variant="outline"
+                className="w-full justify-between"
+                onClick={async () => {
+                  setVoiceChoices(null);
+                  await fillFromVoiceChannel(c.user_ids);
+                }}
+              >
+                <span>🔊 {c.name}</span>
+                <Badge variant="secondary">{c.user_ids.length}</Badge>
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+      {selectedGuildId && (
+        <AnnounceLineupDialog
+          open={!!savedLineup}
+          onOpenChange={handleAnnounceOpenChange}
+          guildId={selectedGuildId}
+          lineupId={savedLineup?.id ?? null}
+          lineupName={savedLineup?.name ?? ""}
+          captureImage={capturePitchImage}
+        />
+      )}
     </DashboardLayout>
   );
 }

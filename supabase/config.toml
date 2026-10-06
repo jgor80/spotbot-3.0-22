@@ -110,3 +110,6 @@ verify_jwt = false
 
 [functions.apply-friendly-to-draft]
 verify_jwt = false
+
+[functions.announce-lineup]
+verify_jwt = false

@@ -631,6 +631,16 @@ const COMMANDS = [
   },
   { name: 'syncclub', description: 'Manually sync recent matches from EA FC Pro Clubs.' },
   {
+    name: 'teamsheet',
+    description: 'Post the latest saved lineup (team sheet) in this channel and ping the starting XI.',
+    options: [
+      { name: 'team', description: 'Team name (defaults to the most recent lineup).', type: 3, required: false },
+      { name: 'ping', description: 'Ping the starting XI (default: yes).', type: 5, required: false },
+      { name: 'dm', description: 'Also DM each starter their position (default: no).', type: 5, required: false },
+      { name: 'message', description: 'Note to include, e.g. kick-off time.', type: 3, required: false }
+    ]
+  },
+  {
     name: 'linkea',
     description: 'Link your EA username to your Discord account for stats tracking.',
     options: [
@@ -6795,6 +6805,63 @@ client.on(Events.InteractionCreate, async (interaction) => {
           stopEaMonitoring(guildId, currentClub.key);
           return interaction.reply({ content: `⏸️ EA stats monitoring **disabled** for ${currentClub.name}.`, flags: 64 });
         }
+      }
+
+      if (cmd === 'teamsheet') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only managers can post team sheets.', flags: 64 });
+        }
+
+        const teamName = interaction.options.getString('team');
+        const ping = interaction.options.getBoolean('ping');
+        const dm = interaction.options.getBoolean('dm');
+        const note = interaction.options.getString('message');
+
+        await interaction.deferReply({ flags: 64 });
+
+        let teamId = null;
+        if (teamName) {
+          const { data: team } = await supabase
+            .from('teams')
+            .select('id, name')
+            .eq('guild_id', guildId)
+            .ilike('name', teamName)
+            .limit(1)
+            .maybeSingle();
+          if (!team) {
+            return interaction.editReply({ content: `❌ No team named **${teamName}**. Build lineups on the web dashboard under Teams.` });
+          }
+          teamId = team.id;
+        }
+
+        let lineupQuery = supabase
+          .from('lineups')
+          .select('id, name')
+          .eq('guild_id', guildId)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (teamId) lineupQuery = lineupQuery.eq('team_id', teamId);
+        const { data: lineup } = await lineupQuery.maybeSingle();
+
+        if (!lineup) {
+          return interaction.editReply({ content: '❌ No saved lineup yet. Build one on the web dashboard under Teams, then run this again.' });
+        }
+
+        const { error, data } = await callEdgeFunction('announce-lineup', {
+          action: 'announce',
+          lineup_id: lineup.id,
+          channel_id: interaction.channelId,
+          mention_players: ping !== false,
+          dm_players: dm === true,
+          message: note || ''
+        }, 30000);
+
+        if (error || !data?.success) {
+          return interaction.editReply({ content: `❌ Could not post the team sheet: ${error || data?.error || 'unknown error'}` });
+        }
+
+        const dmNote = dm ? ` DMs sent: ${data.dm_sent}${data.dm_failed ? ` (${data.dm_failed} had DMs closed)` : ''}.` : '';
+        return interaction.editReply({ content: `✅ Posted **${lineup.name || 'lineup'}**.${dmNote}` });
       }
 
       if (cmd === 'syncclub') {

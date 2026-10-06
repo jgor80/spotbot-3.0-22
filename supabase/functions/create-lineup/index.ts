@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createAdminClient, identifyCaller } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,6 +23,9 @@ interface CreateLineupRequest {
 
 // Validation helpers
 const DISCORD_ID_REGEX = /^\d{17,19}$/;
+const CREATOR_ID_REGEX = /^(\d{17,19}|web:[0-9a-f-]{36})$/i;
+// Players seen in EA matches but not linked to Discord yet have ids like "ea_some_name"
+const PLAYER_ID_REGEX = /^(\d{17,19}|ea_[\w.-]{1,64})$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VALID_FORMATIONS = ["4-3-3", "4-4-2", "3-5-2", "4-2-3-1", "5-3-2", "5-4-1", "3-4-3", "4-1-4-1", "4-5-1", "4-5-1 ATTACK", "4-3-2-1", "4-3-1-2", "4-3-3 FLAT", "4-4-2 FLAT", "3-1-4-2", "3-4-2-1", "3-4-1-2", "3-4-3 FLAT", "4-2-2-2", "4-5-1 FLAT", "4-2-3-1 WIDE", "4-2-3-1 NARROW", "4-2-1-3", "4-2-4", "4-1-2-1-2 WIDE", "4-1-2-1-2 NARROW", "4-4-1-1", "4-4-2 HOLD", "5-4-1 FLAT", "5-2-1-2", "5-2-2-1", "5-1-2-2", "4-1-3-2", "4-3-3 ATTACK", "5-2-3"];
 
@@ -32,7 +35,8 @@ function validateRequest(body: any): string[] {
   if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) {
     errors.push("guild_id must be a valid Discord ID");
   }
-  if (!body.created_by_discord_id || !DISCORD_ID_REGEX.test(body.created_by_discord_id)) {
+  // Web app requests are attributed to the signed-in user instead (see below)
+  if (body.created_by_discord_id && !CREATOR_ID_REGEX.test(body.created_by_discord_id)) {
     errors.push("created_by_discord_id must be a valid Discord ID");
   }
   if (!body.formation || !VALID_FORMATIONS.includes(body.formation)) {
@@ -52,7 +56,7 @@ function validateRequest(body: any): string[] {
   } else {
     for (let i = 0; i < body.slots.length; i++) {
       const slot = body.slots[i];
-      if (!slot.discord_user_id || !DISCORD_ID_REGEX.test(slot.discord_user_id)) {
+      if (!slot.discord_user_id || !PLAYER_ID_REGEX.test(slot.discord_user_id)) {
         errors.push(`slots[${i}].discord_user_id must be a valid Discord ID`);
         break;
       }
@@ -76,24 +80,27 @@ serve(async (req) => {
   }
 
   try {
-    // Verify the request is from the Discord bot (service role key)
-    const authHeader = req.headers.get("authorization");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    
-    if (!authHeader || !authHeader.includes(serviceRoleKey)) {
-      console.log("[create-lineup] Unauthorized: Missing or invalid service role key");
+    // Accept the Discord bot (service role key) or a signed-in web app user
+    const supabase = createAdminClient();
+    const caller = await identifyCaller(req, supabase);
+
+    if (!caller) {
+      console.log("[create-lineup] Unauthorized: no bot key or user session");
       return new Response(
-        JSON.stringify({ error: "This operation requires bot authentication" }),
+        JSON.stringify({ error: "Sign in to save lineups" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      serviceRoleKey
-    );
-
     const body = await req.json();
+    if (caller.kind === "user") {
+      body.created_by_discord_id = `web:${caller.userId}`;
+    } else if (!body.created_by_discord_id) {
+      return new Response(
+        JSON.stringify({ error: "Validation failed", details: ["created_by_discord_id is required"] }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     
     // Validate input
     const errors = validateRequest(body);
@@ -128,7 +135,7 @@ serve(async (req) => {
       .eq("guild_id", guild_id)
       .in("discord_user_id", playerIds);
 
-    const playerRatings = new Map((players || []).map(p => [p.discord_user_id, p.overall_rating || 50]));
+    const playerRatings = new Map<string, number>((players || []).map((p: any) => [p.discord_user_id, p.overall_rating || 50]));
     const avgRating = playerIds.length > 0
       ? playerIds.reduce((sum, id) => sum + (playerRatings.get(id) || 50), 0) / playerIds.length
       : 50;
@@ -173,7 +180,7 @@ serve(async (req) => {
       .eq("guild_id", guild_id)
       .in("discord_user_id", allPlayerIds);
 
-    const playerMap = new Map((playerDetails || []).map(p => [p.discord_user_id, p]));
+    const playerMap = new Map((playerDetails || []).map((p: any) => [p.discord_user_id, p]));
 
     const enrichedSlots = slots.map(slot => ({
       ...slot,
