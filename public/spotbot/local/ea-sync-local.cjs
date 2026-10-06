@@ -574,7 +574,7 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // EA API Configuration (FC27: gen5 + Switch, no gen4)
-const { toFcPlatform } = require('./ea-fc27.cjs');
+const { toFcPlatform } = require('../ea-fc27.cjs');
 
 // === ROTATING USER-AGENT POOL ===
 // Rotate through realistic browser strings to avoid fingerprinting

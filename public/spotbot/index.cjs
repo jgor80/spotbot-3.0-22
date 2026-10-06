@@ -37,6 +37,8 @@ const { installProcessGuards, installClientGuards, prepareCommandsForRegistratio
 
 installProcessGuards();
 const axios = require('axios');
+const { installEaRetry, eaRecentlyThrottled, EA_THROTTLED_MESSAGE } = require('./ea-retry.cjs');
+installEaRetry(axios);
 const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
@@ -3899,7 +3901,7 @@ client.once(Events.ClientReady, async (c) => {
     // Resume EA FC Pro Clubs monitoring for all linked clubs
     resumeEaMonitoring();
     
-    // Start background polling for pending feedback DMs (created by local sync script)
+    // Start background polling for pending feedback DMs (created by draft results and the optional local sync)
     startFeedbackDMPolling(c);
     
     // Start Xbox presence polling for game detection
@@ -9061,7 +9063,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const errorText = await response.text();
             console.error('[squadiq_syncstats] Sync failed:', response.status, errorText);
             return interaction.editReply({ 
-              content: `❌ Stats sync failed: ${response.status} - Check if EA API is accessible from local sync script.` 
+              content: `❌ Stats sync failed (${response.status}). Try again in a minute.` 
             });
           }
 
@@ -9069,15 +9071,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
           
           return interaction.editReply({
             content: `📊 **Stats Sync Complete**\n\n` +
-              `• Matches synced: **${result.total_matches || 0}**\n` +
-              `• Members updated: **${result.total_members || 0}**\n` +
-              `• Clubs processed: **${result.total_clubs || 0}**\n\n` +
-              `⚠️ Note: Full EA sync runs via local script every 10 min. This triggers an immediate refresh.`
+              `• Matches synced: **${result.synced || 0}**\n` +
+              `• Members updated: **${result.member_stats_synced || 0}**\n` +
+              `• Clubs processed: **${result.club_stats_synced || 0}**` +
+              (result.warning ? `\n\n⚠️ ${result.warning}` : '')
           });
         } catch (error) {
           console.error('[squadiq_syncstats] Error:', error);
           return interaction.editReply({ 
-            content: `❌ Stats sync error: ${error.message}. The local EA sync script handles most syncing.` 
+            content: `❌ Stats sync error: ${error.message}` 
           });
         }
       }
@@ -16878,7 +16880,7 @@ async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
     ].slice(0, maxMatches);
     
     if (allMatches.length === 0) {
-      return { synced: 0, skipped: 0, error: 'No matches found from EA API' };
+      return { synced: 0, skipped: 0, error: eaRecentlyThrottled() ? EA_THROTTLED_MESSAGE : 'No matches found from EA API' };
     }
     
     // Get all existing match IDs to avoid duplicates

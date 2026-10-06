@@ -32,6 +32,36 @@ if (EA_SESSION_COOKIE) {
   console.log('[sync-ea-stats] EA session cookie configured')
 }
 
+// EA sometimes rejects datacenter IPs (403), rate-limits (429) or resets the connection.
+// Retry those with exponential backoff; keep in sync with public/spotbot/ea-retry.cjs.
+const EA_RETRY_STATUSES = new Set([403, 429, 500, 502, 503, 504])
+const EA_RETRY_DELAYS_MS = [1000, 3000, 7000]
+let eaThrottledThisRun = false
+
+// Once EA has refused a request through every retry, later requests in the same run get one try,
+// so a full block doesn't push the scheduled sync past the function's time limit.
+async function eaFetch(url: string, init: RequestInit = { headers: EA_HEADERS }): Promise<Response> {
+  const maxRetries = eaThrottledThisRun ? 0 : EA_RETRY_DELAYS_MS.length
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetch(url, init)
+      if (!EA_RETRY_STATUSES.has(response.status) || attempt >= maxRetries) {
+        if (EA_RETRY_STATUSES.has(response.status)) eaThrottledThisRun = true
+        return response
+      }
+      console.warn(`[EA] HTTP ${response.status} from ${url}; retrying`)
+      await response.body?.cancel()
+    } catch (err) {
+      if (attempt >= maxRetries) {
+        eaThrottledThisRun = true
+        throw err
+      }
+      console.warn(`[EA] ${err instanceof Error ? err.message : err} from ${url}; retrying`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, EA_RETRY_DELAYS_MS[attempt] + Math.floor(Math.random() * 500)))
+  }
+}
+
 const KNOWN_MEMBER_KEYS = new Set([
   'assists', 'goals', 'gamesPlayed', 'matches', 'wins', 'losses', 'ratingAve', 'avgRating',
   'cleanSheetsDef', 'cleanSheetsGK', 'cleanSheets', 'manOfTheMatch', 'mom', 'favoritePosition', 'proPos',
@@ -215,7 +245,7 @@ async function fetchMatches(clubId: string, platform: string, matchType: string,
   
   try {
     console.log(`[EA] Fetching matches from: ${url}`)
-    const response = await fetch(url, { headers: EA_HEADERS })
+    const response = await eaFetch(url, { headers: EA_HEADERS })
     
     if (!response.ok) {
       console.error(`[EA] Matches request failed: ${response.status} ${response.statusText}`)
@@ -266,7 +296,7 @@ async function fetchClubInfo(clubId: string, platform: string) {
   const fcPlatform = toFcPlatform(platform)
   
   try {
-    const response = await fetch(`https://proclubs.ea.com/api/fc/clubs/info?platform=${fcPlatform}&clubIds=${clubId}`, {
+    const response = await eaFetch(`https://proclubs.ea.com/api/fc/clubs/info?platform=${fcPlatform}&clubIds=${clubId}`, {
       headers: EA_HEADERS
     })
     
@@ -290,7 +320,7 @@ async function fetchClubSeasonalStats(clubId: string, platform: string) {
   const fcPlatform = toFcPlatform(platform)
   
   try {
-    const response = await fetch(`https://proclubs.ea.com/api/fc/clubs/seasonalStats?platform=${fcPlatform}&clubIds=${clubId}`, {
+    const response = await eaFetch(`https://proclubs.ea.com/api/fc/clubs/seasonalStats?platform=${fcPlatform}&clubIds=${clubId}`, {
       headers: EA_HEADERS
     })
     
@@ -316,7 +346,7 @@ async function fetchClubOverallStats(clubId: string, platform: string) {
   const fcPlatform = toFcPlatform(platform)
   
   try {
-    const response = await fetch(`https://proclubs.ea.com/api/fc/clubs/overallStats?platform=${fcPlatform}&clubIds=${clubId}`, {
+    const response = await eaFetch(`https://proclubs.ea.com/api/fc/clubs/overallStats?platform=${fcPlatform}&clubIds=${clubId}`, {
       headers: EA_HEADERS
     })
     
@@ -342,7 +372,7 @@ async function fetchClubPlayoffAchievements(clubId: string, platform: string) {
   
   try {
     // Note: This endpoint uses clubId (singular) not clubIds
-    const response = await fetch(`https://proclubs.ea.com/api/fc/club/playoffAchievements?platform=${fcPlatform}&clubId=${clubId}`, {
+    const response = await eaFetch(`https://proclubs.ea.com/api/fc/club/playoffAchievements?platform=${fcPlatform}&clubId=${clubId}`, {
       headers: EA_HEADERS
     })
     
@@ -364,7 +394,7 @@ async function fetchMemberCareerStats(clubId: string, platform: string) {
   const fcPlatform = toFcPlatform(platform)
   
   try {
-    const response = await fetch(`https://proclubs.ea.com/api/fc/members/career/stats?platform=${fcPlatform}&clubId=${clubId}`, {
+    const response = await eaFetch(`https://proclubs.ea.com/api/fc/members/career/stats?platform=${fcPlatform}&clubId=${clubId}`, {
       headers: EA_HEADERS
     })
     
@@ -390,7 +420,7 @@ async function fetchClubMembers(clubId: string, platform: string) {
   const fcPlatform = toFcPlatform(platform)
   
   try {
-    const response = await fetch(`https://proclubs.ea.com/api/fc/members/stats?platform=${fcPlatform}&clubId=${clubId}`, {
+    const response = await eaFetch(`https://proclubs.ea.com/api/fc/members/stats?platform=${fcPlatform}&clubId=${clubId}`, {
       headers: EA_HEADERS
     })
     
@@ -1742,6 +1772,8 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders })
   }
 
+  eaThrottledThisRun = false
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -2649,7 +2681,9 @@ Deno.serve(async (req) => {
       guilds_processed: guildsProcessed,
       hidden_probe_results: hiddenProbeResults.length > 0 ? hiddenProbeResults : undefined,
       last_game_fields: lastGameSnapshots.length > 0 ? lastGameSnapshots : undefined,
-      unknown_member_fields: unmappedMemberKeys.size > 0 ? [...unmappedMemberKeys] : undefined
+      unknown_member_fields: unmappedMemberKeys.size > 0 ? [...unmappedMemberKeys] : undefined,
+      ea_throttled: eaThrottledThisRun || undefined,
+      warning: eaThrottledThisRun ? 'EA servers are throttling requests right now, so some data may be missing. Try again in a minute.' : undefined
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
