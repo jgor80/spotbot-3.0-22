@@ -1,8 +1,8 @@
 # Disable auto-detection to prevent Vite/Bun detection
 providers = ["node"]
 
-[phases.setup]
-nixPkgs = ["nodejs_20"]
+[variables]
+NIXPACKS_NODE_VERSION = "20"
 
 [phases.install]
 cmds = ["cd public/spotbot && npm install"]
