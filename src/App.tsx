@@ -19,6 +19,7 @@ import CompetitionsPage from "./pages/CompetitionsPage";
 import TeamsPage from "./pages/TeamsPage";
 import RatingsPage from "./pages/RatingsPage";
 import RecentGamesPage from "./pages/RecentGamesPage";
+import InsightsPage from "./pages/InsightsPage";
 import SquadIQPanel from "./pages/SquadIQPanel";
 import GlobalLeaguePage from "./pages/GlobalLeaguePage";
 import TournamentsPage from "./pages/TournamentsPage";
@@ -48,6 +49,7 @@ const App = () => (
               <Route path="/teams" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
               <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
               <Route path="/games" element={<ProtectedRoute><RecentGamesPage /></ProtectedRoute>} />
+              <Route path="/insights" element={<ProtectedRoute><InsightsPage /></ProtectedRoute>} />
               <Route path="/squadiq" element={<ProtectedRoute><SquadIQPanel /></ProtectedRoute>} />
               <Route path="/global-league" element={<ProtectedRoute><GlobalLeaguePage /></ProtectedRoute>} />
               <Route path="/tournaments" element={<ProtectedRoute><TournamentsPage /></ProtectedRoute>} />
