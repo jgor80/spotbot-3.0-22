@@ -5,6 +5,7 @@ Club management for EA SPORTS FC Pro Clubs Discord servers: a Discord bot plus t
 What it does:
 
 - **Manager Hub**: `/manager` posts a pinned hub with Call Session (In / Late / Out roll call), Team Sheet, Sync Matches, Club Stats and Tactical Insights buttons. `/insights` and `/clubstats` show the same cards directly. A server with one club never sees a club picker; with several, the hub follows the club linked to your voice channel.
+- **Squads and league servers**: `/squad` links each club to a squad (First XI, Academy) and names its captain and managers, who then own that club's hub, team sheet and syncs. `/lfg` matches clubs on the same server for friendlies.
 - **Spots and availability**: live spot panels per club (`/spotpanel`, `/spots`, `/vcspots`) and availability for events.
 - **Team sheets**: build a lineup on the web (Lineup Builder), save it, and announce it in Discord with a pitch graphic, pings for the starting XI and optional DMs. `/teamsheet` posts the latest lineup from Discord.
 - **Club stats and insights**: EA match sync, the Games page, and the Insights page (record, form, duo and trio chemistry, player impact, win vs. loss gaps, formations).

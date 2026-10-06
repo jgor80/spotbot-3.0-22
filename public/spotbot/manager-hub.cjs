@@ -81,6 +81,8 @@ function createManagerHub(deps) {
     buildLeaderboardEmbed,
     dashboardUrl,
   } = deps;
+  // Squad leaders when the club has them, otherwise any manager role
+  const canManageClub = deps.canManageClub || (async (member) => isManager(member));
 
   async function loadMatches(guildId, clubKey) {
     const [{ data: rows, error }, { data: lineups }] = await Promise.all([
@@ -352,13 +354,14 @@ function createManagerHub(deps) {
   // ---------- Team Sheet ----------
 
   async function buildTeamSheet(guildId, club) {
-    const { data: lineup } = await supabase
+    let query = supabase
       .from('lineups')
       .select('id, name, formation, created_at, team_avg_rating')
       .eq('guild_id', guildId)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    if (club.team_id) query = query.eq('team_id', club.team_id);
+    const { data: lineup } = await query.maybeSingle();
 
     const embed = new EmbedBuilder().setTitle(`📋 ${club.name} Team Sheet`).setColor(HUB_COLOR);
     const buttons = [];
@@ -374,10 +377,14 @@ function createManagerHub(deps) {
           `${count ?? 0} starters picked${lineup.team_avg_rating ? `, average rating ${Math.round(lineup.team_avg_rating)}` : ''}.`
       );
       buttons.push(
-        new ButtonBuilder().setCustomId(`hub_announce:${lineup.id}`).setLabel('Announce Lineup').setEmoji('📢').setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId(`hub_announce:${lineup.id}:${club.key}`).setLabel('Announce Lineup').setEmoji('📢').setStyle(ButtonStyle.Success)
       );
     } else {
-      embed.setDescription('No saved lineup yet. Build one in the Lineup Builder, using Fill from Voice to place everyone in your voice channel.');
+      embed.setDescription(
+        club.team_id
+          ? 'No lineup saved for this squad yet. In the Lineup Builder, pick this squad when you save.'
+          : 'No saved lineup yet. Build one in the Lineup Builder, using Fill from Voice to place everyone in your voice channel.'
+      );
     }
     if (dashboardUrl) {
       buttons.push(
@@ -387,16 +394,17 @@ function createManagerHub(deps) {
     return { embeds: [embed], components: buttons.length ? [new ActionRowBuilder().addComponents(buttons)] : [] };
   }
 
-  async function announceLineup(interaction, lineupId) {
+  async function announceLineup(interaction, lineupId, club) {
     // Post where the club last announced; fall back to this channel
-    const { data: previous } = await supabase
+    let query = supabase
       .from('lineups')
       .select('channel_id')
       .eq('guild_id', interaction.guildId)
       .not('channel_id', 'is', null)
       .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    if (club.team_id) query = query.eq('team_id', club.team_id);
+    const { data: previous } = await query.maybeSingle();
     const channelId = previous?.channel_id || interaction.channelId;
 
     const { error, data } = await callEdgeFunction(
@@ -416,8 +424,8 @@ function createManagerHub(deps) {
     return { state, club };
   }
 
-  const managerOnly = (interaction) =>
-    interaction.reply({ content: '❌ Only managers and captains can do that.', flags: 64 });
+  const managerOnly = (interaction, club) =>
+    interaction.reply({ content: `❌ Only ${club ? `${club.name}'s` : 'club'} leaders can do that.`, flags: 64 });
 
   async function handleCommand(interaction, cmd) {
     if (cmd !== 'manager' && cmd !== 'insights') return false;
@@ -428,8 +436,8 @@ function createManagerHub(deps) {
     }
 
     if (cmd === 'manager') {
-      if (!isManager(interaction.member)) {
-        await managerOnly(interaction);
+      if (!(await canManageClub(interaction.member, club))) {
+        await managerOnly(interaction, club);
         return true;
       }
       await interaction.deferReply();
@@ -449,7 +457,7 @@ function createManagerHub(deps) {
 
   async function handleButton(interaction) {
     const id = interaction.customId;
-    const [action, arg] = id.split(':');
+    const [action, arg, extra] = id.split(':');
 
     if (action.startsWith('sess_')) {
       const choice = SESSION_RESPONSES[action.slice(5)];
@@ -474,10 +482,11 @@ function createManagerHub(deps) {
     if (!action.startsWith('hub_')) return false;
 
     if (action === 'hub_announce') {
-      if (!isManager(interaction.member)) return managerOnly(interaction).then(() => true);
+      const { club } = await withClub(interaction, extra);
+      if (!club || !(await canManageClub(interaction.member, club))) return managerOnly(interaction, club).then(() => true);
       await interaction.deferReply({ flags: 64 });
       try {
-        const channelId = await announceLineup(interaction, arg);
+        const channelId = await announceLineup(interaction, arg, club);
         await interaction.editReply({ content: `✅ Lineup posted in <#${channelId}> and the starting XI pinged.` });
       } catch (err) {
         await interaction.editReply({ content: `❌ Could not post the lineup: ${err.message}` });
@@ -493,7 +502,7 @@ function createManagerHub(deps) {
 
     switch (action) {
       case 'hub_call': {
-        if (!isManager(interaction.member)) return managerOnly(interaction).then(() => true);
+        if (!(await canManageClub(interaction.member, club))) return managerOnly(interaction, club).then(() => true);
         await interaction.deferReply({ flags: 64 });
         try {
           await callSession(interaction, club);
@@ -508,7 +517,7 @@ function createManagerHub(deps) {
         await interaction.editReply(await buildTeamSheet(interaction.guildId, club));
         return true;
       case 'hub_sync': {
-        if (!isManager(interaction.member)) return managerOnly(interaction).then(() => true);
+        if (!(await canManageClub(interaction.member, club))) return managerOnly(interaction, club).then(() => true);
         if (!club.ea_club_id) {
           await interaction.reply({ content: '❌ This club is not linked to EA. Run `/setclub` first.', flags: 64 });
           return true;
