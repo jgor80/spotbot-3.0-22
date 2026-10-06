@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createAdminClient, identifyCaller } from "../_shared/auth.ts";
 import {
   validateDiscordId,
   validateUUID,
@@ -41,20 +41,98 @@ interface MatchingFriendly {
   opponent_club_name: string | null;
 }
 
-interface PlayerStatFromMatch {
-  playername?: string;
-  ea_username?: string;
-  discord_user_id?: string;
-  goals?: number;
-  assists?: number;
-  rating?: number;
-  position?: string;
-  saves?: number;
-  tackles?: number;
-  passes?: number;
-  passAttempts?: number;
-  shots?: number;
-  motm?: boolean;
+// One player's line from a match, from either side, in our player_stats column names
+interface MatchPlayerLine {
+  ea_username: string;
+  side_won: boolean | null;
+  side_conceded: number;
+  stats: Record<string, number | boolean | string | null>;
+}
+
+const WINDOW_MS = 2 * 60 * 60 * 1000;
+
+function toInt(v: unknown): number {
+  const n = parseInt(String(v ?? "0"), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function toFloat(v: unknown): number {
+  const n = parseFloat(String(v ?? "0"));
+  return Number.isFinite(n) ? n : 0;
+}
+
+// When the match was played: EA's timestamp (epoch seconds) if stored, else when we synced it
+function playedAt(match: { created_at: string; match_data?: any }): Date {
+  const ts = Number(match.match_data?.timestamp);
+  if (Number.isFinite(ts) && ts > 1e9) return new Date(ts < 1e12 ? ts * 1000 : ts);
+  return new Date(match.created_at);
+}
+
+function isGoalkeeper(pos: unknown): boolean {
+  return /^(gk|goalkeeper)$/i.test(String(pos ?? ""));
+}
+
+// Accepts raw EA player rows (match_data.players) and our stored player_stats rows
+function statsFromRow(p: any) {
+  return {
+    goals: toInt(p.goals),
+    assists: toInt(p.assists),
+    ea_match_rating: toFloat(p.rating),
+    position_played: p.pos ?? p.position ?? null,
+    shots: toInt(p.shots),
+    tackles: toInt(p.tacklesmade ?? p.tackles),
+    tackle_attempts: toInt(p.tackleattempts ?? p.tackle_attempts),
+    passes_made: toInt(p.passesmade ?? p.passes_made),
+    pass_attempts: toInt(p.passattempts ?? p.pass_attempts),
+    interceptions: toInt(p.interceptions),
+    clearances: toInt(p.clearances),
+    possession: toFloat(p.possession),
+    dribbles: toInt(p.dribbles),
+    dribble_attempts: toInt(p.dribble_attempts),
+    fouls: toInt(p.fouls ?? p.foulscommited),
+    offsides: toInt(p.offsides),
+    red_cards: toInt(p.redcards ?? p.red_cards) > 0 || p.red_cards === true,
+    man_of_match: p.mom === "1" || p.mom === 1 || p.motm === true,
+  };
+}
+
+// Players from both clubs when the raw match is stored (a draft is often our club vs. a second club),
+// otherwise just our club's stored player_stats
+function matchPlayerLines(match: any): MatchPlayerLine[] {
+  const lines: MatchPlayerLine[] = [];
+  const clubs = match.match_data?.clubs;
+  const players = match.match_data?.players;
+  if (clubs && players && typeof players === "object") {
+    const clubIds = Object.keys(players);
+    for (const clubId of clubIds) {
+      const goalsFor = toInt(clubs[clubId]?.goals);
+      const otherId = Object.keys(clubs).find((id) => id !== clubId);
+      const goalsAgainst = otherId ? toInt(clubs[otherId]?.goals) : 0;
+      for (const p of Object.values(players[clubId] || {}) as any[]) {
+        const name = String(p.playername || p.name || "").trim();
+        if (!name) continue;
+        lines.push({
+          ea_username: name.toLowerCase(),
+          side_won: goalsFor === goalsAgainst ? null : goalsFor > goalsAgainst,
+          side_conceded: goalsAgainst,
+          stats: statsFromRow(p),
+        });
+      }
+    }
+    if (lines.length) return lines;
+  }
+  const won = match.result === "win" ? true : match.result === "loss" ? false : null;
+  for (const p of (match.player_stats || []) as any[]) {
+    const name = String(p.ea_username || p.playername || "").trim();
+    if (!name) continue;
+    lines.push({
+      ea_username: name.toLowerCase(),
+      side_won: won,
+      side_conceded: toInt(match.score_against),
+      stats: statsFromRow(p),
+    });
+  }
+  return lines;
 }
 
 Deno.serve(async (req) => {
@@ -65,7 +143,14 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createAdminClient();
+
+    if (!(await identifyCaller(req, supabase))) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const body: RequestBody = await req.json();
     const { guild_id, draft_id, action } = body;
@@ -120,7 +205,7 @@ Deno.serve(async (req) => {
       .from("draft_results")
       .select("id, ea_match_id, team_a_score, team_b_score")
       .eq("draft_id", draft_id)
-      .single();
+      .maybeSingle();
 
     if (draftResult?.ea_match_id) {
       return new Response(
@@ -134,12 +219,9 @@ Deno.serve(async (req) => {
     }
 
     // Get all draft players
-    const allDraftPlayers = [
-      ...(draft.team_a_player_ids || []),
-      ...(draft.team_b_player_ids || []),
-      draft.captain_a_discord_id,
-      draft.captain_b_discord_id,
-    ].filter(Boolean);
+    const teamA = new Set<string>([...(draft.team_a_player_ids || []), draft.captain_a_discord_id].filter(Boolean));
+    const teamB = new Set<string>([...(draft.team_b_player_ids || []), draft.captain_b_discord_id].filter(Boolean));
+    const allDraftPlayers = Array.from(new Set([...teamA, ...teamB]));
 
     // Get profiles for draft players to match EA usernames
     const { data: profiles } = await supabase
@@ -158,9 +240,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Calculate time window: 2 hours after draft completion
+    // Matches played within 2 hours of draft completion count
     const completedAt = new Date(draft.completed_at);
-    const windowEnd = new Date(completedAt.getTime() + 2 * 60 * 60 * 1000); // +2 hours
+    const windowEnd = new Date(completedAt.getTime() + WINDOW_MS);
 
     if (action === "list") {
       // Fetch friendly matches in the time window
@@ -169,8 +251,9 @@ Deno.serve(async (req) => {
         .select("*")
         .eq("guild_id", guild_id)
         .eq("match_type", "friendly")
+        // Syncs can lag behind play, so fetch matches synced up to a day later and filter on play time
         .gte("created_at", completedAt.toISOString())
-        .lte("created_at", windowEnd.toISOString())
+        .lte("created_at", new Date(windowEnd.getTime() + 22 * 60 * 60 * 1000).toISOString())
         .order("created_at", { ascending: false });
 
       if (matchError) {
@@ -187,22 +270,18 @@ Deno.serve(async (req) => {
         .select("ea_match_id")
         .not("ea_match_id", "is", null);
 
-      const linkedMatchIds = new Set((linkedResults || []).map((r) => r.ea_match_id));
+      const linkedMatchIds = new Set((linkedResults || []).map((r: any) => r.ea_match_id));
 
       // Filter and score matches
       const matchingFriendlies: MatchingFriendly[] = [];
 
       for (const match of friendlyMatches || []) {
-        // Skip already linked matches
+        // Skip already linked matches and ones played outside the window
         if (linkedMatchIds.has(match.ea_match_id)) continue;
+        const played = playedAt(match);
+        if (played < completedAt || played > windowEnd) continue;
 
-        // Parse player_stats to find matching players
-        const playerStats = match.player_stats || [];
-        const matchPlayerEaUsernames = playerStats
-          .map((p: { playername?: string; ea_username?: string }) => 
-            (p.playername || p.ea_username || "").toLowerCase()
-          )
-          .filter(Boolean);
+        const matchPlayerEaUsernames = Array.from(new Set(matchPlayerLines(match).map((l) => l.ea_username)));
 
         // Count how many draft players are in this match
         let matchingPlayers = 0;
@@ -223,7 +302,7 @@ Deno.serve(async (req) => {
             result: match.result || "unknown",
             score_for: match.score_for || 0,
             score_against: match.score_against || 0,
-            played_at: match.created_at,
+            played_at: played.toISOString(),
             player_count: matchPlayerEaUsernames.length,
             matching_players: matchingPlayers,
             match_percentage: matchPercentage,
@@ -288,7 +367,7 @@ Deno.serve(async (req) => {
       }
 
       // Validate time window
-      const matchTime = new Date(friendlyMatch.created_at);
+      const matchTime = playedAt(friendlyMatch);
       if (matchTime < completedAt || matchTime > windowEnd) {
         return new Response(
           JSON.stringify({ 
@@ -304,7 +383,8 @@ Deno.serve(async (req) => {
         .from("draft_results")
         .select("draft_id")
         .eq("ea_match_id", ea_match_id)
-        .single();
+        .limit(1)
+        .maybeSingle();
 
       if (existingLink) {
         return new Response(
@@ -317,22 +397,60 @@ Deno.serve(async (req) => {
         );
       }
 
-      // Update draft_results with ea_match_id
-      const { error: updateError } = await supabase
-        .from("draft_results")
-        .update({ ea_match_id })
-        .eq("draft_id", draft_id);
+      // Work out each draft player's line in the match
+      const lines = matchPlayerLines(friendlyMatch);
+      const linesForDraft = lines
+        .map((line) => ({ line, discordUserId: eaToDiscordMap.get(line.ea_username) }))
+        .filter((x): x is { line: MatchPlayerLine; discordUserId: string } =>
+          !!x.discordUserId && allDraftPlayers.includes(x.discordUserId));
 
-      if (updateError) {
-        console.error("Error updating draft_results:", updateError);
-        return new Response(
-          JSON.stringify({ success: false, error: "Failed to link match to draft" }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      // Record the link. If nobody reported a score yet, record EA's score for the draft teams.
+      if (draftResult) {
+        const { error: updateError } = await supabase
+          .from("draft_results")
+          .update({ ea_match_id })
+          .eq("id", draftResult.id);
+        if (updateError) {
+          console.error("Error updating draft_results:", updateError);
+          return new Response(
+            JSON.stringify({ success: false, error: "Failed to link match to draft" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        // Team A's score is the score of the side most team A players were on
+        const sideOf = (team: Set<string>) => {
+          const won = linesForDraft.filter((x) => team.has(x.discordUserId)).map((x) => x.line.side_won);
+          const wins = won.filter((w) => w === true).length;
+          const losses = won.filter((w) => w === false).length;
+          return wins > losses ? "won" : losses > wins ? "lost" : "unknown";
+        };
+        const teamASide = sideOf(teamA);
+        const scoreFor = toInt(friendlyMatch.score_for);
+        const scoreAgainst = toInt(friendlyMatch.score_against);
+        const ourSideWon = scoreFor > scoreAgainst;
+        // Our club's score belongs to team A when team A's result matches ours
+        const teamAIsOurs = teamASide === "unknown" ? true : (teamASide === "won") === ourSideWon;
+        const teamAScore = teamAIsOurs ? scoreFor : scoreAgainst;
+        const teamBScore = teamAIsOurs ? scoreAgainst : scoreFor;
+        const { error: insertError } = await supabase.from("draft_results").insert({
+          draft_id,
+          ea_match_id,
+          team_a_score: teamAScore,
+          team_b_score: teamBScore,
+          winning_team: teamAScore === teamBScore ? "draw" : teamAScore > teamBScore ? "a" : "b",
+          status: "confirmed",
+          confirmed_at: new Date().toISOString(),
+        });
+        if (insertError) {
+          console.error("Error creating draft_results:", insertError);
+          return new Response(
+            JSON.stringify({ success: false, error: "Failed to link match to draft" }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
 
-      // Extract player stats and update player_stats records
-      const playerStats: PlayerStatFromMatch[] = friendlyMatch.player_stats || [];
       const statsApplied: Array<{
         discord_user_id: string;
         ea_username: string;
@@ -341,23 +459,16 @@ Deno.serve(async (req) => {
         rating: number;
         position: string;
       }> = [];
+      const failed: string[] = [];
 
-      for (const pStat of playerStats) {
-        const eaUsername = (pStat.playername || pStat.ea_username || "").toLowerCase();
-        const discordUserId = eaToDiscordMap.get(eaUsername);
-
-        if (!discordUserId) continue;
-
-        // Check if player is in this draft
-        if (!allDraftPlayers.includes(discordUserId)) continue;
-
-        // Check if player_stats record exists for this draft
+      for (const { line, discordUserId } of linesForDraft) {
         const { data: existingStat } = await supabase
           .from("player_stats")
           .select("id")
           .eq("guild_id", guild_id)
           .eq("discord_user_id", discordUserId)
           .eq("draft_id", draft_id)
+          .limit(1)
           .maybeSingle();
 
         const statData = {
@@ -366,38 +477,28 @@ Deno.serve(async (req) => {
           draft_id,
           ea_match_id,
           match_type: "draft",
-          goals: parseInt(pStat.goals?.toString() || "0"),
-          assists: parseInt(pStat.assists?.toString() || "0"),
-          ea_match_rating: parseFloat(pStat.rating?.toString() || "0"),
-          position_played: pStat.position || null,
-          saves: parseInt(pStat.saves?.toString() || "0"),
-          tackles: parseInt(pStat.tackles?.toString() || "0"),
-          passes: parseInt(pStat.passes?.toString() || "0"),
-          pass_attempts: parseInt(pStat.passAttempts?.toString() || "0"),
-          shots: parseInt(pStat.shots?.toString() || "0"),
-          man_of_match: pStat.motm || false,
-          won: friendlyMatch.result === "win",
-          clean_sheet: pStat.position === "GK" && (friendlyMatch.score_against || 0) === 0,
+          team: teamA.has(discordUserId) ? "a" : teamB.has(discordUserId) ? "b" : null,
+          ...line.stats,
+          won: line.side_won,
+          clean_sheet: isGoalkeeper(line.stats.position_played) && line.side_conceded === 0,
         };
 
-        if (existingStat) {
-          // Update existing record with EA stats
-          await supabase
-            .from("player_stats")
-            .update(statData)
-            .eq("id", existingStat.id);
-        } else {
-          // Insert new record
-          await supabase.from("player_stats").insert(statData);
+        const { error: writeError } = existingStat
+          ? await supabase.from("player_stats").update(statData).eq("id", existingStat.id)
+          : await supabase.from("player_stats").insert(statData);
+        if (writeError) {
+          console.error(`Error saving stats for ${discordUserId}:`, writeError);
+          failed.push(discordUserId);
+          continue;
         }
 
         statsApplied.push({
           discord_user_id: discordUserId,
-          ea_username: eaUsername,
-          goals: statData.goals,
-          assists: statData.assists,
-          rating: statData.ea_match_rating,
-          position: statData.position_played || "?",
+          ea_username: line.ea_username,
+          goals: Number(line.stats.goals) || 0,
+          assists: Number(line.stats.assists) || 0,
+          rating: Number(line.stats.ea_match_rating) || 0,
+          position: String(line.stats.position_played || "?"),
         });
 
         // Trigger rating recalculation for this player
@@ -426,6 +527,7 @@ Deno.serve(async (req) => {
           match_result: friendlyMatch.result,
           match_score: `${friendlyMatch.score_for}-${friendlyMatch.score_against}`,
           players_updated: statsApplied.length,
+          players_failed: failed.length,
           stats_applied: statsApplied,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }

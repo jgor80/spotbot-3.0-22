@@ -14984,7 +14984,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setColor(0x00ff00)
           .setDescription(
             `**Match:** ${data.match_result === 'win' ? '✅' : data.match_result === 'loss' ? '❌' : '🟡'} ${data.match_score}\n\n` +
-            `**Players Updated:** ${data.players_updated}\n\n` +
+            `**Players Updated:** ${data.players_updated}` +
+            (data.players_failed ? ` (${data.players_failed} could not be saved, check the logs)` : '') + `\n\n` +
             (statsLines.length > 0 ? `**Stats Applied:**\n${statsLines.join('\n')}` : '')
           )
           .setFooter({ text: 'Player ratings will be recalculated' });
