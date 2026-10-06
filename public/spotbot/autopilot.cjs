@@ -662,7 +662,15 @@ function createAutopilot(deps) {
         await channel.send({ content: `🏁 ${older.length} earlier game${older.length === 1 ? '' : 's'} synced: ${line}`.slice(0, 2000) }).catch(() => {});
       }
       for (const m of shown) {
-        await channel.send(await buildRecap(rowsById.get(m.id), club)).catch((err) => console.warn(`[autopilot] recap ${m.id} failed: ${err.message}`));
+        const recapRow = rowsById.get(m.id);
+        const recapMsg = await buildRecap(recapRow, club);
+        // "I'm <gamertag>" buttons for players on the pitch who aren't linked yet
+        if (deps.autoLink && Array.isArray(recapRow?.player_stats)) {
+          const tags = recapRow.player_stats.map((p) => p?.ea_username).filter(Boolean);
+          const rows = await deps.autoLink.claimButtons(guildId, tags).catch(() => []);
+          if (rows.length) recapMsg.components = [...(recapMsg.components || []), ...rows];
+        }
+        await channel.send(recapMsg).catch((err) => console.warn(`[autopilot] recap ${m.id} failed: ${err.message}`));
       }
     }
   }

@@ -393,6 +393,7 @@ const managerHub = createManagerHub({
 // Voice check-ins, the auto-drafted XI, match recaps, sub requests on drop-outs and the Monday digest
 const autopilot = createAutopilot({
   supabase,
+  autoLink,
   events: clubEvents,
   matchNight,
   getGuildState,
