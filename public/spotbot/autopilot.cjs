@@ -4,6 +4,7 @@
 //   recaps  post a recap as soon as a finished EA match lands in club_matches
 //   subs    a starter out of voice for 3 minutes during the session gets a sub request
 //   digest  Monday morning recap of formations, pairings and show-up rates
+//   session a recap of every match played while the club's voice channel was busy, once it empties
 // Everything is on by default; /autopilot (or the hub's Autopilot button) switches parts off.
 // Settings and cursors live on the club in guild_settings.clubs, so no new tables are needed.
 
@@ -20,6 +21,7 @@ const { missingChannelPerms } = require('./perm-check.cjs');
 const { activeClubs, resolveClub } = require('./manager-hub.cjs');
 const { toInsightMatches, computeOverview, computeCombos, computeFormations, playerKey, winPct } = require('./club-insights.cjs');
 const { autofillLineup, FORMATION_SLOTS } = require('./lineup-autofill.cjs');
+const { seasonTotals } = require('./player-season.cjs');
 const T = require('./event-time.cjs');
 
 const FEATURES = {
@@ -28,6 +30,12 @@ const FEATURES = {
   recaps: { label: 'Match recaps', emoji: '🏁', help: 'Post a recap here as soon as EA records a finished match.' },
   subs: { label: 'Auto sub requests', emoji: '🆘', help: 'A starter out of voice for 3 min during the session gets a sub request.' },
   digest: { label: 'Monday digest', emoji: '🗞️', help: 'Formation win rates, best pairings and show-up rates every Monday morning.' },
+  session: { label: 'Session recap', emoji: '🧾', help: 'When the club voice channel empties, a recap of every match played since it filled up.' },
+  // Premium: these only run when the server has GafferBot Premium (see premium.cjs)
+  graphics: { label: 'Matchday graphics', emoji: '🖼️', premium: true, help: 'Recap images, a Team of the Week poster on Sunday night and squad cards on the 1st of the month.' },
+  moments: { label: 'Big moments', emoji: '📣', premium: true, help: 'Hat-tricks, comebacks of form and big wins get a shout-out with links to anyone live on Twitch.' },
+  trophies: { label: 'Stat trophies', emoji: '🏆', premium: true, help: 'Club Legend, Golden Boot, Playmaker, Golden Glove and In-Form roles move on their own after each match.' },
+  coach: { label: 'Assistant coach', emoji: '🧠', premium: true, help: 'A session debrief 45 minutes after the last match of the night.' },
 };
 
 const VOICE_LEAD_MS = 30 * 60 * 1000;
@@ -37,6 +45,11 @@ const SUB_WATCH_FROM_MS = 10 * 60 * 1000;
 const RECAP_MAX_AGE_MS = 3 * 60 * 60 * 1000;
 // More than this many new games at once (a catch-up after downtime) get one summary line instead
 const RECAPS_PER_TICK = 8;
+// A session ends once the voice channel has been empty this long (EA's last match needs a sync or two to land)
+const SESSION_SETTLE_MS = 15 * 60 * 1000;
+// Matches EA stamps slightly before anyone joined voice (e.g. a quick rejoin) still count
+const SESSION_EARLY_MS = 5 * 60 * 1000;
+const SESSION_MAX_PLAYERS = 24;
 const DIGEST_HOUR = 10;
 const DEFAULT_FORMATION = '4-3-3 FLAT';
 const MIN_FORMATION_GAMES = 3;
@@ -84,6 +97,9 @@ function createAutopilot(deps) {
   const drafted = new Set();
   const lineupPool = new Map();
   const startedAt = new Date().toISOString();
+  const newMatchHooks = [];
+  const sessionHooks = [];
+  let recapImage = null;
 
   // ---------- Settings ----------
 
@@ -580,6 +596,17 @@ function createAutopilot(deps) {
     const form = upTo.slice(0, 5).reverse().map((m) => RESULT[m.result].emoji).join('');
     embed.addFields({ name: 'Form', value: `${form}  (${record(upTo.slice(0, 10))} in the last ${Math.min(upTo.length, 10)})` });
     if (prefs.branding?.footer) embed.setFooter({ text: prefs.branding.footer });
+    // Premium servers get the broadcast-style image on top (graphics.cjs via broadcast.cjs)
+    if (recapImage && isOn(club, 'graphics')) {
+      const png = await recapImage({ row, club, match, history: upTo, prefs, talkingPoint: nugget }).catch((err) => {
+        console.warn(`[autopilot] recap image ${row.id} failed: ${err.message}`);
+        return null;
+      });
+      if (png) {
+        embed.setImage('attachment://recap.png');
+        return { embeds: [embed], files: [{ attachment: png, name: 'recap.png' }] };
+      }
+    }
     return { embeds: [embed] };
   }
 
@@ -611,13 +638,16 @@ function createAutopilot(deps) {
       await updateClub(guildId, clubKey, (ap) => {
         ap.recap_cursor = lastSeen;
       });
-      if (!isOn(club, 'recaps')) continue;
-      // History backfills (/syncclub) insert old games; only recap ones played in the last few hours
+      // History backfills (/syncclub) insert old games; only react to ones played in the last few hours
       // Every recent game gets its own recap, oldest first, so back-to-back games are never dropped
       const recent = toInsightMatches(fresh)
         .filter((m) => now.getTime() - m.playedAt.getTime() < RECAP_MAX_AGE_MS)
         .reverse();
       if (!recent.length) continue;
+      for (const hook of newMatchHooks) {
+        await hook(guildId, club, recent, fresh).catch((err) => console.warn(`[autopilot] new-match hook failed: ${err.message}`));
+      }
+      if (!isOn(club, 'recaps')) continue;
       const channel = await postChannel(guildId, club);
       if (!channel) {
         console.warn(`[autopilot] ${recent.length} recap(s) for ${guildId}/${clubKey} not posted: no channel I can post in`);
@@ -687,6 +717,92 @@ function createAutopilot(deps) {
       note: `<@${userId}> left <#${vcId}> ${Math.round(SUB_GRACE_MS / 60000)} min ago.`,
     });
     await matchNight.refreshCheckin(event);
+  }
+
+  // ---------- 3b. Voice-bounded session recap ----------
+
+  // One player's line: GP and only the stats that aren't zero
+  function sessionPlayerLine(t) {
+    const parts = [`👕 GP ${t.games}`];
+    if (t.goals) parts.push(`🥅 GLS ${t.goals}`);
+    if (t.shots) parts.push(`🎯 SHT ${t.shots}`);
+    if (t.assists) parts.push(`🤝 AST ${t.assists}`);
+    if (t.passAttempts) parts.push(`👟 PAS ${t.passesMade}/${t.passAttempts}`);
+    if (t.tackleAttempts || t.tackles) parts.push(`🛡 TKL ${t.tackles}/${t.tackleAttempts || t.tackles}`);
+    if (t.interceptions) parts.push(`🧠 INT ${t.interceptions}`);
+    if (t.saves) parts.push(`🧤 SVS ${t.saves}`);
+    if (t.motm) parts.push(`⭐ MOTM ${t.motm}`);
+    return parts.join(' · ');
+  }
+
+  async function buildSessionRecap(guildId, club, matches, startedAt, endedAt) {
+    const prefs = await events.serverPrefs(guildId);
+    const ordered = [...matches].sort((a, b) => a.playedAt - b.playedAt);
+    const goalsFor = ordered.reduce((s, m) => s + m.scoreFor, 0);
+    const goalsAgainst = ordered.reduce((s, m) => s + m.scoreAgainst, 0);
+    const minutes = Math.round((endedAt - startedAt) / 60000);
+    const embed = new EmbedBuilder()
+      .setTitle(`🧾 Session recap · ${club.name}`)
+      .setColor(Number(prefs.branding?.color) || 0x5865f2)
+      .setDescription(
+        `You played **${ordered.length}** match${ordered.length === 1 ? '' : 'es'} in ${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)}h ` : ''}${minutes % 60}m.\n` +
+          `**${record(ordered)}** · ${goalsFor} scored, ${goalsAgainst} conceded\n` +
+          ordered.map((m) => `${RESULT[m.result].emoji} ${m.scoreFor}-${m.scoreAgainst} ${m.opponent}`).join('\n')
+      )
+      .setTimestamp(new Date(endedAt));
+    const players = [...seasonTotals(ordered).values()].sort((a, b) => b.avgRating - a.avgRating || b.games - a.games);
+    for (const t of players.slice(0, SESSION_MAX_PLAYERS)) {
+      embed.addFields({ name: `${t.name} · ${t.avgRating ? t.avgRating.toFixed(1) : '–'}`, value: truncate(sessionPlayerLine(t)), inline: true });
+    }
+    embed.setFooter({ text: `${prefs.branding?.footer ? `${prefs.branding.footer} · ` : ''}From voice to voice: ${ordered.length} EA matches. /autopilot to switch this off.` });
+    return { embeds: [embed] };
+  }
+
+  async function closeSession(guild, club, session) {
+    const startedAt = new Date(session.started_at).getTime();
+    const endedAt = new Date(session.empty_since).getTime();
+    const matches = loadMatches ? await loadMatches(guild.id, club.key).catch(() => []) : [];
+    const played = matches.filter((m) => m.playedAt.getTime() >= startedAt - SESSION_EARLY_MS && m.playedAt.getTime() <= endedAt);
+    if (!played.length) return;
+    const recap = await buildSessionRecap(guild.id, club, played, startedAt, endedAt);
+    // Premium extras (the assistant coach) add embeds to the same message
+    for (const hook of sessionHooks) {
+      const extra = await hook({ guildId: guild.id, club, matches: played, allMatches: matches, startedAt, endedAt }).catch((err) => {
+        console.warn(`[autopilot] session hook failed: ${err.message}`);
+        return null;
+      });
+      if (extra?.embeds) recap.embeds.push(...extra.embeds);
+    }
+    const channel = await postChannel(guild.id, club);
+    if (channel) await channel.send(recap).catch((err) => console.warn(`[autopilot] session recap failed: ${err.message}`));
+  }
+
+  // A session opens when the linked voice channel gets its first player and closes once it has
+  // been empty for SESSION_SETTLE_MS; the state lives on the club so a restart doesn't lose it.
+  async function sweepSessions(now) {
+    for (const guild of client().guilds.cache.values()) {
+      const state = await getGuildState(guild.id);
+      for (const club of activeClubs(state)) {
+        const vcId = state.clubVcLinks?.[club.key];
+        if (!vcId || !club.ea_club_id) continue;
+        const session = club.autopilot?.session || null;
+        const busy = voiceMembers(guild.id, vcId).length > 0;
+        if (busy && (!session || session.empty_since)) {
+          await updateClub(guild.id, club.key, (ap) => {
+            ap.session = session ? { started_at: session.started_at } : { started_at: now.toISOString() };
+          });
+        } else if (!busy && session && !session.empty_since) {
+          await updateClub(guild.id, club.key, (ap) => {
+            ap.session = { ...session, empty_since: now.toISOString() };
+          });
+        } else if (!busy && session?.empty_since && now - new Date(session.empty_since) >= SESSION_SETTLE_MS) {
+          await updateClub(guild.id, club.key, (ap) => {
+            delete ap.session;
+          });
+          if (isOn(club, 'session')) await closeSession(guild, club, session).catch((err) => console.warn(`[autopilot] session ${club.key} failed: ${err.message}`));
+        }
+      }
+    }
   }
 
   // ---------- 4. Weekly digest ----------
@@ -780,22 +896,27 @@ function createAutopilot(deps) {
       .setColor(0x5865f2)
       .setDescription(
         Object.entries(FEATURES)
-          .map(([k, f]) => `${isOn(club, k) ? '✅' : '⛔'} ${f.emoji} **${f.label}**: ${f.help}`)
+          .map(([k, f]) => `${isOn(club, k) ? '✅' : '⛔'} ${f.emoji} **${f.label}**${f.premium ? ' ⭐' : ''}: ${f.help}`)
           .join('\n')
       )
       .addFields(
         { name: 'Voice channel', value: vcId ? `<#${vcId}>` : 'Not linked. Voice check-ins, the auto XI and sub requests need one: run `/vcspots` from the club voice channel.', inline: true },
         { name: 'Recaps and digest go to', value: channel ? `<#${channel}>` : 'The channel your events are posted in', inline: true }
       );
-    const toggles = new ActionRowBuilder().addComponents(
-      Object.entries(FEATURES).map(([k, f]) =>
-        new ButtonBuilder()
-          .setCustomId(`ap_t:${k}:${club.key}`)
-          .setLabel(f.label)
-          .setEmoji(f.emoji)
-          .setStyle(isOn(club, k) ? ButtonStyle.Success : ButtonStyle.Secondary)
-      )
-    );
+    // Discord allows five buttons per row
+    const toggleRow = (entries) =>
+      new ActionRowBuilder().addComponents(
+        entries.map(([k, f]) =>
+          new ButtonBuilder()
+            .setCustomId(`ap_t:${k}:${club.key}`)
+            .setLabel(f.label)
+            .setEmoji(f.emoji)
+            .setStyle(isOn(club, k) ? ButtonStyle.Success : ButtonStyle.Secondary)
+        )
+      );
+    const entries = Object.entries(FEATURES);
+    const toggles = [];
+    for (let i = 0; i < entries.length; i += 5) toggles.push(toggleRow(entries.slice(i, i + 5)));
     const pickChannel = new ActionRowBuilder().addComponents(
       new ChannelSelectMenuBuilder()
         .setCustomId(`ap_ch:${club.key}`)
@@ -805,7 +926,8 @@ function createAutopilot(deps) {
     const extras = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`ap_digest:${club.key}`).setLabel('Preview digest').setEmoji('🗞️').setStyle(ButtonStyle.Secondary)
     );
-    return { embeds: [embed], components: [toggles, pickChannel, extras] };
+    embed.setFooter({ text: '⭐ Premium jobs only run on servers with GafferBot Premium. /premium for details.' });
+    return { embeds: [embed], components: [...toggles, pickChannel, extras] };
   }
 
   async function withClub(interaction, key) {
@@ -878,6 +1000,7 @@ function createAutopilot(deps) {
       ['lineup', draftDue],
       ['recaps', postRecaps],
       ['digest', postDigests],
+      ['session', sweepSessions],
     ]) {
       await job(now).catch((err) => console.warn(`[autopilot] ${name} failed: ${err.message}`));
     }
@@ -893,7 +1016,27 @@ function createAutopilot(deps) {
   // The bot's own EA monitor posts a basic result card; skip it when recaps cover the club
   const postsRecaps = (club) => isOn(club, 'recaps');
 
-  return { commands: AUTOPILOT_COMMANDS, handleInteraction, onVoiceStateUpdate, postsRecaps, buildDigest, buildRecap, draft };
+  return {
+    commands: AUTOPILOT_COMMANDS,
+    handleInteraction,
+    onVoiceStateUpdate,
+    postsRecaps,
+    buildDigest,
+    buildRecap,
+    draft,
+    isOn,
+    updateClub,
+    postChannel,
+    // fn(guildId, club, recentMatches, rows) after new EA matches land, whether or not recaps are on
+    onNewMatches: (fn) => newMatchHooks.push(fn),
+    // fn({ guildId, club, matches, allMatches, startedAt, endedAt }) -> { embeds } added to the session recap
+    onSessionEnd: (fn) => sessionHooks.push(fn),
+    buildSessionRecap,
+    // fn({ row, club, match, history, prefs, talkingPoint }) -> PNG buffer or null
+    setRecapImage: (fn) => {
+      recapImage = fn;
+    },
+  };
 }
 
 module.exports = { createAutopilot, AUTOPILOT_COMMANDS, FEATURES };
