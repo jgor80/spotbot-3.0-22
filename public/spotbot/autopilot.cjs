@@ -35,7 +35,8 @@ const LINEUP_LEAD_MS = 10 * 60 * 1000;
 const SUB_GRACE_MS = 3 * 60 * 1000;
 const SUB_WATCH_FROM_MS = 10 * 60 * 1000;
 const RECAP_MAX_AGE_MS = 3 * 60 * 60 * 1000;
-const RECAPS_PER_TICK = 3;
+// More than this many new games at once (a catch-up after downtime) get one summary line instead
+const RECAPS_PER_TICK = 8;
 const DIGEST_HOUR = 10;
 const DEFAULT_FORMATION = '4-3-3 FLAT';
 const MIN_FORMATION_GAMES = 3;
@@ -589,10 +590,11 @@ function createAutopilot(deps) {
       .from('club_matches')
       .select('id, guild_id, club_key, created_at, result, score_for, score_against, opponent_club_name, player_stats, match_data, match_type')
       .gte('created_at', new Date(now.getTime() - 30 * 60 * 1000).toISOString())
-      .order('created_at', { ascending: true })
-      .limit(100);
+      .order('created_at', { ascending: false })
+      .limit(300);
+    // Newest first so a big history backfill can't push this tick's games out of the page
     const byClub = new Map();
-    for (const row of data || []) {
+    for (const row of (data || []).reverse()) {
       if (!client().guilds.cache.has(row.guild_id)) continue;
       const key = `${row.guild_id}|${row.club_key}`;
       if (!byClub.has(key)) byClub.set(key, []);
@@ -611,12 +613,25 @@ function createAutopilot(deps) {
       });
       if (!isOn(club, 'recaps')) continue;
       // History backfills (/syncclub) insert old games; only recap ones played in the last few hours
-      const recent = toInsightMatches(fresh).filter((m) => now.getTime() - m.playedAt.getTime() < RECAP_MAX_AGE_MS);
-      const ids = new Set(recent.slice(0, RECAPS_PER_TICK).map((m) => m.id));
-      const channel = ids.size ? await postChannel(guildId, club) : null;
-      if (!channel) continue;
-      for (const row of fresh.filter((r) => ids.has(r.id))) {
-        await channel.send(await buildRecap(row, club)).catch((err) => console.warn(`[autopilot] recap ${row.id} failed: ${err.message}`));
+      // Every recent game gets its own recap, oldest first, so back-to-back games are never dropped
+      const recent = toInsightMatches(fresh)
+        .filter((m) => now.getTime() - m.playedAt.getTime() < RECAP_MAX_AGE_MS)
+        .reverse();
+      if (!recent.length) continue;
+      const channel = await postChannel(guildId, club);
+      if (!channel) {
+        console.warn(`[autopilot] ${recent.length} recap(s) for ${guildId}/${clubKey} not posted: no channel I can post in`);
+        continue;
+      }
+      const rowsById = new Map(fresh.map((r) => [r.id, r]));
+      const shown = recent.length > RECAPS_PER_TICK ? recent.slice(-RECAPS_PER_TICK) : recent;
+      if (shown.length < recent.length) {
+        const older = recent.slice(0, recent.length - shown.length);
+        const line = older.map((m) => `${RESULT[m.result].emoji} ${m.scoreFor}-${m.scoreAgainst} ${m.opponent}`).join(' · ');
+        await channel.send({ content: `🏁 ${older.length} earlier game${older.length === 1 ? '' : 's'} synced: ${line}`.slice(0, 2000) }).catch(() => {});
+      }
+      for (const m of shown) {
+        await channel.send(await buildRecap(rowsById.get(m.id), club)).catch((err) => console.warn(`[autopilot] recap ${m.id} failed: ${err.message}`));
       }
     }
   }
