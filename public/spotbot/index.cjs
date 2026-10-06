@@ -33,7 +33,12 @@ const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
 const { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES } = require('./club-stats.cjs');
+const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
+
+installProcessGuards();
 const axios = require('axios');
+const { installEaRetry, eaRecentlyThrottled, EA_THROTTLED_MESSAGE } = require('./ea-retry.cjs');
+installEaRetry(axios);
 const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
@@ -394,6 +399,7 @@ const client = new Client({
     GatewayIntentBits.DirectMessages
   ]
 });
+installClientGuards(client);
 
 // =======================
 // FORMATION DEFINITIONS (loaded from JSON for efficiency)
@@ -3880,9 +3886,14 @@ client.once(Events.ClientReady, async (c) => {
     }
     console.log(`🧹 Guild command cleanup complete`);
     
-    // Register commands globally only (not per-guild to avoid duplicates)
-    await c.application.commands.set(COMMANDS);
-    console.log(`✅ Commands registered globally for ${c.guilds.cache.size} guilds`);
+    // Register commands globally only (not per-guild to avoid duplicates).
+    // A registration failure must not stop the background jobs below from starting.
+    try {
+      await c.application.commands.set(prepareCommandsForRegistration(COMMANDS));
+      console.log(`✅ Commands registered globally for ${c.guilds.cache.size} guilds`);
+    } catch (err) {
+      console.error('❌ Failed to register commands:', err);
+    }
     
     // Sync guild names to database
     await syncGuildNames(c);
@@ -3890,7 +3901,7 @@ client.once(Events.ClientReady, async (c) => {
     // Resume EA FC Pro Clubs monitoring for all linked clubs
     resumeEaMonitoring();
     
-    // Start background polling for pending feedback DMs (created by local sync script)
+    // Start background polling for pending feedback DMs (created by draft results and the optional local sync)
     startFeedbackDMPolling(c);
     
     // Start Xbox presence polling for game detection
@@ -3904,7 +3915,7 @@ client.once(Events.ClientReady, async (c) => {
     scouting.start(c);
     trials.start(c);
   } catch (err) {
-    console.error('❌ Failed to register commands:', err);
+    console.error('❌ Startup error:', err);
   }
 });
 
@@ -9052,7 +9063,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const errorText = await response.text();
             console.error('[squadiq_syncstats] Sync failed:', response.status, errorText);
             return interaction.editReply({ 
-              content: `❌ Stats sync failed: ${response.status} - Check if EA API is accessible from local sync script.` 
+              content: `❌ Stats sync failed (${response.status}). Try again in a minute.` 
             });
           }
 
@@ -9060,15 +9071,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
           
           return interaction.editReply({
             content: `📊 **Stats Sync Complete**\n\n` +
-              `• Matches synced: **${result.total_matches || 0}**\n` +
-              `• Members updated: **${result.total_members || 0}**\n` +
-              `• Clubs processed: **${result.total_clubs || 0}**\n\n` +
-              `⚠️ Note: Full EA sync runs via local script every 10 min. This triggers an immediate refresh.`
+              `• Matches synced: **${result.synced || 0}**\n` +
+              `• Members updated: **${result.member_stats_synced || 0}**\n` +
+              `• Clubs processed: **${result.club_stats_synced || 0}**` +
+              (result.warning ? `\n\n⚠️ ${result.warning}` : '')
           });
         } catch (error) {
           console.error('[squadiq_syncstats] Error:', error);
           return interaction.editReply({ 
-            content: `❌ Stats sync error: ${error.message}. The local EA sync script handles most syncing.` 
+            content: `❌ Stats sync error: ${error.message}` 
           });
         }
       }
@@ -15815,12 +15826,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       }
     }
   } catch (err) {
+    if (isIgnorableDiscordError(err)) return;
     console.error('❌ Error handling interaction:', err);
-    if (!interaction.replied && !interaction.deferred) {
-      try {
-        await interaction.reply({ content: 'An error occurred.', flags: 64 });
-      } catch (e) {}
-    }
+    await replyWithError(interaction);
   }
 });
 
@@ -16872,7 +16880,7 @@ async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
     ].slice(0, maxMatches);
     
     if (allMatches.length === 0) {
-      return { synced: 0, skipped: 0, error: 'No matches found from EA API' };
+      return { synced: 0, skipped: 0, error: eaRecentlyThrottled() ? EA_THROTTLED_MESSAGE : 'No matches found from EA API' };
     }
     
     // Get all existing match IDs to avoid duplicates

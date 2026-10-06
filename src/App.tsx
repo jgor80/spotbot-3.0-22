@@ -6,24 +6,33 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { GuildProvider } from "@/contexts/GuildContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import Index from "./pages/Index";
-import AuthPage from "./pages/AuthPage";
-import Leaderboard from "./pages/Leaderboard";
+import { lazy, Suspense } from "react";
+import { Loader2 } from "lucide-react";
 
-import ProfilePage from "./pages/ProfilePage";
-import SettingsPage from "./pages/SettingsPage";
-import DraftsPage from "./pages/DraftsPage";
-import ScoutingPage from "./pages/ScoutingPage";
-import ScoutingIntelPage from "./pages/ScoutingIntelPage";
-import CompetitionsPage from "./pages/CompetitionsPage";
-import TeamsPage from "./pages/TeamsPage";
-import RatingsPage from "./pages/RatingsPage";
-import RecentGamesPage from "./pages/RecentGamesPage";
-import InsightsPage from "./pages/InsightsPage";
-import SquadIQPanel from "./pages/SquadIQPanel";
-import NotFound from "./pages/NotFound";
+// Pages load on demand so the first visit only downloads the page being opened.
+const Index = lazy(() => import("./pages/Index"));
+const AuthPage = lazy(() => import("./pages/AuthPage"));
+const Leaderboard = lazy(() => import("./pages/Leaderboard"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const DraftsPage = lazy(() => import("./pages/DraftsPage"));
+const ScoutingPage = lazy(() => import("./pages/ScoutingPage"));
+const ScoutingIntelPage = lazy(() => import("./pages/ScoutingIntelPage"));
+const CompetitionsPage = lazy(() => import("./pages/CompetitionsPage"));
+const TeamsPage = lazy(() => import("./pages/TeamsPage"));
+const RatingsPage = lazy(() => import("./pages/RatingsPage"));
+const RecentGamesPage = lazy(() => import("./pages/RecentGamesPage"));
+const InsightsPage = lazy(() => import("./pages/InsightsPage"));
+const SquadIQPanel = lazy(() => import("./pages/SquadIQPanel"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
+
+const PageLoading = () => (
+  <div className="min-h-screen flex items-center justify-center bg-background">
+    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+  </div>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -33,25 +42,27 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <Routes>
-              <Route path="/auth" element={<AuthPage />} />
-              <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-              <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
-              <Route path="/lineup" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
-              <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
-              <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-              <Route path="/drafts" element={<ProtectedRoute><DraftsPage /></ProtectedRoute>} />
-              <Route path="/scouting" element={<ProtectedRoute><ScoutingPage /></ProtectedRoute>} />
-              <Route path="/scouting/intel" element={<ProtectedRoute><ScoutingIntelPage /></ProtectedRoute>} />
-              <Route path="/competitions" element={<ProtectedRoute><CompetitionsPage /></ProtectedRoute>} />
-              <Route path="/teams" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
-              <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
-              <Route path="/games" element={<ProtectedRoute><RecentGamesPage /></ProtectedRoute>} />
-              <Route path="/insights" element={<ProtectedRoute><InsightsPage /></ProtectedRoute>} />
-              <Route path="/squadiq" element={<ProtectedRoute><SquadIQPanel /></ProtectedRoute>} />
-              <Route path="/players" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <Suspense fallback={<PageLoading />}>
+              <Routes>
+                <Route path="/auth" element={<AuthPage />} />
+                <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+                <Route path="/lineup" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
+                <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+                <Route path="/drafts" element={<ProtectedRoute><DraftsPage /></ProtectedRoute>} />
+                <Route path="/scouting" element={<ProtectedRoute><ScoutingPage /></ProtectedRoute>} />
+                <Route path="/scouting/intel" element={<ProtectedRoute><ScoutingIntelPage /></ProtectedRoute>} />
+                <Route path="/competitions" element={<ProtectedRoute><CompetitionsPage /></ProtectedRoute>} />
+                <Route path="/teams" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
+                <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
+                <Route path="/games" element={<ProtectedRoute><RecentGamesPage /></ProtectedRoute>} />
+                <Route path="/insights" element={<ProtectedRoute><InsightsPage /></ProtectedRoute>} />
+                <Route path="/squadiq" element={<ProtectedRoute><SquadIQPanel /></ProtectedRoute>} />
+                <Route path="/players" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
           </BrowserRouter>
         </TooltipProvider>
       </GuildProvider>
