@@ -85,7 +85,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur-lg">
-        <div className="container flex h-14 items-center gap-3 md:h-16 md:gap-6">
+        <div className="container flex h-14 items-center gap-3 px-4 sm:px-6 md:h-16 md:gap-6 lg:px-8">
           <Link to="/" className="flex shrink-0 items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-hero shadow-sm">
               <Zap className="h-4 w-4 text-primary-foreground" />
@@ -174,7 +174,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       </header>
 
       {/* Bottom padding keeps content clear of the mobile tab bar */}
-      <main className="container pb-28 pt-5 md:pt-8 lg:pb-12">{children}</main>
+      <main className="container px-4 pb-28 pt-5 sm:px-6 md:pt-8 lg:px-8 lg:pb-12">{children}</main>
 
       {/* Mobile tab bar */}
       <nav
