@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createHmac } from "node:crypto";
+import { rejectUnlessCaller } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -159,6 +160,13 @@ Deno.serve(async (req) => {
 
   const url = new URL(req.url);
   const path = url.pathname.split("/").pop();
+
+  // setup/remove/list manage a server's subscriptions, so only the bot may call them.
+  // The Twitch callback itself is checked by its message signature below.
+  if (path === "setup" || path === "remove" || path === "list") {
+    const denied = await rejectUnlessCaller(req, { botOnly: true });
+    if (denied) return denied;
+  }
 
   try {
     // =============================

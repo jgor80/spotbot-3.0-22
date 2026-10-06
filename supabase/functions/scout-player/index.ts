@@ -2,6 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { FC_PLATFORMS, toFcPlatform } from '../_shared/ea.ts'
+import { rejectUnlessCaller } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -220,6 +221,10 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // verify_jwt is off for this function: only the bot or a signed-in web user may call it.
+  const denied = await rejectUnlessCaller(req);
+  if (denied) return denied;
 
   try {
     const { guild_id, player_id, ea_username, ea_platform } = await req.json();
