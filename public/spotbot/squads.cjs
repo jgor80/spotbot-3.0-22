@@ -7,9 +7,9 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionsBitField,
 } = require('discord.js');
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
+const { isServerAdmin } = require('./perm-check.cjs');
 const T = require('./event-time.cjs');
 
 const SQUAD_COMMANDS = [
@@ -48,13 +48,6 @@ const SQUAD_COMMANDS = [
   },
 ];
 
-function isServerAdmin(member) {
-  try {
-    return !!member?.permissions?.has?.(PermissionsBitField.Flags.ManageGuild);
-  } catch {
-    return false;
-  }
-}
 
 function createSquads(deps) {
   const { supabase, getGuildState, saveGuildSettings, isManager } = deps;
