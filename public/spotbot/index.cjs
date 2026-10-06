@@ -1,5 +1,5 @@
 // ============================================
-// SquadIQ Spots - Unified Discord Bot
+// GafferBot - Unified Discord Bot
 // Combines Spot Management + Position Preferences
 // with Supabase persistence and auto-assign from VC
 // ============================================
@@ -455,7 +455,7 @@ async function ensurePositionRoles(guild) {
   const roles = {};
   for (const pos of POSITION_ROLE_OPTIONS) {
     roles[pos] = guild.roles.cache.find((r) => r.name.toUpperCase() === pos)
-      || await guild.roles.create({ name: pos, mentionable: true, reason: 'SquadIQ position roles' });
+      || await guild.roles.create({ name: pos, mentionable: true, reason: 'GafferBot position roles' });
   }
   return roles;
 }
@@ -469,7 +469,7 @@ const COMMANDS = [
   { name: 'spotpanel', description: 'Create the global control panel for club spots.' },
   { name: 'spots', description: 'Show a read-only board with club dropdown.' },
   { name: 'vcspots', description: 'Create/update a live club spot panel linked to your current voice channel.' },
-  { name: 'spothelp', description: 'Shows the SquadIQ Spots manual & quick commands.' },
+  { name: 'spothelp', description: 'Shows the GafferBot manual & quick commands.' },
   {
     name: 'spotblock',
     description: 'Block or unblock a user from moving players.',
@@ -665,7 +665,7 @@ const COMMANDS = [
   },
 
   // Admin Panel
-  { name: 'squadiq', description: 'Launch the SquadIQ control panel in this channel (admin only).' },
+  { name: 'squadiq', description: 'Launch the GafferBot control panel in this channel (admin only).' },
   { name: 'refreshpanel', description: 'Force refresh the admin panel in this channel.' },
 
   // Scouting Panel
@@ -1555,7 +1555,7 @@ async function handleSlotOpened(guildId, clubKey, slotIndex) {
       if (!member) continue;
 
       await member.send({
-        content: `✅ A spot you were waiting for just opened: **${slotLabel}** in **${clubName}**.\nJump into VC and claim it on the SquadIQ panel!`
+        content: `✅ A spot you were waiting for just opened: **${slotLabel}** in **${clubName}**.\nJump into VC and claim it on the GafferBot panel!`
       });
     } catch {
       // DMs closed / blocked, ignore
@@ -2161,7 +2161,7 @@ async function smartAssignFromVc(interaction, state, clubKey) {
 
   if (await isUserBlocked(guildId, interaction.user.id)) {
     return interaction.reply({
-      content: 'You have been blocked from moving players on SquadIQ Spots.',
+      content: 'You have been blocked from moving players on GafferBot.',
       flags: 64
     });
   }
@@ -2492,7 +2492,7 @@ async function startAssignFromVc(interaction, state, clubKey) {
 
   if (await isUserBlocked(guildId, interaction.user.id)) {
     return interaction.reply({
-      content: 'You have been blocked from moving players on SquadIQ Spots.',
+      content: 'You have been blocked from moving players on GafferBot.',
       flags: 64
     });
   }
@@ -2574,7 +2574,7 @@ async function startManagePlayers(interaction, state, clubKey) {
 
   if (await isUserBlocked(guildId, interaction.user.id)) {
     return interaction.reply({
-      content: 'You have been blocked from moving players on SquadIQ Spots.',
+      content: 'You have been blocked from moving players on GafferBot.',
       flags: 64
     });
   }
@@ -2854,7 +2854,7 @@ async function setClubFormation(interaction, guildId, clubKey, formationName) {
 
 function buildHelpEmbed() {
   return new EmbedBuilder()
-    .setTitle('📘 SquadIQ Complete Help')
+    .setTitle('📘 GafferBot Complete Help')
     .setColor(0x5865f2)
     .setDescription(
       '**📋 Spot Management** (Use Control Panel buttons)\n' +
@@ -2890,7 +2890,7 @@ function buildHelpEmbed() {
       '✨ Auto-assign from VC prefs\n' +
       '🎮 All features accessible via buttons!'
     )
-    .setFooter({ text: 'SquadIQ • All features button-accessible • No slash commands needed' });
+    .setFooter({ text: 'GafferBot • All features button-accessible • No slash commands needed' });
 }
 
 // =======================
@@ -2902,7 +2902,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
   
   // Header embed with branding
   const headerEmbed = new EmbedBuilder()
-    .setTitle('🎮 SQUADIQ CONTROL CENTER')
+    .setTitle('🎮 GAFFERBOT CONTROL CENTER')
     .setColor(0x5865f2)
     .setDescription(
       '**Your central hub for squad management, drafts, and player analytics.**\n\n' +
@@ -3865,7 +3865,7 @@ function buildDraftPickButtonRows(availablePlayers, draftId, currentPickerId) {
 // =======================
 
 client.once(Events.ClientReady, async (c) => {
-  console.log(`✅ SquadIQ Spots logged in as ${c.user.tag}`);
+  console.log(`✅ GafferBot logged in as ${c.user.tag}`);
 
   try {
     // One-time cleanup: Remove all guild-specific commands to fix duplicates
@@ -3944,7 +3944,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
   try {
     console.log(`[Welcome] New member joined: ${member.user.username} in ${member.guild.name}`);
     
-    // Check if guild has any clubs set up (indicates active SquadIQ usage)
+    // Check if guild has any clubs set up (indicates active GafferBot usage)
     const { data: guildSettings } = await supabase
       .from('guild_settings')
       .select('clubs, guild_id')
@@ -3981,7 +3981,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
       .setTitle(`👋 Welcome to ${member.guild.name}!`)
       .setColor(0x5865f2)
       .setDescription(
-        `This server uses **SquadIQ** to track EA FC Pro Clubs stats, ratings, and more!\n\n` +
+        `This server uses **GafferBot** to track EA FC Pro Clubs stats, ratings, and more!\n\n` +
         `To get started and have your stats tracked automatically, link your EA account now.`
       )
       .addFields(
@@ -3996,7 +3996,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
           inline: false 
         }
       )
-      .setFooter({ text: 'SquadIQ • Pro Clubs Stats Tracker' });
+      .setFooter({ text: 'GafferBot • Pro Clubs Stats Tracker' });
     
     const linkButton = new ButtonBuilder()
       .setCustomId(`welcome_link_ea_${member.guild.id}`)
@@ -5395,7 +5395,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         await setUserBlocked(guildId, target.id, true);
         return interaction.reply({
-          content: `🚫 <@${target.id}> is now **blocked** from moving other players on SquadIQ Spots.`,
+          content: `🚫 <@${target.id}> is now **blocked** from moving other players on GafferBot.`,
           flags: 64
         });
       }
@@ -5420,7 +5420,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (!linkedClubKey) {
           return interaction.reply({
-            content: 'This voice channel is not linked to a SquadIQ club. Ask an admin to link it in the control panel.',
+            content: 'This voice channel is not linked to a GafferBot club. Ask an admin to link it in the control panel.',
             flags: 64
           });
         }
@@ -6914,7 +6914,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setColor(0x00ff00)
           .setDescription(`Your EA username **${eaUsername}** is now linked to your Discord account.\n\nWhen your club plays division matches, your stats will be automatically recorded!`)
           .addFields(
-            { name: '📊 What happens now?', value: 'Your goals, assists, ratings, and other stats from Pro Clubs matches will be tracked and contribute to your SquadIQ rating.', inline: false }
+            { name: '📊 What happens now?', value: 'Your goals, assists, ratings, and other stats from Pro Clubs matches will be tracked and contribute to your GafferBot rating.', inline: false }
           );
 
         return interaction.editReply({ embeds: [embed] });
@@ -7511,7 +7511,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (cmd === 'squadiq') {
         if (!isManager(interaction.member)) {
           return interaction.reply({
-            content: '❌ Only admins and managers can launch the SquadIQ control panel.',
+            content: '❌ Only admins and managers can launch the GafferBot control panel.',
             flags: 64
           });
         }
@@ -9174,7 +9174,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
       }
 
-      // SquadIQ - Toggle Feedback button
+      // GafferBot - Toggle Feedback button
       if (id === 'squadiq_togglefeedback') {
         if (!isManager(interaction.member)) {
           return interaction.reply({ content: '❌ Only managers can toggle feedback settings.', flags: 64 });
@@ -9194,7 +9194,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           });
         }
 
-        // SquadIQ - Clear Pending Feedback button
+        // GafferBot - Clear Pending Feedback button
         if (id === 'squadiq_clearfeedback') {
           if (!isManager(interaction.member)) {
             return interaction.reply({ content: '❌ Only managers can clear pending feedback.', flags: 64 });
@@ -9568,7 +9568,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return interaction.showModal(modal);
       }
 
-      // Remove Club button from SquadIQ Teams Panel
+      // Remove Club button from GafferBot Teams Panel
       if (id === 'squadiq_club_remove') {
         if (!isManager(interaction.member)) {
           return interaction.reply({
@@ -11080,7 +11080,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               },
               { name: '📈 Per-Game Efficiency', value: perGameText, inline: false }
             )
-            .setFooter({ text: '🟢 = Better | 🔴 = Worse | ➖ = Equal • SquadIQ Scouting' })
+            .setFooter({ text: '🟢 = Better | 🔴 = Worse | ➖ = Equal • GafferBot Scouting' })
             .setTimestamp();
 
           return interaction.editReply({ content: null, embeds: [embed], components: [] });
@@ -11930,7 +11930,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               { name: '🎮 Games Played', value: `${playerData.games_played || 0}`, inline: true },
               { name: '📍 Position', value: playerData.primary_position || 'Unknown', inline: true }
             )
-            .setFooter({ text: 'AI-powered analysis • SquadIQ Scouting' })
+            .setFooter({ text: 'AI-powered analysis • GafferBot Scouting' })
             .setTimestamp();
 
           return interaction.editReply({ content: null, embeds: [embed], components: [] });
@@ -11993,7 +11993,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             embed.addFields({ name: `🏟️ Clubs (${eaClubs.length})`, value: clubsText.substring(0, 1000), inline: false });
           }
 
-          embed.setFooter({ text: 'AI-powered analysis • SquadIQ Scouting' });
+          embed.setFooter({ text: 'AI-powered analysis • GafferBot Scouting' });
           embed.setTimestamp();
 
           return interaction.editReply({ 
@@ -12060,7 +12060,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               `Your EA account **${eaUsername}** has been linked!\n\n` +
               `Your stats from club matches will now be automatically tracked and contribute to your ratings.`
             )
-            .setFooter({ text: 'Welcome to SquadIQ!' });
+            .setFooter({ text: 'Welcome to GafferBot!' });
           
           return interaction.update({ content: null, embeds: [embed], components: [] });
         } catch (err) {
@@ -13029,7 +13029,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             description = `✨ **Website Account Created!**\n\n` +
               `📧 **Username:** \`${discordUsername}_${interaction.user.id}@spotbot.local\`\n` +
               `🔑 **Password:** \`${result.password}\`\n\n` +
-              `⚠️ **Save these credentials!** You can use them to log into the SpotBot website.\n\n` +
+              `⚠️ **Save these credentials!** You can use them to log into the GafferBot website.\n\n` +
               `━━━━━━━━━━━━━━━\n\n` +
               `Your EA username **${eaUsername}** is now linked!\n` +
               `🎮 Your stats from Pro Clubs matches will now be automatically tracked.`;
@@ -13157,7 +13157,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setColor(0x00ff00)
           .setDescription(`Your EA username **${eaUsername}** is now linked to your Discord account.\n\nWhen your club plays division matches, your stats will be automatically recorded!`)
           .addFields(
-            { name: '📊 What happens now?', value: 'Your goals, assists, ratings, and other stats from Pro Clubs matches will be tracked and contribute to your SquadIQ rating.', inline: false }
+            { name: '📊 What happens now?', value: 'Your goals, assists, ratings, and other stats from Pro Clubs matches will be tracked and contribute to your GafferBot rating.', inline: false }
           );
 
         return interaction.editReply({ embeds: [embed] });
@@ -13731,7 +13731,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
               { name: '🔴 Team 2', value: `${Math.round(data?.team2_probability || 50)}%`, inline: true }
             )
             .setDescription(data?.analysis || 'Based on player ratings and recent form.')
-            .setFooter({ text: 'AI-powered prediction • SquadIQ' })
+            .setFooter({ text: 'AI-powered prediction • GafferBot' })
             .setTimestamp();
 
           return interaction.editReply({ embeds: [embed] });
@@ -15018,7 +15018,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         return;
       }
 
-      // SquadIQ Club Remove select handler
+      // GafferBot Club Remove select handler
       if (id === 'squadiq_club_remove_select') {
         const clubKey = interaction.values[0];
 

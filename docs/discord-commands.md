@@ -15,7 +15,7 @@ This project exposes Discord-facing commands through Supabase Edge Functions. Us
 - **/lfg [when] [note]**: posts a "looking for a friendly" card. A leader of another club on the server presses Accept (from their club's voice channel) and both contacts are pinged.
 
 ## Availability & "Spot" management
-- **spotpanel** (`public/spotbot/index.cjs`): creates the SquadIQ control panel for managing club spots from Discord.
+- **spotpanel** (`public/spotbot/index.cjs`): creates the GafferBot control panel for managing club spots from Discord.
 - **availability-response** (`supabase/functions/availability-response/index.ts`): records a player's "yes / no / maybe" response for an event.
 - **get-event-availability** (`supabase/functions/get-event-availability/index.ts`): fetches the response breakdown for a specific event so you can see who has a spot.
 - **mark-attendance** (`supabase/functions/mark-attendance/index.ts`): admin-side override to mark players present/absent.

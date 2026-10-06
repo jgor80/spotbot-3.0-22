@@ -85,7 +85,7 @@ export default function Dashboard() {
           <div>
             <h1 className="font-display text-3xl font-bold">Match Night</h1>
             <p className="text-muted-foreground">
-              {selectedGuild ? `Welcome to ${selectedGuild.name}` : "Welcome to SquadIQ"}
+              {selectedGuild ? `Welcome to ${selectedGuild.name}` : "Welcome to GafferBot"}
             </p>
           </div>
           {selectedGuildId && <SyncMatchesButton guildId={selectedGuildId} />}
@@ -263,7 +263,7 @@ export default function Dashboard() {
                     <div className="py-8 text-center text-muted-foreground">
                       <Swords className="h-10 w-10 mx-auto mb-3 opacity-50" />
                       <p className="text-sm">No drafts yet</p>
-                      <p className="text-xs mt-1">Start a draft in Discord with SpotBot</p>
+                      <p className="text-xs mt-1">Start a draft in Discord with GafferBot</p>
                     </div>
                   )}
                 </CardContent>

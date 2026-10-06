@@ -304,7 +304,7 @@ export default function ScoutingPage() {
 
       setCommandOutputs(prev => [
         {
-          title: "SquadIQ • Player Scout",
+          title: "GafferBot • Player Scout",
           content: `Saved and refreshed the report for ${selectedPlayerId}. Latest rating: ${
             data.player_data?.overall?.rating?.toFixed?.(1) || "N/A"
           } across ${data.player_data?.overall?.games_played || 0} games.`,
@@ -359,7 +359,7 @@ export default function ScoutingPage() {
       });
 
       appendCommandOutput(
-        "SquadIQ • EA Gamertag Scout",
+        "GafferBot • EA Gamertag Scout",
         `Pulled every EA stat for ${trimmedGamertag} (${searchPlatform.toUpperCase()}). Latest rating: ${
           data.player_data?.overall?.rating?.toFixed?.(1) || "N/A"
         } | Games: ${data.player_data?.overall?.games_played || 0}.`
@@ -455,7 +455,7 @@ Focus on controlling midfield to limit their counter-attacks.
       const assistsLeader = data.player_highlights?.assists?.[0];
 
       appendCommandOutput(
-        "SquadIQ • Recent Results",
+        "GafferBot • Recent Results",
         `Last ${data.window_size} matches ready. ${
           ratingLeader ? `${ratingLeader.name} leads AMR at ${ratingLeader.avg.toFixed?.(1)}` : "No rating leader yet"
         }. ${
@@ -500,11 +500,11 @@ Focus on controlling midfield to limit their counter-attacks.
         .join(" | ");
 
       appendCommandOutput(
-        "SquadIQ • In-Form Leaders",
+        "GafferBot • In-Form Leaders",
         entries.length ? lines : "No form data yet — run EA sync first."
       );
 
-      toast({ title: "Form Leaderboard", description: "In-form results are ready for the SquadIQ panel" });
+      toast({ title: "Form Leaderboard", description: "In-form results are ready for the GafferBot panel" });
     } catch (error) {
       toast({
         title: "Form Leaderboard Failed",
@@ -558,7 +558,7 @@ Focus on controlling midfield to limit their counter-attacks.
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
-              SquadIQ Discord Panel
+              GafferBot Discord Panel
             </CardTitle>
             <CardDescription>
               One-click buttons that mirror the Discord scouting commands so staff don&apos;t need slash commands.
