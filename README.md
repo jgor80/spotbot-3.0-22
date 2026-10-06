@@ -66,6 +66,7 @@ Bot environment variables:
 | `EA_SESSION_COOKIE` | no | Helps when EA blocks requests |
 | `DASHBOARD_URL` | no | Your web dashboard address; adds an "Open Lineup Builder" link to the hub's Team Sheet and is the base of the /premium overlay link |
 | `BOT_OWNER_IDS` | no | Comma-separated Discord user ids allowed to run `/premium on` and `/premium off` |
+| `PREMIUM_PAYWALL` | no | Leave unset to give every server the Premium features free; set to `on` to limit them to Premium servers |
 | `PREMIUM_GUILDS` | no | Comma-separated server ids that always have Premium (testing) |
 | `DISCORD_PREMIUM_SKU_ID` | no | The SKU of a Discord App Subscription; servers holding it get Premium and non-premium servers see Discord's Subscribe button |
 
