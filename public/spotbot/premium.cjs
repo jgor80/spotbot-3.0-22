@@ -1,5 +1,6 @@
 // GafferBot Premium: which servers get the premium features, and the /premium command.
-// A server is premium when any of these is true:
+// For now every server gets Premium free. Set PREMIUM_PAYWALL=on to start gating it; then
+// a server is premium when any of these is true:
 //   - the bot owner switched it on with /premium on (stored in premium_servers)
 //   - its id is in the PREMIUM_GUILDS env list (handy for testing before the table exists)
 //   - it holds an active Discord App Subscription for DISCORD_PREMIUM_SKU_ID (Discord's own shop)
@@ -10,6 +11,8 @@ const crypto = require('crypto');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const CACHE_MS = 60 * 1000;
+// Until PREMIUM_PAYWALL=on, every premium feature is free on every server
+const PREMIUM_FREE = !/^(on|true|1|yes)$/i.test(String(process.env.PREMIUM_PAYWALL || '').trim());
 const PREMIUM_COLOR = 0xf5b301;
 
 // What premium unlocks, for /premium and the upsell message
@@ -101,6 +104,7 @@ function createPremium(deps) {
   // { premium, source } with source manual | env | discord | null
   async function status(guildId) {
     if (!guildId) return { premium: false, source: null };
+    if (PREMIUM_FREE) return { premium: true, source: 'free', row: null };
     const hit = cache.get(guildId);
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
     let value = { premium: false, source: null, row: null };
@@ -180,7 +184,7 @@ function createPremium(deps) {
     const sub = interaction.options.getSubcommand();
     if (sub === 'status') {
       const s = await status(interaction.guildId);
-      const how = { manual: 'switched on by the bot owner', env: 'switched on in the bot settings', discord: 'active Discord subscription' }[s.source];
+      const how = { manual: 'switched on by the bot owner', env: 'switched on in the bot settings', discord: 'active Discord subscription', free: 'free for every server for now' }[s.source];
       const embed = new EmbedBuilder()
         .setTitle(s.premium ? '⭐ This server has GafferBot Premium' : 'GafferBot Premium')
         .setColor(s.premium ? PREMIUM_COLOR : 0x99aab5)
@@ -228,4 +232,4 @@ function createPremium(deps) {
   return { handleInteraction, start, isPremium, status, gate, upsellMessage, overlayToken };
 }
 
-module.exports = { createPremium, premiumCommands, PREMIUM_FEATURES };
+module.exports = { createPremium, premiumCommands, PREMIUM_FEATURES, PREMIUM_FREE };

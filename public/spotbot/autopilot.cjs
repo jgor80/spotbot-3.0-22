@@ -23,6 +23,7 @@ const { toInsightMatches, computeOverview, computeCombos, computeFormations, pla
 const { autofillLineup, FORMATION_SLOTS } = require('./lineup-autofill.cjs');
 const { seasonTotals } = require('./player-season.cjs');
 const T = require('./event-time.cjs');
+const { PREMIUM_FREE } = require('./premium.cjs');
 
 const FEATURES = {
   voice: { label: 'Voice check-ins', emoji: '🎧', help: 'Joining the club voice channel from 30 min before kick-off checks a player in.' },
@@ -926,7 +927,9 @@ function createAutopilot(deps) {
     const extras = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`ap_digest:${club.key}`).setLabel('Preview digest').setEmoji('🗞️').setStyle(ButtonStyle.Secondary)
     );
-    embed.setFooter({ text: '⭐ Premium jobs only run on servers with GafferBot Premium. /premium for details.' });
+    embed.setFooter({
+      text: PREMIUM_FREE ? '⭐ Premium jobs are free on every server for now.' : '⭐ Premium jobs only run on servers with GafferBot Premium. /premium for details.',
+    });
     return { embeds: [embed], components: [...toggles, pickChannel, extras] };
   }
 
