@@ -48,6 +48,17 @@ Jobs the bot runs by itself for each club, all on by default. **/autopilot** (or
 - **/roster view [by] [position]**: the roster grouped by position (main players and cover), by status, or filtered to one position. Players without a roster position fall back to their `/myprefs` or position roles. The footer flags key positions nobody covers.
 - The roster belongs to the club's squad (`/squad link`); one named after the club is created on first use.
 
+## Recruitment: free agents (`public/spotbot/recruitment.cjs`)
+- **/fa status [position] [secondary] [timezone] [platform] [notes] [gamertag]**: a player lists themselves in the free agent pool shared by every server GafferBot is in (works in DMs too). Strictly opt-in: listings show positions, timezone, platform, notes, the EA gamertag (✅ when it matches the account linked with `/linkea`) and GafferBot match stats, never the Discord name. Listings drop out of search after 30 days unless refreshed; `status:Remove my listing` takes one down.
+- **/recruit search position [min_rating] [timezone] [platform]** (managers): the best 10 matches, main position first, then second and nearby positions. Timezone matches an hour either side. Players already on one of this server's rosters are left out.
+- **Reach Out** (the menu under search results, the watchlist, or a scouting alert): the manager adds an optional message and the bot DMs the player with Interested / Not right now / Stop all contact. Interested sends the player a one-use 7-day invite and only then tells the manager who they are. Stop all contact takes the listing down and blocks further reach-outs. One reach-out per server per player per 7 days, and 15 per server per day.
+- **/recruit setup [channel] [invite_channel] [alerts] [min_rating]**: where scouting alerts and reach-out replies go (without a channel, replies are DMed to the manager), which channel invites open on, and the alert threshold.
+
+## Recruitment: scouting (`public/spotbot/scouting.cjs`)
+- **Recruitment Alerts**: after each synced match (whichever sync stored it), the bot reads the opponent's box score and posts up to two alerts to the recruitment channel for players rated at or above the threshold (default 8.0), with 90%+ passing (15+ attempts), 5+ tackles or a hat-trick. Buttons: Scout Player (their club stats and games against you), Add to Watchlist, and Reach Out when they're a listed free agent. Only matches from the last 6 hours are scanned, so a restart never floods old alerts.
+- **/scout watchlist**, **/scout add gamertag [position] [note]**, **/scout remove gamertag** (managers): up to 100 watched players per server, with listed free agents first and a Reach Out menu.
+- Watched players ping the server (recruitment channel, else a DM to whoever added them) when they list as a free agent or appear for a new club in any synced match, at most once a day each.
+
 ## Availability & "Spot" management
 - **/positionpanel**: members pick up to 3 positions and get the matching roles.
 - **spotpanel** (`public/spotbot/index.cjs`): creates the GafferBot control panel for managing club spots from Discord.
