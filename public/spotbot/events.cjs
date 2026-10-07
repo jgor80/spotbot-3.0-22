@@ -589,6 +589,7 @@ function createEvents(deps) {
     const channel =
       channelOpt ||
       (preset?.channel_id ? await interaction.guild.channels.fetch(preset.channel_id).catch(() => null) : null) ||
+      (club?.events_channel_id ? await interaction.guild.channels.fetch(club.events_channel_id).catch(() => null) : null) ||
       interaction.channel;
     const me = interaction.guild.members.me;
     const missing = missingChannelPerms(channel, me);
