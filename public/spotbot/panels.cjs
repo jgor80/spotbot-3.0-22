@@ -443,6 +443,12 @@ function createPanels(deps) {
           .setRequired(!!o.required)
           .setMaxLength(Math.min(o.max_length || 4000, 4000));
         if (o.type === 4 || o.type === 10) input.setPlaceholder('A number');
+        if (o.name === 'when') {
+          input.setPlaceholder('thu 9pm · tomorrow 20:00 · in 2h');
+          if (!o.description) label.setDescription('Type it how you\'d say it: "thu 9pm", "tomorrow 8pm", "21 sep 18:00", "in 2h"');
+        }
+        if (o.name === 'zone') input.setPlaceholder('e.g. America/Chicago, Europe/London');
+        if (o.name === 'formation' && !o.description) input.setPlaceholder('e.g. 4-3-3, 4-2-3-1 wide');
         label.setTextInputComponent(input);
       }
       modal.addLabelComponents(label);

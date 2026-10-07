@@ -1201,7 +1201,11 @@ function createEvents(deps) {
     if (!isManager(interaction.member)) return interaction.reply({ content: '❌ Only managers can change the timezone.', flags: 64 });
     const zone = interaction.options.getString('zone').trim();
     const match = T.allTimeZones().find((z) => z.toLowerCase() === zone.toLowerCase()) || (T.isValidTimeZone(zone) ? zone : null);
-    if (!match) return interaction.reply({ content: `❌ "${zone}" isn't a timezone I know. Pick one from the list, e.g. Europe/London.`, flags: 64 });
+    if (!match) {
+      const close = T.allTimeZones().filter((z) => z.toLowerCase().includes(zone.toLowerCase())).slice(0, 5);
+      const hint = close.length ? ` Did you mean ${close.map((z) => `\`${z}\``).join(', ')}?` : ' Type a city or region, e.g. `America/Chicago`, `Europe/London`, `Australia/Sydney`.';
+      return interaction.reply({ content: `❌ "${zone}" isn't a timezone I know.${hint}`, flags: 64 });
+    }
     const { error } = await supabase.from('guild_settings').upsert({ guild_id: interaction.guildId, timezone: match }, { onConflict: 'guild_id' });
     if (error) return interaction.reply({ content: `❌ ${error.message}`, flags: 64 });
     forgetPrefs(interaction.guildId);
