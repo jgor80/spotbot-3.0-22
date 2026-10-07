@@ -1670,7 +1670,7 @@ async function syncTrackedGameStatsToClubStats(
       // Check if player already has a record in player_club_stats
       const { data: existingRecord } = await supabase
         .from('player_club_stats')
-        .select('id, games_played, goals, assists, saves, clean_sheets')
+        .select('id, games_played, goals, assists, saves, clean_sheets, baseline_synced')
         .eq('guild_id', guildId)
         .eq('club_key', clubKey)
         .eq('discord_user_id', discordUserId)
@@ -1715,6 +1715,9 @@ async function syncTrackedGameStatsToClubStats(
         updated_at: new Date().toISOString(),
       };
       
+      // Never overwrite full EA Member List totals with the few recent tracked games
+      if (existingRecord?.baseline_synced) continue;
+
       if (existingRecord) {
         // Update existing record - merge with EA member stats if they exist
         const { error: updateError } = await supabase
@@ -1969,7 +1972,7 @@ Deno.serve(async (req) => {
 
           // Sync member career stats (pulls from EA member list API)
           const { updatedPlayerIds, unknownMemberKeys } = await syncMemberStats(
-            supabase, guildId, club.ea_club_id, club.ea_platform, club.name, aggregates
+            supabase, guildId, club.ea_club_id, club.ea_platform, club.name, aggregates, club.key
           )
           updatedPlayerIds.forEach(id => guildUpdatedPlayerIds.add(id))
           unknownMemberKeys?.forEach((key) => unmappedMemberKeys.add(key))
