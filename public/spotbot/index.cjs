@@ -16385,7 +16385,7 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
     
     const scoreFor = parseInt(ourClubData?.goals || 0);
     const scoreAgainst = parseInt(opponentClubData?.goals || 0);
-    const opponentName = opponentClubData?.name || 'Unknown';
+    const opponentName = opponentClubData?.details?.name || opponentClubData?.name || 'Unknown';
     
     let result = 'draw';
     if (scoreFor > scoreAgainst) result = 'win';
@@ -17108,7 +17108,7 @@ async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
       
       const scoreFor = parseInt(ourClubData?.goals || 0);
       const scoreAgainst = parseInt(opponentClubData?.goals || 0);
-      const opponentName = opponentClubData?.name || 'Unknown';
+      const opponentName = opponentClubData?.details?.name || opponentClubData?.name || 'Unknown';
       
       let result = 'draw';
       if (scoreFor > scoreAgainst) result = 'win';
