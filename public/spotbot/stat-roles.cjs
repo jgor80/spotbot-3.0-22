@@ -220,11 +220,14 @@ function createStatRoles(deps) {
     }
     const lines = changeLines(result.changes || []);
     if (!lines.length) return;
-    const channel = await autopilot.postChannel(guildId, club);
-    if (channel)
-      await channel
-        .send({ embeds: [new EmbedBuilder().setTitle('🏆 Trophy update').setColor(0xf5b301).setDescription(lines.join('\n'))], allowedMentions: { parse: [] } })
-        .catch(() => {});
+    let channel = null;
+    const hofId = club.autopilot?.hof_channel_id;
+    if (hofId) channel = await client().guilds.cache.get(guildId)?.channels.fetch(hofId).catch(() => null);
+    if (!channel) channel = await autopilot.postChannel(guildId, club);
+    if (!channel) return;
+    const embed = new EmbedBuilder().setTitle(`🏆 ${club.name} Hall of Fame`).setColor(0xf5b301).setDescription(lines.join('\n'));
+    embed.setFooter({ text: 'Trophy roles update after every synced match. Players need /me → Link EA to receive them.' });
+    await channel.send({ embeds: [embed], allowedMentions: { parse: [] } }).catch(() => {});
   }
 
   async function handleInteraction(interaction) {

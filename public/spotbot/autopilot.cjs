@@ -953,7 +953,8 @@ function createAutopilot(deps) {
       .addFields(
         { name: 'Voice channel', value: vcId ? `<#${vcId}>` : 'Not linked. Voice check-ins, the auto XI and sub requests need one: run **/manager → Lineups & Spots → Voice Spots** from the club voice channel.', inline: true },
         { name: 'Recaps and digest go to', value: channel ? `<#${channel}>` : 'The channel your events are posted in', inline: true },
-        { name: '📰 Chronicle prints in', value: club.autopilot?.chronicle_channel_id ? `<#${club.autopilot.chronicle_channel_id}>` : 'Same as recaps (press Print Chronicle here in the channel you want)', inline: true }
+        { name: '📰 Chronicle prints in', value: club.autopilot?.chronicle_channel_id ? `<#${club.autopilot.chronicle_channel_id}>` : 'Same as recaps (press Print Chronicle here in the channel you want)', inline: true },
+        { name: '🏆 Hall of Fame posts in', value: club.autopilot?.hof_channel_id ? `<#${club.autopilot.hof_channel_id}>` : 'Not set (trophy banners go to the recap channel)', inline: true }
       );
     // Discord allows five buttons per row
     const toggleRow = (entries) =>
@@ -978,7 +979,8 @@ function createAutopilot(deps) {
     const extras = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`ap_digest:${club.key}`).setLabel('Preview digest').setEmoji('🗞️').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(`ap_chronhere:${club.key}`).setLabel('Print Chronicle here').setEmoji('📰').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId(`ap_chron:${club.key}`).setLabel('Preview Chronicle').setEmoji('🗞️').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId(`ap_chron:${club.key}`).setLabel('Preview Chronicle').setEmoji('🗞️').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`ap_hofhere:${club.key}`).setLabel('Hall of Fame here').setEmoji('🏆').setStyle(ButtonStyle.Primary)
     );
     embed.setFooter({
       text: PREMIUM_FREE ? '⭐ Premium jobs are free on every server for now.' : '⭐ Premium jobs only run on servers with GafferBot Premium. /manager → Premium for details.',
@@ -1035,6 +1037,15 @@ function createAutopilot(deps) {
       });
       await interaction.update(await buildPanel(interaction.guildId, updated));
       await interaction.followUp({ content: `📰 The ${club.name} Chronicle will print in <#${interaction.channelId}> at 3 PM and midnight Central.`, flags: 64 });
+    } else if (action === 'ap_hofhere') {
+      const club = await withClub(interaction, a);
+      if (!club) return true;
+      const updated = await updateClub(interaction.guildId, club.key, (ap) => {
+        ap.hof_channel_id = interaction.channelId;
+        ap.off = (ap.off || []).filter((f) => f !== 'trophies');
+      });
+      await interaction.update(await buildPanel(interaction.guildId, updated));
+      await interaction.followUp({ content: `🏆 Trophy banners and player accolades for ${club.name} will post in <#${interaction.channelId}>.`, flags: 64 });
     } else if (action === 'ap_chron') {
       const club = await withClub(interaction, a);
       if (!club) return true;
