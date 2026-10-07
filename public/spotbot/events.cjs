@@ -394,6 +394,27 @@ function createEvents(deps) {
     return { expected: [], out: [], source: 'none' };
   }
 
+  // Every non-bot member of the server (cached; refilled at most every 10 minutes).
+  // Used so "Still to answer" covers everyone the @everyone ping reached, not just the roster.
+  async function allMemberIds(event) {
+    if (!client) return null;
+    const guild = client.guilds.cache.get(event.guild_id);
+    if (!guild) return null;
+    const last = memberFetchAt.get(guild.id) || 0;
+    if (Date.now() - last > 10 * 60 * 1000) {
+      memberFetchAt.set(guild.id, Date.now());
+      await guild.members.fetch().catch(() => {});
+    }
+    const ids = guild.members.cache.filter((m) => !m.user.bot).map((m) => m.id);
+    return ids.length ? ids : null;
+  }
+
+  // Compact mention list for an embed field: names, then "+N more" past 12
+  function mentionList(ids, cap = 12) {
+    const shown = ids.slice(0, cap).map((id) => `<@${id}>`).join(', ');
+    return ids.length > cap ? `${shown} … +${ids.length - cap} more` : shown;
+  }
+
   // ---------- Board ----------
 
   async function buildBoard(event) {
