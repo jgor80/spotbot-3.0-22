@@ -102,7 +102,7 @@ async function fetchImage(url) {
   }
 }
 
-// EA's crest CDN by asset id (URL pattern not verified from here; a failed fetch falls back to initials)
+// EA's crest CDN by crest/team id (verified: serves both real-club and custom Pro Clubs crests)
 function eaCrestUrl(crestAssetId) {
   const id = String(crestAssetId || '').replace(/\D/g, '');
   return id ? `https://eafc24.content.easports.com/fifa/fltOnlineAssets/24B23FDE-7835-41C2-87A2-F453DFDB2E82/2024/fcweb/crests/256x256/l${id}.png` : null;
