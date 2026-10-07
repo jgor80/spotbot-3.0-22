@@ -401,7 +401,7 @@ function createEvents(deps) {
     const info = typeInfo(event.event_type);
     const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
     const responses = await loadResponses(event.id);
-    const { expected, out } = await expectedPlayers(event);
+    const { expected } = await expectedPlayers(event);
     const deadline = event.deadline_at ? new Date(event.deadline_at) : null;
     const kickoff = T.unix(event.scheduled_at);
     const locked = !event.closed && (await isLocked(event));
@@ -428,22 +428,14 @@ function createEvents(deps) {
       .setDescription(truncate(lines.join('\n'), 4000))
       .setFooter({ text: `${prefs.branding.footer || 'GafferBot'} · event ${event.id.slice(0, 8)}` });
 
+    // The public post shows counts only; names stay private behind "Who's in"
     const answered = new Set(responses.map((r) => r.discord_user_id));
-    const flagged = await reliabilityLookup(
-      event.guild_id,
-      responses.filter((r) => r.response !== 'no').map((r) => r.discord_user_id)
-    ).catch(() => new Map());
-    const label = (r) => {
-      const late = deadline && r.responded_at && new Date(r.responded_at) > deadline ? ' *(late)*' : '';
-      const pos = r.position ? ` ${r.position.split(',').join('/')}` : '';
-      const shows = r.response !== 'no' && flagged.has(r.discord_user_id) ? ` ⚠️ ${flagged.get(r.discord_user_id)}% show-up` : '';
-      const note = r.note ? `\n  📝 *${r.note.slice(0, 80)}*` : '';
-      return `<@${r.discord_user_id}>${pos}${late}${shows}${note}`;
-    };
-    for (const [key, r] of Object.entries(RESPONSES)) {
-      const list = responses.filter((x) => x.response === key);
-      embed.addFields({ name: `${r.emoji} ${r.label} (${list.length})`, value: truncate(list.map(label).join('\n') || '–'), inline: true });
-    }
+    embed.addFields({
+      name: 'Availability',
+      value: Object.entries(RESPONSES)
+        .map(([key, r]) => `${r.emoji} **${responses.filter((x) => x.response === key).length}** ${r.label}`)
+        .join(' · '),
+    });
 
     if (event.position_signup) {
       const counts = {};
@@ -457,15 +449,9 @@ function createEvents(deps) {
 
     const waiting = expected.filter((id) => !answered.has(id));
     if (waiting.length && !event.closed && !locked) {
-      embed.addFields({ name: `⏳ No answer yet (${waiting.length})`, value: truncate(waiting.map((id) => `<@${id}>`).join(' ')) });
+      embed.addFields({ name: '⏳ Still to answer', value: `${waiting.length} player${waiting.length === 1 ? '' : 's'}` });
     }
-    const outLeft = out.filter((o) => !answered.has(o.id));
-    if (outLeft.length) {
-      embed.addFields({
-        name: `Unavailable on the roster (${outLeft.length})`,
-        value: truncate(outLeft.map((o) => `${ROSTER_OUT[o.status]} <@${o.id}>`).join(' ')),
-      });
-    }
+    embed.addFields({ name: '\u200b', value: '*Anyone in the server can answer. Tap 👥 Who\'s in to see names privately.*' });
 
     const components = [];
     if (!event.closed && !locked) {
@@ -477,6 +463,7 @@ function createEvents(deps) {
         )
       );
       const tools = [
+        new ButtonBuilder().setCustomId(`ev_list:${event.id}`).setLabel("Who's in").setEmoji('👥').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`ev_note:${event.id}`).setLabel('Add a note').setEmoji('📝').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`evl_build:${event.id}`).setLabel('Build Lineup').setEmoji('📋').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(`ev_remind:${event.id}`).setLabel('Remind').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
@@ -1463,6 +1450,26 @@ function createEvents(deps) {
     return pending.kind === 'edit' ? handleEdit(shim) : handleNew(shim);
   }
 
+  // Private list of who answered, visible only to the person who tapped
+  async function handleListButton(interaction, eventId) {
+    const event = await loadEvent(eventId);
+    if (!event) return interaction.reply({ content: '❌ That event no longer exists.', flags: 64 });
+    const responses = await loadResponses(event.id);
+    const deadline = event.deadline_at ? new Date(event.deadline_at) : null;
+    const label = (r) => {
+      const late = deadline && r.responded_at && new Date(r.responded_at) > deadline ? ' *(late)*' : '';
+      const pos = r.position ? ` ${r.position.split(',').join('/')}` : '';
+      const note = r.note ? ` — 📝 *${r.note.slice(0, 80)}*` : '';
+      return `<@${r.discord_user_id}>${pos}${late}${note}`;
+    };
+    const embed = new EmbedBuilder().setTitle(`👥 ${event.title}`).setColor(0x5865f2);
+    for (const [key, r] of Object.entries(RESPONSES)) {
+      const list = responses.filter((x) => x.response === key);
+      embed.addFields({ name: `${r.emoji} ${r.label} (${list.length})`, value: truncate(list.map(label).join('\n') || '–') });
+    }
+    return interaction.reply({ embeds: [embed], flags: 64, allowedMentions: { parse: [] } });
+  }
+
   async function handleComponent(interaction) {
     const [action, a, b] = interaction.customId.split(':');
     if (!action.startsWith('ev_')) return false;
@@ -1470,6 +1477,7 @@ function createEvents(deps) {
     else if (action === 'ev_pos') await handlePositionPick(interaction, a);
     else if (action === 'ev_remind') await handleRemindButton(interaction, a);
     else if (action === 'ev_note') await handleNoteButton(interaction, a);
+    else if (action === 'ev_list') await handleListButton(interaction, a);
     else if (action === 'ev_when') await handleWhenPick(interaction, a);
     else return false;
     return true;
