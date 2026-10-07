@@ -237,6 +237,57 @@ function whenExamples(tz) {
   return `Try "thu 9pm", "tomorrow 20:00", "21/09 18:00", "21 sep 8pm" or "in 2h" (read as ${tz} time; change it with **/manager → Events → Timezone**). As you type, the box above the keyboard shows how I read it.`;
 }
 
+// When a typed time can't be read, offer real kick-off times to tap instead of making the
+// manager retype. The failed form is stashed under a token; picking a time re-runs it.
+const pendingWhen = new Map(); // token -> { at, userId, kind, rec }
+const WHEN_PICK_TTL = 15 * 60 * 1000;
+
+function captureOptions(interaction) {
+  const rec = { strings: {}, roles: {}, channels: {}, booleans: {} };
+  const o = interaction.options;
+  if (!o) return rec;
+  for (const [method, key] of [['getString', 'strings'], ['getRole', 'roles'], ['getChannel', 'channels'], ['getBoolean', 'booleans']]) {
+    if (typeof o[method] !== 'function') continue;
+    const orig = o[method].bind(o);
+    o[method] = (n, ...rest) => {
+      const v = orig(n, ...rest);
+      if (v != null) rec[key][n] = key === 'roles' || key === 'channels' ? v.id : v;
+      return v;
+    };
+  }
+  return rec;
+}
+
+function whenPicker(tz, token, whenText) {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const picks = ['tonight 21:00', 'tomorrow 20:00', ...[1, 2, 3, 4, 5, 6].map((d) => `${T.WEEKDAYS[(T.localParts(now, tz).weekday + d) % 7]} 20:00`)];
+  const seen = new Set();
+  const options = [];
+  for (const p of picks) {
+    const at = T.parseWhen(p, tz, now);
+    if (!at || at <= now || seen.has(T.unix(at))) continue;
+    seen.add(T.unix(at));
+    options.push({ label: fmt.format(at).slice(0, 100), value: String(T.unix(at)) });
+  }
+  const menu = new StringSelectMenuBuilder().setCustomId(`ev_when:${token}`).setPlaceholder('⚡ Pick a kick-off time instead').addOptions(options.slice(0, 25));
+  return {
+    content:
+      `❌ I couldn't read "${whenText}".\n\n**Pick a time below, or type it how you'd say it:**\n` +
+      '• `thu 9pm` or `friday 20:30`\n• `tomorrow 8pm` / `tonight 9pm`\n• `21/09 18:00` or `21 sep 8pm`\n• `in 2h`\n' +
+      `(read as ${tz} time — change it in **/manager → Events → Timezone**)`,
+    components: [new ActionRowBuilder().addComponents(menu)],
+    flags: 64,
+  };
+}
+
+function stashWhen(interaction, kind, rec) {
+  for (const [token, p] of pendingWhen) if (Date.now() - p.at > WHEN_PICK_TTL) pendingWhen.delete(token);
+  const token = Math.random().toString(36).slice(2, 10);
+  pendingWhen.set(token, { at: Date.now(), userId: interaction.user.id, kind, rec });
+  return token;
+}
+
 function createEvents(deps) {
   const { supabase, getGuildState, saveGuildSettings, isManager, dashboardUrl } = deps;
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
@@ -493,6 +544,7 @@ function createEvents(deps) {
   }
 
   async function handleNew(interaction) {
+    const rec = captureOptions(interaction);
     const guildId = interaction.guildId;
     const state = await getGuildState(guildId);
     const clubKey = interaction.options.getString('club');
@@ -510,10 +562,8 @@ function createEvents(deps) {
     const whenText = interaction.options.getString('when');
     const kickoff = whenText ? T.parseWhen(whenText, tz) : presetKickoff(preset, tz);
     if (!kickoff) {
-      return interaction.reply({
-        content: whenText ? `❌ I couldn't read "${whenText}". ${whenExamples(tz)}` : `❌ Tell me when it kicks off. ${whenExamples(tz)}`,
-        flags: 64,
-      });
+      if (!whenText) return interaction.reply({ content: `❌ Tell me when it kicks off. ${whenExamples(tz)}`, flags: 64 });
+      return interaction.reply(whenPicker(tz, stashWhen(interaction, 'new', rec), whenText));
     }
     const now = new Date();
     if (kickoff.getTime() < now.getTime() - 5 * 60000) {
@@ -891,6 +941,7 @@ function createEvents(deps) {
   }
 
   async function handleEdit(interaction) {
+    const rec = captureOptions(interaction);
     const event = await leaderEvent(interaction);
     if (!event) return;
     const { timezone: tz } = await serverPrefs(event.guild_id);
@@ -900,7 +951,7 @@ function createEvents(deps) {
     let kickoff = new Date(event.scheduled_at);
     if (whenText) {
       const at = T.parseWhen(whenText, tz);
-      if (!at) return interaction.reply({ content: `❌ I couldn't read "${whenText}". ${whenExamples(tz)}`, flags: 64 });
+      if (!at) return interaction.reply(whenPicker(tz, stashWhen(interaction, 'edit', rec), whenText));
       if (at.getTime() < Date.now() - 5 * 60000) return interaction.reply({ content: `❌ <t:${T.unix(at)}:F> is in the past.`, flags: 64 });
       if (at.getTime() !== kickoff.getTime()) {
         update.scheduled_at = at.toISOString();
@@ -1150,7 +1201,11 @@ function createEvents(deps) {
     if (!isManager(interaction.member)) return interaction.reply({ content: '❌ Only managers can change the timezone.', flags: 64 });
     const zone = interaction.options.getString('zone').trim();
     const match = T.allTimeZones().find((z) => z.toLowerCase() === zone.toLowerCase()) || (T.isValidTimeZone(zone) ? zone : null);
-    if (!match) return interaction.reply({ content: `❌ "${zone}" isn't a timezone I know. Pick one from the list, e.g. Europe/London.`, flags: 64 });
+    if (!match) {
+      const close = T.allTimeZones().filter((z) => z.toLowerCase().includes(zone.toLowerCase())).slice(0, 5);
+      const hint = close.length ? ` Did you mean ${close.map((z) => `\`${z}\``).join(', ')}?` : ' Type a city or region, e.g. `America/Chicago`, `Europe/London`, `Australia/Sydney`.';
+      return interaction.reply({ content: `❌ "${zone}" isn't a timezone I know.${hint}`, flags: 64 });
+    }
     const { error } = await supabase.from('guild_settings').upsert({ guild_id: interaction.guildId, timezone: match }, { onConflict: 'guild_id' });
     if (error) return interaction.reply({ content: `❌ ${error.message}`, flags: 64 });
     forgetPrefs(interaction.guildId);
@@ -1374,6 +1429,39 @@ function createEvents(deps) {
   }
 
   // Buttons and selects work in the server and in reminder DMs
+  // A manager picked a kick-off time from the "couldn't read it" menu: re-run the original
+  // form with that time, keeping everything else they had typed.
+  async function handleWhenPick(interaction, token) {
+    const pending = pendingWhen.get(token);
+    pendingWhen.delete(token);
+    if (!pending || Date.now() - pending.at > WHEN_PICK_TTL) {
+      return interaction.update({ content: '❌ That expired — start the event again.', components: [] });
+    }
+    if (pending.userId !== interaction.user.id) {
+      return interaction.reply({ content: '❌ Only the person creating the event can pick the time.', flags: 64 });
+    }
+    const picked = interaction.values[0];
+    const rec = pending.rec;
+    const guild = interaction.guild;
+    const shim = Object.create(interaction);
+    shim.options = {
+      getString: (n) => (n === 'when' ? picked : rec.strings[n] ?? null),
+      getRole: (n) => (rec.roles[n] ? guild.roles.cache.get(rec.roles[n]) ?? null : null),
+      getChannel: (n) => (rec.channels[n] ? guild.channels.cache.get(rec.channels[n]) ?? null : null),
+      getBoolean: (n) => rec.booleans[n] ?? null,
+    };
+    let used = false;
+    shim.reply = (opts) => {
+      if (!used) {
+        used = true;
+        return interaction.update({ ...opts, components: opts.components ?? [] });
+      }
+      return interaction.followUp(opts);
+    };
+    shim.deferReply = () => interaction.deferUpdate();
+    return pending.kind === 'edit' ? handleEdit(shim) : handleNew(shim);
+  }
+
   async function handleComponent(interaction) {
     const [action, a, b] = interaction.customId.split(':');
     if (!action.startsWith('ev_')) return false;
@@ -1381,6 +1469,7 @@ function createEvents(deps) {
     else if (action === 'ev_pos') await handlePositionPick(interaction, a);
     else if (action === 'ev_remind') await handleRemindButton(interaction, a);
     else if (action === 'ev_note') await handleNoteButton(interaction, a);
+    else if (action === 'ev_when') await handleWhenPick(interaction, a);
     else return false;
     return true;
   }
