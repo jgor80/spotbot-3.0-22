@@ -206,8 +206,17 @@ function createBroadcast(deps) {
     const clubs = md.clubs || {};
     const ourId = String(club.ea_club_id || '');
     const theirId = Object.keys(clubs).find((id) => id !== ourId);
-    const ourCrest = (await G.fetchImage(prefs.branding?.logo_url)) || (await G.fetchImage(G.eaCrestUrl(clubs[ourId]?.details?.customKit?.crestAssetId)));
-    const theirCrest = theirId ? await G.fetchImage(G.eaCrestUrl(clubs[theirId]?.details?.customKit?.crestAssetId)) : null;
+    // EA's TEAM field is the crest the club actually shows in-game (a real club's id or a custom crest id)
+    const eaCrest = async (c) => {
+      if (!c) return null;
+      for (const id of [c.TEAM, c.details?.customKit?.crestAssetId, c.details?.teamId]) {
+        const img = await G.fetchImage(G.eaCrestUrl(id));
+        if (img) return img;
+      }
+      return null;
+    };
+    const ourCrest = (await eaCrest(clubs[ourId])) || (await G.fetchImage(prefs.branding?.logo_url));
+    const theirCrest = theirId ? await eaCrest(clubs[theirId]) : null;
     const ourCount = Object.keys(md.players?.[ourId] || {}).length || match.players.length;
     const theirCount = theirId ? Object.keys(md.players?.[theirId] || {}).length : 0;
 
