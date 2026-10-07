@@ -1,6 +1,6 @@
 // Club events: /event (new, list, cancel, remind, presets, recurring series, timezone) and /available.
-// Each event posts a live availability board that names who is in, maybe, out and who still owes
-// an answer. The scheduler posts recurring events, reminds non-responders before the deadline and
+// Each event announces @everyone once and posts a counts-only live availability board.
+// The scheduler posts recurring events, reminds non-responders before the deadline and
 // closes events after they finish.
 
 const {
@@ -478,7 +478,7 @@ function createEvents(deps) {
       }
       components.push(new ActionRowBuilder().addComponents(tools));
     }
-    return { embeds: [embed], components };
+    return { embeds: [embed], components, allowedMentions: { parse: [] } };
   }
 
   async function fetchBoardMessage(event) {
@@ -501,11 +501,10 @@ function createEvents(deps) {
     const { data: event, error } = await supabase.from('availability_events').insert(fields).select().single();
     if (error) throw new Error(error.message);
     try {
-      const role = fields.ping_role_id ? channel.guild.roles.cache.get(fields.ping_role_id) : null;
       const message = await channel.send({
-        content: role ? `${role}` : undefined,
         ...(await buildBoard(event)),
-        allowedMentions: { roles: role ? [role.id] : [] },
+        content: '@everyone',
+        allowedMentions: { parse: ['everyone'], users: [], roles: [], repliedUser: false },
       });
       await supabase.from('availability_events').update({ message_id: message.id }).eq('id', event.id);
       event.message_id = message.id;
