@@ -140,10 +140,112 @@ function seasonArc(club, matches, seasonMatches) {
   return [`${club} sits at ${w}-${d}-${l} across ${sorted.length} matches on record.`, streakText, trend, lead].filter(Boolean).join(' ');
 }
 
+// ---------- Story angles: the things a beat writer would notice from the record ----------
+// Every angle is computed from saved matches, so the prose never claims anything the data doesn't show.
+const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : null);
+
+function storyAngles(matches, seasonMatches) {
+  const angles = [];
+  if (!matches.length) return angles;
+  const todayIds = new Set(matches.map((m) => m.id));
+  const earlier = seasonMatches.filter((m) => !todayIds.has(m.id) && matches.every((t) => m.playedAt < t.playedAt));
+  const priorTotals = new Map(playerTotals(earlier).map((t) => [t.name.toLowerCase(), t]));
+  const today = playerTotals(matches);
+
+  // Season-best results
+  const margin = (m) => m.scoreFor - m.scoreAgainst;
+  const bestEarlier = earlier.length ? Math.max(...earlier.map(margin)) : null;
+  const bestToday = [...matches].sort((a, b) => margin(b) - margin(a))[0];
+  if (bestEarlier != null && earlier.length >= 5 && margin(bestToday) > bestEarlier && margin(bestToday) > 0) {
+    angles.push(`Biggest win on record: ${bestToday.scoreFor}-${bestToday.scoreAgainst} over ${bestToday.opponent}.`);
+  }
+  const mostGoalsEarlier = earlier.length ? Math.max(...earlier.map((m) => m.scoreFor)) : null;
+  const mostToday = Math.max(...matches.map((m) => m.scoreFor));
+  if (mostGoalsEarlier != null && earlier.length >= 5 && mostToday > mostGoalsEarlier) angles.push(`${mostToday} goals in one game is the club's highest total on record.`);
+
+  // Rematches and grudges
+  for (const m of matches) {
+    const past = earlier.filter((e) => e.opponent && e.opponent === m.opponent && e.opponent !== 'Unknown');
+    if (!past.length) continue;
+    const pw = past.filter((e) => e.result === 'win').length;
+    const pl = past.filter((e) => e.result === 'loss').length;
+    if (pl > pw && m.result === 'win') angles.push(`Revenge: beat ${m.opponent} after going ${pw}-${pl} against them before.`);
+    else if (pw > pl && m.result === 'loss') angles.push(`Upset: ${m.opponent} had lost ${pw} of ${past.length} earlier meetings but won this one.`);
+    else angles.push(`Rematch with ${m.opponent}: now ${pw + (m.result === 'win' ? 1 : 0)}-${pl + (m.result === 'loss' ? 1 : 0)} all-time on record.`);
+  }
+
+  // Player milestones, breakthroughs and droughts
+  for (const t of today) {
+    const prior = priorTotals.get(t.name.toLowerCase());
+    const before = prior?.goals || 0;
+    for (const mark of [10, 25, 50, 100]) {
+      if (before < mark && before + t.goals >= mark) angles.push(`Milestone: **${t.name}** reached ${mark} goals on record.`);
+    }
+    const appsBefore = prior?.apps || 0;
+    for (const mark of [25, 50, 100]) {
+      if (appsBefore < mark && appsBefore + t.apps >= mark) angles.push(`Milestone: **${t.name}** made appearance #${mark}.`);
+    }
+    if (!prior && t.apps) angles.push(`Debut on record for **${t.name}**${t.goals ? `, and he scored` : ''}.`);
+    else if (prior && before === 0 && t.goals && prior.apps >= 3) angles.push(`First goal on record for **${t.name}** after ${prior.apps} appearances.`);
+    if (prior && t.goals) {
+      // Drought: games since last goal before today
+      const sorted = [...earlier].sort((a, b) => b.playedAt - a.playedAt);
+      let dry = 0;
+      for (const m of sorted) {
+        const p = m.players.find((x) => nm(x).toLowerCase() === t.name.toLowerCase());
+        if (!p) continue;
+        if (n(p.goals)) break;
+        dry += 1;
+      }
+      if (dry >= 5 && before > 0) angles.push(`**${t.name}** ended a ${dry}-game scoring drought.`);
+    }
+    if (prior && prior.rated >= 5 && t.rated) {
+      const diff = t.avg - prior.avg;
+      if (diff >= 1) angles.push(`**${t.name}** played well above his usual level (${t.avg.toFixed(1)} vs ${prior.avg.toFixed(1)} average).`);
+      else if (diff <= -1.2) angles.push(`An off day for **${t.name}** (${t.avg.toFixed(1)} vs his usual ${prior.avg.toFixed(1)}).`);
+    }
+  }
+
+  // How the games were won: passing, tackling, keeping
+  const sum = (k) => matches.reduce((s, m) => s + m.players.reduce((x, p) => x + n(p[k]), 0), 0);
+  const passPct = pct(sum('passes_made'), sum('pass_attempts'));
+  const tacklePct = pct(sum('tackles'), sum('tackle_attempts'));
+  const shots = sum('shots');
+  const goals = matches.reduce((s, m) => s + m.scoreFor, 0);
+  if (passPct != null) angles.push(`Team passing: ${passPct}% completed.`);
+  if (tacklePct != null) angles.push(`Team tackling: ${tacklePct}% of tackles won.`);
+  if (shots >= 5) angles.push(`Finishing: ${goals} goals from ${shots} shots (${pct(goals, shots)}% conversion).`);
+  const keeper = today.filter((t) => t.saves > 0).sort((a, b) => b.saves - a.saves)[0];
+  if (keeper && keeper.saves >= 4) angles.push(`**${keeper.name}** made ${keeper.saves} saves.`);
+
+  // Partnerships: players who scored and assisted in the same games
+  const pairs = new Map();
+  for (const m of matches) {
+    const scorers = m.players.filter((p) => n(p.goals));
+    const creators = m.players.filter((p) => n(p.assists));
+    for (const s of scorers) for (const c of creators) {
+      if (nm(s) === nm(c)) continue;
+      const k = `${nm(c)} → ${nm(s)}`;
+      pairs.set(k, (pairs.get(k) || 0) + 1);
+    }
+  }
+  const duo = [...pairs.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (duo && duo[1] >= 2) angles.push(`Partnership: ${duo[0]} both contributed in ${duo[1]} of today's games.`);
+
+  return angles.slice(0, 10);
+}
+
 // Plain facts handed to the AI writer, if the bot has one.
 function storyFacts({ club, matches, seasonMatches }) {
-  const games = [...matches].sort((a, b) => a.playedAt - b.playedAt).map((m) => `${m.result.toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} vs ${m.opponent}; ${m.players.map((p) => `${nm(p)} ${n(p.goals)}G ${n(p.assists)}A ${n(p.rating) ? n(p.rating).toFixed(1) : '-'}${p.motm ? ' MOTM' : ''}`).join(', ')}`);
-  return `Club: ${club.name}\nToday's games:\n${games.join('\n') || 'none'}\nSeason context: ${seasonArc(club.name, matches, seasonMatches)}`;
+  const games = [...matches].sort((a, b) => a.playedAt - b.playedAt).map((m) => {
+    const players = m.players.map((p) => {
+      const pass = pct(n(p.passes_made), n(p.pass_attempts));
+      return `${nm(p)}${p.position ? ` (${p.position})` : ''} ${n(p.goals)}G ${n(p.assists)}A ${n(p.shots)}sh${pass != null ? ` ${pass}%pass` : ''} ${n(p.tackles)}tkl${n(p.saves) ? ` ${n(p.saves)}sv` : ''} ${n(p.rating) ? n(p.rating).toFixed(1) : '-'}${p.motm ? ' MOTM' : ''}${p.red_cards ? ' RED' : ''}`;
+    });
+    return `${m.result.toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} vs ${m.opponent}${m.matchType ? ` [${m.matchType}]` : ''}; ${players.join(', ')}`;
+  });
+  const angles = storyAngles(matches, seasonMatches);
+  return `Club: ${club.name}\nToday's games (in order):\n${games.join('\n') || 'none'}\nStory angles (verified from the record):\n${angles.map((a) => `- ${a}`).join('\n') || '- none'}\nSeason context: ${seasonArc(club.name, matches, seasonMatches)}`;
 }
 
 // Build the edition embed. upcoming = [{ title, scheduled_at, yes }] events still ahead.
