@@ -9064,7 +9064,7 @@ async function routeInteraction(interaction) {
         
         if (playersWithoutPrefs.length > 0) {
           embed.addFields({
-            name: '⚠️ No Preferences Set',
+            name: '⚠️ No Position Role or Picks',
             value: playersWithoutPrefs.map(m => m.displayName || m.user.username).join(', '),
             inline: false
           });
