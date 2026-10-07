@@ -1052,7 +1052,7 @@ async function buildPosboardEmbed(guildId, voiceChannels) {
     .setColor(0x5865f2)
     .setDescription(description)
     .addFields(fields)
-    .setFooter({ text: 'Select VCs below • Set your preferences • Refresh to update' });
+    .setFooter({ text: '🟢 Main (Discord role) • 🟡 Flex (draft picks) • Refresh to update' });
 
   return { embed, memberCount: allMembers.length, channelIds: channels.map(c => c?.id).filter(Boolean) };
 }
@@ -2192,7 +2192,7 @@ function buildPosPrefsEmbedForParticipants(guild, participants, label) {
   for (const { member, prefs } of participants) {
     prefs.forEach((pos, index) => {
       if (posMap[pos]) {
-        posMap[pos].push({ userId: member.id, rank: index + 1, icon: prefIcon(guildId, member.id, pos) });
+        posMap[pos].push({ userId: member.id, rank: index + 1, icon: prefIcon(guild.id, member.id, pos) });
       }
     });
   }
