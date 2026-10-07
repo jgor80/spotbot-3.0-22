@@ -24,6 +24,7 @@ const { autofillLineup, FORMATION_SLOTS } = require('./lineup-autofill.cjs');
 const { seasonTotals } = require('./player-season.cjs');
 const T = require('./event-time.cjs');
 const { PREMIUM_FREE } = require('./premium.cjs');
+const { buildChronicle, EDITIONS, CHRONICLE_TZ } = require('./chronicle.cjs');
 
 const FEATURES = {
   voice: { label: 'Voice check-ins', emoji: '🎧', help: 'Joining the club voice channel from 30 min before kick-off checks a player in.' },
@@ -31,6 +32,7 @@ const FEATURES = {
   recaps: { label: 'Match recaps', emoji: '🏁', help: 'Post a recap here as soon as EA records a finished match.' },
   subs: { label: 'Auto sub requests', emoji: '🆘', help: 'A starter out of voice for 3 min during the session gets a sub request.' },
   digest: { label: 'Monday digest', emoji: '🗞️', help: 'Formation win rates, best pairings and show-up rates every Monday morning.' },
+  chronicle: { label: 'Daily Chronicle', emoji: '📰', help: 'A newspaper-style beat writer digest at 3 PM and midnight Central covering the day\'s matches, players and events.' },
   session: { label: 'Session recap', emoji: '🧾', help: 'When the club voice channel empties, a recap of every match played since it filled up.' },
   // Premium: these only run when the server has GafferBot Premium (see premium.cjs)
   graphics: { label: 'Matchday graphics', emoji: '🖼️', premium: true, help: 'Recap images, a Team of the Week poster on Sunday night and squad cards on the 1st of the month.' },
@@ -894,6 +896,46 @@ function createAutopilot(deps) {
     }
   }
 
+  // ---------- Daily Chronicle (3 PM + midnight Central) ----------
+
+  async function buildEdition(guildId, club, edition, now = new Date()) {
+    const ed = EDITIONS[edition];
+    const all = loadMatches ? await loadMatches(guildId, club.key).catch(() => []) : [];
+    const since = now.getTime() - ed.windowH * 60 * 60 * 1000;
+    const matches = all.filter((m) => m.playedAt.getTime() >= since && m.playedAt.getTime() <= now.getTime());
+    const { data: upcoming } = await supabase
+      .from('availability_events')
+      .select('title, scheduled_at')
+      .eq('guild_id', guildId)
+      .eq('club_key', club.key)
+      .gte('scheduled_at', now.toISOString())
+      .lte('scheduled_at', new Date(now.getTime() + 20 * 60 * 60 * 1000).toISOString())
+      .order('scheduled_at', { ascending: true })
+      .limit(5);
+    const prefs = await events.serverPrefs(guildId).catch(() => ({}));
+    return buildChronicle({ club, edition, matches, upcoming: upcoming || [], seasonMatches: all, now, logoUrl: prefs.branding?.logo_url });
+  }
+
+  async function postChronicles(now) {
+    const local = T.localParts(now, CHRONICLE_TZ);
+    const edition = local.hour === EDITIONS.afternoon.hour ? 'afternoon' : local.hour === EDITIONS.overnight.hour ? 'overnight' : null;
+    if (!edition) return;
+    const dayKey = `${local.year}-${local.month}-${local.day}:${edition}`;
+    for (const guild of client().guilds.cache.values()) {
+      const state = await getGuildState(guild.id);
+      for (const club of activeClubs(state)) {
+        if (!club.ea_club_id || !isOn(club, 'chronicle') || club.autopilot?.chronicle_last === dayKey) continue;
+        await updateClub(guild.id, club.key, (ap) => {
+          ap.chronicle_last = dayKey;
+        });
+        const paper = await buildEdition(guild.id, club, edition, now).catch((err) => console.warn(`[autopilot] chronicle ${club.key} failed: ${err.message}`));
+        const chId = club.autopilot?.chronicle_channel_id;
+        const channel = chId ? await guild.channels.fetch(chId).catch(() => null) : await postChannel(guild.id, club);
+        if (paper && channel) await channel.send(paper).catch((err) => console.warn(`[autopilot] chronicle send failed: ${err.message}`));
+      }
+    }
+  }
+
   // ---------- /autopilot panel ----------
 
   async function buildPanel(guildId, club) {
@@ -910,7 +952,8 @@ function createAutopilot(deps) {
       )
       .addFields(
         { name: 'Voice channel', value: vcId ? `<#${vcId}>` : 'Not linked. Voice check-ins, the auto XI and sub requests need one: run **/manager → Lineups & Spots → Voice Spots** from the club voice channel.', inline: true },
-        { name: 'Recaps and digest go to', value: channel ? `<#${channel}>` : 'The channel your events are posted in', inline: true }
+        { name: 'Recaps and digest go to', value: channel ? `<#${channel}>` : 'The channel your events are posted in', inline: true },
+        { name: '📰 Chronicle prints in', value: club.autopilot?.chronicle_channel_id ? `<#${club.autopilot.chronicle_channel_id}>` : 'Same as recaps (press Print Chronicle here in the channel you want)', inline: true }
       );
     // Discord allows five buttons per row
     const toggleRow = (entries) =>
@@ -933,7 +976,9 @@ function createAutopilot(deps) {
         .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
     );
     const extras = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`ap_digest:${club.key}`).setLabel('Preview digest').setEmoji('🗞️').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId(`ap_digest:${club.key}`).setLabel('Preview digest').setEmoji('🗞️').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`ap_chronhere:${club.key}`).setLabel('Print Chronicle here').setEmoji('📰').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`ap_chron:${club.key}`).setLabel('Preview Chronicle').setEmoji('🗞️').setStyle(ButtonStyle.Secondary)
     );
     embed.setFooter({
       text: PREMIUM_FREE ? '⭐ Premium jobs are free on every server for now.' : '⭐ Premium jobs only run on servers with GafferBot Premium. /manager → Premium for details.',
@@ -981,6 +1026,21 @@ function createAutopilot(deps) {
         ap.channel_id = interaction.values[0];
       });
       await interaction.update(await buildPanel(interaction.guildId, updated));
+    } else if (action === 'ap_chronhere') {
+      const club = await withClub(interaction, a);
+      if (!club) return true;
+      const updated = await updateClub(interaction.guildId, club.key, (ap) => {
+        ap.chronicle_channel_id = interaction.channelId;
+        ap.off = (ap.off || []).filter((f) => f !== 'chronicle');
+      });
+      await interaction.update(await buildPanel(interaction.guildId, updated));
+      await interaction.followUp({ content: `📰 The ${club.name} Chronicle will print in <#${interaction.channelId}> at 3 PM and midnight Central.`, flags: 64 });
+    } else if (action === 'ap_chron') {
+      const club = await withClub(interaction, a);
+      if (!club) return true;
+      await interaction.deferReply({ flags: 64 });
+      const hour = Number(T.localParts(new Date(), CHRONICLE_TZ).hour);
+      await interaction.editReply(await buildEdition(interaction.guildId, club, hour >= 12 && hour < 20 ? 'afternoon' : 'overnight'));
     } else if (action === 'ap_digest') {
       const club = await withClub(interaction, a);
       if (!club) return true;
@@ -1011,6 +1071,7 @@ function createAutopilot(deps) {
       ['lineup', draftDue],
       ['recaps', postRecaps],
       ['digest', postDigests],
+      ['chronicle', postChronicles],
       ['session', sweepSessions],
     ]) {
       await job(now).catch((err) => console.warn(`[autopilot] ${name} failed: ${err.message}`));
