@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Pro photos are publicly readable" ON storage.objects;
