@@ -151,93 +151,88 @@ const BOX_COLUMNS = [
 // d: { clubName, opponentName, scoreFor, scoreAgainst, result, crestFor, crestAgainst,
 //      players: [{ name, position, rating, goals, assists, shots, passesMade, passAttempts, tackles, tackleAttempts, saves, motm, red }],
 //      motm: { name, rating, goals, assists, avatar } | null, accent, competition, dateText, details[], footer, talkingPoint }
+// Backgrounds are bundled, representative AI artwork, never player likenesses.
+const BACKGROUNDS = new Map();
+function actionBackground(position) {
+  const key = /^(GK|goalkeeper)$/i.test(position || '') ? 'keeper' : /^(DEF|CB|LB|RB|defender)$/i.test(position || '') ? 'defence' : 'attack';
+  if (!BACKGROUNDS.has(key)) {
+    try {
+      const image = fs.readFileSync(path.join(__dirname, 'assets', 'backgrounds', `${key}.jpg`));
+      BACKGROUNDS.set(key, `data:image/jpeg;base64,${image.toString('base64')}`);
+    } catch { BACKGROUNDS.set(key, null); }
+  }
+  return BACKGROUNDS.get(key);
+}
+
 function recapGraphic(d) {
-  const W = 1600;
-  const H = 900;
+  const W = 1600, H = 900;
   const accent = hex(d.accent);
   const res = RESULT_STYLE[d.result] || RESULT_STYLE.draw;
   const motm = d.motm;
   const players = (d.players || []).slice(0, 11);
-  const nameSize = (t) => fit(t, 360, 44, 0.5, 20);
-
-  // Player table on the right
-  const tx = 560;
-  const tw = W - 60 - tx;
-  const rowH = Math.min(52, Math.floor(560 / Math.max(players.length, 1)));
+  const background = actionBackground(motm?.position);
+  const tx = 550, tw = 1000, rowH = 40;
   const colX = [];
   let cx = tx + tw;
   for (let i = BOX_COLUMNS.length - 1; i >= 0; i--) {
     colX[i] = cx - BOX_COLUMNS[i][1] / 2 - 10;
     cx -= BOX_COLUMNS[i][1];
   }
-  const header = BOX_COLUMNS.map(
-    ([label], i) =>
-      `<text x="${colX[i]}" y="318" text-anchor="middle" font-family="${HEAD}" font-weight="500" font-size="22" letter-spacing="1" fill="#94a3b8">${label}</text>`,
-  ).join('');
-  const rows = players
-    .map((p, r) => {
-      const y = 330 + r * rowH;
-      const mid = y + rowH / 2 + 8;
-      const cells = BOX_COLUMNS.map(
-        ([, , get], i) =>
-          `<text x="${colX[i]}" y="${mid}" text-anchor="middle" font-family="${BODY}" font-weight="${i === 0 ? 700 : 400}" font-size="22" fill="${i === 0 ? '#facc15' : '#e2e8f0'}">${esc(get(p))}</text>`,
-      ).join('');
-      return `${r % 2 ? '' : `<rect x="${tx}" y="${y}" width="${tw}" height="${rowH}" fill="rgba(255,255,255,0.04)"/>`}
-        <text x="${tx + 20}" y="${mid}" font-family="${BODY}" font-weight="700" font-size="22" fill="#fff">${esc(clip(p.name, 18))}</text>
-        <text x="${tx + 260}" y="${mid}" font-family="${BODY}" font-size="18" fill="#94a3b8">${esc(p.position || '')}${p.motm ? '  MOTM' : ''}${p.red ? '  RED' : ''}</text>
-        ${cells}`;
-    })
-    .join('');
-
-  const details = (d.details || []).filter(Boolean).slice(0, 3);
+  const headers = BOX_COLUMNS.map(([label], i) => `<text x="${colX[i]}" y="319" text-anchor="middle" font-family="${HEAD}" font-size="20" fill="#a8b8b0">${label}</text>`).join('');
+  const rows = players.map((p, r) => {
+    const y = 337 + r * rowH, mid = y + 27;
+    return `<rect x="${tx}" y="${y}" width="${tw}" height="${rowH}" fill="${p.motm ? '#193b2c' : r % 2 ? '#0f1e19' : '#14251e'}" fill-opacity="0.96"/>
+      ${p.motm ? `<rect x="${tx}" y="${y}" width="4" height="${rowH}" fill="${accent}"/>` : ''}
+      <text x="${tx + 16}" y="${mid}" font-family="${BODY}" font-weight="700" font-size="${fit(p.name, 250, 20, 0.58, 14)}" fill="#ffffff">${esc(clip(p.name, 24))}</text>
+      <text x="${tx + 280}" y="${mid}" font-family="${HEAD}" font-size="16" fill="${p.red ? '#fb7185' : '#a8b8b0'}">${esc(p.position)}${p.red ? ' RED' : ''}</text>
+      ${BOX_COLUMNS.map(([, , get], i) => `<text x="${colX[i]}" y="${mid}" text-anchor="middle" font-family="${BODY}" font-size="20" font-weight="${i === 0 ? 700 : 400}" fill="${i === 0 ? '#f7d776' : '#ffffff'}">${esc(get(p))}</text>`).join('')}`;
+  }).join('');
+  const sum = key => players.reduce((n, p) => n + (Number(p[key]) || 0), 0);
+  const passes = sum('passAttempts');
+  const shots = sum('shots');
+  const metrics = [['SHOTS', shots], ['PASS COMPLETION', passes ? `${Math.round(sum('passesMade') / passes * 100)}%` : '—'], ['TACKLES WON', sum('tackles')]];
+  const card = motm ? {
+    name: motm.name, position: motm.position, avatar: motm.avatar,
+    overall: Math.max(40, Math.min(99, Math.round(18 + (Number(motm.rating) || 0) * 8))),
+    ratingDisplay: Number(motm.rating) > 0 ? Number(motm.rating).toFixed(1) : '—',
+    ratingLabel: 'MATCH RTG', inForm: Number(motm.rating) >= 8.5,
+    stats: motm.position === 'GK'
+      ? [['SAV', motm.saves], ['GLS', motm.goals], ['AST', motm.assists], ['PAS', motm.passAttempts ? `${Math.round(motm.passesMade / motm.passAttempts * 100)}%` : '—'], ['TKL', motm.tackles], ['SHT', motm.shots]]
+      : [['GLS', motm.goals], ['AST', motm.assists], ['SHT', motm.shots], ['PAS', motm.passAttempts ? `${Math.round(motm.passesMade / motm.passAttempts * 100)}%` : '—'], ['TKL', motm.tackles], ['SAV', motm.saves]],
+    badges: [motm.motm ? 'EA MOTM' : 'TOP RATED'],
+  } : null;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0b1220"/><stop offset="0.6" stop-color="#111827"/><stop offset="1" stop-color="${shade(d.accent, -0.55)}"/>
-    </linearGradient>
-    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${accent}"/><stop offset="1" stop-color="${shade(d.accent, 0.35)}"/></linearGradient>
-  </defs>
-  <rect width="${W}" height="${H}" fill="url(#bg)"/>
-  <rect x="0" y="0" width="${W}" height="8" fill="url(#bar)"/>
-
-  ${crest(110, 140, 70, d.crestFor, d.clubName, accent)}
-  <text x="200" y="130" font-family="${HEAD}" font-weight="700" font-size="${nameSize(d.clubName)}" fill="#fff">${esc(clip(d.clubName, 26).toUpperCase())}</text>
-  <text x="200" y="172" font-family="${HEAD}" font-weight="500" font-size="22" letter-spacing="4" fill="#94a3b8">FULL TIME${d.competition ? ` · ${esc(d.competition.toUpperCase())}` : ''}</text>
-  <text x="${W / 2 - 40}" y="190" text-anchor="end" font-family="${HEAD}" font-weight="700" font-size="140" fill="#fff">${Number(d.scoreFor) || 0}</text>
-  <rect x="${W / 2 - 18}" y="134" width="36" height="12" rx="4" fill="#64748b"/>
-  <text x="${W / 2 + 40}" y="190" font-family="${HEAD}" font-weight="700" font-size="140" fill="#fff">${Number(d.scoreAgainst) || 0}</text>
-  <rect x="${W / 2 - 70}" y="210" width="140" height="38" rx="8" fill="${res.color}"/>
-  <text x="${W / 2}" y="238" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="24" letter-spacing="3" fill="#0b1220">${res.label}</text>
-  ${crest(W - 110, 140, 70, d.crestAgainst, d.opponentName, '#475569')}
-  <text x="${W - 200}" y="130" text-anchor="end" font-family="${HEAD}" font-weight="700" font-size="${nameSize(d.opponentName)}" fill="#fff">${esc(clip(d.opponentName, 26).toUpperCase())}</text>
-  ${d.dateText ? `<text x="${W - 200}" y="172" text-anchor="end" font-family="${BODY}" font-size="20" fill="#94a3b8">${esc(d.dateText)}</text>` : ''}
-
-  <rect x="60" y="290" width="460" height="${H - 290 - 80}" rx="18" fill="rgba(255,255,255,0.05)"/>
-  <text x="90" y="335" font-family="${HEAD}" font-weight="500" font-size="22" letter-spacing="4" fill="${accent}">MAN OF THE MATCH</text>
-  ${
-    motm
-      ? `${crest(160, 430, 62, motm.avatar, motm.name, accent)}
-    <text x="245" y="420" font-family="${HEAD}" font-weight="700" font-size="${fit(motm.name, 250, 36, 0.5, 18)}" fill="#fff">${esc(clip(motm.name, 18))}</text>
-    <text x="245" y="460" font-family="${BODY}" font-size="22" fill="#cbd5e1">${[motm.rating ? `${Number(motm.rating).toFixed(1)} rating` : null, motm.goals ? `${motm.goals}G` : null, motm.assists ? `${motm.assists}A` : null].filter(Boolean).join(' · ')}</text>`
-      : `<text x="90" y="430" font-family="${BODY}" font-size="24" fill="#94a3b8">Not recorded</text>`
-  }
-  <line x1="90" y1="530" x2="490" y2="530" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
-  <text x="90" y="575" font-family="${HEAD}" font-weight="500" font-size="22" letter-spacing="4" fill="${accent}">MATCH DETAILS</text>
-  ${details.map((t, i) => `<text x="90" y="${618 + i * 36}" font-family="${BODY}" font-size="22" fill="#e2e8f0">${esc(clip(t, 34))}</text>`).join('')}
-  ${wrap(d.talkingPoint, 34, 2)
-    .map(
-      (line, i) =>
-        `<text x="90" y="${618 + details.length * 36 + 30 + i * 30}" font-family="${BODY}" font-weight="700" font-size="22" fill="#fff">${esc(line)}</text>`,
-    )
-    .join('')}
-
-  <rect x="${tx}" y="290" width="${tw}" height="${H - 290 - 80}" rx="18" fill="rgba(255,255,255,0.05)"/>
-  <text x="${tx + 20}" y="318" font-family="${HEAD}" font-weight="500" font-size="22" letter-spacing="1" fill="#94a3b8">PLAYER</text>
-  ${header}
-  ${rows}
-  <text x="60" y="${H - 28}" font-family="${HEAD}" font-weight="700" font-size="30" fill="#fff">POWERED BY <tspan fill="${accent}">GAFFERBOT</tspan></text>
-  <text x="${W - 60}" y="${H - 30}" text-anchor="end" font-family="${BODY}" font-size="18" fill="#64748b">${esc(clip(d.footer || '', 60))}</text>
-</svg>`;
+  <defs><linearGradient id="veil"><stop offset="0" stop-color="#07120e" stop-opacity="0.12"/><stop offset="0.36" stop-color="#07120e" stop-opacity="0.78"/><stop offset="1" stop-color="#07120e" stop-opacity="0.92"/></linearGradient></defs>
+  <rect width="${W}" height="${H}" fill="#10251a"/>
+  ${background ? `<image href="${background}" width="${W}" height="${H}" preserveAspectRatio="xMidYMid slice"/>` : ''}
+  <rect width="${W}" height="${H}" fill="url(#veil)"/>
+  <rect width="${W}" height="52" fill="#07120e" fill-opacity="0.94"/>
+  <rect width="10" height="52" fill="${accent}"/>
+  <text x="38" y="35" font-family="${HEAD}" font-weight="700" font-size="24" fill="#ffffff">GAFFERBOT / MATCHDAY</text>
+  <text x="1550" y="34" text-anchor="end" font-family="${BODY}" font-size="18" fill="#b7c6bf">${esc(clip(d.dateText, 60))}</text>
+  <rect x="32" y="74" width="1536" height="166" fill="#07120e" fill-opacity="0.90"/>
+  ${crest(110, 157, 52, d.crestFor, d.clubName, accent)}
+  <text x="184" y="151" font-family="${HEAD}" font-weight="700" font-size="${fit(d.clubName, 380, 42, 0.55, 18)}" fill="#ffffff">${esc(clip(d.clubName, 30).toUpperCase())}</text>
+  <text x="184" y="190" font-family="${BODY}" font-size="19" fill="#b7c6bf">${esc(clip(d.competition || 'EA FC / PRO CLUBS', 28))}</text>
+  <text x="800" y="177" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="100" fill="#ffffff">${Number(d.scoreFor) || 0} : ${Number(d.scoreAgainst) || 0}</text>
+  <rect x="710" y="196" width="180" height="32" fill="${res.color}"/>
+  <text x="800" y="219" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="20" fill="#07120e">FULL TIME / ${res.label}</text>
+  ${crest(1490, 157, 52, d.crestAgainst, d.opponentName, '#374f43')}
+  <text x="1416" y="155" text-anchor="end" font-family="${HEAD}" font-weight="700" font-size="${fit(d.opponentName, 380, 42, 0.55, 18)}" fill="#ffffff">${esc(clip(d.opponentName, 30).toUpperCase())}</text>
+  <text x="${tx}" y="281" font-family="${HEAD}" font-size="22" fill="${accent}">MATCH CENTRE / PLAYER RATINGS</text>
+  <rect x="${tx}" y="295" width="${tw}" height="36" fill="#07120e"/>
+  <text x="${tx + 16}" y="319" font-family="${HEAD}" font-size="20" fill="#a8b8b0">PLAYER</text>${headers}${rows}
+  ${!players.length ? `<text x="580" y="390" font-family="${BODY}" font-size="24" fill="#b7c6bf">Player stats not available</text>` : ''}
+  <rect x="200" y="280" width="310" height="42" fill="#07120e" fill-opacity="0.90"/>
+  <text x="355" y="309" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="22" fill="#f7d776">${motm?.motm ? 'MAN OF THE MATCH' : 'MATCH SPOTLIGHT'}</text>
+  ${card ? `<g transform="translate(205 338) scale(0.98)">${cardSvg(card, 0, 0)}</g>` : ''}
+  ${metrics.map(([label, value], i) => `<text x="${585 + i * 325}" y="804" font-family="${HEAD}" font-size="20" fill="#b7c6bf">${label} <tspan fill="#ffffff" font-weight="700">${value}</tspan></text>`).join('')}
+  <rect y="833" width="${W}" height="67" fill="#07120e"/>
+  <rect y="833" width="9" height="67" fill="${accent}"/>
+  <text x="38" y="862" font-family="${BODY}" font-weight="700" font-size="${fit(d.talkingPoint || (d.details || []).filter(Boolean).join(' / '), 1480, 21, 0.58, 14)}" fill="#ffffff">${esc(clip(d.talkingPoint || (d.details || []).filter(Boolean).join(' / '), 135))}</text>
+  <text x="38" y="888" font-family="${BODY}" font-size="14" fill="#a8b8b0">EA MATCH DATA / ${esc(clip(d.footer || 'GAFFERBOT', 70))}</text>
+  <text x="1550" y="888" text-anchor="end" font-family="${BODY}" font-size="13" fill="#a8b8b0">AI ACTION ART / DISCORD AVATARS</text>
+  </svg>`;
   return render(svg);
 }
 
@@ -292,9 +287,10 @@ function cardSvg(card, x, y) {
   return `<g>
     <defs><linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${t.top}"/><stop offset="1" stop-color="${t.bottom}"/></linearGradient></defs>
     <path d="${shape}" fill="url(#${id}g)" stroke="${t.edge}" stroke-width="4"/>
-    <text x="${x + 56}" y="${y + 90}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="64" fill="${t.ink}">${Number(card.overall) || '–'}</text>
+    <text x="${x + 56}" y="${y + 90}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="64" fill="${t.ink}">${esc(card.ratingDisplay ?? (Number(card.overall) || '–'))}</text>
     <text x="${x + 56}" y="${y + 126}" text-anchor="middle" font-family="${HEAD}" font-weight="500" font-size="28" fill="${t.ink}">${esc(card.position || '')}</text>
-    ${card.inForm ? `<text x="${x + 56}" y="${y + 156}" text-anchor="middle" font-family="${HEAD}" font-weight="500" font-size="14" letter-spacing="1" fill="${t.ink}">IN FORM</text>` : ''}
+    ${card.ratingLabel ? `<text x="${x + 56}" y="${y + 148}" text-anchor="middle" font-family="${HEAD}" font-size="12" fill="${t.sub}">${esc(card.ratingLabel)}</text>` : ''}
+    ${card.inForm && !card.ratingLabel ? `<text x="${x + 56}" y="${y + 156}" text-anchor="middle" font-family="${HEAD}" font-weight="500" font-size="14" letter-spacing="1" fill="${t.ink}">IN FORM</text>` : ''}
     ${avatar}
     <text x="${x + w / 2}" y="${y + 268}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="${fit(card.name, 250, 34, 0.5, 16)}" fill="${t.ink}">${esc(clip(card.name, 22).toUpperCase())}</text>
     <line x1="${x + 40}" y1="${y + 286}" x2="${x + w - 40}" y2="${y + 286}" stroke="${t.ink}" stroke-opacity="0.35" stroke-width="2"/>
