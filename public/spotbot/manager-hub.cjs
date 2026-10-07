@@ -598,7 +598,60 @@ function createManagerHub(deps) {
     return false;
   }
 
-  return { commands: HUB_COMMANDS, handleCommand, handleButton, handleSelect, buildStats, resolveClub, loadMatches };
+  // ---------- Sticky panel: keeps the hub as the last message in a club's manager desk channel ----------
+  const stickyIds = new Map(); // channelId -> panel message id
+  const stickyTimers = new Map();
+  const STICKY_DELAY_MS = 4000;
+
+  function deskClub(state, channelId) {
+    return activeClubs(state).find((c) => c.manager_desk_channel_id === channelId);
+  }
+
+  async function repostSticky(channel, state, club) {
+    const oldId = stickyIds.get(channel.id);
+    if (oldId) await channel.messages.delete(oldId).catch(() => {});
+    else {
+      // After a restart, clear any earlier panel the bot left in recent history.
+      const recent = await channel.messages.fetch({ limit: 30 }).catch(() => null);
+      for (const m of recent?.values() || []) {
+        if (m.author.id === channel.client.user.id && m.embeds[0]?.footer?.text?.includes('Manager desk')) {
+          await m.delete().catch(() => {});
+        }
+      }
+    }
+    const payload = await buildHub(channel.guildId, state, club);
+    const embeds = (payload.embeds || []).map((e) => {
+      const b = EmbedBuilder.from(e);
+      return b.setFooter({ text: '📌 Manager desk · this panel always stays at the bottom' });
+    });
+    const sent = await channel.send({ ...payload, embeds, content: payload.content || undefined });
+    stickyIds.set(channel.id, sent.id);
+  }
+
+  async function onMessage(message) {
+    if (!message.guildId || stickyIds.get(message.channelId) === message.id) return;
+    const state = await getGuildState(message.guildId).catch(() => null);
+    const club = state && deskClub(state, message.channelId);
+    if (!club) return;
+    clearTimeout(stickyTimers.get(message.channelId));
+    stickyTimers.set(message.channelId, setTimeout(() => {
+      stickyTimers.delete(message.channelId);
+      repostSticky(message.channel, state, club).catch((err) => console.warn('[sticky] repost failed:', err.message));
+    }, STICKY_DELAY_MS));
+  }
+
+  async function initSticky(client) {
+    for (const guild of client.guilds.cache.values()) {
+      const state = await getGuildState(guild.id).catch(() => null);
+      for (const club of activeClubs(state)) {
+        if (!club.manager_desk_channel_id) continue;
+        const channel = await guild.channels.fetch(club.manager_desk_channel_id).catch(() => null);
+        if (channel?.isTextBased()) await repostSticky(channel, state, club).catch((err) => console.warn('[sticky] init failed:', err.message));
+      }
+    }
+  }
+
+  return { onMessage, initSticky, commands: HUB_COMMANDS, handleCommand, handleButton, handleSelect, buildStats, resolveClub, loadMatches };
 }
 
 module.exports = { createManagerHub, resolveClub, activeClubs, HUB_COMMANDS };
