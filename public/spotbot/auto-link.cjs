@@ -211,6 +211,44 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
     return out;
   }
 
+  // Declined pairs survive restarts: stored as rejected link_suggestions
+  async function loadDeclined(guildId) {
+    const set = new Set(declinedPairs.get(guildId) || []);
+    const { data } = await supabase.from('link_suggestions').select('suggested_discord_id, ea_username').eq('guild_id', guildId).eq('status', 'rejected');
+    for (const r of data || []) set.add(`${r.suggested_discord_id}:${norm(r.ea_username)}`);
+    declinedPairs.set(guildId, set);
+    return set;
+  }
+
+  // Reverse a wrong link: give the match history back to the placeholder profile so the real owner
+  // gets it when they link, drop the roster spots it created, and never suggest the pair again.
+  async function undoLink(guildId, userId, gamertag) {
+    const tempId = `ea_${gamertag.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const key = norm(gamertag);
+    const { data: matches } = await supabase.from('club_matches').select('ea_match_id, club_key, player_stats').eq('guild_id', guildId);
+    const matchIds = [];
+    const clubKeys = new Set();
+    for (const m of matches || []) {
+      const hit = (Array.isArray(m.player_stats) ? m.player_stats : []).some((p) => norm(p?.ea_username || p?.playername || p?.name) === key);
+      if (!hit) continue;
+      matchIds.push(m.ea_match_id);
+      if (m.club_key) clubKeys.add(m.club_key);
+    }
+    await supabase.from('profiles').update({ ea_username: null }).eq('discord_user_id', userId);
+    const { data: temp } = await supabase.from('profiles').select('discord_user_id').eq('discord_user_id', tempId).maybeSingle();
+    if (!temp) await supabase.from('profiles').insert({ discord_user_id: tempId, ea_username: gamertag });
+    for (let i = 0; i < matchIds.length; i += 100) {
+      await supabase.from('player_stats').update({ discord_user_id: tempId }).eq('discord_user_id', userId).eq('guild_id', guildId).in('ea_match_id', matchIds.slice(i, i + 100));
+    }
+    const state = await getGuildState(guildId).catch(() => null);
+    const teamIds = (Array.isArray(state?.clubs) ? state.clubs : []).filter((c) => c.team_id && clubKeys.has(c.key)).map((c) => c.team_id);
+    if (teamIds.length) await supabase.from('team_rosters').delete().eq('discord_user_id', userId).in('team_id', teamIds);
+    await supabase.from('link_suggestions').insert({ guild_id: guildId, temp_profile_id: tempId, ea_username: gamertag, suggested_discord_id: userId, similarity_score: 0, status: 'rejected', reviewed_at: new Date().toISOString() });
+    if (!declinedPairs.has(guildId)) declinedPairs.set(guildId, new Set());
+    declinedPairs.get(guildId).add(`${userId}:${key}`);
+    namesCache.clear();
+  }
+
   // Match every unlinked gamertag from this server's matches against every unlinked server member.
   // Strong matches are linked straight away; close ones get an "Is this you?" DM; the rest are
   // returned so a manager can pick the right member.
@@ -221,7 +259,7 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
     const members = [...(await guild.members.fetch().catch(() => guild.members.cache)).values()].filter((m) => !m.user?.bot);
     const linkedIds = await linkedMemberIds(members.map((m) => m.id));
     const free = members.filter((m) => !linkedIds.has(m.id));
-    const declined = declinedPairs.get(guild.id) || new Set();
+    const declined = await loadDeclined(guild.id);
     const used = new Set();
     // Best pairs first so two gamertags never grab the same member
     const pairs = [];
@@ -309,12 +347,7 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
       }
       const [, guildId, userId] = id.split(':');
       const profile = await profileFor(userId);
-      if (profile?.ea_username) {
-        await supabase.from('profiles').update({ ea_username: null }).eq('discord_user_id', userId);
-        if (!declinedPairs.has(guildId)) declinedPairs.set(guildId, new Set());
-        declinedPairs.get(guildId).add(`${userId}:${norm(profile.ea_username)}`);
-        namesCache.clear();
-      }
+      if (profile?.ea_username) await undoLink(guildId, userId, profile.ea_username);
       await interaction.reply({ content: `↩️ Unlinked <@${userId}>${profile?.ea_username ? ` from **${profile.ea_username}**` : ''}.`, flags: 64 });
       return true;
     }
