@@ -344,7 +344,23 @@ if (!supabaseUrl || !supabaseKey) {
   process.exit(1);
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// When BOT_PROXY_SECRET is set, database requests go through the bot-proxy
+// backend function, which holds the admin key server-side. This lets the bot
+// save changes without ever having the admin key on Railway.
+const BOT_PROXY_SECRET = process.env.BOT_PROXY_SECRET;
+const proxyFetch = BOT_PROXY_SECRET
+  ? (input, init = {}) => {
+      const url = typeof input === 'string' ? input : input.url;
+      const restBase = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/`;
+      if (!url.startsWith(restBase)) return fetch(input, init);
+      const headers = new Headers(init.headers || {});
+      headers.set('x-bot-secret', BOT_PROXY_SECRET);
+      headers.set('x-rest-path', url.slice(restBase.length));
+      return fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/bot-proxy`, { ...init, headers });
+    }
+  : undefined;
+if (BOT_PROXY_SECRET) console.log('🔐 Database writes routed through bot-proxy');
+const supabase = createClient(supabaseUrl, supabaseKey, proxyFetch ? { global: { fetch: proxyFetch } } : undefined);
 
 const squads = createSquads({ supabase, getGuildState, saveGuildSettings, isManager });
 
