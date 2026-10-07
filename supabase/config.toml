@@ -119,3 +119,6 @@ verify_jwt = false
 
 [functions.bot-proxy]
 verify_jwt = false
+
+[functions.backfill-club-games]
+verify_jwt = false
