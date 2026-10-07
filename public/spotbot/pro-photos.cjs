@@ -1,5 +1,5 @@
 // Pro photos: in-game Virtual Pro pictures used on recap cards.
-// - Any image posted in a #pro-photos channel (or the channel set as pro_photos_channel_id) is analyzed
+// - Any image posted in a #pro-photos channel (or a club's pro_photos_channel_id) is analyzed
 //   and attached to the poster, or to the mentioned player when a manager posts it.
 // - /me → Pro Photo uploads one directly.
 const { EmbedBuilder } = require('discord.js');
@@ -39,7 +39,7 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
   async function isPhotoChannel(message) {
     if (NAME_RE.test(message.channel?.name || '')) return true;
     const state = await getGuildState(message.guild.id).catch(() => null);
-    return !!state?.pro_photos_channel_id && state.pro_photos_channel_id === message.channelId;
+    return (Array.isArray(state?.clubs) ? state.clubs : []).some((c) => c?.pro_photos_channel_id === message.channelId);
   }
 
   async function onMessage(message) {
