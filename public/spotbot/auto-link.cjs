@@ -7,10 +7,11 @@
 //   - Match recaps: claimButtons() adds "That's me" buttons for unlinked gamertags in a match.
 // Profiles are global, so a gamertag linked in one server works in every server.
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder } = require('discord.js');
 
 const MATCH_SCAN = 60;
 const NAME_MATCH = 0.8;
+const AUTO_MATCH = 0.92;
 const PROMPT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const CACHE_MS = 10 * 60 * 1000;
 const POSITION_ROLES = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST'];
@@ -42,9 +43,11 @@ function similarity(a, b) {
   return (2 * hit) / Math.max(1, a.length - 1 + b.length - 1);
 }
 
-function createAutoLink({ supabase, getGuildState }) {
+function createAutoLink({ supabase, getGuildState, isManager }) {
   const namesCache = new Map(); // guildId -> { at, names: Map<key, {name, clubKey}> }
   const lastPrompt = new Map(); // `${guildId}:${userId}` -> ms
+  const declinedPairs = new Map(); // guildId -> Set(`${userId}:${gamertagKey}`) undone by a manager
+  const isManagerFn = async (m) => (isManager ? isManager(m) : m?.permissions?.has?.('ManageGuild'));
 
   // Gamertags seen in this server's recent matches, with the club they played for
   async function recentNames(guildId) {
@@ -197,9 +200,125 @@ function createAutoLink({ supabase, getGuildState }) {
     return row ? [row] : [];
   }
 
+  // Discord IDs (of the given list) that already have a gamertag linked
+  async function linkedMemberIds(ids) {
+    const out = new Set();
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data } = await supabase.from('profiles').select('discord_user_id, ea_username').in('discord_user_id', ids.slice(i, i + 100));
+      for (const p of data || []) if (p.ea_username) out.add(p.discord_user_id);
+    }
+    return out;
+  }
+
+  // Match every unlinked gamertag from this server's matches against every unlinked server member.
+  // Strong matches are linked straight away; close ones get an "Is this you?" DM; the rest are
+  // returned so a manager can pick the right member.
+  async function bulkScan(guild, { autoThreshold = AUTO_MATCH, promptThreshold = NAME_MATCH, prompt = true } = {}) {
+    const result = { linked: [], prompted: [], unmatched: [] };
+    const open = await unlinkedNames(guild.id);
+    if (!open.length) return result;
+    const members = [...(await guild.members.fetch().catch(() => guild.members.cache)).values()].filter((m) => !m.user?.bot);
+    const linkedIds = await linkedMemberIds(members.map((m) => m.id));
+    const free = members.filter((m) => !linkedIds.has(m.id));
+    const declined = declinedPairs.get(guild.id) || new Set();
+    const used = new Set();
+    // Best pairs first so two gamertags never grab the same member
+    const pairs = [];
+    for (const c of open) {
+      for (const m of free) {
+        if (declined.has(`${m.id}:${norm(c.name)}`)) continue;
+        const labels = [m.displayName, m.nickname, m.user?.username, m.user?.globalName].filter(Boolean);
+        const score = Math.max(...labels.map((l) => similarity(l, c.name)));
+        if (score >= promptThreshold) pairs.push({ c, m, score });
+      }
+    }
+    pairs.sort((a, b) => b.score - a.score);
+    const done = new Set();
+    for (const { c, m, score } of pairs) {
+      const key = norm(c.name);
+      if (done.has(key) || used.has(m.id)) continue;
+      done.add(key);
+      used.add(m.id);
+      if (score >= autoThreshold) {
+        const r = await link(m.id, c.name, null);
+        if (!r.ok) continue;
+        await addToRosters(guild.id, m.id, c.clubKeys).catch(() => {});
+        await applyPositionRoles(m).catch(() => {});
+        result.linked.push({ gamertag: c.name, userId: m.id });
+        console.log(`[auto-link] bulk: ${m.user.username} -> ${c.name} (${score.toFixed(2)})`);
+      } else {
+        if (prompt) await promptMember(m, c);
+        result.prompted.push({ gamertag: c.name, userId: m.id });
+      }
+    }
+    result.unmatched = open.filter((c) => !done.has(norm(c.name))).map((c) => c.name);
+    return result;
+  }
+
+  // Manager-facing summary with undo buttons and member pickers for gamertags with no match
+  function scanReport(guildId, result) {
+    const lines = [
+      `✅ **Linked (${result.linked.length})**`,
+      ...result.linked.map((l) => `• ${l.gamertag} → <@${l.userId}>`),
+      `\n📩 **Asked to confirm (${result.prompted.length})**`,
+      ...result.prompted.map((p) => `• ${p.gamertag} → <@${p.userId}>?`),
+      `\n❓ **No match (${result.unmatched.length})**`,
+      ...result.unmatched.map((u) => `• ${u}`)
+    ];
+    const embed = new EmbedBuilder().setTitle('🔗 Auto-link results').setColor(0x22c55e).setDescription(lines.join('\n').slice(0, 4000));
+    const components = [];
+    const undo = result.linked.slice(0, 5).map((l) =>
+      new ButtonBuilder().setCustomId(`alink-undo:${guildId}:${l.userId}`.slice(0, 100)).setLabel(`Undo ${l.gamertag}`.slice(0, 80)).setStyle(ButtonStyle.Secondary)
+    );
+    if (undo.length) components.push(new ActionRowBuilder().addComponents(undo));
+    for (const g of result.unmatched.slice(0, 5 - components.length)) {
+      components.push(new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder().setCustomId(`alink-pick:${guildId}:${g}`.slice(0, 100)).setPlaceholder(`Who is ${g}?`.slice(0, 150)).setMaxValues(1)
+      ));
+    }
+    return { embeds: [embed], components };
+  }
+
   async function handleInteraction(interaction) {
-    if (!interaction.isButton?.() || !interaction.customId.startsWith('alink:')) return false;
-    const [, guildId, ...rest] = interaction.customId.split(':');
+    const id = interaction.customId || '';
+    if (interaction.isUserSelectMenu?.() && id.startsWith('alink-pick:')) {
+      if (!(await isManagerFn(interaction.member))) {
+        await interaction.reply({ content: '❌ Managers only.', flags: 64 });
+        return true;
+      }
+      const [, guildId, ...rest] = id.split(':');
+      const gamertag = rest.join(':');
+      const userId = interaction.values[0];
+      const r = await link(userId, gamertag, null);
+      if (!r.ok) {
+        await interaction.reply({ content: `❌ ${r.reason}`, flags: 64 });
+        return true;
+      }
+      const names = await recentNames(guildId);
+      await addToRosters(guildId, userId, names.get(norm(gamertag))?.clubKeys || new Set()).catch(() => {});
+      const member = await interaction.guild.members.fetch(userId).catch(() => null);
+      if (member) await applyPositionRoles(member).catch(() => {});
+      await interaction.reply({ content: `✅ Linked **${gamertag}** to <@${userId}>.`, flags: 64 });
+      return true;
+    }
+    if (interaction.isButton?.() && id.startsWith('alink-undo:')) {
+      if (!(await isManagerFn(interaction.member))) {
+        await interaction.reply({ content: '❌ Managers only.', flags: 64 });
+        return true;
+      }
+      const [, guildId, userId] = id.split(':');
+      const profile = await profileFor(userId);
+      if (profile?.ea_username) {
+        await supabase.from('profiles').update({ ea_username: null }).eq('discord_user_id', userId);
+        if (!declinedPairs.has(guildId)) declinedPairs.set(guildId, new Set());
+        declinedPairs.get(guildId).add(`${userId}:${norm(profile.ea_username)}`);
+        namesCache.clear();
+      }
+      await interaction.reply({ content: `↩️ Unlinked <@${userId}>${profile?.ea_username ? ` from **${profile.ea_username}**` : ''}.`, flags: 64 });
+      return true;
+    }
+    if (!interaction.isButton?.() || !id.startsWith('alink:')) return false;
+    const [, guildId, ...rest] = id.split(':');
     const gamertag = rest.join(':');
     const result = await link(interaction.user.id, gamertag, null);
     if (!result.ok) {
@@ -212,7 +331,7 @@ function createAutoLink({ supabase, getGuildState }) {
     return true;
   }
 
-  return { onMemberJoin, onVoiceJoin, claimButtons, handleInteraction, link, similarity };
+  return { onMemberJoin, onVoiceJoin, claimButtons, handleInteraction, link, similarity, bulkScan, scanReport };
 }
 
 module.exports = { createAutoLink, similarity };
