@@ -71,6 +71,9 @@ const AREAS = [
     emoji: '📅',
     blurb: 'Schedule sessions with Available / Maybe / Out buttons and manage who answered.',
     actions: [
+      { id: 'ev_quick_league', label: 'League Game', emoji: '⚽', cmd: 'event', sub: 'new', fields: ['when', 'title'], required: ['when'], fixed: { type: 'league' }, style: 'success' },
+      { id: 'ev_quick_byot', label: 'BYOT / Tournament', emoji: '🏆', cmd: 'event', sub: 'new', fields: ['when', 'title'], required: ['when'], fixed: { type: 'tournament' }, style: 'success' },
+      { id: 'ev_quick_friendly', label: 'Friendly', emoji: '🤝', cmd: 'event', sub: 'new', fields: ['when', 'title'], required: ['when'], fixed: { type: 'friendly' } },
       { id: 'ev_new', label: 'New Event', emoji: '➕', cmd: 'event', sub: 'new', ask: true, fields: ['when', 'title', 'type', 'ping', 'description'], style: 'primary' },
       { id: 'ev_preset', label: 'Event From Preset', emoji: '📎', cmd: 'event', sub: 'new', fields: ['preset', 'when', 'ping'], required: ['preset'] },
       { id: 'ev_list', label: 'Upcoming', emoji: '📅', cmd: 'event', sub: 'list' },
@@ -237,7 +240,7 @@ const ACTIONS = new Map();
 for (const a of PLAYER_ACTIONS) ACTIONS.set(a.id, { ...a, area: null });
 for (const area of AREAS) for (const a of area.actions) ACTIONS.set(a.id, { ...a, area });
 
-const STYLES = { primary: ButtonStyle.Primary, danger: ButtonStyle.Danger, secondary: ButtonStyle.Secondary };
+const STYLES = { primary: ButtonStyle.Primary, danger: ButtonStyle.Danger, secondary: ButtonStyle.Secondary, success: ButtonStyle.Success };
 
 // Where an action lives, in words, for help text and messages: "/manager → Drafts → Start Draft"
 function where(actionId) {
