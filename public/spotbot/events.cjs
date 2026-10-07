@@ -473,11 +473,15 @@ function createEvents(deps) {
       if (byPos) embed.addFields({ name: 'By position', value: byPos });
     }
 
-    const waiting = expected.filter((id) => !answered.has(id));
+    const everyone = (await allMemberIds(event)) || expected;
+    const waiting = everyone.filter((id) => !answered.has(id));
     if (waiting.length && !event.closed && !locked) {
-      embed.addFields({ name: '⏳ Still to answer', value: `${waiting.length} player${waiting.length === 1 ? '' : 's'}` });
+      embed.addFields({
+        name: '⏳ Still to answer',
+        value: `**${waiting.length}** player${waiting.length === 1 ? '' : 's'}\n${mentionList(waiting)}`,
+      });
     }
-    embed.addFields({ name: '\u200b', value: '*Anyone in the server can answer. Tap 👥 Who\'s in to see names privately.*' });
+    embed.addFields({ name: '\u200b', value: '*Anyone in the server can answer. Tap 👥 Who\'s in for the full list with notes.*' });
 
     const components = [];
     if (!event.closed && !locked) {
