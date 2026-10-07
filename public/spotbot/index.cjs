@@ -1026,7 +1026,7 @@ async function buildPosboardEmbed(guildId, voiceChannels) {
         if (mappedPositions.includes(pos)) {
           // Avoid duplicates: only add if not already in this display position
           if (!posMap[displayPos].some(e => e.userId === m.id)) {
-            posMap[displayPos].push({ userId: m.id, rank: index + 1, originalPos: pos });
+            posMap[displayPos].push({ userId: m.id, rank: index + 1, originalPos: pos, icon: prefIcon(guildId, m.id, pos) });
           }
         }
       }
@@ -1038,7 +1038,7 @@ async function buildPosboardEmbed(guildId, voiceChannels) {
     const meta = POSITION_META[pos];
     const value = entries.length === 0
       ? '*—*'
-      : entries.map(e => `${RANK_EMOJI[e.rank] || e.rank} <@${e.userId}>`).join('\n');
+      : entries.map(e => `${e.icon || RANK_EMOJI[e.rank] || e.rank} <@${e.userId}>`).join('\n');
     return { name: `${meta?.emoji || ''} ${pos}`, value, inline: true };
   });
 
@@ -1775,13 +1775,30 @@ async function getUserPrefs(guildId, userId) {
   }
   const guildPrefs = positionPrefsCache.get(guildId);
 
-  if (guildPrefs.has(userId)) {
-    return guildPrefs.get(userId);
+  let stored = guildPrefs.get(userId);
+  if (!stored) {
+    stored = await loadPositionPrefs(guildId, userId) || [];
+    guildPrefs.set(userId, stored);
   }
+  // Unified: Discord position roles = main (comp) positions, always first.
+  // Saved picks = secondary/flex positions used for drafts.
+  const main = rolePositionsFor(guildId, userId);
+  return [...new Set([...main, ...stored])].slice(0, PREFS_LIMIT);
+}
 
-  const prefs = await loadPositionPrefs(guildId, userId);
-  guildPrefs.set(userId, prefs);
-  return prefs;
+// Main positions come from the member's Discord position roles (GK, CB, ST...).
+function rolePositionsFor(guildId, userId) {
+  try {
+    const member = client.guilds.cache.get(guildId)?.members.cache.get(userId);
+    if (!member) return [];
+    const names = new Set(member.roles.cache.map(r => r.name.trim().toUpperCase().split(/[\s·|-]+/)[0]));
+    return POSITION_PREF_OPTIONS.filter(p => names.has(p));
+  } catch { return []; }
+}
+
+// 🟢 = main position (Discord role), 🟡 = flex/draft pick.
+function prefIcon(guildId, userId, pos) {
+  return rolePositionsFor(guildId, userId).includes(pos) ? '🟢' : '🟡';
 }
 
 async function setUserPrefs(guildId, userId, prefs) {
@@ -2175,7 +2192,7 @@ function buildPosPrefsEmbedForParticipants(guild, participants, label) {
   for (const { member, prefs } of participants) {
     prefs.forEach((pos, index) => {
       if (posMap[pos]) {
-        posMap[pos].push({ userId: member.id, rank: index + 1 });
+        posMap[pos].push({ userId: member.id, rank: index + 1, icon: prefIcon(guildId, member.id, pos) });
       }
     });
   }
@@ -2189,7 +2206,7 @@ function buildPosPrefsEmbedForParticipants(guild, participants, label) {
     const meta = POSITION_META[pos];
     const value = entries.length === 0
       ? '*No data*'
-      : entries.slice(0, 10).map(e => `${RANK_EMOJI[e.rank] || e.rank} <@${e.userId}>`).join('\n') +
+      : entries.slice(0, 10).map(e => `${e.icon || RANK_EMOJI[e.rank] || e.rank} <@${e.userId}>`).join('\n') +
         (entries.length > 10 ? `\n…+${entries.length - 10} more` : '');
     return { name: `${meta?.emoji || ''} ${pos}`, value, inline: true };
   });
@@ -9007,7 +9024,7 @@ async function routeInteraction(interaction) {
           const prefs = await getUserPrefs(guildId, m.id);
           prefs.forEach((pos, index) => {
             if (posMap[pos]) {
-              posMap[pos].push({ userId: m.id, rank: index + 1, username: m.displayName || m.user.username });
+              posMap[pos].push({ userId: m.id, rank: index + 1, icon: prefIcon(guildId, m.id, pos), username: m.displayName || m.user.username });
             }
           });
         }
@@ -9031,7 +9048,7 @@ async function routeInteraction(interaction) {
             const entries = posMap[pos].sort((a, b) => a.rank - b.rank);
             if (entries.length > 0) {
               const meta = POSITION_META[pos];
-              const playerList = entries.map(e => `${RANK_EMOJI[e.rank] || e.rank} ${e.username}`).join(', ');
+              const playerList = entries.map(e => `${e.icon || RANK_EMOJI[e.rank] || e.rank} ${e.username}`).join(', ');
               lines.push(`${meta?.emoji || ''} **${pos}**: ${playerList}`);
             }
           }
