@@ -29,6 +29,7 @@ const { parseWhen: parseEventWhen } = require('./event-time.cjs');
 const embedStyle = require('./embed-style.cjs');
 const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
 const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
+const { createEventLineup } = require('./event-lineup.cjs');
 const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
 const { createAutopilot, AUTOPILOT_COMMANDS } = require('./autopilot.cjs');
 const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
@@ -380,6 +381,7 @@ const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isMana
 
 const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents });
 
+const eventLineup = createEventLineup({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, getUserPrefs: (g, u) => getUserPrefs(g, u), getGuildState });
 const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState });
 
 const autoLink = createAutoLink({ supabase, getGuildState, isManager });
@@ -4215,6 +4217,7 @@ async function routeInteraction(interaction) {
     if (await panels.handleInteraction(interaction)) return;
     // Events: /event, /available, autocomplete, and board buttons (also used from reminder DMs)
     if (await autoLink.handleInteraction(interaction)) return;
+    if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;
     // Match night: /checkin, /sub, /reliability, check-in and sub request buttons
     if (await matchNight.handleInteraction(interaction)) return;
