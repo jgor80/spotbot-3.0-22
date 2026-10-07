@@ -394,6 +394,27 @@ function createEvents(deps) {
     return { expected: [], out: [], source: 'none' };
   }
 
+  // Every non-bot member of the server (cached; refilled at most every 10 minutes).
+  // Used so "Still to answer" covers everyone the @everyone ping reached, not just the roster.
+  async function allMemberIds(event) {
+    if (!client) return null;
+    const guild = client.guilds.cache.get(event.guild_id);
+    if (!guild) return null;
+    const last = memberFetchAt.get(guild.id) || 0;
+    if (Date.now() - last > 10 * 60 * 1000) {
+      memberFetchAt.set(guild.id, Date.now());
+      await guild.members.fetch().catch(() => {});
+    }
+    const ids = guild.members.cache.filter((m) => !m.user.bot).map((m) => m.id);
+    return ids.length ? ids : null;
+  }
+
+  // Compact mention list for an embed field: names, then "+N more" past 12
+  function mentionList(ids, cap = 12) {
+    const shown = ids.slice(0, cap).map((id) => `<@${id}>`).join(', ');
+    return ids.length > cap ? `${shown} … +${ids.length - cap} more` : shown;
+  }
+
   // ---------- Board ----------
 
   async function buildBoard(event) {
@@ -428,14 +449,19 @@ function createEvents(deps) {
       .setDescription(truncate(lines.join('\n'), 4000))
       .setFooter({ text: `${prefs.branding.footer || 'GafferBot'} · event ${event.id.slice(0, 8)}` });
 
-    // The public post shows counts only; names stay private behind "Who's in"
+    // Names are shown for everyone who has answered; "Still to answer" covers the whole server
     const answered = new Set(responses.map((r) => r.discord_user_id));
-    embed.addFields({
-      name: 'Availability',
-      value: Object.entries(RESPONSES)
-        .map(([key, r]) => `${r.emoji} **${responses.filter((x) => x.response === key).length}** ${r.label}`)
-        .join(' · '),
-    });
+    const byResponse = {};
+    for (const r of responses) {
+      (byResponse[r.response] = byResponse[r.response] || []).push(r.discord_user_id);
+    }
+    const availLines = Object.entries(RESPONSES)
+      .map(([key, r]) => {
+        const ids = byResponse[key] || [];
+        return ids.length ? `${r.emoji} **${ids.length}** ${r.label}\n${mentionList(ids)}` : `${r.emoji} **0** ${r.label}`;
+      })
+      .join('\n');
+    embed.addFields({ name: 'Availability', value: truncate(availLines, 1020) });
 
     if (event.position_signup) {
       const counts = {};
@@ -447,11 +473,15 @@ function createEvents(deps) {
       if (byPos) embed.addFields({ name: 'By position', value: byPos });
     }
 
-    const waiting = expected.filter((id) => !answered.has(id));
+    const everyone = (await allMemberIds(event)) || expected;
+    const waiting = everyone.filter((id) => !answered.has(id));
     if (waiting.length && !event.closed && !locked) {
-      embed.addFields({ name: '⏳ Still to answer', value: `${waiting.length} player${waiting.length === 1 ? '' : 's'}` });
+      embed.addFields({
+        name: '⏳ Still to answer',
+        value: `**${waiting.length}** player${waiting.length === 1 ? '' : 's'}\n${mentionList(waiting)}`,
+      });
     }
-    embed.addFields({ name: '\u200b', value: '*Anyone in the server can answer. Tap 👥 Who\'s in to see names privately.*' });
+    embed.addFields({ name: '\u200b', value: '*Anyone in the server can answer. Tap 👥 Who\'s in for the full list with notes.*' });
 
     const components = [];
     if (!event.closed && !locked) {
