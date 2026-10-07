@@ -1585,6 +1585,36 @@ export type Database = {
           },
         ]
       }
+      link_invites: {
+        Row: {
+          created_at: string
+          discord_user_id: string
+          discord_username: string | null
+          expires_at: string
+          guild_id: string
+          token: string
+          used_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          discord_user_id: string
+          discord_username?: string | null
+          expires_at?: string
+          guild_id: string
+          token: string
+          used_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          discord_user_id?: string
+          discord_username?: string | null
+          expires_at?: string
+          guild_id?: string
+          token?: string
+          used_at?: string | null
+        }
+        Relationships: []
+      }
       link_suggestions: {
         Row: {
           created_at: string

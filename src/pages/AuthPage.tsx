@@ -18,6 +18,8 @@ const authSchema = z.object({
 export default function AuthPage() {
   const navigate = useNavigate();
   const { signIn, signUp, user, isLoading: authLoading } = useAuth();
+  const rawNext = new URLSearchParams(window.location.search).get("next") || "/";
+  const nextPath = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
   
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,7 +29,7 @@ export default function AuthPage() {
 
   // Redirect if already logged in
   if (user && !authLoading) {
-    navigate("/");
+    navigate(nextPath);
     return null;
   }
 
@@ -58,7 +60,7 @@ export default function AuthPage() {
         setError(error.message);
       }
     } else {
-      navigate("/");
+      navigate(nextPath);
     }
   };
 
@@ -81,7 +83,7 @@ export default function AuthPage() {
       }
     } else {
       setSuccess("Account created! You can now sign in.");
-      navigate("/");
+      navigate(nextPath);
     }
   };
 

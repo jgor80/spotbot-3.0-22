@@ -7,6 +7,7 @@
 //   - Match recaps: claimButtons() adds "That's me" buttons for unlinked gamertags in a match.
 // Profiles are global, so a gamertag linked in one server works in every server.
 
+const crypto = require('crypto');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder } = require('discord.js');
 
 const MATCH_SCAN = 60;
@@ -331,7 +332,31 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
     return true;
   }
 
-  return { onMemberJoin, onVoiceJoin, claimButtons, handleInteraction, link, similarity, bulkScan, scanReport };
+  // DM a one-time link to members so they can confirm gamertag + platform and connect the website.
+  // By default only members with no gamertag yet; everyone=true re-asks the whole server.
+  async function sendInvites(guild, { everyone = false, baseUrl } = {}) {
+    const site = (baseUrl || process.env.DASHBOARD_URL || 'https://spotbot3.lovable.app').replace(/\/$/, '');
+    const members = [...(await guild.members.fetch().catch(() => guild.members.cache)).values()].filter((m) => !m.user?.bot);
+    const linked = everyone ? new Set() : await linkedMemberIds(members.map((m) => m.id));
+    const targets = members.filter((m) => !linked.has(m.id));
+    const out = { sent: 0, failed: 0, skipped: members.length - targets.length };
+    for (const m of targets) {
+      const token = crypto.randomBytes(24).toString('base64url');
+      const { error } = await supabase.from('link_invites').insert({ token, discord_user_id: m.id, discord_username: m.user.username, guild_id: guild.id });
+      if (error) { out.failed++; continue; }
+      const embed = new EmbedBuilder()
+        .setTitle('🔗 Link your accounts')
+        .setColor(0x22c55e)
+        .setDescription(`**${guild.name}** uses SpotBot for lineups and stats. Tap the button and confirm your EA gamertag and platform. It takes 20 seconds.\n\nThis link is just for you and expires in 7 days.`);
+      const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Link my accounts').setURL(`${site}/link/${token}`));
+      const ok = await m.send({ embeds: [embed], components: [row] }).then(() => true).catch(() => false);
+      ok ? out.sent++ : out.failed++;
+      await new Promise((r) => setTimeout(r, 1200)); // stay well under Discord's DM rate limits
+    }
+    return out;
+  }
+
+  return { onMemberJoin, onVoiceJoin, claimButtons, handleInteraction, link, similarity, bulkScan, scanReport, sendInvites };
 }
 
 module.exports = { createAutoLink, similarity };

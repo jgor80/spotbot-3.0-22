@@ -13,6 +13,7 @@ import { Loader2 } from "lucide-react";
 // Pages load on demand so the first visit only downloads the page being opened.
 const Index = lazy(() => import("./pages/Index"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
+const LinkInvitePage = lazy(() => import("./pages/LinkInvitePage"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
@@ -49,6 +50,7 @@ const App = () => (
               <Suspense fallback={<PageLoading />}>
                 <Routes>
                   <Route path="/auth" element={<AuthPage />} />
+                  <Route path="/link/:token" element={<LinkInvitePage />} />
                   {/* OBS browser source for /premium overlay: public, token in the URL */}
                   <Route path="/overlay/:token" element={<StreamOverlay />} />
                   <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />

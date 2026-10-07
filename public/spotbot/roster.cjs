@@ -39,6 +39,12 @@ const ROSTER_COMMANDS = [
       },
       {
         type: 1,
+        name: 'invite',
+        description: 'DM members a one-time link to confirm their gamertag and platform (managers).',
+        options: [{ name: 'everyone', description: 'Also re-ask members who are already linked.', type: 5, required: false }]
+      },
+      {
+        type: 1,
         name: 'view',
         description: 'Show the roster grouped by position (or by status).',
         options: [
@@ -302,6 +308,15 @@ function createRoster(deps) {
     const state = await getGuildState(interaction.guildId);
     const club = resolveClub(state, interaction.member);
     if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+
+    if (sub === 'invite') {
+      if (!(await canManageClub(interaction.member, club))) return interaction.reply({ content: '❌ Managers only.', flags: 64 });
+      const al = deps.autoLink?.();
+      if (!al) return interaction.reply({ content: '❌ Auto-link is not available.', flags: 64 });
+      await interaction.reply({ content: '📨 Sending link invites… this can take a few minutes for big servers. I\'ll update this message when done.', flags: 64 });
+      const r = await al.sendInvites(interaction.guild, { everyone: interaction.options.getBoolean('everyone') || false });
+      return interaction.editReply({ content: `📨 Invites sent: **${r.sent}**\n🚫 Couldn't DM (DMs closed): **${r.failed}**\n✅ Already linked, skipped: **${r.skipped}**` }).catch(() => {});
+    }
 
     if (sub === 'autolink') {
       if (!(await canManageClub(interaction.member, club))) return interaction.reply({ content: '❌ Managers only.', flags: 64 });
