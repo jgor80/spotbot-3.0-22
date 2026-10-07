@@ -237,6 +237,57 @@ function whenExamples(tz) {
   return `Try "thu 9pm", "tomorrow 20:00", "21/09 18:00", "21 sep 8pm" or "in 2h" (read as ${tz} time; change it with **/manager → Events → Timezone**). As you type, the box above the keyboard shows how I read it.`;
 }
 
+// When a typed time can't be read, offer real kick-off times to tap instead of making the
+// manager retype. The failed form is stashed under a token; picking a time re-runs it.
+const pendingWhen = new Map(); // token -> { at, userId, kind, rec }
+const WHEN_PICK_TTL = 15 * 60 * 1000;
+
+function captureOptions(interaction) {
+  const rec = { strings: {}, roles: {}, channels: {}, booleans: {} };
+  const o = interaction.options;
+  if (!o) return rec;
+  for (const [method, key] of [['getString', 'strings'], ['getRole', 'roles'], ['getChannel', 'channels'], ['getBoolean', 'booleans']]) {
+    if (typeof o[method] !== 'function') continue;
+    const orig = o[method].bind(o);
+    o[method] = (n, ...rest) => {
+      const v = orig(n, ...rest);
+      if (v != null) rec[key][n] = key === 'roles' || key === 'channels' ? v.id : v;
+      return v;
+    };
+  }
+  return rec;
+}
+
+function whenPicker(tz, token, whenText) {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const picks = ['tonight 21:00', 'tomorrow 20:00', ...[1, 2, 3, 4, 5, 6].map((d) => `${T.WEEKDAYS[(T.localParts(now, tz).weekday + d) % 7]} 20:00`)];
+  const seen = new Set();
+  const options = [];
+  for (const p of picks) {
+    const at = T.parseWhen(p, tz, now);
+    if (!at || at <= now || seen.has(T.unix(at))) continue;
+    seen.add(T.unix(at));
+    options.push({ label: fmt.format(at).slice(0, 100), value: String(T.unix(at)) });
+  }
+  const menu = new StringSelectMenuBuilder().setCustomId(`ev_when:${token}`).setPlaceholder('⚡ Pick a kick-off time instead').addOptions(options.slice(0, 25));
+  return {
+    content:
+      `❌ I couldn't read "${whenText}".\n\n**Pick a time below, or type it how you'd say it:**\n` +
+      '• `thu 9pm` or `friday 20:30`\n• `tomorrow 8pm` / `tonight 9pm`\n• `21/09 18:00` or `21 sep 8pm`\n• `in 2h`\n' +
+      `(read as ${tz} time — change it in **/manager → Events → Timezone**)`,
+    components: [new ActionRowBuilder().addComponents(menu)],
+    flags: 64,
+  };
+}
+
+function stashWhen(interaction, kind, rec) {
+  for (const [token, p] of pendingWhen) if (Date.now() - p.at > WHEN_PICK_TTL) pendingWhen.delete(token);
+  const token = Math.random().toString(36).slice(2, 10);
+  pendingWhen.set(token, { at: Date.now(), userId: interaction.user.id, kind, rec });
+  return token;
+}
+
 function createEvents(deps) {
   const { supabase, getGuildState, saveGuildSettings, isManager, dashboardUrl } = deps;
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
