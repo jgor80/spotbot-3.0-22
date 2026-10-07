@@ -18,6 +18,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
   ChannelType
+const eaPlayerStats = require('./ea-player-stats.cjs');
 } = require('discord.js');
 
 const { createClient } = require('@supabase/supabase-js');
@@ -16395,22 +16396,7 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
     const playerStats = [];
     const players = matchData.players?.[club.ea_club_id] || {};
     
-    for (const [eaPlayerId, pStats] of Object.entries(players)) {
-      playerStats.push({
-        ea_username: pStats.playername,
-        goals: parseInt(pStats.goals || 0),
-        assists: parseInt(pStats.assists || 0),
-        rating: parseFloat(pStats.rating || 0),
-        position: pStats.pos,
-        motm: pStats.mom === '1',
-        // Expanded stats
-        shots: parseInt(pStats.shots || 0),
-        tackles: parseInt(pStats.tacklesmade || pStats.tackles || 0),
-        passes_made: parseInt(pStats.passesmade || 0),
-        pass_attempts: parseInt(pStats.passattempts || 0),
-        red_cards: pStats.redcards === '1' || pStats.redCards === '1'
-      });
-    }
+    playerStats.push(...eaPlayerStats.mapPlayers(matchData, club.ea_club_id));
     
     // Save to club_matches table
     await supabase.from('club_matches').insert({
@@ -16460,20 +16446,10 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
           guild_id: guildId,
           discord_user_id: profile.discord_user_id,
           draft_id: null,
+          ea_match_id: matchId,
           match_type: 'club',
-          goals: pStat.goals,
-          assists: pStat.assists,
-          clean_sheet: pStat.position === 'GK' && scoreAgainst === 0,
           won: result === 'win',
-          ea_match_rating: pStat.rating,
-          position_played: pStat.position,
-          man_of_match: pStat.motm,
-          // Expanded stats
-          shots: pStat.shots,
-          tackles: pStat.tackles,
-          passes_made: pStat.passes_made,
-          pass_attempts: pStat.pass_attempts,
-          red_cards: pStat.red_cards
+          ...eaPlayerStats.statColumns(pStat, scoreAgainst)
         });
         
         // Trigger rating recalculation
@@ -17118,16 +17094,7 @@ async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
       const playerStats = [];
       const players = matchData.players?.[club.ea_club_id] || {};
       
-      for (const [eaPlayerId, pStats] of Object.entries(players)) {
-        playerStats.push({
-          ea_username: pStats.playername,
-          goals: parseInt(pStats.goals || 0),
-          assists: parseInt(pStats.assists || 0),
-          rating: parseFloat(pStats.rating || 0),
-          position: pStats.pos,
-          motm: pStats.mom === '1'
-        });
-      }
+      playerStats.push(...eaPlayerStats.mapPlayers(matchData, club.ea_club_id));
       
       // Save to club_matches table
       const { error: insertError } = await supabase.from('club_matches').insert({
@@ -17183,8 +17150,7 @@ async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
             .select('id')
             .eq('guild_id', guildId)
             .eq('discord_user_id', profile.discord_user_id)
-            .eq('match_type', 'club')
-            .eq('recorded_at', matchData.timestamp || new Date().toISOString())
+            .eq('ea_match_id', matchId)
             .maybeSingle();
           
           if (!existingStat) {
@@ -17192,14 +17158,10 @@ async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
               guild_id: guildId,
               discord_user_id: profile.discord_user_id,
               draft_id: null,
+              ea_match_id: matchId,
               match_type: 'club',
-              goals: pStat.goals,
-              assists: pStat.assists,
-              clean_sheet: pStat.position === 'GK' && scoreAgainst === 0,
               won: result === 'win',
-              ea_match_rating: pStat.rating,
-              position_played: pStat.position,
-              man_of_match: pStat.motm
+              ...eaPlayerStats.statColumns(pStat, scoreAgainst)
             });
             
             // Trigger rating recalculation
