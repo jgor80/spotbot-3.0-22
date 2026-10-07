@@ -544,6 +544,7 @@ function createEvents(deps) {
   }
 
   async function handleNew(interaction) {
+    const rec = captureOptions(interaction);
     const guildId = interaction.guildId;
     const state = await getGuildState(guildId);
     const clubKey = interaction.options.getString('club');
@@ -561,10 +562,8 @@ function createEvents(deps) {
     const whenText = interaction.options.getString('when');
     const kickoff = whenText ? T.parseWhen(whenText, tz) : presetKickoff(preset, tz);
     if (!kickoff) {
-      return interaction.reply({
-        content: whenText ? `❌ I couldn't read "${whenText}". ${whenExamples(tz)}` : `❌ Tell me when it kicks off. ${whenExamples(tz)}`,
-        flags: 64,
-      });
+      if (!whenText) return interaction.reply({ content: `❌ Tell me when it kicks off. ${whenExamples(tz)}`, flags: 64 });
+      return interaction.reply(whenPicker(tz, stashWhen(interaction, 'new', rec), whenText));
     }
     const now = new Date();
     if (kickoff.getTime() < now.getTime() - 5 * 60000) {
