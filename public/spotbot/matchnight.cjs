@@ -445,7 +445,7 @@ function createMatchNight(deps) {
 
   async function handleCheckinCommand(interaction) {
     const event = await nextEvent(interaction.guildId, interaction.member);
-    if (!event) return interaction.reply({ content: 'No upcoming event to check in for. Create one with `/event new`.', flags: 64 });
+    if (!event) return interaction.reply({ content: 'No upcoming event to check in for. Create one with **/manager → Events → New Event**.', flags: 64 });
     const club = event.club_key ? await events.clubFor(event.guild_id, event.club_key) : null;
     const leader = club ? await canManageClub(interaction.member, club) : isManager(interaction.member);
 
@@ -465,7 +465,7 @@ function createMatchNight(deps) {
 
   async function handleSubCommand(interaction) {
     const event = await nextEvent(interaction.guildId);
-    if (!event) return interaction.reply({ content: 'No upcoming event. Create one with `/event new`.', flags: 64 });
+    if (!event) return interaction.reply({ content: 'No upcoming event. Create one with **/manager → Events → New Event**.', flags: 64 });
     const replacing = interaction.options.getUser('replacing');
     const club = event.club_key ? await events.clubFor(event.guild_id, event.club_key) : null;
     if (replacing && replacing.id !== interaction.user.id && !(club ? await canManageClub(interaction.member, club) : isManager(interaction.member))) {

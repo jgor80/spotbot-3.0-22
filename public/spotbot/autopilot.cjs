@@ -763,7 +763,7 @@ function createAutopilot(deps) {
     for (const t of players.slice(0, SESSION_MAX_PLAYERS)) {
       embed.addFields({ name: `${t.name} · ${t.avgRating ? t.avgRating.toFixed(1) : '–'}`, value: truncate(sessionPlayerLine(t)), inline: true });
     }
-    embed.setFooter({ text: `${prefs.branding?.footer ? `${prefs.branding.footer} · ` : ''}From voice to voice: ${ordered.length} EA matches. /autopilot to switch this off.` });
+    embed.setFooter({ text: `${prefs.branding?.footer ? `${prefs.branding.footer} · ` : ''}From voice to voice: ${ordered.length} EA matches. /manager → Match Night → Autopilot to switch this off.` });
     return { embeds: [embed] };
   }
 
@@ -870,7 +870,7 @@ function createAutopilot(deps) {
     if (noShows.length) embed.addFields({ name: '🔴 Said yes, didn’t show this week', value: truncate(noShows.map((id) => `<@${id}>`).join(', ')) });
 
     const hasContent = week.length || formations.length || duos.length || reliable.length || noShows.length;
-    embed.setFooter({ text: `Based on ${matches.length} synced matches. /autopilot to switch this off.` });
+    embed.setFooter({ text: `Based on ${matches.length} synced matches. /manager → Match Night → Autopilot to switch this off.` });
     return hasContent ? { embeds: [embed], allowedMentions: { parse: [] } } : null;
   }
 
@@ -909,7 +909,7 @@ function createAutopilot(deps) {
           .join('\n')
       )
       .addFields(
-        { name: 'Voice channel', value: vcId ? `<#${vcId}>` : 'Not linked. Voice check-ins, the auto XI and sub requests need one: run `/vcspots` from the club voice channel.', inline: true },
+        { name: 'Voice channel', value: vcId ? `<#${vcId}>` : 'Not linked. Voice check-ins, the auto XI and sub requests need one: run **/manager → Lineups & Spots → Voice Spots** from the club voice channel.', inline: true },
         { name: 'Recaps and digest go to', value: channel ? `<#${channel}>` : 'The channel your events are posted in', inline: true }
       );
     // Discord allows five buttons per row
@@ -936,7 +936,7 @@ function createAutopilot(deps) {
       new ButtonBuilder().setCustomId(`ap_digest:${club.key}`).setLabel('Preview digest').setEmoji('🗞️').setStyle(ButtonStyle.Secondary)
     );
     embed.setFooter({
-      text: PREMIUM_FREE ? '⭐ Premium jobs are free on every server for now.' : '⭐ Premium jobs only run on servers with GafferBot Premium. /premium for details.',
+      text: PREMIUM_FREE ? '⭐ Premium jobs are free on every server for now.' : '⭐ Premium jobs only run on servers with GafferBot Premium. /manager → Premium for details.',
     });
     return { embeds: [embed], components: [...toggles, pickChannel, extras] };
   }
@@ -945,7 +945,7 @@ function createAutopilot(deps) {
     const state = await getGuildState(interaction.guildId);
     const club = resolveClub(state, interaction.member, key);
     if (!club) {
-      await interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+      await interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
       return null;
     }
     if (!(await canManageClub(interaction.member, club))) {

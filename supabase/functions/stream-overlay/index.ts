@@ -44,7 +44,7 @@ serve(async (req) => {
     const supabase = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "");
 
     const { data: server } = await supabase.from("premium_servers").select("guild_id").eq("overlay_token", token).maybeSingle();
-    if (!server) return json({ error: "This overlay link is not valid any more. Get a new one with /premium overlay." }, 404);
+    if (!server) return json({ error: "This overlay link is not valid any more. Get a new one in Discord with /manager → Premium → Stream Overlay." }, 404);
     const guildId = server.guild_id as string;
 
     const { data: settings } = await supabase.from("guild_settings").select("clubs, branding").eq("guild_id", guildId).maybeSingle();

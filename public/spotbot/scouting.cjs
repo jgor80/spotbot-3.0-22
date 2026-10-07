@@ -123,7 +123,7 @@ function createScouting(deps) {
     const { count } = await supabase.from('scout_watchlist').select('id', { count: 'exact', head: true }).eq('guild_id', guildId);
     const { data: existing } = await supabase.from('scout_watchlist').select('id').eq('guild_id', guildId).eq('ea_key', key).maybeSingle();
     if (existing) return { already: true };
-    if ((count || 0) >= MAX_WATCHLIST) return { error: `The watchlist is full (${MAX_WATCHLIST}). Remove someone with \`/scout remove\` first.` };
+    if ((count || 0) >= MAX_WATCHLIST) return { error: `The watchlist is full (${MAX_WATCHLIST}). Remove someone with **/manager → Recruiting → Unwatch** first.` };
     const { data: profile } = await supabase.from('profiles').select('discord_user_id').ilike('ea_username', key.replace(/[\\%_]/g, (c) => `\\${c}`)).limit(1).maybeSingle();
     const { error } = await supabase.from('scout_watchlist').insert({
       guild_id: guildId,
@@ -374,7 +374,7 @@ function createScouting(deps) {
     });
     if (res.error) return interaction.editReply({ content: `❌ ${res.error}` });
     if (res.already) return interaction.editReply({ content: `\`${name}\` is already on the watchlist.` });
-    return interaction.editReply({ content: `👀 Added \`${name}\` to the watchlist. I'll ping you if they list as a free agent or turn up at a new club. See \`/scout watchlist\`.` });
+    return interaction.editReply({ content: `👀 Added \`${name}\` to the watchlist. I'll ping you if they list as a free agent or turn up at a new club. See **/manager → Recruiting → Watchlist**.` });
   }
 
   // ---------- /scout ----------
@@ -402,7 +402,7 @@ function createScouting(deps) {
       return interaction.editReply({
         content:
           `👀 Watching \`${name}\`. I'll ping you if they list as a free agent or show up at a new club in a synced match.` +
-          (listing ? `\n📣 They're listed as a free agent right now (${recruitment.positionsText(listing)}). Use \`/scout watchlist\` to reach out.` : ''),
+          (listing ? `\n📣 They're listed as a free agent right now (${recruitment.positionsText(listing)}). Use **/manager → Recruiting → Watchlist** to reach out.` : ''),
       });
     }
 
@@ -418,7 +418,7 @@ function createScouting(deps) {
     if (recruitment.tablesMissing(error)) return interaction.editReply({ content: recruitment.NOT_READY });
     const embed = new EmbedBuilder().setTitle('👀 Recruitment watchlist').setColor(0x9b59b6);
     if (!rows.length) {
-      embed.setDescription('Nobody yet. Press **Add to Watchlist** on a Recruitment Alert, or use `/scout add gamertag:`.');
+      embed.setDescription('Nobody yet. Press **Add to Watchlist** on a Recruitment Alert, or use **/manager → Recruiting → Watch a Player**.');
       return interaction.editReply({ embeds: [embed] });
     }
     const listings = await recruitment.findListings({ eaKeys: rows.map((r) => r.ea_username), discordIds: rows.map((r) => r.discord_user_id) });
@@ -468,7 +468,7 @@ function createScouting(deps) {
     }
     if (interaction.isChatInputCommand() && interaction.commandName === 'scout') {
       if (!interaction.guildId) {
-        await interaction.reply({ content: '❌ Use `/scout` in your club\'s server.', flags: 64 });
+        await interaction.reply({ content: '❌ Use **/manager → Recruiting** in your club\'s server.', flags: 64 });
         return true;
       }
       await handleScout(interaction);

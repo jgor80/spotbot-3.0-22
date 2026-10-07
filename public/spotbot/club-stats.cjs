@@ -5,6 +5,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { toInsightMatches } = require('./club-insights.cjs');
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
+const { where } = require('./panels.cjs');
 
 const MATCH_WINDOW = 100;
 const FORM_WINDOW = 10;
@@ -40,39 +41,42 @@ const GLOSSARY =
   '**Rtg** average EA match rating (0-10) · **MOTM** man of the match\n' +
   '**Pass%** passes completed out of passes tried · **Tkl** tackles won · **CS** clean sheets (keepers and defenders)\n' +
   '**W-D-L** wins, draws, losses · **GD** goal difference\n' +
-  '**Overall rating** (on `/profile`) is GafferBot\'s 0-100 score from match ratings, form and teammate reviews; it is not an EA number.\n\n' +
+  '**Overall rating** (on **/me → My Profile**) is GafferBot\'s 0-100 score from match ratings, form and teammate reviews; it is not an EA number.\n\n' +
   '**Why EA numbers can look off**\n' +
   '• If you play as "Any" or control AI teammates, EA credits you with every pass and tackle those AI players make, but not their possessions won or interceptions.\n' +
   '• EA\'s in-game summary screen and its "Possession" tab often disagree. The bot uses what EA\'s API reports, which matches the tab, not the summary.\n' +
   '• Only finished club matches count; EA posts them a few minutes after full time, and the bot picks them up on its next sync.';
+
+// Where a tool lives now, e.g. "/manager → Events → New Event"
+const at = (...ids) => ids.map(where).join(' · ');
 
 const HELP_PAGES = [
   {
     key: 'start',
     label: 'Getting started',
     emoji: '🚀',
-    blurb: 'Three steps to get your club running.',
+    blurb: 'GafferBot has four commands: `/manager` for leaders, `/me` for players, `/help` and `/setup`. Everything else is a button.',
     lines: [
-      ['1. /setclub name', 'Link your EA club. EA only lists a club after its first FC27 league match, so play one first if it isn\'t found.'],
-      ['2. /linkea username', 'Every player picks their EA name from the list as they type, so their stats count.'],
-      ['3. /setup', 'Shows what\'s left, missing permissions, and any commands an admin has turned off. Then post your first `/event new`.'],
-      [null, '\n**Command missing, or "you can\'t use this"?** A server admin can turn commands on or off in Server Settings → Integrations → GafferBot. `/setup` lists what is off.'],
+      [`1. ${at('ad_setclub')}`, 'Link your EA club. EA only lists a club after its first FC27 league match, so play one first if it isn\'t found.'],
+      [`2. ${at('linkea')}`, 'Every player links their EA name so their stats count. Post a Player Hub (Admin area) so players can press the button instead of typing.'],
+      ['3. /setup', 'Shows what\'s left and any missing permissions. Then post your first event from **/manager → Events**.'],
+      [null, '\n**How the panels work:** `/manager` shows the hub; its **More tools** menu opens each area as buttons. Buttons that need details (a player, a time, a score) open a short form. Leader tools only work for captains, managers and admins.'],
     ],
   },
   {
     key: 'events',
     label: 'Events & availability',
     emoji: '✅',
-    blurb: 'Schedule sessions and collect who can play.',
+    blurb: 'Schedule sessions and collect who can play. All in **/manager → Events**.',
     lines: [
-      ['/event new', 'Post an event with Available / Maybe / Out buttons. Times like "thu 9pm" or "21/09 18:00".'],
-      ['/event edit', 'Change the time, title, deadline or details. The board updates and players are told.'],
-      ['/event close · /event reopen', 'Stop or restart answers for an event.'],
-      ['/event mark', 'Set or clear a player\'s answer for them.'],
-      ['/event post', 'Post the board again here, e.g. after it scrolled away.'],
-      ['/event remind · /event cancel', 'Nudge players who haven\'t answered, or cancel and tell everyone.'],
-      ['/event list · /available', 'Upcoming events, and your own answers in one place.'],
-      ['/event preset · /event series · /event timezone', 'Templates, repeating events and your server\'s timezone.'],
+      ['New Event · Event From Preset', 'Post an event with Available / Maybe / Out buttons. Times like "thu 9pm" or "21/09 18:00".'],
+      ['Edit Event', 'Change the time, title, deadline or details. The board updates and players are told.'],
+      ['Close Answers · Reopen Answers', 'Stop or restart answers for an event.'],
+      ['Mark a Player', 'Set or clear a player\'s answer for them.'],
+      ['Repost Board', 'Post the board again here, e.g. after it scrolled away.'],
+      ['Remind · Cancel Event', 'Nudge players who haven\'t answered, or cancel and tell everyone.'],
+      ['Upcoming', 'Every upcoming event. Players see their own answers with **/me → My Events**.'],
+      ['Presets · Repeating Events · Timezone', 'Templates, repeating events and your server\'s timezone.'],
     ],
   },
   {
@@ -81,40 +85,41 @@ const HELP_PAGES = [
     emoji: '🏟️',
     blurb: 'Lineups, check-ins and subs on the night.',
     lines: [
-      ['/manager', 'The Manager Hub: roll call, team sheet, sync and stats buttons.'],
-      ['/teamsheet', 'Post the latest lineup and ping the starting XI.'],
-      ['/checkin', 'Open check-in for the next event, or check yourself in.'],
-      ['/sub', 'Ask the server for a sub.'],
-      ['/reliability', 'Show-up rates: who turns up when they say they will.'],
-      ['/autopilot', 'Turn on or off the automatic jobs: match recaps, auto team sheet, check-ins, subs, Monday digest.'],
+      ['/manager', 'The Manager Hub: Call Session, Team Sheet, Sync Matches, Club Stats and Insights buttons.'],
+      [at('ln_sheet'), 'Post the latest lineup and ping the starting XI.'],
+      [at('mn_checkin'), 'Open check-in for the next event. Players check in with **/me → Check In**.'],
+      [at('mn_sub'), 'Ask the server for a sub.'],
+      [at('mn_reliability'), 'Show-up rates: who turns up when they say they will.'],
+      [at('mn_autopilot'), 'Turn on or off the automatic jobs: match recaps, auto team sheet, check-ins, subs, Monday digest.'],
+      ['/manager → Lineups & Spots · Drafts', 'Live spot boards, position preferences and captain drafts.'],
     ],
   },
   {
     key: 'roster',
     label: 'Roster & players',
     emoji: '👥',
-    blurb: 'Look up players and manage the roster.',
+    blurb: 'Look up players and manage the roster. All in **/manager → Roster & Squad**.',
     lines: [
-      ['/roster add', 'Add a player, or update their positions and role.'],
-      ['/roster view', 'The roster grouped by position or status.'],
-      ['/roster player', 'Leaders only: one player\'s roster details, EA stats and recent answers.'],
-      ['/roster status', 'Set a player active, trial, injured, away or inactive.'],
-      ['/roster remove', 'Move a player to Inactive (or delete them).'],
-      ['/roster import', 'Add everyone with a role.'],
-      ['/positionpanel · /myprefs', 'Players pick their positions.'],
+      ['Add Player', 'Add a player, or update their positions and role.'],
+      ['View Roster', 'The roster grouped by position or status.'],
+      ['Player Details', 'One player\'s roster details, EA stats and recent answers.'],
+      ['Set Status', 'Set a player active, trial, injured, away or inactive.'],
+      ['Remove Player', 'Move a player to Inactive (or delete them).'],
+      ['Import Role', 'Add everyone with a role.'],
+      [`${at('ln_posroles')} · ${at('myprefs')}`, 'Players pick their positions.'],
     ],
   },
   {
     key: 'stats',
     label: 'Club & stats',
     emoji: '📈',
-    blurb: 'Results, player stats and insights from your EA matches.',
+    blurb: 'Results, player stats and insights from your EA matches. Leaders: **/manager → Stats & Scouting**.',
     lines: [
-      ['/clubstats', 'Club stats card. Pick an action for Members, Top players (per stat), In form or Recent matches.'],
-      ['/profile · /mystats · /leaderboard', 'Player ratings, form and the server leaderboard.'],
-      ['/insights', 'Pairing chemistry, formation win rates and what wins you games.'],
-      ['/syncclub', 'Pull your latest EA matches now.'],
-      ['/clubmatches · /scoutclub · /matchpreview', 'Look at any other club, scout them, or preview a match.'],
+      ['Club Stats', 'Club stats card. Pick Members, Top players (per stat), In form or Recent matches.'],
+      [`${at('mystats')} · ${at('myprofile')} · ${at('leaderboard')}`, 'Your ratings and form, and the server leaderboard.'],
+      ['Insights', 'Pairing chemistry, formation win rates and what wins you games.'],
+      ['Sync Matches', 'Pull your latest EA matches now.'],
+      ['Club Matches · Scout a Club · Match Preview', 'Look at any other club, scout them, or preview a match.'],
     ],
   },
   {
@@ -123,24 +128,25 @@ const HELP_PAGES = [
     emoji: '🧲',
     blurb: 'Leaders, friendlies and finding players.',
     lines: [
-      ['/squad', 'Link the club to a squad and name its captain and managers.'],
-      ['/lfg', 'Look for a friendly; times show in each server\'s local time.'],
-      ['/recruit · /scout', 'Find free agents, post a recruitment ad, keep a watchlist.'],
-      ['/fa · /lfc', 'Players: list yourself as a free agent, or share your resume card.'],
-      ['/apply', 'Apply to trial for this server\'s club.'],
+      ['/manager → Roster & Squad', 'Link the club to a squad and name its captain and managers.'],
+      [at('mn_lfg'), 'Look for a friendly; times show in each server\'s local time.'],
+      ['/manager → Recruiting', 'Find free agents, post a recruitment ad, keep a watchlist, scout opponents.'],
+      [`${at('fa')} · ${at('lfccard')}`, 'Players: list yourself as a free agent, or share your resume card.'],
+      [at('apply'), 'Apply to trial for this server\'s club.'],
     ],
   },
   {
     key: 'admin',
     label: 'Setup & admin',
     emoji: '⚙️',
-    blurb: 'Configure the bot for your server.',
+    blurb: 'Configure the bot for your server. Leaders: **/manager → Admin**.',
     lines: [
       ['/setup', 'Checklist, permissions, disabled commands, bot latency.'],
-      ['/setclub', 'Link or relink your EA club, and pick the channel for match results.'],
-      ['/brand', 'Your colours, crest, lineup title, and the bot\'s name and picture here.'],
-      ['/forcelink', 'Link an EA name to a player, or move it from their old Discord account.'],
-      ['/eapanel · /squadiq', 'Button panels for EA links and the admin controls.'],
+      ['Link EA Club', 'Link or relink your EA club, and pick the channel for match results.'],
+      ['Brand · Bot Avatar', 'Your colours, crest, lineup title, and the bot\'s name and picture here (needs Manage Server).'],
+      ['Post Player Hub', 'A pinned panel players can use without typing a command.'],
+      [at('ro_forcelink'), 'Link an EA name to a player, or move it from their old Discord account.'],
+      ['EA Panel · Control Panel', 'Button panels for EA links and the admin controls.'],
     ],
   },
   {
@@ -281,8 +287,8 @@ function createClubStats(deps) {
       content:
         `📭 No matches saved for **${club.name}** yet.\n` +
         (club.ea_club_id
-          ? 'Play a club match; it shows up here a few minutes after full time. `/syncclub` pulls the latest now.'
-          : 'Link the club first with `/setclub`. EA only lists a club after its first FC27 league match.'),
+          ? 'Play a club match; it shows up here a few minutes after full time. **/manager → Stats & Scouting → Sync Matches** pulls the latest now.'
+          : 'Link the club first with **/manager → Admin → Link EA Club**. EA only lists a club after its first FC27 league match.'),
     };
   }
 
@@ -303,7 +309,7 @@ function createClubStats(deps) {
       .setColor(0x5865f2)
       .setDescription(`\`\`\`\n  ${pad('Player', 16)} ${pad('Pos', 4)} GP   G   A  Rtg\n${rows.join('\n')}\n\`\`\``)
       .setFooter({ text: `Last ${matches.length} saved matches${totals.length > shown.length ? ` · top ${shown.length} of ${totals.length} by games` : ''} · ✓ linked to Discord · /help explains the stats` });
-    if (unlinked) embed.addFields({ name: 'Not linked yet', value: `${unlinked} player${unlinked === 1 ? '' : 's'} without ✓ should run \`/linkea\` (start typing and pick their name) so their stats count.` });
+    if (unlinked) embed.addFields({ name: 'Not linked yet', value: `${unlinked} player${unlinked === 1 ? '' : 's'} without ✓ should press **/me → Link EA** and pick their name so their stats count.` });
     return { embeds: [embed] };
   }
 
@@ -324,7 +330,7 @@ function createClubStats(deps) {
       .setTitle(`🏆 ${club.name}: ${stat.label}`)
       .setColor(0xf59e0b)
       .setDescription(lines.join('\n') || 'Nobody has recorded this stat yet.')
-      .setFooter({ text: `Last ${matches.length} saved matches${needsGames ? ` · at least ${MIN_GAMES} games` : ''} · pick another stat with /clubstats action:Top stat:…` });
+      .setFooter({ text: `Last ${matches.length} saved matches${needsGames ? ` · at least ${MIN_GAMES} games` : ''} · pick another stat in /manager → Stats & Scouting → Club Stats` });
     return { embeds: [embed] };
   }
 
@@ -355,7 +361,7 @@ function createClubStats(deps) {
       .setTitle(`📅 ${club.name}: recent matches`)
       .setColor(0x22c55e)
       .setDescription(lines.join('\n').slice(0, 4000))
-      .setFooter({ text: 'Any other club: /clubmatches · full breakdowns: /insights' });
+      .setFooter({ text: 'Any other club: /manager → Stats & Scouting → Club Matches · full breakdowns: /manager → Stats & Scouting → Insights' });
     return { embeds: [embed] };
   }
 
@@ -415,7 +421,7 @@ function createClubStats(deps) {
     const state = await getGuildState(interaction.guildId);
     const club = resolveClub(state, interaction.member);
     if (!club) {
-      await interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+      await interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
       return true;
     }
     await interaction.deferReply();

@@ -92,7 +92,7 @@ const RECRUIT_COMMANDS = [
       { name: 'timezone', description: 'When you play from.', type: 3, required: false, choices: timezoneChoices },
       { name: 'platform', description: 'Your platform.', type: 3, required: false, choices: platformChoices },
       { name: 'notes', description: 'e.g. "Comp experience, free Sun-Thu".', type: 3, required: false, max_length: 200 },
-      { name: 'gamertag', description: 'Only if you have not linked your EA account with /linkea.', type: 3, required: false, max_length: 32 },
+      { name: 'gamertag', description: 'Only if you have not linked your EA account with /me → Link EA.', type: 3, required: false, max_length: 32 },
     ],
   },
   {
@@ -119,7 +119,7 @@ const RECRUIT_COMMANDS = [
           { name: 'invite_channel', description: 'Channel that invites sent to players open on.', type: 7, required: false, channel_types: [ChannelType.GuildText] },
           { name: 'alerts', description: 'Post standout-opponent alerts after synced matches.', type: 5, required: false },
           { name: 'min_rating', description: 'Opponent match rating that triggers an alert (default 8.0).', type: 10, required: false, min_value: 6, max_value: 10 },
-          { name: 'trialist_role', description: 'Role given to players who /apply (removed on promote or release).', type: 8, required: false },
+          { name: 'trialist_role', description: 'Role given to players who /me → Apply to Trial (removed on promote or release).', type: 8, required: false },
         ],
       },
       {
@@ -140,7 +140,7 @@ const RECRUIT_COMMANDS = [
       {
         type: 1,
         name: 'applypanel',
-        description: 'Post an "Apply to trial" button (e.g. in #welcome) that runs /apply.',
+        description: 'Post an "Apply to trial" button (e.g. in #welcome) that runs /me → Apply to Trial.',
         options: [{ name: 'channel', description: 'Where to post it (defaults to here).', type: 7, required: false, channel_types: [ChannelType.GuildText] }],
       },
     ],
@@ -362,7 +362,7 @@ function createRecruitment(deps) {
         { name: 'Timezone', value: TIMEZONES[fa.timezone]?.label || 'Not set', inline: true },
         { name: 'Platform', value: PLATFORMS[fa.platform] || 'Not set', inline: true }
       )
-      .setFooter({ text: `Listed ${new Date(fa.updated_at).toISOString().slice(0, 10)} · ✅ = gamertag linked with /linkea` });
+      .setFooter({ text: `Listed ${new Date(fa.updated_at).toISOString().slice(0, 10)} · ✅ = gamertag linked with /me → Link EA` });
     if (fa.notes) embed.addFields({ name: 'Notes', value: truncate(fa.notes, 300) });
     return embed;
   }
@@ -413,10 +413,10 @@ function createRecruitment(deps) {
     const wasListed = isListed(existing);
     await interaction.editReply({
       content:
-        `${wasListed ? '✅ Listing updated.' : '✅ You\'re listed as a free agent.'} This is what managers see in \`/recruit search\`.\n` +
+        `${wasListed ? '✅ Listing updated.' : '✅ You\'re listed as a free agent.'} This is what managers see in **/manager → Recruiting → Search Free Agents**.\n` +
         "They can't see your Discord name. If one reaches out I'll DM you and you decide whether to share it and get an invite.\n" +
-        `Your listing stays up for ${LISTING_DAYS} days; run \`/fa\` again to refresh it, or \`/fa status:Remove my listing\` to take it down.` +
-        (verified ? '' : '\n_Tip: link your EA account with `/linkea` so your stats show and your gamertag gets a ✅._'),
+        `Your listing stays up for ${LISTING_DAYS} days; press **/me → Free Agent** again to refresh it, or pick "Remove my listing" there to take it down.` +
+        (verified ? '' : '\n_Tip: link your EA account with **/me → Link EA** so your stats show and your gamertag gets a ✅._'),
       embeds: [listingEmbed(saved, stats)],
     });
 
@@ -498,7 +498,7 @@ function createRecruitment(deps) {
       embed.setDescription(
         'Nobody matches right now.' +
           (unrated ? ` ${unrated} more ${unrated === 1 ? 'player has' : 'players have'} no GafferBot stats yet, so the rating filter hides them.` : '') +
-          '\nPlayers list themselves with `/fa`; share it in your server or league Discord to grow the pool.'
+          '\nPlayers list themselves with **/me → Free Agent**; share it in your server or league Discord to grow the pool.'
       );
       return interaction.editReply({ embeds: [embed] });
     }
@@ -574,7 +574,7 @@ function createRecruitment(deps) {
       `📣 Alerts and replies: ${row.channel_id ? `<#${row.channel_id}>` : 'not set (replies are DMed to the manager; standout alerts need a channel)'}`,
       `🔎 Standout-opponent alerts: ${row.alerts_enabled ? `on, for match ratings of ${Number(row.alert_min_rating).toFixed(1)}+, 90%+ passing or 5+ tackles` : 'off'}`,
       `✉️ Player invites open on: ${row.invite_channel_id ? `<#${row.invite_channel_id}>` : 'the server\'s system channel (or the first channel I can invite to)'}`,
-      `🧪 Trialist role: ${trialistRole ? `${trialistRole}` : current.trialist_role_id ? `<@&${current.trialist_role_id}>` : 'not set (players who /apply are added to the roster as Trial)'}`,
+      `🧪 Trialist role: ${trialistRole ? `${trialistRole}` : current.trialist_role_id ? `<@&${current.trialist_role_id}>` : 'not set (players who /me → Apply to Trial are added to the roster as Trial)'}`,
     ];
     return interaction.editReply({ content: `✅ Recruitment settings saved.\n${lines.join('\n')}` });
   }
@@ -685,7 +685,7 @@ function createRecruitment(deps) {
           (message ? `> ${message.replace(/\n/g, '\n> ')}\n\n` : '') +
           "**Interested** sends you an invite to their server and shares your Discord name with them. **Not right now** tells them no, without sharing anything."
       )
-      .setFooter({ text: 'You got this because you listed yourself with /fa. "Stop all contact" takes your listing down.' });
+      .setFooter({ text: 'You got this because you listed yourself with /me → Free Agent. "Stop all contact" takes your listing down.' });
     if (record) embed.addFields({ name: 'Club', value: record, inline: true });
     if (interaction.guild.iconURL()) embed.setThumbnail(interaction.guild.iconURL());
     const row = new ActionRowBuilder().addComponents(
@@ -743,7 +743,7 @@ function createRecruitment(deps) {
       }
       await interaction.update({ components: done(action === 'stop' ? 'Stopped: listing removed' : 'Not right now') });
       if (action === 'stop') {
-        await interaction.followUp({ content: '⚪ Done. Your free agent listing is down and no club can contact you through GafferBot. Run `/fa` any time to list again.' }).catch(() => {});
+        await interaction.followUp({ content: '⚪ Done. Your free agent listing is down and no club can contact you through GafferBot. Run **/me → Free Agent** any time to list again.' }).catch(() => {});
       }
       const { data: fa } = await supabase.from('free_agents').select('position, ea_username').eq('id', contact.free_agent_id || '00000000-0000-0000-0000-000000000000').maybeSingle();
       await postToGuild(
@@ -792,7 +792,7 @@ function createRecruitment(deps) {
     }
     if (interaction.commandName !== 'recruit') return false;
     if (!interaction.guildId) {
-      await interaction.reply({ content: '❌ Use `/recruit` in your club\'s server.', flags: 64 });
+      await interaction.reply({ content: '❌ Use **/manager → Recruiting** in your club\'s server.', flags: 64 });
       return true;
     }
     const sub = interaction.options.getSubcommand();

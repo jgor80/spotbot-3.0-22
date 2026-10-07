@@ -278,9 +278,9 @@ export default function GafferBotPanel() {
   // === TWITCH COMMANDS ===
   const handleTwitchInfo = (action: "setup" | "list" | "remove") => {
     const messages: Record<string, string> = {
-      setup: `Use in Discord: /twitchsetup username:${twitchUsername || "<streamer>"} channel:#channel\nSets up live notifications for a Twitch streamer.`,
-      list: "Use in Discord: /twitchlist\nShows all configured Twitch notification channels.",
-      remove: `Use in Discord: /twitchremove username:${twitchUsername || "<streamer>"}\nRemoves live notifications for a streamer.`
+      setup: `In Discord: /manager → Admin → Twitch Alert, then enter ${twitchUsername || "the streamer"} and pick a channel.\nSets up live notifications for a Twitch streamer.`,
+      list: "In Discord: /manager → Admin → Twitch List\nShows all configured Twitch notification channels.",
+      remove: `In Discord: /manager → Admin → Remove Twitch, then enter ${twitchUsername || "the streamer"}.\nRemoves live notifications for a streamer.`
     };
     
     appendOutput(
@@ -293,7 +293,7 @@ export default function GafferBotPanel() {
   const handleClaimWin = () => {
     appendOutput(
       "🏆 Claim Win",
-      `Use in Discord: /claimwin competition:"${competitionName || "<name>"}" type:tournament tier:major\nSubmits a competition win for verification.`
+      `In Discord: /me → Claim a Win, then enter "${competitionName || "the competition"}", the type and the tier.\nSubmits a competition win for verification.`
     );
   };
 
@@ -301,7 +301,7 @@ export default function GafferBotPanel() {
   const handleCreateEvent = () => {
     appendOutput(
       "📅 Create Event",
-      `Use in Discord: /event new when:"${eventDate || "thu 9pm"}" title:"${eventTitle || "<title>"}" type:league\nPosts an availability board for the team.`
+      `In Discord: /manager → Events → New Event, with When "${eventDate || "thu 9pm"}" and Title "${eventTitle || "your title"}".\nPosts an availability board for the team.`
     );
   };
 
@@ -339,7 +339,7 @@ export default function GafferBotPanel() {
                   <div className="flex items-center gap-2">
                     <Target className="h-5 w-5 text-orange-500" />
                     <span className="font-semibold">Scouting & Intel</span>
-                    <Badge variant="secondary" className="ml-2">5 commands</Badge>
+                    <Badge variant="secondary" className="ml-2">5 tools</Badge>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="space-y-4 pt-2">
@@ -444,7 +444,7 @@ export default function GafferBotPanel() {
                   <div className="flex items-center gap-2">
                     <BarChart3 className="h-5 w-5 text-blue-500" />
                     <span className="font-semibold">Stats & Leaderboards</span>
-                    <Badge variant="secondary" className="ml-2">6 commands</Badge>
+                    <Badge variant="secondary" className="ml-2">6 tools</Badge>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="space-y-3 pt-2">
@@ -513,7 +513,7 @@ export default function GafferBotPanel() {
                   <div className="flex items-center gap-2">
                     <Gamepad2 className="h-5 w-5 text-green-500" />
                     <span className="font-semibold">EA FC Integration</span>
-                    <Badge variant="secondary" className="ml-2">4 commands</Badge>
+                    <Badge variant="secondary" className="ml-2">4 tools</Badge>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="space-y-3 pt-2">
@@ -538,7 +538,7 @@ export default function GafferBotPanel() {
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Discord-only: /setclub, /linkea, /forcelink, /reviewlinks
+                    In Discord: /manager → Admin → Link EA Club, /me → Link EA, and Link Player to EA and Review EA Links under /manager → Roster & Squad
                   </p>
                 </AccordionContent>
               </AccordionItem>
@@ -549,7 +549,7 @@ export default function GafferBotPanel() {
                   <div className="flex items-center gap-2">
                     <ClipboardList className="h-5 w-5 text-purple-500" />
                     <span className="font-semibold">Lineup & Drafts</span>
-                    <Badge variant="secondary" className="ml-2">5 commands</Badge>
+                    <Badge variant="secondary" className="ml-2">5 tools</Badge>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="space-y-3 pt-2">
@@ -561,7 +561,7 @@ export default function GafferBotPanel() {
                     </RouterLink>
                   </Button>
                   <p className="text-xs text-muted-foreground">
-                    Discord-only: /draft, /draftpick, /draftresult, /draftpanel
+                    In Discord: /manager → Drafts (Start Draft, Pick Player, Report Result, Draft Panel)
                   </p>
                 </AccordionContent>
               </AccordionItem>
@@ -572,22 +572,22 @@ export default function GafferBotPanel() {
                   <div className="flex items-center gap-2">
                     <MapPin className="h-5 w-5 text-yellow-500" />
                     <span className="font-semibold">Spot Management</span>
-                    <Badge variant="secondary" className="ml-2">8 commands</Badge>
+                    <Badge variant="secondary" className="ml-2">8 tools</Badge>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="pt-2">
                   <p className="text-sm text-muted-foreground mb-2">
-                    Spot management commands require Discord voice channel context:
+                    In Discord under /manager → Lineups & Spots (players: /me). Most need you in the club voice channel:
                   </p>
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-2 border rounded bg-muted/50">/spotpanel - Create spot panel</div>
-                    <div className="p-2 border rounded bg-muted/50">/spots - Show read-only board</div>
-                    <div className="p-2 border rounded bg-muted/50">/vcspots - VC-linked panel</div>
-                    <div className="p-2 border rounded bg-muted/50">/whoisplaying - VC players</div>
-                    <div className="p-2 border rounded bg-muted/50">/myprefs - Your preferences</div>
-                    <div className="p-2 border rounded bg-muted/50">/pospanel - Preference panel</div>
-                    <div className="p-2 border rounded bg-muted/50">/autoassign - Toggle auto</div>
-                    <div className="p-2 border rounded bg-muted/50">/syncprefs - Sync from roles</div>
+                    <div className="p-2 border rounded bg-muted/50">Spots Panel</div>
+                    <div className="p-2 border rounded bg-muted/50">Spots Board</div>
+                    <div className="p-2 border rounded bg-muted/50">Voice Spots</div>
+                    <div className="p-2 border rounded bg-muted/50">Who's Playing</div>
+                    <div className="p-2 border rounded bg-muted/50">My Positions (/me)</div>
+                    <div className="p-2 border rounded bg-muted/50">Prefs Panel</div>
+                    <div className="p-2 border rounded bg-muted/50">Auto-assign</div>
+                    <div className="p-2 border rounded bg-muted/50">Prefs From Roles</div>
                   </div>
                 </AccordionContent>
               </AccordionItem>
@@ -598,12 +598,12 @@ export default function GafferBotPanel() {
                   <div className="flex items-center gap-2">
                     <Calendar className="h-5 w-5 text-cyan-500" />
                     <span className="font-semibold">Events & Availability</span>
-                    <Badge variant="secondary" className="ml-2">4 commands</Badge>
+                    <Badge variant="secondary" className="ml-2">4 tools</Badge>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="space-y-3 pt-2">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Event Info (Discord command helper)</label>
+                    <label className="text-sm font-medium">Event Info (Discord helper)</label>
                     <div className="flex gap-2">
                       <Input 
                         placeholder="Event title..." 
@@ -620,11 +620,11 @@ export default function GafferBotPanel() {
                     </div>
                     <Button onClick={handleCreateEvent} variant="outline" className="w-full gap-2">
                       <Calendar className="h-4 w-4" />
-                      Show Event Command
+                      Show How in Discord
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Discord-only: /available, /attendance, /sendreminders
+                    In Discord: /me → My Events, /manager → Match Night → Attendance, /manager → Events → Remind
                   </p>
                 </AccordionContent>
               </AccordionItem>
@@ -635,12 +635,12 @@ export default function GafferBotPanel() {
                   <div className="flex items-center gap-2">
                     <Trophy className="h-5 w-5 text-amber-500" />
                     <span className="font-semibold">Competitions</span>
-                    <Badge variant="secondary" className="ml-2">3 commands</Badge>
+                    <Badge variant="secondary" className="ml-2">3 tools</Badge>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="space-y-3 pt-2">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium">Claim Win (Discord command helper)</label>
+                    <label className="text-sm font-medium">Claim Win (Discord helper)</label>
                     <Input 
                       placeholder="Competition name..." 
                       value={competitionName}
@@ -648,11 +648,11 @@ export default function GafferBotPanel() {
                     />
                     <Button onClick={handleClaimWin} variant="outline" className="w-full gap-2">
                       <Trophy className="h-4 w-4" />
-                      Show Claim Command
+                      Show How in Discord
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Discord-only: /verifywin, /pendingwins
+                    In Discord: /manager → Admin → Pending Wins and Verify a Win
                   </p>
                 </AccordionContent>
               </AccordionItem>
@@ -663,7 +663,7 @@ export default function GafferBotPanel() {
                   <div className="flex items-center gap-2">
                     <Twitch className="h-5 w-5 text-purple-500" />
                     <span className="font-semibold">Streaming Controls</span>
-                    <Badge variant="secondary" className="ml-2">3 commands</Badge>
+                    <Badge variant="secondary" className="ml-2">3 tools</Badge>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="space-y-3 pt-2">
@@ -728,20 +728,20 @@ export default function GafferBotPanel() {
                   <div className="flex items-center gap-2">
                     <Shield className="h-5 w-5 text-red-500" />
                     <span className="font-semibold">Admin & Panels</span>
-                    <Badge variant="secondary" className="ml-2">6 commands</Badge>
+                    <Badge variant="secondary" className="ml-2">6 tools</Badge>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="pt-2">
                   <p className="text-sm text-muted-foreground mb-2">
-                    Admin commands for managing Discord panels:
+                    In Discord under /manager → Admin (and Stats & Scouting, Lineups & Spots):
                   </p>
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-2 border rounded bg-muted/50">/squadiq - Main control panel</div>
-                    <div className="p-2 border rounded bg-muted/50">/refreshpanel - Refresh panels</div>
-                    <div className="p-2 border rounded bg-muted/50">/scoutpanel - Scouting panel</div>
-                    <div className="p-2 border rounded bg-muted/50">/eapanel - EA integration panel</div>
-                    <div className="p-2 border rounded bg-muted/50">/ratingspanel - Ratings panel</div>
-                    <div className="p-2 border rounded bg-muted/50">/spotblock - Block/unblock user</div>
+                    <div className="p-2 border rounded bg-muted/50">Control Panel</div>
+                    <div className="p-2 border rounded bg-muted/50">Refresh Panel</div>
+                    <div className="p-2 border rounded bg-muted/50">Scouting Panel</div>
+                    <div className="p-2 border rounded bg-muted/50">EA Panel</div>
+                    <div className="p-2 border rounded bg-muted/50">Ratings Panel</div>
+                    <div className="p-2 border rounded bg-muted/50">Block Mover</div>
                   </div>
                 </AccordionContent>
               </AccordionItem>

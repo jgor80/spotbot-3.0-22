@@ -112,7 +112,7 @@ function createTrials(deps) {
   }
 
   async function openApply(interaction, clubKey) {
-    if (!interaction.guildId) return interaction.reply({ content: 'Run `/apply` in the server of the club you want to trial for.', flags: 64 });
+    if (!interaction.guildId) return interaction.reply({ content: 'Run **/me → Apply to Trial** in the server of the club you want to trial for.', flags: 64 });
     const state = await getGuildState(interaction.guildId);
     const club = resolveClub(state, interaction.member, clubKey || undefined);
     if (!club) return interaction.reply({ content: "❌ This server hasn't set up a club yet, so there's nothing to apply to.", flags: 64 });
@@ -198,7 +198,7 @@ function createTrials(deps) {
     if (!(await recruitment.canRecruit(interaction.member, club))) {
       return interaction.reply({ content: '❌ Only managers can post the apply panel.', flags: 64 });
     }
-    if (!club) return interaction.reply({ content: '❌ Set up a club first with `/setclub`.', flags: 64 });
+    if (!club) return interaction.reply({ content: '❌ Set up a club first with **/manager → Admin → Link EA Club**.', flags: 64 });
     const channel = interaction.options.getChannel('channel') || interaction.channel;
     const missing = missingChannelPerms(channel, interaction.guild.members.me);
     if (missing.length) return interaction.reply({ content: `❌ I can't post in ${channel}. I'm missing **${missing.join('**, **')}** there.`, flags: 64 });
@@ -453,7 +453,7 @@ function createTrials(deps) {
       await supabase.from('trialists').update({ trial_count: (trialist.trial_count || 1) + 1, updated_at: now }).eq('id', trialist.id);
       await dm(trialist.discord_user_id, { content: `🔁 **${clubName}** liked what they saw and want you back for a second trial. I'll DM you when the next tryout is posted.` });
       return interaction.reply({
-        content: `🔁 ${who} is down for a second trial and has been told. Post the next tryout with \`/event new type:Tryout\`; trialists are invited automatically.`,
+        content: `🔁 ${who} is down for a second trial and has been told. Post the next tryout with **/manager → Events → New Event** (type Tryout); trialists are invited automatically.`,
         flags: 64,
       });
     }
@@ -465,7 +465,7 @@ function createTrials(deps) {
     await dm(trialist.discord_user_id, {
       content: promote
         ? `🎉 You've been promoted to **${clubName}**'s active roster. Welcome to the squad!`
-        : `Thanks for trialling with **${clubName}**. They've decided not to take it further this time. Good luck, and \`/fa\` lists you for other clubs if you're still looking.`,
+        : `Thanks for trialling with **${clubName}**. They've decided not to take it further this time. Good luck, and **/me → Free Agent** lists you for other clubs if you're still looking.`,
     });
     await interaction.update({
       components: [

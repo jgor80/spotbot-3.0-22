@@ -287,7 +287,7 @@ export default function Leaderboard() {
         {selectedGuild && enabledClubs.length === 0 && (
           <Card className="border-dashed">
             <CardContent className="py-4 text-sm text-muted-foreground">
-              No EA club is linked to this server yet. Run <code>/setclub</code> in Discord to start tracking matches.
+              No EA club is linked to this server yet. Link one in Discord with <code>/manager → Admin → Link EA Club</code> to start tracking matches.
             </CardContent>
           </Card>
         )}
