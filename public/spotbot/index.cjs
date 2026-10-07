@@ -421,6 +421,12 @@ const autopilot = createAutopilot({
   loadTeam: squads.loadTeam,
   dashboardUrl: process.env.DASHBOARD_URL
 });
+// After new matches arrive, quietly link gamertags whose name clearly matches a server member
+autopilot.onNewMatches(async (guildId) => {
+  const guild = client.guilds.cache.get(guildId);
+  if (guild) await autoLink.bulkScan(guild, { prompt: false });
+});
+
 
 // GafferBot Premium: the per-server switch, then the features behind it (all under /premium, plus /scout opponent)
 const premium = createPremium({ supabase });
