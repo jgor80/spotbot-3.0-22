@@ -14,6 +14,19 @@ const {
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
 const { missingChannelPerms, canPingRole, missingPermsMessage } = require('./perm-check.cjs');
 const T = require('./event-time.cjs');
+const { FORMATION_SLOTS } = require('./lineup-autofill.cjs');
+const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+
+// "433", "4-3-3", "4-3-3 flat" -> "4-3-3 FLAT"
+function matchFormation(text) {
+  if (!text) return null;
+  const names = Object.keys(FORMATION_SLOTS);
+  const t = String(text).toUpperCase().trim();
+  const exact = names.find((n) => n === t);
+  if (exact) return exact;
+  const squash = (x) => x.replace(/[^0-9A-Z]/g, '');
+  return names.find((n) => squash(n) === squash(t)) || names.find((n) => squash(n).startsWith(squash(t))) || null;
+}
 
 const POSITIONS = ['GK', 'LB', 'CB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'CF', 'ST'];
 const EVENT_TYPES = {
@@ -59,6 +72,7 @@ const EVENT_COMMANDS = [
             required: false,
             choices: ['league', 'friendly', 'scrim', 'training', 'tryout', 'tournament', 'match'].map((v) => ({ name: EVENT_TYPES[v].label, value: v })),
           },
+          { name: 'formation', description: 'Formation for the lineup, e.g. 4-3-3, 4-2-3-1 wide.', type: 3, required: false, autocomplete: true },
           { name: 'preset', description: 'Start from a saved preset.', type: 3, required: false, autocomplete: true },
           { name: 'deadline', description: 'Answer by, e.g. "2h" before kick-off or "wed 6pm". Default 1h before.', type: 3, required: false },
           {
@@ -263,7 +277,7 @@ function createEvents(deps) {
   async function loadResponses(eventId) {
     const { data } = await supabase
       .from('player_availability')
-      .select('discord_user_id, response, responded_at, position')
+      .select('discord_user_id, response, responded_at, position, note')
       .eq('event_id', eventId)
       .order('responded_at', { ascending: true });
     return (data || []).filter((r) => r.response !== 'no_response');
@@ -352,6 +366,7 @@ function createEvents(deps) {
           : '⏰ The deadline has passed. Late answers still count but are marked.'
       );
     }
+    if (event.formation) lines.push(`📐 Formation: **${event.formation}**`);
     if (event.series_id) lines.push('🔁 Repeats automatically');
     if (event.position_signup) lines.push(`🎯 Pick up to ${MAX_SIGNUP_POSITIONS} positions when you tap Available`);
     if (event.description) lines.push('', event.description);
@@ -371,7 +386,8 @@ function createEvents(deps) {
       const late = deadline && r.responded_at && new Date(r.responded_at) > deadline ? ' *(late)*' : '';
       const pos = r.position ? ` ${r.position.split(',').join('/')}` : '';
       const shows = r.response !== 'no' && flagged.has(r.discord_user_id) ? ` ⚠️ ${flagged.get(r.discord_user_id)}% show-up` : '';
-      return `<@${r.discord_user_id}>${pos}${late}${shows}`;
+      const note = r.note ? `\n  📝 *${r.note.slice(0, 80)}*` : '';
+      return `<@${r.discord_user_id}>${pos}${late}${shows}${note}`;
     };
     for (const [key, r] of Object.entries(RESPONSES)) {
       const list = responses.filter((x) => x.response === key);
@@ -409,12 +425,16 @@ function createEvents(deps) {
           )
         )
       );
-      const tools = [new ButtonBuilder().setCustomId(`ev_remind:${event.id}`).setLabel('Remind').setEmoji('🔔').setStyle(ButtonStyle.Secondary)];
+      const tools = [
+        new ButtonBuilder().setCustomId(`ev_note:${event.id}`).setLabel('Add a note').setEmoji('📝').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`evl_build:${event.id}`).setLabel('Build Lineup').setEmoji('📋').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`ev_remind:${event.id}`).setLabel('Remind').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
+      ];
       if (dashboardUrl) {
         tools.push(
           new ButtonBuilder()
             .setURL(`${dashboardUrl.replace(/\/$/, '')}/teams?event=${event.id}`)
-            .setLabel('Build Lineup')
+            .setLabel('Lineup on website')
             .setStyle(ButtonStyle.Link)
         );
       }
@@ -530,6 +550,9 @@ function createEvents(deps) {
       });
     }
 
+    const formationText = interaction.options.getString('formation');
+    const formation = formationText ? matchFormation(formationText) : null;
+    if (formationText && !formation) return interaction.reply({ content: `❌ I don't know the formation "${formationText}". Try something like 4-3-3 or 4-2-3-1 wide.`, flags: 64 });
     const positionsOpt = interaction.options.getBoolean('positions');
     const positionSignup = positionsOpt ?? (preset ? preset.position_signup : type === 'tryout');
     const description = (interaction.options.getString('description') || preset?.description || '').slice(0, 1000) || null;
@@ -581,6 +604,7 @@ function createEvents(deps) {
           duration_minutes: durationMinutes,
           ping_role_id: role?.id || null,
           position_signup: positionSignup,
+          formation,
           created_by_discord_id: interaction.user.id,
           channel_id: channel.id,
         },
@@ -1185,6 +1209,10 @@ function createEvents(deps) {
     } else if (focused.name === 'series') {
       const { data } = await supabase.from('event_series').select('id, title, interval_weeks').eq('guild_id', guildId).eq('active', true);
       choices = (data || []).map((s) => ({ name: `${s.title} (every ${s.interval_weeks === 1 ? 'week' : `${s.interval_weeks} weeks`})`.slice(0, 100), value: s.id }));
+    } else if (focused.name === 'formation') {
+      choices = Object.keys(FORMATION_SLOTS).map((n) => ({ name: n, value: n }));
+      const sq = q.replace(/[^0-9a-z]/g, '');
+      return interaction.respond(choices.filter((c) => c.name.toLowerCase().replace(/[^0-9a-z]/g, '').includes(sq)).slice(0, 25)).catch(() => {});
     } else if (focused.name === 'when') {
       return interaction.respond(await whenChoices(guildId, focused.value)).catch(() => {});
     } else if (focused.name === 'zone') {
@@ -1352,11 +1380,46 @@ function createEvents(deps) {
     if (action === 'ev_r' && RESPONSES[a]) await handleResponse(interaction, a, b);
     else if (action === 'ev_pos') await handlePositionPick(interaction, a);
     else if (action === 'ev_remind') await handleRemindButton(interaction, a);
+    else if (action === 'ev_note') await handleNoteButton(interaction, a);
     else return false;
     return true;
   }
 
+  async function handleNoteButton(interaction, eventId) {
+    const event = await loadEvent(eventId);
+    if (!event || event.closed) return interaction.reply({ content: '❌ That event is closed.', flags: 64 });
+    const { data: mine } = await supabase.from('player_availability').select('note').eq('event_id', eventId).eq('discord_user_id', interaction.user.id).maybeSingle();
+    const input = new TextInputBuilder()
+      .setCustomId('note')
+      .setLabel('Note for the captain')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(false)
+      .setMaxLength(200)
+      .setPlaceholder('e.g. might be 10 min late, can only play first half');
+    if (mine?.note) input.setValue(mine.note);
+    return interaction.showModal(
+      new ModalBuilder().setCustomId(`ev_notem:${eventId}`).setTitle(event.title.slice(0, 45)).addComponents(new ActionRowBuilder().addComponents(input))
+    );
+  }
+
+  async function handleNoteSubmit(interaction, eventId) {
+    const event = await loadEvent(eventId);
+    if (!event) return interaction.reply({ content: '❌ That event no longer exists.', flags: 64 });
+    const note = (interaction.fields.getTextInputValue('note') || '').trim().slice(0, 200) || null;
+    const { data: row } = await supabase.from('player_availability').select('id').eq('event_id', eventId).eq('discord_user_id', interaction.user.id).maybeSingle();
+    const res = row
+      ? await supabase.from('player_availability').update({ note }).eq('id', row.id)
+      : await supabase.from('player_availability').insert({ event_id: eventId, discord_user_id: interaction.user.id, response: 'maybe', note, responded_at: new Date().toISOString() });
+    if (res.error) return interaction.reply({ content: `❌ ${res.error.message}`, flags: 64 });
+    await interaction.reply({ content: note ? `📝 Note saved for **${event.title}**.${row ? '' : ' You were marked **Maybe** — tap Available if you can play.'}` : '📝 Note cleared.', flags: 64 });
+    await refreshBoard(event);
+  }
+
   async function handleInteraction(interaction) {
+    if (interaction.isModalSubmit?.() && interaction.customId.startsWith('ev_notem:')) {
+      await handleNoteSubmit(interaction, interaction.customId.split(':')[1]);
+      return true;
+    }
     if (interaction.isAutocomplete()) {
       if (interaction.commandName !== 'event') return false;
       await handleAutocomplete(interaction);
@@ -1394,4 +1457,4 @@ function createEvents(deps) {
   };
 }
 
-module.exports = { createEvents, EVENT_COMMANDS, POSITIONS, EVENT_TYPES };
+module.exports = { createEvents, EVENT_COMMANDS, POSITIONS, EVENT_TYPES, matchFormation };

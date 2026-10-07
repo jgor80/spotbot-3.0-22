@@ -112,6 +112,7 @@ export type Database = {
           description: string | null
           duration_minutes: number | null
           event_type: string
+          formation: string | null
           guild_id: string
           id: string
           message_id: string | null
@@ -124,6 +125,8 @@ export type Database = {
           team_id: string | null
           title: string
           updated_at: string
+          vc_invite_0_sent: boolean
+          vc_invite_30_sent: boolean
         }
         Insert: {
           cancelled?: boolean
@@ -139,6 +142,7 @@ export type Database = {
           description?: string | null
           duration_minutes?: number | null
           event_type?: string
+          formation?: string | null
           guild_id: string
           id?: string
           message_id?: string | null
@@ -151,6 +155,8 @@ export type Database = {
           team_id?: string | null
           title: string
           updated_at?: string
+          vc_invite_0_sent?: boolean
+          vc_invite_30_sent?: boolean
         }
         Update: {
           cancelled?: boolean
@@ -166,6 +172,7 @@ export type Database = {
           description?: string | null
           duration_minutes?: number | null
           event_type?: string
+          formation?: string | null
           guild_id?: string
           id?: string
           message_id?: string | null
@@ -178,6 +185,8 @@ export type Database = {
           team_id?: string | null
           title?: string
           updated_at?: string
+          vc_invite_0_sent?: boolean
+          vc_invite_30_sent?: boolean
         }
         Relationships: [
           {
@@ -1477,6 +1486,8 @@ export type Database = {
       }
       lineup_slots: {
         Row: {
+          confirmed_at: string | null
+          declined_at: string | null
           discord_user_id: string
           id: string
           is_substitute: boolean
@@ -1485,6 +1496,8 @@ export type Database = {
           slot_index: number
         }
         Insert: {
+          confirmed_at?: string | null
+          declined_at?: string | null
           discord_user_id: string
           id?: string
           is_substitute?: boolean
@@ -1493,6 +1506,8 @@ export type Database = {
           slot_index: number
         }
         Update: {
+          confirmed_at?: string | null
+          declined_at?: string | null
           discord_user_id?: string
           id?: string
           is_substitute?: boolean
