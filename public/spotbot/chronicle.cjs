@@ -74,7 +74,7 @@ function lede(club, matches, stars, seed) {
     seed
   );
   if (!top) return opener;
-  const line = [top.goals && `${top.goals} goal${top.goals > 1 ? 's' : ''}`, top.assists && `${top.assists} assist${top.assists > 1 ? 's' : ''}`, top.avg && `a ${top.avg.toFixed(1)} average`].filter(Boolean).join(', ');
+  const line = [top.goals && `${top.goals} goal${top.goals > 1 ? 's' : ''}`, top.assists && `${top.assists} assist${top.assists > 1 ? 's' : ''}`, top.avg && `${/^8/.test(top.avg.toFixed(1)) ? 'an' : 'a'} ${top.avg.toFixed(1)} average`].filter(Boolean).join(', ');
   const quip = pick(
     [`The headline belongs to **${top.name}**, who finished with ${line}.`, `Ask anyone in the room and they'll name **${top.name}**: ${line}.`, `**${top.name}** was the story, posting ${line}.`],
     seed >> 3
@@ -85,7 +85,7 @@ function lede(club, matches, stars, seed) {
 // Build the edition embed. upcoming = [{ title, scheduled_at, yes }] events still ahead.
 function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches = [], now = new Date(), logoUrl }) {
   const ed = EDITIONS[edition];
-  const dateText = now.toLocaleDateString('en-US', { timeZone: CHRONICLE_TZ, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const dateText = new Date(now.getTime() - (edition === 'overnight' ? 3600000 : 0)).toLocaleDateString('en-US', { timeZone: CHRONICLE_TZ, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const seed = seedOf(`${club.name}${dateText}${edition}`);
   const totals = playerTotals(matches);
   const stars = [...totals].sort((a, b) => b.goals * 3 + b.assists * 2 + b.avg + b.motm * 2 - (a.goals * 3 + a.assists * 2 + a.avg + a.motm * 2)).slice(0, 3);
