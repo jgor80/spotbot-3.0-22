@@ -941,6 +941,7 @@ function createEvents(deps) {
   }
 
   async function handleEdit(interaction) {
+    const rec = captureOptions(interaction);
     const event = await leaderEvent(interaction);
     if (!event) return;
     const { timezone: tz } = await serverPrefs(event.guild_id);
@@ -950,7 +951,7 @@ function createEvents(deps) {
     let kickoff = new Date(event.scheduled_at);
     if (whenText) {
       const at = T.parseWhen(whenText, tz);
-      if (!at) return interaction.reply({ content: `❌ I couldn't read "${whenText}". ${whenExamples(tz)}`, flags: 64 });
+      if (!at) return interaction.reply(whenPicker(tz, stashWhen(interaction, 'edit', rec), whenText));
       if (at.getTime() < Date.now() - 5 * 60000) return interaction.reply({ content: `❌ <t:${T.unix(at)}:F> is in the past.`, flags: 64 });
       if (at.getTime() !== kickoff.getTime()) {
         update.scheduled_at = at.toISOString();
