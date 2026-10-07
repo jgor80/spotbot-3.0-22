@@ -24,7 +24,7 @@ const { autofillLineup, FORMATION_SLOTS } = require('./lineup-autofill.cjs');
 const { seasonTotals } = require('./player-season.cjs');
 const T = require('./event-time.cjs');
 const { PREMIUM_FREE } = require('./premium.cjs');
-const { buildChronicle, EDITIONS, CHRONICLE_TZ } = require('./chronicle.cjs');
+const { storyFacts, buildChronicle, EDITIONS, CHRONICLE_TZ } = require('./chronicle.cjs');
 
 const FEATURES = {
   voice: { label: 'Voice check-ins', emoji: '🎧', help: 'Joining the club voice channel from 30 min before kick-off checks a player in.' },
@@ -913,7 +913,24 @@ function createAutopilot(deps) {
       .order('scheduled_at', { ascending: true })
       .limit(5);
     const prefs = await events.serverPrefs(guildId).catch(() => ({}));
-    return buildChronicle({ club, edition, matches, upcoming: upcoming || [], seasonMatches: all, now, logoUrl: prefs.branding?.logo_url });
+    let story;
+    if (deps.openai && matches.length) {
+      try {
+        const res = await deps.openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          temperature: 0.7,
+          max_tokens: 450,
+          messages: [
+            { role: 'system', content: "You are a newspaper beat writer covering an EA FC Pro Clubs team. Write 2 short paragraphs (under 850 characters total) telling the story of today's games: momentum, key moments implied by the scores, the standout players by name in **bold**, and how it fits the club's season storyline. Only use the facts given; never invent goals, minutes or quotes. No headings." },
+            { role: 'user', content: storyFacts({ club, matches, seasonMatches: all }) },
+          ],
+        });
+        story = res.choices?.[0]?.message?.content?.trim() || undefined;
+      } catch (err) {
+        console.warn(`[chronicle] AI story failed, using template: ${err.message}`);
+      }
+    }
+    return buildChronicle({ club, edition, matches, upcoming: upcoming || [], seasonMatches: all, now, logoUrl: prefs.branding?.logo_url, story });
   }
 
   async function postChronicles(now) {
