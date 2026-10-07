@@ -3146,6 +3146,51 @@ export type Database = {
         }
         Relationships: []
       }
+      pro_photos: {
+        Row: {
+          analysis: Json
+          archetype: string | null
+          created_at: string
+          discord_user_id: string
+          ea_username: string | null
+          guild_id: string
+          id: string
+          image_url: string
+          overall: number | null
+          position: string | null
+          submitted_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          analysis?: Json
+          archetype?: string | null
+          created_at?: string
+          discord_user_id: string
+          ea_username?: string | null
+          guild_id: string
+          id?: string
+          image_url: string
+          overall?: number | null
+          position?: string | null
+          submitted_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          analysis?: Json
+          archetype?: string | null
+          created_at?: string
+          discord_user_id?: string
+          ea_username?: string | null
+          guild_id?: string
+          id?: string
+          image_url?: string
+          overall?: number | null
+          position?: string | null
+          submitted_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           career_appearances: number | null

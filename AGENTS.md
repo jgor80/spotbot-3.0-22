@@ -7,3 +7,4 @@
 - Recap action artwork is bundled in the bot assets and selected by the spotlight player’s position; it is labelled as AI art because EA stats and Discord avatars do not establish a player’s likeness.
 - Recap cards display actual single-match ratings, not derived overall ratings, so match performance cannot be mistaken for EA player attributes.
 - Event announcement mentions are enabled only in postEvent; board updates and reposts suppress mentions so availability changes never notify the whole server again.
+- Pro photos are ingested only through the `pro-photo` function (bot secret, AI vision check, private storage with long-lived signed URLs); recap art prefers them over Discord avatars because public storage buckets are blocked in this workspace.

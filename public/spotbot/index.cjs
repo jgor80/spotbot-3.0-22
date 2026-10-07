@@ -32,6 +32,7 @@ const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
 const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
 const { createEventLineup } = require('./event-lineup.cjs');
 const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
+const { createProPhotos, PRO_PHOTO_COMMANDS } = require('./pro-photos.cjs');
 const { createAutopilot, AUTOPILOT_COMMANDS } = require('./autopilot.cjs');
 const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
 const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
@@ -386,6 +387,7 @@ const eventLineup = createEventLineup({ supabase, events: clubEvents, isManager,
 const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState });
 
 const autoLink = createAutoLink({ supabase, getGuildState, isManager });
+const proPhotos = createProPhotos({ supabaseUrl, secret: BOT_PROXY_SECRET, getGuildState, isManager });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
 
 const scouting = createScouting({ supabase, getGuildState, recruitment });
@@ -466,6 +468,7 @@ installClientGuards(client);
 // Keep the Manager Hub pinned as the last message in each club's manager desk channel.
 client.on('messageCreate', (message) => {
   managerHub.onMessage(message).catch((err) => console.warn('[sticky] message hook failed:', err.message));
+  proPhotos.onMessage(message).catch((err) => console.warn('[pro-photos] failed:', err.message));
 });
 client.once('ready', () => {
   setTimeout(() => managerHub.initSticky(client).catch((err) => console.warn('[sticky] init failed:', err.message)), 15000);
@@ -890,6 +893,7 @@ const ACTION_SCHEMAS = [
   ...MATCHNIGHT_COMMANDS,
   ...AUTOPILOT_COMMANDS,
   ...SETUP_COMMANDS,
+  ...PRO_PHOTO_COMMANDS,
   ...RECRUIT_COMMANDS,
   ...SCOUT_COMMANDS,
   ...TRIAL_COMMANDS,
@@ -4228,6 +4232,7 @@ async function routeInteraction(interaction) {
     if (await panels.handleInteraction(interaction)) return;
     // Events: /event, /available, autocomplete, and board buttons (also used from reminder DMs)
     if (await autoLink.handleInteraction(interaction)) return;
+    if (await proPhotos.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;
     // Match night: /checkin, /sub, /reliability, check-in and sub request buttons

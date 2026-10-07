@@ -166,9 +166,16 @@ function createBroadcast(deps) {
     if (!names.length) return out;
     const { data } = await supabase.from('profiles').select('discord_user_id, ea_username').in('ea_username', names);
     const guild = client()?.guilds.cache.get(guildId);
+    // In-game pro photos come first, Discord avatars fill the gaps
+    const ids = (data || []).map((p) => p.discord_user_id).filter((id) => !String(id).startsWith('ea_'));
+    const { data: photos } = ids.length ? await supabase.from('pro_photos').select('discord_user_id, image_url').in('discord_user_id', ids) : { data: [] };
+    const photoBy = new Map((photos || []).map((r) => [r.discord_user_id, r.image_url]));
     await Promise.all(
       (data || []).map(async (p) => {
         if (!p.ea_username || String(p.discord_user_id).startsWith('ea_')) return;
+        const pro = photoBy.get(p.discord_user_id);
+        const proImg = pro ? await G.fetchImage(pro) : null;
+        if (proImg) return out.set(p.ea_username.toLowerCase(), proImg);
         const member = guild ? await guild.members.fetch(p.discord_user_id).catch(() => null) : null;
         const url = member?.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
         const img = url ? await G.fetchImage(url) : null;
