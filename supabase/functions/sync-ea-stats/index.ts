@@ -1133,7 +1133,7 @@ async function syncMemberStats(
 
       // Extended stats from EA API using fallback paths
       const shots = parseInt(extractWithFallback(member, ['shots']) || 0)
-      const tackles = parseInt(extractWithFallback(member, ['tacklesmade', 'tackles']) || 0)
+      const tackles = parseInt(extractWithFallback(member, ['tacklesMade', 'tacklesmade', 'tackles']) || 0)
       const passesMade = parseInt(extractWithFallback(member, ['passesmade', 'passesMade']) || 0)
       const passAttempts = parseInt(extractWithFallback(member, ['passattempts', 'passAttempts']) || 0)
       const saves = parseInt(extractWithFallback(member, ['saves', 'gksaves', 'gkSaves']) || 0)
