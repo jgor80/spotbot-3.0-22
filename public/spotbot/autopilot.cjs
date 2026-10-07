@@ -34,6 +34,7 @@ const FEATURES = {
   digest: { label: 'Monday digest', emoji: '🗞️', help: 'Formation win rates, best pairings and show-up rates every Monday morning.' },
   chronicle: { label: 'Daily Chronicle', emoji: '📰', help: 'A newspaper-style beat writer digest at 3 PM and midnight Central covering the day\'s matches, players and events.' },
   session: { label: 'Session recap', emoji: '🧾', help: 'When the club voice channel empties, a recap of every match played since it filled up.' },
+  ratings: { label: 'Teammate rating DMs', emoji: '⭐', help: 'After a match, players get a DM asking them to rate their teammates.' },
   // Premium: these only run when the server has GafferBot Premium (see premium.cjs)
   graphics: { label: 'Matchday graphics', emoji: '🖼️', premium: true, help: 'Recap images, a Team of the Week poster on Sunday night and squad cards on the 1st of the month.' },
   moments: { label: 'Big moments', emoji: '📣', premium: true, help: 'Hat-tricks, comebacks of form and big wins get a shout-out with links to anyone live on Twitch.' },

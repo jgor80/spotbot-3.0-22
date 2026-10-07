@@ -16508,9 +16508,21 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
   }
 }
 
+// Teammate rating DMs are on unless every club in the server has 'ratings' switched off in autopilot
+function ratingsDmsEnabled(state) {
+  const clubs = Object.values(state?.clubs || {});
+  if (!clubs.length) return true;
+  return clubs.some((c) => !((c?.autopilot?.off) || []).includes('ratings'));
+}
+
 // Create feedback requests for club match participants
 async function createClubMatchFeedbackRequests(guildId, eaMatchId, playerStats) {
   try {
+    const state = await loadGuildSettings(guildId);
+    if (!ratingsDmsEnabled(state)) {
+      console.log(`[Feedback] Rating DMs switched off for guild ${guildId}, skipping`);
+      return;
+    }
     // Get the club_match record
     const { data: clubMatch } = await supabase
       .from('club_matches')
@@ -17316,6 +17328,11 @@ async function pollAndSendFeedbackDMs(discordClient) {
         if (!guild) {
           console.log(`[Feedback] Guild ${guildId} not accessible, skipping...`);
           continue;
+        }
+
+        const guildState = await loadGuildSettings(guildId).catch(() => null);
+        if (!ratingsDmsEnabled(guildState)) {
+          continue; // Rating DMs switched off for this server
         }
         
         const result = await sendPendingFeedbackDMs(guildId, guild);
