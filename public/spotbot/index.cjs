@@ -18,8 +18,8 @@ const {
   TextInputBuilder,
   TextInputStyle,
   ChannelType
-const eaPlayerStats = require('./ea-player-stats.cjs');
 } = require('discord.js');
+const eaPlayerStats = require('./ea-player-stats.cjs');
 
 const { createClient } = require('@supabase/supabase-js');
 const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.cjs');
