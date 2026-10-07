@@ -185,7 +185,7 @@ function storyAngles(matches, seasonMatches) {
     for (const mark of [25, 50, 100]) {
       if (appsBefore < mark && appsBefore + t.apps >= mark) angles.push(`Milestone: **${t.name}** made appearance #${mark}.`);
     }
-    if (!prior && t.apps) angles.push(`Debut on record for **${t.name}**${t.goals ? `, and he scored` : ''}.`);
+    if (!prior && t.apps) angles.push(`Debut on record for **${t.name}**${t.goals ? `, and scored right away` : ''}.`);
     else if (prior && before === 0 && t.goals && prior.apps >= 3) angles.push(`First goal on record for **${t.name}** after ${prior.apps} appearances.`);
     if (prior && t.goals) {
       // Drought: games since last goal before today
@@ -201,8 +201,8 @@ function storyAngles(matches, seasonMatches) {
     }
     if (prior && prior.rated >= 5 && t.rated) {
       const diff = t.avg - prior.avg;
-      if (diff >= 1) angles.push(`**${t.name}** played well above his usual level (${t.avg.toFixed(1)} vs ${prior.avg.toFixed(1)} average).`);
-      else if (diff <= -1.2) angles.push(`An off day for **${t.name}** (${t.avg.toFixed(1)} vs his usual ${prior.avg.toFixed(1)}).`);
+      if (diff >= 1) angles.push(`**${t.name}** played well above their usual level (${t.avg.toFixed(1)} vs ${prior.avg.toFixed(1)} average).`);
+      else if (diff <= -1.2) angles.push(`An off day for **${t.name}** (${t.avg.toFixed(1)} vs their usual ${prior.avg.toFixed(1)}).`);
     }
   }
 
@@ -280,6 +280,8 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
   if (gameText) embed.addFields({ name: '✍️ THE STORY', value: clip(gameText) });
   const feature = !story && spotlight(stars, seed);
   if (feature) embed.addFields({ name: '🔦 PLAYER SPOTLIGHT', value: clip(feature) });
+  const angles = storyAngles(matches, seasonMatches).filter((a) => !/^Team (passing|tackling)|^Finishing/.test(a));
+  if (angles.length) embed.addFields({ name: '🔎 THE ANGLE', value: clip(angles.slice(0, 5).map((a) => `• ${a}`).join('\n')) });
   const arc = seasonArc(club.name, matches, seasonMatches);
   if (arc) embed.addFields({ name: '📖 THE STORYLINE', value: clip(arc) });
 
@@ -317,4 +319,4 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
   return { embeds: [embed], allowedMentions: { parse: [] } };
 }
 
-module.exports = { storyFacts, buildChronicle, EDITIONS, CHRONICLE_TZ };
+module.exports = { storyAngles, storyFacts, buildChronicle, EDITIONS, CHRONICLE_TZ };

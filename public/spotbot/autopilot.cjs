@@ -920,9 +920,9 @@ function createAutopilot(deps) {
         const res = await deps.openai.chat.completions.create({
           model: 'gpt-4o-mini',
           temperature: 0.7,
-          max_tokens: 450,
+          max_tokens: 550,
           messages: [
-            { role: 'system', content: "You are a newspaper beat writer covering an EA FC Pro Clubs team. Write 2 short paragraphs (under 850 characters total) telling the story of today's games: momentum, key moments implied by the scores, the standout players by name in **bold**, and how it fits the club's season storyline. Only use the facts given; never invent goals, minutes or quotes. No headings." },
+            { role: 'system', content: "You are a sharp newspaper beat writer covering an EA FC Pro Clubs team. Write 2-3 short paragraphs (under 950 characters total). Lead with the most newsworthy story angle, not the first game. Explain HOW games were won or lost using the stats (passing, tackling, finishing, saves), name standout players in **bold**, mention any milestone, rematch, drought or partnership from the angles, and close with what it means for the season storyline. Vary sentence rhythm; no clichés like 'all in all'. Only use the facts given; never invent goals, minutes, scorers' timing or quotes. No headings or bullet points." },
             { role: 'user', content: storyFacts({ club, matches, seasonMatches: all }) },
           ],
         });
