@@ -1425,6 +1425,39 @@ function createEvents(deps) {
   }
 
   // Buttons and selects work in the server and in reminder DMs
+  // A manager picked a kick-off time from the "couldn't read it" menu: re-run the original
+  // form with that time, keeping everything else they had typed.
+  async function handleWhenPick(interaction, token) {
+    const pending = pendingWhen.get(token);
+    pendingWhen.delete(token);
+    if (!pending || Date.now() - pending.at > WHEN_PICK_TTL) {
+      return interaction.update({ content: '❌ That expired — start the event again.', components: [] });
+    }
+    if (pending.userId !== interaction.user.id) {
+      return interaction.reply({ content: '❌ Only the person creating the event can pick the time.', flags: 64 });
+    }
+    const picked = interaction.values[0];
+    const rec = pending.rec;
+    const guild = interaction.guild;
+    const shim = Object.create(interaction);
+    shim.options = {
+      getString: (n) => (n === 'when' ? picked : rec.strings[n] ?? null),
+      getRole: (n) => (rec.roles[n] ? guild.roles.cache.get(rec.roles[n]) ?? null : null),
+      getChannel: (n) => (rec.channels[n] ? guild.channels.cache.get(rec.channels[n]) ?? null : null),
+      getBoolean: (n) => rec.booleans[n] ?? null,
+    };
+    let used = false;
+    shim.reply = (opts) => {
+      if (!used) {
+        used = true;
+        return interaction.update({ ...opts, components: opts.components ?? [] });
+      }
+      return interaction.followUp(opts);
+    };
+    shim.deferReply = () => interaction.deferUpdate();
+    return pending.kind === 'edit' ? handleEdit(shim) : handleNew(shim);
+  }
+
   async function handleComponent(interaction) {
     const [action, a, b] = interaction.customId.split(':');
     if (!action.startsWith('ev_')) return false;
@@ -1432,6 +1465,7 @@ function createEvents(deps) {
     else if (action === 'ev_pos') await handlePositionPick(interaction, a);
     else if (action === 'ev_remind') await handleRemindButton(interaction, a);
     else if (action === 'ev_note') await handleNoteButton(interaction, a);
+    else if (action === 'ev_when') await handleWhenPick(interaction, a);
     else return false;
     return true;
   }
