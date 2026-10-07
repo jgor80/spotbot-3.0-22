@@ -240,7 +240,7 @@ const ACTIONS = new Map();
 for (const a of PLAYER_ACTIONS) ACTIONS.set(a.id, { ...a, area: null });
 for (const area of AREAS) for (const a of area.actions) ACTIONS.set(a.id, { ...a, area });
 
-const STYLES = { primary: ButtonStyle.Primary, danger: ButtonStyle.Danger, secondary: ButtonStyle.Secondary };
+const STYLES = { primary: ButtonStyle.Primary, danger: ButtonStyle.Danger, secondary: ButtonStyle.Secondary, success: ButtonStyle.Success };
 
 // Where an action lives, in words, for help text and messages: "/manager → Drafts → Start Draft"
 function where(actionId) {
