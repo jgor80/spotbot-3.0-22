@@ -608,6 +608,7 @@ const ACTION_SCHEMAS = [
   { name: 'myprefs', description: 'Open your personal position preferences editor.' },
   { name: 'posboard', description: 'Show position preferences for players in your current voice channel.' },
   { name: 'posprefs', description: 'View position preferences for VC members or online players.' },
+  { name: 'depthchart', description: 'Depth chart: who covers each position and where the squad is thin.' },
   { name: 'autoassign', description: 'Toggle auto-assign for the current club.' },
   { 
     name: 'syncprefs', 
@@ -5715,6 +5716,52 @@ async function routeInteraction(interaction) {
           
           return interaction.reply({ embeds: [emptyEmbed], components: [vcSelectRow, buttonRow] });
         }
+      }
+
+      if (cmd === 'depthchart') {
+        const guild = interaction.guild;
+        if (!guild) return interaction.reply({ content: 'Please run this in a server.', flags: 64 });
+        await interaction.deferReply();
+        const DEPTH = [
+          ['Goalkeepers', [['GK', ['GK'], 2]]],
+          ['Defence', [['LB', ['LB', 'LWB'], 2], ['CB', ['CB'], 4], ['RB', ['RB', 'RWB'], 2]]],
+          ['Midfield', [['CDM', ['CDM'], 2], ['CM', ['CM'], 2], ['CAM', ['CAM'], 2]]],
+          ['Attack', [['LW', ['LW', 'LM'], 2], ['ST', ['ST', 'CF'], 2], ['RW', ['RW', 'RM'], 2]]],
+        ];
+        const members = (await guild.members.fetch()).filter(m => !m.user.bot);
+        const rows = [];
+        for (const m of members.values()) {
+          const prefs = await getUserPrefs(guildId, m.id);
+          if (!prefs.length) continue;
+          rows.push({ id: m.id, main: rolePositionsFor(guildId, m.id), flex: prefs.filter(p => !rolePositionsFor(guildId, m.id).includes(p)) });
+        }
+        const needs = [];
+        let squad = 0;
+        const embed = new EmbedBuilder()
+          .setTitle('📊 Depth Chart')
+          .setColor(0x3b82f6);
+        for (const [line, slots] of DEPTH) {
+          const out = [];
+          for (const [label, codes, target] of slots) {
+            const starters = rows.filter(r => r.main.some(p => codes.includes(p)));
+            const cover = rows.filter(r => !starters.includes(r) && r.flex.some(p => codes.includes(p)));
+            const n = starters.length;
+            const icon = n >= target ? '✅' : n > 0 ? '⚠️' : '❌';
+            if (n < target) needs.push(`${label} (${n}/${target})`);
+            const names = [
+              ...starters.map(r => `<@${r.id}>`),
+              ...cover.map(r => `🟡<@${r.id}>`),
+            ];
+            out.push(`${icon} **${label}** ${n}/${target}  ${names.length ? names.join(' ') : '*nobody*'}`);
+          }
+          embed.addFields({ name: line, value: out.join('\n').slice(0, 1024), inline: false });
+        }
+        squad = rows.filter(r => r.main.length).length;
+        embed.setDescription(`**${squad}** players hold a position role.\n${needs.length ? `**Needs:** ${needs.join(', ')}` : '**Squad is fully covered.** 🎉'}`);
+        embed.setFooter({ text: 'Count = main position (Discord role) • 🟡 = can cover (flex pick) • Targets: 2 deep, 4 CBs' });
+        const unassigned = members.filter(m => !rows.some(r => r.id === m.id && r.main.length)).size;
+        if (unassigned) embed.addFields({ name: 'No position role', value: `${unassigned} member(s) — post the Position Roles Panel so they can pick.`, inline: false });
+        return interaction.editReply({ embeds: [embed] });
       }
 
       if (cmd === 'posprefs') {

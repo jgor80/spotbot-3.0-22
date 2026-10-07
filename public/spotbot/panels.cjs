@@ -109,6 +109,7 @@ const AREAS = [
     emoji: '📋',
     blurb: 'Team sheets, live spot boards and position preferences.',
     actions: [
+      { id: 'ln_depth', label: 'Depth Chart', emoji: '📊', cmd: 'depthchart', style: 'primary' },
       { id: 'ln_sheet', label: 'Team Sheet', emoji: '📋', cmd: 'teamsheet', ask: true, style: 'primary' },
       { id: 'ln_spotpanel', label: 'Spots Panel', emoji: '🎛️', cmd: 'spotpanel' },
       { id: 'ln_spots', label: 'Spots Board', emoji: '🗒️', cmd: 'spots' },
@@ -117,7 +118,7 @@ const AREAS = [
       { id: 'ln_block', label: 'Block Mover', emoji: '🚫', cmd: 'spotblock' },
       { id: 'ln_autoassign', label: 'Auto-assign', emoji: '⚙️', cmd: 'autoassign' },
       { id: 'ln_pospanel', label: 'Prefs Panel', emoji: '🧩', cmd: 'pospanel' },
-      { id: 'ln_posboard', label: 'Voice Prefs', emoji: '🎧', cmd: 'posboard' },
+      { id: 'ln_posboard', label: 'Draft Prefs (Voice)', emoji: '🎧', cmd: 'posboard' },
       { id: 'ln_posprefs', label: 'All Prefs', emoji: '📑', cmd: 'posprefs' },
       { id: 'ln_syncprefs', label: 'Prefs From Roles', emoji: '🔃', cmd: 'syncprefs', ask: true },
       { id: 'ln_posroles', label: 'Position Roles Panel', emoji: '🏷️', cmd: 'positionpanel', perm: F.ManageRoles },
