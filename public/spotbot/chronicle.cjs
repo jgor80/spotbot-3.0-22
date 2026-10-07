@@ -82,8 +82,72 @@ function lede(club, matches, stars, seed) {
   return `${opener} ${quip}`;
 }
 
+// ---------- Storyline prose: game stories, player features and the club's season arc ----------
+
+function gameStory(m, i, seed) {
+  const top = [...m.players].sort((a, b) => n(b.goals) * 3 + n(b.assists) * 2 + n(b.rating) - (n(a.goals) * 3 + n(a.assists) * 2 + n(a.rating)))[0];
+  const score = `${m.scoreFor}-${m.scoreAgainst}`;
+  const verb = m.result === 'win'
+    ? pick([`beat ${m.opponent} ${score}`, `got past ${m.opponent} ${score}`, `took care of ${m.opponent}, ${score}`], seed + i)
+    : m.result === 'loss'
+      ? pick([`fell ${score} to ${m.opponent}`, `came up short against ${m.opponent}, ${score}`], seed + i)
+      : `drew ${score} with ${m.opponent}`;
+  const margin = m.scoreFor - m.scoreAgainst;
+  const flavor = margin >= 3 ? ' It was never in doubt.' : margin === 1 ? ' It went down to the wire.' : margin <= -3 ? ' A night to forget.' : m.result === 'draw' ? ' Neither side could find the winner.' : '';
+  let who = '';
+  if (top && (n(top.goals) || n(top.assists) || n(top.rating) >= 7.5)) {
+    const bits = [n(top.goals) && `${n(top.goals)} goal${n(top.goals) > 1 ? 's' : ''}`, n(top.assists) && `${n(top.assists)} assist${n(top.assists) > 1 ? 's' : ''}`].filter(Boolean).join(' and ');
+    who = ` **${nm(top)}** led the way${bits ? ` with ${bits}` : ''}${n(top.rating) ? ` and a ${n(top.rating).toFixed(1)} rating` : ''}.`;
+  }
+  const opener = i === 0 ? pick(['The day opened as', 'First up,', 'It started when'], seed) : pick(['Next,', 'Then', 'Later,', 'After that,'], seed + i);
+  return `${opener} the club ${verb}.${flavor}${who}`;
+}
+
+function spotlight(stars, seed) {
+  const s = stars[0];
+  if (!s) return '';
+  const lines = [];
+  if (s.goals >= 3) lines.push(`${s.goals} goals in a day is the kind of output that changes a dressing room's mood.`);
+  else if (s.assists >= 3) lines.push(`${s.assists} assists says it all: everything good went through them.`);
+  else if (s.avg >= 8) lines.push(`A ${s.avg.toFixed(1)} average across ${s.apps} appearance${s.apps > 1 ? 's' : ''} is as steady as it gets.`);
+  else lines.push(`${s.apps} appearance${s.apps > 1 ? 's' : ''}, and the numbers kept adding up.`);
+  if (s.motm) lines.push(`Man of the match ${s.motm > 1 ? `${s.motm} times` : 'once'}, too.`);
+  const second = stars[1];
+  if (second) lines.push(pick([`**${second.name}** deserves a mention as well.`, `Don't overlook **${second.name}**, who was right behind.`], seed));
+  return `**${s.name}**: ${lines.join(' ')}`;
+}
+
+function seasonArc(club, matches, seasonMatches) {
+  if (!seasonMatches.length) return '';
+  const sorted = [...seasonMatches].sort((a, b) => b.playedAt - a.playedAt);
+  const w = sorted.filter((m) => m.result === 'win').length;
+  const d = sorted.filter((m) => m.result === 'draw').length;
+  const l = sorted.length - w - d;
+  let streak = 0;
+  const kind = sorted[0].result;
+  for (const m of sorted) { if (m.result === kind) streak += 1; else break; }
+  const streakText = streak >= 3 ? (kind === 'win' ? `They've now won ${streak} straight, and the confidence shows.` : kind === 'loss' ? `That's ${streak} losses in a row, and the next session matters.` : `${streak} draws in a row: close, but not quite.`) : '';
+  const last10 = sorted.slice(0, 10);
+  const prev10 = sorted.slice(10, 20);
+  const pct = (arr) => (arr.length ? arr.filter((m) => m.result === 'win').length / arr.length : 0);
+  let trend = '';
+  if (prev10.length >= 5) {
+    const diff = pct(last10) - pct(prev10);
+    trend = diff >= 0.2 ? 'The club is clearly trending up compared to the stretch before.' : diff <= -0.2 ? 'The form has dipped compared to the stretch before, something for the staff to fix.' : 'The form is holding steady.';
+  }
+  const scorers = playerTotals(sorted).sort((a, b) => b.goals - a.goals);
+  const lead = scorers[0]?.goals ? `**${scorers[0].name}** leads the club with ${scorers[0].goals} goals in the matches on record.` : '';
+  return [`${club} sits at ${w}-${d}-${l} across ${sorted.length} matches on record.`, streakText, trend, lead].filter(Boolean).join(' ');
+}
+
+// Plain facts handed to the AI writer, if the bot has one.
+function storyFacts({ club, matches, seasonMatches }) {
+  const games = [...matches].sort((a, b) => a.playedAt - b.playedAt).map((m) => `${m.result.toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} vs ${m.opponent}; ${m.players.map((p) => `${nm(p)} ${n(p.goals)}G ${n(p.assists)}A ${n(p.rating) ? n(p.rating).toFixed(1) : '-'}${p.motm ? ' MOTM' : ''}`).join(', ')}`);
+  return `Club: ${club.name}\nToday's games:\n${games.join('\n') || 'none'}\nSeason context: ${seasonArc(club.name, matches, seasonMatches)}`;
+}
+
 // Build the edition embed. upcoming = [{ title, scheduled_at, yes }] events still ahead.
-function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches = [], now = new Date(), logoUrl }) {
+function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches = [], now = new Date(), logoUrl, story }) {
   const ed = EDITIONS[edition];
   const dateText = new Date(now.getTime() - (edition === 'overnight' ? 3600000 : 0)).toLocaleDateString('en-US', { timeZone: CHRONICLE_TZ, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const seed = seedOf(`${club.name}${dateText}${edition}`);
@@ -108,6 +172,14 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
       });
     embed.addFields({ name: '📋 BOX SCORES', value: clip(box.join('\n')) });
   }
+
+  // The prose: game stories, player feature and the club storyline
+  const gameText = story || [...matches].sort((a, b) => a.playedAt - b.playedAt).slice(0, 6).map((m, i) => gameStory(m, i, seed)).join(' ');
+  if (gameText) embed.addFields({ name: '✍️ THE STORY', value: clip(gameText) });
+  const feature = !story && spotlight(stars, seed);
+  if (feature) embed.addFields({ name: '🔦 PLAYER SPOTLIGHT', value: clip(feature) });
+  const arc = seasonArc(club.name, matches, seasonMatches);
+  if (arc) embed.addFields({ name: '📖 THE STORYLINE', value: clip(arc) });
 
   if (stars.length) {
     const medals = ['⭐', '⭐⭐', '⭐⭐⭐'];
@@ -143,4 +215,4 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
   return { embeds: [embed], allowedMentions: { parse: [] } };
 }
 
-module.exports = { buildChronicle, EDITIONS, CHRONICLE_TZ };
+module.exports = { storyFacts, buildChronicle, EDITIONS, CHRONICLE_TZ };

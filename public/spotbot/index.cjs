@@ -422,6 +422,7 @@ const autopilot = createAutopilot({
   callEdgeFunction,
   loadMatches: managerHub.loadMatches,
   loadTeam: squads.loadTeam,
+  openai,
   dashboardUrl: process.env.DASHBOARD_URL
 });
 // After new matches arrive, quietly link gamertags whose name clearly matches a server member
