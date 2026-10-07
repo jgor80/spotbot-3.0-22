@@ -1036,7 +1036,8 @@ async function syncMemberStats(
   clubId: string,
   platform: string,
   clubName: string,
-  aggregates: Map<string, AggregatedPlayerStats>
+  aggregates: Map<string, AggregatedPlayerStats>,
+  clubKey?: string
 ) {
   try {
     // Fetch season stats from members endpoint
@@ -1075,14 +1076,21 @@ async function syncMemberStats(
       // Get career data for this member (if available)
       const careerData = careerLookup.get(eaUsername.toLowerCase())
       
-      // Find profile for this EA username
-      const { data: profile } = await supabase
+      // Find profile for this EA username; unlinked members get an ea_<gamertag> placeholder
+      // so their club totals show now and move over when they link.
+      let { data: profile } = await supabase
         .from('profiles')
         .select('discord_user_id, discord_username')
-        .eq('ea_username', eaUsername)
+        .ilike('ea_username', eaUsername)
+        .limit(1)
         .maybeSingle()
-      
-      if (!profile || profile.discord_user_id.startsWith('ea_')) continue
+      if (!profile) {
+        const placeholder = { discord_user_id: `ea_${eaUsername}`, discord_username: eaUsername, ea_username: eaUsername }
+        const { error: phErr } = await supabase.from('profiles').upsert(placeholder, { onConflict: 'discord_user_id' })
+        if (phErr) { console.error(`[sync-ea-stats] Placeholder for ${eaUsername} failed:`, phErr.message); continue }
+        profile = placeholder
+      }
+      const isPlaceholder = profile.discord_user_id.startsWith('ea_')
       
       // Extract preferred position from career stats using fallback paths per data map
       const preferredPosition = extractWithFallback(careerData, ['favoritePosition', 'preferredPosition', 'pos']) ||
@@ -1125,7 +1133,7 @@ async function syncMemberStats(
 
       // Extended stats from EA API using fallback paths
       const shots = parseInt(extractWithFallback(member, ['shots']) || 0)
-      const tackles = parseInt(extractWithFallback(member, ['tacklesmade', 'tackles']) || 0)
+      const tackles = parseInt(extractWithFallback(member, ['tacklesMade', 'tacklesmade', 'tackles']) || 0)
       const passesMade = parseInt(extractWithFallback(member, ['passesmade', 'passesMade']) || 0)
       const passAttempts = parseInt(extractWithFallback(member, ['passattempts', 'passAttempts']) || 0)
       const saves = parseInt(extractWithFallback(member, ['saves', 'gksaves', 'gkSaves']) || 0)
@@ -1141,6 +1149,36 @@ async function syncMemberStats(
       console.log(`[sync-ea-stats] Member ${eaUsername} fields:`, JSON.stringify(Object.keys(member).sort()))
 
       const normalizedPosition = position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null
+
+      // Full EA club totals for this player at this club (the EA Member List numbers)
+      if (clubKey && gamesPlayed > 0) {
+        const { error: pcsErr } = await supabase.from('player_club_stats').upsert({
+          guild_id: guildId,
+          club_key: clubKey,
+          ea_club_id: clubId,
+          discord_user_id: profile.discord_user_id,
+          discord_username: profile.discord_username || eaUsername,
+          games_played: gamesPlayed,
+          wins, losses, draws: Math.max(0, draws),
+          win_rate: gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0,
+          goals, assists, second_assists: secondAssists,
+          clean_sheets: cleanSheets,
+          man_of_match: manOfMatch,
+          avg_match_rating: avgRating,
+          shots, tackles,
+          passes_made: passesMade,
+          pass_attempts: passAttempts,
+          saves, interceptions, clearances, dribbles,
+          dribble_attempts: dribbleAttempts,
+          primary_position: normalizedPosition,
+          baseline_synced: true,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'guild_id,club_key,discord_user_id' })
+        if (pcsErr) console.error(`[sync-ea-stats] Club totals for ${eaUsername} failed:`, pcsErr.message)
+      }
+
+      // Placeholders only get club totals; ratings and summaries are for linked players
+      if (isPlaceholder) { synced++; continue }
 
       addOrUpdateAggregate(aggregates, profile, {
         gamesPlayed,
@@ -1632,7 +1670,7 @@ async function syncTrackedGameStatsToClubStats(
       // Check if player already has a record in player_club_stats
       const { data: existingRecord } = await supabase
         .from('player_club_stats')
-        .select('id, games_played, goals, assists, saves, clean_sheets')
+        .select('id, games_played, goals, assists, saves, clean_sheets, baseline_synced')
         .eq('guild_id', guildId)
         .eq('club_key', clubKey)
         .eq('discord_user_id', discordUserId)
@@ -1677,6 +1715,9 @@ async function syncTrackedGameStatsToClubStats(
         updated_at: new Date().toISOString(),
       };
       
+      // Never overwrite full EA Member List totals with the few recent tracked games
+      if (existingRecord?.baseline_synced) continue;
+
       if (existingRecord) {
         // Update existing record - merge with EA member stats if they exist
         const { error: updateError } = await supabase
@@ -1931,7 +1972,7 @@ Deno.serve(async (req) => {
 
           // Sync member career stats (pulls from EA member list API)
           const { updatedPlayerIds, unknownMemberKeys } = await syncMemberStats(
-            supabase, guildId, club.ea_club_id, club.ea_platform, club.name, aggregates
+            supabase, guildId, club.ea_club_id, club.ea_platform, club.name, aggregates, club.key
           )
           updatedPlayerIds.forEach(id => guildUpdatedPlayerIds.add(id))
           unknownMemberKeys?.forEach((key) => unmappedMemberKeys.add(key))
