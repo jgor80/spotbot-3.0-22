@@ -1,0 +1,1 @@
+UPDATE public.profiles SET ea_username = 'AirDangus23' WHERE discord_user_id = '501557839932948490' AND ea_username = 'KEEP C0MP0SURE';

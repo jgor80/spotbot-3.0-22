@@ -667,11 +667,10 @@ function createAutopilot(deps) {
       for (const m of shown) {
         const recapRow = rowsById.get(m.id);
         const recapMsg = await buildRecap(recapRow, club);
-        // "I'm <gamertag>" buttons for players on the pitch who aren't linked yet
-        if (deps.autoLink && Array.isArray(recapRow?.player_stats)) {
+        // Unlinked players get a private "Is this you?" DM instead of public buttons on the recap
+        if (deps.autoLink && Array.isArray(recapRow?.player_stats) && channel.guild) {
           const tags = recapRow.player_stats.map((p) => p?.ea_username).filter(Boolean);
-          const rows = await deps.autoLink.claimButtons(guildId, tags).catch(() => []);
-          if (rows.length) recapMsg.components = [...(recapMsg.components || []), ...rows];
+          deps.autoLink.promptMatchPlayers(channel.guild, tags).catch(() => {});
         }
         await channel.send(recapMsg).catch((err) => console.warn(`[autopilot] recap ${m.id} failed: ${err.message}`));
       }

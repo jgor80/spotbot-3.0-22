@@ -4,7 +4,7 @@
 //     have played for here and given their position roles. Unlinked players whose name looks like
 //     a gamertag from this server's matches get a one-click "Is this you?" DM.
 //   - Joining a voice channel: same "Is this you?" check, at most once a day per player.
-//   - Match recaps: claimButtons() adds "That's me" buttons for unlinked gamertags in a match.
+//   - After matches: promptMatchPlayers() DMs the likely owner of each unlinked gamertag (never public buttons).
 // Profiles are global, so a gamertag linked in one server works in every server.
 
 const crypto = require('crypto');
@@ -145,9 +145,10 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
     return roles.map((r) => r.name);
   }
 
-  function claimRow(guildId, gamertags) {
+  // DM-only buttons, bound to the member they were sent to so nobody else can claim the gamertag
+  function claimRow(guildId, gamertags, userId) {
     const buttons = gamertags.slice(0, 5).map((g) =>
-      new ButtonBuilder().setCustomId(`alink:${guildId}:${g}`.slice(0, 100)).setLabel(`I'm ${g}`.slice(0, 80)).setStyle(ButtonStyle.Success).setEmoji('🎮')
+      new ButtonBuilder().setCustomId(`alink:${guildId}:${userId}:${g}`.slice(0, 100)).setLabel(`I'm ${g}`.slice(0, 80)).setStyle(ButtonStyle.Success).setEmoji('🎮')
     );
     return buttons.length ? new ActionRowBuilder().addComponents(buttons) : null;
   }
@@ -160,7 +161,7 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
       .setTitle('🎮 Is this you?')
       .setColor(0x22c55e)
       .setDescription(`**${match.name}** played for a club in **${member.guild.name}**. If that's you, press the button and your stats will count straight away.`);
-    await member.send({ embeds: [embed], components: [claimRow(member.guild.id, [match.name])] }).catch(() => {});
+    await member.send({ embeds: [embed], components: [claimRow(member.guild.id, [match.name], member.id)] }).catch(() => {});
   }
 
   async function onMemberJoin(member) {
@@ -193,12 +194,23 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
     else lastPrompt.set(k, Date.now());
   }
 
-  // "That's me" buttons for the unlinked gamertags in a match (for recaps)
-  async function claimButtons(guildId, gamertags) {
+  // After a match: DM an "Is this you?" button to the best-matching unlinked member for each
+  // unlinked gamertag. Nothing is posted in public channels.
+  async function promptMatchPlayers(guild, gamertags) {
     const taken = await linkedNames(gamertags);
     const open = [...new Set(gamertags)].filter((g) => g && !taken.has(norm(g)));
-    const row = claimRow(guildId, open);
-    return row ? [row] : [];
+    if (!open.length) return 0;
+    const all = await unlinkedNames(guild.id);
+    const cands = all.filter((c) => open.some((g) => norm(g) === norm(c.name)));
+    if (!cands.length) return 0;
+    const r = await bulkScan(guild, { autoThreshold: 2, prompt: false, only: new Set(cands.map((c) => norm(c.name))) });
+    let sent = 0;
+    for (const p of r.prompted) {
+      const m = await guild.members.fetch(p.userId).catch(() => null);
+      const c = cands.find((x) => norm(x.name) === norm(p.gamertag));
+      if (m && c) { await promptMember(m, c); sent++; }
+    }
+    return sent;
   }
 
   // Discord IDs (of the given list) that already have a gamertag linked
@@ -252,9 +264,9 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
   // Match every unlinked gamertag from this server's matches against every unlinked server member.
   // Strong matches are linked straight away; close ones get an "Is this you?" DM; the rest are
   // returned so a manager can pick the right member.
-  async function bulkScan(guild, { autoThreshold = AUTO_MATCH, promptThreshold = NAME_MATCH, prompt = true } = {}) {
+  async function bulkScan(guild, { autoThreshold = AUTO_MATCH, promptThreshold = NAME_MATCH, prompt = true, only = null } = {}) {
     const result = { linked: [], prompted: [], unmatched: [] };
-    const open = await unlinkedNames(guild.id);
+    const open = (await unlinkedNames(guild.id)).filter((c) => !only || only.has(norm(c.name)));
     if (!open.length) return result;
     const members = [...(await guild.members.fetch().catch(() => guild.members.cache)).values()].filter((m) => !m.user?.bot);
     const linkedIds = await linkedMemberIds(members.map((m) => m.id));
@@ -352,8 +364,16 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
       return true;
     }
     if (!interaction.isButton?.() || !id.startsWith('alink:')) return false;
-    const [, guildId, ...rest] = id.split(':');
-    const gamertag = rest.join(':');
+    // Only from the DM it was sent in, and only by the member it was sent to (old public recap
+    // buttons have no member ID and are refused)
+    const parts = id.split(':');
+    const guildId = parts[1];
+    const boundTo = /^\d{15,25}$/.test(parts[2] || '') ? parts[2] : null;
+    const gamertag = parts.slice(boundTo ? 3 : 2).join(':');
+    if (interaction.guildId || !boundTo || boundTo !== interaction.user.id) {
+      await interaction.reply({ content: "🔒 Linking buttons only work from the DM the bot sent you. If this gamertag is yours, ask a manager or use **/me → Link EA**.", flags: 64 });
+      return true;
+    }
     const result = await link(interaction.user.id, gamertag, null);
     if (!result.ok) {
       await interaction.reply({ content: `❌ ${result.reason}`, flags: 64 });
@@ -389,7 +409,7 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
     return out;
   }
 
-  return { onMemberJoin, onVoiceJoin, claimButtons, handleInteraction, link, similarity, bulkScan, scanReport, sendInvites };
+  return { onMemberJoin, onVoiceJoin, promptMatchPlayers, handleInteraction, link, similarity, bulkScan, scanReport, sendInvites };
 }
 
 module.exports = { createAutoLink, similarity };
