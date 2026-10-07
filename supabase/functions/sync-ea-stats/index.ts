@@ -1075,14 +1075,21 @@ async function syncMemberStats(
       // Get career data for this member (if available)
       const careerData = careerLookup.get(eaUsername.toLowerCase())
       
-      // Find profile for this EA username
-      const { data: profile } = await supabase
+      // Find profile for this EA username; unlinked members get an ea_<gamertag> placeholder
+      // so their club totals show now and move over when they link.
+      let { data: profile } = await supabase
         .from('profiles')
         .select('discord_user_id, discord_username')
-        .eq('ea_username', eaUsername)
+        .ilike('ea_username', eaUsername)
+        .limit(1)
         .maybeSingle()
-      
-      if (!profile || profile.discord_user_id.startsWith('ea_')) continue
+      if (!profile) {
+        const placeholder = { discord_user_id: `ea_${eaUsername}`, discord_username: eaUsername, ea_username: eaUsername }
+        const { error: phErr } = await supabase.from('profiles').upsert(placeholder, { onConflict: 'discord_user_id' })
+        if (phErr) { console.error(`[sync-ea-stats] Placeholder for ${eaUsername} failed:`, phErr.message); continue }
+        profile = placeholder
+      }
+      const isPlaceholder = profile.discord_user_id.startsWith('ea_')
       
       // Extract preferred position from career stats using fallback paths per data map
       const preferredPosition = extractWithFallback(careerData, ['favoritePosition', 'preferredPosition', 'pos']) ||
