@@ -375,13 +375,13 @@ const clubEvents = createEvents({
 
 embedStyle.install({ loadBranding: async (guildId) => (await clubEvents.serverPrefs(guildId)).branding });
 
-const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub });
+const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub, autoLink: () => autoLink });
 
 const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents });
 
 const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState });
 
-const autoLink = createAutoLink({ supabase, getGuildState });
+const autoLink = createAutoLink({ supabase, getGuildState, isManager });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
 
 const scouting = createScouting({ supabase, getGuildState, recruitment });
@@ -9285,15 +9285,8 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
         await interaction.deferReply({ flags: 64 });
 
         try {
-          const result = await autoLinkEaAccounts(guildId, interaction.guild);
-          
-          return interaction.editReply({
-            content: `🔗 **EA Account Auto-Link Complete**\n\n` +
-              `✅ Linked: ${result.linked}\n` +
-              `⏭️ Already linked: ${result.skipped}\n` +
-              `❌ No match found: ${result.noMatch}\n\n` +
-              `Auto-linking uses fuzzy matching (>50% similarity) to connect EA usernames to Discord members.`
-          });
+          const result = await autoLink.bulkScan(interaction.guild);
+          return interaction.editReply(autoLink.scanReport(guildId, result));
         } catch (error) {
           console.error('[Auto-Link] Error:', error);
           return interaction.editReply({ content: `❌ Error: ${error.message}` });

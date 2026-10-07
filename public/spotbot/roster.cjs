@@ -34,6 +34,11 @@ const ROSTER_COMMANDS = [
     options: [
       {
         type: 1,
+        name: 'autolink',
+        description: 'Match every unlinked gamertag from your matches to a server member (managers).'
+      },
+      {
+        type: 1,
         name: 'view',
         description: 'Show the roster grouped by position (or by status).',
         options: [
@@ -297,6 +302,15 @@ function createRoster(deps) {
     const state = await getGuildState(interaction.guildId);
     const club = resolveClub(state, interaction.member);
     if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run `/setclub` first.', flags: 64 });
+
+    if (sub === 'autolink') {
+      if (!(await canManageClub(interaction.member, club))) return interaction.reply({ content: '❌ Managers only.', flags: 64 });
+      const al = deps.autoLink?.();
+      if (!al) return interaction.reply({ content: '❌ Auto-link is not available.', flags: 64 });
+      await interaction.deferReply({ flags: 64 });
+      const result = await al.bulkScan(interaction.guild);
+      return interaction.editReply(al.scanReport(interaction.guildId, result));
+    }
 
     if (sub === 'view') {
       if (!club.team_id) {
