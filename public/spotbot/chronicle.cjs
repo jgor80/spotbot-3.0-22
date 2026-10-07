@@ -97,7 +97,7 @@ function gameStory(m, i, seed) {
   let who = '';
   if (top && (n(top.goals) || n(top.assists) || n(top.rating) >= 7.5)) {
     const bits = [n(top.goals) && `${n(top.goals)} goal${n(top.goals) > 1 ? 's' : ''}`, n(top.assists) && `${n(top.assists)} assist${n(top.assists) > 1 ? 's' : ''}`].filter(Boolean).join(' and ');
-    who = ` **${nm(top)}** led the way${bits ? ` with ${bits}` : ''}${n(top.rating) ? ` and a ${n(top.rating).toFixed(1)} rating` : ''}.`;
+    who = ` **${nm(top)}** led the way${bits ? ` with ${bits}` : ''}${n(top.rating) ? ` and ${/^8/.test(n(top.rating).toFixed(1)) ? 'an' : 'a'} ${n(top.rating).toFixed(1)} rating` : ''}.`;
   }
   const opener = i === 0 ? pick(['The day opened as', 'First up,', 'It started when'], seed) : pick(['Next,', 'Then', 'Later,', 'After that,'], seed + i);
   return `${opener} the club ${verb}.${flavor}${who}`;
