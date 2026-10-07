@@ -401,7 +401,7 @@ function createEvents(deps) {
     const info = typeInfo(event.event_type);
     const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
     const responses = await loadResponses(event.id);
-    const { expected, out } = await expectedPlayers(event);
+    const { expected } = await expectedPlayers(event);
     const deadline = event.deadline_at ? new Date(event.deadline_at) : null;
     const kickoff = T.unix(event.scheduled_at);
     const locked = !event.closed && (await isLocked(event));
@@ -451,8 +451,6 @@ function createEvents(deps) {
     if (waiting.length && !event.closed && !locked) {
       embed.addFields({ name: '⏳ Still to answer', value: `${waiting.length} player${waiting.length === 1 ? '' : 's'}` });
     }
-    void out;
-    if (!event.closed && !locked) lines.length; // keep layout
     embed.addFields({ name: '\u200b', value: '*Anyone in the server can answer. Tap 👥 Who\'s in to see names privately.*' });
 
     const components = [];
@@ -1450,6 +1448,26 @@ function createEvents(deps) {
     };
     shim.deferReply = () => interaction.deferUpdate();
     return pending.kind === 'edit' ? handleEdit(shim) : handleNew(shim);
+  }
+
+  // Private list of who answered, visible only to the person who tapped
+  async function handleListButton(interaction, eventId) {
+    const event = await loadEvent(eventId);
+    if (!event) return interaction.reply({ content: '❌ That event no longer exists.', flags: 64 });
+    const responses = await loadResponses(event.id);
+    const deadline = event.deadline_at ? new Date(event.deadline_at) : null;
+    const label = (r) => {
+      const late = deadline && r.responded_at && new Date(r.responded_at) > deadline ? ' *(late)*' : '';
+      const pos = r.position ? ` ${r.position.split(',').join('/')}` : '';
+      const note = r.note ? ` — 📝 *${r.note.slice(0, 80)}*` : '';
+      return `<@${r.discord_user_id}>${pos}${late}${note}`;
+    };
+    const embed = new EmbedBuilder().setTitle(`👥 ${event.title}`).setColor(0x5865f2);
+    for (const [key, r] of Object.entries(RESPONSES)) {
+      const list = responses.filter((x) => x.response === key);
+      embed.addFields({ name: `${r.emoji} ${r.label} (${list.length})`, value: truncate(list.map(label).join('\n') || '–') });
+    }
+    return interaction.reply({ embeds: [embed], flags: 64, allowedMentions: { parse: [] } });
   }
 
   async function handleComponent(interaction) {
