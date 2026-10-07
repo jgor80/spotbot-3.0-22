@@ -428,22 +428,14 @@ function createEvents(deps) {
       .setDescription(truncate(lines.join('\n'), 4000))
       .setFooter({ text: `${prefs.branding.footer || 'GafferBot'} · event ${event.id.slice(0, 8)}` });
 
+    // The public post shows counts only; names stay private behind "Who's in"
     const answered = new Set(responses.map((r) => r.discord_user_id));
-    const flagged = await reliabilityLookup(
-      event.guild_id,
-      responses.filter((r) => r.response !== 'no').map((r) => r.discord_user_id)
-    ).catch(() => new Map());
-    const label = (r) => {
-      const late = deadline && r.responded_at && new Date(r.responded_at) > deadline ? ' *(late)*' : '';
-      const pos = r.position ? ` ${r.position.split(',').join('/')}` : '';
-      const shows = r.response !== 'no' && flagged.has(r.discord_user_id) ? ` ⚠️ ${flagged.get(r.discord_user_id)}% show-up` : '';
-      const note = r.note ? `\n  📝 *${r.note.slice(0, 80)}*` : '';
-      return `<@${r.discord_user_id}>${pos}${late}${shows}${note}`;
-    };
-    for (const [key, r] of Object.entries(RESPONSES)) {
-      const list = responses.filter((x) => x.response === key);
-      embed.addFields({ name: `${r.emoji} ${r.label} (${list.length})`, value: truncate(list.map(label).join('\n') || '–'), inline: true });
-    }
+    embed.addFields({
+      name: 'Availability',
+      value: Object.entries(RESPONSES)
+        .map(([key, r]) => `${r.emoji} **${responses.filter((x) => x.response === key).length}** ${r.label}`)
+        .join(' · '),
+    });
 
     if (event.position_signup) {
       const counts = {};
@@ -457,15 +449,11 @@ function createEvents(deps) {
 
     const waiting = expected.filter((id) => !answered.has(id));
     if (waiting.length && !event.closed && !locked) {
-      embed.addFields({ name: `⏳ No answer yet (${waiting.length})`, value: truncate(waiting.map((id) => `<@${id}>`).join(' ')) });
+      embed.addFields({ name: '⏳ Still to answer', value: `${waiting.length} player${waiting.length === 1 ? '' : 's'}` });
     }
-    const outLeft = out.filter((o) => !answered.has(o.id));
-    if (outLeft.length) {
-      embed.addFields({
-        name: `Unavailable on the roster (${outLeft.length})`,
-        value: truncate(outLeft.map((o) => `${ROSTER_OUT[o.status]} <@${o.id}>`).join(' ')),
-      });
-    }
+    void out;
+    if (!event.closed && !locked) lines.length; // keep layout
+    embed.addFields({ name: '\u200b', value: '*Anyone in the server can answer. Tap 👥 Who\'s in to see names privately.*' });
 
     const components = [];
     if (!event.closed && !locked) {
@@ -477,6 +465,7 @@ function createEvents(deps) {
         )
       );
       const tools = [
+        new ButtonBuilder().setCustomId(`ev_list:${event.id}`).setLabel("Who's in").setEmoji('👥').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`ev_note:${event.id}`).setLabel('Add a note').setEmoji('📝').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`evl_build:${event.id}`).setLabel('Build Lineup').setEmoji('📋').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(`ev_remind:${event.id}`).setLabel('Remind').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
@@ -1470,6 +1459,7 @@ function createEvents(deps) {
     else if (action === 'ev_pos') await handlePositionPick(interaction, a);
     else if (action === 'ev_remind') await handleRemindButton(interaction, a);
     else if (action === 'ev_note') await handleNoteButton(interaction, a);
+    else if (action === 'ev_list') await handleListButton(interaction, a);
     else if (action === 'ev_when') await handleWhenPick(interaction, a);
     else return false;
     return true;
