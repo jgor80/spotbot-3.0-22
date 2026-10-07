@@ -455,10 +455,19 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
     GatewayIntentBits.DirectMessages
   ]
 });
 installClientGuards(client);
+
+// Keep the Manager Hub pinned as the last message in each club's manager desk channel.
+client.on('messageCreate', (message) => {
+  managerHub.onMessage(message).catch((err) => console.warn('[sticky] message hook failed:', err.message));
+});
+client.once('ready', () => {
+  setTimeout(() => managerHub.initSticky(client).catch((err) => console.warn('[sticky] init failed:', err.message)), 15000);
+});
 
 // =======================
 // FORMATION DEFINITIONS (loaded from JSON for efficiency)
