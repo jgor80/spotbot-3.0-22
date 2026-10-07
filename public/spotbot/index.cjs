@@ -375,13 +375,13 @@ const clubEvents = createEvents({
 
 embedStyle.install({ loadBranding: async (guildId) => (await clubEvents.serverPrefs(guildId)).branding });
 
-const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub });
+const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub, autoLink: () => autoLink });
 
 const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents });
 
 const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState });
 
-const autoLink = createAutoLink({ supabase, getGuildState });
+const autoLink = createAutoLink({ supabase, getGuildState, isManager });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
 
 const scouting = createScouting({ supabase, getGuildState, recruitment });
@@ -421,6 +421,12 @@ const autopilot = createAutopilot({
   loadTeam: squads.loadTeam,
   dashboardUrl: process.env.DASHBOARD_URL
 });
+// After new matches arrive, quietly link gamertags whose name clearly matches a server member
+autopilot.onNewMatches(async (guildId) => {
+  const guild = client.guilds.cache.get(guildId);
+  if (guild) await autoLink.bulkScan(guild, { prompt: false });
+});
+
 
 // GafferBot Premium: the per-server switch, then the features behind it (all under /premium, plus /scout opponent)
 const premium = createPremium({ supabase });
@@ -9285,15 +9291,8 @@ client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(inte
         await interaction.deferReply({ flags: 64 });
 
         try {
-          const result = await autoLinkEaAccounts(guildId, interaction.guild);
-          
-          return interaction.editReply({
-            content: `🔗 **EA Account Auto-Link Complete**\n\n` +
-              `✅ Linked: ${result.linked}\n` +
-              `⏭️ Already linked: ${result.skipped}\n` +
-              `❌ No match found: ${result.noMatch}\n\n` +
-              `Auto-linking uses fuzzy matching (>50% similarity) to connect EA usernames to Discord members.`
-          });
+          const result = await autoLink.bulkScan(interaction.guild);
+          return interaction.editReply(autoLink.scanReport(guildId, result));
         } catch (error) {
           console.error('[Auto-Link] Error:', error);
           return interaction.editReply({ content: `❌ Error: ${error.message}` });
