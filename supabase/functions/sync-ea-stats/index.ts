@@ -1036,7 +1036,8 @@ async function syncMemberStats(
   clubId: string,
   platform: string,
   clubName: string,
-  aggregates: Map<string, AggregatedPlayerStats>
+  aggregates: Map<string, AggregatedPlayerStats>,
+  clubKey?: string
 ) {
   try {
     // Fetch season stats from members endpoint
@@ -1148,6 +1149,36 @@ async function syncMemberStats(
       console.log(`[sync-ea-stats] Member ${eaUsername} fields:`, JSON.stringify(Object.keys(member).sort()))
 
       const normalizedPosition = position ? (positionMap[position.toLowerCase()] || position.toUpperCase()) : null
+
+      // Full EA club totals for this player at this club (the EA Member List numbers)
+      if (clubKey && gamesPlayed > 0) {
+        const { error: pcsErr } = await supabase.from('player_club_stats').upsert({
+          guild_id: guildId,
+          club_key: clubKey,
+          ea_club_id: clubId,
+          discord_user_id: profile.discord_user_id,
+          discord_username: profile.discord_username || eaUsername,
+          games_played: gamesPlayed,
+          wins, losses, draws: Math.max(0, draws),
+          win_rate: gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0,
+          goals, assists, second_assists: secondAssists,
+          clean_sheets: cleanSheets,
+          man_of_match: manOfMatch,
+          avg_match_rating: avgRating,
+          shots, tackles,
+          passes_made: passesMade,
+          pass_attempts: passAttempts,
+          saves, interceptions, clearances, dribbles,
+          dribble_attempts: dribbleAttempts,
+          primary_position: normalizedPosition,
+          baseline_synced: true,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'guild_id,club_key,discord_user_id' })
+        if (pcsErr) console.error(`[sync-ea-stats] Club totals for ${eaUsername} failed:`, pcsErr.message)
+      }
+
+      // Placeholders only get club totals; ratings and summaries are for linked players
+      if (isPlaceholder) { synced++; continue }
 
       addOrUpdateAggregate(aggregates, profile, {
         gamesPlayed,
