@@ -449,14 +449,19 @@ function createEvents(deps) {
       .setDescription(truncate(lines.join('\n'), 4000))
       .setFooter({ text: `${prefs.branding.footer || 'GafferBot'} · event ${event.id.slice(0, 8)}` });
 
-    // The public post shows counts only; names stay private behind "Who's in"
+    // Names are shown for everyone who has answered; "Still to answer" covers the whole server
     const answered = new Set(responses.map((r) => r.discord_user_id));
-    embed.addFields({
-      name: 'Availability',
-      value: Object.entries(RESPONSES)
-        .map(([key, r]) => `${r.emoji} **${responses.filter((x) => x.response === key).length}** ${r.label}`)
-        .join(' · '),
-    });
+    const byResponse = {};
+    for (const r of responses) {
+      (byResponse[r.response] = byResponse[r.response] || []).push(r.discord_user_id);
+    }
+    const availLines = Object.entries(RESPONSES)
+      .map(([key, r]) => {
+        const ids = byResponse[key] || [];
+        return ids.length ? `${r.emoji} **${ids.length}** ${r.label}\n${mentionList(ids)}` : `${r.emoji} **0** ${r.label}`;
+      })
+      .join('\n');
+    embed.addFields({ name: 'Availability', value: truncate(availLines, 1020) });
 
     if (event.position_signup) {
       const counts = {};
