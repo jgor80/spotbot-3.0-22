@@ -94,7 +94,7 @@ function createStatRoles(deps) {
     const totalsAll = seasonTotals(matches);
     const totalsRecent = seasonTotals(matches.filter((m) => m.playedAt.getTime() >= since));
     const ea = await eaGamesFor(club);
-    const holders = trophyHolders(totalsRecent, totalsAll, new Map([...ea].map(([k, v]) => [k, v.games])));
+    const holders = trophyHolders(totalsRecent, totalsAll, new Map([...ea].map(([k, v]) => [k, v.games])), matches.length);
     const names = new Map([...[...ea].map(([k, v]) => [k, v.name]), ...[...totalsAll.values()].map((t) => [t.key, t.name])]);
     return { holders, totalsRecent, totalsAll, names, matches: matches.length };
   }
