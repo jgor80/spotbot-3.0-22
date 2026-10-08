@@ -31,4 +31,4 @@
 
 - [x] Fun Zone: /fun roast, presser, rumour, quote(s), curse + auto roast/curse in session recaps
 - [x] "Mud & Tears" Sunday League satirical card style in Graphics Studio
-- [ ] Make /me visible to every server member
+- [x] Make /me visible to every server member
