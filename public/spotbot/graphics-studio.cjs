@@ -391,7 +391,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       .setCustomId(`gs_dphoto:${token}`).setPlaceholder(`Photo: ${photos.find((p) => p.id === draft.data.photoId)?.label || 'Automatic (best match)'}`)
       .addOptions([{ label: 'Automatic — best match for the pose', value: 'auto' }, ...photos.map((p) => ({ label: p.label, value: p.id, description: p.description || undefined, default: p.id === draft.data.photoId }))]))] : [];
     return { content: kind === 'card' ? `🎴 Pick a kit and ${photos.length ? 'which of your uploaded photos to base it on' : 'style'} (optional), then with stats or just your pro?` : 'Your details are ready. Pick a kit if you like.', components: [...kitRow, ...photoRow, new ActionRowBuilder().addComponents(
-      choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary)),
+      ...choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary)),
       ...(kind === 'card' ? [new ButtonBuilder().setCustomId(`gs_dback:${token}`).setLabel(draft?.data?.noBack ? 'Back of card: Off' : 'Back of card: On').setEmoji('🔄').setStyle(draft?.data?.noBack ? ButtonStyle.Secondary : ButtonStyle.Success)] : []),
     )] };
   }
