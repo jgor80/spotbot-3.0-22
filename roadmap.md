@@ -1,5 +1,6 @@
 
 ## Current
+- [ ] Add and verify a separate 1986-inspired player-card style using the supplied references
 - [x] Fix Graphics Studio style-selection deadlines; test all styles with real Discord builders and verify a live Modern Broadcast render
 - [x] Allow stat-free player cards and non-repeating layouts and virtual-pro poses
 - [ ] Activate the updated Discord panel and verify in-server behavior — blocked on Railway deployment/access
