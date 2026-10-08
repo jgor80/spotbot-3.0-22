@@ -17,3 +17,4 @@
 - Card data is validated in `card-stats.cjs` against the exact club and EA baseline ID; missing metrics and unverified EA win records are omitted, while manual changes are labelled member-edited to prevent misleading claims.
 - `card-layout.cjs` removes unused print-card stat bands and portrait artwork requests reserve only compact lettering space, so optional data never leaves empty panels.
 - Signature cards (broadcast, heritage, esports, synthwave) render in `graphics-signature.cjs` with style-specific text-free art from club-art, so each style's frame and lighting stay distinct.
+- The 1974 Sicilia card (`graphics-sicilia.cjs`) posts a front and a back; the back's lore is seeded from the name and labelled fiction, while its stat line uses only validated card stats.

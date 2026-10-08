@@ -23,6 +23,7 @@ const { renderY2kCard } = require('./graphics-y2k.cjs');
 const { render2010sCard } = require('./graphics-2010s.cjs');
 const { render2020sCard } = require('./graphics-2020s.cjs');
 const { renderSignatureCard, SIGNATURE_STYLES } = require('./graphics-signature.cjs');
+const { renderSiciliaCard, renderSiciliaBack } = require('./graphics-sicilia.cjs');
 const { finishCardSvg } = require('./card-layout.cjs');
 const { cardStats } = require('./card-stats.cjs');
 
@@ -35,6 +36,7 @@ const STYLES = {
   chrome: { label: 'Liquid Chrome', emoji: '🪩', desc: 'Iridescent glass, chrome bevels, frosted plaques' },
   mvp: { label: 'Tournament MVP', emoji: '🏆', desc: 'Carbon fibre, brushed gold slashes, elite tier tags' },
   synthwave: { label: 'Synthwave Chill', emoji: '🌅', desc: 'Sunset grid, neon outlines, chillwave haze' },
+  sicilia: { label: '1974 Palermo Sicilia', emoji: '🍋', desc: 'Calciatori sticker meets Topps: tiles, skyline, card back', cardOnly: true },
   retro1986: { label: '1986 Club Classic', emoji: '⚾', desc: 'Bold club masthead, white frame, position badge', cardOnly: true },
   retro1960s: { label: '1960s Club Heritage', emoji: '🎞️', desc: 'Oval portraits, pennants, colourful print borders', cardOnly: true },
   retro1970s: { label: '1970s Club Archive', emoji: '🌟', desc: 'Arched club lettering, double borders, ribbon frames', cardOnly: true },
@@ -70,6 +72,7 @@ function palette(style, kit) {
     esports: { ink: '#ffffff', accent: hex(primary), sub: '#e5e7eb', panel: '#000000', panelOpacity: 0.55, skew: -8 },
     modern: { ink: '#ffffff', accent: hex(primary), sub: '#cbd5e1', panel: '#0b1220', panelOpacity: 0.72, skew: 0 },
     vintage: { ink: '#f5e9cf', accent: '#c8553d', sub: '#e8d9b5', panel: '#2a1d12', panelOpacity: 0.7, skew: 0, frame: '#efe3c8' },
+    sicilia: { accent: '#e98bb5' },
     retro1986: { accent: hex(primary) },
     retro1960s: { accent: hex(primary) },
     retro1970s: { accent: hex(primary) },
@@ -120,6 +123,7 @@ function headline(text, x, y, size, p, anchor = 'start') {
 
 function playerCard(d) {
   const print = { retro1986: render1986Card, retro1960s: render1960sCard, retro1970s: render1970sCard, retro1990s: render1990sCard, y2k: renderY2kCard, retro2010s: render2010sCard, retro2020s: render2020sCard }[d.style];
+  if (d.style === 'sicilia') return renderSiciliaCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d)) });
   if (SIGNATURE_STYLES.includes(d.style)) return renderSignatureCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d)) }, hex(colorNum(d.kit?.primary, 0x22c55e)));
   if (print) return print(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d)) }, palette(d.style, d.kit).accent);
   const W = 1024, H = 1536, p = palette(d.style, d.kit);
@@ -368,13 +372,14 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`);
     // Print-card lettering and frames are local; artwork reuses the text-free vintage style.
     const printCard = Boolean(STYLES[style]?.cardOnly) || SIGNATURE_STYLES.includes(style);
-    const a = await art({ kind: 'card', style: STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...variation, has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
+    const a = await art({ kind: 'card', style: style === 'sicilia' ? 'sicilia' : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...variation, has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
     if (a.error) return a;
     const png = playerCard({
       art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), name: d.name, position: d.position || null,
       overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition,
     });
-    return { file: new AttachmentBuilder(png, { name: `card-${d.name}.png`.replace(/[^\w.-]/g, '_') }), note: a.usedPro ? null : 'No pro photo on file, so this uses a silhouette — post your pro in #pro-photos for the real thing.' };
+    const back = style === 'sicilia' ? new AttachmentBuilder(renderSiciliaBack({ name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_') }) : null;
+    return { extra: back ? [back] : [], file: new AttachmentBuilder(png, { name: `card-${d.name}.png`.replace(/[^\w.-]/g, '_') }), note: a.usedPro ? null : 'No pro photo on file, so this uses a silhouette — post your pro in #pro-photos for the real thing.' };
   }
   async function buildCard({ guildId, club, userId, displayName, style, noStats = false }) {
     const d = await cardData({ guildId, club, userId, displayName });
@@ -536,7 +541,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       const r = await build();
       if (r.error) return r;
       const content = `${label}${r.note ? `\n_${r.note}_` : ''}`;
-      await channel.send({ content, files: [r.file], allowedMentions: { parse: [] } });
+      await channel.send({ content, files: [r.file, ...(r.extra || [])], allowedMentions: { parse: [] } });
       if (hallOfFame) {
         const hof = club.autopilot?.hof_channel_id && (await guild.channels.fetch(club.autopilot.hof_channel_id).catch(() => null));
         if (hof && hof.id !== channel.id) await hof.send({ content, files: [new AttachmentBuilder(r.file.attachment, { name: r.file.name })], allowedMentions: { parse: [] } }).catch(() => {});
@@ -569,7 +574,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     const { club } = await studioClub(message.guild.id, message.channelId, message.channel?.name);
     if (!club) return;
-    const style = /synth|chillwave|vaporwave|outrun/i.test(text) ? 'synthwave' : /glitch|cyber|neo[- ]?tokyo/i.test(text) ? 'cyber' : /liquid chrome|glass/i.test(text) ? 'chrome' : /\bmvp\b/i.test(text) ? 'mvp' : /broadcast|\btv\b/i.test(text) ? 'modern' : /heritage|1950|50['’]?s/i.test(text) ? 'vintage' : /\bcard\b/.test(text) && /2020|20['’]?s|twenties|prism|mosaic/i.test(text) ? 'retro2020s' : /\bcard\b/.test(text) && /2010|10['’]?s|twenty[ -]?tens/i.test(text) ? 'retro2010s' : /\bcard\b/.test(text) && /y2k|2000|chrome|refractor/i.test(text) ? 'y2k' : /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
+    const style = /sicil|calciatori|1974|palermo card/i.test(text) ? 'sicilia' : /synth|chillwave|vaporwave|outrun/i.test(text) ? 'synthwave' : /glitch|cyber|neo[- ]?tokyo/i.test(text) ? 'cyber' : /liquid chrome|glass/i.test(text) ? 'chrome' : /\bmvp\b/i.test(text) ? 'mvp' : /broadcast|\btv\b/i.test(text) ? 'modern' : /heritage|1950|50['’]?s/i.test(text) ? 'vintage' : /\bcard\b/.test(text) && /2020|20['’]?s|twenties|prism|mosaic/i.test(text) ? 'retro2020s' : /\bcard\b/.test(text) && /2010|10['’]?s|twenty[ -]?tens/i.test(text) ? 'retro2010s' : /\bcard\b/.test(text) && /y2k|2000|chrome|refractor/i.test(text) ? 'y2k' : /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
     let build, label;
     if (/\bcard\b/.test(text)) {
       const target = message.mentions.users.find((u) => !u.bot) || message.author;
