@@ -2677,14 +2677,18 @@ export type Database = {
         Row: {
           assists: number
           avg_rating: number | null
+          ball_recoveries: number | null
           blocks: number | null
+          chances_created: number | null
           clean_sheets: number
           clearances: number | null
+          defensive_stops: number | null
           discord_user_id: string
           dribbles: number | null
           first_match_at: string | null
           goals: number
           guild_id: string
+          hockey_assists: number | null
           interceptions: number
           last_match_at: string | null
           matches: number
@@ -2696,20 +2700,25 @@ export type Database = {
           second_assists: number | null
           shots: number | null
           tackles: number
+          take_on_attempts: number | null
           updated_at: string
           wins: number
         }
         Insert: {
           assists?: number
           avg_rating?: number | null
+          ball_recoveries?: number | null
           blocks?: number | null
+          chances_created?: number | null
           clean_sheets?: number
           clearances?: number | null
+          defensive_stops?: number | null
           discord_user_id: string
           dribbles?: number | null
           first_match_at?: string | null
           goals?: number
           guild_id: string
+          hockey_assists?: number | null
           interceptions?: number
           last_match_at?: string | null
           matches?: number
@@ -2721,20 +2730,25 @@ export type Database = {
           second_assists?: number | null
           shots?: number | null
           tackles?: number
+          take_on_attempts?: number | null
           updated_at?: string
           wins?: number
         }
         Update: {
           assists?: number
           avg_rating?: number | null
+          ball_recoveries?: number | null
           blocks?: number | null
+          chances_created?: number | null
           clean_sheets?: number
           clearances?: number | null
+          defensive_stops?: number | null
           discord_user_id?: string
           dribbles?: number | null
           first_match_at?: string | null
           goals?: number
           guild_id?: string
+          hockey_assists?: number | null
           interceptions?: number
           last_match_at?: string | null
           matches?: number
@@ -2746,6 +2760,7 @@ export type Database = {
           second_assists?: number | null
           shots?: number | null
           tackles?: number
+          take_on_attempts?: number | null
           updated_at?: string
           wins?: number
         }
@@ -2766,6 +2781,7 @@ export type Database = {
           ball_recoveries: number | null
           big_chances: number | null
           blocks: number | null
+          chances_created: number | null
           clean_sheet: boolean | null
           clean_sheet_def: boolean | null
           clean_sheet_gk: boolean | null
@@ -2788,6 +2804,7 @@ export type Database = {
           goals_conceded: number | null
           goals_inside_box: number | null
           guild_id: string
+          hockey_assists: number | null
           id: string
           interceptions: number | null
           man_of_match: boolean | null
@@ -2818,6 +2835,7 @@ export type Database = {
           tackle_attempts: number | null
           tackle_success: number | null
           tackles: number | null
+          take_on_attempts: number | null
           team: string | null
           through_balls: number | null
           touches_in_box: number | null
@@ -2829,6 +2847,7 @@ export type Database = {
           ball_recoveries?: number | null
           big_chances?: number | null
           blocks?: number | null
+          chances_created?: number | null
           clean_sheet?: boolean | null
           clean_sheet_def?: boolean | null
           clean_sheet_gk?: boolean | null
@@ -2851,6 +2870,7 @@ export type Database = {
           goals_conceded?: number | null
           goals_inside_box?: number | null
           guild_id: string
+          hockey_assists?: number | null
           id?: string
           interceptions?: number | null
           man_of_match?: boolean | null
@@ -2881,6 +2901,7 @@ export type Database = {
           tackle_attempts?: number | null
           tackle_success?: number | null
           tackles?: number | null
+          take_on_attempts?: number | null
           team?: string | null
           through_balls?: number | null
           touches_in_box?: number | null
@@ -2892,6 +2913,7 @@ export type Database = {
           ball_recoveries?: number | null
           big_chances?: number | null
           blocks?: number | null
+          chances_created?: number | null
           clean_sheet?: boolean | null
           clean_sheet_def?: boolean | null
           clean_sheet_gk?: boolean | null
@@ -2914,6 +2936,7 @@ export type Database = {
           goals_conceded?: number | null
           goals_inside_box?: number | null
           guild_id?: string
+          hockey_assists?: number | null
           id?: string
           interceptions?: number | null
           man_of_match?: boolean | null
@@ -2944,6 +2967,7 @@ export type Database = {
           tackle_attempts?: number | null
           tackle_success?: number | null
           tackles?: number | null
+          take_on_attempts?: number | null
           team?: string | null
           through_balls?: number | null
           touches_in_box?: number | null
