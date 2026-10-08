@@ -161,6 +161,35 @@ test('recruitment groups exclude inactive and unsaved players, reject outside le
   } finally { global.fetch = originalFetch; }
 });
 
+test('recruitment rotates a bounded group of distinct saved active players and keeps an eligible lead', async () => {
+  const lead = '501557839932948490';
+  const ids = [lead, ...Array.from({ length: 6 }, (_, i) => String(700000000000000000n + BigInt(i)))];
+  const f = fixture({
+    team_rosters: ids.map((discord_user_id) => ({ discord_user_id, status: 'active' })),
+    pro_photo_assets: ids.map((discord_user_id) => ({ discord_user_id })),
+    pro_photos: [],
+  });
+  const originalFetch = global.fetch;
+  let body;
+  global.fetch = async (_, options) => {
+    body = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ image_b64: new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"/>').render().asPng().toString('base64') }) };
+  };
+  try {
+    await f.studio.handleInteraction(f.interaction('gs_style:recruit:palermo', 'select', { values: ['modern'] }));
+    const menu = f.requests.at(-1).components[0].toJSON().components[0];
+    await f.studio.handleInteraction(f.interaction(menu.custom_id, 'select', { values: ['auto'] }));
+    const edit = f.requests.at(-1).components.at(-1).toJSON().components[0];
+    await f.studio.handleInteraction(f.interaction(edit.custom_id, 'button'));
+    await f.studio.handleInteraction(f.interaction(f.requests.at(-1).custom_id, 'modal', { fields: { getTextInputValue: (key) => key === 'headline' ? 'Join our squad' : key === 'featured' ? lead : '' } }));
+    assert.equal(body.team_player_ids.length, 5);
+    assert.equal(new Set(body.team_player_ids).size, 5);
+    assert.equal(body.team_player_ids[0], lead);
+    assert.ok(body.team_player_ids.every((id) => ids.includes(id)));
+    assert.equal(body.discord_user_id, undefined);
+  } finally { global.fetch = originalFetch; }
+});
+
 test('recruiting styles render bounded text without fabricated trial claims or stats', () => {
   for (const style of Object.keys(STYLES)) {
     const png = recruitmentPoster({ style, clubName: 'PCN Palermo', headline: 'Join our club', positions: '', details: '', contact: '' },
