@@ -14,7 +14,7 @@ Module._load = function (request, parent, ...args) {
   if (parent?.filename.endsWith('graphics-studio.cjs') && request === './manager-hub.cjs') return { activeClubs: (s) => s?.clubs || [] };
   return originalLoad.call(this, request, parent, ...args);
 };
-const { createGraphicsStudio, playerCard, STYLES } = require('./graphics-studio.cjs');
+const { createGraphicsStudio, playerCard, STYLES, recruitmentPoster, palette } = require('./graphics-studio.cjs');
 Module._load = originalLoad;
 
 function fixture() {
@@ -84,6 +84,55 @@ test('blank stats on a prefilled card stay blank rather than restoring stats', a
     await f.studio.handleInteraction(f.interaction(f.requests.at(-1).custom_id, 'modal', { fields: { getTextInputValue: (k) => k === 'name' ? 'AirDangus23' : '' } }));
     assert.match(f.requests.at(-1), /Credit limit reached/);
   } finally { global.fetch = originalFetch; }
+});
+
+test('recruiting poster uses an editable user-bound draft, logo choice and saved club kit', async () => {
+  const f = fixture();
+  await f.studio.handleInteraction(f.interaction('gs_recruit:palermo', 'button'));
+  assert.equal(f.calls[0], 'deferReply');
+  const styles = f.requests.at(-1).components[0].toJSON().components[0].options;
+  assert.equal(styles.length, Object.keys(STYLES).length);
+  await f.studio.handleInteraction(f.interaction('gs_style:recruit:palermo', 'select', { values: ['synthwave'] }));
+  const logoMenu = f.requests.at(-1).components[0].toJSON().components[0];
+  assert.equal(logoMenu.options.length, 6);
+  await f.studio.handleInteraction(f.interaction(logoMenu.custom_id, 'select', { values: ['heritage'] }));
+  const edit = f.requests.at(-1).components[0].toJSON().components[0];
+  await f.studio.handleInteraction(f.interaction(edit.custom_id, 'button', { user: { id: 'other' } }));
+  assert.match(f.requests.at(-1).content, /expired/);
+  await f.studio.handleInteraction(f.interaction(edit.custom_id, 'button'));
+  const modal = f.requests.at(-1);
+  assert.equal(modal.components.length, 5);
+  const originalFetch = global.fetch;
+  global.fetch = async (_, options) => {
+    const b = JSON.parse(options.body);
+    assert.equal(b.kind, 'poster'); assert.equal(b.style, 'synthwave');
+    assert.equal(b.kit.primary, 'pink'); assert.equal(b.mood, 'neutral');
+    return { ok: true, json: async () => ({ image_b64: new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="pink"/></svg>').render().asPng().toString('base64') }) };
+  };
+  try {
+    const fields = { headline: 'Become Palermo', positions: 'GK · CB · CAM', details: 'Friday 7:30 PM ET · FC27', contact: 'DM our captain', featured: '' };
+    await f.studio.handleInteraction(f.interaction(modal.custom_id, 'modal', { fields: { getTextInputValue: (k) => fields[k] || '' } }));
+    const post = f.posts.find((p) => p.files?.length);
+    assert.equal(post.files[0].name, 'recruiting-poster.png');
+    assert.deepEqual(post.allowedMentions, { parse: [] });
+    assert.match(lastSvg, /BECOME PALERMO/); assert.match(lastSvg, /GK · CB · CAM/);
+    assert.doesNotMatch(lastSvg, /FULL TIME|VICTORY|EA MATCH DATA/);
+    assert.equal(f.requests.at(-1), '✅ Posted!');
+  } finally { global.fetch = originalFetch; }
+});
+
+test('recruiting styles render bounded text without fabricated trial claims or stats', () => {
+  for (const style of Object.keys(STYLES)) {
+    const png = recruitmentPoster({ style, clubName: 'PCN Palermo', headline: 'Join our club', positions: '', details: '', contact: '' },
+      { esc: (s) => String(s), render: (svg) => { lastSvg = svg; return new Resvg(svg).render().asPng(); } },
+      { ...palette('modern', { primary: 'pink' }), ...palette(style, { primary: 'pink' }) });
+    assert.equal(png.readUInt32BE(16), 1024); assert.equal(png.readUInt32BE(20), 1536);
+    assert.doesNotMatch(lastSvg, /NaN|undefined|Friday|CHAMPIONS|EA MATCH DATA/);
+  }
+  const { logoFor, logosFor } = require('./club-logos.cjs');
+  assert.equal(logoFor({ name: 'PCN Palermo' }, 'vintage').key, 'heritage');
+  assert.equal(logoFor({ name: 'PCN Palermo' }, 'modern').key, 'shield');
+  assert.deepEqual(logosFor({ name: 'Another club' }), []);
 });
 
 test('consecutive editions never repeat pose or layout; all compositions render', () => {
