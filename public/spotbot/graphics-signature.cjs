@@ -109,7 +109,7 @@ function renderSignatureCard(d, G, accent) {
       </g>
       <g transform="translate(${comp === 'editorial' ? 724 : 90} ${comp === 'editorial' ? 1200 : 96})"><rect width="${ovr ? 210 : 140}" height="64" rx="32" fill="${t.glass}" fill-opacity="0.18" stroke="url(#irisL)" stroke-width="2"/><text x="${ovr ? 105 : 70}" y="43" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="30" fill="${t.ink}">${esc(pos)}${ovr ? ` · ${esc(ovr)}` : ''}</text></g>
       ${tag ? `<text x="512" y="1300" text-anchor="middle" font-family="Inter" font-size="16" letter-spacing="2" fill="${t.sub}">${tag}</text>` : ''}
-      ${stats.length ? statRow(1366 - 28, t.ink, t.sub) : ''}
+      ${stats.length ? statRow(1374, t.ink, t.sub) : ''}
       ${footer(t.sub)}`;
   } else if (d.style === 'mvp') {
     // Tournament MVP: carbon fibre, brushed gold slashes, vertical crest column.
@@ -152,7 +152,7 @@ function renderSignatureCard(d, G, accent) {
         <text y="54" font-family="Inter" font-weight="700" font-size="22" letter-spacing="10" fill="${t.ink}">${esc(pos)}${ovr ? `  ·  ${esc(ovr)}` : ''}</text></g>
       <g transform="translate(80 80)">${crest(0, 0, 80, t.ink)}</g>
       ${tag ? `<text x="512" y="1260" text-anchor="middle" font-family="Inter" font-size="17" letter-spacing="3" fill="${t.sub}">${tag}</text>` : ''}
-      ${stats.length ? statRow(1360 - 22, t.hi2, t.sub) : ''}
+      ${stats.length ? statRow(1368, t.hi2, t.sub) : ''}
       ${footer(t.sub)}`;
   }
   return G.render(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${body}</svg>`);
