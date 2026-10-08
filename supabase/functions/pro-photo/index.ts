@@ -54,7 +54,7 @@ async function analyze(dataUrl: string) {
       input: [{
         role: "user",
         content: [
-          { type: "input_text", text: "Is this a screenshot or photo of an EA SPORTS FC Pro Clubs player (Virtual Pro)? Read any position, overall rating, archetype, height and playstyles visible on screen. Use null when not visible. Never invent values." },
+          { type: "input_text", text: "Is this an image of a single footballer that a club member could use as their EA SPORTS FC Pro Clubs player (Virtual Pro)? Accept in-game screenshots (Edit Pro, lobby, player card, match) AND custom renders, cutouts or action shots of one player in kit, even with no game menus or HUD visible and even if very photorealistic — EA renders look lifelike. Set is_pro_clubs_player false only for images with no footballer, multiple players with no clear subject, memes, or obviously unrelated content. Read any position, overall rating, archetype, height and playstyles visible on screen. Use null when not visible. Never invent values." },
           { type: "input_image", image_url: dataUrl },
         ],
       }],
