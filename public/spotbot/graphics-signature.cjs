@@ -144,8 +144,8 @@ function renderSignatureCard(d, G, accent) {
         <g clip-path="url(#sunClip)"><rect x="262" y="${sunY - 250}" width="500" height="500" fill="url(#sunS)"/>${[0, 1, 2, 3, 4, 5].map((i) => `<rect x="262" y="${sunY + 30 + i * 36}" width="500" height="${6 + i * 3}" fill="#4b1670"/>`).join('')}</g>
         <g stroke="${t.hi2}" stroke-width="2" opacity="0.7">${Array.from({ length: 13 }, (_, i) => `<path d="M${512 + (i - 6) * 40} 860 L${512 + (i - 6) * 260} 1340"/>`).join('')}${[0, 1, 2, 3, 4, 5, 6].map((i) => `<path d="M0 ${860 + i * i * 10 + i * 20} H${W}"/>`).join('')}</g>
         <rect y="830" width="${W}" height="30" fill="${t.hi}" opacity="0.25"/>
-        ${d.art ? `<image href="${d.art}" x="0" y="0" width="${W}" height="1340" preserveAspectRatio="xMidYMin slice" style="mix-blend-mode:screen" opacity="0.9"/>` : ''}
-        <rect width="${W}" height="1340" fill="${accent}" opacity="0.08"/><rect width="${W}" height="1340" fill="url(#fadeS)"/></g>
+        ${d.art ? `<image href="${d.art}" x="0" y="0" width="${W}" height="1340" preserveAspectRatio="xMidYMin slice"/>` : ''}
+        <rect width="${W}" height="1340" fill="url(#fadeS)"/></g>
       <rect x="44" y="44" width="936" height="1280" rx="24" fill="none" stroke="url(#neonS)" stroke-width="6" filter="url(#glowS)"/>
       <text x="512" y="${comp === 'editorial' ? 120 : 130}" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${fit(club, 760, 64, 0.6)}" letter-spacing="10" fill="none" stroke="${t.hi2}" stroke-width="2.5" filter="url(#glowS)">${esc(club)}</text>
       <g transform="translate(512 1150)" text-anchor="middle"><text font-family="Oswald" font-weight="700" font-style="italic" font-size="${fit(name, 800, 100, 0.5)}" fill="url(#neonS)" filter="url(#glowS)">${esc(name)}</text>
