@@ -1,5 +1,6 @@
 
 ## Current
+- [x] Add and verify 2020s-inspired player-card designs
 - [x] Add and verify 2010s-inspired player-card designs
 - [x] Add and verify Y2K-inspired player-card designs
 - [x] Add and verify 1990s-inspired player-card designs

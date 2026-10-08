@@ -226,3 +226,28 @@ test('2010s Club Signature renders chrome, sweep and foil with optional accurate
   playerCard({ ...base, name: 'A very long player name with forty letters', clubName: 'A very long football club name for testing' });
   assert.doesNotMatch(lastSvg, /NaN|undefined/);
 });
+
+test('2020s Club Prism renders angular, mosaic and sculpted editions with optional stats', () => {
+  const base = { style: 'retro2020s', kit: { primary: 'pink' }, name: 'AirDangus23', clubName: 'PCN Palermo', position: 'CAM', stats: [] };
+  const frames = [];
+  for (const composition of ['lower-third', 'editorial', 'side-panel']) {
+    const png = playerCard({ ...base, composition });
+    assert.equal(png.subarray(1, 4).toString(), 'PNG');
+    assert.equal(png.readUInt32BE(16), 1024);
+    assert.equal(png.readUInt32BE(20), 1434);
+    assert.match(lastSvg, /AIRDANGUS23/);
+    assert.match(lastSvg, /PCN PALERMO/);
+    assert.match(lastSvg, /CAM/);
+    assert.doesNotMatch(lastSvg, /NaN|undefined|EA MATCH DATA|>GAMES<|Topps|Panini|Bowman|AUTOGRAPH|ROOKIE|GEM MINT/);
+    frames.push(lastSvg);
+  }
+  assert.equal(new Set(frames).size, 3);
+  assert.match(frames[0], /fill="url\(#clubStreak20\)"/);
+  assert.match(frames[1], /fill="url\(#mosaic20\)"/);
+  assert.match(frames[2], /M40 350 Q512 10/);
+  playerCard({ ...base, stats: [['GAMES', '22'], ['GOALS', '9']] });
+  assert.match(lastSvg, />GAMES</);
+  assert.match(lastSvg, />22</);
+  playerCard({ ...base, name: 'A very long player name with forty letters', clubName: 'A very long football club name for testing' });
+  assert.doesNotMatch(lastSvg, /NaN|undefined/);
+});
