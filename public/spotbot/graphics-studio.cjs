@@ -435,7 +435,8 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const verified = (assets || []).map((a) => a.analysis?.kit_number).find((n) => Number.isInteger(n) && n >= 1 && n <= 99);
     // Card back: one row per archived season, plus the EA Member List total for this exact club.
     const short = String(club.name || '').split(/\s+/).pop().slice(0, 10).toUpperCase();
-    const seasonRows = (seasons || []).map((s) => ({ s, r: (archive || []).find((a) => a.season_code === s.code) })).filter(({ r }) => r && r.matches > 0)
+    const archiveRows = Array.isArray(archive) ? archive : [];
+    const seasonRows = (Array.isArray(seasons) ? seasons : []).map((s) => ({ s, r: archiveRows.find((a) => a.season_code === s.code) })).filter(({ r }) => r && r.matches > 0)
       .map(({ s, r }) => ({ label: `'${String(s.code).replace(/\D/g, '')} ${short}`, apps: r.matches, goals: r.goals, assists: r.assists, cs: r.clean_sheets, motm: r.motm, rating: r.avg_rating }));
     const ea = (statsRows || []).find((s) => s.club_key === club.key && (!club.ea_club_id || !s.ea_club_id || String(s.ea_club_id) === String(club.ea_club_id)) && s.games_played > 0);
     const clubTotals = ea ? { apps: ea.games_played, goals: ea.goals, assists: ea.assists, cs: ea.clean_sheets, motm: ea.man_of_match, rating: ea.avg_match_rating } : null;
