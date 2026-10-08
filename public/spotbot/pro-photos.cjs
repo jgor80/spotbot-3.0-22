@@ -44,7 +44,10 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
 
   async function onMessage(message) {
     if (!message.guild || message.author?.bot) return;
-    const images = [...message.attachments.values()].filter((a) => IMAGE_RE.test(a.contentType || ''));
+    // Every image in the message counts: Discord sometimes omits contentType on multi-uploads, so fall back to the file extension.
+    const isImage = (a) => IMAGE_RE.test(a.contentType || '') || /\.(png|jpe?g|webp)(\?|$)/i.test(a.name || a.url || '');
+    const seen = new Set();
+    const images = [...message.attachments.values()].filter((a) => isImage(a) && !seen.has(a.url) && seen.add(a.url));
     if (!images.length || !(await isPhotoChannel(message))) return;
     const tagged = message.mentions.users.find((u) => !u.bot);
     let target = message.author;
