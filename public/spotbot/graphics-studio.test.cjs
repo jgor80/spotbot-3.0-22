@@ -168,7 +168,9 @@ test('recruiting styles render bounded text without fabricated trial claims or s
   }
   const { logoFor, logosFor } = require('./club-logos.cjs');
   assert.equal(logoFor({ name: 'PCN Palermo' }, 'vintage').key, 'heritage');
-  assert.equal(logoFor({ name: 'PCN Palermo' }, 'modern').key, 'shield');
+  assert.equal(logoFor({ name: 'PCN Palermo' }, 'modern').key, 'current');
+  assert.equal(logoFor({ name: 'PCN Palermo' }, 'synthwave').key, 'current');
+  assert.equal(logoFor({ name: 'PCN Palermo' }, 'modern', 'shield').key, 'shield');
   assert.deepEqual(logosFor({ name: 'Another club' }), []);
 });
 

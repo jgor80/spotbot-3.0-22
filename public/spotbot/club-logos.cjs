@@ -1,5 +1,6 @@
 // Uploaded Palermo identities are scoped to Palermo, never another club.
 const choices = [
+  ['current', 'Current Palermo logo (2019–present)', 'palermo-logo-current'],
   ['eagle', 'Palermo eagle lettering', 'palermo-logo-43'],
   ['shield', 'Pink and black shield', 'palermo-logo-44'],
   ['heritage', 'Vintage gold shield', 'palermo-logo-45'],
@@ -12,7 +13,7 @@ function logosFor(club) {
 function logoFor(club, style, key) {
   const logos = logosFor(club);
   const preferred = key && logos.find((l) => l.key === key);
-  return preferred || logos.find((l) => l.key === (/vintage|sicilia|retro19/.test(style || '') ? 'heritage' : 'shield')) || null;
+  return preferred || logos.find((l) => l.key === (/vintage|sicilia|retro19/.test(style || '') ? 'heritage' : 'current')) || null;
 }
 function assetUrl(url) {
   return url.startsWith('/') ? `https://spotbot3.lovable.app${url}` : url;
