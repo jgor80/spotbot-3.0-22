@@ -28,6 +28,7 @@ const { renderSignatureCard, SIGNATURE_STYLES } = require('./graphics-signature.
 const { renderSiciliaCard, renderSiciliaBack } = require('./graphics-sicilia.cjs');
 const { finishCardSvg } = require('./card-layout.cjs');
 const { cardStats } = require('./card-stats.cjs');
+const { kitsFor, kitFor, withKit } = require('./club-kits.cjs');
 const { logosFor, logoFor, assetUrl } = require('./club-logos.cjs');
 const { recruitmentPoster } = require('./graphics-recruitment.cjs');
 
@@ -344,11 +345,18 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     for (const [k, v] of DRAFTS) if (Date.now() - v.ts > 30 * 60e3) DRAFTS.delete(k);
     return token;
   }
-  function draftPrompt(token, kind) {
+  function draftPrompt(token, kind, club) {
     const choices = kind === 'card'
       ? [['stats', 'With Stats'], ['portrait', 'Portrait Only']]
       : [['edit', 'Edit Before Rendering']];
-    return { content: kind === 'card' ? '🎴 With stats or just your pro?' : 'Your details are ready.', components: [new ActionRowBuilder().addComponents(
+    const draft = DRAFTS.get(token);
+    const kits = kitsFor(club);
+    const chosen = draft?.data?.kitKey;
+    const auto = kitFor(club, draft?.style);
+    const kitRow = kits.length ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
+      .setCustomId(`gs_dkit:${token}`).setPlaceholder(`Kit: ${chosen ? kits.find((k) => k.key === chosen)?.label : `Automatic (${auto.label})`}`)
+      .addOptions([{ label: `Automatic — ${auto.label}`.slice(0, 100), value: 'auto' }, ...kits.map((k) => ({ label: k.label, value: k.key, default: k.key === chosen }))]))] : [];
+    return { content: kind === 'card' ? '🎴 Pick a kit (optional), then with stats or just your pro?' : 'Your details are ready. Pick a kit if you like.', components: [...kitRow, new ActionRowBuilder().addComponents(
       choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary))
     )] };
   }
