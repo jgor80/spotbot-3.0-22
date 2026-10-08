@@ -23,4 +23,4 @@
 - All team-focused Studio artwork selects up to five distinct saved active players from the exact club roster and sends ordered identity references to club-art; group outputs are never stored as individual photo references, preventing cross-player identity contamination.
 - Palermo kits live in `public/spotbot/club-kits.cjs`: vintage card styles auto-pair with a matching era kit and members can override per graphic from the draft prompt, so the art matches the card's era; non-Palermo clubs keep their saved `club.kit`.
 - `fun-zone.cjs`: real-stat roasts, fiction-marked rumours.
-- Season sets: `player_season_archive` (never purged) feed card backs (`graphics-card-back.cjs`) with the exact-club EA total.
+- Season sets: `player_season_archive` (never purged) feed backs (`graphics-card-back.cjs`) with the exact-club EA total.
