@@ -1,5 +1,6 @@
 import { LeaderboardPlayer } from "@/types/player";
 import { RatingBadge } from "@/components/player/RatingBadge";
+import { PlayerCardArt } from "@/components/player/PlayerCardArt";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -238,9 +239,9 @@ export function LeaderboardTable({ players, onPlayerClick, highlightColumn }: Le
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-medium text-sm">
+                    <PlayerCardArt discordUserId={player.discord_user_id} name={player.ea_username || player.discord_username || "Player"} className="h-12 w-9 shrink-0" fallback={<div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-medium text-sm">
                       {(player.ea_username || player.discord_username)?.charAt(0).toUpperCase() || "?"}
-                    </div>
+                    </div>} />
                     <div className="flex items-center gap-2">
                       <div>
                         <p className="font-medium">{player.ea_username || player.discord_username || "Unknown"}</p>

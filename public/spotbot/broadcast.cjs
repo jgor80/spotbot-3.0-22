@@ -185,6 +185,30 @@ function createBroadcast(deps) {
     return out;
   }
 
+  async function cardsFor(guildId, names) {
+    const out = new Map();
+    const secret = process.env.BOT_PROXY_SECRET;
+    const url = process.env.SUPABASE_URL;
+    if (!secret || !url || !names.length) return out;
+    try {
+      const { data: profiles } = await supabase.from('profiles').select('discord_user_id, ea_username').in('ea_username', names);
+      const ids = [...new Set((profiles || []).map(p => p.discord_user_id).filter(id => /^\d{5,25}$/.test(id)))];
+      if (!ids.length) return out;
+      const response = await fetch(`${url.replace(/\/$/, '')}/functions/v1/player-cards`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-bot-secret': secret },
+        body: JSON.stringify({ action: 'latest', guild_id: guildId, discord_user_ids: ids }), signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) return out;
+      const { cards } = await response.json();
+      const byId = new Map((cards || []).map(card => [card.discord_user_id, card.front_url]));
+      await Promise.all((profiles || []).map(async p => {
+        const image = await G.fetchImage(byId.get(p.discord_user_id));
+        if (image && p.ea_username) out.set(p.ea_username.toLowerCase(), image);
+      }));
+    } catch { /* Saved-card outages must not stop recaps. */ }
+    return out;
+  }
+
   // EA's pro overall per gamertag (lowercase), when EA returns it
   async function eaOveralls(club) {
     const out = new Map();
@@ -247,6 +271,7 @@ function createBroadcast(deps) {
       .sort((a, b) => b.rating - a.rating);
     const motmLine = players.find((p) => p.motm) || players[0] || null;
     const avatars = motmLine ? await avatarsFor(row.guild_id, [motmLine.name]) : new Map();
+    const savedCards = motmLine ? await cardsFor(row.guild_id, [motmLine.name]) : new Map();
     const form = history
       .slice(0, 5)
       .reverse()
@@ -263,6 +288,7 @@ function createBroadcast(deps) {
       crestAgainst: theirCrest,
       players,
       motm: motmLine && { ...motmLine, avatar: avatars.get(motmLine.name.toLowerCase()) || null },
+      savedCard: motmLine ? savedCards.get(motmLine.name.toLowerCase()) || null : null,
       accent: Number.isInteger(prefs.branding?.color) ? prefs.branding.color : undefined,
       competition: MATCH_TYPES[md._matchCategory] || MATCH_TYPES[row.match_type] || null,
       dateText: dateText(match.playedAt, prefs.timezone),
@@ -303,6 +329,7 @@ function createBroadcast(deps) {
         chosen.map((t) => t.name),
       );
     const prefPos = new Map((profiles || []).filter((p) => p.ea_username).map((p) => [p.ea_username.toLowerCase(), p.preferred_position]));
+    const savedCards = await cardsFor(guildId, chosen.map(t => t.name));
     let derived = false;
     const cards = chosen.map((t) => {
       const ea = overalls.get(t.key);
@@ -313,6 +340,7 @@ function createBroadcast(deps) {
         position: /^[A-Z]{2,3}$/.test(pos) ? pos : LINE_LABEL[t.line],
         overall: ea || derivedOverall(t.avgRating),
         avatar: avatars.get(t.key) || null,
+        savedCard: savedCards.get(t.key) || null,
         stats: cardStats(t),
         badges: badgesFor(t, totals),
         inForm: t.ratings.length >= 5 && t.recentAvg(5) > IN_FORM_RATING,
@@ -326,7 +354,7 @@ function createBroadcast(deps) {
       const png = G.cardSheet({
         cards: cards.slice(i, i + CARDS_PER_IMAGE),
         title: `${club.name} squad cards`,
-        subtitle: `${label} · ${matches.length} matches${derived ? ' · OVR from match ratings where EA gives none' : ''}`,
+        subtitle: `${label} · ${matches.length} matches${savedCards.size ? ' · Saved cards retain collection stats' : ''}${derived ? ' · OVR from match ratings where EA gives none' : ''}`,
         accent,
         footer: prefs.branding?.footer || 'GafferBot',
       });
@@ -370,9 +398,10 @@ function createBroadcast(deps) {
     );
     const prefs = await events.serverPrefs(guildId);
     const guild = client()?.guilds.cache.get(guildId);
+    const savedCards = await cardsFor(guildId, picked.map(p => p.t.name));
     const local = T.localParts(new Date(), prefs.timezone);
     const png = G.totwPoster({
-      players: picked.map(({ t, line }) => ({ name: t.name, line, rating: t.avgRating, club: t.club, avatar: avatars.get(t.key) || null })),
+      players: picked.map(({ t, line }) => ({ name: t.name, line, rating: t.avgRating, club: t.club, avatar: avatars.get(t.key) || null, savedCard: savedCards.get(t.key) || null })),
       title: `${guild?.name || 'Your server'} · week ending ${local.day} ${MONTHS[local.month - 1]}`,
       subtitle: `Best average match rating, min ${MIN_TOTW_GAMES} games`,
       accent: Number.isInteger(prefs.branding?.color) ? prefs.branding.color : undefined,
