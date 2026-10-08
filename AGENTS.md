@@ -24,3 +24,4 @@
 - Palermo kits live in `public/spotbot/club-kits.cjs`: vintage card styles auto-pair with a matching era kit and members can override per graphic from the draft prompt, so the art matches the card's era; non-Palermo clubs keep their saved `club.kit`.
 - `fun-zone.cjs`: real-stat roasts, fiction-marked rumours.
 - Season sets: `player_season_archive` (never purged) feed backs (`graphics-card-back.cjs`) plus exact-club EA total.
+- Hidden EA stats (second assists, dribbles, possessions won/lost, blocks) are decoded from match_event_aggregate codes in both ea-player-stats.cjs and the backfill_advanced_player_stats() DB function, which reruns hourly; keep the code meanings identical in both so history and live recaps agree.
