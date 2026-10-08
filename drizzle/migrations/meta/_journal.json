@@ -36,6 +36,13 @@
       "when": 1791488052182,
       "tag": "0004_season_card_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791488062991,
+      "tag": "0005_season_archive_schedule",
+      "breakpoints": true
     }
   ]
 }
