@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { PlayerCardArt } from "./PlayerCardArt";
+import { CareerSets } from "./CareerSets";
 
 interface PlayerProfileProps {
   player: PlayerProfileType;
@@ -359,6 +360,8 @@ export function PlayerProfileView({ player }: PlayerProfileProps) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <CareerSets guildId={(player as { guild_id?: string }).guild_id} discordUserId={player.discord_user_id} />
     </div>
   );
 }
