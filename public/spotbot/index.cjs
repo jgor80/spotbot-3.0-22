@@ -5478,6 +5478,14 @@ async function routeInteraction(interaction) {
       if (await squads.handleCommand(interaction, cmd)) return;
       if (await roster.handleCommand(interaction, cmd)) return;
 
+      if (cmd === 'graphics') {
+        const panel = await graphicsStudio.panelFor(guildId).catch(() => null);
+        if (!panel) {
+          return interaction.reply({ content: 'No club is set up yet — run /setup first.', flags: 64 });
+        }
+        return interaction.reply(panel);
+      }
+
       if (cmd === 'spotpanel') {
         await interaction.reply({
           embeds: [buildEmbedForClub(guildId, state.currentClubKey, state)],
