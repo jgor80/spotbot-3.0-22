@@ -606,6 +606,14 @@ function createAutopilot(deps) {
     );
     const nugget = statNugget(match, upTo);
     if (nugget) embed.addFields({ name: '💡 Talking point', value: nugget });
+    // Hidden EA stats: best player for each, only when someone actually registered one
+    const hidden = [['second_assists', '🔁 Second assists'], ['dribbles', '🪄 Dribbles'], ['possessions_won', '🧲 Possessions won'], ['interceptions', '🧠 Interceptions'], ['blocks', '🧱 Blocks']]
+      .map(([k, l]) => {
+        const top = [...match.players].sort((a, b) => Number(b[k] || 0) - Number(a[k] || 0))[0];
+        return top && Number(top[k]) > 0 ? `${l}: ${name(top)} ${top[k]}` : null;
+      })
+      .filter(Boolean);
+    if (hidden.length) embed.addFields({ name: '🔬 Under the hood', value: truncate(hidden.join('\n')) });
     const units = RX.unitBadges(match);
     if (units.length) embed.addFields({ name: '🏅 Unit badges', value: truncate(units.join('\n')) });
     const fan = RX.fantasyTop(match);
