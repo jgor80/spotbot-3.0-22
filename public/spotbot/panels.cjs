@@ -38,6 +38,7 @@ const TYPED = '__typed';
 
 const PANEL_COMMANDS = [
   { name: 'me', description: 'Your player hub: stats, availability, check-in, positions, EA link, free agent and more.' },
+  { name: 'graphics', description: 'Open the Graphics Studio panel: player cards, match posters and championship banners.' },
 ];
 
 // One entry per former command (or subcommand). fields: which inputs the form asks for, in order
