@@ -1,5 +1,6 @@
 
 ## Current
+- [ ] Reuse saved rendered player cards in postgame imagery and app player views
 - [x] Add verified year eras to Discord logo choices; distinguish custom era-inspired crests
 - [x] Use groups of saved active club players in recruitment, banners and other team-focused graphics
 - [x] Automatically feature a saved active club player on recruitment posters when none is specified
