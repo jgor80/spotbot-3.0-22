@@ -11,7 +11,9 @@ const {
   EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
+const axios = require('axios');
 const G = require('./graphics.cjs');
+const { toFcPlatform } = require('./ea-fc27.cjs');
 const { activeClubs } = require('./manager-hub.cjs');
 const { toInsightMatches } = require('./club-insights.cjs');
 const { nextVariation } = require('./graphics-variants.cjs');
@@ -239,9 +241,36 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return { state, club: null };
   }
 
-  async function crestFor(guildId) {
+  // Club crest for graphics: the uploaded branding logo wins, then the club's real
+  // EA badge (from its crestAssetId), then nothing (renderers fall back to initials).
+  const CREST_CACHE = new Map(); // ea:<clubId> -> data url | null
+  async function crestFor(guildId, club) {
     const prefs = serverPrefs ? await serverPrefs(guildId).catch(() => ({})) : {};
-    return G.fetchImage(prefs?.branding?.logo_url);
+    if (prefs?.branding?.logo_url) return G.fetchImage(prefs.branding.logo_url);
+    const id = club?.ea_club_id;
+    if (!id) return null;
+    const key = `ea:${id}`;
+    if (CREST_CACHE.has(key)) return CREST_CACHE.get(key);
+    let crest = null;
+    try {
+      const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/info', {
+        params: { platform: toFcPlatform(club.ea_platform), clubIds: id },
+        headers: {
+          accept: 'application/json',
+          origin: 'https://www.ea.com',
+          referer: 'https://www.ea.com/',
+          'user-agent': 'Mozilla/5.0',
+        },
+        timeout: 8000,
+        validateStatus: () => true,
+      });
+      const info = Array.isArray(res.data) ? res.data[0] : res.data?.[id];
+      const crestId = info?.customKit?.crestAssetId || info?.crestAssetId;
+      const url = G.eaCrestUrl(crestId);
+      if (url) crest = await G.fetchImage(url);
+    } catch { /* leave crest null */ }
+    CREST_CACHE.set(key, crest);
+    return crest;
   }
 
   function panelMessage(club) {
@@ -380,7 +409,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (a.error) return a;
     const number = d.number !== undefined ? d.number : (a.kitNumber || '');
     const png = playerCard({
-      art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), name: d.name, position: d.position || null,
+      art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club), name: d.name, position: d.position || null,
       overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number,
     });
     const back = style === 'sicilia' ? new AttachmentBuilder(renderSiciliaBack({ number, name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_') }) : null;
@@ -450,7 +479,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const mood = d.result === 'win' ? 'win' : d.result === 'loss' ? 'loss' : 'draw';
     const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: motmId, mood, competition: clip(d.competition, 60), ...nextVariation(`${guildId}:poster:${style}`) });
     if (a.error) return a;
-    const png = matchPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crestFor: await crestFor(guildId), crestAgainst: null, ...d });
+    const png = matchPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crestFor: await crestFor(guildId, club), crestAgainst: null, ...d });
     return { file: new AttachmentBuilder(png, { name: 'full-time.png' }) };
   }
   async function buildPoster({ guildId, club, style }) {
@@ -508,7 +537,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   async function renderLineup({ guildId, club, style, d }) {
     const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.heroId, mood: 'neutral', competition: clip(d.subtitle, 60), ...nextVariation(`${guildId}:lineup:${style}`) });
     if (a.error) return a;
-    const png = lineupPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), ...d });
+    const png = lineupPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club), ...d });
     return { file: new AttachmentBuilder(png, { name: 'starting-xi.png' }) };
   }
 
@@ -533,7 +562,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     const a = await art({ kind: 'banner', style, club_name: club.name, kit: club.kit || {}, competition, discord_user_id: heroId, ...nextVariation(`${guildId}:banner:${style}`) });
     if (a.error) return a;
-    const png = banner({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), headline: title, competition, seasonTag, roster });
+    const png = banner({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club), headline: title, competition, seasonTag, roster });
     return { file: new AttachmentBuilder(png, { name: 'champions-banner.png' }) };
   }
 
