@@ -107,7 +107,7 @@ function renderSignatureCard(d, G, accent) {
         <text x="42" y="140" font-family="Inter" font-weight="700" font-size="20" letter-spacing="6" fill="${t.sub}">${esc(club)}</text>
         <circle cx="760" cy="${stats.length ? 86 : 98}" r="62" fill="${t.bg}" fill-opacity="0.5" stroke="url(#irisL)" stroke-width="4"/>${crest(722, (stats.length ? 86 : 98) - 46, 76, t.ink)}
       </g>
-      <g transform="translate(90 96)"><rect width="${ovr ? 210 : 140}" height="64" rx="32" fill="${t.glass}" fill-opacity="0.18" stroke="url(#irisL)" stroke-width="2"/><text x="${ovr ? 105 : 70}" y="43" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="30" fill="${t.ink}">${esc(pos)}${ovr ? ` · ${esc(ovr)}` : ''}</text></g>
+      <g transform="translate(${comp === 'editorial' ? 724 : 90} ${comp === 'editorial' ? 1200 : 96})"><rect width="${ovr ? 210 : 140}" height="64" rx="32" fill="${t.glass}" fill-opacity="0.18" stroke="url(#irisL)" stroke-width="2"/><text x="${ovr ? 105 : 70}" y="43" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="30" fill="${t.ink}">${esc(pos)}${ovr ? ` · ${esc(ovr)}` : ''}</text></g>
       ${tag ? `<text x="512" y="1300" text-anchor="middle" font-family="Inter" font-size="16" letter-spacing="2" fill="${t.sub}">${tag}</text>` : ''}
       ${stats.length ? statRow(1366 - 28, t.ink, t.sub) : ''}
       ${footer(t.sub)}`;
@@ -131,7 +131,7 @@ function renderSignatureCard(d, G, accent) {
       ${footer(t.sub)}`;
   } else {
     // Synthwave / chillwave: sunset bands, perspective grid, neon outline lettering.
-    const sunY = comp === 'editorial' ? 300 : 420;
+    const sunY = comp === 'editorial' ? 500 : 420;
     body = `<defs><linearGradient id="skyS" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#120a33"/><stop offset="0.45" stop-color="#4b1670"/><stop offset="0.75" stop-color="${t.hi}"/><stop offset="1" stop-color="${t.sun}"/></linearGradient>
       <linearGradient id="sunS" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff07a"/><stop offset="0.5" stop-color="${t.sun}"/><stop offset="1" stop-color="${t.hi}"/></linearGradient>
       <linearGradient id="neonS" x1="0" y1="0" x2="1" y2="0"><stop stop-color="${t.hi2}"/><stop offset="1" stop-color="${t.hi}"/></linearGradient>
