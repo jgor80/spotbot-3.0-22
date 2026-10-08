@@ -378,11 +378,12 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const printCard = Boolean(STYLES[style]?.cardOnly) || SIGNATURE_STYLES.includes(style);
     const a = await art({ kind: 'card', style: style === 'sicilia' ? 'sicilia' : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...variation, has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
     if (a.error) return a;
+    const number = d.number !== undefined ? d.number : (a.kitNumber || '');
     const png = playerCard({
       art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), name: d.name, position: d.position || null,
-      overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number: a.kitNumber || '',
+      overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number,
     });
-    const back = style === 'sicilia' ? new AttachmentBuilder(renderSiciliaBack({ number: a.kitNumber || '', name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_') }) : null;
+    const back = style === 'sicilia' ? new AttachmentBuilder(renderSiciliaBack({ number, name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_') }) : null;
     return { extra: back ? [back] : [], file: new AttachmentBuilder(png, { name: `card-${d.name}.png`.replace(/[^\w.-]/g, '_') }), note: a.usedPro ? null : 'No pro photo on file, so this uses a silhouette — post your pro in #pro-photos for the real thing.' };
   }
   async function buildCard({ guildId, club, userId, displayName, style, noStats = false }) {
