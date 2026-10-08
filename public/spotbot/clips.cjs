@@ -4,7 +4,7 @@
 // - Any platform (PS5 shares, YouTube/Twitch/Medal links, uploaded videos): when posted in the clips
 //   channel, the bot replies with the club match it was played in, if one lines up.
 const { EmbedBuilder } = require('discord.js');
-const { activeClubs } = require('./squads.cjs');
+const { activeClubs } = require('./manager-hub.cjs');
 
 const NAME_RE = /clips?|highlights?/i;
 const VIDEO_URL_RE = /https?:\/\/\S*(youtu\.?be|twitch\.tv|medal\.tv|streamable|xbox\.com|gamerdvr|xboxclips|playstation)\S*/i;

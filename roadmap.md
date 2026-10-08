@@ -41,3 +41,5 @@
 - [x] Pregame Matchday Programme post
 - [x] 3D card binder page on the web app
 - [x] All-time trophy cabinet with season history
+- [x] Smarter Chronicle: game scripts, richer storyline, position-aware notebook (no clean sheets for attackers)
+- [ ] Auto-post Xbox club-match clips to #clips-and-highlights (built) — blocked on a working Xbox (OpenXBL) key + Railway redeploy; PS5 has no clip access, shared clips get match-tagged instead
