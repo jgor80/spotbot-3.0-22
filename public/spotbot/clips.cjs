@@ -4,6 +4,7 @@
 // - Any platform (PS5 shares, YouTube/Twitch/Medal links, uploaded videos): when posted in the clips
 //   channel, the bot replies with the club match it was played in, if one lines up.
 const { EmbedBuilder } = require('discord.js');
+const { activeClubs } = require('./squads.cjs');
 
 const NAME_RE = /clips?|highlights?/i;
 const VIDEO_URL_RE = /https?:\/\/\S*(youtu\.?be|twitch\.tv|medal\.tv|streamable|xbox\.com|gamerdvr|xboxclips|playstation)\S*/i;
@@ -93,7 +94,7 @@ function createClips({ supabaseUrl, secret, getGuildState, updateClub, loadMatch
     const hasVideo = [...(message.attachments?.values() || [])].some((a) => /^video\//.test(a.contentType || '') || /\.(mp4|mov|webm)$/i.test(a.name || ''));
     if (!hasVideo && !VIDEO_URL_RE.test(message.content || '')) return;
     const state = await getGuildState(message.guild.id);
-    const clubs = Object.values(state.clubs || {}).filter((c) => c && c.key);
+    const clubs = activeClubs(state);
     const club = clubs.find((c) => clipsChannel(message.guild, c)?.id === message.channelId);
     if (!club || !loadMatches) return;
     const matches = await loadMatches(message.guild.id, club.key).catch(() => []);
