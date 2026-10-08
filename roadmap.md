@@ -1,5 +1,6 @@
 
 ## Current
+- [ ] Add recruiting posters in existing style filters and uploaded Palermo logo choices
 - [x] Verify card stat provenance and reflow cards without optional text or stats
 - [x] Preserve player photo collections and choose suitable poses for graphics
 - [x] Add and verify 2020s-inspired player-card designs
