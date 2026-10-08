@@ -85,11 +85,19 @@ function seamlessLogo(dataUrl) {
       // Keep the main crest plus any sizeable part near it (letters, stars); far-off small marks go.
       let cx0 = W, cy0 = H, cx1 = 0, cy1 = 0; const main = sizes.indexOf(big);
       for (let k = 0; k < W * H; k++) if (label[k] === main) { const x = k % W, y = (k / W) | 0; cx0 = Math.min(cx0, x); cx1 = Math.max(cx1, x); cy0 = Math.min(cy0, y); cy1 = Math.max(cy1, y); }
-      for (let k = 0; k < W * H; k++) {
-        const l = label[k]; if (l < 0 || l === main) continue;
-        const x = k % W, y = (k / W) | 0, inside = x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1;
-        if (!inside && sizes[l] < big * 0.15) px[k * 4 + 3] = 0;
-      }
+      // Isolated small marks outside the crest go; clustered parts (wordmark letters) stay.
+      const boxes = sizes.map(() => [W, H, 0, 0]);
+      for (let k = 0; k < W * H; k++) { const l = label[k]; if (l < 0) continue; const b = boxes[l], x = k % W, y = (k / W) | 0; b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y); }
+      const drop = new Set();
+      sizes.forEach((n, l) => {
+        if (l === main || n >= big * 0.15) return;
+        const [bx0, by0, bx1, by1] = boxes[l];
+        if (bx1 >= cx0 && bx0 <= cx1 && by1 >= cy0 && by0 <= cy1) return;
+        const m = Math.max(bx1 - bx0, by1 - by0);
+        const near = boxes.some((o, j) => j !== l && j !== main && sizes[j] > 20 && o[2] >= bx0 - m && o[0] <= bx1 + m && o[3] >= by0 - m && o[1] <= by1 + m);
+        if (!near) drop.add(l);
+      });
+      for (let k = 0; k < W * H; k++) if (drop.has(label[k])) px[k * 4 + 3] = 0;
       const r = Math.max(4, Math.round((x1 - x0) * 0.022)), alpha = new Uint8Array(W * H);
       for (let k = 0; k < W * H; k++) alpha[k] = px[k * 4 + 3];
       const rows = new Uint8Array(W * H);
