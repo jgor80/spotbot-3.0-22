@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
 
   const found = await proPhoto(b);
   const ref = found?.file ?? null;
-  const kitNumber = found?.kitNumber ?? null;
+  const kitNumber = b.kit_number_override ?? found?.kitNumber ?? null;
   const prompt = promptFor(b, !!ref, kitNumber);
   const size = b.kind === "banner" ? "1536x1024" : "1024x1536";
   let res: Response;
