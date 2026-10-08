@@ -108,7 +108,7 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
   global.fetch = async (_, options) => {
     const b = JSON.parse(options.body);
     assert.equal(b.kind, 'poster'); assert.equal(b.style, 'synthwave');
-    assert.equal(b.kit.primary, 'pink'); assert.equal(b.mood, 'neutral');
+    assert.equal(b.kit.primary, 'pale pink'); assert.match(b.kit.description, /diagonal slash/); assert.equal(b.mood, 'neutral');
     assert.equal(b.discord_user_id, '501557839932948490');
     return { ok: true, json: async () => ({ image_b64: new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="pink"/></svg>').render().asPng().toString('base64') }) };
   };
