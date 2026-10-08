@@ -24,3 +24,4 @@
 - Palermo kits live in `public/spotbot/club-kits.cjs`: vintage card styles auto-pair with a matching era kit and members can override per graphic from the draft prompt, so the art matches the card's era; non-Palermo clubs keep their saved `club.kit`.
 - `fun-zone.cjs` roasts use real stats; rumours marked fiction.
 - Season card sets: `player_season_archive`, nightly from match rows by `ea_seasons`; history never purged.
+- Every Graphics Studio player card can post a back (`graphics-card-back.cjs`, Sicilia keeps its own) built from `player_season_archive` rows plus the exact-club EA Member List total, so backs only print saved numbers.

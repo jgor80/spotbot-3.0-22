@@ -32,7 +32,7 @@ function renderCardBack(d, G) {
     return out;
   }).join('');
   const tot = d.totals;
-  const totY = Math.max(y + 30, 560);
+  const totY = y + 50;
   const totals = tot ? `<rect x="70" y="${totY - 48}" width="1294" height="70" fill="${t.accent}" opacity="0.92"/>` + cols.map(([, k], i) => `<text x="${xs[i]}" y="${totY}" ${i ? 'text-anchor="middle"' : ''} font-family="Oswald" font-weight="700" font-size="36" fill="${t.headInk}">${esc(i ? cell(tot, k) : 'EA CLUB TOTAL')}</text>`).join('') : '';
   const empty = !rows.length && !tot ? `<text x="717" y="460" text-anchor="middle" font-family="Oswald" font-size="40" fill="${t.sub}">NO SEASONS RECORDED YET</text>` : '';
   return G.render(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
