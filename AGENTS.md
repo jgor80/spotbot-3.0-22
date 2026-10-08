@@ -20,3 +20,4 @@
 - The 1974 Sicilia card (`graphics-sicilia.cjs`) posts a front and a back; the back's lore is seeded from the name and labelled fiction, while its stat line uses only validated card stats.
 - Shirt numbers appear in art and on cards only when the vision check legibly read them from the player's own upload (`analysis.kit_number`); generated art never verifies a number, so numbers can't be invented.
 - Recruiting posters use user-bound Graphics Studio drafts and a local lettering renderer with existing text-free poster art; uploaded club-logo collections are club-scoped and style-matched so another club never inherits Palermo branding.
+- Recruitment auto-selection intersects the exact club team's active roster with saved photo collections before requesting artwork, so blank featured-player fields cannot select another club's player or an unsaved identity.
