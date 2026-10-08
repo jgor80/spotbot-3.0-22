@@ -772,6 +772,27 @@ export type Database = {
         }
         Relationships: []
       }
+      ea_seasons: {
+        Row: {
+          code: string
+          created_at: string
+          label: string
+          starts_at: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          label: string
+          starts_at: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          label?: string
+          starts_at?: string
+        }
+        Relationships: []
+      }
       evaluator_trust_scores: {
         Row: {
           accuracy_score: number | null
@@ -2652,6 +2673,71 @@ export type Database = {
         }
         Relationships: []
       }
+      player_season_archive: {
+        Row: {
+          assists: number
+          avg_rating: number | null
+          clean_sheets: number
+          discord_user_id: string
+          first_match_at: string | null
+          goals: number
+          guild_id: string
+          interceptions: number
+          last_match_at: string | null
+          matches: number
+          motm: number
+          saves: number
+          season_code: string
+          tackles: number
+          updated_at: string
+          wins: number
+        }
+        Insert: {
+          assists?: number
+          avg_rating?: number | null
+          clean_sheets?: number
+          discord_user_id: string
+          first_match_at?: string | null
+          goals?: number
+          guild_id: string
+          interceptions?: number
+          last_match_at?: string | null
+          matches?: number
+          motm?: number
+          saves?: number
+          season_code: string
+          tackles?: number
+          updated_at?: string
+          wins?: number
+        }
+        Update: {
+          assists?: number
+          avg_rating?: number | null
+          clean_sheets?: number
+          discord_user_id?: string
+          first_match_at?: string | null
+          goals?: number
+          guild_id?: string
+          interceptions?: number
+          last_match_at?: string | null
+          matches?: number
+          motm?: number
+          saves?: number
+          season_code?: string
+          tackles?: number
+          updated_at?: string
+          wins?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "player_season_archive_season_code_fkey"
+            columns: ["season_code"]
+            isOneToOne: false
+            referencedRelation: "ea_seasons"
+            referencedColumns: ["code"]
+          },
+        ]
+      }
       player_stats: {
         Row: {
           archetypeid: string | null
@@ -4395,7 +4481,6 @@ export type Database = {
       }
     }
     Functions: {
-      archive_old_club_matches: { Args: never; Returns: number }
       archive_old_global_league_matches: { Args: never; Returns: number }
       cleanup_old_event_occurrences: { Args: never; Returns: number }
       has_any_role: {
@@ -4414,6 +4499,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      refresh_player_season_archive: { Args: never; Returns: number }
       user_has_guild_access: {
         Args: { check_guild_id: string }
         Returns: boolean
