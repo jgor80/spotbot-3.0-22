@@ -66,6 +66,30 @@ function seamlessLogo(dataUrl) {
     // Sticker-cut outline in the backdrop colour: keeps dark crest parts readable on dark art and
     // fills the gaps the knock-out opened, so it reads as an intentional die-cut badge.
     if (knocked) {
+      // Drop the faint anti-aliased rim of the removed backdrop and stray marks (e.g. a separate stamp).
+      for (let i = 3; i < px.length; i += 4) if (px[i] < 90) px[i] = 0;
+      const label = new Int32Array(W * H).fill(-1), sizes = [];
+      for (let k = 0; k < W * H; k++) {
+        if (label[k] >= 0 || !px[k * 4 + 3]) continue;
+        const id = sizes.length; let n = 0; const st = [k]; label[k] = id;
+        while (st.length) {
+          const q = st.pop(); n++; const x = q % W, y = (q / W) | 0;
+          for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+            if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+            const nk = ny * W + nx; if (label[nk] < 0 && px[nk * 4 + 3]) { label[nk] = id; st.push(nk); }
+          }
+        }
+        sizes.push(n);
+      }
+      const big = Math.max(0, ...sizes);
+      // Keep the main crest plus any sizeable part near it (letters, stars); far-off small marks go.
+      let cx0 = W, cy0 = H, cx1 = 0, cy1 = 0; const main = sizes.indexOf(big);
+      for (let k = 0; k < W * H; k++) if (label[k] === main) { const x = k % W, y = (k / W) | 0; cx0 = Math.min(cx0, x); cx1 = Math.max(cx1, x); cy0 = Math.min(cy0, y); cy1 = Math.max(cy1, y); }
+      for (let k = 0; k < W * H; k++) {
+        const l = label[k]; if (l < 0 || l === main) continue;
+        const x = k % W, y = (k / W) | 0, inside = x >= cx0 && x <= cx1 && y >= cy0 && y <= cy1;
+        if (!inside && sizes[l] < big * 0.15) px[k * 4 + 3] = 0;
+      }
       const r = Math.max(4, Math.round((x1 - x0) * 0.022)), alpha = new Uint8Array(W * H);
       for (let k = 0; k < W * H; k++) alpha[k] = px[k * 4 + 3];
       const rows = new Uint8Array(W * H);
