@@ -13,6 +13,7 @@ const {
 } = require('discord.js');
 const axios = require('axios');
 const G = require('./graphics.cjs');
+const { seamlessLogo } = require('./logo-cleanup.cjs');
 const { toFcPlatform } = require('./ea-fc27.cjs');
 const { activeClubs } = require('./manager-hub.cjs');
 const { toInsightMatches } = require('./club-insights.cjs');
@@ -255,7 +256,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (url) {
       const cached = CREST_CACHE.get(url);
       if (cached) return cached;
-      const image = await G.fetchImage(url);
+      const fetched = await G.fetchImage(url);
+      // Knock out flat logo backdrops (e.g. a white square) so the crest blends into every style.
+      const image = fetched && seamlessLogo(fetched);
       if (image) { CREST_CACHE.set(url, image); return image; }
       // Never silently substitute another team's badge when a saved logo fails to load.
       if (selected) throw new Error('The selected club logo could not be loaded. Please try again.');
@@ -280,7 +283,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       const info = Array.isArray(res.data) ? res.data[0] : res.data?.[id];
       const crestId = info?.customKit?.crestAssetId || info?.crestAssetId;
       const url = G.eaCrestUrl(crestId);
-      if (url) crest = await G.fetchImage(url);
+      if (url) { const raw = await G.fetchImage(url); crest = raw && seamlessLogo(raw); }
     } catch { /* leave crest null */ }
     CREST_CACHE.set(key, crest);
     return crest;
