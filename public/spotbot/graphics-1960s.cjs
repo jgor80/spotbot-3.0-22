@@ -10,7 +10,7 @@ function render1960sCard(d, G, accent) {
   const size = (t, w, max) => Math.max(20, Math.min(max, Math.floor(w / Math.max(t.length * 0.6, 1))));
   const stats = (d.stats || []).slice(0, 6);
   const cells = 900 / Math.max(stats.length, 1);
-  const lift = stats.length ? 0 : 68;
+  const lift = stats.length ? 0 : 48;
   const shape = oval ? `<ellipse cx="512" cy="${651 + lift / 2}" rx="446" ry="${460 + lift / 2}"/>` : `<rect x="54" y="${pennant ? 54 : 74}" width="916" height="${(pennant ? 1020 : 1000) + lift}" rx="${pennant ? 62 : 0}"/>`;
   const photoY = oval ? 191 : pennant ? 54 : 74;
   const photoH = (oval ? 920 : pennant ? 1020 : 1000) + lift;
