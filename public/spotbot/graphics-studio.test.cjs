@@ -155,3 +155,27 @@ test('1970s Club Archive renders arched and ribbon editions with optional stats'
   assert.match(lastSvg, />GAMES</);
   assert.match(lastSvg, />22</);
 });
+
+test('1990s Club Collection renders three distinct editions with accurate labels and optional stats', () => {
+  const base = { style: 'retro1990s', kit: { primary: 'pink' }, name: 'AirDangus23', clubName: 'PCN Palermo', position: 'CAM', stats: [] };
+  const frames = [];
+  for (const composition of ['lower-third', 'editorial', 'side-panel']) {
+    const png = playerCard({ ...base, composition });
+    assert.equal(png.subarray(1, 4).toString(), 'PNG');
+    assert.equal(png.readUInt32BE(16), 1024);
+    assert.equal(png.readUInt32BE(20), 1434);
+    assert.match(lastSvg, /AIRDANGUS23/);
+    assert.match(lastSvg, /CAM/);
+    assert.doesNotMatch(lastSvg, /NaN|undefined|EA MATCH DATA|>GAMES<|Topps|Donruss|Leaf|DEBUT/);
+    frames.push(lastSvg);
+  }
+  assert.equal(new Set(frames).size, 3);
+  assert.match(frames[0], /url\(#speckle90\)/);
+  assert.match(frames[1], /CLUB COLLECTION/);
+  assert.match(frames[2], /x="128"/);
+  playerCard({ ...base, stats: [['GAMES', '22'], ['GOALS', '9']] });
+  assert.match(lastSvg, />GAMES</);
+  assert.match(lastSvg, />22</);
+  playerCard({ ...base, composition: 'side-panel', name: 'A very long player name with forty letters', clubName: 'A very long football club name for testing' });
+  assert.doesNotMatch(lastSvg, /NaN|undefined/);
+});
