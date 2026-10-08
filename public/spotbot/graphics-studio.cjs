@@ -250,10 +250,15 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   async function crestFor(guildId, club, style, logoKey) {
     const prefs = serverPrefs ? await serverPrefs(guildId).catch(() => ({})) : {};
     const selected = logoFor(club, style, logoKey);
-    const url = logoKey && selected ? assetUrl(selected.url) : prefs?.branding?.logo_url || (selected ? assetUrl(selected.url) : null);
+    // Uploaded club identities take precedence even for Automatic; server branding may be an unrelated EA badge.
+    const url = selected ? assetUrl(selected.url) : prefs?.branding?.logo_url;
     if (url) {
-      if (!CREST_CACHE.has(url)) CREST_CACHE.set(url, await G.fetchImage(url));
-      if (CREST_CACHE.get(url)) return CREST_CACHE.get(url);
+      const cached = CREST_CACHE.get(url);
+      if (cached) return cached;
+      const image = await G.fetchImage(url);
+      if (image) { CREST_CACHE.set(url, image); return image; }
+      // Never silently substitute another team's badge when a saved logo fails to load.
+      if (selected) throw new Error('The selected club logo could not be loaded. Please try again.');
     }
     const id = club?.ea_club_id;
     if (!id) return null;
