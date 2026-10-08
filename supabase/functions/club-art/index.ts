@@ -5,7 +5,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
 import { rankPhotos } from "./photo-selection.ts";
-import { teamPrompt, appendReferences } from "./team-art.ts";
+import { teamPrompt, appendReferences, isRearFacing } from "./team-art.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -100,22 +100,28 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number |
   return `Vertical football club artwork. ${subject} Stadium background lit in the club colours. Style: ${look}. ${variation} ${noText}`;
 }
 
-async function proPhoto(b: z.infer<typeof Body>): Promise<{ file: File; kitNumber: number | null } | null> {
+async function proPhoto(b: z.infer<typeof Body>, team = false): Promise<{ file: File; kitNumber: number | null; description: string | null } | null> {
   if (!b.discord_user_id) return null;
   const { data: assets } = await db.from("pro_photo_assets").select("image_url,pose,source_kind,graphic_kind,analysis")
     .eq("discord_user_id", b.discord_user_id).order("created_at", { ascending: false }).limit(200);
-  const candidates = rankPhotos(assets ?? [], b.pose, b.kind, b.club_name);
+  // Group art uses only the player's own face-visible uploads: rear shots force the model to invent a face,
+  // and generated art can already carry another player's traits.
+  const pool = team ? (assets ?? []).filter((a) => a.source_kind === "upload" && !isRearFacing(a.analysis?.description)) : (assets ?? []);
+  const candidates: { image_url: string; analysis?: { description?: string } | null }[] = rankPhotos(pool, b.pose, b.kind, b.club_name);
   // Latest number legibly read from the player's own uploads; generated art never verifies a number.
   const n = (assets ?? []).find((a) => a.source_kind === "upload" && Number.isInteger(a.analysis?.kit_number))?.analysis?.kit_number;
   const kitNumber = Number.isInteger(n) && n >= 1 && n <= 99 ? n : null;
-  const { data: latest } = await db.from("pro_photos").select("image_url").eq("discord_user_id", b.discord_user_id).maybeSingle();
-  if (latest) candidates.push(latest);
+  if (!team || !candidates.length) {
+    const { data: latest } = await db.from("pro_photos").select("image_url").eq("discord_user_id", b.discord_user_id).maybeSingle();
+    if (latest) candidates.push(latest);
+  }
   for (const photo of candidates) {
     try {
       const res = await fetch(photo.image_url);
       const type = (res.headers.get("content-type") || "").split(";")[0];
       if (!res.ok || !/^image\/(png|jpe?g|webp)$/.test(type)) continue;
-      return { file: new File([await res.arrayBuffer()], `pro.${type.split("/")[1]}`, { type }), kitNumber };
+      const description = photo.analysis?.description ?? null;
+      return { file: new File([await res.arrayBuffer()], `pro.${type.split("/")[1]}`, { type }), kitNumber, description };
     } catch { /* Try another saved photo when a reference is no longer reachable. */ }
   }
   return null;
