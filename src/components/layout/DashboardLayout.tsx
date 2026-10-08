@@ -49,6 +49,7 @@ const primaryNavItems = [
 
 const moreNavItems = [
   { path: "/games", label: "Games", icon: Gamepad2 },
+  { path: "/trophy-room", label: "Trophy Room", icon: Medal },
   { path: "/ratings", label: "Ratings", icon: Star },
   { path: "/drafts", label: "Drafts", icon: Swords },
   { path: "/scouting", label: "Scouting", icon: Target },

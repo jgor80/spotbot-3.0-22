@@ -67,6 +67,7 @@ const App = () => (
                   <Route path="/games" element={<ProtectedRoute><RecentGamesPage /></ProtectedRoute>} />
                   <Route path="/insights" element={<ProtectedRoute><InsightsPage /></ProtectedRoute>} />
                   <Route path="/squadiq" element={<ProtectedRoute><SquadIQPanel /></ProtectedRoute>} />
+                  <Route path="/trophy-room" element={<ProtectedRoute><CabinetPage /></ProtectedRoute>} />
                   <Route path="/players" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
