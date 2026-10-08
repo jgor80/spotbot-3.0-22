@@ -1,9 +1,7 @@
 // Premium: stat trophies. Discord roles the bot hands out and takes back on its own after each
-// synced match, so players chase them all season:
-//   Club Legend   50+ appearances for the club (EA's own games-played count, else synced matches)
-//   Golden Boot   top scorer over the last 30 days of synced matches
-//   Playmaker     top assister over the last 30 days
-//   Golden Glove  most clean sheets over the last 30 days (keepers first, defenders if no keeper)
+// synced match. Weekly belts cover the last 7 days, so they change hands week to week:
+//   Club Legend   played in 75%+ of all the club's games (needs 10+ club games)
+//   Golden Boot / Playmaker / Golden Glove / The Wall / MVP / Iron Man / Sniper  weekly leaders
 //   In-Form       average match rating above 8.5 over their last 5 games
 // Ties share a trophy. Players need their EA gamertag linked (/linkea) to receive roles.
 // Role ids live on the club (autopilot.trophy_roles); a deleted role is recreated next time.
@@ -13,44 +11,62 @@ const { activeClubs, resolveClub } = require('./manager-hub.cjs');
 const { seasonTotals, leaders, num } = require('./player-season.cjs');
 
 const DAY = 24 * 60 * 60 * 1000;
-const WINDOW_DAYS = 30;
-const LEGEND_GAMES = 50;
+const WINDOW_DAYS = 7;
+const LEGEND_SHARE = 0.75;
+const LEGEND_MIN_CLUB_GAMES = 10;
 const IN_FORM_RATING = 8.5;
 const IN_FORM_GAMES = 5;
+const IRON_MAN_MIN = 3;
+const SNIPER_MIN_GOALS = 3;
 
 const TROPHIES = {
-  legend: { name: '👑 Club Legend', color: 0xf5b301, help: `${LEGEND_GAMES}+ appearances` },
-  boot: { name: '⚽ Golden Boot', color: 0xfacc15, help: `Top scorer, last ${WINDOW_DAYS} days` },
-  playmaker: { name: '🎯 Playmaker', color: 0x38bdf8, help: `Most assists, last ${WINDOW_DAYS} days` },
-  glove: { name: '🧤 Golden Glove', color: 0x22c55e, help: `Most clean sheets, last ${WINDOW_DAYS} days` },
+  legend: { name: '👑 Club Legend', color: 0xf5b301, help: `Played in ${LEGEND_SHARE * 100}%+ of all club games` },
+  boot: { name: '⚽ Golden Boot', color: 0xfacc15, help: 'Top scorer this week (last 7 days)' },
+  playmaker: { name: '🎯 Playmaker', color: 0x38bdf8, help: 'Most assists this week' },
+  glove: { name: '🧤 Golden Glove', color: 0x22c55e, help: 'Most clean sheets this week' },
+  wall: { name: '🛡️ The Wall', color: 0x64748b, help: 'Most tackles + interceptions this week' },
+  mvp: { name: '⭐ MVP', color: 0xeab308, help: 'Most Man of the Match awards this week' },
+  ironman: { name: '🦾 Iron Man', color: 0x94a3b8, help: `Most appearances this week (${IRON_MAN_MIN}+)` },
+  sniper: { name: '🔫 Sniper', color: 0xef4444, help: `Best goals-per-shot this week (${SNIPER_MIN_GOALS}+ goals)` },
   inform: { name: '🔥 In-Form', color: 0xf97316, help: `Avg rating over ${IN_FORM_RATING} in last ${IN_FORM_GAMES} games` },
 };
 
 const TROPHIES_SUBCOMMAND = {
   type: 1,
   name: 'trophies',
-  description: 'Who holds Club Legend, Golden Boot, Playmaker, Golden Glove and In-Form.',
+  description: 'Who holds the weekly stat trophies, Club Legend and In-Form.',
   options: [
     { name: 'club', description: 'Club name (if the server has more than one).', type: 3, required: false },
     { name: 'refresh', description: 'Leaders: re-check and hand out the roles now.', type: 5, required: false },
   ],
 };
 
-// Pure: who should hold each trophy. totalsRecent from the last 30 days, totalsAll from everything
-// synced, eaGames maps lowercase gamertag -> EA's games played for the club.
-function trophyHolders(totalsRecent, totalsAll, eaGames = new Map()) {
+// Pure: who should hold each trophy. totalsRecent from the last 7 days, totalsAll from everything
+// synced, eaGames maps lowercase gamertag -> EA's games played for the club, clubGames = club match count.
+function trophyHolders(totalsRecent, totalsAll, eaGames = new Map(), clubGames = 0) {
   const recent = [...totalsRecent.values()];
   const all = [...totalsAll.values()];
   const keys = (list) => list.map((t) => t.key);
   const keepers = recent.filter((t) => t.line === 'GK');
   const gloveFrom = keepers.some((t) => t.cleanSheets > 0) ? keepers : recent.filter((t) => t.line === 'DEF');
-  const legendKeys = new Set(all.filter((t) => t.games >= LEGEND_GAMES).map((t) => t.key));
-  for (const [key, games] of eaGames) if (games >= LEGEND_GAMES) legendKeys.add(key);
+  // EA's member list counts games we never synced, so the club total is the larger of the two.
+  const eaMax = Math.max(0, ...eaGames.values());
+  const total = Math.max(clubGames, eaMax);
+  const legendKeys = new Set();
+  if (total >= LEGEND_MIN_CLUB_GAMES) {
+    const need = Math.ceil(total * LEGEND_SHARE);
+    for (const t of all) if (t.games >= need) legendKeys.add(t.key);
+    for (const [key, games] of eaGames) if (games >= need) legendKeys.add(key);
+  }
   return {
     legend: [...legendKeys],
     boot: keys(leaders(recent, (t) => t.goals)),
     playmaker: keys(leaders(recent, (t) => t.assists)),
     glove: keys(leaders(gloveFrom, (t) => t.cleanSheets)),
+    wall: keys(leaders(recent, (t) => num(t.tackles) + num(t.interceptions))),
+    mvp: keys(leaders(recent, (t) => num(t.motm))),
+    ironman: keys(leaders(recent.filter((t) => t.games >= IRON_MAN_MIN), (t) => t.games)),
+    sniper: keys(leaders(recent.filter((t) => t.goals >= SNIPER_MIN_GOALS && num(t.shots) > 0), (t) => t.goals / num(t.shots))),
     inform: keys(all.filter((t) => t.ratings.length >= IN_FORM_GAMES && t.recentAvg(IN_FORM_GAMES) > IN_FORM_RATING)),
   };
 }
