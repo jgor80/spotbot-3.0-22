@@ -18,6 +18,7 @@ const { nextVariation } = require('./graphics-variants.cjs');
 const { render1986Card } = require('./graphics-1986.cjs');
 const { render1960sCard } = require('./graphics-1960s.cjs');
 const { render1970sCard } = require('./graphics-1970s.cjs');
+const { render1990sCard } = require('./graphics-1990s.cjs');
 
 const NAME_RE = /graphic|media-?studio|studio/i;
 const STYLES = {
@@ -27,6 +28,7 @@ const STYLES = {
   retro1986: { label: '1986 Club Classic', emoji: '⚾', desc: 'Bold club masthead, white frame, position badge', cardOnly: true },
   retro1960s: { label: '1960s Club Heritage', emoji: '🎞️', desc: 'Oval portraits, pennants, colourful print borders', cardOnly: true },
   retro1970s: { label: '1970s Club Archive', emoji: '🌟', desc: 'Arched club lettering, double borders, ribbon frames', cardOnly: true },
+  retro1990s: { label: '1990s Club Collection', emoji: '💿', desc: 'Colour-pop borders, clean action frames, vertical club type', cardOnly: true },
   obsidian: { label: 'Obsidian & Gold', emoji: '🛡️', desc: 'Black and gold, elite' },
 };
 const HEAD = 'Oswald';
@@ -58,6 +60,7 @@ function palette(style, kit) {
     retro1986: { accent: hex(primary) },
     retro1960s: { accent: hex(primary) },
     retro1970s: { accent: hex(primary) },
+    retro1990s: { accent: hex(primary) },
     obsidian: { ink: '#f6e7b0', accent: '#d4af37', sub: '#d6d3d1', panel: '#000000', panelOpacity: 0.7, skew: 0, frame: '#d4af37' },
   }[style] || {};
   return base;
@@ -99,6 +102,7 @@ function playerCard(d) {
   if (d.style === 'retro1986') return render1986Card(d, G, palette(d.style, d.kit).accent);
   if (d.style === 'retro1960s') return render1960sCard(d, G, palette(d.style, d.kit).accent);
   if (d.style === 'retro1970s') return render1970sCard(d, G, palette(d.style, d.kit).accent);
+  if (d.style === 'retro1990s') return render1990sCard(d, G, palette(d.style, d.kit).accent);
   const W = 1024, H = 1536, p = palette(d.style, d.kit);
   const stats = (d.stats || []).slice(0, 6);
   const editorial = d.composition === 'editorial';
@@ -553,7 +557,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     const { club } = await studioClub(message.guild.id, message.channelId, message.channel?.name);
     if (!club) return;
-    const style = /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
+    const style = /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
     let build, label;
     if (/\bcard\b/.test(text)) {
       const target = message.mentions.users.find((u) => !u.bot) || message.author;
