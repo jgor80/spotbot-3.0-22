@@ -1,0 +1,1 @@
+SELECT cron.schedule('advanced-stats-refresh', '15 * * * *', $$SELECT public.backfill_advanced_player_stats(); SELECT public.refresh_player_season_archive();$$);

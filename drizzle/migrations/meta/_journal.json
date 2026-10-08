@@ -57,6 +57,13 @@
       "when": 1791489838593,
       "tag": "0007_run_advanced_stats_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791489894926,
+      "tag": "0008_schedule_advanced_stats",
+      "breakpoints": true
     }
   ]
 }
