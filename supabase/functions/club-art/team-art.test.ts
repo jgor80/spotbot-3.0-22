@@ -10,8 +10,8 @@ test('ordered group references preserve separate identities and verified numbers
   const prompt = teamPrompt({ kind: 'banner', club_name: 'PCN Palermo', mood: 'win', pose: 'celebrate' }, refs, 'vintage', 'Pink club kit');
   assert.match(prompt, /exactly 2 distinct saved players/);
   assert.match(prompt, /Reference image 1 is player 1/);
-  assert.match(prompt, /Only this player may wear verified number 23/);
-  assert.match(prompt, /Reference image 2 is player 2.*no shirt or shorts number/);
+  assert.match(prompt, /Only player 1 may wear verified number 23/);
+  assert.match(prompt, /Player 2 must have no shirt or shorts number/);
   assert.match(prompt, /signature move/);
   assert.match(prompt, /Wide landscape/);
   const form = new FormData();
