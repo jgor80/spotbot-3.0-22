@@ -605,7 +605,33 @@ function createAutopilot(deps) {
       { name: '⭐ Man of the Match', value: motm ? `${name(motm)}${Number(motm.rating) > 0 ? ` (${Number(motm.rating).toFixed(1)})` : ''}${motmLine(motm)}` : '–', inline: true }
     );
     const nugget = statNugget(match, upTo);
-    if (nugget) embed.addFields({ name: '💡 Talking point', value: nugget });
+    // Story: talking point, milestones, H2H, catalyst, and a gentle roast on defeats
+    const story = [];
+    if (nugget) story.push(nugget);
+    try {
+      const names = match.players.map(name).filter(Boolean);
+      const { data: profs } = names.length
+        ? await supabase.from('profiles').select('discord_user_id, ea_username').in('ea_username', names)
+        : { data: [] };
+      const totals = new Map();
+      for (const pr of profs || []) {
+        if (!pr.discord_user_id) continue;
+        const { data: ps } = await supabase.from('player_stats').select('goals').eq('guild_id', row.guild_id).eq('discord_user_id', pr.discord_user_id).limit(2000);
+        totals.set(String(pr.ea_username).toLowerCase(), { apps: (ps || []).length, goals: (ps || []).reduce((n, x) => n + Number(x.goals || 0), 0) });
+      }
+      story.push(...RX.milestones(match, totals));
+    } catch (err) { console.warn(`[autopilot] milestones failed: ${err.message}`); }
+    if (match.opponent && match.opponent !== 'Unknown') {
+      const { data: past } = await supabase.from('club_matches').select('result, score_for, score_against')
+        .eq('guild_id', row.guild_id).eq('club_key', row.club_key).eq('opponent_club_name', match.opponent).neq('id', row.id).limit(200);
+      const line = RX.h2h(past, match.opponent);
+      if (line) story.push(line);
+    }
+    const cat = RX.catalyst(match);
+    if (cat) story.push(cat);
+    const flop = RX.flop(match);
+    if (flop) story.push(flop);
+    if (story.length) embed.addFields({ name: '📖 The story', value: truncate(story.join('\n')) });
     // Hidden EA stats, refined: leader per metric, only when someone registered one
     const n0 = (v) => Number(v || 0);
     const derived = {
@@ -635,7 +661,7 @@ function createAutopilot(deps) {
     if (prefs.branding?.footer) embed.setFooter({ text: prefs.branding.footer });
     // Premium servers get the broadcast-style image on top (graphics.cjs via broadcast.cjs)
     if (recapImage && isOn(club, 'graphics')) {
-      const png = await recapImage({ row, club, match, history: upTo, prefs, talkingPoint: nugget }).catch((err) => {
+      const png = await recapImage({ row, club, match, history: upTo, prefs, talkingPoint: nugget, headline: RX.headline(match, club) }).catch((err) => {
         console.warn(`[autopilot] recap image ${row.id} failed: ${err.message}`);
         return null;
       });
