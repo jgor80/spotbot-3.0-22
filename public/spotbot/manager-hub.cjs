@@ -253,6 +253,69 @@ function createManagerHub(deps) {
     );
   }
 
+  // ---------- Pro Photos ----------
+
+  async function buildProPhotos(guildId, club, page = 0) {
+    const { data: photos, error } = await supabase
+      .from('pro_photos')
+      .select('discord_user_id, ea_username, image_url, position, overall, archetype, created_at')
+      .eq('guild_id', guildId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+
+    const list = photos || [];
+    // Roster names so we can show who still needs a photo
+    const { data: roster } = await supabase
+      .from('player_club_stats')
+      .select('discord_user_id, ea_username')
+      .eq('guild_id', guildId)
+      .eq('club_key', club.key)
+      .limit(100);
+    const withPhoto = new Set(list.map((p) => p.discord_user_id));
+    const missing = (roster || []).filter((r) => !withPhoto.has(r.discord_user_id));
+
+    const PAGE = 8;
+    const pages = Math.max(1, Math.ceil(list.length / PAGE));
+    const p = Math.min(Math.max(0, page), pages - 1);
+    const slice = list.slice(p * PAGE, p * PAGE + PAGE);
+
+    const line = (ph) => {
+      const bits = [ph.position, ph.overall && `${ph.overall} OVR`, ph.archetype].filter(Boolean).join(' · ');
+      return `📸 <@${ph.discord_user_id}>${ph.ea_username ? ` (${ph.ea_username})` : ''}${bits ? ` — ${bits}` : ''}`;
+    };
+
+    const embed = new EmbedBuilder()
+      .setTitle(`📸 ${club.name} Pro Photos`)
+      .setColor(HUB_COLOR)
+      .setDescription(
+        list.length
+          ? `**${list.length} player${list.length === 1 ? '' : 's'} in.** These photos show on recap cards, MOTM and Team of the Week.\n\n` +
+            slice.map(line).join('\n')
+          : 'No pro photos yet. Players can post a screenshot in the #pro-photos channel or use **/me → Pro Photo**.'
+      );
+
+    if (missing.length) {
+      embed.addFields({
+        name: `Still to submit (${missing.length})`,
+        value: truncate(missing.slice(0, 15).map((r) => r.ea_username || `<@${r.discord_user_id}>`).join(', ')),
+      });
+    }
+
+    if (slice[0]?.image_url) embed.setImage(slice[0].image_url);
+    if (pages > 1) embed.setFooter({ text: `Page ${p + 1} of ${pages}` });
+
+    const components = [];
+    if (pages > 1) {
+      components.push(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`hub_photos_pg:${club.key}:${p - 1}`).setLabel('◀').setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
+          new ButtonBuilder().setCustomId(`hub_photos_pg:${club.key}:${p + 1}`).setLabel('▶').setStyle(ButtonStyle.Secondary).setDisabled(p >= pages - 1)
+        )
+      );
+    }
+    return { embeds: [embed], components };
+  }
+
   // ---------- Insights ----------
 
   async function buildInsights(guildId, club) {
