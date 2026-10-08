@@ -110,7 +110,7 @@ function flop(match) {
         ? `${num(p.shots)} shots, none in`
         : `a ${num(p.rating).toFixed(1)} match rating`;
   const lines = ['buys the cannoli this week', 'is on cone duty at training', 'owes the dressing room an espresso', 'has been sent to stand outside the Teatro Massimo to think'];
-  return `🍋 **Flop of the Match:** ${name(p)} — ${why}. ${lines[seed(String(match.id) + name(p)) % lines.length]}.`;
+  return `🍋 **Flop of the Match:** ${name(p)} — ${why}. ${pick(lines, String(match.id) + name(p))}.`;
 }
 
 // All-time record vs this opponent from saved games (excludes the current match)

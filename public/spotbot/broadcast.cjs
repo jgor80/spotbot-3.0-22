@@ -231,7 +231,7 @@ function createBroadcast(deps) {
 
   // ---------- Recap image ----------
 
-  async function recapImage({ row, club, match, history, prefs, talkingPoint }) {
+  async function recapImage({ row, club, match, history, prefs, talkingPoint, headline }) {
     if (!(await premium.isPremium(row.guild_id))) return null;
     const md = row.match_data || {};
     const clubs = md.clubs || {};
@@ -264,6 +264,8 @@ function createBroadcast(deps) {
         tackles: num(p.tackles),
         tackleAttempts: num(p.tackle_attempts),
         saves: num(p.saves),
+        stops: num(p.tackles) + num(p.interceptions) + num(p.clearances) + num(p.blocks),
+        chances: num(p.chances_created),
         motm: !!p.motm,
         red: !!p.red_cards,
       }))
@@ -299,6 +301,8 @@ function createBroadcast(deps) {
       ],
       talkingPoint: talkingPoint ? talkingPoint.replace(/\*\*/g, '').replace(/^\S+\s/, '') : null,
       footer: prefs.branding?.footer || '',
+      headline: headline || null,
+      seed: String(row.id),
     });
   }
 

@@ -144,8 +144,10 @@ const BOX_COLUMNS = [
   ['AST', 70, (p) => p.assists || '-'],
   ['SHT', 70, (p) => p.shots || '-'],
   ['PAS', 100, (p) => (p.passAttempts ? `${p.passesMade}/${p.passAttempts}` : '-')],
-  ['TKL', 90, (p) => (p.tackleAttempts || p.tackles ? `${p.tackles}/${p.tackleAttempts || p.tackles}` : '-')],
-  ['SVS', 70, (p) => p.saves || '-'],
+  ['TKL', 80, (p) => (p.tackleAttempts || p.tackles ? `${p.tackles}/${p.tackleAttempts || p.tackles}` : '-')],
+  ['DEF', 64, (p) => p.stops || '-'],
+  ['KEY', 64, (p) => p.chances || '-'],
+  ['SVS', 60, (p) => p.saves || '-'],
 ];
 
 // d: { clubName, opponentName, scoreFor, scoreAgainst, result, crestFor, crestAgainst,
@@ -153,15 +155,20 @@ const BOX_COLUMNS = [
 //      motm: { name, rating, goals, assists, avatar } | null, accent, competition, dateText, details[], footer, talkingPoint }
 // Backgrounds are bundled, representative AI artwork, never player likenesses.
 const BACKGROUNDS = new Map();
-function actionBackground(position) {
-  const key = /^(GK|goalkeeper)$/i.test(position || '') ? 'keeper' : /^(DEF|CB|LB|RB|defender)$/i.test(position || '') ? 'defence' : 'attack';
+const BG_VARIANTS = { attack: ['attack', 'attack2', 'attack3'], defence: ['defence', 'defence2'], keeper: ['keeper', 'keeper2'] };
+function actionBackground(position, seed = '') {
+  const kind = /^(GK|goalkeeper)$/i.test(position || '') ? 'keeper' : /^(DEF|CB|LB|RB|defender)$/i.test(position || '') ? 'defence' : 'attack';
+  let h = 0;
+  for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const list = BG_VARIANTS[kind];
+  const key = list[h % list.length];
   if (!BACKGROUNDS.has(key)) {
     try {
       const image = fs.readFileSync(path.join(__dirname, 'assets', 'backgrounds', `${key}.jpg`));
       BACKGROUNDS.set(key, `data:image/jpeg;base64,${image.toString('base64')}`);
     } catch { BACKGROUNDS.set(key, null); }
   }
-  return BACKGROUNDS.get(key);
+  return BACKGROUNDS.get(key) || (key !== kind ? actionBackground(position, '') : null);
 }
 
 function recapGraphic(d) {
@@ -170,7 +177,7 @@ function recapGraphic(d) {
   const res = RESULT_STYLE[d.result] || RESULT_STYLE.draw;
   const motm = d.motm;
   const players = (d.players || []).slice(0, 11);
-  const background = actionBackground(motm?.position);
+  const background = actionBackground(motm?.position, d.seed);
   const tx = 550, tw = 1000, rowH = 40;
   const colX = [];
   let cx = tx + tw;
@@ -208,7 +215,7 @@ function recapGraphic(d) {
   <rect width="${W}" height="${H}" fill="url(#veil)"/>
   <rect width="${W}" height="52" fill="#07120e" fill-opacity="0.94"/>
   <rect width="10" height="52" fill="${accent}"/>
-  <text x="38" y="35" font-family="${HEAD}" font-weight="700" font-size="24" fill="#ffffff">GAFFERBOT / MATCHDAY</text>
+  <text x="38" y="35" font-family="${HEAD}" font-weight="700" font-size="24" fill="#ffffff">${d.headline ? `<tspan fill="${accent}">LA GAZZETTA</tspan> / ${esc(clip(d.headline, 70)).toUpperCase()}` : 'GAFFERBOT / MATCHDAY'}</text>
   <text x="1550" y="34" text-anchor="end" font-family="${BODY}" font-size="18" fill="#b7c6bf">${esc(clip(d.dateText, 60))}</text>
   <rect x="32" y="74" width="1536" height="166" fill="#07120e" fill-opacity="0.90"/>
   ${crest(110, 157, 52, d.crestFor, d.clubName, accent)}
