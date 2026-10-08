@@ -28,3 +28,6 @@
 - [x] 1974 Palermo Sicilia card (front + back with fictional lore)
 - [x] Allow shirt numbers in player art only when verified from the player's uploaded screenshot
 - [x] Re-ingest #pro-photos messages 1557541357591986236 and 1557565010979594370 (all attachments)
+
+- [x] Fun Zone: /fun roast, presser, rumour, quote(s), curse + auto roast/curse in session recaps
+- [ ] "Mud & Tears" Sunday League satirical card style in Graphics Studio
