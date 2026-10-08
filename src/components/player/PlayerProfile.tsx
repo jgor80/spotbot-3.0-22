@@ -23,6 +23,7 @@ import {
   Minus
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { PlayerCardArt } from "./PlayerCardArt";
 
 interface PlayerProfileProps {
   player: PlayerProfileType;
@@ -41,9 +42,9 @@ export function PlayerProfileView({ player }: PlayerProfileProps) {
           <div className="flex flex-col md:flex-row items-center gap-6">
             {/* Avatar */}
             <div className="relative">
-              <div className="h-24 w-24 rounded-full bg-muted flex items-center justify-center text-3xl font-bold">
+              <PlayerCardArt discordUserId={player.discord_user_id} name={player.discord_username || "Player"} className="w-40" fallback={<div className="h-24 w-24 rounded-full bg-muted flex items-center justify-center text-3xl font-bold">
                 {player.discord_username?.charAt(0).toUpperCase() || "?"}
-              </div>
+              </div>} />
               {player.current_streak > 0 && player.streak_type === "win" && (
                 <div className="absolute -top-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                   <Flame className="h-4 w-4" />

@@ -2,11 +2,13 @@
 // Auth: x-bot-secret (BOT_PROXY_SECRET). Images live in private storage; reads return short-lived signed URLs.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
+import { identifyCaller } from "../_shared/auth.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const db = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "");
 const BUCKET = "pro-photos";
-const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
+const headers = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bot-secret" };
+const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers });
 function safeEqual(a: string, b: string) {
   if (a.length !== b.length) return false;
   let r = 0;
@@ -15,6 +17,7 @@ function safeEqual(a: string, b: string) {
 }
 const id = z.string().regex(/^\d{5,25}$/);
 const Body = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("latest"), guild_id: id, discord_user_ids: z.array(id).max(100).optional() }),
   z.object({ action: z.literal("save"), guild_id: id, discord_user_id: id, style: z.string().max(30), name: z.string().min(1).max(40),
     front_b64: z.string().min(10).max(12_000_000), back_b64: z.string().max(12_000_000).optional() }),
   z.object({ action: z.literal("list"), discord_user_id: id }),
@@ -25,17 +28,37 @@ const bytes = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)
 const sign = async (path: string | null) => path ? (await db.storage.from(BUCKET).createSignedUrl(path, 3600)).data?.signedUrl ?? null : null;
 
 Deno.serve(async (req) => {
-  if (!SECRET || !safeEqual(req.headers.get("x-bot-secret") ?? "", SECRET)) return json({ error: "unauthorized" }, 401);
+  if (req.method === "OPTIONS") return new Response(null, { headers });
+  const bot = !!SECRET && safeEqual(req.headers.get("x-bot-secret") ?? "", SECRET);
+  const caller = bot ? null : await identifyCaller(req, db);
+  if (!bot && caller?.kind !== "user") return json({ error: "unauthorized" }, 401);
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return json({ error: "Invalid request." }, 400);
   const b = p.data;
+  // Only card fronts are shared within an authorized server. Collections/backs/deletion stay bot-owner scoped.
+  if (b.action === "latest") {
+    if (!bot) {
+      const userDb = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") ?? "", { global: { headers: { Authorization: req.headers.get("authorization") ?? "" } } });
+      const { data: allowed, error } = await userDb.rpc("user_has_guild_access", { check_guild_id: b.guild_id });
+      if (error || allowed !== true) return json({ error: "Forbidden" }, 403);
+    }
+    if (b.discord_user_ids?.length === 0) return json({ cards: [] });
+    let query = db.from("player_cards").select("discord_user_id,style,storage_path,created_at").eq("guild_id", b.guild_id).order("created_at", { ascending: false }).limit(1000);
+    if (b.discord_user_ids) query = query.in("discord_user_id", b.discord_user_ids);
+    const { data, error } = await query;
+    if (error) return json({ error: "Could not load cards." }, 500);
+    const seen = new Set<string>();
+    const latest = (data ?? []).filter(card => { if (seen.has(card.discord_user_id)) return false; seen.add(card.discord_user_id); return true; });
+    return json({ cards: await Promise.all(latest.map(async card => ({ discord_user_id: card.discord_user_id, style: card.style, front_url: await sign(card.storage_path) }))) });
+  }
+  if (!bot) return json({ error: "Forbidden" }, 403);
   if (b.action === "save") {
     const key = crypto.randomUUID();
     const front = `cards/${b.discord_user_id}/${key}.png`;
     const back = b.back_b64 ? `cards/${b.discord_user_id}/${key}-back.png` : null;
     const up = await db.storage.from(BUCKET).upload(front, bytes(b.front_b64), { contentType: "image/png" });
     if (up.error) return json({ error: "Could not save the card." }, 500);
-    if (back) await db.storage.from(BUCKET).upload(back, bytes(b.back_b64!), { contentType: "image/png" });
+    if (back && b.back_b64) await db.storage.from(BUCKET).upload(back, bytes(b.back_b64), { contentType: "image/png" });
     const { data, error } = await db.from("player_cards").insert({ guild_id: b.guild_id, discord_user_id: b.discord_user_id, style: b.style, name: b.name, storage_path: front, back_path: back }).select("id").single();
     return error ? json({ error: "Could not save the card." }, 500) : json({ id: data.id });
   }

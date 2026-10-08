@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Minus, Target, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PlayerCardArt } from "./PlayerCardArt";
 
 interface PlayerCardProps {
   player: LeaderboardPlayer;
@@ -32,7 +33,7 @@ export function PlayerCard({ player, rank, onClick, selected, compact }: PlayerC
             : "border-border hover:border-primary/50 hover:bg-muted/50"
         )}
       >
-        <RatingBadge rating={player.overall_rating} size="sm" />
+        <PlayerCardArt discordUserId={player.discord_user_id} name={displayName} className="w-10 shrink-0" fallback={<RatingBadge rating={player.overall_rating} size="sm" />} />
         <div className="flex-1 min-w-0">
           <p className="font-medium truncate">{displayName}</p>
           <p className="text-xs text-muted-foreground">{player.primary_position || "ANY"}</p>
@@ -59,6 +60,7 @@ export function PlayerCard({ player, rank, onClick, selected, compact }: PlayerC
       )}
 
       <div className="p-4">
+        <PlayerCardArt discordUserId={player.discord_user_id} name={displayName} className="w-full max-h-72 mb-4" />
         <div className="flex items-start gap-4">
           <RatingBadge rating={player.overall_rating} size="lg" showTier />
 

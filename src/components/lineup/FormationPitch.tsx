@@ -2,6 +2,7 @@ import { LineupSlot } from "@/types/player";
 import { FormationType } from "@/types/formations";
 import { FORMATIONS, getPositionColor, getPositionRatingCategory } from "@/lib/formations";
 import { cn } from "@/lib/utils";
+import { PlayerCardArt } from "@/components/player/PlayerCardArt";
 
 interface PositionRating {
   discord_user_id: string;
@@ -105,6 +106,7 @@ export function FormationPitch({
                 {!slot && (
                   <span className="text-lg text-muted-foreground">+</span>
                 )}
+                {slot && <PlayerCardArt discordUserId={slot.discord_user_id} name={displayName} className="absolute h-14 w-10 md:h-16 md:w-12" />}
               </div>
 
               {/* Player name label */}
