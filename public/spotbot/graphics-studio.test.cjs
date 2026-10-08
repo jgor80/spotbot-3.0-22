@@ -98,6 +98,10 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
   await f.studio.handleInteraction(f.interaction('gs_style:recruit:palermo', 'select', { values: ['synthwave'] }));
   const logoMenu = f.requests.at(-1).components[0].toJSON().components[0];
   assert.equal(logoMenu.options.length, 7);
+  for (const option of logoMenu.options.filter((option) => option.value !== 'auto')) {
+    assert.match(option.label, /\b(?:19|20)\d{2}(?:s|–(?:\d{4}|present))?\b/, `${option.value} includes its year era`);
+    assert.ok(option.label.length <= 100, 'Era labels fit Discord’s option limit');
+  }
   await f.studio.handleInteraction(f.interaction(logoMenu.custom_id, 'select', { values: ['heritage'] }));
   const edit = f.requests.at(-1).components.at(-1).toJSON().components[0];
   await f.studio.handleInteraction(f.interaction(edit.custom_id, 'button', { user: { id: 'other' } }));
