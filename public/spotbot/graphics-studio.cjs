@@ -358,17 +358,19 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     input('name', 'Name on card', d.name, { max: 30, req: true }),
     input('position', 'Position', d.position, { max: 10 }),
     input('overall', 'Overall (optional)', d.overall, { max: 3 }),
+    input('number', `Shirt number (optional${d.kitNumber ? `; verified #${d.kitNumber}` : ''})`, d.kitNumber || '', { max: 2 }),
     input('stats', 'Stats (optional; blank = no stats)', d.stats.map(([l, v]) => `${l} ${v}`).join('\n'), { para: true, max: 200 }),
-    input('tagline', 'Tagline', d.tagline, { max: 60 }),
   );
   function applyCardEdits(d, f) {
     const stats = f('stats').split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 6).map((line) => {
       const m = line.match(/^(.*\S)\s+(\S+)$/);
       return m ? [m[1].toUpperCase(), m[2]] : [line.toUpperCase(), ''];
     });
-    const changed = JSON.stringify(stats.map(([l, v]) => [l, String(v)])) !== JSON.stringify(d.stats.map(([l, v]) => [l, String(v)])) || f('tagline') !== d.tagline || f('overall') !== String(d.overall || '');
+    const changed = JSON.stringify(stats.map(([l, v]) => [l, String(v)])) !== JSON.stringify(d.stats.map(([l, v]) => [l, String(v)])) || f('overall') !== String(d.overall || '');
     const overall = /^\d{1,2}$/.test(f('overall')) && Number(f('overall')) > 0 ? f('overall') : '';
-    return { ...d, name: f('name') || d.name, position: f('position'), overall, stats, tagline: f('tagline'), dataLabel: changed ? 'MEMBER-EDITED' : d.seasonLabel, overallLabel: changed ? 'MEMBER OVR' : 'EA OVR', seasonLabel: stats.length ? changed ? 'MEMBER-EDITED' : d.seasonLabel : 'VIRTUAL PRO' };
+    const numRaw = f('number').replace(/\D/g, '');
+    const number = numRaw && Number(numRaw) >= 1 && Number(numRaw) <= 99 ? String(Number(numRaw)) : '';
+    return { ...d, name: f('name') || d.name, position: f('position'), overall, number, stats, dataLabel: changed ? 'MEMBER-EDITED' : d.seasonLabel, overallLabel: changed ? 'MEMBER OVR' : 'EA OVR', seasonLabel: stats.length ? changed ? 'MEMBER-EDITED' : d.seasonLabel : 'VIRTUAL PRO' };
   }
   async function renderCard({ guildId, club, style, d }) {
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`);
