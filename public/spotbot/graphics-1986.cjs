@@ -14,7 +14,7 @@ function render1986Card(d, G, accent) {
     <rect x="24" y="24" width="976" height="1178" fill="#111111"/>
     <text x="512" y="150" text-anchor="middle" font-family="Inter" font-weight="900" font-size="${clubSize}" fill="${accent}" textLength="900" lengthAdjust="spacingAndGlyphs">${esc(club)}</text>
     <rect x="54" y="190" width="916" height="1000" fill="#525a60"/>
-    ${d.art ? `<image href="${d.art}" x="54" y="190" width="916" height="1000" preserveAspectRatio="xMidYMid slice" clip-path="url(#photo1986)"/>` : ''}
+    ${d.art ? `<image href="${d.art}" x="54" y="190" width="916" height="1000" preserveAspectRatio="xMidYMin slice" clip-path="url(#photo1986)"/>` : ''}
     ${d.crest ? `<image href="${d.crest}" x="856" y="220" width="80" height="80" preserveAspectRatio="xMidYMid meet"/>` : ''}
     ${d.position ? `<circle cx="126" cy="1108" r="47" fill="${accent}" stroke="#fafaf7" stroke-width="4"/>
       <text x="126" y="1120" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${String(d.position).length > 3 ? 24 : 32}" fill="#111111">${esc(String(d.position).toUpperCase().slice(0, 5))}</text>` : ''}

@@ -60,20 +60,22 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean) {
   const look = STYLE[b.style];
   const render = "Keep it looking like an EA SPORTS FC in-game 3D character render (video-game Virtual Pro model, game-engine shading), not a real human photo.";
   const noText = "Absolutely no text, letters, numbers, logos or watermarks anywhere.";
+  // Card-style shot variety: tight portraits, waist-up, action and celebration, never the same crop every time.
   const poses = {
-    ready: "three-quarter standing pose, shoulders turned, looking towards the camera",
-    stride: "in motion striding across the pitch, natural arm swing, three-quarter view",
-    ball: "holding a football at the hip, relaxed shoulders and confident expression",
-    celebrate: "a composed fist-pump celebration with one arm raised",
-    profile: "side-profile portrait, looking across the stadium with focused expression",
-    captain: "hands on hips, captain-like stance, low camera angle",
+    ready: "WAIST-UP three-quarter portrait, shoulders turned, looking towards the camera, camera at chest height",
+    stride: "FULL-BODY action shot sprinting or dribbling at speed, dynamic lean, ball at the feet, boots fully visible",
+    ball: "HALF-BODY shot (from mid-thigh up) holding a football under one arm, confident expression",
+    celebrate: "KNEES-UP goal celebration, both arms out or one fist raised, mouth open shouting, joyful energy",
+    profile: "CLOSE CHEST-UP portrait, head and shoulders filling much of the frame, intense focused stare",
+    captain: "THREE-QUARTER-LENGTH (from knees up) hands-on-hips stance, slight low camera angle",
   };
+  const framing = "FRAMING RULES (critical): the whole head — hair, beard, glasses and headwear — must sit completely inside the image with clear empty space above it; the top of the hair at least 9% below the top edge and the eyes never higher than 15% of the image height. Never crop the top of the head, face, chin or hands at the frame edge. For full-body shots, keep both boots inside the frame too. Centre the subject horizontally unless the composition says otherwise.";
   const placement = b.kind !== "card" ? "Subject in the upper two thirds; keep the lower third empty."
-    : !b.has_stats ? `Portrait-first composition: make the virtual pro large and dominant, filling the frame from 8% to ${b.has_tagline ? "86%" : "90%"} height. Show the full available pose or close three-quarter portrait. No empty lower third, blank side panels or reserved stat bands. Keep only the top 10% and bottom ${b.has_tagline ? "14%" : "10%"} clear enough for compact club and name lettering. Continue the stadium and kit into the lower frame.`
+    : !b.has_stats ? `Portrait-first composition: make the virtual pro large and dominant, filling the frame from 9% (top of the hair) to ${b.has_tagline ? "86%" : "90%"} height, using the requested shot type. No empty lower third, blank side panels or reserved stat bands. Keep the top 8% and bottom ${b.has_tagline ? "14%" : "10%"} clear enough for compact club and name lettering. Continue the stadium and kit into the lower frame.`
     : b.composition === "editorial" ? "Editorial composition: leave a dark empty band from 12% to 28% height for the name; place the character below that band, face between 32% and 50% height, with the lower third empty."
     : b.composition === "side-panel" ? "Asymmetric composition: character to the right, face in the upper right half. Leave the lower left area and bottom third dark and empty for a nameplate and optional stats."
     : "Broadcast lower-third composition: character centred, face in the upper half, lower third empty for a nameplate and optional stats.";
-   const variation = `Creative edition ${b.variation || crypto.randomUUID()}: independently vary camera angle, stadium detail and lighting within the selected style. The pose must be ${poses[b.pose]}. Reuse the reference pose when it already matches; otherwise adapt it. Never copy its background or typography. ${placement}`;
+   const variation = `Creative edition ${b.variation || crypto.randomUUID()}: independently vary camera angle, stadium detail and lighting within the selected style. The pose must be ${poses[b.pose]}. Reuse the reference pose when it already matches; otherwise adapt it. Never copy its background or typography. ${placement} ${framing}`;
   if (b.kind === "banner") {
     return `Championship celebration artwork for the esports football club ${b.club_name}${b.competition ? ` winning ${b.competition}` : ""}. A large gleaming trophy in the centre on a stage, confetti and pyrotechnics, stadium lights. ${hasRef ? `The reference shows one of the club's players: include them lifting or standing beside the trophy, keeping their face, hair and accessories. ${render} ${kitLine(b.kit, b.club_name)}` : `Club colours ${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "throughout"}.`} Style: ${look}. Wide landscape composition. Independently vary trophy camera angle, lighting and stage arrangement for edition ${b.variation || crypto.randomUUID()}. ${noText}`;
   }

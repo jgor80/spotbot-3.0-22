@@ -28,7 +28,7 @@ function render2020sCard(d, G, accent) {
       ? `<rect x="22" y="22" width="980" height="1310" fill="url(#chrome20)"/><rect x="38" y="38" width="948" height="1278" fill="${accent}"/><path d="M40 350 Q512 10 985 435 Q590 540 40 890 Z" fill="url(#chrome20)"/>`
       : `<rect x="22" y="22" width="980" height="1310" fill="${accent}"/><rect x="22" y="22" width="980" height="1310" fill="url(#clubStreak20)"/>`}
     <g fill="${C.ink}">${frame}</g>
-    ${d.art ? `<image href="${d.art}" x="64" y="64" width="896" height="1236" preserveAspectRatio="xMidYMid slice" clip-path="url(#portrait20)"/>` : ''}
+    ${d.art ? `<image href="${d.art}" x="64" y="64" width="896" height="1236" preserveAspectRatio="xMidYMin slice" clip-path="url(#portrait20)"/>` : ''}
     ${mosaic ? '<g clip-path="url(#portrait20)"><rect x="64" y="72" width="150" height="1220" fill="url(#holoDots20)" opacity="0.65"/><rect x="810" y="72" width="150" height="1220" fill="url(#holoDots20)" opacity="0.65"/></g>' : ''}
     <rect x="64" y="994" width="896" height="306" fill="url(#shade20)" clip-path="url(#portrait20)"/>
     <g fill="none" stroke="url(#chrome20)" stroke-width="12">${frame}</g>
