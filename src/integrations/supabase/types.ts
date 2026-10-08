@@ -3146,6 +3146,51 @@ export type Database = {
         }
         Relationships: []
       }
+      pro_photo_assets: {
+        Row: {
+          analysis: Json
+          created_at: string
+          discord_user_id: string
+          graphic_kind: string | null
+          guild_id: string
+          id: string
+          image_url: string
+          pose: string | null
+          source_key: string
+          source_kind: string
+          storage_path: string | null
+          submitted_by: string | null
+        }
+        Insert: {
+          analysis?: Json
+          created_at?: string
+          discord_user_id: string
+          graphic_kind?: string | null
+          guild_id: string
+          id?: string
+          image_url: string
+          pose?: string | null
+          source_key: string
+          source_kind?: string
+          storage_path?: string | null
+          submitted_by?: string | null
+        }
+        Update: {
+          analysis?: Json
+          created_at?: string
+          discord_user_id?: string
+          graphic_kind?: string | null
+          guild_id?: string
+          id?: string
+          image_url?: string
+          pose?: string | null
+          source_key?: string
+          source_kind?: string
+          storage_path?: string | null
+          submitted_by?: string | null
+        }
+        Relationships: []
+      }
       pro_photos: {
         Row: {
           analysis: Json
