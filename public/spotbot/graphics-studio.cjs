@@ -29,6 +29,7 @@ const COLOR_WORDS = {
   yellow: 0xfacc15, gold: 0xd4af37, orange: 0xf97316, purple: 0x7c3aed, sky: 0x38bdf8, maroon: 0x7f1d1d, grey: 0x9ca3af, gray: 0x9ca3af,
 };
 const BUSY = new Set();
+const DRAFTS = new Map(); // token -> pending graphic waiting on its edit form
 
 function colorNum(v, fallback) {
   const s = String(v || '').trim().toLowerCase();
@@ -679,7 +680,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       const r = await deliver({
         channel: interaction.channel, club, guild: interaction.guild, userId: interaction.user.id, hallOfFame: true,
         label: `🏆 **${f('headline')}** — ${f('competition')}`,
-        build: () => buildBanner({ guildId: interaction.guildId, club, style, headline: f('headline'), competition: f('competition'), seasonTag: f('tag'), rosterText: f('roster'), heroId: hero }),
+        build: () => buildBanner({ guild: interaction.guild, guildId: interaction.guildId, club, style, headline: f('headline'), competition: f('competition'), seasonTag: f('tag'), rosterText: f('roster'), heroId: hero }),
       });
       await interaction.editReply(r.error ? `❌ ${r.error}` : '✅ Banner posted here and in the Hall of Fame.').catch(() => {});
       return true;
@@ -710,4 +711,4 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   return { onMessage, handleInteraction, init, panelFor, refreshPanel };
 }
 
-module.exports = { createGraphicsStudio, STYLES, playerCard, matchPoster, banner };
+module.exports = { createGraphicsStudio, STYLES, playerCard, matchPoster, banner, lineupPoster };
