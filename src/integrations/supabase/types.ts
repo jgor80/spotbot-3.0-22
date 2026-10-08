@@ -2677,8 +2677,11 @@ export type Database = {
         Row: {
           assists: number
           avg_rating: number | null
+          blocks: number | null
           clean_sheets: number
+          clearances: number | null
           discord_user_id: string
+          dribbles: number | null
           first_match_at: string | null
           goals: number
           guild_id: string
@@ -2686,8 +2689,12 @@ export type Database = {
           last_match_at: string | null
           matches: number
           motm: number
+          possessions_lost: number | null
+          possessions_won: number | null
           saves: number
           season_code: string
+          second_assists: number | null
+          shots: number | null
           tackles: number
           updated_at: string
           wins: number
@@ -2695,8 +2702,11 @@ export type Database = {
         Insert: {
           assists?: number
           avg_rating?: number | null
+          blocks?: number | null
           clean_sheets?: number
+          clearances?: number | null
           discord_user_id: string
+          dribbles?: number | null
           first_match_at?: string | null
           goals?: number
           guild_id: string
@@ -2704,8 +2714,12 @@ export type Database = {
           last_match_at?: string | null
           matches?: number
           motm?: number
+          possessions_lost?: number | null
+          possessions_won?: number | null
           saves?: number
           season_code: string
+          second_assists?: number | null
+          shots?: number | null
           tackles?: number
           updated_at?: string
           wins?: number
@@ -2713,8 +2727,11 @@ export type Database = {
         Update: {
           assists?: number
           avg_rating?: number | null
+          blocks?: number | null
           clean_sheets?: number
+          clearances?: number | null
           discord_user_id?: string
+          dribbles?: number | null
           first_match_at?: string | null
           goals?: number
           guild_id?: string
@@ -2722,8 +2739,12 @@ export type Database = {
           last_match_at?: string | null
           matches?: number
           motm?: number
+          possessions_lost?: number | null
+          possessions_won?: number | null
           saves?: number
           season_code?: string
+          second_assists?: number | null
+          shots?: number | null
           tackles?: number
           updated_at?: string
           wins?: number
@@ -2744,6 +2765,7 @@ export type Database = {
           assists: number
           ball_recoveries: number | null
           big_chances: number | null
+          blocks: number | null
           clean_sheet: boolean | null
           clean_sheet_def: boolean | null
           clean_sheet_gk: boolean | null
@@ -2778,6 +2800,7 @@ export type Database = {
           position_played: string | null
           possession: number | null
           possession_gains: number | null
+          possessions_lost: number | null
           pressing_actions: number | null
           progressive_carries: number | null
           recorded_at: string
@@ -2805,6 +2828,7 @@ export type Database = {
           assists?: number
           ball_recoveries?: number | null
           big_chances?: number | null
+          blocks?: number | null
           clean_sheet?: boolean | null
           clean_sheet_def?: boolean | null
           clean_sheet_gk?: boolean | null
@@ -2839,6 +2863,7 @@ export type Database = {
           position_played?: string | null
           possession?: number | null
           possession_gains?: number | null
+          possessions_lost?: number | null
           pressing_actions?: number | null
           progressive_carries?: number | null
           recorded_at?: string
@@ -2866,6 +2891,7 @@ export type Database = {
           assists?: number
           ball_recoveries?: number | null
           big_chances?: number | null
+          blocks?: number | null
           clean_sheet?: boolean | null
           clean_sheet_def?: boolean | null
           clean_sheet_gk?: boolean | null
@@ -2900,6 +2926,7 @@ export type Database = {
           position_played?: string | null
           possession?: number | null
           possession_gains?: number | null
+          possessions_lost?: number | null
           pressing_actions?: number | null
           progressive_carries?: number | null
           recorded_at?: string
@@ -4482,7 +4509,9 @@ export type Database = {
     }
     Functions: {
       archive_old_global_league_matches: { Args: never; Returns: number }
+      backfill_advanced_player_stats: { Args: never; Returns: number }
       cleanup_old_event_occurrences: { Args: never; Returns: number }
+      ea_event_counts: { Args: { p: Json }; Returns: Json }
       has_any_role: {
         Args: {
           _discord_user_id: string
