@@ -22,14 +22,19 @@ const { render1990sCard } = require('./graphics-1990s.cjs');
 const { renderY2kCard } = require('./graphics-y2k.cjs');
 const { render2010sCard } = require('./graphics-2010s.cjs');
 const { render2020sCard } = require('./graphics-2020s.cjs');
+const { renderSignatureCard, SIGNATURE_STYLES } = require('./graphics-signature.cjs');
 const { finishCardSvg } = require('./card-layout.cjs');
 const { cardStats } = require('./card-stats.cjs');
 
 const NAME_RE = /graphic|media-?studio|studio/i;
 const STYLES = {
   esports: { label: 'Ultra Esports', emoji: '⚡', desc: 'Neon, smoke, grunge — matchday hype' },
-  modern: { label: 'Modern Broadcast', emoji: '✨', desc: 'Clean TV-graphic look' },
-  vintage: { label: 'Vintage Heritage', emoji: '📜', desc: '90s trading card, film grain' },
+  modern: { label: 'Modern Broadcast', emoji: '📺', desc: 'Live TV lower-third, live bug, telemetry rail' },
+  vintage: { label: 'Vintage Heritage', emoji: '📜', desc: '1950s trade card: halftone, arched banner, oval crest' },
+  cyber: { label: 'Cyber Glitch', emoji: '🟨', desc: 'Neon duotone, glitch slices, warning tape, crosshairs' },
+  chrome: { label: 'Liquid Chrome', emoji: '🪩', desc: 'Iridescent glass, chrome bevels, frosted plaques' },
+  mvp: { label: 'Tournament MVP', emoji: '🏆', desc: 'Carbon fibre, brushed gold slashes, elite tier tags' },
+  synthwave: { label: 'Synthwave Chill', emoji: '🌅', desc: 'Sunset grid, neon outlines, chillwave haze' },
   retro1986: { label: '1986 Club Classic', emoji: '⚾', desc: 'Bold club masthead, white frame, position badge', cardOnly: true },
   retro1960s: { label: '1960s Club Heritage', emoji: '🎞️', desc: 'Oval portraits, pennants, colourful print borders', cardOnly: true },
   retro1970s: { label: '1970s Club Archive', emoji: '🌟', desc: 'Arched club lettering, double borders, ribbon frames', cardOnly: true },
@@ -72,6 +77,10 @@ function palette(style, kit) {
     y2k: { accent: hex(primary) },
     retro2010s: { accent: hex(primary) },
     retro2020s: { accent: hex(primary) },
+    cyber: { ink: '#f4f4f5', accent: '#e8ff3a', sub: '#ff2bd6', panel: '#050507', panelOpacity: 0.7, skew: -6, frame: '#e8ff3a' },
+    chrome: { ink: '#ffffff', accent: '#9fe8ff', sub: '#f4b8ff', panel: '#0b0f17', panelOpacity: 0.55, skew: 0, frame: '#c8d2e0' },
+    mvp: { ink: '#f7e7b4', accent: '#d8b25a', sub: '#bfb59a', panel: '#0a0a0a', panelOpacity: 0.75, skew: -4, frame: '#d8b25a' },
+    synthwave: { ink: '#fff6fb', accent: '#ff4fb8', sub: '#3ef0ff', panel: '#140b2e', panelOpacity: 0.6, skew: -6, frame: '#ff4fb8' },
     obsidian: { ink: '#f6e7b0', accent: '#d4af37', sub: '#d6d3d1', panel: '#000000', panelOpacity: 0.7, skew: 0, frame: '#d4af37' },
   }[style] || {};
   return base;
@@ -111,6 +120,7 @@ function headline(text, x, y, size, p, anchor = 'start') {
 
 function playerCard(d) {
   const print = { retro1986: render1986Card, retro1960s: render1960sCard, retro1970s: render1970sCard, retro1990s: render1990sCard, y2k: renderY2kCard, retro2010s: render2010sCard, retro2020s: render2020sCard }[d.style];
+  if (SIGNATURE_STYLES.includes(d.style)) return renderSignatureCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d)) }, hex(colorNum(d.kit?.primary, 0x22c55e)));
   if (print) return print(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d)) }, palette(d.style, d.kit).accent);
   const W = 1024, H = 1536, p = palette(d.style, d.kit);
   const stats = (d.stats || []).slice(0, 6);
@@ -357,8 +367,8 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   async function renderCard({ guildId, club, style, d }) {
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`);
     // Print-card lettering and frames are local; artwork reuses the text-free vintage style.
-    const printCard = Boolean(STYLES[style]?.cardOnly);
-    const a = await art({ kind: 'card', style: printCard ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...variation, has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
+    const printCard = Boolean(STYLES[style]?.cardOnly) || SIGNATURE_STYLES.includes(style);
+    const a = await art({ kind: 'card', style: STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...variation, has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
     if (a.error) return a;
     const png = playerCard({
       art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), name: d.name, position: d.position || null,
@@ -559,7 +569,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     const { club } = await studioClub(message.guild.id, message.channelId, message.channel?.name);
     if (!club) return;
-    const style = /\bcard\b/.test(text) && /2020|20['’]?s|twenties|prism|mosaic/i.test(text) ? 'retro2020s' : /\bcard\b/.test(text) && /2010|10['’]?s|twenty[ -]?tens/i.test(text) ? 'retro2010s' : /\bcard\b/.test(text) && /y2k|2000|chrome|refractor/i.test(text) ? 'y2k' : /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
+    const style = /synth|chillwave|vaporwave|outrun/i.test(text) ? 'synthwave' : /glitch|cyber|neo[- ]?tokyo/i.test(text) ? 'cyber' : /liquid chrome|glass/i.test(text) ? 'chrome' : /\bmvp\b/i.test(text) ? 'mvp' : /broadcast|\btv\b/i.test(text) ? 'modern' : /heritage|1950|50['’]?s/i.test(text) ? 'vintage' : /\bcard\b/.test(text) && /2020|20['’]?s|twenties|prism|mosaic/i.test(text) ? 'retro2020s' : /\bcard\b/.test(text) && /2010|10['’]?s|twenty[ -]?tens/i.test(text) ? 'retro2010s' : /\bcard\b/.test(text) && /y2k|2000|chrome|refractor/i.test(text) ? 'y2k' : /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
     let build, label;
     if (/\bcard\b/.test(text)) {
       const target = message.mentions.users.find((u) => !u.bot) || message.author;

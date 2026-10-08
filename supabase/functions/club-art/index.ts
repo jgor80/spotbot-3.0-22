@@ -22,7 +22,7 @@ function safeEqual(a: string, b: string) {
 
 const Body = z.object({
   kind: z.enum(["card", "banner", "poster"]),
-  style: z.enum(["esports", "modern", "vintage", "obsidian"]),
+  style: z.enum(["esports", "modern", "vintage", "obsidian", "cyber", "chrome", "mvp", "synthwave"]),
   club_name: z.string().min(1).max(60),
   kit: z.object({
     primary: z.string().max(30).optional(),
@@ -42,8 +42,12 @@ const Body = z.object({
 
 const STYLE: Record<string, string> = {
   esports: "ultra esports poster look: dramatic neon rim light in the club colours, volumetric smoke, lens flares, sparks, grunge halftone and torn-paper texture, deep black shadows, high contrast",
-  modern: "clean modern broadcast look like a Champions League TV graphic: crisp studio lighting, soft gradients, geometric light streaks, glassy surfaces, minimal and premium",
+  modern: "live sports-television broadcast look: night match under floodlights, directional light spill, slight motion blur in the background crowd, crisp rim light on the player, cool broadcast colour grade, glossy and premium like a top-flight TV production",
   vintage: "vintage 1990s trading-card look: warm faded film grain, matte paper texture, muted club colours, halftone print dots, retro stadium floodlights",
+  cyber: "neo-Tokyo cyberpunk esports look: obsidian black backdrop, acid-yellow and hot-magenta neon rim lights, holographic grid haze, rain sheen, sharp high-contrast shadows",
+  chrome: "liquid chrome esports major look: iridescent refracted light, floating glass shards, cool silver studio backdrop with pastel holographic reflections, specular highlights",
+  mvp: "tournament MVP trophy-stage look: dark arena, golden confetti drifting, warm gold spotlights, carbon-black backdrop, champion atmosphere",
+  synthwave: "synthwave chillwave look: soft dusk sky in purple, magenta and peach, distant neon glow, light haze, dreamy retro-futuristic stadium lights, smooth airbrushed gradients",
   obsidian: "elite black-and-gold look: carbon-fibre black backdrop, subtle gold foil streaks, moody spotlight, desaturated tones with gold highlights, luxury trophy-room feel",
 };
 
