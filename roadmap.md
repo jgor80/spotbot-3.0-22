@@ -1,6 +1,6 @@
 
 ## Current
-- [ ] Add and verify the 1970s-inspired arched and ribbon player-card frames
+- [x] Add and verify the 1970s-inspired arched and ribbon player-card frames
 - [x] Add and verify the separate 1960s-inspired vintage card style
 - [x] Add and verify a separate 1986-inspired player-card style using the supplied references
 - [x] Fix Graphics Studio style-selection deadlines; test all styles with real Discord builders and verify a live Modern Broadcast render
