@@ -101,6 +101,10 @@ Deno.serve(async (req) => {
   if (!img.ok || !/^image\/(png|jpe?g|webp)$/.test(type)) return json({ error: "Send a PNG, JPG or WebP image." }, 400);
   const bytes = new Uint8Array(await img.arrayBuffer());
   if (bytes.length > MAX_BYTES) return json({ error: "Image is over 8 MB." }, 400);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const sourceKey = Array.from(new Uint8Array(digest), (v) => v.toString(16).padStart(2, "0")).join("");
+  const { data: existing } = await db.from("pro_photo_assets").select("image_url,analysis").eq("discord_user_id", discord_user_id).eq("source_key", sourceKey).maybeSingle();
+  if (existing) return json({ accepted: true, image_url: existing.image_url, analysis: existing.analysis, already_saved: true });
 
   let b64 = "";
   for (let i = 0; i < bytes.length; i += 0x8000) b64 += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -114,7 +118,7 @@ Deno.serve(async (req) => {
   if (!analysis.is_pro_clubs_player) return json({ accepted: false, analysis });
 
   const ext = type === "image/png" ? "png" : type === "image/webp" ? "webp" : "jpg";
-  const path = `${guild_id}/${discord_user_id}-${Date.now()}.${ext}`;
+  const path = `${guild_id}/${discord_user_id}-${sourceKey}.${ext}`;
   const up = await db.storage.from("pro-photos").upload(path, bytes, { contentType: type, upsert: true });
   if (up.error) return json({ error: "Couldn't store the photo." }, 500);
   const signed = await db.storage.from("pro-photos").createSignedUrl(path, TEN_YEARS);
@@ -123,17 +127,17 @@ Deno.serve(async (req) => {
   const { data: prof } = await db.from("profiles").select("ea_username").eq("discord_user_id", discord_user_id).maybeSingle();
   const pos = typeof analysis.position === "string" ? analysis.position.toUpperCase().slice(0, 5) : null;
   const ovr = Number.isInteger(analysis.overall) && analysis.overall >= 40 && analysis.overall <= 99 ? analysis.overall : null;
+  const { error: assetError } = await db.from("pro_photo_assets").upsert({
+    guild_id, discord_user_id, submitted_by: submitted_by ?? discord_user_id,
+    image_url: signed.data.signedUrl, storage_path: path, source_key: sourceKey,
+    source_kind: "upload", pose: analysis.pose === "other" ? null : analysis.pose, analysis,
+  }, { onConflict: "discord_user_id,source_key", ignoreDuplicates: true });
+  if (assetError) return json({ error: "Couldn't add the photo to the player's collection." }, 500);
   const { error } = await db.from("pro_photos").upsert({
     guild_id, discord_user_id, submitted_by: submitted_by ?? discord_user_id,
     ea_username: prof?.ea_username ?? null, image_url: signed.data.signedUrl,
     position: pos, overall: ovr, archetype: analysis.archetype ?? null, analysis,
   }, { onConflict: "discord_user_id" });
   if (error) return json({ error: "Couldn't save the photo." }, 500);
-  const { error: assetError } = await db.from("pro_photo_assets").insert({
-    guild_id, discord_user_id, submitted_by: submitted_by ?? discord_user_id,
-    image_url: signed.data.signedUrl, storage_path: path, source_key: path,
-    source_kind: "upload", pose: analysis.pose === "other" ? null : analysis.pose, analysis,
-  });
-  if (assetError) return json({ error: "The latest photo was saved, but it couldn't be added to the player's collection." }, 500);
   return json({ accepted: true, image_url: signed.data.signedUrl, ea_username: prof?.ea_username ?? null, analysis: { ...analysis, position: pos, overall: ovr } });
 });

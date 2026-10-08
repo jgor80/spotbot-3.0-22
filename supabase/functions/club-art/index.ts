@@ -4,6 +4,7 @@
 // kept as an EA FC 3D game render (never "humanized") and dressed in the club's own kit.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
+import { rankPhotos } from "./photo-selection.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -65,7 +66,7 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean) {
     : b.composition === "editorial" ? "Editorial composition: leave a dark empty band from 12% to 28% height for the name; place the character below that band, face between 32% and 50% height, with the lower third empty."
     : b.composition === "side-panel" ? "Asymmetric composition: character to the right, face in the upper right half. Leave the lower left area and bottom third dark and empty for a nameplate and optional stats."
     : "Broadcast lower-third composition: character centred, face in the upper half, lower third empty for a nameplate and optional stats.";
-  const variation = `Creative edition ${b.variation || crypto.randomUUID()}: independently vary camera angle, stadium detail and lighting within the selected style. The pose must be ${poses[b.pose]}. Do not copy the reference pose or its background. ${placement}`;
+   const variation = `Creative edition ${b.variation || crypto.randomUUID()}: independently vary camera angle, stadium detail and lighting within the selected style. The pose must be ${poses[b.pose]}. Reuse the reference pose when it already matches; otherwise adapt it. Never copy its background or typography. ${placement}`;
   if (b.kind === "banner") {
     return `Championship celebration artwork for the esports football club ${b.club_name}${b.competition ? ` winning ${b.competition}` : ""}. A large gleaming trophy in the centre on a stage, confetti and pyrotechnics, stadium lights. ${hasRef ? `The reference shows one of the club's players: include them lifting or standing beside the trophy, keeping their face, hair and accessories. ${render} ${kitLine(b.kit, b.club_name)}` : `Club colours ${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "throughout"}.`} Style: ${look}. Wide landscape composition. Independently vary trophy camera angle, lighting and stage arrangement for edition ${b.variation || crypto.randomUUID()}. ${noText}`;
   }
@@ -73,23 +74,27 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean) {
     ? b.mood === "win" ? "celebrating a victory with a fist pump, roaring" : b.mood === "loss" ? "determined, walking off the pitch, focused" : "intense, ready for kick-off"
     : `player-card portrait${b.position ? `, as a ${b.position}` : ""}`;
   const subject = hasRef
-    ? `The reference image supplies identity only. Recreate this exact in-game Virtual Pro character (same face, skin tone, hair, beard, glasses and accessories), ${action}. Preserve identity and game-render materials but change pose, camera and background. ${render} ${kitLine(b.kit, b.club_name)}`
+    ? `Recreate this exact in-game Virtual Pro character (same face, skin tone, hair, beard, glasses and accessories), ${action}. Preserve identity and game-render materials. Reuse the available reference pose if it fits the requested pose; adapt the camera and background to this graphic. ${render} ${kitLine(b.kit, b.club_name)}`
     : `A stylised silhouette of a footballer in ${b.club_name}'s kit (${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "club colours"}), ${action}, seen from behind or in shadow so no face is shown.`;
   return `Vertical football club artwork. ${subject} Stadium background lit in the club colours. Style: ${look}. ${variation} ${noText}`;
 }
 
-async function proPhoto(discordId?: string, pose?: string) {
-  if (!discordId) return null;
-  let query = db.from("pro_photo_assets").select("image_url").eq("discord_user_id", discordId).eq("source_kind", "upload");
-  if (pose) query = query.eq("pose", pose);
-  const { data: matched } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
-  const fallback = matched ?? (await db.from("pro_photo_assets").select("image_url").eq("discord_user_id", discordId).eq("source_kind", "upload").order("created_at", { ascending: false }).limit(1).maybeSingle()).data;
-  const data = fallback ?? (await db.from("pro_photos").select("image_url").eq("discord_user_id", discordId).maybeSingle()).data;
-  if (!data?.image_url) return null;
-  const res = await fetch(data.image_url);
-  const type = (res.headers.get("content-type") || "").split(";")[0];
-  if (!res.ok || !/^image\/(png|jpe?g|webp)$/.test(type)) return null;
-  return new File([await res.arrayBuffer()], `pro.${type.split("/")[1]}`, { type });
+async function proPhoto(b: z.infer<typeof Body>) {
+  if (!b.discord_user_id) return null;
+  const { data: assets } = await db.from("pro_photo_assets").select("image_url,pose,source_kind,graphic_kind,analysis")
+    .eq("discord_user_id", b.discord_user_id).order("created_at", { ascending: false }).limit(200);
+  const candidates = rankPhotos(assets ?? [], b.pose, b.kind, b.club_name);
+  const { data: latest } = await db.from("pro_photos").select("image_url").eq("discord_user_id", b.discord_user_id).maybeSingle();
+  if (latest) candidates.push(latest);
+  for (const photo of candidates) {
+    try {
+      const res = await fetch(photo.image_url);
+      const type = (res.headers.get("content-type") || "").split(";")[0];
+      if (!res.ok || !/^image\/(png|jpe?g|webp)$/.test(type)) continue;
+      return new File([await res.arrayBuffer()], `pro.${type.split("/")[1]}`, { type });
+    } catch { /* Try another saved photo when a reference is no longer reachable. */ }
+  }
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -99,7 +104,7 @@ Deno.serve(async (req) => {
   if (!parsed.success) return json({ error: parsed.error.flatten().fieldErrors }, 400);
   const b = parsed.data;
 
-  const ref = await proPhoto(b.discord_user_id, b.pose);
+  const ref = await proPhoto(b);
   const prompt = promptFor(b, !!ref);
   const size = b.kind === "banner" ? "1536x1024" : "1024x1536";
   let res: Response;
@@ -127,7 +132,8 @@ Deno.serve(async (req) => {
   const out = await res.json().catch(() => null);
   const b64 = out?.data?.[0]?.b64_json;
   if (!b64) return json({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
-  if (b.discord_user_id) {
+  let artworkSaved = !b.discord_user_id;
+  if (b.discord_user_id && ref) {
     const raw = atob(b64);
     const bytes = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
@@ -136,12 +142,15 @@ Deno.serve(async (req) => {
     const saved = await db.storage.from("pro-photos").upload(path, bytes, { contentType: "image/png" });
     if (!saved.error) {
       const signed = await db.storage.from("pro-photos").createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
-      if (!signed.error) await db.from("pro_photo_assets").insert({
+      if (!signed.error) {
+        const { error } = await db.from("pro_photo_assets").insert({
         discord_user_id: b.discord_user_id, guild_id: "graphics-studio", image_url: signed.data.signedUrl,
         storage_path: path, source_key: sourceKey, source_kind: "generated", graphic_kind: b.kind,
         pose: b.pose, analysis: { style: b.style, composition: b.composition, club_name: b.club_name },
-      });
+        });
+        artworkSaved = !error;
+      }
     }
   }
-  return json({ image_b64: b64, used_pro_photo: !!ref });
+  return json({ image_b64: b64, used_pro_photo: !!ref, artwork_saved: artworkSaved });
 });
