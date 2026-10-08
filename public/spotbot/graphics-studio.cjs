@@ -27,6 +27,7 @@ const { render2010sCard } = require('./graphics-2010s.cjs');
 const { render2020sCard } = require('./graphics-2020s.cjs');
 const { renderSignatureCard, SIGNATURE_STYLES } = require('./graphics-signature.cjs');
 const { renderSiciliaCard, renderSiciliaBack } = require('./graphics-sicilia.cjs');
+const { renderCardBack } = require('./graphics-card-back.cjs');
 const { finishCardSvg } = require('./card-layout.cjs');
 const { cardStats } = require('./card-stats.cjs');
 const { kitsFor, kitFor, withKit } = require('./club-kits.cjs');
@@ -421,17 +422,25 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
 
   // ----- player card -----
   async function cardData({ guildId, club, userId, displayName }) {
-    const [{ data: statsRows }, { data: profile }, { data: photo }, { data: assets }] = await Promise.all([
+    const [{ data: statsRows }, { data: profile }, { data: photo }, { data: assets }, { data: archive }, { data: seasons }] = await Promise.all([
       supabase.from('player_club_stats').select('*').eq('guild_id', guildId).eq('discord_user_id', userId),
       supabase.from('profiles').select('ea_username').eq('discord_user_id', userId).maybeSingle(),
       supabase.from('pro_photos').select('position, overall').eq('discord_user_id', userId).maybeSingle(),
       supabase.from('pro_photo_assets').select('id, pose, source_kind, analysis, created_at').eq('discord_user_id', userId).order('created_at', { ascending: false }).limit(60),
+      supabase.from('player_season_archive').select('*').eq('guild_id', guildId).eq('discord_user_id', userId),
+      supabase.from('ea_seasons').select('code, label, starts_at').order('starts_at'),
     ]);
     const data = cardStats((statsRows || []).map((s) => ({ ...s, primary_position: photo?.position || s.primary_position })), club);
     const verified = (assets || []).map((a) => a.analysis?.kit_number).find((n) => Number.isInteger(n) && n >= 1 && n <= 99);
+    // Card back: one row per archived season, plus the EA Member List total for this exact club.
+    const short = String(club.name || '').split(/\s+/).pop().slice(0, 10).toUpperCase();
+    const seasonRows = (seasons || []).map((s) => ({ s, r: (archive || []).find((a) => a.season_code === s.code) })).filter(({ r }) => r && r.matches > 0)
+      .map(({ s, r }) => ({ label: `'${String(s.code).replace(/\D/g, '')} ${short}`, apps: r.matches, goals: r.goals, assists: r.assists, cs: r.clean_sheets, motm: r.motm, rating: r.avg_rating }));
+    const ea = (statsRows || []).find((s) => s.club_key === club.key && (!club.eaClubId || !s.ea_club_id || String(s.ea_club_id) === String(club.eaClubId)) && s.games_played > 0);
+    const clubTotals = ea ? { apps: ea.games_played, goals: ea.goals, assists: ea.assists, cs: ea.clean_sheets, motm: ea.man_of_match, rating: ea.avg_match_rating } : null;
     return {
       ...data, userId, name: displayName || profile?.ea_username || 'Player', position: photo?.position || data.position,
-      overall: photo?.overall || '', kitNumber: verified || null,
+      overall: photo?.overall || '', kitNumber: verified || null, seasonRows, clubTotals,
       // The member's own uploads, offered as the card's reference photo.
       photos: (assets || []).filter((a) => a.source_kind === 'upload').slice(0, 24).map((a, i) => ({
         id: a.id, label: clip(`${i + 1}. ${a.pose || 'Photo'}${a.analysis?.kit_number ? ` · #${a.analysis.kit_number}` : ''}`, 90),
@@ -468,7 +477,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), name: d.name, position: shortPosition(d.position) || null,
       overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number,
     });
-    const back = style === 'sicilia' ? new AttachmentBuilder(renderSiciliaBack({ number, name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_') }) : null;
+    const backName = `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_');
+    const back = d.noBack ? null : style === 'sicilia'
+      ? new AttachmentBuilder(renderSiciliaBack({ number, name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: backName })
+      : new AttachmentBuilder(renderCardBack({ style, accent: palette(style, club.kit).accent, number, name: d.name, clubName: club.name, position: shortPosition(d.position) || d.position, rows: d.seasonRows || [], totals: d.clubTotals || null, edited: d.dataLabel === 'MEMBER-EDITED' }, G), { name: backName });
     // Keep a copy in the member's collection (My Cards); a failed save never blocks posting.
     cardsApi({ action: 'save', guild_id: guildId, discord_user_id: d.userId, style, name: String(d.name).slice(0, 40), front_b64: Buffer.from(png).toString('base64'), ...(back ? { back_b64: Buffer.from(back.attachment).toString('base64') } : {}) })
       .then((r) => r.error && console.warn('[studio] card save failed:', r.error)).catch(() => {});
