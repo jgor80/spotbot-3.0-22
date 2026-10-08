@@ -20,3 +20,11 @@ Rejected:
 - 102 (possessions lost): appears in only 10% of games, max 26 — not a per-player turnover count.
 - 61 (blocks): never occurs in FC27 data.
 - OurProClub's sample totals could not be matched to any player/code combination in our data.
+
+## Refined OurProClub mapping (current)
+At the club's request we report OurProClub's mapping, refined so it never double-counts:
+- `second_assists` = raw 118 (OurProClub's label). `hockey_assists` = max(118 − official assists, 0).
+- `chances_created` = 118 + 35 (through balls). Take-ons = 32 won / max(3, 32) attempted.
+- `possessions_won` 176, `possessions_lost` 102 (sparse), `blocks` 61 (rarely sent). Net possession = won − lost.
+- Season archive: `ball_recoveries` = 176 + interceptions; `defensive_stops` = tackles + interceptions + clearances + blocks.
+Code 49 stays a GK-save code and is never used for recoveries. All of these are shown with a * as estimates.

@@ -69,11 +69,20 @@ function eventCounts(p) {
 function eventStats(p) {
   const c = eventCounts(p);
   const g = (k) => c[k] || 0;
+  // OurProClub mapping, refined (same as backfill_advanced_player_stats()):
+  // 118 raw = their "second assists"; surplus over official assists = true hockey assists.
+  const sa = g(118);
+  const assists = int(p.assists);
   return {
-    // Only codes that pass data checks. 118 is a subset of assists (not a second assist);
-    // 102 and 61 have no reliable meaning, so they are not reported.
+    second_assists: sa,
+    hockey_assists: Math.max(sa - assists, 0),
+    chances_created: sa + g(35),
+    through_balls: g(35),
     dribbles: g(32),
+    take_on_attempts: Math.max(g(3), g(32)),
     possessions_won: g(176),
+    possessions_lost: g(102),
+    blocks: g(61),
   };
 }
 
@@ -109,8 +118,12 @@ function statColumns(s, scoreAgainst) {
     seconds_played: s.seconds_played,
     archetypeid: s.archetypeid,
     second_assists: s.second_assists || 0,
+    hockey_assists: s.hockey_assists || 0,
+    chances_created: s.chances_created || 0,
+    through_balls: s.through_balls || 0,
     dribbles: s.dribbles || 0,
     dribble_success: s.dribbles || 0,
+    take_on_attempts: s.take_on_attempts || 0,
     possession_gains: s.possessions_won || 0,
     possessions_lost: s.possessions_lost || 0,
     blocks: s.blocks || 0,
