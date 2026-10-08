@@ -2117,7 +2117,7 @@ function buildPrefsEmbed(selected, formationName = null) {
       const rankIcon = RANK_EMOJI[rank] || `${rank}.`;
       const meta = POSITION_META[pos];
       const friendly = meta ? `${meta.emoji || ''} **${pos}** – ${meta.label}` : `**${pos}**`;
-      return `${rankIcon} ${friendly}`;
+      return `${rankIcon} ${friendly}${i === 0 ? '  ⭐ **PRIMARY**' : ''}`;
     });
     body = 'Your current preferences:\n' + lines.join('\n');
   }
@@ -2129,8 +2129,8 @@ function buildPrefsEmbed(selected, formationName = null) {
     .setColor(0x5865f2)
     .setDescription(`Slots: **${list.length}/${PREFS_LIMIT}** \`${bar}\`\n\n${body}`)
     .setFooter({ text: formationName 
-      ? `Showing positions for ${formationName} • Preferences saved automatically` 
-      : 'Preferences saved automatically • Smart matching fills similar positions' });
+      ? `Showing positions for ${formationName} • First pick is your ⭐ primary • Saved automatically` 
+      : 'First pick is your ⭐ primary position • Saved automatically • Smart matching fills similar positions' });
 }
 
 function buildPrefComponents(selected, availablePositions = null) {
@@ -2144,13 +2144,16 @@ function buildPrefComponents(selected, availablePositions = null) {
   const uniquePositions = [...new Set(positionsToShow)];
 
   uniquePositions.forEach((pos, index) => {
-    const isSelected = list.includes(pos);
+    const selIdx = list.indexOf(pos);
+    const isSelected = selIdx !== -1;
+    const isPrimary = selIdx === 0;
     const meta = POSITION_META[pos];
 
     const button = new ButtonBuilder()
       .setCustomId(`prefpos_${pos}`)
-      .setLabel(pos)
-      .setStyle(isSelected ? ButtonStyle.Success : ButtonStyle.Secondary);
+      .setLabel(isPrimary ? `⭐ ${pos}` : pos)
+      // Primary pick is highlighted blue, other picks green, unselected grey.
+      .setStyle(isPrimary ? ButtonStyle.Primary : isSelected ? ButtonStyle.Success : ButtonStyle.Secondary);
 
     if (meta?.emoji) button.setEmoji(meta.emoji);
 
