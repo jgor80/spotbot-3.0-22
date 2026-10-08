@@ -8,6 +8,7 @@ const THEMES = {
   cyber: { bg: '#050507', ink: '#f4f4f5', sub: '#9ca3af', glass: '#0d0d12', hi: '#e8ff3a', hi2: '#ff2bd6' },
   chrome: { bg: '#0b0f17', ink: '#ffffff', sub: '#c8d2e0', glass: '#ffffff', hi: '#9fe8ff', hi2: '#f4b8ff' },
   mvp: { bg: '#0a0a0a', ink: '#f7e7b4', sub: '#bfb59a', glass: '#141414', hi: '#d8b25a', hi2: '#f3d98d' },
+  sunday: { bg: '#2b2a26', ink: '#f2ead8', sub: '#c9bfa8', glass: '#3a3630', hi: '#8a6a3b', mud: '#4a3a26' },
   synthwave: { bg: '#140b2e', ink: '#fff6fb', sub: '#f8bfe0', glass: '#1d1042', hi: '#ff4fb8', hi2: '#3ef0ff', sun: '#ffb347' },
 };
 
@@ -32,7 +33,27 @@ function renderSignatureCard(d, G, accent) {
   const tag = d.tagline ? esc(String(d.tagline).slice(0, 60)) : '';
   let body = '';
 
-  if (d.style === 'modern') {
+  if (d.style === 'sunday') {
+    // Mud & Tears 1982: rain-streaked art, mud splats, a dented tape-mended frame and a sad paper label.
+    const rain = Array.from({ length: 70 }, (_, i) => { const x = (i * 149) % W, y = (i * 263) % 1300; return `<path d="M${x} ${y} l-14 46" stroke="#dfe7ee" stroke-opacity="0.18" stroke-width="2"/>`; }).join('');
+    const splats = [[120, 1150, 60], [900, 1180, 46], [780, 330, 28], [200, 420, 22], [560, 1230, 34]].map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${t.mud}" opacity="0.85"/><circle cx="${x + r}" cy="${y - r * 0.4}" r="${r * 0.3}" fill="${t.mud}" opacity="0.8"/>`).join('');
+    const labelY = comp === 'editorial' ? 120 : 1070;
+    body = `<defs><filter id="wetS"><feColorMatrix type="saturate" values="0.45"/><feComponentTransfer><feFuncR type="linear" slope="0.9"/><feFuncB type="linear" slope="1.05"/></feComponentTransfer></filter>
+      <clipPath id="winS"><path d="M70 70 H950 L944 1260 L76 1268 Z"/></clipPath></defs>
+      <rect width="${W}" height="${H}" fill="${t.bg}"/>
+      <g clip-path="url(#winS)">${d.art ? `<image href="${d.art}" x="0" y="0" width="${W}" height="1340" preserveAspectRatio="xMidYMin slice" filter="url(#wetS)"/>` : ''}<rect width="${W}" height="1340" fill="#5d6670" opacity="0.18"/>${rain}</g>
+      <path d="M70 70 H950 L944 1260 L76 1268 Z" fill="none" stroke="${t.glass}" stroke-width="14"/><path d="M70 70 H950 L944 1260 L76 1268 Z" fill="none" stroke="${t.hi}" stroke-width="3" stroke-dasharray="40 10 4 10"/>
+      <rect x="40" y="96" width="120" height="34" fill="#e8dcb8" opacity="0.8" transform="rotate(-24 100 113)"/><rect x="866" y="1210" width="120" height="34" fill="#e8dcb8" opacity="0.8" transform="rotate(-18 926 1227)"/>
+      ${splats}
+      <g transform="translate(90 ${labelY}) rotate(-1.5)"><rect width="844" height="148" fill="#e8dcb8"/><rect width="844" height="148" fill="${t.mud}" opacity="0.08"/>
+        <text x="30" y="90" font-family="Oswald" font-weight="700" font-size="${fit(name, 560, 72, 0.52)}" fill="#2b2118">${esc(name)}</text>
+        <text x="32" y="128" font-family="Inter" font-weight="700" font-size="18" letter-spacing="4" fill="#5b4a33">${esc(club)}${pos ? ` · ${esc(pos)}` : ''} · SUNDAY LEAGUE '82</text>
+        <g transform="translate(720 18)">${crest(0, 0, 110, '#2b2118')}</g></g>
+      <text x="512" y="${labelY - 18}" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="30" letter-spacing="8" fill="${t.ink}" opacity="0.9">MUD &amp; TEARS</text>
+      ${tag ? `<text x="512" y="${labelY + 186}" text-anchor="middle" font-family="Inter" font-style="italic" font-size="18" fill="${t.sub}">${tag}</text>` : ''}
+      ${stats.length ? `<rect x="70" y="1284" width="884" height="84" fill="${t.glass}"/>${statRow(1324, t.ink, t.sub)}` : ''}
+      ${footer(t.sub)}`;
+  } else if (d.style === 'modern') {
     // Live TV broadcast: full-bleed art, glass lower-third, live bug, telemetry rail.
     const barY = comp === 'editorial' ? 120 : 1080;
     body = `<defs><linearGradient id="fadeM" x1="0" y1="0" x2="0" y2="1"><stop offset="0.55" stop-color="${t.bg}" stop-opacity="0"/><stop offset="0.93" stop-color="${t.bg}"/></linearGradient>

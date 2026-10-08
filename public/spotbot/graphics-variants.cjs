@@ -11,6 +11,7 @@ const STYLE_POSES = {
   cyber: { stride: 4, celebrate: 3, ready: 2, profile: 2, ball: 1, captain: 1 },
   chrome: { profile: 3, ready: 3, stride: 2, captain: 2, celebrate: 1, ball: 1 },
   mvp: { celebrate: 4, captain: 3, ball: 2, profile: 2, ready: 1, stride: 1 },
+  sunday: { profile: 4, ready: 3, stride: 2, captain: 1, ball: 1, celebrate: 1 },
   synthwave: { ready: 3, profile: 3, celebrate: 2, stride: 2, ball: 1, captain: 1 },
   y2k: { stride: 3, celebrate: 3, ready: 2, ball: 2, profile: 1, captain: 1 },
   retro1960s: { profile: 4, captain: 3, ready: 3, ball: 2, stride: 1, celebrate: 1 },
