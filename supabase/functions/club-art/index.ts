@@ -38,6 +38,8 @@ const Body = z.object({
   variation: z.string().max(60).optional(),
   has_stats: z.boolean().default(true),
   has_tagline: z.boolean().default(true),
+  // Manually confirmed by the member in the card form; treated like a verified upload number.
+  kit_number_override: z.number().int().min(1).max(99).optional(),
 });
 
 const STYLE: Record<string, string> = {
@@ -122,7 +124,7 @@ Deno.serve(async (req) => {
 
   const found = await proPhoto(b);
   const ref = found?.file ?? null;
-  const kitNumber = found?.kitNumber ?? null;
+  const kitNumber = b.kit_number_override ?? found?.kitNumber ?? null;
   const prompt = promptFor(b, !!ref, kitNumber);
   const size = b.kind === "banner" ? "1536x1024" : "1024x1536";
   let res: Response;
