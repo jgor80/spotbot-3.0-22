@@ -35,3 +35,4 @@
 - [x] "Mud & Tears" Sunday League satirical card style in Graphics Studio
 - [x] Make /me visible to every server member
 - [x] Remove stale event boards from match-night channel
+- [x] Permanent competitive match vault + per-season Career Sets (nightly archive, profile view)
