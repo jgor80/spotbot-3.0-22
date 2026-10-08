@@ -241,9 +241,36 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return { state, club: null };
   }
 
-  async function crestFor(guildId) {
+  // Club crest for graphics: the uploaded branding logo wins, then the club's real
+  // EA badge (from its crestAssetId), then nothing (renderers fall back to initials).
+  const CREST_CACHE = new Map(); // ea:<clubId> -> data url | null
+  async function crestFor(guildId, club) {
     const prefs = serverPrefs ? await serverPrefs(guildId).catch(() => ({})) : {};
-    return G.fetchImage(prefs?.branding?.logo_url);
+    if (prefs?.branding?.logo_url) return G.fetchImage(prefs.branding.logo_url);
+    const id = club?.ea_club_id;
+    if (!id) return null;
+    const key = `ea:${id}`;
+    if (CREST_CACHE.has(key)) return CREST_CACHE.get(key);
+    let crest = null;
+    try {
+      const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/info', {
+        params: { platform: toFcPlatform(club.ea_platform), clubIds: id },
+        headers: {
+          accept: 'application/json',
+          origin: 'https://www.ea.com',
+          referer: 'https://www.ea.com/',
+          'user-agent': 'Mozilla/5.0',
+        },
+        timeout: 8000,
+        validateStatus: () => true,
+      });
+      const info = Array.isArray(res.data) ? res.data[0] : res.data?.[id];
+      const crestId = info?.customKit?.crestAssetId || info?.crestAssetId;
+      const url = G.eaCrestUrl(crestId);
+      if (url) crest = await G.fetchImage(url);
+    } catch { /* leave crest null */ }
+    CREST_CACHE.set(key, crest);
+    return crest;
   }
 
   function panelMessage(club) {
