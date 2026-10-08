@@ -762,14 +762,6 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (!id.startsWith('gs_')) return false;
     const [action, a1, a2, a3] = id.split(':');
     // Modal-opening buttons use prepared data: never wait on cloud reads before Discord's 3s deadline.
-    if (interaction.isButton() && action === 'gs_dback') {
-      const draft = DRAFTS.get(a1);
-      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
-        await interaction.update({ content: 'That form expired — start again from the panel.', components: [] }); return true;
-      }
-      draft.data.noBack = !draft.data.noBack;
-      await interaction.update(draftPrompt(a1, 'card', findClub(draft.clubKey))); return true;
-    }
     if (interaction.isButton() && action === 'gs_edit') {
       const draft = DRAFTS.get(a1);
       if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
@@ -789,6 +781,14 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const update = (payload) => deferredSelect ? interaction.editReply(payload) : interaction.update(payload);
     const state = await getGuildState(interaction.guildId).catch(() => null);
     const findClub = (key) => activeClubs(state).find((c) => c.key === key) || activeClubs(state)[0];
+    if (interaction.isButton() && action === 'gs_dback') {
+      const draft = DRAFTS.get(a1);
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
+        await interaction.update({ content: 'That form expired — start again from the panel.', components: [] }); return true;
+      }
+      draft.data.noBack = !draft.data.noBack;
+      await interaction.update(draftPrompt(a1, 'card', findClub(draft.clubKey))); return true;
+    }
     const manager = async () => isManager(interaction.member, interaction.guildId);
     if (interaction.isButton() && action === 'gs_recruit') {
       await respond({ content: '📣 Pick a recruiting poster style:', components: [styleRow('recruit', a1)] });
