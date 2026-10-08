@@ -1,7 +1,8 @@
 
 ## Current
-- [ ] Fix Graphics Studio style-selection failures and verify the Discord interaction flow
-- [ ] Allow stat-free player cards and varied layouts and virtual-pro poses
+- [x] Fix Graphics Studio style-selection deadlines; test all styles with real Discord builders and verify a live Modern Broadcast render
+- [x] Allow stat-free player cards and non-repeating layouts and virtual-pro poses
+- [ ] Activate the updated Discord panel and verify in-server behavior — blocked on Railway deployment/access
 - [x] Refresh postgame recap images with soccer-broadcast backgrounds and stat-based player cards
 - [x] Auto-link known players on server join / voice join / "Is this you?" claim buttons
 - [x] Season-weighted scouting stats (FC27 1.0x, legacy 0.25x)
