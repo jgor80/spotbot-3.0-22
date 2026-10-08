@@ -45,7 +45,7 @@ function renderSignatureCard(d, G, accent) {
       <path d="M70 70 H950 L944 1260 L76 1268 Z" fill="none" stroke="${t.glass}" stroke-width="14"/><path d="M70 70 H950 L944 1260 L76 1268 Z" fill="none" stroke="${t.hi}" stroke-width="3" stroke-dasharray="40 10 4 10"/>
       <rect x="40" y="96" width="120" height="34" fill="#e8dcb8" opacity="0.8" transform="rotate(-24 100 113)"/><rect x="866" y="1210" width="120" height="34" fill="#e8dcb8" opacity="0.8" transform="rotate(-18 926 1227)"/>
       ${splats}
-      <g transform="translate(90 ${labelY}) rotate(-1.5)"><rect width="844" height="150" fill="#e8dcb8"/><rect width="844" height="150" fill="${t.mud}" opacity="0.08"/>
+      <g transform="translate(90 ${labelY}) rotate(-1.5)"><rect width="844" height="148" fill="#e8dcb8"/><rect width="844" height="148" fill="${t.mud}" opacity="0.08"/>
         <text x="30" y="90" font-family="Oswald" font-weight="700" font-size="${fit(name, 560, 72, 0.52)}" fill="#2b2118">${esc(name)}</text>
         <text x="32" y="128" font-family="Inter" font-weight="700" font-size="18" letter-spacing="4" fill="#5b4a33">${esc(club)}${pos ? ` · ${esc(pos)}` : ''} · SUNDAY LEAGUE '82</text>
         <g transform="translate(720 18)">${crest(0, 0, 110, '#2b2118')}</g></g>
