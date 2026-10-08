@@ -493,9 +493,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     };
   }
   async function renderPoster({ guildId, club, style, d }) {
-    const motmId = await idForName(d.motm?.name);
+    const players = await teamPlayers(guildId, club, await idForName(d.motm?.name));
+    if (!players.length) return { error: 'No active club players have saved pro photos yet.' };
     const mood = d.result === 'win' ? 'win' : d.result === 'loss' ? 'loss' : 'draw';
-    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: motmId, mood, competition: clip(d.competition, 60), ...nextVariation(`${guildId}:poster:${style}`, style, mood) });
+    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, guild_id: guildId, team_player_ids: players, mood, competition: clip(d.competition, 60), ...nextVariation(`${guildId}:poster:${style}`, style, mood) });
     if (a.error) return a;
     const png = matchPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crestFor: await crestFor(guildId, club, style), crestAgainst: null, ...d });
     return { file: new AttachmentBuilder(png, { name: 'full-time.png' }) };
@@ -540,7 +541,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     input('subtitle', 'Subtitle (competition · date · formation)', [d.subtitle, d.formation].filter(Boolean).join(' · '), { max: 80 }),
     input('starters', 'Starting XI — one per line: POS Name', d.starters.map((s) => `${s.pos} ${s.name}`).join('\n'), { para: true, max: 600, req: true }),
     input('subs', 'Subs (comma separated)', d.subs.join(', '), { para: true, max: 300 }),
-    input('featured', 'Featured player for the artwork (name)', d.featured, { max: 40 }),
+    input('featured', 'Lead player in the team artwork (optional)', d.featured, { max: 40 }),
   );
   async function applyLineupEdits(d, f) {
     const starters = f('starters').split('\n').map((s) => s.trim()).filter(Boolean).slice(0, 11).map((line) => {
@@ -553,7 +554,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     };
   }
   async function renderLineup({ guildId, club, style, d }) {
-    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.heroId, mood: 'neutral', competition: clip(d.subtitle, 60), ...nextVariation(`${guildId}:lineup:${style}`, style) });
+    const players = await teamPlayers(guildId, club, d.heroId);
+    if (!players.length) return { error: 'No active club players have saved pro photos yet.' };
+    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, guild_id: guildId, team_player_ids: players, mood: 'neutral', competition: clip(d.subtitle, 60), ...nextVariation(`${guildId}:lineup:${style}`, style) });
     if (a.error) return a;
     const png = lineupPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), ...d });
     return { file: new AttachmentBuilder(png, { name: 'starting-xi.png' }) };
@@ -578,7 +581,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       for (const r of data || []) for (const p of r.player_stats || []) if (p?.ea_username) seen.set(p.ea_username.toLowerCase(), p.ea_username);
       roster = [...seen.values()];
     }
-    const a = await art({ kind: 'banner', style, club_name: club.name, kit: club.kit || {}, competition, discord_user_id: heroId, ...nextVariation(`${guildId}:banner:${style}`, style, 'win') });
+    const players = await teamPlayers(guildId, club, heroId);
+    if (!players.length) return { error: 'No active club players have saved pro photos yet.' };
+    const a = await art({ kind: 'banner', style, club_name: club.name, kit: club.kit || {}, competition, guild_id: guildId, team_player_ids: players, ...nextVariation(`${guildId}:banner:${style}`, style, 'win') });
     if (a.error) return a;
     const png = banner({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), headline: title, competition, seasonTag, roster });
     return { file: new AttachmentBuilder(png, { name: 'champions-banner.png' }) };
@@ -589,20 +594,20 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     input('positions', 'Positions needed (optional)', d.positions, { max: 60 }),
     input('details', 'Trial time / platform / requirements', d.details, { max: 150, para: true }),
     input('contact', 'Contact or invite link (optional)', d.contact, { max: 100 }),
-    input('featured', 'Player Discord ID (blank = auto-pick)', d.featured, { max: 25 }),
+    input('featured', 'Lead player Discord ID (optional)', d.featured, { max: 25 }),
   );
-  async function recruitmentPlayer(guildId, club) {
+  async function teamPlayers(guildId, club, leadId) {
     let teamId = club.team_id;
     if (!teamId) {
       const { data, error } = await supabase.from('teams').select('id').eq('guild_id', guildId).ilike('name', club.name).limit(1).maybeSingle();
       if (error) throw new Error(error.message);
       teamId = data?.id;
     }
-    if (!teamId) return undefined;
+    if (!teamId) return [];
     const { data: roster, error } = await supabase.from('team_rosters').select('discord_user_id, status').eq('team_id', teamId);
     if (error) throw new Error(error.message);
     const ids = [...new Set((roster || []).filter((r) => (r.status || 'active') === 'active' && /^\d{5,25}$/.test(r.discord_user_id)).map((r) => r.discord_user_id))];
-    if (!ids.length) return undefined;
+    if (!ids.length) return [];
     const results = await Promise.all(['pro_photo_assets', 'pro_photos'].map((table) =>
       supabase.from(table).select('discord_user_id').in('discord_user_id', ids)));
     const saved = new Set();
@@ -611,13 +616,19 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       for (const photo of result.data || []) saved.add(photo.discord_user_id);
     }
     const candidates = ids.filter((id) => saved.has(id));
-    return candidates[Math.floor(Math.random() * candidates.length)];
+    // Fisher-Yates rotates the group; an eligible chosen lead stays in front.
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+    if (leadId && candidates.includes(leadId)) return [leadId, ...candidates.filter((id) => id !== leadId)].slice(0, 5);
+    return candidates.slice(0, 5);
   }
   async function renderRecruit({ guildId, club, style, d }) {
-    const featured = d.featured || await recruitmentPlayer(guildId, club);
-    if (!featured) return { error: 'No active club players have saved pro photos yet. Upload a photo for an active roster player or specify a featured player.' };
+    const players = await teamPlayers(guildId, club, d.featured);
+    if (!players.length) return { error: 'No active club players have saved pro photos yet. Upload photos for active roster players.' };
     const a = await art({ kind: 'poster', style: STYLES[style]?.cardOnly && style !== 'sicilia' ? 'vintage' : style,
-      club_name: club.name, kit: club.kit || {}, mood: 'neutral', discord_user_id: featured,
+      club_name: club.name, kit: club.kit || {}, mood: 'neutral', guild_id: guildId, team_player_ids: players,
       ...nextVariation(`${guildId}:recruit:${style}`, style) });
     if (a.error) return a;
     const png = recruitmentPoster({ ...d, art: a.image, style, clubName: club.name,
@@ -802,7 +813,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
           new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('competition').setLabel('Competition').setPlaceholder('VPG Cup Final · Oct 2026').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(60)),
           new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('tag').setLabel('Corner tag (optional)').setPlaceholder('SEASON 1').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(14)),
           new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('roster').setLabel('Roster (comma sep. / "lineup" / blank=3 wks)').setPlaceholder('lineup = players from the latest tournament lineup').setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(600)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('hero').setLabel('Featured player (Discord user ID, optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(25)),
+           new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('hero').setLabel('Lead player (Discord user ID, optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(25)),
         );
         await interaction.showModal(modal);
         return true;
