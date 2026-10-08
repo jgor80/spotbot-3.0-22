@@ -81,4 +81,63 @@ function fantasyTop(match, n = 3) {
     .slice(0, n);
 }
 
-module.exports = { fantasyPoints, headline, mood, unitBadges, fantasyTop };
+// Catalyst: the build-up player behind the goals (chances created, hockey assists, take-ons).
+// Skips the outright top scorer so it spotlights someone the scoresheet misses.
+function catalyst(match) {
+  const score = (p) => num(p.chances_created) * 2 + num(p.hockey_assists) * 3 + num(p.dribbles) * 0.5 + num(p.assists) * 2;
+  const top = [...match.players].filter((p) => score(p) >= 3).sort((a, b) => score(b) - score(a))[0];
+  if (!top) return null;
+  const bits = [
+    num(top.chances_created) && `${num(top.chances_created)} chances created`,
+    num(top.hockey_assists) && `${num(top.hockey_assists)} hockey assist${num(top.hockey_assists) > 1 ? 's' : ''}`,
+    num(top.assists) && `${num(top.assists)} assist${num(top.assists) > 1 ? 's' : ''}`,
+    num(top.dribbles) && `${num(top.dribbles)} take-ons`,
+  ].filter(Boolean);
+  return `🧠 **${name(top)}** pulled the strings: ${bits.slice(0, 3).join(' · ')}*`;
+}
+
+// Gentle roast for defeats only: the lowest rated player, with the real number behind it.
+function flop(match) {
+  if (match.result !== 'loss') return null;
+  const rated = match.players.filter((p) => num(p.rating) > 0).sort((a, b) => num(a.rating) - num(b.rating));
+  const p = rated[0];
+  if (!p || rated.length < 3 || num(p.rating) >= 6.8) return null;
+  const why = num(p.red_cards)
+    ? 'an early bath with a red card'
+    : num(p.pass_attempts) >= 6 && num(p.passes_made) / num(p.pass_attempts) < 0.65
+      ? `${num(p.passes_made)}/${num(p.pass_attempts)} passing`
+      : num(p.shots) >= 3 && !num(p.goals)
+        ? `${num(p.shots)} shots, none in`
+        : `a ${num(p.rating).toFixed(1)} match rating`;
+  const lines = ['buys the cannoli this week', 'is on cone duty at training', 'owes the dressing room an espresso', 'has been sent to stand outside the Teatro Massimo to think'];
+  return `🍋 **Flop of the Match:** ${name(p)} — ${why}. ${lines[seed(String(match.id) + name(p)) % lines.length]}.`;
+}
+
+// All-time record vs this opponent from saved games (excludes the current match)
+function h2h(rows, opponent) {
+  if (!rows?.length) return null;
+  let w = 0, d = 0, l = 0, gd = 0;
+  for (const r of rows) {
+    if (r.result === 'win') w++; else if (r.result === 'loss') l++; else d++;
+    gd += num(r.score_for) - num(r.score_against);
+  }
+  return `⚔️ **H2H vs ${opponent}:** ${w}W · ${d}D · ${l}L (${gd >= 0 ? '+' : ''}${gd} GD) in ${rows.length} earlier meeting${rows.length > 1 ? 's' : ''}`;
+}
+
+// Milestones crossed in this match. totals: Map lower(name) -> { apps, goals, cs } including this match.
+const APP_MARKS = [10, 25, 50, 75, 100, 150, 200, 250, 300, 400, 500];
+const GOAL_MARKS = [1, 10, 25, 50, 75, 100, 150, 200];
+function milestones(match, totals) {
+  const out = [];
+  for (const p of match.players) {
+    const t = totals.get(name(p).toLowerCase());
+    if (!t) continue;
+    if (APP_MARKS.includes(t.apps)) out.push(`🎖️ ${name(p)} — ${t.apps}th appearance`);
+    const g = num(p.goals);
+    const crossed = GOAL_MARKS.filter((m) => t.goals >= m && t.goals - g < m).pop();
+    if (g && crossed) out.push(crossed === 1 ? `🎉 ${name(p)} — first club goal` : `⚽ ${name(p)} — reached ${crossed} club goals`);
+  }
+  return out.slice(0, 4);
+}
+
+module.exports = { fantasyPoints, headline, mood, unitBadges, fantasyTop, catalyst, flop, h2h, milestones };
