@@ -29,29 +29,34 @@ function seamlessLogo(dataUrl) {
     let x0 = W, y0 = H, x1 = -1, y1 = -1;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (px[at(x, y) + 3] > 200) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
     if (x1 < 0) return dataUrl;
-    // Sample the frame border: a uniform border means a flat backdrop box.
-    const border = [];
-    for (let x = x0; x <= x1; x += 2) border.push(at(x, y0), at(x, y1));
-    for (let y = y0; y <= y1; y += 2) border.push(at(x0, y), at(x1, y));
-    const opaque = border.filter((i) => px[i + 3] > 200);
-    if (opaque.length > border.length * 0.6) {
-      const bg = [0, 1, 2].map((c) => opaque.map((i) => px[i + c]).sort((a, b) => a - b)[opaque.length >> 1]);
+    // Peel hairline frame/scan lines on the image edge so they never show as a stray rule.
+    const peel = Math.max(2, Math.round((x1 - x0) * 0.006));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x < x0 + peel || x > x1 - peel || y < y0 + peel || y > y1 - peel) px[at(x, y) + 3] = 0;
+    const transparent = (x, y) => x < 0 || y < 0 || x >= W || y >= H || px[at(x, y) + 3] < 24;
+    // Two passes: the outer square, then e.g. a flat white disc inside it.
+    for (let pass = 0; pass < 2; pass++) {
+      const edge = [];
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (transparent(x, y)) continue;
+        if (transparent(x + 1, y) || transparent(x - 1, y) || transparent(x, y + 1) || transparent(x, y - 1)) edge.push([x, y]);
+      }
+      if (edge.length < 40) break;
+      const idx = edge.map(([x, y]) => at(x, y));
+      const bg = [0, 1, 2].map((c) => idx.map((i) => px[i + c]).sort((a, b) => a - b)[idx.length >> 1]);
       const dist = (i) => Math.max(Math.abs(px[i] - bg[0]), Math.abs(px[i + 1] - bg[1]), Math.abs(px[i + 2] - bg[2]));
-      const close = opaque.filter((i) => dist(i) < 36).length;
-      if (close > opaque.length * 0.8) {
-        const seen = new Uint8Array(W * H), stack = [];
-        for (let x = x0; x <= x1; x++) stack.push([x, y0], [x, y1]);
-        for (let y = y0; y <= y1; y++) stack.push([x0, y], [x1, y]);
-        while (stack.length) {
-          const [x, y] = stack.pop();
-          if (x < x0 || y < y0 || x > x1 || y > y1) continue;
-          const k = y * W + x; if (seen[k]) continue; seen[k] = 1;
-          const i = k * 4, d = dist(i);
-          if (d >= 60) continue;
-          // Hard knock-out for the flat fill, feathered alpha on the anti-aliased edge.
-          px[i + 3] = d < 36 ? 0 : Math.round(px[i + 3] * (d - 36) / 24);
-          if (d < 36) stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
-        }
+      // Only a uniform outline is a backdrop; a crest's own varied edge is left alone.
+      if (idx.filter((i) => dist(i) < 36).length < idx.length * 0.85) break;
+      const seen = new Uint8Array(W * H), stack = edge.slice();
+      while (stack.length) {
+        const [x, y] = stack.pop();
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const k = y * W + x; if (seen[k]) continue; seen[k] = 1;
+        const i = k * 4; if (px[i + 3] < 24) continue;
+        const d = dist(i);
+        if (d >= 60) continue;
+        // Hard knock-out for the flat fill, feathered alpha on the anti-aliased edge.
+        px[i + 3] = d < 36 ? 0 : Math.round(px[i + 3] * (d - 36) / 24);
+        if (d < 36) stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
       }
     }
     // Trim to the visible crest with a small margin.
