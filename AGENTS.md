@@ -10,5 +10,5 @@
 - The bot requests Discord's Message Content intent (needed to see attachments for #pro-photos) and falls back to logging in without it if the portal toggle is off, so a missing toggle never takes the bot offline.
 - `fun-zone.cjs`: real-stat roasts, fiction-marked rumours.
 - Season sets: `player_season_archive` (never purged) feed backs (`graphics-card-back.cjs`) plus exact-club EA total.
-- Hidden EA stats (second assists, dribbles, possessions won/lost, blocks) are decoded from match_event_aggregate codes in both ea-player-stats.cjs and the backfill_advanced_player_stats() DB function, which reruns hourly; keep the code meanings identical in both so history and live recaps agree.
+- Hidden EA stats come from match_event_aggregate codes, decoded identically in ea-player-stats.cjs and backfill_advanced_player_stats() (hourly); only data-verified codes are reported (see docs/ea-event-codes.md), never codes that fail the checks.
 - Graphics Studio rules live in public/spotbot/AGENTS.md.
