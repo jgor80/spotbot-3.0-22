@@ -1614,4 +1614,4 @@ function createEvents(deps) {
   };
 }
 
-module.exports = { createEvents, EVENT_COMMANDS, POSITIONS, EVENT_TYPES, matchFormation };
+module.exports = { createEvents, EVENT_COMMANDS, POSITIONS, EVENT_TYPES, matchFormation, typeInfo };

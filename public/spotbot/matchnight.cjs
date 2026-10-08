@@ -11,6 +11,8 @@ const {
 } = require('discord.js');
 const { missingChannelPerms } = require('./perm-check.cjs');
 const T = require('./event-time.cjs');
+const { typeInfo } = require('./events.cjs');
+const { createProgramme } = require('./matchday-programme.cjs');
 
 const CHECKIN_LEAD_MS = 30 * 60 * 1000;
 const CHECKINS = {
@@ -50,6 +52,7 @@ function truncate(text, max = 1024) {
 function createMatchNight(deps) {
   const { supabase, events, isManager, callEdgeFunction, getGuildState } = deps;
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
+  const programme = createProgramme({ supabase, typeInfo });
 
   // ---------- Data ----------
 
@@ -171,8 +174,11 @@ function createMatchNight(deps) {
     const channel = await client.channels.fetch(event.channel_id).catch(() => null);
     if (!channel?.send) return null;
     if (missingChannelPerms(channel, channel.guild.members.me).length) return null;
-    const { ids } = await expectedTonight(event);
+    const { ids, lineup } = await expectedTonight(event);
     const board = await events.fetchBoardMessage(event);
+    // Matchday Programme goes up once, just before check-in opens
+    const prog = await programme.build(event, lineup).catch((err) => console.warn(`[matchnight] programme: ${err.message}`));
+    if (prog) await (board ? board.reply({ embeds: [prog], allowedMentions: { parse: [] } }) : channel.send({ embeds: [prog], allowedMentions: { parse: [] } })).catch(() => {});
     const payload = {
       content: ids.length ? `🟢 Check-in is open for **${event.title}**: ${ids.map((id) => `<@${id}>`).join(' ')}` : `🟢 Check-in is open for **${event.title}**.`,
       ...(await buildCheckin(event)),

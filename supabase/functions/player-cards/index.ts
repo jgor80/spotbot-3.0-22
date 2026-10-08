@@ -17,6 +17,7 @@ function safeEqual(a: string, b: string) {
 }
 const id = z.string().regex(/^\d{5,25}$/);
 const Body = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("binder") }),
   z.object({ action: z.literal("latest"), guild_id: id, discord_user_ids: z.array(id).max(100).optional() }),
   z.object({ action: z.literal("save"), guild_id: id, discord_user_id: id, style: z.string().max(30), name: z.string().min(1).max(40),
     front_b64: z.string().min(10).max(12_000_000), back_b64: z.string().max(12_000_000).optional() }),
@@ -35,6 +36,16 @@ Deno.serve(async (req) => {
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return json({ error: "Invalid request." }, 400);
   const b = p.data;
+  // Binder: the signed-in member's own collection, fronts and backs. Ownership comes from their
+  // verified Discord link, never from the request body.
+  if (b.action === "binder") {
+    if (bot || caller?.kind !== "user") return json({ error: "Forbidden" }, 403);
+    const { data: links } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId);
+    const ids = (links ?? []).map((l) => l.discord_user_id).filter(Boolean);
+    if (!ids.length) return json({ cards: [] });
+    const { data } = await db.from("player_cards").select("id,style,name,created_at,storage_path,back_path").in("discord_user_id", ids).order("created_at", { ascending: false }).limit(60);
+    return json({ cards: await Promise.all((data ?? []).map(async (c) => ({ id: c.id, style: c.style, name: c.name, created_at: c.created_at, front_url: await sign(c.storage_path), back_url: await sign(c.back_path) }))) });
+  }
   // Only card fronts are shared within an authorized server. Collections/backs/deletion stay bot-owner scoped.
   if (b.action === "latest") {
     if (!bot) {

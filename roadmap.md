@@ -38,6 +38,6 @@
 - [x] Permanent competitive match vault + per-season Career Sets (nightly archive, profile view)
 - [x] Weekly stat trophies, Club Legend at 75% of club games, new trophies (Wall, MVP, Iron Man, Sniper, Fantasy King)
 - [x] Smarter recaps: Gazzetta headline, dressing-room mood, unit badges, fantasy points, MOTM stat line
-- [ ] Pregame Matchday Programme post
-- [ ] 3D card binder page on the web app
-- [ ] All-time trophy cabinet with season history
+- [x] Pregame Matchday Programme post
+- [x] 3D card binder page on the web app
+- [x] All-time trophy cabinet with season history
