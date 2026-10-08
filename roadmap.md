@@ -1,5 +1,6 @@
 
 ## Current
+- [ ] Use groups of saved active club players in recruitment, banners and other team-focused graphics
 - [x] Automatically feature a saved active club player on recruitment posters when none is specified
 - [x] Add recruiting posters in existing style filters and uploaded Palermo logo choices
 - [x] Verify card stat provenance and reflow cards without optional text or stats
