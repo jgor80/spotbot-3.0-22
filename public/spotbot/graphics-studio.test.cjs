@@ -54,7 +54,7 @@ test('all styles load safely, portrait option opens a valid stat-free form and r
     for (const style of Object.keys(STYLES)) {
       const f = fixture();
       assert.equal(await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: [style] })), true);
-      const buttons = f.requests.at(-1).components[0].toJSON().components;
+      const buttons = f.requests.at(-1).components.at(-1).toJSON().components;
       assert.equal(buttons.length, 2);
       const portrait = buttons.find((b) => b.label === 'Portrait Only');
       assert.ok(portrait);
@@ -76,7 +76,7 @@ test('all styles load safely, portrait option opens a valid stat-free form and r
 test('blank stats on a prefilled card stay blank rather than restoring stats', async () => {
   const f = fixture();
   await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: ['modern'] }));
-  const buttons = f.requests.at(-1).components[0].toJSON().components;
+  const buttons = f.requests.at(-1).components.at(-1).toJSON().components;
   await f.studio.handleInteraction(f.interaction(buttons[0].custom_id, 'button'));
   assert.match(f.requests.at(-1).components.find((r) => r.components[0].custom_id === 'stats').components[0].value, /GAMES/);
   const originalFetch = global.fetch;
@@ -97,7 +97,7 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
   const logoMenu = f.requests.at(-1).components[0].toJSON().components[0];
   assert.equal(logoMenu.options.length, 7);
   await f.studio.handleInteraction(f.interaction(logoMenu.custom_id, 'select', { values: ['heritage'] }));
-  const edit = f.requests.at(-1).components[0].toJSON().components[0];
+  const edit = f.requests.at(-1).components.at(-1).toJSON().components[0];
   await f.studio.handleInteraction(f.interaction(edit.custom_id, 'button', { user: { id: 'other' } }));
   assert.match(f.requests.at(-1).content, /expired/);
   await f.studio.handleInteraction(f.interaction(edit.custom_id, 'button'));
@@ -108,7 +108,7 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
   global.fetch = async (_, options) => {
     const b = JSON.parse(options.body);
     assert.equal(b.kind, 'poster'); assert.equal(b.style, 'synthwave');
-    assert.equal(b.kit.primary, 'pink'); assert.equal(b.mood, 'neutral');
+    assert.equal(b.kit.primary, 'pale pink'); assert.match(b.kit.description, /diagonal slash/); assert.equal(b.mood, 'neutral');
     assert.equal(b.discord_user_id, '501557839932948490');
     return { ok: true, json: async () => ({ image_b64: new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="pink"/></svg>').render().asPng().toString('base64') }) };
   };
@@ -141,7 +141,7 @@ test('recruitment auto-pick excludes inactive and unsaved players, preserves exp
       await f.studio.handleInteraction(f.interaction('gs_style:recruit:palermo', 'select', { values: ['modern'] }));
       const menu = f.requests.at(-1).components[0].toJSON().components[0];
       await f.studio.handleInteraction(f.interaction(menu.custom_id, 'select', { values: ['auto'] }));
-      const edit = f.requests.at(-1).components[0].toJSON().components[0];
+      const edit = f.requests.at(-1).components.at(-1).toJSON().components[0];
       await f.studio.handleInteraction(f.interaction(edit.custom_id, 'button'));
       const modal = f.requests.at(-1);
       const before = bodies.length;
@@ -347,4 +347,15 @@ test('2020s Club Prism renders angular, mosaic and sculpted editions with option
   assert.match(lastSvg, />22</);
   playerCard({ ...base, name: 'A very long player name with forty letters', clubName: 'A very long football club name for testing' });
   assert.doesNotMatch(lastSvg, /NaN|undefined/);
+});
+test('Palermo kits auto-pair by era and stay scoped to Palermo', () => {
+  const { kitFor, kitsFor } = require('./club-kits.cjs');
+  const pal = { name: 'PCN Palermo', kit: { primary: 'pink' } };
+  assert.equal(kitFor(pal, 'retro1970s').key, 'retro1979');
+  assert.equal(kitFor(pal, 'retro1986').key, 'retro1986');
+  assert.equal(kitFor(pal, 'y2k').key, 'retro2000s');
+  assert.equal(kitFor(pal, 'synthwave').key, 'home');
+  assert.equal(kitFor(pal, 'retro1970s', 'third').key, 'third');
+  assert.ok(kitsFor(pal).every((k) => k.description.length <= 200));
+  assert.deepEqual(kitFor({ name: 'Other FC', kit: { primary: 'red' } }, 'y2k'), { primary: 'red' });
 });
