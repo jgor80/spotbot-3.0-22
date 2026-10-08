@@ -24,6 +24,7 @@ const CompetitionsPage = lazy(() => import("./pages/CompetitionsPage"));
 const TeamsPage = lazy(() => import("./pages/TeamsPage"));
 const RatingsPage = lazy(() => import("./pages/RatingsPage"));
 const RecentGamesPage = lazy(() => import("./pages/RecentGamesPage"));
+const CabinetPage = lazy(() => import("./pages/CabinetPage"));
 const InsightsPage = lazy(() => import("./pages/InsightsPage"));
 const SquadIQPanel = lazy(() => import("./pages/SquadIQPanel"));
 const StreamOverlay = lazy(() => import("./pages/StreamOverlay"));
