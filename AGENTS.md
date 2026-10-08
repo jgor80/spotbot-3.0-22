@@ -16,3 +16,4 @@
 - Player-only decade collections, including Y2K, 2010s and 2020s cards, use dedicated local SVG renderers with composition-selected frames and reuse an existing text-free artwork style, so fixed frame geometry and accurate lettering do not depend on AI-generated text.
 - Card data is validated in `card-stats.cjs` against the exact club and EA baseline ID; missing metrics and unverified EA win records are omitted, while manual changes are labelled member-edited to prevent misleading claims.
 - `card-layout.cjs` removes unused print-card stat bands and portrait artwork requests reserve only compact lettering space, so optional data never leaves empty panels.
+- Signature cards (broadcast, heritage, esports, synthwave) render in `graphics-signature.cjs` with style-specific text-free art from club-art, so each style's frame and lighting stay distinct.
