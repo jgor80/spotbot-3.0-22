@@ -459,6 +459,9 @@ const statRoles = createStatRoles(premiumDeps);
 const coach = createCoach({ ...premiumDeps, openai });
 const funZone = createFunZone({ getGuildState, saveGuildSettings, loadMatches: managerHub.loadMatches });
 autopilot.onSessionEnd(funZone.onSessionEnd);
+// Clips & Highlights: Xbox clips recorded during club matches, plus match tags on shared clips
+const clips = require('./clips.cjs').createClips({ supabaseUrl, secret: BOT_PROXY_SECRET, getGuildState, updateClub: autopilot.updateClub, loadMatches: managerHub.loadMatches, client: () => client });
+autopilot.onNewMatches(clips.onNewMatches);
 
 // MessageContent is required to see attachments on normal channel posts (#pro-photos detection).
 // It's a privileged intent: if it isn't enabled in the Developer Portal, login falls back without it.
@@ -477,6 +480,7 @@ client.on('messageCreate', (message) => {
   managerHub.onMessage(message).catch((err) => console.warn('[sticky] message hook failed:', err.message));
   proPhotos.onMessage(message).catch((err) => console.warn('[pro-photos] failed:', err.message));
   graphicsStudio.onMessage(message).catch((err) => console.warn('[studio] failed:', err.message));
+  clips.onMessage(message).catch((err) => console.warn('[clips] failed:', err.message));
 });
 client.once('ready', () => {
   setTimeout(() => managerHub.initSticky(client).catch((err) => console.warn('[sticky] init failed:', err.message)), 15000);
