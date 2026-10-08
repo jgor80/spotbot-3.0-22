@@ -81,7 +81,7 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number |
     : b.composition === "editorial" ? "Editorial composition: leave a dark empty band from 12% to 28% height for the name; place the character below that band, face between 32% and 50% height, with the lower third empty."
     : b.composition === "side-panel" ? "Asymmetric composition: character to the right, face in the upper right half. Leave the lower left area and bottom third dark and empty for a nameplate and optional stats."
     : "Broadcast lower-third composition: character centred, face in the upper half, lower third empty for a nameplate and optional stats.";
-   const variation = `Creative edition ${b.variation || crypto.randomUUID()}: independently vary camera angle, stadium detail and lighting within the selected style. The pose must be ${poses[b.pose]}. Reuse the reference pose when it already matches; otherwise adapt it. Never copy its background or typography. ${placement} ${framing}`;
+   const variation = `Creative edition ${b.variation || crypto.randomUUID()}: independently vary camera angle, stadium detail and lighting within the selected style. The pose must be ${poses[b.pose]}. Never copy the reference photo's posture, arm or hand positions — take only the face, hair, beard and accessories from it. Never copy its background or typography. ${placement} ${framing}`;
   if (b.kind === "banner") {
     return `Championship celebration artwork for the esports football club ${b.club_name}${b.competition ? ` winning ${b.competition}` : ""}. A large gleaming trophy in the centre on a stage, confetti and pyrotechnics, stadium lights. ${hasRef ? `The reference shows one of the club's players: include them lifting or standing beside the trophy, keeping their face, hair and accessories. ${render} ${kitLine(b.kit, b.club_name)}` : `Club colours ${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "throughout"}.`} Style: ${look}. Wide landscape composition. Independently vary trophy camera angle, lighting and stage arrangement for edition ${b.variation || crypto.randomUUID()}. ${noText}`;
   }
@@ -89,7 +89,7 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number |
     ? b.mood === "win" ? "celebrating a victory with a fist pump, roaring" : b.mood === "loss" ? "determined, walking off the pitch, focused" : "intense, ready for kick-off"
     : `player-card portrait${b.position ? `, as a ${b.position}` : ""}`;
   const subject = hasRef
-    ? `Recreate this exact in-game Virtual Pro character (same face, skin tone, hair, beard, glasses and accessories), ${action}. Preserve identity and game-render materials. Reuse the available reference pose if it fits the requested pose; adapt the camera and background to this graphic. ${render} ${kitLine(b.kit, b.club_name)}`
+    ? `Recreate this exact in-game Virtual Pro character (same face, skin tone, hair, beard, glasses and accessories), ${action}. Preserve identity and game-render materials, but pose the body freshly as requested; adapt the camera and background to this graphic. ${render} ${kitLine(b.kit, b.club_name)}`
     : `A stylised silhouette of a footballer in ${b.club_name}'s kit (${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "club colours"}), ${action}, seen from behind or in shadow so no face is shown.`;
   return `Vertical football club artwork. ${subject} Stadium background lit in the club colours. Style: ${look}. ${variation} ${noText}`;
 }
