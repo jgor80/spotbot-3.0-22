@@ -30,4 +30,4 @@
 - [x] Re-ingest #pro-photos messages 1557541357591986236 and 1557565010979594370 (all attachments)
 
 - [x] Fun Zone: /fun roast, presser, rumour, quote(s), curse + auto roast/curse in session recaps
-- [ ] "Mud & Tears" Sunday League satirical card style in Graphics Studio
+- [x] "Mud & Tears" Sunday League satirical card style in Graphics Studio
