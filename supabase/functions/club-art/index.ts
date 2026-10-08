@@ -9,7 +9,7 @@ const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
 const GATEWAY = "https://ai.gateway.lovable.dev";
 const MODEL = "openai/gpt-image-2.5-sunburst";
-const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+const db = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "");
 
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
 function safeEqual(a: string, b: string) {
@@ -32,6 +32,9 @@ const Body = z.object({
   position: z.string().max(10).optional(),
   mood: z.enum(["win", "draw", "loss", "neutral"]).default("neutral"),
   competition: z.string().max(60).optional(),
+  composition: z.enum(["lower-third", "editorial", "side-panel"]).default("lower-third"),
+  pose: z.enum(["ready", "stride", "ball", "celebrate", "profile", "captain"]).default("ready"),
+  variation: z.string().max(60).optional(),
 });
 
 const STYLE: Record<string, string> = {
@@ -49,17 +52,30 @@ function kitLine(kit: z.infer<typeof Body>["kit"], club: string) {
 function promptFor(b: z.infer<typeof Body>, hasRef: boolean) {
   const look = STYLE[b.style];
   const render = "Keep it looking like an EA SPORTS FC in-game 3D character render (video-game Virtual Pro model, game-engine shading), not a real human photo.";
-  const noText = "Absolutely no text, letters, numbers, logos or watermarks anywhere; leave clean dark space in the lower third for a headline.";
+  const noText = "Absolutely no text, letters, numbers, logos or watermarks anywhere; keep the lower third dark and uncluttered for the bot's typography.";
+  const poses = {
+    ready: "three-quarter standing pose, shoulders turned, looking towards the camera",
+    stride: "in motion striding across the pitch, natural arm swing, three-quarter view",
+    ball: "holding a football at the hip, relaxed shoulders and confident expression",
+    celebrate: "a composed fist-pump celebration with one arm raised",
+    profile: "side-profile portrait, looking across the stadium with focused expression",
+    captain: "hands on hips, captain-like stance, low camera angle",
+  };
+  const placement = b.kind !== "card" ? "Subject in the upper two thirds; keep the lower third empty."
+    : b.composition === "editorial" ? "Editorial composition: leave a dark empty band from 12% to 28% height for the name; place the character below that band, face between 32% and 50% height, with the lower third empty."
+    : b.composition === "side-panel" ? "Asymmetric composition: character to the right, face in the upper right half. Leave the lower left area and bottom third dark and empty for a nameplate and optional stats."
+    : "Broadcast lower-third composition: character centred, face in the upper half, lower third empty for a nameplate and optional stats.";
+  const variation = `Creative edition ${b.variation || crypto.randomUUID()}: independently vary camera angle, stadium detail and lighting within the selected style. The pose must be ${poses[b.pose]}. Do not copy the reference pose or its background. ${placement}`;
   if (b.kind === "banner") {
-    return `Championship celebration artwork for the esports football club ${b.club_name}${b.competition ? ` winning ${b.competition}` : ""}. A large gleaming trophy in the centre on a stage, confetti and pyrotechnics, stadium lights. ${hasRef ? `The reference shows one of the club's players: include them lifting or standing beside the trophy, keeping their face, hair and accessories. ${render} ${kitLine(b.kit, b.club_name)}` : `Club colours ${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "throughout"}.`} Style: ${look}. Wide landscape composition. ${noText}`;
+    return `Championship celebration artwork for the esports football club ${b.club_name}${b.competition ? ` winning ${b.competition}` : ""}. A large gleaming trophy in the centre on a stage, confetti and pyrotechnics, stadium lights. ${hasRef ? `The reference shows one of the club's players: include them lifting or standing beside the trophy, keeping their face, hair and accessories. ${render} ${kitLine(b.kit, b.club_name)}` : `Club colours ${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "throughout"}.`} Style: ${look}. Wide landscape composition. Independently vary trophy camera angle, lighting and stage arrangement for edition ${b.variation || crypto.randomUUID()}. ${noText}`;
   }
   const action = b.kind === "poster"
     ? b.mood === "win" ? "celebrating a victory with a fist pump, roaring" : b.mood === "loss" ? "determined, walking off the pitch, focused" : "intense, ready for kick-off"
-    : `heroic portrait pose for a player card${b.position ? `, as a ${b.position}` : ""}`;
+    : `player-card portrait${b.position ? `, as a ${b.position}` : ""}`;
   const subject = hasRef
-    ? `The reference image is the player's in-game Virtual Pro. Recreate this exact character (same face, skin tone, hair, beard, glasses and accessories), ${action}, waist-up, centred, filling the upper two thirds. ${render} ${kitLine(b.kit, b.club_name)}`
+    ? `The reference image supplies identity only. Recreate this exact in-game Virtual Pro character (same face, skin tone, hair, beard, glasses and accessories), ${action}. Preserve identity and game-render materials but change pose, camera and background. ${render} ${kitLine(b.kit, b.club_name)}`
     : `A stylised silhouette of a footballer in ${b.club_name}'s kit (${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "club colours"}), ${action}, seen from behind or in shadow so no face is shown.`;
-  return `Vertical esports football graphic artwork. ${subject} Stadium background lit in the club colours. Style: ${look}. ${noText}`;
+  return `Vertical football club artwork. ${subject} Stadium background lit in the club colours. Style: ${look}. ${variation} ${noText}`;
 }
 
 async function proPhoto(discordId?: string) {
@@ -98,13 +114,14 @@ Deno.serve(async (req) => {
     });
   }
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    console.error(`[club-art] AI ${res.status}: ${detail.slice(0, 300)}`);
-    const msg = res.status === 402 ? "AI credits ran out." : res.status === 429 ? "The art studio is busy, try again in a minute." : res.status === 403 ? "The image AI refused or isn't enabled for this workspace." : "Couldn't create the artwork.";
+    const detail = await res.json().catch(() => null);
+    console.error(`[club-art] AI failed: ${res.status}`);
+    const safeMessage = detail?.error?.message ?? detail?.message ?? (typeof detail?.error === "string" ? detail.error : null);
+    const msg = typeof safeMessage === "string" ? safeMessage : "Couldn't create the artwork.";
     return json({ error: msg }, res.status >= 500 ? 502 : res.status);
   }
   const out = await res.json().catch(() => null);
   const b64 = out?.data?.[0]?.b64_json;
-  if (!b64) return json({ error: "The AI returned no image (it may have declined the request)." }, 502);
+  if (!b64) return json({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
   return json({ image_b64: b64, used_pro_photo: !!ref });
 });
