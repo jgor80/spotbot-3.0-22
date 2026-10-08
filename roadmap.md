@@ -1,5 +1,7 @@
 
 ## Current
+- [ ] Fix Graphics Studio style-selection failures and verify the Discord interaction flow
+- [ ] Allow stat-free player cards and varied layouts and virtual-pro poses
 - [x] Refresh postgame recap images with soccer-broadcast backgrounds and stat-based player cards
 - [x] Auto-link known players on server join / voice join / "Is this you?" claim buttons
 - [x] Season-weighted scouting stats (FC27 1.0x, legacy 0.25x)
