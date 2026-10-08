@@ -581,11 +581,35 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     input('positions', 'Positions needed (optional)', d.positions, { max: 60 }),
     input('details', 'Trial time / platform / requirements', d.details, { max: 150, para: true }),
     input('contact', 'Contact or invite link (optional)', d.contact, { max: 100 }),
-    input('featured', 'Featured player Discord ID (optional)', d.featured, { max: 25 }),
+    input('featured', 'Player Discord ID (blank = auto-pick)', d.featured, { max: 25 }),
   );
+  async function recruitmentPlayer(guildId, club) {
+    let teamId = club.team_id;
+    if (!teamId) {
+      const { data, error } = await supabase.from('teams').select('id').eq('guild_id', guildId).ilike('name', club.name).limit(1).maybeSingle();
+      if (error) throw new Error(error.message);
+      teamId = data?.id;
+    }
+    if (!teamId) return undefined;
+    const { data: roster, error } = await supabase.from('team_rosters').select('discord_user_id, status').eq('team_id', teamId);
+    if (error) throw new Error(error.message);
+    const ids = [...new Set((roster || []).filter((r) => (r.status || 'active') === 'active' && /^\d{5,25}$/.test(r.discord_user_id)).map((r) => r.discord_user_id))];
+    if (!ids.length) return undefined;
+    const results = await Promise.all(['pro_photo_assets', 'pro_photos'].map((table) =>
+      supabase.from(table).select('discord_user_id').in('discord_user_id', ids)));
+    const saved = new Set();
+    for (const result of results) {
+      if (result.error) throw new Error(result.error.message);
+      for (const photo of result.data || []) saved.add(photo.discord_user_id);
+    }
+    const candidates = ids.filter((id) => saved.has(id));
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
   async function renderRecruit({ guildId, club, style, d }) {
+    const featured = d.featured || await recruitmentPlayer(guildId, club);
+    if (!featured) return { error: 'No active club players have saved pro photos yet. Upload a photo for an active roster player or specify a featured player.' };
     const a = await art({ kind: 'poster', style: STYLES[style]?.cardOnly && style !== 'sicilia' ? 'vintage' : style,
-      club_name: club.name, kit: club.kit || {}, mood: 'neutral', discord_user_id: d.featured || undefined,
+      club_name: club.name, kit: club.kit || {}, mood: 'neutral', discord_user_id: featured,
       ...nextVariation(`${guildId}:recruit:${style}`) });
     if (a.error) return a;
     const png = recruitmentPoster({ ...d, art: a.image, style, clubName: club.name,
@@ -747,7 +771,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       }
       if (kind === 'recruit') {
         const token = saveDraft({ kind, clubKey: club.key, style, userId: interaction.user.id,
-          data: { headline: 'JOIN OUR CLUB', positions: '', details: '', contact: '', featured: interaction.user.id } });
+          data: { headline: 'JOIN OUR CLUB', positions: '', details: '', contact: '', featured: '' } });
         const logos = logosFor(club);
         await update(logos.length ? { content: 'Pick your club logo:', components: [pickRow(`gs_rlogo:${token}`, 'Club logo',
           [{ label: 'Automatic — match the style', value: 'auto' }, ...logos.map((l) => ({ label: l.label, value: l.key }))])] } : draftPrompt(token, kind));

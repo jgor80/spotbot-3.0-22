@@ -17,13 +17,13 @@ Module._load = function (request, parent, ...args) {
 const { createGraphicsStudio, playerCard, STYLES, recruitmentPoster, palette } = require('./graphics-studio.cjs');
 Module._load = originalLoad;
 
-function fixture() {
+function fixture(overrides = {}) {
   const calls = [], posts = [], requests = [];
   const club = { key: 'palermo', name: 'PCN Palermo', kit: { primary: 'pink', secondary: 'black' } };
   const db = { from(table) {
     assert.ok(calls.includes('deferUpdate'), 'acknowledge before loading player data');
-    const result = table === 'player_club_stats' ? [{ club_key: 'palermo', games_played: 22, goals: 9, assists: 4, wins: 10, draws: 2, losses: 10 }] : table === 'profiles' ? { ea_username: 'AirDangus23' } : table === 'pro_photo_assets' ? [{ analysis: { kit_number: 23 } }] : { position: 'CAM', overall: 90 };
-    const query = { select() { return this; }, eq() { return this; }, order() { return this; }, limit() { return this; }, maybeSingle() { return Promise.resolve({ data: result }); }, then(resolve) { return Promise.resolve({ data: result }).then(resolve); } };
+    const result = Object.hasOwn(overrides, table) ? overrides[table] : table === 'teams' ? { id: 'palermo-team' } : table === 'team_rosters' ? [{ discord_user_id: '501557839932948490', status: 'active' }] : table === 'player_club_stats' ? [{ club_key: 'palermo', games_played: 22, goals: 9, assists: 4, wins: 10, draws: 2, losses: 10 }] : table === 'profiles' ? { ea_username: 'AirDangus23' } : table === 'pro_photo_assets' ? [{ discord_user_id: '501557839932948490', analysis: { kit_number: 23 } }] : { position: 'CAM', overall: 90 };
+    const query = { select() { return this; }, eq(key, value) { if (table === 'team_rosters') assert.equal(value, 'palermo-team'); return this; }, in(key, ids) { assert.ok(ids.includes('501557839932948490')); return this; }, ilike(key, value) { assert.equal(value, club.name); return this; }, order() { return this; }, limit() { return this; }, maybeSingle() { return Promise.resolve({ data: result }); }, then(resolve) { return Promise.resolve({ data: result }).then(resolve); } };
     return query;
   } };
   const guild = { id: '1529555651762851930', channels: { fetch: async () => null } };
@@ -102,11 +102,13 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
   await f.studio.handleInteraction(f.interaction(edit.custom_id, 'button'));
   const modal = f.requests.at(-1);
   assert.equal(modal.components.length, 5);
+  assert.equal(modal.components[4].components[0].value, '');
   const originalFetch = global.fetch;
   global.fetch = async (_, options) => {
     const b = JSON.parse(options.body);
     assert.equal(b.kind, 'poster'); assert.equal(b.style, 'synthwave');
     assert.equal(b.kit.primary, 'pink'); assert.equal(b.mood, 'neutral');
+    assert.equal(b.discord_user_id, '501557839932948490');
     return { ok: true, json: async () => ({ image_b64: new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="pink"/></svg>').render().asPng().toString('base64') }) };
   };
   try {
@@ -118,6 +120,40 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
     assert.match(lastSvg, /BECOME PALERMO/); assert.match(lastSvg, /GK · CB · CAM/);
     assert.doesNotMatch(lastSvg, /FULL TIME|VICTORY|EA MATCH DATA/);
     assert.equal(f.requests.at(-1), '✅ Posted!');
+  } finally { global.fetch = originalFetch; }
+});
+
+test('recruitment auto-pick excludes inactive and unsaved players, preserves explicit selections and handles an empty pool', async () => {
+  const originalFetch = global.fetch;
+  const bodies = [];
+  global.fetch = async (_, options) => {
+    bodies.push(JSON.parse(options.body));
+    return { ok: true, json: async () => ({ image_b64: new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"/>').render().asPng().toString('base64') }) };
+  };
+  try {
+    for (const mode of ['auto', 'explicit', 'empty']) {
+      const f = fixture({
+        team_rosters: [{ discord_user_id: '501557839932948490', status: 'active' }, { discord_user_id: '111111111111111111', status: 'inactive' }, { discord_user_id: '222222222222222222', status: 'active' }],
+        pro_photo_assets: mode === 'empty' ? [] : [{ discord_user_id: '111111111111111111' }],
+        pro_photos: mode === 'empty' ? [] : [{ discord_user_id: '501557839932948490' }],
+      });
+      await f.studio.handleInteraction(f.interaction('gs_style:recruit:palermo', 'select', { values: ['modern'] }));
+      const menu = f.requests.at(-1).components[0].toJSON().components[0];
+      await f.studio.handleInteraction(f.interaction(menu.custom_id, 'select', { values: ['auto'] }));
+      const edit = f.requests.at(-1).components[0].toJSON().components[0];
+      await f.studio.handleInteraction(f.interaction(edit.custom_id, 'button'));
+      const modal = f.requests.at(-1);
+      const before = bodies.length;
+      await f.studio.handleInteraction(f.interaction(modal.custom_id, 'modal', { fields: { getTextInputValue: (key) => key === 'headline' ? 'Join us' : key === 'featured' && mode === 'explicit' ? '333333333333333333' : '' } }));
+      if (mode === 'empty') {
+        assert.equal(bodies.length, before);
+        assert.match(f.requests.at(-1), /No active club players have saved pro photos/);
+        assert.equal(f.posts.some((p) => p.files?.length), false);
+      } else {
+        assert.equal(bodies.at(-1).discord_user_id, mode === 'explicit' ? '333333333333333333' : '501557839932948490');
+        assert.ok(f.posts.some((p) => p.files?.length));
+      }
+    }
   } finally { global.fetch = originalFetch; }
 });
 
