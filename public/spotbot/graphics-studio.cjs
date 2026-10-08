@@ -255,7 +255,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (url) {
       const cached = CREST_CACHE.get(url);
       if (cached) return cached;
-      const image = await G.fetchImage(url);
+      const fetched = await G.fetchImage(url);
+      // Knock out flat logo backdrops (e.g. a white square) so the crest blends into every style.
+      const image = fetched && seamlessLogo(fetched);
       if (image) { CREST_CACHE.set(url, image); return image; }
       // Never silently substitute another team's badge when a saved logo fails to load.
       if (selected) throw new Error('The selected club logo could not be loaded. Please try again.');
