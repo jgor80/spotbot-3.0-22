@@ -29,7 +29,7 @@ function render1990sCard(d, G, accent) {
       <path d="M176 1238 H958 L934 1310 H153 Z" fill="${C.ink}"/>
       <text x="566" y="1289" text-anchor="middle" font-family="Oswald" font-style="italic" font-weight="700" font-size="${fit(name, 706, 56)}" fill="${C.paper}">${esc(name)}</text>` : ''}
     <g fill="${C.ink}">${photo}</g>
-    ${d.art ? `<image href="${d.art}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid slice" clip-path="url(#portrait90)"/>` : ''}
+    ${d.art ? `<image href="${d.art}" x="${x}" y="${y}" width="${w}" height="${h}" preserveAspectRatio="xMidYMin slice" clip-path="url(#portrait90)"/>` : ''}
     <g fill="none" stroke="${clean ? C.paper : C.ink}" stroke-width="5">${photo}</g>
     ${clean ? `<path d="M54 1238 V917 L216 1238 Z" fill="${C.foil}" opacity="0.78"/>
       <path d="M55 984 L192 1238 M55 1064 L164 1238 M55 1144 L132 1238" stroke="${C.paper}" stroke-width="3"/>

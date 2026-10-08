@@ -30,7 +30,7 @@ function renderY2kCard(d, G, accent) {
       <rect x="48" y="48" width="928" height="1340" fill="${brushed ? 'url(#brushY2k)' : 'url(#refractorY2k)'}"/>`}
     <g fill="${C.ink}" stroke="${C.ink}" stroke-width="16">${photo}</g>
     <g fill="none" stroke="${circles ? C.light : 'url(#chromeY2k)'}" stroke-width="9">${photo}</g>
-    ${d.art ? `<image href="${d.art}" x="70" y="${photoY}" width="884" height="${photoH}" preserveAspectRatio="xMidYMid slice" clip-path="url(#portraitY2k)"/>` : ''}
+    ${d.art ? `<image href="${d.art}" x="70" y="${photoY}" width="884" height="${photoH}" preserveAspectRatio="xMidYMin slice" clip-path="url(#portraitY2k)"/>` : ''}
     <g fill="none" stroke="${circles ? C.dark : 'url(#refractorY2k)'}" stroke-width="3">${photo}</g>
     ${!circles ? `<path d="M70 70 H170 L954 1150 V1204 H854 L70 130 Z" fill="url(#refractorY2k)" opacity="${brushed ? 0.08 : 0.12}" clip-path="url(#portraitY2k)"/>
       <text x="105" y="128" font-family="Oswald" font-weight="700" font-style="italic" font-size="${fit(club, 610, 38)}" fill="${C.light}" stroke="${C.ink}" stroke-width="1" paint-order="stroke">${esc(club)}</text>` : ''}

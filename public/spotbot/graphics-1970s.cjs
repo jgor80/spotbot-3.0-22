@@ -29,7 +29,7 @@ function render1970sCard(d, G, accent) {
       <path d="M64 150 H172 Q512 40 852 150 H960 V1292 H64 Z" fill="none" stroke="${C.gold}" stroke-width="10"/>${letters}${stars}`}
     <g fill="${C.blue}" stroke="${C.ink}" stroke-width="22">${photo}</g>
     <g fill="none" stroke="${C.gold}" stroke-width="12">${photo}</g>
-    ${d.art ? `<image href="${d.art}" x="82" y="${ribbon ? 228 : 354}" width="860" height="${ribbon ? 980 : 866}" preserveAspectRatio="xMidYMid slice" clip-path="url(#portrait70)"/>` : ''}
+    ${d.art ? `<image href="${d.art}" x="82" y="${ribbon ? 228 : 354}" width="860" height="${ribbon ? 980 : 866}" preserveAspectRatio="xMidYMin slice" clip-path="url(#portrait70)"/>` : ''}
     <g fill="none" stroke="${C.pale}" stroke-width="4">${photo}</g>
     ${ribbon ? `<path d="M538 1234 H942 V1276 Q942 1328 884 1328 H538 L570 1280 Z" fill="${accent}" stroke="${C.ink}" stroke-width="5"/>
       <text x="308" y="1283" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${fit(name, 432, 56)}" fill="${C.ink}">${esc(name)}</text>

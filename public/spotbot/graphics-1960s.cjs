@@ -24,7 +24,7 @@ function render1960sCard(d, G, accent) {
     <rect width="1024" height="1434" fill="${C.paper}"/>
     <rect x="30" y="30" width="964" height="1320" fill="${oval ? C.field : C.gold}"/>
     <g fill="${C.teal}">${shape}</g>
-    ${d.art ? `<image href="${d.art}" x="54" y="${photoY}" width="916" height="${photoH}" preserveAspectRatio="xMidYMid slice" clip-path="url(#portrait60)"/>` : ''}
+    ${d.art ? `<image href="${d.art}" x="54" y="${photoY}" width="916" height="${photoH}" preserveAspectRatio="xMidYMin slice" clip-path="url(#portrait60)"/>` : ''}
     ${oval ? `<text x="512" y="140" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${size(name, 840, 80)}" fill="${C.paper}">${esc(name)}</text>` : ''}
     ${pennant ? `<path d="M64 972 Q246 900 612 977 L550 1103 Q303 1048 82 1153 Z" fill="${C.ink}"/>
       <path d="M80 979 Q247 920 586 986 L533 1080 Q293 1032 95 1127 Z" fill="${accent}"/>

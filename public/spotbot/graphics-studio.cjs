@@ -93,7 +93,7 @@ function svgOpen(W, H, art) {
     <linearGradient id="top" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0.6"/><stop offset="0.18" stop-color="#000" stop-opacity="0"/></linearGradient>
   </defs>
   <rect width="${W}" height="${H}" fill="#050505"/>
-  ${art ? `<image href="${art}" width="${W}" height="${H}" preserveAspectRatio="xMidYMid slice"/>` : ''}
+  ${art ? `<image href="${art}" width="${W}" height="${H}" preserveAspectRatio="xMidYMin slice"/>` : ''}
   <rect width="${W}" height="${H}" fill="url(#fade)"/><rect width="${W}" height="${H}" fill="url(#top)"/>`;
 }
 
@@ -106,7 +106,7 @@ function frame(W, H, p) {
 function crestSvg(x, y, r, img) {
   if (!img) return '';
   return `<clipPath id="cr${x}"><circle cx="${x}" cy="${y}" r="${r}"/></clipPath>
-    <image href="${img}" x="${x - r}" y="${y - r}" width="${r * 2}" height="${r * 2}" clip-path="url(#cr${x})" preserveAspectRatio="xMidYMid slice"/>`;
+    <image href="${img}" x="${x - r}" y="${y - r}" width="${r * 2}" height="${r * 2}" clip-path="url(#cr${x})" preserveAspectRatio="xMidYMin slice"/>`;
 }
 
 function headline(text, x, y, size, p, anchor = 'start') {

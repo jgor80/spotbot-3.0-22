@@ -23,7 +23,7 @@ function renderSignatureCard(d, G, accent) {
   const crest = (x, y, s, fill = t.ink) => d.crest
     ? `<image href="${d.crest}" x="${x}" y="${y}" width="${s}" height="${s}" preserveAspectRatio="xMidYMid meet"/>`
     : `<text x="${x + s / 2}" y="${y + s * 0.66}" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${s * 0.42}" fill="${fill}">${esc(club.slice(0, 3))}</text>`;
-  const art = (clip) => d.art ? `<image href="${d.art}" x="0" y="0" width="${W}" height="1340" preserveAspectRatio="xMidYMid slice"${clip ? ` clip-path="url(#${clip})"` : ''}/>` : '';
+  const art = (clip) => d.art ? `<image href="${d.art}" x="0" y="0" width="${W}" height="1340" preserveAspectRatio="xMidYMin slice"${clip ? ` clip-path="url(#${clip})"` : ''}/>` : '';
   const statRow = (y, color, labelColor, mono = false) => stats.map(([l, v], i) => {
     const x = 70 + (884 / stats.length) * (i + 0.5);
     return `<text x="${x}" y="${y}" text-anchor="middle" font-family="${mono ? 'Inter' : 'Oswald'}" font-weight="700" font-size="30" fill="${color}">${esc(v)}</text><text x="${x}" y="${y + 24}" text-anchor="middle" font-family="Inter" font-size="13" letter-spacing="2" fill="${labelColor}">${esc(l)}</text>`;
@@ -57,7 +57,7 @@ function renderSignatureCard(d, G, accent) {
       <filter id="sepiaV"><feColorMatrix type="matrix" values="0.42 0.6 0.16 0 0.04  0.34 0.56 0.14 0 0.02  0.25 0.42 0.11 0 0  0 0 0 1 0"/></filter>
       <clipPath id="winV"><rect x="88" y="250" width="848" height="900" rx="10"/></clipPath><path id="archV" d="${arch}"/></defs>
       <rect width="${W}" height="${H}" fill="${t.bg}"/><rect x="26" y="26" width="972" height="1330" fill="none" stroke="${t.ink}" stroke-width="4"/><rect x="40" y="40" width="944" height="1302" fill="none" stroke="${t.hi}" stroke-width="2" stroke-dasharray="2 6"/>
-      <g clip-path="url(#winV)"><rect x="88" y="250" width="848" height="900" fill="${t.sub}"/>${d.art ? `<image href="${d.art}" x="88" y="250" width="848" height="900" preserveAspectRatio="xMidYMid slice" filter="url(#sepiaV)"/>` : ''}
+      <g clip-path="url(#winV)"><rect x="88" y="250" width="848" height="900" fill="${t.sub}"/>${d.art ? `<image href="${d.art}" x="88" y="250" width="848" height="900" preserveAspectRatio="xMidYMin slice" filter="url(#sepiaV)"/>` : ''}
         <rect x="88" y="250" width="848" height="900" fill="${accent}" opacity="0.14" style="mix-blend-mode:multiply"/><rect x="88" y="250" width="848" height="900" fill="url(#dotV)"/></g>
       <rect x="88" y="250" width="848" height="900" rx="10" fill="none" stroke="${t.ink}" stroke-width="5"/><rect x="92" y="254" width="840" height="892" rx="8" fill="none" stroke="${accent}" stroke-width="2" transform="translate(3 2)" opacity="0.6"/>
       <text font-family="Oswald" font-weight="700" font-size="${fit(club, 680, 64, 0.62)}" letter-spacing="6" fill="${t.hi}" stroke="${t.ink}" stroke-width="1.5" paint-order="stroke"><textPath href="#archV" startOffset="50%" text-anchor="middle">${esc(club)}</textPath></text>
@@ -75,7 +75,7 @@ function renderSignatureCard(d, G, accent) {
       <pattern id="tapeC" width="40" height="40" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="20" height="40" fill="${t.hi}"/><rect x="20" width="20" height="40" fill="${t.bg}"/></pattern>
       <pattern id="gridC" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0 H0 V32" fill="none" stroke="${t.hi}" stroke-opacity="0.08"/></pattern></defs>
       <rect width="${W}" height="${H}" fill="${t.bg}"/><rect width="${W}" height="${H}" fill="url(#gridC)"/>
-      <g clip-path="url(#frC)">${d.art ? `<image href="${d.art}" x="0" y="0" width="${W}" height="1340" preserveAspectRatio="xMidYMid slice" filter="url(#duoC)"/>
+      <g clip-path="url(#frC)">${d.art ? `<image href="${d.art}" x="0" y="0" width="${W}" height="1340" preserveAspectRatio="xMidYMin slice" filter="url(#duoC)"/>
         <g opacity="0.85"><svg x="-18" y="380" width="${W}" height="60" viewBox="0 380 ${W} 60" preserveAspectRatio="none">${art()}</svg><svg x="22" y="760" width="${W}" height="34" viewBox="0 760 ${W} 34" preserveAspectRatio="none">${art()}</svg></g>` : ''}
         <rect x="0" y="0" width="${W}" height="1340" fill="${accent}" opacity="0.12"/></g>
       <path d="M60 60 H900 L964 124 V1250 L904 1310 H60 Z" fill="none" stroke="${t.hi}" stroke-width="4"/>
@@ -144,7 +144,7 @@ function renderSignatureCard(d, G, accent) {
         <g clip-path="url(#sunClip)"><rect x="262" y="${sunY - 250}" width="500" height="500" fill="url(#sunS)"/>${[0, 1, 2, 3, 4, 5].map((i) => `<rect x="262" y="${sunY + 30 + i * 36}" width="500" height="${6 + i * 3}" fill="#4b1670"/>`).join('')}</g>
         <g stroke="${t.hi2}" stroke-width="2" opacity="0.7">${Array.from({ length: 13 }, (_, i) => `<path d="M${512 + (i - 6) * 40} 860 L${512 + (i - 6) * 260} 1340"/>`).join('')}${[0, 1, 2, 3, 4, 5, 6].map((i) => `<path d="M0 ${860 + i * i * 10 + i * 20} H${W}"/>`).join('')}</g>
         <rect y="830" width="${W}" height="30" fill="${t.hi}" opacity="0.25"/>
-        ${d.art ? `<image href="${d.art}" x="0" y="0" width="${W}" height="1340" preserveAspectRatio="xMidYMid slice" style="mix-blend-mode:screen" opacity="0.9"/>` : ''}
+        ${d.art ? `<image href="${d.art}" x="0" y="0" width="${W}" height="1340" preserveAspectRatio="xMidYMin slice" style="mix-blend-mode:screen" opacity="0.9"/>` : ''}
         <rect width="${W}" height="1340" fill="${accent}" opacity="0.08"/><rect width="${W}" height="1340" fill="url(#fadeS)"/></g>
       <rect x="44" y="44" width="936" height="1280" rx="24" fill="none" stroke="url(#neonS)" stroke-width="6" filter="url(#glowS)"/>
       <text x="512" y="${comp === 'editorial' ? 120 : 130}" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${fit(club, 760, 64, 0.6)}" letter-spacing="10" fill="none" stroke="${t.hi2}" stroke-width="2.5" filter="url(#glowS)">${esc(club)}</text>

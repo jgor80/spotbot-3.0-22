@@ -22,7 +22,7 @@ function render2010sCard(d, G, accent) {
     <rect width="1024" height="1434" fill="${ribbon || foil ? C.paper : C.ink}"/>
     ${foil ? `<rect x="24" y="24" width="976" height="1306" fill="url(#chrome10)"/><rect x="24" y="24" width="976" height="1306" fill="url(#foilGrain10)"/>` : ''}
     <g fill="${C.ink}">${photo}</g>
-    ${d.art ? `<image href="${d.art}" x="62" y="62" width="900" height="1240" preserveAspectRatio="xMidYMid slice" clip-path="url(#portrait10)"/>` : ''}
+    ${d.art ? `<image href="${d.art}" x="62" y="62" width="900" height="1240" preserveAspectRatio="xMidYMin slice" clip-path="url(#portrait10)"/>` : ''}
     <rect x="62" y="1000" width="900" height="302" fill="url(#shade10)" clip-path="url(#portrait10)"/>
     <g fill="none" stroke="${foil ? C.foil : ribbon ? C.paper : 'url(#chrome10)'}" stroke-width="10">${photo}</g>
     ${!ribbon && !foil ? `<rect x="49" y="49" width="926" height="1266" rx="98" fill="none" stroke="${C.silver}" stroke-width="2"/>
