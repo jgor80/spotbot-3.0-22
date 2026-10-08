@@ -720,13 +720,23 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       await respond({ content: '📣 Pick a recruiting poster style:', components: [styleRow('recruit', a1)] });
       return true;
     }
+    if (interaction.isStringSelectMenu() && action === 'gs_dkit') {
+      const draft = DRAFTS.get(a1);
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
+        await update({ content: 'That form expired — start again from the panel.', components: [] }); return true;
+      }
+      const club = findClub(draft.clubKey);
+      const key = interaction.values[0];
+      draft.data.kitKey = kitsFor(club).some((k) => k.key === key) ? key : undefined;
+      await update(draftPrompt(a1, draft.kind, club)); return true;
+    }
     if (interaction.isStringSelectMenu() && action === 'gs_rlogo') {
       const draft = DRAFTS.get(a1);
       if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
         await update({ content: 'That form expired — start again from the panel.', components: [] }); return true;
       }
       draft.data.logoKey = interaction.values[0] === 'auto' ? undefined : interaction.values[0];
-      await update(draftPrompt(a1, 'recruit')); return true;
+      await update(draftPrompt(a1, 'recruit', findClub(draft.clubKey))); return true;
     }
 
     if (interaction.isButton() && action === 'gs_card') {
@@ -782,7 +792,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
           data: { headline: 'JOIN OUR CLUB', positions: '', details: '', contact: '', featured: '' } });
         const logos = logosFor(club);
         await update(logos.length ? { content: 'Pick your club logo:', components: [pickRow(`gs_rlogo:${token}`, 'Club logo',
-          [{ label: 'Automatic — match the style', value: 'auto' }, ...logos.map((l) => ({ label: l.label, value: l.key }))])] } : draftPrompt(token, kind));
+          [{ label: 'Automatic — match the style', value: 'auto' }, ...logos.map((l) => ({ label: l.label, value: l.key }))])] } : draftPrompt(token, kind, club));
         return true;
       }
       if (kind === 'banner') {
@@ -801,7 +811,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         // Pre-fill an editable form with the member's real data
         const d = await cardData({ guildId: interaction.guildId, club, userId: interaction.user.id, displayName: interaction.member?.displayName || interaction.user.username });
         const token = saveDraft({ kind: 'card', clubKey: club.key, clubName: club.name, style, data: d, userId: interaction.user.id });
-        await update(draftPrompt(token, 'card'));
+        await update(draftPrompt(token, 'card', club));
         return true;
       }
       if (kind === 'poster') {
@@ -823,7 +833,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       const d = await posterData({ guildId: interaction.guildId, club, matchId: interaction.values[0] });
       if (d.error) { await update({ content: `❌ ${d.error}`, components: [] }); return true; }
       const token = saveDraft({ kind: 'poster', clubKey: club.key, style, data: d, userId: interaction.user.id });
-      await update(draftPrompt(token, 'poster'));
+      await update(draftPrompt(token, 'poster', club));
       return true;
     }
     if (interaction.isStringSelectMenu() && action === 'gs_lpick') {
@@ -831,14 +841,14 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       const d = await lineupData({ guild: interaction.guild, lineupId: interaction.values[0] });
       if (d.error) { await update({ content: `❌ ${d.error}`, components: [] }); return true; }
       const token = saveDraft({ kind: 'lineup', clubKey: club.key, style, data: d, userId: interaction.user.id });
-      await update(draftPrompt(token, 'lineup'));
+      await update(draftPrompt(token, 'lineup', club));
       return true;
     }
     if (interaction.isModalSubmit() && ['gs_cform', 'gs_pform', 'gs_lform', 'gs_rform'].includes(action)) {
       const draft = DRAFTS.get(a1);
       if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) { await respond({ content: 'That form expired — start again from the panel.' }); return true; }
       DRAFTS.delete(a1);
-      const club = findClub(draft.clubKey), style = draft.style;
+      const style = draft.style, club = withKit(findClub(draft.clubKey), style, draft.data?.kitKey);
       const f = (k) => { try { return interaction.fields.getTextInputValue(k).trim(); } catch { return ''; } };
       if (!club) { await respond({ content: 'No club set up here.' }); return true; }
       await respond({ content: `🎨 Drawing it in **${STYLES[style].label}**…` });
@@ -869,7 +879,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       return true;
     }
     if (interaction.isModalSubmit() && action === 'gs_bannerform') {
-      const club = findClub(a1), style = STYLES[a2] ? a2 : 'esports';
+      const style = STYLES[a2] ? a2 : 'esports', club = withKit(findClub(a1), style);
       if (!club || !(await manager())) { await respond({ content: 'Banners are for managers.' }); return true; }
       await respond({ content: '🏆 Drawing the banner…' });
       const f = (k) => interaction.fields.getTextInputValue(k).trim();

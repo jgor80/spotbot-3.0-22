@@ -56,7 +56,7 @@ const STYLE: Record<string, string> = {
 
 function kitLine(kit: z.infer<typeof Body>["kit"], club: string) {
   const colours = [kit.primary, kit.secondary].filter(Boolean).join(" and ");
-  return `The player must wear ${club}'s own home kit${colours ? ` in ${colours}` : ""}${kit.description ? ` (${kit.description})` : ""}, whatever kit the reference shows. No real-world brand or sponsor logos.`;
+  return `The player must wear ${club}'s own kit${colours ? ` in ${colours}` : ""}${kit.description ? ` (${kit.description})` : ""}, whatever kit the reference shows. No real-world brand or sponsor logos.`;
 }
 
 function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number | null = null) {
