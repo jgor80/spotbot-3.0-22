@@ -95,7 +95,7 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
   assert.equal(styles.length, Object.keys(STYLES).length);
   await f.studio.handleInteraction(f.interaction('gs_style:recruit:palermo', 'select', { values: ['synthwave'] }));
   const logoMenu = f.requests.at(-1).components[0].toJSON().components[0];
-  assert.equal(logoMenu.options.length, 6);
+  assert.equal(logoMenu.options.length, 7);
   await f.studio.handleInteraction(f.interaction(logoMenu.custom_id, 'select', { values: ['heritage'] }));
   const edit = f.requests.at(-1).components[0].toJSON().components[0];
   await f.studio.handleInteraction(f.interaction(edit.custom_id, 'button', { user: { id: 'other' } }));
