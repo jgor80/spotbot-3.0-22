@@ -30,7 +30,7 @@ const RX = require('./recap-extras.cjs');
 // Short "why" for the MOTM, from that player's own numbers
 function motmLine(p) {
   const bits = [];
-  for (const [k, l] of [['goals', 'G'], ['assists', 'A'], ['tackles', 'TKL'], ['interceptions', 'INT'], ['saves', 'SV']]) if (Number(p[k]) > 0) bits.push(`${p[k]} ${l}`);
+  for (const [k, l] of [['goals', 'G'], ['assists', 'A'], ['second_assists', '2A'], ['tackles', 'TKL'], ['interceptions', 'INT'], ['possessions_won', 'WON'], ['saves', 'SV']]) if (Number(p[k]) > 0) bits.push(`${p[k]} ${l}`);
   return bits.length ? `\n-# ${bits.slice(0, 4).join(' · ')}` : '';
 }
 
