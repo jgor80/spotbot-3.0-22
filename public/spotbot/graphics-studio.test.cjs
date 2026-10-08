@@ -23,7 +23,8 @@ function fixture(overrides = {}) {
   const db = { from(table) {
     assert.ok(calls.includes('deferUpdate'), 'acknowledge before loading player data');
     const result = Object.hasOwn(overrides, table) ? overrides[table] : table === 'teams' ? { id: 'palermo-team' } : table === 'team_rosters' ? [{ discord_user_id: '501557839932948490', status: 'active' }] : table === 'player_club_stats' ? [{ club_key: 'palermo', games_played: 22, goals: 9, assists: 4, wins: 10, draws: 2, losses: 10 }] : table === 'profiles' ? { ea_username: 'AirDangus23' } : table === 'pro_photo_assets' ? [{ discord_user_id: '501557839932948490', analysis: { kit_number: 23 } }] : { position: 'CAM', overall: 90 };
-    const query = { select() { return this; }, eq(key, value) { if (table === 'team_rosters') assert.equal(value, 'palermo-team'); return this; }, in(key, ids) { assert.ok(ids.includes('501557839932948490')); return this; }, ilike(key, value) { assert.equal(value, club.name); return this; }, order() { return this; }, limit() { return this; }, maybeSingle() { return Promise.resolve({ data: result }); }, then(resolve) { return Promise.resolve({ data: result }).then(resolve); } };
+    let selected = result;
+    const query = { select() { return this; }, eq(key, value) { if (table === 'team_rosters') assert.equal(value, 'palermo-team'); return this; }, in(key, ids) { assert.ok(ids.includes('501557839932948490')); if (table === 'pro_photos' && !Object.hasOwn(overrides, table)) selected = [{ discord_user_id: '501557839932948490' }]; return this; }, ilike(key, value) { assert.equal(value, club.name); return this; }, order() { return this; }, limit() { return this; }, maybeSingle() { return Promise.resolve({ data: selected }); }, then(resolve) { return Promise.resolve({ data: selected }).then(resolve); } };
     return query;
   } };
   const guild = { id: '1529555651762851930', channels: { fetch: async () => null } };
