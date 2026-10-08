@@ -82,7 +82,7 @@ function recruitmentPoster(d, G, p) {
     : side ? { x: 440, y: 230, w: 540, h: 1180 } : { x: 50, y: 250, w: 924, h: 780 };
   const tx = side ? 70 : 80;
   let headY, posY, detY;
-  if (layout === 'editorial') { headY = 330; posY = 390; detY = 1180; }
+  if (layout === 'editorial') { headY = 370; posY = 425; detY = 1180; }
   else if (side) { headY = 420; posY = 500; detY = 600; }
   else { headY = 1150; posY = 1220; detY = contact.length ? 1290 : 1330; }
   const contactY = side ? detY + details.length * 34 + 60 : 1410;
