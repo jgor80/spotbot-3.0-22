@@ -25,6 +25,14 @@ const { seasonTotals } = require('./player-season.cjs');
 const T = require('./event-time.cjs');
 const { PREMIUM_FREE } = require('./premium.cjs');
 const { storyFacts, buildChronicle, EDITIONS, CHRONICLE_TZ } = require('./chronicle.cjs');
+const RX = require('./recap-extras.cjs');
+
+// Short "why" for the MOTM, from that player's own numbers
+function motmLine(p) {
+  const bits = [];
+  for (const [k, l] of [['goals', 'G'], ['assists', 'A'], ['tackles', 'TKL'], ['interceptions', 'INT'], ['saves', 'SV']]) if (Number(p[k]) > 0) bits.push(`${p[k]} ${l}`);
+  return bits.length ? `\n-# ${bits.slice(0, 4).join(' · ')}` : '';
+}
 
 const FEATURES = {
   voice: { label: 'Voice check-ins', emoji: '🎧', help: 'Joining the club voice channel from 30 min before kick-off checks a player in.' },
@@ -587,16 +595,21 @@ function createAutopilot(deps) {
 
     const embed = new EmbedBuilder()
       .setTitle(`${r.emoji} ${r.label} · ${club.name} ${match.scoreFor}-${match.scoreAgainst} ${match.opponent}`)
+      .setDescription(`📰 **La Gazzetta:** ${RX.headline(match, club)}\n${RX.mood(match)}`)
       .setColor(r.color)
       .setTimestamp(match.playedAt);
     if (prefs.branding?.logo_url) embed.setThumbnail(prefs.branding.logo_url);
     embed.addFields(
       { name: '⚽ Goals', value: truncate(scorers.map((p) => `${name(p)}${count(p.goals, '⚽')}`).join('\n') || '–'), inline: true },
       { name: '🎯 Assists', value: truncate(assisters.map((p) => `${name(p)}${count(p.assists, '🎯')}`).join('\n') || '–'), inline: true },
-      { name: '⭐ Man of the Match', value: motm ? `${name(motm)}${Number(motm.rating) > 0 ? ` (${Number(motm.rating).toFixed(1)})` : ''}` : '–', inline: true }
+      { name: '⭐ Man of the Match', value: motm ? `${name(motm)}${Number(motm.rating) > 0 ? ` (${Number(motm.rating).toFixed(1)})` : ''}${motmLine(motm)}` : '–', inline: true }
     );
     const nugget = statNugget(match, upTo);
     if (nugget) embed.addFields({ name: '💡 Talking point', value: nugget });
+    const units = RX.unitBadges(match);
+    if (units.length) embed.addFields({ name: '🏅 Unit badges', value: truncate(units.join('\n')) });
+    const fan = RX.fantasyTop(match);
+    if (fan.length) embed.addFields({ name: '🎮 Fantasy points', value: fan.map((f, i) => `${['🥇', '🥈', '🥉'][i]} ${f.name} ${f.pts}`).join('  ') });
     const form = upTo.slice(0, 5).reverse().map((m) => RESULT[m.result].emoji).join('');
     embed.addFields({ name: 'Form', value: `${form}  (${record(upTo.slice(0, 10))} in the last ${Math.min(upTo.length, 10)})` });
     if (prefs.branding?.footer) embed.setFooter({ text: prefs.branding.footer });

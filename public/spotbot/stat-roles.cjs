@@ -9,6 +9,7 @@
 const { EmbedBuilder, PermissionsBitField } = require('discord.js');
 const { activeClubs, resolveClub } = require('./manager-hub.cjs');
 const { seasonTotals, leaders, num } = require('./player-season.cjs');
+const { fantasyPoints } = require('./recap-extras.cjs');
 
 const DAY = 24 * 60 * 60 * 1000;
 const WINDOW_DAYS = 7;
@@ -28,6 +29,7 @@ const TROPHIES = {
   mvp: { name: '⭐ MVP', color: 0xeab308, help: 'Most Man of the Match awards this week' },
   ironman: { name: '🦾 Iron Man', color: 0x94a3b8, help: `Most appearances this week (${IRON_MAN_MIN}+)` },
   sniper: { name: '🔫 Sniper', color: 0xef4444, help: `Best goals-per-shot this week (${SNIPER_MIN_GOALS}+ goals)` },
+  fantasy: { name: '🎮 Fantasy King', color: 0xa855f7, help: 'Most fantasy points this week' },
   inform: { name: '🔥 In-Form', color: 0xf97316, help: `Avg rating over ${IN_FORM_RATING} in last ${IN_FORM_GAMES} games` },
 };
 
@@ -43,7 +45,7 @@ const TROPHIES_SUBCOMMAND = {
 
 // Pure: who should hold each trophy. totalsRecent from the last 7 days, totalsAll from everything
 // synced, eaGames maps lowercase gamertag -> EA's games played for the club, clubGames = club match count.
-function trophyHolders(totalsRecent, totalsAll, eaGames = new Map(), clubGames = 0) {
+function trophyHolders(totalsRecent, totalsAll, eaGames = new Map(), clubGames = 0, fantasy = new Map()) {
   const recent = [...totalsRecent.values()];
   const all = [...totalsAll.values()];
   const keys = (list) => list.map((t) => t.key);
@@ -67,6 +69,7 @@ function trophyHolders(totalsRecent, totalsAll, eaGames = new Map(), clubGames =
     mvp: keys(leaders(recent, (t) => num(t.motm))),
     ironman: keys(leaders(recent.filter((t) => t.games >= IRON_MAN_MIN), (t) => t.games)),
     sniper: keys(leaders(recent.filter((t) => t.goals >= SNIPER_MIN_GOALS && num(t.shots) > 0), (t) => t.goals / num(t.shots))),
+    fantasy: [...fantasy].length ? leaders([...fantasy].map(([key, pts]) => ({ key, pts })), (t) => t.pts).map((t) => t.key) : [],
     inform: keys(all.filter((t) => t.ratings.length >= IN_FORM_GAMES && t.recentAvg(IN_FORM_GAMES) > IN_FORM_RATING)),
   };
 }
@@ -92,9 +95,15 @@ function createStatRoles(deps) {
     const matches = loadMatches ? await loadMatches(guildId, club.key).catch(() => []) : [];
     const since = Date.now() - WINDOW_DAYS * DAY;
     const totalsAll = seasonTotals(matches);
-    const totalsRecent = seasonTotals(matches.filter((m) => m.playedAt.getTime() >= since));
+    const week = matches.filter((m) => m.playedAt.getTime() >= since);
+    const totalsRecent = seasonTotals(week);
+    const fantasy = new Map();
+    for (const m of week) for (const p of m.players || []) {
+      const k = String(p.ea_username || '').trim().toLowerCase();
+      if (k) fantasy.set(k, (fantasy.get(k) || 0) + fantasyPoints(p, m));
+    }
     const ea = await eaGamesFor(club);
-    const holders = trophyHolders(totalsRecent, totalsAll, new Map([...ea].map(([k, v]) => [k, v.games])));
+    const holders = trophyHolders(totalsRecent, totalsAll, new Map([...ea].map(([k, v]) => [k, v.games])), matches.length, fantasy);
     const names = new Map([...[...ea].map(([k, v]) => [k, v.name]), ...[...totalsAll.values()].map((t) => [t.key, t.name])]);
     return { holders, totalsRecent, totalsAll, names, matches: matches.length };
   }
