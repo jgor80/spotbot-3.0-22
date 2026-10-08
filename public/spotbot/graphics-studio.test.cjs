@@ -94,3 +94,21 @@ test('consecutive editions never repeat pose or layout; all compositions render'
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
   }
 });
+
+test('1986 Club Classic keeps a fixed print frame, club colours and optional real stats', () => {
+  const base = { style: 'retro1986', kit: { primary: 'pink' }, name: 'AirDangus23', clubName: 'PCN Palermo', position: 'CAM', tagline: 'Palermo', stats: [] };
+  const png = playerCard(base);
+  assert.equal(png.subarray(1, 4).toString(), 'PNG');
+  assert.equal(png.readUInt32BE(16), 1024);
+  assert.equal(png.readUInt32BE(20), 1434);
+  assert.match(lastSvg, /PCN PALERMO/);
+  assert.match(lastSvg, /AIRDANGUS23/);
+  assert.match(lastSvg, /circle cx="126"/);
+  assert.match(lastSvg, /fill="#f472b6"/);
+  assert.doesNotMatch(lastSvg, /EA MATCH DATA|>GAMES<|Topps/);
+  playerCard({ ...base, stats: [['GAMES', '22'], ['GOALS', '9']] });
+  assert.match(lastSvg, />GAMES</);
+  assert.match(lastSvg, />22</);
+  playerCard({ ...base, name: 'A very long player name with forty letters', clubName: 'A very long football club name for testing' });
+  assert.doesNotMatch(lastSvg, /NaN|undefined/);
+});
