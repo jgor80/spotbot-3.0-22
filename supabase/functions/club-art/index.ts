@@ -146,9 +146,13 @@ Deno.serve(async (req) => {
     const active = new Set((roster ?? []).filter((r) => (r.status || 'active') === 'active').map((r) => r.discord_user_id));
     if (teamIds.some((id) => !active.has(id))) return json({ error: 'Team artwork can only feature active players from this club.' }, 422);
   }
+  const { data: names } = teamIds.length
+    ? await db.from('profiles').select('discord_user_id,ea_username').in('discord_user_id', teamIds)
+    : { data: [] };
+  const nameOf = new Map((names ?? []).map((p) => [p.discord_user_id, p.ea_username]));
   const group = await Promise.all(teamIds.map(async (userId) => {
-    const photo = await proPhoto({ ...b, discord_user_id: userId });
-    return photo ? { ...photo, userId } : null;
+    const photo = await proPhoto({ ...b, discord_user_id: userId }, true);
+    return photo ? { ...photo, userId, name: nameOf.get(userId) ?? null } : null;
   }));
   if (group.some((r) => !r)) return json({ error: 'A selected active player has no reachable saved pro photo. Nothing was rendered.' }, 422);
   const refs = group.filter((r) => r !== null);
