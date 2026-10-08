@@ -10,3 +10,5 @@
 - Pro photos are ingested only through the `pro-photo` function (bot secret, AI vision check, private storage with long-lived signed URLs); recap art prefers them over Discord avatars because public storage buckets are blocked in this workspace.
 - The bot requests Discord's Message Content intent (needed to see attachments for #pro-photos) and falls back to logging in without it if the portal toggle is off, so a missing toggle never takes the bot offline.
 - Graphics Studio (`public/spotbot/graphics-studio.cjs`) gets text-free AI art from the `club-art` function and draws every word and stat itself in SVG, so names and numbers always come from saved data; club kit lives on the club config (`club.kit`).
+- Graphics Studio acknowledges data-loading interactions before cloud reads and opens edit forms from user-bound prepared drafts, so Discord's three-second response deadline cannot silently discard selections.
+- Graphics Studio selects non-repeating pose/layout pairs through `graphics-variants.cjs` and passes composition constraints to club-art and SVG rendering together, keeping generated subjects clear of overlaid names and optional stats.

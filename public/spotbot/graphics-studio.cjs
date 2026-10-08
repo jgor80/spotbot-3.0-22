@@ -14,6 +14,7 @@ const {
 const G = require('./graphics.cjs');
 const { activeClubs } = require('./manager-hub.cjs');
 const { toInsightMatches } = require('./club-insights.cjs');
+const { nextVariation } = require('./graphics-variants.cjs');
 
 const NAME_RE = /graphic|media-?studio|studio/i;
 const STYLES = {
@@ -87,7 +88,12 @@ function headline(text, x, y, size, p, anchor = 'start') {
 
 function playerCard(d) {
   const W = 1024, H = 1536, p = palette(d.style, d.kit);
-  const stats = d.stats.slice(0, 6);
+  const stats = (d.stats || []).slice(0, 6);
+  const editorial = d.composition === 'editorial';
+  const side = d.composition === 'side-panel';
+  const x = side ? 80 : 60;
+  const nameY = editorial ? 345 : side ? 1110 : stats.length ? 1200 : 1320;
+  const nameWidth = side ? 620 : 900;
   const cell = (W - 120) / Math.max(stats.length, 1);
   return G.render(`${svgOpen(W, H, d.art)}${frame(W, H, p)}
     ${crestSvg(110, 120, 52, d.crest)}
@@ -95,13 +101,14 @@ function playerCard(d) {
     <text x="${d.crest ? 180 : 70}" y="148" font-family="${BODY}" font-size="20" fill="${p.sub}">${esc(d.seasonLabel || 'PRO CLUBS')}</text>
     ${d.position ? `<rect x="${W - 190}" y="72" width="120" height="70" fill="${p.accent}"/><text x="${W - 130}" y="122" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="40" fill="#000">${esc(d.position)}</text>` : ''}
     ${d.overall ? `<text x="${W - 130}" y="215" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="76" fill="${p.ink}">${d.overall}</text><text x="${W - 130}" y="245" text-anchor="middle" font-family="${BODY}" font-size="16" fill="${p.sub}">${esc(d.overallLabel)}</text>` : ''}
-    <rect x="60" y="1090" width="140" height="8" fill="${p.accent}"/>
-    ${headline(clip(d.name, 18), 60, 1200, fit(d.name, 900, 130, 0.48, 60), p)}
-    <text x="64" y="1250" font-family="${BODY}" font-weight="700" font-size="24" fill="${p.accent}">${esc(clip(d.tagline, 60).toUpperCase())}</text>
-    <rect x="60" y="1290" width="${W - 120}" height="150" fill="${p.panel}" fill-opacity="${p.panelOpacity}"/>
-    ${stats.map(([label, value], i) => `<text x="${60 + cell * i + cell / 2}" y="1375" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="56" fill="${p.ink}">${esc(value)}</text>
-      <text x="${60 + cell * i + cell / 2}" y="1415" text-anchor="middle" font-family="${BODY}" font-weight="700" font-size="18" fill="${p.sub}">${esc(label)}</text>`).join('')}
-    <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">EA MATCH DATA · AI ART FROM THEIR IN-GAME PRO · SPOTBOT STUDIO</text>
+    ${side ? `<rect x="60" y="950" width="700" height="${stats.length ? 490 : 480}" fill="${p.panel}" fill-opacity="${p.panelOpacity}"/><rect x="60" y="950" width="8" height="480" fill="${p.accent}"/>` : ''}
+    <rect x="${x}" y="${nameY - 110}" width="140" height="${d.style === 'modern' ? 3 : 8}" fill="${p.accent}"/>
+    ${headline(clip(d.name, 30), x, nameY, fit(d.name, nameWidth, editorial ? 100 : 130, 0.48, 32), p)}
+    <text x="${x + 4}" y="${nameY + 50}" font-family="${BODY}" font-weight="700" font-size="${fit(d.tagline, nameWidth, 24, 0.58, 16)}" fill="${p.accent}">${esc(clip(d.tagline, 60).toUpperCase())}</text>
+    ${stats.length ? `<rect x="60" y="1290" width="${W - 120}" height="150" fill="${p.panel}" fill-opacity="${p.panelOpacity}"/>
+      ${stats.map(([label, value], i) => `<text x="${60 + cell * i + cell / 2}" y="1375" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="56" fill="${p.ink}">${esc(value)}</text>
+      <text x="${60 + cell * i + cell / 2}" y="1415" text-anchor="middle" font-family="${BODY}" font-weight="700" font-size="18" fill="${p.sub}">${esc(label)}</text>`).join('')}` : ''}
+    <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">${stats.length ? 'EA MATCH DATA · ' : ''}AI ART FROM THEIR IN-GAME PRO · SPOTBOT STUDIO</text>
   </svg>`);
 }
 
@@ -180,7 +187,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       body: JSON.stringify(body),
     }).catch(() => null);
     const out = res ? await res.json().catch(() => ({})) : {};
-    if (!res?.ok || !out.image_b64) return { error: typeof out.error === 'string' ? out.error : 'The art studio is unavailable right now.' };
+    if (!res?.ok || !out.image_b64) return { error: typeof out.error === 'string' ? out.error : typeof out.message === 'string' ? out.message : 'The art studio is unavailable right now.' };
     return { image: `data:image/png;base64,${out.image_b64}`, usedPro: out.used_pro_photo };
   }
 
@@ -207,7 +214,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         .setDescription([
           'Ask for graphics any time — everyone appears in **our kit**, drawn from their in-game pro.',
           '',
-          '🎴 **Player Card** — your pro, your real club stats',
+          '🎴 **Player Card** — portrait only or with club stats',
           '📰 **Match Poster** — pick any recent game',
           '📋 **Lineup** — starting XI from a lineup built for an event or tournament',
           '_You can edit names, scores and players before anything is drawn._',
@@ -258,6 +265,14 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     DRAFTS.set(token, { ...draft, ts: Date.now() });
     for (const [k, v] of DRAFTS) if (Date.now() - v.ts > 30 * 60e3) DRAFTS.delete(k);
     return token;
+  }
+  function draftPrompt(token, kind) {
+    const choices = kind === 'card'
+      ? [['stats', 'With Stats'], ['portrait', 'Portrait Only']]
+      : [['edit', 'Edit Before Rendering']];
+    return { content: kind === 'card' ? '🎴 With stats or just your pro?' : 'Your details are ready.', components: [new ActionRowBuilder().addComponents(
+      choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary))
+    )] };
   }
   const input = (id, label, value, { para = false, max = 100, req = false } = {}) => new ActionRowBuilder().addComponents(
     new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(para ? TextInputStyle.Paragraph : TextInputStyle.Short)
@@ -311,7 +326,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     input('name', 'Name on card', d.name, { max: 30, req: true }),
     input('position', 'Position', d.position, { max: 10 }),
     input('overall', 'Overall (optional)', d.overall, { max: 3 }),
-    input('stats', 'Stats — one per line: LABEL value (max 6)', d.stats.map(([l, v]) => `${l} ${v}`).join('\n'), { para: true, max: 200 }),
+    input('stats', 'Stats (optional; blank = no stats)', d.stats.map(([l, v]) => `${l} ${v}`).join('\n'), { para: true, max: 200 }),
     input('tagline', 'Tagline', d.tagline, { max: 60 }),
   );
   function applyCardEdits(d, f) {
@@ -319,19 +334,21 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       const m = line.match(/^(.*\S)\s+(\S+)$/);
       return m ? [m[1].toUpperCase().slice(0, 10), m[2].slice(0, 6)] : [line.toUpperCase().slice(0, 10), ''];
     });
-    return { ...d, name: f('name') || d.name, position: f('position'), overall: f('overall'), stats: stats.length ? stats : d.stats, tagline: f('tagline') };
+    return { ...d, name: f('name') || d.name, position: f('position'), overall: f('overall'), stats, tagline: f('tagline'), seasonLabel: stats.length ? d.seasonLabel : 'VIRTUAL PRO' };
   }
   async function renderCard({ guildId, club, style, d }) {
-    const a = await art({ kind: 'card', style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined });
+    const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`);
+    const a = await art({ kind: 'card', style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...variation });
     if (a.error) return a;
     const png = playerCard({
       art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), name: d.name, position: d.position || null,
-      overall: d.overall || null, overallLabel: 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, tagline: d.tagline,
+      overall: d.overall || null, overallLabel: 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, tagline: d.tagline, composition: variation.composition,
     });
     return { file: new AttachmentBuilder(png, { name: `card-${d.name}.png`.replace(/[^\w.-]/g, '_') }), note: a.usedPro ? null : 'No pro photo on file, so this uses a silhouette — post your pro in #pro-photos for the real thing.' };
   }
-  async function buildCard({ guildId, club, userId, displayName, style }) {
-    return renderCard({ guildId, club, style, d: await cardData({ guildId, club, userId, displayName }) });
+  async function buildCard({ guildId, club, userId, displayName, style, noStats = false }) {
+    const d = await cardData({ guildId, club, userId, displayName });
+    return renderCard({ guildId, club, style, d: noStats ? { ...d, stats: [], overall: '', seasonLabel: 'VIRTUAL PRO', tagline: club.name } : d });
   }
 
   // ----- match poster (from any recent game) -----
@@ -391,7 +408,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   async function renderPoster({ guildId, club, style, d }) {
     const motmId = await idForName(d.motm?.name);
     const mood = d.result === 'win' ? 'win' : d.result === 'loss' ? 'loss' : 'draw';
-    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: motmId, mood, competition: d.competition });
+    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: motmId, mood, competition: clip(d.competition, 60), ...nextVariation(`${guildId}:poster:${style}`) });
     if (a.error) return a;
     const png = matchPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crestFor: await crestFor(guildId), crestAgainst: null, ...d });
     return { file: new AttachmentBuilder(png, { name: 'full-time.png' }) };
@@ -449,7 +466,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     };
   }
   async function renderLineup({ guildId, club, style, d }) {
-    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.heroId, mood: 'neutral', competition: d.subtitle });
+    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.heroId, mood: 'neutral', competition: clip(d.subtitle, 60), ...nextVariation(`${guildId}:lineup:${style}`) });
     if (a.error) return a;
     const png = lineupPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), ...d });
     return { file: new AttachmentBuilder(png, { name: 'starting-xi.png' }) };
@@ -474,7 +491,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       for (const r of data || []) for (const p of r.player_stats || []) if (p?.ea_username) seen.set(p.ea_username.toLowerCase(), p.ea_username);
       roster = [...seen.values()];
     }
-    const a = await art({ kind: 'banner', style, club_name: club.name, kit: club.kit || {}, competition, discord_user_id: heroId });
+    const a = await art({ kind: 'banner', style, club_name: club.name, kit: club.kit || {}, competition, discord_user_id: heroId, ...nextVariation(`${guildId}:banner:${style}`) });
     if (a.error) return a;
     const png = banner({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), headline: title, competition, seasonTag, roster });
     return { file: new AttachmentBuilder(png, { name: 'champions-banner.png' }) };
@@ -527,7 +544,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (/\bcard\b/.test(text)) {
       const target = message.mentions.users.find((u) => !u.bot) || message.author;
       const member = await message.guild.members.fetch(target.id).catch(() => null);
-      build = () => buildCard({ guildId: message.guild.id, club, userId: target.id, displayName: member?.displayName || target.username, style });
+      build = () => buildCard({ guildId: message.guild.id, club, userId: target.id, displayName: member?.displayName || target.username, style, noStats: /no[ -]?stats|portrait|without stats/.test(text) });
       label = `🎴 **${member?.displayName || target.username}** · ${STYLES[style].label}`;
     } else if (/\b(poster|recap|full ?time)\b/.test(text)) {
       build = () => buildPoster({ guildId: message.guild.id, club, style });
@@ -548,20 +565,38 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const id = interaction.customId || '';
     if (!id.startsWith('gs_')) return false;
     const [action, a1, a2, a3] = id.split(':');
+    // Modal-opening buttons use prepared data: never wait on cloud reads before Discord's 3s deadline.
+    if (interaction.isButton() && action === 'gs_edit') {
+      const draft = DRAFTS.get(a1);
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
+        await interaction.reply({ content: 'That form expired — start again from the panel.', flags: 64 });
+        return true;
+      }
+      const d = draft.data;
+      if (draft.kind === 'card' && a2 === 'portrait') draft.data = { ...d, stats: [], overall: '', seasonLabel: 'VIRTUAL PRO', tagline: draft.clubName };
+      await interaction.showModal(draft.kind === 'card' ? cardModal(a1, draft.data) : draft.kind === 'poster' ? posterModal(a1, d) : lineupModal(a1, d));
+      return true;
+    }
+    const deferredSelect = interaction.isStringSelectMenu() && action !== 'gs_style' || interaction.isStringSelectMenu() && a1 !== 'banner';
+    const deferredReply = interaction.isModalSubmit() || interaction.isButton() && ['gs_card', 'gs_poster', 'gs_lineup'].includes(action);
+    if (deferredSelect) await interaction.deferUpdate();
+    else if (deferredReply) await interaction.deferReply({ flags: 64 });
+    const respond = (payload) => deferredReply ? interaction.editReply(payload) : interaction.reply(payload);
+    const update = (payload) => deferredSelect ? interaction.editReply(payload) : interaction.update(payload);
     const state = await getGuildState(interaction.guildId).catch(() => null);
     const findClub = (key) => activeClubs(state).find((c) => c.key === key) || activeClubs(state)[0];
     const manager = async () => isManager(interaction.member, interaction.guildId);
 
     if (interaction.isButton() && action === 'gs_card') {
-      await interaction.reply({ content: '🎴 Pick a style for your card:', components: [styleRow('card', a1)], flags: 64 });
+      await respond({ content: '🎴 Pick a style for your card:', components: [styleRow('card', a1)] });
       return true;
     }
     if (interaction.isButton() && action === 'gs_poster') {
-      await interaction.reply({ content: '📰 Pick a style for the full-time poster:', components: [styleRow('poster', a1)], flags: 64 });
+      await respond({ content: '📰 Pick a style for the full-time poster:', components: [styleRow('poster', a1)] });
       return true;
     }
     if (interaction.isButton() && action === 'gs_lineup') {
-      await interaction.reply({ content: '📋 Pick a style for the lineup graphic:', components: [styleRow('lineup', a1)], flags: 64 });
+      await respond({ content: '📋 Pick a style for the lineup graphic:', components: [styleRow('lineup', a1)] });
       return true;
     }
     if (interaction.isButton() && action === 'gs_banner') {
@@ -583,20 +618,20 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     if (interaction.isModalSubmit() && action === 'gs_kitform') {
       const club = findClub(a1);
-      if (!club || !(await manager())) { await interaction.reply({ content: 'Only managers can change the club kit.', flags: 64 }); return true; }
+      if (!club || !(await manager())) { await respond({ content: 'Only managers can change the club kit.', flags: 64 }); return true; }
       club.kit = {
         primary: interaction.fields.getTextInputValue('primary').trim(),
         secondary: interaction.fields.getTextInputValue('secondary').trim() || undefined,
         description: interaction.fields.getTextInputValue('description').trim() || undefined,
       };
       await saveGuildSettings(interaction.guildId, state);
-      await interaction.reply({ content: `👕 Kit saved: **${club.kit.primary}${club.kit.secondary ? ` / ${club.kit.secondary}` : ''}**. Every new graphic uses it.`, flags: 64 });
+      await respond({ content: `👕 Kit saved: **${club.kit.primary}${club.kit.secondary ? ` / ${club.kit.secondary}` : ''}**. Every new graphic uses it.` });
       if (interaction.channel) refreshPanel(interaction.channel, club).catch(() => {});
       return true;
     }
     if (interaction.isStringSelectMenu() && action === 'gs_style') {
       const kind = a1, club = findClub(a2), style = interaction.values[0];
-      if (!club) { await interaction.update({ content: 'No club set up here.', components: [] }); return true; }
+      if (!club) { await update({ content: 'No club set up here.', components: [] }); return true; }
       if (kind === 'banner') {
         const modal = new ModalBuilder().setCustomId(`gs_bannerform:${club.key}:${style}`).setTitle('Championship banner');
         modal.addComponents(
@@ -612,20 +647,20 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       if (kind === 'card') {
         // Pre-fill an editable form with the member's real data
         const d = await cardData({ guildId: interaction.guildId, club, userId: interaction.user.id, displayName: interaction.member?.displayName || interaction.user.username });
-        const token = saveDraft({ kind: 'card', clubKey: club.key, style, data: d, userId: interaction.user.id });
-        await interaction.showModal(cardModal(token, d));
+        const token = saveDraft({ kind: 'card', clubKey: club.key, clubName: club.name, style, data: d, userId: interaction.user.id });
+        await update(draftPrompt(token, 'card'));
         return true;
       }
       if (kind === 'poster') {
         const opts = await matchOptions(interaction.guildId, club);
-        if (!opts.length) { await interaction.update({ content: 'No synced matches yet for this club.', components: [] }); return true; }
-        await interaction.update({ content: '📰 Which game? You can edit everything before it is drawn.', components: [pickRow(`gs_pmatch:${club.key}:${style}`, 'Pick a game', opts)] });
+        if (!opts.length) { await update({ content: 'No synced matches yet for this club.', components: [] }); return true; }
+        await update({ content: '📰 Which game? You can edit everything before it is drawn.', components: [pickRow(`gs_pmatch:${club.key}:${style}`, 'Pick a game', opts)] });
         return true;
       }
       if (kind === 'lineup') {
         const opts = await lineupOptions(interaction.guildId);
-        if (!opts.length) { await interaction.update({ content: 'No saved lineups yet — build one from an event in /manager → Events.', components: [] }); return true; }
-        await interaction.update({ content: '📋 Which lineup? You can edit the players before it is drawn.', components: [pickRow(`gs_lpick:${club.key}:${style}`, 'Pick a lineup', opts)] });
+        if (!opts.length) { await update({ content: 'No saved lineups yet — build one from an event in /manager → Events.', components: [] }); return true; }
+        await update({ content: '📋 Which lineup? You can edit the players before it is drawn.', components: [pickRow(`gs_lpick:${club.key}:${style}`, 'Pick a lineup', opts)] });
         return true;
       }
       return true;
@@ -633,26 +668,27 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (interaction.isStringSelectMenu() && action === 'gs_pmatch') {
       const club = findClub(a1), style = STYLES[a2] ? a2 : 'esports';
       const d = await posterData({ guildId: interaction.guildId, club, matchId: interaction.values[0] });
-      if (d.error) { await interaction.update({ content: `❌ ${d.error}`, components: [] }); return true; }
+      if (d.error) { await update({ content: `❌ ${d.error}`, components: [] }); return true; }
       const token = saveDraft({ kind: 'poster', clubKey: club.key, style, data: d, userId: interaction.user.id });
-      await interaction.showModal(posterModal(token, d));
+      await update(draftPrompt(token, 'poster'));
       return true;
     }
     if (interaction.isStringSelectMenu() && action === 'gs_lpick') {
       const club = findClub(a1), style = STYLES[a2] ? a2 : 'esports';
       const d = await lineupData({ guild: interaction.guild, lineupId: interaction.values[0] });
-      if (d.error) { await interaction.update({ content: `❌ ${d.error}`, components: [] }); return true; }
+      if (d.error) { await update({ content: `❌ ${d.error}`, components: [] }); return true; }
       const token = saveDraft({ kind: 'lineup', clubKey: club.key, style, data: d, userId: interaction.user.id });
-      await interaction.showModal(lineupModal(token, d));
+      await update(draftPrompt(token, 'lineup'));
       return true;
     }
     if (interaction.isModalSubmit() && ['gs_cform', 'gs_pform', 'gs_lform'].includes(action)) {
       const draft = DRAFTS.get(a1);
-      if (!draft || draft.userId !== interaction.user.id) { await interaction.reply({ content: 'That form expired — start again from the panel.', flags: 64 }); return true; }
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) { await respond({ content: 'That form expired — start again from the panel.' }); return true; }
       DRAFTS.delete(a1);
       const club = findClub(draft.clubKey), style = draft.style;
       const f = (k) => { try { return interaction.fields.getTextInputValue(k).trim(); } catch { return ''; } };
-      await interaction.reply({ content: `🎨 Drawing it in **${STYLES[style].label}** — about a minute…`, flags: 64 });
+      if (!club) { await respond({ content: 'No club set up here.' }); return true; }
+      await respond({ content: `🎨 Drawing it in **${STYLES[style].label}**…` });
       let build, label;
       if (action === 'gs_cform') {
         const d = applyCardEdits(draft.data, f);
@@ -673,8 +709,8 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     if (interaction.isModalSubmit() && action === 'gs_bannerform') {
       const club = findClub(a1), style = STYLES[a2] ? a2 : 'esports';
-      if (!club || !(await manager())) { await interaction.reply({ content: 'Banners are for managers.', flags: 64 }); return true; }
-      await interaction.reply({ content: '🏆 Drawing the banner — about a minute…', flags: 64 });
+      if (!club || !(await manager())) { await respond({ content: 'Banners are for managers.' }); return true; }
+      await respond({ content: '🏆 Drawing the banner…' });
       const f = (k) => interaction.fields.getTextInputValue(k).trim();
       const hero = /^\d{5,25}$/.test(f('hero')) ? f('hero') : undefined;
       const r = await deliver({
@@ -708,7 +744,18 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return panelMessage(clubs[0]);
   }
 
-  return { onMessage, handleInteraction, init, panelFor, refreshPanel };
+  async function safeHandleInteraction(interaction) {
+    try { return await handleInteraction(interaction); }
+    catch (err) {
+      if (!interaction.customId?.startsWith('gs_')) throw err;
+      console.warn('[studio] interaction failed:', err.message);
+      const payload = { content: '❌ The studio could not complete that step. Start again from /graphics.', components: [] };
+      if (interaction.deferred || interaction.replied) await interaction.editReply(payload).catch(() => {});
+      else await interaction.reply({ ...payload, flags: 64 }).catch(() => {});
+      return true;
+    }
+  }
+  return { onMessage, handleInteraction: safeHandleInteraction, init, panelFor, refreshPanel };
 }
 
 module.exports = { createGraphicsStudio, STYLES, playerCard, matchPoster, banner, lineupPoster };
