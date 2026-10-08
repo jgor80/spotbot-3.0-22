@@ -179,3 +179,25 @@ test('1990s Club Collection renders three distinct editions with accurate labels
   playerCard({ ...base, composition: 'side-panel', name: 'A very long player name with forty letters', clubName: 'A very long football club name for testing' });
   assert.doesNotMatch(lastSvg, /NaN|undefined/);
 });
+
+test('Y2K Club Chrome renders foil, circular and brushed editions without invented honours', () => {
+  const base = { style: 'y2k', kit: { primary: 'pink' }, name: 'AirDangus23', clubName: 'PCN Palermo', position: 'CAM', stats: [] };
+  const frames = [];
+  for (const composition of ['lower-third', 'editorial', 'side-panel']) {
+    const png = playerCard({ ...base, composition });
+    assert.equal(png.subarray(1, 4).toString(), 'PNG');
+    assert.equal(png.readUInt32BE(16), 1024);
+    assert.equal(png.readUInt32BE(20), 1434);
+    assert.match(lastSvg, /AIRDANGUS23/);
+    assert.match(lastSvg, /CAM/);
+    assert.doesNotMatch(lastSvg, /NaN|undefined|EA MATCH DATA|>GAMES<|Topps|Bowman|ROOKIE|GEM MINT|signature/);
+    frames.push(lastSvg);
+  }
+  assert.equal(new Set(frames).size, 3);
+  assert.match(frames[0], /fill="url\(#refractorY2k\)"/);
+  assert.match(frames[1], /<circle cx=/);
+  assert.match(frames[2], /fill="url\(#brushY2k\)"/);
+  playerCard({ ...base, stats: [['GAMES', '22'], ['GOALS', '9']] });
+  assert.match(lastSvg, />GAMES</);
+  assert.match(lastSvg, />22</);
+});
