@@ -173,12 +173,17 @@ test('recruiting styles render bounded text without fabricated trial claims or s
 });
 
 test('consecutive editions never repeat pose or layout; all compositions render', () => {
-  let previous;
-  for (let i = 0; i < 30; i++) {
-    const current = nextVariation('test-player-modern');
+  let previous, before;
+  const seen = new Set();
+  for (let i = 0; i < 60; i++) {
+    const current = nextVariation('test-player-modern', i % 2 ? 'vintage' : 'cyber');
+    seen.add(current.pose);
+    if (before) assert.notEqual(current.pose, before.pose);
+    before = previous;
     if (previous) { assert.notEqual(current.pose, previous.pose); assert.notEqual(current.composition, previous.composition); assert.notEqual(current.variation, previous.variation); }
     previous = current;
   }
+  assert.ok(seen.size >= 5, 'poses should rotate widely');
   for (const composition of ['editorial', 'side-panel', 'lower-third']) {
     const png = playerCard({ style: 'modern', kit: { primary: 'pink' }, name: 'AirDangus23', clubName: 'PCN Palermo', tagline: 'Palermo', stats: [], composition });
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
