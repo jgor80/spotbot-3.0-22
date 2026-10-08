@@ -22,7 +22,7 @@ function safeEqual(a: string, b: string) {
 
 const Body = z.object({
   kind: z.enum(["card", "banner", "poster"]),
-  style: z.enum(["esports", "modern", "vintage", "obsidian", "cyber", "chrome", "mvp", "synthwave"]),
+  style: z.enum(["esports", "modern", "vintage", "obsidian", "cyber", "chrome", "mvp", "synthwave", "sicilia"]),
   club_name: z.string().min(1).max(60),
   kit: z.object({
     primary: z.string().max(30).optional(),
@@ -48,6 +48,7 @@ const STYLE: Record<string, string> = {
   chrome: "liquid chrome esports major look: iridescent refracted light, floating glass shards, cool silver studio backdrop with pastel holographic reflections, specular highlights",
   mvp: "tournament MVP trophy-stage look: dark arena, golden confetti drifting, warm gold spotlights, carbon-black backdrop, champion atmosphere",
   synthwave: "synthwave chillwave look: soft dusk sky in purple, magenta and peach, distant neon glow, light haze, dreamy retro-futuristic stadium lights, smooth airbrushed gradients",
+  sicilia: "1974 Sicilian collectible look: dramatic Italian movie-poster lighting, warm Mediterranean golden hour, Palermo skyline with baroque domes, bell towers and Monte Pellegrino softly behind the stadium, slightly faded grainy offset-print finish, muted pink, black, ivory and gold tones, theatrical but not parody",
   obsidian: "elite black-and-gold look: carbon-fibre black backdrop, subtle gold foil streaks, moody spotlight, desaturated tones with gold highlights, luxury trophy-room feel",
 };
 
