@@ -7,6 +7,7 @@
 const {
   Client,
   GatewayIntentBits,
+  IntentsBitField,
   Events,
   ActionRowBuilder,
   ButtonBuilder,
@@ -454,15 +455,16 @@ const streamKit = createStreamKit(premiumDeps);
 const statRoles = createStatRoles(premiumDeps);
 const coach = createCoach({ ...premiumDeps, openai });
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.DirectMessages
-  ]
-});
+// MessageContent is required to see attachments on normal channel posts (#pro-photos detection).
+// It's a privileged intent: if it isn't enabled in the Developer Portal, login falls back without it.
+const BASE_INTENTS = [
+  GatewayIntentBits.Guilds,
+  GatewayIntentBits.GuildVoiceStates,
+  GatewayIntentBits.GuildMembers,
+  GatewayIntentBits.GuildMessages,
+  GatewayIntentBits.DirectMessages
+];
+const client = new Client({ intents: [...BASE_INTENTS, GatewayIntentBits.MessageContent] });
 installClientGuards(client);
 
 // Keep the Manager Hub pinned as the last message in each club's manager desk channel.
@@ -17673,4 +17675,10 @@ function startXboxPresencePolling(discordClient) {
 // LOGIN
 // =======================
 
-client.login(token);
+client.login(token).catch(async (err) => {
+  if (!/disallowed intents/i.test(err?.message || '')) throw err;
+  console.warn('[intents] Message Content Intent is OFF in the Discord Developer Portal — #pro-photos channel detection is disabled. /me → Pro Photo still works. Enable it under Bot → Privileged Gateway Intents.');
+  await client.destroy().catch(() => {});
+  client.options.intents = new IntentsBitField(BASE_INTENTS);
+  await client.login(token);
+});
