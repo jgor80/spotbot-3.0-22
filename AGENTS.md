@@ -9,3 +9,4 @@
 - Event announcement mentions are enabled only in postEvent; board updates and reposts suppress mentions so availability changes never notify the whole server again.
 - Pro photos are ingested only through the `pro-photo` function (bot secret, AI vision check, private storage with long-lived signed URLs); recap art prefers them over Discord avatars because public storage buckets are blocked in this workspace.
 - The bot requests Discord's Message Content intent (needed to see attachments for #pro-photos) and falls back to logging in without it if the portal toggle is off, so a missing toggle never takes the bot offline.
+- Graphics Studio (`public/spotbot/graphics-studio.cjs`) gets text-free AI art from the `club-art` function and draws every word and stat itself in SVG, so names and numbers always come from saved data; club kit lives on the club config (`club.kit`).

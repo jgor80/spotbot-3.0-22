@@ -1,0 +1,1 @@
+UPDATE public.guild_settings SET clubs = jsonb_set(clubs, '{0,kit}', '{"primary":"pink","secondary":"black","description":"pink shirt with black trim and collar"}'::jsonb) WHERE guild_id = '1529555651762851930';
