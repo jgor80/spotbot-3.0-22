@@ -8,7 +8,7 @@ const PALERMO = [
   { key: 'third', label: 'Third 2024–25 (Anthracite)', era: 'modern', primary: 'anthracite black', secondary: 'pale pink',
     description: 'dark anthracite shirt with pale pink henley button collar and cuffs, thin aqua-mint trim, anthracite shorts with pink side panels' },
   { key: 'retro1979', label: '1979 Vintage (Pouchain)', era: 'vintage', primary: 'pink', secondary: 'black',
-    description: 'late-1970s cotton shirt: pink body with two wide horizontal black bands across the chest and shoulders, white V-neck collar, white sleeves with twin pink stripes, round white eagle badge patch, black shorts' },
+    description: 'late-1970s cotton shirt: pink body with two wide horizontal black bands across the chest and shoulders, white V-neck collar, white sleeves with twin pink stripes, round white eagle badge, black shorts' },
   { key: 'retro1986', label: '1986 Classic', era: 'vintage', primary: 'pink', secondary: 'black',
     description: 'mid-1980s plain pink shirt with black knitted polo collar and V insert, black cuffs, black shorts' },
   { key: 'retro1990s', label: '1990s Geometric', era: 'vintage', primary: 'pink', secondary: 'black',
