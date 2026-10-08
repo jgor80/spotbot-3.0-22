@@ -64,7 +64,7 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
     }
     if (!r.accepted) {
       await message.react('🤔').catch(() => {});
-      return message.reply("🤔 That doesn't look like a Pro Clubs player. Post a screenshot of your pro (Edit Pro, lobby or player card).").catch(() => {});
+      return message.reply("🤔 That doesn't look like a Pro Clubs player. Post a screenshot or render of your pro in kit.").catch(() => {});
     }
     await message.react('✅').catch(() => {});
     await message.reply({ embeds: [resultEmbed(target, r)], allowedMentions: { parse: [] } }).catch(() => {});
@@ -80,7 +80,7 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
     await interaction.deferReply({ flags: 64 });
     const r = await ingest({ guildId: interaction.guildId, userId: interaction.user.id, submittedBy: interaction.user.id, url: file.url });
     if (r.error) await interaction.editReply(`❌ ${r.error}`);
-    else if (!r.accepted) await interaction.editReply("🤔 That doesn't look like a Pro Clubs player. Try a screenshot from Edit Pro, the lobby or your player card.");
+    else if (!r.accepted) await interaction.editReply("🤔 That doesn't look like a Pro Clubs player. Try a screenshot or render of your pro in kit.");
     else await interaction.editReply({ embeds: [resultEmbed(interaction.user, r)] });
     return true;
   }
