@@ -227,7 +227,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }).catch(() => null);
     const out = res ? await res.json().catch(() => ({})) : {};
     if (!res?.ok || !out.image_b64) return { error: typeof out.error === 'string' ? out.error : typeof out.message === 'string' ? out.message : 'The art studio is unavailable right now.' };
-    return { image: `data:image/png;base64,${out.image_b64}`, usedPro: out.used_pro_photo };
+    return { image: `data:image/png;base64,${out.image_b64}`, usedPro: out.used_pro_photo, kitNumber: Number.isInteger(out.kit_number) ? out.kit_number : null };
   }
 
   async function studioClub(guildId, channelId, channelName) {
@@ -376,9 +376,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (a.error) return a;
     const png = playerCard({
       art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), name: d.name, position: d.position || null,
-      overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition,
+      overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number: a.kitNumber || '',
     });
-    const back = style === 'sicilia' ? new AttachmentBuilder(renderSiciliaBack({ name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_') }) : null;
+    const back = style === 'sicilia' ? new AttachmentBuilder(renderSiciliaBack({ number: a.kitNumber || '', name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_') }) : null;
     return { extra: back ? [back] : [], file: new AttachmentBuilder(png, { name: `card-${d.name}.png`.replace(/[^\w.-]/g, '_') }), note: a.usedPro ? null : 'No pro photo on file, so this uses a silhouette — post your pro in #pro-photos for the real thing.' };
   }
   async function buildCard({ guildId, club, userId, displayName, style, noStats = false }) {

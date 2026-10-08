@@ -57,10 +57,13 @@ function kitLine(kit: z.infer<typeof Body>["kit"], club: string) {
   return `The player must wear ${club}'s own home kit${colours ? ` in ${colours}` : ""}${kit.description ? ` (${kit.description})` : ""}, whatever kit the reference shows. No real-world brand or sponsor logos.`;
 }
 
-function promptFor(b: z.infer<typeof Body>, hasRef: boolean) {
+function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number | null = null) {
   const look = STYLE[b.style];
   const render = "Keep it looking like an EA SPORTS FC in-game 3D character render (video-game Virtual Pro model, game-engine shading), not a real human photo.";
-  const noText = "Absolutely no text, letters, numbers, logos or watermarks anywhere.";
+  // A shirt number is allowed only when the player's own uploaded screenshot showed it legibly.
+  const noText = kitNumber
+    ? `No text, letters, logos or watermarks anywhere. The only numerals allowed are the player's verified kit number ${kitNumber}, printed cleanly on the shirt (and optionally shorts) where it is naturally visible; no other numbers.`
+    : "Absolutely no text, letters, numbers, logos or watermarks anywhere, including no shirt or shorts numbers.";
   // Card-style shot variety: tight portraits, waist-up, action and celebration, never the same crop every time.
   const poses = {
     ready: "WAIST-UP three-quarter portrait, shoulders turned, looking towards the camera, camera at chest height",
@@ -89,11 +92,14 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean) {
   return `Vertical football club artwork. ${subject} Stadium background lit in the club colours. Style: ${look}. ${variation} ${noText}`;
 }
 
-async function proPhoto(b: z.infer<typeof Body>) {
+async function proPhoto(b: z.infer<typeof Body>): Promise<{ file: File; kitNumber: number | null } | null> {
   if (!b.discord_user_id) return null;
   const { data: assets } = await db.from("pro_photo_assets").select("image_url,pose,source_kind,graphic_kind,analysis")
     .eq("discord_user_id", b.discord_user_id).order("created_at", { ascending: false }).limit(200);
   const candidates = rankPhotos(assets ?? [], b.pose, b.kind, b.club_name);
+  // Latest number legibly read from the player's own uploads; generated art never verifies a number.
+  const n = (assets ?? []).find((a) => a.source_kind === "upload" && Number.isInteger(a.analysis?.kit_number))?.analysis?.kit_number;
+  const kitNumber = Number.isInteger(n) && n >= 1 && n <= 99 ? n : null;
   const { data: latest } = await db.from("pro_photos").select("image_url").eq("discord_user_id", b.discord_user_id).maybeSingle();
   if (latest) candidates.push(latest);
   for (const photo of candidates) {
@@ -101,7 +107,7 @@ async function proPhoto(b: z.infer<typeof Body>) {
       const res = await fetch(photo.image_url);
       const type = (res.headers.get("content-type") || "").split(";")[0];
       if (!res.ok || !/^image\/(png|jpe?g|webp)$/.test(type)) continue;
-      return new File([await res.arrayBuffer()], `pro.${type.split("/")[1]}`, { type });
+      return { file: new File([await res.arrayBuffer()], `pro.${type.split("/")[1]}`, { type }), kitNumber };
     } catch { /* Try another saved photo when a reference is no longer reachable. */ }
   }
   return null;
@@ -114,8 +120,10 @@ Deno.serve(async (req) => {
   if (!parsed.success) return json({ error: parsed.error.flatten().fieldErrors }, 400);
   const b = parsed.data;
 
-  const ref = await proPhoto(b);
-  const prompt = promptFor(b, !!ref);
+  const found = await proPhoto(b);
+  const ref = found?.file ?? null;
+  const kitNumber = found?.kitNumber ?? null;
+  const prompt = promptFor(b, !!ref, kitNumber);
   const size = b.kind === "banner" ? "1536x1024" : "1024x1536";
   let res: Response;
   if (ref) {
@@ -162,5 +170,5 @@ Deno.serve(async (req) => {
       }
     }
   }
-  return json({ image_b64: b64, used_pro_photo: !!ref, artwork_saved: artworkSaved });
+  return json({ image_b64: b64, used_pro_photo: !!ref, artwork_saved: artworkSaved, kit_number: kitNumber });
 });
