@@ -7,7 +7,7 @@
 //   /fun curse    the Malocchio: 2+ straight losses curse the club until members break it
 // Roast awards only use numbers that exist in the match data; anything invented is labelled.
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { activeClubs, resolveClub } = require('./manager-hub.cjs');
 const { toSessions } = require('./coach.cjs');
 
@@ -20,6 +20,7 @@ const FUN_COMMAND = {
   name: 'fun',
   description: 'Banter tools: roasts, press conferences, rumours, quotes and the curse.',
   options: [
+    { type: 1, name: 'panel', description: 'Post the Fun Zone panel with buttons for every banter tool.' },
     { type: 1, name: 'roast', description: 'Tongue-in-cheek awards from the latest night of games.' },
     { type: 1, name: 'presser', description: 'Face the tabloid press after the match.' },
     {
@@ -212,10 +213,46 @@ function createFunZone({ getGuildState, saveGuildSettings, loadMatches }) {
     );
   }
 
-  async function handleCommand(interaction) {
-    const sub = interaction.options.getSubcommand();
+  function funPanel(club) {
+    return {
+      embeds: [new EmbedBuilder().setColor(PINK).setTitle(`🍝 Fun Zone — ${club.name || 'the club'}`)
+        .setDescription([
+          'Win or lose, keep the banter going.',
+          '',
+          '🍝 **Roast** — awards from the last night\'s real stats',
+          '🎙️ **Press Conference** — face the tabloids',
+          '🚨 **Rumour** — a made-up transfer exclusive about you',
+          '📜 **Save Quote** · 🎧 **Random Quote** — the voice-chat archive',
+          '🧿 **Curse** — check or break the Malocchio',
+        ].join('\n'))
+        .setFooter({ text: 'Roasts use real stats · rumours are fiction' })],
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('fun_panel:roast').setLabel('Roast').setEmoji('🍝').setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId('fun_panel:presser').setLabel('Press Conference').setEmoji('🎙️').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('fun_panel:rumour').setLabel('Rumour').setEmoji('🚨').setStyle(ButtonStyle.Secondary),
+        ),
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('fun_panel:quote').setLabel('Save Quote').setEmoji('📜').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('fun_panel:quotes').setLabel('Random Quote').setEmoji('🎧').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('fun_panel:curse').setLabel('Curse').setEmoji('🧿').setStyle(ButtonStyle.Danger),
+        ),
+      ],
+    };
+  }
+
+  function quoteModal() {
+    return new ModalBuilder().setCustomId('fun_quote_modal').setTitle('Save a voice-chat quote').addComponents(
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('text').setLabel('What was said').setStyle(TextInputStyle.Paragraph).setMaxLength(300).setRequired(true)),
+    );
+  }
+
+  async function handleCommand(interaction, forced, overrides = {}) {
+    const sub = forced || interaction.options.getSubcommand();
+    const getUser = (k) => (k in overrides ? overrides[k] : interaction.options?.getUser?.(k) || null);
     const { state, club } = await clubFor(interaction);
     if (!club) return interaction.reply({ content: 'No club is set up yet — run /setup first.', flags: 64 });
+    if (sub === 'panel') return interaction.reply(funPanel(club));
 
     if (sub === 'roast') {
       await interaction.deferReply();
@@ -239,7 +276,7 @@ function createFunZone({ getGuildState, saveGuildSettings, loadMatches }) {
     }
 
     if (sub === 'rumour') {
-      const target = interaction.options.getUser('player');
+      const target = getUser('player');
       const member = target ? await interaction.guild.members.fetch(target.id).catch(() => null) : null;
       const label = member?.displayName || target?.username || interaction.member?.displayName || interaction.user.username;
       const e = new EmbedBuilder().setColor(PINK).setDescription(pick(RUMOURS).replace('{p}', `**${label}**`)).setFooter({ text: 'Fake news. 100% made up for banter.' });
@@ -247,8 +284,8 @@ function createFunZone({ getGuildState, saveGuildSettings, loadMatches }) {
     }
 
     if (sub === 'quote') {
-      const text = interaction.options.getString('text').trim();
-      const who = interaction.options.getUser('who') || interaction.user;
+      const text = String(overrides.text ?? interaction.options.getString('text')).trim();
+      const who = getUser('who') || interaction.user;
       await saveFun(interaction.guildId, state, club, (fun) => {
         fun.quotes = [{ text, who: who.id, by: interaction.user.id, at: new Date().toISOString() }, ...(fun.quotes || [])].slice(0, MAX_QUOTES);
       });
@@ -319,6 +356,16 @@ function createFunZone({ getGuildState, saveGuildSettings, loadMatches }) {
     if (!interaction.guildId) return false;
     if (interaction.isChatInputCommand() && interaction.commandName === 'fun') {
       await handleCommand(interaction);
+      return true;
+    }
+    if (interaction.isButton() && interaction.customId.startsWith('fun_panel:')) {
+      const sub = interaction.customId.split(':')[1];
+      if (sub === 'quote') await interaction.showModal(quoteModal());
+      else await handleCommand(interaction, sub, { player: null });
+      return true;
+    }
+    if (interaction.isModalSubmit?.() && interaction.customId === 'fun_quote_modal') {
+      await handleCommand(interaction, 'quote', { text: interaction.fields.getTextInputValue('text'), who: null });
       return true;
     }
     if (interaction.isButton() && /^fun_(press|rit):/.test(interaction.customId)) {
