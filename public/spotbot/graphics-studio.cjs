@@ -391,7 +391,8 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       .setCustomId(`gs_dphoto:${token}`).setPlaceholder(`Photo: ${photos.find((p) => p.id === draft.data.photoId)?.label || 'Automatic (best match)'}`)
       .addOptions([{ label: 'Automatic — best match for the pose', value: 'auto' }, ...photos.map((p) => ({ label: p.label, value: p.id, description: p.description || undefined, default: p.id === draft.data.photoId }))]))] : [];
     return { content: kind === 'card' ? `🎴 Pick a kit and ${photos.length ? 'which of your uploaded photos to base it on' : 'style'} (optional), then with stats or just your pro?` : 'Your details are ready. Pick a kit if you like.', components: [...kitRow, ...photoRow, new ActionRowBuilder().addComponents(
-      choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary))
+      choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary)),
+      ...(kind === 'card' ? [new ButtonBuilder().setCustomId(`gs_dback:${token}`).setLabel(draft?.data?.noBack ? 'Back of card: Off' : 'Back of card: On').setEmoji('🔄').setStyle(draft?.data?.noBack ? ButtonStyle.Secondary : ButtonStyle.Success)] : []),
     )] };
   }
   const input = (id, label, value, { para = false, max = 100, req = false } = {}) => new ActionRowBuilder().addComponents(
@@ -436,7 +437,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const short = String(club.name || '').split(/\s+/).pop().slice(0, 10).toUpperCase();
     const seasonRows = (seasons || []).map((s) => ({ s, r: (archive || []).find((a) => a.season_code === s.code) })).filter(({ r }) => r && r.matches > 0)
       .map(({ s, r }) => ({ label: `'${String(s.code).replace(/\D/g, '')} ${short}`, apps: r.matches, goals: r.goals, assists: r.assists, cs: r.clean_sheets, motm: r.motm, rating: r.avg_rating }));
-    const ea = (statsRows || []).find((s) => s.club_key === club.key && (!club.eaClubId || !s.ea_club_id || String(s.ea_club_id) === String(club.eaClubId)) && s.games_played > 0);
+    const ea = (statsRows || []).find((s) => s.club_key === club.key && (!club.ea_club_id || !s.ea_club_id || String(s.ea_club_id) === String(club.ea_club_id)) && s.games_played > 0);
     const clubTotals = ea ? { apps: ea.games_played, goals: ea.goals, assists: ea.assists, cs: ea.clean_sheets, motm: ea.man_of_match, rating: ea.avg_match_rating } : null;
     return {
       ...data, userId, name: displayName || profile?.ea_username || 'Player', position: photo?.position || data.position,
@@ -761,6 +762,14 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (!id.startsWith('gs_')) return false;
     const [action, a1, a2, a3] = id.split(':');
     // Modal-opening buttons use prepared data: never wait on cloud reads before Discord's 3s deadline.
+    if (interaction.isButton() && action === 'gs_dback') {
+      const draft = DRAFTS.get(a1);
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
+        await interaction.update({ content: 'That form expired — start again from the panel.', components: [] }); return true;
+      }
+      draft.data.noBack = !draft.data.noBack;
+      await interaction.update(draftPrompt(a1, 'card', findClub(draft.clubKey))); return true;
+    }
     if (interaction.isButton() && action === 'gs_edit') {
       const draft = DRAFTS.get(a1);
       if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
