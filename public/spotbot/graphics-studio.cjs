@@ -28,6 +28,8 @@ const { renderSignatureCard, SIGNATURE_STYLES } = require('./graphics-signature.
 const { renderSiciliaCard, renderSiciliaBack } = require('./graphics-sicilia.cjs');
 const { finishCardSvg } = require('./card-layout.cjs');
 const { cardStats } = require('./card-stats.cjs');
+const { logosFor, logoFor, assetUrl } = require('./club-logos.cjs');
+const { recruitmentPoster } = require('./graphics-recruitment.cjs');
 
 const NAME_RE = /graphic|media-?studio|studio/i;
 const STYLES = {
@@ -244,9 +246,14 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   // Club crest for graphics: the uploaded branding logo wins, then the club's real
   // EA badge (from its crestAssetId), then nothing (renderers fall back to initials).
   const CREST_CACHE = new Map(); // ea:<clubId> -> data url | null
-  async function crestFor(guildId, club) {
+  async function crestFor(guildId, club, style, logoKey) {
     const prefs = serverPrefs ? await serverPrefs(guildId).catch(() => ({})) : {};
-    if (prefs?.branding?.logo_url) return G.fetchImage(prefs.branding.logo_url);
+    const selected = logoFor(club, style, logoKey);
+    const url = logoKey && selected ? assetUrl(selected.url) : prefs?.branding?.logo_url || (selected ? assetUrl(selected.url) : null);
+    if (url) {
+      if (!CREST_CACHE.has(url)) CREST_CACHE.set(url, await G.fetchImage(url));
+      if (CREST_CACHE.get(url)) return CREST_CACHE.get(url);
+    }
     const id = club?.ea_club_id;
     if (!id) return null;
     const key = `ea:${id}`;
@@ -285,6 +292,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
           '🎴 **Player Card** — portrait only or with club stats',
           '📰 **Match Poster** — pick any recent game',
           '📋 **Lineup** — starting XI from a lineup built for an event or tournament',
+          '📣 **Recruiting Poster** — positions, trial details and contact info',
           '_You can edit names, scores and players before anything is drawn._',
           '🏆 **Banner** — managers only, for BYOT, league, cup and playoff wins',
           '',
@@ -299,6 +307,8 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         new ButtonBuilder().setCustomId(`gs_lineup:${club.key}`).setLabel('Lineup').setEmoji('📋').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`gs_banner:${club.key}`).setLabel('Banner').setEmoji('🏆').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`gs_kit:${club.key}`).setLabel('Club Kit').setEmoji('👕').setStyle(ButtonStyle.Secondary),
+      ), new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`gs_recruit:${club.key}`).setLabel('Recruiting Poster').setEmoji('📣').setStyle(ButtonStyle.Secondary),
       )],
       allowedMentions: { parse: [] },
     };
@@ -321,7 +331,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
       .setCustomId(`gs_style:${kind}:${clubKey}${extra ? `:${extra}` : ''}`)
       .setPlaceholder('Pick a style')
-      .addOptions(Object.entries(STYLES).filter(([, s]) => !s.cardOnly || kind === 'card').map(([value, s]) => ({ label: s.label, value, emoji: s.emoji, description: s.desc }))));
+      .addOptions(Object.entries(STYLES).filter(([, s]) => !s.cardOnly || kind === 'card' || kind === 'recruit').map(([value, s]) => ({ label: s.label, value, emoji: s.emoji, description: s.desc }))));
   }
 
   // ----- builders (return { file, note } or { error }) -----
@@ -409,7 +419,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (a.error) return a;
     const number = d.number !== undefined ? d.number : (a.kitNumber || '');
     const png = playerCard({
-      art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club), name: d.name, position: d.position || null,
+      art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), name: d.name, position: d.position || null,
       overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number,
     });
     const back = style === 'sicilia' ? new AttachmentBuilder(renderSiciliaBack({ number, name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_') }) : null;
@@ -479,7 +489,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const mood = d.result === 'win' ? 'win' : d.result === 'loss' ? 'loss' : 'draw';
     const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: motmId, mood, competition: clip(d.competition, 60), ...nextVariation(`${guildId}:poster:${style}`) });
     if (a.error) return a;
-    const png = matchPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crestFor: await crestFor(guildId, club), crestAgainst: null, ...d });
+    const png = matchPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crestFor: await crestFor(guildId, club, style), crestAgainst: null, ...d });
     return { file: new AttachmentBuilder(png, { name: 'full-time.png' }) };
   }
   async function buildPoster({ guildId, club, style }) {
@@ -537,7 +547,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   async function renderLineup({ guildId, club, style, d }) {
     const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.heroId, mood: 'neutral', competition: clip(d.subtitle, 60), ...nextVariation(`${guildId}:lineup:${style}`) });
     if (a.error) return a;
-    const png = lineupPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club), ...d });
+    const png = lineupPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), ...d });
     return { file: new AttachmentBuilder(png, { name: 'starting-xi.png' }) };
   }
 
@@ -562,8 +572,25 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     const a = await art({ kind: 'banner', style, club_name: club.name, kit: club.kit || {}, competition, discord_user_id: heroId, ...nextVariation(`${guildId}:banner:${style}`) });
     if (a.error) return a;
-    const png = banner({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club), headline: title, competition, seasonTag, roster });
+    const png = banner({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), headline: title, competition, seasonTag, roster });
     return { file: new AttachmentBuilder(png, { name: 'champions-banner.png' }) };
+  }
+
+  const recruitModal = (token, d) => new ModalBuilder().setCustomId(`gs_rform:${token}`).setTitle('Check your recruiting poster').addComponents(
+    input('headline', 'Headline', d.headline, { max: 40, req: true }),
+    input('positions', 'Positions needed (optional)', d.positions, { max: 60 }),
+    input('details', 'Trial time / platform / requirements', d.details, { max: 150, para: true }),
+    input('contact', 'Contact or invite link (optional)', d.contact, { max: 100 }),
+    input('featured', 'Featured player Discord ID (optional)', d.featured, { max: 25 }),
+  );
+  async function renderRecruit({ guildId, club, style, d }) {
+    const a = await art({ kind: 'poster', style: STYLES[style]?.cardOnly && style !== 'sicilia' ? 'vintage' : style,
+      club_name: club.name, kit: club.kit || {}, mood: 'neutral', discord_user_id: d.featured || undefined,
+      ...nextVariation(`${guildId}:recruit:${style}`) });
+    if (a.error) return a;
+    const png = recruitmentPoster({ ...d, art: a.image, style, clubName: club.name,
+      crest: await crestFor(guildId, club, style, d.logoKey) }, G, { ...palette('modern', club.kit), ...palette(style, club.kit) });
+    return { file: new AttachmentBuilder(png, { name: 'recruiting-poster.png' }) };
   }
 
   // Run a build, post the result in the studio channel (and Hall of Fame for banners), keep the panel last
@@ -610,7 +637,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (!club) return;
     const style = /sicil|calciatori|1974|palermo card/i.test(text) ? 'sicilia' : /synth|chillwave|vaporwave|outrun/i.test(text) ? 'synthwave' : /glitch|cyber|neo[- ]?tokyo/i.test(text) ? 'cyber' : /liquid chrome|glass/i.test(text) ? 'chrome' : /\bmvp\b/i.test(text) ? 'mvp' : /broadcast|\btv\b/i.test(text) ? 'modern' : /heritage|1950|50['’]?s/i.test(text) ? 'vintage' : /\bcard\b/.test(text) && /2020|20['’]?s|twenties|prism|mosaic/i.test(text) ? 'retro2020s' : /\bcard\b/.test(text) && /2010|10['’]?s|twenty[ -]?tens/i.test(text) ? 'retro2010s' : /\bcard\b/.test(text) && /y2k|2000|chrome|refractor/i.test(text) ? 'y2k' : /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
     let build, label;
-    if (/\bcard\b/.test(text)) {
+    if (/\b(recruit(?:ing|ment)?|trials?)\b/.test(text)) {
+      return message.reply({ content: '📣 Pick a recruiting poster style, then edit your details:', components: [styleRow('recruit', club.key)], allowedMentions: { parse: [] } }).catch(() => {});
+    } else if (/\bcard\b/.test(text)) {
       const target = message.mentions.users.find((u) => !u.bot) || message.author;
       const member = await message.guild.members.fetch(target.id).catch(() => null);
       build = () => buildCard({ guildId: message.guild.id, club, userId: target.id, displayName: member?.displayName || target.username, style, noStats: /no[ -]?stats|portrait|without stats/.test(text) });
@@ -643,11 +672,11 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       }
       const d = draft.data;
       if (draft.kind === 'card' && a2 === 'portrait') draft.data = { ...d, stats: [], overall: '', seasonLabel: 'VIRTUAL PRO', tagline: '' };
-      await interaction.showModal(draft.kind === 'card' ? cardModal(a1, draft.data) : draft.kind === 'poster' ? posterModal(a1, d) : lineupModal(a1, d));
+      await interaction.showModal(draft.kind === 'card' ? cardModal(a1, draft.data) : draft.kind === 'recruit' ? recruitModal(a1, d) : draft.kind === 'poster' ? posterModal(a1, d) : lineupModal(a1, d));
       return true;
     }
     const deferredSelect = interaction.isStringSelectMenu() && action !== 'gs_style' || interaction.isStringSelectMenu() && a1 !== 'banner';
-    const deferredReply = interaction.isModalSubmit() || interaction.isButton() && ['gs_card', 'gs_poster', 'gs_lineup'].includes(action);
+    const deferredReply = interaction.isModalSubmit() || interaction.isButton() && ['gs_card', 'gs_poster', 'gs_lineup', 'gs_recruit'].includes(action);
     if (deferredSelect) await interaction.deferUpdate();
     else if (deferredReply) await interaction.deferReply({ flags: 64 });
     const respond = (payload) => deferredReply ? interaction.editReply(payload) : interaction.reply(payload);
@@ -655,6 +684,18 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const state = await getGuildState(interaction.guildId).catch(() => null);
     const findClub = (key) => activeClubs(state).find((c) => c.key === key) || activeClubs(state)[0];
     const manager = async () => isManager(interaction.member, interaction.guildId);
+    if (interaction.isButton() && action === 'gs_recruit') {
+      await respond({ content: '📣 Pick a recruiting poster style:', components: [styleRow('recruit', a1)] });
+      return true;
+    }
+    if (interaction.isStringSelectMenu() && action === 'gs_rlogo') {
+      const draft = DRAFTS.get(a1);
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
+        await update({ content: 'That form expired — start again from the panel.', components: [] }); return true;
+      }
+      draft.data.logoKey = interaction.values[0] === 'auto' ? undefined : interaction.values[0];
+      await update(draftPrompt(a1, 'recruit')); return true;
+    }
 
     if (interaction.isButton() && action === 'gs_card') {
       await respond({ content: '🎴 Pick a style for your card:', components: [styleRow('card', a1)] });
@@ -701,6 +742,17 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (interaction.isStringSelectMenu() && action === 'gs_style') {
       const kind = a1, club = findClub(a2), style = interaction.values[0];
       if (!club) { await update({ content: 'No club set up here.', components: [] }); return true; }
+      if (!STYLES[style] || STYLES[style].cardOnly && !['card', 'recruit'].includes(kind)) {
+        await update({ content: 'Pick a style from the panel.', components: [] }); return true;
+      }
+      if (kind === 'recruit') {
+        const token = saveDraft({ kind, clubKey: club.key, style, userId: interaction.user.id,
+          data: { headline: 'JOIN OUR CLUB', positions: '', details: '', contact: '', featured: interaction.user.id } });
+        const logos = logosFor(club);
+        await update(logos.length ? { content: 'Pick your club logo:', components: [pickRow(`gs_rlogo:${token}`, 'Club logo',
+          [{ label: 'Automatic — match the style', value: 'auto' }, ...logos.map((l) => ({ label: l.label, value: l.key }))])] } : draftPrompt(token, kind));
+        return true;
+      }
       if (kind === 'banner') {
         const modal = new ModalBuilder().setCustomId(`gs_bannerform:${club.key}:${style}`).setTitle('Championship banner');
         modal.addComponents(
@@ -750,7 +802,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       await update(draftPrompt(token, 'lineup'));
       return true;
     }
-    if (interaction.isModalSubmit() && ['gs_cform', 'gs_pform', 'gs_lform'].includes(action)) {
+    if (interaction.isModalSubmit() && ['gs_cform', 'gs_pform', 'gs_lform', 'gs_rform'].includes(action)) {
       const draft = DRAFTS.get(a1);
       if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) { await respond({ content: 'That form expired — start again from the panel.' }); return true; }
       DRAFTS.delete(a1);
@@ -767,6 +819,14 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         const d = applyPosterEdits(draft.data, f);
         build = () => renderPoster({ guildId: interaction.guildId, club, style, d });
         label = `📰 Full time vs ${d.opponent} · ${STYLES[style].label}`;
+      } else if (action === 'gs_rform') {
+        if (f('featured') && !/^\d{5,25}$/.test(f('featured'))) {
+          await respond({ content: 'Use a Discord player ID for the featured player, or leave it blank.' }); return true;
+        }
+        const d = { ...draft.data, headline: f('headline').slice(0, 40) || draft.data.headline,
+          positions: f('positions').slice(0, 60), details: f('details').slice(0, 150), contact: f('contact').slice(0, 100), featured: f('featured') };
+        build = () => renderRecruit({ guildId: interaction.guildId, club, style, d });
+        label = `📣 **${club.name}** recruiting · ${STYLES[style].label}`;
       } else {
         const d = await applyLineupEdits(draft.data, f);
         build = () => renderLineup({ guildId: interaction.guildId, club, style, d });
@@ -827,4 +887,4 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   return { onMessage, handleInteraction: safeHandleInteraction, init, panelFor, refreshPanel };
 }
 
-module.exports = { createGraphicsStudio, STYLES, playerCard, matchPoster, banner, lineupPoster };
+module.exports = { createGraphicsStudio, STYLES, playerCard, matchPoster, banner, lineupPoster, recruitmentPoster, palette };
