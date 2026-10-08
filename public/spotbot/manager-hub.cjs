@@ -620,6 +620,22 @@ function createManagerHub(deps) {
         await interaction.deferReply({ flags: 64 });
         await interaction.editReply(await buildEventList(interaction.guildId));
         return true;
+      case 'hub_photos':
+        await interaction.deferReply({ flags: 64 });
+        try {
+          await interaction.editReply(await buildProPhotos(interaction.guildId, club));
+        } catch (err) {
+          await interaction.editReply({ content: `❌ Could not load pro photos: ${err.message}` });
+        }
+        return true;
+      case 'hub_photos_pg':
+        await interaction.deferUpdate();
+        try {
+          await interaction.editReply(await buildProPhotos(interaction.guildId, club, Number(extra) || 0));
+        } catch (err) {
+          await interaction.followUp({ content: `❌ Could not load pro photos: ${err.message}`, flags: 64 });
+        }
+        return true;
       case 'hub_ins':
         await interaction.deferReply({ flags: 64 });
         try {
