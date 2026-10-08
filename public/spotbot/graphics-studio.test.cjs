@@ -4,11 +4,13 @@ const Module = require('node:module');
 const { Resvg } = require('@resvg/resvg-js');
 const { nextVariation } = require('./graphics-variants.cjs');
 let lastSvg = '';
+const fetchedLogos = [];
+const testLogo = 'data:image/png;base64,' + new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="pink"/></svg>').render().asPng().toString('base64');
 const originalLoad = Module._load;
 Module._load = function (request, parent, ...args) {
   if (parent?.filename.endsWith('graphics-studio.cjs') && request === './graphics.cjs') return {
     esc: (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;'),
-    fetchImage: async () => null,
+    fetchImage: async (url) => { fetchedLogos.push(url); return testLogo; },
     render: (svg) => { lastSvg = svg; return new Resvg(svg).render().asPng(); },
   };
   if (parent?.filename.endsWith('graphics-studio.cjs') && request === './manager-hub.cjs') return { activeClubs: (s) => s?.clubs || [] };
@@ -31,7 +33,7 @@ function fixture(overrides = {}) {
   const channel = { id: 'studio', client: { user: { id: 'bot' } }, messages: { fetch: async () => new Map(), delete: async () => {} }, send: async (p) => { posts.push(p); return { id: 'posted' }; } };
   const studio = createGraphicsStudio({ supabase: db, supabaseUrl: 'https://example.invalid', secret: 'test-only',
     getGuildState: async () => { assert.ok(calls.length, 'acknowledge before settings read'); return { clubs: [club] }; },
-    isManager: async () => false });
+    isManager: async () => false, serverPrefs: async () => ({ branding: { logo_url: 'https://example.invalid/unrelated-badge.png' } }) });
   function interaction(customId, type, extra = {}) {
     return { customId, guildId: guild.id, guild, channel, user: { id: '501557839932948490', username: 'AirDangus23' },
       isButton: () => type === 'button', isStringSelectMenu: () => type === 'select', isModalSubmit: () => type === 'modal',
@@ -124,6 +126,15 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
     assert.doesNotMatch(lastSvg, /FULL TIME|VICTORY|EA MATCH DATA/);
     assert.equal(f.requests.at(-1), '✅ Posted!');
   } finally { global.fetch = originalFetch; }
+});
+
+test('automatic club logos override unrelated server branding and render the saved crest', () => {
+  assert.ok(fetchedLogos.some((url) => url.includes('palermo-logo-current.png')));
+  assert.ok(fetchedLogos.some((url) => url.includes('palermo-logo-45.png')));
+  assert.ok(fetchedLogos.every((url) => !url.includes('unrelated-badge')));
+  const renderer = { esc: String, render: (svg) => svg };
+  const svg = recruitmentPoster({ style: 'modern', clubName: 'PCN Palermo', headline: 'Join us', crest: testLogo }, renderer, palette('modern', {}));
+  assert.ok(svg.includes(`<image href="${testLogo}" x="66" y="66"`));
 });
 
 test('recruitment groups exclude inactive and unsaved players, reject outside leads and handle an empty pool', async () => {
