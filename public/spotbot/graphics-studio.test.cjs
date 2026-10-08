@@ -22,7 +22,7 @@ function fixture() {
   const club = { key: 'palermo', name: 'PCN Palermo', kit: { primary: 'pink', secondary: 'black' } };
   const db = { from(table) {
     assert.ok(calls.includes('deferUpdate'), 'acknowledge before loading player data');
-    const result = table === 'player_club_stats' ? [] : table === 'profiles' ? { ea_username: 'AirDangus23' } : { position: 'CAM', overall: 90 };
+    const result = table === 'player_club_stats' ? [{ club_key: 'palermo', games_played: 22, goals: 9, assists: 4, wins: 10, draws: 2, losses: 10 }] : table === 'profiles' ? { ea_username: 'AirDangus23' } : { position: 'CAM', overall: 90 };
     const query = { select() { return this; }, eq() { return this; }, maybeSingle() { return Promise.resolve({ data: result }); }, then(resolve) { return Promise.resolve({ data: result }).then(resolve); } };
     return query;
   } };
@@ -44,7 +44,11 @@ function fixture() {
 
 test('all styles load safely, portrait option opens a valid stat-free form and renders without stats', async () => {
   const originalFetch = global.fetch;
-  global.fetch = async () => ({ ok: true, json: async () => ({ image_b64: new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="pink"/></svg>').render().asPng().toString('base64'), used_pro_photo: true }) });
+  global.fetch = async (_, options) => {
+    assert.equal(JSON.parse(options.body).has_stats, false);
+    assert.equal(JSON.parse(options.body).has_tagline, false);
+    return { ok: true, json: async () => ({ image_b64: new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="pink"/></svg>').render().asPng().toString('base64'), used_pro_photo: true }) };
+  };
   try {
     for (const style of Object.keys(STYLES)) {
       const f = fixture();
@@ -100,7 +104,7 @@ test('1986 Club Classic keeps a fixed print frame, club colours and optional rea
   const png = playerCard(base);
   assert.equal(png.subarray(1, 4).toString(), 'PNG');
   assert.equal(png.readUInt32BE(16), 1024);
-  assert.equal(png.readUInt32BE(20), 1434);
+  assert.equal(png.readUInt32BE(20), 1360);
   assert.match(lastSvg, /PCN PALERMO/);
   assert.match(lastSvg, /AIRDANGUS23/);
   assert.match(lastSvg, /circle cx="126"/);
@@ -120,7 +124,7 @@ test('1960s Club Heritage renders three distinct print frames with optional stat
     const png = playerCard({ ...base, composition });
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
     assert.equal(png.readUInt32BE(16), 1024);
-    assert.equal(png.readUInt32BE(20), 1434);
+    assert.equal(png.readUInt32BE(20), 1380);
     assert.match(lastSvg, /AIRDANGUS23/);
     assert.match(lastSvg, /PCN PALERMO/);
     assert.doesNotMatch(lastSvg, /EA MATCH DATA|>GAMES<|signature|Topps/);
@@ -141,7 +145,7 @@ test('1970s Club Archive renders arched and ribbon editions with optional stats'
     const png = playerCard({ ...base, composition });
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
     assert.equal(png.readUInt32BE(16), 1024);
-    assert.equal(png.readUInt32BE(20), 1434);
+    assert.equal(png.readUInt32BE(20), 1380);
     assert.match(lastSvg, /AIRDANGUS23/);
     assert.match(lastSvg, /CAM/);
     assert.match(lastSvg, /fill="#f472b6"/);
@@ -163,7 +167,7 @@ test('1990s Club Collection renders three distinct editions with accurate labels
     const png = playerCard({ ...base, composition });
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
     assert.equal(png.readUInt32BE(16), 1024);
-    assert.equal(png.readUInt32BE(20), 1434);
+    assert.equal(png.readUInt32BE(20), 1380);
     assert.match(lastSvg, /AIRDANGUS23/);
     assert.match(lastSvg, /CAM/);
     assert.doesNotMatch(lastSvg, /NaN|undefined|EA MATCH DATA|>GAMES<|Topps|Donruss|Leaf|DEBUT/);
@@ -187,7 +191,7 @@ test('Y2K Club Chrome renders foil, circular and brushed editions without invent
     const png = playerCard({ ...base, composition });
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
     assert.equal(png.readUInt32BE(16), 1024);
-    assert.equal(png.readUInt32BE(20), 1434);
+    assert.equal(png.readUInt32BE(20), 1380);
     assert.match(lastSvg, /AIRDANGUS23/);
     assert.match(lastSvg, /CAM/);
     assert.doesNotMatch(lastSvg, /NaN|undefined|EA MATCH DATA|>GAMES<|Topps|Bowman|ROOKIE|GEM MINT|signature/);
@@ -209,7 +213,7 @@ test('2010s Club Signature renders chrome, sweep and foil with optional accurate
     const png = playerCard({ ...base, composition });
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
     assert.equal(png.readUInt32BE(16), 1024);
-    assert.equal(png.readUInt32BE(20), 1434);
+    assert.equal(png.readUInt32BE(20), 1380);
     assert.match(lastSvg, /AIRDANGUS23/);
     assert.match(lastSvg, /PCN PALERMO/);
     assert.match(lastSvg, /CAM/);
@@ -234,7 +238,7 @@ test('2020s Club Prism renders angular, mosaic and sculpted editions with option
     const png = playerCard({ ...base, composition });
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
     assert.equal(png.readUInt32BE(16), 1024);
-    assert.equal(png.readUInt32BE(20), 1434);
+    assert.equal(png.readUInt32BE(20), 1380);
     assert.match(lastSvg, /AIRDANGUS23/);
     assert.match(lastSvg, /PCN PALERMO/);
     assert.match(lastSvg, /CAM/);

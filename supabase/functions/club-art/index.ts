@@ -36,6 +36,8 @@ const Body = z.object({
   composition: z.enum(["lower-third", "editorial", "side-panel"]).default("lower-third"),
   pose: z.enum(["ready", "stride", "ball", "celebrate", "profile", "captain"]).default("ready"),
   variation: z.string().max(60).optional(),
+  has_stats: z.boolean().default(true),
+  has_tagline: z.boolean().default(true),
 });
 
 const STYLE: Record<string, string> = {
@@ -53,7 +55,7 @@ function kitLine(kit: z.infer<typeof Body>["kit"], club: string) {
 function promptFor(b: z.infer<typeof Body>, hasRef: boolean) {
   const look = STYLE[b.style];
   const render = "Keep it looking like an EA SPORTS FC in-game 3D character render (video-game Virtual Pro model, game-engine shading), not a real human photo.";
-  const noText = "Absolutely no text, letters, numbers, logos or watermarks anywhere; keep the lower third dark and uncluttered for the bot's typography.";
+  const noText = "Absolutely no text, letters, numbers, logos or watermarks anywhere.";
   const poses = {
     ready: "three-quarter standing pose, shoulders turned, looking towards the camera",
     stride: "in motion striding across the pitch, natural arm swing, three-quarter view",
@@ -63,6 +65,7 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean) {
     captain: "hands on hips, captain-like stance, low camera angle",
   };
   const placement = b.kind !== "card" ? "Subject in the upper two thirds; keep the lower third empty."
+    : !b.has_stats ? `Portrait-first composition: make the virtual pro large and dominant, filling the frame from 8% to ${b.has_tagline ? "86%" : "90%"} height. Show the full available pose or close three-quarter portrait. No empty lower third, blank side panels or reserved stat bands. Keep only the top 10% and bottom ${b.has_tagline ? "14%" : "10%"} clear enough for compact club and name lettering. Continue the stadium and kit into the lower frame.`
     : b.composition === "editorial" ? "Editorial composition: leave a dark empty band from 12% to 28% height for the name; place the character below that band, face between 32% and 50% height, with the lower third empty."
     : b.composition === "side-panel" ? "Asymmetric composition: character to the right, face in the upper right half. Leave the lower left area and bottom third dark and empty for a nameplate and optional stats."
     : "Broadcast lower-third composition: character centred, face in the upper half, lower third empty for a nameplate and optional stats.";
