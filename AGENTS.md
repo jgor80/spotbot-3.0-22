@@ -4,8 +4,7 @@
 - Both the cloud sync (sync-ea-stats) and the bot relink pre-FC27 clubs by exact EA name and mark them ea_fc_version='fc27'; FC27 gave every club a new ID, so old IDs only return last season's matches.
 - Bot database access goes through the `bot-proxy` function with a shared BOT_PROXY_SECRET; the admin key never leaves the backend.
 
-- Recap action artwork is bundled in the bot assets and selected by the spotlight player’s position; it is labelled as AI art because EA stats and Discord avatars do not establish a player’s likeness.
-- Recap cards display actual single-match ratings, not derived overall ratings, so match performance cannot be mistaken for EA player attributes.
+- Guild-authorized player-cards latest shares signed fronts for app/broadcast reuse; backs/collections stay owner-only. Recaps label single-match ratings separately from collection stats and use bundled position-based AI art as fallback.
 - Event announcement mentions are enabled only in postEvent; board updates and reposts suppress mentions so availability changes never notify the whole server again.
 - Pro photos are ingested only through the `pro-photo` function (bot secret, AI vision check, private storage with long-lived signed URLs); every accepted upload is retained in `pro_photo_assets`, while `pro_photos` stays as the latest-photo compatibility record.
 - The bot requests Discord's Message Content intent (needed to see attachments for #pro-photos) and falls back to logging in without it if the portal toggle is off, so a missing toggle never takes the bot offline.

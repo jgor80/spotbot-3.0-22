@@ -225,13 +225,15 @@ function recapGraphic(d) {
   ${!players.length ? `<text x="580" y="390" font-family="${BODY}" font-size="24" fill="#b7c6bf">Player stats not available</text>` : ''}
   <rect x="200" y="280" width="310" height="42" fill="#07120e" fill-opacity="0.90"/>
   <text x="355" y="309" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="22" fill="#f7d776">${motm?.motm ? 'MAN OF THE MATCH' : 'MATCH SPOTLIGHT'}</text>
-  ${card ? `<g transform="translate(205 338) scale(0.98)">${cardSvg(card, 0, 0)}</g>` : ''}
+  ${d.savedCard ? `<image href="${d.savedCard}" x="205" y="332" width="294" height="414" preserveAspectRatio="xMidYMid meet"/>
+    <text x="352" y="772" text-anchor="middle" font-family="${HEAD}" font-size="22" fill="#f7d776">MATCH RTG ${esc(card?.ratingDisplay || '—')}</text>
+    <text x="352" y="794" text-anchor="middle" font-family="${BODY}" font-size="12" fill="#b7c6bf">SAVED CARD / COLLECTION STATS</text>` : card ? `<g transform="translate(205 338) scale(0.98)">${cardSvg(card, 0, 0)}</g>` : ''}
   ${metrics.map(([label, value], i) => `<text x="${585 + i * 325}" y="804" font-family="${HEAD}" font-size="20" fill="#b7c6bf">${label} <tspan fill="#ffffff" font-weight="700">${value}</tspan></text>`).join('')}
   <rect y="833" width="${W}" height="67" fill="#07120e"/>
   <rect y="833" width="9" height="67" fill="${accent}"/>
   <text x="38" y="862" font-family="${BODY}" font-weight="700" font-size="${fit(d.talkingPoint || (d.details || []).filter(Boolean).join(' / '), 1480, 21, 0.58, 14)}" fill="#ffffff">${esc(clip(d.talkingPoint || (d.details || []).filter(Boolean).join(' / '), 135))}</text>
   <text x="38" y="888" font-family="${BODY}" font-size="14" fill="#a8b8b0">EA MATCH DATA / ${esc(clip(d.footer || 'GAFFERBOT', 70))}</text>
-  <text x="1550" y="888" text-anchor="end" font-family="${BODY}" font-size="13" fill="#a8b8b0">AI ACTION ART / DISCORD AVATARS</text>
+  <text x="1550" y="888" text-anchor="end" font-family="${BODY}" font-size="13" fill="#a8b8b0">${d.savedCard ? 'SAVED PLAYER CARD / AI ART' : 'AI ACTION ART / DISCORD AVATARS'}</text>
   </svg>`;
   return render(svg);
 }
@@ -254,6 +256,7 @@ function tierFor(overall, inForm) {
 
 // card: { name, position, overall, avatar, stats: [[label, value] x6], badges: [], inForm, club }
 function cardSvg(card, x, y) {
+  if (card.savedCard) return `<image href="${card.savedCard}" x="${x}" y="${y}" width="300" height="440" preserveAspectRatio="xMidYMid meet"/>`;
   const w = 300;
   const h = 440;
   const t = TIERS[tierFor(card.overall, card.inForm)];
@@ -355,10 +358,12 @@ function totwPoster({ players, title, subtitle, accent, crestImage, footer }) {
   const tokens = spots
     .map(({ p, x, y }) => {
       const id = `t${Math.round(x)}_${y}`;
-      const face = p.avatar
+      const face = p.savedCard
+        ? `<image href="${p.savedCard}" x="${x - 55}" y="${y - 130}" width="110" height="154" preserveAspectRatio="xMidYMid meet"/>`
+        : p.avatar
         ? `<clipPath id="${id}"><circle cx="${x}" cy="${y - 20}" r="52"/></clipPath><image href="${p.avatar}" x="${x - 52}" y="${y - 72}" width="104" height="104" clip-path="url(#${id})" preserveAspectRatio="xMidYMid slice"/>`
         : `<text x="${x}" y="${y}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="40" fill="#fff">${esc(initials(p.name))}</text>`;
-      return `<circle cx="${x}" cy="${y - 20}" r="58" fill="${ac}" stroke="#fff" stroke-width="4"/>
+      return `${p.savedCard ? '' : `<circle cx="${x}" cy="${y - 20}" r="58" fill="${ac}" stroke="#fff" stroke-width="4"/>`}
         ${face}
         <rect x="${x - 34}" y="${y + 22}" width="68" height="32" rx="8" fill="#0b1220"/>
         <text x="${x}" y="${y + 46}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="24" fill="#facc15">${Number(p.rating).toFixed(1)}</text>
