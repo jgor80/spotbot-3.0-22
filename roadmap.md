@@ -22,3 +22,4 @@
 - [x] One-time DM link invites (/roster invite) to confirm gamertag, platform and website account
 - [x] Sharpen Modern Broadcast and Vintage Heritage cards; add Cyber Glitch, Liquid Chrome, Tournament MVP and Synthwave Chill styles
 - [x] Vary card shot types (portrait, half, action, celebration) and keep the full head in frame
+- [x] 1974 Palermo Sicilia card (front + back with fictional lore)

@@ -73,12 +73,12 @@ function renderSiciliaBack(d, G) {
   const get = (k) => (d.stats || []).find(([l]) => l === k)?.[1];
   const line = [['PRESENZE', get('GAMES')], ['GOL', get('GOALS')], ['ASSIST', get('ASSISTS')], ['VOTO', get('RATING')]].filter(([, v]) => v != null && v !== '');
   const name = String(d.name || '').toUpperCase().slice(0, 30);
-  const bio = [`Born (so the legend goes) in ${pick(BIRTH, seed, 0)}.`, `Off the pitch: ${pick(HOBBY, seed, 1)}.`, `Known to ${pick(QUIRK, seed, 2)}.`];
+  const bio = [`Born (so the legend goes) in ${pick(BIRTH, seed, 0)}.`, `Off the pitch: ${pick(HOBBY, seed, 1)}.`, `Famously: ${pick(QUIRK, seed, 2)}.`];
   return G.render(`<svg xmlns="http://www.w3.org/2000/svg" width="1434" height="1024" viewBox="0 0 1434 1024">${defs(C.pink)}
     <rect width="1434" height="1024" fill="${C.paper}"/><rect x="22" y="22" width="1390" height="980" fill="${C.black}"/><rect x="34" y="34" width="1366" height="956" fill="${C.ivory}"/>
     <rect x="34" y="34" width="1366" height="956" fill="url(#grainS)"/>
     <rect x="60" y="60" width="1314" height="120" fill="${C.pink}" stroke="${C.black}" stroke-width="4"/>
-    <circle cx="140" cy="120" r="44" fill="${C.black}"/><text x="140" y="136" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="44" fill="${C.pink}">${esc(/^\d{1,2}$/.test(String(d.number || '')) ? d.number : '★')}</text>
+    <circle cx="140" cy="120" r="44" fill="${C.black}"/><text x="140" y="136" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="44" fill="${C.pink}">${esc(/^\d{1,2}$/.test(String(d.number || '')) ? d.number : String(d.position || 'P').toUpperCase().slice(0, 3))}</text>
     <text x="210" y="138" font-family="Oswald" font-weight="700" font-size="${Math.min(60, Math.floor(860 / Math.max(name.length * 0.55, 1)))}" fill="${C.black}">${esc(name)}</text>
     <text x="1340" y="110" text-anchor="end" font-family="Oswald" font-size="26" letter-spacing="4" fill="${C.black}">${esc(String(d.clubName || '').toUpperCase().slice(0, 28))}</text>
     <text x="1340" y="150" text-anchor="end" font-family="Oswald" font-size="24" letter-spacing="4" fill="${C.black}">${esc(String(d.position || '').toUpperCase())} · SICILIA</text>
@@ -86,7 +86,7 @@ function renderSiciliaBack(d, G) {
     <rect x="80" y="270" width="1274" height="190" fill="none" stroke="${C.black}" stroke-width="3"/>
     ${line.length ? line.map(([l, v], i) => { const x = 80 + (1274 / line.length) * (i + 0.5); return `<text x="${x}" y="330" text-anchor="middle" font-family="Oswald" font-size="24" letter-spacing="4" fill="${C.deep}">${l}</text><text x="${x}" y="420" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="76" fill="${C.black}">${esc(v)}</text>`; }).join('')
       : `<text x="717" y="380" text-anchor="middle" font-family="Oswald" font-size="34" fill="${C.ink}">STATS NOT YET RECORDED</text>`}
-    <text x="80" y="470 " font-family="Inter" font-size="14" fill="${C.ink}">${line.length ? esc(`${d.dataLabel || d.seasonLabel || 'EA MATCH DATA'} · verified club data`) : ''}</text>
+    <text x="80" y="492" font-family="Inter" font-size="14" fill="${C.ink}">${line.length ? esc(`${d.dataLabel || d.seasonLabel || 'EA MATCH DATA'} · verified club data`) : ''}</text>
     <text x="80" y="540" font-family="Oswald" font-weight="700" font-size="30" letter-spacing="6" fill="${C.deep}">LA LEGGENDA</text>
     ${bio.map((b, i) => `<text x="80" y="${600 + i * 56}" font-family="Inter" font-style="italic" font-size="30" fill="${C.ink}">${esc(b)}</text>`).join('')}
     <g transform="translate(1180 700)"><path d="M-130 -34 H130 L110 0 L130 34 H-130 L-110 0 Z" fill="${C.gold}" stroke="${C.black}" stroke-width="3"/><text y="11" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="30" letter-spacing="8" fill="${C.black}">SICILIA</text></g>
