@@ -42,6 +42,7 @@ const STYLES = {
   chrome: { label: 'Liquid Chrome', emoji: '🪩', desc: 'Iridescent glass, chrome bevels, frosted plaques' },
   mvp: { label: 'Tournament MVP', emoji: '🏆', desc: 'Carbon fibre, brushed gold slashes, elite tier tags' },
   synthwave: { label: 'Synthwave Chill', emoji: '🌅', desc: 'Sunset grid, neon outlines, chillwave haze' },
+  sunday: { label: 'Mud & Tears 1982', emoji: '🌧️', desc: 'Sunday-league satire: rain, mud, dented frame, honest stats' },
   sicilia: { label: '1974 Palermo Sicilia', emoji: '🍋', desc: 'Calciatori sticker meets Topps: tiles, skyline, card back', cardOnly: true },
   retro1986: { label: '1986 Club Classic', emoji: '⚾', desc: 'Bold club masthead, white frame, position badge', cardOnly: true },
   retro1960s: { label: '1960s Club Heritage', emoji: '🎞️', desc: 'Oval portraits, pennants, colourful print borders', cardOnly: true },
@@ -90,6 +91,7 @@ function palette(style, kit) {
     chrome: { ink: '#ffffff', accent: '#9fe8ff', sub: '#f4b8ff', panel: '#0b0f17', panelOpacity: 0.55, skew: 0, frame: '#c8d2e0' },
     mvp: { ink: '#f7e7b4', accent: '#d8b25a', sub: '#bfb59a', panel: '#0a0a0a', panelOpacity: 0.75, skew: -4, frame: '#d8b25a' },
     synthwave: { ink: '#fff6fb', accent: '#ff4fb8', sub: '#3ef0ff', panel: '#140b2e', panelOpacity: 0.6, skew: -6, frame: '#ff4fb8' },
+    sunday: { ink: '#f2ead8', accent: '#8a6a3b', sub: '#c9bfa8', panel: '#2b2a26', panelOpacity: 0.7, skew: -3, frame: '#5b4a33' },
     obsidian: { ink: '#f6e7b0', accent: '#d4af37', sub: '#d6d3d1', panel: '#000000', panelOpacity: 0.7, skew: 0, frame: '#d4af37' },
   }[style] || {};
   return base;
@@ -686,7 +688,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     const { club } = await studioClub(message.guild.id, message.channelId, message.channel?.name);
     if (!club) return;
-    const style = /sicil|calciatori|1974|palermo card/i.test(text) ? 'sicilia' : /synth|chillwave|vaporwave|outrun/i.test(text) ? 'synthwave' : /glitch|cyber|neo[- ]?tokyo/i.test(text) ? 'cyber' : /liquid chrome|glass/i.test(text) ? 'chrome' : /\bmvp\b/i.test(text) ? 'mvp' : /broadcast|\btv\b/i.test(text) ? 'modern' : /heritage|1950|50['’]?s/i.test(text) ? 'vintage' : /\bcard\b/.test(text) && /2020|20['’]?s|twenties|prism|mosaic/i.test(text) ? 'retro2020s' : /\bcard\b/.test(text) && /2010|10['’]?s|twenty[ -]?tens/i.test(text) ? 'retro2010s' : /\bcard\b/.test(text) && /y2k|2000|chrome|refractor/i.test(text) ? 'y2k' : /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
+    const style = /mud|sunday league|tears|disaster/i.test(text) ? 'sunday' : /sicil|calciatori|1974|palermo card/i.test(text) ? 'sicilia' : /synth|chillwave|vaporwave|outrun/i.test(text) ? 'synthwave' : /glitch|cyber|neo[- ]?tokyo/i.test(text) ? 'cyber' : /liquid chrome|glass/i.test(text) ? 'chrome' : /\bmvp\b/i.test(text) ? 'mvp' : /broadcast|\btv\b/i.test(text) ? 'modern' : /heritage|1950|50['’]?s/i.test(text) ? 'vintage' : /\bcard\b/.test(text) && /2020|20['’]?s|twenties|prism|mosaic/i.test(text) ? 'retro2020s' : /\bcard\b/.test(text) && /2010|10['’]?s|twenty[ -]?tens/i.test(text) ? 'retro2010s' : /\bcard\b/.test(text) && /y2k|2000|chrome|refractor/i.test(text) ? 'y2k' : /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
     let build, label;
     if (/\b(recruit(?:ing|ment)?|trials?)\b/.test(text)) {
       return message.reply({ content: '📣 Pick a recruiting poster style, then edit your details:', components: [styleRow('recruit', club.key)], allowedMentions: { parse: [] } }).catch(() => {});
