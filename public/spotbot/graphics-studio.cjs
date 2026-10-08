@@ -308,7 +308,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       const content = `${label}${r.note ? `\n_${r.note}_` : ''}`;
       await channel.send({ content, files: [r.file], allowedMentions: { parse: [] } });
       if (hallOfFame) {
-        const hof = club.hall_of_fame_channel_id && (await guild.channels.fetch(club.hall_of_fame_channel_id).catch(() => null));
+        const hof = club.autopilot?.hof_channel_id && (await guild.channels.fetch(club.autopilot.hof_channel_id).catch(() => null));
         if (hof && hof.id !== channel.id) await hof.send({ content, files: [new AttachmentBuilder(r.file.attachment, { name: r.file.name })], allowedMentions: { parse: [] } }).catch(() => {});
       }
       await refreshPanel(channel, club);
