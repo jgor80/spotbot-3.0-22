@@ -47,7 +47,7 @@ function seamlessLogo(dataUrl) {
       const bg = [0, 1, 2].map((c) => idx.map((i) => px[i + c]).sort((a, b) => a - b)[idx.length >> 1]);
       const dist = (i) => Math.max(Math.abs(px[i] - bg[0]), Math.abs(px[i + 1] - bg[1]), Math.abs(px[i + 2] - bg[2]));
       // Only a uniform outline is a backdrop; a crest's own varied edge is left alone.
-      if (idx.filter((i) => dist(i) < 36).length < idx.length * 0.85) break;
+      if (idx.filter((i) => dist(i) < 36).length < idx.length * (pass ? 0.85 : 0.6)) break;
       const seen = new Uint8Array(W * H), stack = edge.slice();
       while (stack.length) {
         const [x, y] = stack.pop();
