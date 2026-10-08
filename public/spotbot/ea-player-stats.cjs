@@ -50,6 +50,31 @@ function mapPlayer(p) {
     clean_sheet_def: flag(p.cleansheetsdef),
     seconds_played: int(p.secondsPlayed),
     archetypeid: p.archetypeid ?? null,
+    ...eventStats(p),
+  };
+}
+
+// EA hides extra stats in match_event_aggregate_0..3 as "code:count" pairs.
+// Same code meanings as backfill_advanced_player_stats() in the database.
+function eventCounts(p) {
+  const c = {};
+  for (let i = 0; i < 4; i++) {
+    for (const kv of String(p[`match_event_aggregate_${i}`] || '').split(',')) {
+      const [k, v] = kv.split(':');
+      if (/^\d+$/.test(k) && /^\d+$/.test(v || '')) c[k] = (c[k] || 0) + Number(v);
+    }
+  }
+  return c;
+}
+function eventStats(p) {
+  const c = eventCounts(p);
+  const g = (k) => c[k] || 0;
+  return {
+    second_assists: g(118),
+    dribbles: g(32),
+    possessions_won: g(176),
+    possessions_lost: g(102),
+    blocks: g(61),
   };
 }
 
@@ -84,7 +109,13 @@ function statColumns(s, scoreAgainst) {
     goals_conceded: s.goals_conceded,
     seconds_played: s.seconds_played,
     archetypeid: s.archetypeid,
+    second_assists: s.second_assists || 0,
+    dribbles: s.dribbles || 0,
+    dribble_success: s.dribbles || 0,
+    possession_gains: s.possessions_won || 0,
+    possessions_lost: s.possessions_lost || 0,
+    blocks: s.blocks || 0,
   };
 }
 
-module.exports = { mapPlayer, mapPlayers, statColumns, isKeeper };
+module.exports = { mapPlayer, mapPlayers, statColumns, isKeeper, eventCounts };

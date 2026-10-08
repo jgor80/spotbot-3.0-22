@@ -15,6 +15,7 @@ function fantasyPoints(p, match) {
   if ((line === 'GK' || line === 'DEF') && num(match.scoreAgainst) === 0) pts += 4;
   pts += Math.floor(num(p.saves) / 3);
   pts += (num(p.tackles) + num(p.interceptions)) * 0.5;
+  pts += num(p.second_assists) * 1 + num(p.blocks) * 0.5 + Math.floor(num(p.possessions_won) / 5);
   if (num(p.pass_attempts) >= 10 && num(p.passes_made) / num(p.pass_attempts) >= 0.85) pts += 2;
   if (p.motm) pts += 3;
   if (match.result === 'win') pts += 1;

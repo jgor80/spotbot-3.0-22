@@ -54,6 +54,20 @@ export function CareerSets({ guildId, discordUserId }: Props) {
               <Stat k="MOTM" v={row!.motm} />
               <Stat k="Rating" v={row!.avg_rating ?? "—"} />
             </div>
+            <div className="mt-3 border-t border-border pt-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pro stat card</div>
+              <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                <Stat k="Shots" v={row!.shots ?? 0} />
+                <Stat k="2nd Assists" v={row!.second_assists ?? 0} />
+                <Stat k="Dribbles" v={row!.dribbles ?? 0} />
+                <Stat k="Poss. Won" v={row!.possessions_won ?? 0} />
+                <Stat k="Poss. Lost" v={row!.possessions_lost ?? 0} />
+                <Stat k="Interceptions" v={row!.interceptions ?? 0} />
+                <Stat k="Blocks" v={row!.blocks ?? 0} />
+                <Stat k="Clears" v={row!.clearances ?? 0} />
+                <Stat k="GK Saves" v={row!.saves ?? 0} />
+              </div>
+            </div>
           </div>
         ))}
       </CardContent>
