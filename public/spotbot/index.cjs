@@ -2129,8 +2129,8 @@ function buildPrefsEmbed(selected, formationName = null) {
     .setColor(0x5865f2)
     .setDescription(`Slots: **${list.length}/${PREFS_LIMIT}** \`${bar}\`\n\n${body}`)
     .setFooter({ text: formationName 
-      ? `Showing positions for ${formationName} • Preferences saved automatically` 
-      : 'Preferences saved automatically • Smart matching fills similar positions' });
+      ? `Showing positions for ${formationName} • First pick is your ⭐ primary • Saved automatically` 
+      : 'First pick is your ⭐ primary position • Saved automatically • Smart matching fills similar positions' });
 }
 
 function buildPrefComponents(selected, availablePositions = null) {
