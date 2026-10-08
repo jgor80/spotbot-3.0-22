@@ -48,6 +48,7 @@ const { createStreamKit, OVERLAY_SUBCOMMAND } = require('./stream-kit.cjs');
 const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
 const { createAutoLink } = require('./auto-link.cjs');
+const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
 const permCheck = require('./perm-check.cjs');
 const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
 
@@ -456,6 +457,8 @@ const dossier = createDossier({ ...premiumDeps, searchClub, matchesStats });
 const streamKit = createStreamKit(premiumDeps);
 const statRoles = createStatRoles(premiumDeps);
 const coach = createCoach({ ...premiumDeps, openai });
+const funZone = createFunZone({ getGuildState, saveGuildSettings, loadMatches: managerHub.loadMatches });
+autopilot.onSessionEnd(funZone.onSessionEnd);
 
 // MessageContent is required to see attachments on normal channel posts (#pro-photos detection).
 // It's a privileged intent: if it isn't enabled in the Developer Portal, login falls back without it.
@@ -909,7 +912,7 @@ const ACTION_SCHEMAS = [
 
 // The slash commands people see: /manager (club tools), /me (player hub), /help and /setup
 const ENTRY_COMMANDS = new Set(['manager', 'help', 'setup']);
-const COMMANDS = [...ACTION_SCHEMAS.filter((c) => ENTRY_COMMANDS.has(c.name)), ...PANEL_COMMANDS];
+const COMMANDS = [...ACTION_SCHEMAS.filter((c) => ENTRY_COMMANDS.has(c.name)), ...PANEL_COMMANDS, FUN_COMMAND];
 
 // =======================
 // CACHES & STATE
@@ -4240,6 +4243,7 @@ async function routeInteraction(interaction) {
     if (await autoLink.handleInteraction(interaction)) return;
     if (await proPhotos.handleInteraction(interaction)) return;
     if (await graphicsStudio.handleInteraction(interaction)) return;
+    if (await funZone.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;
     // Match night: /checkin, /sub, /reliability, check-in and sub request buttons
