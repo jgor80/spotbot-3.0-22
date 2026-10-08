@@ -64,6 +64,13 @@
       "when": 1791489894926,
       "tag": "0008_schedule_advanced_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791490093693,
+      "tag": "0009_fix_unverified_event_stats",
+      "breakpoints": true
     }
   ]
 }
