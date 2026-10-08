@@ -412,7 +412,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return { ...d, name: f('name') || d.name, position: f('position'), overall, number, stats, dataLabel: changed ? 'MEMBER-EDITED' : d.seasonLabel, overallLabel: changed ? 'MEMBER OVR' : 'EA OVR', seasonLabel: stats.length ? changed ? 'MEMBER-EDITED' : d.seasonLabel : 'VIRTUAL PRO' };
   }
   async function renderCard({ guildId, club, style, d }) {
-    const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`);
+    const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);
     // Print-card lettering and frames are local; artwork reuses the text-free vintage style.
     const printCard = Boolean(STYLES[style]?.cardOnly) || SIGNATURE_STYLES.includes(style);
     const a = await art({ kind: 'card', style: style === 'sicilia' ? 'sicilia' : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...variation, has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
@@ -487,7 +487,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   async function renderPoster({ guildId, club, style, d }) {
     const motmId = await idForName(d.motm?.name);
     const mood = d.result === 'win' ? 'win' : d.result === 'loss' ? 'loss' : 'draw';
-    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: motmId, mood, competition: clip(d.competition, 60), ...nextVariation(`${guildId}:poster:${style}`) });
+    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: motmId, mood, competition: clip(d.competition, 60), ...nextVariation(`${guildId}:poster:${style}`, style, mood) });
     if (a.error) return a;
     const png = matchPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crestFor: await crestFor(guildId, club, style), crestAgainst: null, ...d });
     return { file: new AttachmentBuilder(png, { name: 'full-time.png' }) };
@@ -545,7 +545,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     };
   }
   async function renderLineup({ guildId, club, style, d }) {
-    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.heroId, mood: 'neutral', competition: clip(d.subtitle, 60), ...nextVariation(`${guildId}:lineup:${style}`) });
+    const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.heroId, mood: 'neutral', competition: clip(d.subtitle, 60), ...nextVariation(`${guildId}:lineup:${style}`, style) });
     if (a.error) return a;
     const png = lineupPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), ...d });
     return { file: new AttachmentBuilder(png, { name: 'starting-xi.png' }) };
@@ -570,7 +570,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       for (const r of data || []) for (const p of r.player_stats || []) if (p?.ea_username) seen.set(p.ea_username.toLowerCase(), p.ea_username);
       roster = [...seen.values()];
     }
-    const a = await art({ kind: 'banner', style, club_name: club.name, kit: club.kit || {}, competition, discord_user_id: heroId, ...nextVariation(`${guildId}:banner:${style}`) });
+    const a = await art({ kind: 'banner', style, club_name: club.name, kit: club.kit || {}, competition, discord_user_id: heroId, ...nextVariation(`${guildId}:banner:${style}`, style, 'win') });
     if (a.error) return a;
     const png = banner({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), headline: title, competition, seasonTag, roster });
     return { file: new AttachmentBuilder(png, { name: 'champions-banner.png' }) };
@@ -610,7 +610,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (!featured) return { error: 'No active club players have saved pro photos yet. Upload a photo for an active roster player or specify a featured player.' };
     const a = await art({ kind: 'poster', style: STYLES[style]?.cardOnly && style !== 'sicilia' ? 'vintage' : style,
       club_name: club.name, kit: club.kit || {}, mood: 'neutral', discord_user_id: featured,
-      ...nextVariation(`${guildId}:recruit:${style}`) });
+      ...nextVariation(`${guildId}:recruit:${style}`, style) });
     if (a.error) return a;
     const png = recruitmentPoster({ ...d, art: a.image, style, clubName: club.name,
       crest: await crestFor(guildId, club, style, d.logoKey) }, G, { ...palette('modern', club.kit), ...palette(style, club.kit) });
