@@ -3,7 +3,7 @@ export type PhotoAsset = {
   pose?: string | null;
   source_kind?: string;
   graphic_kind?: string | null;
-  analysis?: { club_name?: string } | null;
+  analysis?: { club_name?: string; kit_number?: number | null } | null;
 };
 
 // Input order is newest first. Prefer a matching uploaded pose to avoid render drift.
