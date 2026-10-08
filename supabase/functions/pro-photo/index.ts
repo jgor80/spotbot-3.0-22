@@ -19,7 +19,7 @@ const Body = z.object({
 const schema = {
   type: "object",
   additionalProperties: false,
-  required: ["is_pro_clubs_player", "reason", "screen", "position", "overall", "archetype", "height", "playstyles", "description"],
+  required: ["is_pro_clubs_player", "reason", "screen", "position", "overall", "archetype", "height", "playstyles", "pose", "description"],
   properties: {
     is_pro_clubs_player: { type: "boolean", description: "True if the image shows an EA FC Pro Clubs / Virtual Pro player (render, lobby, edit-pro, team sheet or player card)." },
     reason: { type: "string" },
@@ -29,6 +29,7 @@ const schema = {
     archetype: { type: ["string", "null"] },
     height: { type: ["string", "null"] },
     playstyles: { type: "array", items: { type: "string" } },
+    pose: { type: "string", enum: ["ready", "stride", "ball", "celebrate", "profile", "captain", "other"], description: "The closest reusable graphics pose shown by the player." },
     description: { type: "string", description: "One short sentence describing the pro's look (kit, hair, boots). No guesses about real identity." },
   },
 };
@@ -54,7 +55,7 @@ async function analyze(dataUrl: string) {
       input: [{
         role: "user",
         content: [
-          { type: "input_text", text: "Is this an image of a single footballer that a club member could use as their EA SPORTS FC Pro Clubs player (Virtual Pro)? Accept in-game screenshots (Edit Pro, lobby, player card, match) AND custom renders, cutouts or action shots of one player in kit, even with no game menus or HUD visible and even if very photorealistic — EA renders look lifelike. Set is_pro_clubs_player false only for images with no footballer, multiple players with no clear subject, memes, or obviously unrelated content. Read any position, overall rating, archetype, height and playstyles visible on screen. Use null when not visible. Never invent values." },
+          { type: "input_text", text: "Is this an image of a single footballer that a club member could use as their EA SPORTS FC Pro Clubs player (Virtual Pro)? Accept in-game screenshots (Edit Pro, lobby, player card, match) AND custom renders, cutouts or action shots of one player in kit, even with no game menus or HUD visible and even if very photorealistic — EA renders look lifike. Set is_pro_clubs_player false only for images with no footballer, multiple players with no clear subject, memes, or obviously unrelated content. Read any position, overall rating, archetype, height and playstyles visible on screen. Classify the visible pose as ready, stride, ball, celebrate, profile, captain or other so graphics can reuse the best reference. Use null when facts are not visible. Never invent values." },
           { type: "input_image", image_url: dataUrl },
         ],
       }],
@@ -128,5 +129,11 @@ Deno.serve(async (req) => {
     position: pos, overall: ovr, archetype: analysis.archetype ?? null, analysis,
   }, { onConflict: "discord_user_id" });
   if (error) return json({ error: "Couldn't save the photo." }, 500);
+  const { error: assetError } = await db.from("pro_photo_assets").insert({
+    guild_id, discord_user_id, submitted_by: submitted_by ?? discord_user_id,
+    image_url: signed.data.signedUrl, storage_path: path, source_key: path,
+    source_kind: "upload", pose: analysis.pose === "other" ? null : analysis.pose, analysis,
+  });
+  if (assetError) return json({ error: "The latest photo was saved, but it couldn't be added to the player's collection." }, 500);
   return json({ accepted: true, image_url: signed.data.signedUrl, ea_username: prof?.ea_username ?? null, analysis: { ...analysis, position: pos, overall: ovr } });
 });

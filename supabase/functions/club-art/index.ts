@@ -78,9 +78,13 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean) {
   return `Vertical football club artwork. ${subject} Stadium background lit in the club colours. Style: ${look}. ${variation} ${noText}`;
 }
 
-async function proPhoto(discordId?: string) {
+async function proPhoto(discordId?: string, pose?: string) {
   if (!discordId) return null;
-  const { data } = await db.from("pro_photos").select("image_url").eq("discord_user_id", discordId).maybeSingle();
+  let query = db.from("pro_photo_assets").select("image_url").eq("discord_user_id", discordId).eq("source_kind", "upload");
+  if (pose) query = query.eq("pose", pose);
+  const { data: matched } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const fallback = matched ?? (await db.from("pro_photo_assets").select("image_url").eq("discord_user_id", discordId).eq("source_kind", "upload").order("created_at", { ascending: false }).limit(1).maybeSingle()).data;
+  const data = fallback ?? (await db.from("pro_photos").select("image_url").eq("discord_user_id", discordId).maybeSingle()).data;
   if (!data?.image_url) return null;
   const res = await fetch(data.image_url);
   const type = (res.headers.get("content-type") || "").split(";")[0];
@@ -95,7 +99,7 @@ Deno.serve(async (req) => {
   if (!parsed.success) return json({ error: parsed.error.flatten().fieldErrors }, 400);
   const b = parsed.data;
 
-  const ref = await proPhoto(b.discord_user_id);
+  const ref = await proPhoto(b.discord_user_id, b.pose);
   const prompt = promptFor(b, !!ref);
   const size = b.kind === "banner" ? "1536x1024" : "1024x1536";
   let res: Response;
@@ -123,5 +127,21 @@ Deno.serve(async (req) => {
   const out = await res.json().catch(() => null);
   const b64 = out?.data?.[0]?.b64_json;
   if (!b64) return json({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
+  if (b.discord_user_id) {
+    const raw = atob(b64);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    const sourceKey = crypto.randomUUID();
+    const path = `generated/${b.discord_user_id}/${sourceKey}.png`;
+    const saved = await db.storage.from("pro-photos").upload(path, bytes, { contentType: "image/png" });
+    if (!saved.error) {
+      const signed = await db.storage.from("pro-photos").createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
+      if (!signed.error) await db.from("pro_photo_assets").insert({
+        discord_user_id: b.discord_user_id, guild_id: "graphics-studio", image_url: signed.data.signedUrl,
+        storage_path: path, source_key: sourceKey, source_kind: "generated", graphic_kind: b.kind,
+        pose: b.pose, analysis: { style: b.style, composition: b.composition, club_name: b.club_name },
+      });
+    }
+  }
   return json({ image_b64: b64, used_pro_photo: !!ref });
 });

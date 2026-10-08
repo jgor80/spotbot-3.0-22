@@ -1,6 +1,6 @@
 
 ## Current
-- [ ] Preserve player photo collections and choose suitable poses for graphics
+- [x] Preserve player photo collections and choose suitable poses for graphics
 - [x] Add and verify 2020s-inspired player-card designs
 - [x] Add and verify 2010s-inspired player-card designs
 - [x] Add and verify Y2K-inspired player-card designs

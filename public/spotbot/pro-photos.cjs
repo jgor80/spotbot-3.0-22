@@ -32,7 +32,7 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
     return new EmbedBuilder()
       .setColor(0x22c55e)
       .setTitle(`📸 Pro photo saved — ${r.ea_username || user.username}`)
-      .setDescription([a.description, lines.join('\n'), '_Used on recap cards, MOTM and Team of the Week from now on._'].filter(Boolean).join('\n\n'))
+      .setDescription([a.description, lines.join('\n'), '_Added to this player’s photo collection. Graphics Studio will choose a suitable pose._'].filter(Boolean).join('\n\n'))
       .setThumbnail(r.image_url);
   }
 
