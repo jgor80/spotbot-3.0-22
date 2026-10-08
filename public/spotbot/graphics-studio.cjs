@@ -460,7 +460,15 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
   }
 
-  return { onMessage, handleInteraction, init };
+  // /graphics slash command: post the studio panel in whatever channel it was called from
+  async function panelFor(guildId) {
+    const state = await getGuildState(guildId).catch(() => null);
+    const clubs = activeClubs(state);
+    if (!clubs.length) return null;
+    return panelMessage(clubs[0]);
+  }
+
+  return { onMessage, handleInteraction, init, panelFor, refreshPanel };
 }
 
 module.exports = { createGraphicsStudio, STYLES, playerCard, matchPoster, banner };
