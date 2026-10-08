@@ -225,7 +225,16 @@ function truncate(text, max = 1024) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function typeInfo(type) {
+// The title wins: "Practice", "BYOT" or "League" in the name tells members what the night is,
+// even when the stored type is the generic "match".
+function typeInfo(type, title) {
+  const t = String(title || '').toLowerCase();
+  if (/\b(practice|training|session)\b/.test(t)) return EVENT_TYPES.training;
+  if (/\b(byot|tournament|cup|playoff)\b/.test(t)) return { ...EVENT_TYPES.tournament, label: /byot/.test(t) ? 'BYOT tournament' : 'Tournament' };
+  if (/\bleague\b/.test(t)) return EVENT_TYPES.league;
+  if (/\bscrim\b/.test(t)) return EVENT_TYPES.scrim;
+  if (/\bfriendly\b/.test(t)) return EVENT_TYPES.friendly;
+  if (/\btry ?outs?\b/.test(t)) return EVENT_TYPES.tryout;
   return EVENT_TYPES[type] || EVENT_TYPES.match;
 }
 

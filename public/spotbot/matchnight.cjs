@@ -112,7 +112,7 @@ function createMatchNight(deps) {
     const tag = (id) => `<@${id}>${positionOf.get(id) ? ` ${positionOf.get(id)}` : ''}`;
 
     const embed = new EmbedBuilder()
-      .setTitle(`🟢 Check-in: ${event.title}`)
+      .setTitle(`🟢 Check-in: ${event.title}`.slice(0, 256))
       .setColor(0x57f287)
       .setDescription(
         event.closed
