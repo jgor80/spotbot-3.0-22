@@ -637,11 +637,12 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   async function renderRecruit({ guildId, club, style, d }) {
     const players = await teamPlayers(guildId, club, d.featured);
     if (!players.length) return { error: 'No active club players have saved pro photos yet. Upload photos for active roster players.' };
-    const a = await art({ kind: 'poster', style: STYLES[style]?.cardOnly && style !== 'sicilia' ? 'vintage' : style,
-      club_name: club.name, kit: club.kit || {}, mood: 'neutral', guild_id: guildId, team_player_ids: players,
-      ...nextVariation(`${guildId}:recruit:${style}`, style) });
+    const ART_STYLE = { retro1960s: 'vintage', retro1970s: 'vintage', retro1986: 'vintage', retro1990s: 'esports', y2k: 'chrome', retro2010s: 'chrome', retro2020s: 'cyber' };
+    const v = nextVariation(`${guildId}:recruit:${style}`, style);
+    const a = await art({ kind: 'poster', style: ART_STYLE[style] || style,
+      club_name: club.name, kit: club.kit || {}, mood: 'neutral', guild_id: guildId, team_player_ids: players, ...v });
     if (a.error) return a;
-    const png = recruitmentPoster({ ...d, art: a.image, style, clubName: club.name,
+    const png = recruitmentPoster({ ...d, art: a.image, style, clubName: club.name, composition: v.composition,
       crest: await crestFor(guildId, club, style, d.logoKey) }, G, { ...palette('modern', club.kit), ...palette(style, club.kit) });
     return { file: new AttachmentBuilder(png, { name: 'recruiting-poster.png' }) };
   }
