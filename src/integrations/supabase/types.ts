@@ -2094,6 +2094,39 @@ export type Database = {
         }
         Relationships: []
       }
+      player_cards: {
+        Row: {
+          back_path: string | null
+          created_at: string
+          discord_user_id: string
+          guild_id: string
+          id: string
+          name: string
+          storage_path: string
+          style: string
+        }
+        Insert: {
+          back_path?: string | null
+          created_at?: string
+          discord_user_id: string
+          guild_id: string
+          id?: string
+          name: string
+          storage_path: string
+          style: string
+        }
+        Update: {
+          back_path?: string | null
+          created_at?: string
+          discord_user_id?: string
+          guild_id?: string
+          id?: string
+          name?: string
+          storage_path?: string
+          style?: string
+        }
+        Relationships: []
+      }
       player_chemistry: {
         Row: {
           draws_together: number

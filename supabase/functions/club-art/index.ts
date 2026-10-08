@@ -43,6 +43,8 @@ const Body = z.object({
   has_tagline: z.boolean().default(true),
   // Manually confirmed by the member in the card form; treated like a verified upload number.
   kit_number_override: z.number().int().min(1).max(99).optional(),
+  // Member-chosen upload to base a single-player card on.
+  photo_asset_id: z.string().uuid().optional(),
 });
 
 const STYLE: Record<string, string> = {
@@ -63,7 +65,7 @@ function kitLine(kit: z.infer<typeof Body>["kit"], club: string) {
   return `The player must wear ${club}'s own kit${colours ? ` in ${colours}` : ""}${kit.description ? ` (${kit.description})` : ""}, whatever kit the reference shows. No real-world brand or sponsor logos.`;
 }
 
-function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number | null = null) {
+function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number | null = null, description: string | null = null) {
   const look = STYLE[b.style];
   const render = "Keep it looking like an EA SPORTS FC in-game 3D character render (video-game Virtual Pro model, game-engine shading), not a real human photo.";
   // A shirt number is allowed only when the player's own uploaded screenshot showed it legibly.
@@ -96,19 +98,26 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number |
     ? b.mood === "win" ? "celebrating a victory with a fist pump, roaring" : b.mood === "loss" ? "determined, walking off the pitch, focused" : "intense, ready for kick-off"
     : `player-card portrait${b.position ? `, as a ${b.position}` : ""}`;
   const subject = hasRef
-    ? `Recreate this exact in-game Virtual Pro character (same face, skin tone, hair, beard, glasses and accessories), ${action}. Preserve identity and game-render materials, but pose the body freshly as requested; adapt the camera and background to this graphic. ${render} ${kitLine(b.kit, b.club_name)}`
+    ? `Recreate this exact in-game Virtual Pro character (same face, skin tone, hair, beard, glasses and accessories), ${action}. ${description ? `IDENTITY LOCK — this player looks like: ${description.replace(/\s+/g, ' ').slice(0, 300)}. Match that hair colour and style, facial hair (or lack of it), skin tone, face shape and build exactly; do not substitute a different-looking face. ` : ''}Preserve identity and game-render materials, but pose the body freshly as requested; adapt the camera and background to this graphic. ${render} ${kitLine(b.kit, b.club_name)}`
     : `A stylised silhouette of a footballer in ${b.club_name}'s kit (${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "club colours"}), ${action}, seen from behind or in shadow so no face is shown.`;
   return `Vertical football club artwork. ${subject} Stadium background lit in the club colours. Style: ${look}. ${variation} ${noText}`;
 }
 
 async function proPhoto(b: z.infer<typeof Body>, team = false): Promise<{ file: File; kitNumber: number | null; description: string | null } | null> {
   if (!b.discord_user_id) return null;
-  const { data: assets } = await db.from("pro_photo_assets").select("image_url,pose,source_kind,graphic_kind,analysis")
+  const { data: assets } = await db.from("pro_photo_assets").select("id,image_url,pose,source_kind,graphic_kind,analysis")
     .eq("discord_user_id", b.discord_user_id).order("created_at", { ascending: false }).limit(200);
   // Group art uses only the player's own face-visible uploads: rear shots force the model to invent a face,
   // and generated art can already carry another player's traits.
-  const pool = team ? (assets ?? []).filter((a) => a.source_kind === "upload" && !isRearFacing(a.analysis?.description)) : (assets ?? []);
+  // Single cards also use only real uploads: re-feeding generated art makes the likeness drift card after card.
+  const uploads = (assets ?? []).filter((a) => a.source_kind === "upload");
+  const faced = uploads.filter((a) => !isRearFacing(a.analysis?.description));
+  const pool = team ? faced : faced.length ? faced : uploads.length ? uploads : (assets ?? []);
   const candidates: { image_url: string; analysis?: { description?: string } | null }[] = rankPhotos(pool, b.pose, b.kind, b.club_name);
+  const chosen = !team && b.photo_asset_id ? uploads.find((a) => a.id === b.photo_asset_id) : null;
+  if (chosen) candidates.unshift(chosen);
+  // Rear shots still carry useful look notes; fall back to any upload description for the identity lock.
+  const anyDescription = faced[0]?.analysis?.description ?? uploads[0]?.analysis?.description ?? null;
   // Latest number legibly read from the player's own uploads; generated art never verifies a number.
   const n = (assets ?? []).find((a) => a.source_kind === "upload" && Number.isInteger(a.analysis?.kit_number))?.analysis?.kit_number;
   const kitNumber = Number.isInteger(n) && n >= 1 && n <= 99 ? n : null;
@@ -121,7 +130,7 @@ async function proPhoto(b: z.infer<typeof Body>, team = false): Promise<{ file: 
       const res = await fetch(photo.image_url);
       const type = (res.headers.get("content-type") || "").split(";")[0];
       if (!res.ok || !/^image\/(png|jpe?g|webp)$/.test(type)) continue;
-      const description = photo.analysis?.description ?? null;
+      const description = photo.analysis?.description ?? anyDescription;
       return { file: new File([await res.arrayBuffer()], `pro.${type.split("/")[1]}`, { type }), kitNumber, description };
     } catch { /* Try another saved photo when a reference is no longer reachable. */ }
   }
@@ -160,7 +169,7 @@ Deno.serve(async (req) => {
   const found = teamIds.length ? null : await proPhoto(b);
   const ref = found?.file ?? null;
   const kitNumber = b.kit_number_override ?? found?.kitNumber ?? null;
-  const prompt = refs.length ? teamPrompt(b, refs, STYLE[b.style], kitLine(b.kit, b.club_name)) : promptFor(b, !!ref, kitNumber);
+  const prompt = refs.length ? teamPrompt(b, refs, STYLE[b.style], kitLine(b.kit, b.club_name)) : promptFor(b, !!ref, kitNumber, found?.description ?? null);
   const size = b.kind === "banner" ? "1536x1024" : "1024x1536";
   let res: Response;
   if (ref || refs.length) {
