@@ -18,3 +18,4 @@
 - `card-layout.cjs` removes unused print-card stat bands and portrait artwork requests reserve only compact lettering space, so optional data never leaves empty panels.
 - Signature cards (broadcast, heritage, esports, synthwave) render in `graphics-signature.cjs` with style-specific text-free art from club-art, so each style's frame and lighting stay distinct.
 - The 1974 Sicilia card (`graphics-sicilia.cjs`) posts a front and a back; the back's lore is seeded from the name and labelled fiction, while its stat line uses only validated card stats.
+- Shirt numbers appear in art and on cards only when the vision check legibly read them from the player's own upload (`analysis.kit_number`); generated art never verifies a number, so numbers can't be invented.

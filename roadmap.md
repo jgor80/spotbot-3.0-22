@@ -23,3 +23,4 @@
 - [x] Sharpen Modern Broadcast and Vintage Heritage cards; add Cyber Glitch, Liquid Chrome, Tournament MVP and Synthwave Chill styles
 - [x] Vary card shot types (portrait, half, action, celebration) and keep the full head in frame
 - [x] 1974 Palermo Sicilia card (front + back with fictional lore)
+- [x] Allow shirt numbers in player art only when verified from the player's uploaded screenshot
