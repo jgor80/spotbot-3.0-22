@@ -13,6 +13,7 @@ const {
 } = require('discord.js');
 const axios = require('axios');
 const G = require('./graphics.cjs');
+const { seamlessLogo } = require('./logo-cleanup.cjs');
 const { toFcPlatform } = require('./ea-fc27.cjs');
 const { activeClubs } = require('./manager-hub.cjs');
 const { toInsightMatches } = require('./club-insights.cjs');
@@ -282,7 +283,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       const info = Array.isArray(res.data) ? res.data[0] : res.data?.[id];
       const crestId = info?.customKit?.crestAssetId || info?.crestAssetId;
       const url = G.eaCrestUrl(crestId);
-      if (url) crest = await G.fetchImage(url);
+      if (url) { const raw = await G.fetchImage(url); crest = raw && seamlessLogo(raw); }
     } catch { /* leave crest null */ }
     CREST_CACHE.set(key, crest);
     return crest;
