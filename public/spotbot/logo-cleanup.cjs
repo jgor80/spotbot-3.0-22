@@ -25,6 +25,8 @@ function seamlessLogo(dataUrl) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${SIZE}" height="${SIZE}"><image xlink:href="${dataUrl}" width="${SIZE}" height="${SIZE}" preserveAspectRatio="xMidYMid meet"/></svg>`;
     const px = Buffer.from(new Resvg(svg).render().pixels);
     const W = SIZE, H = SIZE, at = (x, y) => (y * W + x) * 4;
+    // resvg returns premultiplied RGBA; PNG needs straight alpha.
+    for (let i = 0; i < px.length; i += 4) { const a = px[i + 3]; if (a && a < 255) for (let c = 0; c < 3; c++) px[i + c] = Math.min(255, Math.round(px[i + c] * 255 / a)); }
     // Opaque bounding box = the uploaded image's own frame.
     let x0 = W, y0 = H, x1 = -1, y1 = -1;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (px[at(x, y) + 3] > 200) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
