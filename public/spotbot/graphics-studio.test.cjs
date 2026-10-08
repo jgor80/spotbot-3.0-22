@@ -245,7 +245,7 @@ test('1970s Club Archive renders arched and ribbon editions with optional stats'
   }
   assert.equal(new Set(frames).size, 3);
   assert.match(frames[0], /rotate\(/);
-  assert.match(frames[2], /PCN PALERMO/);
+  assert.match(frames[2], />PCN<\/text>/); assert.match(frames[2], />PALERMO<\/text>/); assert.doesNotMatch(frames[2], /PCN PALERMO/);
   playerCard({ ...base, stats: [['GAMES', '22'], ['GOALS', '9']] });
   assert.match(lastSvg, />GAMES</);
   assert.match(lastSvg, />22</);
