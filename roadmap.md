@@ -1,6 +1,6 @@
 
 ## Current
-- [ ] Add and verify 1990s-inspired player-card designs
+- [x] Add and verify 1990s-inspired player-card designs
 - [x] Add and verify the 1970s-inspired arched and ribbon player-card frames
 - [x] Add and verify the separate 1960s-inspired vintage card style
 - [x] Add and verify a separate 1986-inspired player-card style using the supplied references
