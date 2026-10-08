@@ -11,7 +11,9 @@ const {
   EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
+const axios = require('axios');
 const G = require('./graphics.cjs');
+const { toFcPlatform } = require('./ea-fc27.cjs');
 const { activeClubs } = require('./manager-hub.cjs');
 const { toInsightMatches } = require('./club-insights.cjs');
 const { nextVariation } = require('./graphics-variants.cjs');
