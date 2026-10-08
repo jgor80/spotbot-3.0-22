@@ -350,7 +350,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const data = cardStats((statsRows || []).map((s) => ({ ...s, primary_position: photo?.position || s.primary_position })), club);
     const verified = (assets || []).map((a) => a.analysis?.kit_number).find((n) => Number.isInteger(n) && n >= 1 && n <= 99);
     return {
-      ...data, userId, name: profile?.ea_username || displayName, position: photo?.position || data.position,
+      ...data, userId, name: displayName || profile?.ea_username || 'Player', position: photo?.position || data.position,
       overall: photo?.overall || '', kitNumber: verified || null,
     };
   }
