@@ -741,6 +741,7 @@ function createAutopilot(deps) {
     if (t.passAttempts) parts.push(`👟 PAS ${t.passesMade}/${t.passAttempts}`);
     if (t.tackleAttempts || t.tackles) parts.push(`🛡 TKL ${t.tackles}/${t.tackleAttempts || t.tackles}`);
     if (t.interceptions) parts.push(`🧠 INT ${t.interceptions}`);
+    if (t.clearances) parts.push(`🧹 CLR ${t.clearances}`);
     if (t.saves) parts.push(`🧤 SVS ${t.saves}`);
     if (t.motm) parts.push(`⭐ MOTM ${t.motm}`);
     return parts.join(' · ');

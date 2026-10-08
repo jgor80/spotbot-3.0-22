@@ -36,6 +36,7 @@ function emptyLine(name) {
     tackleAttempts: 0,
     saves: 0,
     interceptions: 0,
+    clearances: 0,
     conceded: 0,
     cleanSheets: 0,
     motm: 0,
@@ -68,6 +69,7 @@ function seasonTotals(matches) {
       t.tackleAttempts += num(p.tackle_attempts);
       t.saves += num(p.saves);
       t.interceptions += num(p.interceptions);
+      t.clearances += num(p.clearances);
       if (line === 'GK') t.conceded += m.scoreAgainst;
       // A clean sheet counts for keepers and defenders, like EA's own cleansheetsdef/gk
       if ((line === 'GK' || line === 'DEF') && m.scoreAgainst === 0) t.cleanSheets++;
