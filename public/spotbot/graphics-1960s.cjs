@@ -30,7 +30,7 @@ function render1960sCard(d, G, accent) {
       <path d="M80 979 Q247 920 586 986 L533 1080 Q293 1032 95 1127 Z" fill="${accent}"/>
       <text x="313" y="1022" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${size(club, 390, 48)}" fill="${C.ink}">${esc(club)}</text>` : ''}
     <rect x="${oval ? 54 : 30}" y="${1156 + lift}" width="${oval ? 916 : 964}" height="${194 - lift}" fill="${strip}"/>
-    ${oval && d.crest ? `<image href="${d.crest}" x="72" y="1174" width="84" height="84" preserveAspectRatio="xMidYMid meet"/>` : ''}
+    ${oval && d.crest ? `<image href="${d.crest}" x="72" y="${1174 + lift}" width="84" height="84" preserveAspectRatio="xMidYMid meet"/>` : ''}
     <text x="${oval ? 190 : 60}" y="${(oval ? 1207 : 1219) + lift}" font-family="${oval ? 'Oswald' : 'Inter'}" font-weight="700" font-size="${size(oval ? club : name, oval ? 750 : 900, oval ? 36 : 64)}" fill="${nameInk}">${esc(oval ? club : name)}</text>
     <text x="${oval ? 190 : 60}" y="${1260 + lift}" font-family="Oswald" font-size="${size(oval ? pos : club, 690, 30)}" fill="${nameInk}">${esc(oval ? pos : club)}</text>
     ${!oval && pos ? `<text x="960" y="${1260 + lift}" text-anchor="end" font-family="Oswald" font-size="26" fill="${nameInk}">${esc(pos)}</text>` : ''}

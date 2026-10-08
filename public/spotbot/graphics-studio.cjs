@@ -23,6 +23,7 @@ const { renderY2kCard } = require('./graphics-y2k.cjs');
 const { render2010sCard } = require('./graphics-2010s.cjs');
 const { render2020sCard } = require('./graphics-2020s.cjs');
 const { finishCardSvg } = require('./card-layout.cjs');
+const { cardStats } = require('./card-stats.cjs');
 
 const NAME_RE = /graphic|media-?studio|studio/i;
 const STYLES = {
@@ -331,19 +332,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       supabase.from('profiles').select('ea_username').eq('discord_user_id', userId).maybeSingle(),
       supabase.from('pro_photos').select('position, overall').eq('discord_user_id', userId).maybeSingle(),
     ]);
-    const rows = (statsRows || []).sort((a, b) => (a.club_key === club.key ? -1 : 0) - (b.club_key === club.key ? -1 : 0) || n(b.games_played) - n(a.games_played));
-    const s = rows[0] || {};
-    const position = photo?.position || s.primary_position || '';
-    const gk = /GK/i.test(position);
-    const pass = n(s.pass_attempts) ? `${Math.round((n(s.passes_made) / n(s.pass_attempts)) * 100)}%` : '—';
-    const rating = s.avg_match_rating ? Number(s.avg_match_rating).toFixed(1) : '—';
-    const stats = gk
-      ? [['GAMES', n(s.games_played)], ['SAVES', n(s.saves)], ['CLEAN SH.', n(s.clean_sheets)], ['PASS', pass], ['MOTM', n(s.man_of_match)], ['RATING', rating]]
-      : [['GAMES', n(s.games_played)], ['GOALS', n(s.goals)], ['ASSISTS', n(s.assists)], ['PASS', pass], ['TACKLES', n(s.tackles)], ['RATING', rating]];
+    const data = cardStats((statsRows || []).map((s) => ({ ...s, primary_position: photo?.position || s.primary_position })), club);
     return {
-      userId, name: profile?.ea_username || displayName, position, overall: photo?.overall || '', stats,
-      seasonLabel: s.baseline_synced ? 'EA CLUB TOTALS' : 'TRACKED MATCHES',
-      tagline: n(s.games_played) ? `${n(s.wins)}W ${n(s.draws)}D ${n(s.losses)}L with ${club.name}` : 'New signing',
+      ...data, userId, name: profile?.ea_username || displayName, position: photo?.position || data.position,
+      overall: photo?.overall || '',
     };
   }
   const cardModal = (token, d) => new ModalBuilder().setCustomId(`gs_cform:${token}`).setTitle('Check your card before it is drawn').addComponents(
@@ -358,7 +350,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       const m = line.match(/^(.*\S)\s+(\S+)$/);
       return m ? [m[1].toUpperCase().slice(0, 10), m[2].slice(0, 6)] : [line.toUpperCase().slice(0, 10), ''];
     });
-    return { ...d, name: f('name') || d.name, position: f('position'), overall: f('overall'), stats, tagline: f('tagline'), seasonLabel: stats.length ? d.seasonLabel : 'VIRTUAL PRO' };
+    const changed = JSON.stringify(stats.map(([l, v]) => [l, String(v)])) !== JSON.stringify(d.stats.map(([l, v]) => [l, String(v)])) || f('tagline') !== d.tagline || f('overall') !== String(d.overall || '');
+    const overall = /^\d{1,2}$/.test(f('overall')) && Number(f('overall')) > 0 ? f('overall') : '';
+    return { ...d, name: f('name') || d.name, position: f('position'), overall, stats, tagline: f('tagline'), dataLabel: changed ? 'MEMBER-EDITED' : d.seasonLabel, overallLabel: changed ? 'MEMBER OVR' : 'EA OVR', seasonLabel: stats.length ? changed ? 'MEMBER-EDITED' : d.seasonLabel : 'VIRTUAL PRO' };
   }
   async function renderCard({ guildId, club, style, d }) {
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`);
@@ -368,13 +362,13 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (a.error) return a;
     const png = playerCard({
       art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), name: d.name, position: d.position || null,
-      overall: d.overall || null, overallLabel: 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, tagline: d.tagline, composition: variation.composition,
+      overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition,
     });
     return { file: new AttachmentBuilder(png, { name: `card-${d.name}.png`.replace(/[^\w.-]/g, '_') }), note: a.usedPro ? null : 'No pro photo on file, so this uses a silhouette — post your pro in #pro-photos for the real thing.' };
   }
   async function buildCard({ guildId, club, userId, displayName, style, noStats = false }) {
     const d = await cardData({ guildId, club, userId, displayName });
-    return renderCard({ guildId, club, style, d: noStats ? { ...d, stats: [], overall: '', seasonLabel: 'VIRTUAL PRO', tagline: club.name } : d });
+    return renderCard({ guildId, club, style, d: noStats ? { ...d, stats: [], overall: '', seasonLabel: 'VIRTUAL PRO', tagline: '' } : d });
   }
 
   // ----- match poster (from any recent game) -----
@@ -599,7 +593,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         return true;
       }
       const d = draft.data;
-      if (draft.kind === 'card' && a2 === 'portrait') draft.data = { ...d, stats: [], overall: '', seasonLabel: 'VIRTUAL PRO', tagline: draft.clubName };
+      if (draft.kind === 'card' && a2 === 'portrait') draft.data = { ...d, stats: [], overall: '', seasonLabel: 'VIRTUAL PRO', tagline: '' };
       await interaction.showModal(draft.kind === 'card' ? cardModal(a1, draft.data) : draft.kind === 'poster' ? posterModal(a1, d) : lineupModal(a1, d));
       return true;
     }

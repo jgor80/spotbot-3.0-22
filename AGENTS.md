@@ -14,3 +14,5 @@
 - Graphics Studio selects non-repeating pose/layout pairs through `graphics-variants.cjs` and passes composition constraints to club-art and SVG rendering together, keeping generated subjects clear of overlaid names and optional stats.
 - Graphics Studio selects a player's closest uploaded pose as its identity reference and retains generated player artwork in the private photo collection for later graphics.
 - Player-only decade collections, including Y2K, 2010s and 2020s cards, use dedicated local SVG renderers with composition-selected frames and reuse an existing text-free artwork style, so fixed frame geometry and accurate lettering do not depend on AI-generated text.
+- Card data is validated in `card-stats.cjs` against the exact club and EA baseline ID; missing metrics and unverified EA win records are omitted, while manual changes are labelled member-edited to prevent misleading claims.
+- `card-layout.cjs` removes unused print-card stat bands and portrait artwork requests reserve only compact lettering space, so optional data never leaves empty panels.
