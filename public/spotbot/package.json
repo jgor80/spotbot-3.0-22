@@ -4,6 +4,7 @@
   "description": "GafferBot Discord Bot",
   "main": "index.cjs",
   "scripts": {
+    "test": "node --test graphics-studio.test.cjs",
     "start": "node index.cjs",
     "sync": "node local/ea-sync-local.cjs"
   },
