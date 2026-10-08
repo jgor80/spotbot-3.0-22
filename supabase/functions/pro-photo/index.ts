@@ -19,7 +19,7 @@ const Body = z.object({
 const schema = {
   type: "object",
   additionalProperties: false,
-  required: ["is_pro_clubs_player", "reason", "screen", "position", "overall", "archetype", "height", "playstyles", "description"],
+  required: ["is_pro_clubs_player", "reason", "screen", "position", "overall", "archetype", "height", "playstyles", "pose", "description"],
   properties: {
     is_pro_clubs_player: { type: "boolean", description: "True if the image shows an EA FC Pro Clubs / Virtual Pro player (render, lobby, edit-pro, team sheet or player card)." },
     reason: { type: "string" },
@@ -29,6 +29,7 @@ const schema = {
     archetype: { type: ["string", "null"] },
     height: { type: ["string", "null"] },
     playstyles: { type: "array", items: { type: "string" } },
+    pose: { type: "string", enum: ["ready", "stride", "ball", "celebrate", "profile", "captain", "other"], description: "The closest reusable graphics pose shown by the player." },
     description: { type: "string", description: "One short sentence describing the pro's look (kit, hair, boots). No guesses about real identity." },
   },
 };
@@ -54,7 +55,7 @@ async function analyze(dataUrl: string) {
       input: [{
         role: "user",
         content: [
-          { type: "input_text", text: "Is this an image of a single footballer that a club member could use as their EA SPORTS FC Pro Clubs player (Virtual Pro)? Accept in-game screenshots (Edit Pro, lobby, player card, match) AND custom renders, cutouts or action shots of one player in kit, even with no game menus or HUD visible and even if very photorealistic — EA renders look lifelike. Set is_pro_clubs_player false only for images with no footballer, multiple players with no clear subject, memes, or obviously unrelated content. Read any position, overall rating, archetype, height and playstyles visible on screen. Use null when not visible. Never invent values." },
+          { type: "input_text", text: "Is this an image of a single footballer that a club member could use as their EA SPORTS FC Pro Clubs player (Virtual Pro)? Accept in-game screenshots (Edit Pro, lobby, player card, match) AND custom renders, cutouts or action shots of one player in kit, even with no game menus or HUD visible and even if very photorealistic — EA renders look lifike. Set is_pro_clubs_player false only for images with no footballer, multiple players with no clear subject, memes, or obviously unrelated content. Read any position, overall rating, archetype, height and playstyles visible on screen. Classify the visible pose as ready, stride, ball, celebrate, profile, captain or other so graphics can reuse the best reference. Use null when facts are not visible. Never invent values." },
           { type: "input_image", image_url: dataUrl },
         ],
       }],
@@ -100,6 +101,10 @@ Deno.serve(async (req) => {
   if (!img.ok || !/^image\/(png|jpe?g|webp)$/.test(type)) return json({ error: "Send a PNG, JPG or WebP image." }, 400);
   const bytes = new Uint8Array(await img.arrayBuffer());
   if (bytes.length > MAX_BYTES) return json({ error: "Image is over 8 MB." }, 400);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const sourceKey = Array.from(new Uint8Array(digest), (v) => v.toString(16).padStart(2, "0")).join("");
+  const { data: existing } = await db.from("pro_photo_assets").select("image_url,analysis").eq("discord_user_id", discord_user_id).eq("source_key", sourceKey).maybeSingle();
+  if (existing) return json({ accepted: true, image_url: existing.image_url, analysis: existing.analysis, already_saved: true });
 
   let b64 = "";
   for (let i = 0; i < bytes.length; i += 0x8000) b64 += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -113,7 +118,7 @@ Deno.serve(async (req) => {
   if (!analysis.is_pro_clubs_player) return json({ accepted: false, analysis });
 
   const ext = type === "image/png" ? "png" : type === "image/webp" ? "webp" : "jpg";
-  const path = `${guild_id}/${discord_user_id}-${Date.now()}.${ext}`;
+  const path = `${guild_id}/${discord_user_id}-${sourceKey}.${ext}`;
   const up = await db.storage.from("pro-photos").upload(path, bytes, { contentType: type, upsert: true });
   if (up.error) return json({ error: "Couldn't store the photo." }, 500);
   const signed = await db.storage.from("pro-photos").createSignedUrl(path, TEN_YEARS);
@@ -122,6 +127,12 @@ Deno.serve(async (req) => {
   const { data: prof } = await db.from("profiles").select("ea_username").eq("discord_user_id", discord_user_id).maybeSingle();
   const pos = typeof analysis.position === "string" ? analysis.position.toUpperCase().slice(0, 5) : null;
   const ovr = Number.isInteger(analysis.overall) && analysis.overall >= 40 && analysis.overall <= 99 ? analysis.overall : null;
+  const { error: assetError } = await db.from("pro_photo_assets").upsert({
+    guild_id, discord_user_id, submitted_by: submitted_by ?? discord_user_id,
+    image_url: signed.data.signedUrl, storage_path: path, source_key: sourceKey,
+    source_kind: "upload", pose: analysis.pose === "other" ? null : analysis.pose, analysis,
+  }, { onConflict: "discord_user_id,source_key", ignoreDuplicates: true });
+  if (assetError) return json({ error: "Couldn't add the photo to the player's collection." }, 500);
   const { error } = await db.from("pro_photos").upsert({
     guild_id, discord_user_id, submitted_by: submitted_by ?? discord_user_id,
     ea_username: prof?.ea_username ?? null, image_url: signed.data.signedUrl,

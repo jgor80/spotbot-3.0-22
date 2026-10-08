@@ -32,7 +32,7 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
     return new EmbedBuilder()
       .setColor(0x22c55e)
       .setTitle(`📸 Pro photo saved — ${r.ea_username || user.username}`)
-      .setDescription([a.description, lines.join('\n'), '_Used on recap cards, MOTM and Team of the Week from now on._'].filter(Boolean).join('\n\n'))
+      .setDescription([a.description, lines.join('\n'), '_Added to this player’s photo collection. Graphics Studio will choose a suitable pose._'].filter(Boolean).join('\n\n'))
       .setThumbnail(r.image_url);
   }
 
@@ -44,8 +44,8 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
 
   async function onMessage(message) {
     if (!message.guild || message.author?.bot) return;
-    const img = message.attachments.find((a) => IMAGE_RE.test(a.contentType || ''));
-    if (!img || !(await isPhotoChannel(message))) return;
+    const images = [...message.attachments.values()].filter((a) => IMAGE_RE.test(a.contentType || ''));
+    if (!images.length || !(await isPhotoChannel(message))) return;
     const tagged = message.mentions.users.find((u) => !u.bot);
     let target = message.author;
     if (tagged && tagged.id !== message.author.id) {
@@ -56,18 +56,20 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
       target = tagged;
     }
     await message.react('⏳').catch(() => {});
-    const r = await ingest({ guildId: message.guild.id, userId: target.id, submittedBy: message.author.id, url: img.url });
+    let saved = 0;
+    const problems = [];
+    let lastSaved;
+    for (const img of images) {
+      const r = await ingest({ guildId: message.guild.id, userId: target.id, submittedBy: message.author.id, url: img.url }).catch(() => ({ error: 'Could not save this photo. Please try again.' }));
+      if (r.accepted) { saved++; lastSaved = r; }
+      else problems.push(r.error || "That image needs a single footballer as its clear subject.");
+    }
     await message.reactions.cache.get('⏳')?.users.remove(message.client.user.id).catch(() => {});
-    if (r.error) {
-      await message.react('❌').catch(() => {});
-      return message.reply(`❌ ${r.error}`).catch(() => {});
-    }
-    if (!r.accepted) {
-      await message.react('🤔').catch(() => {});
-      return message.reply("🤔 That doesn't look like a Pro Clubs player. Post a screenshot or render of your pro in kit.").catch(() => {});
-    }
-    await message.react('✅').catch(() => {});
-    await message.reply({ embeds: [resultEmbed(target, r)], allowedMentions: { parse: [] } }).catch(() => {});
+    await message.react(saved ? '✅' : '❌').catch(() => {});
+    await message.reply({
+      content: [`${saved} of ${images.length} photo${images.length === 1 ? '' : 's'} saved.`, ...problems].join('\n'),
+      embeds: lastSaved ? [resultEmbed(target, lastSaved)] : [], allowedMentions: { parse: [] },
+    }).catch(() => {});
   }
 
   async function handleInteraction(interaction) {
