@@ -709,7 +709,9 @@ function createManagerHub(deps) {
   }
 
   async function onMessage(message) {
-    if (!message.guildId || stickyIds.get(message.channelId) === message.id) return;
+    // Ignore every bot message, including the sticky panel itself: its gateway MESSAGE_CREATE can
+    // arrive before send() resolves and stickyIds is updated, which would otherwise loop the panel.
+    if (!message.guildId || message.author?.bot || stickyIds.get(message.channelId) === message.id) return;
     const state = await getGuildState(message.guildId).catch(() => null);
     const club = state && deskClub(state, message.channelId);
     if (!club) return;
