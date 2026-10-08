@@ -132,7 +132,7 @@ function playerCard(d) {
     ${d.tagline ? `<text x="${x + 4}" y="${nameY + 50}" font-family="${BODY}" font-weight="700" font-size="${fit(d.tagline, nameWidth, 24, 0.58, 16)}" fill="${p.accent}">${esc(clip(d.tagline, 60).toUpperCase())}</text>` : ''}
     ${stats.length ? `<rect x="60" y="1290" width="${W - 120}" height="150" fill="${p.panel}" fill-opacity="${p.panelOpacity}"/>
       ${stats.map(([label, value], i) => `<text x="${60 + cell * i + cell / 2}" y="1375" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="56" fill="${p.ink}">${esc(value)}</text>
-      <text x="${60 + cell * i + cell / 2}" y="1415" text-anchor="middle" font-family="${BODY}" font-weight="700" font-size="18" fill="${p.sub}">${esc(label)}</text>`).join('')}` : ''}
+       <text x="${60 + cell * i + cell / 2}" y="1415" text-anchor="middle" font-family="${BODY}" font-weight="700" font-size="${fit(label, cell - 12, 18, 0.58, 10)}" fill="${p.sub}">${esc(label)}</text>`).join('')}` : ''}
     <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">${stats.length ? 'EA MATCH DATA · ' : ''}AI ART FROM THEIR IN-GAME PRO · SPOTBOT STUDIO</text>
   </svg>`, d));
 }
@@ -348,7 +348,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   function applyCardEdits(d, f) {
     const stats = f('stats').split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 6).map((line) => {
       const m = line.match(/^(.*\S)\s+(\S+)$/);
-      return m ? [m[1].toUpperCase().slice(0, 10), m[2].slice(0, 6)] : [line.toUpperCase().slice(0, 10), ''];
+      return m ? [m[1].toUpperCase(), m[2]] : [line.toUpperCase(), ''];
     });
     const changed = JSON.stringify(stats.map(([l, v]) => [l, String(v)])) !== JSON.stringify(d.stats.map(([l, v]) => [l, String(v)])) || f('tagline') !== d.tagline || f('overall') !== String(d.overall || '');
     const overall = /^\d{1,2}$/.test(f('overall')) && Number(f('overall')) > 0 ? f('overall') : '';

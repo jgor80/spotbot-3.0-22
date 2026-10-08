@@ -44,7 +44,11 @@ function fixture() {
 
 test('all styles load safely, portrait option opens a valid stat-free form and renders without stats', async () => {
   const originalFetch = global.fetch;
-  global.fetch = async () => ({ ok: true, json: async () => ({ image_b64: new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="pink"/></svg>').render().asPng().toString('base64'), used_pro_photo: true }) });
+  global.fetch = async (_, options) => {
+    assert.equal(JSON.parse(options.body).has_stats, false);
+    assert.equal(JSON.parse(options.body).has_tagline, false);
+    return { ok: true, json: async () => ({ image_b64: new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="pink"/></svg>').render().asPng().toString('base64'), used_pro_photo: true }) };
+  };
   try {
     for (const style of Object.keys(STYLES)) {
       const f = fixture();

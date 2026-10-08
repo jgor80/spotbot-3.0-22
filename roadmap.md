@@ -1,6 +1,6 @@
 
 ## Current
-- [ ] Verify card stat provenance and reflow cards without optional text or stats
+- [x] Verify card stat provenance and reflow cards without optional text or stats
 - [x] Preserve player photo collections and choose suitable poses for graphics
 - [x] Add and verify 2020s-inspired player-card designs
 - [x] Add and verify 2010s-inspired player-card designs
