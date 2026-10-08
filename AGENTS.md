@@ -22,5 +22,5 @@
 - Uploaded club logos (even Automatic) override server branding and EA badges, are never cached or substituted on failure, and pass through `logo-cleanup.cjs` (backdrop knock-out, trim, die-cut outline) so crests blend into any background.
 - All team-focused Studio artwork selects up to five distinct saved active players from the exact club roster and sends ordered identity references to club-art; group outputs are never stored as individual photo references, preventing cross-player identity contamination.
 - Palermo kits live in `public/spotbot/club-kits.cjs`: vintage card styles auto-pair with a matching era kit and members can override per graphic from the draft prompt, so the art matches the card's era; non-Palermo clubs keep their saved `club.kit`.
-- `fun-zone.cjs` roasts use real stats; rumours marked fiction.
-- Season card sets: `player_season_archive`, nightly from match rows by `ea_seasons`; history never purged.
+- `fun-zone.cjs`: real-stat roasts, fiction-marked rumours.
+- Season sets: `player_season_archive` (never purged) feed backs (`graphics-card-back.cjs`) plus exact-club EA total.

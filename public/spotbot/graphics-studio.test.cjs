@@ -57,7 +57,8 @@ test('all styles load safely, portrait option opens a valid stat-free form and r
       const f = fixture();
       assert.equal(await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: [style] })), true);
       const buttons = f.requests.at(-1).components.at(-1).toJSON().components;
-      assert.equal(buttons.length, 2);
+      assert.equal(buttons.length, 3);
+      assert.ok(buttons.some((b) => b.label === 'Back of card: On'));
       const portrait = buttons.find((b) => b.label === 'Portrait Only');
       assert.ok(portrait);
       await f.studio.handleInteraction(f.interaction(portrait.custom_id, 'button'));
@@ -69,6 +70,7 @@ test('all styles load safely, portrait option opens a valid stat-free form and r
       assert.equal(inputs.find((i) => i.custom_id === 'overall').value, '');
       await f.studio.handleInteraction(f.interaction(modal.custom_id, 'modal', { fields: { getTextInputValue: (key) => inputs.find((i) => i.custom_id === key)?.value || '' } }));
       assert.ok(f.posts.some((p) => p.files?.[0]?.attachment?.length > 1000), 'PNG posted');
+      assert.ok(f.posts.some((p) => p.files?.length === 2), 'back posted with front');
       assert.doesNotMatch(lastSvg, /EA MATCH DATA|>GAMES<|>RATING<|height="150"/);
       assert.equal(f.requests.at(-1), '✅ Posted!');
     }

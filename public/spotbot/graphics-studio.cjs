@@ -27,6 +27,7 @@ const { render2010sCard } = require('./graphics-2010s.cjs');
 const { render2020sCard } = require('./graphics-2020s.cjs');
 const { renderSignatureCard, SIGNATURE_STYLES } = require('./graphics-signature.cjs');
 const { renderSiciliaCard, renderSiciliaBack } = require('./graphics-sicilia.cjs');
+const { renderCardBack } = require('./graphics-card-back.cjs');
 const { finishCardSvg } = require('./card-layout.cjs');
 const { cardStats } = require('./card-stats.cjs');
 const { kitsFor, kitFor, withKit } = require('./club-kits.cjs');
@@ -390,7 +391,8 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       .setCustomId(`gs_dphoto:${token}`).setPlaceholder(`Photo: ${photos.find((p) => p.id === draft.data.photoId)?.label || 'Automatic (best match)'}`)
       .addOptions([{ label: 'Automatic — best match for the pose', value: 'auto' }, ...photos.map((p) => ({ label: p.label, value: p.id, description: p.description || undefined, default: p.id === draft.data.photoId }))]))] : [];
     return { content: kind === 'card' ? `🎴 Pick a kit and ${photos.length ? 'which of your uploaded photos to base it on' : 'style'} (optional), then with stats or just your pro?` : 'Your details are ready. Pick a kit if you like.', components: [...kitRow, ...photoRow, new ActionRowBuilder().addComponents(
-      choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary))
+      ...choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary)),
+      ...(kind === 'card' ? [new ButtonBuilder().setCustomId(`gs_dback:${token}`).setLabel(draft?.data?.noBack ? 'Back of card: Off' : 'Back of card: On').setEmoji('🔄').setStyle(draft?.data?.noBack ? ButtonStyle.Secondary : ButtonStyle.Success)] : []),
     )] };
   }
   const input = (id, label, value, { para = false, max = 100, req = false } = {}) => new ActionRowBuilder().addComponents(
@@ -421,17 +423,26 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
 
   // ----- player card -----
   async function cardData({ guildId, club, userId, displayName }) {
-    const [{ data: statsRows }, { data: profile }, { data: photo }, { data: assets }] = await Promise.all([
+    const [{ data: statsRows }, { data: profile }, { data: photo }, { data: assets }, { data: archive }, { data: seasons }] = await Promise.all([
       supabase.from('player_club_stats').select('*').eq('guild_id', guildId).eq('discord_user_id', userId),
       supabase.from('profiles').select('ea_username').eq('discord_user_id', userId).maybeSingle(),
       supabase.from('pro_photos').select('position, overall').eq('discord_user_id', userId).maybeSingle(),
       supabase.from('pro_photo_assets').select('id, pose, source_kind, analysis, created_at').eq('discord_user_id', userId).order('created_at', { ascending: false }).limit(60),
+      supabase.from('player_season_archive').select('*').eq('guild_id', guildId).eq('discord_user_id', userId),
+      supabase.from('ea_seasons').select('code, label, starts_at').order('starts_at'),
     ]);
     const data = cardStats((statsRows || []).map((s) => ({ ...s, primary_position: photo?.position || s.primary_position })), club);
     const verified = (assets || []).map((a) => a.analysis?.kit_number).find((n) => Number.isInteger(n) && n >= 1 && n <= 99);
+    // Card back: one row per archived season, plus the EA Member List total for this exact club.
+    const short = String(club.name || '').split(/\s+/).pop().slice(0, 10).toUpperCase();
+    const archiveRows = Array.isArray(archive) ? archive : [];
+    const seasonRows = (Array.isArray(seasons) ? seasons : []).map((s) => ({ s, r: archiveRows.find((a) => a.season_code === s.code) })).filter(({ r }) => r && r.matches > 0)
+      .map(({ s, r }) => ({ label: `'${String(s.code).replace(/\D/g, '')} ${short}`, apps: r.matches, goals: r.goals, assists: r.assists, cs: r.clean_sheets, motm: r.motm, rating: r.avg_rating }));
+    const ea = (statsRows || []).find((s) => s.club_key === club.key && (!club.ea_club_id || !s.ea_club_id || String(s.ea_club_id) === String(club.ea_club_id)) && s.games_played > 0);
+    const clubTotals = ea ? { apps: ea.games_played, goals: ea.goals, assists: ea.assists, cs: ea.clean_sheets, motm: ea.man_of_match, rating: ea.avg_match_rating } : null;
     return {
       ...data, userId, name: displayName || profile?.ea_username || 'Player', position: photo?.position || data.position,
-      overall: photo?.overall || '', kitNumber: verified || null,
+      overall: photo?.overall || '', kitNumber: verified || null, seasonRows, clubTotals,
       // The member's own uploads, offered as the card's reference photo.
       photos: (assets || []).filter((a) => a.source_kind === 'upload').slice(0, 24).map((a, i) => ({
         id: a.id, label: clip(`${i + 1}. ${a.pose || 'Photo'}${a.analysis?.kit_number ? ` · #${a.analysis.kit_number}` : ''}`, 90),
@@ -468,7 +479,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), name: d.name, position: shortPosition(d.position) || null,
       overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number,
     });
-    const back = style === 'sicilia' ? new AttachmentBuilder(renderSiciliaBack({ number, name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_') }) : null;
+    const backName = `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_');
+    const back = d.noBack ? null : style === 'sicilia'
+      ? new AttachmentBuilder(renderSiciliaBack({ number, name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: backName })
+      : new AttachmentBuilder(renderCardBack({ style, accent: palette(style, club.kit).accent, number, name: d.name, clubName: club.name, position: shortPosition(d.position) || d.position, rows: d.seasonRows || [], totals: d.clubTotals || null, edited: d.dataLabel === 'MEMBER-EDITED' }, G), { name: backName });
     // Keep a copy in the member's collection (My Cards); a failed save never blocks posting.
     cardsApi({ action: 'save', guild_id: guildId, discord_user_id: d.userId, style, name: String(d.name).slice(0, 40), front_b64: Buffer.from(png).toString('base64'), ...(back ? { back_b64: Buffer.from(back.attachment).toString('base64') } : {}) })
       .then((r) => r.error && console.warn('[studio] card save failed:', r.error)).catch(() => {});
@@ -768,6 +782,14 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const update = (payload) => deferredSelect ? interaction.editReply(payload) : interaction.update(payload);
     const state = await getGuildState(interaction.guildId).catch(() => null);
     const findClub = (key) => activeClubs(state).find((c) => c.key === key) || activeClubs(state)[0];
+    if (interaction.isButton() && action === 'gs_dback') {
+      const draft = DRAFTS.get(a1);
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
+        await interaction.update({ content: 'That form expired — start again from the panel.', components: [] }); return true;
+      }
+      draft.data.noBack = !draft.data.noBack;
+      await interaction.update(draftPrompt(a1, 'card', findClub(draft.clubKey))); return true;
+    }
     const manager = async () => isManager(interaction.member, interaction.guildId);
     if (interaction.isButton() && action === 'gs_recruit') {
       await respond({ content: '📣 Pick a recruiting poster style:', components: [styleRow('recruit', a1)] });
