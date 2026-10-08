@@ -5,6 +5,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
 import { rankPhotos } from "./photo-selection.ts";
+import { teamPrompt, appendReferences } from "./team-art.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -30,6 +31,8 @@ const Body = z.object({
     description: z.string().max(200).optional(),
   }).default({}),
   discord_user_id: z.string().regex(/^\d{5,25}$/).optional(),
+  guild_id: z.string().regex(/^\d{5,25}$/).optional(),
+  team_player_ids: z.array(z.string().regex(/^\d{5,25}$/)).min(1).max(5).optional(),
   position: z.string().max(10).optional(),
   mood: z.enum(["win", "draw", "loss", "neutral"]).default("neutral"),
   competition: z.string().max(60).optional(),
@@ -125,18 +128,36 @@ Deno.serve(async (req) => {
   if (!parsed.success) return json({ error: parsed.error.flatten().fieldErrors }, 400);
   const b = parsed.data;
 
-  const found = await proPhoto(b);
+  const teamIds = [...new Set(b.team_player_ids ?? [])];
+  if (teamIds.length && (b.kind === 'card' || !b.guild_id)) return json({ error: 'Team artwork needs a server and a team-focused graphic.' }, 400);
+  if (teamIds.length) {
+    // Recheck membership server-side rather than trusting a supplied player list.
+    const { data: teams, error: teamError } = await db.from('teams').select('id').eq('guild_id', b.guild_id).ilike('name', b.club_name);
+    if (teamError) return json({ error: 'Could not verify the active club roster.' }, 503);
+    if (teams?.length !== 1) return json({ error: 'Could not identify the exact club team.' }, 422);
+    const { data: roster, error } = await db.from('team_rosters').select('discord_user_id,status').eq('team_id', teams[0].id).in('discord_user_id', teamIds);
+    if (error) return json({ error: 'Could not verify the active club roster.' }, 503);
+    const active = new Set((roster ?? []).filter((r) => (r.status || 'active') === 'active').map((r) => r.discord_user_id));
+    if (teamIds.some((id) => !active.has(id))) return json({ error: 'Team artwork can only feature active players from this club.' }, 422);
+  }
+  const group = await Promise.all(teamIds.map(async (userId) => {
+    const photo = await proPhoto({ ...b, discord_user_id: userId });
+    return photo ? { ...photo, userId } : null;
+  }));
+  if (group.some((r) => !r)) return json({ error: 'A selected active player has no reachable saved pro photo. Nothing was rendered.' }, 422);
+  const refs = group.filter((r) => r !== null);
+  const found = teamIds.length ? null : await proPhoto(b);
   const ref = found?.file ?? null;
   const kitNumber = b.kit_number_override ?? found?.kitNumber ?? null;
-  const prompt = promptFor(b, !!ref, kitNumber);
+  const prompt = refs.length ? teamPrompt(b, refs, STYLE[b.style], kitLine(b.kit, b.club_name)) : promptFor(b, !!ref, kitNumber);
   const size = b.kind === "banner" ? "1536x1024" : "1024x1536";
   let res: Response;
-  if (ref) {
+  if (ref || refs.length) {
     const form = new FormData();
     form.set("model", MODEL);
     form.set("prompt", prompt);
     form.set("size", size);
-    form.append("image", ref);
+    appendReferences(form, refs.length ? refs : ref ? [{ file: ref }] : []);
     res = await fetch(`${GATEWAY}/v1/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${AI_KEY}` }, body: form });
   } else {
     res = await fetch(`${GATEWAY}/v1/images/generations`, {
@@ -156,7 +177,7 @@ Deno.serve(async (req) => {
   const b64 = out?.data?.[0]?.b64_json;
   if (!b64) return json({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
   let artworkSaved = !b.discord_user_id;
-  if (b.discord_user_id && ref) {
+  if (!teamIds.length && b.discord_user_id && ref) {
     const raw = atob(b64);
     const bytes = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
@@ -175,5 +196,5 @@ Deno.serve(async (req) => {
       }
     }
   }
-  return json({ image_b64: b64, used_pro_photo: !!ref, artwork_saved: artworkSaved, kit_number: kitNumber });
+  return json({ image_b64: b64, used_pro_photo: !!ref || refs.length > 0, artwork_saved: artworkSaved, kit_number: teamIds.length ? null : kitNumber, team_player_ids: teamIds });
 });
