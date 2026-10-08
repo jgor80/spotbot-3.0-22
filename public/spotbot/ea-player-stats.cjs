@@ -70,11 +70,10 @@ function eventStats(p) {
   const c = eventCounts(p);
   const g = (k) => c[k] || 0;
   return {
-    second_assists: g(118),
+    // Only codes that pass data checks. 118 is a subset of assists (not a second assist);
+    // 102 and 61 have no reliable meaning, so they are not reported.
     dribbles: g(32),
     possessions_won: g(176),
-    possessions_lost: g(102),
-    blocks: g(61),
   };
 }
 

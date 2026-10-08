@@ -30,7 +30,7 @@ const RX = require('./recap-extras.cjs');
 // Short "why" for the MOTM, from that player's own numbers
 function motmLine(p) {
   const bits = [];
-  for (const [k, l] of [['goals', 'G'], ['assists', 'A'], ['second_assists', '2A'], ['tackles', 'TKL'], ['interceptions', 'INT'], ['possessions_won', 'WON'], ['saves', 'SV']]) if (Number(p[k]) > 0) bits.push(`${p[k]} ${l}`);
+  for (const [k, l] of [['goals', 'G'], ['assists', 'A'], ['tackles', 'TKL'], ['interceptions', 'INT'], ['possessions_won', 'WON'], ['saves', 'SV']]) if (Number(p[k]) > 0) bits.push(`${p[k]} ${l}`);
   return bits.length ? `\n-# ${bits.slice(0, 4).join(' · ')}` : '';
 }
 
@@ -607,7 +607,7 @@ function createAutopilot(deps) {
     const nugget = statNugget(match, upTo);
     if (nugget) embed.addFields({ name: '💡 Talking point', value: nugget });
     // Hidden EA stats: best player for each, only when someone actually registered one
-    const hidden = [['second_assists', '🔁 Second assists'], ['dribbles', '🪄 Dribbles'], ['possessions_won', '🧲 Possessions won'], ['interceptions', '🧠 Interceptions'], ['blocks', '🧱 Blocks']]
+    const hidden = [['dribbles', '🪄 Dribbles'], ['possessions_won', '🧲 Possessions won'], ['interceptions', '🧠 Interceptions']]
       .map(([k, l]) => {
         const top = [...match.players].sort((a, b) => Number(b[k] || 0) - Number(a[k] || 0))[0];
         return top && Number(top[k]) > 0 ? `${l}: ${name(top)} ${top[k]}` : null;
