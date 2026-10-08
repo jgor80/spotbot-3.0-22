@@ -38,6 +38,8 @@ const Body = z.object({
   variation: z.string().max(60).optional(),
   has_stats: z.boolean().default(true),
   has_tagline: z.boolean().default(true),
+  // Manually confirmed by the member in the card form; treated like a verified upload number.
+  kit_number_override: z.number().int().min(1).max(99).optional(),
 });
 
 const STYLE: Record<string, string> = {
