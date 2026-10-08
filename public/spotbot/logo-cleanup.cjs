@@ -35,6 +35,7 @@ function seamlessLogo(dataUrl) {
     const peel = Math.max(2, Math.round((x1 - x0) * 0.006));
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x < x0 + peel || x > x1 - peel || y < y0 + peel || y > y1 - peel) px[at(x, y) + 3] = 0;
     const transparent = (x, y) => x < 0 || y < 0 || x >= W || y >= H || px[at(x, y) + 3] < 24;
+    let knocked = false;
     // Two passes: the outer square, then e.g. a flat white disc inside it.
     for (let pass = 0; pass < 2; pass++) {
       const edge = [];
@@ -47,7 +48,7 @@ function seamlessLogo(dataUrl) {
       const bg = [0, 1, 2].map((c) => idx.map((i) => px[i + c]).sort((a, b) => a - b)[idx.length >> 1]);
       const dist = (i) => Math.max(Math.abs(px[i] - bg[0]), Math.abs(px[i + 1] - bg[1]), Math.abs(px[i + 2] - bg[2]));
       // Only a uniform outline is a backdrop; a crest's own varied edge is left alone.
-      if (idx.filter((i) => dist(i) < 36).length < idx.length * (pass ? 0.85 : 0.6)) break;
+      if (idx.filter((i) => dist(i) < 24).length < idx.length * (pass ? 0.85 : 0.6)) break;
       const seen = new Uint8Array(W * H), stack = edge.slice();
       while (stack.length) {
         const [x, y] = stack.pop();
@@ -55,10 +56,28 @@ function seamlessLogo(dataUrl) {
         const k = y * W + x; if (seen[k]) continue; seen[k] = 1;
         const i = k * 4; if (px[i + 3] < 24) continue;
         const d = dist(i);
-        if (d >= 60) continue;
+        if (d >= 40) continue;
         // Hard knock-out for the flat fill, feathered alpha on the anti-aliased edge.
-        px[i + 3] = d < 36 ? 0 : Math.round(px[i + 3] * (d - 36) / 24);
-        if (d < 36) stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+        knocked = true;
+        px[i + 3] = d < 18 ? 0 : Math.round(px[i + 3] * (d - 18) / 22);
+        if (d < 18) stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+      }
+    }
+    // Sticker-cut outline in the backdrop colour: keeps dark crest parts readable on dark art and
+    // fills the gaps the knock-out opened, so it reads as an intentional die-cut badge.
+    if (knocked) {
+      const r = Math.max(4, Math.round((x1 - x0) * 0.022)), alpha = new Uint8Array(W * H);
+      for (let k = 0; k < W * H; k++) alpha[k] = px[k * 4 + 3];
+      const rows = new Uint8Array(W * H);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let m = 0; for (let dx = -r; dx <= r && m < 255; dx++) { const xx = x + dx; if (xx >= 0 && xx < W) m = Math.max(m, alpha[y * W + xx]); } rows[y * W + x] = m; }
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        let m = 0; for (let dy = -r; dy <= r && m < 255; dy++) { const yy = y + dy; if (yy >= 0 && yy < H) m = Math.max(m, rows[yy * W + x]); }
+        const i = at(x, y), a = px[i + 3] / 255, o = m / 255;
+        if (o <= a) continue;
+        // Composite crest over a white outline.
+        const outA = a + o * (1 - a);
+        for (let c = 0; c < 3; c++) px[i + c] = Math.round((px[i + c] * a + 255 * o * (1 - a)) / outA);
+        px[i + 3] = Math.round(outA * 255);
       }
     }
     // Trim to the visible crest with a small margin.
