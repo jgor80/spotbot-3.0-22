@@ -22,8 +22,8 @@ function fixture() {
   const club = { key: 'palermo', name: 'PCN Palermo', kit: { primary: 'pink', secondary: 'black' } };
   const db = { from(table) {
     assert.ok(calls.includes('deferUpdate'), 'acknowledge before loading player data');
-    const result = table === 'player_club_stats' ? [{ club_key: 'palermo', games_played: 22, goals: 9, assists: 4, wins: 10, draws: 2, losses: 10 }] : table === 'profiles' ? { ea_username: 'AirDangus23' } : { position: 'CAM', overall: 90 };
-    const query = { select() { return this; }, eq() { return this; }, maybeSingle() { return Promise.resolve({ data: result }); }, then(resolve) { return Promise.resolve({ data: result }).then(resolve); } };
+    const result = table === 'player_club_stats' ? [{ club_key: 'palermo', games_played: 22, goals: 9, assists: 4, wins: 10, draws: 2, losses: 10 }] : table === 'profiles' ? { ea_username: 'AirDangus23' } : table === 'pro_photo_assets' ? [{ analysis: { kit_number: 23 } }] : { position: 'CAM', overall: 90 };
+    const query = { select() { return this; }, eq() { return this; }, order() { return this; }, limit() { return this; }, maybeSingle() { return Promise.resolve({ data: result }); }, then(resolve) { return Promise.resolve({ data: result }).then(resolve); } };
     return query;
   } };
   const guild = { id: '1529555651762851930', channels: { fetch: async () => null } };
