@@ -341,15 +341,17 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
 
   // ----- player card -----
   async function cardData({ guildId, club, userId, displayName }) {
-    const [{ data: statsRows }, { data: profile }, { data: photo }] = await Promise.all([
+    const [{ data: statsRows }, { data: profile }, { data: photo }, { data: assets }] = await Promise.all([
       supabase.from('player_club_stats').select('*').eq('guild_id', guildId).eq('discord_user_id', userId),
       supabase.from('profiles').select('ea_username').eq('discord_user_id', userId).maybeSingle(),
       supabase.from('pro_photos').select('position, overall').eq('discord_user_id', userId).maybeSingle(),
+      supabase.from('pro_photo_assets').select('analysis').eq('discord_user_id', userId).order('created_at', { ascending: false }).limit(10),
     ]);
     const data = cardStats((statsRows || []).map((s) => ({ ...s, primary_position: photo?.position || s.primary_position })), club);
+    const verified = (assets || []).map((a) => a.analysis?.kit_number).find((n) => Number.isInteger(n) && n >= 1 && n <= 99);
     return {
       ...data, userId, name: profile?.ea_username || displayName, position: photo?.position || data.position,
-      overall: photo?.overall || '',
+      overall: photo?.overall || '', kitNumber: verified || null,
     };
   }
   const cardModal = (token, d) => new ModalBuilder().setCustomId(`gs_cform:${token}`).setTitle('Check your card before it is drawn').addComponents(
