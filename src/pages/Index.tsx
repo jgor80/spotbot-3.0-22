@@ -193,7 +193,10 @@ export default function Dashboard() {
               <Loader2 className="mt-4 h-6 w-6 animate-spin" />
             ) : nextEvent ? (
               <>
-                <h2 className="mt-2 font-display text-2xl font-bold leading-tight md:text-3xl">{nextEvent.title}</h2>
+                <span className="mt-2 inline-block rounded bg-background/20 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider">
+                  {eventKind(nextEvent.title, nextEvent.event_type)}
+                </span>
+                <h2 className="mt-1 font-display text-2xl font-bold leading-tight md:text-3xl">{nextEvent.title}</h2>
                 <p className="mt-1 text-sm opacity-90">
                   {kickoffLabel(new Date(nextEvent.scheduled_at))}
                   {" · "}
@@ -255,6 +258,7 @@ export default function Dashboard() {
                       className="flex items-center gap-3 py-3 text-sm transition-colors hover:text-primary"
                     >
                       <CalendarPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <Badge variant="outline" className="shrink-0">{eventKind(e.title, e.event_type)}</Badge>
                       <span className="min-w-0 flex-1 truncate font-medium">{e.title}</span>
                       <span className="shrink-0 text-muted-foreground">{kickoffLabel(new Date(e.scheduled_at))}</span>
                       <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">{e.counts.yes} in</span>

@@ -1,3 +1,4 @@
+import { eventKind } from "@/lib/eventKind";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import html2canvas from "html2canvas";
@@ -1118,7 +1119,7 @@ export default function TeamsPage() {
                               <SelectItem value="none">No event</SelectItem>
                               {upcomingEvents.map((e) => (
                                 <SelectItem key={e.id} value={e.id}>
-                                  {e.title} · {format(new Date(e.scheduled_at), "EEE d MMM, HH:mm")}
+                                  {eventKind(e.title)} · {e.title} · {format(new Date(e.scheduled_at), "EEE d MMM, HH:mm")}
                                 </SelectItem>
                               ))}
                             </SelectContent>
