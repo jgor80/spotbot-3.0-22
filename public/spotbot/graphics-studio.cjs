@@ -223,6 +223,14 @@ function lineupPoster(d) {
 
 // ---------- Studio ----------
 
+// Circle badges fit about four letters: long position words become standard abbreviations.
+const POS_SHORT = { GOALKEEPER: 'GK', KEEPER: 'GK', DEFENDER: 'DEF', DEFENCE: 'DEF', DEFENSE: 'DEF', MIDFIELDER: 'MID', MIDFIELD: 'MID', FORWARD: 'FWD', ATTACKER: 'ATT', STRIKER: 'ST', WINGER: 'WNG', 'CENTRE BACK': 'CB', 'CENTER BACK': 'CB', 'FULL BACK': 'FB', 'WING BACK': 'WB' };
+function shortPosition(pos) {
+  const p = String(pos || '').trim().toUpperCase();
+  if (!p) return '';
+  return POS_SHORT[p] || (p.length > 4 ? p.replace(/[^A-Z]/g, '').slice(0, 3) : p);
+}
+
 function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs }) {
   const panelIds = new Map(); // channelId -> panel message id
 
@@ -236,6 +244,16 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const out = res ? await res.json().catch(() => ({})) : {};
     if (!res?.ok || !out.image_b64) return { error: typeof out.error === 'string' ? out.error : typeof out.message === 'string' ? out.message : 'The art studio is unavailable right now.' };
     return { image: `data:image/png;base64,${out.image_b64}`, usedPro: out.used_pro_photo, kitNumber: Number.isInteger(out.kit_number) ? out.kit_number : null };
+  }
+
+  // Saved-card collection (player-cards function): save / list / get / delete, always scoped to the owner.
+  async function cardsApi(body) {
+    if (!secret) return { error: 'The studio needs BOT_PROXY_SECRET set on the bot.' };
+    const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/player-cards`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-bot-secret': secret }, body: JSON.stringify(body),
+    }).catch(() => null);
+    const out = res ? await res.json().catch(() => ({})) : {};
+    return res?.ok ? out : { error: out.error || 'Your card collection is unavailable right now.' };
   }
 
   async function studioClub(guildId, channelId, channelName) {
@@ -320,6 +338,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         new ButtonBuilder().setCustomId(`gs_kit:${club.key}`).setLabel('Club Kit').setEmoji('👕').setStyle(ButtonStyle.Secondary),
       ), new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`gs_recruit:${club.key}`).setLabel('Recruiting Poster').setEmoji('📣').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`gs_mycards:${club.key}`).setLabel('My Cards').setEmoji('🗂️').setStyle(ButtonStyle.Secondary),
       )],
       allowedMentions: { parse: [] },
     };
@@ -366,7 +385,11 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const kitRow = kits.length ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
       .setCustomId(`gs_dkit:${token}`).setPlaceholder(`Kit: ${chosen ? kits.find((k) => k.key === chosen)?.label : `Automatic (${auto.label})`}`)
       .addOptions([{ label: `Automatic — ${auto.label}`.slice(0, 100), value: 'auto' }, ...kits.map((k) => ({ label: k.label, value: k.key, default: k.key === chosen }))]))] : [];
-    return { content: kind === 'card' ? '🎴 Pick a kit (optional), then with stats or just your pro?' : 'Your details are ready. Pick a kit if you like.', components: [...kitRow, new ActionRowBuilder().addComponents(
+    const photos = kind === 'card' ? draft?.data?.photos || [] : [];
+    const photoRow = photos.length ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
+      .setCustomId(`gs_dphoto:${token}`).setPlaceholder(`Photo: ${photos.find((p) => p.id === draft.data.photoId)?.label || 'Automatic (best match)'}`)
+      .addOptions([{ label: 'Automatic — best match for the pose', value: 'auto' }, ...photos.map((p) => ({ label: p.label, value: p.id, description: p.description || undefined, default: p.id === draft.data.photoId }))]))] : [];
+    return { content: kind === 'card' ? `🎴 Pick a kit and ${photos.length ? 'which of your uploaded photos to base it on' : 'style'} (optional), then with stats or just your pro?` : 'Your details are ready. Pick a kit if you like.', components: [...kitRow, ...photoRow, new ActionRowBuilder().addComponents(
       choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary))
     )] };
   }
@@ -402,13 +425,18 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       supabase.from('player_club_stats').select('*').eq('guild_id', guildId).eq('discord_user_id', userId),
       supabase.from('profiles').select('ea_username').eq('discord_user_id', userId).maybeSingle(),
       supabase.from('pro_photos').select('position, overall').eq('discord_user_id', userId).maybeSingle(),
-      supabase.from('pro_photo_assets').select('analysis').eq('discord_user_id', userId).order('created_at', { ascending: false }).limit(10),
+      supabase.from('pro_photo_assets').select('id, pose, source_kind, analysis, created_at').eq('discord_user_id', userId).order('created_at', { ascending: false }).limit(60),
     ]);
     const data = cardStats((statsRows || []).map((s) => ({ ...s, primary_position: photo?.position || s.primary_position })), club);
     const verified = (assets || []).map((a) => a.analysis?.kit_number).find((n) => Number.isInteger(n) && n >= 1 && n <= 99);
     return {
       ...data, userId, name: displayName || profile?.ea_username || 'Player', position: photo?.position || data.position,
       overall: photo?.overall || '', kitNumber: verified || null,
+      // The member's own uploads, offered as the card's reference photo.
+      photos: (assets || []).filter((a) => a.source_kind === 'upload').slice(0, 24).map((a, i) => ({
+        id: a.id, label: clip(`${i + 1}. ${a.pose || 'Photo'}${a.analysis?.kit_number ? ` · #${a.analysis.kit_number}` : ''}`, 90),
+        description: clip(a.analysis?.description || new Date(a.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), 95),
+      })),
     };
   }
   const cardModal = (token, d) => new ModalBuilder().setCustomId(`gs_cform:${token}`).setTitle('Check your card before it is drawn').addComponents(
@@ -433,14 +461,17 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);
     // Print-card lettering and frames are local; artwork reuses the text-free vintage style.
     const printCard = Boolean(STYLES[style]?.cardOnly) || SIGNATURE_STYLES.includes(style);
-    const a = await art({ kind: 'card', style: style === 'sicilia' ? 'sicilia' : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...variation, has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
+    const a = await art({ kind: 'card', style: style === 'sicilia' ? 'sicilia' : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...(d.photoId ? { photo_asset_id: d.photoId } : {}), ...variation, has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
     if (a.error) return a;
     const number = d.number !== undefined ? d.number : (a.kitNumber || '');
     const png = playerCard({
-      art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), name: d.name, position: d.position || null,
+      art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), name: d.name, position: shortPosition(d.position) || null,
       overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number,
     });
     const back = style === 'sicilia' ? new AttachmentBuilder(renderSiciliaBack({ number, name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_') }) : null;
+    // Keep a copy in the member's collection (My Cards); a failed save never blocks posting.
+    cardsApi({ action: 'save', guild_id: guildId, discord_user_id: d.userId, style, name: String(d.name).slice(0, 40), front_b64: Buffer.from(png).toString('base64'), ...(back ? { back_b64: Buffer.from(back.attachment).toString('base64') } : {}) })
+      .then((r) => r.error && console.warn('[studio] card save failed:', r.error)).catch(() => {});
     return { extra: back ? [back] : [], file: new AttachmentBuilder(png, { name: `card-${d.name}.png`.replace(/[^\w.-]/g, '_') }), note: a.usedPro ? null : 'No pro photo on file, so this uses a silhouette — post your pro in #pro-photos for the real thing.' };
   }
   async function buildCard({ guildId, club, userId, displayName, style, noStats = false }) {
@@ -730,7 +761,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       return true;
     }
     const deferredSelect = interaction.isStringSelectMenu() && action !== 'gs_style' || interaction.isStringSelectMenu() && a1 !== 'banner';
-    const deferredReply = interaction.isModalSubmit() || interaction.isButton() && ['gs_card', 'gs_poster', 'gs_lineup', 'gs_recruit'].includes(action);
+    const deferredReply = interaction.isModalSubmit() || interaction.isButton() && ['gs_card', 'gs_poster', 'gs_lineup', 'gs_recruit', 'gs_mycards'].includes(action);
     if (deferredSelect) await interaction.deferUpdate();
     else if (deferredReply) await interaction.deferReply({ flags: 64 });
     const respond = (payload) => deferredReply ? interaction.editReply(payload) : interaction.reply(payload);
@@ -740,6 +771,40 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const manager = async () => isManager(interaction.member, interaction.guildId);
     if (interaction.isButton() && action === 'gs_recruit') {
       await respond({ content: '📣 Pick a recruiting poster style:', components: [styleRow('recruit', a1)] });
+      return true;
+    }
+    if (interaction.isStringSelectMenu() && action === 'gs_dphoto') {
+      const draft = DRAFTS.get(a1);
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
+        await update({ content: 'That form expired — start again from the panel.', components: [] }); return true;
+      }
+      const v = interaction.values[0];
+      draft.data.photoId = (draft.data.photos || []).some((p) => p.id === v) ? v : undefined;
+      await update(draftPrompt(a1, 'card', findClub(draft.clubKey))); return true;
+    }
+    if (interaction.isButton() && action === 'gs_mycards') {
+      const r = await cardsApi({ action: 'list', discord_user_id: interaction.user.id });
+      if (r.error) { await respond({ content: `❌ ${r.error}` }); return true; }
+      if (!r.cards?.length) { await respond({ content: '🗂️ No saved cards yet — every Player Card you make is saved here automatically.' }); return true; }
+      await respond({ content: `🗂️ Your saved cards (${r.cards.length}). Pick one to view or delete:`, components: [pickRow('gs_mycard', 'Open a card', r.cards.map((c) => ({
+        value: c.id, label: clip(`${c.name} · ${STYLES[c.style]?.label || c.style}`, 90), description: new Date(c.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }),
+      })))] });
+      return true;
+    }
+    if (interaction.isStringSelectMenu() && action === 'gs_mycard') {
+      const r = await cardsApi({ action: 'get', discord_user_id: interaction.user.id, card_id: interaction.values[0] });
+      if (r.error || !r.card?.front_url) { await update({ content: `❌ ${r.error || 'Card not found.'}`, components: [], embeds: [] }); return true; }
+      const c = r.card;
+      const embeds = [new EmbedBuilder().setTitle(`${c.name} · ${STYLES[c.style]?.label || c.style}`).setImage(c.front_url)];
+      if (c.back_url) embeds.push(new EmbedBuilder().setTitle('Back').setImage(c.back_url));
+      await update({ content: '', embeds, components: [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`gs_cdel:${c.id}`).setLabel('Delete Card').setEmoji('🗑️').setStyle(ButtonStyle.Danger),
+      )] });
+      return true;
+    }
+    if (interaction.isButton() && action === 'gs_cdel') {
+      const r = await cardsApi({ action: 'delete', discord_user_id: interaction.user.id, card_id: a1 });
+      await interaction.update({ content: r.error ? `❌ ${r.error}` : '🗑️ Card deleted from your collection.', embeds: [], components: [] });
       return true;
     }
     if (interaction.isStringSelectMenu() && action === 'gs_dkit') {
