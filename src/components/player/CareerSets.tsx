@@ -59,12 +59,21 @@ export function CareerSets({ guildId, discordUserId }: Props) {
               <div className="grid grid-cols-3 gap-2 text-center text-sm">
                 <Stat k="Shots" v={row!.shots ?? 0} />
                 <Stat k="GK Saves" v={row!.saves ?? 0} />
-                <Stat k="Dribbles*" v={row!.dribbles ?? 0} />
-                <Stat k="Poss. Won*" v={row!.possessions_won ?? 0} />
+                <Stat k="Chances*" v={row!.chances_created ?? 0} />
+                <Stat k="Hockey Ast*" v={row!.hockey_assists ?? 0} />
+                <Stat
+                  k="Take-ons*"
+                  v={row!.take_on_attempts ? `${row!.dribbles ?? 0}/${row!.take_on_attempts} (${Math.round(((row!.dribbles ?? 0) * 100) / row!.take_on_attempts)}%)` : row!.dribbles ?? 0}
+                />
+                <Stat
+                  k="Net Poss.*"
+                  v={(() => { const n = (row!.possessions_won ?? 0) - (row!.possessions_lost ?? 0); return n > 0 ? `+${n}` : n; })()}
+                />
+                <Stat k="Recoveries*" v={row!.ball_recoveries ?? 0} />
+                <Stat k="Def. Stops*" v={row!.defensive_stops ?? 0} />
                 <Stat k="Interceptions*" v={row!.interceptions ?? 0} />
-                <Stat k="Clears*" v={row!.clearances ?? 0} />
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">* Read from EA's hidden match data — close estimates, not official EA totals.</p>
+              <p className="mt-2 text-xs text-muted-foreground">* From EA's hidden match data (OurProClub-style, refined). Hockey assists only count build-up passes not already an assist.</p>
             </div>
           </div>
         ))}

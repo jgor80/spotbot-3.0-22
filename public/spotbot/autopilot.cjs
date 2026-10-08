@@ -606,11 +606,23 @@ function createAutopilot(deps) {
     );
     const nugget = statNugget(match, upTo);
     if (nugget) embed.addFields({ name: '💡 Talking point', value: nugget });
-    // Hidden EA stats: best player for each, only when someone actually registered one
-    const hidden = [['dribbles', '🪄 Dribbles'], ['possessions_won', '🧲 Possessions won'], ['interceptions', '🧠 Interceptions']]
+    // Hidden EA stats, refined: leader per metric, only when someone registered one
+    const n0 = (v) => Number(v || 0);
+    const derived = {
+      chances_created: (p) => n0(p.chances_created),
+      hockey_assists: (p) => n0(p.hockey_assists),
+      dribbles: (p) => n0(p.dribbles),
+      net_poss: (p) => n0(p.possessions_won) - n0(p.possessions_lost),
+      stops: (p) => n0(p.tackles) + n0(p.interceptions) + n0(p.clearances) + n0(p.blocks),
+    };
+    const fmt = {
+      dribbles: (p) => `${n0(p.dribbles)}${n0(p.take_on_attempts) > 0 ? `/${n0(p.take_on_attempts)} (${Math.round((100 * n0(p.dribbles)) / n0(p.take_on_attempts))}%)` : ''}`,
+      net_poss: (p) => { const v = derived.net_poss(p); return v > 0 ? `+${v}` : `${v}`; },
+    };
+    const hidden = [['chances_created', '🎨 Chances created'], ['hockey_assists', '🏒 Hockey assists'], ['dribbles', '🪄 Take-ons'], ['net_poss', '🧲 Net possession'], ['stops', '🛡️ Defensive anchor (stops)']]
       .map(([k, l]) => {
-        const top = [...match.players].sort((a, b) => Number(b[k] || 0) - Number(a[k] || 0))[0];
-        return top && Number(top[k]) > 0 ? `${l}: ${name(top)} ${top[k]}` : null;
+        const top = [...match.players].sort((a, b) => derived[k](b) - derived[k](a))[0];
+        return top && derived[k](top) > 0 ? `${l}: ${name(top)} ${fmt[k] ? fmt[k](top) : derived[k](top)}` : null;
       })
       .filter(Boolean);
     if (hidden.length) embed.addFields({ name: '🔬 Under the hood', value: truncate(hidden.join('\n')) });
