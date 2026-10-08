@@ -16,6 +16,7 @@ const { activeClubs } = require('./manager-hub.cjs');
 const { toInsightMatches } = require('./club-insights.cjs');
 const { nextVariation } = require('./graphics-variants.cjs');
 const { render1986Card } = require('./graphics-1986.cjs');
+const { render1960sCard } = require('./graphics-1960s.cjs');
 
 const NAME_RE = /graphic|media-?studio|studio/i;
 const STYLES = {
@@ -23,6 +24,7 @@ const STYLES = {
   modern: { label: 'Modern Broadcast', emoji: '✨', desc: 'Clean TV-graphic look' },
   vintage: { label: 'Vintage Heritage', emoji: '📜', desc: '90s trading card, film grain' },
   retro1986: { label: '1986 Club Classic', emoji: '⚾', desc: 'Bold club masthead, white frame, position badge', cardOnly: true },
+  retro1960s: { label: '1960s Club Heritage', emoji: '🎞️', desc: 'Oval portraits, pennants, colourful print borders', cardOnly: true },
   obsidian: { label: 'Obsidian & Gold', emoji: '🛡️', desc: 'Black and gold, elite' },
 };
 const HEAD = 'Oswald';
@@ -52,6 +54,7 @@ function palette(style, kit) {
     modern: { ink: '#ffffff', accent: hex(primary), sub: '#cbd5e1', panel: '#0b1220', panelOpacity: 0.72, skew: 0 },
     vintage: { ink: '#f5e9cf', accent: '#c8553d', sub: '#e8d9b5', panel: '#2a1d12', panelOpacity: 0.7, skew: 0, frame: '#efe3c8' },
     retro1986: { accent: hex(primary) },
+    retro1960s: { accent: hex(primary) },
     obsidian: { ink: '#f6e7b0', accent: '#d4af37', sub: '#d6d3d1', panel: '#000000', panelOpacity: 0.7, skew: 0, frame: '#d4af37' },
   }[style] || {};
   return base;
@@ -91,6 +94,7 @@ function headline(text, x, y, size, p, anchor = 'start') {
 
 function playerCard(d) {
   if (d.style === 'retro1986') return render1986Card(d, G, palette(d.style, d.kit).accent);
+  if (d.style === 'retro1960s') return render1960sCard(d, G, palette(d.style, d.kit).accent);
   const W = 1024, H = 1536, p = palette(d.style, d.kit);
   const stats = (d.stats || []).slice(0, 6);
   const editorial = d.composition === 'editorial';
@@ -342,8 +346,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   }
   async function renderCard({ guildId, club, style, d }) {
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`);
-    // Reuse the existing text-free vintage artwork; the exact 1986 frame is drawn locally.
-    const a = await art({ kind: 'card', style: style === 'retro1986' ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...variation, ...(style === 'retro1986' ? { composition: 'lower-third' } : {}) });
+    // Print-card lettering and frames are local; artwork reuses the text-free vintage style.
+    const printCard = Boolean(STYLES[style]?.cardOnly);
+    const a = await art({ kind: 'card', style: printCard ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...variation, ...(printCard ? { composition: 'lower-third' } : {}) });
     if (a.error) return a;
     const png = playerCard({
       art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId), name: d.name, position: d.position || null,
@@ -544,7 +549,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     const { club } = await studioClub(message.guild.id, message.channelId, message.channel?.name);
     if (!club) return;
-    const style = /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
+    const style = /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
     let build, label;
     if (/\bcard\b/.test(text)) {
       const target = message.mentions.users.find((u) => !u.bot) || message.author;
