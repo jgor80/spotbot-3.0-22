@@ -167,6 +167,7 @@ function createManagerHub(deps) {
     if (buildEventList) {
       more.push(new ButtonBuilder().setCustomId(`hub_events:${k}`).setLabel('Events').setEmoji('📅').setStyle(ButtonStyle.Secondary));
     }
+    more.push(new ButtonBuilder().setCustomId(`hub_photos:${k}`).setLabel('Pro Photos').setEmoji('📸').setStyle(ButtonStyle.Secondary));
     // Handled by autopilot.cjs
     more.push(new ButtonBuilder().setCustomId(`ap_panel:${k}`).setLabel('Autopilot').setEmoji('🤖').setStyle(ButtonStyle.Secondary));
     rows.push(new ActionRowBuilder().addComponents(more));
