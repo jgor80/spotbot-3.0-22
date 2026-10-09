@@ -4238,7 +4238,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 
 // Every embed sent while handling the interaction picks up the server's /brand style (embed-style.cjs)
 // Panel buttons and forms re-enter routeInteraction as the old slash command (panels.cjs)
-const panels = createPanels({ schemas: ACTION_SCHEMAS, isManager, dispatch: (interaction) => routeInteraction(interaction) });
+const panels = createPanels({ schemas: ACTION_SCHEMAS, isManager, timezoneFor: async (g) => (await clubEvents.serverPrefs(g)).timezone, dispatch: (interaction) => routeInteraction(interaction) });
 
 client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(interaction.guildId, () => routeInteraction(interaction)));
 
