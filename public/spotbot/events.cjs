@@ -974,6 +974,8 @@ function createEvents(deps) {
 
   async function handleEdit(interaction) {
     const rec = captureOptions(interaction);
+    // Read every option up front so the time-picker stash keeps the whole form
+    for (const n of ['event', 'when', 'title', 'deadline', 'description']) interaction.options.getString(n);
     const event = await leaderEvent(interaction);
     if (!event) return;
     const { timezone: tz } = await serverPrefs(event.guild_id);
