@@ -570,6 +570,12 @@ function createEvents(deps) {
 
   async function handleNew(interaction) {
     const rec = captureOptions(interaction);
+    // Read every option up front so the time-picker stash keeps the whole form
+    // (otherwise an unreadable "when" would replay with title/description/etc. lost).
+    for (const n of ['when', 'title', 'type', 'formation', 'preset', 'deadline', 'repeat', 'club', 'description']) interaction.options.getString(n);
+    interaction.options.getRole('ping');
+    interaction.options.getChannel('channel');
+    interaction.options.getBoolean('positions');
     const guildId = interaction.guildId;
     const state = await getGuildState(guildId);
     const clubKey = interaction.options.getString('club');
