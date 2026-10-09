@@ -14,3 +14,4 @@
 - Graphics Studio rules live in public/spotbot/AGENTS.md.
 - Recruiting artwork is aspect-fitted in a separate lettering-free region with decorative frames behind it, so generated groups are never cropped or covered by poster bands.
 - The /setup wizard (button → one modal in `club-setup.cjs`) saves EA link, accent colour and `club.kit` through the same helpers as /setclub and /brand, so onboarding never diverges from the individual commands.
+- The stats panel (sticky, in `club-stats.cjs`) lives in each club's `stats_panel_channel_id` falling back to `stats_channel_id` (opt out with `stats_panel: false`); Team Stats and EA Member List read EA live so they always match EA's own numbers.
