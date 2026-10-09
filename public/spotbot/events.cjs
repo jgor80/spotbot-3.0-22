@@ -1408,20 +1408,19 @@ function createEvents(deps) {
     }
   }
 
-  // Keep the match-night channel clean: delete boards of events that finished a while ago
-  const STALE_AFTER_MS = 3 * 60 * 60 * 1000;
+  // Keep the match-night channel clean: delete boards 6 hours after the event starts
+  const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
   async function removeStaleBoards(now) {
     const { data: events } = await supabase
       .from('availability_events')
       .select('id, channel_id, message_id, scheduled_at, duration_minutes, guild_id')
-      .eq('closed', true)
       .not('message_id', 'is', null)
       .lte('scheduled_at', new Date(now.getTime() - STALE_AFTER_MS).toISOString())
       .limit(25);
     for (const event of events || []) {
       if (!client.guilds.cache.has(event.guild_id)) continue;
-      const end = new Date(event.scheduled_at).getTime() + (event.duration_minutes || 90) * 60000;
-      if (end + STALE_AFTER_MS > now.getTime()) continue;
+      const start = new Date(event.scheduled_at).getTime();
+      if (start + STALE_AFTER_MS > now.getTime()) continue;
       const msg = await fetchBoardMessage(event);
       if (msg) await msg.delete().catch(() => {});
       await supabase.from('availability_events').update({ message_id: null }).eq('id', event.id);
