@@ -116,7 +116,7 @@ async function proPhoto(b: z.infer<typeof Body>, team = false): Promise<{ file: 
   const chosen = !team && b.photo_asset_id ? uploads.find((a) => a.id === b.photo_asset_id) : null;
   if (!team && b.photo_asset_id && !chosen) return null;
   // Never let a body/pose selection displace the close-up face anchor.
-  if (chosen && candidates[0]?.id !== chosen.id) candidates.splice(1, 0, chosen);
+  if (chosen && candidates.length && candidates[0]?.id !== chosen.id) candidates.splice(1, 0, chosen);
   // Rear shots still carry useful look notes; fall back to any upload description for the identity lock.
   const anyDescription = faced[0]?.analysis?.description ?? uploads[0]?.analysis?.description ?? null;
   // Latest number legibly read from the player's own uploads; generated art never verifies a number.
