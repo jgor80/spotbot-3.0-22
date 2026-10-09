@@ -136,7 +136,7 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
 
 test('automatic club logos override unrelated server branding and render the saved crest', () => {
   assert.ok(fetchedLogos.some((url) => url.includes('palermo-logo-current.png')));
-  assert.ok(fetchedLogos.some((url) => url.includes('crest-palermo-1947-1968.png')));
+  assert.ok(fetchedLogos.some((url) => url.includes('palermo-logo-45.png')));
   assert.ok(fetchedLogos.every((url) => !url.includes('unrelated-badge')));
   const renderer = { esc: String, render: (svg) => svg };
   const svg = recruitmentPoster({ style: 'modern', clubName: 'PCN Palermo', headline: 'Join us', crest: testLogo }, renderer, palette('modern', {}));
