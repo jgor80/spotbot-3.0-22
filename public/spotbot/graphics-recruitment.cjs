@@ -78,7 +78,7 @@ function recruitmentPoster(d, G, p) {
   const spacing = /vintage|sicilia|gold|chrome/.test(f) ? ' letter-spacing="4"' : '';
 
   // Art rect + text anchor per layout
-  const art = layout === 'editorial' ? { x: 50, y: 420, w: 924, h: 640 }
+  const art = layout === 'editorial' ? { x: 50, y: 460, w: 924, h: 580 }
     : side ? { x: 440, y: 230, w: 540, h: 1180 } : { x: 50, y: 250, w: 924, h: 780 };
   const tx = side ? 70 : 80;
   let headY, posY, detY;
@@ -102,9 +102,9 @@ function recruitmentPoster(d, G, p) {
   const editorialBand = layout === 'editorial' ? `<rect x="50" y="230" width="924" height="190" fill="${t.bg}" opacity=".9"/>` : '';
   return G.render(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
     <rect width="${W}" height="${H}" fill="${t.bg}"/>
-    ${d.art ? `<image href="${d.art}" x="${art.x}" y="${art.y}" width="${art.w}" height="${art.h}" preserveAspectRatio="xMidYMin slice"/>` : ''}
-    ${t.paper && d.art ? `<rect x="${art.x}" y="${art.y}" width="${art.w}" height="${art.h}" fill="#c8a970" opacity=".18"/>` : ''}
     ${frame(f, t, accent, W, H)}
+    ${d.art ? `<image href="${d.art}" x="${art.x}" y="${art.y}" width="${art.w}" height="${art.h}" preserveAspectRatio="xMidYMid meet"/>` : ''}
+    ${t.paper && d.art ? `<rect x="${art.x}" y="${art.y}" width="${art.w}" height="${art.h}" fill="#c8a970" opacity=".18"/>` : ''}
     ${maskedPanel}${editorialBand}
     ${d.crest ? `<image href="${d.crest}" x="${crestX}" y="66" width="140" height="140" preserveAspectRatio="xMidYMid meet"/>` : ''}
     <text x="${clubX}" y="142" font-family="Oswald" font-weight="700" font-size="${Math.min(64, Math.floor((W - clubX - 80) / Math.max(d.clubName.length * .56, 1)))}" fill="${t.ink}"${spacing}>${esc(d.clubName.toUpperCase())}</text>
