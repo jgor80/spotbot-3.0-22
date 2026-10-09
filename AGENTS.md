@@ -13,3 +13,4 @@
 - Hidden EA stats come from match_event_aggregate codes, decoded identically in ea-player-stats.cjs and backfill_advanced_player_stats() (hourly); codes follow the refined OurProClub mapping in docs/ea-event-codes.md (deduplicated hockey assists, derived net possession and defensive stops), always shown as estimates.
 - Graphics Studio rules live in public/spotbot/AGENTS.md.
 - Recruiting artwork is aspect-fitted in a separate lettering-free region with decorative frames behind it, so generated groups are never cropped or covered by poster bands.
+- The /setup wizard (button → one modal in `club-setup.cjs`) saves EA link, accent colour and `club.kit` through the same helpers as /setclub and /brand, so onboarding never diverges from the individual commands.
