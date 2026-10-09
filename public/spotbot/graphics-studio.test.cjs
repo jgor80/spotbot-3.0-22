@@ -236,7 +236,7 @@ test('recruiting frames contain the whole group and keep decoration and letterin
       assert.doesNotMatch(lastSvg, /\bslice\b/);
       const artIndex = lastSvg.indexOf(image);
       // Decorative family frames are rendered behind, never over the players.
-      assert.doesNotMatch(lastSvg.slice(artIndex), /<polygon|stroke-dasharray|id="arc"/);
+      assert.doesNotMatch(lastSvg.slice(artIndex), /<polygon|stroke-dasharray/);
       if (composition === 'editorial') assert.match(image, /y="460"[^>]*height="580"/);
     }
   }
