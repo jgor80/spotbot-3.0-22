@@ -4055,6 +4055,18 @@ client.once(Events.ClientReady, async (c) => {
   }
 });
 
+// New members are added to every open, upcoming event so they appear on the
+// board and get deadline reminders (they could already answer via the buttons).
+client.on(Events.GuildMemberAdd, async (member) => {
+  try {
+    if (member.user?.bot) return;
+    const added = await clubEvents.addMemberToOpenEvents(member.guild.id, member.id);
+    if (added) console.log(`[Events] Added new member ${member.user.tag} to ${added} open event(s) in ${member.guild.name}`);
+  } catch (err) {
+    console.error('[Events] Failed to add new member to open events:', err.message);
+  }
+});
+
 // Sync guild names to guild_settings table
 async function syncGuildNames(discordClient) {
   try {
