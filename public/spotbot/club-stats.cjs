@@ -33,6 +33,8 @@ const CLUBSTATS_ACTION_CHOICES = [
   { name: 'Top players for a stat', value: 'top' },
   { name: 'In form: best over recent games', value: 'form' },
   { name: 'Recent matches', value: 'matches' },
+  { name: 'Overall team stats (EA)', value: 'team' },
+  { name: 'Full EA member list', value: 'ea_members' },
 ];
 const TOP_STAT_CHOICES = Object.entries(TOP_STATS).map(([value, s]) => ({ name: s.label, value }));
 
@@ -224,7 +226,7 @@ function formatStat(v, stat) {
 }
 
 function createClubStats(deps) {
-  const { supabase, getGuildState, fetchClubMembers, dashboardUrl } = deps;
+  const { supabase, getGuildState, fetchClubMembers, fetchClubOverall, fetchClubInfo, dashboardUrl } = deps;
   const namesCache = new Map();
 
   async function loadClubMatches(guildId, clubKey, limit = MATCH_WINDOW) {
@@ -365,6 +367,184 @@ function createClubStats(deps) {
     return { embeds: [embed] };
   }
 
+  // ---------- EA views: full member list and overall team stats, straight from EA ----------
+
+  function notLinked(club) {
+    return { content: `❌ **${club.name}** isn't linked to EA yet. Run **/setup → Club setup** or **/manager → Admin → Link EA Club**.` };
+  }
+  const pct = (v) => (v === undefined || v === null || v === '' ? '–' : `${Math.round(num(v))}%`);
+
+  async function eaMembersView(club) {
+    if (!club.ea_club_id) return notLinked(club);
+    const members = (await fetchClubMembers({ clubId: club.ea_club_id, platform: club.ea_platform }).catch(() => [])) || [];
+    if (!members.length) return { content: "📭 EA didn't send a member list just now. Try again in a minute." };
+    const rows = members
+      .map((m) => ({
+        name: String(m.name || m.proName || m.playername || '?').trim(),
+        pos: String(m.favoritePosition || m.proPos || '').slice(0, 3).toUpperCase(),
+        gp: num(m.gamesPlayed), g: num(m.goals), a: num(m.assists), motm: num(m.manOfTheMatch),
+        rtg: num(m.ratingAve), win: m.winRate, pass: m.passSuccessRate, tkl: num(m.tacklesMade),
+        cs: num(m.cleanSheetsGK) + num(m.cleanSheetsDef), ovr: num(m.proOverall),
+      }))
+      .sort((a, b) => b.gp - a.gp || b.g + b.a - (a.g + a.a));
+    const header = `${pad('Player', 14)} ${pad('Pos', 3)}  GP   G   A MOTM  Rtg Win% Pas% Tkl  CS`;
+    const lines = rows.map((r) => `${pad(r.name, 14)} ${pad(r.pos, 3)} ${String(r.gp).padStart(3)} ${String(r.g).padStart(3)} ${String(r.a).padStart(3)} ${String(r.motm).padStart(4)} ${r.rtg ? r.rtg.toFixed(1).padStart(4) : '   –'} ${pct(r.win).padStart(4)} ${pct(r.pass).padStart(4)} ${String(r.tkl).padStart(3)} ${String(r.cs).padStart(3)}`);
+    // Split the table across embeds so every member fits (Discord: 4096 chars per embed)
+    const embeds = [];
+    let chunk = [];
+    for (const line of lines) {
+      if ((chunk.join('\n').length + line.length + header.length + 20) > 3900) { embeds.push(chunk); chunk = []; }
+      chunk.push(line);
+    }
+    if (chunk.length) embeds.push(chunk);
+    const totals = rows.reduce((t, r) => ({ g: t.g + r.g, a: t.a + r.a, gp: Math.max(t.gp, r.gp) }), { g: 0, a: 0, gp: 0 });
+    return {
+      embeds: embeds.slice(0, 10).map((c, i) =>
+        new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle(i === 0 ? `👥 ${club.name}: EA member list (${rows.length})` : null)
+          .setDescription(`\`\`\`\n${header}\n${c.join('\n')}\n\`\`\``)
+          .setFooter(i === embeds.length - 1 ? { text: `Straight from EA's club member list · ${totals.g} goals, ${totals.a} assists across the squad · Win%/Pas% are EA's own rates` } : null)
+      ),
+    };
+  }
+
+  async function teamView(club) {
+    if (!club.ea_club_id) return notLinked(club);
+    const opts = { clubId: club.ea_club_id, platform: club.ea_platform };
+    const [o, info, members] = await Promise.all([
+      fetchClubOverall ? fetchClubOverall(opts).catch(() => null) : null,
+      fetchClubInfo ? fetchClubInfo(opts).catch(() => null) : null,
+      fetchClubMembers(opts).catch(() => []),
+    ]);
+    if (!o && !(members || []).length) return { content: "📭 EA didn't send club stats just now. Try again in a minute." };
+    const st = o || {};
+    const w = num(st.wins), d = num(st.ties ?? st.draws), l = num(st.losses);
+    const gp = num(st.gamesPlayed) || w + d + l;
+    const gf = num(st.goals), ga = num(st.goalsAgainst);
+    const list = members || [];
+    const sum = (k) => list.reduce((t, m) => t + num(m[k]), 0);
+    const top = (k) => { const m = [...list].sort((a, b) => num(b[k]) - num(a[k]))[0]; return m && num(m[k]) ? `${m.name || m.proName} (${num(m[k])})` : '–'; };
+    const topRtg = [...list].filter((m) => num(m.gamesPlayed) >= 5).sort((a, b) => num(b.ratingAve) - num(a.ratingAve))[0];
+    const f = (name, value) => ({ name, value: String(value ?? '–'), inline: true });
+    const embed = new EmbedBuilder()
+      .setTitle(`📊 ${info?.name || club.ea_club_name || club.name}: overall team stats`)
+      .setColor(0x22c55e)
+      .addFields(
+        f('Record (W-D-L)', gp ? `${w}-${d}-${l}` : '–'),
+        f('Games', gp || '–'),
+        f('Win rate', gp ? `${Math.round((100 * w) / gp)}%` : '–'),
+        f('Goals for / against', gp ? `${gf} / ${ga}` : '–'),
+        f('Goal difference', gp ? (gf - ga > 0 ? `+${gf - ga}` : gf - ga) : '–'),
+        f('Goals per game', gp ? (gf / gp).toFixed(2) : '–'),
+        f('Skill rating', st.skillRating || '–'),
+        f('Current division', st.currentDivision || '–'),
+        f('Best division', st.bestDivision || '–'),
+        f('Promotions / relegations', `${num(st.promotions)} / ${num(st.relegations)}`),
+        f('Win streak / unbeaten', `${num(st.wstreak)} / ${num(st.unbeatenstreak)}`),
+        f('Squad on EA', list.length || '–'),
+        f('Squad goals / assists', list.length ? `${sum('goals')} / ${sum('assists')}` : '–'),
+        f('Squad tackles', list.length ? sum('tacklesMade') : '–'),
+        f('Clean sheets (GK)', list.length ? sum('cleanSheetsGK') : '–'),
+        f('Top scorer', top('goals')),
+        f('Top assister', top('assists')),
+        f('Best rating (5+ GP)', topRtg ? `${topRtg.name || topRtg.proName} (${num(topRtg.ratingAve).toFixed(1)})` : '–'),
+      )
+      .setFooter({ text: "From EA's club stats and member list · /help explains each stat" });
+    return { embeds: [embed] };
+  }
+
+  // ---------- Stats panel: lives at the bottom of the club's player-stats channel ----------
+
+  const PANEL_MARK = '📊 Stats panel';
+  const panelIds = new Map();
+  const panelTimers = new Map();
+
+  function panelPayload(club) {
+    const embed = new EmbedBuilder()
+      .setTitle(`📊 ${club.name} stats`)
+      .setColor(0x22c55e)
+      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers')
+      .setFooter({ text: `${PANEL_MARK} · always stays at the bottom` });
+    const b = (id, label, emoji, style = ButtonStyle.Secondary) => new ButtonBuilder().setCustomId(`statsp:${id}:${club.key}`).setLabel(label).setEmoji(emoji).setStyle(style);
+    return {
+      embeds: [embed],
+      components: [
+        new ActionRowBuilder().addComponents(b('team', 'Team Stats', '📊', ButtonStyle.Primary), b('members', 'EA Member List', '👥', ButtonStyle.Primary)),
+        new ActionRowBuilder().addComponents(b('top', 'Top Players', '🏆'), b('form', 'In Form', '🔥'), b('matches', 'Recent Matches', '📅'), new ButtonBuilder().setCustomId('help_glossary').setLabel('What the stats mean').setEmoji('❓').setStyle(ButtonStyle.Secondary)),
+      ],
+    };
+  }
+
+  const panelChannelOf = (club) => (club.stats_panel === false ? null : club.stats_panel_channel_id || club.stats_channel_id || null);
+
+  async function repostPanel(channel, club) {
+    const oldId = panelIds.get(channel.id);
+    if (oldId) await channel.messages.delete(oldId).catch(() => {});
+    else {
+      const recent = await channel.messages.fetch({ limit: 30 }).catch(() => null);
+      for (const m of recent?.values() || []) {
+        if (m.author.id === channel.client.user.id && m.embeds[0]?.footer?.text?.includes(PANEL_MARK)) await m.delete().catch(() => {});
+      }
+    }
+    const sent = await channel.send(panelPayload(club));
+    panelIds.set(channel.id, sent.id);
+  }
+
+  async function onMessage(message) {
+    if (!message.guildId || panelIds.get(message.channelId) === message.id) return;
+    // Bot posts (recaps, stat answers) also push the panel down, so follow them too — but never our own panel
+    if (message.author?.id === message.client.user.id && message.embeds[0]?.footer?.text?.includes(PANEL_MARK)) return;
+    const state = await getGuildState(message.guildId).catch(() => null);
+    const club = activeClubs(state).find((c) => panelChannelOf(c) === message.channelId);
+    if (!club) return;
+    clearTimeout(panelTimers.get(message.channelId));
+    panelTimers.set(message.channelId, setTimeout(() => {
+      panelTimers.delete(message.channelId);
+      repostPanel(message.channel, club).catch((err) => console.warn('[stats panel] repost failed:', err.message));
+    }, 5000));
+  }
+
+  async function initPanels(client) {
+    for (const guild of client.guilds.cache.values()) {
+      const state = await getGuildState(guild.id).catch(() => null);
+      for (const club of activeClubs(state)) {
+        const id = panelChannelOf(club);
+        if (!id) continue;
+        const channel = await guild.channels.fetch(id).catch(() => null);
+        if (channel?.isTextBased()) await repostPanel(channel, club).catch((err) => console.warn('[stats panel] init failed:', err.message));
+      }
+    }
+  }
+
+  async function handlePanel(interaction) {
+    const [, action, clubKey] = interaction.customId.split(':');
+    const state = await getGuildState(interaction.guildId);
+    const club = activeClubs(state).find((c) => c.key === clubKey) || resolveClub(state, interaction.member);
+    if (!club) return interaction.reply({ content: '❌ That club is no longer set up.', flags: 64 });
+    if (action === 'top' && interaction.isButton()) {
+      return interaction.reply({
+        flags: 64,
+        components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`statsp:topsel:${club.key}`).setPlaceholder('Pick a stat').addOptions(TOP_STAT_CHOICES.map((c) => ({ label: c.name, value: c.value }))))],
+      });
+    }
+    if (action === 'topsel') {
+      await interaction.deferUpdate();
+      return interaction.editReply({ ...(await topView(interaction.guildId, club, interaction.values[0])), components: interaction.message.components });
+    }
+    await interaction.deferReply({ flags: 64 });
+    try {
+      const view =
+        action === 'team' ? await teamView(club)
+        : action === 'members' ? await eaMembersView(club)
+        : action === 'form' ? await formView(interaction.guildId, club)
+        : await matchesView(interaction.guildId, club);
+      return interaction.editReply(view);
+    } catch (err) {
+      return interaction.editReply({ content: `❌ Could not load stats: ${err.message}` });
+    }
+  }
+
   // ---------- /help ----------
 
   // One short page per area, picked from a menu (the TeamSheet layout): command + one line each
@@ -402,6 +582,10 @@ function createClubStats(deps) {
       await interaction.respond(await nameChoices(interaction.guildId, focused.value)).catch(() => {});
       return true;
     }
+    if ((interaction.isButton() || interaction.isStringSelectMenu()) && interaction.customId.startsWith('statsp:')) {
+      await handlePanel(interaction);
+      return true;
+    }
     if (interaction.isStringSelectMenu() && interaction.customId === 'help_page') {
       await interaction.update(helpPage(interaction.values[0]));
       return true;
@@ -417,7 +601,7 @@ function createClubStats(deps) {
     }
     if (interaction.commandName !== 'clubstats' || !interaction.guildId) return false;
     const action = interaction.options.getString('action');
-    if (!['members', 'top', 'form', 'matches'].includes(action)) return false;
+    if (!['members', 'top', 'form', 'matches', 'team', 'ea_members'].includes(action)) return false;
     const state = await getGuildState(interaction.guildId);
     const club = resolveClub(state, interaction.member);
     if (!club) {
@@ -428,7 +612,9 @@ function createClubStats(deps) {
     try {
       const guildId = interaction.guildId;
       const view =
-        action === 'members' ? await membersView(guildId, club)
+        action === 'team' ? await teamView(club)
+        : action === 'ea_members' ? await eaMembersView(club)
+        : action === 'members' ? await membersView(guildId, club)
         : action === 'top' ? await topView(guildId, club, interaction.options.getString('stat'))
         : action === 'form' ? await formView(guildId, club)
         : await matchesView(guildId, club);
@@ -439,7 +625,7 @@ function createClubStats(deps) {
     return true;
   }
 
-  return { handleInteraction, knownEaNames, matchKnownName, helpMessage, glossaryMessage, forgetNames: (guildId) => namesCache.delete(guildId) };
+  return { handleInteraction, onMessage, initPanels, teamView, eaMembersView, knownEaNames, matchKnownName, helpMessage, glossaryMessage, forgetNames: (guildId) => namesCache.delete(guildId) };
 }
 
 module.exports = { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES, GLOSSARY, aggregate };

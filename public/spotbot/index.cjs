@@ -261,6 +261,23 @@ async function fetchClubInfo(options) {
  * @param {Object} options - { clubId: string, platform: string }
  * @returns {Array} - Array of member objects
  */
+// EA's season totals for a club (wins, goals, division, skill rating...); null when EA doesn't answer
+async function fetchClubOverall(options) {
+  const { clubId, platform } = options;
+  try {
+    const res = await axios.get('https://proclubs.ea.com/api/fc/clubs/overallStats', {
+      params: { platform: toFcPlatform(platform), clubIds: clubId },
+      headers: EA_HEADERS, timeout: 10000, validateStatus: () => true
+    });
+    if (res.status !== 200 || !res.data) return null;
+    const d = res.data;
+    return Array.isArray(d) ? d.find((x) => String(x.clubId) === String(clubId)) || d[0] || null : d[clubId] || d;
+  } catch (err) {
+    console.error(`[EA] Overall stats error for ${clubId}:`, err.message);
+    return null;
+  }
+}
+
 async function fetchClubMembers(options) {
   const { clubId, platform } = options;
   const fcPlatform = toFcPlatform(platform);
@@ -402,7 +419,7 @@ const recruitCards = createRecruitCards({ supabase, getGuildState, recruitment }
 roster.setExtraFields(recruitCards.gapFields);
 
 // /help, /clubstats members|top|form|matches and the EA-name lookup behind /linkea
-const clubStats = createClubStats({ supabase, getGuildState, fetchClubMembers, dashboardUrl: process.env.DASHBOARD_URL });
+const clubStats = createClubStats({ supabase, getGuildState, fetchClubMembers, fetchClubOverall, fetchClubInfo, dashboardUrl: process.env.DASHBOARD_URL });
 
 const managerHub = createManagerHub({
   supabase,
@@ -478,12 +495,14 @@ installClientGuards(client);
 // Keep the Manager Hub pinned as the last message in each club's manager desk channel.
 client.on('messageCreate', (message) => {
   managerHub.onMessage(message).catch((err) => console.warn('[sticky] message hook failed:', err.message));
+  clubStats.onMessage(message).catch((err) => console.warn('[stats panel] message hook failed:', err.message));
   proPhotos.onMessage(message).catch((err) => console.warn('[pro-photos] failed:', err.message));
   graphicsStudio.onMessage(message).catch((err) => console.warn('[studio] failed:', err.message));
   clips.onMessage(message).catch((err) => console.warn('[clips] failed:', err.message));
 });
 client.once('ready', () => {
   setTimeout(() => managerHub.initSticky(client).catch((err) => console.warn('[sticky] init failed:', err.message)), 15000);
+  setTimeout(() => clubStats.initPanels(client).catch((err) => console.warn('[stats panel] init failed:', err.message)), 20000);
   setTimeout(() => graphicsStudio.init(client).catch((err) => console.warn('[studio] init failed:', err.message)), 20000);
 });
 
