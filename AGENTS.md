@@ -12,6 +12,7 @@
 - Season sets: `player_season_archive` (never purged) feed backs (`graphics-card-back.cjs`) plus exact-club EA total.
 - Hidden EA stats come from match_event_aggregate codes, decoded identically in ea-player-stats.cjs and backfill_advanced_player_stats() (hourly); codes follow the refined OurProClub mapping in docs/ea-event-codes.md (deduplicated hockey assists, derived net possession and defensive stops), always shown as estimates.
 - Graphics Studio rules live in public/spotbot/AGENTS.md.
+- Club-art filters original uploads before limiting queries and sends a stable face anchor before pose references; generated assets are display-only to prevent cumulative likeness drift.
 - Recruiting artwork is aspect-fitted in a separate lettering-free region with decorative frames behind it, so generated groups are never cropped or covered by poster bands.
 - The /setup wizard (button → one modal in `club-setup.cjs`) saves EA link, accent colour and `club.kit` through the same helpers as /setclub and /brand, so onboarding never diverges from the individual commands.
 - The stats panel (sticky, in `club-stats.cjs`) lives in each club's `stats_panel_channel_id` falling back to `stats_channel_id` (opt out with `stats_panel: false`); Team Stats and EA Member List read EA live so they always match EA's own numbers.
