@@ -2,6 +2,7 @@
 // what the AI could read from the screen (position, overall, archetype). Called only by the bot.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
+import { ManageBody, managePhotos } from "./manage.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -93,7 +94,14 @@ async function analyze(dataUrl: string) {
 
 Deno.serve(async (req) => {
   if (!SECRET || !safeEqual(req.headers.get("x-bot-secret") ?? "", SECRET)) return json({ error: "unauthorized" }, 401);
-  const parsed = Body.safeParse(await req.json().catch(() => null));
+  const input = await req.json().catch(() => null);
+  if (input?.action === "list" || input?.action === "delete") {
+    const management = ManageBody.safeParse(input);
+    if (!management.success) return json({ error: "Invalid photo management request." }, 400);
+    const result = await managePhotos(db, management.data);
+    return json(result.body, result.status);
+  }
+  const parsed = Body.safeParse(input);
   if (!parsed.success) return json({ error: parsed.error.flatten().fieldErrors }, 400);
   const { guild_id, discord_user_id, image_url, submitted_by } = parsed.data;
 

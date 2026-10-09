@@ -2,12 +2,47 @@
 // - Any image posted in a #pro-photos channel (or a club's pro_photos_channel_id) is analyzed
 //   and attached to the poster, or to the mentioned player when a manager posts it.
 // - /me → Pro Photo uploads one directly.
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const NAME_RE = /pro-?photos?/i;
 const IMAGE_RE = /^image\/(png|jpe?g|webp)$/;
 
 function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
+  async function manage(userId, action, extra = {}) {
+    if (!secret) return { error: 'Photo management is not configured.' };
+    try {
+      const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/pro-photo`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-bot-secret': secret },
+        body: JSON.stringify({ ...extra, action, discord_user_id: userId, requester_id: userId }),
+      });
+      const result = await res.json().catch(() => ({}));
+      return res.ok ? result : { error: typeof result.error === 'string' ? result.error : 'Could not manage your photos.' };
+    } catch { return { error: 'Could not reach your photo collection. Please try again.' }; }
+  }
+
+  function photoButton(owner, action, offset, id, label, style = ButtonStyle.Secondary) {
+    return new ButtonBuilder().setCustomId(`pph:${owner}:${action}:${offset}:${id || 'none'}`).setLabel(label).setStyle(style);
+  }
+
+  async function showPhotos(interaction, offset = 0, notice = '') {
+    let r = await manage(interaction.user.id, 'list', { offset });
+    if (!r.error && !r.photo && r.total > 0 && offset > 0) {
+      offset = Math.max(0, r.total - 1);
+      r = await manage(interaction.user.id, 'list', { offset });
+    }
+    if (r.error) return interaction.editReply({ content: r.error, embeds: [], components: [] });
+    if (!r.photo) return interaction.editReply({ content: `${notice ? `${notice}\n` : ''}You have no saved original pro photos.`, embeds: [], components: [] });
+    const p = r.photo;
+    const embed = new EmbedBuilder().setColor(0x3b82f6).setTitle(`My pro photos · ${offset + 1} of ${r.total}`)
+      .setDescription((p.description || 'Saved original pro photo').slice(0, 2000)).setImage(p.image_url)
+      .setFooter({ text: `Original upload · ${p.pose || 'unclassified pose'} · ${new Date(p.created_at).toLocaleDateString('en-US')}` });
+    const row = new ActionRowBuilder().addComponents(
+      photoButton(interaction.user.id, 'page', Math.max(0, offset - 1), null, 'Previous').setDisabled(offset === 0),
+      photoButton(interaction.user.id, 'page', offset + 1, null, 'Next').setDisabled(offset + 1 >= r.total),
+      photoButton(interaction.user.id, 'ask', offset, p.id, 'Delete photo', ButtonStyle.Danger),
+    );
+    await interaction.editReply({ content: notice || null, embeds: [embed], components: [row] });
+  }
   async function ingest({ guildId, userId, submittedBy, url }) {
     if (!secret) return { error: 'Photo uploads need BOT_PROXY_SECRET set on the bot.' };
     const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/pro-photo`, {
@@ -76,6 +111,32 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
   }
 
   async function handleInteraction(interaction) {
+    if (interaction.customId?.startsWith('pph:')) {
+      const [, owner, action, rawOffset, id] = interaction.customId.split(':');
+      if (owner !== interaction.user.id) {
+        await interaction.reply({ content: 'These are another player’s photo controls. Open /me → My Pro Photos for yours.', flags: 64 });
+        return true;
+      }
+      const offset = Number(rawOffset);
+      if (!Number.isInteger(offset) || offset < 0 || offset > 10000 || !['page', 'ask', 'cancel', 'delete'].includes(action)) return false;
+      await interaction.deferUpdate();
+      if (action === 'ask') {
+        await interaction.editReply({ content: 'Permanently delete this original photo? It will no longer guide new graphics. Saved cards and the original Discord message stay unchanged.', components: [new ActionRowBuilder().addComponents(
+          photoButton(owner, 'delete', offset, id, 'Confirm delete', ButtonStyle.Danger),
+          photoButton(owner, 'cancel', offset, null, 'Cancel'),
+        )] });
+      } else if (action === 'delete') {
+        const r = await manage(interaction.user.id, 'delete', { photo_asset_id: id });
+        if (r.error) await interaction.editReply({ content: r.error, embeds: [], components: [] });
+        else await showPhotos(interaction, offset, 'Photo deleted. Future graphics will use your remaining original uploads.');
+      } else await showPhotos(interaction, offset);
+      return true;
+    }
+    if (interaction.isChatInputCommand?.() && interaction.commandName === 'myphotos') {
+      await interaction.deferReply({ flags: 64 });
+      await showPhotos(interaction);
+      return true;
+    }
     if (!interaction.isChatInputCommand?.() || interaction.commandName !== 'prophoto') return false;
     const file = interaction.options.getAttachment('photo', true);
     if (!IMAGE_RE.test(file?.contentType || '')) {
@@ -94,6 +155,7 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
 }
 
 const PRO_PHOTO_COMMANDS = [
+  { name: 'myphotos', description: 'Privately browse and delete your own original pro photos.' },
   {
     name: 'prophoto',
     description: 'Upload a screenshot of your in-game pro for recap cards.',
