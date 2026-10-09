@@ -1,5 +1,6 @@
 
 ## Current
+- [ ] Fix player likeness drift by anchoring every new graphic to original saved player uploads; verify reference ordering and live artwork request
 - [x] Fix recruiting poster cropping across all styles and layouts; keep decorative bands behind group artwork
 - [x] Reuse saved rendered player cards in postgame, squad/TOTW imagery, profiles, player cards, leaderboard and lineups; authorize signed-front access and verify rendering/fallbacks
 - [x] Add verified year eras to Discord logo choices; distinguish custom era-inspired crests
