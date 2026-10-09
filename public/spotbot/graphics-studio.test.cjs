@@ -225,6 +225,23 @@ test('recruiting styles render bounded text without fabricated trial claims or s
   assert.deepEqual(logosFor({ name: 'Another club' }), []);
 });
 
+test('recruiting frames contain the whole group and keep decoration and lettering outside the art', () => {
+  for (const style of Object.keys(STYLES)) {
+    for (const composition of ['editorial', 'side-panel', 'lower-third']) {
+      recruitmentPoster({ style, composition, art: testLogo, clubName: 'PCN Palermo', headline: 'Become Palermo', positions: 'CB, DM, Vibe Captain', details: 'Join our club', contact: '' },
+        { esc: (s) => String(s), render: (svg) => { lastSvg = svg; return new Resvg(svg).render().asPng(); } }, palette(style, { primary: 'pink' }));
+      const image = lastSvg.match(/<image[^>]*x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)"[^>]*>/)?.[0];
+      assert.ok(image, `${style}/${composition} has artwork`);
+      assert.match(image, /preserveAspectRatio="xMidYMid meet"/);
+      assert.doesNotMatch(lastSvg, /\bslice\b/);
+      const artIndex = lastSvg.indexOf(image);
+      // Decorative family frames are rendered behind, never over the players.
+      assert.doesNotMatch(lastSvg.slice(artIndex), /<polygon|stroke-dasharray/);
+      if (composition === 'editorial') assert.match(image, /y="460"[^>]*height="580"/);
+    }
+  }
+});
+
 test('consecutive editions never repeat pose or layout; all compositions render', () => {
   let previous, before;
   const seen = new Set();

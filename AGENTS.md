@@ -12,3 +12,4 @@
 - Season sets: `player_season_archive` (never purged) feed backs (`graphics-card-back.cjs`) plus exact-club EA total.
 - Hidden EA stats come from match_event_aggregate codes, decoded identically in ea-player-stats.cjs and backfill_advanced_player_stats() (hourly); codes follow the refined OurProClub mapping in docs/ea-event-codes.md (deduplicated hockey assists, derived net possession and defensive stops), always shown as estimates.
 - Graphics Studio rules live in public/spotbot/AGENTS.md.
+- Recruiting artwork is aspect-fitted in a separate lettering-free region with decorative frames behind it, so generated groups are never cropped or covered by poster bands.
