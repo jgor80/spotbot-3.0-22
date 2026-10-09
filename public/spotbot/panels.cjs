@@ -57,6 +57,7 @@ const PLAYER_ACTIONS = [
   { id: 'myreliability', label: 'My Reliability', emoji: '📈', cmd: 'reliability' },
   { id: 'linkea', label: 'Link EA', emoji: '🎮', cmd: 'linkea' },
   { id: 'prophoto', label: 'Pro Photo', emoji: '📸', cmd: 'prophoto', fields: ['photo'], required: ['photo'] },
+  { id: 'myphotos', label: 'My Pro Photos', emoji: '🖼️', cmd: 'myphotos' },
   { id: 'linkxbox', label: 'Link Xbox', emoji: '🟩', cmd: 'linkxbox' },
   { id: 'fa', label: 'Free Agent', emoji: '🧲', cmd: 'fa', fields: ['status', 'position', 'secondary', 'platform', 'timezone'] },
   { id: 'fadetails', label: 'Free Agent Details', emoji: '📝', cmd: 'fa', fields: ['status', 'gamertag', 'notes'] },

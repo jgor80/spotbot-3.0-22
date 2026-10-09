@@ -7,6 +7,7 @@
 - Guild-authorized player-cards latest shares signed fronts for app/broadcast reuse; backs/collections stay owner-only. Recaps label single-match ratings separately from collection stats and use bundled position-based AI art as fallback.
 - Event announcement mentions are enabled only in postEvent; board updates and reposts suppress mentions so availability changes never notify the whole server again.
 - Pro photos are ingested only through the `pro-photo` function (bot secret, AI vision check, private storage with long-lived signed URLs); every accepted upload is retained in `pro_photo_assets`, while `pro_photos` stays as the latest-photo compatibility record.
+- Photo management in `pro-photo/manage.ts` requires the bot-authenticated requester to equal the owner, deletes only original uploads and their storage objects, and refreshes the compatibility photo; `/me` controls bind to the clicking user so saved cards stay untouched.
 - The bot requests Discord's Message Content intent (needed to see attachments for #pro-photos) and falls back to logging in without it if the portal toggle is off, so a missing toggle never takes the bot offline.
 - `fun-zone.cjs`: real-stat roasts, fiction-marked rumours.
 - Season sets: `player_season_archive` (never purged) feed backs (`graphics-card-back.cjs`) plus exact-club EA total.

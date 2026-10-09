@@ -1,5 +1,7 @@
 
 ## Current
+- [x] Add private player-owned photo browsing and confirmed deletion; refresh latest-photo fallback; five tests passed, live list returned photos and unauthorized deletion was denied
+- [ ] Make My Pro Photos available in the live Discord /me panel — blocked on Railway bot redeploy/access
 - [x] Fix player likeness drift by anchoring every new graphic to original saved player uploads; six tests passed and live AirDangus artwork verified with three original references
 - [x] Fix recruiting poster cropping across all styles and layouts; keep decorative bands behind group artwork
 - [x] Reuse saved rendered player cards in postgame, squad/TOTW imagery, profiles, player cards, leaderboard and lineups; authorize signed-front access and verify rendering/fallbacks
