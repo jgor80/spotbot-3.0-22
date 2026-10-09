@@ -11,7 +11,7 @@ export const isRearFacing = (description?: string | null) => /\b(rear(?:-facing)
 
 // Input is newest first. Stable face close-ups outrank pose variety: generated images are
 // display assets, never identity evidence. Keep the same anchor between creative editions.
-export function rankPhotos(assets: PhotoAsset[], pose: string, _kind: string, _club: string, _rng?: () => number) {
+export function rankPhotos<T extends PhotoAsset>(assets: T[], pose: string, _kind: string, _club: string, _rng?: () => number): T[] {
   const eligible = assets.filter((p) => p.source_kind === "upload" && !isRearFacing(p.analysis?.description));
   const score = (p: PhotoAsset) => p.pose === "profile" ? 4 : /close.?up|head.and.shoulders/i.test(p.analysis?.description || "") ? 3 : p.pose === pose ? 2 : 1;
   return eligible.map((asset, index) => ({ asset, index })).sort((a, b) => score(b.asset) - score(a.asset) || a.index - b.index).map(({ asset }) => asset);
