@@ -76,10 +76,10 @@ const AREAS = [
       { id: 'ev_quick_league', label: 'League Game', emoji: '⚽', cmd: 'event', sub: 'new', fields: ['when', 'title', 'description', 'formation'], required: ['when'], fixed: { type: 'league' }, style: 'success' },
       { id: 'ev_quick_byot', label: 'BYOT / Tournament', emoji: '🏆', cmd: 'event', sub: 'new', fields: ['when', 'title', 'description', 'formation'], required: ['when'], fixed: { type: 'tournament' }, style: 'success' },
       { id: 'ev_quick_friendly', label: 'Friendly', emoji: '🤝', cmd: 'event', sub: 'new', fields: ['when', 'title', 'description', 'formation'], required: ['when'], fixed: { type: 'friendly' } },
-      { id: 'ev_new', label: 'New Event', emoji: '➕', cmd: 'event', sub: 'new', ask: true, fields: ['when', 'title', 'type', 'ping', 'description'], style: 'primary' },
+      { id: 'ev_new', label: 'New Event', emoji: '➕', cmd: 'event', sub: 'new', ask: true, fields: ['when', 'title', 'type', 'description'], required: ['when'], style: 'primary' },
       { id: 'ev_preset', label: 'Event From Preset', emoji: '📎', cmd: 'event', sub: 'new', fields: ['preset', 'when', 'ping'], required: ['preset'] },
       { id: 'ev_list', label: 'Upcoming', emoji: '📅', cmd: 'event', sub: 'list' },
-      { id: 'ev_edit', label: 'Edit Event', emoji: '✏️', cmd: 'event', sub: 'edit' },
+      { id: 'ev_edit', label: 'Edit Event', emoji: '✏️', cmd: 'event', sub: 'edit', fields: ['event', 'when', 'title', 'description'] },
       { id: 'ev_post', label: 'Repost Board', emoji: '📌', cmd: 'event', sub: 'post' },
       { id: 'ev_remind', label: 'Remind', emoji: '🔔', cmd: 'event', sub: 'remind' },
       { id: 'ev_mark', label: 'Mark a Player', emoji: '☑️', cmd: 'event', sub: 'mark' },
@@ -309,6 +309,29 @@ function playerHub({ persistent = false } = {}) {
   return { embeds: [embed], components: actionButtons(PLAYER_ACTIONS) };
 }
 
+// Kick-off as two dropdowns (day + time) in the server's timezone instead of free text.
+// Required forms preselect today and the current time (rounded up to 5 minutes).
+function whenDropdowns(tz, preselect, now = new Date()) {
+  const parts = (d) => Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(d).map((p) => [p.type, p.value]));
+  const zoneName = (new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' }).formatToParts(now).find((p) => p.type === 'timeZoneName') || {}).value || tz;
+  const dayFmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long', month: 'short', day: 'numeric' });
+  const days = [];
+  for (let i = 0; i < 14; i++) {
+    const d = new Date(now.getTime() + i * 86400000);
+    const p = parts(d);
+    const name = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : null;
+    days.push({ label: (name ? `${name} · ${dayFmt.format(d)}` : dayFmt.format(d)).slice(0, 100), value: `${p.year}-${p.month}-${p.day}`, default: preselect && i === 0 });
+  }
+  const p = parts(now);
+  let mins = Number(p.hour) * 60 + Number(p.minute);
+  mins = Math.min(Math.ceil(mins / 5) * 5, 23 * 60 + 55);
+  const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const pretty = (m) => `${((Math.floor(m / 60) + 11) % 12) + 1}:${String(m % 60).padStart(2, '0')} ${m < 720 ? 'AM' : 'PM'}`;
+  const times = [{ label: `Right now · ${pretty(mins)} ${zoneName}`, value: hhmm(mins), default: !!preselect }];
+  for (let m = 12 * 60; m < 24 * 60; m += 30) if (m !== mins) times.push({ label: `${pretty(m)} ${zoneName}`, value: hhmm(m) });
+  return { days, times: times.slice(0, 25), zoneName };
+}
+
 function createPanels(deps) {
   const { schemas, isManager, dispatch } = deps;
   const schemaByName = new Map(schemas.map((c) => [c.name, c]));
@@ -382,6 +405,15 @@ function createPanels(deps) {
   async function buildForm(interaction, action, fields) {
     const modal = new ModalBuilder().setCustomId(`gp:m:${action.id}`).setTitle(action.label.slice(0, 45));
     for (const o of fields) {
+      if (o.name === 'when' && deps.timezoneFor) {
+        const tz = (await deps.timezoneFor(interaction.guildId).catch(() => null)) || 'UTC';
+        const req = !!o.required;
+        const { days, times, zoneName } = whenDropdowns(tz, req);
+        const sel = (id, ph, opts) => new StringSelectMenuBuilder().setCustomId(id).setRequired(req).setMinValues(req ? 1 : 0).setMaxValues(1).setPlaceholder(ph).addOptions(opts);
+        modal.addLabelComponents(new LabelBuilder().setLabel('Kick-off day').setDescription(`Times are ${tz.replace(/_/g, ' ')} (${zoneName}).`.slice(0, 100)).setStringSelectMenuComponent(sel('when__day', req ? 'Pick a day' : 'Keep current day', days)));
+        modal.addLabelComponents(new LabelBuilder().setLabel(`Kick-off time (${zoneName})`.slice(0, 45)).setDescription('Change the server timezone in /manager → Events → Timezone.').setStringSelectMenuComponent(sel('when__time', req ? 'Pick a time' : 'Keep current time', times)));
+        continue;
+      }
       const label = new LabelBuilder().setLabel(humanize(o.name).slice(0, 45));
       if (o.description) label.setDescription(o.description.slice(0, 100));
 
@@ -463,6 +495,16 @@ function createPanels(deps) {
     const values = {};
     const members = {};
     for (const o of formFields(action)) {
+      if (o.name === 'when' && deps.timezoneFor) {
+        let day, time;
+        try { day = interaction.fields.getStringSelectValues('when__day')[0]; } catch {}
+        try { time = interaction.fields.getStringSelectValues('when__time')[0]; } catch {}
+        if (day || time) {
+          if (!day || !time) return { error: 'Pick both a **day** and a **time** for kick-off.' };
+          values.when = `${day} ${time}`;
+        } else if (o.required) return { error: 'Pick a kick-off **day** and **time**.' };
+        continue;
+      }
       if (PICK_OR_TYPE.has(o.name) && o.autocomplete) {
         let typed = '';
         let picked;
