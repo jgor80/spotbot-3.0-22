@@ -99,7 +99,7 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
   assert.equal(styles.length, Object.keys(STYLES).length);
   await f.studio.handleInteraction(f.interaction('gs_style:recruit:palermo', 'select', { values: ['synthwave'] }));
   const logoMenu = f.requests.at(-1).components[0].toJSON().components[0];
-  assert.equal(logoMenu.options.length, 7);
+  assert.equal(logoMenu.options.length, 17);
   for (const option of logoMenu.options.filter((option) => option.value !== 'auto')) {
     assert.match(option.label, /\b(?:19|20)\d{2}(?:s|–(?:\d{4}|present))?\b/, `${option.value} includes its year era`);
     assert.ok(option.label.length <= 100, 'Era labels fit Discord’s option limit');
@@ -216,7 +216,9 @@ test('recruiting styles render bounded text without fabricated trial claims or s
     assert.doesNotMatch(lastSvg, /NaN|undefined|Friday|CHAMPIONS|EA MATCH DATA/);
   }
   const { logoFor, logosFor } = require('./club-logos.cjs');
-  assert.equal(logoFor({ name: 'PCN Palermo' }, 'vintage').key, 'heritage');
+  assert.equal(logoFor({ name: 'PCN Palermo' }, 'vintage').key, 'h1947');
+  assert.equal(logoFor({ name: 'PCN Palermo' }, 'retro1986').key, 'h1979');
+  assert.equal(logoFor({ name: 'Other FC' }, 'vintage'), null);
   assert.equal(logoFor({ name: 'PCN Palermo' }, 'modern').key, 'current');
   assert.equal(logoFor({ name: 'PCN Palermo' }, 'synthwave').key, 'current');
   assert.equal(logoFor({ name: 'PCN Palermo' }, 'modern', 'shield').key, 'shield');

@@ -5,6 +5,7 @@
 const { EmbedBuilder, PermissionsBitField } = require('discord.js');
 const { missingChannelPerms } = require('./perm-check.cjs');
 const { activeClubs } = require('./manager-hub.cjs');
+const { parseCrestHistory } = require('./club-logos.cjs');
 
 const F = PermissionsBitField.Flags;
 const SERVER_PERMS = [
@@ -30,6 +31,8 @@ const SETUP_COMMANDS = [
       { name: 'footer', description: 'Footer text on boards and team sheets.', type: 3, required: false, max_length: 100 },
       { name: 'lineup_title', description: 'Team sheet title, e.g. "{team} Matchday XI".', type: 3, required: false, max_length: 100 },
       { name: 'logo_url', description: 'https link to your crest, shown on team sheets.', type: 3, required: false },
+      { name: 'crest_history', description: 'Crest-history page link (e.g. worldsoccerpins.com) — imports every era crest.', type: 3, required: false },
+      { name: 'clear_crests', description: 'Remove imported era crests.', type: 5, required: false },
       { name: 'nickname', description: "The bot's name in this server.", type: 3, required: false, max_length: 32 },
       { name: 'avatar', description: "The bot's picture in this server (PNG, JPG or GIF).", type: 11, required: false },
       { name: 'reset', description: 'Go back to the default look.', type: 5, required: false },
@@ -225,6 +228,21 @@ function createClubSetup(deps) {
     if (logo) {
       if (!/^https:\/\/\S+$/i.test(logo.trim())) return interaction.editReply({ content: '❌ The logo must be an https link to an image.' });
       branding.logo_url = logo.trim();
+    }
+
+    if (interaction.options.getBoolean('clear_crests')) { delete branding.crests; notes.push('Imported era crests removed.'); }
+    const history = interaction.options.getString('crest_history');
+    if (history) {
+      if (!/^https:\/\/\S+$/i.test(history.trim())) return interaction.editReply({ content: '❌ The crest history must be an https link.' });
+      try {
+        const res = await fetch(history.trim(), { headers: { 'user-agent': 'Mozilla/5.0' } });
+        const crests = parseCrestHistory(await res.text(), history.trim());
+        if (!crests.length) return interaction.editReply({ content: "❌ I couldn't find crests with year ranges on that page. Try the club's worldsoccerpins.com historical-crests page." });
+        branding.crests = crests;
+        notes.push(`🛡️ Imported **${crests.length}** era crests (${crests[0].from}–${crests.at(-1).to === 9999 ? 'present' : crests.at(-1).to}). Card styles now use the crest from their own era.`);
+      } catch (err) {
+        return interaction.editReply({ content: `❌ Couldn't load that page: ${err.message}` });
+      }
     }
 
     const nickname = interaction.options.getString('nickname');

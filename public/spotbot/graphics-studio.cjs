@@ -271,7 +271,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   const CREST_CACHE = new Map(); // ea:<clubId> -> data url | null
   async function crestFor(guildId, club, style, logoKey) {
     const prefs = serverPrefs ? await serverPrefs(guildId).catch(() => ({})) : {};
-    const selected = logoFor(club, style, logoKey);
+    const selected = logoFor(club, style, logoKey, prefs?.branding);
     // Uploaded club identities take precedence even for Automatic; server branding may be an unrelated EA badge.
     const url = selected ? assetUrl(selected.url) : prefs?.branding?.logo_url;
     if (url) {
@@ -899,9 +899,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       if (kind === 'recruit') {
         const token = saveDraft({ kind, clubKey: club.key, style, userId: interaction.user.id,
           data: { headline: 'JOIN OUR CLUB', positions: '', details: '', contact: '', featured: '' } });
-        const logos = logosFor(club);
+        const brandPrefs = serverPrefs ? await serverPrefs(interaction.guildId).catch(() => ({})) : {};
+        const logos = logosFor(club, brandPrefs?.branding);
         await update(logos.length ? { content: 'Pick your club logo:', components: [pickRow(`gs_rlogo:${token}`, 'Club logo',
-          [{ label: 'Automatic — match the style', value: 'auto' }, ...logos.map((l) => ({ label: l.label, value: l.key }))])] } : draftPrompt(token, kind, club));
+          [{ label: 'Automatic — match the style', value: 'auto' }, ...logos.map((l) => ({ label: l.label.slice(0, 100), value: l.key }))])] } : draftPrompt(token, kind, club));
         return true;
       }
       if (kind === 'banner') {
