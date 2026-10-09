@@ -1597,8 +1597,37 @@ function createEvents(deps) {
     return false;
   }
 
+  // Add a freshly joined member to every open, upcoming event in the guild as
+  // "no_response" so they appear on the board and get deadline reminders.
+  // Anyone can answer via the buttons regardless — this just makes them visible.
+  async function addMemberToOpenEvents(guildId, userId) {
+    const now = new Date().toISOString();
+    const { data: open, error } = await supabase
+      .from('availability_events')
+      .select('id')
+      .eq('guild_id', guildId)
+      .eq('closed', false)
+      .eq('cancelled', false)
+      .gt('scheduled_at', now);
+    if (error || !open?.length) return 0;
+    const rows = open.map((e) => ({
+      event_id: e.id,
+      discord_user_id: userId,
+      response: 'no_response',
+    }));
+    const { error: upErr } = await supabase
+      .from('player_availability')
+      .upsert(rows, { onConflict: 'event_id,discord_user_id', ignoreDuplicates: true });
+    if (upErr) {
+      console.error('[events] addMemberToOpenEvents failed:', upErr.message);
+      return 0;
+    }
+    return open.length;
+  }
+
   return {
     commands: EVENT_COMMANDS,
+    addMemberToOpenEvents,
     handleInteraction,
     start,
     buildEventList,
