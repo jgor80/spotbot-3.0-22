@@ -22,6 +22,7 @@ function due(job, d) {
 function startScheduler({ supabase, callFunction }) {
   if (process.env.SCHEDULER === 'off') return;
   const running = new Set();
+  const warned = new Set();
   let lastMinute = -1;
   const run = async (job) => {
     if (running.has(job.name)) return;
@@ -29,7 +30,8 @@ function startScheduler({ supabase, callFunction }) {
     try {
       for (const name of job.rpc || []) {
         const { error } = await supabase.rpc(name);
-        if (error) console.error(`⏰ ${job.name}: ${name} failed:`, error.message);
+        if (error && !warned.has(name)) { warned.add(name); console.error(`⏰ ${job.name}: ${name} failed (logged once):`, error.message); }
+        else if (!error) warned.delete(name);
       }
       if (job.fn) {
         const { error } = await callFunction(job.fn, job.body, 280000);
