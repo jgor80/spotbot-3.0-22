@@ -21,12 +21,16 @@ export default function AuthCallback() {
       if (params.get("error")) return setError("Discord sign-in was cancelled.");
       if (!code || !state || state !== expected) return setError("Sign-in link is invalid or expired. Please try again.");
       sessionStorage.removeItem("discord_oauth_state");
-      const { data, error } = await discordAuthApi<{ token_hash?: string }>({
-        code, redirect_uri: `${window.location.origin}/auth/callback`,
-      });
-      if (error || !data?.token_hash) return setError(error || "Discord sign-in failed. Please try again.");
-      const { error: vErr } = await supabase.auth.verifyOtp({ token_hash: data.token_hash, type: "magiclink" });
-      if (vErr) return setError(vErr.message);
+      try {
+        const { data, error } = await discordAuthApi<{ token_hash?: string }>({
+          code, redirect_uri: `${window.location.origin}/auth/callback`,
+        });
+        if (error || !data?.token_hash) return setError(error || "Discord sign-in failed. Please try again.");
+        const { error: vErr } = await supabase.auth.verifyOtp({ token_hash: data.token_hash, type: "magiclink" });
+        if (vErr) return setError(vErr.message);
+      } catch {
+        return setError("Couldn't reach the server. Please try again.");
+      }
       const next = sessionStorage.getItem("auth_next") || "/";
       sessionStorage.removeItem("auth_next");
       navigate(next.startsWith("/") && !next.startsWith("//") ? next : "/", { replace: true });
