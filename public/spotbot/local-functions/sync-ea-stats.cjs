@@ -1340,7 +1340,10 @@ async function syncTrackedGameStatsToClubStats(supabase, guildId, clubKey) {
     const { data: clubMatches } = await supabase.from("club_matches").select("ea_match_id").eq("guild_id", guildId).eq("club_key", clubKey);
     if (!clubMatches || clubMatches.length === 0) return 0;
     const clubMatchIds = clubMatches.map((m) => m.ea_match_id);
-    const { data: playerStats, error: statsError } = await supabase.from("player_stats").select(`
+    const playerStats = [];
+    let statsError = null;
+    for (let i = 0; i < clubMatchIds.length && !statsError; i += 50) {
+      const { data, error } = await supabase.from("player_stats").select(`
         discord_user_id,
         goals,
         assists,
@@ -1370,7 +1373,10 @@ async function syncTrackedGameStatsToClubStats(supabase, guildId, clubKey) {
         position_played,
         archetypeid,
         ea_match_id
-      `).eq("guild_id", guildId).in("ea_match_id", clubMatchIds);
+      `).eq("guild_id", guildId).in("ea_match_id", clubMatchIds.slice(i, i + 50));
+      if (error) statsError = error;
+      else playerStats.push(...data || []);
+    }
     if (statsError) {
       console.error(`[sync-ea-stats] Error fetching player_stats for club ${clubKey}:`, statsError);
       return 0;
