@@ -14,6 +14,7 @@ import { Loader2 } from "lucide-react";
 const Index = lazy(() => import("./pages/Index"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
 const AuthCallback = lazy(() => import("./pages/AuthCallback"));
+const XboxCallback = lazy(() => import("./pages/XboxCallback"));
 const LinkInvitePage = lazy(() => import("./pages/LinkInvitePage"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
@@ -55,6 +56,7 @@ const App = () => (
                 <Routes>
                   <Route path="/auth" element={<AuthPage />} />
                   <Route path="/auth/callback" element={<AuthCallback />} />
+                  <Route path="/auth/xbox" element={<XboxCallback />} />
                   <Route path="/link/:token" element={<LinkInvitePage />} />
                   {/* OBS browser source for /premium overlay: public, token in the URL */}
                   <Route path="/overlay/:token" element={<StreamOverlay />} />
