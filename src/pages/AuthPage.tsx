@@ -71,7 +71,7 @@ export default function AuthPage() {
     window.location.href = `https://discord.com/oauth2/authorize?${params}`;
   };
 
-  const handleOAuth = async (provider: "google" | "microsoft") => {
+  const handleOAuth = async (provider: "google") => {
     setError(null);
     setIsLoading(true);
     const result = await lovable.auth.signInWithOAuth(provider, {
@@ -155,33 +155,24 @@ export default function AuthPage() {
           <div className="space-y-3 mb-4">
             <Button
               type="button"
-              className="w-full"
+              size="lg"
+              className="w-full h-12 text-base font-semibold"
               disabled={isLoading}
               onClick={handleDiscord}
             >
+              <DiscordIcon className="mr-2 h-5 w-5" />
               Continue with Discord
             </Button>
             {LOVABLE_HOSTED && (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  disabled={isLoading}
-                  onClick={() => handleOAuth("google")}
-                >
-                  Continue with Google
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  disabled={isLoading}
-                  onClick={() => handleOAuth("microsoft")}
-                >
-                  Continue with Microsoft / Xbox
-                </Button>
-              </>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={isLoading}
+                onClick={() => handleOAuth("google")}
+              >
+                Continue with Google
+              </Button>
             )}
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
