@@ -34,6 +34,7 @@ const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
 const { createEventLineup } = require('./event-lineup.cjs');
 const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
 const { createProPhotos, PRO_PHOTO_COMMANDS } = require('./pro-photos.cjs');
+const { createAiAccess, AI_ACCESS_COMMANDS } = require('./ai-access.cjs');
 const { createGraphicsStudio } = require('./graphics-studio.cjs');
 const { createAutopilot, AUTOPILOT_COMMANDS } = require('./autopilot.cjs');
 const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
@@ -429,6 +430,7 @@ const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, c
 
 const autoLink = createAutoLink({ supabase, getGuildState, isManager });
 const proPhotos = createProPhotos({ supabaseUrl, secret: BOT_PROXY_SECRET, getGuildState, isManager });
+const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
 const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: BOT_PROXY_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g) });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
 
@@ -947,6 +949,7 @@ const ACTION_SCHEMAS = [
   ...AUTOPILOT_COMMANDS,
   ...SETUP_COMMANDS,
   ...PRO_PHOTO_COMMANDS,
+  ...AI_ACCESS_COMMANDS,
   ...RECRUIT_COMMANDS,
   ...SCOUT_COMMANDS,
   ...TRIAL_COMMANDS,
@@ -4315,6 +4318,7 @@ async function routeInteraction(interaction) {
     // Events: /event, /available, autocomplete, and board buttons (also used from reminder DMs)
     if (await autoLink.handleInteraction(interaction)) return;
     if (await proPhotos.handleInteraction(interaction)) return;
+    if (await aiAccess.handleInteraction(interaction)) return;
     if (await graphicsStudio.handleInteraction(interaction)) return;
     if (await funZone.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
