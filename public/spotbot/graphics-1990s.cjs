@@ -44,7 +44,7 @@ function render1990sCard(d, G, accent) {
       <text x="276" y="1298" font-family="Oswald" font-weight="700" font-size="${fit(name, 676, 54)}" fill="${C.ink}">${esc(name)}</text>
       <text x="130" y="1298" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${fit(pos, 150, 38)}" fill="${C.ink}">${esc(pos)}</text>` : ''}
     ${stats.map(([label, value], i) => `<text x="${54 + 916 / stats.length * (i + 0.5)}" y="1363" text-anchor="middle" font-family="Oswald" font-size="24" font-weight="700" fill="${C.ink}">${esc(value)}</text><text x="${54 + 916 / stats.length * (i + 0.5)}" y="1384" text-anchor="middle" font-family="Oswald" font-size="13" fill="${C.ink}">${esc(label)}</text>`).join('')}
-    <text x="512" y="1414" text-anchor="middle" font-family="Inter" font-size="12" fill="${C.ink}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · SPOTBOT STUDIO</text>
+    <text x="512" y="1414" text-anchor="middle" font-family="Inter" font-size="12" fill="${C.ink}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · GAFFERBOT STUDIO</text>
   </svg>`);
 }
 module.exports = { render1990sCard };

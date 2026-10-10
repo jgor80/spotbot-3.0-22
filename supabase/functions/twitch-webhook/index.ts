@@ -14,7 +14,8 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const DISCORD_BOT_TOKEN = Deno.env.get("DISCORD_BOT_TOKEN");
 
 // Message signing secret provided by Twitch when subscribing
-const TWITCH_MESSAGE_SECRET = Deno.env.get("TWITCH_WEBHOOK_SECRET") || "squadiq_twitch_webhook_secret_2024";
+// No fallback: a default secret in a public repo would let anyone forge Twitch notifications.
+const TWITCH_MESSAGE_SECRET = Deno.env.get("TWITCH_WEBHOOK_SECRET") ?? "";
 
 const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -166,6 +167,14 @@ Deno.serve(async (req) => {
   if (path === "setup" || path === "remove" || path === "list") {
     const denied = await rejectUnlessCaller(req, { botOnly: true });
     if (denied) return denied;
+  }
+
+  if (TWITCH_MESSAGE_SECRET.length < 10) {
+    console.error("[twitch-webhook] TWITCH_WEBHOOK_SECRET is not set; refusing to run");
+    return new Response(
+      JSON.stringify({ error: "Twitch alerts are not configured on the server yet" }),
+      { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   try {

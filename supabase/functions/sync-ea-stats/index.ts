@@ -1,3 +1,4 @@
+import { identifyCaller, requireGuildAccess } from '../_shared/auth.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { decodeRegionId, toFcPlatform, FC_PLATFORMS, normalizeClubName } from '../_shared/ea.ts'
 
@@ -1879,6 +1880,25 @@ Deno.serve(async (req) => {
     // The scheduled run syncs every monitored club; the web and bot can ask for one guild or club
     const onlyGuildId = typeof requestBody?.guild_id === 'string' && /^\d{17,19}$/.test(requestBody.guild_id) ? requestBody.guild_id : null
     const onlyClubKey = onlyGuildId && typeof requestBody?.club_key === 'string' ? requestBody.club_key : null
+
+    // Who may start a sync: the bot, a member of the one server being synced, or the scheduled job
+    // (x-cron-secret = CRON_SECRET). Until CRON_SECRET is set the scheduled job still runs on the
+    // public key, so anonymous full syncs stay allowed only in that case.
+    const caller = await identifyCaller(req, supabase)
+    const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
+    const isCron = cronSecret.length >= 24 && (req.headers.get('x-cron-secret') ?? '') === cronSecret
+    if (caller?.kind === 'user') {
+      if (!onlyGuildId) {
+        return new Response(JSON.stringify({ error: 'guild_id is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+      const denied = await requireGuildAccess(req, supabase, onlyGuildId, 'member')
+      if (denied) return denied
+    } else if (!caller && !isCron) {
+      if (cronSecret) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+      console.warn('[sync-ea-stats] Unauthenticated call accepted because CRON_SECRET is not set')
+    }
     
     console.log(`[sync-ea-stats] Starting ${syncType} EA sync...`)
     

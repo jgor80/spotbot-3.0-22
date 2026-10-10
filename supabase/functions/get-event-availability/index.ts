@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireGuildAccess } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,6 +40,10 @@ serve(async (req) => {
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Only the bot or members of the event's server may read who is available
+    const denied = await requireGuildAccess(req, supabase, event.guild_id, "member");
+    if (denied) return denied;
 
     // Get all responses
     const { data: responses } = await supabase

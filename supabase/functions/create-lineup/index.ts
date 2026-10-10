@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createAdminClient, identifyCaller } from "../_shared/auth.ts";
+import { createAdminClient, identifyCaller, requireGuildAccess } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -94,6 +94,8 @@ serve(async (req) => {
 
     const body = await req.json();
     if (caller.kind === "user") {
+      const denied = await requireGuildAccess(req, supabase, body.guild_id, "leader");
+      if (denied) return denied;
       body.created_by_discord_id = `web:${caller.userId}`;
     } else if (!body.created_by_discord_id) {
       return new Response(

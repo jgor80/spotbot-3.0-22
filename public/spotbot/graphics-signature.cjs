@@ -29,7 +29,7 @@ function renderSignatureCard(d, G, accent) {
     const x = 70 + (884 / stats.length) * (i + 0.5);
     return `<text x="${x}" y="${y}" text-anchor="middle" font-family="${mono ? 'Inter' : 'Oswald'}" font-weight="700" font-size="30" fill="${color}">${esc(v)}</text><text x="${x}" y="${y + 24}" text-anchor="middle" font-family="Inter" font-size="13" letter-spacing="2" fill="${labelColor}">${esc(l)}</text>`;
   }).join('');
-  const footer = (fill) => `<text x="512" y="1416" text-anchor="middle" font-family="Inter" font-size="12" letter-spacing="1" fill="${fill}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · SPOTBOT STUDIO</text>`;
+  const footer = (fill) => `<text x="512" y="1416" text-anchor="middle" font-family="Inter" font-size="12" letter-spacing="1" fill="${fill}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · GAFFERBOT STUDIO</text>`;
   const tag = d.tagline ? esc(String(d.tagline).slice(0, 60)) : '';
   let body = '';
 

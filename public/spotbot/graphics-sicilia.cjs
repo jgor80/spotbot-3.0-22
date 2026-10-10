@@ -58,7 +58,7 @@ function renderSiciliaCard(d, G, accent = C.pink) {
     ${pos ? `<g transform="translate(870 1150)"><rect x="-70" y="-36" width="140" height="56" rx="28" fill="${C.pink}" stroke="${C.ivory}" stroke-width="3"/><text y="6" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="30" fill="${C.black}">${esc(pos)}</text></g>` : ''}
     ${stats.length ? stats.map(([l, v], i) => `<text x="${640 + i * 82}" y="1300" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="28" fill="${C.ivory}">${esc(v)}</text><text x="${640 + i * 82}" y="1318" text-anchor="middle" font-family="Inter" font-size="10" fill="${C.gold}">${esc(String(l).slice(0, 9))}</text>`).join('') : ''}
     <rect width="1024" height="1434" fill="url(#ageS)"/>
-    <text x="512" y="1416" text-anchor="middle" font-family="Inter" font-size="12" fill="${C.ink}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · SPOTBOT STUDIO</text>
+    <text x="512" y="1416" text-anchor="middle" font-family="Inter" font-size="12" fill="${C.ink}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · GAFFERBOT STUDIO</text>
   </svg>`);
 }
 
@@ -92,7 +92,7 @@ function renderSiciliaBack(d, G) {
     <g transform="translate(1180 700)"><path d="M-130 -34 H130 L110 0 L130 34 H-130 L-110 0 Z" fill="${C.gold}" stroke="${C.black}" stroke-width="3"/><text y="11" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="30" letter-spacing="8" fill="${C.black}">SICILIA</text></g>
     ${skyline(980, C.pink)}
     <rect x="34" y="900" width="1366" height="90" fill="${C.black}" opacity="0.9"/>
-    <text x="717" y="955" text-anchor="middle" font-family="Inter" font-size="18" fill="${C.ivory}">La Leggenda is playful fiction, not real biography · Stats from saved club data · SPOTBOT STUDIO</text>
+    <text x="717" y="955" text-anchor="middle" font-family="Inter" font-size="18" fill="${C.ivory}">La Leggenda is playful fiction, not real biography · Stats from saved club data · GAFFERBOT STUDIO</text>
     <rect width="1434" height="1024" fill="url(#ageS)"/>
   </svg>`);
 }

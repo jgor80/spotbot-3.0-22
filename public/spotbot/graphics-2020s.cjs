@@ -54,7 +54,7 @@ function render2020sCard(d, G, accent) {
       <path d="M240 1220 H899" stroke="${accent}" stroke-width="4"/>
       <text x="894" y="1260" text-anchor="end" font-family="Oswald" font-size="${fit(pos, 630, 27)}" fill="${C.white}">${esc(pos)}</text>` : ''}
     ${stats.map(([label, value], i) => `<text x="${54 + 916 / stats.length * (i + 0.5)}" y="1364" text-anchor="middle" font-family="Oswald" font-size="24" font-weight="700" fill="${mosaic || sculpted ? C.ink : C.white}">${esc(value)}</text><text x="${54 + 916 / stats.length * (i + 0.5)}" y="1385" text-anchor="middle" font-family="Oswald" font-size="13" fill="${mosaic || sculpted ? C.ink : C.white}">${esc(label)}</text>`).join('')}
-    <text x="512" y="1416" text-anchor="middle" font-family="Inter" font-size="12" fill="${mosaic || sculpted ? C.ink : C.white}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · SPOTBOT STUDIO</text>
+    <text x="512" y="1416" text-anchor="middle" font-family="Inter" font-size="12" fill="${mosaic || sculpted ? C.ink : C.white}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · GAFFERBOT STUDIO</text>
   </svg>`);
 }
 module.exports = { render2020sCard };

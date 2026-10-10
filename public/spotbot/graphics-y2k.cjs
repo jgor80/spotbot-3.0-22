@@ -42,7 +42,7 @@ function renderY2kCard(d, G, accent) {
       <text x="620" y="1303" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${fit(name, 650, 60)}" fill="${C.light}">${esc(name)}</text>` : `<text x="512" y="1274" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${fit(name, 868, 68)}" fill="${C.ink}">${esc(name)}</text>
       <text x="512" y="1316" text-anchor="middle" font-family="Oswald" font-size="${fit(pos, 860, 30)}" fill="${C.dark}">${esc(pos)}</text>`}
     ${stats.map(([label, value], i) => `<text x="${54 + 916 / stats.length * (i + 0.5)}" y="1366" text-anchor="middle" font-family="Oswald" font-size="24" font-weight="700" fill="${C.ink}">${esc(value)}</text><text x="${54 + 916 / stats.length * (i + 0.5)}" y="1387" text-anchor="middle" font-family="Oswald" font-size="13" fill="${C.ink}">${esc(label)}</text>`).join('')}
-    <text x="512" y="1420" text-anchor="middle" font-family="Inter" font-size="12" fill="${circles ? C.ink : C.light}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · SPOTBOT STUDIO</text>
+    <text x="512" y="1420" text-anchor="middle" font-family="Inter" font-size="12" fill="${circles ? C.ink : C.light}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · GAFFERBOT STUDIO</text>
   </svg>`);
 }
 module.exports = { renderY2kCard };

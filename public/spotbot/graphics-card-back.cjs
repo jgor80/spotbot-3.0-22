@@ -48,7 +48,7 @@ function renderCardBack(d, G) {
     ${cols.map(([l], i) => `<text x="${xs[i]}" y="282" ${i ? 'text-anchor="middle"' : ''} font-family="Oswald" font-size="24" letter-spacing="3" fill="${t.sub}">${l}</text>`).join('')}
     <line x1="80" x2="1354" y1="298" y2="298" stroke="${t.line}" stroke-width="3"/>
     ${body}${totals}${empty}
-    <text x="717" y="950" text-anchor="middle" font-family="Inter" font-size="18" fill="${t.sub}">${esc(`Season rows from saved competitive matches${tot ? ' · Club total from the official EA Member List' : ''}${d.edited ? ' · front stats member-edited' : ''} · SPOTBOT STUDIO`)}</text>
+    <text x="717" y="950" text-anchor="middle" font-family="Inter" font-size="18" fill="${t.sub}">${esc(`Season rows from saved competitive matches${tot ? ' · Club total from the official EA Member List' : ''}${d.edited ? ' · front stats member-edited' : ''} · GAFFERBOT STUDIO`)}</text>
   </svg>`);
 }
 
