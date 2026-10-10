@@ -32,7 +32,8 @@ http_ok() {
 }
 
 record() { # name ok|fail detail
-  local name=$1 result=$2 detail=${3:-} f="$STATE_DIR/$1" prev
+  local name=$1 result=$2 detail=${3:-} f prev
+  f="$STATE_DIR/$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '_')"
   prev=$(cat "$f" 2>/dev/null || echo 0)
   if [ "$result" = ok ]; then
     [ "$prev" -ge 2 ] && notify ":green_circle: $name recovered on $(hostname)"
