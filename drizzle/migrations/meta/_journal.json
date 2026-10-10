@@ -78,6 +78,13 @@
       "when": 1791490569045,
       "tag": "0010_refined_pro_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791614632188,
+      "tag": "0011_profiles_auth_accounts",
+      "breakpoints": true
     }
   ]
 }

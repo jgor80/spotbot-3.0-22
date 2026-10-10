@@ -3408,13 +3408,16 @@ export type Database = {
       }
       profiles: {
         Row: {
+          auth_user_id: string | null
+          avatar_url: string | null
           career_appearances: number | null
           career_assists: number | null
           career_goals: number | null
           created_at: string
           discord_avatar: string | null
-          discord_user_id: string
+          discord_user_id: string | null
           discord_username: string | null
+          display_name: string | null
           ea_persona_id: string | null
           ea_platform: string | null
           ea_username: string | null
@@ -3422,6 +3425,8 @@ export type Database = {
           link_dm_sent_at: string | null
           preferred_position: string | null
           primary_position: string | null
+          psn_id: string | null
+          sign_in_provider: string | null
           updated_at: string
           xbox_gamertag: string | null
           xbox_last_game: string | null
@@ -3429,13 +3434,16 @@ export type Database = {
           xbox_xuid: string | null
         }
         Insert: {
+          auth_user_id?: string | null
+          avatar_url?: string | null
           career_appearances?: number | null
           career_assists?: number | null
           career_goals?: number | null
           created_at?: string
           discord_avatar?: string | null
-          discord_user_id: string
+          discord_user_id?: string | null
           discord_username?: string | null
+          display_name?: string | null
           ea_persona_id?: string | null
           ea_platform?: string | null
           ea_username?: string | null
@@ -3443,6 +3451,8 @@ export type Database = {
           link_dm_sent_at?: string | null
           preferred_position?: string | null
           primary_position?: string | null
+          psn_id?: string | null
+          sign_in_provider?: string | null
           updated_at?: string
           xbox_gamertag?: string | null
           xbox_last_game?: string | null
@@ -3450,13 +3460,16 @@ export type Database = {
           xbox_xuid?: string | null
         }
         Update: {
+          auth_user_id?: string | null
+          avatar_url?: string | null
           career_appearances?: number | null
           career_assists?: number | null
           career_goals?: number | null
           created_at?: string
           discord_avatar?: string | null
-          discord_user_id?: string
+          discord_user_id?: string | null
           discord_username?: string | null
+          display_name?: string | null
           ea_persona_id?: string | null
           ea_platform?: string | null
           ea_username?: string | null
@@ -3464,6 +3477,8 @@ export type Database = {
           link_dm_sent_at?: string | null
           preferred_position?: string | null
           primary_position?: string | null
+          psn_id?: string | null
+          sign_in_provider?: string | null
           updated_at?: string
           xbox_gamertag?: string | null
           xbox_last_game?: string | null
