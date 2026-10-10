@@ -178,6 +178,12 @@ Deno.serve(async (req) => {
     // POST /twitch-webhook/setup - Setup a new subscription
     // =============================
     if (req.method === "POST" && path === "setup") {
+      if (!TWITCH_MESSAGE_SECRET) {
+        return new Response(
+          JSON.stringify({ error: "Twitch webhooks are not configured on this deployment yet" }),
+          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       const { guild_id, twitch_username, channel_id, custom_message } = await req.json();
 
       if (!guild_id || !twitch_username || !channel_id) {
