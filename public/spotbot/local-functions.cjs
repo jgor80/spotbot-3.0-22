@@ -1,6 +1,6 @@
 // Runs bundled backend functions (local-functions/*.cjs) inside the bot process and serves them
 // over HTTP for the web app, so a self-hosted server needs no edge runtime or Lovable Cloud.
-// AI calls written for the Lovable AI gateway are rewritten to OpenAI with the server's own key.
+// AI calls written for the Lovable AI gateway are routed to the server's own OpenAI/Gemini/Claude keys.
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -15,7 +15,7 @@ let originalFetch = globalThis.fetch;
 
 const ENV_MAP = {
   BOT_PROXY_SECRET: () => INTERNAL_SECRET,
-  LOVABLE_API_KEY: () => process.env.OPENAI_API_KEY,
+  LOVABLE_API_KEY: () => process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || 'self-hosted',
   DISCORD_BOT_TOKEN: () => process.env.DISCORD_BOT_TOKEN || process.env.BOT_TOKEN,
 };
 const denoEnv = { get: (k) => (ENV_MAP[k] ? ENV_MAP[k]() : process.env[k]) };
@@ -37,27 +37,62 @@ function load(name) {
   return captured;
 }
 
-// Lovable AI gateway → OpenAI. Override models with AI_TEXT_MODEL / AI_IMAGE_MODEL.
+// Lovable AI gateway → your own keys, routed for quality per cost:
+//  - images (Graphics Studio, player cards): OpenAI gpt-image-1, best likeness edits; AI_IMAGE_QUALITY (default medium)
+//  - vision with strict JSON (pro-photo checks): OpenAI Responses, AI_VISION_MODEL (default gpt-5-mini)
+//  - plain chat text (match analysis): Gemini Flash when GEMINI_API_KEY is set (cheapest), else Claude Haiku, else OpenAI
 const GATEWAY = 'https://ai.gateway.lovable.dev';
-function mapModel(m) {
-  if (typeof m !== 'string') return m;
-  if (/image/i.test(m)) return process.env.AI_IMAGE_MODEL || 'gpt-image-1';
-  return process.env.AI_TEXT_MODEL || 'gpt-5-mini';
+function need(name) { const v = process.env[name]; if (!v) throw new Error(`${name} is not set on the server`); return v; }
+function jsonBody(init) { try { return JSON.parse(init.body); } catch { return null; } }
+
+async function claudeChat(j, init) {
+  const system = (j.messages || []).filter(m => m.role === 'system').map(m => m.content).join('\n');
+  const res = await originalFetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST', signal: init.signal,
+    headers: { 'x-api-key': need('CLAUDE_API_KEY'), 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: process.env.AI_CLAUDE_MODEL || 'claude-haiku-4-5', max_tokens: j.max_tokens || j.max_completion_tokens || 2048,
+      system: system || undefined, messages: (j.messages || []).filter(m => m.role !== 'system').map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })) }),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) return new Response(JSON.stringify(out), { status: res.status, headers: { 'Content-Type': 'application/json' } });
+  const text = (out.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+  return new Response(JSON.stringify({ choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }] }), { headers: { 'Content-Type': 'application/json' } });
 }
-function rewriteAi(url, init = {}) {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error('OPENAI_API_KEY is not set on the server');
-  const target = (process.env.AI_BASE_URL || 'https://api.openai.com').replace(/\/$/, '') + url.slice(GATEWAY.length);
+
+async function routeAi(url, init = {}) {
+  const pathPart = url.slice(GATEWAY.length);
   const headers = new Headers(init.headers || {});
   headers.delete('Lovable-API-Key'); headers.delete('X-Lovable-AIG-SDK');
-  headers.set('Authorization', `Bearer ${key}`);
   let body = init.body;
-  if (typeof body === 'string') {
-    try { const j = JSON.parse(body); if (j.model) j.model = mapModel(j.model); body = JSON.stringify(j); } catch { /* not JSON */ }
-  } else if (body && typeof body.set === 'function' && typeof body.get === 'function') {
-    if (body.get('model')) body.set('model', mapModel(body.get('model')));
+
+  if (pathPart.startsWith('/v1/images/')) {
+    headers.set('Authorization', `Bearer ${need('OPENAI_API_KEY')}`);
+    const model = process.env.AI_IMAGE_MODEL || 'gpt-image-1';
+    const quality = process.env.AI_IMAGE_QUALITY || 'medium';
+    if (body && typeof body.set === 'function') { body.set('model', model); if (!body.get('quality')) body.set('quality', quality); }
+    else { const j = jsonBody(init) || {}; j.model = model; j.quality ??= quality; body = JSON.stringify(j); }
+    return originalFetch('https://api.openai.com' + pathPart, { ...init, headers, body });
   }
-  return [target, { ...init, headers, body }];
+
+  if (pathPart.startsWith('/v1/chat/completions')) {
+    const j = jsonBody(init) || {};
+    if (process.env.GEMINI_API_KEY) {
+      j.model = process.env.AI_GEMINI_MODEL || 'gemini-2.5-flash';
+      delete j.reasoning_effort;
+      headers.set('Authorization', `Bearer ${process.env.GEMINI_API_KEY}`);
+      return originalFetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', { ...init, headers, body: JSON.stringify(j) });
+    }
+    if (process.env.CLAUDE_API_KEY && !j.stream && !j.tools) return claudeChat(j, init);
+    j.model = process.env.AI_TEXT_MODEL || 'gpt-5-mini';
+    headers.set('Authorization', `Bearer ${need('OPENAI_API_KEY')}`);
+    return originalFetch('https://api.openai.com' + pathPart, { ...init, headers, body: JSON.stringify(j) });
+  }
+
+  // Responses API (strict JSON vision): OpenAI only.
+  const j = jsonBody(init);
+  if (j) { j.model = process.env.AI_VISION_MODEL || 'gpt-5-mini'; body = JSON.stringify(j); }
+  headers.set('Authorization', `Bearer ${need('OPENAI_API_KEY')}`);
+  return originalFetch('https://api.openai.com' + pathPart, { ...init, headers, body });
 }
 
 function wrapFetch(supabaseUrl) {
@@ -67,7 +102,7 @@ function wrapFetch(supabaseUrl) {
   const base = `${String(supabaseUrl).replace(/\/$/, '')}/functions/v1/`;
   globalThis.fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input?.url;
-    if (url && url.startsWith(GATEWAY)) return originalFetch(...rewriteAi(url, init));
+    if (url && url.startsWith(GATEWAY)) return routeAi(url, init);
     if (url && url.startsWith(base)) {
       const name = url.slice(base.length).split(/[/?]/)[0];
       const h = load(name);
