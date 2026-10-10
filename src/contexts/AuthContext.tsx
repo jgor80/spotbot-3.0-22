@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       setIsLoading(false);
-    });
+    }).catch(() => setIsLoading(false));
 
     return () => subscription.unsubscribe();
   }, []);

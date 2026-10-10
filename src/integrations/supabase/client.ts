@@ -3,7 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { brokeredPreviewStorage } from './previewAuthStorage';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+// Self-hosted Hetzner backend; upgrade http→https on secure pages to avoid mixed-content blocks.
+const RAW_URL: string = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_URL =
+  typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? RAW_URL.replace(/^http:\/\//, 'https://')
+    : RAW_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 // Import the supabase client like this:
