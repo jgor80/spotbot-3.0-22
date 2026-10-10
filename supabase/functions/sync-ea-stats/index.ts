@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { decodeRegionId, toFcPlatform, FC_PLATFORMS, normalizeClubName } from '../_shared/ea.ts'
+import { identifyCaller, guildAccess } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1865,7 +1866,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
-    
+
     // Parse request body for sync type and optional probing
     let syncType = 'full'
     let requestBody: any = null
@@ -1879,6 +1880,22 @@ Deno.serve(async (req) => {
     // The scheduled run syncs every monitored club; the web and bot can ask for one guild or club
     const onlyGuildId = typeof requestBody?.guild_id === 'string' && /^\d{17,19}$/.test(requestBody.guild_id) ? requestBody.guild_id : null
     const onlyClubKey = onlyGuildId && typeof requestBody?.club_key === 'string' ? requestBody.club_key : null
+
+    // Syncs write match data with the service-role key: the bot may sync anything;
+    // a signed-in web user may only sync a guild they lead.
+    const caller = await identifyCaller(req, supabase)
+    if (!caller) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+    if (caller.kind !== 'bot') {
+      if (!onlyGuildId) {
+        return new Response(JSON.stringify({ error: 'A guild_id is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+      const access = await guildAccess(supabase, caller, onlyGuildId)
+      if (!access.leader) {
+        return new Response(JSON.stringify({ error: 'Only server managers can sync matches' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+    }
     
     console.log(`[sync-ea-stats] Starting ${syncType} EA sync...`)
     

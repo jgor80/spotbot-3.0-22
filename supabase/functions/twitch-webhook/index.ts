@@ -13,8 +13,12 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const DISCORD_BOT_TOKEN = Deno.env.get("DISCORD_BOT_TOKEN");
 
-// Message signing secret provided by Twitch when subscribing
-const TWITCH_MESSAGE_SECRET = Deno.env.get("TWITCH_WEBHOOK_SECRET") || "squadiq_twitch_webhook_secret_2024";
+// Message signing secret provided by Twitch when subscribing.
+// Fail closed: with no secret configured, signatures can never verify, so webhooks are rejected.
+const TWITCH_MESSAGE_SECRET = Deno.env.get("TWITCH_WEBHOOK_SECRET")?.trim();
+if (!TWITCH_MESSAGE_SECRET) {
+  console.error("[twitch-webhook] TWITCH_WEBHOOK_SECRET is not set; all webhook deliveries will be rejected");
+}
 
 const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -25,6 +29,7 @@ function verifyTwitchSignature(
   body: string,
   signature: string
 ): boolean {
+  if (!TWITCH_MESSAGE_SECRET) return false;
   const message = messageId + timestamp + body;
   const expectedSignature = "sha256=" + createHmac("sha256", TWITCH_MESSAGE_SECRET)
     .update(message)
@@ -173,6 +178,12 @@ Deno.serve(async (req) => {
     // POST /twitch-webhook/setup - Setup a new subscription
     // =============================
     if (req.method === "POST" && path === "setup") {
+      if (!TWITCH_MESSAGE_SECRET) {
+        return new Response(
+          JSON.stringify({ error: "Twitch webhooks are not configured on this deployment yet" }),
+          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       const { guild_id, twitch_username, channel_id, custom_message } = await req.json();
 
       if (!guild_id || !twitch_username || !channel_id) {

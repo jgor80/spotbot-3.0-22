@@ -1,7 +1,7 @@
 // Silently backfill every game EA still has for one club (league, playoff/cup and friendly).
 // Runs the normal sync for just that club, then moves the club's recap cursor and last_match_id
 // past the new rows so the bot never posts recaps, result cards or rating DMs for them.
-import { createAdminClient, rejectUnlessCaller } from '../_shared/auth.ts'
+import { createAdminClient, rejectUnlessGuildAccess } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -13,14 +13,15 @@ const json = (body: unknown, status = 200) =>
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  const denied = await rejectUnlessCaller(req)
-  if (denied) return denied
-
   let body: any = {}
   try { body = await req.json() } catch { /* empty */ }
   const guildId = typeof body.guild_id === 'string' && /^\d{17,19}$/.test(body.guild_id) ? body.guild_id : null
   const clubKey = typeof body.club_key === 'string' && /^[\w-]{1,40}$/.test(body.club_key) ? body.club_key : null
   if (!guildId || !clubKey) return json({ error: 'guild_id and club_key are required' }, 400)
+
+  // Backfills rewrite a club's sync state: the bot, or a leader of this guild only.
+  const denied = await rejectUnlessGuildAccess(req, guildId, { leader: true })
+  if (denied) return denied
 
   const supabase = createAdminClient()
   const { data: settings } = await supabase.from('guild_settings').select('clubs').eq('guild_id', guildId).maybeSingle()

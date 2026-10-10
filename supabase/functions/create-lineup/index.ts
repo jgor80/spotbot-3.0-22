@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createAdminClient, identifyCaller } from "../_shared/auth.ts";
+import { createAdminClient, identifyCaller, guildAccess } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -95,6 +95,14 @@ serve(async (req) => {
     const body = await req.json();
     if (caller.kind === "user") {
       body.created_by_discord_id = `web:${caller.userId}`;
+      // Web users must actually belong to this server to save lineups for it.
+      const access = await guildAccess(supabase, caller, String(body.guild_id ?? ""));
+      if (!access.member) {
+        return new Response(
+          JSON.stringify({ error: "You are not a member of this server" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     } else if (!body.created_by_discord_id) {
       return new Response(
         JSON.stringify({ error: "Validation failed", details: ["created_by_discord_id is required"] }),

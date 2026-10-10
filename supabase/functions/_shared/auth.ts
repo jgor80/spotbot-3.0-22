@@ -50,3 +50,71 @@ export async function rejectUnlessCaller(
   }
   return null;
 }
+
+const LEADER_ROLES = ["admin", "moderator", "manager", "captain"];
+
+// Resolves a signed-in web user to their linked Discord id, if any.
+export async function linkedDiscordId(admin: AdminClient, userId: string): Promise<string | null> {
+  const { data } = await admin
+    .from("user_discord_links")
+    .select("discord_user_id")
+    .eq("auth_user_id", userId)
+    .maybeSingle();
+  return data?.discord_user_id ?? null;
+}
+
+export type GuildAccess = { member: boolean; leader: boolean; discordId: string | null };
+
+// Proves the caller actually belongs to (or manages) the requested Discord server,
+// not just that they are signed in. The bot and web admins pass every check.
+export async function guildAccess(admin: AdminClient, caller: Caller, guildId: string): Promise<GuildAccess> {
+  if (caller.kind === "bot") return { member: true, leader: true, discordId: null };
+
+  const { data: webAdmin } = await admin
+    .from("web_admins")
+    .select("auth_user_id")
+    .eq("auth_user_id", caller.userId)
+    .maybeSingle();
+  if (webAdmin) return { member: true, leader: true, discordId: null };
+
+  const discordId = await linkedDiscordId(admin, caller.userId);
+  if (!discordId) return { member: false, leader: false, discordId: null };
+
+  const { data: roleRow } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("guild_id", guildId)
+    .eq("discord_user_id", discordId)
+    .in("role", LEADER_ROLES)
+    .limit(1)
+    .maybeSingle();
+  if (roleRow) return { member: true, leader: true, discordId };
+
+  // A player with recorded matches in this guild counts as a member.
+  const { data: played } = await admin
+    .from("player_stats")
+    .select("id")
+    .eq("guild_id", guildId)
+    .eq("discord_user_id", discordId)
+    .limit(1)
+    .maybeSingle();
+  return { member: !!played, leader: false, discordId };
+}
+
+// Like rejectUnlessCaller, but also requires guild membership (or leadership with opts.leader).
+export async function rejectUnlessGuildAccess(
+  req: Request,
+  guildId: string,
+  opts: { leader?: boolean } = {},
+): Promise<Response | null> {
+  const admin = createAdminClient();
+  const caller = await identifyCaller(req, admin);
+  if (!caller) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: rejectHeaders });
+  }
+  const access = await guildAccess(admin, caller, guildId);
+  if (!access.member || (opts.leader && !access.leader)) {
+    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: rejectHeaders });
+  }
+  return null;
+}

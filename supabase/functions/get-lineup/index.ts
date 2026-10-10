@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { rejectUnlessCaller } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -29,6 +30,12 @@ serve(async (req) => {
         JSON.stringify({ error: "Either lineup_id or share_code is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // share_code links are intentionally public; direct lineup_id lookups require a signed-in caller.
+    if (lineup_id) {
+      const denied = await rejectUnlessCaller(req);
+      if (denied) return denied;
     }
 
     console.log(`[get-lineup] Fetching lineup ${lineup_id || share_code}`);
