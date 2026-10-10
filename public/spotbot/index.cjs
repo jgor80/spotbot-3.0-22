@@ -393,6 +393,13 @@ const proxyFetch = BOT_PROXY_SECRET
     }
   : undefined;
 if (BOT_PROXY_SECRET) console.log('🔐 Database writes routed through bot-proxy');
+// Self-hosted: every backend function runs inside this process and is served on FUNCTIONS_PORT
+// for the web app, so nothing depends on a cloud edge runtime. Set LOCAL_FUNCTIONS=off to disable.
+if (!BOT_PROXY_SECRET && process.env.LOCAL_FUNCTIONS !== 'off') {
+  const lf = require('./local-functions.cjs');
+  lf.wrapFetch(supabaseUrl);
+  if (process.env.FUNCTIONS_PORT !== '0') lf.startServer({ port: Number(process.env.FUNCTIONS_PORT || 8080), supabaseUrl });
+}
 const supabase = createClient(supabaseUrl, supabaseKey, proxyFetch ? { global: { fetch: proxyFetch } } : undefined);
 
 const squads = createSquads({ supabase, getGuildState, saveGuildSettings, isManager });
