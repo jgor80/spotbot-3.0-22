@@ -51,6 +51,7 @@ const App = () => (
               <Suspense fallback={<PageLoading />}>
                 <Routes>
                   <Route path="/auth" element={<AuthPage />} />
+                  <Route path="/auth/callback" element={<AuthCallback />} />
                   <Route path="/link/:token" element={<LinkInvitePage />} />
                   {/* OBS browser source for /premium overlay: public, token in the URL */}
                   <Route path="/overlay/:token" element={<StreamOverlay />} />
