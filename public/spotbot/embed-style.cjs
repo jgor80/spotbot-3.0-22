@@ -91,15 +91,26 @@ function currentBranding() {
   return brandingCache.get(guildId)?.value ?? null;
 }
 
+const WARM_WAIT_MS = 400;
+const loading = new Map();
+
+// Loads the guild's branding, but never holds an interaction up for more than WARM_WAIT_MS:
+// a stale cache entry is used while it refreshes, and a slow first load finishes in the background.
 async function warm(guildId) {
   if (!guildId || !loadBranding) return;
   const cached = brandingCache.get(guildId);
   if (cached && Date.now() - cached.at < BRANDING_TTL_MS) return;
-  try {
-    brandingCache.set(guildId, { at: Date.now(), value: (await loadBranding(guildId)) || {} });
-  } catch {
-    brandingCache.set(guildId, { at: Date.now(), value: {} });
+  let pending = loading.get(guildId);
+  if (!pending) {
+    pending = Promise.resolve()
+      .then(() => loadBranding(guildId))
+      .then((value) => brandingCache.set(guildId, { at: Date.now(), value: value || {} }))
+      .catch(() => brandingCache.set(guildId, { at: Date.now(), value: cached?.value || {} }))
+      .finally(() => loading.delete(guildId));
+    loading.set(guildId, pending);
   }
+  if (cached) return;
+  await Promise.race([pending, new Promise((r) => setTimeout(r, WARM_WAIT_MS).unref?.())]);
 }
 
 // Runs fn with the guild's branding available to every embed it sends.

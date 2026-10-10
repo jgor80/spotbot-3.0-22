@@ -29,6 +29,7 @@ const { createPanels, PANEL_COMMANDS } = require('./panels.cjs');
 const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
 const { parseWhen: parseEventWhen } = require('./event-time.cjs');
 const embedStyle = require('./embed-style.cjs');
+const ackGuard = require('./ack-guard.cjs');
 const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
 const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
 const { createEventLineup } = require('./event-lineup.cjs');
@@ -4317,7 +4318,11 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 // Panel buttons and forms re-enter routeInteraction as the old slash command (panels.cjs)
 const panels = createPanels({ schemas: ACTION_SCHEMAS, isManager, timezoneFor: async (g) => (await clubEvents.serverPrefs(g)).timezone, dispatch: (interaction) => routeInteraction(interaction) });
 
-client.on(Events.InteractionCreate, (interaction) => embedStyle.runForGuild(interaction.guildId, () => routeInteraction(interaction)));
+// ack-guard defers for any handler still busy near Discord's 3-second deadline
+client.on(Events.InteractionCreate, (interaction) => {
+  const release = ackGuard.guard(interaction);
+  embedStyle.runForGuild(interaction.guildId, () => routeInteraction(interaction)).finally(release);
+});
 
 async function routeInteraction(interaction) {
   try {
