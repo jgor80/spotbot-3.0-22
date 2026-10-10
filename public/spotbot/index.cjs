@@ -396,7 +396,11 @@ const proxyFetch = BOT_PROXY_SECRET
 if (BOT_PROXY_SECRET) console.log('🔐 Database writes routed through bot-proxy');
 // Self-hosted: every backend function runs inside this process and is served on FUNCTIONS_PORT
 // for the web app, so nothing depends on a cloud edge runtime. Set LOCAL_FUNCTIONS=off to disable.
-if (!BOT_PROXY_SECRET && process.env.LOCAL_FUNCTIONS !== 'off') {
+// Secret the bot sends to bot-only functions (studio, cards, pro photos, clips). Self-hosted, the
+// in-process fetch wrapper swaps it for its per-boot secret, so any non-empty value works.
+const LOCAL_FUNCTIONS_ON = !BOT_PROXY_SECRET && process.env.LOCAL_FUNCTIONS !== 'off';
+const FUNCTION_SECRET = BOT_PROXY_SECRET || (LOCAL_FUNCTIONS_ON ? 'self-hosted' : '');
+if (LOCAL_FUNCTIONS_ON) {
   const lf = require('./local-functions.cjs');
   lf.wrapFetch(supabaseUrl);
   if (process.env.FUNCTIONS_PORT !== '0') lf.startServer({ port: Number(process.env.FUNCTIONS_PORT || 8880), supabaseUrl });
@@ -429,9 +433,9 @@ const eventLineup = createEventLineup({ supabase, events: clubEvents, isManager,
 const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState });
 
 const autoLink = createAutoLink({ supabase, getGuildState, isManager });
-const proPhotos = createProPhotos({ supabaseUrl, secret: BOT_PROXY_SECRET, getGuildState, isManager });
+const proPhotos = createProPhotos({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, isManager });
 const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
-const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: BOT_PROXY_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g) });
+const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g) });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
 
 const scouting = createScouting({ supabase, getGuildState, recruitment });
@@ -500,7 +504,7 @@ const coach = createCoach({ ...premiumDeps, openai });
 const funZone = createFunZone({ getGuildState, saveGuildSettings, loadMatches: managerHub.loadMatches });
 autopilot.onSessionEnd(funZone.onSessionEnd);
 // Clips & Highlights: Xbox clips recorded during club matches, plus match tags on shared clips
-const clips = require('./clips.cjs').createClips({ supabaseUrl, secret: BOT_PROXY_SECRET, getGuildState, updateClub: autopilot.updateClub, loadMatches: managerHub.loadMatches, client: () => client });
+const clips = require('./clips.cjs').createClips({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, updateClub: autopilot.updateClub, loadMatches: managerHub.loadMatches, client: () => client });
 autopilot.onNewMatches(clips.onNewMatches);
 
 // MessageContent is required to see attachments on normal channel posts (#pro-photos detection).
