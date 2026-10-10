@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { rejectUnlessCaller } from "../_shared/auth.ts";
+import { rejectUnlessCaller, identifyCaller, guildAccess } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,6 +36,19 @@ serve(async (req) => {
         JSON.stringify({ success: false, error: "guild_id, discord_user_id, and ea_username are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Web users may only link their own account, unless they lead this guild.
+    const caller = await identifyCaller(req, supabase);
+    if (caller?.kind === "user") {
+      const access = await guildAccess(supabase, caller, guild_id);
+      const isSelf = access.discordId === discord_user_id;
+      if (!access.leader && !isSelf) {
+        return new Response(
+          JSON.stringify({ success: false, error: "You can only link your own account" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Validate discord_user_id is a valid Discord snowflake (numeric, 17-19 digits)

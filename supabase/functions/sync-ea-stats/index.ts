@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { decodeRegionId, toFcPlatform, FC_PLATFORMS, normalizeClubName } from '../_shared/ea.ts'
+import { rejectUnlessCaller } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1858,6 +1859,10 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
+
+  // Syncs write match data with the service-role key: only the bot (or scheduled job) may trigger them.
+  const denied = await rejectUnlessCaller(req, { botOnly: true })
+  if (denied) return denied
 
   eaThrottledThisRun = false
 
