@@ -83,6 +83,23 @@ Deno.serve(async (req) => {
       await admin.auth.admin.updateUserById(userId, { user_metadata: meta });
     }
 
+    // Sync linked console gamertags onto the player's profile. Never overwrite a gamertag
+    // the player already set — only fill empty fields.
+    if (xboxGamertag || psnId) {
+      const { data: profile } = await admin.from("profiles").select("id, ea_username, ea_platform, xbox_gamertag").eq("discord_user_id", discordId).maybeSingle();
+      if (profile) {
+        const patch: Record<string, string> = {};
+        if (xboxGamertag && !profile.xbox_gamertag) patch.xbox_gamertag = xboxGamertag;
+        if (!profile.ea_username) {
+          if (xboxGamertag) { patch.ea_username = xboxGamertag; patch.ea_platform = "xbsx"; }
+          else if (psnId) { patch.ea_username = psnId; patch.ea_platform = "ps5"; }
+        }
+        if (Object.keys(patch).length > 0) {
+          await admin.from("profiles").update(patch).eq("id", profile.id);
+        }
+      }
+    }
+
     const { data: gen, error: genErr } = await admin.auth.admin.generateLink({ type: "magiclink", email: email! });
     if (genErr || !gen?.properties?.hashed_token) throw genErr ?? new Error("No token");
     return json({ token_hash: gen.properties.hashed_token });
