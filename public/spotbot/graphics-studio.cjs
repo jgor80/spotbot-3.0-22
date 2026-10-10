@@ -774,8 +774,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       await interaction.showModal(draft.kind === 'card' ? cardModal(a1, draft.data) : draft.kind === 'recruit' ? recruitModal(a1, d) : draft.kind === 'poster' ? posterModal(a1, d) : lineupModal(a1, d));
       return true;
     }
-    const deferredSelect = interaction.isStringSelectMenu() && action !== 'gs_style' || interaction.isStringSelectMenu() && a1 !== 'banner';
-    const deferredReply = interaction.isModalSubmit() || interaction.isButton() && ['gs_card', 'gs_poster', 'gs_lineup', 'gs_recruit', 'gs_mycards'].includes(action);
+    // Banner style opens a modal, which Discord forbids after a deferral; everything else is acknowledged immediately.
+    const deferredSelect = (interaction.isStringSelectMenu() && !(action === 'gs_style' && a1 === 'banner'))
+      || (interaction.isButton() && ['gs_dback', 'gs_cdel'].includes(action));
+    const deferredReply = interaction.isModalSubmit() || interaction.isButton() && ['gs_card', 'gs_poster', 'gs_lineup', 'gs_recruit', 'gs_mycards', 'gs_banner'].includes(action);
     if (deferredSelect) await interaction.deferUpdate();
     else if (deferredReply) await interaction.deferReply({ flags: 64 });
     const respond = (payload) => deferredReply ? interaction.editReply(payload) : interaction.reply(payload);
