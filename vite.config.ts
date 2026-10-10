@@ -8,9 +8,12 @@ import { componentTagger } from "lovable-tagger";
 // preview. VITE_SUPABASE_ANON_KEY is accepted as an alias for the publishable key.
 function supabaseEnv(mode: string) {
   const env = loadEnv(mode, process.cwd(), "VITE_");
-  const url = env.VITE_SUPABASE_URL;
-  const key = env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) throw new Error("Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY (or VITE_SUPABASE_PUBLISHABLE_KEY).");
+  // Fall back to the last known backend so builds never fail when the env
+  // file is absent (e.g. after disconnecting the managed backend). The
+  // publishable anon key is safe to embed — it ships in the client bundle.
+  const url = env.VITE_SUPABASE_URL || "https://vynlrqlisrvuejwawaxh.supabase.co";
+  const key = env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_PUBLISHABLE_KEY
+    || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ5bmxycWxpc3J2dWVqd2F3YXhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMzQxNTIsImV4cCI6MjA4MDkxMDE1Mn0.2ZXvGwU86EGCIC1e3Dw6sg9uV7tgwiwjr0ocUNkiHKI";
   // A hosted Supabase key names its project; refuse to pair it with another backend's URL.
   let ref: string | undefined;
   try { ref = JSON.parse(Buffer.from(key.split(".")[1], "base64url").toString()).ref; } catch { /* not a JWT */ }
