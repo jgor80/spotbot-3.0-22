@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, Shield, AlertCircle } from "lucide-react";
 import { z } from "zod";
 import { lovable } from "@/integrations/lovable/index";
+import { supabase } from "@/integrations/supabase/client";
 
 const authSchema = z.object({
   email: z.string().trim().email({ message: "Invalid email address" }),
@@ -41,6 +42,29 @@ export default function AuthPage() {
       return false;
     }
     return true;
+  };
+
+  const handleDiscord = async () => {
+    setError(null);
+    setIsLoading(true);
+    const { data, error } = await supabase.functions.invoke("auth-discord", { method: "GET" });
+    if (error || !data?.client_id) {
+      setIsLoading(false);
+      setError("Discord sign-in isn't set up yet.");
+      return;
+    }
+    const state = crypto.randomUUID();
+    sessionStorage.setItem("discord_oauth_state", state);
+    sessionStorage.setItem("auth_next", nextPath);
+    const params = new URLSearchParams({
+      client_id: data.client_id,
+      response_type: "code",
+      scope: "identify",
+      redirect_uri: `${window.location.origin}/auth/callback`,
+      state,
+      prompt: "none",
+    });
+    window.location.href = `https://discord.com/oauth2/authorize?${params}`;
   };
 
   const handleOAuth = async (provider: "google" | "microsoft") => {
@@ -125,6 +149,14 @@ export default function AuthPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3 mb-4">
+            <Button
+              type="button"
+              className="w-full"
+              disabled={isLoading}
+              onClick={handleDiscord}
+            >
+              Continue with Discord
+            </Button>
             <Button
               type="button"
               variant="outline"
