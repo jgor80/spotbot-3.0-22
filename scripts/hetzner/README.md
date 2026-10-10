@@ -52,3 +52,39 @@ The bot reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from its env, and e
 functions read `SUPABASE_URL` from the runtime, so they only need their env set to
 the Hetzner values. Edge function secrets (`BOT_PROXY_SECRET`, `DISCORD_*`,
 `OPENAI_API_KEY`, ...) must be copied to the Hetzner functions env.
+
+## 4. Automatic deploys from GitHub
+
+`scripts/hetzner/auto-deploy.sh` keeps `/opt/spotbot` a mirror of `main` (tracked files are reset;
+untracked `.env` files and backups are kept). A systemd timer runs it every 2 minutes and, when
+`main` has moved:
+
+- applies new `supabase/migrations/*.sql` in filename order, each in one transaction, recorded in
+  `ops.applied_migrations`. A failing migration rolls back, stops the deploy and leaves the bot on its
+  old code; the next push (or `auto-deploy.sh --force`) retries it.
+- runs `npm ci` in `public/spotbot` when its package files changed.
+- restarts the pm2 `spotbot` process when anything under `public/spotbot/` changed and checks it is
+  back online. Backend functions run inside the bot, so this is also how function changes go live.
+
+Function sources are bundled by the `Rebuild local functions` GitHub Action, which commits
+`public/spotbot/local-functions/` whenever `supabase/functions/` changes on `main` (including Lovable's
+edits), so the server never builds them itself. The web app deploys through Cloudflare's Git builds.
+
+Install once, as root (after `git pull` brings these files to the server):
+
+```sh
+sudo bash /opt/spotbot/scripts/hetzner/install-auto-deploy.sh
+```
+
+It marks every migration before `20261010080000` as already applied (override with
+`BASELINE_BEFORE=...`), so that one and anything newer run on the first deploy. Deploy results can be
+posted to Discord by putting `DEPLOY_WEBHOOK_URL=<webhook>` in `/etc/spotbot-deploy.env`.
+
+Useful commands (the `claude` user may run these with sudo, nothing else):
+
+```sh
+sudo systemctl start spotbot-deploy.service      # deploy now
+sudo systemctl start spotbot-restart.service     # restart the bot
+sudo journalctl -u spotbot-deploy.service -n 200 --no-pager
+sudo tail -n 300 /root/.pm2/logs/spotbot-error.log
+```

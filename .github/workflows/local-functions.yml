@@ -1,0 +1,41 @@
+name: Rebuild local functions
+
+# The self-hosted bot runs public/spotbot/local-functions/*.cjs, bundled from supabase/functions.
+# Edits to function sources (including Lovable's) are rebuilt and committed here, so the server's
+# auto-deploy picks them up without building anything itself.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/**"
+      - "scripts/build-local-functions.mjs"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: local-functions
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/build-local-functions.mjs
+      - name: Commit rebuilt bundles
+        run: |
+          if git diff --quiet -- public/spotbot/local-functions && [ -z "$(git ls-files --others --exclude-standard public/spotbot/local-functions)" ]; then
+            echo "bundles already up to date"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A public/spotbot/local-functions
+          git commit -m "Rebuild local functions from supabase/functions"
+          git pull --rebase origin main
+          git push origin HEAD:main
