@@ -50,7 +50,7 @@ function render2010sCard(d, G, accent) {
       <rect x="805" y="1161" width="130" height="130" rx="18" fill="${C.ink}" stroke="${C.foil}" stroke-width="3"/>
       ${badge(825, 1181, 90)}` : ''}
     ${stats.map(([label, value], i) => `<text x="${54 + 916 / stats.length * (i + 0.5)}" y="1364" text-anchor="middle" font-family="Oswald" font-size="24" font-weight="700" fill="${ribbon || foil ? C.ink : C.light}">${esc(value)}</text><text x="${54 + 916 / stats.length * (i + 0.5)}" y="1385" text-anchor="middle" font-family="Oswald" font-size="13" fill="${ribbon || foil ? C.ink : C.light}">${esc(label)}</text>`).join('')}
-    <text x="512" y="1416" text-anchor="middle" font-family="Inter" font-size="12" fill="${ribbon || foil ? C.ink : C.light}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · SPOTBOT STUDIO</text>
+    <text x="512" y="1416" text-anchor="middle" font-family="Inter" font-size="12" fill="${ribbon || foil ? C.ink : C.light}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · GAFFERBOT STUDIO</text>
   </svg>`);
 }
 module.exports = { render2010sCard };

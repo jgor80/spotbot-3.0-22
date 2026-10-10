@@ -23,7 +23,7 @@ function render1986Card(d, G, accent) {
       ${stats.map(([label, value], i) => `<text x="${62 + cells * (i + 0.5)}" y="1337" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="32" fill="#111111">${esc(value)}</text>
       <text x="${62 + cells * (i + 0.5)}" y="1363" text-anchor="middle" font-family="Inter" font-size="14" fill="#404040">${esc(label)}</text>`).join('')}` :
       `<text x="512" y="1328" text-anchor="middle" font-family="Inter" font-size="20" fill="#404040">${esc(String(d.tagline || '').toUpperCase().slice(0, 60))}</text>`}
-    <text x="512" y="1408" text-anchor="middle" font-family="Inter" font-size="13" fill="#404040">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · SPOTBOT STUDIO</text>
+    <text x="512" y="1408" text-anchor="middle" font-family="Inter" font-size="13" fill="#404040">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · GAFFERBOT STUDIO</text>
   </svg>`);
 }
 module.exports = { render1986Card };

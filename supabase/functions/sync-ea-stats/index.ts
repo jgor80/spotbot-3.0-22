@@ -1,6 +1,6 @@
+import { identifyCaller, requireGuildAccess } from '../_shared/auth.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { decodeRegionId, toFcPlatform, FC_PLATFORMS, normalizeClubName } from '../_shared/ea.ts'
-import { identifyCaller, guildAccess } from '../_shared/auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1866,7 +1866,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
-
+    
     // Parse request body for sync type and optional probing
     let syncType = 'full'
     let requestBody: any = null
@@ -1881,20 +1881,23 @@ Deno.serve(async (req) => {
     const onlyGuildId = typeof requestBody?.guild_id === 'string' && /^\d{17,19}$/.test(requestBody.guild_id) ? requestBody.guild_id : null
     const onlyClubKey = onlyGuildId && typeof requestBody?.club_key === 'string' ? requestBody.club_key : null
 
-    // Syncs write match data with the service-role key: the bot may sync anything;
-    // a signed-in web user may only sync a guild they lead.
+    // Who may start a sync: the bot, a leader of the one server being synced, or the scheduled job
+    // (x-cron-secret = CRON_SECRET). Until CRON_SECRET is set the scheduled job still runs on the
+    // public key, so anonymous full syncs stay allowed only in that case.
     const caller = await identifyCaller(req, supabase)
-    if (!caller) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-    if (caller.kind !== 'bot') {
+    const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
+    const isCron = cronSecret.length >= 24 && (req.headers.get('x-cron-secret') ?? '') === cronSecret
+    if (caller?.kind === 'user') {
       if (!onlyGuildId) {
-        return new Response(JSON.stringify({ error: 'A guild_id is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify({ error: 'guild_id is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
-      const access = await guildAccess(supabase, caller, onlyGuildId)
-      if (!access.leader) {
-        return new Response(JSON.stringify({ error: 'Only server managers can sync matches' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      const denied = await requireGuildAccess(req, supabase, onlyGuildId, 'leader')
+      if (denied) return denied
+    } else if (!caller && !isCron) {
+      if (cronSecret) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
+      console.warn('[sync-ea-stats] Unauthenticated call accepted because CRON_SECRET is not set')
     }
     
     console.log(`[sync-ea-stats] Starting ${syncType} EA sync...`)

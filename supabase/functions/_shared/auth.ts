@@ -8,8 +8,20 @@ export type Caller =
   | { kind: "bot" }
   | { kind: "user"; userId: string };
 
-// The bot sends the service-role key as its bearer token; the web app sends the signed-in user's JWT.
+function safeEqual(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r === 0;
+}
+
+// The bot sends x-bot-secret (BOT_PROXY_SECRET) or the service-role key as its bearer token;
+// the web app sends the signed-in user's JWT.
 export async function identifyCaller(req: Request, admin: AdminClient): Promise<Caller | null> {
+  const botSecret = Deno.env.get("BOT_PROXY_SECRET") ?? "";
+  const givenSecret = req.headers.get("x-bot-secret") ?? "";
+  if (botSecret.length >= 24 && givenSecret && safeEqual(givenSecret, botSecret)) return { kind: "bot" };
+
   const authHeader = req.headers.get("authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
@@ -31,7 +43,7 @@ export function createAdminClient(): AdminClient {
 
 const rejectHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bot-secret",
   "Content-Type": "application/json",
 };
 
@@ -51,70 +63,119 @@ export async function rejectUnlessCaller(
   return null;
 }
 
-const LEADER_ROLES = ["admin", "moderator", "manager", "captain"];
-
-// Resolves a signed-in web user to their linked Discord id, if any.
-export async function linkedDiscordId(admin: AdminClient, userId: string): Promise<string | null> {
-  const { data } = await admin
+// Who is acting, as a Discord user. The bot is trusted to name the member it acts for; a web user is always
+// their own verified Discord link, whatever the request body claims. Returns a 401/403 response otherwise.
+export async function resolveDiscordActor(
+  req: Request,
+  admin: AdminClient,
+  claimedDiscordId: string | undefined | null,
+): Promise<{ discordUserId: string | null } | Response> {
+  const caller = await identifyCaller(req, admin);
+  if (!caller) {
+    return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: rejectHeaders });
+  }
+  if (caller.kind === "bot") return { discordUserId: claimedDiscordId || null };
+  const { data: link } = await admin
     .from("user_discord_links")
     .select("discord_user_id")
-    .eq("auth_user_id", userId)
+    .eq("auth_user_id", caller.userId)
+    .eq("verified", true)
     .maybeSingle();
-  return data?.discord_user_id ?? null;
+  if (!link?.discord_user_id) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Sign in with Discord to manage your server" }),
+      { status: 403, headers: rejectHeaders },
+    );
+  }
+  return { discordUserId: link.discord_user_id as string };
 }
 
-export type GuildAccess = { member: boolean; leader: boolean; discordId: string | null };
+// Discord's own server owner / Administrator / Manage Server, matching the bot's permCheck.isServerAdmin.
+// Needs the DISCORD_BOT_TOKEN secret; without it only GafferBot roles count.
+function discordGet(path: string) {
+  const token = Deno.env.get("DISCORD_BOT_TOKEN");
+  if (!token) return Promise.resolve(null);
+  return fetch(`https://discord.com/api/v10${path}`, { headers: { Authorization: `Bot ${token}` } })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+}
 
-// Proves the caller actually belongs to (or manages) the requested Discord server,
-// not just that they are signed in. The bot and web admins pass every check.
-export async function guildAccess(admin: AdminClient, caller: Caller, guildId: string): Promise<GuildAccess> {
-  if (caller.kind === "bot") return { member: true, leader: true, discordId: null };
+const snowflake = (id: string) => /^\d{17,20}$/.test(id);
 
-  const { data: webAdmin } = await admin
-    .from("web_admins")
-    .select("auth_user_id")
+async function isDiscordServerAdmin(guildId: string, discordUserId: string): Promise<boolean> {
+  if (!snowflake(guildId) || !snowflake(discordUserId)) return false;
+  const get = discordGet;
+  const [guild, member] = await Promise.all([get(`/guilds/${guildId}`), get(`/guilds/${guildId}/members/${discordUserId}`)]);
+  if (!guild || !member) return false;
+  if (guild.owner_id === discordUserId) return true;
+  const memberRoles = new Set<string>([guildId, ...(member.roles || [])]);
+  let perms = 0n;
+  for (const role of guild.roles || []) {
+    if (memberRoles.has(role.id)) perms |= BigInt(role.permissions || "0");
+  }
+  return (perms & 0x8n) !== 0n || (perms & 0x20n) !== 0n;
+}
+
+// GafferBot role check (has_any_role) that also lets Discord server admins through.
+export async function hasGuildRole(
+  admin: AdminClient,
+  args: { _guild_id: string; _discord_user_id: string | null; _roles: string[] },
+): Promise<{ data: boolean }> {
+  if (!args._discord_user_id) return { data: false };
+  const { data } = await admin.rpc("has_any_role", args);
+  if (data) return { data: true };
+  return { data: await isDiscordServerAdmin(args._guild_id, args._discord_user_id) };
+}
+
+// Per-server authorization for web users. The bot always passes; GafferBot web admins pass;
+// otherwise the user's verified Discord account must be a member of the server ("member") or
+// hold a GafferBot leader role / Discord admin rights there ("leader"). Returns a response to send back, or null.
+export async function requireGuildAccess(
+  req: Request,
+  admin: AdminClient,
+  guildId: string | null | undefined,
+  level: "member" | "leader",
+): Promise<Response | null> {
+  const caller = await identifyCaller(req, admin);
+  if (!caller) {
+    return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: rejectHeaders });
+  }
+  if (caller.kind === "bot") return null;
+  const forbidden = new Response(
+    JSON.stringify({ success: false, error: "You don't have access to this server" }),
+    { status: 403, headers: rejectHeaders },
+  );
+  if (!guildId || !snowflake(guildId)) return forbidden;
+
+  const { data: webAdmin } = await admin.from("web_admins").select("id").eq("auth_user_id", caller.userId).maybeSingle();
+  if (webAdmin) return null;
+
+  const { data: link } = await admin
+    .from("user_discord_links")
+    .select("discord_user_id")
     .eq("auth_user_id", caller.userId)
+    .eq("verified", true)
     .maybeSingle();
-  if (webAdmin) return { member: true, leader: true, discordId: null };
+  const discordUserId = link?.discord_user_id as string | undefined;
+  if (!discordUserId) return forbidden;
 
-  const discordId = await linkedDiscordId(admin, caller.userId);
-  if (!discordId) return { member: false, leader: false, discordId: null };
+  const { data: leader } = await hasGuildRole(admin, {
+    _guild_id: guildId,
+    _discord_user_id: discordUserId,
+    _roles: ["admin", "moderator", "manager", "captain"],
+  });
+  if (leader) return null;
+  if (level === "leader") return forbidden;
 
-  const { data: roleRow } = await admin
-    .from("user_roles")
-    .select("role")
-    .eq("guild_id", guildId)
-    .eq("discord_user_id", discordId)
-    .in("role", LEADER_ROLES)
-    .limit(1)
-    .maybeSingle();
-  if (roleRow) return { member: true, leader: true, discordId };
-
-  // A player with recorded matches in this guild counts as a member.
+  // A player with recorded matches in this server, or a current Discord member, counts as a member.
   const { data: played } = await admin
     .from("player_stats")
     .select("id")
     .eq("guild_id", guildId)
-    .eq("discord_user_id", discordId)
+    .eq("discord_user_id", discordUserId)
     .limit(1)
     .maybeSingle();
-  return { member: !!played, leader: false, discordId };
-}
-
-// Like rejectUnlessCaller, but also requires guild membership (or leadership with opts.leader).
-export async function rejectUnlessGuildAccess(
-  req: Request,
-  guildId: string,
-  opts: { leader?: boolean } = {},
-): Promise<Response | null> {
-  const admin = createAdminClient();
-  const caller = await identifyCaller(req, admin);
-  if (!caller) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: rejectHeaders });
-  }
-  const access = await guildAccess(admin, caller, guildId);
-  if (!access.member || (opts.leader && !access.leader)) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: rejectHeaders });
-  }
-  return null;
+  if (played) return null;
+  const member = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
+  return member ? null : forbidden;
 }

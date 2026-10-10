@@ -7,7 +7,7 @@ function finishCardSvg(svg, d) {
   if (height !== 1434) return svg;
   const compact = d.style === 'retro1986' ? d.tagline ? 1360 : 1334 : 1380;
   // The final text is the provenance footer, not player information.
-  svg = svg.replace(/(<text\b[^>]*\by=")(\d+)("[^>]*>[^<]*SPOTBOT STUDIO<\/text>)/, `$1${compact - 20}$3`);
+  svg = svg.replace(/(<text\b[^>]*\by=")(\d+)("[^>]*>[^<]*GAFFERBOT STUDIO<\/text>)/, `$1${compact - 20}$3`);
   return svg.replace('height="1434" viewBox="0 0 1024 1434"', `height="${compact}" viewBox="0 0 1024 ${compact}"`);
 }
 module.exports = { finishCardSvg };

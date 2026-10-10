@@ -36,7 +36,7 @@ function render1960sCard(d, G, accent) {
     ${!oval && pos ? `<text x="960" y="${1260 + lift}" text-anchor="end" font-family="Oswald" font-size="26" fill="${nameInk}">${esc(pos)}</text>` : ''}
     ${stats.length ? stats.map(([label, value], i) => `<text x="${62 + cells * (i + 0.5)}" y="1302" text-anchor="middle" font-family="Oswald" font-size="26" font-weight="700" fill="${nameInk}">${esc(value)}</text><text x="${62 + cells * (i + 0.5)}" y="1326" text-anchor="middle" font-family="Oswald" font-size="15" fill="${nameInk}">${esc(label)}</text>`).join('') : ''}
     <rect x="30" y="30" width="964" height="1320" fill="url(#paper60)"/>
-    <text x="512" y="1402" text-anchor="middle" font-family="Inter" font-size="13" fill="${C.ink}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · SPOTBOT STUDIO</text>
+    <text x="512" y="1402" text-anchor="middle" font-family="Inter" font-size="13" fill="${C.ink}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · GAFFERBOT STUDIO</text>
   </svg>`);
 }
 module.exports = { render1960sCard };

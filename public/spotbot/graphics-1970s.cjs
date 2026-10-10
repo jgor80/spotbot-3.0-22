@@ -48,7 +48,7 @@ function render1970sCard(d, G, accent) {
       ${pos ? `<text x="512" y="1330" text-anchor="middle" font-family="Oswald" font-size="24" fill="${C.ink}">${esc(pos)}</text>` : ''}`}
     ${stats.map(([label, value], i) => `<text x="${82 + 860 / stats.length * (i + 0.5)}" y="1364" text-anchor="middle" font-family="Oswald" font-size="24" fill="${C.ink}">${esc(value)}</text><text x="${82 + 860 / stats.length * (i + 0.5)}" y="1384" text-anchor="middle" font-family="Oswald" font-size="13" fill="${C.ink}">${esc(label)}</text>`).join('')}
     <rect width="1024" height="1434" fill="url(#paper70)"/>
-    <text x="512" y="1414" text-anchor="middle" font-family="Inter" font-size="12" fill="${C.ink}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · SPOTBOT STUDIO</text>
+    <text x="512" y="1414" text-anchor="middle" font-family="Inter" font-size="12" fill="${C.ink}">${stats.length ? 'EA MATCH DATA · ' : ''}AI VIRTUAL PRO ART · GAFFERBOT STUDIO</text>
   </svg>`);
 }
 module.exports = { render1970sCard };

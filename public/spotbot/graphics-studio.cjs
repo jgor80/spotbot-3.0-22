@@ -156,7 +156,7 @@ function playerCard(d) {
     ${stats.length ? `<rect x="60" y="1290" width="${W - 120}" height="150" fill="${p.panel}" fill-opacity="${p.panelOpacity}"/>
       ${stats.map(([label, value], i) => `<text x="${60 + cell * i + cell / 2}" y="1375" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="56" fill="${p.ink}">${esc(value)}</text>
        <text x="${60 + cell * i + cell / 2}" y="1415" text-anchor="middle" font-family="${BODY}" font-weight="700" font-size="${fit(label, cell - 12, 18, 0.58, 10)}" fill="${p.sub}">${esc(label)}</text>`).join('')}` : ''}
-    <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">${stats.length ? 'EA MATCH DATA · ' : ''}AI ART FROM THEIR IN-GAME PRO · SPOTBOT STUDIO</text>
+    <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">${stats.length ? 'EA MATCH DATA · ' : ''}AI ART FROM THEIR IN-GAME PRO · GAFFERBOT STUDIO</text>
   </svg>`, d));
 }
 
@@ -179,7 +179,7 @@ function matchPoster(d) {
       <text x="90" y="1365" font-family="${BODY}" font-weight="700" font-size="20" fill="#000">PLAYER OF THE MATCH</text>
       <text x="90" y="1412" font-family="${HEAD}" font-weight="700" font-size="44" fill="#000">${esc(clip(d.motm.name, 22).toUpperCase())}</text>
       <text x="${W - 90}" y="1412" text-anchor="end" font-family="${HEAD}" font-weight="700" font-size="60" fill="#000">${d.motm.rating ? Number(d.motm.rating).toFixed(1) : ''}</text>` : ''}
-    <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">EA MATCH DATA · AI ART · SPOTBOT STUDIO</text>
+    <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">EA MATCH DATA · AI ART · GAFFERBOT STUDIO</text>
   </svg>`);
 }
 
@@ -218,7 +218,7 @@ function lineupPoster(d) {
     ${xi.slice(0, half).map((s, i) => row(s, 90, 995 + i * 52)).join('')}
     ${xi.slice(half).map((s, i) => row(s, 540, 995 + i * 52)).join('')}
     ${d.subs?.length ? `<text x="70" y="${1060 + half * 52}" font-family="${BODY}" font-weight="700" font-size="${fit(d.subs.join(', '), 800, 22, 0.55, 14)}" fill="${p.sub}">SUBS  ${esc(clip(d.subs.join(' · '), 90))}</text>` : ''}
-    <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">CLUB LINEUP · AI ART · SPOTBOT STUDIO</text>
+    <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">CLUB LINEUP · AI ART · GAFFERBOT STUDIO</text>
   </svg>`);
 }
 

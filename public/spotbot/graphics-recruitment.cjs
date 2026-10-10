@@ -113,7 +113,7 @@ function recruitmentPoster(d, G, p) {
     ${d.positions ? `<text x="${tx}" y="${posY}" font-family="Oswald" font-weight="700" font-size="${fit(d.positions, 46)}" fill="${t.accent2 || accent}"${italic}>${esc(d.positions.toUpperCase())}</text>` : ''}
     ${details.map((l, i) => `<text x="${tx}" y="${detY + i * 34}" font-family="Inter" font-size="${fit(l, 27)}" fill="${t.sub}">${esc(l)}</text>`).join('')}
     ${contact.map((l, i) => `<text x="${tx}" y="${contactY + i * 32}" font-family="Inter" font-weight="700" font-size="${fit(l, 25)}" fill="${t.ink}">${esc(l)}</text>`).join('')}
-    <text x="512" y="1490" text-anchor="middle" font-family="Inter" font-size="13" fill="${t.sub}">AI VIRTUAL PRO ART · SPOTBOT STUDIO</text>
+    <text x="512" y="1490" text-anchor="middle" font-family="Inter" font-size="13" fill="${t.sub}">AI VIRTUAL PRO ART · GAFFERBOT STUDIO</text>
   </svg>`);
 }
 module.exports = { recruitmentPoster, FAMILY };

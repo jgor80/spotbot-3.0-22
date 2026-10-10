@@ -210,20 +210,19 @@ export default function SettingsPage() {
       if (verifyError) throw verifyError;
       if (!verifyData.verified) throw new Error("Could not verify EA account");
       
-      // Update the profile
-      const { error } = await supabase
-        .from("profiles")
-        .upsert({
+      // Link through the backend, which checks the signed-in user may link this member
+      if (!selectedGuildId) throw new Error("Select a server first");
+      const { data: linkData, error } = await supabase.functions.invoke("link-ea-account", {
+        body: {
+          guild_id: selectedGuildId,
           discord_user_id: searchedUserId,
           ea_username: eaUsername,
           ea_platform: eaPlatform,
-          ea_persona_id: verifyData.persona_id || null,
-          updated_at: new Date().toISOString(),
-        }, {
-          onConflict: "discord_user_id",
-        });
-      
+        },
+      });
+
       if (error) throw error;
+      if (linkData && linkData.success === false) throw new Error(linkData.error || "Could not link EA account");
       
       return verifyData;
     },

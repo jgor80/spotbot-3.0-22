@@ -400,7 +400,7 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
       const embed = new EmbedBuilder()
         .setTitle('🔗 Link your accounts')
         .setColor(0x22c55e)
-        .setDescription(`**${guild.name}** uses SpotBot for lineups and stats. Tap the button and confirm your EA gamertag and platform. It takes 20 seconds.\n\nThis link is just for you and expires in 7 days.`);
+        .setDescription(`**${guild.name}** uses GafferBot for lineups and stats. Tap the button and confirm your EA gamertag and platform. It takes 20 seconds.\n\nThis link is just for you and expires in 7 days.`);
       const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Link my accounts').setURL(`${site}/link/${token}`));
       const ok = await m.send({ embeds: [embed], components: [row] }).then(() => true).catch(() => false);
       ok ? out.sent++ : out.failed++;

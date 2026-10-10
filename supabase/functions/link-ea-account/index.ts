@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { rejectUnlessCaller, identifyCaller, guildAccess } from "../_shared/auth.ts";
+import { hasGuildRole, resolveDiscordActor } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,10 +19,6 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // verify_jwt is off for this function: only the bot or a signed-in web user may call it.
-  const denied = await rejectUnlessCaller(req);
-  if (denied) return denied;
-
   try {
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -38,19 +34,6 @@ serve(async (req) => {
       );
     }
 
-    // Web users may only link their own account, unless they lead this guild.
-    const caller = await identifyCaller(req, supabase);
-    if (caller?.kind === "user") {
-      const access = await guildAccess(supabase, caller, guild_id);
-      const isSelf = access.discordId === discord_user_id;
-      if (!access.leader && !isSelf) {
-        return new Response(
-          JSON.stringify({ success: false, error: "You can only link your own account" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-    }
-
     // Validate discord_user_id is a valid Discord snowflake (numeric, 17-19 digits)
     const discordIdRegex = /^\d{17,19}$/;
     if (!discordIdRegex.test(discord_user_id)) {
@@ -59,6 +42,23 @@ serve(async (req) => {
         JSON.stringify({ success: false, error: "Invalid discord_user_id - must be a valid Discord user ID (17-19 digit number)" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // verify_jwt is off: only the bot, or a signed-in web user linking themselves or managing this server.
+    const actor = await resolveDiscordActor(req, supabase, discord_user_id);
+    if (actor instanceof Response) return actor;
+    if (actor.discordUserId !== discord_user_id) {
+      const { data: canManage } = await hasGuildRole(supabase, {
+        _guild_id: guild_id,
+        _discord_user_id: actor.discordUserId,
+        _roles: ["admin", "moderator", "manager", "captain"],
+      });
+      if (!canManage) {
+        return new Response(
+          JSON.stringify({ success: false, error: "You can only link your own EA account" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     console.log(`[link-ea-account] Linking Discord ${discord_user_id} to EA ${ea_username}`);
