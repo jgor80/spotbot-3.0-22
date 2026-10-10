@@ -13,6 +13,7 @@ import { Loader2 } from "lucide-react";
 // Pages load on demand so the first visit only downloads the page being opened.
 const Index = lazy(() => import("./pages/Index"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
+const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const LinkInvitePage = lazy(() => import("./pages/LinkInvitePage"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard"));
 const ProfilePage = lazy(() => import("./pages/ProfilePage"));
