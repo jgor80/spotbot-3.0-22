@@ -12,6 +12,10 @@ const TWITCH_CLIENT_SECRET = Deno.env.get("TWITCH_CLIENT_SECRET")?.trim();
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const DISCORD_BOT_TOKEN = Deno.env.get("DISCORD_BOT_TOKEN");
+// Where Twitch delivers stream.online events: the public site's Worker forwards /api/functions/* to
+// the functions server, so the callback never depends on where the database lives.
+const CALLBACK_URL = Deno.env.get("TWITCH_CALLBACK_URL")?.trim() ||
+  `${(Deno.env.get("DASHBOARD_URL") || "https://gafferbot.app").replace(/\/+$/, "")}/api/functions/v1/twitch-webhook`;
 
 // Message signing secret provided by Twitch when subscribing.
 // Fail closed: with no secret configured, signatures can never verify, so webhooks are rejected.
@@ -168,7 +172,7 @@ Deno.serve(async (req) => {
 
   // setup/remove/list manage a server's subscriptions, so only the bot may call them.
   // The Twitch callback itself is checked by its message signature below.
-  if (path === "setup" || path === "remove" || path === "list") {
+  if (path === "setup" || path === "remove" || path === "list" || path === "resync") {
     const denied = await rejectUnlessCaller(req, { botOnly: true });
     if (denied) return denied;
   }
@@ -217,8 +221,7 @@ Deno.serve(async (req) => {
       }
 
       // Create EventSub subscription
-      const callbackUrl = `${SUPABASE_URL}/functions/v1/twitch-webhook`;
-      const subscriptionId = await subscribeToStreamOnline(twitchUser.id, callbackUrl, token);
+      const subscriptionId = await subscribeToStreamOnline(twitchUser.id, CALLBACK_URL, token);
 
       if (!subscriptionId) {
         return new Response(
@@ -299,6 +302,48 @@ Deno.serve(async (req) => {
         JSON.stringify({ success: true }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // =============================
+    // POST /twitch-webhook/resync - Point every saved subscription at CALLBACK_URL
+    // (subscriptions made before the move still deliver to the old backend's address).
+    // Idempotent: rows whose subscription is already enabled on CALLBACK_URL are left alone.
+    // =============================
+    if (req.method === "POST" && path === "resync") {
+      if (!TWITCH_MESSAGE_SECRET || !TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) {
+        return new Response(JSON.stringify({ skipped: "Twitch is not configured" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: rows, error } = await supabase.from("twitch_notifications").select("guild_id, twitch_username, subscription_id");
+      if (error) throw error;
+      if (!rows?.length) return new Response(JSON.stringify({ checked: 0, moved: 0 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+      const token = await getTwitchAppToken();
+      const current = new Map<string, { callback: string; status: string }>();
+      let cursor: string | undefined;
+      do {
+        const res = await fetch(`https://api.twitch.tv/helix/eventsub/subscriptions?type=stream.online${cursor ? `&after=${cursor}` : ""}`, {
+          headers: { "Client-ID": TWITCH_CLIENT_ID, Authorization: `Bearer ${token}` },
+        });
+        const page = await res.json();
+        for (const sub of page.data || []) current.set(sub.id, { callback: sub.transport?.callback, status: sub.status });
+        cursor = page.pagination?.cursor;
+      } while (cursor);
+
+      let moved = 0;
+      const failed: string[] = [];
+      for (const row of rows) {
+        const sub = row.subscription_id ? current.get(row.subscription_id) : undefined;
+        if (sub && sub.callback === CALLBACK_URL && sub.status === "enabled") continue;
+        if (row.subscription_id) await deleteSubscription(row.subscription_id, token);
+        const user = await getTwitchUser(row.twitch_username, token);
+        const id = user ? await subscribeToStreamOnline(user.id, CALLBACK_URL, token) : null;
+        if (!id) { failed.push(row.twitch_username); continue; }
+        await supabase.from("twitch_notifications").update({ subscription_id: id })
+          .eq("guild_id", row.guild_id).eq("twitch_username", row.twitch_username);
+        moved++;
+      }
+      console.log(`[Resync] ${moved} moved to ${CALLBACK_URL}, ${failed.length} failed`);
+      return new Response(JSON.stringify({ checked: rows.length, moved, failed }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // =============================

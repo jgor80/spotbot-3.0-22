@@ -86,6 +86,7 @@ function shade(color, amount) {
 
 // Download an image (crest, avatar) as a data URI; null when it can't be fetched
 async function fetchImage(url) {
+  if (/^data:image\/(png|jpe?g|gif|webp);base64,/i.test(url || '')) return url; // bundled assets
   if (!url || !/^https:\/\//i.test(url)) return null;
   try {
     const res = await axios.get(url, {
