@@ -11,6 +11,7 @@ import { Loader2, Shield, AlertCircle } from "lucide-react";
 import { z } from "zod";
 import { lovable } from "@/integrations/lovable/index";
 import { supabase } from "@/integrations/supabase/client";
+import { discordAuthApi } from "@/lib/discordAuthApi";
 
 const DiscordIcon = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
@@ -57,7 +58,7 @@ export default function AuthPage() {
   const handleDiscord = async () => {
     setError(null);
     setIsLoading(true);
-    const { data, error } = await supabase.functions.invoke("auth-discord", { method: "GET" });
+    const { data, error } = await discordAuthApi<{ client_id: string | null }>();
     if (error || !data?.client_id) {
       setIsLoading(false);
       setError("Discord sign-in isn't set up yet.");
