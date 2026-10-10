@@ -39,7 +39,24 @@ Deno.serve(async (req) => {
     const discordId: string = me.id;
     if (!/^\d{17,20}$/.test(discordId)) return json({ error: "Bad Discord id" }, 400);
     const avatar = me.avatar ? `https://cdn.discordapp.com/avatars/${discordId}/${me.avatar}.png` : null;
-    const meta = { discord_user_id: discordId, discord_username: me.username, full_name: me.global_name ?? me.username, avatar_url: avatar, provider: "discord" };
+
+    // Linked console accounts (requires the "connections" OAuth scope). Clubs require players
+    // to connect their Xbox/PSN account in Discord settings, so this is the gamertag source of truth.
+    let xboxGamertag: string | null = null;
+    let psnId: string | null = null;
+    const connRes = await fetch("https://discord.com/api/users/@me/connections", { headers: { Authorization: `Bearer ${access_token}` } });
+    if (connRes.ok) {
+      const connections: { type?: string; name?: string; verified?: boolean }[] = await connRes.json();
+      for (const c of connections) {
+        if (!c?.name || c.verified === false) continue;
+        if (c.type === "xbox" && !xboxGamertag) xboxGamertag = c.name;
+        if (c.type === "psn" && !psnId) psnId = c.name;
+      }
+    } else {
+      console.error("connections fetch failed", connRes.status, await connRes.text());
+    }
+
+    const meta = { discord_user_id: discordId, discord_username: me.username, full_name: me.global_name ?? me.username, avatar_url: avatar, provider: "discord", xbox_gamertag: xboxGamertag, psn_id: psnId };
 
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     let email: string | null = null;
@@ -64,6 +81,23 @@ Deno.serve(async (req) => {
       await admin.from("user_discord_links").upsert({ auth_user_id: userId, discord_user_id: discordId, verified: true }, { onConflict: "discord_user_id" });
     } else {
       await admin.auth.admin.updateUserById(userId, { user_metadata: meta });
+    }
+
+    // Sync linked console gamertags onto the player's profile. Never overwrite a gamertag
+    // the player already set — only fill empty fields.
+    if (xboxGamertag || psnId) {
+      const { data: profile } = await admin.from("profiles").select("id, ea_username, ea_platform, xbox_gamertag").eq("discord_user_id", discordId).maybeSingle();
+      if (profile) {
+        const patch: Record<string, string> = {};
+        if (xboxGamertag && !profile.xbox_gamertag) patch.xbox_gamertag = xboxGamertag;
+        if (!profile.ea_username) {
+          if (xboxGamertag) { patch.ea_username = xboxGamertag; patch.ea_platform = "xbsx"; }
+          else if (psnId) { patch.ea_username = psnId; patch.ea_platform = "ps5"; }
+        }
+        if (Object.keys(patch).length > 0) {
+          await admin.from("profiles").update(patch).eq("id", profile.id);
+        }
+      }
     }
 
     const { data: gen, error: genErr } = await admin.auth.admin.generateLink({ type: "magiclink", email: email! });
