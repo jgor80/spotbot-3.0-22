@@ -1006,7 +1006,7 @@ function createAutopilot(deps) {
           ap.chronicle_last = dayKey;
         });
         const paper = await buildEdition(guild.id, club, edition, now).catch((err) => console.warn(`[autopilot] chronicle ${club.key} failed: ${err.message}`));
-        const chId = club.autopilot?.chronicle_channel_id;
+        const chId = club.autopilot?.chronicle_channel_id || club.autopilot?.channel_id;
         const channel = chId ? await guild.channels.fetch(chId).catch(() => null) : await postChannel(guild.id, club);
         if (paper && channel) await channel.send(paper).catch((err) => console.warn(`[autopilot] chronicle send failed: ${err.message}`));
       }
@@ -1030,7 +1030,7 @@ function createAutopilot(deps) {
       .addFields(
         { name: 'Voice channel', value: vcId ? `<#${vcId}>` : 'Not linked. Voice check-ins, the auto XI and sub requests need one: run **/manager → Lineups & Spots → Voice Spots** from the club voice channel.', inline: true },
         { name: 'Recaps and digest go to', value: channel ? `<#${channel}>` : 'The channel your events are posted in', inline: true },
-        { name: '📰 Chronicle prints in', value: club.autopilot?.chronicle_channel_id ? `<#${club.autopilot.chronicle_channel_id}>` : 'Same as recaps (press Print Chronicle here in the channel you want)', inline: true },
+        { name: '📰 Chronicle prints in', value: club.autopilot?.chronicle_channel_id ? `<#${club.autopilot.chronicle_channel_id}>` : club.autopilot?.channel_id ? `<#${club.autopilot.channel_id}> (the dropdown channel)` : 'Pick a channel in the dropdown below', inline: true },
         { name: '🏆 Hall of Fame posts in', value: club.autopilot?.hof_channel_id ? `<#${club.autopilot.hof_channel_id}>` : 'Not set (trophy banners go to the recap channel)', inline: true }
       );
     // Discord allows five buttons per row
@@ -1108,16 +1108,18 @@ function createAutopilot(deps) {
     } else if (action === 'ap_chronhere') {
       const club = await withClub(interaction, a);
       if (!club) return true;
+      const targetId = club.autopilot?.channel_id || interaction.channelId;
       const updated = await updateClub(interaction.guildId, club.key, (ap) => {
-        ap.chronicle_channel_id = interaction.channelId;
+        ap.chronicle_channel_id = ap.channel_id || interaction.channelId;
         ap.off = (ap.off || []).filter((f) => f !== 'chronicle');
       });
       await interaction.update(await buildPanel(interaction.guildId, updated));
-      await interaction.followUp({ content: `📰 The ${club.name} Chronicle will print in <#${interaction.channelId}> at 3 PM and midnight Central. Printing the latest edition here now.`, flags: 64 });
+      await interaction.followUp({ content: `📰 The ${club.name} Chronicle will print in <#${targetId}> at 3 PM and midnight Central. Printing the latest edition there now.`, flags: 64 });
       // Print the edition covering the most recent period straight away
       const hour = T.localParts(new Date(), CHRONICLE_TZ).hour;
       const paper = await buildEdition(interaction.guildId, updated, hour >= 15 ? 'afternoon' : 'overnight').catch((err) => console.warn(`[autopilot] chronicle ${club.key} failed: ${err.message}`));
-      if (paper) await interaction.channel?.send(paper).catch((err) => console.warn(`[autopilot] chronicle send failed: ${err.message}`));
+      const target = await interaction.guild?.channels.fetch(targetId).catch(() => null);
+      if (paper && target?.isTextBased()) await target.send(paper).catch((err) => console.warn(`[autopilot] chronicle send failed: ${err.message}`));
     } else if (action === 'ap_hofhere') {
       const club = await withClub(interaction, a);
       if (!club) return true;
