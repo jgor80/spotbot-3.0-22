@@ -1,9 +1,14 @@
 {
   "name": "spotbot-3-0-22",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // /api/* must reach the Worker instead of the SPA fallback.
+    "run_worker_first": ["/api/*"]
   },
   // Lets Cloudflare's `wrangler preview` build a preview for each PR branch.
   "previews": {}
