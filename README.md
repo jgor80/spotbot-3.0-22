@@ -59,7 +59,7 @@ Bot environment variables:
 | Variable | Required | Used for |
 |---|---|---|
 | `BOT_TOKEN` | yes | Discord bot token |
-| `SUPABASE_URL` | yes | e.g. `https://<project-ref>.supabase.co` |
+| `SUPABASE_URL` | yes | The self-hosted Supabase (Kong) address, e.g. `https://supabasekong-xue3q5tb1udz4bvq6oxbg1pv.65.108.243.142.sslip.io` |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Server-side database access. Never put this in the web app or a public file. |
 | `OPENAI_API_KEY` | no | Scouting reports and the Premium assistant coach's wording |
 | `OPENXBL_API_KEY` | no | Xbox presence |
@@ -84,7 +84,7 @@ You don't need a local machine: the `sync-ea-stats` edge function syncs EA on a 
 cd public/spotbot
 npm install
 cat > .env <<'EOF'
-SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_URL=https://supabasekong-xue3q5tb1udz4bvq6oxbg1pv.65.108.243.142.sslip.io
 SUPABASE_SERVICE_ROLE_KEY=<service role key>
 # optional
 EA_SESSION_COOKIE=

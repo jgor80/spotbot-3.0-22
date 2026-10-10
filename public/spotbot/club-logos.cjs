@@ -2,6 +2,9 @@
 // crest from its own era. Palermo ships with a built-in history; any other club gets the same
 // depth from branding.crests (imported by /brand crest_history from a crest-history page).
 // Crests are scoped: a club only ever sees its own built-in or saved history.
+const fs = require('fs');
+const path = require('path');
+
 const asset = (f) => require(`./assets/${f}.asset.json`).url;
 
 const PALERMO_HISTORY = [
@@ -66,8 +69,14 @@ function logoFor(club, style, key, branding) {
   if (year) return crestForYear(logos, year) || logos[logos.length - 1];
   return logos.find((l) => l.key === 'current') || crestForYear(logos, NOW) || logos[logos.length - 1];
 }
+// Built-in crests ship with the bot in assets/crests (named as in their .asset.json url), so they
+// load without the old Lovable-hosted site; that site is only a fallback for a file not yet bundled.
+const CREST_DIR = path.join(__dirname, 'assets', 'crests');
 function assetUrl(url) {
-  return url.startsWith('/') ? `https://spotbot3.lovable.app${url}` : url;
+  if (!url.startsWith('/')) return url;
+  const file = path.join(CREST_DIR, path.basename(url));
+  if (fs.existsSync(file)) return `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`;
+  return `https://spotbot3.lovable.app${url}`;
 }
 
 // Parse a crest-history page (worldsoccerpins.com, footballkitarchive.com, or any page whose

@@ -566,7 +566,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !supabaseKey) {
   console.error('❌ SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set');
   console.log('Create a .env file with:');
-  console.log('SUPABASE_URL=https://vynlrqlisrvuejwawaxh.supabase.co');
+  console.log('SUPABASE_URL=https://supabasekong-xue3q5tb1udz4bvq6oxbg1pv.65.108.243.142.sslip.io');
   console.log('SUPABASE_SERVICE_ROLE_KEY=your_service_role_key');
   process.exit(1);
 }

@@ -228,7 +228,7 @@ serve(async (req) => {
         success: true,
         lineup_id: lineup.id,
         share_code: shareCode,
-        share_url: `${Deno.env.get("SUPABASE_URL")?.replace(".supabase.co", "")}/lineup/${shareCode}`,
+        share_url: `${(Deno.env.get("DASHBOARD_URL") || "https://gafferbot.app").replace(/\/+$/, "")}/lineup/${shareCode}`,
         formation,
         team_avg_rating: Math.round(avgRating * 10) / 10,
         slots: enrichedSlots

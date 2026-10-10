@@ -527,6 +527,10 @@ client.once('ready', () => {
   setTimeout(() => managerHub.initSticky(client).catch((err) => console.warn('[sticky] init failed:', err.message)), 15000);
   setTimeout(() => clubStats.initPanels(client).catch((err) => console.warn('[stats panel] init failed:', err.message)), 20000);
   setTimeout(() => graphicsStudio.init(client).catch((err) => console.warn('[studio] init failed:', err.message)), 20000);
+  // Re-point Twitch EventSub callbacks at this deployment's public URL (no-op once they match).
+  setTimeout(() => twitchWebhook('resync', { body: {}, timeout: 120000 })
+    .then(({ data }) => { if (data?.moved || data?.failed?.length) console.log('[twitch] resync:', JSON.stringify(data)); })
+    .catch((err) => console.warn('[twitch] resync failed:', err.message)), 30000);
 });
 
 // =======================
@@ -7846,23 +7850,15 @@ async function routeInteraction(interaction) {
         await interaction.deferReply();
 
         try {
-          const response = await axios.post(
-            `${process.env.SUPABASE_URL}/functions/v1/twitch-webhook/setup`,
-            {
+          const response = await twitchWebhook('setup', {
+            body: {
               guild_id: guildId,
               twitch_username: twitchUsername,
               channel_id: channel.id,
               custom_message: customMessage
             },
-            {
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-                ...(BOT_PROXY_SECRET ? { 'x-bot-secret': BOT_PROXY_SECRET } : {})
-              },
-              timeout: 30000
-            }
-          );
+            timeout: 30000
+          });
 
           if (response.data.success) {
             const twitchUser = response.data.twitch_user;
@@ -7905,21 +7901,10 @@ async function routeInteraction(interaction) {
         await interaction.deferReply();
 
         try {
-          const response = await axios.post(
-            `${process.env.SUPABASE_URL}/functions/v1/twitch-webhook/remove`,
-            {
-              guild_id: guildId,
-              twitch_username: twitchUsername
-            },
-            {
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-                ...(BOT_PROXY_SECRET ? { 'x-bot-secret': BOT_PROXY_SECRET } : {})
-              },
-              timeout: 15000
-            }
-          );
+          const response = await twitchWebhook('remove', {
+            body: { guild_id: guildId, twitch_username: twitchUsername },
+            timeout: 15000
+          });
 
           if (response.data.success) {
             return interaction.editReply({ content: `✅ Stopped monitoring **${twitchUsername}** for live streams.` });
@@ -7936,17 +7921,7 @@ async function routeInteraction(interaction) {
         await interaction.deferReply();
 
         try {
-          const response = await axios.get(
-            `${process.env.SUPABASE_URL}/functions/v1/twitch-webhook/list`,
-            {
-              params: { guild_id: guildId },
-              headers: {
-                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-                ...(BOT_PROXY_SECRET ? { 'x-bot-secret': BOT_PROXY_SECRET } : {})
-              },
-              timeout: 15000
-            }
-          );
+          const response = await twitchWebhook('list', { query: { guild_id: guildId }, timeout: 15000 });
 
           const notifications = response.data.notifications || [];
 
@@ -16126,6 +16101,25 @@ async function routeInteraction(interaction) {
 // =======================
 
 const localFunctions = require('./local-functions.cjs');
+// twitch-webhook/<action> over fetch, so self-hosted calls run in-process (axios bypasses the
+// local-functions fetch hook and would hit the database host's edge runtime). Returns { data } like
+// axios and throws with error.response.data on a non-2xx status.
+async function twitchWebhook(action, { body, query, timeout = 15000 } = {}) {
+  const qs = query ? `?${new URLSearchParams(query)}` : '';
+  const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/twitch-webhook/${action}${qs}`, {
+    method: body ? 'POST' : 'GET',
+    headers: {
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      Authorization: `Bearer ${supabaseKey}`,
+      ...(BOT_PROXY_SECRET ? { 'x-bot-secret': BOT_PROXY_SECRET } : {})
+    },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(timeout)
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data?.error || `HTTP ${res.status}`), { response: { status: res.status, data } });
+  return { data };
+}
 async function callEdgeFunction(functionName, body, timeoutMs = 120000) {
   // Self-hosted (admin key, no proxy): run bundled helpers in-process — no edge runtime needed.
   if (!BOT_PROXY_SECRET && supabaseKey && process.env.LOCAL_FUNCTIONS !== 'off' && localFunctions.hasLocal(functionName)) {

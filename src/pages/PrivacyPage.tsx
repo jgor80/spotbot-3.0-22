@@ -53,8 +53,9 @@ export default function PrivacyPage() {
           sheets, stats, ratings, graphics).
         </li>
         <li>
-          <strong>Service providers</strong> that process data for us: Supabase (database, file storage and
-          backend functions), our bot hosting provider, Lovable (web hosting and its AI gateway), and OpenAI.
+          <strong>Service providers</strong> that process data for us: Supabase software for our database and
+          file storage, run on our own server at Hetzner (which also runs the bot and backend functions),
+          Cloudflare (web hosting), and the AI providers OpenAI, Google (Gemini) and Anthropic (Claude).
           Uploaded photos, and stats used for AI-written recaps and coaching notes, are sent to the AI providers
           to check photos and generate artwork and text.
         </li>
