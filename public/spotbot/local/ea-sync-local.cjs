@@ -1,7 +1,7 @@
 /**
  * Local EA Sync Script
  * Run this locally to bypass EA's cloud IP blocking
- * Your Railway bot handles Discord, this just syncs EA data to Supabase
+ * The bot handles Discord, this just syncs EA data to Supabase
  */
 
 const axios = require('axios');

@@ -27,7 +27,7 @@ The web dashboard has four main views (Match Night, Lineup Builder, Club Stats, 
 |---|---|
 | `src/` | Web dashboard (Vite, React, TypeScript, shadcn/ui). Edited in Lovable and here. |
 | `public/spotbot/index.cjs` | The Discord bot (single file). |
-| `public/spotbot/local/ea-sync-local.cjs` | Optional fallback EA sync worker for your own machine. Not needed to run the bot and not shipped in the Railway image. |
+| `public/spotbot/local/ea-sync-local.cjs` | Optional fallback EA sync worker for your own machine. Not needed to run the bot. |
 | `public/spotbot/ea-fc27.cjs` | EA platform and region helpers shared by the bot and local sync. |
 | `supabase/functions/` | Edge functions (Deno). Shared code is in `supabase/functions/_shared/`. |
 | `supabase/migrations/` | Database schema. |
@@ -46,7 +46,7 @@ The dashboard reads `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` and `VI
 
 ## Discord bot
 
-The bot is deployed with Nixpacks (`nixpacks.toml`): it installs `public/spotbot` dependencies and starts `node public/spotbot/index.cjs`. To run it yourself:
+In production the bot runs on the Hetzner server and redeploys on every merge to main (see `scripts/hetzner/README.md`). To run it yourself:
 
 ```sh
 cd public/spotbot
