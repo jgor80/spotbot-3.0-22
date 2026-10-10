@@ -159,13 +159,25 @@ export async function requireGuildAccess(
   const discordUserId = link?.discord_user_id as string | undefined;
   if (!discordUserId) return forbidden;
 
+  const access = await guildAccessLevel(admin, guildId, discordUserId);
+  if (access === "leader" || (access === "member" && level === "member")) return null;
+  return forbidden;
+}
+
+// What a Discord user may see in a server: "leader" (GafferBot leader role or Discord admin rights),
+// "member" (recorded matches there, or a current Discord member), or null.
+export async function guildAccessLevel(
+  admin: AdminClient,
+  guildId: string,
+  discordUserId: string,
+): Promise<"leader" | "member" | null> {
+  if (!snowflake(guildId) || !snowflake(discordUserId)) return null;
   const { data: leader } = await hasGuildRole(admin, {
     _guild_id: guildId,
     _discord_user_id: discordUserId,
     _roles: ["admin", "moderator", "manager", "captain"],
   });
-  if (leader) return null;
-  if (level === "leader") return forbidden;
+  if (leader) return "leader";
 
   // A player with recorded matches in this server, or a current Discord member, counts as a member.
   const { data: played } = await admin
@@ -175,7 +187,7 @@ export async function requireGuildAccess(
     .eq("discord_user_id", discordUserId)
     .limit(1)
     .maybeSingle();
-  if (played) return null;
+  if (played) return "member";
   const member = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
-  return member ? null : forbidden;
+  return member ? "member" : null;
 }
