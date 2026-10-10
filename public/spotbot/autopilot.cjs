@@ -1113,7 +1113,11 @@ function createAutopilot(deps) {
         ap.off = (ap.off || []).filter((f) => f !== 'chronicle');
       });
       await interaction.update(await buildPanel(interaction.guildId, updated));
-      await interaction.followUp({ content: `📰 The ${club.name} Chronicle will print in <#${interaction.channelId}> at 3 PM and midnight Central.`, flags: 64 });
+      await interaction.followUp({ content: `📰 The ${club.name} Chronicle will print in <#${interaction.channelId}> at 3 PM and midnight Central. Printing the latest edition here now.`, flags: 64 });
+      // Print the edition covering the most recent period straight away
+      const hour = T.localParts(new Date(), CHRONICLE_TZ).hour;
+      const paper = await buildEdition(interaction.guildId, updated, hour >= 15 ? 'afternoon' : 'overnight').catch((err) => console.warn(`[autopilot] chronicle ${club.key} failed: ${err.message}`));
+      if (paper) await interaction.channel?.send(paper).catch((err) => console.warn(`[autopilot] chronicle send failed: ${err.message}`));
     } else if (action === 'ap_hofhere') {
       const club = await withClub(interaction, a);
       if (!club) return true;
