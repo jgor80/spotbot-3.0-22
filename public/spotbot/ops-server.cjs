@@ -123,6 +123,37 @@ const HANDLERS = {
     const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
     if (!url) return { ok: false, error: 'DATABASE_URL not set in .env — add the Postgres connection string to enable SQL reads', output: '' };
     return run('psql', [url, '--no-psqlrc', '-X', '-P', 'pager=off', '-c', q], { timeout: 60000 });
+  },
+
+  // Bot creates a Discord webhook in the given channel and saves it as ALERT_WEBHOOK_URL
+  // in /etc/spotbot-ops.env. The URL is never returned in the response.
+  async 'create-alert-webhook'(args) {
+    const channel = String(args.channel_id || '');
+    if (!/^\d{15,22}$/.test(channel)) return { ok: false, error: 'channel_id must be a Discord snowflake', output: '' };
+    const token = process.env.BOT_TOKEN;
+    if (!token) return { ok: false, error: 'BOT_TOKEN not set', output: '' };
+    const res = await fetch(`https://discord.com/api/v10/channels/${channel}/webhooks`, {
+      method: 'POST',
+      headers: { Authorization: `Bot ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Server Alerts' })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: `Discord ${res.status}: ${body.message || ''}`, output: '' };
+    const url = `https://discord.com/api/webhooks/${body.id}/${body.token}`;
+    const fs = require('fs');
+    const file = process.env.OPS_ENV_FILE || '/etc/spotbot-ops.env';
+    try {
+      let txt = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+      txt = /^ALERT_WEBHOOK_URL=.*$/m.test(txt)
+        ? txt.replace(/^ALERT_WEBHOOK_URL=.*$/m, `ALERT_WEBHOOK_URL=${url}`)
+        : `${txt}${txt && !txt.endsWith('\n') ? '\n' : ''}ALERT_WEBHOOK_URL=${url}\n`;
+      fs.writeFileSync(file, txt, { mode: 0o600 });
+    } catch (e) {
+      return { ok: false, error: `Webhook ${body.id} created but could not write ${file}: ${e.message}`, output: '' };
+    }
+    await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: '✅ Server alerts are connected. Health check problems will be posted here.' }) }).catch(() => {});
+    return { ok: true, error: null, output: `Webhook ${body.id} created and saved to ${file}` };
   }
 };
 
