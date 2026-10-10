@@ -1030,7 +1030,7 @@ function createAutopilot(deps) {
       .addFields(
         { name: 'Voice channel', value: vcId ? `<#${vcId}>` : 'Not linked. Voice check-ins, the auto XI and sub requests need one: run **/manager → Lineups & Spots → Voice Spots** from the club voice channel.', inline: true },
         { name: 'Recaps and digest go to', value: channel ? `<#${channel}>` : 'The channel your events are posted in', inline: true },
-        { name: '📰 Chronicle prints in', value: club.autopilot?.chronicle_channel_id ? `<#${club.autopilot.chronicle_channel_id}>` : 'Same as recaps (press Print Chronicle here in the channel you want)', inline: true },
+        { name: '📰 Chronicle prints in', value: club.autopilot?.chronicle_channel_id ? `<#${club.autopilot.chronicle_channel_id}>` : club.autopilot?.channel_id ? `<#${club.autopilot.channel_id}> (the dropdown channel)` : 'Pick a channel in the dropdown below', inline: true },
         { name: '🏆 Hall of Fame posts in', value: club.autopilot?.hof_channel_id ? `<#${club.autopilot.hof_channel_id}>` : 'Not set (trophy banners go to the recap channel)', inline: true }
       );
     // Discord allows five buttons per row
