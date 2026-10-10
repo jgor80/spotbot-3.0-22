@@ -9,6 +9,7 @@ interface Env {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   FUNCTIONS_ORIGIN?: string;
+  OPS_ORIGIN?: string;
 }
 
 const ALLOWED = [/^https:\/\/(www\.)?gafferbot\.app$/, /^https:\/\/[a-z0-9-]+\.workers\.dev$/, /^http:\/\/localhost:\d+$/];
@@ -125,6 +126,15 @@ export default {
       const headers = new Headers(req.headers);
       headers.delete("x-bot-secret");
       return fetch(target, { method: req.method, headers, body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body });
+    }
+    // Remote maintenance: the Lovable agent runs whitelisted ops on our server.
+    // Auth is enforced by the ops server itself via the x-ops-secret header, which is
+    // forwarded untouched (never logged here).
+    if (url.pathname.startsWith("/api/ops/")) {
+      if (!env.OPS_ORIGIN) return json({ error: "Ops server is not configured" }, 503);
+      if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+      const target = env.OPS_ORIGIN.replace(/\/$/, "") + url.pathname.slice("/api/ops".length) + url.search;
+      return fetch(target, { method: "POST", headers: req.headers, body: req.body });
     }
     if (url.pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
     return env.ASSETS.fetch(req);

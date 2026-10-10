@@ -400,6 +400,11 @@ if (!BOT_PROXY_SECRET && process.env.LOCAL_FUNCTIONS !== 'off') {
   lf.wrapFetch(supabaseUrl);
   if (process.env.FUNCTIONS_PORT !== '0') lf.startServer({ port: Number(process.env.FUNCTIONS_PORT || 8880), supabaseUrl });
 }
+// Remote maintenance: the Lovable agent runs whitelisted ops through the Worker at /api/ops/*.
+// Needs OPS_SECRET in .env; set OPS_PORT=0 to disable.
+if (!BOT_PROXY_SECRET && process.env.OPS_PORT !== '0') {
+  require('./ops-server.cjs').startOpsServer({ port: Number(process.env.OPS_PORT || 9001) });
+}
 const supabase = createClient(supabaseUrl, supabaseKey, proxyFetch ? { global: { fetch: proxyFetch } } : undefined);
 
 const squads = createSquads({ supabase, getGuildState, saveGuildSettings, isManager });
