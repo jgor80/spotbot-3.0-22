@@ -57,7 +57,7 @@ Description=Restart the GafferBot pm2 process
 [Service]
 Type=oneshot
 Environment=HOME=/root PM2_HOME=/root/.pm2
-ExecStart=$PM2_BIN restart spotbot --update-env
+ExecStart=$PM2_BIN restart spotbot
 EOF
 
 cat > /etc/systemd/system/spotbot-deploy.timer <<'EOF'

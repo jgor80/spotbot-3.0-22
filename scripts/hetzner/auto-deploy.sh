@@ -78,7 +78,8 @@ if changed '^public/spotbot/(package\.json|package-lock\.json)$' || [ "${1:-}" =
 fi
 
 if changed '^public/spotbot/' || [ "${1:-}" = "--force" ]; then
-  pm2 restart "$PM2_APP" --update-env >/dev/null
+  # No --update-env: the bot's tokens live in pm2's saved env, which the timer's sparse env would replace.
+  pm2 restart "$PM2_APP" >/dev/null
   sleep 20
   STATUS=$(pm2 jlist 2>/dev/null | node -e '
     let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
