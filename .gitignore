@@ -26,3 +26,9 @@ dist-ssr
 # Bot / local sync secrets
 public/spotbot/.env
 .env
+
+# Server-only files in the /opt/spotbot checkout
+.env.save*
+.wrangler/
+storage-backup/
+/deploy.sh
