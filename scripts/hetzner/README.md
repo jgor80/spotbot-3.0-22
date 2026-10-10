@@ -88,3 +88,50 @@ sudo systemctl start spotbot-restart.service     # restart the bot
 sudo journalctl -u spotbot-deploy.service -n 200 --no-pager
 sudo tail -n 300 /root/.pm2/logs/spotbot-error.log
 ```
+
+## 5. Backups and health alerts
+
+Install once, as root (re-run after these scripts change; it copies them to the root-owned
+`/usr/local/lib/spotbot-ops` so the repo user can't alter what root runs):
+
+```sh
+sudo bash /opt/spotbot/scripts/hetzner/install-ops.sh
+```
+
+**Backups** (`backup.sh`, nightly 03:30 UTC) write `/var/backups/spotbot/<timestamp>/` (root-only):
+`postgres.dump` (pg_dump custom format of the `postgres` database: public, auth, storage schemas),
+`roles.sql`, `storage.tar.gz` (the MinIO data folder, every storage object) and `config.tar.gz`
+(bot and Supabase `.env` files plus the Supabase `docker-compose.yml`). It keeps 7 nightly sets and
+4 Sunday sets. For off-site copies, set up an rclone remote as root (`rclone config`: Cloudflare R2,
+Backblaze B2 or a Hetzner Storage Box over SFTP; wrap it in an rclone `crypt` remote since the
+config archive holds secrets) and set `RCLONE_REMOTE=<remote>:<path>` in `/etc/spotbot-ops.env`.
+
+Prove a backup restores (loads it into a scratch `restore_check` database, compares row counts with
+live, checks the archives, drops the scratch database; nothing live is touched):
+
+```sh
+sudo bash /usr/local/lib/spotbot-ops/restore-test.sh
+```
+
+Real restore onto this or a fresh Coolify Supabase stack (stop the bot first: `pm2 stop spotbot`):
+
+```sh
+SET=/var/backups/spotbot/<timestamp>
+DB=supabase-db-xue3q5tb1udz4bvq6oxbg1pv
+docker exec -i $DB pg_restore -U postgres -d postgres --clean --if-exists --no-owner < $SET/postgres.dump
+# storage: stop the minio container, then
+tar -C /data/coolify/services/xue3q5tb1udz4bvq6oxbg1pv/volumes -xzf $SET/storage.tar.gz
+# config: inspect first, then extract the files you need
+tar -tzf $SET/config.tar.gz && tar -C / -xzf $SET/config.tar.gz opt/spotbot/.env
+pm2 restart spotbot
+```
+
+On a brand-new stack, keep its own `.env` JWT secret identical to the backed-up one (from
+`config.tar.gz`) or every API key and signed storage URL stops working.
+
+**Health checks** (`healthcheck.sh`, every 2 minutes) cover gafferbot.app, the bot's functions
+server (`:8880/health`), Supabase Kong, the pm2 `spotbot` process, free RAM (< 150 MB) and disk
+(> 85 %). A check alerts after two failures in a row and once more when it recovers. Put a Discord
+webhook in `ALERT_WEBHOOK_URL` in `/etc/spotbot-ops.env`. pm2 already restarts the bot when it
+crashes; the installer also saves the pm2 process list so `pm2-root.service` brings it back after a
+reboot.
