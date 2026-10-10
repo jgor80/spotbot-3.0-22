@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2, Shield, AlertCircle } from "lucide-react";
 import { z } from "zod";
+import { lovable } from "@/integrations/lovable/index";
 
 const authSchema = z.object({
   email: z.string().trim().email({ message: "Invalid email address" }),
