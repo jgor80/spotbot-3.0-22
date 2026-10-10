@@ -73,17 +73,22 @@ async function requireGuildAccess(req, admin, guildId, level) {
   const { data: link } = await admin.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).maybeSingle();
   const discordUserId = link?.discord_user_id;
   if (!discordUserId) return forbidden;
+  const access = await guildAccessLevel(admin, guildId, discordUserId);
+  if (access === "leader" || access === "member" && level === "member") return null;
+  return forbidden;
+}
+async function guildAccessLevel(admin, guildId, discordUserId) {
+  if (!snowflake(guildId) || !snowflake(discordUserId)) return null;
   const { data: leader } = await hasGuildRole(admin, {
     _guild_id: guildId,
     _discord_user_id: discordUserId,
     _roles: ["admin", "moderator", "manager", "captain"]
   });
-  if (leader) return null;
-  if (level === "leader") return forbidden;
+  if (leader) return "leader";
   const { data: played } = await admin.from("player_stats").select("id").eq("guild_id", guildId).eq("discord_user_id", discordUserId).limit(1).maybeSingle();
-  if (played) return null;
+  if (played) return "member";
   const member = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
-  return member ? null : forbidden;
+  return member ? "member" : null;
 }
 
 // supabase/functions/backfill-club-games/index.ts

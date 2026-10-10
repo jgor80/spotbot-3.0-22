@@ -120,9 +120,12 @@ export default {
       catch (e) { console.error("auth-discord error", e); return json({ error: "Discord sign-in failed" }, 500); }
     }
     // Backend functions run inside the bot on our own server (FUNCTIONS_ORIGIN, e.g. http://host.sslip.io:8880).
-    if (url.pathname.startsWith("/api/functions/v1/")) {
+    // /mcp is the GafferBot MCP server for AI assistants (the gafferbot-mcp function).
+    const isMcp = url.pathname === "/mcp";
+    if (isMcp || url.pathname.startsWith("/api/functions/v1/")) {
       if (!env.FUNCTIONS_ORIGIN) return json({ error: "Functions server is not configured" }, 503);
-      const target = env.FUNCTIONS_ORIGIN.replace(/\/$/, "") + url.pathname.slice(4) + url.search;
+      const path = isMcp ? "/functions/v1/gafferbot-mcp" : url.pathname.slice(4);
+      const target = env.FUNCTIONS_ORIGIN.replace(/\/$/, "") + path + url.search;
       const headers = new Headers(req.headers);
       headers.delete("x-bot-secret");
       return fetch(target, { method: req.method, headers, body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body });

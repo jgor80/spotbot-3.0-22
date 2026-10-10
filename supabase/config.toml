@@ -122,3 +122,9 @@ verify_jwt = false
 
 [functions.backfill-club-games]
 verify_jwt = false
+
+[functions.gafferbot-mcp]
+verify_jwt = false
+
+[functions.mcp-token]
+verify_jwt = false
