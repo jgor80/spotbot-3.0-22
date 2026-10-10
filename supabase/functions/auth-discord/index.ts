@@ -83,21 +83,25 @@ Deno.serve(async (req) => {
       await admin.auth.admin.updateUserById(userId, { user_metadata: meta });
     }
 
-    // Sync linked console gamertags onto the player's profile. Never overwrite a gamertag
-    // the player already set — only fill empty fields.
-    if (xboxGamertag || psnId) {
-      const { data: profile } = await admin.from("profiles").select("id, ea_username, ea_platform, xbox_gamertag").eq("discord_user_id", discordId).maybeSingle();
-      if (profile) {
-        const patch: Record<string, string> = {};
-        if (xboxGamertag && !profile.xbox_gamertag) patch.xbox_gamertag = xboxGamertag;
-        if (!profile.ea_username) {
-          if (xboxGamertag) { patch.ea_username = xboxGamertag; patch.ea_platform = "xbsx"; }
-          else if (psnId) { patch.ea_username = psnId; patch.ea_platform = "ps5"; }
-        }
-        if (Object.keys(patch).length > 0) {
-          await admin.from("profiles").update(patch).eq("id", profile.id);
-        }
+    // One profile row per player: upsert name/avatar, fill gamertags only when empty.
+    {
+      const { data: profile } = await admin.from("profiles").select("id, ea_username, ea_platform, xbox_gamertag, psn_id").eq("discord_user_id", discordId).maybeSingle();
+      const base: Record<string, unknown> = {
+        auth_user_id: userId, discord_user_id: discordId, discord_username: me.username,
+        display_name: me.global_name ?? me.username, avatar_url: avatar, discord_avatar: avatar, sign_in_provider: "discord",
+      };
+      if (xboxGamertag && !profile?.xbox_gamertag) base.xbox_gamertag = xboxGamertag;
+      if (psnId && !profile?.psn_id) base.psn_id = psnId;
+      if (!profile?.ea_username) {
+        if (xboxGamertag) { base.ea_username = xboxGamertag; base.ea_platform = "xbsx"; }
+        else if (psnId) { base.ea_username = psnId; base.ea_platform = "ps5"; }
       }
+      // Drop any placeholder row the trigger may have made for this auth user.
+      await admin.from("profiles").delete().eq("auth_user_id", userId).is("discord_user_id", null);
+      const { error: pErr } = profile
+        ? await admin.from("profiles").update(base).eq("id", profile.id)
+        : await admin.from("profiles").insert(base);
+      if (pErr) console.error("profile upsert failed", pErr.message);
     }
 
     const { data: gen, error: genErr } = await admin.auth.admin.generateLink({ type: "magiclink", email: email! });

@@ -167,6 +167,15 @@ export async function requireGuildAccess(
   if (leader) return null;
   if (level === "leader") return forbidden;
 
+  // A player with recorded matches in this server, or a current Discord member, counts as a member.
+  const { data: played } = await admin
+    .from("player_stats")
+    .select("id")
+    .eq("guild_id", guildId)
+    .eq("discord_user_id", discordUserId)
+    .limit(1)
+    .maybeSingle();
+  if (played) return null;
   const member = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
   return member ? null : forbidden;
 }

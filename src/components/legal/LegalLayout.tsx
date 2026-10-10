@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 // can be monetized or listed in the App Directory, so these routes must stay outside ProtectedRoute.
 
 // Shown on both pages. Set before pasting the URLs into the Discord Developer Portal.
-export const LEGAL_CONTACT_EMAIL = "privacy@example.com";
+export const LEGAL_CONTACT_EMAIL = "privacy@gafferbot.app";
 export const LEGAL_UPDATED = "9 October 2026";
 
 export function LegalLayout({ title, children }: { title: string; children: ReactNode }) {

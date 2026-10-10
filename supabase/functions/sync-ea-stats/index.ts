@@ -1881,7 +1881,7 @@ Deno.serve(async (req) => {
     const onlyGuildId = typeof requestBody?.guild_id === 'string' && /^\d{17,19}$/.test(requestBody.guild_id) ? requestBody.guild_id : null
     const onlyClubKey = onlyGuildId && typeof requestBody?.club_key === 'string' ? requestBody.club_key : null
 
-    // Who may start a sync: the bot, a member of the one server being synced, or the scheduled job
+    // Who may start a sync: the bot, a leader of the one server being synced, or the scheduled job
     // (x-cron-secret = CRON_SECRET). Until CRON_SECRET is set the scheduled job still runs on the
     // public key, so anonymous full syncs stay allowed only in that case.
     const caller = await identifyCaller(req, supabase)
@@ -1891,7 +1891,7 @@ Deno.serve(async (req) => {
       if (!onlyGuildId) {
         return new Response(JSON.stringify({ error: 'guild_id is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
-      const denied = await requireGuildAccess(req, supabase, onlyGuildId, 'member')
+      const denied = await requireGuildAccess(req, supabase, onlyGuildId, 'leader')
       if (denied) return denied
     } else if (!caller && !isCron) {
       if (cronSecret) {
