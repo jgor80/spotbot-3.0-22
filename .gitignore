@@ -25,3 +25,4 @@ dist-ssr
 
 # Bot / local sync secrets
 public/spotbot/.env
+.env
