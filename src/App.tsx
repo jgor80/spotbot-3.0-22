@@ -29,6 +29,8 @@ const CabinetPage = lazy(() => import("./pages/CabinetPage"));
 const InsightsPage = lazy(() => import("./pages/InsightsPage"));
 const SquadIQPanel = lazy(() => import("./pages/SquadIQPanel"));
 const StreamOverlay = lazy(() => import("./pages/StreamOverlay"));
+const TermsPage = lazy(() => import("./pages/TermsPage"));
+const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -56,6 +58,8 @@ const App = () => (
                   <Route path="/link/:token" element={<LinkInvitePage />} />
                   {/* OBS browser source for /premium overlay: public, token in the URL */}
                   <Route path="/overlay/:token" element={<StreamOverlay />} />
+                  <Route path="/terms" element={<TermsPage />} />
+                  <Route path="/privacy" element={<PrivacyPage />} />
                   <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                   <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
                   <Route path="/lineup" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />

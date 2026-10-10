@@ -295,6 +295,11 @@ export default function AuthPage() {
             </TabsContent>
           </Tabs>
         </CardContent>
+        <p className="pb-6 text-center text-xs text-muted-foreground">
+          <a href="/terms" className="underline hover:text-foreground">Terms of Service</a>
+          {" · "}
+          <a href="/privacy" className="underline hover:text-foreground">Privacy Policy</a>
+        </p>
       </Card>
     </div>
   );
