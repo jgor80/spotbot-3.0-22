@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { toast } from "sonner";
+import { LinkXboxButton } from "@/components/player/LinkXboxButton";
 
 export default function ProfilePage() {
   const { selectedGuildId, isLoading: guildLoading } = useGuild();
@@ -172,6 +173,10 @@ export default function ProfilePage() {
                       {isUnlinking ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Unlink className="h-4 w-4 mr-2" />}
                       Unlink
                     </Button>
+                  </div>
+                  <div className="mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
+                    <LinkXboxButton />
+                    <p className="text-xs text-muted-foreground">Sign in with Microsoft to fill your real Xbox gamertag automatically.</p>
                   </div>
                 </CardContent>
               </Card>

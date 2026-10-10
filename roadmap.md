@@ -48,3 +48,5 @@
 - [x] Smarter Chronicle: game scripts, richer storyline, position-aware notebook (no clean sheets for attackers)
 - [ ] Auto-post Xbox club-match clips to #clips-and-highlights (built) — blocked on a working Xbox (OpenXBL) key + Railway redeploy; PS5 has no clip access, shared clips get match-tagged instead
 - [x] Set PCN Palermo clips channel to 1529555653805473844 (clips_channel_id saved in club settings)
+- [x] Xbox gamertag auto-fill via Microsoft (works for Discord-created accounts)
+- [ ] Azure app credentials (waiting on user)
