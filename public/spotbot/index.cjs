@@ -4,6 +4,14 @@
 // with Supabase persistence and auto-assign from VC
 // ============================================
 
+// The .env in the working directory (or ENV_FILE) is the source of truth and overrides inherited
+// variables. pm2 keeps the environment from when a process was first started, and Node's
+// --env-file never overrides it, so without this a rotated key in .env could lose to a stale copy.
+{
+  const envFile = require('path').resolve(process.env.ENV_FILE || '.env');
+  if (require('fs').existsSync(envFile)) require('dotenv').config({ path: envFile, override: true, quiet: true });
+}
+
 const {
   Client,
   GatewayIntentBits,
