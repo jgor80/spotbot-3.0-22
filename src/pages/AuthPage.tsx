@@ -59,7 +59,7 @@ export default function AuthPage() {
     const params = new URLSearchParams({
       client_id: data.client_id,
       response_type: "code",
-      scope: "identify",
+      scope: "identify connections",
       redirect_uri: `${window.location.origin}/auth/callback`,
       state,
       prompt: "none",

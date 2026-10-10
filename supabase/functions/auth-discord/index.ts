@@ -39,7 +39,24 @@ Deno.serve(async (req) => {
     const discordId: string = me.id;
     if (!/^\d{17,20}$/.test(discordId)) return json({ error: "Bad Discord id" }, 400);
     const avatar = me.avatar ? `https://cdn.discordapp.com/avatars/${discordId}/${me.avatar}.png` : null;
-    const meta = { discord_user_id: discordId, discord_username: me.username, full_name: me.global_name ?? me.username, avatar_url: avatar, provider: "discord" };
+
+    // Linked console accounts (requires the "connections" OAuth scope). Clubs require players
+    // to connect their Xbox/PSN account in Discord settings, so this is the gamertag source of truth.
+    let xboxGamertag: string | null = null;
+    let psnId: string | null = null;
+    const connRes = await fetch("https://discord.com/api/users/@me/connections", { headers: { Authorization: `Bearer ${access_token}` } });
+    if (connRes.ok) {
+      const connections: { type?: string; name?: string; verified?: boolean }[] = await connRes.json();
+      for (const c of connections) {
+        if (!c?.name || c.verified === false) continue;
+        if (c.type === "xbox" && !xboxGamertag) xboxGamertag = c.name;
+        if (c.type === "psn" && !psnId) psnId = c.name;
+      }
+    } else {
+      console.error("connections fetch failed", connRes.status, await connRes.text());
+    }
+
+    const meta = { discord_user_id: discordId, discord_username: me.username, full_name: me.global_name ?? me.username, avatar_url: avatar, provider: "discord", xbox_gamertag: xboxGamertag, psn_id: psnId };
 
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     let email: string | null = null;
