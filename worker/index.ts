@@ -118,7 +118,7 @@ export default {
       try { return await discordAuth(req, env); }
       catch (e) { console.error("auth-discord error", e); return json({ error: "Discord sign-in failed" }, 500); }
     }
-    // Backend functions run inside the bot on our own server (FUNCTIONS_ORIGIN, e.g. http://host.sslip.io:8080).
+    // Backend functions run inside the bot on our own server (FUNCTIONS_ORIGIN, e.g. http://host.sslip.io:8880).
     if (url.pathname.startsWith("/api/functions/v1/")) {
       if (!env.FUNCTIONS_ORIGIN) return json({ error: "Functions server is not configured" }, 503);
       const target = env.FUNCTIONS_ORIGIN.replace(/\/$/, "") + url.pathname.slice(4) + url.search;

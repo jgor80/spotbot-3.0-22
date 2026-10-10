@@ -398,7 +398,7 @@ if (BOT_PROXY_SECRET) console.log('🔐 Database writes routed through bot-proxy
 if (!BOT_PROXY_SECRET && process.env.LOCAL_FUNCTIONS !== 'off') {
   const lf = require('./local-functions.cjs');
   lf.wrapFetch(supabaseUrl);
-  if (process.env.FUNCTIONS_PORT !== '0') lf.startServer({ port: Number(process.env.FUNCTIONS_PORT || 8080), supabaseUrl });
+  if (process.env.FUNCTIONS_PORT !== '0') lf.startServer({ port: Number(process.env.FUNCTIONS_PORT || 8880), supabaseUrl });
 }
 const supabase = createClient(supabaseUrl, supabaseKey, proxyFetch ? { global: { fetch: proxyFetch } } : undefined);
 
