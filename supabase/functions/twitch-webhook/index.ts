@@ -29,6 +29,7 @@ function verifyTwitchSignature(
   body: string,
   signature: string
 ): boolean {
+  if (!TWITCH_MESSAGE_SECRET) return false;
   const message = messageId + timestamp + body;
   const expectedSignature = "sha256=" + createHmac("sha256", TWITCH_MESSAGE_SECRET)
     .update(message)
