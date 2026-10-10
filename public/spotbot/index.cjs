@@ -5581,11 +5581,12 @@ async function routeInteraction(interaction) {
       if (await roster.handleCommand(interaction, cmd)) return;
 
       if (cmd === 'graphics') {
+        if (!interaction.deferred && !interaction.replied) await interaction.deferReply();
         const panel = await graphicsStudio.panelFor(guildId).catch(() => null);
         if (!panel) {
-          return interaction.reply({ content: 'No club is set up yet — run /setup first.', flags: 64 });
+          return interaction.editReply({ content: 'No club is set up yet — run /setup first.' });
         }
-        return interaction.reply(panel);
+        return interaction.editReply(panel);
       }
 
       if (cmd === 'spotpanel') {
