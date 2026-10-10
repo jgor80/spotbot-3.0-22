@@ -8,6 +8,7 @@ interface Env {
   DISCORD_CLIENT_SECRET: string;
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
+  FUNCTIONS_ORIGIN?: string;
 }
 
 const ALLOWED = [/^https:\/\/(www\.)?gafferbot\.app$/, /^https:\/\/[a-z0-9-]+\.workers\.dev$/, /^http:\/\/localhost:\d+$/];
@@ -116,6 +117,14 @@ export default {
     if (url.pathname === "/api/auth/discord") {
       try { return await discordAuth(req, env); }
       catch (e) { console.error("auth-discord error", e); return json({ error: "Discord sign-in failed" }, 500); }
+    }
+    // Backend functions run inside the bot on our own server (FUNCTIONS_ORIGIN, e.g. http://host.sslip.io:8880).
+    if (url.pathname.startsWith("/api/functions/v1/")) {
+      if (!env.FUNCTIONS_ORIGIN) return json({ error: "Functions server is not configured" }, 503);
+      const target = env.FUNCTIONS_ORIGIN.replace(/\/$/, "") + url.pathname.slice(4) + url.search;
+      const headers = new Headers(req.headers);
+      headers.delete("x-bot-secret");
+      return fetch(target, { method: req.method, headers, body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body });
     }
     if (url.pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
     return env.ASSETS.fetch(req);

@@ -50,3 +50,6 @@
 - [x] Set PCN Palermo clips channel to 1529555653805473844 (clips_channel_id saved in club settings)
 - [x] Xbox gamertag auto-fill via Microsoft (works for Discord-created accounts)
 - [ ] Azure app credentials (waiting on user)
+
+- [x] Run all backend functions on Hetzner bot (no Lovable Cloud)
+- [ ] Use AI keys already in Cloudflare (bot needs OPENAI_API_KEY in its own .env; Worker needs FUNCTIONS_ORIGIN)
