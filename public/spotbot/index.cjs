@@ -4001,7 +4001,18 @@ function buildDraftPickButtonRows(availablePlayers, draftId, currentPickerId) {
 // READY & COMMAND REG
 // =======================
 
+// Servers the bot may stay in (comma-separated IDs). Others are left on startup/join; their saved data is untouched.
+const ALLOWED_GUILD_IDS = new Set((process.env.ALLOWED_GUILD_IDS || '1529555651762851930').split(',').map(s => s.trim()).filter(Boolean));
+const guildAllowed = (id) => ALLOWED_GUILD_IDS.size === 0 || ALLOWED_GUILD_IDS.has(String(id));
+async function leaveIfNotAllowed(guild) {
+  if (guildAllowed(guild.id)) return false;
+  console.log(`🚪 Leaving non-allowed guild: ${guild.name} (${guild.id}) — data kept`);
+  await guild.leave().catch(e => console.warn('leave failed', e.message));
+  return true;
+}
+
 client.once(Events.ClientReady, async (c) => {
+  for (const guild of [...c.guilds.cache.values()]) await leaveIfNotAllowed(guild);
   // Pick up players who already hold position roles (runs in the background, one server at a time)
   setTimeout(async () => {
     for (const guild of c.guilds.cache.values()) await roster.syncGuildPositions(guild).catch(() => {});
@@ -4093,6 +4104,7 @@ async function syncGuildNames(discordClient) {
 }
 
 client.on(Events.GuildCreate, async (guild) => {
+  if (await leaveIfNotAllowed(guild)) return;
   // Commands are registered globally, no need to register per-guild (causes duplicates)
   console.log(`✅ Joined new guild: ${guild.name} (${guild.id})`);
   // Sync guild name to database
@@ -17286,6 +17298,7 @@ async function resumeEaMonitoring() {
     if (!allSettings) return;
     
     for (const settings of allSettings) {
+      if (!guildAllowed(settings.guild_id)) continue;
       const clubs = settings.clubs || [];
       for (const club of clubs) {
         if (club.ea_club_id && club.monitoring_enabled) {
