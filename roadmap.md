@@ -52,4 +52,5 @@
 - [ ] Azure app credentials (waiting on user)
 
 - [x] Run all backend functions on Hetzner bot (no Lovable Cloud)
-- [ ] Use AI keys already in Cloudflare (bot needs OPENAI_API_KEY in its own .env; Worker needs FUNCTIONS_ORIGIN)
+- [x] Use AI keys already in Cloudflare (bot needs OPENAI_API_KEY in its own .env; Worker needs FUNCTIONS_ORIGIN)
+- [x] Move scheduled jobs onto the bot

@@ -4025,6 +4025,8 @@ async function leaveIfNotAllowed(guild) {
 }
 
 client.once(Events.ClientReady, async (c) => {
+  // Self-hosted: the bot runs the scheduled syncs and refreshes that used to run in the cloud.
+  if (!BOT_PROXY_SECRET) require('./scheduler.cjs').startScheduler({ supabase, callFunction: callEdgeFunction });
   for (const guild of [...c.guilds.cache.values()]) await leaveIfNotAllowed(guild);
   // Pick up players who already hold position roles (runs in the background, one server at a time)
   setTimeout(async () => {
