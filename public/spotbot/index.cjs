@@ -16107,7 +16107,19 @@ async function routeInteraction(interaction) {
 // EDGE FUNCTION HELPER
 // =======================
 
+const localFunctions = require('./local-functions.cjs');
 async function callEdgeFunction(functionName, body, timeoutMs = 120000) {
+  // Self-hosted (admin key, no proxy): run bundled helpers in-process — no edge runtime needed.
+  if (!BOT_PROXY_SECRET && supabaseKey && process.env.LOCAL_FUNCTIONS !== 'off' && localFunctions.hasLocal(functionName)) {
+    try {
+      const { ok, data } = await localFunctions.invokeLocal(functionName, body, { supabaseUrl, serviceKey: supabaseKey });
+      if (!ok) { console.error(`❌ Local function ${functionName} error:`, data); return { error: data?.error || 'Unknown error', data: null }; }
+      return { error: null, data };
+    } catch (err) {
+      console.error(`❌ Local function ${functionName} exception:`, err);
+      return { error: err.message, data: null };
+    }
+  }
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
