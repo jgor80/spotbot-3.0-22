@@ -787,10 +787,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (interaction.isButton() && action === 'gs_dback') {
       const draft = DRAFTS.get(a1);
       if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
-        await interaction.update({ content: 'That form expired — start again from the panel.', components: [] }); return true;
+        await update({ content: 'That form expired — start again from the panel.', components: [] }); return true;
       }
       draft.data.noBack = !draft.data.noBack;
-      await interaction.update(draftPrompt(a1, 'card', findClub(draft.clubKey))); return true;
+      await update(draftPrompt(a1, 'card', findClub(draft.clubKey))); return true;
     }
     const manager = async () => isManager(interaction.member, interaction.guildId);
     if (interaction.isButton() && action === 'gs_recruit') {
@@ -828,7 +828,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     if (interaction.isButton() && action === 'gs_cdel') {
       const r = await cardsApi({ action: 'delete', discord_user_id: interaction.user.id, card_id: a1 });
-      await interaction.update({ content: r.error ? `❌ ${r.error}` : '🗑️ Card deleted from your collection.', embeds: [], components: [] });
+      await update({ content: r.error ? `❌ ${r.error}` : '🗑️ Card deleted from your collection.', embeds: [], components: [] });
       return true;
     }
     if (interaction.isStringSelectMenu() && action === 'gs_dkit') {
@@ -863,8 +863,8 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       return true;
     }
     if (interaction.isButton() && action === 'gs_banner') {
-      if (!(await manager())) { await interaction.reply({ content: '🏆 Banners are for managers — they mark real trophy wins.', flags: 64 }); return true; }
-      await interaction.reply({ content: '🏆 Pick a banner style:', components: [styleRow('banner', a1)], flags: 64 });
+      if (!(await manager())) { await respond({ content: '🏆 Banners are for managers — they mark real trophy wins.' }); return true; }
+      await respond({ content: '🏆 Pick a banner style:', components: [styleRow('banner', a1)] });
       return true;
     }
     if (interaction.isButton() && action === 'gs_kit') {

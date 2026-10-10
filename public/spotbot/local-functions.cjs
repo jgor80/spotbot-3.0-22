@@ -71,7 +71,12 @@ async function routeAi(url, init = {}) {
     const quality = process.env.AI_IMAGE_QUALITY || 'medium';
     if (body && typeof body.set === 'function') { body.set('model', model); if (!body.get('quality')) body.set('quality', quality); }
     else { const j = jsonBody(init) || {}; j.model = model; j.quality ??= quality; body = JSON.stringify(j); }
-    return originalFetch('https://api.openai.com' + pathPart, { ...init, headers, body });
+    const res = await originalFetch('https://api.openai.com' + pathPart, { ...init, headers, body });
+    if (!res.ok) {
+      const detail = await res.clone().text().catch(() => '');
+      console.warn(`[ai] OpenAI ${pathPart} ${res.status} (model ${model}): ${detail.slice(0, 300)}`);
+    }
+    return res;
   }
 
   if (pathPart.startsWith('/v1/chat/completions')) {
