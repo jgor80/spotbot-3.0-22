@@ -2,7 +2,7 @@
 // no extra EA calls: /clubstats members, top players per stat, in-form players and recent results.
 // Also /help (short guide plus a stats glossary) and the EA-name lookup behind /linkea.
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
 const { toInsightMatches } = require('./club-insights.cjs');
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
 const { where } = require('./panels.cjs');
@@ -478,7 +478,27 @@ function createClubStats(deps) {
 
   const panelChannelOf = (club) => (club.stats_panel === false ? null : club.stats_panel_channel_id || club.stats_channel_id || null);
 
+  // Channels where the bot lacks a permission are skipped (and named once in the log) instead of
+  // failing every repost with Discord's bare "Missing Access".
+  const warnedChannels = new Set();
+  function missingPanelPerms(channel) {
+    const me = channel.guild?.members?.me;
+    const perms = me && channel.permissionsFor?.(me);
+    if (!perms) return [];
+    const send = channel.isThread?.() ? 'SendMessagesInThreads' : 'SendMessages';
+    return ['ViewChannel', send, 'EmbedLinks', 'ReadMessageHistory'].filter((name) => !perms.has(PermissionFlagsBits[name]));
+  }
+
   async function repostPanel(channel, club) {
+    const missing = missingPanelPerms(channel);
+    if (missing.length) {
+      if (!warnedChannels.has(channel.id)) {
+        warnedChannels.add(channel.id);
+        console.warn(`[stats panel] skipped #${channel.name} (${channel.id}) in ${channel.guild?.name} (${channel.guildId}) for club ${club.name || club.key}: bot is missing ${missing.join(', ')}`);
+      }
+      return;
+    }
+    warnedChannels.delete(channel.id);
     const oldId = panelIds.get(channel.id);
     if (oldId) await channel.messages.delete(oldId).catch(() => {});
     else {
