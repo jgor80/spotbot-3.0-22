@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { hasGuildRole, resolveDiscordActor } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,7 +33,11 @@ serve(async (req) => {
     );
 
     const body: UpdateGuildSettingsRequest = await req.json();
-    const { guild_id, discord_user_id, clubs, feedback_enabled } = body;
+    const { guild_id, clubs, feedback_enabled } = body;
+    // A web user always acts as their own verified Discord account, never the ID in the body.
+    const actor = await resolveDiscordActor(req, supabase, body.discord_user_id);
+    if (actor instanceof Response) return actor;
+    const discord_user_id = actor.discordUserId;
 
     // Validate required fields
     if (!guild_id) {
@@ -42,33 +47,20 @@ serve(async (req) => {
       );
     }
 
-    // Check if user has admin/moderator role (only if discord_user_id provided)
+    // Web users need a GafferBot admin/moderator role or Discord admin rights in this server.
+    // Only the bot can act without a Discord user.
     if (discord_user_id) {
-      // First, check if ANY roles exist for this guild - if not, allow operation (initial setup)
-      const { data: anyRoles, error: rolesError } = await supabase
-        .from("user_roles")
-        .select("id")
-        .eq("guild_id", guild_id)
-        .limit(1);
+      const { data: hasRole } = await hasGuildRole(supabase, {
+        _guild_id: guild_id,
+        _discord_user_id: discord_user_id,
+        _roles: ["admin", "moderator"],
+      });
 
-      const hasNoRolesConfigured = !anyRoles || anyRoles.length === 0;
-
-      if (!hasNoRolesConfigured) {
-        // Roles exist, check if user has permission
-        const { data: hasRole } = await supabase.rpc("has_any_role", {
-          _guild_id: guild_id,
-          _discord_user_id: discord_user_id,
-          _roles: ["admin", "moderator"],
-        });
-
-        if (!hasRole) {
-          return new Response(
-            JSON.stringify({ success: false, error: "Insufficient permissions" }),
-            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-      } else {
-        console.log(`No roles configured for guild ${guild_id}, allowing operation`);
+      if (!hasRole) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Insufficient permissions" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
     }
 

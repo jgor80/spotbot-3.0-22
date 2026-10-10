@@ -8,8 +8,20 @@ export type Caller =
   | { kind: "bot" }
   | { kind: "user"; userId: string };
 
-// The bot sends the service-role key as its bearer token; the web app sends the signed-in user's JWT.
+function safeEqual(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r === 0;
+}
+
+// The bot sends x-bot-secret (BOT_PROXY_SECRET) or the service-role key as its bearer token;
+// the web app sends the signed-in user's JWT.
 export async function identifyCaller(req: Request, admin: AdminClient): Promise<Caller | null> {
+  const botSecret = Deno.env.get("BOT_PROXY_SECRET") ?? "";
+  const givenSecret = req.headers.get("x-bot-secret") ?? "";
+  if (botSecret.length >= 24 && givenSecret && safeEqual(givenSecret, botSecret)) return { kind: "bot" };
+
   const authHeader = req.headers.get("authorization") || "";
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
@@ -31,7 +43,7 @@ export function createAdminClient(): AdminClient {
 
 const rejectHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bot-secret",
   "Content-Type": "application/json",
 };
 
@@ -49,4 +61,62 @@ export async function rejectUnlessCaller(
     return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: rejectHeaders });
   }
   return null;
+}
+
+// Who is acting, as a Discord user. The bot is trusted to name the member it acts for; a web user is always
+// their own verified Discord link, whatever the request body claims. Returns a 401/403 response otherwise.
+export async function resolveDiscordActor(
+  req: Request,
+  admin: AdminClient,
+  claimedDiscordId: string | undefined | null,
+): Promise<{ discordUserId: string | null } | Response> {
+  const caller = await identifyCaller(req, admin);
+  if (!caller) {
+    return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: rejectHeaders });
+  }
+  if (caller.kind === "bot") return { discordUserId: claimedDiscordId || null };
+  const { data: link } = await admin
+    .from("user_discord_links")
+    .select("discord_user_id")
+    .eq("auth_user_id", caller.userId)
+    .eq("verified", true)
+    .maybeSingle();
+  if (!link?.discord_user_id) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Sign in with Discord to manage your server" }),
+      { status: 403, headers: rejectHeaders },
+    );
+  }
+  return { discordUserId: link.discord_user_id as string };
+}
+
+// Discord's own server owner / Administrator / Manage Server, matching the bot's permCheck.isServerAdmin.
+// Needs the DISCORD_BOT_TOKEN secret; without it only GafferBot roles count.
+async function isDiscordServerAdmin(guildId: string, discordUserId: string): Promise<boolean> {
+  const token = Deno.env.get("DISCORD_BOT_TOKEN");
+  if (!token || !/^\d{17,20}$/.test(guildId) || !/^\d{17,20}$/.test(discordUserId)) return false;
+  const get = (path: string) =>
+    fetch(`https://discord.com/api/v10${path}`, { headers: { Authorization: `Bot ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+  const [guild, member] = await Promise.all([get(`/guilds/${guildId}`), get(`/guilds/${guildId}/members/${discordUserId}`)]);
+  if (!guild || !member) return false;
+  if (guild.owner_id === discordUserId) return true;
+  const memberRoles = new Set<string>([guildId, ...(member.roles || [])]);
+  let perms = 0n;
+  for (const role of guild.roles || []) {
+    if (memberRoles.has(role.id)) perms |= BigInt(role.permissions || "0");
+  }
+  return (perms & 0x8n) !== 0n || (perms & 0x20n) !== 0n;
+}
+
+// GafferBot role check (has_any_role) that also lets Discord server admins through.
+export async function hasGuildRole(
+  admin: AdminClient,
+  args: { _guild_id: string; _discord_user_id: string | null; _roles: string[] },
+): Promise<{ data: boolean }> {
+  if (!args._discord_user_id) return { data: false };
+  const { data } = await admin.rpc("has_any_role", args);
+  if (data) return { data: true };
+  return { data: await isDiscordServerAdmin(args._guild_id, args._discord_user_id) };
 }

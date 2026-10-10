@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { hasGuildRole, resolveDiscordActor } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,7 +32,11 @@ serve(async (req) => {
     );
 
     const body: ManageScoutingListRequest = await req.json();
-    const { action, guild_id, discord_user_id, name, description, is_public, list_id, player_ids } = body;
+    const { action, guild_id, name, description, is_public, list_id, player_ids } = body;
+    // A web user always acts as their own verified Discord account, never the ID in the body.
+    const actor = await resolveDiscordActor(req, supabase, body.discord_user_id);
+    if (actor instanceof Response) return actor;
+    const discord_user_id = actor.discordUserId;
 
     // Validate required fields
     if (!action || !guild_id || !discord_user_id) {
@@ -99,7 +104,7 @@ serve(async (req) => {
       let hasRole = false;
       
       if (!isOwner) {
-        const { data: roleCheck } = await supabase.rpc("has_any_role", {
+        const { data: roleCheck } = await hasGuildRole(supabase, {
           _guild_id: guild_id,
           _discord_user_id: discord_user_id,
           _roles: ["admin", "moderator", "scout"],

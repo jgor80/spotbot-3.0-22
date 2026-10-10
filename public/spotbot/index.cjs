@@ -379,6 +379,12 @@ const proxyFetch = BOT_PROXY_SECRET
   ? (input, init = {}) => {
       const url = typeof input === 'string' ? input : input.url;
       const restBase = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/`;
+      if (url.startsWith(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/`)) {
+        // Backend functions accept the bot secret, so they work without the admin key here.
+        const headers = new Headers(init.headers || {});
+        headers.set('x-bot-secret', BOT_PROXY_SECRET);
+        return fetch(input, { ...init, headers });
+      }
       if (!url.startsWith(restBase)) return fetch(input, init);
       const headers = new Headers(init.headers || {});
       headers.set('x-bot-secret', BOT_PROXY_SECRET);
@@ -7821,7 +7827,8 @@ async function routeInteraction(interaction) {
             {
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                ...(BOT_PROXY_SECRET ? { 'x-bot-secret': BOT_PROXY_SECRET } : {})
               },
               timeout: 30000
             }
@@ -7877,7 +7884,8 @@ async function routeInteraction(interaction) {
             {
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                ...(BOT_PROXY_SECRET ? { 'x-bot-secret': BOT_PROXY_SECRET } : {})
               },
               timeout: 15000
             }
@@ -7903,7 +7911,8 @@ async function routeInteraction(interaction) {
             {
               params: { guild_id: guildId },
               headers: {
-                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+                'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+                ...(BOT_PROXY_SECRET ? { 'x-bot-secret': BOT_PROXY_SECRET } : {})
               },
               timeout: 15000
             }
@@ -16095,7 +16104,8 @@ async function callEdgeFunction(functionName, body, timeoutMs = 120000) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseKey}`
+        'Authorization': `Bearer ${supabaseKey}`,
+        ...(BOT_PROXY_SECRET ? { 'x-bot-secret': BOT_PROXY_SECRET } : {})
       },
       body: JSON.stringify(body),
       signal: controller.signal
