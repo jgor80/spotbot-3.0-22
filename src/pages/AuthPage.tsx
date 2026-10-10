@@ -43,6 +43,21 @@ export default function AuthPage() {
     return true;
   };
 
+  const handleOAuth = async (provider: "google" | "microsoft") => {
+    setError(null);
+    setIsLoading(true);
+    const result = await lovable.auth.signInWithOAuth(provider, {
+      redirect_uri: window.location.origin,
+    });
+    setIsLoading(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    if (result.redirected) return; // Browser is heading to the provider
+    navigate(nextPath);
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
