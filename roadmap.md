@@ -1,7 +1,7 @@
 
 ## Current
 - [x] Add private player-owned photo browsing and confirmed deletion; refresh latest-photo fallback; five tests passed, live list returned photos and unauthorized deletion was denied
-- [ ] Make My Pro Photos available in the live Discord /me panel — blocked on Railway bot redeploy/access
+- [ ] Make My Pro Photos available in the live Discord /me panel — deployed via auto-deploy; needs a live check
 - [x] Fix player likeness drift by anchoring every new graphic to original saved player uploads; six tests passed and live AirDangus artwork verified with three original references
 - [x] Fix recruiting poster cropping across all styles and layouts; keep decorative bands behind group artwork
 - [x] Reuse saved rendered player cards in postgame, squad/TOTW imagery, profiles, player cards, leaderboard and lineups; authorize signed-front access and verify rendering/fallbacks
@@ -20,7 +20,7 @@
 - [x] Add and verify a separate 1986-inspired player-card style using the supplied references
 - [x] Fix Graphics Studio style-selection deadlines; test all styles with real Discord builders and verify a live Modern Broadcast render
 - [x] Allow stat-free player cards and non-repeating layouts and virtual-pro poses
-- [ ] Activate the updated Discord panel and verify in-server behavior — blocked on Railway deployment/access
+- [ ] Activate the updated Discord panel and verify in-server behavior — deployed via auto-deploy; needs a live check
 - [x] Refresh postgame recap images with soccer-broadcast backgrounds and stat-based player cards
 - [x] Auto-link known players on server join / voice join / "Is this you?" claim buttons
 - [x] Season-weighted scouting stats (FC27 1.0x, legacy 0.25x)
@@ -46,7 +46,7 @@
 - [x] 3D card binder page on the web app
 - [x] All-time trophy cabinet with season history
 - [x] Smarter Chronicle: game scripts, richer storyline, position-aware notebook (no clean sheets for attackers)
-- [ ] Auto-post Xbox club-match clips to #clips-and-highlights (built) — blocked on a working Xbox (OpenXBL) key + Railway redeploy; PS5 has no clip access, shared clips get match-tagged instead
+- [ ] Auto-post Xbox club-match clips to #clips-and-highlights (built) — blocked on a working Xbox (OpenXBL) key ; PS5 has no clip access, shared clips get match-tagged instead
 - [x] Set PCN Palermo clips channel to 1529555653805473844 (clips_channel_id saved in club settings)
 - [x] Xbox gamertag auto-fill via Microsoft (works for Discord-created accounts)
 - [ ] Azure app credentials (waiting on user)

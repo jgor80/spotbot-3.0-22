@@ -372,7 +372,7 @@ if (!supabaseUrl || !supabaseKey) {
 
 // When BOT_PROXY_SECRET is set, database requests go through the bot-proxy
 // backend function, which holds the admin key server-side. This lets the bot
-// save changes without ever having the admin key on Railway.
+// save changes without ever having the admin key on the bot host.
 // Public web app; DASHBOARD_URL overrides it for a staging or self-hosted copy.
 const DASHBOARD_URL = (process.env.DASHBOARD_URL || 'https://gafferbot.app').replace(/\/+$/, '');
 const DASHBOARD_HOST = DASHBOARD_URL.replace(/^https?:\/\//, '');
