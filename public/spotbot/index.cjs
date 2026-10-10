@@ -371,6 +371,9 @@ if (!supabaseUrl || !supabaseKey) {
 // When BOT_PROXY_SECRET is set, database requests go through the bot-proxy
 // backend function, which holds the admin key server-side. This lets the bot
 // save changes without ever having the admin key on Railway.
+// Public web app; DASHBOARD_URL overrides it for a staging or self-hosted copy.
+const DASHBOARD_URL = (process.env.DASHBOARD_URL || 'https://gafferbot.app').replace(/\/+$/, '');
+const DASHBOARD_HOST = DASHBOARD_URL.replace(/^https?:\/\//, '');
 const BOT_PROXY_SECRET = process.env.BOT_PROXY_SECRET;
 const proxyFetch = BOT_PROXY_SECRET
   ? (input, init = {}) => {
@@ -394,7 +397,7 @@ const clubEvents = createEvents({
   saveGuildSettings,
   isManager,
   canManageClub: squads.canManageClub,
-  dashboardUrl: process.env.DASHBOARD_URL
+  dashboardUrl: DASHBOARD_URL
 });
 
 embedStyle.install({ loadBranding: async (guildId) => (await clubEvents.serverPrefs(guildId)).branding });
@@ -419,7 +422,7 @@ const recruitCards = createRecruitCards({ supabase, getGuildState, recruitment }
 roster.setExtraFields(recruitCards.gapFields);
 
 // /help, /clubstats members|top|form|matches and the EA-name lookup behind /linkea
-const clubStats = createClubStats({ supabase, getGuildState, fetchClubMembers, fetchClubOverall, fetchClubInfo, dashboardUrl: process.env.DASHBOARD_URL });
+const clubStats = createClubStats({ supabase, getGuildState, fetchClubMembers, fetchClubOverall, fetchClubInfo, dashboardUrl: DASHBOARD_URL });
 
 const managerHub = createManagerHub({
   supabase,
@@ -429,7 +432,7 @@ const managerHub = createManagerHub({
   canManageClub: squads.canManageClub,
   syncClubHistory,
   buildLeaderboardEmbed,
-  dashboardUrl: process.env.DASHBOARD_URL,
+  dashboardUrl: DASHBOARD_URL,
   buildEventList: clubEvents.buildEventList
 });
 
@@ -447,7 +450,7 @@ const autopilot = createAutopilot({
   loadMatches: managerHub.loadMatches,
   loadTeam: squads.loadTeam,
   openai,
-  dashboardUrl: process.env.DASHBOARD_URL
+  dashboardUrl: DASHBOARD_URL
 });
 // After new matches arrive, quietly link gamertags whose name clearly matches a server member
 autopilot.onNewMatches(async (guildId) => {
@@ -467,7 +470,7 @@ const premiumDeps = {
   canManageClub: squads.canManageClub,
   loadMatches: managerHub.loadMatches,
   fetchClubMembers,
-  dashboardUrl: process.env.DASHBOARD_URL
+  dashboardUrl: DASHBOARD_URL
 };
 const broadcast = createBroadcast(premiumDeps);
 const dossier = createDossier({ ...premiumDeps, searchClub, matchesStats });
@@ -3147,7 +3150,7 @@ async function buildAdminControlPanelEmbeds(guildId, state) {
       { name: '📬 Pending Feedback', value: `${pendingFeedbackCount}`, inline: true },
       { name: '✅ Completed (30d)', value: `${completedFeedbackCount}`, inline: true },
       { name: '📨 Feedback Status', value: feedbackEnabled ? '✅ Enabled' : '❌ Disabled', inline: true },
-      { name: '🌐 Web Dashboard', value: '[Open →](https://squadiq.lovable.app)', inline: true },
+      { name: '🌐 Web Dashboard', value: `[Open →](${DASHBOARD_URL})`, inline: true },
       { name: '⏱️ Last Update', value: `<t:${Math.floor(Date.now() / 1000)}:R>`, inline: true }
     );
   embeds.push(statsEmbed);
@@ -3287,7 +3290,7 @@ function buildAdminControlPanelButtons(state) {
       .setLabel('Web Dashboard')
       .setEmoji('🌐')
       .setStyle(ButtonStyle.Link)
-      .setURL('https://squadiq.lovable.app')
+      .setURL(DASHBOARD_URL)
   );
   rows.push(row4);
   
@@ -3468,7 +3471,7 @@ function buildScoutingPanelComponents() {
       .setLabel('Web Dashboard')
       .setEmoji('🌐')
       .setStyle(ButtonStyle.Link)
-      .setURL('https://squadiq.lovable.app/scouting')
+      .setURL(`${DASHBOARD_URL}/scouting`)
   );
   rows.push(row4);
   
@@ -3566,7 +3569,7 @@ function buildEaPanelComponents(state) {
       .setLabel('Web Dashboard')
       .setEmoji('🌐')
       .setStyle(ButtonStyle.Link)
-      .setURL('https://squadiq.lovable.app/settings')
+      .setURL(`${DASHBOARD_URL}/settings`)
   );
   rows.push(row3);
   
@@ -3658,7 +3661,7 @@ function buildRatingsPanelComponents() {
       .setLabel('Web Dashboard')
       .setEmoji('🌐')
       .setStyle(ButtonStyle.Link)
-      .setURL('https://squadiq.lovable.app/leaderboard')
+      .setURL(`${DASHBOARD_URL}/leaderboard`)
   );
   rows.push(row3);
   
@@ -9524,7 +9527,7 @@ async function routeInteraction(interaction) {
             '**Manage Teams on Web Dashboard:**\n' +
             'Create teams, assign players to rosters, set captains and managers.'
           )
-          .setFooter({ text: 'Full team management available on web • squadiq.lovable.app' });
+          .setFooter({ text: `Full team management available on web • ${DASHBOARD_HOST}` });
         
         const buttons = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
@@ -9541,7 +9544,7 @@ async function routeInteraction(interaction) {
             .setLabel('Manage on Web')
             .setEmoji('🌐')
             .setStyle(ButtonStyle.Link)
-            .setURL('https://squadiq.lovable.app/teams')
+            .setURL(`${DASHBOARD_URL}/teams`)
         );
         
         return interaction.editReply({ embeds: [embed], components: [buttons] });
@@ -9586,7 +9589,7 @@ async function routeInteraction(interaction) {
         return interaction.reply({
           content: '📸 **Upload Your Build Screenshot**\n\n' +
             'Please post your build screenshot in this channel, then an admin will verify it.\n\n' +
-            '*Alternatively, use the web dashboard at squadiq.lovable.app to upload directly.*',
+            `*Alternatively, use the web dashboard at ${DASHBOARD_HOST} to upload directly.*`,
           flags: 64
         });
       }
@@ -13691,7 +13694,7 @@ async function routeInteraction(interaction) {
               { name: '🏆 Wins', value: `${summary.wins || 0}`, inline: true },
               { name: '📈 Form', value: summary.form_rating ? `${Math.round(summary.form_rating)}` : 'N/A', inline: true }
             )
-            .setFooter({ text: `Full profiles: /manager → Stats & Scouting → Player Profile • Web: squadiq.lovable.app` });
+            .setFooter({ text: `Full profiles: /manager → Stats & Scouting → Player Profile • Web: ${DASHBOARD_HOST}` });
 
           return interaction.editReply({ embeds: [embed] });
         } catch (err) {
@@ -14156,7 +14159,7 @@ async function routeInteraction(interaction) {
             content: `✅ **Team "${teamName}" created!**\n\n` +
               `**Type:** ${teamType}\n` +
               `**Captain:** ${captainId ? `<@${captainId}>` : 'Not set'}\n\n` +
-              `Manage your team roster at squadiq.lovable.app/teams`
+              `Manage your team roster at ${DASHBOARD_HOST}/teams`
           });
         } catch (err) {
           console.error('[Team Create Modal] Error:', err);

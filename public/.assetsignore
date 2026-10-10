@@ -1,0 +1,3 @@
+# Bot source and old bot copy are deployed to the bot host, not the website.
+spotbot/
+index.js

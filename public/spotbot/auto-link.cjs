@@ -388,7 +388,7 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
   // DM a one-time link to members so they can confirm gamertag + platform and connect the website.
   // By default only members with no gamertag yet; everyone=true re-asks the whole server.
   async function sendInvites(guild, { everyone = false, baseUrl } = {}) {
-    const site = (baseUrl || process.env.DASHBOARD_URL || 'https://spotbot3.lovable.app').replace(/\/$/, '');
+    const site = (baseUrl || process.env.DASHBOARD_URL || 'https://gafferbot.app').replace(/\/$/, '');
     const members = [...(await guild.members.fetch().catch(() => guild.members.cache)).values()].filter((m) => !m.user?.bot);
     const linked = everyone ? new Set() : await linkedMemberIds(members.map((m) => m.id));
     const targets = members.filter((m) => !linked.has(m.id));

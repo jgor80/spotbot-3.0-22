@@ -17,6 +17,10 @@ const authSchema = z.object({
   password: z.string().min(6, { message: "Password must be at least 6 characters" }),
 });
 
+// Google/Microsoft go through Lovable's OAuth broker (/~oauth), which only exists on Lovable hosting.
+// On a self-hosted domain that path falls through to the app's 404, so those buttons are hidden there.
+const LOVABLE_HOSTED = /(^|\.)(lovable\.app|lovableproject\.com)$/.test(window.location.hostname);
+
 export default function AuthPage() {
   const navigate = useNavigate();
   const { signIn, signUp, user, isLoading: authLoading } = useAuth();
@@ -157,24 +161,28 @@ export default function AuthPage() {
             >
               Continue with Discord
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              disabled={isLoading}
-              onClick={() => handleOAuth("google")}
-            >
-              Continue with Google
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              disabled={isLoading}
-              onClick={() => handleOAuth("microsoft")}
-            >
-              Continue with Microsoft / Xbox
-            </Button>
+            {LOVABLE_HOSTED && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={isLoading}
+                  onClick={() => handleOAuth("google")}
+                >
+                  Continue with Google
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={isLoading}
+                  onClick={() => handleOAuth("microsoft")}
+                >
+                  Continue with Microsoft / Xbox
+                </Button>
+              </>
+            )}
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t" />
