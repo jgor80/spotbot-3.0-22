@@ -15,7 +15,7 @@ const { num } = require('./player-season.cjs');
 const LIVE_TRUST_MS = 6 * 60 * 60 * 1000;
 const BIG_WIN_MARGIN = 5;
 const STREAK = 5;
-const DEFAULT_DASHBOARD = 'https://squadiq.lovable.app';
+const DEFAULT_DASHBOARD = 'https://gafferbot.app';
 
 const OVERLAY_SUBCOMMAND = {
   type: 1,
