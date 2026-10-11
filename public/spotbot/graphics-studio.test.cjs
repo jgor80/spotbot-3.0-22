@@ -16,7 +16,7 @@ Module._load = function (request, parent, ...args) {
   if (parent?.filename.endsWith('graphics-studio.cjs') && request === './manager-hub.cjs') return { activeClubs: (s) => s?.clubs || [] };
   return originalLoad.call(this, request, parent, ...args);
 };
-const { createGraphicsStudio, playerCard, STYLES, recruitmentPoster, palette } = require('./graphics-studio.cjs');
+const { createGraphicsStudio, playerCard, STYLES, recruitmentPoster, palette, matchPoster, lineupPoster, banner } = require('./graphics-studio.cjs');
 Module._load = originalLoad;
 
 function fixture(overrides = {}) {
@@ -239,7 +239,7 @@ test('recruiting frames contain the whole group and keep decoration and letterin
       const artIndex = lastSvg.indexOf(image);
       // Decorative family frames are rendered behind, never over the players.
       assert.doesNotMatch(lastSvg.slice(artIndex), /<polygon|stroke-dasharray/);
-      if (composition === 'editorial') assert.match(image, /y="460"[^>]*height="580"/);
+      if (composition === 'editorial') assert.match(image, /y="460"[^>]*height="600"/);
     }
   }
 });
@@ -477,4 +477,46 @@ test('pick sheet highlights the chosen kit and photo and reads multi-word kit co
   assert.ok(new Resvg(svg).render().asPng().length > 1000);
   const crests = crestSheet([{ label: 'Eagle <old>', years: '1947–1968', image: testLogo }]);
   assert.match(crests, /1\. 1947–1968/); assert.match(crests, /Eagle &lt;old&gt;/);
+});
+
+test('style menus show a numbered gallery of every style drawn locally, and the next step clears it', async () => {
+  const f = fixture({ club_matches: [] });
+  const originalFetch = global.fetch;
+  global.fetch = async () => { throw new Error('style galleries must not call club-art'); };
+  try {
+    await f.studio.handleInteraction(f.interaction('gs_poster:palermo', 'button'));
+    const msg = f.requests.at(-1);
+    assert.equal(msg.files[0].name, 'studio-preview.png');
+    assert.equal(msg.embeds[0].toJSON().image.url, 'attachment://studio-preview.png');
+    const options = msg.components[0].toJSON().components[0].options;
+    assert.equal(options.length, Object.values(STYLES).filter((s) => !s.cardOnly).length);
+    options.forEach((o, i) => assert.match(o.label, new RegExp(`^${i + 1}\\. `)));
+    const again = fixture();
+    await again.studio.handleInteraction(again.interaction('gs_poster:palermo', 'button'));
+    assert.ok(again.requests.at(-1).files[0].attachment.length > 1000);
+  } finally { global.fetch = originalFetch; }
+  await f.studio.handleInteraction(f.interaction('gs_style:poster:palermo', 'select', { values: ['cyber'] }));
+  assert.deepEqual(f.requests.at(-1).embeds, [], 'gallery cleared once a style is picked');
+});
+
+test('full-bleed themes are distinct, fill the frame with the art and keep text inside the frame', () => {
+  const { theme, THEME_STYLES } = require('./graphics-themes.cjs');
+  const art = testLogo;
+  const seen = new Set();
+  for (const style of THEME_STYLES) {
+    matchPoster({ art, style, kit: { primary: 'pale pink' }, clubName: 'PCN Palermo', scoreFor: 2, scoreAgainst: 1, result: 'win', opponent: 'Rivals', competition: 'League', dateText: 'Oct 10', scorers: 'A 2', motm: { name: 'A', rating: 8 } });
+    assert.doesNotMatch(lastSvg, /NaN|undefined|✦/);
+    assert.match(lastSvg, new RegExp(`<image href="${art.slice(0, 40).replace(/[+/]/g, '.')}[^>]*width="1024" height="1536"`), `${style} art fills the poster`);
+    const decor = theme(style).decor(1024, 1536, '#f9c5d9') + theme(style).defs('#f9c5d9');
+    assert.ok(!seen.has(decor), `${style} has its own frame`);
+    seen.add(decor);
+    lineupPoster({ art, style, kit: {}, clubName: 'C', title: 'Final', subtitle: 'Cup', starters: Array.from({ length: 11 }, (_, i) => ({ pos: 'CM', name: `P${i}` })), subs: ['S'] });
+    assert.doesNotMatch(lastSvg, /NaN|undefined/);
+    banner({ art, style, kit: {}, clubName: 'C', headline: 'BYOT Showdown Champions', competition: 'Cup', seasonTag: 'S1', roster: ['A', 'B'] });
+    assert.doesNotMatch(lastSvg, /NaN|undefined/);
+  }
+  // Multi-word kit colours reach the palette instead of falling back to green.
+  playerCard({ style: 'esports', kit: { primary: 'pale pink' }, name: 'A', clubName: 'C', stats: [] });
+  assert.match(lastSvg, /#f9c5d9/);
+  assert.doesNotMatch(lastSvg, /#22c55e/);
 });
