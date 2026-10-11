@@ -49,7 +49,8 @@ Deno.serve(async (req) => {
   // Only card fronts are shared within an authorized server. Collections/backs/deletion stay bot-owner scoped.
   if (b.action === "latest") {
     if (!bot) {
-      const userDb = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") ?? "", { global: { headers: { Authorization: req.headers.get("authorization") ?? "" } } });
+      // The self-hosted bot has no SUPABASE_ANON_KEY; the browser's apikey header is that same public key.
+      const userDb = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") || req.headers.get("apikey") || "", { global: { headers: { Authorization: req.headers.get("authorization") ?? "" } } });
       const { data: allowed, error } = await userDb.rpc("user_has_guild_access", { check_guild_id: b.guild_id });
       if (error || allowed !== true) return json({ error: "Forbidden" }, 403);
     }
