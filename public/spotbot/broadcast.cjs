@@ -143,6 +143,8 @@ function derivedOverall(avgRating) {
 
 function createBroadcast(deps) {
   const { supabase, premium, events, autopilot, getGuildState, canManageClub, fetchClubMembers } = deps;
+  // Self-hosted bots have no BOT_PROXY_SECRET; their in-process functions accept the local placeholder
+  const functionSecret = deps.functionSecret || process.env.BOT_PROXY_SECRET;
   const client = () => events.getClient();
 
   // ---------- Lookups ----------
@@ -185,27 +187,29 @@ function createBroadcast(deps) {
     return out;
   }
 
-  // Each player's own original pro-photo uploads (newest first), keyed by lowercase gamertag.
-  // Generated artwork (source_kind 'generated') is never included, so whatever we draw is really them.
-  async function uploadsFor(names) {
+  // Each player's pro-photo assets of one kind (newest first), keyed by lowercase gamertag.
+  //   'upload'     their own original photos (falls back to the latest-photo compatibility record)
+  //   'generated'  the rendered art the Studio made for their player cards from those photos
+  async function assetsFor(names, kind) {
     const out = new Map();
     if (!names.length) return out;
     const { data: profiles } = await supabase.from('profiles').select('discord_user_id, ea_username').in('ea_username', names);
     const byId = new Map((profiles || []).filter((p) => p.ea_username && /^\d{5,25}$/.test(p.discord_user_id)).map((p) => [p.discord_user_id, p.ea_username.toLowerCase()]));
     const ids = [...byId.keys()];
     if (!ids.length) return out;
-    const [{ data: uploads }, { data: latest }] = await Promise.all([
-      supabase.from('pro_photo_assets').select('discord_user_id, image_url').in('discord_user_id', ids).eq('source_kind', 'upload').order('created_at', { ascending: false }).limit(300),
-      supabase.from('pro_photos').select('discord_user_id, image_url').in('discord_user_id', ids),
+    const [{ data: assets }, { data: latest }] = await Promise.all([
+      supabase.from('pro_photo_assets').select('discord_user_id, image_url').in('discord_user_id', ids).eq('source_kind', kind).order('created_at', { ascending: false }).limit(300),
+      kind === 'upload' ? supabase.from('pro_photos').select('discord_user_id, image_url').in('discord_user_id', ids) : { data: [] },
     ]);
     for (const [id, name] of byId) {
-      const mine = (uploads || []).filter((u) => u.discord_user_id === id && u.image_url).map((u) => u.image_url);
+      const mine = (assets || []).filter((u) => u.discord_user_id === id && u.image_url).map((u) => u.image_url);
       const legacy = (latest || []).find((p) => p.discord_user_id === id)?.image_url;
       const urls = mine.length ? mine : legacy ? [legacy] : [];
       if (urls.length) out.set(name, urls);
     }
     return out;
   }
+  const uploadsFor = (names) => assetsFor(names, 'upload');
 
   // First of a player's uploads that loads, rotated by seed so back-to-back posts vary
   async function photoOf(urls, seed = '') {
@@ -230,15 +234,18 @@ function createBroadcast(deps) {
     return null;
   }
 
-  // Chronicle front page: the edition's cover players drawn only from their own uploads
+  // Chronicle front page: each cover player appears as their rendered player-card art (made from
+  // their own reference photos), falling back to an original upload when they have no render yet
   async function editionImage({ guildId, club, cover, prefs = {} }) {
     if (!(await premium.isPremium(guildId))) return null;
     const names = cover.coverStars.map((s) => s.name);
-    const uploads = await uploadsFor(names).catch(() => new Map());
+    const [renders, uploads] = await Promise.all([assetsFor(names, 'generated').catch(() => new Map()), uploadsFor(names).catch(() => new Map())]);
     const players = await Promise.all(cover.coverStars.map(async (s) => {
-      const urls = uploads.get(s.name.toLowerCase());
+      const key = s.name.toLowerCase();
+      const seed = `${cover.seed}${s.name}`;
       const bits = [s.goals && `${s.goals}G`, s.assists && `${s.assists}A`, s.avg && `${s.avg.toFixed(1)} avg`, s.saves && `${s.saves} saves`].filter(Boolean);
-      return { name: s.name, caption: bits.join(' · '), photo: urls ? await photoOf(urls, `${cover.seed}${s.name}`) : null };
+      const photo = (renders.has(key) ? await photoOf(renders.get(key), seed) : null) || (uploads.has(key) ? await photoOf(uploads.get(key), seed) : null);
+      return { name: s.name, caption: bits.join(' · '), photo };
     }));
     return G.frontPage({
       clubName: club.name,
@@ -255,7 +262,7 @@ function createBroadcast(deps) {
 
   async function cardsFor(guildId, names) {
     const out = new Map();
-    const secret = process.env.BOT_PROXY_SECRET;
+    const secret = functionSecret;
     const url = process.env.SUPABASE_URL;
     if (!secret || !url || !names.length) return out;
     try {
