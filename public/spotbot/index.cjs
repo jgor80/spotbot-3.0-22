@@ -538,6 +538,11 @@ client.on('messageCreate', (message) => {
   clips.onMessage(message).catch((err) => console.warn('[clips] failed:', err.message));
 });
 client.once('ready', () => {
+  setTimeout(async () => {
+    for (const guild of client.guilds.cache.values()) {
+      await guild.roles.fetch().then(() => stripPositionRolePermissions(guild)).catch((err) => console.warn('[roles] check failed:', err.message));
+    }
+  }, 10000);
   setTimeout(() => managerHub.initSticky(client).catch((err) => console.warn('[sticky] init failed:', err.message)), 15000);
   setTimeout(() => clubStats.initPanels(client).catch((err) => console.warn('[stats panel] init failed:', err.message)), 20000);
   setTimeout(() => graphicsStudio.init(client).catch((err) => console.warn('[studio] init failed:', err.message)), 20000);
@@ -661,14 +666,27 @@ function buildPositionRolePanel() {
   return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)] };
 }
 
+// Position roles are labels only: they never carry Discord permissions (no Timeout, kick, manage, etc.).
+async function stripPositionRolePermissions(guild) {
+  for (const role of guild.roles.cache.values()) {
+    if (!POSITION_ROLE_OPTIONS.includes(role.name.toUpperCase())) continue;
+    if (role.permissions.bitfield === 0n) continue;
+    if (!role.editable) { console.warn(`[roles] ${guild.name}: can't clear permissions on ${role.name} (role is above mine)`); continue; }
+    await role.setPermissions(0n, 'GafferBot: position roles carry no permissions')
+      .then(() => console.log(`[roles] ${guild.name}: cleared permissions on ${role.name}`))
+      .catch((err) => console.warn(`[roles] ${guild.name}: clear ${role.name} failed:`, err.message));
+  }
+}
+
 // Finds the guild's role for each position code, creating any that are missing.
 async function ensurePositionRoles(guild) {
   await guild.roles.fetch();
   const roles = {};
   for (const pos of POSITION_ROLE_OPTIONS) {
     roles[pos] = guild.roles.cache.find((r) => r.name.toUpperCase() === pos)
-      || await guild.roles.create({ name: pos, mentionable: true, reason: 'GafferBot position roles' });
+      || await guild.roles.create({ name: pos, mentionable: true, permissions: [], reason: 'GafferBot position roles' });
   }
+  await stripPositionRolePermissions(guild);
   return roles;
 }
 
