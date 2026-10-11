@@ -429,3 +429,52 @@ test('Palermo kits auto-pair by era and stay scoped to Palermo', () => {
   assert.ok(kitsFor(pal).every((k) => k.description.length <= 200));
   assert.deepEqual(kitFor({ name: 'Other FC', kit: { primary: 'red' } }, 'y2k'), { primary: 'red' });
 });
+
+test('card drafts show a local preview of the kit, crest and uploaded photos without calling the art model', async () => {
+  const uploads = [1, 2, 3].map((i) => ({ id: `photo-${i}`, pose: 'celebrate', source_kind: 'upload', image_url: `https://example.invalid/pro-${i}.png`, analysis: { kit_number: 23 }, created_at: '2026-10-01T00:00:00Z' }));
+  const f = fixture({ pro_photo_assets: uploads });
+  const originalFetch = global.fetch;
+  global.fetch = async () => { throw new Error('previews must not call club-art'); };
+  try {
+    await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: ['retro1986'] }));
+    const first = f.requests.at(-1);
+    assert.equal(first.files[0].name, 'studio-preview.png');
+    assert.ok(first.files[0].attachment.length > 1000, 'preview PNG attached');
+    assert.equal(first.embeds[0].toJSON().image.url, 'attachment://studio-preview.png');
+    assert.deepEqual(first.attachments, [], 'the previous preview is replaced, not stacked');
+    assert.ok(fetchedLogos.includes('https://example.invalid/pro-2.png'), 'photo thumbnails come from the saved uploads');
+    const photoMenu = first.components.map((r) => r.toJSON().components[0]).find((c) => c.custom_id.startsWith('gs_dphoto:'));
+    assert.equal(photoMenu.options[2].label, '2. celebrate · #23', 'dropdown numbers match the preview');
+    await f.studio.handleInteraction(f.interaction(photoMenu.custom_id, 'select', { values: ['photo-2'] }));
+    assert.equal(f.requests.at(-1).files[0].name, 'studio-preview.png');
+    assert.equal(f.requests.at(-1).components[1].toJSON().components[0].options.find((o) => o.default)?.value, 'photo-2');
+    const kitMenu = first.components[0].toJSON().components[0];
+    await f.studio.handleInteraction(f.interaction(kitMenu.custom_id, 'select', { values: ['away'] }));
+    assert.equal(f.requests.at(-1).embeds.length, 1, 'preview follows the kit change');
+  } finally { global.fetch = originalFetch; }
+});
+
+test('recruiting logo menu shows every crest numbered like the menu', async () => {
+  const f = fixture();
+  await f.studio.handleInteraction(f.interaction('gs_style:recruit:palermo', 'select', { values: ['modern'] }));
+  const msg = f.requests.at(-1);
+  assert.equal(msg.files[0].name, 'studio-preview.png');
+  assert.equal(msg.embeds[0].toJSON().image.url, 'attachment://studio-preview.png');
+  const options = msg.components[0].toJSON().components[0].options;
+  assert.match(options[1].label, /^1\. /);
+  assert.match(options.at(-1).label, new RegExp(`^${options.length - 1}\\. `));
+});
+
+test('pick sheet highlights the chosen kit and photo and reads multi-word kit colours', () => {
+  const { pickSheet, crestSheet, kitColor } = require('./studio-preview.cjs');
+  assert.equal(kitColor('pale pink', '#000'), '#f9c5d9');
+  assert.equal(kitColor('#F472B6', '#000'), '#f472b6');
+  assert.equal(kitColor('electric mauve', '#123456'), '#123456');
+  const svg = pickSheet({ kits: [{ label: 'Home', primary: 'pink', secondary: 'black', picked: true, auto: true }, { label: 'Away', primary: 'peach' }],
+    crest: { image: testLogo, label: 'Eagle' }, photos: [{ label: '1. celebrate', image: testLogo }, { label: '2. pose', image: null, picked: true }], morePhotos: 4 });
+  assert.match(svg, />AUTO</); assert.match(svg, />PICKED</); assert.match(svg, /\+4 more/); assert.match(svg, /No preview/);
+  assert.doesNotMatch(svg, /undefined|NaN/);
+  assert.ok(new Resvg(svg).render().asPng().length > 1000);
+  const crests = crestSheet([{ label: 'Eagle <old>', years: '1947–1968', image: testLogo }]);
+  assert.match(crests, /1\. 1947–1968/); assert.match(crests, /Eagle &lt;old&gt;/);
+});
