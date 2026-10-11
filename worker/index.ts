@@ -112,6 +112,11 @@ async function discordAuth(req: Request, env: Env): Promise<Response> {
   return json({ token_hash: gen.properties.hashed_token });
 }
 
+// Workers can't fetch a bare IP (Cloudflare error 1003), so http://1.2.3.4:8880 becomes http://1.2.3.4.sslip.io:8880.
+function originUrl(origin: string): string {
+  return origin.replace(/\/$/, "").replace(/^(https?:\/\/)(\d{1,3}(?:\.\d{1,3}){3})(?=[:/]|$)/, "$1$2.sslip.io");
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -125,7 +130,7 @@ export default {
     if (isMcp || url.pathname.startsWith("/api/functions/v1/")) {
       if (!env.FUNCTIONS_ORIGIN) return json({ error: "Functions server is not configured" }, 503);
       const path = isMcp ? "/functions/v1/gafferbot-mcp" : url.pathname.slice(4);
-      const target = env.FUNCTIONS_ORIGIN.replace(/\/$/, "") + path + url.search;
+      const target = originUrl(env.FUNCTIONS_ORIGIN) + path + url.search;
       const headers = new Headers(req.headers);
       headers.delete("x-bot-secret");
       return fetch(target, { method: req.method, headers, body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body });
@@ -136,7 +141,7 @@ export default {
     if (url.pathname.startsWith("/api/ops/")) {
       if (!env.OPS_ORIGIN) return json({ error: "Ops server is not configured" }, 503);
       if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
-      const target = env.OPS_ORIGIN.replace(/\/$/, "") + url.pathname.slice("/api/ops".length) + url.search;
+      const target = originUrl(env.OPS_ORIGIN) + url.pathname.slice("/api/ops".length) + url.search;
       return fetch(target, { method: "POST", headers: req.headers, body: req.body });
     }
     if (url.pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
