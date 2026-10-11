@@ -114,7 +114,8 @@ function lede(club, matches, stars, seed) {
 
 // ---------- Storyline prose: game stories, player features and the club's season arc ----------
 
-function gameStory(m, i, seed) {
+// subject set (a club name) writes a single game as its own story instead of a line in the day's run
+function gameStory(m, i, seed, subject) {
   const score = `${m.scoreFor}-${m.scoreAgainst}`;
   const script = matchScript(m);
   const verb = {
@@ -151,6 +152,7 @@ function gameStory(m, i, seed) {
     collapse: ' The film session will be long.',
     stalemate: ' Two goalkeepers will sleep well tonight.',
   }[script] || '';
+  if (subject) return `${subject} ${verb}.${flavor} ${bits.join(' ')}`.trim();
   const opener = i === 0 ? pick(['The day opened as', 'First up,', 'It started when'], seed) : pick(['Next,', 'Then', 'Later,', 'After that,'], seed + i);
   return `${opener} the club ${verb}.${flavor} ${bits.join(' ')}`.trim();
 }
@@ -446,4 +448,106 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
   return { embeds: [embed], allowedMentions: { parse: [] } };
 }
 
-module.exports = { matchScript, seasonArc, storyAngles, storyFacts, buildChronicle, EDITIONS, CHRONICLE_TZ };
+// ---------- Full-time extra: one match written up as a Chronicle story ----------
+// Posted in the Chronicle's channel right after the regular recap, so every game gets a newspaper
+// write-up beside the 3 PM and midnight editions. Same masthead, newsprint colour and beat-desk voice.
+
+function reportHeadline(club, m, seed) {
+  const C = club.toUpperCase();
+  const O = String(m.opponent || 'Unknown').toUpperCase();
+  const score = `${m.scoreFor}-${m.scoreAgainst}`;
+  const hatTrick = m.players.find((p) => n(p.goals) >= 3);
+  if (hatTrick && m.result === 'win') return `${nm(hatTrick).toUpperCase()} HAT-TRICK SINKS ${O} ${score}`;
+  const keeper = m.players.find((p) => lineOf(p.position) === 'GK' && n(p.saves) >= 4);
+  return {
+    demolition: pick([`${C} ROUTS ${O} ${score}`, `${C} RUNS RIOT: ${O} BURIED ${score}`], seed),
+    lockdown: keeper ? `${nm(keeper).toUpperCase()} SLAMS THE DOOR AS ${C} BLANKS ${O}` : `${C} SHUTS OUT ${O} ${score}`,
+    shootout: m.result === 'win' ? `${C} SURVIVES ${score} SHOOTOUT WITH ${O}` : m.result === 'loss' ? `${C} LOSES ${score} THRILLER TO ${O}` : `${score} CHAOS: ${C} AND ${O} SHARE THE SPOILS`,
+    'smash-and-grab': `${C} SMASH-AND-GRABS ${score} WIN AT ${O}`,
+    'arm-wrestle': pick([`${C} EDGES ${O} ${score}`, `NERVES OF STEEL: ${C} HOLDS ON ${score}`], seed),
+    heartbreaker: pick([`${C} EDGED ${score} BY ${O}`, `ONE GOAL SHORT: ${C} FALLS TO ${O}`], seed),
+    stalemate: `${C} AND ${O} PLAY OUT GOALLESS DRAW`,
+    'trade-off': `${C} AND ${O} SPLIT THE POINTS ${score}`,
+    collapse: pick([`${C} FLATTENED ${score} BY ${O}`, `NIGHT TO FORGET: ${O} TAKES ${C} APART`], seed),
+    win: `${C} TAKES CARE OF ${O} ${score}`,
+    loss: `${C} FALLS ${score} TO ${O}`,
+  }[matchScript(m)] || `${C} ${score} ${O}`;
+}
+
+// How the game was won or lost, from the team's own passing, tackling and finishing
+function howItWent(m) {
+  const sum = (k) => m.players.reduce((x, p) => x + n(p[k]), 0);
+  const passPct = pct(sum('passes_made'), sum('pass_attempts'));
+  const tacklePct = pct(sum('tackles'), sum('tackle_attempts'));
+  const shots = sum('shots');
+  const bits = [];
+  if (passPct != null) bits.push(`completed ${passPct}% of their passes`);
+  if (tacklePct != null) bits.push(`won ${tacklePct}% of their tackles`);
+  if (shots >= m.scoreFor && shots > 0) bits.push(`turned ${m.scoreFor} of ${shots} shot${shots > 1 ? 's' : ''} into goals`);
+  if (!bits.length) return '';
+  const last = bits.pop();
+  return `By the numbers, the side ${bits.length ? `${bits.join(', ')} and ${last}` : last}.`;
+}
+
+function buildMatchReport({ club, match: m, seasonMatches = [], logoUrl, story }) {
+  const at = m.playedAt instanceof Date ? m.playedAt : new Date(m.playedAt);
+  const dateText = at.toLocaleDateString('en-US', { timeZone: CHRONICLE_TZ, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const timeText = at.toLocaleTimeString('en-US', { timeZone: CHRONICLE_TZ, hour: 'numeric', minute: '2-digit' });
+  const seed = seedOf(`${club.name}${m.id}`);
+  // Only the record up to and including this game, so reposts and late syncs read the same
+  const history = seasonMatches.filter((x) => x.id !== m.id && x.playedAt <= at);
+  const record = [m, ...history];
+  const tag = m.result === 'win' ? 'W' : m.result === 'loss' ? 'L' : 'D';
+
+  const lede = story || [gameStory(m, 0, seed, club.name), howItWent(m)].filter(Boolean).join(' ');
+  const embed = new EmbedBuilder()
+    .setAuthor({ name: `📰 THE ${club.name.toUpperCase()} CHRONICLE · 🏁 FULL-TIME EXTRA` })
+    .setTitle(reportHeadline(club.name, m, seed))
+    .setDescription(clip(`*${dateText}, ${timeText} Central · From the beat desk*\n\n${lede}`, 4096))
+    .setColor(0xe8d9b5)
+    .setTimestamp(at);
+  if (logoUrl) embed.setThumbnail(logoUrl);
+
+  const scorers = m.players.filter((p) => n(p.goals) > 0).sort((a, b) => n(b.goals) - n(a.goals)).map((p) => `${nm(p)}${n(p.goals) > 1 ? ` ×${n(p.goals)}` : ''}`);
+  const assists = m.players.filter((p) => n(p.assists) > 0).sort((a, b) => n(b.assists) - n(a.assists)).map((p) => `${nm(p)}${n(p.assists) > 1 ? ` ×${n(p.assists)}` : ''}`);
+  const box = [`**${tag} ${m.scoreFor}-${m.scoreAgainst}** vs ${m.opponent}${m.matchType ? ` · ${m.matchType}` : ''}`];
+  if (scorers.length) box.push(`⚽ ${scorers.join(', ')}`);
+  if (assists.length) box.push(`🎯 ${assists.join(', ')}`);
+  embed.addFields({ name: '📋 BOX SCORE', value: clip(box.join('\n')) });
+
+  // Player ratings, best first: the line a reader looks for after the score
+  const rated = m.players.filter((p) => n(p.rating) > 0).sort((a, b) => n(b.rating) - n(a.rating));
+  if (rated.length) {
+    const lines = rated.slice(0, 11).map((p) => {
+      const bits = [n(p.goals) && `${n(p.goals)}G`, n(p.assists) && `${n(p.assists)}A`, n(p.saves) && `${n(p.saves)} sv`, p.motm && 'MOTM'].filter(Boolean).join(' ');
+      return `\`${n(p.rating).toFixed(1)}\` **${nm(p)}**${p.position ? ` (${p.position})` : ''}${bits ? ` · ${bits}` : ''}`;
+    });
+    embed.addFields({ name: '📊 RATINGS', value: clip(lines.join('\n')) });
+  }
+
+  const stars = playerTotals([m])
+    .sort((a, b) => b.goals * 3 + b.assists * 2 + b.avg + b.motm * 2 - (a.goals * 3 + a.assists * 2 + a.avg + a.motm * 2))
+    .slice(0, 3);
+  if (stars.length) {
+    const medals = ['⭐', '⭐⭐', '⭐⭐⭐'];
+    embed.addFields({
+      name: '🏅 THREE STARS',
+      value: stars.map((s, i) => `${medals[i]} **${s.name}** (${[s.goals && `${s.goals}G`, s.assists && `${s.assists}A`, s.avg && s.avg.toFixed(1), s.motm && 'MOTM'].filter(Boolean).join(', ') || '1 app'})`).join('\n'),
+    });
+  }
+
+  // Milestones, rematches, droughts. With too little history every player would read as a "debut".
+  const angles = storyAngles([m], record).filter((a) => !/^Team (passing|tackling)|^Finishing/.test(a) && (history.length >= 5 || !/^Debut/.test(a)));
+  if (angles.length) embed.addFields({ name: '🔎 THE ANGLE', value: clip(angles.slice(0, 5).map((a) => `• ${a}`).join('\n')) });
+
+  if (history.length) {
+    const form = record.sort((a, b) => b.playedAt - a.playedAt).slice(0, 5).reverse().map((x) => (x.result === 'win' ? '🟢' : x.result === 'loss' ? '🔴' : '⚪')).join('');
+    const arc = seasonArc(club.name, [m], record, seed);
+    embed.addFields({ name: '📖 THE STORYLINE', value: clip(`Form guide, last 5: ${form}\n${arc}`) });
+  }
+
+  embed.setFooter({ text: 'Full-time extra from the Chronicle desk. Full editions print at 3 PM and midnight Central.' });
+  return { embeds: [embed], allowedMentions: { parse: [] } };
+}
+
+module.exports = { matchScript, seasonArc, storyAngles, storyFacts, buildChronicle, buildMatchReport, reportHeadline, EDITIONS, CHRONICLE_TZ };
