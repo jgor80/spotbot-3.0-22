@@ -4,7 +4,7 @@
 - Both the cloud sync (sync-ea-stats) and the bot relink pre-FC27 clubs by exact EA name and mark them ea_fc_version='fc27'; FC27 gave every club a new ID, so old IDs only return last season's matches.
 - Bot database access goes through the `bot-proxy` function with a shared BOT_PROXY_SECRET; the admin key never leaves the backend.
 
-- Guild-authorized player-cards latest shares signed fronts for app/broadcast reuse; backs/collections stay owner-only. Recaps label single-match ratings separately from collection stats and use bundled position-based AI art as fallback.
+- Guild-authorized player-cards latest shares signed fronts for app/broadcast reuse; backs/collections stay owner-only. Recaps label single-match ratings separately from collection stats; the recap image backdrop is only ever an original pro-photo upload (`source_kind='upload'`) from a match player, never generated art, and the recap text stays compact, adding only what the image doesn't show.
 - Event announcement mentions are enabled only in postEvent; board updates and reposts suppress mentions so availability changes never notify the whole server again.
 - Pro photos are ingested only through the `pro-photo` function (bot secret, AI vision check, private storage with long-lived signed URLs); every accepted upload is retained in `pro_photo_assets`, while `pro_photos` stays as the latest-photo compatibility record.
 - Photo management in `pro-photo/manage.ts` requires the bot-authenticated requester to equal the owner, deletes only original uploads and their storage objects, and refreshes the compatibility photo; `/me` controls bind to the clicking user so saved cards stay untouched.

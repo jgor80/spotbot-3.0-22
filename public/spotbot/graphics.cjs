@@ -154,31 +154,15 @@ const BOX_COLUMNS = [
 // d: { clubName, opponentName, scoreFor, scoreAgainst, result, crestFor, crestAgainst,
 //      players: [{ name, position, rating, goals, assists, shots, passesMade, passAttempts, tackles, tackleAttempts, saves, motm, red }],
 //      motm: { name, rating, goals, assists, avatar } | null, accent, competition, dateText, details[], footer, talkingPoint }
-// Backgrounds are bundled, representative AI artwork, never player likenesses.
-const BACKGROUNDS = new Map();
-const BG_VARIANTS = { attack: ['attack', 'attack2', 'attack3'], defence: ['defence', 'defence2'], keeper: ['keeper', 'keeper2'] };
-function actionBackground(position, seed = '') {
-  const kind = /^(GK|goalkeeper)$/i.test(position || '') ? 'keeper' : /^(DEF|CB|LB|RB|defender)$/i.test(position || '') ? 'defence' : 'attack';
-  let h = 0;
-  for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  const list = BG_VARIANTS[kind];
-  const key = list[h % list.length];
-  if (!BACKGROUNDS.has(key)) {
-    try {
-      const image = fs.readFileSync(path.join(__dirname, 'assets', 'backgrounds', `${key}.jpg`));
-      BACKGROUNDS.set(key, `data:image/jpeg;base64,${image.toString('base64')}`);
-    } catch { BACKGROUNDS.set(key, null); }
-  }
-  return BACKGROUNDS.get(key) || (key !== kind ? actionBackground(position, '') : null);
-}
-
+//      background: data URL of one of our own original uploads (a match player's pro photo), or nothing.
+// No generated art is ever used behind the recap; without a photo it is the plain club green.
 function recapGraphic(d) {
   const W = 1600, H = 900;
   const accent = hex(d.accent);
   const res = RESULT_STYLE[d.result] || RESULT_STYLE.draw;
   const motm = d.motm;
   const players = (d.players || []).slice(0, 11);
-  const background = actionBackground(motm?.position, d.seed);
+  const background = d.background || null;
   const tx = 550, tw = 1000, rowH = 40;
   const colX = [];
   let cx = tx + tw;
@@ -241,7 +225,7 @@ function recapGraphic(d) {
   <rect y="833" width="9" height="67" fill="${accent}"/>
   <text x="38" y="862" font-family="${BODY}" font-weight="700" font-size="${fit(d.talkingPoint || (d.details || []).filter(Boolean).join(' / '), 1480, 21, 0.58, 14)}" fill="#ffffff">${esc(clip(d.talkingPoint || (d.details || []).filter(Boolean).join(' / '), 135))}</text>
   <text x="38" y="888" font-family="${BODY}" font-size="14" fill="#a8b8b0">EA MATCH DATA / ${esc(clip(d.footer || 'GAFFERBOT', 70))}</text>
-  <text x="1550" y="888" text-anchor="end" font-family="${BODY}" font-size="13" fill="#a8b8b0">${d.savedCard ? 'SAVED PLAYER CARD / AI ART' : 'AI ACTION ART / DISCORD AVATARS'}</text>
+  <text x="1550" y="888" text-anchor="end" font-family="${BODY}" font-size="13" fill="#a8b8b0">${[background && 'PLAYER PHOTO', d.savedCard ? 'SAVED PLAYER CARD' : 'DISCORD AVATARS'].filter(Boolean).join(' / ')}</text>
   </svg>`;
   return render(svg);
 }

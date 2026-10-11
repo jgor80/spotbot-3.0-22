@@ -185,6 +185,33 @@ function createBroadcast(deps) {
     return out;
   }
 
+  // Recap backdrop: an original pro-photo upload from someone in this match (Man of the Match first).
+  // Generated artwork (source_kind 'generated') is never used, so the background is always our own image.
+  async function backgroundFor(names, seed = '') {
+    if (!names.length) return null;
+    const { data: profiles } = await supabase.from('profiles').select('discord_user_id, ea_username').in('ea_username', names);
+    const idOf = new Map((profiles || []).filter((p) => p.ea_username && /^\d{5,25}$/.test(p.discord_user_id)).map((p) => [p.ea_username.toLowerCase(), p.discord_user_id]));
+    const ids = names.map((n) => idOf.get(n.toLowerCase())).filter(Boolean);
+    if (!ids.length) return null;
+    const [{ data: uploads }, { data: latest }] = await Promise.all([
+      supabase.from('pro_photo_assets').select('discord_user_id, image_url').in('discord_user_id', ids).eq('source_kind', 'upload').order('created_at', { ascending: false }).limit(200),
+      supabase.from('pro_photos').select('discord_user_id, image_url').in('discord_user_id', ids),
+    ]);
+    let h = 0;
+    for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    for (const id of ids) {
+      const mine = (uploads || []).filter((u) => u.discord_user_id === id && u.image_url).map((u) => u.image_url);
+      const legacy = (latest || []).find((p) => p.discord_user_id === id)?.image_url;
+      // Rotate through a player's uploads so back-to-back recaps don't all look the same
+      const urls = mine.length ? [...mine.slice(h % mine.length), ...mine.slice(0, h % mine.length)] : legacy ? [legacy] : [];
+      for (const url of urls) {
+        const img = await G.fetchImage(url);
+        if (img) return img;
+      }
+    }
+    return null;
+  }
+
   async function cardsFor(guildId, names) {
     const out = new Map();
     const secret = process.env.BOT_PROXY_SECRET;
@@ -274,6 +301,7 @@ function createBroadcast(deps) {
     const motmLine = players.find((p) => p.motm) || players[0] || null;
     const avatars = motmLine ? await avatarsFor(row.guild_id, [motmLine.name]) : new Map();
     const savedCards = motmLine ? await cardsFor(row.guild_id, [motmLine.name]) : new Map();
+    const background = await backgroundFor([...new Set([motmLine?.name, ...players.map((p) => p.name)].filter(Boolean))], row.id).catch(() => null);
     const form = history
       .slice(0, 5)
       .reverse()
@@ -291,6 +319,7 @@ function createBroadcast(deps) {
       players,
       motm: motmLine && { ...motmLine, avatar: avatars.get(motmLine.name.toLowerCase()) || null },
       savedCard: motmLine ? savedCards.get(motmLine.name.toLowerCase()) || null : null,
+      background,
       accent: Number.isInteger(prefs.branding?.color) ? prefs.branding.color : undefined,
       competition: MATCH_TYPES[md._matchCategory] || MATCH_TYPES[row.match_type] || null,
       dateText: dateText(match.playedAt, prefs.timezone),
@@ -302,7 +331,6 @@ function createBroadcast(deps) {
       talkingPoint: talkingPoint ? talkingPoint.replace(/\*\*/g, '').replace(/^\S+\s/, '') : null,
       footer: prefs.branding?.footer || '',
       headline: headline || null,
-      seed: String(row.id),
     });
   }
 
@@ -500,7 +528,7 @@ function createBroadcast(deps) {
   autopilot.setRecapImage(recapImage);
   events.onTick((now) => tick(now).catch((err) => console.warn(`[broadcast] tick failed: ${err.message}`)));
 
-  return { handleInteraction, buildCards, buildTotw, recapImage };
+  return { handleInteraction, buildCards, buildTotw, recapImage, backgroundFor };
 }
 
 module.exports = { createBroadcast, BROADCAST_SUBCOMMANDS, derivedOverall, badgesFor };
