@@ -185,31 +185,72 @@ function createBroadcast(deps) {
     return out;
   }
 
-  // Recap backdrop: an original pro-photo upload from someone in this match (Man of the Match first).
-  // Generated artwork (source_kind 'generated') is never used, so the background is always our own image.
-  async function backgroundFor(names, seed = '') {
-    if (!names.length) return null;
+  // Each player's own original pro-photo uploads (newest first), keyed by lowercase gamertag.
+  // Generated artwork (source_kind 'generated') is never included, so whatever we draw is really them.
+  async function uploadsFor(names) {
+    const out = new Map();
+    if (!names.length) return out;
     const { data: profiles } = await supabase.from('profiles').select('discord_user_id, ea_username').in('ea_username', names);
-    const idOf = new Map((profiles || []).filter((p) => p.ea_username && /^\d{5,25}$/.test(p.discord_user_id)).map((p) => [p.ea_username.toLowerCase(), p.discord_user_id]));
-    const ids = names.map((n) => idOf.get(n.toLowerCase())).filter(Boolean);
-    if (!ids.length) return null;
+    const byId = new Map((profiles || []).filter((p) => p.ea_username && /^\d{5,25}$/.test(p.discord_user_id)).map((p) => [p.discord_user_id, p.ea_username.toLowerCase()]));
+    const ids = [...byId.keys()];
+    if (!ids.length) return out;
     const [{ data: uploads }, { data: latest }] = await Promise.all([
-      supabase.from('pro_photo_assets').select('discord_user_id, image_url').in('discord_user_id', ids).eq('source_kind', 'upload').order('created_at', { ascending: false }).limit(200),
+      supabase.from('pro_photo_assets').select('discord_user_id, image_url').in('discord_user_id', ids).eq('source_kind', 'upload').order('created_at', { ascending: false }).limit(300),
       supabase.from('pro_photos').select('discord_user_id, image_url').in('discord_user_id', ids),
     ]);
-    let h = 0;
-    for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-    for (const id of ids) {
+    for (const [id, name] of byId) {
       const mine = (uploads || []).filter((u) => u.discord_user_id === id && u.image_url).map((u) => u.image_url);
       const legacy = (latest || []).find((p) => p.discord_user_id === id)?.image_url;
-      // Rotate through a player's uploads so back-to-back recaps don't all look the same
-      const urls = mine.length ? [...mine.slice(h % mine.length), ...mine.slice(0, h % mine.length)] : legacy ? [legacy] : [];
-      for (const url of urls) {
-        const img = await G.fetchImage(url);
-        if (img) return img;
-      }
+      const urls = mine.length ? mine : legacy ? [legacy] : [];
+      if (urls.length) out.set(name, urls);
+    }
+    return out;
+  }
+
+  // First of a player's uploads that loads, rotated by seed so back-to-back posts vary
+  async function photoOf(urls, seed = '') {
+    let h = 0;
+    for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    const k = h % urls.length;
+    for (const url of [...urls.slice(k), ...urls.slice(0, k)]) {
+      const img = await G.fetchImage(url);
+      if (img) return img;
     }
     return null;
+  }
+
+  // Recap backdrop: an original upload from someone in this match, Man of the Match first
+  async function backgroundFor(names, seed = '') {
+    const uploads = await uploadsFor(names);
+    for (const n of names) {
+      const urls = uploads.get(n.toLowerCase());
+      const img = urls ? await photoOf(urls, seed) : null;
+      if (img) return img;
+    }
+    return null;
+  }
+
+  // Chronicle front page: the edition's cover players drawn only from their own uploads
+  async function editionImage({ guildId, club, cover, prefs = {} }) {
+    if (!(await premium.isPremium(guildId))) return null;
+    const names = cover.coverStars.map((s) => s.name);
+    const uploads = await uploadsFor(names).catch(() => new Map());
+    const players = await Promise.all(cover.coverStars.map(async (s) => {
+      const urls = uploads.get(s.name.toLowerCase());
+      const bits = [s.goals && `${s.goals}G`, s.assists && `${s.assists}A`, s.avg && `${s.avg.toFixed(1)} avg`, s.saves && `${s.saves} saves`].filter(Boolean);
+      return { name: s.name, caption: bits.join(' · '), photo: urls ? await photoOf(urls, `${cover.seed}${s.name}`) : null };
+    }));
+    return G.frontPage({
+      clubName: club.name,
+      editionLabel: cover.ed.label,
+      dateText: cover.dateText,
+      headline: cover.headline,
+      record: cover.record,
+      storyline: cover.storyline,
+      run: cover.run,
+      players,
+      accent: Number.isInteger(prefs.branding?.color) ? prefs.branding.color : undefined,
+    });
   }
 
   async function cardsFor(guildId, names) {
@@ -526,9 +567,10 @@ function createBroadcast(deps) {
   }
 
   autopilot.setRecapImage(recapImage);
+  if (autopilot.setEditionImage) autopilot.setEditionImage(editionImage);
   events.onTick((now) => tick(now).catch((err) => console.warn(`[broadcast] tick failed: ${err.message}`)));
 
-  return { handleInteraction, buildCards, buildTotw, recapImage, backgroundFor };
+  return { handleInteraction, buildCards, buildTotw, recapImage, backgroundFor, editionImage };
 }
 
 module.exports = { createBroadcast, BROADCAST_SUBCOMMANDS, derivedOverall, badgesFor };

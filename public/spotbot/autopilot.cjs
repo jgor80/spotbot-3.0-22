@@ -25,7 +25,7 @@ const { autofillLineup, FORMATION_SLOTS } = require('./lineup-autofill.cjs');
 const { seasonTotals } = require('./player-season.cjs');
 const T = require('./event-time.cjs');
 const { PREMIUM_FREE } = require('./premium.cjs');
-const { storyFacts, buildChronicle, buildMatchReport, EDITIONS, CHRONICLE_TZ } = require('./chronicle.cjs');
+const { storyFacts, buildChronicle, buildMatchReport, editionCover, EDITIONS, CHRONICLE_TZ } = require('./chronicle.cjs');
 const RX = require('./recap-extras.cjs');
 
 const FEATURES = {
@@ -107,6 +107,7 @@ function createAutopilot(deps) {
   const newMatchHooks = [];
   const sessionHooks = [];
   let recapImage = null;
+  let editionImage = null;
 
   // ---------- Settings ----------
 
@@ -995,11 +996,17 @@ function createAutopilot(deps) {
     const prefs = await events.serverPrefs(guildId).catch(() => ({}));
     const story = matches.length
       ? await aiStory(
-          "You are a sharp newspaper beat writer covering an EA FC Pro Clubs team. Write 2-3 short paragraphs (under 950 characters total). Lead with the most newsworthy story angle, not the first game. Explain HOW games were won or lost using the stats (passing, tackling, finishing, saves), name standout players in **bold**, mention any milestone, rematch, drought or partnership from the angles, and close with what it means for the season storyline. Vary sentence rhythm; no clichés like 'all in all'. Only use the facts given; never invent goals, minutes, scorers' timing or quotes. No headings or bullet points. Each game has a 'script' tag (demolition, lockdown, shootout, smash-and-grab, heartbreaker, etc.): use it to set the tone. Clean sheets belong only to goalkeepers and defenders, never attackers. Stats marked (est) are estimates; say 'about'. Write like an original columnist for an Italian sports daily (think Gazzetta dello Sport): operatic, passionate, a little melodramatic, with a few natural Italian words or exclamations (mamma mia, che partita, catenaccio, fantasista, tifosi, forza) but never a whole sentence in Italian, and no stock phrases repeated from story to story. When an opponent's name invites it, slip in one cheeky innuendo or pun on it (PG-13, aimed at the club name only, never at real people, gender, race or bodies); if no gag is genuinely funny, skip it. Teasing the opponent is fine; never mock our own players.",
+          "You are a sharp newspaper beat writer covering an EA FC Pro Clubs team. Write 2-3 short paragraphs (under 950 characters total). Lead with the most newsworthy story angle, not the first game. Explain HOW games were won or lost using the stats (passing, tackling, finishing, saves), name standout players in **bold**, mention any milestone, rematch, drought or partnership from the angles, and give the last paragraph to the recent run of games and the overall team storyline (form, streaks, points pace, who is carrying the side). Vary sentence rhythm; no clichés like 'all in all'. Only use the facts given; never invent goals, minutes, scorers' timing or quotes. No headings or bullet points. Each game has a 'script' tag (demolition, lockdown, shootout, smash-and-grab, heartbreaker, etc.): use it to set the tone. Clean sheets belong only to goalkeepers and defenders, never attackers. Stats marked (est) are estimates; say 'about'. Write like an original columnist for an Italian sports daily (think Gazzetta dello Sport): operatic, passionate, a little melodramatic, with a few natural Italian words or exclamations (mamma mia, che partita, catenaccio, fantasista, tifosi, forza) but never a whole sentence in Italian, and no stock phrases repeated from story to story. When an opponent's name invites it, slip in one cheeky innuendo or pun on it (PG-13, aimed at the club name only, never at real people, gender, race or bodies); if no gag is genuinely funny, skip it. Teasing the opponent is fine; never mock our own players.",
           storyFacts({ club, matches, seasonMatches: all })
         )
       : undefined;
-    return buildChronicle({ club, edition, matches, upcoming: upcoming || [], seasonMatches: all, now, logoUrl: prefs.branding?.logo_url, story });
+    // Premium front page drawn from the same cover, with players shown only through their own photos
+    let image;
+    if (editionImage && isOn(club, 'graphics')) {
+      const cover = editionCover({ club, edition, matches, seasonMatches: all, now });
+      image = (await editionImage({ guildId, club, cover, prefs }).catch((err) => console.warn(`[chronicle] front page failed: ${err.message}`))) || undefined;
+    }
+    return buildChronicle({ club, edition, matches, upcoming: upcoming || [], seasonMatches: all, now, logoUrl: prefs.branding?.logo_url, story, image });
   }
 
   async function postChronicles(now) {
@@ -1210,6 +1217,10 @@ function createAutopilot(deps) {
     onSessionEnd: (fn) => sessionHooks.push(fn),
     buildSessionRecap,
     // fn({ row, club, match, history, prefs, talkingPoint }) -> PNG buffer or null
+    // fn({ guildId, club, cover, prefs }) -> PNG buffer or null (the Chronicle front page)
+    setEditionImage: (fn) => {
+      editionImage = fn;
+    },
     setRecapImage: (fn) => {
       recapImage = fn;
     },

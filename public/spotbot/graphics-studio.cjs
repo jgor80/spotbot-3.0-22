@@ -452,16 +452,16 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const p = await draftPreview(token, kind, club, guildId).catch((err) => { console.warn('[studio] preview failed:', err.message); return null; });
     return p ? { ...base, embeds: [p.embed], files: [p.file], attachments: [] } : { ...base, embeds: [], files: [], attachments: [] };
   }
-  // Style picker gallery: every style for this graphic drawn locally with bundled sample art
+  // Style picker gallery: every style for this graphic drawn locally with bundled sample art (assets/samples, menus only)
   // (no AI calls), small and cached per club kit, so members see each theme before choosing.
   const STYLE_SHEETS = new Map();
   const SAMPLE = (file, w, h) => {
-    const raw = `data:image/jpeg;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'backgrounds', `${file}.jpg`)).toString('base64')}`;
+    const raw = `data:image/jpeg;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'samples', `${file}.jpg`)).toString('base64')}`;
     return `data:image/png;base64,${Buffer.from(G.render(thumbSvg(raw, w, h))).toString('base64')}`;
   };
   // A head-and-shoulders crop of the bundled celebration art, standing in for a yearbook headshot.
   const SAMPLE_HEAD = () => {
-    const raw = `data:image/jpeg;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'backgrounds', 'attack3.jpg')).toString('base64')}`;
+    const raw = `data:image/jpeg;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'samples', 'attack3.jpg')).toString('base64')}`;
     return `data:image/png;base64,${Buffer.from(G.render(`<svg xmlns="http://www.w3.org/2000/svg" width="512" height="768" viewBox="215 90 300 450" preserveAspectRatio="xMidYMid slice"><image href="${raw}" width="1600" height="912"/></svg>`)).toString('base64')}`;
   };
   async function styleGallery(kind, club, guildId) {

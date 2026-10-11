@@ -378,4 +378,82 @@ function totwPoster({ players, title, subtitle, accent, crestImage, footer }) {
   return render(svg);
 }
 
-module.exports = { render, esc, fetchImage, eaCrestUrl, recapGraphic, cardSheet, totwPoster, tierFor, hex };
+// ---------- Chronicle front page ----------
+
+// d: { clubName, editionLabel, dateText, headline, record, storyline, accent, crest,
+//      run: [{ result, scoreFor, scoreAgainst, opponent }] newest first,
+//      players: [{ name, caption, photo }] cover players; photo is the player's own pro-photo upload or null }
+// Players are only ever shown through their real uploaded photos (no generated likenesses); a player
+// without one is named in the caption strip instead of drawn.
+function frontPage(d) {
+  const W = 1200, H = 1500;
+  const ink = '#1b1a17', paper = '#f1e9d6', rule = '#3a362e', muted = '#5d574b';
+  const accent = hex(d.accent);
+  const pictured = (d.players || []).filter((p) => p.photo).slice(0, 3);
+  const unpictured = (d.players || []).filter((p) => !p.photo).slice(0, 3);
+  const id = (i) => `fp${i}`;
+  // Photo block: one lead photo, up to two smaller ones beside it
+  const photoY = 400, photoH = 640;
+  let photos = '';
+  if (pictured.length) {
+    const lead = pictured[0];
+    const side = pictured.slice(1);
+    const leadW = side.length ? 700 : 1100;
+    photos += `<clipPath id="${id(0)}"><rect x="50" y="${photoY}" width="${leadW}" height="${photoH}"/></clipPath>
+      <image href="${lead.photo}" x="50" y="${photoY}" width="${leadW}" height="${photoH}" preserveAspectRatio="xMidYMin slice" clip-path="url(#${id(0)})"/>
+      <rect x="50" y="${photoY + photoH - 64}" width="${leadW}" height="64" fill="${ink}" fill-opacity="0.82"/>
+      <text x="70" y="${photoY + photoH - 24}" font-family="${HEAD}" font-weight="700" font-size="${fit(lead.name, leadW - 60, 32, 0.55, 18)}" fill="#ffffff">${esc(clip(lead.name, 26).toUpperCase())}<tspan dx="16" font-family="${BODY}" font-weight="400" font-size="20" fill="#e8dfc8">${esc(clip(lead.caption, 48))}</tspan></text>`;
+    const sh = side.length === 2 ? (photoH - 20) / 2 : photoH;
+    side.forEach((p, i) => {
+      const y = photoY + i * (sh + 20);
+      photos += `<clipPath id="${id(i + 1)}"><rect x="770" y="${y}" width="380" height="${sh}"/></clipPath>
+        <image href="${p.photo}" x="770" y="${y}" width="380" height="${sh}" preserveAspectRatio="xMidYMin slice" clip-path="url(#${id(i + 1)})"/>
+        <rect x="770" y="${y + sh - 54}" width="380" height="54" fill="${ink}" fill-opacity="0.82"/>
+        <text x="786" y="${y + sh - 20}" font-family="${HEAD}" font-weight="700" font-size="${fit(p.name, 340, 24, 0.55, 14)}" fill="#ffffff">${esc(clip(p.name, 22).toUpperCase())}</text>`;
+    });
+  } else {
+    photos += `<rect x="50" y="${photoY}" width="1100" height="${photoH}" fill="none" stroke="${rule}" stroke-width="2"/>
+      <text x="600" y="${photoY + photoH / 2}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="44" fill="${muted}">NO PHOTOS ON FILE</text>
+      <text x="600" y="${photoY + photoH / 2 + 44}" text-anchor="middle" font-family="${BODY}" font-size="22" fill="${muted}">Players: post your pro photo in #pro-photos to make the front page</text>`;
+  }
+  const notPictured = unpictured.length ? `ALSO STARRING: ${unpictured.map((p) => p.name.toUpperCase()).join(' · ')}` : '';
+  // The run: one tile per game, oldest on the left so it reads like a form guide
+  const run = (d.run || []).slice(0, 10).reverse();
+  const tileW = run.length ? Math.min(106, Math.floor(1100 / run.length) - 6) : 0;
+  const runY = 1132;
+  const tiles = run.map((m, i) => {
+    const x = 50 + i * (tileW + 6);
+    const fill = m.result === 'win' ? '#2f6b3f' : m.result === 'loss' ? '#8c2f2a' : '#7a7466';
+    return `<rect x="${x}" y="${runY}" width="${tileW}" height="86" fill="${fill}"/>
+      <text x="${x + tileW / 2}" y="${runY + 36}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="28" fill="#ffffff">${m.scoreFor}-${m.scoreAgainst}</text>
+      <text x="${x + tileW / 2}" y="${runY + 68}" text-anchor="middle" font-family="${BODY}" font-size="${fit(m.opponent, tileW - 10, 15, 0.55, 9)}" fill="#f3efe4">${esc(clip(m.opponent, 14))}</text>`;
+  }).join('');
+  const story = wrap(d.storyline || '', 100, 5);
+  // Headline: one line when it fits, else two balanced lines at a size that fits the width
+  const head = String(d.headline || '');
+  const headLines = head.length <= 30 ? [head] : wrap(head, Math.ceil(head.length / 2) + 4, 2);
+  const headSize = Math.min(...headLines.map((l) => fit(l, 1100, 72, 0.47, 34)));
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  <rect width="${W}" height="${H}" fill="${paper}"/>
+  <rect x="50" y="40" width="1100" height="6" fill="${ink}"/>
+  <text x="600" y="140" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="${fit(`THE ${d.clubName} CHRONICLE`, 1080, 84, 0.5, 40)}" fill="${ink}" letter-spacing="2">${esc(`THE ${clip(d.clubName, 30)} CHRONICLE`.toUpperCase())}</text>
+  <rect x="50" y="164" width="1100" height="2" fill="${ink}"/>
+  <text x="50" y="194" font-family="${BODY}" font-weight="700" font-size="18" fill="${accent}">${esc(clip(d.editionLabel || '', 40))}</text>
+  <text x="600" y="194" text-anchor="middle" font-family="${BODY}" font-size="18" fill="${muted}">${esc(clip(d.dateText, 60))}</text>
+  <text x="1150" y="194" text-anchor="end" font-family="${BODY}" font-size="18" fill="${muted}">${d.record ? `LAST ${(d.run || []).length}: ${esc(d.record)}` : 'EA FC PRO CLUBS'}</text>
+  <rect x="50" y="210" width="1100" height="2" fill="${ink}"/>
+  ${headLines.map((l, i) => `<text x="600" y="${(headLines.length === 1 ? 322 : 282) + i * (headSize + 8)}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="${headSize}" fill="${ink}">${esc(l)}</text>`).join('')}
+  ${photos}
+  ${notPictured ? `<text x="50" y="${photoY + photoH + 32}" font-family="${HEAD}" font-size="20" fill="${muted}">${esc(clip(notPictured, 100))}</text>` : ''}
+  <text x="50" y="${runY - 14}" font-family="${HEAD}" font-weight="700" font-size="24" fill="${ink}">THE RUN</text>
+  ${tiles || `<text x="50" y="${runY + 40}" font-family="${BODY}" font-size="22" fill="${muted}">No games on record yet.</text>`}
+  <rect x="50" y="1238" width="1100" height="2" fill="${ink}"/>
+  <text x="50" y="1272" font-family="${HEAD}" font-weight="700" font-size="24" fill="${ink}">THE STORYLINE</text>
+  ${story.map((l, i) => `<text x="50" y="${1306 + i * 30}" font-family="${BODY}" font-size="21" fill="${ink}">${esc(l)}</text>`).join('')}
+  <rect x="50" y="1454" width="1100" height="6" fill="${ink}"/>
+  <text x="1150" y="1485" text-anchor="end" font-family="${BODY}" font-size="14" fill="${muted}">EA MATCH DATA / PLAYER PHOTOS FROM #PRO-PHOTOS</text>
+  </svg>`;
+  return render(svg);
+}
+
+module.exports = { render, esc, fetchImage, eaCrestUrl, recapGraphic, cardSheet, totwPoster, frontPage, tierFor, hex };

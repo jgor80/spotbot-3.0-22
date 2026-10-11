@@ -352,16 +352,50 @@ function storyFacts({ club, matches, seasonMatches }) {
   });
   const angles = storyAngles(matches, seasonMatches);
   const jokes = [...new Set(matches.map((m) => nameJoke(m.opponent, m.result)).filter(Boolean))];
-  return `Club: ${club.name}\nToday's games (in order):\n${games.join('\n') || 'none'}\nStory angles (verified from the record):\n${angles.map((a) => `- ${a}`).join('\n') || '- none'}\nSeason context: ${seasonArc(club.name, matches, seasonMatches).replace(/\*/g, '')}${jokes.length ? `\nOptional name gags (use one only if it lands, or write a better one): ${jokes.join(' | ')}` : ''}`;
+  const run = recentRun(seasonMatches, new Date(Math.max(...matches.map((m) => +m.playedAt), 0) || Date.now()));
+  return `Club: ${club.name}\nToday's games (in order):\n${games.join('\n') || 'none'}\nStory angles (verified from the record):\n${angles.map((a) => `- ${a}`).join('\n') || '- none'}\nRecent run (newest first): ${run.map((m) => `${m.result[0].toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} ${m.opponent}`).join(', ') || 'none'}\nSeason context: ${seasonArc(club.name, matches, seasonMatches).replace(/\*/g, '')}${jokes.length ? `\nOptional name gags (use one only if it lands, or write a better one): ${jokes.join(' | ')}` : ''}`;
 }
 
-// Build the edition embed. upcoming = [{ title, scheduled_at, yes }] events still ahead.
-function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches = [], now = new Date(), logoUrl, story }) {
+const starScore = (t) => t.goals * 3 + t.assists * 2 + t.avg + t.motm * 2;
+const RUN_LENGTH = 10;
+
+// The recent run: the last games on record up to now, newest first
+function recentRun(seasonMatches, now = new Date(), n = RUN_LENGTH) {
+  return [...seasonMatches].filter((m) => m.playedAt <= now).sort((a, b) => b.playedAt - a.playedAt).slice(0, n);
+}
+
+// What an edition is about, shared by the embed and the front-page image so they always agree.
+// Cover players are today's stars, or the run's best performers on a quiet day.
+function editionCover({ club, edition, matches, seasonMatches = [], now = new Date() }) {
   const ed = EDITIONS[edition];
   const dateText = new Date(now.getTime() - (edition === 'overnight' ? 3600000 : 0)).toLocaleDateString('en-US', { timeZone: CHRONICLE_TZ, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const seed = seedOf(`${club.name}${dateText}${edition}`);
   const totals = playerTotals(matches);
-  const stars = [...totals].sort((a, b) => b.goals * 3 + b.assists * 2 + b.avg + b.motm * 2 - (a.goals * 3 + a.assists * 2 + a.avg + a.motm * 2)).slice(0, 3);
+  const stars = [...totals].sort((a, b) => starScore(b) - starScore(a)).slice(0, 3);
+  const run = recentRun(seasonMatches, now);
+  const runStars = [...playerTotals(run)].sort((a, b) => starScore(b) - starScore(a)).slice(0, 3);
+  const w = run.filter((m) => m.result === 'win').length;
+  const d = run.filter((m) => m.result === 'draw').length;
+  // Storyline in plain sentences for the image: record, streak and pace, without the markdown
+  const storyline = seasonArc(club.name, matches, seasonMatches, seed).replace(/\*/g, '');
+  return {
+    ed, dateText, seed, totals, stars, run,
+    coverStars: stars.length ? stars : runStars,
+    headline: headline(club.name, matches, seed),
+    record: run.length ? `${w}-${d}-${run.length - w - d}` : null,
+    storyline,
+  };
+}
+
+// The run in one line per game, newest first, for the embed
+function runLines(run) {
+  return run.map((m) => `${m.result === 'win' ? '🟢 W' : m.result === 'loss' ? '🔴 L' : '⚪ D'} ${m.scoreFor}-${m.scoreAgainst} ${m.opponent}`);
+}
+
+// Build the edition embed. upcoming = [{ title, scheduled_at, yes }] events still ahead.
+// image: optional front-page PNG (Buffer) drawn from the same cover.
+function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches = [], now = new Date(), logoUrl, story, image }) {
+  const { ed, dateText, seed, totals, stars, run, record } = editionCover({ club, edition, matches, seasonMatches, now });
 
   const embed = new EmbedBuilder()
     .setAuthor({ name: `📰 THE ${club.name.toUpperCase()} CHRONICLE · ${ed.emoji} ${ed.label}` })
@@ -389,6 +423,8 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
   if (feature) embed.addFields({ name: '🔦 PLAYER SPOTLIGHT', value: clip(feature) });
   const angles = storyAngles(matches, seasonMatches).filter((a) => !/^Team (passing|tackling)|^Finishing/.test(a));
   if (angles.length) embed.addFields({ name: '🔎 THE ANGLE', value: clip(angles.slice(0, 5).map((a) => `• ${a}`).join('\n')) });
+  // The run of games, then where it leaves the season
+  if (run.length >= 2) embed.addFields({ name: `🏃 THE RUN · ${record} in the last ${run.length}`, value: clip(runLines(run).join('\n')) });
   const arc = seasonArc(club.name, matches, seasonMatches, seed);
   if (arc) embed.addFields({ name: '📖 THE STORYLINE', value: clip(arc) });
 
@@ -449,6 +485,10 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
   }
 
   embed.setFooter({ text: 'The Chronicle prints at 3 PM and midnight Central. /autopilot to change where it runs.' });
+  if (image) {
+    embed.setImage('attachment://chronicle.png');
+    return { embeds: [embed], files: [{ attachment: image, name: 'chronicle.png' }], allowedMentions: { parse: [] } };
+  }
   return { embeds: [embed], allowedMentions: { parse: [] } };
 }
 
@@ -613,4 +653,4 @@ function buildMatchReport({ club, match: m, seasonMatches = [], logoUrl, story }
   return { embeds: [embed], allowedMentions: { parse: [] } };
 }
 
-module.exports = { matchScript, seasonArc, storyAngles, storyFacts, buildChronicle, buildMatchReport, reportHeadline, nameJoke, EDITIONS, CHRONICLE_TZ };
+module.exports = { matchScript, seasonArc, storyAngles, storyFacts, buildChronicle, editionCover, recentRun, buildMatchReport, reportHeadline, nameJoke, EDITIONS, CHRONICLE_TZ };
