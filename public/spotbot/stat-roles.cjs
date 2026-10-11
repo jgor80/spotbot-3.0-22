@@ -134,6 +134,7 @@ function createStatRoles(deps) {
       color: t.color,
       hoist: false,
       mentionable: false,
+      permissions: [],
       reason: 'GafferBot stat trophy',
     });
     await autopilot.updateClub(guild.id, club.key, (ap) => {
