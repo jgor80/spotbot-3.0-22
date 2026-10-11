@@ -28,13 +28,6 @@ const { PREMIUM_FREE } = require('./premium.cjs');
 const { storyFacts, buildChronicle, buildMatchReport, EDITIONS, CHRONICLE_TZ } = require('./chronicle.cjs');
 const RX = require('./recap-extras.cjs');
 
-// Short "why" for the MOTM, from that player's own numbers
-function motmLine(p) {
-  const bits = [];
-  for (const [k, l] of [['goals', 'G'], ['assists', 'A'], ['tackles', 'TKL'], ['interceptions', 'INT'], ['possessions_won', 'WON'], ['saves', 'SV']]) if (Number(p[k]) > 0) bits.push(`${p[k]} ${l}`);
-  return bits.length ? `\n-# ${bits.slice(0, 4).join(' · ')}` : '';
-}
-
 const FEATURES = {
   voice: { label: 'Voice check-ins', emoji: '🎧', help: 'Joining the club voice channel from 30 min before kick-off checks a player in.' },
   lineup: { label: 'Auto team sheet', emoji: '📋', help: '10 min before kick-off, draft the XI from who is in voice and send it to leaders to publish.' },
@@ -588,28 +581,16 @@ function createAutopilot(deps) {
     const upTo = idx >= 0 ? history.slice(idx) : [match];
     const r = RESULT[match.result];
     const name = (p) => (p.ea_username || '').trim();
-    const count = (n, emoji) => (n > 1 ? ` ${emoji}×${n}` : '');
+    const count = (n) => (n > 1 ? ` ×${n}` : '');
 
     const scorers = match.players.filter((p) => Number(p.goals) > 0).sort((a, b) => b.goals - a.goals);
     const assisters = match.players.filter((p) => Number(p.assists) > 0).sort((a, b) => b.assists - a.assists);
     const rated = match.players.filter((p) => Number(p.rating) > 0).sort((a, b) => b.rating - a.rating);
     const motm = match.players.find((p) => p.motm) || rated[0];
 
-    const embed = new EmbedBuilder()
-      .setTitle(`${r.emoji} ${r.label} · ${club.name} ${match.scoreFor}-${match.scoreAgainst} ${match.opponent}`)
-      .setDescription(`📰 **La Gazzetta:** ${RX.headline(match, club)}\n${RX.mood(match)}`)
-      .setColor(r.color)
-      .setTimestamp(match.playedAt);
-    if (prefs.branding?.logo_url) embed.setThumbnail(prefs.branding.logo_url);
-    embed.addFields(
-      { name: '⚽ Goals', value: truncate(scorers.map((p) => `${name(p)}${count(p.goals, '⚽')}`).join('\n') || '–'), inline: true },
-      { name: '🎯 Assists', value: truncate(assisters.map((p) => `${name(p)}${count(p.assists, '🎯')}`).join('\n') || '–'), inline: true },
-      { name: '⭐ Man of the Match', value: motm ? `${name(motm)}${Number(motm.rating) > 0 ? ` (${Number(motm.rating).toFixed(1)})` : ''}${motmLine(motm)}` : '–', inline: true }
-    );
     const nugget = statNugget(match, upTo);
-    // Story: talking point, milestones, H2H, catalyst, and a gentle roast on defeats
+    // Story lines the scoreline can't tell: milestones, head-to-head, the catalyst, a gentle roast on defeats
     const story = [];
-    if (nugget) story.push(nugget);
     try {
       const names = match.players.map(name).filter(Boolean);
       const { data: profs } = names.length
@@ -633,45 +614,36 @@ function createAutopilot(deps) {
     if (cat) story.push(cat);
     const flop = RX.flop(match);
     if (flop) story.push(flop);
-    if (story.length) embed.addFields({ name: '📖 The story', value: truncate(story.join('\n')) });
-    // Hidden EA stats, refined: leader per metric, only when someone registered one
-    const n0 = (v) => Number(v || 0);
-    const derived = {
-      chances_created: (p) => n0(p.chances_created),
-      hockey_assists: (p) => n0(p.hockey_assists),
-      dribbles: (p) => n0(p.dribbles),
-      net_poss: (p) => n0(p.possessions_won) - n0(p.possessions_lost),
-      stops: (p) => n0(p.tackles) + n0(p.interceptions) + n0(p.clearances) + n0(p.blocks),
-    };
-    const fmt = {
-      dribbles: (p) => `${n0(p.dribbles)}${n0(p.take_on_attempts) > 0 ? `/${n0(p.take_on_attempts)} (${Math.round((100 * n0(p.dribbles)) / n0(p.take_on_attempts))}%)` : ''}`,
-      net_poss: (p) => { const v = derived.net_poss(p); return v > 0 ? `+${v}` : `${v}`; },
-    };
-    const hidden = [['chances_created', '🎨 Chances created'], ['hockey_assists', '🏒 Hockey assists'], ['dribbles', '🪄 Take-ons'], ['net_poss', '🧲 Net possession'], ['stops', '🛡️ Defensive anchor (stops)']]
-      .map(([k, l]) => {
-        const top = [...match.players].sort((a, b) => derived[k](b) - derived[k](a))[0];
-        return top && derived[k](top) > 0 ? `${l}: ${name(top)} ${fmt[k] ? fmt[k](top) : derived[k](top)}` : null;
-      })
-      .filter(Boolean);
-    if (hidden.length) embed.addFields({ name: '🔬 Under the hood', value: truncate(hidden.join('\n')) });
-    const units = RX.unitBadges(match);
-    if (units.length) embed.addFields({ name: '🏅 Unit badges', value: truncate(units.join('\n')) });
-    const fan = RX.fantasyTop(match);
-    if (fan.length) embed.addFields({ name: '🎮 Fantasy points', value: fan.map((f, i) => `${['🥇', '🥈', '🥉'][i]} ${f.name} ${f.pts}`).join('  ') });
-    const form = upTo.slice(0, 5).reverse().map((m) => RESULT[m.result].emoji).join('');
-    embed.addFields({ name: 'Form', value: `${form}  (${record(upTo.slice(0, 10))} in the last ${Math.min(upTo.length, 10)})` });
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${r.emoji} ${r.label} · ${club.name} ${match.scoreFor}-${match.scoreAgainst} ${match.opponent}`)
+      .setColor(r.color)
+      .setTimestamp(match.playedAt);
     if (prefs.branding?.footer) embed.setFooter({ text: prefs.branding.footer });
-    // Premium servers get the broadcast-style image on top (graphics.cjs via broadcast.cjs)
+    // With the recap image, the text only adds what the image can't show: the image already carries the
+    // headline, scoreline, ratings table, Man of the Match and talking point.
     if (recapImage && isOn(club, 'graphics')) {
       const png = await recapImage({ row, club, match, history: upTo, prefs, talkingPoint: nugget, headline: RX.headline(match, club) }).catch((err) => {
         console.warn(`[autopilot] recap image ${row.id} failed: ${err.message}`);
         return null;
       });
       if (png) {
+        if (story.length) embed.setDescription(truncate(story.slice(0, 3).join('\n'), 600));
         embed.setImage('attachment://recap.png');
         return { embeds: [embed], files: [{ attachment: png, name: 'recap.png' }] };
       }
     }
+    // No image: one compact card with the headline, who scored and the Man of the Match
+    const facts = [
+      scorers.length && `⚽ ${scorers.map((p) => `${name(p)}${count(p.goals)}`).join(', ')}`,
+      assisters.length && `🎯 ${assisters.map((p) => `${name(p)}${count(p.assists)}`).join(', ')}`,
+      motm && `⭐ ${name(motm)}${Number(motm.rating) > 0 ? ` (${Number(motm.rating).toFixed(1)})` : ''}`,
+    ].filter(Boolean);
+    const form = upTo.slice(0, 5).reverse().map((m) => RESULT[m.result].emoji).join('');
+    embed.setDescription(
+      truncate([`📰 ${RX.headline(match, club)}`, facts.join(' · '), ...[nugget, ...story].filter(Boolean).slice(0, 2), `-# Form ${form}`].filter(Boolean).join('\n'), 1000)
+    );
+    if (prefs.branding?.logo_url) embed.setThumbnail(prefs.branding.logo_url);
     return { embeds: [embed] };
   }
 
