@@ -137,6 +137,27 @@ function crestSheet(crests) {
   return svg(W, top + rows * (ch + GAP) + PAD - GAP, parts);
 }
 
+// Every style for one graphic, rendered with sample art, numbered like the style menu.
+// items: [{ label, image, w, h }] where w/h is the thumbnail's own size.
+function styleSheet(items, cols = 6) {
+  const list = items.slice(0, 25);
+  const cw = Math.floor((W - PAD * 2 - GAP * (cols - 1)) / cols);
+  const tall = Math.max(...list.map((i) => Math.round(cw * i.h / i.w)), 1);
+  const ch = tall + 46;
+  const parts = [heading(PAD, PAD + 20, 'STYLES · SAMPLE ART, YOURS USES YOUR PROS')];
+  const top = PAD + 36;
+  list.forEach((it, i) => {
+    const x = PAD + (i % cols) * (cw + GAP), y = top + Math.floor(i / cols) * (ch + GAP);
+    const h = Math.round(cw * it.h / it.w);
+    parts.push(tile(x, y, cw, ch, false));
+    parts.push(it.image ? `<image href="${it.image}" x="${x + 4}" y="${y + 4}" width="${cw - 8}" height="${h - 8}" preserveAspectRatio="xMidYMid meet"/>`
+      : `<text x="${x + cw / 2}" y="${y + h / 2}" text-anchor="middle" font-family="${BODY}" font-size="13" fill="${SUB}">No preview</text>`);
+    parts.push(caption(x, y + tall + 30, cw, `${i + 1}. ${it.label}`, 14));
+  });
+  const rows = Math.ceil(list.length / cols) || 1;
+  return svg(W, top + rows * (ch + GAP) + PAD - GAP, parts);
+}
+
 function svg(w, h, parts) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="${BG}"/>${parts.join('')}</svg>`;
 }
@@ -146,4 +167,4 @@ function thumbSvg(image, w, h = w, fit = 'slice') {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><image href="${image}" width="${w}" height="${h}" preserveAspectRatio="xMidYMid ${fit}"/></svg>`;
 }
 
-module.exports = { pickSheet, crestSheet, thumbSvg, shirtSvg, kitColor };
+module.exports = { pickSheet, crestSheet, styleSheet, thumbSvg, shirtSvg, kitColor };

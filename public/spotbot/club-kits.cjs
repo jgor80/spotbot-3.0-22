@@ -18,7 +18,7 @@ const PALERMO = [
 ];
 const STYLE_KIT = {
   retro1960s: 'retro1979', retro1970s: 'retro1979', sicilia: 'retro1979', vintage: 'retro1979',
-  retro1986: 'retro1986', retro1990s: 'retro1990s', y2k: 'retro2000s',
+  retro1986: 'retro1986', retro1990s: 'retro1990s', yearbook: 'retro1990s', y2k: 'retro2000s',
 };
 function kitsFor(club) {
   return /palermo/i.test(club?.name || '') ? PALERMO : [];

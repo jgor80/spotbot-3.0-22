@@ -76,18 +76,18 @@ function renderSignatureCard(d, G, accent) {
     const arch = comp === 'side-panel' ? 'M150 210 Q512 120 874 210' : 'M130 230 Q512 90 894 230';
     body = `<defs><pattern id="dotV" width="7" height="7" patternUnits="userSpaceOnUse"><circle cx="3.5" cy="3.5" r="1.3" fill="${t.ink}" opacity="0.28"/></pattern>
       <filter id="sepiaV"><feColorMatrix type="matrix" values="0.42 0.6 0.16 0 0.04  0.34 0.56 0.14 0 0.02  0.25 0.42 0.11 0 0  0 0 0 1 0"/></filter>
-      <clipPath id="winV"><rect x="88" y="250" width="848" height="900" rx="10"/></clipPath><path id="archV" d="${arch}"/></defs>
+      <clipPath id="winV"><rect x="60" y="250" width="904" height="930" rx="10"/></clipPath><path id="archV" d="${arch}"/></defs>
       <rect width="${W}" height="${H}" fill="${t.bg}"/><rect x="26" y="26" width="972" height="1330" fill="none" stroke="${t.ink}" stroke-width="4"/><rect x="40" y="40" width="944" height="1302" fill="none" stroke="${t.hi}" stroke-width="2" stroke-dasharray="2 6"/>
-      <g clip-path="url(#winV)"><rect x="88" y="250" width="848" height="900" fill="${t.sub}"/>${d.art ? `<image href="${d.art}" x="88" y="250" width="848" height="900" preserveAspectRatio="xMidYMin slice" filter="url(#sepiaV)"/>` : ''}
-        <rect x="88" y="250" width="848" height="900" fill="${accent}" opacity="0.14" style="mix-blend-mode:multiply"/><rect x="88" y="250" width="848" height="900" fill="url(#dotV)"/></g>
-      <rect x="88" y="250" width="848" height="900" rx="10" fill="none" stroke="${t.ink}" stroke-width="5"/><rect x="92" y="254" width="840" height="892" rx="8" fill="none" stroke="${accent}" stroke-width="2" transform="translate(3 2)" opacity="0.6"/>
+      <g clip-path="url(#winV)"><rect x="60" y="250" width="904" height="930" fill="${t.sub}"/>${d.art ? `<image href="${d.art}" x="60" y="250" width="904" height="930" preserveAspectRatio="xMidYMin slice" filter="url(#sepiaV)"/>` : ''}
+        <rect x="60" y="250" width="904" height="930" fill="${accent}" opacity="0.14" style="mix-blend-mode:multiply"/><rect x="60" y="250" width="904" height="930" fill="url(#dotV)"/></g>
+      <rect x="60" y="250" width="904" height="930" rx="10" fill="none" stroke="${t.ink}" stroke-width="5"/><rect x="64" y="254" width="896" height="922" rx="8" fill="none" stroke="${accent}" stroke-width="2" transform="translate(3 2)" opacity="0.6"/>
       <text font-family="Oswald" font-weight="700" font-size="${fit(club, 680, 64, 0.62)}" letter-spacing="6" fill="${t.hi}" stroke="${t.ink}" stroke-width="1.5" paint-order="stroke"><textPath href="#archV" startOffset="50%" text-anchor="middle">${esc(club)}</textPath></text>
-      <text x="150" y="232" text-anchor="middle" font-family="Oswald" font-size="30" fill="${t.ink}">✦</text><text x="874" y="232" text-anchor="middle" font-family="Oswald" font-size="30" fill="${t.ink}">✦</text>
-      <g transform="translate(512 1196)"><path d="M-400 -38 H400 L370 0 L400 38 H-400 L-370 0 Z" fill="${t.glass}" stroke="${t.ink}" stroke-width="3"/>
+      <text x="150" y="232" text-anchor="middle" font-family="Inter" font-size="22" fill="${t.ink}">◆</text><text x="874" y="232" text-anchor="middle" font-family="Inter" font-size="22" fill="${t.ink}">◆</text>
+      <g transform="translate(512 1218)"><path d="M-400 -38 H400 L370 0 L400 38 H-400 L-370 0 Z" fill="${t.glass}" stroke="${t.ink}" stroke-width="3"/>
         <text y="16" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${fit(name, 640, 50, 0.6)}" letter-spacing="3" fill="${t.ink}">${esc(name)}</text></g>
-      <g transform="translate(830 1060)"><ellipse rx="74" ry="86" fill="${t.glass}" stroke="${t.ink}" stroke-width="3"/><ellipse rx="64" ry="76" fill="none" stroke="${t.hi}" stroke-width="1.5"/>${crest(-44, -66, 88, t.ink)}<text y="68" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="20" fill="${t.ink}">${esc(pos)}</text></g>
-      ${tag ? `<text x="512" y="1262" text-anchor="middle" font-family="Inter" font-style="italic" font-size="18" fill="${t.sub}">${tag}</text>` : ''}
-      ${stats.length ? `<path d="M90 1286 H934" stroke="${t.ink}" stroke-width="1.5"/>${statRow(1330, t.ink, t.sub)}` : ''}
+      <g transform="translate(856 1090)"><ellipse rx="74" ry="86" fill="${t.glass}" stroke="${t.ink}" stroke-width="3"/><ellipse rx="64" ry="76" fill="none" stroke="${t.hi}" stroke-width="1.5"/>${crest(-44, -66, 88, t.ink)}<text y="68" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="20" fill="${t.ink}">${esc(pos)}</text></g>
+      ${tag ? `<text x="512" y="1280" text-anchor="middle" font-family="Inter" font-style="italic" font-size="18" fill="${t.sub}">${tag}</text>` : ''}
+      ${stats.length ? `<path d="M90 1290 H934" stroke="${t.ink}" stroke-width="1.5"/>${statRow(1330, t.ink, t.sub)}` : ''}
       ${footer(t.sub)}`;
   } else if (d.style === 'cyber') {
     // Neo-Tokyo glitch: duotone art, slice offsets, crosshairs, warning tape, katakana-free tech type.

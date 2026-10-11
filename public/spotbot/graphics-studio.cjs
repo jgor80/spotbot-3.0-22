@@ -25,6 +25,7 @@ const { render1990sCard } = require('./graphics-1990s.cjs');
 const { renderY2kCard } = require('./graphics-y2k.cjs');
 const { render2010sCard } = require('./graphics-2010s.cjs');
 const { render2020sCard } = require('./graphics-2020s.cjs');
+const { renderYearbookCard } = require('./graphics-yearbook.cjs');
 const { renderSignatureCard, SIGNATURE_STYLES } = require('./graphics-signature.cjs');
 const { renderSiciliaCard, renderSiciliaBack } = require('./graphics-sicilia.cjs');
 const { renderCardBack } = require('./graphics-card-back.cjs');
@@ -32,8 +33,11 @@ const { finishCardSvg } = require('./card-layout.cjs');
 const { cardStats } = require('./card-stats.cjs');
 const { kitsFor, kitFor, withKit } = require('./club-kits.cjs');
 const { logosFor, logoFor, assetUrl } = require('./club-logos.cjs');
-const { pickSheet, crestSheet, thumbSvg } = require('./studio-preview.cjs');
+const { pickSheet, crestSheet, styleSheet, thumbSvg, kitColor } = require('./studio-preview.cjs');
+const fs = require('fs');
+const path = require('path');
 const { recruitmentPoster } = require('./graphics-recruitment.cjs');
+const { theme, themeOpen } = require('./graphics-themes.cjs');
 
 const NAME_RE = /graphic|media-?studio|studio/i;
 const STYLES = {
@@ -53,6 +57,7 @@ const STYLES = {
   y2k: { label: 'Y2K Club Chrome', emoji: '💎', desc: 'Refractor foil, circular club type, metallic nameplates', cardOnly: true },
   retro2010s: { label: '2010s Club Signature', emoji: '🌊', desc: 'Chrome outlines, sweeping ribbons, textured foil frames', cardOnly: true },
   retro2020s: { label: '2020s Club Prism', emoji: '🔮', desc: 'Angular prism, mosaic foil, sculpted chrome emblems', cardOnly: true },
+  yearbook: { label: "'90s Yearbook Headshot", emoji: '📸', desc: 'Tight school-portrait headshot, laser backdrop, photo corners', cardOnly: true, playerOnly: true },
   obsidian: { label: 'Obsidian & Gold', emoji: '🛡️', desc: 'Black and gold, elite' },
 };
 const HEAD = 'Oswald';
@@ -67,7 +72,10 @@ const DRAFTS = new Map(); // token -> pending graphic waiting on its edit form
 function colorNum(v, fallback) {
   const s = String(v || '').trim().toLowerCase();
   if (/^#?[0-9a-f]{6}$/.test(s)) return parseInt(s.replace('#', ''), 16);
-  return COLOR_WORDS[s] ?? fallback;
+  if (COLOR_WORDS[s] !== undefined) return COLOR_WORDS[s];
+  // Multi-word kit colours ("pale pink", "anthracite black") resolve like the kit previews.
+  const named = kitColor(s, null);
+  return named ? parseInt(named.slice(1), 16) : fallback;
 }
 const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
 const esc = G.esc;
@@ -89,6 +97,7 @@ function palette(style, kit) {
     y2k: { accent: hex(primary) },
     retro2010s: { accent: hex(primary) },
     retro2020s: { accent: hex(primary) },
+    yearbook: { accent: hex(primary) },
     cyber: { ink: '#f4f4f5', accent: '#e8ff3a', sub: '#ff2bd6', panel: '#050507', panelOpacity: 0.7, skew: -6, frame: '#e8ff3a' },
     chrome: { ink: '#ffffff', accent: '#9fe8ff', sub: '#f4b8ff', panel: '#0b0f17', panelOpacity: 0.55, skew: 0, frame: '#c8d2e0' },
     mvp: { ink: '#f7e7b4', accent: '#d8b25a', sub: '#bfb59a', panel: '#0a0a0a', panelOpacity: 0.75, skew: -4, frame: '#d8b25a' },
@@ -99,128 +108,116 @@ function palette(style, kit) {
   return base;
 }
 
-function svgOpen(W, H, art) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-  <defs>
-    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0.45" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.92"/></linearGradient>
-    <linearGradient id="top" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0.6"/><stop offset="0.18" stop-color="#000" stop-opacity="0"/></linearGradient>
-  </defs>
-  <rect width="${W}" height="${H}" fill="#050505"/>
-  ${art ? `<image href="${art}" width="${W}" height="${H}" preserveAspectRatio="xMidYMin slice"/>` : ''}
-  <rect width="${W}" height="${H}" fill="url(#fade)"/><rect width="${W}" height="${H}" fill="url(#top)"/>`;
-}
-
-function frame(W, H, p) {
-  if (!p.frame) return '';
-  return `<rect x="18" y="18" width="${W - 36}" height="${H - 36}" fill="none" stroke="${p.frame}" stroke-width="10"/>
-    <rect x="36" y="36" width="${W - 72}" height="${H - 72}" fill="none" stroke="${p.frame}" stroke-width="2" stroke-opacity="0.7"/>`;
-}
-
+// Crest as drawn on full-bleed graphics: the whole logo, never cropped to a circle.
 function crestSvg(x, y, r, img) {
   if (!img) return '';
-  return `<clipPath id="cr${x}"><circle cx="${x}" cy="${y}" r="${r}"/></clipPath>
-    <image href="${img}" x="${x - r}" y="${y - r}" width="${r * 2}" height="${r * 2}" clip-path="url(#cr${x})" preserveAspectRatio="xMidYMin slice"/>`;
-}
-
-function headline(text, x, y, size, p, anchor = 'start') {
-  const t = esc(String(text).toUpperCase());
-  return `<g transform="translate(${x} ${y}) skewX(${p.skew || 0})">
-    <text text-anchor="${anchor}" font-family="${HEAD}" font-weight="700" font-size="${size}" fill="#000" fill-opacity="0.55" transform="translate(5 6)">${t}</text>
-    <text text-anchor="${anchor}" font-family="${HEAD}" font-weight="700" font-size="${size}" fill="${p.ink}">${t}</text></g>`;
+  return `<image href="${img}" x="${x - r}" y="${y - r}" width="${r * 2}" height="${r * 2}" preserveAspectRatio="xMidYMid meet"/>`;
 }
 
 // ---------- Compositions ----------
 
+// Club name and line beside the crest, top left of full-bleed graphics.
+function masthead(th, crest, clubName, line, { x = 70, y = 70, r = 46, max = 30 } = {}) {
+  const tx = crest ? x + r * 2 + 18 : x;
+  return `${crestSvg(x + r, y + r, r, crest)}
+    <text x="${tx}" y="${y + r - 2}" font-family="${HEAD}" font-weight="700" font-size="32" fill="${th.ink}" stroke="#000" stroke-opacity="0.35" stroke-width="2" paint-order="stroke">${esc(clip(clubName, max).toUpperCase())}</text>
+    ${line ? `<text x="${tx}" y="${y + r + 30}" font-family="${BODY}" font-weight="700" font-size="19" letter-spacing="1" fill="${th.sub}" stroke="#000" stroke-opacity="0.35" stroke-width="2" paint-order="stroke">${esc(clip(line, 60))}</text>` : ''}`;
+}
+
 function playerCard(d) {
-  const print = { retro1986: render1986Card, retro1960s: render1960sCard, retro1970s: render1970sCard, retro1990s: render1990sCard, y2k: renderY2kCard, retro2010s: render2010sCard, retro2020s: render2020sCard }[d.style];
-  if (d.style === 'sicilia') return renderSiciliaCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d)) });
-  if (SIGNATURE_STYLES.includes(d.style)) return renderSignatureCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d)) }, hex(colorNum(d.kit?.primary, 0x22c55e)));
-  if (print) return print(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d)) }, palette(d.style, d.kit).accent);
-  const W = 1024, H = 1536, p = palette(d.style, d.kit);
+  const print = { retro1986: render1986Card, retro1960s: render1960sCard, retro1970s: render1970sCard, retro1990s: render1990sCard, y2k: renderY2kCard, retro2010s: render2010sCard, retro2020s: render2020sCard, yearbook: renderYearbookCard }[d.style];
+  if (d.style === 'sicilia') return renderSiciliaCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d), d.renderWidth) });
+  if (SIGNATURE_STYLES.includes(d.style)) return renderSignatureCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d), d.renderWidth) }, hex(colorNum(d.kit?.primary, 0x22c55e)));
+  if (print) return print(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d), d.renderWidth) }, palette(d.style, d.kit).accent);
+  // Ultra Esports and Obsidian & Gold: full-bleed art with their own grade, frame and lettering.
+  const W = 1024, H = 1536, th = theme(d.style, palette(d.style, d.kit).accent || '#22c55e');
+  const centred = th.key === 'obsidian';
   const stats = (d.stats || []).slice(0, 6);
-  const editorial = stats.length > 0 && d.composition === 'editorial';
-  const side = stats.length > 0 && d.composition === 'side-panel';
-  const x = side ? 80 : 60;
-  const nameY = editorial ? 345 : side ? 1110 : stats.length ? 1200 : d.tagline ? 1360 : 1410;
-  const nameWidth = side ? 620 : 900;
-  const cell = (W - 120) / Math.max(stats.length, 1);
-  return G.render(finishCardSvg(`${svgOpen(W, H, d.art)}${frame(W, H, p)}
-    ${crestSvg(110, 120, 52, d.crest)}
-    <text x="${d.crest ? 180 : 70}" y="112" font-family="${HEAD}" font-weight="700" font-size="34" fill="${p.ink}">${esc(clip(d.clubName, 26).toUpperCase())}</text>
-    <text x="${d.crest ? 180 : 70}" y="148" font-family="${BODY}" font-size="20" fill="${p.sub}">${esc(d.seasonLabel || 'PRO CLUBS')}</text>
-    ${d.position ? `<rect x="${W - 190}" y="72" width="120" height="70" fill="${p.accent}"/><text x="${W - 130}" y="122" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="40" fill="#000">${esc(d.position)}</text>` : ''}
-    ${d.overall ? `<text x="${W - 130}" y="215" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="76" fill="${p.ink}">${d.overall}</text><text x="${W - 130}" y="245" text-anchor="middle" font-family="${BODY}" font-size="16" fill="${p.sub}">${esc(d.overallLabel)}</text>` : ''}
-    ${side ? `<rect x="60" y="950" width="700" height="${stats.length ? 490 : 480}" fill="${p.panel}" fill-opacity="${p.panelOpacity}"/><rect x="60" y="950" width="8" height="480" fill="${p.accent}"/>` : ''}
-    <rect x="${x}" y="${nameY - 110}" width="140" height="${d.style === 'modern' ? 3 : 8}" fill="${p.accent}"/>
-    ${headline(clip(d.name, 30), x, nameY, fit(d.name, nameWidth, editorial ? 100 : 130, 0.48, 32), p)}
-    ${d.tagline ? `<text x="${x + 4}" y="${nameY + 50}" font-family="${BODY}" font-weight="700" font-size="${fit(d.tagline, nameWidth, 24, 0.58, 16)}" fill="${p.accent}">${esc(clip(d.tagline, 60).toUpperCase())}</text>` : ''}
-    ${stats.length ? `<rect x="60" y="1290" width="${W - 120}" height="150" fill="${p.panel}" fill-opacity="${p.panelOpacity}"/>
-      ${stats.map(([label, value], i) => `<text x="${60 + cell * i + cell / 2}" y="1375" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="56" fill="${p.ink}">${esc(value)}</text>
-       <text x="${60 + cell * i + cell / 2}" y="1415" text-anchor="middle" font-family="${BODY}" font-weight="700" font-size="${fit(label, cell - 12, 18, 0.58, 10)}" fill="${p.sub}">${esc(label)}</text>`).join('')}` : ''}
-    <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">${stats.length ? 'EA MATCH DATA · ' : ''}AI ART FROM THEIR IN-GAME PRO · GAFFERBOT STUDIO</text>
-  </svg>`, d));
+  const editorial = !centred && stats.length > 0 && d.composition === 'editorial';
+  const x = centred ? W / 2 : 70, anchor = centred ? 'middle' : 'start';
+  const nameY = editorial ? 330 : stats.length ? 1235 : d.tagline ? 1370 : 1420;
+  const name = clip(d.name, 30), size = fit(d.name, 880, editorial ? 100 : 128, 0.48, 32);
+  const cell = (W - 140) / Math.max(stats.length, 1);
+  const badgeX = W - 200;
+  return G.render(finishCardSvg(`${themeOpen(th, W, H, d.art, { fadeFrom: editorial ? 0.7 : 0.6 })}
+    ${masthead(th, d.crest, d.clubName, d.seasonLabel || 'PRO CLUBS', { y: 72 })}
+    ${d.position ? `<rect x="${badgeX}" y="${centred ? 82 : 72}" width="130" height="66" fill="${th.accent}"/><text x="${badgeX + 65}" y="${centred ? 128 : 118}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="38" fill="${th.accentInk}">${esc(d.position)}</text>` : ''}
+    ${d.overall ? `<text x="${badgeX + 65}" y="225" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="76" fill="${th.ink}" stroke="#000" stroke-opacity="0.4" stroke-width="3" paint-order="stroke">${d.overall}</text><text x="${badgeX + 65}" y="252" text-anchor="middle" font-family="${BODY}" font-size="16" fill="${th.sub}">${esc(d.overallLabel)}</text>` : ''}
+    ${centred ? '' : th.slash(x, nameY - size * 0.82, Math.min(860, name.length * size * 0.5), size * 0.9, th.accent)}
+    ${th.head(esc(name.toUpperCase()), x, nameY, size, anchor, th)}
+    ${d.tagline ? `<text x="${centred ? x : x + 4}" y="${nameY + 48}" text-anchor="${anchor}" font-family="${BODY}" font-weight="700" font-size="${fit(d.tagline, 880, 24, 0.58, 16)}" fill="${th.accent}">${esc(clip(d.tagline, 60).toUpperCase())}</text>` : ''}
+    ${stats.length ? `${th.plate(70, 1300, W - 140, 140, th)}
+      ${stats.map(([label, value], i) => `<text x="${70 + cell * i + cell / 2}" y="1382" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="54" fill="${th.plateInk}">${esc(value)}</text>
+       <text x="${70 + cell * i + cell / 2}" y="1418" text-anchor="middle" font-family="${BODY}" font-weight="700" font-size="${fit(label, cell - 12, 17, 0.58, 10)}" fill="${th.plateSub}">${esc(label)}</text>`).join('')}` : ''}
+    <text x="${W / 2}" y="1484" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${th.sub}" fill-opacity="0.85">${stats.length ? 'EA MATCH DATA · ' : ''}AI ART FROM THEIR IN-GAME PRO · GAFFERBOT STUDIO</text>
+  </svg>`, d), d.renderWidth);
 }
 
 const RESULT_WORD = { win: 'VICTORY', draw: 'SHARE THE SPOILS', loss: 'DEFEAT' };
 function matchPoster(d) {
-  const W = 1024, H = 1536, p = palette(d.style, d.kit);
+  const W = 1024, H = 1536, th = theme(d.style, palette(d.style, d.kit).accent || '#22c55e');
   const word = d.headline || RESULT_WORD[d.result] || 'FULL TIME';
-  return G.render(`${svgOpen(W, H, d.art)}${frame(W, H, p)}
-    <text x="70" y="110" font-family="${HEAD}" font-weight="700" font-size="30" fill="${p.ink}">${esc(clip(d.clubName, 30).toUpperCase())}</text>
-    <text x="70" y="145" font-family="${BODY}" font-size="20" fill="${p.sub}">${esc(clip(`${d.competition || 'Pro Clubs'} · ${d.dateText}`, 60))}</text>
-    ${headline('FULL TIME', 60, 960, 150, p)}
-    <text x="66" y="1010" font-family="${HEAD}" font-weight="700" font-size="36" fill="${p.accent}">${esc(word)}</text>
-    <rect x="60" y="1040" width="${W - 120}" height="190" fill="${p.panel}" fill-opacity="${p.panelOpacity}"/>
-    ${crestSvg(150, 1135, 62, d.crestFor)}
-    ${crestSvg(W - 150, 1135, 62, d.crestAgainst)}
-    <text x="${W / 2}" y="1170" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="120" fill="${p.ink}">${n(d.scoreFor)} – ${n(d.scoreAgainst)}</text>
-    <text x="${W / 2}" y="1215" text-anchor="middle" font-family="${BODY}" font-size="22" fill="${p.sub}">vs ${esc(clip(d.opponent, 34))}</text>
-    ${d.scorers ? `<text x="70" y="1290" font-family="${BODY}" font-weight="700" font-size="${fit(d.scorers, 880, 26, 0.55, 16)}" fill="${p.ink}">⚽ ${esc(clip(d.scorers, 80))}</text>`.replace('⚽ ', 'GOALS  ') : ''}
-    ${d.motm ? `<rect x="60" y="1320" width="${W - 120}" height="110" fill="${p.accent}"/>
-      <text x="90" y="1365" font-family="${BODY}" font-weight="700" font-size="20" fill="#000">PLAYER OF THE MATCH</text>
-      <text x="90" y="1412" font-family="${HEAD}" font-weight="700" font-size="44" fill="#000">${esc(clip(d.motm.name, 22).toUpperCase())}</text>
-      <text x="${W - 90}" y="1412" text-anchor="end" font-family="${HEAD}" font-weight="700" font-size="60" fill="#000">${d.motm.rating ? Number(d.motm.rating).toFixed(1) : ''}</text>` : ''}
-    <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">EA MATCH DATA · AI ART · GAFFERBOT STUDIO</text>
-  </svg>`);
+  return G.render(`${themeOpen(th, W, H, d.art)}
+    ${masthead(th, d.crestFor, d.clubName, `${d.competition || 'Pro Clubs'} · ${d.dateText}`)}
+    ${th.slash(70, 940, 640, 130, th.accent)}
+    ${th.head('FULL TIME', 70, 1060, 150, 'start', th)}
+    <text x="76" y="1112" font-family="${HEAD}" font-weight="700" font-size="36" letter-spacing="2" fill="${th.wordInk}" stroke="#000" stroke-opacity="0.4" stroke-width="2" paint-order="stroke">${esc(word)}</text>
+    ${th.plate(70, 1140, W - 140, 156, th)}
+    ${crestSvg(160, 1218, 54, d.crestFor)}
+    ${crestSvg(W - 160, 1218, 54, d.crestAgainst)}
+    <text x="${W / 2}" y="1240" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="112" fill="${th.plateInk}">${n(d.scoreFor)} – ${n(d.scoreAgainst)}</text>
+    <text x="${W / 2}" y="1280" text-anchor="middle" font-family="${BODY}" font-size="22" fill="${th.plateSub}">vs ${esc(clip(d.opponent, 34))}</text>
+    ${d.scorers ? `<text x="76" y="1336" font-family="${BODY}" font-weight="700" font-size="${fit(d.scorers, 860, 25, 0.55, 15)}" fill="${th.ink}" stroke="#000" stroke-opacity="0.45" stroke-width="3" paint-order="stroke">GOALS  ${esc(clip(d.scorers, 80))}</text>` : ''}
+    ${d.motm ? `<rect x="70" y="1358" width="${W - 140}" height="92" fill="${th.accent}"/>
+      <text x="96" y="1394" font-family="${BODY}" font-weight="700" font-size="18" letter-spacing="2" fill="${th.accentInk}">PLAYER OF THE MATCH</text>
+      <text x="96" y="1436" font-family="${HEAD}" font-weight="700" font-size="40" fill="${th.accentInk}">${esc(clip(d.motm.name, 22).toUpperCase())}</text>
+      <text x="${W - 96}" y="1436" text-anchor="end" font-family="${HEAD}" font-weight="700" font-size="56" fill="${th.accentInk}">${d.motm.rating ? Number(d.motm.rating).toFixed(1) : ''}</text>` : ''}
+    <text x="${W / 2}" y="1484" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${th.sub}" fill-opacity="0.85">EA MATCH DATA · AI ART · GAFFERBOT STUDIO</text>
+  </svg>`, d.renderWidth);
 }
 
 function banner(d) {
-  const W = 1536, H = 1024, p = palette(d.style, d.kit);
+  const W = 1536, H = 1024, th = theme(d.style, palette(d.style, d.kit).accent || '#22c55e');
   const roster = d.roster.slice(0, 24);
   const perRow = Math.min(8, Math.max(roster.length, 1));
-  const colW = (W - 160) / perRow;
-  return G.render(`${svgOpen(W, H, d.art)}${frame(W, H, p)}
-    ${crestSvg(130, 130, 70, d.crest)}
-    <text x="${d.crest ? 225 : 80}" y="120" font-family="${HEAD}" font-weight="700" font-size="40" fill="${p.ink}">${esc(clip(d.clubName, 30).toUpperCase())}</text>
-    <text x="${d.crest ? 225 : 80}" y="160" font-family="${BODY}" font-size="22" fill="${p.sub}">${esc(clip(d.competition, 50))}</text>
-    ${d.seasonTag ? `<rect x="${W - 300}" y="80" width="220" height="64" fill="${p.accent}"/><text x="${W - 190}" y="124" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="32" fill="#000">${esc(clip(d.seasonTag, 14).toUpperCase())}</text>` : ''}
-    ${headline(clip(d.headline, 28), W / 2, 790, fit(d.headline, 1350, 120, 0.46, 54), p, 'middle')}
-    <rect x="80" y="830" width="${W - 160}" height="4" fill="${p.accent}"/>
+  const colW = (W - 200) / perRow;
+  const size = fit(d.headline, 1180, 112, 0.5, 50);
+  return G.render(`${themeOpen(th, W, H, d.art, { fadeFrom: 0.5 })}
+    ${masthead(th, d.crest, d.clubName, d.competition, { x: 80, y: 70, r: 56 })}
+    ${d.seasonTag ? `<rect x="${W - 320}" y="80" width="220" height="62" fill="${th.accent}"/><text x="${W - 210}" y="123" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="30" fill="${th.accentInk}">${esc(clip(d.seasonTag, 14).toUpperCase())}</text>` : ''}
+    ${th.slash(W / 2 - Math.min(1300, d.headline.length * size * 0.5) / 2, 790 - size * 0.82, Math.min(1300, d.headline.length * size * 0.5), size * 0.9, th.accent)}
+    ${th.head(esc(clip(d.headline, 28).toUpperCase()), W / 2, 790, size, 'middle', th)}
+    ${roster.length ? `${th.plate(100, 826, W - 200, 34 + Math.ceil(roster.length / perRow) * 38, th)}
     ${roster.map((name, i) => {
       const row = Math.floor(i / perRow), col = i % perRow;
-      return `<text x="${80 + colW * col + colW / 2}" y="${880 + row * 38}" text-anchor="middle" font-family="${BODY}" font-weight="700" font-size="${fit(name, colW - 10, 22, 0.58, 12)}" fill="${p.ink}">${esc(clip(name, 18))}</text>`;
-    }).join('')}
-  </svg>`);
+      return `<text x="${100 + colW * col + colW / 2}" y="${866 + row * 38}" text-anchor="middle" font-family="${BODY}" font-weight="700" font-size="${fit(name, colW - 10, 22, 0.58, 12)}" fill="${th.plateInk}">${esc(clip(name, 18))}</text>`;
+    }).join('')}` : ''}
+  </svg>`, d.renderWidth);
 }
 
 function lineupPoster(d) {
-  const W = 1024, H = 1536, p = palette(d.style, d.kit);
+  const W = 1024, H = 1536, th = theme(d.style, palette(d.style, d.kit).accent || '#22c55e');
   const xi = (d.starters || []).slice(0, 11);
   const half = Math.ceil(xi.length / 2);
-  const row = (s, x, y) => `<text x="${x}" y="${y}" font-family="${HEAD}" font-weight="700" font-size="26" fill="${p.accent}">${esc(clip(s.pos, 4))}</text>
-    <text x="${x + 78}" y="${y}" font-family="${BODY}" font-weight="700" font-size="${fit(s.name, 330, 28, 0.58, 16)}" fill="${p.ink}">${esc(clip(s.name, 22))}</text>`;
-  return G.render(`${svgOpen(W, H, d.art)}${frame(W, H, p)}
-    ${crestSvg(130, 130, 60, d.crest)}
-    <text x="${d.crest ? 210 : 70}" y="120" font-family="${HEAD}" font-weight="700" font-size="30" fill="${p.ink}">${esc(clip(d.clubName, 30).toUpperCase())}</text>
-    <text x="${d.crest ? 210 : 70}" y="155" font-family="${BODY}" font-size="20" fill="${p.sub}">${esc(clip(d.subtitle, 60))}</text>
-    ${headline('STARTING XI', 60, 860, 120, p)}
-    <text x="66" y="910" font-family="${HEAD}" font-weight="700" font-size="${fit(d.title, 880, 40, 0.5, 22)}" fill="${p.accent}">${esc(clip(d.title, 40).toUpperCase())}</text>
-    <rect x="60" y="940" width="${W - 120}" height="${70 + half * 52}" fill="${p.panel}" fill-opacity="${p.panelOpacity}"/>
-    ${xi.slice(0, half).map((s, i) => row(s, 90, 995 + i * 52)).join('')}
-    ${xi.slice(half).map((s, i) => row(s, 540, 995 + i * 52)).join('')}
-    ${d.subs?.length ? `<text x="70" y="${1060 + half * 52}" font-family="${BODY}" font-weight="700" font-size="${fit(d.subs.join(', '), 800, 22, 0.55, 14)}" fill="${p.sub}">SUBS  ${esc(clip(d.subs.join(' · '), 90))}</text>` : ''}
-    <text x="${W / 2}" y="1490" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${p.sub}" fill-opacity="0.8">CLUB LINEUP · AI ART · GAFFERBOT STUDIO</text>
-  </svg>`);
+  const top = 1010, rowH = 50;
+  const row = (s, x, y) => `<text x="${x}" y="${y}" font-family="${HEAD}" font-weight="700" font-size="25" fill="${th.accent}">${esc(clip(s.pos, 4))}</text>
+    <text x="${x + 76}" y="${y}" font-family="${BODY}" font-weight="700" font-size="${fit(s.name, 300, 27, 0.58, 16)}" fill="${th.plateInk}">${esc(clip(s.name, 22))}</text>`;
+  return G.render(`${themeOpen(th, W, H, d.art, { fadeFrom: 0.5 })}
+    ${masthead(th, d.crest, d.clubName, d.subtitle)}
+    ${th.slash(70, 830, 560, 110, th.accent)}
+    ${th.head('STARTING XI', 70, 930, 118, 'start', th)}
+    <text x="76" y="978" font-family="${HEAD}" font-weight="700" font-size="${fit(d.title, 860, 38, 0.5, 22)}" fill="${th.wordInk}" stroke="#000" stroke-opacity="0.4" stroke-width="2" paint-order="stroke">${esc(clip(d.title, 40).toUpperCase())}</text>
+    ${th.plate(70, top, W - 140, 44 + half * rowH + (d.subs?.length ? 44 : 0), th)}
+    ${xi.slice(0, half).map((s, i) => row(s, 100, top + 52 + i * rowH)).join('')}
+    ${xi.slice(half).map((s, i) => row(s, 545, top + 52 + i * rowH)).join('')}
+    ${d.subs?.length ? `<text x="100" y="${top + 44 + half * rowH + 20}" font-family="${BODY}" font-weight="700" font-size="${fit(d.subs.join(', '), 800, 21, 0.55, 14)}" fill="${th.plateSub}">SUBS  ${esc(clip(d.subs.join(' · '), 90))}</text>` : ''}
+    <text x="${W / 2}" y="1484" text-anchor="middle" font-family="${BODY}" font-size="14" fill="${th.sub}" fill-opacity="0.85">CLUB LINEUP · AI ART · GAFFERBOT STUDIO</text>
+  </svg>`, d.renderWidth);
+}
+
+// Styles offered for each graphic, in menu order (print-card styles are cards and recruiting only).
+function stylesFor(kind) {
+  return Object.entries(STYLES).filter(([, s]) => !s.cardOnly || kind === 'card' || (kind === 'recruit' && !s.playerOnly));
 }
 
 // ---------- Studio ----------
@@ -363,7 +360,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
       .setCustomId(`gs_style:${kind}:${clubKey}${extra ? `:${extra}` : ''}`)
       .setPlaceholder('Pick a style')
-      .addOptions(Object.entries(STYLES).filter(([, s]) => !s.cardOnly || kind === 'card' || kind === 'recruit').map(([value, s]) => ({ label: s.label, value, emoji: s.emoji, description: s.desc }))));
+      .addOptions(stylesFor(kind).map(([value, s], i) => ({ label: `${i + 1}. ${s.label}`, value, emoji: s.emoji, description: s.desc }))));
   }
 
   // ----- builders (return { file, note } or { error }) -----
@@ -455,6 +452,56 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const p = await draftPreview(token, kind, club, guildId).catch((err) => { console.warn('[studio] preview failed:', err.message); return null; });
     return p ? { ...base, embeds: [p.embed], files: [p.file], attachments: [] } : { ...base, embeds: [], files: [], attachments: [] };
   }
+  // Style picker gallery: every style for this graphic drawn locally with bundled sample art
+  // (no AI calls), small and cached per club kit, so members see each theme before choosing.
+  const STYLE_SHEETS = new Map();
+  const SAMPLE = (file, w, h) => {
+    const raw = `data:image/jpeg;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'backgrounds', `${file}.jpg`)).toString('base64')}`;
+    return `data:image/png;base64,${Buffer.from(G.render(thumbSvg(raw, w, h))).toString('base64')}`;
+  };
+  // A head-and-shoulders crop of the bundled celebration art, standing in for a yearbook headshot.
+  const SAMPLE_HEAD = () => {
+    const raw = `data:image/jpeg;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'backgrounds', 'attack3.jpg')).toString('base64')}`;
+    return `data:image/png;base64,${Buffer.from(G.render(`<svg xmlns="http://www.w3.org/2000/svg" width="512" height="768" viewBox="215 90 300 450" preserveAspectRatio="xMidYMid slice"><image href="${raw}" width="1600" height="912"/></svg>`)).toString('base64')}`;
+  };
+  async function styleGallery(kind, club, guildId) {
+    const key = `${guildId}:${club.key}:${kind}:${club.kit?.primary || ''}:${club.kit?.secondary || ''}`;
+    if (STYLE_SHEETS.has(key)) return STYLE_SHEETS.get(key);
+    const banner_ = kind === 'banner';
+    const art = SAMPLE(banner_ ? 'attack3' : kind === 'lineup' ? 'defence' : kind === 'card' ? 'attack2' : 'attack', banner_ ? 768 : 512, banner_ ? 512 : 768);
+    const width = banner_ ? 300 : 200;
+    const items = [];
+    for (const [style, s] of stylesFor(kind)) {
+      const c = withKit(club, style);
+      const crest = await crestFor(guildId, club, style).catch(() => null);
+      const base = { art: style === 'yearbook' ? SAMPLE_HEAD() : art, style, kit: c.kit, clubName: club.name, renderWidth: width };
+      let png;
+      try {
+        if (kind === 'card') png = playerCard({ ...base, crest, name: 'Your Name', position: 'ST', overall: '', overallLabel: 'EA OVR', stats: [['GAMES', '20'], ['GOALS', '12'], ['ASSISTS', '6']], seasonLabel: 'PRO CLUBS', dataLabel: 'SAMPLE', composition: 'lower-third', tagline: '' });
+        else if (kind === 'poster') png = matchPoster({ ...base, crestFor: crest, crestAgainst: null, scoreFor: 2, scoreAgainst: 1, result: 'win', opponent: 'Rivals FC', competition: 'League', dateText: 'Matchday', scorers: '', motm: { name: 'Your Name', rating: 8.4 } });
+        else if (kind === 'lineup') png = lineupPoster({ ...base, crest, title: 'Cup Final', subtitle: 'Matchday', starters: ['GK', 'LB', 'CB', 'CB', 'RB', 'CM', 'CM', 'CAM', 'LW', 'RW', 'ST'].map((pos, i) => ({ pos, name: `Player ${i + 1}` })), subs: [] });
+        else if (kind === 'banner') png = banner({ ...base, crest, headline: 'Champions', competition: 'Cup Final', seasonTag: '', roster: [] });
+        else png = recruitmentPoster({ ...base, crest, headline: 'Join our club', positions: 'GK · CB · ST', details: '', contact: '', composition: 'lower-third' },
+          { ...G, render: (svg) => G.render(svg, width) }, { ...palette('modern', c.kit), ...palette(style, c.kit) });
+      } catch (err) { console.warn(`[studio] style preview ${style} failed:`, err.message); png = null; }
+      const w = banner_ ? 3 : 2, h = banner_ ? 2 : kind === 'card' ? 2.8 : 3;
+      items.push({ label: s.label, image: png ? `data:image/png;base64,${Buffer.from(png).toString('base64')}` : null, w, h });
+    }
+    const sheet = G.render(styleSheet(items, banner_ ? 4 : 6));
+    if (STYLE_SHEETS.size >= 40) STYLE_SHEETS.delete(STYLE_SHEETS.keys().next().value);
+    STYLE_SHEETS.set(key, sheet);
+    return sheet;
+  }
+  // The style menu with its gallery; the menu still works if the gallery can't be drawn.
+  async function styleMessage(kind, club, guildId, content, clubKey = club?.key) {
+    const payload = { content, components: [styleRow(kind, clubKey)] };
+    if (!club) return payload;
+    try {
+      const png = await styleGallery(kind, club, guildId);
+      return { ...payload, embeds: [previewEmbed('👀 Styles', colorNum(club.kit?.primary, 0x22c55e)).setFooter({ text: 'Numbers match the style menu · sample art, yours is drawn from your club\'s pros' })], files: [previewFile(png)] };
+    } catch (err) { console.warn('[studio] style gallery failed:', err.message); return payload; }
+  }
+
   // Every logo on the recruiting poster's logo menu, numbered to match it.
   async function logoMenuMessage(token, club, logos) {
     const crests = await Promise.all(logos.map(async (l) => ({
@@ -540,7 +587,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);
     // Print-card lettering and frames are local; artwork reuses the text-free vintage style.
     const printCard = Boolean(STYLES[style]?.cardOnly) || SIGNATURE_STYLES.includes(style);
-    const a = await art({ kind: 'card', style: style === 'sicilia' ? 'sicilia' : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...(d.photoId ? { photo_asset_id: d.photoId } : {}), ...variation, has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
+    const a = await art({ kind: 'card', style: style === 'sicilia' || style === 'yearbook' ? style : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...(d.photoId ? { photo_asset_id: d.photoId } : {}), ...variation, ...(style === 'yearbook' ? { pose: 'headshot' } : {}), has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
     if (a.error) return a;
     const number = d.number !== undefined ? d.number : (a.kitNumber || '');
     const png = playerCard({
@@ -802,11 +849,11 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     const { club } = await studioClub(message.guild.id, message.channelId, message.channel?.name);
     if (!club) return;
-    const style = /mud|sunday league|tears|disaster/i.test(text) ? 'sunday' : /sicil|calciatori|1974|palermo card/i.test(text) ? 'sicilia' : /synth|chillwave|vaporwave|outrun/i.test(text) ? 'synthwave' : /glitch|cyber|neo[- ]?tokyo/i.test(text) ? 'cyber' : /liquid chrome|glass/i.test(text) ? 'chrome' : /\bmvp\b/i.test(text) ? 'mvp' : /broadcast|\btv\b/i.test(text) ? 'modern' : /heritage|1950|50['’]?s/i.test(text) ? 'vintage' : /\bcard\b/.test(text) && /2020|20['’]?s|twenties|prism|mosaic/i.test(text) ? 'retro2020s' : /\bcard\b/.test(text) && /2010|10['’]?s|twenty[ -]?tens/i.test(text) ? 'retro2010s' : /\bcard\b/.test(text) && /y2k|2000|chrome|refractor/i.test(text) ? 'y2k' : /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
+    const style = /\byearbook|school photo|headshot/i.test(text) ? 'yearbook' : /mud|sunday league|tears|disaster/i.test(text) ? 'sunday' : /sicil|calciatori|1974|palermo card/i.test(text) ? 'sicilia' : /synth|chillwave|vaporwave|outrun/i.test(text) ? 'synthwave' : /glitch|cyber|neo[- ]?tokyo/i.test(text) ? 'cyber' : /liquid chrome|glass/i.test(text) ? 'chrome' : /\bmvp\b/i.test(text) ? 'mvp' : /broadcast|\btv\b/i.test(text) ? 'modern' : /heritage|1950|50['’]?s/i.test(text) ? 'vintage' : /\bcard\b/.test(text) && /2020|20['’]?s|twenties|prism|mosaic/i.test(text) ? 'retro2020s' : /\bcard\b/.test(text) && /2010|10['’]?s|twenty[ -]?tens/i.test(text) ? 'retro2010s' : /\bcard\b/.test(text) && /y2k|2000|chrome|refractor/i.test(text) ? 'y2k' : /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
     let build, label;
     if (/\b(recruit(?:ing|ment)?|trials?)\b/.test(text)) {
-      return message.reply({ content: '📣 Pick a recruiting poster style, then edit your details:', components: [styleRow('recruit', club.key)], allowedMentions: { parse: [] } }).catch(() => {});
-    } else if (/\bcard\b/.test(text)) {
+      return message.reply({ ...(await styleMessage('recruit', club, message.guild.id, '📣 Pick a recruiting poster style, then edit your details:')), allowedMentions: { parse: [] } }).catch(() => {});
+    } else if (/\bcard\b|\byearbook\b|headshot/.test(text)) {
       const target = message.mentions.users.find((u) => !u.bot) || message.author;
       const member = await message.guild.members.fetch(target.id).catch(() => null);
       build = () => buildCard({ guildId: message.guild.id, club, userId: target.id, displayName: member?.displayName || target.username, style, noStats: /no[ -]?stats|portrait|without stats/.test(text) });
@@ -862,7 +909,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     const manager = async () => isManager(interaction.member, interaction.guildId);
     if (interaction.isButton() && action === 'gs_recruit') {
-      await respond({ content: '📣 Pick a recruiting poster style:', components: [styleRow('recruit', a1)] });
+      await respond(await styleMessage('recruit', findClub(a1), interaction.guildId, '📣 Pick a recruiting poster style:', a1));
       return true;
     }
     if (interaction.isStringSelectMenu() && action === 'gs_dphoto') {
@@ -919,20 +966,20 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
 
     if (interaction.isButton() && action === 'gs_card') {
-      await respond({ content: '🎴 Pick a style for your card:', components: [styleRow('card', a1)] });
+      await respond(await styleMessage('card', findClub(a1), interaction.guildId, '🎴 Pick a style for your card:', a1));
       return true;
     }
     if (interaction.isButton() && action === 'gs_poster') {
-      await respond({ content: '📰 Pick a style for the full-time poster:', components: [styleRow('poster', a1)] });
+      await respond(await styleMessage('poster', findClub(a1), interaction.guildId, '📰 Pick a style for the full-time poster:', a1));
       return true;
     }
     if (interaction.isButton() && action === 'gs_lineup') {
-      await respond({ content: '📋 Pick a style for the lineup graphic:', components: [styleRow('lineup', a1)] });
+      await respond(await styleMessage('lineup', findClub(a1), interaction.guildId, '📋 Pick a style for the lineup graphic:', a1));
       return true;
     }
     if (interaction.isButton() && action === 'gs_banner') {
       if (!(await manager())) { await respond({ content: '🏆 Banners are for managers — they mark real trophy wins.' }); return true; }
-      await respond({ content: '🏆 Pick a banner style:', components: [styleRow('banner', a1)] });
+      await respond(await styleMessage('banner', findClub(a1), interaction.guildId, '🏆 Pick a banner style:', a1));
       return true;
     }
     if (interaction.isButton() && action === 'gs_kit') {
@@ -965,16 +1012,16 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     if (interaction.isStringSelectMenu() && action === 'gs_style') {
       const kind = a1, club = findClub(a2), style = interaction.values[0];
-      if (!club) { await update({ content: 'No club set up here.', components: [] }); return true; }
-      if (!STYLES[style] || STYLES[style].cardOnly && !['card', 'recruit'].includes(kind)) {
-        await update({ content: 'Pick a style from the panel.', components: [] }); return true;
+      if (!club) { await update({ embeds: [], attachments: [], content: 'No club set up here.', components: [] }); return true; }
+      if (!stylesFor(kind).some(([key]) => key === style)) {
+        await update({ embeds: [], attachments: [], content: 'Pick a style from the panel.', components: [] }); return true;
       }
       if (kind === 'recruit') {
         const token = saveDraft({ kind, clubKey: club.key, style, userId: interaction.user.id,
           data: { headline: 'JOIN OUR CLUB', positions: '', details: '', contact: '', featured: '' } });
         const brandPrefs = serverPrefs ? await serverPrefs(interaction.guildId).catch(() => ({})) : {};
         const logos = logosFor(club, brandPrefs?.branding);
-        await update(logos.length ? await logoMenuMessage(token, club, logos) : await draftMessage(token, kind, club, interaction.guildId));
+        await update(logos.length ? { embeds: [], attachments: [], ...(await logoMenuMessage(token, club, logos)) } : await draftMessage(token, kind, club, interaction.guildId));
         return true;
       }
       if (kind === 'banner') {
@@ -998,14 +1045,14 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       }
       if (kind === 'poster') {
         const opts = await matchOptions(interaction.guildId, club);
-        if (!opts.length) { await update({ content: 'No synced matches yet for this club.', components: [] }); return true; }
-        await update({ content: '📰 Which game? You can edit everything before it is drawn.', components: [pickRow(`gs_pmatch:${club.key}:${style}`, 'Pick a game', opts)] });
+        if (!opts.length) { await update({ embeds: [], attachments: [], content: 'No synced matches yet for this club.', components: [] }); return true; }
+        await update({ embeds: [], attachments: [], content: '📰 Which game? You can edit everything before it is drawn.', components: [pickRow(`gs_pmatch:${club.key}:${style}`, 'Pick a game', opts)] });
         return true;
       }
       if (kind === 'lineup') {
         const opts = await lineupOptions(interaction.guildId);
-        if (!opts.length) { await update({ content: 'No saved lineups yet — build one from an event in /manager → Events.', components: [] }); return true; }
-        await update({ content: '📋 Which lineup? You can edit the players before it is drawn.', components: [pickRow(`gs_lpick:${club.key}:${style}`, 'Pick a lineup', opts)] });
+        if (!opts.length) { await update({ embeds: [], attachments: [], content: 'No saved lineups yet — build one from an event in /manager → Events.', components: [] }); return true; }
+        await update({ embeds: [], attachments: [], content: '📋 Which lineup? You can edit the players before it is drawn.', components: [pickRow(`gs_lpick:${club.key}:${style}`, 'Pick a lineup', opts)] });
         return true;
       }
       return true;
@@ -1102,7 +1149,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     catch (err) {
       if (!interaction.customId?.startsWith('gs_')) throw err;
       console.warn('[studio] interaction failed:', err.message);
-      const payload = { content: '❌ The studio could not complete that step. Start again from /graphics.', components: [] };
+      const payload = { content: '❌ The studio could not complete that step. Start again from /graphics.', components: [], embeds: [], attachments: [] };
       if (interaction.deferred || interaction.replied) await interaction.editReply(payload).catch(() => {});
       else await interaction.reply({ ...payload, flags: 64 }).catch(() => {});
       return true;

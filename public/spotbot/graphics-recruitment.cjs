@@ -78,8 +78,8 @@ function recruitmentPoster(d, G, p) {
   const spacing = /vintage|sicilia|gold|chrome/.test(f) ? ' letter-spacing="4"' : '';
 
   // Art rect + text anchor per layout
-  const art = layout === 'editorial' ? { x: 50, y: 460, w: 924, h: 580 }
-    : side ? { x: 440, y: 230, w: 540, h: 1180 } : { x: 50, y: 250, w: 924, h: 780 };
+  const art = layout === 'editorial' ? { x: 50, y: 460, w: 924, h: 600 }
+    : side ? { x: 430, y: 220, w: 560, h: 1200 } : { x: 50, y: 220, w: 924, h: 820 };
   const tx = side ? 70 : 80;
   let headY, posY, detY;
   if (layout === 'editorial') { headY = 370; posY = 425; detY = 1180; }
@@ -100,8 +100,13 @@ function recruitmentPoster(d, G, p) {
   const clubX = d.crest ? crestX + 172 : 80;
   const maskedPanel = side ? '' : `<rect x="50" y="${layout === 'editorial' ? 1080 : 1048}" width="924" height="${layout === 'editorial' ? 380 : 420}" fill="${t.bg}" opacity="${t.paper ? 1 : .88}"/>`;
   const editorialBand = layout === 'editorial' ? `<rect x="50" y="230" width="924" height="190" fill="${t.bg}" opacity=".9"/>` : '';
+  // The same artwork, softened, fills the whole poster behind the frame so the players lead the design;
+  // the sharp copy stays whole (never cropped) in its lettering-free region.
+  const backdrop = d.art ? `<defs><filter id="bd" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="16"/>${t.paper ? '<feColorMatrix type="matrix" values="0.42 0.6 0.16 0 0.05  0.34 0.56 0.14 0 0.03  0.25 0.42 0.11 0 0  0 0 0 1 0"/>' : ''}</filter></defs>
+    <image href="${d.art}" width="${W}" height="${H}" preserveAspectRatio="xMidYMid meet" filter="url(#bd)" opacity="${t.paper ? 0.5 : 1}"/><rect width="${W}" height="${H}" fill="${t.bg}" opacity="${t.paper ? 0.25 : 0.35}"/>` : '';
   return G.render(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
     <rect width="${W}" height="${H}" fill="${t.bg}"/>
+    ${backdrop}
     ${frame(f, t, accent, W, H)}
     ${d.art ? `<image href="${d.art}" x="${art.x}" y="${art.y}" width="${art.w}" height="${art.h}" preserveAspectRatio="xMidYMid meet"/>` : ''}
     ${t.paper && d.art ? `<rect x="${art.x}" y="${art.y}" width="${art.w}" height="${art.h}" fill="#c8a970" opacity=".18"/>` : ''}
