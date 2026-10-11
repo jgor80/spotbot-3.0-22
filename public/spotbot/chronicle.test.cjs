@@ -91,3 +91,43 @@ test('autopilot prints a match report in the Chronicle channel only when one is 
   assert.equal(sent.length, 1);
   assert.match(sent[0].embeds[0].toJSON().author.name, /FULL-TIME EXTRA/);
 });
+
+test('opponent names get a cheeky line only when a word in them gives one', () => {
+  const { nameJoke } = require('./chronicle.cjs');
+  assert.match(nameJoke('Hard Knocks FC', 'win'), /came in hard and finished early/);
+  assert.match(nameJoke('Big Balls FC', 'loss'), /bigger balls/);
+  assert.equal(nameJoke('Eagles XI', 'loss'), null); // no losing line, so no joke
+  assert.equal(nameJoke('Rivals FC', 'win'), null);
+  assert.equal(nameJoke('Unknown', 'win'), null);
+});
+
+test('match reports read Italian: kicker over the headline and a sign-off', () => {
+  const m = game('w1', 0, 'win', 5, 0, 'Wolves Town', []);
+  const e = buildMatchReport({ club, match: m }).embeds[0].toJSON();
+  assert.match(e.title, /^(MAMMA MIA!|CHE SPETTACOLO!) /);
+  assert.match(e.description, /Mamma mia/);
+  assert.match(e.description, /Wolves Town turned up as lapdogs\./);
+  assert.match(e.description, /\*(Forza Calcio Roma!|Avanti così, Calcio Roma\.|Che serata\. Forza Calcio Roma!)\*$/);
+});
+
+test('editions cover the run of games and the storyline, and carry the front page when given', () => {
+  const { buildChronicle, editionCover } = require('./chronicle.cjs');
+  const now = new Date(Date.UTC(2026, 9, 10, 5));
+  const season = [match, ...[1, 2, 3].map((h) => game(`r${h}`, h * 24, 'loss', 0, 1, 'Wolves Town'))];
+  const cover = editionCover({ club, edition: 'overnight', matches: [match], seasonMatches: season, now });
+  assert.equal(cover.record, '1-0-3');
+  assert.equal(cover.run[0].id, 'm1');
+  assert.equal(cover.coverStars[0].name, 'Striker9');
+  const msg = buildChronicle({ club, edition: 'overnight', matches: [match], seasonMatches: season, now, image: Buffer.from('png') });
+  const e = msg.embeds[0].toJSON();
+  const run = e.fields.find((f) => f.name.startsWith('🏃 THE RUN'));
+  assert.equal(run.name, '🏃 THE RUN · 1-0-3 in the last 4');
+  assert.match(run.value, /^🟢 W 3-1 Rivals FC\n🔴 L 0-1 Wolves Town/);
+  assert.ok(e.fields.some((f) => f.name.includes('STORYLINE')));
+  assert.equal(e.image.url, 'attachment://chronicle.png');
+  assert.equal(msg.files[0].name, 'chronicle.png');
+  // Quiet day: the cover still features the run's best performers
+  const quiet = editionCover({ club, edition: 'afternoon', matches: [], seasonMatches: season, now });
+  assert.equal(quiet.stars.length, 0);
+  assert.ok(quiet.coverStars.length > 0);
+});

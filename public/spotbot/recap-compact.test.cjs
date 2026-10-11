@@ -96,3 +96,29 @@ test('recap background is an original upload from a match player, never generate
   assert.ok(seen.some((q) => q.table === 'pro_photo_assets' && q.filters.some(([op, k, v]) => op === 'eq' && k === 'source_kind' && v === 'upload')));
   assert.equal(await b.backgroundFor([], 'm1'), null);
 });
+
+test('the Chronicle front page shows players only through their own uploads', async () => {
+  const supabase = fakeSupabase({
+    profiles: [{ discord_user_id: '111111111111', ea_username: 'Striker9' }, { discord_user_id: '222222222222', ea_username: 'Maestro' }],
+    pro_photo_assets: [
+      { discord_user_id: '111111111111', image_url: pixel('#ff0000'), source_kind: 'upload' },
+      { discord_user_id: '222222222222', image_url: pixel('#0000ff'), source_kind: 'generated' },
+    ],
+    pro_photos: [],
+  });
+  const G2 = require('./graphics.cjs');
+  const real = G2.frontPage;
+  let drawn;
+  G2.frontPage = (d) => ((drawn = d), Buffer.from('png'));
+  try {
+    const b = createBroadcast({ supabase, premium: { isPremium: async () => true }, events: { onTick: () => {}, getClient: () => null }, autopilot: { setRecapImage: () => {} } });
+    const { editionCover } = require('./chronicle.cjs');
+    const cover = editionCover({ club, edition: 'overnight', matches: [{ id: 'm', result: 'win', scoreFor: 3, scoreAgainst: 1, opponent: 'X', playedAt: new Date(), players: row.player_stats }], seasonMatches: [] });
+    assert.deepEqual(await b.editionImage({ guildId: 'g1', club, cover }), Buffer.from('png'));
+  } finally {
+    G2.frontPage = real;
+  }
+  assert.equal(drawn.players.find((p) => p.name === 'Striker9').photo, pixel('#ff0000'));
+  assert.equal(drawn.players.find((p) => p.name === 'Maestro').photo, null); // generated art never stands in
+  assert.ok(G2.frontPage({ clubName: 'Club', headline: 'QUIET DAY', run: [], players: [] }).length > 1000);
+});
