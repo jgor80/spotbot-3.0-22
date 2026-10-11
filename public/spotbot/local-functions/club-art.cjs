@@ -4094,7 +4094,7 @@ function safeEqual(a, b) {
 }
 var Body = external_exports.object({
   kind: external_exports.enum(["card", "banner", "poster"]),
-  style: external_exports.enum(["esports", "modern", "vintage", "obsidian", "cyber", "chrome", "mvp", "synthwave", "sicilia", "sunday"]),
+  style: external_exports.enum(["esports", "modern", "vintage", "obsidian", "cyber", "chrome", "mvp", "synthwave", "sicilia", "sunday", "yearbook"]),
   club_name: external_exports.string().min(1).max(60),
   kit: external_exports.object({
     primary: external_exports.string().max(30).optional(),
@@ -4108,7 +4108,7 @@ var Body = external_exports.object({
   mood: external_exports.enum(["win", "draw", "loss", "neutral"]).default("neutral"),
   competition: external_exports.string().max(60).optional(),
   composition: external_exports.enum(["lower-third", "editorial", "side-panel"]).default("lower-third"),
-  pose: external_exports.enum(["ready", "stride", "ball", "celebrate", "profile", "captain"]).default("ready"),
+  pose: external_exports.enum(["ready", "stride", "ball", "celebrate", "profile", "captain", "headshot"]).default("ready"),
   variation: external_exports.string().max(60).optional(),
   has_stats: external_exports.boolean().default(true),
   has_tagline: external_exports.boolean().default(true),
@@ -4127,6 +4127,7 @@ var STYLE = {
   synthwave: "synthwave chillwave look: soft dusk sky in purple, magenta and peach, distant neon glow, light haze, dreamy retro-futuristic stadium lights, smooth airbrushed gradients",
   sicilia: "1974 Sicilian collectible look: dramatic Italian movie-poster lighting, warm Mediterranean golden hour, Palermo skyline with baroque domes, bell towers and Monte Pellegrino softly behind the stadium, slightly faded grainy offset-print finish, muted pink, black, ivory and gold tones, theatrical but not parody",
   sunday: "1982 Sunday-league disaster look: grey drizzle and sideways rain, a churned muddy park pitch with puddles, the player soaked, mud-splattered kit and socks, exhausted or exasperated expression, overcast flat light, a lonely floodlight, faded wet-film grain, comic but affectionate, never cruel",
+  yearbook: "1990s school yearbook portrait photo: mottled blue and purple laser-swirl studio backdrop, soft on-camera flash with a gentle shadow behind the head, slightly warm film colour, fine 35mm grain, simple and earnest, no stadium",
   obsidian: "elite black-and-gold look: carbon-fibre black backdrop, subtle gold foil streaks, moody spotlight, desaturated tones with gold highlights, luxury trophy-room feel"
 };
 function kitLine(kit, club) {
@@ -4143,10 +4144,11 @@ function promptFor(b, hasRef, kitNumber = null, description = null) {
     ball: "HALF-BODY shot (from mid-thigh up) holding a football under one arm, confident expression",
     celebrate: "KNEES-UP goal celebration, both arms out or one fist raised, mouth open shouting, joyful energy",
     profile: "CLOSE CHEST-UP portrait, head and shoulders filling much of the frame, intense focused stare",
-    captain: "THREE-QUARTER-LENGTH (from knees up) hands-on-hips stance, slight low camera angle"
+    captain: "THREE-QUARTER-LENGTH (from knees up) hands-on-hips stance, slight low camera angle",
+    headshot: "TIGHT HEAD-AND-SHOULDERS school portrait, facing the camera straight on with the head tilted very slightly, relaxed smile, shoulders square, camera at eye level"
   };
   const framing = "FRAMING RULES (critical): the whole head \u2014 hair, beard, glasses and headwear \u2014 must sit completely inside the image with clear empty space above it; the top of the hair at least 9% below the top edge and the eyes never higher than 15% of the image height. Never crop the top of the head, face, chin or hands at the frame edge. For full-body shots, keep both boots inside the frame too. Centre the subject horizontally unless the composition says otherwise.";
-  const placement = b.kind !== "card" ? "Subject in the upper two thirds; keep the lower third empty." : !b.has_stats ? `Portrait-first composition: make the virtual pro large and dominant, filling the frame from 9% (top of the hair) to ${b.has_tagline ? "86%" : "90%"} height, using the requested shot type. No empty lower third, blank side panels or reserved stat bands. Keep the top 8% and bottom ${b.has_tagline ? "14%" : "10%"} clear enough for compact club and name lettering. Continue the stadium and kit into the lower frame.` : b.composition === "editorial" ? "Editorial composition: leave a dark empty band from 12% to 28% height for the name; place the character below that band, face between 32% and 50% height, with the lower third empty." : b.composition === "side-panel" ? "Asymmetric composition: character to the right, face in the upper right half. Leave the lower left area and bottom third dark and empty for a nameplate and optional stats." : "Broadcast lower-third composition: character centred, face in the upper half, lower third empty for a nameplate and optional stats.";
+  const placement = b.kind !== "card" ? "Subject in the upper two thirds; keep the lower third empty." : b.pose === "headshot" ? "Yearbook headshot composition: head and shoulders fill the frame, face centred horizontally with the eyes at about 38% height, the top of the hair about 10% below the top edge and the shoulders running off the bottom edge. Plain studio backdrop only, no pitch, crowd or stadium." : !b.has_stats ? `Portrait-first composition: make the virtual pro large and dominant, filling the frame from 9% (top of the hair) to ${b.has_tagline ? "86%" : "90%"} height, using the requested shot type. No empty lower third, blank side panels or reserved stat bands. Keep the top 8% and bottom ${b.has_tagline ? "14%" : "10%"} clear enough for compact club and name lettering. Continue the stadium and kit into the lower frame.` : b.composition === "editorial" ? "Editorial composition: leave a dark empty band from 12% to 28% height for the name; place the character below that band, face between 32% and 50% height, with the lower third empty." : b.composition === "side-panel" ? "Asymmetric composition: character to the right, face in the upper right half. Leave the lower left area and bottom third dark and empty for a nameplate and optional stats." : "Broadcast lower-third composition: character centred, face in the upper half, lower third empty for a nameplate and optional stats.";
   const poseRule = b.pose === "celebrate" ? "SIGNATURE CELEBRATION: if the reference photo shows a celebration pose (raised fists, arms out, knee slide, etc.), reproduce that exact celebration posture, arm and hand positions as this player's signature goal celebration \u2014 vary only the camera angle, framing and background. Take the face, hair, beard and accessories from the reference." : "Vary the body posture only when the original likeness can be preserved; keep the face anchor's head angle and every distinguishing feature. Pose variety must never override identity.";
   const variation = `Creative edition ${b.variation || crypto.randomUUID()}: independently vary camera angle, stadium detail and lighting within the selected style. The pose must be ${poses[b.pose]}. ${poseRule} Never copy its background or typography. ${placement} ${framing}`;
   if (b.kind === "banner") {

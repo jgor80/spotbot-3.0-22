@@ -96,7 +96,7 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
   await f.studio.handleInteraction(f.interaction('gs_recruit:palermo', 'button'));
   assert.equal(f.calls[0], 'deferReply');
   const styles = f.requests.at(-1).components[0].toJSON().components[0].options;
-  assert.equal(styles.length, Object.keys(STYLES).length);
+  assert.equal(styles.length, Object.values(STYLES).filter((s) => !s.playerOnly).length);
   await f.studio.handleInteraction(f.interaction('gs_style:recruit:palermo', 'select', { values: ['synthwave'] }));
   const logoMenu = f.requests.at(-1).components[0].toJSON().components[0];
   assert.equal(logoMenu.options.length, 17);
@@ -519,4 +519,27 @@ test('full-bleed themes are distinct, fill the frame with the art and keep text 
   playerCard({ style: 'esports', kit: { primary: 'pale pink' }, name: 'A', clubName: 'C', stats: [] });
   assert.match(lastSvg, /#f9c5d9/);
   assert.doesNotMatch(lastSvg, /#22c55e/);
+});
+
+test("'90s yearbook card asks club-art for a tight headshot and is offered only for player cards", async () => {
+  const f = fixture();
+  let body;
+  const originalFetch = global.fetch;
+  global.fetch = async (url, options) => { if (String(url).endsWith('/club-art')) body = JSON.parse(options.body); return { ok: true, json: async () => ({ image_b64: testLogo.split(',')[1], used_pro_photo: true }) }; };
+  try {
+    await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: ['yearbook'] }));
+    const stats = f.requests.at(-1).components.at(-1).toJSON().components.find((b) => b.label === 'With Stats');
+    await f.studio.handleInteraction(f.interaction(stats.custom_id, 'button'));
+    const inputs = f.requests.at(-1).components.map((r) => r.components[0]);
+    await f.studio.handleInteraction(f.interaction(f.requests.at(-1).custom_id, 'modal', { fields: { getTextInputValue: (k) => inputs.find((i) => i.custom_id === k)?.value || '' } }));
+    assert.equal(body.style, 'yearbook');
+    assert.equal(body.pose, 'headshot');
+    assert.equal(f.requests.at(-1), '✅ Posted!');
+  } finally { global.fetch = originalFetch; }
+  playerCard({ style: 'yearbook', kit: { primary: 'pink' }, name: 'AirDangus23', clubName: 'PCN Palermo', position: 'CAM', number: '23', seasonLabel: 'FC27', stats: [['GAMES', '22']] });
+  assert.match(lastSvg, /YEARBOOK/); assert.match(lastSvg, /AIRDANGUS23/); assert.match(lastSvg, /CAM  ·  #23/); assert.match(lastSvg, />22 GAMES</);
+  assert.doesNotMatch(lastSvg, /NaN|undefined/);
+  const r = fixture();
+  await r.studio.handleInteraction(r.interaction('gs_style:poster:palermo', 'select', { values: ['yearbook'] }));
+  assert.match(r.requests.at(-1).content, /Pick a style from the panel/);
 });

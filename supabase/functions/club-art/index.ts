@@ -23,7 +23,7 @@ function safeEqual(a: string, b: string) {
 
 const Body = z.object({
   kind: z.enum(["card", "banner", "poster"]),
-  style: z.enum(["esports", "modern", "vintage", "obsidian", "cyber", "chrome", "mvp", "synthwave", "sicilia", "sunday"]),
+  style: z.enum(["esports", "modern", "vintage", "obsidian", "cyber", "chrome", "mvp", "synthwave", "sicilia", "sunday", "yearbook"]),
   club_name: z.string().min(1).max(60),
   kit: z.object({
     primary: z.string().max(30).optional(),
@@ -37,7 +37,7 @@ const Body = z.object({
   mood: z.enum(["win", "draw", "loss", "neutral"]).default("neutral"),
   competition: z.string().max(60).optional(),
   composition: z.enum(["lower-third", "editorial", "side-panel"]).default("lower-third"),
-  pose: z.enum(["ready", "stride", "ball", "celebrate", "profile", "captain"]).default("ready"),
+  pose: z.enum(["ready", "stride", "ball", "celebrate", "profile", "captain", "headshot"]).default("ready"),
   variation: z.string().max(60).optional(),
   has_stats: z.boolean().default(true),
   has_tagline: z.boolean().default(true),
@@ -57,6 +57,7 @@ const STYLE: Record<string, string> = {
   synthwave: "synthwave chillwave look: soft dusk sky in purple, magenta and peach, distant neon glow, light haze, dreamy retro-futuristic stadium lights, smooth airbrushed gradients",
   sicilia: "1974 Sicilian collectible look: dramatic Italian movie-poster lighting, warm Mediterranean golden hour, Palermo skyline with baroque domes, bell towers and Monte Pellegrino softly behind the stadium, slightly faded grainy offset-print finish, muted pink, black, ivory and gold tones, theatrical but not parody",
   sunday: "1982 Sunday-league disaster look: grey drizzle and sideways rain, a churned muddy park pitch with puddles, the player soaked, mud-splattered kit and socks, exhausted or exasperated expression, overcast flat light, a lonely floodlight, faded wet-film grain, comic but affectionate, never cruel",
+  yearbook: "1990s school yearbook portrait photo: mottled blue and purple laser-swirl studio backdrop, soft on-camera flash with a gentle shadow behind the head, slightly warm film colour, fine 35mm grain, simple and earnest, no stadium",
   obsidian: "elite black-and-gold look: carbon-fibre black backdrop, subtle gold foil streaks, moody spotlight, desaturated tones with gold highlights, luxury trophy-room feel",
 };
 
@@ -80,9 +81,11 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number |
     celebrate: "KNEES-UP goal celebration, both arms out or one fist raised, mouth open shouting, joyful energy",
     profile: "CLOSE CHEST-UP portrait, head and shoulders filling much of the frame, intense focused stare",
     captain: "THREE-QUARTER-LENGTH (from knees up) hands-on-hips stance, slight low camera angle",
+    headshot: "TIGHT HEAD-AND-SHOULDERS school portrait, facing the camera straight on with the head tilted very slightly, relaxed smile, shoulders square, camera at eye level",
   };
   const framing = "FRAMING RULES (critical): the whole head — hair, beard, glasses and headwear — must sit completely inside the image with clear empty space above it; the top of the hair at least 9% below the top edge and the eyes never higher than 15% of the image height. Never crop the top of the head, face, chin or hands at the frame edge. For full-body shots, keep both boots inside the frame too. Centre the subject horizontally unless the composition says otherwise.";
   const placement = b.kind !== "card" ? "Subject in the upper two thirds; keep the lower third empty."
+    : b.pose === "headshot" ? "Yearbook headshot composition: head and shoulders fill the frame, face centred horizontally with the eyes at about 38% height, the top of the hair about 10% below the top edge and the shoulders running off the bottom edge. Plain studio backdrop only, no pitch, crowd or stadium."
     : !b.has_stats ? `Portrait-first composition: make the virtual pro large and dominant, filling the frame from 9% (top of the hair) to ${b.has_tagline ? "86%" : "90%"} height, using the requested shot type. No empty lower third, blank side panels or reserved stat bands. Keep the top 8% and bottom ${b.has_tagline ? "14%" : "10%"} clear enough for compact club and name lettering. Continue the stadium and kit into the lower frame.`
     : b.composition === "editorial" ? "Editorial composition: leave a dark empty band from 12% to 28% height for the name; place the character below that band, face between 32% and 50% height, with the lower third empty."
     : b.composition === "side-panel" ? "Asymmetric composition: character to the right, face in the upper right half. Leave the lower left area and bottom third dark and empty for a nameplate and optional stats."

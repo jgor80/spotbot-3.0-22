@@ -34,7 +34,7 @@ const PALERMO_EXTRAS = [
 // The year each card style "lives" in, used to pick the crest in use at that time.
 const STYLE_YEAR = {
   vintage: 1955, retro1960s: 1962, sicilia: 1974, retro1970s: 1977, sunday: 1982, retro1986: 1986,
-  retro1990s: 1993, y2k: 2001, retro2010s: 2014, retro2020s: 2024,
+  retro1990s: 1993, yearbook: 1997, y2k: 2001, retro2010s: 2014, retro2020s: 2024,
 };
 const NOW = 2100;
 

@@ -25,6 +25,7 @@ const { render1990sCard } = require('./graphics-1990s.cjs');
 const { renderY2kCard } = require('./graphics-y2k.cjs');
 const { render2010sCard } = require('./graphics-2010s.cjs');
 const { render2020sCard } = require('./graphics-2020s.cjs');
+const { renderYearbookCard } = require('./graphics-yearbook.cjs');
 const { renderSignatureCard, SIGNATURE_STYLES } = require('./graphics-signature.cjs');
 const { renderSiciliaCard, renderSiciliaBack } = require('./graphics-sicilia.cjs');
 const { renderCardBack } = require('./graphics-card-back.cjs');
@@ -56,6 +57,7 @@ const STYLES = {
   y2k: { label: 'Y2K Club Chrome', emoji: '💎', desc: 'Refractor foil, circular club type, metallic nameplates', cardOnly: true },
   retro2010s: { label: '2010s Club Signature', emoji: '🌊', desc: 'Chrome outlines, sweeping ribbons, textured foil frames', cardOnly: true },
   retro2020s: { label: '2020s Club Prism', emoji: '🔮', desc: 'Angular prism, mosaic foil, sculpted chrome emblems', cardOnly: true },
+  yearbook: { label: "'90s Yearbook Headshot", emoji: '📸', desc: 'Tight school-portrait headshot, laser backdrop, photo corners', cardOnly: true, playerOnly: true },
   obsidian: { label: 'Obsidian & Gold', emoji: '🛡️', desc: 'Black and gold, elite' },
 };
 const HEAD = 'Oswald';
@@ -95,6 +97,7 @@ function palette(style, kit) {
     y2k: { accent: hex(primary) },
     retro2010s: { accent: hex(primary) },
     retro2020s: { accent: hex(primary) },
+    yearbook: { accent: hex(primary) },
     cyber: { ink: '#f4f4f5', accent: '#e8ff3a', sub: '#ff2bd6', panel: '#050507', panelOpacity: 0.7, skew: -6, frame: '#e8ff3a' },
     chrome: { ink: '#ffffff', accent: '#9fe8ff', sub: '#f4b8ff', panel: '#0b0f17', panelOpacity: 0.55, skew: 0, frame: '#c8d2e0' },
     mvp: { ink: '#f7e7b4', accent: '#d8b25a', sub: '#bfb59a', panel: '#0a0a0a', panelOpacity: 0.75, skew: -4, frame: '#d8b25a' },
@@ -122,7 +125,7 @@ function masthead(th, crest, clubName, line, { x = 70, y = 70, r = 46, max = 30 
 }
 
 function playerCard(d) {
-  const print = { retro1986: render1986Card, retro1960s: render1960sCard, retro1970s: render1970sCard, retro1990s: render1990sCard, y2k: renderY2kCard, retro2010s: render2010sCard, retro2020s: render2020sCard }[d.style];
+  const print = { retro1986: render1986Card, retro1960s: render1960sCard, retro1970s: render1970sCard, retro1990s: render1990sCard, y2k: renderY2kCard, retro2010s: render2010sCard, retro2020s: render2020sCard, yearbook: renderYearbookCard }[d.style];
   if (d.style === 'sicilia') return renderSiciliaCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d), d.renderWidth) });
   if (SIGNATURE_STYLES.includes(d.style)) return renderSignatureCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d), d.renderWidth) }, hex(colorNum(d.kit?.primary, 0x22c55e)));
   if (print) return print(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d), d.renderWidth) }, palette(d.style, d.kit).accent);
@@ -214,7 +217,7 @@ function lineupPoster(d) {
 
 // Styles offered for each graphic, in menu order (print-card styles are cards and recruiting only).
 function stylesFor(kind) {
-  return Object.entries(STYLES).filter(([, s]) => !s.cardOnly || kind === 'card' || kind === 'recruit');
+  return Object.entries(STYLES).filter(([, s]) => !s.cardOnly || kind === 'card' || (kind === 'recruit' && !s.playerOnly));
 }
 
 // ---------- Studio ----------
@@ -456,6 +459,11 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const raw = `data:image/jpeg;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'backgrounds', `${file}.jpg`)).toString('base64')}`;
     return `data:image/png;base64,${Buffer.from(G.render(thumbSvg(raw, w, h))).toString('base64')}`;
   };
+  // A head-and-shoulders crop of the bundled celebration art, standing in for a yearbook headshot.
+  const SAMPLE_HEAD = () => {
+    const raw = `data:image/jpeg;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'backgrounds', 'attack3.jpg')).toString('base64')}`;
+    return `data:image/png;base64,${Buffer.from(G.render(`<svg xmlns="http://www.w3.org/2000/svg" width="512" height="768" viewBox="215 90 300 450" preserveAspectRatio="xMidYMid slice"><image href="${raw}" width="1600" height="912"/></svg>`)).toString('base64')}`;
+  };
   async function styleGallery(kind, club, guildId) {
     const key = `${guildId}:${club.key}:${kind}:${club.kit?.primary || ''}:${club.kit?.secondary || ''}`;
     if (STYLE_SHEETS.has(key)) return STYLE_SHEETS.get(key);
@@ -466,7 +474,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     for (const [style, s] of stylesFor(kind)) {
       const c = withKit(club, style);
       const crest = await crestFor(guildId, club, style).catch(() => null);
-      const base = { art, style, kit: c.kit, clubName: club.name, renderWidth: width };
+      const base = { art: style === 'yearbook' ? SAMPLE_HEAD() : art, style, kit: c.kit, clubName: club.name, renderWidth: width };
       let png;
       try {
         if (kind === 'card') png = playerCard({ ...base, crest, name: 'Your Name', position: 'ST', overall: '', overallLabel: 'EA OVR', stats: [['GAMES', '20'], ['GOALS', '12'], ['ASSISTS', '6']], seasonLabel: 'PRO CLUBS', dataLabel: 'SAMPLE', composition: 'lower-third', tagline: '' });
@@ -579,7 +587,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);
     // Print-card lettering and frames are local; artwork reuses the text-free vintage style.
     const printCard = Boolean(STYLES[style]?.cardOnly) || SIGNATURE_STYLES.includes(style);
-    const a = await art({ kind: 'card', style: style === 'sicilia' ? 'sicilia' : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...(d.photoId ? { photo_asset_id: d.photoId } : {}), ...variation, has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
+    const a = await art({ kind: 'card', style: style === 'sicilia' || style === 'yearbook' ? style : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...(d.photoId ? { photo_asset_id: d.photoId } : {}), ...variation, ...(style === 'yearbook' ? { pose: 'headshot' } : {}), has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
     if (a.error) return a;
     const number = d.number !== undefined ? d.number : (a.kitNumber || '');
     const png = playerCard({
@@ -841,11 +849,11 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     const { club } = await studioClub(message.guild.id, message.channelId, message.channel?.name);
     if (!club) return;
-    const style = /mud|sunday league|tears|disaster/i.test(text) ? 'sunday' : /sicil|calciatori|1974|palermo card/i.test(text) ? 'sicilia' : /synth|chillwave|vaporwave|outrun/i.test(text) ? 'synthwave' : /glitch|cyber|neo[- ]?tokyo/i.test(text) ? 'cyber' : /liquid chrome|glass/i.test(text) ? 'chrome' : /\bmvp\b/i.test(text) ? 'mvp' : /broadcast|\btv\b/i.test(text) ? 'modern' : /heritage|1950|50['’]?s/i.test(text) ? 'vintage' : /\bcard\b/.test(text) && /2020|20['’]?s|twenties|prism|mosaic/i.test(text) ? 'retro2020s' : /\bcard\b/.test(text) && /2010|10['’]?s|twenty[ -]?tens/i.test(text) ? 'retro2010s' : /\bcard\b/.test(text) && /y2k|2000|chrome|refractor/i.test(text) ? 'y2k' : /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
+    const style = /\byearbook|school photo|headshot/i.test(text) ? 'yearbook' : /mud|sunday league|tears|disaster/i.test(text) ? 'sunday' : /sicil|calciatori|1974|palermo card/i.test(text) ? 'sicilia' : /synth|chillwave|vaporwave|outrun/i.test(text) ? 'synthwave' : /glitch|cyber|neo[- ]?tokyo/i.test(text) ? 'cyber' : /liquid chrome|glass/i.test(text) ? 'chrome' : /\bmvp\b/i.test(text) ? 'mvp' : /broadcast|\btv\b/i.test(text) ? 'modern' : /heritage|1950|50['’]?s/i.test(text) ? 'vintage' : /\bcard\b/.test(text) && /2020|20['’]?s|twenties|prism|mosaic/i.test(text) ? 'retro2020s' : /\bcard\b/.test(text) && /2010|10['’]?s|twenty[ -]?tens/i.test(text) ? 'retro2010s' : /\bcard\b/.test(text) && /y2k|2000|chrome|refractor/i.test(text) ? 'y2k' : /\bcard\b/.test(text) && /1990|90['’]?s|nineties/i.test(text) ? 'retro1990s' : /\bcard\b/.test(text) && /1970|70['’]?s|seventies/i.test(text) ? 'retro1970s' : /\bcard\b/.test(text) && /1960|60['’]?s|sixties/i.test(text) ? 'retro1960s' : /\bcard\b/.test(text) && /1986|topps|retro1986/i.test(text) ? 'retro1986' : Object.keys(STYLES).filter((s) => !STYLES[s].cardOnly).find((s) => text.includes(s)) || (text.includes('gold') ? 'obsidian' : text.includes('retro') ? 'vintage' : text.includes('clean') ? 'modern' : 'esports');
     let build, label;
     if (/\b(recruit(?:ing|ment)?|trials?)\b/.test(text)) {
       return message.reply({ ...(await styleMessage('recruit', club, message.guild.id, '📣 Pick a recruiting poster style, then edit your details:')), allowedMentions: { parse: [] } }).catch(() => {});
-    } else if (/\bcard\b/.test(text)) {
+    } else if (/\bcard\b|\byearbook\b|headshot/.test(text)) {
       const target = message.mentions.users.find((u) => !u.bot) || message.author;
       const member = await message.guild.members.fetch(target.id).catch(() => null);
       build = () => buildCard({ guildId: message.guild.id, club, userId: target.id, displayName: member?.displayName || target.username, style, noStats: /no[ -]?stats|portrait|without stats/.test(text) });
@@ -1005,7 +1013,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (interaction.isStringSelectMenu() && action === 'gs_style') {
       const kind = a1, club = findClub(a2), style = interaction.values[0];
       if (!club) { await update({ embeds: [], attachments: [], content: 'No club set up here.', components: [] }); return true; }
-      if (!STYLES[style] || STYLES[style].cardOnly && !['card', 'recruit'].includes(kind)) {
+      if (!stylesFor(kind).some(([key]) => key === style)) {
         await update({ embeds: [], attachments: [], content: 'Pick a style from the panel.', components: [] }); return true;
       }
       if (kind === 'recruit') {
