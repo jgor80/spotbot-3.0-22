@@ -20,6 +20,7 @@ import {
   Moon,
   Sun,
   Medal,
+  SlidersHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ const primaryNavItems = [
 ];
 
 const moreNavItems = [
+  { path: "/control", label: "Control Room", icon: SlidersHorizontal },
   { path: "/games", label: "Games", icon: Gamepad2 },
   { path: "/trophy-room", label: "Trophy Room", icon: Medal },
   { path: "/ratings", label: "Ratings", icon: Star },

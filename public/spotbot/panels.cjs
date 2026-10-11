@@ -335,38 +335,44 @@ function whenDropdowns(tz, preselect, now = new Date()) {
   return { days, times: times.slice(0, 25), zoneName };
 }
 
+// The inputs an action takes, from its old command definition
+function actionInputs(schemaByName, action) {
+  const cmd = schemaByName.get(action.cmd);
+  if (!cmd) return [];
+  const parent = action.group ? (cmd.options || []).find((o) => o.type === 2 && o.name === action.group) : cmd;
+  const opts = action.sub ? (parent?.options || []).find((o) => o.type === 1 && o.name === action.sub)?.options || [] : (cmd.options || []).filter((o) => o.type > 2);
+  return opts.map((o) => (action.required?.includes(o.name) ? { ...o, required: true } : o));
+}
+
+// The inputs its form asks for (the web app's control room builds the same form)
+function actionFields(schemaByName, action) {
+  const fixed = action.fixed || {};
+  const inputs = actionInputs(schemaByName, action).filter((o) => !(o.name in fixed));
+  if (action.fields) return action.fields.map((n) => inputs.find((o) => o.name === n)).filter(Boolean);
+  const usable = inputs.filter((o) => o.type !== 11);
+  return [...usable.filter((o) => o.required), ...usable.filter((o) => !o.required)].slice(0, 5);
+}
+
+// Why this member may not use the action, or null. Shared with the web app's control room.
+function deniedReason(member, action, isManager) {
+  if (action.area && !isManager(member)) return `Only captains, managers and admins can use **${action.area.label}** tools.`;
+  if (action.perm) {
+    const perms = member?.permissions;
+    const ok = typeof perms?.has === 'function' ? perms.has(action.perm) : (BigInt(perms || 0) & action.perm) === action.perm;
+    if (!ok) return `You need the **${new PermissionsBitField(action.perm).toArray().join(', ').replace(/([a-z])([A-Z])/g, '$1 $2')}** permission for this.`;
+  }
+  return null;
+}
+
 function createPanels(deps) {
   const { schemas, isManager, dispatch } = deps;
   const schemaByName = new Map(schemas.map((c) => [c.name, c]));
-
-  // The inputs an action takes, from its old command definition
-  function inputsFor(action) {
-    const cmd = schemaByName.get(action.cmd);
-    if (!cmd) return [];
-    const parent = action.group ? (cmd.options || []).find((o) => o.type === 2 && o.name === action.group) : cmd;
-    const opts = action.sub ? (parent?.options || []).find((o) => o.type === 1 && o.name === action.sub)?.options || [] : (cmd.options || []).filter((o) => o.type > 2);
-    return opts.map((o) => (action.required?.includes(o.name) ? { ...o, required: true } : o));
-  }
-
-  function formFields(action) {
-    const fixed = action.fixed || {};
-    const inputs = inputsFor(action).filter((o) => !(o.name in fixed));
-    if (action.fields) return action.fields.map((n) => inputs.find((o) => o.name === n)).filter(Boolean);
-    const usable = inputs.filter((o) => o.type !== 11);
-    return [...usable.filter((o) => o.required), ...usable.filter((o) => !o.required)].slice(0, 5);
-  }
+  const formFields = (action) => actionFields(schemaByName, action);
 
   // ---------- Who may use what ----------
 
   function denied(interaction, action) {
-    const member = interaction.member;
-    if (action.area && !isManager(member)) return `Only captains, managers and admins can use **${action.area.label}** tools.`;
-    if (action.perm) {
-      const perms = member?.permissions;
-      const ok = typeof perms?.has === 'function' ? perms.has(action.perm) : (BigInt(perms || 0) & action.perm) === action.perm;
-      if (!ok) return `You need the **${new PermissionsBitField(action.perm).toArray().join(', ').replace(/([a-z])([A-Z])/g, '$1 $2')}** permission for this.`;
-    }
-    return null;
+    return deniedReason(interaction.member, action, isManager);
   }
 
   // ---------- Running an action ----------
@@ -715,4 +721,4 @@ function autocompleteProxy(base, action, optionName, onChoices) {
   return proxy;
 }
 
-module.exports = { createPanels, PANEL_COMMANDS, PLAYER_ACTIONS, AREAS, ACTIONS, where, areaSelect, areaMenu, playerHub, commandProxy };
+module.exports = { createPanels, PANEL_COMMANDS, PLAYER_ACTIONS, AREAS, ACTIONS, where, areaSelect, areaMenu, playerHub, commandProxy, optionResolver, actionFields, deniedReason, whenDropdowns };

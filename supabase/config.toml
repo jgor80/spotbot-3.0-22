@@ -128,3 +128,6 @@ verify_jwt = false
 
 [functions.mcp-token]
 verify_jwt = false
+
+[functions.web-panel]
+verify_jwt = false

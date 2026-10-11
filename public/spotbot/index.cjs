@@ -34,6 +34,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.cjs');
 const { createSquads, SQUAD_COMMANDS } = require('./squads.cjs');
 const { createPanels, PANEL_COMMANDS } = require('./panels.cjs');
+const { createWebPanels } = require('./web-panels.cjs');
 const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
 const { parseWhen: parseEventWhen } = require('./event-time.cjs');
 const embedStyle = require('./embed-style.cjs');
@@ -4325,6 +4326,16 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 // Every embed sent while handling the interaction picks up the server's /brand style (embed-style.cjs)
 // Panel buttons and forms re-enter routeInteraction as the old slash command (panels.cjs)
 const panels = createPanels({ schemas: ACTION_SCHEMAS, isManager, timezoneFor: async (g) => (await clubEvents.serverPrefs(g)).timezone, dispatch: (interaction) => routeInteraction(interaction) });
+// The web app's control room presses the same panel buttons as the signed-in user (web-panels.cjs),
+// reached in-process by the web-panel backend function
+globalThis.__gafferbotWebPanels = createWebPanels({
+  getClient: () => client,
+  schemas: ACTION_SCHEMAS,
+  isManager,
+  timezoneFor: async (g) => (await clubEvents.serverPrefs(g)).timezone,
+  graphicsPanel: (g) => graphicsStudio.panelFor(g),
+  dispatch: (interaction) => embedStyle.runForGuild(interaction.guildId, () => routeInteraction(interaction)),
+});
 
 // ack-guard defers for any handler still busy near Discord's 3-second deadline
 client.on(Events.InteractionCreate, (interaction) => {
