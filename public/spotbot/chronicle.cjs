@@ -5,6 +5,8 @@
 
 const { EmbedBuilder } = require('discord.js');
 const { lineOf } = require('./player-season.cjs');
+const P = require('./press-copy.cjs');
+const { nameJoke } = P;
 
 const CHRONICLE_TZ = 'America/Chicago';
 const EDITIONS = {
@@ -116,21 +118,8 @@ function lede(club, matches, stars, seed) {
 
 // subject set (a club name) writes a single game as its own story instead of a line in the day's run
 function gameStory(m, i, seed, subject) {
-  const score = `${m.scoreFor}-${m.scoreAgainst}`;
   const script = matchScript(m);
-  const verb = {
-    demolition: pick([`dismantled ${m.opponent} ${score}`, `ran riot against ${m.opponent}, ${score}`, `put ${m.opponent} to the sword, ${score}`], seed + i),
-    lockdown: pick([`shut the door on ${m.opponent}, ${score}`, `strangled ${m.opponent} ${score}`], seed + i),
-    shootout: m.result === 'win' ? `outlasted ${m.opponent} in a ${score} shootout` : m.result === 'loss' ? `lost a ${score} shootout to ${m.opponent}` : `traded blows with ${m.opponent} in a wild ${score} draw`,
-    'smash-and-grab': `smash-and-grabbed a ${score} win off ${m.opponent}`,
-    'arm-wrestle': pick([`edged ${m.opponent} ${score}`, `squeezed past ${m.opponent}, ${score}`], seed + i),
-    heartbreaker: pick([`fell ${score} to ${m.opponent} by a single goal`, `were edged ${score} by ${m.opponent}`], seed + i),
-    stalemate: `played out a goalless draw with ${m.opponent}`,
-    'trade-off': `split the points ${score} with ${m.opponent}`,
-    collapse: pick([`were taken apart ${score} by ${m.opponent}`, `had a night to forget, losing ${score} to ${m.opponent}`], seed + i),
-    win: pick([`beat ${m.opponent} ${score}`, `took care of ${m.opponent}, ${score}`], seed + i),
-    loss: pick([`fell ${score} to ${m.opponent}`, `came up short against ${m.opponent}, ${score}`], seed + i),
-  }[script] || `drew ${score} with ${m.opponent}`;
+  const verb = P.verbFor(script, m, `${m.id}:${seed + i}`);
   const top = [...m.players].sort((a, b) => n(b.goals) * 3 + n(b.assists) * 2 + n(b.rating) - (n(a.goals) * 3 + n(a.assists) * 2 + n(a.rating)))[0];
   const bits = [];
   if (top && (n(top.goals) || n(top.assists) || n(top.rating) >= 7.5)) {
@@ -144,16 +133,8 @@ function gameStory(m, i, seed, subject) {
   const keeper = m.players.find((p) => lineOf(p.position) === 'GK' && n(p.saves) >= 3);
   if (keeper && (script === 'smash-and-grab' || script === 'heartbreaker' || m.scoreAgainst === 0)) bits.push(`**${nm(keeper)}** made ${n(keeper.saves)} saves${m.scoreAgainst === 0 ? ' to keep it clean' : ''}.`);
   else if (anchor && stops >= 5) bits.push(`**${nm(anchor)}** did the dirty work with ${stops} defensive stops.`);
-  const flavor = {
-    demolition: ' Mamma mia: over by half time in spirit, if not on the clock.',
-    lockdown: ' Pure catenaccio; the opposition barely got a sniff.',
-    shootout: ' Che partita! Defending was optional; entertainment was not.',
-    'smash-and-grab': ' A robbery, and a beautiful one.',
-    heartbreaker: ' One moment either way and this is a different column. Che beffa.',
-    collapse: ' The film session will be long, and the espresso strong.',
-    stalemate: ' Two goalkeepers will sleep well tonight.',
-  }[script] || '';
-  const joke = nameJoke(m.opponent, m.result);
+  const flavor = ['demolition', 'lockdown', 'shootout', 'smash-and-grab', 'heartbreaker', 'collapse', 'stalemate'].includes(script) ? ` ${P.flavorFor(script, m, `${m.id}:${seed}`)}` : '';
+  const joke = nameJoke(m.opponent, m.result, m.id);
   if (joke) bits.push(joke);
   if (subject) return `${subject} ${verb}.${flavor} ${bits.join(' ')}`.trim();
   const opener = i === 0 ? pick(['The day opened as', 'First up,', 'It started when'], seed) : pick(['Next,', 'Then', 'Later,', 'After that,'], seed + i);
@@ -342,7 +323,8 @@ function storyAngles(matches, seasonMatches) {
 }
 
 // Plain facts handed to the AI writer, if the bot has one.
-function storyFacts({ club, matches, seasonMatches }) {
+// single: one postgame story, so only that game's own numbers go in (no run, season or history)
+function storyFacts({ club, matches, seasonMatches, single = false }) {
   const games = [...matches].sort((a, b) => a.playedAt - b.playedAt).map((m) => {
     const players = m.players.map((p) => {
       const pass = pct(n(p.passes_made), n(p.pass_attempts));
@@ -350,8 +332,13 @@ function storyFacts({ club, matches, seasonMatches }) {
     });
     return `${m.result.toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} vs ${m.opponent}${m.matchType ? ` [${m.matchType}]` : ''} (script: ${matchScript(m)}); ${players.join(', ')}`;
   });
+  const jokes = [...new Set(matches.map((m) => nameJoke(m.opponent, m.result, m.id)).filter(Boolean))];
+  if (single) {
+    const puns = matches.map((m) => P.statPun(m, m.id)).filter(Boolean).map((x) => x.replace(/\*/g, ''));
+    const game = storyAngles(matches, matches).filter((a) => /^Team (passing|tackling)|^Finishing|saves\.$/.test(a));
+    return `Club: ${club.name}\nThe game:\n${games.join('\n')}\nThis game's numbers: ${game.join(' ') || 'none'}${puns.length || jokes.length ? `\nOptional gags (use at most one, only if it lands, or write a better one): ${[...puns, ...jokes].join(' | ')}` : ''}`;
+  }
   const angles = storyAngles(matches, seasonMatches);
-  const jokes = [...new Set(matches.map((m) => nameJoke(m.opponent, m.result)).filter(Boolean))];
   const run = recentRun(seasonMatches, new Date(Math.max(...matches.map((m) => +m.playedAt), 0) || Date.now()));
   return `Club: ${club.name}\nToday's games (in order):\n${games.join('\n') || 'none'}\nStory angles (verified from the record):\n${angles.map((a) => `- ${a}`).join('\n') || '- none'}\nRecent run (newest first): ${run.map((m) => `${m.result[0].toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} ${m.opponent}`).join(', ') || 'none'}\nSeason context: ${seasonArc(club.name, matches, seasonMatches).replace(/\*/g, '')}${jokes.length ? `\nOptional name gags (use one only if it lands, or write a better one): ${jokes.join(' | ')}` : ''}`;
 }
@@ -511,48 +498,11 @@ const KICKERS = {
   loss: ['SCONFITTA', 'SI RIPARTE'],
 };
 
-// Cheeky wordplay on the opponent's name, only when a word in it gives us a joke.
-// Each entry: [pattern, line when we win or draw, line when we lose (optional)]. Unmatched names get nothing.
-const NAME_JOKES = [
-  [/\bunited\b/i, (o) => `${o}? United in name only; by the end they were coming apart at the seams.`, (o) => `${o} were united tonight, unfortunately for us, in every sense.`],
-  [/\bcity\b/i, (o) => `The city never sleeps, they say. ${o}'s defence clearly did.`],
-  [/\brovers?\b/i, (o) => `${o} roved all the way here and went home with empty pockets.`],
-  [/\bwanderers?\b/i, (o) => `${o} wandered in, wandered about, and wandered off with nothing.`],
-  [/\brangers?\b/i, (o) => `${o} never found their range. Not even close.`],
-  [/\bathletic\b/i, (o) => `${o}: athletic on the team sheet, less so on the pitch.`],
-  [/\bd[iy]namo\b/i, (o) => `${o} ran out of batteries well before the final whistle.`],
-  [/\breal\b/i, (o) => `${o}? Let's keep it real: second best all night.`],
-  [/\binter\b/i, (o) => `${o}, interrupted. Rudely.`],
-  [/\bsporting\b/i, (o) => `Very sporting of ${o} to hand over the points like that.`],
-  [/\bballs?\b|\bballers?\b/i, (o) => `${o} brought plenty of balls. We just did more with ours.`, (o) => `Say what you like about ${o}, they had the bigger balls tonight.`],
-  [/\bwood(y|s)?\b/i, (o) => `${o} had wood all night and still couldn't finish.`],
-  [/\bhard(core)?\b/i, (o) => `${o} came in hard and finished early. It happens to the best of them.`],
-  [/\bcocks?\b|\bcockerels?\b/i, (o) => `${o} were cocky at kick-off. Very quiet at full time.`],
-  [/\bbangers?\b/i, (o) => `${o} promised bangers and delivered a damp squib.`],
-  [/\bbox\b/i, (o) => `Nobody got into ${o}'s box quite like we did.`],
-  [/\blegends?\b/i, (o) => `${o}: legends in their own minds.`],
-  [/\bkings?\b/i, (o) => `${o} were kings for about ninety seconds.`],
-  [/\bwolves\b/i, (o) => `${o} turned up as lapdogs.`, (o) => `${o} had teeth tonight, credit where due.`],
-  [/\blions?\b/i, (o) => `${o} roared at kick-off and purred by full time.`],
-  [/\beagles?\b/i, (o) => `${o} never got off the ground.`],
-  [/\btitans?\b/i, (o) => `${o}, titans by name, shrank by the hour.`],
-  [/\belite\b/i, (o) => `${o} call themselves elite. The scoreline begs to differ.`],
-];
-
-function nameJoke(opponent, result) {
-  const o = String(opponent || '').trim();
-  if (!o || o === 'Unknown') return null;
-  const hit = NAME_JOKES.find(([re]) => re.test(o));
-  if (!hit) return null;
-  const [, good, bad] = hit;
-  return result === 'loss' ? (bad ? bad(o) : null) : good(o);
-}
-
 // A short Italian sign-off for the bottom of a story
 function signOff(club, m, seed) {
-  if (m.result === 'win') return pick([`Forza ${club}!`, `Avanti così, ${club}.`, `Che serata. Forza ${club}!`], seed);
-  if (m.result === 'draw') return pick([`Un punto è un punto. Avanti, ${club}.`, `Pazienza. Si continua, ${club}.`], seed);
-  return pick([`Testa alta, ${club}. Si riparte.`, `Domani è un altro giorno, ${club}.`], seed);
+  if (m.result === 'win') return pick([`Forza ${club}!`, `Avanti così, ${club}.`, `Che serata. Forza ${club}!`, `Tre punti, zero dubbi. Forza ${club}!`, `Pop the prosecco, ${club}.`, `Bellissimo, ${club}. Bellissimo.`], seed);
+  if (m.result === 'draw') return pick([`Un punto è un punto. Avanti, ${club}.`, `Pazienza. Si continua, ${club}.`, `Half a cannoli is still a cannoli, ${club}.`, `Così così, ${club}.`], seed);
+  return pick([`Testa alta, ${club}. Si riparte.`, `Domani è un altro giorno, ${club}.`, `Chin up, ${club}. The espresso is still hot.`, `Pazienza, ${club}. Next one.`], seed);
 }
 
 function reportHeadline(club, m, seed) {
@@ -592,65 +542,57 @@ function howItWent(m) {
   return `By the numbers, the side ${bits.length ? `${bits.join(', ')} and ${last}` : last}.`;
 }
 
-function buildMatchReport({ club, match: m, seasonMatches = [], logoUrl, story }) {
+// The postgame piece: a few sentences about this one game only. The run, streaks, records and the
+// season storyline belong to the twice-daily editions.
+function matchLede(club, m, seed) {
+  const script = matchScript(m);
+  const verb = P.verbFor(script, m, m.id);
+  const top = [...m.players].sort((a, b) => n(b.goals) * 3 + n(b.assists) * 2 + n(b.rating) - (n(a.goals) * 3 + n(a.assists) * 2 + n(a.rating)))[0];
+  const out = [`${club} ${verb}.`];
+  if (top && (n(top.goals) || n(top.assists) || n(top.rating) >= 7.5)) {
+    const did = [n(top.goals) && (n(top.goals) >= 3 ? 'a hat-trick' : n(top.goals) === 2 ? 'a brace' : 'a goal'), n(top.assists) && `${n(top.assists)} assist${n(top.assists) > 1 ? 's' : ''}`].filter(Boolean).join(' and ');
+    const r = n(top.rating) ? ` (${n(top.rating).toFixed(1)})` : '';
+    const t = `**${nm(top)}**`;
+    out.push(P.pickFrom(did
+      ? [`${t} led the way with ${did}${r}.`, `${t} was the difference: ${did}${r}.`, `Take a bow, ${t}: ${did}${r}.`, `${t} ran the show with ${did}${r}.`, `Chief architect: ${t}, with ${did}${r}.`]
+      : [`${t} was the pick of the bunch${r}.`, `${t} quietly ran the game${r}.`], m.id, 'top'));
+  }
+  // One gag at most: a pun on someone's numbers, else a joke on the opponent's name
+  const gag = P.statPun(m, m.id, top ? [nm(top)] : []) || nameJoke(m.opponent, m.result, m.id) || P.statPun(m, m.id);
+  if (gag) out.push(gag);
+  const flavor = P.flavorFor(script, m, m.id);
+  if (flavor) out.push(flavor);
+  out.push(`*${signOff(club, m, seed)}*`);
+  return out.join(' ');
+}
+
+function buildMatchReport({ club, match: m, logoUrl, story }) {
   const at = m.playedAt instanceof Date ? m.playedAt : new Date(m.playedAt);
-  const dateText = at.toLocaleDateString('en-US', { timeZone: CHRONICLE_TZ, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const dateText = at.toLocaleDateString('en-US', { timeZone: CHRONICLE_TZ, weekday: 'long', month: 'long', day: 'numeric' });
   const timeText = at.toLocaleTimeString('en-US', { timeZone: CHRONICLE_TZ, hour: 'numeric', minute: '2-digit' });
   const seed = seedOf(`${club.name}${m.id}`);
-  // Only the record up to and including this game, so reposts and late syncs read the same
-  const history = seasonMatches.filter((x) => x.id !== m.id && x.playedAt <= at);
-  const record = [m, ...history];
   const tag = m.result === 'win' ? 'W' : m.result === 'loss' ? 'L' : 'D';
+  const kicker = pick(KICKERS[matchScript(m)] || KICKERS.win, seed);
 
-  const lede = story || [gameStory(m, 0, seed, club.name), howItWent(m), `*${signOff(club.name, m, seed)}*`].filter(Boolean).join(' ');
   const embed = new EmbedBuilder()
     .setAuthor({ name: `📰 THE ${club.name.toUpperCase()} CHRONICLE · 🏁 FULL-TIME EXTRA` })
-    .setTitle(`${pick(KICKERS[matchScript(m)] || KICKERS.win, seed)} ${reportHeadline(club.name, m, seed)}`.slice(0, 256))
-    .setDescription(clip(`*${dateText}, ${timeText} Central · From the beat desk*\n\n${lede}`, 4096))
+    .setTitle(`${kicker}${/[!?]$/.test(kicker) ? '' : ' ·'} ${reportHeadline(club.name, m, seed)}`.slice(0, 256))
+    .setDescription(clip(`*${dateText}, ${timeText} Central*\n\n${story || matchLede(club.name, m, seed)}`, 1500))
     .setColor(0xe8d9b5)
     .setTimestamp(at);
   if (logoUrl) embed.setThumbnail(logoUrl);
 
+  // Box score: result, scorers and the top five ratings in one compact field
   const scorers = m.players.filter((p) => n(p.goals) > 0).sort((a, b) => n(b.goals) - n(a.goals)).map((p) => `${nm(p)}${n(p.goals) > 1 ? ` ×${n(p.goals)}` : ''}`);
   const assists = m.players.filter((p) => n(p.assists) > 0).sort((a, b) => n(b.assists) - n(a.assists)).map((p) => `${nm(p)}${n(p.assists) > 1 ? ` ×${n(p.assists)}` : ''}`);
+  const rated = m.players.filter((p) => n(p.rating) > 0).sort((a, b) => n(b.rating) - n(a.rating)).slice(0, 5);
   const box = [`**${tag} ${m.scoreFor}-${m.scoreAgainst}** vs ${m.opponent}${m.matchType ? ` · ${m.matchType}` : ''}`];
-  if (scorers.length) box.push(`⚽ ${scorers.join(', ')}`);
-  if (assists.length) box.push(`🎯 ${assists.join(', ')}`);
+  if (scorers.length) box.push(`⚽ ${scorers.join(', ')}${assists.length ? `  🎯 ${assists.join(', ')}` : ''}`);
+  if (rated.length) box.push(`📊 ${rated.map((p) => `${nm(p)} ${n(p.rating).toFixed(1)}${p.motm ? '⭐' : ''}`).join(' · ')}`);
   embed.addFields({ name: '📋 BOX SCORE', value: clip(box.join('\n')) });
 
-  // Player ratings, best first: the line a reader looks for after the score
-  const rated = m.players.filter((p) => n(p.rating) > 0).sort((a, b) => n(b.rating) - n(a.rating));
-  if (rated.length) {
-    const lines = rated.slice(0, 11).map((p) => {
-      const bits = [n(p.goals) && `${n(p.goals)}G`, n(p.assists) && `${n(p.assists)}A`, n(p.saves) && `${n(p.saves)} sv`, p.motm && 'MOTM'].filter(Boolean).join(' ');
-      return `\`${n(p.rating).toFixed(1)}\` **${nm(p)}**${p.position ? ` (${p.position})` : ''}${bits ? ` · ${bits}` : ''}`;
-    });
-    embed.addFields({ name: '📊 RATINGS', value: clip(lines.join('\n')) });
-  }
-
-  const stars = playerTotals([m])
-    .sort((a, b) => b.goals * 3 + b.assists * 2 + b.avg + b.motm * 2 - (a.goals * 3 + a.assists * 2 + a.avg + a.motm * 2))
-    .slice(0, 3);
-  if (stars.length) {
-    const medals = ['⭐', '⭐⭐', '⭐⭐⭐'];
-    embed.addFields({
-      name: '🏅 THREE STARS',
-      value: stars.map((s, i) => `${medals[i]} **${s.name}** (${[s.goals && `${s.goals}G`, s.assists && `${s.assists}A`, s.avg && s.avg.toFixed(1), s.motm && 'MOTM'].filter(Boolean).join(', ') || '1 app'})`).join('\n'),
-    });
-  }
-
-  // Milestones, rematches, droughts. With too little history every player would read as a "debut".
-  const angles = storyAngles([m], record).filter((a) => !/^Team (passing|tackling)|^Finishing/.test(a) && (history.length >= 5 || !/^Debut/.test(a)));
-  if (angles.length) embed.addFields({ name: '🔎 THE ANGLE', value: clip(angles.slice(0, 5).map((a) => `• ${a}`).join('\n')) });
-
-  if (history.length) {
-    const form = record.sort((a, b) => b.playedAt - a.playedAt).slice(0, 5).reverse().map((x) => (x.result === 'win' ? '🟢' : x.result === 'loss' ? '🔴' : '⚪')).join('');
-    const arc = seasonArc(club.name, [m], record, seed);
-    embed.addFields({ name: '📖 THE STORYLINE', value: clip(`Form guide, last 5: ${form}\n${arc}`) });
-  }
-
-  embed.setFooter({ text: 'Full-time extra from the Chronicle desk. Full editions print at 3 PM and midnight Central.' });
+  embed.setFooter({ text: 'Full-time extra. The run and the storyline are in the 3 PM and midnight editions.' });
   return { embeds: [embed], allowedMentions: { parse: [] } };
 }
 
-module.exports = { matchScript, seasonArc, storyAngles, storyFacts, buildChronicle, editionCover, recentRun, buildMatchReport, reportHeadline, nameJoke, EDITIONS, CHRONICLE_TZ };
+module.exports = { matchScript, seasonArc, storyAngles, storyFacts, buildChronicle, editionCover, recentRun, buildMatchReport, matchLede, reportHeadline, nameJoke, EDITIONS, CHRONICLE_TZ };

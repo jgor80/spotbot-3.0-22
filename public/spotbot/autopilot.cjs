@@ -27,6 +27,7 @@ const T = require('./event-time.cjs');
 const { PREMIUM_FREE } = require('./premium.cjs');
 const { storyFacts, buildChronicle, buildMatchReport, editionCover, EDITIONS, CHRONICLE_TZ } = require('./chronicle.cjs');
 const RX = require('./recap-extras.cjs');
+const PRESS = require('./press-copy.cjs');
 
 const FEATURES = {
   voice: { label: 'Voice check-ins', emoji: '🎧', help: 'Joining the club voice channel from 30 min before kick-off checks a player in.' },
@@ -73,12 +74,6 @@ const AUTOPILOT_COMMANDS = [
 
 function truncate(text, max = 1024) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
-function ordinal(n) {
-  const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 }
 
 function recordText({ wins, draws, losses }) {
@@ -519,7 +514,7 @@ function createAutopilot(deps) {
   // ---------- 2. Match recaps ----------
 
   // One line that says something the scoreline doesn't
-  function statNugget(match, history) {
+  function statNugget(match) {
     const players = match.players;
     const name = (p) => (p.ea_username || '').trim();
     const hatTrick = players.find((p) => (Number(p.goals) || 0) >= 3);
@@ -537,33 +532,10 @@ function createAutopilot(deps) {
     }
     if (best) return `🤝 **${name(best.a)}** and **${name(best.b)}** combined for ${best.total} goals and assists.`;
 
-    // history is newest first and starts with this match
-    const before = history.slice(1);
-    if (match.scoreAgainst === 0) {
-      const gap = before.findIndex((m) => m.scoreAgainst === 0);
-      if (gap === -1 && before.length >= 3) return `🧤 First clean sheet in ${before.length + 1} tracked games.`;
-      if (gap >= 3) return `🧤 First clean sheet in ${gap + 1} games.`;
-    }
-    const streak = (pred) => {
-      let n = 0;
-      for (const m of history) {
-        if (!pred(m)) break;
-        n++;
-      }
-      return n;
-    };
-    const wins = streak((m) => m.result === 'win');
-    if (wins >= 3) return `🔥 ${ordinal(wins)} win in a row.`;
-    if (match.result === 'win') {
-      let losses = 0;
-      for (const m of before) {
-        if (m.result !== 'loss') break;
-        losses++;
-      }
-      if (losses >= 2) return `💪 Ends a run of ${losses} defeats.`;
-    }
-    const unbeaten = streak((m) => m.result !== 'loss');
-    if (unbeaten >= 5) return `🛡️ Unbeaten in ${unbeaten}.`;
+    // Clean sheet and keeper heroics from this game alone; streaks and droughts belong to the Chronicle
+    const keeper = players.find((p) => /^(gk|goalkeeper)$/i.test(String(p.position)) && (Number(p.saves) || 0) >= 4);
+    if (match.scoreAgainst === 0 && keeper) return `🧤 Clean sheet, with **${name(keeper)}** making ${keeper.saves} saves.`;
+    if (match.scoreAgainst === 0) return '🧤 Clean sheet.';
     return null;
   }
 
@@ -589,28 +561,12 @@ function createAutopilot(deps) {
     const rated = match.players.filter((p) => Number(p.rating) > 0).sort((a, b) => b.rating - a.rating);
     const motm = match.players.find((p) => p.motm) || rated[0];
 
-    const nugget = statNugget(match, upTo);
-    // Story lines the scoreline can't tell: milestones, head-to-head, the catalyst, a gentle roast on defeats
+    const nugget = statNugget(match);
+    // Story lines about this game only (the run, records and head-to-head live in the Chronicle editions):
+    // a pun on someone's numbers or the opponent's name, the catalyst, and a gentle roast on defeats
     const story = [];
-    try {
-      const names = match.players.map(name).filter(Boolean);
-      const { data: profs } = names.length
-        ? await supabase.from('profiles').select('discord_user_id, ea_username').in('ea_username', names)
-        : { data: [] };
-      const totals = new Map();
-      for (const pr of profs || []) {
-        if (!pr.discord_user_id) continue;
-        const { data: ps } = await supabase.from('player_stats').select('goals').eq('guild_id', row.guild_id).eq('discord_user_id', pr.discord_user_id).limit(2000);
-        totals.set(String(pr.ea_username).toLowerCase(), { apps: (ps || []).length, goals: (ps || []).reduce((n, x) => n + Number(x.goals || 0), 0) });
-      }
-      story.push(...RX.milestones(match, totals));
-    } catch (err) { console.warn(`[autopilot] milestones failed: ${err.message}`); }
-    if (match.opponent && match.opponent !== 'Unknown') {
-      const { data: past } = await supabase.from('club_matches').select('result, score_for, score_against')
-        .eq('guild_id', row.guild_id).eq('club_key', row.club_key).eq('opponent_club_name', match.opponent).neq('id', row.id).limit(200);
-      const line = RX.h2h(past, match.opponent);
-      if (line) story.push(line);
-    }
+    const gag = PRESS.statPun(match, match.id) || PRESS.nameJoke(match.opponent, match.result, match.id);
+    if (gag && gag !== nugget) story.push(`😂 ${gag}`);
     const cat = RX.catalyst(match);
     if (cat) story.push(cat);
     const flop = RX.flop(match);
@@ -640,9 +596,8 @@ function createAutopilot(deps) {
       assisters.length && `🎯 ${assisters.map((p) => `${name(p)}${count(p.assists)}`).join(', ')}`,
       motm && `⭐ ${name(motm)}${Number(motm.rating) > 0 ? ` (${Number(motm.rating).toFixed(1)})` : ''}`,
     ].filter(Boolean);
-    const form = upTo.slice(0, 5).reverse().map((m) => RESULT[m.result].emoji).join('');
     embed.setDescription(
-      truncate([`📰 ${RX.headline(match, club)}`, facts.join(' · '), ...[nugget, ...story].filter(Boolean).slice(0, 2), `-# Form ${form}`].filter(Boolean).join('\n'), 1000)
+      truncate([`📰 ${RX.headline(match, club)}`, facts.join(' · '), ...[nugget, ...story].filter(Boolean).slice(0, 2)].filter(Boolean).join('\n'), 1000)
     );
     if (prefs.branding?.logo_url) embed.setThumbnail(prefs.branding.logo_url);
     return { embeds: [embed] };
@@ -718,10 +673,10 @@ function createAutopilot(deps) {
   async function buildMatchStory(guildId, club, match, seasonMatches) {
     const prefs = await events.serverPrefs(guildId).catch(() => ({}));
     const story = await aiStory(
-      "You are a sharp newspaper beat writer covering an EA FC Pro Clubs team. Write a match report for ONE game in 2 short paragraphs (under 900 characters total). Open with a punchy lede on the result and the story of the game, explain HOW it was won or lost using the stats (passing, tackling, finishing, saves), name standout players in **bold** with their ratings, and mention any milestone, rematch, drought or partnership from the angles. Only use the facts given; never invent goals, minutes, scorers' timing or quotes. No headings or bullet points. The game's 'script' tag (demolition, lockdown, shootout, smash-and-grab, heartbreaker, etc.) sets the tone. Clean sheets belong only to goalkeepers and defenders, never attackers. Stats marked (est) are estimates; say 'about'. Write like an original columnist for an Italian sports daily (think Gazzetta dello Sport): operatic, passionate, a little melodramatic, with a few natural Italian words or exclamations (mamma mia, che partita, catenaccio, fantasista, tifosi, forza) but never a whole sentence in Italian, and no stock phrases repeated from story to story. When an opponent's name invites it, slip in one cheeky innuendo or pun on it (PG-13, aimed at the club name only, never at real people, gender, race or bodies); if no gag is genuinely funny, skip it. Teasing the opponent is fine; never mock our own players.",
-      storyFacts({ club, matches: [match], seasonMatches })
+      "You are a sharp newspaper beat writer covering an EA FC Pro Clubs team. Write a short postgame piece about THIS ONE GAME only: one paragraph, 3 to 5 sentences, under 550 characters. Open with a punchy lede on the result, say in one line how it was won or lost from the stats, and name the standout player or two in **bold** with their rating. Never mention other games, the season, form, streaks, records, head-to-head history or milestones; that belongs to the twice-daily digest. Land at least one funny pun or wordplay (on a player's numbers or the opponent's name) when one genuinely works, and vary your openings, verbs and jokes so no two pieces read alike. Only use the facts given; never invent goals, minutes, scorers' timing or quotes. No headings or bullet points. The game's 'script' tag (demolition, lockdown, shootout, smash-and-grab, heartbreaker, etc.) sets the tone. Clean sheets belong only to goalkeepers and defenders, never attackers. Stats marked (est) are estimates; say 'about'. Write like an original columnist for an Italian sports daily (think Gazzetta dello Sport): operatic, passionate, a little melodramatic, with a few natural Italian words or exclamations (mamma mia, che partita, catenaccio, fantasista, tifosi, forza) but never a whole sentence in Italian, and no stock phrases repeated from story to story. When an opponent's name invites it, slip in one cheeky innuendo or pun on it (PG-13, aimed at the club name only, never at real people, gender, race or bodies); if no gag is genuinely funny, skip it. Teasing the opponent is fine; never mock our own players.",
+      storyFacts({ club, matches: [match], seasonMatches, single: true })
     );
-    return buildMatchReport({ club, match, seasonMatches, logoUrl: prefs.branding?.logo_url, story });
+    return buildMatchReport({ club, match, logoUrl: prefs.branding?.logo_url, story });
   }
 
   async function postMatchReports(guildId, club, matches) {

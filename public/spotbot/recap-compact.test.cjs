@@ -63,7 +63,7 @@ test('without an image the recap is one compact card', async () => {
   assert.ok(lines.length <= 5, e.description);
   assert.match(e.description, /^📰 /);
   assert.match(e.description, /⚽ Striker9 ×2, Maestro · 🎯 Maestro ×2 · ⭐ Striker9 \(8\.6\)/);
-  assert.match(e.description, /-# Form 🟢$/);
+  assert.ok(!/Form|H2H|appearance|club goals/.test(e.description), e.description);
 });
 
 test('with the recap image the text only adds what the image does not show', async () => {

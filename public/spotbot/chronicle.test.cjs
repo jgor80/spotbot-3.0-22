@@ -21,49 +21,47 @@ const match = game('m1', 0, 'win', 3, 1, 'Rivals FC', [
   player('Gloves', 'GK', { rating: 6.9, saves: 4 }),
 ]);
 
-test('match report uses the Chronicle masthead and real match numbers', () => {
-  const { embeds, allowedMentions } = buildMatchReport({ club, match, seasonMatches: [match] });
+test('match report is a short piece about this one game, with the real numbers', () => {
+  const { embeds, allowedMentions } = buildMatchReport({ club, match });
   const e = embeds[0].toJSON();
   assert.deepEqual(allowedMentions, { parse: [] });
   assert.match(e.author.name, /THE CALCIO ROMA CHRONICLE · 🏁 FULL-TIME EXTRA/);
   assert.equal(e.color, 0xe8d9b5);
   assert.match(e.title, /RIVALS FC/);
-  assert.match(e.description, /From the beat desk/);
   assert.match(e.description, /Calcio Roma .*3-1/);
-  assert.match(e.description, /\*\*Maestro\*\* led the way with a goal and 2 assists \(8\.1\)/);
-  assert.match(e.description, /completed 87% of their passes, won 71% of their tackles and turned 3 of 7 shots into goals/);
-  const field = (name) => e.fields.find((f) => f.name.includes(name))?.value;
-  assert.match(field('BOX SCORE'), /\*\*W 3-1\*\* vs Rivals FC/);
-  assert.match(field('BOX SCORE'), /⚽ Striker9 ×2, Maestro/);
-  assert.match(field('BOX SCORE'), /🎯 Maestro ×2/);
-  // Ratings best first, with the player's own line
-  const ratings = field('RATINGS').split('\n');
-  assert.match(ratings[0], /`8.6` \*\*Striker9\*\* \(ST\) · 2G MOTM/);
-  assert.match(ratings[3], /Gloves.*4 sv/);
-  assert.match(field('THREE STARS'), /⭐ \*\*Striker9\*\*/);
+  assert.match(e.description, /\*\*Maestro\*\*.*a goal and 2 assists \(8\.1\)/);
+  // Short: one paragraph under the dateline, one compact field
+  const prose = e.description.split('\n\n')[1];
+  assert.ok(prose.length < 650, prose);
+  assert.equal(e.fields.length, 1);
+  const box = e.fields[0].value;
+  assert.match(box, /\*\*W 3-1\*\* vs Rivals FC/);
+  assert.match(box, /⚽ Striker9 ×2, Maestro  🎯 Maestro ×2/);
+  assert.match(box, /📊 Striker9 8\.6⭐ · Maestro 8\.1 · Wall 7\.2 · Gloves 6\.9/);
 });
 
 test('AI copy replaces the template lede but the box score stays factual', () => {
   const e = buildMatchReport({ club, match, story: 'A written story.' }).embeds[0].toJSON();
   assert.match(e.description, /A written story\.$/);
-  assert.ok(!/led the way/.test(e.description));
   assert.match(e.fields[0].value, /W 3-1/);
 });
 
-test('without enough history nobody is called a debutant and no storyline is printed', () => {
-  const e = buildMatchReport({ club, match, seasonMatches: [] }).embeds[0].toJSON();
-  assert.ok(!e.fields.some((f) => /Debut/.test(f.value)));
-  assert.ok(!e.fields.some((f) => f.name.includes('STORYLINE')));
+test('match reports never bring in other games, form or the season', () => {
+  const older = [1, 2, 3, 4, 5, 6].map((h) => game(`o${h}`, h * 24, 'loss', 0, 2));
+  const e = buildMatchReport({ club, match, seasonMatches: [match, ...older] }).embeds[0].toJSON();
+  const text = JSON.stringify(e);
+  assert.ok(!/STORYLINE|ANGLE|Form|Revenge|Rematch|record|streak|THREE STARS/i.test(text.replace(/the run and the storyline are in/i, '')), text);
+  const { storyFacts } = require('./chronicle.cjs');
+  const facts = storyFacts({ club, matches: [match], seasonMatches: [match, ...older], single: true });
+  assert.ok(!/Recent run|Season context|Revenge|Rematch/.test(facts), facts);
+  assert.match(facts, /WIN 3-1 vs Rivals FC/);
 });
 
-test('storyline only counts games up to this one', () => {
-  const older = [1, 2, 3, 4, 5, 6].map((h) => game(`o${h}`, h * 24, 'loss', 0, 2));
-  const later = game('later', -5, 'win', 9, 0);
-  const e = buildMatchReport({ club, match, seasonMatches: [later, match, ...older] }).embeds[0].toJSON();
-  const story = e.fields.find((f) => f.name.includes('STORYLINE')).value;
-  assert.match(story, /Form guide, last 5: 🔴🔴🔴🔴🟢/);
-  assert.match(story, /\*\*1-0-6\*\* across 7 matches/);
-  assert.match(e.fields.find((f) => f.name.includes('ANGLE')).value, /Revenge: beat Rivals FC after going 0-6/);
+test('postgame copy varies from game to game', () => {
+  const { matchLede } = require('./chronicle.cjs');
+  const ledes = new Set();
+  for (let i = 0; i < 12; i++) ledes.add(matchLede('Calcio Roma', { ...match, id: `v${i}` }, i).split('.')[0]);
+  assert.ok(ledes.size >= 4, [...ledes].join(' | '));
 });
 
 test('headlines follow the game script', () => {
@@ -97,17 +95,24 @@ test('opponent names get a cheeky line only when a word in them gives one', () =
   assert.match(nameJoke('Hard Knocks FC', 'win'), /came in hard and finished early/);
   assert.match(nameJoke('Big Balls FC', 'loss'), /bigger balls/);
   assert.equal(nameJoke('Eagles XI', 'loss'), null); // no losing line, so no joke
+  assert.match(nameJoke('Hard Knocks FC', 'win', 'other-seed'), /Hard Knocks FC (came in hard|talked hard)/);
   assert.equal(nameJoke('Rivals FC', 'win'), null);
   assert.equal(nameJoke('Unknown', 'win'), null);
 });
 
-test('match reports read Italian: kicker over the headline and a sign-off', () => {
+test('match reports read Italian: kicker over the headline, a gag and a sign-off', () => {
   const m = game('w1', 0, 'win', 5, 0, 'Wolves Town', []);
   const e = buildMatchReport({ club, match: m }).embeds[0].toJSON();
   assert.match(e.title, /^(MAMMA MIA!|CHE SPETTACOLO!) /);
-  assert.match(e.description, /Mamma mia/);
-  assert.match(e.description, /Wolves Town turned up as lapdogs\./);
-  assert.match(e.description, /\*(Forza Calcio Roma!|Avanti così, Calcio Roma\.|Che serata\. Forza Calcio Roma!)\*$/);
+  assert.match(e.description, /Wolves Town (turned up as lapdogs|howled at kick-off)/);
+  assert.match(e.description, /\*[^*]*Calcio Roma[^*]*\*$/);
+});
+
+test('stat puns fit the numbers they joke about', () => {
+  const { statPun } = require('./press-copy.cjs');
+  const hat = game('h', 0, 'win', 3, 0, 'X', [player('Ace', 'ST', { goals: 3 })]);
+  assert.match(statPun(hat, 'h'), /\*\*Ace\*\*.*(hat|three)/i);
+  assert.equal(statPun(game('q', 0, 'draw', 0, 0, 'X', [player('Quiet', 'CM')]), 'q'), null);
 });
 
 test('editions cover the run of games and the storyline, and carry the front page when given', () => {

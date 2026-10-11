@@ -343,11 +343,6 @@ function createBroadcast(deps) {
     const avatars = motmLine ? await avatarsFor(row.guild_id, [motmLine.name]) : new Map();
     const savedCards = motmLine ? await cardsFor(row.guild_id, [motmLine.name]) : new Map();
     const background = await backgroundFor([...new Set([motmLine?.name, ...players.map((p) => p.name)].filter(Boolean))], row.id).catch(() => null);
-    const form = history
-      .slice(0, 5)
-      .reverse()
-      .map((m) => m.result[0].toUpperCase())
-      .join(' ');
 
     return G.recapGraphic({
       clubName: club.name,
@@ -367,7 +362,6 @@ function createBroadcast(deps) {
       details: [
         `${MATCH_TYPES[md._matchCategory] || MATCH_TYPES[row.match_type] || 'EA'} match`,
         theirCount ? `${ourCount} vs ${theirCount} players` : `${ourCount} players`,
-        form ? `Form: ${form}` : null,
       ],
       talkingPoint: talkingPoint ? talkingPoint.replace(/\*\*/g, '').replace(/^\S+\s/, '') : null,
       footer: prefs.branding?.footer || '',
