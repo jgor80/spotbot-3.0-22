@@ -2,10 +2,11 @@
 // stop the bot posting or creating events. /brand: per-server colours, footer, lineup title, logo,
 // and the bot's nickname and avatar in this server.
 
-const { EmbedBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { EmbedBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 const { missingChannelPerms } = require('./perm-check.cjs');
 const { activeClubs } = require('./manager-hub.cjs');
 const { parseCrestHistory } = require('./club-logos.cjs');
+const { VOICES, VOICE_KEYS, identityOf } = require('./club-identity.cjs');
 
 const F = PermissionsBitField.Flags;
 const SERVER_PERMS = [
@@ -186,11 +187,84 @@ function createClubSetup(deps) {
         { name: 'Kit', value: [kit.primary, kit.secondary].filter(Boolean).join(' / ') || 'Not set', inline: true },
         { name: 'Kit look', value: (kit.description || '–').slice(0, 1024) }
       )
-      .setFooter({ text: 'Run /setup again any time to change these.' });
-    await interaction.editReply({ content: notes.join('\n') || null, embeds: [embed] });
+      .setFooter({ text: 'Next: give the club its own voice and newspaper. Run /setup again any time to change these.' });
+    await interaction.editReply({ content: notes.join('\n') || null, embeds: [embed], components: [new ActionRowBuilder().addComponents(identityButton())] });
     if (picker) await interaction.followUp({ ...picker, flags: 64 });
   }
 
+
+  // ---------- Setup wizard step 2: club identity (newspaper voice, paper name, hometown) ----------
+
+  const identityButton = () => new ButtonBuilder().setCustomId('setupw:identity').setLabel('Club identity: voice & newspaper').setEmoji('📰').setStyle(ButtonStyle.Secondary);
+
+  function identityPanel(club) {
+    const id = identityOf(club);
+    const sample = id.def.kickers.demolition?.[0];
+    const embed = new EmbedBuilder()
+      .setTitle(`📰 ${club.name}: club identity`)
+      .setColor(0xe8d9b5)
+      .setDescription(
+        'How the Chronicle, match reports, the AI writer and the Fun Zone sound for this club. Changes apply from the next post.' +
+          (id.picked ? '' : `\n\nYou're on the default voice (${VOICES[id.voice].label}). Pick one below to make it yours.`)
+      )
+      .addFields(
+        { name: 'Voice', value: `${id.def.emoji} **${id.def.label}**\n${id.def.desc}${sample ? `\nHeadline kicker: *${sample}*` : ''}` },
+        { name: 'Newspaper', value: id.paper, inline: true },
+        { name: 'Hometown', value: id.city, inline: true },
+        { name: 'Opponent name gags', value: id.nameJokes ? 'On' : 'Off', inline: true }
+      )
+      .setFooter({ text: 'Run /setup any time to change these.' });
+    const voiceMenu = new StringSelectMenuBuilder()
+      .setCustomId('setupw:voice')
+      .setPlaceholder('Pick your club’s voice')
+      .addOptions(VOICE_KEYS.map((k) => ({ label: VOICES[k].label, value: k, emoji: VOICES[k].emoji, description: VOICES[k].desc.slice(0, 100), default: k === id.voice })));
+    const buttons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('setupw:paper').setLabel('Newspaper name & hometown').setEmoji('✏️').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('setupw:jokes').setLabel(id.nameJokes ? 'Turn name gags off' : 'Turn name gags on').setEmoji('😏').setStyle(ButtonStyle.Secondary)
+    );
+    return { embeds: [embed], components: [new ActionRowBuilder().addComponents(voiceMenu), buttons] };
+  }
+
+  function paperModal(club) {
+    const saved = club.identity || {};
+    const id = identityOf(club);
+    const input = (key, label, value, placeholder) => {
+      const t = new TextInputBuilder().setCustomId(key).setLabel(label).setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(40).setPlaceholder(placeholder);
+      if (value) t.setValue(value);
+      return new ActionRowBuilder().addComponents(t);
+    };
+    return new ModalBuilder().setCustomId('setupw:papersubmit').setTitle('Newspaper & hometown').addComponents(
+      input('paper_name', 'Newspaper name', saved.paper_name || '', id.paper),
+      input('home_city', 'Hometown (used in banter and the press box)', saved.home_city || '', id.city)
+    );
+  }
+
+  async function handleIdentity(interaction) {
+    if (!interaction.member.permissions.has(F.ManageGuild)) {
+      return interaction.reply({ content: '❌ Only server admins can change the club identity.', flags: 64 });
+    }
+    const state = await getGuildState(interaction.guildId);
+    const club = currentClubOf(state);
+    if (!club) return interaction.reply({ content: '❌ No club exists on this server yet. Open `/manager` once to create it, then run setup again.', flags: 64 });
+    const action = interaction.customId.split(':')[1];
+    if (action === 'identity') return interaction.reply({ ...identityPanel(club), flags: 64 });
+    if (action === 'paper') return interaction.showModal(paperModal(club));
+
+    const identity = { ...(club.identity || {}) };
+    if (action === 'voice') identity.voice = VOICE_KEYS.includes(interaction.values?.[0]) ? interaction.values[0] : identityOf(club).voice;
+    else if (action === 'jokes') identity.name_jokes = !identityOf(club).nameJokes;
+    else if (action === 'papersubmit') {
+      for (const key of ['paper_name', 'home_city']) {
+        const v = (interaction.fields.getTextInputValue(key) || '').trim().slice(0, 40);
+        if (v) identity[key] = v;
+        else delete identity[key];
+      }
+    }
+    club.identity = identity;
+    await saveGuildSettings(interaction.guildId, state);
+    if (action === 'papersubmit' && !interaction.isFromMessage?.()) return interaction.reply({ ...identityPanel(club), flags: 64 });
+    return interaction.update(identityPanel(club));
+  }
 
   // ---------- /setup ----------
 
@@ -296,7 +370,7 @@ function createClubSetup(deps) {
       .setFooter({ text: `Bot online · ${Math.max(0, Math.round(guild.client.ws.ping))}ms latency · Missing a channel permission? Edit the channel → Permissions → add my role.` });
     const canEdit = interaction.member.permissions.has(F.ManageGuild);
     const components = canEdit && deps.saveGuildSettings
-      ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupw:start').setLabel('Club setup: EA club, colours & kit').setEmoji('🧭').setStyle(ButtonStyle.Primary))]
+      ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupw:start').setLabel('Club setup: EA club, colours & kit').setEmoji('🧭').setStyle(ButtonStyle.Primary), identityButton())]
       : [];
     return interaction.editReply({ embeds: [embed], components });
   }
@@ -393,6 +467,10 @@ function createClubSetup(deps) {
 
   async function handleInteraction(interaction) {
     if (!interaction.guildId) return false;
+    if (/^setupw:(identity|voice|jokes|paper|papersubmit)$/.test(interaction.customId || '') && (interaction.isButton() || interaction.isStringSelectMenu?.() || interaction.isModalSubmit())) {
+      await handleIdentity(interaction);
+      return true;
+    }
     if ((interaction.isButton() && interaction.customId === 'setupw:start') || (interaction.isModalSubmit() && interaction.customId === 'setupw:submit')) {
       await handleWizard(interaction);
       return true;
@@ -418,7 +496,7 @@ function createClubSetup(deps) {
             .setTitle('👋 Thanks for adding GafferBot')
             .setColor(0x5865f2)
             .setDescription(
-              'Start with **`/setup`** and press **Club setup** to link your EA club and set colours and kit in one form. It also shows what to do next and checks my permissions.\n\n' +
+              'Start with **`/setup`** and press **Club setup** to link your EA club and set colours and kit in one form, then **Club identity** to pick your club\'s voice, newspaper name and hometown. It also shows what to do next and checks my permissions.\n\n' +
                 'The usual path, all from `/manager`: **Admin → Link EA Club**, **Roster & Squad → Import Role**, **Events → Timezone**, then **Events → New Event**.'
             ),
         ],

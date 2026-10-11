@@ -5,6 +5,7 @@
 
 const { EmbedBuilder } = require('discord.js');
 const { lineOf } = require('./player-season.cjs');
+const { identityOf } = require('./club-identity.cjs');
 
 const CHRONICLE_TZ = 'America/Chicago';
 const EDITIONS = {
@@ -115,7 +116,7 @@ function lede(club, matches, stars, seed) {
 // ---------- Storyline prose: game stories, player features and the club's season arc ----------
 
 // subject set (a club name) writes a single game as its own story instead of a line in the day's run
-function gameStory(m, i, seed, subject) {
+function gameStory(m, i, seed, subject, id = identityOf(null)) {
   const score = `${m.scoreFor}-${m.scoreAgainst}`;
   const script = matchScript(m);
   const verb = {
@@ -144,16 +145,8 @@ function gameStory(m, i, seed, subject) {
   const keeper = m.players.find((p) => lineOf(p.position) === 'GK' && n(p.saves) >= 3);
   if (keeper && (script === 'smash-and-grab' || script === 'heartbreaker' || m.scoreAgainst === 0)) bits.push(`**${nm(keeper)}** made ${n(keeper.saves)} saves${m.scoreAgainst === 0 ? ' to keep it clean' : ''}.`);
   else if (anchor && stops >= 5) bits.push(`**${nm(anchor)}** did the dirty work with ${stops} defensive stops.`);
-  const flavor = {
-    demolition: ' Mamma mia: over by half time in spirit, if not on the clock.',
-    lockdown: ' Pure catenaccio; the opposition barely got a sniff.',
-    shootout: ' Che partita! Defending was optional; entertainment was not.',
-    'smash-and-grab': ' A robbery, and a beautiful one.',
-    heartbreaker: ' One moment either way and this is a different column. Che beffa.',
-    collapse: ' The film session will be long, and the espresso strong.',
-    stalemate: ' Two goalkeepers will sleep well tonight.',
-  }[script] || '';
-  const joke = nameJoke(m.opponent, m.result);
+  const flavor = id.def.flavor[script] || '';
+  const joke = id.nameJokes ? nameJoke(m.opponent, m.result) : null;
   if (joke) bits.push(joke);
   if (subject) return `${subject} ${verb}.${flavor} ${bits.join(' ')}`.trim();
   const opener = i === 0 ? pick(['The day opened as', 'First up,', 'It started when'], seed) : pick(['Next,', 'Then', 'Later,', 'After that,'], seed + i);
@@ -351,7 +344,7 @@ function storyFacts({ club, matches, seasonMatches }) {
     return `${m.result.toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} vs ${m.opponent}${m.matchType ? ` [${m.matchType}]` : ''} (script: ${matchScript(m)}); ${players.join(', ')}`;
   });
   const angles = storyAngles(matches, seasonMatches);
-  const jokes = [...new Set(matches.map((m) => nameJoke(m.opponent, m.result)).filter(Boolean))];
+  const jokes = identityOf(club).nameJokes ? [...new Set(matches.map((m) => nameJoke(m.opponent, m.result)).filter(Boolean))] : [];
   const run = recentRun(seasonMatches, new Date(Math.max(...matches.map((m) => +m.playedAt), 0) || Date.now()));
   return `Club: ${club.name}\nToday's games (in order):\n${games.join('\n') || 'none'}\nStory angles (verified from the record):\n${angles.map((a) => `- ${a}`).join('\n') || '- none'}\nRecent run (newest first): ${run.map((m) => `${m.result[0].toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} ${m.opponent}`).join(', ') || 'none'}\nSeason context: ${seasonArc(club.name, matches, seasonMatches).replace(/\*/g, '')}${jokes.length ? `\nOptional name gags (use one only if it lands, or write a better one): ${jokes.join(' | ')}` : ''}`;
 }
@@ -396,9 +389,10 @@ function runLines(run) {
 // image: optional front-page PNG (Buffer) drawn from the same cover.
 function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches = [], now = new Date(), logoUrl, story, image }) {
   const { ed, dateText, seed, totals, stars, run, record } = editionCover({ club, edition, matches, seasonMatches, now });
+  const id = identityOf(club);
 
   const embed = new EmbedBuilder()
-    .setAuthor({ name: `📰 THE ${club.name.toUpperCase()} CHRONICLE · ${ed.emoji} ${ed.label}` })
+    .setAuthor({ name: `📰 ${id.paper.toUpperCase()} · ${ed.emoji} ${ed.label}` })
     .setTitle(headline(club.name, matches, seed))
     .setDescription(`*${dateText} · From the beat desk*\n\n${lede(club.name, matches, stars, seed)}`)
     .setColor(edition === 'overnight' ? 0x2b2d31 : 0xe8d9b5)
@@ -417,7 +411,7 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
   }
 
   // The prose: game stories, player feature and the club storyline
-  const gameText = story || [...matches].sort((a, b) => a.playedAt - b.playedAt).slice(0, 6).map((m, i) => gameStory(m, i, seed)).join(' ');
+  const gameText = story || [...matches].sort((a, b) => a.playedAt - b.playedAt).slice(0, 6).map((m, i) => gameStory(m, i, seed, undefined, id)).join(' ');
   if (gameText) embed.addFields({ name: '✍️ THE STORY', value: clip(gameText) });
   const feature = !story && spotlight(stars, seed);
   if (feature) embed.addFields({ name: '🔦 PLAYER SPOTLIGHT', value: clip(feature) });
@@ -496,20 +490,11 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
 // Posted in the Chronicle's channel right after the regular recap, so every game gets a newspaper
 // write-up beside the 3 PM and midnight editions. Same masthead, newsprint colour and beat-desk voice.
 
-// Italian kicker over the headline, picked by the kind of game it was
-const KICKERS = {
-  demolition: ['MAMMA MIA!', 'CHE SPETTACOLO!'],
-  lockdown: ['CATENACCIO!', 'PORTA CHIUSA'],
-  shootout: ['CHE PARTITA!', 'PAZZESCO!'],
-  'smash-and-grab': ["FURTO D'AUTORE", 'COLPO GROSSO'],
-  'arm-wrestle': ['SOFFERENZA!', 'CUORE E BATTICUORE'],
-  heartbreaker: ['CHE BEFFA', 'AMARO IN BOCCA'],
-  stalemate: ['ZERO A ZERO', 'NOIA? NO, TATTICA'],
-  'trade-off': ['PAREGGIO', 'UN PUNTO A TESTA'],
-  collapse: ['NOTTE FONDA', 'DISASTRO'],
-  win: ['VITTORIA!', 'TRE PUNTI'],
-  loss: ['SCONFITTA', 'SI RIPARTE'],
-};
+// Kicker over the headline in the club's chosen voice, picked by the kind of game it was
+function kicker(id, m, seed) {
+  const k = id.def.kickers[matchScript(m)] || id.def.kickers.win;
+  return k?.length ? `${pick(k, seed)} ` : '';
+}
 
 // Cheeky wordplay on the opponent's name, only when a word in it gives us a joke.
 // Each entry: [pattern, line when we win or draw, line when we lose (optional)]. Unmatched names get nothing.
@@ -548,11 +533,10 @@ function nameJoke(opponent, result) {
   return result === 'loss' ? (bad ? bad(o) : null) : good(o);
 }
 
-// A short Italian sign-off for the bottom of a story
-function signOff(club, m, seed) {
-  if (m.result === 'win') return pick([`Forza ${club}!`, `Avanti così, ${club}.`, `Che serata. Forza ${club}!`], seed);
-  if (m.result === 'draw') return pick([`Un punto è un punto. Avanti, ${club}.`, `Pazienza. Si continua, ${club}.`], seed);
-  return pick([`Testa alta, ${club}. Si riparte.`, `Domani è un altro giorno, ${club}.`], seed);
+// A short sign-off for the bottom of a story, in the club's voice (none for straight news)
+function signOff(id, club, m, seed) {
+  const lines = id.def.signOff?.[m.result === 'win' ? 'win' : m.result === 'draw' ? 'draw' : 'loss'];
+  return lines ? pick(lines(club), seed) : '';
 }
 
 function reportHeadline(club, m, seed) {
@@ -602,10 +586,12 @@ function buildMatchReport({ club, match: m, seasonMatches = [], logoUrl, story }
   const record = [m, ...history];
   const tag = m.result === 'win' ? 'W' : m.result === 'loss' ? 'L' : 'D';
 
-  const lede = story || [gameStory(m, 0, seed, club.name), howItWent(m), `*${signOff(club.name, m, seed)}*`].filter(Boolean).join(' ');
+  const id = identityOf(club);
+  const sign = signOff(id, club.name, m, seed);
+  const lede = story || [gameStory(m, 0, seed, club.name, id), howItWent(m), sign && `*${sign}*`].filter(Boolean).join(' ');
   const embed = new EmbedBuilder()
-    .setAuthor({ name: `📰 THE ${club.name.toUpperCase()} CHRONICLE · 🏁 FULL-TIME EXTRA` })
-    .setTitle(`${pick(KICKERS[matchScript(m)] || KICKERS.win, seed)} ${reportHeadline(club.name, m, seed)}`.slice(0, 256))
+    .setAuthor({ name: `📰 ${id.paper.toUpperCase()} · 🏁 FULL-TIME EXTRA` })
+    .setTitle(`${kicker(id, m, seed)}${reportHeadline(club.name, m, seed)}`.slice(0, 256))
     .setDescription(clip(`*${dateText}, ${timeText} Central · From the beat desk*\n\n${lede}`, 4096))
     .setColor(0xe8d9b5)
     .setTimestamp(at);
