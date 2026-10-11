@@ -91,3 +91,21 @@ test('autopilot prints a match report in the Chronicle channel only when one is 
   assert.equal(sent.length, 1);
   assert.match(sent[0].embeds[0].toJSON().author.name, /FULL-TIME EXTRA/);
 });
+
+test('opponent names get a cheeky line only when a word in them gives one', () => {
+  const { nameJoke } = require('./chronicle.cjs');
+  assert.match(nameJoke('Hard Knocks FC', 'win'), /came in hard and finished early/);
+  assert.match(nameJoke('Big Balls FC', 'loss'), /bigger balls/);
+  assert.equal(nameJoke('Eagles XI', 'loss'), null); // no losing line, so no joke
+  assert.equal(nameJoke('Rivals FC', 'win'), null);
+  assert.equal(nameJoke('Unknown', 'win'), null);
+});
+
+test('match reports read Italian: kicker over the headline and a sign-off', () => {
+  const m = game('w1', 0, 'win', 5, 0, 'Wolves Town', []);
+  const e = buildMatchReport({ club, match: m }).embeds[0].toJSON();
+  assert.match(e.title, /^(MAMMA MIA!|CHE SPETTACOLO!) /);
+  assert.match(e.description, /Mamma mia/);
+  assert.match(e.description, /Wolves Town turned up as lapdogs\./);
+  assert.match(e.description, /\*(Forza Calcio Roma!|Avanti così, Calcio Roma\.|Che serata\. Forza Calcio Roma!)\*$/);
+});
