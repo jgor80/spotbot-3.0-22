@@ -28,6 +28,7 @@ const RecentGamesPage = lazy(() => import("./pages/RecentGamesPage"));
 const CabinetPage = lazy(() => import("./pages/CabinetPage"));
 const InsightsPage = lazy(() => import("./pages/InsightsPage"));
 const SquadIQPanel = lazy(() => import("./pages/SquadIQPanel"));
+const ControlRoomPage = lazy(() => import("./pages/ControlRoomPage"));
 const StreamOverlay = lazy(() => import("./pages/StreamOverlay"));
 const TermsPage = lazy(() => import("./pages/TermsPage"));
 const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
@@ -74,6 +75,7 @@ const App = () => (
                   <Route path="/games" element={<ProtectedRoute><RecentGamesPage /></ProtectedRoute>} />
                   <Route path="/insights" element={<ProtectedRoute><InsightsPage /></ProtectedRoute>} />
                   <Route path="/squadiq" element={<ProtectedRoute><SquadIQPanel /></ProtectedRoute>} />
+                  <Route path="/control" element={<ProtectedRoute><ControlRoomPage /></ProtectedRoute>} />
                   <Route path="/trophy-room" element={<ProtectedRoute><CabinetPage /></ProtectedRoute>} />
                   <Route path="/players" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
