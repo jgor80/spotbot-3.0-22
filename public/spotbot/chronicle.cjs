@@ -7,6 +7,7 @@ const { EmbedBuilder } = require('discord.js');
 const { lineOf } = require('./player-season.cjs');
 const P = require('./press-copy.cjs');
 const { nameJoke } = P;
+const { identityOf } = require('./club-identity.cjs');
 
 const CHRONICLE_TZ = 'America/Chicago';
 const EDITIONS = {
@@ -117,9 +118,9 @@ function lede(club, matches, stars, seed) {
 // ---------- Storyline prose: game stories, player features and the club's season arc ----------
 
 // subject set (a club name) writes a single game as its own story instead of a line in the day's run
-function gameStory(m, i, seed, subject) {
+function gameStory(m, i, seed, subject, id = identityOf(null)) {
   const script = matchScript(m);
-  const verb = P.verbFor(script, m, `${m.id}:${seed + i}`);
+  const verb = P.verbFor(script, m, `${m.id}:${seed + i}`, id.voice);
   const top = [...m.players].sort((a, b) => n(b.goals) * 3 + n(b.assists) * 2 + n(b.rating) - (n(a.goals) * 3 + n(a.assists) * 2 + n(a.rating)))[0];
   const bits = [];
   if (top && (n(top.goals) || n(top.assists) || n(top.rating) >= 7.5)) {
@@ -133,8 +134,8 @@ function gameStory(m, i, seed, subject) {
   const keeper = m.players.find((p) => lineOf(p.position) === 'GK' && n(p.saves) >= 3);
   if (keeper && (script === 'smash-and-grab' || script === 'heartbreaker' || m.scoreAgainst === 0)) bits.push(`**${nm(keeper)}** made ${n(keeper.saves)} saves${m.scoreAgainst === 0 ? ' to keep it clean' : ''}.`);
   else if (anchor && stops >= 5) bits.push(`**${nm(anchor)}** did the dirty work with ${stops} defensive stops.`);
-  const flavor = ['demolition', 'lockdown', 'shootout', 'smash-and-grab', 'heartbreaker', 'collapse', 'stalemate'].includes(script) ? ` ${P.flavorFor(script, m, `${m.id}:${seed}`)}` : '';
-  const joke = nameJoke(m.opponent, m.result, m.id);
+  const flavor = ['demolition', 'lockdown', 'shootout', 'smash-and-grab', 'heartbreaker', 'collapse', 'stalemate'].includes(script) ? ` ${P.flavorFor(script, m, `${m.id}:${seed}`, id.voice)}` : '';
+  const joke = id.nameJokes ? nameJoke(m.opponent, m.result, m.id) : null;
   if (joke) bits.push(joke);
   if (subject) return `${subject} ${verb}.${flavor} ${bits.join(' ')}`.trim();
   const opener = i === 0 ? pick(['The day opened as', 'First up,', 'It started when'], seed) : pick(['Next,', 'Then', 'Later,', 'After that,'], seed + i);
@@ -332,9 +333,10 @@ function storyFacts({ club, matches, seasonMatches, single = false }) {
     });
     return `${m.result.toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} vs ${m.opponent}${m.matchType ? ` [${m.matchType}]` : ''} (script: ${matchScript(m)}); ${players.join(', ')}`;
   });
-  const jokes = [...new Set(matches.map((m) => nameJoke(m.opponent, m.result, m.id)).filter(Boolean))];
+  const id = identityOf(club);
+  const jokes = id.nameJokes ? [...new Set(matches.map((m) => nameJoke(m.opponent, m.result, m.id)).filter(Boolean))] : [];
   if (single) {
-    const puns = matches.map((m) => P.statPun(m, m.id)).filter(Boolean).map((x) => x.replace(/\*/g, ''));
+    const puns = matches.map((m) => P.statPun(m, m.id, [], id.voice)).filter(Boolean).map((x) => x.replace(/\*/g, ''));
     const game = storyAngles(matches, matches).filter((a) => /^Team (passing|tackling)|^Finishing|saves\.$/.test(a));
     return `Club: ${club.name}\nThe game:\n${games.join('\n')}\nThis game's numbers: ${game.join(' ') || 'none'}${puns.length || jokes.length ? `\nOptional gags (use at most one, only if it lands, or write a better one): ${[...puns, ...jokes].join(' | ')}` : ''}`;
   }
@@ -383,9 +385,10 @@ function runLines(run) {
 // image: optional front-page PNG (Buffer) drawn from the same cover.
 function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches = [], now = new Date(), logoUrl, story, image }) {
   const { ed, dateText, seed, totals, stars, run, record } = editionCover({ club, edition, matches, seasonMatches, now });
+  const id = identityOf(club);
 
   const embed = new EmbedBuilder()
-    .setAuthor({ name: `📰 THE ${club.name.toUpperCase()} CHRONICLE · ${ed.emoji} ${ed.label}` })
+    .setAuthor({ name: `📰 ${id.paper.toUpperCase()} · ${ed.emoji} ${ed.label}` })
     .setTitle(headline(club.name, matches, seed))
     .setDescription(`*${dateText} · From the beat desk*\n\n${lede(club.name, matches, stars, seed)}`)
     .setColor(edition === 'overnight' ? 0x2b2d31 : 0xe8d9b5)
@@ -404,7 +407,7 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
   }
 
   // The prose: game stories, player feature and the club storyline
-  const gameText = story || [...matches].sort((a, b) => a.playedAt - b.playedAt).slice(0, 6).map((m, i) => gameStory(m, i, seed)).join(' ');
+  const gameText = story || [...matches].sort((a, b) => a.playedAt - b.playedAt).slice(0, 6).map((m, i) => gameStory(m, i, seed, undefined, id)).join(' ');
   if (gameText) embed.addFields({ name: '✍️ THE STORY', value: clip(gameText) });
   const feature = !story && spotlight(stars, seed);
   if (feature) embed.addFields({ name: '🔦 PLAYER SPOTLIGHT', value: clip(feature) });
@@ -483,26 +486,16 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
 // Posted in the Chronicle's channel right after the regular recap, so every game gets a newspaper
 // write-up beside the 3 PM and midnight editions. Same masthead, newsprint colour and beat-desk voice.
 
-// Italian kicker over the headline, picked by the kind of game it was
-const KICKERS = {
-  demolition: ['MAMMA MIA!', 'CHE SPETTACOLO!'],
-  lockdown: ['CATENACCIO!', 'PORTA CHIUSA'],
-  shootout: ['CHE PARTITA!', 'PAZZESCO!'],
-  'smash-and-grab': ["FURTO D'AUTORE", 'COLPO GROSSO'],
-  'arm-wrestle': ['SOFFERENZA!', 'CUORE E BATTICUORE'],
-  heartbreaker: ['CHE BEFFA', 'AMARO IN BOCCA'],
-  stalemate: ['ZERO A ZERO', 'NOIA? NO, TATTICA'],
-  'trade-off': ['PAREGGIO', 'UN PUNTO A TESTA'],
-  collapse: ['NOTTE FONDA', 'DISASTRO'],
-  win: ['VITTORIA!', 'TRE PUNTI'],
-  loss: ['SCONFITTA', 'SI RIPARTE'],
-};
+// Kicker over the headline in the club's chosen voice, picked by the kind of game it was
+function kicker(id, m, seed) {
+  const k = id.def.kickers[matchScript(m)] || id.def.kickers.win;
+  return k?.length ? `${pick(k, seed)} ` : '';
+}
 
-// A short Italian sign-off for the bottom of a story
-function signOff(club, m, seed) {
-  if (m.result === 'win') return pick([`Forza ${club}!`, `Avanti così, ${club}.`, `Che serata. Forza ${club}!`, `Tre punti, zero dubbi. Forza ${club}!`, `Pop the prosecco, ${club}.`, `Bellissimo, ${club}. Bellissimo.`], seed);
-  if (m.result === 'draw') return pick([`Un punto è un punto. Avanti, ${club}.`, `Pazienza. Si continua, ${club}.`, `Half a cannoli is still a cannoli, ${club}.`, `Così così, ${club}.`], seed);
-  return pick([`Testa alta, ${club}. Si riparte.`, `Domani è un altro giorno, ${club}.`, `Chin up, ${club}. The espresso is still hot.`, `Pazienza, ${club}. Next one.`], seed);
+// A short sign-off for the bottom of a story, in the club's voice (none for straight news)
+function signOff(id, club, m, seed) {
+  const lines = id.def.signOff?.[m.result === 'win' ? 'win' : m.result === 'draw' ? 'draw' : 'loss'];
+  return lines ? pick(lines(club), seed) : '';
 }
 
 function reportHeadline(club, m, seed) {
@@ -544,9 +537,9 @@ function howItWent(m) {
 
 // The postgame piece: a few sentences about this one game only. The run, streaks, records and the
 // season storyline belong to the twice-daily editions.
-function matchLede(club, m, seed) {
+function matchLede(club, m, seed, id = identityOf(null)) {
   const script = matchScript(m);
-  const verb = P.verbFor(script, m, m.id);
+  const verb = P.verbFor(script, m, m.id, id.voice);
   const top = [...m.players].sort((a, b) => n(b.goals) * 3 + n(b.assists) * 2 + n(b.rating) - (n(a.goals) * 3 + n(a.assists) * 2 + n(a.rating)))[0];
   const out = [`${club} ${verb}.`];
   if (top && (n(top.goals) || n(top.assists) || n(top.rating) >= 7.5)) {
@@ -558,11 +551,12 @@ function matchLede(club, m, seed) {
       : [`${t} was the pick of the bunch${r}.`, `${t} quietly ran the game${r}.`], m.id, 'top'));
   }
   // One gag at most: a pun on someone's numbers, else a joke on the opponent's name
-  const gag = P.statPun(m, m.id, top ? [nm(top)] : []) || nameJoke(m.opponent, m.result, m.id) || P.statPun(m, m.id);
+  const gag = P.statPun(m, m.id, top ? [nm(top)] : [], id.voice) || (id.nameJokes && nameJoke(m.opponent, m.result, m.id)) || P.statPun(m, m.id, [], id.voice);
   if (gag) out.push(gag);
-  const flavor = P.flavorFor(script, m, m.id);
+  const flavor = P.flavorFor(script, m, m.id, id.voice);
   if (flavor) out.push(flavor);
-  out.push(`*${signOff(club, m, seed)}*`);
+  const sign = signOff(id, club, m, seed);
+  if (sign) out.push(`*${sign}*`);
   return out.join(' ');
 }
 
@@ -572,12 +566,13 @@ function buildMatchReport({ club, match: m, logoUrl, story }) {
   const timeText = at.toLocaleTimeString('en-US', { timeZone: CHRONICLE_TZ, hour: 'numeric', minute: '2-digit' });
   const seed = seedOf(`${club.name}${m.id}`);
   const tag = m.result === 'win' ? 'W' : m.result === 'loss' ? 'L' : 'D';
-  const kicker = pick(KICKERS[matchScript(m)] || KICKERS.win, seed);
+  const id = identityOf(club);
+  const kick = kicker(id, m, seed).trim();
 
   const embed = new EmbedBuilder()
-    .setAuthor({ name: `📰 THE ${club.name.toUpperCase()} CHRONICLE · 🏁 FULL-TIME EXTRA` })
-    .setTitle(`${kicker}${/[!?]$/.test(kicker) ? '' : ' ·'} ${reportHeadline(club.name, m, seed)}`.slice(0, 256))
-    .setDescription(clip(`*${dateText}, ${timeText} Central*\n\n${story || matchLede(club.name, m, seed)}`, 1500))
+    .setAuthor({ name: `📰 ${id.paper.toUpperCase()} · 🏁 FULL-TIME EXTRA` })
+    .setTitle(`${kick ? `${kick}${/[!?]$/.test(kick) ? '' : ' ·'} ` : ''}${reportHeadline(club.name, m, seed)}`.slice(0, 256))
+    .setDescription(clip(`*${dateText}, ${timeText} Central*\n\n${story || matchLede(club.name, m, seed, id)}`, 1500))
     .setColor(0xe8d9b5)
     .setTimestamp(at);
   if (logoUrl) embed.setThumbnail(logoUrl);

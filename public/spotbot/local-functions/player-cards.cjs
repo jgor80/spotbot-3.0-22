@@ -4120,7 +4120,7 @@ Deno.serve(async (req) => {
   }
   if (b.action === "latest") {
     if (!bot) {
-      const userDb = (0, import_supabase_js_22.createClient)(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") ?? "", { global: { headers: { Authorization: req.headers.get("authorization") ?? "" } } });
+      const userDb = (0, import_supabase_js_22.createClient)(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") || req.headers.get("apikey") || "", { global: { headers: { Authorization: req.headers.get("authorization") ?? "" } } });
       const { data: allowed, error: error2 } = await userDb.rpc("user_has_guild_access", { check_guild_id: b.guild_id });
       if (error2 || allowed !== true) return json({ error: "Forbidden" }, 403);
     }

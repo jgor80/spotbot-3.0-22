@@ -10,6 +10,7 @@ const { activeClubs, resolveClub } = require('./manager-hub.cjs');
 const { toInsightMatches } = require('./club-insights.cjs');
 const { seasonTotals, lineOf, leaders, num } = require('./player-season.cjs');
 const G = require('./graphics.cjs');
+const { identityOf } = require('./club-identity.cjs');
 const T = require('./event-time.cjs');
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -249,6 +250,7 @@ function createBroadcast(deps) {
     }));
     return G.frontPage({
       clubName: club.name,
+      paperName: identityOf(club).paper,
       editionLabel: cover.ed.label,
       dateText: cover.dateText,
       headline: cover.headline,

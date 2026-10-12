@@ -13,6 +13,10 @@ function hash(str) {
 // salt keeps pools independent, so the verb and the pun don't always move together
 const pickFrom = (list, seed, salt = '') => list[hash(`${seed}:${salt}`) % list.length];
 
+// Lines with Italian words or food only suit the Italian voice (club-identity.cjs); other voices skip them
+const ITALIAN = /mamma|catenaccio|che (partita|beffa)|espresso|prosecco|tifosi|roman|rimini|sofferenza|testa alta|cannoli|lasagne|pasta|al dente|cantina|carabinieri|vespa|buon appetito|nonna|chiuso|finito/i;
+const forVoice = (list, voice) => (!voice || voice === 'italian' ? list : list.filter((l) => !ITALIAN.test(l)));
+
 // What the club did, by the kind of game it was. {o} opponent, {s} score.
 const VERBS = {
   demolition: ['dismantled {o} {s}', 'ran riot against {o}, {s}', 'put {o} to the sword, {s}', 'turned {o} into a training cone, {s}', 'made {o} look like a Sunday league side, {s}', 'served {o} a {s} lasagne, extra layers', 'flattened {o} like fresh pasta, {s}'],
@@ -56,13 +60,14 @@ const STAT_PUNS = [
 ];
 
 // avoid: gamertags already named in the story, so the pun lands on someone else
-function statPun(m, seed, avoid = []) {
+function statPun(m, seed, avoid = [], voice) {
   const skip = new Set(avoid.map((x) => String(x).toLowerCase()));
   const order = STAT_PUNS.map((x, i) => ({ x, k: hash(`${seed}:pun${i}`) })).sort((a, b) => a.k - b.k).map((o) => o.x);
   const players = (m.players || []).filter((p) => !skip.has(nm(p).toLowerCase()));
   for (const [applies, lines] of order) {
     const p = applies(m, players);
-    if (p && p !== true) return pickFrom(lines(p), seed, 'punline');
+    const fit = p && p !== true ? forVoice(lines(p), voice) : [];
+    if (fit.length) return pickFrom(fit, seed, 'punline');
   }
   return null;
 }
@@ -120,15 +125,15 @@ function nameJoke(opponent, result, seed = '') {
   return lines?.length ? pickFrom(lines, seed || o, 'name').replace(/\{o\}/g, o) : null;
 }
 
-function verbFor(script, m, seed) {
+function verbFor(script, m, seed, voice) {
   const pool = VERBS[script];
-  const list = Array.isArray(pool) ? pool : pool ? pool[m.result] || pool.win : [`drew {s} with {o}`];
+  const list = forVoice(Array.isArray(pool) ? pool : pool ? pool[m.result] || pool.win : [`drew {s} with {o}`], voice);
   return pickFrom(list, seed, 'verb').replace(/\{o\}/g, m.opponent).replace(/\{s\}/g, `${m.scoreFor}-${m.scoreAgainst}`);
 }
 
-function flavorFor(script, m, seed) {
-  const list = FLAVOR[script] || FLAVOR[m.result];
-  return list ? pickFrom(list, seed, 'flavor').replace(/\{o\}/g, m.opponent) : '';
+function flavorFor(script, m, seed, voice) {
+  const list = forVoice(FLAVOR[script] || FLAVOR[m.result] || [], voice);
+  return list.length ? pickFrom(list, seed, 'flavor').replace(/\{o\}/g, m.opponent) : '';
 }
 
 module.exports = { pickFrom, statPun, nameJoke, verbFor, flavorFor, NAME_JOKES, STAT_PUNS };

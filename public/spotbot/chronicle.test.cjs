@@ -136,3 +136,16 @@ test('editions cover the run of games and the storyline, and carry the front pag
   assert.equal(quiet.stars.length, 0);
   assert.ok(quiet.coverStars.length > 0);
 });
+
+test('postgame copy keeps Italian lines to the Italian voice', () => {
+  const { matchLede } = require('./chronicle.cjs');
+  const { identityOf } = require('./club-identity.cjs');
+  const plain = identityOf({ name: 'X', identity: { voice: 'plain' } });
+  const british = identityOf({ name: 'X', identity: { voice: 'british', name_jokes: false } });
+  const scripts = [game('a', 0, 'win', 5, 0, 'Wolves Town'), game('b', 0, 'loss', 1, 2, 'Rivals FC'), game('c', 0, 'win', 1, 0, 'Rivals FC'), game('d', 0, 'loss', 0, 4, 'Rivals FC'), match];
+  for (let i = 0; i < 40; i++) {
+    const m = { ...scripts[i % scripts.length], id: `p${i}` };
+    assert.doesNotMatch(matchLede('Calcio Roma', m, i, plain), /mamma|catenaccio|espresso|cannoli|lasagne|tifosi|forza|nonna|pasta/i);
+    assert.doesNotMatch(matchLede('Calcio Roma', m, i, british), /lapdogs|howled/);
+  }
+});

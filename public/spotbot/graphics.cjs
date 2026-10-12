@@ -380,7 +380,7 @@ function totwPoster({ players, title, subtitle, accent, crestImage, footer }) {
 
 // ---------- Chronicle front page ----------
 
-// d: { clubName, editionLabel, dateText, headline, record, storyline, accent, crest,
+// d: { clubName, paperName, editionLabel, dateText, headline, record, storyline, accent, crest,
 //      run: [{ result, scoreFor, scoreAgainst, opponent }] newest first,
 //      players: [{ name, caption, photo }] cover players; photo is the player's own pro-photo upload or null }
 // Players are only ever shown through their real uploaded photos (no generated likenesses); a player
@@ -389,6 +389,7 @@ function frontPage(d) {
   const W = 1200, H = 1500;
   const ink = '#1b1a17', paper = '#f1e9d6', rule = '#3a362e', muted = '#5d574b';
   const accent = hex(d.accent);
+  const masthead = clip(d.paperName || `The ${d.clubName} Chronicle`, 40).toUpperCase();
   const pictured = (d.players || []).filter((p) => p.photo).slice(0, 3);
   const unpictured = (d.players || []).filter((p) => !p.photo).slice(0, 3);
   const id = (i) => `fp${i}`;
@@ -436,7 +437,7 @@ function frontPage(d) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="${W}" height="${H}" fill="${paper}"/>
   <rect x="50" y="40" width="1100" height="6" fill="${ink}"/>
-  <text x="600" y="140" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="${fit(`THE ${d.clubName} CHRONICLE`, 1080, 84, 0.5, 40)}" fill="${ink}" letter-spacing="2">${esc(`THE ${clip(d.clubName, 30)} CHRONICLE`.toUpperCase())}</text>
+  <text x="600" y="140" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="${fit(masthead, 1080, 84, 0.5, 40)}" fill="${ink}" letter-spacing="2">${esc(masthead)}</text>
   <rect x="50" y="164" width="1100" height="2" fill="${ink}"/>
   <text x="50" y="194" font-family="${BODY}" font-weight="700" font-size="18" fill="${accent}">${esc(clip(d.editionLabel || '', 40))}</text>
   <text x="600" y="194" text-anchor="middle" font-family="${BODY}" font-size="18" fill="${muted}">${esc(clip(d.dateText, 60))}</text>

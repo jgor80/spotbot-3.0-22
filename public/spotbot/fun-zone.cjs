@@ -10,6 +10,7 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { activeClubs, resolveClub } = require('./manager-hub.cjs');
 const { toSessions } = require('./coach.cjs');
+const { identityOf } = require('./club-identity.cjs');
 
 const PINK = 0xf4a7c4;
 const MAX_QUOTES = 200;
@@ -73,7 +74,7 @@ function nightTotals(matches) {
 }
 
 // Each award needs a real qualifying number; awards nobody qualifies for are skipped
-function roastAwards(matches) {
+function roastAwards(matches, club) {
   const players = nightTotals(matches);
   const out = [];
   const used = new Set();
@@ -110,7 +111,7 @@ function roastAwards(matches) {
     (p) => `**${p.name}** — ${p.saves} saves. Did his job; the other ten owe him dinner.`
   );
   award(
-    '👻 Ghost of Palermo',
+    `👻 Ghost of ${identityOf(club).city}`,
     outfield.filter((p) => p.passAtt + p.shots + p.tackleAtt <= 8 * p.games).sort((a, b) => a.passAtt + a.shots + a.tackleAtt - (b.passAtt + b.shots + b.tackleAtt)),
     (p) => `**${p.name}** — ${p.passAtt} passes tried, ${p.shots} shots, ${p.tackleAtt} tackles in ${p.games} game${p.games > 1 ? 's' : ''}. Witnesses unsure he was there.`
   );
@@ -124,7 +125,7 @@ function record(matches) {
 }
 
 function roastEmbed(club, night) {
-  const awards = roastAwards(night);
+  const awards = roastAwards(night, club);
   const r = record(night);
   const e = new EmbedBuilder()
     .setColor(PINK)
@@ -162,14 +163,28 @@ const PRESS_ANSWERS = [
   ['Philosophical', '"Football is like the sea in Mondello. Sometimes it is calm. Tonight it drowned us."'],
 ];
 
+// {p} the player, {city} the club's hometown. Italian-voiced clubs also get the Sicilian set.
 const RUMOURS = [
-  '🚨 EXCLUSIVE: {p} reportedly stormed out of the post-match pasta buffet. Saudi clubs monitoring. Here we go? 🤔',
-  '🚨 {p} spotted at Palermo airport carrying a suitcase and a single cannoli. Agents deny everything.',
+  '🚨 EXCLUSIVE: {p} reportedly stormed out of the post-match buffet. Saudi clubs monitoring. Here we go? 🤔',
+  '🚨 {p} spotted at {city} airport carrying a suitcase and a single sandwich. Agents deny everything.',
   '🚨 BREAKING: {p} has asked to play as a box-to-box goalkeeper. The board is "considering it".',
-  '🚨 {p} linked with a shock loan move to a Sunday league side in Catania. Fee: two arancini.',
   '🚨 Reports: {p} has demanded his own personal hairdresser on the bench. Talks ongoing.',
-  '🚨 {p} rumoured to be learning Sicilian to give more passionate team talks. Nobody understands them yet.',
 ];
+const VOICE_RUMOURS = {
+  italian: [
+    '🚨 EXCLUSIVE: {p} reportedly stormed out of the post-match pasta buffet. Saudi clubs monitoring. Here we go? 🤔',
+    '🚨 {p} spotted at {city} airport carrying a suitcase and a single cannoli. Agents deny everything.',
+    '🚨 {p} linked with a shock loan move to a Sunday league side in Catania. Fee: two arancini.',
+    '🚨 {p} rumoured to be learning Sicilian to give more passionate team talks. Nobody understands them yet.',
+  ],
+  british: ['🚨 {p} linked with a shock loan to a pub side. Fee: a pie and a pint.'],
+  american: ['🚨 {p} reportedly asking for a trade to a team with better halftime snacks.'],
+  spanish: ['🚨 {p} spotted negotiating a move in exchange for two churros. Agents deny everything.'],
+};
+function rumoursFor(club) {
+  const id = identityOf(club);
+  return id.voice === 'italian' ? [...RUMOURS.slice(2), ...VOICE_RUMOURS.italian] : [...RUMOURS, ...(VOICE_RUMOURS[id.voice] || [])];
+}
 
 const RITUALS = [
   ['🧂', 'Throw salt over your shoulder'],
@@ -271,7 +286,7 @@ function createFunZone({ getGuildState, saveGuildSettings, loadMatches }) {
       const e = new EmbedBuilder()
         .setColor(PINK)
         .setTitle('🎙️ Post-match press conference')
-        .setDescription(`**Reporter (Gazzetta di Palermo, fictional):** ${pick(PRESS_QUESTIONS)}\n\n${interaction.user} steps up to the mic…`);
+        .setDescription(`**Reporter (${identityOf(club).def.outlet(identityOf(club).city)}, fictional):** ${pick(PRESS_QUESTIONS)}\n\n${interaction.user} steps up to the mic…`);
       return interaction.reply({ embeds: [e], components: [row] });
     }
 
@@ -279,7 +294,7 @@ function createFunZone({ getGuildState, saveGuildSettings, loadMatches }) {
       const target = getUser('player');
       const member = target ? await interaction.guild.members.fetch(target.id).catch(() => null) : null;
       const label = member?.displayName || target?.username || interaction.member?.displayName || interaction.user.username;
-      const e = new EmbedBuilder().setColor(PINK).setDescription(pick(RUMOURS).replace('{p}', `**${label}**`)).setFooter({ text: 'Fake news. 100% made up for banter.' });
+      const e = new EmbedBuilder().setColor(PINK).setDescription(pick(rumoursFor(club)).replace('{p}', `**${label}**`).replace('{city}', identityOf(club).city)).setFooter({ text: 'Fake news. 100% made up for banter.' });
       return interaction.reply({ embeds: [e], allowedMentions: { parse: [] } });
     }
 
