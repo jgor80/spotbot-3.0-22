@@ -42,9 +42,9 @@ const VOICES = {
       stalemate: ' Two goalkeepers will sleep well tonight.',
     },
     signOff: {
-      win: (c) => [`Forza ${c}!`, `Avanti così, ${c}.`, `Che serata. Forza ${c}!`],
-      draw: (c) => [`Un punto è un punto. Avanti, ${c}.`, `Pazienza. Si continua, ${c}.`],
-      loss: (c) => [`Testa alta, ${c}. Si riparte.`, `Domani è un altro giorno, ${c}.`],
+      win: (c) => [`Forza ${c}!`, `Avanti così, ${c}.`, `Che serata. Forza ${c}!`, `Tre punti, zero dubbi. Forza ${c}!`, `Pop the prosecco, ${c}.`, `Bellissimo, ${c}. Bellissimo.`],
+      draw: (c) => [`Un punto è un punto. Avanti, ${c}.`, `Pazienza. Si continua, ${c}.`, `Half a cannoli is still a cannoli, ${c}.`, `Così così, ${c}.`],
+      loss: (c) => [`Testa alta, ${c}. Si riparte.`, `Domani è un altro giorno, ${c}.`, `Chin up, ${c}. The espresso is still hot.`, `Pazienza, ${c}. Next one.`],
     },
   },
   british: {

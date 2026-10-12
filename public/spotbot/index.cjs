@@ -504,6 +504,7 @@ const premiumDeps = {
   canManageClub: squads.canManageClub,
   loadMatches: managerHub.loadMatches,
   fetchClubMembers,
+  functionSecret: FUNCTION_SECRET,
   dashboardUrl: DASHBOARD_URL
 };
 const broadcast = createBroadcast(premiumDeps);

@@ -63,7 +63,7 @@ test('without an image the recap is one compact card', async () => {
   assert.ok(lines.length <= 5, e.description);
   assert.match(e.description, /^📰 /);
   assert.match(e.description, /⚽ Striker9 ×2, Maestro · 🎯 Maestro ×2 · ⭐ Striker9 \(8\.6\)/);
-  assert.match(e.description, /-# Form 🟢$/);
+  assert.ok(!/Form|H2H|appearance|club goals/.test(e.description), e.description);
 });
 
 test('with the recap image the text only adds what the image does not show', async () => {
@@ -97,12 +97,13 @@ test('recap background is an original upload from a match player, never generate
   assert.equal(await b.backgroundFor([], 'm1'), null);
 });
 
-test('the Chronicle front page shows players only through their own uploads', async () => {
+test('the Chronicle front page shows each player as their rendered card art, else their own upload', async () => {
   const supabase = fakeSupabase({
     profiles: [{ discord_user_id: '111111111111', ea_username: 'Striker9' }, { discord_user_id: '222222222222', ea_username: 'Maestro' }],
     pro_photo_assets: [
       { discord_user_id: '111111111111', image_url: pixel('#ff0000'), source_kind: 'upload' },
       { discord_user_id: '222222222222', image_url: pixel('#0000ff'), source_kind: 'generated' },
+      { discord_user_id: '222222222222', image_url: pixel('#00ff00'), source_kind: 'upload' },
     ],
     pro_photos: [],
   });
@@ -118,7 +119,7 @@ test('the Chronicle front page shows players only through their own uploads', as
   } finally {
     G2.frontPage = real;
   }
-  assert.equal(drawn.players.find((p) => p.name === 'Striker9').photo, pixel('#ff0000'));
-  assert.equal(drawn.players.find((p) => p.name === 'Maestro').photo, null); // generated art never stands in
+  assert.equal(drawn.players.find((p) => p.name === 'Maestro').photo, pixel('#0000ff')); // the card render wins
+  assert.equal(drawn.players.find((p) => p.name === 'Striker9').photo, pixel('#ff0000')); // no render yet: own upload
   assert.ok(G2.frontPage({ clubName: 'Club', headline: 'QUIET DAY', run: [], players: [] }).length > 1000);
 });
