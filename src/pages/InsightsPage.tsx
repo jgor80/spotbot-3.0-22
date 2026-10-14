@@ -23,14 +23,12 @@ import {
   gdPerGame,
   toInsightMatches,
   winPct,
+  COMPETITIONS,
+  matchCompetition,
 } from "@/lib/clubInsights";
 
-const MATCH_TYPES = [
-  { value: "all", label: "All matches" },
-  { value: "division", label: "League" },
-  { value: "competition", label: "Cups & playoffs" },
-  { value: "friendly", label: "Friendlies" },
-];
+// League / Tournament / BYOT follow the tags managers set in Discord (Manager Hub → Tag Matches)
+const MATCH_TYPES = [{ value: "all", label: "All matches" }, ...COMPETITIONS.map((c) => ({ value: c.value, label: c.label }))];
 
 const RANGES = [
   { value: "20", label: "Last 20" },
@@ -93,16 +91,17 @@ export default function InsightsPage() {
       if (!selectedGuildId) return { rows: [] as ClubMatchRow[], lineups: [] as LineupRow[] };
       const limit = range === "all" ? 1000 : Number(range);
 
+      // Tags live in match_data, so filter by kind of game here; read further back so the range still fills up
       let query = supabase
         .from("club_matches")
         .select("id, result, score_for, score_against, match_type, created_at, opponent_club_name, player_stats, match_data")
         .eq("guild_id", selectedGuildId)
         .order("created_at", { ascending: false })
-        .limit(limit);
+        .limit(matchType === "all" ? limit : 1000);
       if (clubKey !== "all") query = query.eq("club_key", clubKey);
-      if (matchType !== "all") query = query.eq("match_type", matchType);
-      const { data: rows, error } = await query;
+      const { data: all, error } = await query;
       if (error) throw error;
+      const rows = matchType === "all" ? all : (all || []).filter((r) => matchCompetition(r) === matchType).slice(0, limit);
 
       const { data: lineups } = await supabase
         .from("lineups")

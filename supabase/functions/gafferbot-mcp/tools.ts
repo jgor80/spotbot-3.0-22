@@ -142,7 +142,7 @@ export const TOOLS: Tool<Ctx>[] = [
       properties: {
         guild_id: guildIdProp,
         club_key: clubKeyProp,
-        match_type: { type: "string", enum: ["league", "cup", "friendly"], description: "Only this kind of match." },
+        match_type: { type: "string", enum: ["league", "cup", "friendly", "tournament", "byot"], description: "Only this kind of match. league, cup and friendly are EA's own types; tournament and byot are games a manager tagged." },
         limit: { type: "integer", minimum: 1, maximum: 30, default: 10 },
       },
       additionalProperties: false,
@@ -150,12 +150,15 @@ export const TOOLS: Tool<Ctx>[] = [
     run: async (args, ctx) => {
       const guildId = await resolveGuild(args, ctx);
       let q = ctx.db.from("club_matches")
-        .select("ea_match_id, club_key, match_type, result, score_for, score_against, opponent_club_name, player_stats, created_at")
+        .select("ea_match_id, club_key, match_type, tag:match_data->>_tag, result, score_for, score_against, opponent_club_name, player_stats, created_at")
         .eq("guild_id", guildId).order("created_at", { ascending: false }).limit(clampInt(args.limit, 10, 1, 30));
       const clubKey = str(args.club_key);
       if (clubKey) q = q.eq("club_key", clubKey);
       const type = MATCH_TYPES[String(args.match_type)];
       if (type) q = q.eq("match_type", type);
+      // Manager tags (Discord: Manager Hub → Tag Matches) are stored in match_data._tag
+      const tag = String(args.match_type ?? "");
+      if (tag === "tournament" || tag === "byot") q = q.eq("match_data->>_tag", tag);
       const { data, error } = await q;
       if (error) throw error;
       return {
@@ -164,6 +167,7 @@ export const TOOLS: Tool<Ctx>[] = [
           club_key: m.club_key,
           recorded_at: m.created_at,
           match_type: Object.keys(MATCH_TYPES).find((k) => MATCH_TYPES[k] === m.match_type) || m.match_type,
+          tag: m.tag || null,
           result: m.result,
           score: `${m.score_for ?? "?"}-${m.score_against ?? "?"}`,
           opponent: m.opponent_club_name,

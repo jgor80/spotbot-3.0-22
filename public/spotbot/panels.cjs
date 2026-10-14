@@ -161,6 +161,7 @@ const AREAS = [
       { id: 'st_ratings', label: 'Ratings Panel', emoji: '⭐', cmd: 'ratingspanel' },
       { id: 'st_scoutclub', label: 'Scout a Club', emoji: '🔭', cmd: 'scoutclub' },
       { id: 'st_matches', label: 'Club Matches', emoji: '🗂️', cmd: 'clubmatches' },
+      { id: 'st_tags', label: 'Tag Matches', emoji: '🏷️', cmd: 'matchtags' },
       { id: 'st_preview', label: 'Match Preview', emoji: '🆚', cmd: 'matchpreview' },
       { id: 'st_scoutpanel', label: 'Scouting Panel', emoji: '🎛️', cmd: 'scoutpanel' },
     ],

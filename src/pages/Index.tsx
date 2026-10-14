@@ -24,7 +24,7 @@ import { SyncMatchesButton } from "@/components/club/SyncMatchesButton";
 import { useGuild } from "@/contexts/GuildContext";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { computeOverview, toInsightMatches, type ClubMatchRow, type InsightMatch, type MatchResult } from "@/lib/clubInsights";
+import { competitionLabel, computeOverview, toInsightMatches, type ClubMatchRow, type InsightMatch, type MatchResult } from "@/lib/clubInsights";
 
 interface UpcomingEvent {
   id: string;
@@ -341,7 +341,7 @@ export default function Dashboard() {
                         <div className="truncate text-sm font-medium">vs {m.opponent}</div>
                         <div className="truncate text-xs text-muted-foreground">
                           {format(m.playedAt, "EEE d MMM")}
-                          {m.matchType && m.matchType !== "league" ? ` · ${m.matchType}` : ""}
+                          {m.competition !== "league" ? ` · ${competitionLabel(m.competition)}` : ""}
                           {multiClub && club && clubNames.get(club) ? ` · ${clubNames.get(club)}` : ""}
                           {scorers ? ` · ⚽ ${scorers}` : ""}
                         </div>

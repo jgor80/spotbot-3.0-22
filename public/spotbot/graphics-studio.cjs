@@ -16,7 +16,7 @@ const G = require('./graphics.cjs');
 const { seamlessLogo } = require('./logo-cleanup.cjs');
 const { toFcPlatform } = require('./ea-fc27.cjs');
 const { activeClubs } = require('./manager-hub.cjs');
-const { toInsightMatches } = require('./club-insights.cjs');
+const { toInsightMatches, competitionLabel } = require('./club-insights.cjs');
 const { nextVariation } = require('./graphics-variants.cjs');
 const { render1986Card } = require('./graphics-1986.cjs');
 const { render1960sCard } = require('./graphics-1960s.cjs');
@@ -637,7 +637,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const motm = players.find((p) => p.motm) || [...players].sort((x, y) => y.rating - x.rating)[0] || null;
     return {
       opponent: match.opponent || 'Opponent', scoreFor: match.scoreFor, scoreAgainst: match.scoreAgainst, result: match.result,
-      competition: /playoff/i.test(match.matchType || '') ? 'Playoff' : /friendly/i.test(match.matchType || '') ? 'Friendly' : 'League',
+      competition: match.competition === 'cup' ? 'Playoff' : competitionLabel(match.competition),
       dateText: match.playedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       scorers: players.filter((p) => p.goals).map((p) => (p.goals > 1 ? `${p.name} ×${p.goals}` : p.name)).join(', '),
       motm: motm ? { name: motm.name, rating: motm.rating || null } : null,

@@ -52,6 +52,7 @@ const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
 const { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES } = require('./club-stats.cjs');
+const { createMatchTags, ACTION_SCHEMA: MATCHTAGS_SCHEMA } = require('./match-tags.cjs');
 const { createPremium, premiumCommands } = require('./premium.cjs');
 const { createBroadcast, BROADCAST_SUBCOMMANDS } = require('./broadcast.cjs');
 const { createDossier } = require('./dossier.cjs');
@@ -486,6 +487,10 @@ const autopilot = createAutopilot({
   openai,
   dashboardUrl: DASHBOARD_URL
 });
+// League / Tournament / BYOT tags on played games; new friendlies played during such an event are tagged
+// before their recap is built
+const matchTags = createMatchTags({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
+autopilot.onNewMatches(matchTags.autoTag);
 // After new matches arrive, quietly link gamertags whose name clearly matches a server member
 autopilot.onNewMatches(async (guildId) => {
   const guild = client.guilds.cache.get(guildId);
@@ -991,7 +996,8 @@ const ACTION_SCHEMAS = [
   ...SCOUT_COMMANDS,
   ...TRIAL_COMMANDS,
   ...LFC_COMMANDS,
-  ...premiumCommands(BROADCAST_SUBCOMMANDS, OVERLAY_SUBCOMMAND, TROPHIES_SUBCOMMAND, COACH_SUBCOMMAND)
+  ...premiumCommands(BROADCAST_SUBCOMMANDS, OVERLAY_SUBCOMMAND, TROPHIES_SUBCOMMAND, COACH_SUBCOMMAND),
+  MATCHTAGS_SCHEMA
 ];
 
 // The slash commands people see: /manager (club tools), /me (player hub), /help and /setup
@@ -4382,6 +4388,8 @@ async function routeInteraction(interaction) {
     if (await clubSetup.handleInteraction(interaction)) return;
     // /help, /clubstats members/top/form/matches, /linkea name search
     if (await clubStats.handleInteraction(interaction)) return;
+    // Tag Matches: League / Tournament / BYOT on played games
+    if (await matchTags.handleInteraction(interaction)) return;
     // Premium: /premium (status, cards, totw, overlay, trophies, coach) and /scout opponent
     if (await premium.handleInteraction(interaction)) return;
     if (await broadcast.handleInteraction(interaction)) return;

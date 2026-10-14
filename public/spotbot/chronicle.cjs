@@ -8,6 +8,10 @@ const { lineOf } = require('./player-season.cjs');
 const P = require('./press-copy.cjs');
 const { nameJoke } = P;
 const { identityOf } = require('./club-identity.cjs');
+const { competitionLabel } = require('./club-insights.cjs');
+
+// League / Tournament / BYOT (a manager's tag) or EA's own type, in words
+const kindOf = (m) => (m.competition ? competitionLabel(m.competition) : m.matchType || '');
 
 const CHRONICLE_TZ = 'America/Chicago';
 const EDITIONS = {
@@ -331,7 +335,7 @@ function storyFacts({ club, matches, seasonMatches, single = false }) {
       const pass = pct(n(p.passes_made), n(p.pass_attempts));
       return `${nm(p)}${p.position ? ` (${p.position})` : ''} ${n(p.goals)}G ${n(p.assists)}A ${n(p.shots)}sh${pass != null ? ` ${pass}%pass` : ''} ${n(p.tackles)}tkl${n(p.saves) ? ` ${n(p.saves)}sv` : ''} ${n(p.rating) ? n(p.rating).toFixed(1) : '-'}${p.motm ? ' MOTM' : ''}${p.red_cards ? ' RED' : ''}${n(p.interceptions) ? ` ${n(p.interceptions)}int` : ''}${n(p.clearances) ? ` ${n(p.clearances)}clr` : ''}${n(p.chances_created) ? ` ${n(p.chances_created)}chances(est)` : ''}`;
     });
-    return `${m.result.toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} vs ${m.opponent}${m.matchType ? ` [${m.matchType}]` : ''} (script: ${matchScript(m)}); ${players.join(', ')}`;
+    return `${m.result.toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} vs ${m.opponent}${kindOf(m) ? ` [${kindOf(m)}]` : ''} (script: ${matchScript(m)}); ${players.join(', ')}`;
   });
   const id = identityOf(club);
   const jokes = id.nameJokes ? [...new Set(matches.map((m) => nameJoke(m.opponent, m.result, m.id)).filter(Boolean))] : [];
@@ -581,7 +585,7 @@ function buildMatchReport({ club, match: m, logoUrl, story }) {
   const scorers = m.players.filter((p) => n(p.goals) > 0).sort((a, b) => n(b.goals) - n(a.goals)).map((p) => `${nm(p)}${n(p.goals) > 1 ? ` ×${n(p.goals)}` : ''}`);
   const assists = m.players.filter((p) => n(p.assists) > 0).sort((a, b) => n(b.assists) - n(a.assists)).map((p) => `${nm(p)}${n(p.assists) > 1 ? ` ×${n(p.assists)}` : ''}`);
   const rated = m.players.filter((p) => n(p.rating) > 0).sort((a, b) => n(b.rating) - n(a.rating)).slice(0, 5);
-  const box = [`**${tag} ${m.scoreFor}-${m.scoreAgainst}** vs ${m.opponent}${m.matchType ? ` · ${m.matchType}` : ''}`];
+  const box = [`**${tag} ${m.scoreFor}-${m.scoreAgainst}** vs ${m.opponent}${kindOf(m) ? ` · ${kindOf(m)}` : ''}`];
   if (scorers.length) box.push(`⚽ ${scorers.join(', ')}${assists.length ? `  🎯 ${assists.join(', ')}` : ''}`);
   if (rated.length) box.push(`📊 ${rated.map((p) => `${nm(p)} ${n(p.rating).toFixed(1)}${p.motm ? '⭐' : ''}`).join(' · ')}`);
   embed.addFields({ name: '📋 BOX SCORE', value: clip(box.join('\n')) });
