@@ -7,7 +7,7 @@
 
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { activeClubs, resolveClub } = require('./manager-hub.cjs');
-const { toInsightMatches } = require('./club-insights.cjs');
+const { toInsightMatches, matchTag, competitionLabel } = require('./club-insights.cjs');
 const { seasonTotals, lineOf, leaders, num } = require('./player-season.cjs');
 const G = require('./graphics.cjs');
 const { identityOf } = require('./club-identity.cjs');
@@ -366,10 +366,11 @@ function createBroadcast(deps) {
       savedCard: motmLine ? savedCards.get(motmLine.name.toLowerCase()) || null : null,
       background,
       accent: Number.isInteger(prefs.branding?.color) ? prefs.branding.color : undefined,
-      competition: MATCH_TYPES[md._matchCategory] || MATCH_TYPES[row.match_type] || null,
+      // A manager's League / Tournament / BYOT tag wins over EA's own type
+      competition: (matchTag(row) && competitionLabel(matchTag(row))) || MATCH_TYPES[md._matchCategory] || MATCH_TYPES[row.match_type] || null,
       dateText: dateText(match.playedAt, prefs.timezone),
       details: [
-        `${MATCH_TYPES[md._matchCategory] || MATCH_TYPES[row.match_type] || 'EA'} match`,
+        `${(matchTag(row) && competitionLabel(matchTag(row))) || MATCH_TYPES[md._matchCategory] || MATCH_TYPES[row.match_type] || 'EA'} match`,
         theirCount ? `${ourCount} vs ${theirCount} players` : `${ourCount} players`,
       ],
       talkingPoint: talkingPoint ? talkingPoint.replace(/\*\*/g, '').replace(/^\S+\s/, '') : null,

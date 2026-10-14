@@ -20,19 +20,55 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/lib/clubInsights.ts
 var clubInsights_exports = {};
 __export(clubInsights_exports, {
+  COMPETITIONS: () => COMPETITIONS,
+  MATCH_TAGS: () => MATCH_TAGS,
+  competitionEmoji: () => competitionEmoji,
+  competitionLabel: () => competitionLabel,
   computeCombos: () => computeCombos,
+  computeCompetitionRecords: () => computeCompetitionRecords,
   computeFormations: () => computeFormations,
   computeOverview: () => computeOverview,
   computePlayerImpact: () => computePlayerImpact,
   computeWinLossGaps: () => computeWinLossGaps,
   gdPerGame: () => gdPerGame,
   generateInsights: () => generateInsights,
+  matchCompetition: () => matchCompetition,
+  matchTag: () => matchTag,
   playerKey: () => playerKey,
   teamMetrics: () => teamMetrics,
   toInsightMatches: () => toInsightMatches,
   winPct: () => winPct
 });
 module.exports = __toCommonJS(clubInsights_exports);
+var MATCH_TAGS = [
+  { value: "league", label: "League", emoji: "\u{1F3C6}" },
+  { value: "tournament", label: "Tournament", emoji: "\u{1F3DF}\uFE0F" },
+  { value: "byot", label: "BYOT", emoji: "\u{1F39F}\uFE0F" }
+];
+var COMPETITIONS = [
+  ...MATCH_TAGS,
+  { value: "cup", label: "Cup/Playoff", emoji: "\u{1F947}" },
+  { value: "friendly", label: "Friendly", emoji: "\u{1F91D}" }
+];
+function matchTag(row) {
+  const t = row.match_data?._tag;
+  return MATCH_TAGS.some((m) => m.value === t) ? t : null;
+}
+function eaCompetition(row) {
+  const raw = String(row.match_data?._matchCategory || row.match_type || "").toLowerCase();
+  if (/friendly/.test(raw)) return "friendly";
+  if (/competition|cup|playoff/.test(raw)) return "cup";
+  return "league";
+}
+function matchCompetition(row) {
+  return matchTag(row) || eaCompetition(row);
+}
+function competitionLabel(c) {
+  return COMPETITIONS.find((x) => x.value === c)?.label || "Match";
+}
+function competitionEmoji(c) {
+  return COMPETITIONS.find((x) => x.value === c)?.emoji || "\u26BD";
+}
 var LINEUP_WINDOW_MS = 6 * 60 * 60 * 1e3;
 function num(v) {
   const n = typeof v === "string" ? Number(v) : v;
@@ -77,6 +113,8 @@ function toInsightMatches(rows, lineups = []) {
       scoreFor: num(row.score_for) ?? 0,
       scoreAgainst: num(row.score_against) ?? 0,
       matchType: row.match_type,
+      tag: matchTag(row),
+      competition: matchCompetition(row),
       playedAt,
       opponent: row.opponent_club_name || "Unknown",
       players: Array.isArray(row.player_stats) ? row.player_stats : [],
@@ -114,7 +152,6 @@ function teamMetrics(m) {
     shotAccuracy: ratio(sum(ps, "shots_on_target"), shots),
     tackleSuccess: ratio(sum(ps, "tackles"), sum(ps, "tackle_attempts")),
     interceptions: sum(ps, "interceptions"),
-    clearances: sum(ps, "clearances"),
     ballRecoveries: sum(ps, "ball_recoveries"),
     dribbleSuccess: ratio(sum(ps, "dribbles"), sum(ps, "dribble_attempts")),
     fouls: sum(ps, "fouls"),
@@ -160,6 +197,13 @@ function winPct(r) {
 }
 function gdPerGame(r) {
   return r.games ? r.goalDiff / r.games : 0;
+}
+function computeCompetitionRecords(matches) {
+  return COMPETITIONS.map((c) => {
+    const record = emptyRecord();
+    for (const m of matches) if (m.competition === c.value) addTo(record, m);
+    return { competition: c.value, label: c.label, emoji: c.emoji, record };
+  }).filter((x) => x.record.games > 0);
 }
 function displayNames(matches) {
   const names = /* @__PURE__ */ new Map();
@@ -264,7 +308,6 @@ var METRIC_LABELS = [
   { key: "shotAccuracy", label: "Shots on target", unit: "%", higherIsBetter: true },
   { key: "tackleSuccess", label: "Tackle success", unit: "%", higherIsBetter: true },
   { key: "interceptions", label: "Interceptions", unit: "", higherIsBetter: true },
-  { key: "clearances", label: "Clearances", unit: "", higherIsBetter: true },
   { key: "ballRecoveries", label: "Ball recoveries", unit: "", higherIsBetter: true },
   { key: "dribbleSuccess", label: "Dribble success", unit: "%", higherIsBetter: true },
   { key: "fouls", label: "Fouls", unit: "", higherIsBetter: false },
@@ -337,13 +380,20 @@ function generateInsights(matches) {
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  COMPETITIONS,
+  MATCH_TAGS,
+  competitionEmoji,
+  competitionLabel,
   computeCombos,
+  computeCompetitionRecords,
   computeFormations,
   computeOverview,
   computePlayerImpact,
   computeWinLossGaps,
   gdPerGame,
   generateInsights,
+  matchCompetition,
+  matchTag,
   playerKey,
   teamMetrics,
   toInsightMatches,

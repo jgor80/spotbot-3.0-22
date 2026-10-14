@@ -15,6 +15,9 @@ const {
   computeFormations,
   computeWinLossGaps,
   generateInsights,
+  computeCompetitionRecords,
+  COMPETITIONS,
+  competitionLabel,
   playerKey,
   winPct,
 } = require('./club-insights.cjs');
@@ -167,6 +170,8 @@ function createManagerHub(deps) {
     if (buildEventList) {
       more.push(new ButtonBuilder().setCustomId(`hub_events:${k}`).setLabel('Events').setEmoji('📅').setStyle(ButtonStyle.Secondary));
     }
+    // Handled by match-tags.cjs
+    more.push(new ButtonBuilder().setCustomId(`mtag_open:${k}`).setLabel('Tag Matches').setEmoji('🏷️').setStyle(ButtonStyle.Secondary));
     more.push(new ButtonBuilder().setCustomId(`hub_photos:${k}`).setLabel('Pro Photos').setEmoji('📸').setStyle(ButtonStyle.Secondary));
     // Handled by autopilot.cjs
     more.push(new ButtonBuilder().setCustomId(`ap_panel:${k}`).setLabel('Autopilot').setEmoji('🤖').setStyle(ButtonStyle.Secondary));
@@ -217,15 +222,24 @@ function createManagerHub(deps) {
     };
   }
 
-  async function buildStats(guildId, club) {
-    const matches = await loadMatches(guildId, club.key);
+  // competition: only count one kind of game (league, tournament, byot, cup, friendly), following match tags
+  async function buildStats(guildId, club, competition) {
+    const all = await loadMatches(guildId, club.key);
+    const matches = competition ? all.filter((m) => m.competition === competition) : all;
     const o = computeOverview(matches);
     const top = topPerformers(matches);
+    const kind = competition ? `${competitionLabel(competition)} ` : '';
 
     const embed = new EmbedBuilder()
-      .setTitle(`📊 ${club.name} Club Stats`)
+      .setTitle(`📊 ${club.name} Club Stats${competition ? ` · ${competitionLabel(competition)}` : ''}`)
       .setColor(0x57f287)
-      .setDescription(o.played ? `Last ${o.played} synced matches` : 'No matches synced yet. Press Sync Matches on the hub or run **/manager → Stats & Scouting → Sync Matches**.')
+      .setDescription(
+        o.played
+          ? `Last ${o.played} synced ${kind}matches`
+          : competition
+            ? `No ${kind}matches in the last ${all.length} synced. Tag games in **/manager → Tag Matches**.`
+            : 'No matches synced yet. Press Sync Matches on the hub or run **/manager → Stats & Scouting → Sync Matches**.'
+      )
       .addFields(
         { name: 'Record', value: `${o.wins}W ${o.draws}D ${o.losses}L`, inline: true },
         { name: 'Win rate', value: fmtPct(o.winPct), inline: true },
@@ -238,8 +252,27 @@ function createManagerHub(deps) {
         { name: 'Top assisters', value: top.assists, inline: true },
         { name: 'Best match rating', value: top.rating, inline: true }
       );
+    const kinds = computeCompetitionRecords(all);
+    if (!competition && kinds.length > 1) {
+      embed.addFields({
+        name: 'By competition',
+        value: kinds.map((k) => `${k.emoji} ${k.label}: ${k.record.wins}W ${k.record.draws}D ${k.record.losses}L`).join('\n'),
+      });
+    }
 
-    return { embeds: [embed], components: [leaderboardPicker(club.key)] };
+    return { embeds: [embed], components: [competitionPicker(club.key, competition), leaderboardPicker(club.key)] };
+  }
+
+  function competitionPicker(clubKey, selected) {
+    return new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`hub_stc:${clubKey}`)
+        .setPlaceholder('Count only: League, Tournament, BYOT...')
+        .addOptions([
+          { label: 'All matches', value: 'all', emoji: '📊', default: !selected },
+          ...COMPETITIONS.map((c) => ({ label: c.label, value: c.value, emoji: c.emoji, default: c.value === selected })),
+        ])
+    );
   }
 
   function leaderboardPicker(clubKey, selected) {
@@ -657,6 +690,19 @@ function createManagerHub(deps) {
       if (!club) return false;
       await interaction.deferUpdate();
       await interaction.editReply(await buildHub(interaction.guildId, state, club));
+      return true;
+    }
+
+    if (action === 'hub_stc') {
+      const { club } = await withClub(interaction, arg);
+      if (!club) return false;
+      const pick = interaction.values[0];
+      await interaction.deferUpdate();
+      try {
+        await interaction.editReply(await buildStats(interaction.guildId, club, pick === 'all' ? null : pick));
+      } catch (err) {
+        await interaction.followUp({ content: `❌ Could not load stats: ${err.message}`, flags: 64 });
+      }
       return true;
     }
 

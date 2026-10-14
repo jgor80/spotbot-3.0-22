@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format } from "date-fns";
+import { matchCompetition, matchTag } from "@/lib/clubInsights";
 import { Trophy, Minus, X, Users, Calendar, Target, Star, Goal, HandHelping, Shield, Footprints, ChevronRight, Search, Clock } from "lucide-react";
 import { SessionsList } from "@/components/club/SessionsList";
 import { getArchetypeName, getArchetypeInfo, getArchetypeBadgeClasses, getPositionalCategoryBadgeClasses, formatPositionalCategory } from "@/lib/archetypes";
@@ -149,16 +150,20 @@ export default function RecentGamesPage() {
     }
   };
 
-  const getMatchTypeBadge = (matchType: string) => {
-    switch (matchType) {
-      case "division":
-        return <Badge variant="secondary">Division</Badge>;
-      case "competition":
+  // A manager's tag (Discord: Manager Hub → Tag Matches) wins over EA's own match type
+  const getMatchTypeBadge = (match: ClubMatch) => {
+    const tagged = !!matchTag(match);
+    switch (matchCompetition(match)) {
+      case "tournament":
+        return <Badge className="bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/30">Tournament</Badge>;
+      case "byot":
+        return <Badge className="bg-sky-500/20 text-sky-400 border-sky-500/30">BYOT</Badge>;
+      case "league":
+        return <Badge variant="secondary">{tagged ? "League" : "Division"}</Badge>;
+      case "cup":
         return <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30">Cup</Badge>;
-      case "friendly":
-        return <Badge variant="outline">Friendly</Badge>;
       default:
-        return <Badge variant="outline">{matchType}</Badge>;
+        return <Badge variant="outline">Friendly</Badge>;
     }
   };
 
@@ -480,7 +485,7 @@ export default function RecentGamesPage() {
 
                     {/* Badges & Arrow */}
                     <div className="flex items-center gap-2">
-                      {getMatchTypeBadge(match.match_type)}
+                      {getMatchTypeBadge(match)}
                       <Badge variant="outline" className="font-mono text-xs">
                         {match.club_key}
                       </Badge>
@@ -536,7 +541,7 @@ export default function RecentGamesPage() {
                     <span>{getOpponentName(selectedMatch)}</span>
                     <span>•</span>
                     <span>{format(new Date(selectedMatch.created_at), "MMM d, yyyy h:mm a")}</span>
-                    {getMatchTypeBadge(selectedMatch.match_type)}
+                    {getMatchTypeBadge(selectedMatch)}
                   </div>
                 </DialogHeader>
 

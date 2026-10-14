@@ -30,6 +30,10 @@ export interface InsightMatch {
   scoreFor: number;
   scoreAgainst: number;
   matchType: string;
+  // Manager's tag (league / tournament / byot), or null when the game keeps EA's own type
+  tag: MatchTag | null;
+  // What the game counts as: the tag when set, otherwise EA's match type
+  competition: Competition;
   playedAt: Date;
   opponent: string;
   players: PlayerMatchStats[];
@@ -51,6 +55,49 @@ export interface ClubMatchRow {
 export interface LineupRow {
   formation: string;
   created_at: string;
+}
+
+// What kind of game a match was. EA only knows league (division), cup/playoff and friendly; BYOT and
+// community tournaments are played as friendlies, so managers tag them. The tag lives in
+// match_data._tag so EA re-syncs never touch it and every existing club_matches query carries it.
+export type MatchTag = "league" | "tournament" | "byot";
+export type Competition = MatchTag | "cup" | "friendly";
+
+export const MATCH_TAGS: { value: MatchTag; label: string; emoji: string }[] = [
+  { value: "league", label: "League", emoji: "🏆" },
+  { value: "tournament", label: "Tournament", emoji: "🏟️" },
+  { value: "byot", label: "BYOT", emoji: "🎟️" },
+];
+
+export const COMPETITIONS: { value: Competition; label: string; emoji: string }[] = [
+  ...MATCH_TAGS,
+  { value: "cup", label: "Cup/Playoff", emoji: "🥇" },
+  { value: "friendly", label: "Friendly", emoji: "🤝" },
+];
+
+export function matchTag(row: { match_data?: unknown }): MatchTag | null {
+  const t = (row.match_data as { _tag?: unknown } | null)?._tag;
+  return MATCH_TAGS.some((m) => m.value === t) ? (t as MatchTag) : null;
+}
+
+// EA's own type for a match row (club_matches.match_type, or the category saved in match_data)
+function eaCompetition(row: { match_type?: string | null; match_data?: unknown }): Competition {
+  const raw = String((row.match_data as { _matchCategory?: unknown } | null)?._matchCategory || row.match_type || "").toLowerCase();
+  if (/friendly/.test(raw)) return "friendly";
+  if (/competition|cup|playoff/.test(raw)) return "cup";
+  return "league";
+}
+
+export function matchCompetition(row: { match_type?: string | null; match_data?: unknown }): Competition {
+  return matchTag(row) || eaCompetition(row);
+}
+
+export function competitionLabel(c: Competition | null | undefined): string {
+  return COMPETITIONS.find((x) => x.value === c)?.label || "Match";
+}
+
+export function competitionEmoji(c: Competition | null | undefined): string {
+  return COMPETITIONS.find((x) => x.value === c)?.emoji || "⚽";
 }
 
 // A lineup counts for matches played up to this long after it was saved
@@ -108,6 +155,8 @@ export function toInsightMatches(rows: ClubMatchRow[], lineups: LineupRow[] = []
       scoreFor: num(row.score_for) ?? 0,
       scoreAgainst: num(row.score_against) ?? 0,
       matchType: row.match_type,
+      tag: matchTag(row),
+      competition: matchCompetition(row),
       playedAt,
       opponent: row.opponent_club_name || "Unknown",
       players: Array.isArray(row.player_stats) ? (row.player_stats as PlayerMatchStats[]) : [],
@@ -235,6 +284,15 @@ export function winPct(r: WinRecord): number {
 
 export function gdPerGame(r: WinRecord): number {
   return r.games ? r.goalDiff / r.games : 0;
+}
+
+// Record per kind of game (League, Tournament, BYOT, ...), only the kinds that were played
+export function computeCompetitionRecords(matches: InsightMatch[]): { competition: Competition; label: string; emoji: string; record: WinRecord }[] {
+  return COMPETITIONS.map((c) => {
+    const record = emptyRecord();
+    for (const m of matches) if (m.competition === c.value) addTo(record, m);
+    return { competition: c.value, label: c.label, emoji: c.emoji, record };
+  }).filter((x) => x.record.games > 0);
 }
 
 function displayNames(matches: InsightMatch[]): Map<string, string> {

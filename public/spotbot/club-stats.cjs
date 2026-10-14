@@ -3,7 +3,7 @@
 // Also /help (short guide plus a stats glossary) and the EA-name lookup behind /linkea.
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
-const { toInsightMatches } = require('./club-insights.cjs');
+const { toInsightMatches, competitionLabel, competitionEmoji } = require('./club-insights.cjs');
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
 const { where } = require('./panels.cjs');
 
@@ -121,6 +121,7 @@ const HELP_PAGES = [
       [`${at('mystats')} · ${at('myprofile')} · ${at('leaderboard')}`, 'Your ratings and form, and the server leaderboard.'],
       ['Insights', 'Pairing chemistry, formation win rates and what wins you games.'],
       ['Sync Matches', 'Pull your latest EA matches now.'],
+      ['Tag Matches', 'Mark played games as League, Tournament or BYOT (EA counts those as friendlies). Games played during a BYOT, tournament or league event are tagged for you.'],
       ['Club Matches · Scout a Club · Match Preview', 'Look at any other club, scout them, or preview a match.'],
     ],
   },
@@ -357,7 +358,7 @@ function createClubStats(deps) {
     if (!matches.length) return noMatches(club);
     const lines = matches.map((m) => {
       const scorers = m.players.filter((p) => num(p.goals) > 0).map((p) => `${String(p.ea_username).trim()}${num(p.goals) > 1 ? ` ×${num(p.goals)}` : ''}`);
-      return `${RESULT_EMOJI[m.result] || '⚪'} **${m.scoreFor}-${m.scoreAgainst}** vs ${m.opponent} · <t:${Math.floor(m.playedAt.getTime() / 1000)}:R>${scorers.length ? `\n-# ⚽ ${scorers.join(', ')}` : ''}`;
+      return `${RESULT_EMOJI[m.result] || '⚪'} **${m.scoreFor}-${m.scoreAgainst}** vs ${m.opponent}${m.tag ? ` · ${competitionEmoji(m.tag)} ${competitionLabel(m.tag)}` : ''} · <t:${Math.floor(m.playedAt.getTime() / 1000)}:R>${scorers.length ? `\n-# ⚽ ${scorers.join(', ')}` : ''}`;
     });
     const embed = new EmbedBuilder()
       .setTitle(`📅 ${club.name}: recent matches`)

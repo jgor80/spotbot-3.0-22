@@ -5,6 +5,7 @@
 //   channel, the bot replies with the club match it was played in, if one lines up.
 const { EmbedBuilder } = require('discord.js');
 const { activeClubs } = require('./manager-hub.cjs');
+const { competitionLabel } = require('./club-insights.cjs');
 
 const NAME_RE = /clips?|highlights?/i;
 const VIDEO_URL_RE = /https?:\/\/\S*(youtu\.?be|twitch\.tv|medal\.tv|streamable|xbox\.com|gamerdvr|xboxclips|playstation)\S*/i;
@@ -19,7 +20,7 @@ function matchFor(matches, at) {
 
 function matchLine(m) {
   const tag = m.result === 'win' ? 'W' : m.result === 'loss' ? 'L' : 'D';
-  return `**${tag} ${m.scoreFor}-${m.scoreAgainst}** vs ${m.opponent}${m.matchType ? ` · ${m.matchType}` : ''}`;
+  return `**${tag} ${m.scoreFor}-${m.scoreAgainst}** vs ${m.opponent}${m.competition ? ` · ${competitionLabel(m.competition)}` : m.matchType ? ` · ${m.matchType}` : ''}`;
 }
 
 function playerLine(m, name) {

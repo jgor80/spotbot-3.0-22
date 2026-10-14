@@ -20,7 +20,7 @@ const {
 } = require('discord.js');
 const { missingChannelPerms } = require('./perm-check.cjs');
 const { activeClubs, resolveClub } = require('./manager-hub.cjs');
-const { toInsightMatches, computeOverview, computeCombos, computeFormations, playerKey, winPct } = require('./club-insights.cjs');
+const { toInsightMatches, computeOverview, computeCombos, computeFormations, playerKey, winPct, competitionLabel, competitionEmoji } = require('./club-insights.cjs');
 const { autofillLineup, FORMATION_SLOTS } = require('./lineup-autofill.cjs');
 const { seasonTotals } = require('./player-season.cjs');
 const T = require('./event-time.cjs');
@@ -574,7 +574,7 @@ function createAutopilot(deps) {
     if (flop) story.push(flop);
 
     const embed = new EmbedBuilder()
-      .setTitle(`${r.emoji} ${r.label} · ${club.name} ${match.scoreFor}-${match.scoreAgainst} ${match.opponent}`)
+      .setTitle(`${r.emoji} ${r.label} · ${club.name} ${match.scoreFor}-${match.scoreAgainst} ${match.opponent}${match.tag ? ` · ${competitionEmoji(match.tag)} ${competitionLabel(match.tag)}` : ''}`)
       .setColor(r.color)
       .setTimestamp(match.playedAt);
     if (prefs.branding?.footer) embed.setFooter({ text: prefs.branding.footer });
