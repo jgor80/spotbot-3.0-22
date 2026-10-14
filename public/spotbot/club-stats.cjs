@@ -3,7 +3,7 @@
 // Also /help (short guide plus a stats glossary) and the EA-name lookup behind /linkea.
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
-const { toInsightMatches, competitionLabel, competitionEmoji } = require('./club-insights.cjs');
+const { toInsightMatches, competitionLabel, competitionEmoji, isSeparateCompetition, computeCompetitionRecords } = require('./club-insights.cjs');
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
 const { where } = require('./panels.cjs');
 
@@ -33,6 +33,7 @@ const CLUBSTATS_ACTION_CHOICES = [
   { name: 'Top players for a stat', value: 'top' },
   { name: 'In form: best over recent games', value: 'form' },
   { name: 'Recent matches', value: 'matches' },
+  { name: 'Tournament & BYOT stats', value: 'tournaments' },
   { name: 'Overall team stats (EA)', value: 'team' },
   { name: 'Full EA member list', value: 'ea_members' },
 ];
@@ -121,7 +122,7 @@ const HELP_PAGES = [
       [`${at('mystats')} · ${at('myprofile')} · ${at('leaderboard')}`, 'Your ratings and form, and the server leaderboard.'],
       ['Insights', 'Pairing chemistry, formation win rates and what wins you games.'],
       ['Sync Matches', 'Pull your latest EA matches now.'],
-      ['Tag Matches', 'Mark played games as League, Tournament or BYOT (EA counts those as friendlies). Games played during a BYOT, tournament or league event are tagged for you.'],
+      ['Tag Matches', 'Mark played games as League, Tournament or BYOT (EA counts those as friendlies). Tournament and BYOT games keep their own record and player stats (stats panel → Tournaments) and stay out of the regular stats. Games played during a BYOT, tournament or league event are tagged for you.'],
       ['Club Matches · Scout a Club · Match Preview', 'Look at any other club, scout them, or preview a match.'],
     ],
   },
@@ -230,15 +231,19 @@ function createClubStats(deps) {
   const { supabase, getGuildState, fetchClubMembers, fetchClubOverall, fetchClubInfo, dashboardUrl } = deps;
   const namesCache = new Map();
 
-  async function loadClubMatches(guildId, clubKey, limit = MATCH_WINDOW) {
+  // kinds: 'regular' (default) leaves out tagged tournament / BYOT games, which have their own view;
+  // 'separate' is only those; 'all' is everything
+  async function loadClubMatches(guildId, clubKey, limit = MATCH_WINDOW, kinds = 'regular') {
     const { data } = await supabase
       .from('club_matches')
       .select('id, result, score_for, score_against, created_at, opponent_club_name, player_stats, match_data, match_type')
       .eq('guild_id', guildId)
       .eq('club_key', clubKey)
       .order('created_at', { ascending: false })
-      .limit(limit);
-    return toInsightMatches(data || []);
+      .limit(kinds === 'all' ? limit : MATCH_WINDOW * 3);
+    const matches = toInsightMatches(data || []);
+    if (kinds === 'all') return matches;
+    return matches.filter((m) => isSeparateCompetition(m.competition) === (kinds === 'separate')).slice(0, limit);
   }
 
   // Every EA name seen for this server's clubs: from saved matches and EA's member list.
@@ -256,7 +261,7 @@ function createClubStats(deps) {
     };
     const state = await getGuildState(guildId);
     for (const club of activeClubs(state)) {
-      const totals = aggregate(await loadClubMatches(guildId, club.key).catch(() => []));
+      const totals = aggregate(await loadClubMatches(guildId, club.key, MATCH_WINDOW, 'all').catch(() => []));
       for (const t of totals) add(t.name, t.games, club.name);
       if (club.ea_club_id && fetchClubMembers) {
         const members = await fetchClubMembers({ clubId: club.ea_club_id, platform: club.ea_platform }).catch(() => []);
@@ -311,7 +316,7 @@ function createClubStats(deps) {
       .setTitle(`👥 ${club.name} members`)
       .setColor(0x5865f2)
       .setDescription(`\`\`\`\n  ${pad('Player', 16)} ${pad('Pos', 4)} GP   G   A  Rtg\n${rows.join('\n')}\n\`\`\``)
-      .setFooter({ text: `Last ${matches.length} saved matches${totals.length > shown.length ? ` · top ${shown.length} of ${totals.length} by games` : ''} · ✓ linked to Discord · /help explains the stats` });
+      .setFooter({ text: `Last ${matches.length} regular matches (tournament & BYOT games are separate)${totals.length > shown.length ? ` · top ${shown.length} of ${totals.length} by games` : ''} · ✓ linked to Discord · /help explains the stats` });
     if (unlinked) embed.addFields({ name: 'Not linked yet', value: `${unlinked} player${unlinked === 1 ? '' : 's'} without ✓ should press **/me → Link EA** and pick their name so their stats count.` });
     return { embeds: [embed] };
   }
@@ -333,7 +338,7 @@ function createClubStats(deps) {
       .setTitle(`🏆 ${club.name}: ${stat.label}`)
       .setColor(0xf59e0b)
       .setDescription(lines.join('\n') || 'Nobody has recorded this stat yet.')
-      .setFooter({ text: `Last ${matches.length} saved matches${needsGames ? ` · at least ${MIN_GAMES} games` : ''} · pick another stat in /manager → Stats & Scouting → Club Stats` });
+      .setFooter({ text: `Last ${matches.length} regular matches (tournament & BYOT games are separate)${needsGames ? ` · at least ${MIN_GAMES} games` : ''} · pick another stat in /manager → Stats & Scouting → Club Stats` });
     return { embeds: [embed] };
   }
 
@@ -354,7 +359,7 @@ function createClubStats(deps) {
   }
 
   async function matchesView(guildId, club) {
-    const matches = await loadClubMatches(guildId, club.key, 10);
+    const matches = await loadClubMatches(guildId, club.key, 10, 'all');
     if (!matches.length) return noMatches(club);
     const lines = matches.map((m) => {
       const scorers = m.players.filter((p) => num(p.goals) > 0).map((p) => `${String(p.ea_username).trim()}${num(p.goals) > 1 ? ` ×${num(p.goals)}` : ''}`);
@@ -365,6 +370,23 @@ function createClubStats(deps) {
       .setColor(0x22c55e)
       .setDescription(lines.join('\n').slice(0, 4000))
       .setFooter({ text: 'Any other club: /manager → Stats & Scouting → Club Matches · full breakdowns: /manager → Stats & Scouting → Insights' });
+    return { embeds: [embed] };
+  }
+
+  // Tournament and BYOT games, kept apart from the regular stats: the record per kind plus each player's numbers
+  async function tournamentsView(guildId, club) {
+    const matches = await loadClubMatches(guildId, club.key, MATCH_WINDOW, 'separate');
+    const embed = new EmbedBuilder().setTitle(`🏟️ ${club.name}: tournament & BYOT stats`).setColor(0x9b59b6);
+    if (!matches.length) {
+      embed.setDescription(`No tournament or BYOT games yet. Tag them in **${where('st_tags')}**; friendlies played during a BYOT or tournament event are tagged for you.`);
+      return { embeds: [embed] };
+    }
+    const records = computeCompetitionRecords(matches).map((k) => `${k.emoji} **${k.label}** ${k.record.wins}W ${k.record.draws}D ${k.record.losses}L · GD ${k.record.goalDiff >= 0 ? '+' : ''}${k.record.goalDiff}`);
+    const totals = aggregate(matches).sort((a, b) => b.games - a.games || b.ga - a.ga).slice(0, 25);
+    const rows = totals.map((t) => `${pad(t.name, 16)} ${String(t.games).padStart(3)} ${String(t.goals).padStart(3)} ${String(t.assists).padStart(3)} ${t.rating ? t.rating.toFixed(1).padStart(4) : '   –'} ${String(t.motm).padStart(3)}`);
+    embed
+      .setDescription(`${records.join('\n')}\n\`\`\`\n${pad('Player', 16)}  GP   G   A  Rtg MOTM\n${rows.join('\n')}\n\`\`\``.slice(0, 4000))
+      .setFooter({ text: `${matches.length} tournament & BYOT games · not counted in the regular stats` });
     return { embeds: [embed] };
   }
 
@@ -465,14 +487,14 @@ function createClubStats(deps) {
     const embed = new EmbedBuilder()
       .setTitle(`📊 ${club.name} stats`)
       .setColor(0x22c55e)
-      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers')
+      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers\n**Tournaments** tournament & BYOT games, kept apart from the rest')
       .setFooter({ text: `${PANEL_MARK} · always stays at the bottom` });
     const b = (id, label, emoji, style = ButtonStyle.Secondary) => new ButtonBuilder().setCustomId(`statsp:${id}:${club.key}`).setLabel(label).setEmoji(emoji).setStyle(style);
     return {
       embeds: [embed],
       components: [
         new ActionRowBuilder().addComponents(b('team', 'Team Stats', '📊', ButtonStyle.Primary), b('members', 'EA Member List', '👥', ButtonStyle.Primary)),
-        new ActionRowBuilder().addComponents(b('top', 'Top Players', '🏆'), b('form', 'In Form', '🔥'), b('matches', 'Recent Matches', '📅'), new ButtonBuilder().setCustomId('help_glossary').setLabel('What the stats mean').setEmoji('❓').setStyle(ButtonStyle.Secondary)),
+        new ActionRowBuilder().addComponents(b('top', 'Top Players', '🏆'), b('form', 'In Form', '🔥'), b('matches', 'Recent Matches', '📅'), b('tournaments', 'Tournaments', '🏟️'), new ButtonBuilder().setCustomId('help_glossary').setLabel('What the stats mean').setEmoji('❓').setStyle(ButtonStyle.Secondary)),
       ],
     };
   }
@@ -559,6 +581,7 @@ function createClubStats(deps) {
         action === 'team' ? await teamView(club)
         : action === 'members' ? await eaMembersView(club)
         : action === 'form' ? await formView(interaction.guildId, club)
+        : action === 'tournaments' ? await tournamentsView(interaction.guildId, club)
         : await matchesView(interaction.guildId, club);
       return interaction.editReply(view);
     } catch (err) {
@@ -622,7 +645,7 @@ function createClubStats(deps) {
     }
     if (interaction.commandName !== 'clubstats' || !interaction.guildId) return false;
     const action = interaction.options.getString('action');
-    if (!['members', 'top', 'form', 'matches', 'team', 'ea_members'].includes(action)) return false;
+    if (!['members', 'top', 'form', 'matches', 'team', 'ea_members', 'tournaments'].includes(action)) return false;
     const state = await getGuildState(interaction.guildId);
     const club = resolveClub(state, interaction.member);
     if (!club) {
@@ -638,6 +661,7 @@ function createClubStats(deps) {
         : action === 'members' ? await membersView(guildId, club)
         : action === 'top' ? await topView(guildId, club, interaction.options.getString('stat'))
         : action === 'form' ? await formView(guildId, club)
+        : action === 'tournaments' ? await tournamentsView(guildId, club)
         : await matchesView(guildId, club);
       await interaction.editReply(view);
     } catch (err) {

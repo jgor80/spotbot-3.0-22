@@ -489,7 +489,7 @@ const autopilot = createAutopilot({
 });
 // League / Tournament / BYOT tags on played games; new friendlies played during such an event are tagged
 // before their recap is built
-const matchTags = createMatchTags({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
+const matchTags = createMatchTags({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, callEdgeFunction });
 autopilot.onNewMatches(matchTags.autoTag);
 // After new matches arrive, quietly link gamertags whose name clearly matches a server member
 autopilot.onNewMatches(async (guildId) => {

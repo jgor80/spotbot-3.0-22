@@ -18,6 +18,7 @@ const {
   computeCompetitionRecords,
   COMPETITIONS,
   competitionLabel,
+  isSeparateCompetition,
   playerKey,
   winPct,
 } = require('./club-insights.cjs');
@@ -128,9 +129,12 @@ function createManagerHub(deps) {
   // ---------- Hub ----------
 
   async function buildHub(guildId, state, club) {
-    const matches = await loadMatches(guildId, club.key).catch(() => []);
+    const all = await loadMatches(guildId, club.key).catch(() => []);
+    // Tournament and BYOT games keep their own record
+    const matches = all.filter((m) => !isSeparateCompetition(m.competition));
+    const separate = all.filter((m) => isSeparateCompetition(m.competition));
     const o = computeOverview(matches);
-    const last = matches[0];
+    const last = all[0];
 
     const embed = new EmbedBuilder()
       .setTitle(`🧭 ${club.name} Manager Hub`)
@@ -146,6 +150,10 @@ function createManagerHub(deps) {
       .setFooter({ text: 'Updated' })
       .setTimestamp(new Date());
 
+    if (separate.length) {
+      const s = computeOverview(separate);
+      embed.addFields({ name: 'Tournaments & BYOT', value: `${s.wins}W ${s.draws}D ${s.losses}L (kept separate)`, inline: true });
+    }
     if (last) {
       embed.addFields({
         name: 'Last match',
@@ -222,13 +230,20 @@ function createManagerHub(deps) {
     };
   }
 
-  // competition: only count one kind of game (league, tournament, byot, cup, friendly), following match tags
+  // competition: one kind of game (league, tournament, byot, cup, friendly) or 'all'. By default the
+  // regular games only: tagged tournament and BYOT games are counted on their own.
   async function buildStats(guildId, club, competition) {
     const all = await loadMatches(guildId, club.key);
-    const matches = competition ? all.filter((m) => m.competition === competition) : all;
+    const matches =
+      competition === 'all' ? all
+      : competition ? all.filter((m) => m.competition === competition)
+      : all.filter((m) => !isSeparateCompetition(m.competition));
+    const picked = competition;
+    if (competition === 'all') competition = null;
+    const everything = matches.length === all.length;
     const o = computeOverview(matches);
     const top = topPerformers(matches);
-    const kind = competition ? `${competitionLabel(competition)} ` : '';
+    const kind = competition ? `${competitionLabel(competition)} ` : everything ? '' : 'regular ';
 
     const embed = new EmbedBuilder()
       .setTitle(`📊 ${club.name} Club Stats${competition ? ` · ${competitionLabel(competition)}` : ''}`)
@@ -260,7 +275,7 @@ function createManagerHub(deps) {
       });
     }
 
-    return { embeds: [embed], components: [competitionPicker(club.key, competition), leaderboardPicker(club.key)] };
+    return { embeds: [embed], components: [competitionPicker(club.key, picked), leaderboardPicker(club.key)] };
   }
 
   function competitionPicker(clubKey, selected) {
@@ -269,8 +284,9 @@ function createManagerHub(deps) {
         .setCustomId(`hub_stc:${clubKey}`)
         .setPlaceholder('Count only: League, Tournament, BYOT...')
         .addOptions([
-          { label: 'All matches', value: 'all', emoji: '📊', default: !selected },
+          { label: 'Regular games', description: 'Everything except tournament and BYOT games', value: 'regular', emoji: '📊', default: !selected },
           ...COMPETITIONS.map((c) => ({ label: c.label, value: c.value, emoji: c.emoji, default: c.value === selected })),
+          { label: 'All games', description: 'Tournament and BYOT games included', value: 'all', emoji: '🌐', default: selected === 'all' },
         ])
     );
   }
@@ -352,7 +368,7 @@ function createManagerHub(deps) {
   // ---------- Insights ----------
 
   async function buildInsights(guildId, club) {
-    const matches = await loadMatches(guildId, club.key);
+    const matches = (await loadMatches(guildId, club.key)).filter((m) => !isSeparateCompetition(m.competition));
     const embed = new EmbedBuilder().setTitle(`💡 ${club.name} Tactical Insights`).setColor(0xfee75c);
 
     if (matches.length < 5) {
@@ -699,7 +715,7 @@ function createManagerHub(deps) {
       const pick = interaction.values[0];
       await interaction.deferUpdate();
       try {
-        await interaction.editReply(await buildStats(interaction.guildId, club, pick === 'all' ? null : pick));
+        await interaction.editReply(await buildStats(interaction.guildId, club, pick === 'regular' ? null : pick));
       } catch (err) {
         await interaction.followUp({ content: `❌ Could not load stats: ${err.message}`, flags: 64 });
       }

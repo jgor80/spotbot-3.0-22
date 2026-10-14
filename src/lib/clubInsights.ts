@@ -75,6 +75,21 @@ export const COMPETITIONS: { value: Competition; label: string; emoji: string }[
   { value: "friendly", label: "Friendly", emoji: "🤝" },
 ];
 
+// Tournament and BYOT games are kept apart: regular records, player stats and leaderboards leave them
+// out, and they have their own views. Tagged games' player_stats rows carry match_type 'tournament' / 'byot'.
+export const SEPARATE_COMPETITIONS: Competition[] = ["tournament", "byot"];
+
+export function isSeparateCompetition(c: Competition | null | undefined): boolean {
+  return !!c && SEPARATE_COMPETITIONS.includes(c);
+}
+
+// The player_stats.match_type a game's rows should carry for a tag (null: back to what EA sync wrote)
+export function playerStatsTypeForTag(tag: MatchTag | null): string | null {
+  if (tag === "tournament" || tag === "byot") return tag;
+  if (tag === "league") return "club";
+  return null;
+}
+
 export function matchTag(row: { match_data?: unknown }): MatchTag | null {
   const t = (row.match_data as { _tag?: unknown } | null)?._tag;
   return MATCH_TAGS.some((m) => m.value === t) ? (t as MatchTag) : null;
