@@ -18,6 +18,7 @@ const { toFcPlatform } = require('./ea-fc27.cjs');
 const { activeClubs } = require('./manager-hub.cjs');
 const { toInsightMatches, competitionLabel } = require('./club-insights.cjs');
 const { nextVariation } = require('./graphics-variants.cjs');
+const { stillInGuild, recentGames, activePool, pickGroup } = require('./art-players.cjs');
 const { render1986Card } = require('./graphics-1986.cjs');
 const { render1960sCard } = require('./graphics-1960s.cjs');
 const { render1970sCard } = require('./graphics-1970s.cjs');
@@ -67,6 +68,7 @@ const COLOR_WORDS = {
   yellow: 0xfacc15, gold: 0xd4af37, orange: 0xf97316, purple: 0x7c3aed, sky: 0x38bdf8, maroon: 0x7f1d1d, grey: 0x9ca3af, gray: 0x9ca3af,
 };
 const BUSY = new Set();
+const NO_GROUP = 'No recently active club players still in this server have an uploaded pro photo yet.';
 const DRAFTS = new Map(); // token -> pending graphic waiting on its edit form
 
 function colorNum(v, fallback) {
@@ -230,8 +232,9 @@ function shortPosition(pos) {
   return POS_SHORT[p] || (p.length > 4 ? p.replace(/[^A-Z]/g, '').slice(0, 3) : p);
 }
 
-function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs }) {
+function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs, getClient }) {
   const panelIds = new Map(); // channelId -> panel message id
+  const guildOf = (guildId) => getClient?.()?.guilds?.cache?.get(guildId) || null;
 
   async function art(body) {
     if (!secret) return { error: 'The studio needs BOT_PROXY_SECRET set on the bot.' };
@@ -584,6 +587,8 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return { ...d, name: f('name') || d.name, position: f('position'), overall, number, stats, dataLabel: changed ? 'MEMBER-EDITED' : d.seasonLabel, overallLabel: changed ? 'MEMBER OVR' : 'EA OVR', seasonLabel: stats.length ? changed ? 'MEMBER-EDITED' : d.seasonLabel : 'VIRTUAL PRO' };
   }
   async function renderCard({ guildId, club, style, d }) {
+    // Cards are only drawn for someone still in the server.
+    if (!(await stillInGuild(guildOf(guildId), [d.userId])).length) return { error: 'That player is no longer in this server, so no card was made.' };
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);
     // Print-card lettering and frames are local; artwork reuses the text-free vintage style.
     const printCard = Boolean(STYLES[style]?.cardOnly) || SIGNATURE_STYLES.includes(style);
@@ -664,7 +669,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   }
   async function renderPoster({ guildId, club, style, d }) {
     const players = await teamPlayers(guildId, club, await idForName(d.motm?.name));
-    if (!players.length) return { error: 'No active club players have saved pro photos yet.' };
+    if (!players.length) return { error: NO_GROUP };
     const mood = d.result === 'win' ? 'win' : d.result === 'loss' ? 'loss' : 'draw';
     const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, guild_id: guildId, team_player_ids: players, mood, competition: clip(d.competition, 60), ...nextVariation(`${guildId}:poster:${style}`, style, mood) });
     if (a.error) return a;
@@ -725,7 +730,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   }
   async function renderLineup({ guildId, club, style, d }) {
     const players = await teamPlayers(guildId, club, d.heroId);
-    if (!players.length) return { error: 'No active club players have saved pro photos yet.' };
+    if (!players.length) return { error: NO_GROUP };
     const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, guild_id: guildId, team_player_ids: players, mood: 'neutral', competition: clip(d.subtitle, 60), ...nextVariation(`${guildId}:lineup:${style}`, style) });
     if (a.error) return a;
     const png = lineupPoster({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), ...d });
@@ -752,7 +757,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       roster = [...seen.values()];
     }
     const players = await teamPlayers(guildId, club, heroId);
-    if (!players.length) return { error: 'No active club players have saved pro photos yet.' };
+    if (!players.length) return { error: NO_GROUP };
     const a = await art({ kind: 'banner', style, club_name: club.name, kit: club.kit || {}, competition, guild_id: guildId, team_player_ids: players, ...nextVariation(`${guildId}:banner:${style}`, style, 'win') });
     if (a.error) return a;
     const png = banner({ art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), headline: title, competition, seasonTag, roster });
@@ -778,25 +783,24 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (error) throw new Error(error.message);
     const ids = [...new Set((roster || []).filter((r) => (r.status || 'active') === 'active' && /^\d{5,25}$/.test(r.discord_user_id)).map((r) => r.discord_user_id))];
     if (!ids.length) return [];
-    const results = await Promise.all(['pro_photo_assets', 'pro_photos'].map((table) =>
-      supabase.from(table).select('discord_user_id').in('discord_user_id', ids)));
+    // Only original uploads count: club-art never uses generated art as a likeness reference.
+    const results = await Promise.all([
+      supabase.from('pro_photo_assets').select('discord_user_id').eq('source_kind', 'upload').in('discord_user_id', ids),
+      supabase.from('pro_photos').select('discord_user_id').in('discord_user_id', ids),
+    ]);
     const saved = new Set();
     for (const result of results) {
       if (result.error) throw new Error(result.error.message);
       for (const photo of result.data || []) saved.add(photo.discord_user_id);
     }
-    const candidates = ids.filter((id) => saved.has(id));
-    // Fisher-Yates rotates the group; an eligible chosen lead stays in front.
-    for (let i = candidates.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
-    }
-    if (leadId && candidates.includes(leadId)) return [leadId, ...candidates.filter((id) => id !== leadId)].slice(0, 5);
-    return candidates.slice(0, 5);
+    // Never draw someone who has left the server; then keep only the most active players.
+    const present = await stillInGuild(guildOf(guildId), ids.filter((id) => saved.has(id)));
+    const pool = activePool(present, await recentGames(supabase, guildId, club, present));
+    return pickGroup(pool, leadId);
   }
   async function renderRecruit({ guildId, club, style, d }) {
     const players = await teamPlayers(guildId, club, d.featured);
-    if (!players.length) return { error: 'No active club players have saved pro photos yet. Upload photos for active roster players.' };
+    if (!players.length) return { error: NO_GROUP };
     const ART_STYLE = { retro1960s: 'vintage', retro1970s: 'vintage', retro1986: 'vintage', retro1990s: 'esports', y2k: 'chrome', retro2010s: 'chrome', retro2020s: 'cyber' };
     const v = nextVariation(`${guildId}:recruit:${style}`, style);
     const a = await art({ kind: 'poster', style: ART_STYLE[style] || style,
