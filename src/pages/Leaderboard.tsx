@@ -34,6 +34,9 @@ const MATCH_TYPES = [
   { value: "division", label: "Division" },
   { value: "competition", label: "Cup/Competition" },
   { value: "friendly", label: "Friendly" },
+  // Games managers tagged in Discord (Tag Matches); kept off the regular boards
+  { value: "tournament", label: "Tournament" },
+  { value: "byot", label: "BYOT" },
 ];
 
 const GAMES_PLAYED_FILTERS = [

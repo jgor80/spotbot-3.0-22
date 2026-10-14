@@ -16,7 +16,8 @@ interface GetLeaderboardRequest {
   time_period?: "week" | "month"; // New: filter by game timestamp
   club_key?: string;
   stats_source?: "all" | "members" | "games";
-  match_type?: "division" | "competition" | "friendly";
+  // tournament / byot: games a manager tagged (Discord: Tag Matches); their player_stats rows carry that type
+  match_type?: "division" | "competition" | "friendly" | "tournament" | "byot";
 }
 
 // Calculate date range for time period filtering
@@ -111,6 +112,10 @@ serve(async (req) => {
       stats_source = "all",
       match_type,
     }: GetLeaderboardRequest = await req.json();
+
+    // Tagged tournament / BYOT games are kept out of every regular board and only counted on their own
+    const taggedType = match_type === "tournament" || match_type === "byot" ? match_type : null;
+    const gameTypes = taggedType ? [taggedType] : ["club", "friendly"];
 
     console.log(`[get-leaderboard] Fetching ${type} leaderboard for guild ${guild_id}, club: ${club_key || 'all'}, source: ${stats_source}, matchType: ${match_type || 'all'}, timePeriod: ${time_period || 'all'}`);
     
@@ -320,7 +325,7 @@ serve(async (req) => {
             defensive_duels
           `)
           .eq("guild_id", guild_id)
-          .eq("match_type", "club")
+          .eq("match_type", taggedType || "club")
           .range(0, 9999);
         
         if (statsError) throw statsError;
@@ -332,7 +337,7 @@ serve(async (req) => {
           .eq("guild_id", guild_id)
           .eq("club_key", club_key);
         
-        if (match_type) {
+        if (match_type && !taggedType) {
           clubMatchesQuery = clubMatchesQuery.eq("match_type", match_type);
         }
         
@@ -594,7 +599,7 @@ serve(async (req) => {
       
       // If match_type filter is set, get the relevant match IDs first
       let matchTypeFilterIds: Set<string> | null = null;
-      if (match_type) {
+      if (match_type && !taggedType) {
         const { data: filteredMatches } = await supabase
           .from("club_matches")
           .select("ea_match_id")
@@ -610,7 +615,7 @@ serve(async (req) => {
         .from("player_stats")
         .select("*", { count: "exact", head: true })
         .eq("guild_id", guild_id)
-        .in("match_type", ["club", "friendly"]);
+        .in("match_type", gameTypes);
       
       console.log(`[get-leaderboard] Total player_stats count: ${totalCount}`);
       
@@ -676,7 +681,7 @@ serve(async (req) => {
             defensive_duels
           `)
           .eq("guild_id", guild_id)
-          .in("match_type", ["club", "friendly"])
+          .in("match_type", gameTypes)
           .order("id", { ascending: true })
           .range(from, to);
         

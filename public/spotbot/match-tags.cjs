@@ -4,13 +4,18 @@
 // insert rows, so it is never overwritten) and read through matchCompetition() in club-insights.cjs,
 // which is what stats, recaps, the Chronicle and the web app use.
 //
+// Tournament and BYOT games are kept apart from the regular stats: their per-player rows in player_stats
+// are retyped to match_type 'tournament' / 'byot', so every regular board, rating and summary (which read
+// 'club' / 'friendly' / 'competition') leaves them out, and the Tournaments views and leaderboard filter
+// read them on their own. The type EA sync wrote is kept in match_data._ps_type so clearing a tag restores it.
+//
 // Two ways a game gets tagged:
 // - Automatically, when a new EA friendly was played during a BYOT, tournament or league event.
 // - By hand: /manager → Manager Hub → Tag Matches, or /manager → Stats & Scouting → Tag Matches
 //   (also in the web Control Room, which runs the same panel).
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
-const { toInsightMatches, MATCH_TAGS, competitionLabel, competitionEmoji } = require('./club-insights.cjs');
+const { toInsightMatches, MATCH_TAGS, competitionLabel, competitionEmoji, playerStatsTypeForTag } = require('./club-insights.cjs');
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
 
 const PAGE_SIZE = 15;
@@ -21,6 +26,8 @@ const RESULT_EMOJI = { win: '🟢', draw: '⚪', loss: '🔴' };
 const EVENT_LEAD_MS = 30 * 60 * 1000;
 const DEFAULT_EVENT_MINUTES = 180;
 const TAG_VALUES = new Set(MATCH_TAGS.map((t) => t.value));
+// player_stats rows that belong to a synced club game (never draft or EA-aggregate rows)
+const GAME_STAT_TYPES = ['club', 'friendly', 'competition', 'tournament', 'byot'];
 
 const ACTION_SCHEMA = {
   name: 'matchtags',
@@ -58,11 +65,44 @@ function isFriendly(row) {
 }
 
 function createMatchTags(deps) {
-  const { supabase, getGuildState } = deps;
+  const { supabase, getGuildState, callEdgeFunction } = deps;
   const canManageClub = deps.canManageClub || (async (member) => deps.isManager(member));
+
+  // Move the game's player_stats rows to the type the tag asks for, then refresh those players' ratings
+  async function retypePlayerStats(row, tag, md) {
+    let eaMatchId = row.ea_match_id;
+    if (!eaMatchId) {
+      const { data } = await supabase.from('club_matches').select('ea_match_id').eq('id', row.id).maybeSingle();
+      eaMatchId = data?.ea_match_id;
+    }
+    if (!eaMatchId || !row.guild_id) return;
+    const { data: stats, error } = await supabase
+      .from('player_stats')
+      .select('id, discord_user_id, match_type')
+      .eq('guild_id', row.guild_id)
+      .eq('ea_match_id', String(eaMatchId))
+      .in('match_type', GAME_STAT_TYPES);
+    if (error) throw new Error(error.message);
+    if (!stats?.length) return;
+    if (!md._ps_type) {
+      const original = stats.find((s) => s.match_type !== 'tournament' && s.match_type !== 'byot')?.match_type;
+      if (original) md._ps_type = original;
+    }
+    const target = playerStatsTypeForTag(tag) || md._ps_type || 'club';
+    const moved = stats.filter((s) => s.match_type !== target);
+    if (!moved.length) return;
+    const { error: upErr } = await supabase.from('player_stats').update({ match_type: target }).in('id', moved.map((s) => s.id));
+    if (upErr) throw new Error(upErr.message);
+    if (callEdgeFunction) {
+      for (const id of new Set(moved.map((s) => s.discord_user_id))) {
+        Promise.resolve(callEdgeFunction('calculate-ratings', { guild_id: row.guild_id, discord_user_id: id })).catch(() => {});
+      }
+    }
+  }
 
   async function saveTag(row, tag, source, userId) {
     const md = { ...(row.match_data && typeof row.match_data === 'object' ? row.match_data : {}) };
+    await retypePlayerStats(row, tag, md);
     if (tag) {
       md._tag = tag;
       md._tag_source = source;
@@ -73,6 +113,7 @@ function createMatchTags(deps) {
       delete md._tag_source;
       delete md._tagged_by;
       delete md._tagged_at;
+      delete md._ps_type;
     }
     const { error } = await supabase.from('club_matches').update({ match_data: md }).eq('id', row.id);
     if (error) throw new Error(error.message);
@@ -102,6 +143,7 @@ function createMatchTags(deps) {
       if (!event) continue;
       const tag = tagForEvent(event);
       const row = candidates.find((r) => r.id === m.id);
+      if (!row.guild_id) row.guild_id = guildId;
       await saveTag(row, tag, `event:${event.id}`, null).catch((err) => console.warn(`[match-tags] auto-tag ${m.id} failed: ${err.message}`));
       // Keep the hook's copies in step so later hooks and the recap see the tag
       for (const x of recent || []) {
@@ -143,7 +185,8 @@ function createMatchTags(deps) {
     embed
       .setDescription(
         'EA only knows league, cup and friendly games, and BYOT nights and tournaments are played as friendlies. ' +
-          'Pick a game below to mark it **League**, **Tournament** or **BYOT**; stats, recaps and the web app follow the tag. ' +
+          'Pick a game below to mark it **League**, **Tournament** or **BYOT**. Tournament and BYOT games get their own record and player stats ' +
+          '(stats panel → **Tournaments**) and stay out of the regular stats and leaderboards. ' +
           'Friendlies played during a BYOT, tournament or league event are tagged for you.\n\n' +
           slice.map((m) => `${RESULT_EMOJI[m.result] || '⚪'} **${m.scoreFor}-${m.scoreAgainst}** vs ${m.opponent} · ${kindLine(m)} · ${when(m)}`).join('\n')
       )

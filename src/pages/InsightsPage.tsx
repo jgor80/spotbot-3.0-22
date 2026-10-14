@@ -25,10 +25,16 @@ import {
   winPct,
   COMPETITIONS,
   matchCompetition,
+  isSeparateCompetition,
 } from "@/lib/clubInsights";
 
-// League / Tournament / BYOT follow the tags managers set in Discord (Manager Hub → Tag Matches)
-const MATCH_TYPES = [{ value: "all", label: "All matches" }, ...COMPETITIONS.map((c) => ({ value: c.value, label: c.label }))];
+// League / Tournament / BYOT follow the tags managers set in Discord (Manager Hub → Tag Matches).
+// Tournament and BYOT games are kept apart, so the default view leaves them out.
+const MATCH_TYPES = [
+  { value: "all", label: "Regular games" },
+  ...COMPETITIONS.map((c) => ({ value: c.value, label: c.label })),
+  { value: "everything", label: "All games incl. tournaments" },
+];
 
 const RANGES = [
   { value: "20", label: "Last 20" },
@@ -97,11 +103,13 @@ export default function InsightsPage() {
         .select("id, result, score_for, score_against, match_type, created_at, opponent_club_name, player_stats, match_data")
         .eq("guild_id", selectedGuildId)
         .order("created_at", { ascending: false })
-        .limit(matchType === "all" ? limit : 1000);
+        .limit(matchType === "everything" ? limit : 1000);
       if (clubKey !== "all") query = query.eq("club_key", clubKey);
       const { data: all, error } = await query;
       if (error) throw error;
-      const rows = matchType === "all" ? all : (all || []).filter((r) => matchCompetition(r) === matchType).slice(0, limit);
+      const keep = (r: ClubMatchRow) =>
+        matchType === "everything" || (matchType === "all" ? !isSeparateCompetition(matchCompetition(r)) : matchCompetition(r) === matchType);
+      const rows = (all || []).filter(keep).slice(0, limit);
 
       const { data: lineups } = await supabase
         .from("lineups")

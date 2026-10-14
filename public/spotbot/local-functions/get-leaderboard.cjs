@@ -128,6 +128,8 @@ serve(async (req) => {
       stats_source = "all",
       match_type
     } = await req.json();
+    const taggedType = match_type === "tournament" || match_type === "byot" ? match_type : null;
+    const gameTypes = taggedType ? [taggedType] : ["club", "friendly"];
     console.log(`[get-leaderboard] Fetching ${type} leaderboard for guild ${guild_id}, club: ${club_key || "all"}, source: ${stats_source}, matchType: ${match_type || "all"}, timePeriod: ${time_period || "all"}`);
     let timePeriodMatchIds = null;
     if (time_period) {
@@ -266,10 +268,10 @@ serve(async (req) => {
             forward_runs,
             offensive_duels,
             defensive_duels
-          `).eq("guild_id", guild_id).eq("match_type", "club").range(0, 9999);
+          `).eq("guild_id", guild_id).eq("match_type", taggedType || "club").range(0, 9999);
         if (statsError) throw statsError;
         let clubMatchesQuery = supabase.from("club_matches").select("ea_match_id").eq("guild_id", guild_id).eq("club_key", club_key);
-        if (match_type) {
+        if (match_type && !taggedType) {
           clubMatchesQuery = clubMatchesQuery.eq("match_type", match_type);
         }
         const { data: clubMatches } = await clubMatchesQuery;
@@ -483,11 +485,11 @@ serve(async (req) => {
     } else if (stats_source === "games") {
       console.log(`[get-leaderboard] Aggregating from player_stats (games only), matchType: ${match_type || "all"}, position: ${position || "all"}`);
       let matchTypeFilterIds = null;
-      if (match_type) {
+      if (match_type && !taggedType) {
         const { data: filteredMatches } = await supabase.from("club_matches").select("ea_match_id").eq("guild_id", guild_id).eq("match_type", match_type);
         matchTypeFilterIds = new Set((filteredMatches || []).map((m) => m.ea_match_id));
       }
-      const { count: totalCount } = await supabase.from("player_stats").select("*", { count: "exact", head: true }).eq("guild_id", guild_id).in("match_type", ["club", "friendly"]);
+      const { count: totalCount } = await supabase.from("player_stats").select("*", { count: "exact", head: true }).eq("guild_id", guild_id).in("match_type", gameTypes);
       console.log(`[get-leaderboard] Total player_stats count: ${totalCount}`);
       let allPlayerStats = [];
       const pageSize = 1e3;
@@ -545,7 +547,7 @@ serve(async (req) => {
             forward_runs,
             offensive_duels,
             defensive_duels
-          `).eq("guild_id", guild_id).in("match_type", ["club", "friendly"]).order("id", { ascending: true }).range(from, to);
+          `).eq("guild_id", guild_id).in("match_type", gameTypes).order("id", { ascending: true }).range(from, to);
         if (pageError) throw pageError;
         allPlayerStats = allPlayerStats.concat(pageData || []);
       }

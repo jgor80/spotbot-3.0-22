@@ -30,6 +30,7 @@ function fakeDb(tables) {
       eq: (k, v) => (filters.push((r) => r[k] === v), q),
       gte: () => q,
       lte: () => q,
+      in: (k, vals) => (filters.push((r) => vals.includes(r[k])), q),
       order: () => q,
       limit: () => q,
       update: (p) => ((patch = p), q),
@@ -158,4 +159,30 @@ test('managers tag a game from the panel; others are turned away', async () => {
   other.guildId = 'g2';
   await tags.handleInteraction(other);
   assert.strictEqual(m.match_data._tag, undefined);
+});
+
+test('tagging moves the game\'s player stats out of the regular stats and back', async () => {
+  const m = row({ ea_match_id: 'ea1' });
+  const ps = [
+    { id: 'p1', guild_id: 'g1', ea_match_id: 'ea1', discord_user_id: 'u1', match_type: 'club' },
+    { id: 'p2', guild_id: 'g1', ea_match_id: 'ea1', discord_user_id: 'u2', match_type: 'club' },
+    { id: 'p3', guild_id: 'g1', ea_match_id: 'ea1', discord_user_id: 'u1', match_type: 'draft' },
+    { id: 'p4', guild_id: 'g1', ea_match_id: 'ea2', discord_user_id: 'u1', match_type: 'club' },
+  ];
+  const db = fakeDb({ club_matches: [m], player_stats: ps });
+  const recalcs = [];
+  const tags = createMatchTags({ supabase: db, getGuildState, canManageClub: async () => true, callEdgeFunction: async (fn, body) => recalcs.push([fn, body.discord_user_id]) });
+
+  await tags.saveTag(m, 'byot', 'manual', 'u9');
+  assert.deepStrictEqual(ps.map((p) => p.match_type), ['byot', 'byot', 'draft', 'club']);
+  assert.strictEqual(m.match_data._ps_type, 'club');
+  assert.deepStrictEqual(recalcs.map((r) => r[1]).sort(), ['u1', 'u2']);
+
+  await tags.saveTag(m, 'tournament', 'manual', 'u9');
+  assert.deepStrictEqual(ps.map((p) => p.match_type), ['tournament', 'tournament', 'draft', 'club']);
+  assert.strictEqual(m.match_data._ps_type, 'club');
+
+  await tags.saveTag(m, null, 'manual', 'u9');
+  assert.deepStrictEqual(ps.map((p) => p.match_type), ['club', 'club', 'draft', 'club']);
+  assert.strictEqual(m.match_data._ps_type, undefined);
 });

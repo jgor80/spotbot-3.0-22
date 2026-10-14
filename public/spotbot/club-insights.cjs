@@ -22,6 +22,7 @@ var clubInsights_exports = {};
 __export(clubInsights_exports, {
   COMPETITIONS: () => COMPETITIONS,
   MATCH_TAGS: () => MATCH_TAGS,
+  SEPARATE_COMPETITIONS: () => SEPARATE_COMPETITIONS,
   competitionEmoji: () => competitionEmoji,
   competitionLabel: () => competitionLabel,
   computeCombos: () => computeCombos,
@@ -32,9 +33,11 @@ __export(clubInsights_exports, {
   computeWinLossGaps: () => computeWinLossGaps,
   gdPerGame: () => gdPerGame,
   generateInsights: () => generateInsights,
+  isSeparateCompetition: () => isSeparateCompetition,
   matchCompetition: () => matchCompetition,
   matchTag: () => matchTag,
   playerKey: () => playerKey,
+  playerStatsTypeForTag: () => playerStatsTypeForTag,
   teamMetrics: () => teamMetrics,
   toInsightMatches: () => toInsightMatches,
   winPct: () => winPct
@@ -50,6 +53,15 @@ var COMPETITIONS = [
   { value: "cup", label: "Cup/Playoff", emoji: "\u{1F947}" },
   { value: "friendly", label: "Friendly", emoji: "\u{1F91D}" }
 ];
+var SEPARATE_COMPETITIONS = ["tournament", "byot"];
+function isSeparateCompetition(c) {
+  return !!c && SEPARATE_COMPETITIONS.includes(c);
+}
+function playerStatsTypeForTag(tag) {
+  if (tag === "tournament" || tag === "byot") return tag;
+  if (tag === "league") return "club";
+  return null;
+}
 function matchTag(row) {
   const t = row.match_data?._tag;
   return MATCH_TAGS.some((m) => m.value === t) ? t : null;
@@ -382,6 +394,7 @@ function generateInsights(matches) {
 0 && (module.exports = {
   COMPETITIONS,
   MATCH_TAGS,
+  SEPARATE_COMPETITIONS,
   competitionEmoji,
   competitionLabel,
   computeCombos,
@@ -392,9 +405,11 @@ function generateInsights(matches) {
   computeWinLossGaps,
   gdPerGame,
   generateInsights,
+  isSeparateCompetition,
   matchCompetition,
   matchTag,
   playerKey,
+  playerStatsTypeForTag,
   teamMetrics,
   toInsightMatches,
   winPct
