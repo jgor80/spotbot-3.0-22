@@ -19,6 +19,7 @@ const { activeClubs } = require('./manager-hub.cjs');
 const { toInsightMatches, competitionLabel } = require('./club-insights.cjs');
 const { nextVariation } = require('./graphics-variants.cjs');
 const { stillInGuild, recentGames, activePool, pickGroup } = require('./art-players.cjs');
+const { UPLOAD_ID: PHOTO_UPLOAD_ID } = require('./pro-photos.cjs');
 const { render1986Card } = require('./graphics-1986.cjs');
 const { render1960sCard } = require('./graphics-1960s.cjs');
 const { render1970sCard } = require('./graphics-1970s.cjs');
@@ -326,9 +327,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
           '📣 **Recruiting Poster** — positions, trial details and contact info',
           '_You can edit names, scores and players before anything is drawn._',
           '🏆 **Banner** — managers only, for BYOT, league, cup and playoff wins',
+          '📸 **Upload Photos** — your headshot and goal celebrations, shot on your phone or as screenshots (no AI renders)',
           '',
           `Styles: ${Object.values(STYLES).map((s) => `${s.emoji} ${s.label}`).join(' · ')}`,
-          `Kit: **${kit.primary || 'not set'}${kit.secondary ? ` / ${kit.secondary}` : ''}** · No pro photo yet? Post one in #pro-photos first.`,
+          `Kit: **${kit.primary || 'not set'}${kit.secondary ? ` / ${kit.secondary}` : ''}** · No pro photo yet? Tap **Upload Photos** first.`,
           '_Or just type “card”, “card vintage” or “poster” here._',
         ].join('\n'))
         .setFooter({ text: '📌 This panel stays at the bottom · artwork is AI, stats are real EA data' })],
@@ -341,6 +343,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       ), new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`gs_recruit:${club.key}`).setLabel('Recruiting Poster').setEmoji('📣').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`gs_mycards:${club.key}`).setLabel('My Cards').setEmoji('🗂️').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(PHOTO_UPLOAD_ID).setLabel('Upload Photos').setEmoji('📸').setStyle(ButtonStyle.Success),
       )],
       allowedMentions: { parse: [] },
     };

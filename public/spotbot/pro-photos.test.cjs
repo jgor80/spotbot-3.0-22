@@ -57,3 +57,30 @@ test('photo browser is private, owner-bound, and requires confirmation before de
     assert.equal(requests[1].requester_id, user.id);
   } finally { global.fetch = oldFetch; }
 });
+test('Upload Photos asks for a headshot and celebrations and tags each shot for the vision check', async () => {
+  const oldFetch = global.fetch;
+  const requests = [];
+  let modal, reply;
+  global.fetch = async (_, options) => {
+    const body = JSON.parse(options.body); requests.push(body);
+    if (body.shot === 'celebration' && requests.length === 3) return { ok: true, json: async () => ({ accepted: false, error: 'That looks like an AI rendering or edited image.' }) };
+    return { ok: true, json: async () => ({ accepted: true, analysis: {}, image_url: 'https://example.test/p.png' }) };
+  };
+  try {
+    const photos = createProPhotos({ supabaseUrl: 'https://example.test', secret: 'test' });
+    const user = { id: '12345', username: 'Player' };
+    assert.equal(await photos.handleInteraction({ customId: 'pph_upload', user, isButton: () => true, showModal: async (m) => { modal = m.toJSON(); } }), true);
+    const uploads = modal.components.filter((c) => c.type === 18).map((c) => c.component);
+    assert.deepEqual(uploads.map((c) => [c.custom_id, c.max_values]), [['headshot', 1], ['celebrations', 5]]);
+    assert.match(modal.components[0].content, /phone/);
+    assert.match(modal.components[0].content, /no AI renders/);
+    const file = (n, type = 'image/jpeg', ext = 'jpg') => [n, { contentType: type, url: `https://cdn.discordapp.com/${n}.${ext}`, name: `${n}.${ext}` }];
+    const fields = { headshot: new Map([file('face')]), celebrations: new Map([file('c1'), file('c2'), file('c3', 'image/heic', 'heic')]) };
+    await photos.handleInteraction({ customId: 'pph_upload_form', guildId: '999', user, isButton: () => false, isModalSubmit: () => true,
+      fields: { getUploadedFiles: (id) => fields[id] || null }, deferReply: async () => {}, editReply: async (r) => { reply = r; } });
+    assert.deepEqual(requests.map((r) => r.shot), ['headshot', 'celebration', 'celebration']);
+    assert.match(reply.content, /2 of 4 photos saved/);
+    assert.match(reply.content, /Celebration 2: That looks like an AI rendering/);
+    assert.match(reply.content, /Celebration 3: Send a PNG, JPG or WebP/);
+  } finally { global.fetch = oldFetch; }
+});
