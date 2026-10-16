@@ -101,6 +101,7 @@ Every other former command is a panel button. A button that needs input opens a 
 | `/network status` | /manager → Admin → Network Status | Leaders |
 | `/network clubs` | /manager → Match Night → Network Clubs | Leaders |
 | `/network need` | /manager → Match Night → Need a Player | Leaders |
+| `/network leaderboard` | /me → Network Leaderboard, /manager → Stats & Scouting → Network Leaderboard | Everyone |
 | `/network suspend` | /manager → Admin → Owner: Network Suspend | Bot owners |
 | `/scout watchlist` | /manager → Recruiting → Watchlist | Leaders |
 | `/scout add` | /manager → Recruiting → Watch a Player | Leaders |
@@ -203,6 +204,7 @@ Jobs the bot runs by itself for each club, all on by default. **/autopilot** (or
 - **/network setup enabled [channel] [show_server_name] [region]** (server admins): join or leave. The channel is where requests from other servers land. Other servers see club name, platform, EA division, skill rating, record and region, plus the server's name only with `show_server_name`. Only clubs linked to EA are listed. Leaving hides the clubs at once.
 - **/network clubs [platform] [region]** (anyone on a listed server): the other listed clubs, top 15 by skill rating, with a menu to report or block a server.
 - **/network need position when [note] [reach]** (club leaders, listed servers): asks for a replacement. The bot DMs up to 10 listed free agents for that position and platform (each player gets at most 3 of these a day, with Stop all contact), and unless `reach` is free agents only, posts a card with **I can play** in up to 25 other network servers' channels. Volunteers land in your network channel (or your DMs) with Accept / Pass; Accept DMs the player the club, kick-off, the manager's name and a one-use 24-hour invite, tells everyone else it's filled and closes the cards everywhere. Requests close 30 minutes after kick-off. 10 requests per server per day.
+- **/network leaderboard [view] [platform] [region]** (anyone on a listed server): every listed club ranked by EA skill rating, with division, this season's record and "vs network" (this season's W-D-L against other network clubs from synced matches). Your clubs are starred and shown even outside the top 20. `view:Servers` rolls clubs up per server and only names servers that show their name.
 - **/network status** (managers): this server's settings and the servers it blocked, with an Unblock menu.
 - Blocking hides both servers from each other and is silent. Reports (5 per server per day) go to `NETWORK_REPORTS_CHANNEL_ID`, or the bot owners' DMs when it's unset. **/network suspend server_id [reason]** (bot owners) takes a server off the network; no reason lifts it. `NETWORK=off` switches the whole network off. Text typed into network requests has links, invites and mentions stripped and blocked words masked (`NETWORK_BLOCKED_WORDS` adds words).
 

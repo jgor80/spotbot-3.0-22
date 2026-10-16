@@ -52,6 +52,7 @@ const { createAutopilot, AUTOPILOT_COMMANDS } = require('./autopilot.cjs');
 const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
 const { createNetwork, NETWORK_COMMANDS } = require('./network.cjs');
 const { createReplacements } = require('./network-replacements.cjs');
+const { createNetworkLeaderboard } = require('./network-leaderboard.cjs');
 const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
@@ -457,6 +458,7 @@ const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUN
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, positionTiers });
 const network = createNetwork({ supabase, getGuildState, isManager });
 createReplacements({ supabase, getGuildState, network, recruitment, canManageClub: squads.canManageClub });
+createNetworkLeaderboard({ supabase, network });
 
 const scouting = createScouting({ supabase, getGuildState, recruitment });
 
