@@ -106,3 +106,126 @@ test('friendlies: suggestions are same platform, closest skill rating first', ()
   ];
   assert.deepStrictEqual(suggestClubs(clubs, 'common-gen5', 1200).map((c) => c.name), ['Near', 'Far']);
 });
+
+const { bracketSize, seedOrder, firstRound, nextSlot, roundName } = require('./network-byot.cjs');
+
+test('byot: bracket size, standard seeding and byes for the top seeds', () => {
+  assert.strictEqual(bracketSize(2), 2);
+  assert.strictEqual(bracketSize(5), 8);
+  assert.deepStrictEqual(seedOrder(8), [1, 8, 4, 5, 2, 7, 3, 6]);
+  const entries = [1300, 1500, 1100, 1400, 1200].map((sr, i) => ({ id: `e${i}`, skill_rating: sr }));
+  const { size, rounds, pairs } = firstRound(entries);
+  assert.strictEqual(size, 8);
+  assert.strictEqual(rounds, 3);
+  // Seeds: 1500, 1400, 1300, 1200, 1100 → seed 1 (1500) has a bye, 4 v 5 meet
+  assert.deepStrictEqual(pairs.map((p) => [p.home?.skill_rating ?? null, p.away?.skill_rating ?? null]), [
+    [1500, null],
+    [1200, 1100],
+    [1400, null],
+    [1300, null],
+  ]);
+});
+
+test('byot: winners move to the next slot, even slots at home', () => {
+  assert.deepStrictEqual(nextSlot(1, 0), { round: 2, slot: 0, side: 'from' });
+  assert.deepStrictEqual(nextSlot(1, 3), { round: 2, slot: 1, side: 'to' });
+  assert.strictEqual(roundName(3, 3), 'Final');
+  assert.strictEqual(roundName(2, 3), 'Semi-finals');
+  assert.strictEqual(roundName(1, 4), 'Round 1');
+});
+
+// A small in-memory stand-in for supabase-js: enough for the BYOT bracket to run end to end
+function memoryDb() {
+  const tables = {};
+  let n = 0;
+  const from = (table) => {
+    const rows = (tables[table] = tables[table] || []);
+    const filters = [];
+    let op = 'select';
+    let payload = null;
+    let returning = false;
+    const q = {
+      select: () => ((returning = true), q),
+      insert: (p) => ((op = 'insert'), (payload = p), q),
+      update: (p) => ((op = 'update'), (payload = p), q),
+      upsert: (p) => ((op = 'insert'), (payload = p), q),
+      eq: (k, v) => (filters.push((r) => r[k] === v), q),
+      in: (k, vs) => (filters.push((r) => vs.includes(r[k])), q),
+      is: (k, v) => (filters.push((r) => (r[k] ?? null) === v), q),
+      gte: () => q,
+      lte: () => q,
+      or: () => q,
+      order: () => q,
+      limit: () => q,
+      run() {
+        if (op === 'insert') {
+          const row = { id: `id${++n}`, ...payload };
+          if (row.tournament_id && row.round != null && rows.some((r) => r.tournament_id === row.tournament_id && r.round === row.round && r.slot === row.slot)) {
+            return { data: null, error: { message: 'duplicate' } };
+          }
+          rows.push(row);
+          return { data: [row], error: null };
+        }
+        const hit = rows.filter((r) => filters.every((f) => f(r)));
+        if (op === 'update') hit.forEach((r) => Object.assign(r, payload));
+        return { data: hit.map((r) => ({ ...r })), error: null };
+      },
+      single: async () => {
+        const { data, error } = q.run();
+        return { data: data?.[0] || null, error };
+      },
+      maybeSingle: async () => ({ data: q.run().data?.[0] || null }),
+      then: (resolve) => resolve(q.run()),
+    };
+    return q;
+  };
+  return { from, tables };
+}
+
+test('byot: five clubs play through to a champion, byes and all', async () => {
+  const { createNetworkByot } = require('./network-byot.cjs');
+  const db = memoryDb();
+  const posted = [];
+  const network = {
+    addSubcommand() {},
+    addComponent() {},
+    isOn: () => true,
+    postToChannel: async (_c, guildId, payload) => (posted.push([guildId, payload.content]), null),
+    notifyHost: async () => {},
+  };
+  const byot = createNetworkByot({ supabase: db, network, client: () => ({ channels: { fetch: async () => null } }) });
+  const T1 = '00000000-0000-4000-8000-000000000001';
+  const t = { id: T1, name: 'Cup', platform: 'common-gen5', max_teams: 8, round_minutes: 45, starts_at: new Date(Date.now() + 3600000).toISOString(), status: 'signup', created_by_discord_id: 'host', posts: [] };
+  db.tables.network_tournaments = [t];
+  db.tables.network_tournament_entries = [1500, 1400, 1300, 1200, 1100].map((sr, i) => ({
+    id: `e${i}`, tournament_id: T1, guild_id: `g${i}`, club_key: 'c1', club_name: `Club ${sr}`, ea_club_id: String(100 + i), skill_rating: sr, status: 'entered',
+  }));
+  const res = await byot.start(t);
+  assert.ok(res.ok);
+  const fixtures = () => db.tables.network_fixtures;
+  // Round 1: one real game (4 v 5) plus three byes; seeds 1 v (4/5) waits, 2 v 3 is created at once
+  const r2 = fixtures().filter((f) => f.round === 2);
+  assert.deepStrictEqual(r2.map((f) => [f.from_club_name, f.to_club_name]), [['Club 1400', 'Club 1300']]);
+  const r1game = fixtures().find((f) => f.round === 1 && f.to_entry_id);
+  await byot.settle(r1game, 'to'); // Club 1100 beats Club 1200
+  const semis = fixtures().filter((f) => f.round === 2).sort((a, b) => a.slot - b.slot);
+  assert.deepStrictEqual(semis.map((f) => [f.from_club_name, f.to_club_name]), [['Club 1500', 'Club 1100'], ['Club 1400', 'Club 1300']]);
+  await byot.settle(semis[0], 'from');
+  await byot.settle(semis[1], 'to');
+  const final = fixtures().find((f) => f.round === 3);
+  assert.deepStrictEqual([final.from_club_name, final.to_club_name], ['Club 1500', 'Club 1300']);
+  await byot.settle(final, 'to');
+  assert.strictEqual(db.tables.network_tournaments[0].status, 'finished');
+  assert.strictEqual(db.tables.network_tournament_entries.find((e) => e.status === 'champion').club_name, 'Club 1300');
+});
+
+test('byot: two hosts pressing Advance on the same game only settle it once', async () => {
+  const { createNetworkByot } = require('./network-byot.cjs');
+  const db = memoryDb();
+  const network = { addSubcommand() {}, addComponent() {}, isOn: () => true, postToChannel: async () => null, notifyHost: async () => {} };
+  const byot = createNetworkByot({ supabase: db, network, client: () => null });
+  db.tables.network_fixtures = [{ id: 'f1', status: 'accepted', tournament_id: null }];
+  assert.strictEqual(await byot.settle(db.tables.network_fixtures[0], 'from'), true);
+  assert.strictEqual(await byot.settle(db.tables.network_fixtures[0], 'to'), false);
+  assert.strictEqual(db.tables.network_fixtures[0].winner_side, 'from');
+});

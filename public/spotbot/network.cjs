@@ -81,6 +81,19 @@ const NETWORK_COMMANDS = [
           { name: 'open', description: 'Post to every network server and take the first club that accepts (default: pick a club).', type: 5, required: false },
         ],
       },
+      { type: 1, name: 'byot', description: 'GafferBot-hosted BYOT tournaments: sign up and see the bracket.' },
+      {
+        type: 1,
+        name: 'byot_create',
+        description: 'Bot owners: host a BYOT tournament for every network server.',
+        options: [
+          { name: 'name', description: 'Tournament name.', type: 3, required: true, max_length: 60 },
+          { name: 'when', description: 'Round 1 kick-off, e.g. "sat 20:00". Sign-ups close then.', type: 3, required: true },
+          { name: 'platform', description: 'Platform.', type: 3, required: true, choices: PLATFORM_CHOICES },
+          { name: 'max_teams', description: 'Most clubs that can enter (default 16).', type: 4, required: false, choices: [4, 8, 16, 32].map((n) => ({ name: String(n), value: n })) },
+          { name: 'round_minutes', description: 'Minutes between rounds (default 45).', type: 4, required: false, min_value: 20, max_value: 1440 },
+        ],
+      },
       {
         type: 1,
         name: 'leaderboard',
@@ -453,19 +466,24 @@ function createNetwork(deps) {
         { name: 'Reason', value: reason.slice(0, 1000) }
       )
       .setFooter({ text: `Report ${reportId} · suspend with /manager → Admin → Owner: Network Suspend` });
+    await notifyHost(client, { embeds: [embed] });
+  }
+
+  // The host's queue (reports, BYOT disputes): NETWORK_REPORTS_CHANNEL_ID if set, else the bot owners' DMs
+  async function notifyHost(client, payload) {
     const channelId = process.env.NETWORK_REPORTS_CHANNEL_ID;
     try {
       if (channelId) {
         const ch = await client.channels.fetch(channelId);
-        if (ch?.isTextBased()) return void (await ch.send({ embeds: [embed] }));
+        if (ch?.isTextBased()) return void (await ch.send(payload));
       }
     } catch (err) {
-      console.warn(`[network] report channel failed: ${err.message}`);
+      console.warn(`[network] host channel failed: ${err.message}`);
     }
     for (const id of ownerIds()) {
       try {
         const user = await client.users.fetch(id);
-        await user.send({ embeds: [embed] });
+        await user.send(payload);
       } catch (err) {
         console.warn(`[network] could not DM owner ${id}: ${err.message}`);
       }
@@ -561,6 +579,7 @@ function createNetwork(deps) {
     cleanText,
     postToChannel,
     kickoffFor,
+    notifyHost,
     addSubcommand: (name, fn) => {
       subcommandHandlers[name] = fn;
     },

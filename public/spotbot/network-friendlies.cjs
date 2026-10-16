@@ -19,12 +19,12 @@ const unix = (d) => Math.floor(new Date(d).getTime() / 1000);
 const when = (d) => `<t:${unix(d)}:F> (<t:${unix(d)}:R>)`;
 
 // Which accepted fixture (if any) is this synced game? Same two EA clubs, played near kick-off.
-function fixtureForMatch(fixtures, guildId, clubKey, row) {
+function fixtureForMatch(fixtures, guildId, clubKey, row, statuses = ['accepted']) {
   const playedAt = row.match_data?.timestamp ? row.match_data.timestamp * 1000 : new Date(row.created_at).getTime();
   const opp = String(row.opponent_club_id || '');
   return (
     (fixtures || []).find((f) => {
-      if (f.status !== 'accepted') return false;
+      if (!statuses.includes(f.status)) return false;
       const home = f.from_guild_id === guildId && f.from_club_key === clubKey;
       const away = f.to_guild_id === guildId && f.to_club_key === clubKey;
       if (!home && !away) return false;
@@ -329,8 +329,8 @@ function createNetworkFriendlies(deps) {
     if (!network.isOn() || !rows?.length) return;
     const since = new Date(Date.now() - 2 * DAY_MS).toISOString();
     const [{ data: asHome }, { data: asAway }] = await Promise.all([
-      supabase.from('network_fixtures').select('*').eq('status', 'accepted').eq('from_guild_id', guildId).eq('from_club_key', club.key).gte('kickoff_at', since),
-      supabase.from('network_fixtures').select('*').eq('status', 'accepted').eq('to_guild_id', guildId).eq('to_club_key', club.key).gte('kickoff_at', since),
+      supabase.from('network_fixtures').select('*').eq('kind', 'friendly').eq('status', 'accepted').eq('from_guild_id', guildId).eq('from_club_key', club.key).gte('kickoff_at', since),
+      supabase.from('network_fixtures').select('*').eq('kind', 'friendly').eq('status', 'accepted').eq('to_guild_id', guildId).eq('to_club_key', club.key).gte('kickoff_at', since),
     ]);
     const fixtures = [...(asHome || []), ...(asAway || [])];
     if (!fixtures.length) return;
