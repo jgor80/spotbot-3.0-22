@@ -17,9 +17,13 @@ CREATE TABLE IF NOT EXISTS public.player_positions (
 CREATE INDEX IF NOT EXISTS idx_player_positions_primary ON public.player_positions(guild_id, primary_position);
 CREATE INDEX IF NOT EXISTS idx_player_positions_secondary ON public.player_positions USING gin (secondary_positions);
 CREATE INDEX IF NOT EXISTS idx_player_positions_emergency ON public.player_positions USING gin (emergency_positions);
--- Only the bot and backend functions (service role) read or write it
+-- Only the bot and backend functions (service role) write it; the signed-in website reads it
+-- (lineup builder, availability board), never the anonymous key
 ALTER TABLE public.player_positions ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.player_positions FROM anon;
+DROP POLICY IF EXISTS "Signed-in users can read player positions" ON public.player_positions;
+CREATE POLICY "Signed-in users can read player positions" ON public.player_positions
+  FOR SELECT TO authenticated USING (true);
 
 -- Existing roster positions become the player's tiers in that server. A player on several club
 -- rosters in one server keeps the primary from their earliest roster entry; every other position
