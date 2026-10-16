@@ -8,7 +8,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { resolveClub } = require('./manager-hub.cjs');
 const { toFcPlatform } = require('./ea-fc27.cjs');
-const T = require('./event-time.cjs');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LISTING_DAYS = 30;
@@ -72,10 +71,8 @@ function createReplacements(deps) {
     const limited = await network.overLimit(interaction.guildId, 'replacement');
     if (limited) return interaction.editReply({ content: `⏳ ${limited}` });
 
-    const { data: prefs } = await supabase.from('guild_settings').select('timezone').eq('guild_id', interaction.guildId).maybeSingle();
-    const tz = T.isValidTimeZone(prefs?.timezone) ? prefs.timezone : 'UTC';
     const whenText = interaction.options.getString('when');
-    const kickoff = whenText.trim().toLowerCase() === 'now' ? new Date() : T.parseWhen(whenText, tz);
+    const kickoff = await network.kickoffFor(interaction.guildId, whenText);
     if (!kickoff) return interaction.editReply({ content: `❌ I couldn't read "${whenText.slice(0, 50)}" as a time. Try "9pm", "thu 21:00" or "now".` });
     if (kickoff.getTime() + GRACE_MS < Date.now()) return interaction.editReply({ content: '❌ That kick-off has already passed.' });
     if (kickoff.getTime() - Date.now() > 7 * DAY_MS) return interaction.editReply({ content: '❌ Replacement requests are for the next 7 days.' });

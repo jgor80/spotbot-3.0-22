@@ -53,6 +53,7 @@ const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
 const { createNetwork, NETWORK_COMMANDS } = require('./network.cjs');
 const { createReplacements } = require('./network-replacements.cjs');
 const { createNetworkLeaderboard } = require('./network-leaderboard.cjs');
+const { createNetworkFriendlies } = require('./network-friendlies.cjs');
 const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
@@ -503,6 +504,8 @@ const autopilot = createAutopilot({
 // before their recap is built
 const matchTags = createMatchTags({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, callEdgeFunction });
 autopilot.onNewMatches(matchTags.autoTag);
+// GafferBot Network friendlies between servers; their score fills in from the EA sync
+createNetworkFriendlies({ supabase, getGuildState, network, canManageClub: squads.canManageClub, autopilot, client: () => client });
 // After new matches arrive, quietly link gamertags whose name clearly matches a server member
 autopilot.onNewMatches(async (guildId) => {
   const guild = client.guilds.cache.get(guildId);

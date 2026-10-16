@@ -84,3 +84,25 @@ test('leaderboard: ranks by EA skill rating and counts games against other netwo
   const servers = rankServers(clubs);
   assert.deepStrictEqual(servers.map((s) => [s.guildId, s.clubs, s.best, s.w]), [['g2', 2, 1500, 11], ['g1', 1, 1200, 5]]);
 });
+
+const { fixtureForMatch, suggestClubs } = require('./network-friendlies.cjs');
+
+test('friendlies: a synced game matches the accepted fixture between the same two EA clubs near kick-off', () => {
+  const kickoff = Date.parse('2026-10-16T20:00:00Z');
+  const fx = { id: 'f1', status: 'accepted', from_guild_id: 'g1', from_club_key: 'c1', from_ea_club_id: '100', to_guild_id: 'g2', to_club_key: 'c1', to_ea_club_id: '200', kickoff_at: new Date(kickoff).toISOString() };
+  const row = (over) => ({ opponent_club_id: '200', match_data: { timestamp: (kickoff + 15 * 60000) / 1000 }, ...over });
+  assert.strictEqual(fixtureForMatch([fx], 'g1', 'c1', row())?.id, 'f1');
+  assert.strictEqual(fixtureForMatch([fx], 'g2', 'c1', row({ opponent_club_id: 100 }))?.id, 'f1');
+  assert.strictEqual(fixtureForMatch([fx], 'g1', 'c1', row({ opponent_club_id: '999' })), null);
+  assert.strictEqual(fixtureForMatch([fx], 'g1', 'c1', row({ match_data: { timestamp: (kickoff + 6 * 3600000) / 1000 } })), null);
+  assert.strictEqual(fixtureForMatch([{ ...fx, status: 'played' }], 'g1', 'c1', row()), null);
+});
+
+test('friendlies: suggestions are same platform, closest skill rating first', () => {
+  const clubs = [
+    { name: 'Far', platform: 'common-gen5', skill: 2000 },
+    { name: 'Switch', platform: 'nx', skill: 1210 },
+    { name: 'Near', platform: 'common-gen5', skill: 1250 },
+  ];
+  assert.deepStrictEqual(suggestClubs(clubs, 'common-gen5', 1200).map((c) => c.name), ['Near', 'Far']);
+});
