@@ -15,14 +15,18 @@ const Body = z.object({
   discord_user_id: z.string().regex(/^\d{5,25}$/),
   submitted_by: z.string().regex(/^\d{5,25}$/).optional(),
   image_url: z.string().url().refine((u) => /^https:\/\/(cdn|media)\.discordapp\.(com|net)\//.test(u), "Discord attachments only"),
+  // Which guided shot the member was asked for (Studio → Upload Photos); sets the reusable pose.
+  shot: z.enum(["headshot", "celebration"]).optional(),
 });
 
 const schema = {
   type: "object",
   additionalProperties: false,
-  required: ["is_pro_clubs_player", "reason", "screen", "position", "overall", "archetype", "height", "playstyles", "pose", "kit_number", "description"],
+  required: ["is_pro_clubs_player", "is_raw_capture", "face_visible", "reason", "screen", "position", "overall", "archetype", "height", "playstyles", "pose", "kit_number", "description"],
   properties: {
     is_pro_clubs_player: { type: "boolean", description: "True if the image shows an EA FC Pro Clubs / Virtual Pro player (render, lobby, edit-pro, team sheet or player card)." },
+    is_raw_capture: { type: "boolean", description: "True only for an unedited capture of the game: a console/PC screenshot or a phone photo of a TV or monitor showing the game. False for AI-generated or AI-edited images, fan renders, drawings, cutouts and composites." },
+    face_visible: { type: "boolean", description: "True if the pro's face is clearly visible (not from behind, not hidden)." },
     reason: { type: "string" },
     screen: { type: "string", enum: ["edit_pro", "lobby", "player_card", "match", "team_sheet", "other"] },
     position: { type: ["string", "null"], description: "Position abbreviation visible on screen, e.g. ST, CAM, CB, GK" },
@@ -57,7 +61,7 @@ async function analyze(dataUrl: string) {
       input: [{
         role: "user",
         content: [
-          { type: "input_text", text: "Is this an image of a single footballer that a club member could use as their EA SPORTS FC Pro Clubs player (Virtual Pro)? Accept in-game screenshots (Edit Pro, lobby, player card, match) AND custom renders, cutouts or action shots of one player in kit, even with no game menus or HUD visible and even if very photorealistic — EA renders look lifike. Set is_pro_clubs_player false only for images with no footballer, multiple players with no clear subject, memes, or obviously unrelated content. Read any position, overall rating, archetype, height and playstyles visible on screen. Read the kit number only if it is clearly legible on the shirt, shorts or an on-screen kit number field — never guess partly hidden digits. Classify the visible pose as ready, stride, ball, celebrate, profile, captain or other so graphics can reuse the best reference. Use null when facts are not visible. Never invent values." },
+          { type: "input_text", text: "Is this an image of a single footballer that a club member could use as their EA SPORTS FC Pro Clubs player (Virtual Pro)? It may be an in-game screenshot (Edit Pro, goal celebrations, lobby, player card, match) or a phone photo of a TV or monitor showing the game; screen glare, a tilted angle, moiré lines, bezels or a living room around the screen are fine. EA's game engine looks lifelike, so photorealism alone is not a reason to reject. Set is_pro_clubs_player false only for images with no footballer, multiple players with no clear subject, memes, or obviously unrelated content. Set is_raw_capture false when the image looks AI-generated or AI-edited (e.g. Midjourney or ChatGPT art, smoothed painterly skin, warped hands or text), a fan render, drawing, cutout on a plain background or a composite; we only keep real captures of the game so artwork matches the player's actual pro. Describe the pro, not the TV or room. Read any position, overall rating, archetype, height and playstyles visible on screen. Read the kit number only if it is clearly legible on the shirt, shorts or an on-screen kit number field — never guess partly hidden digits. Classify the visible pose as ready, stride, ball, celebrate, profile, captain or other so graphics can reuse the best reference. Use null when facts are not visible. Never invent values." },
           { type: "input_image", image_url: dataUrl },
         ],
       }],
@@ -103,7 +107,7 @@ Deno.serve(async (req) => {
   }
   const parsed = Body.safeParse(input);
   if (!parsed.success) return json({ error: parsed.error.flatten().fieldErrors }, 400);
-  const { guild_id, discord_user_id, image_url, submitted_by } = parsed.data;
+  const { guild_id, discord_user_id, image_url, submitted_by, shot } = parsed.data;
 
   const img = await fetch(image_url);
   const type = (img.headers.get("content-type") || "").split(";")[0];
@@ -125,6 +129,10 @@ Deno.serve(async (req) => {
     return json({ error: status === 402 ? "AI credits ran out." : status === 429 ? "AI is busy, try again in a minute." : "Couldn't analyze that image." }, status && status < 500 ? status : 502);
   }
   if (!analysis.is_pro_clubs_player) return json({ accepted: false, analysis });
+  if (analysis.is_raw_capture === false) return json({ accepted: false, analysis, error: "That looks like an AI rendering or edited image. Upload a raw screenshot or a phone photo of your screen instead." });
+  if (shot === "headshot" && analysis.face_visible === false) return json({ accepted: false, analysis, error: "The headshot needs your pro's face clearly visible, facing the camera." });
+  if (shot === "headshot") analysis.pose = "profile";
+  else if (shot === "celebration") analysis.pose = "celebrate";
 
   const ext = type === "image/png" ? "png" : type === "image/webp" ? "webp" : "jpg";
   const path = `${guild_id}/${discord_user_id}-${sourceKey}.${ext}`;

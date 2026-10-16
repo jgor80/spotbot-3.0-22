@@ -19,7 +19,7 @@ Module._load = function (request, parent, ...args) {
 const { createGraphicsStudio, playerCard, STYLES, recruitmentPoster, palette, matchPoster, lineupPoster, banner } = require('./graphics-studio.cjs');
 Module._load = originalLoad;
 
-function fixture(overrides = {}) {
+function fixture(overrides = {}, { members } = {}) {
   const calls = [], posts = [], requests = [];
   const club = { key: 'palermo', name: 'PCN Palermo', kit: { primary: 'pink', secondary: 'black' } };
   const db = { from(table) {
@@ -33,7 +33,8 @@ function fixture(overrides = {}) {
   const channel = { id: 'studio', client: { user: { id: 'bot' } }, messages: { fetch: async () => new Map(), delete: async () => {} }, send: async (p) => { posts.push(p); return { id: 'posted' }; } };
   const studio = createGraphicsStudio({ supabase: db, supabaseUrl: 'https://example.invalid', secret: 'test-only',
     getGuildState: async () => { assert.ok(calls.length, 'acknowledge before settings read'); return { clubs: [club] }; },
-    isManager: async () => false, serverPrefs: async () => ({ branding: { logo_url: 'https://example.invalid/unrelated-badge.png' } }) });
+    isManager: async () => false, serverPrefs: async () => ({ branding: { logo_url: 'https://example.invalid/unrelated-badge.png' } }),
+    ...(members ? { getClient: () => ({ guilds: { cache: new Map([[guild.id, { members: { fetch: async (id) => { if (!members.includes(id)) throw new Error('Unknown Member'); return { id }; } } }]]) } }) } : {}) });
   function interaction(customId, type, extra = {}) {
     return { customId, guildId: guild.id, guild, channel, user: { id: '501557839932948490', username: 'AirDangus23' },
       isButton: () => type === 'button', isStringSelectMenu: () => type === 'select', isModalSubmit: () => type === 'modal',
@@ -169,7 +170,7 @@ test('recruitment groups exclude inactive and unsaved players, reject outside le
       await f.studio.handleInteraction(f.interaction(modal.custom_id, 'modal', { fields: { getTextInputValue: (key) => key === 'headline' ? 'Join us' : key === 'featured' && mode === 'explicit' ? '333333333333333333' : '' } }));
       if (mode === 'empty') {
         assert.equal(bodies.length, before);
-        assert.match(f.requests.at(-1), /No active club players have saved pro photos/);
+        assert.match(f.requests.at(-1), /No recently active club players still in this server have an uploaded pro photo/);
         assert.equal(f.posts.some((p) => p.files?.length), false);
       } else {
         assert.deepEqual(bodies.at(-1).team_player_ids, ['501557839932948490']);
@@ -206,6 +207,30 @@ test('recruitment rotates a bounded group of distinct saved active players and k
     assert.equal(body.team_player_ids[0], lead);
     assert.ok(body.team_player_ids.every((id) => ids.includes(id)));
     assert.equal(body.discord_user_id, undefined);
+  } finally { global.fetch = originalFetch; }
+});
+
+test('group art and cards skip players who have left the server', async () => {
+  const left = '222222222222222222';
+  const f = fixture({
+    team_rosters: [{ discord_user_id: '501557839932948490', status: 'active' }, { discord_user_id: left, status: 'active' }],
+    pro_photo_assets: [{ discord_user_id: '501557839932948490' }, { discord_user_id: left }],
+    pro_photos: [],
+  }, { members: ['501557839932948490'] });
+  const originalFetch = global.fetch;
+  let body;
+  global.fetch = async (_, options) => {
+    body = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ image_b64: new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"/>').render().asPng().toString('base64') }) };
+  };
+  try {
+    await f.studio.handleInteraction(f.interaction('gs_style:recruit:palermo', 'select', { values: ['modern'] }));
+    const menu = f.requests.at(-1).components[0].toJSON().components[0];
+    await f.studio.handleInteraction(f.interaction(menu.custom_id, 'select', { values: ['auto'] }));
+    const edit = f.requests.at(-1).components.at(-1).toJSON().components[0];
+    await f.studio.handleInteraction(f.interaction(edit.custom_id, 'button'));
+    await f.studio.handleInteraction(f.interaction(f.requests.at(-1).custom_id, 'modal', { fields: { getTextInputValue: (key) => key === 'headline' ? 'Join us' : key === 'featured' ? left : '' } }));
+    assert.deepEqual(body.team_player_ids, ['501557839932948490']);
   } finally { global.fetch = originalFetch; }
 });
 

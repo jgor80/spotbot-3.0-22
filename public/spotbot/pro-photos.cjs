@@ -2,10 +2,30 @@
 // - Any image posted in a #pro-photos channel (or a club's pro_photos_channel_id) is analyzed
 //   and attached to the poster, or to the mentioned player when a manager posts it.
 // - /me → Pro Photo uploads one directly.
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+// - Graphics Studio → Upload Photos asks for a headshot and goal celebrations in one form.
+// Only raw captures are kept (console screenshots or phone photos of the screen), never AI renders.
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, LabelBuilder, FileUploadBuilder, TextDisplayBuilder } = require('discord.js');
 
 const NAME_RE = /pro-?photos?/i;
 const IMAGE_RE = /^image\/(png|jpe?g|webp)$/;
+const UPLOAD_ID = 'pph_upload';
+const UPLOAD_FORM_ID = 'pph_upload_form';
+
+// Guided upload: a face headshot (the likeness anchor) plus goal celebrations (signature poses).
+function uploadModal() {
+  return new ModalBuilder().setCustomId(UPLOAD_FORM_ID).setTitle('Upload photos of your pro')
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent([
+      'Use **your phone** to photograph the TV/monitor, or a **console screenshot**. Real game images only, no AI renders or edited art: the artwork copies exactly what you send.',
+      '**Headshot:** edit your pro, zoom in on the face looking at the camera, fill the frame, avoid glare.',
+      '**Goal celebrations:** open the goal celebrations screen while editing your pro and snap each celebration you use, whole body in frame.',
+    ].join('\n')))
+    .addLabelComponents(
+      new LabelBuilder().setLabel('Headshot').setDescription('One clear photo of your pro\'s face, facing the camera')
+        .setFileUploadComponent(new FileUploadBuilder().setCustomId('headshot').setMinValues(1).setMaxValues(1).setRequired(true)),
+      new LabelBuilder().setLabel('Goal celebrations (optional)').setDescription('Up to 5 photos from the goal celebrations screen')
+        .setFileUploadComponent(new FileUploadBuilder().setCustomId('celebrations').setMinValues(0).setMaxValues(5).setRequired(false)),
+    );
+}
 
 function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
   async function manage(userId, action, extra = {}) {
@@ -43,12 +63,12 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
     );
     await interaction.editReply({ content: notice || null, embeds: [embed], components: [row] });
   }
-  async function ingest({ guildId, userId, submittedBy, url }) {
+  async function ingest({ guildId, userId, submittedBy, url, shot }) {
     if (!secret) return { error: 'Photo uploads need BOT_PROXY_SECRET set on the bot.' };
     const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/pro-photo`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-bot-secret': secret },
-      body: JSON.stringify({ guild_id: guildId, discord_user_id: userId, submitted_by: submittedBy, image_url: url }),
+      body: JSON.stringify({ guild_id: guildId, discord_user_id: userId, submitted_by: submittedBy, image_url: url, ...(shot ? { shot } : {}) }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) return { error: typeof body.error === 'string' ? body.error : 'Something went wrong saving the photo.' };
@@ -110,7 +130,32 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
     }).catch(() => {});
   }
 
+  async function handleUpload(interaction) {
+    if (interaction.isButton?.()) {
+      await interaction.showModal(uploadModal());
+      return true;
+    }
+    if (!interaction.isModalSubmit?.()) return false;
+    await interaction.deferReply({ flags: 64 });
+    const files = (id) => [...(interaction.fields.getUploadedFiles(id, false)?.values() || [])];
+    const shots = [...files('headshot').map((f) => ({ f, shot: 'headshot', label: 'Headshot' })), ...files('celebrations').map((f, i) => ({ f, shot: 'celebration', label: `Celebration ${i + 1}` }))];
+    if (!shots.length) { await interaction.editReply('No photos were attached.'); return true; }
+    const lines = [];
+    let saved = 0, last;
+    for (const { f, shot, label } of shots) {
+      const isImage = IMAGE_RE.test(f.contentType || '') || /\.(png|jpe?g|webp)(\?|$)/i.test(f.name || f.url || '');
+      const r = isImage
+        ? await ingest({ guildId: interaction.guildId, userId: interaction.user.id, submittedBy: interaction.user.id, url: f.url, shot }).catch(() => ({ error: 'Could not save this photo. Please try again.' }))
+        : { error: 'Send a PNG, JPG or WebP image (on iPhone, set Camera → Formats → Most Compatible).' };
+      if (r.accepted) { saved++; last = r; lines.push(`✅ ${label} saved`); }
+      else lines.push(`❌ ${label}: ${r.error || 'That image needs your pro as its clear subject.'}`);
+    }
+    await interaction.editReply({ content: [`${saved} of ${shots.length} photo${shots.length === 1 ? '' : 's'} saved.`, ...lines].join('\n'), embeds: last ? [resultEmbed(interaction.user, last)] : [] });
+    return true;
+  }
+
   async function handleInteraction(interaction) {
+    if (interaction.customId === UPLOAD_ID || interaction.customId === UPLOAD_FORM_ID) return handleUpload(interaction);
     if (interaction.customId?.startsWith('pph:')) {
       const [, owner, action, rawOffset, id] = interaction.customId.split(':');
       if (owner !== interaction.user.id) {
@@ -146,7 +191,7 @@ function createProPhotos({ supabaseUrl, secret, getGuildState, isManager }) {
     await interaction.deferReply({ flags: 64 });
     const r = await ingest({ guildId: interaction.guildId, userId: interaction.user.id, submittedBy: interaction.user.id, url: file.url });
     if (r.error) await interaction.editReply(`❌ ${r.error}`);
-    else if (!r.accepted) await interaction.editReply("🤔 That doesn't look like a Pro Clubs player. Try a screenshot or render of your pro in kit.");
+    else if (!r.accepted) await interaction.editReply("🤔 That doesn't look like a Pro Clubs player. Try a screenshot or a phone photo of your pro on screen.");
     else await interaction.editReply({ embeds: [resultEmbed(interaction.user, r)] });
     return true;
   }
@@ -163,4 +208,4 @@ const PRO_PHOTO_COMMANDS = [
   },
 ];
 
-module.exports = { createProPhotos, PRO_PHOTO_COMMANDS };
+module.exports = { createProPhotos, PRO_PHOTO_COMMANDS, UPLOAD_ID, uploadModal };
