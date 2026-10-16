@@ -49,6 +49,7 @@ const { createGraphicsStudio } = require('./graphics-studio.cjs');
 const { createAutopilot, AUTOPILOT_COMMANDS } = require('./autopilot.cjs');
 const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
 const { createNetwork, NETWORK_COMMANDS } = require('./network.cjs');
+const { createReplacements } = require('./network-replacements.cjs');
 const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
@@ -450,6 +451,7 @@ const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL 
 const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
 const network = createNetwork({ supabase, getGuildState, isManager });
+createReplacements({ supabase, getGuildState, network, recruitment, canManageClub: squads.canManageClub });
 
 const scouting = createScouting({ supabase, getGuildState, recruitment });
 

@@ -21,12 +21,13 @@ const {
 const { activeClubs } = require('./manager-hub.cjs');
 const { isServerAdmin, isBotOwner, ownerIds, missingChannelPerms, missingPermsMessage } = require('./perm-check.cjs');
 const { toFcPlatform } = require('./ea-fc27.cjs');
+const { POSITIONS } = require('./recruitment.cjs');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REGIONS = ['Europe', 'UK & Ireland', 'North America East', 'North America West', 'South America', 'Middle East & Africa', 'Asia', 'Oceania'];
 const PLATFORMS = { 'common-gen5': 'PS5 / Xbox Series / PC', nx: 'Switch' };
 // Per server, per rolling day. Later slices add their own kinds (replacement, friendly...).
-const DAILY_LIMITS = { report: 5 };
+const DAILY_LIMITS = { report: 5, replacement: 10 };
 const PAGE_SIZE = 15;
 const MAX_TEXT = 200;
 
@@ -47,6 +48,17 @@ const NETWORK_COMMANDS = [
         ],
       },
       { type: 1, name: 'status', description: 'Whether this server is on the network, and the servers you blocked.' },
+      {
+        type: 1,
+        name: 'need',
+        description: 'Short a player? Ask free agents and other network servers for a replacement.',
+        options: [
+          { name: 'position', description: 'The position you need.', type: 3, required: true, choices: POSITIONS.map((p) => ({ name: p, value: p })) },
+          { name: 'when', description: 'Kick-off, e.g. "9pm" or "thu 21:00". Shown in each reader\'s local time.', type: 3, required: true },
+          { name: 'note', description: 'Anything else, e.g. "Div 2 league game, mics on".', type: 3, required: false },
+          { name: 'reach', description: 'Who to ask (default: free agents and other servers).', type: 3, required: false, choices: [{ name: 'Free agents and other servers', value: 'all' }, { name: 'Free agents only', value: 'fa' }] },
+        ],
+      },
       {
         type: 1,
         name: 'clubs',
@@ -119,6 +131,9 @@ function createNetwork(deps) {
   const { supabase, getGuildState, isManager } = deps;
   const isOn = () => String(process.env.NETWORK || '').toLowerCase() !== 'off';
   const OFF_MSG = '⚪ The GafferBot Network is switched off right now. Try again later.';
+  // Later slices register their own subcommands and nw_<x> components here
+  const subcommandHandlers = {};
+  const componentHandlers = {};
 
   async function serverRow(guildId) {
     const { data } = await supabase.from('network_servers').select('*').eq('guild_id', guildId).maybeSingle();
@@ -439,6 +454,22 @@ function createNetwork(deps) {
     return interaction.reply({ content: '✅ Unblocked. You\'ll see that server\'s clubs and requests again.', flags: 64 });
   }
 
+  // Post into a server's network channel; falls back to a DM to fallbackUserId. Returns the message.
+  async function postToChannel(client, guildId, payload, fallbackUserId) {
+    const row = await serverRow(guildId);
+    const guild = client?.guilds?.cache?.get(guildId);
+    if (guild && row?.channel_id) {
+      const channel = guild.channels.cache.get(row.channel_id) || (await guild.channels.fetch(row.channel_id).catch(() => null));
+      if (channel && !missingChannelPerms(channel, guild.members.me).length) {
+        const sent = await channel.send({ allowedMentions: { parse: [] }, ...payload }).catch(() => null);
+        if (sent) return sent;
+      }
+    }
+    if (!fallbackUserId) return null;
+    const user = await client.users.fetch(fallbackUserId).catch(() => null);
+    return user ? await user.send(payload).catch(() => null) : null;
+  }
+
   // ---------- Routing ----------
 
   async function handleInteraction(interaction) {
@@ -457,11 +488,16 @@ function createNetwork(deps) {
       else if (sub === 'status') await handleStatus(interaction);
       else if (sub === 'clubs') await handleClubs(interaction);
       else if (sub === 'suspend') await handleSuspend(interaction);
+      else if (subcommandHandlers[sub]) await subcommandHandlers[sub](interaction);
       else return false;
       return true;
     }
     const id = interaction.customId || '';
     if (!id.startsWith('nw_')) return false;
+    if (!isOn()) {
+      await interaction.reply({ content: OFF_MSG, flags: 64 });
+      return true;
+    }
     const [action, a, b] = id.split(':');
     if (interaction.isStringSelectMenu?.() && action === 'nw_mod') {
       const [kind, target] = String(interaction.values[0] || '').split(':');
@@ -470,6 +506,7 @@ function createNetwork(deps) {
       else await openReport(interaction, target, a);
     } else if (interaction.isStringSelectMenu?.() && action === 'nw_unblock') await unblock(interaction, interaction.values[0]);
     else if (interaction.isModalSubmit?.() && action === 'nw_repsend') await sendReport(interaction, a, b);
+    else if (componentHandlers[action]) await componentHandlers[action](interaction, a, b);
     else return false;
     return true;
   }
@@ -489,6 +526,13 @@ function createNetwork(deps) {
     overLimit,
     logActivity,
     cleanText,
+    postToChannel,
+    addSubcommand: (name, fn) => {
+      subcommandHandlers[name] = fn;
+    },
+    addComponent: (action, fn) => {
+      componentHandlers[action] = fn;
+    },
   };
 }
 
