@@ -28,6 +28,8 @@ const REGIONS = ['Europe', 'UK & Ireland', 'North America East', 'North America 
 const PLATFORMS = { 'common-gen5': 'PS5 / Xbox Series / PC', nx: 'Switch' };
 // Per server, per rolling day. Later slices add their own kinds (replacement, friendly...).
 const DAILY_LIMITS = { report: 5, replacement: 10 };
+const REGION_CHOICES = REGIONS.map((r) => ({ name: r, value: r }));
+const PLATFORM_CHOICES = Object.entries({ 'common-gen5': 'PS5 / Xbox Series / PC', nx: 'Switch' }).map(([value, name]) => ({ name, value }));
 const PAGE_SIZE = 15;
 const MAX_TEXT = 200;
 
@@ -66,6 +68,16 @@ const NETWORK_COMMANDS = [
         options: [
           { name: 'platform', description: 'Only clubs on this platform.', type: 3, required: false, choices: Object.entries(PLATFORMS).map(([value, name]) => ({ name, value })) },
           { name: 'region', description: 'Only clubs from this region.', type: 3, required: false, choices: REGIONS.map((r) => ({ name: r, value: r })) },
+        ],
+      },
+      {
+        type: 1,
+        name: 'leaderboard',
+        description: 'Every club on the GafferBot Network, ranked.',
+        options: [
+          { name: 'view', description: 'Clubs (default) or servers.', type: 3, required: false, choices: [{ name: 'Clubs', value: 'clubs' }, { name: 'Servers', value: 'servers' }] },
+          { name: 'platform', description: 'Only clubs on this platform.', type: 3, required: false, choices: PLATFORM_CHOICES },
+          { name: 'region', description: 'Only clubs from this region.', type: 3, required: false, choices: REGION_CHOICES },
         ],
       },
       {
@@ -210,6 +222,7 @@ function createNetwork(deps) {
         out.push({
           guildId: row.guild_id,
           key: club.key,
+          eaClubId: String(club.ea_club_id),
           name: club.ea_club_name || s?.club_name || club.name,
           platform: toFcPlatform(club.ea_platform || s?.ea_platform),
           division: s?.current_division || null,

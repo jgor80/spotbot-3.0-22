@@ -63,3 +63,24 @@ test('isOpen: open until it expires', () => {
   assert.ok(!isOpen({ status: 'open', expires_at: '2026-10-16T19:00:00Z' }, now));
   assert.ok(!isOpen({ status: 'filled', expires_at: '2026-10-16T21:00:00Z' }, now));
 });
+
+const { networkRecords, rankClubs, rankServers } = require('./network-leaderboard.cjs');
+
+test('leaderboard: ranks by EA skill rating and counts games against other network clubs', () => {
+  const clubs = [
+    { guildId: 'g1', key: 'c1', eaClubId: '100', name: 'Alpha', skill: 1200, stats: { wins: 5 } },
+    { guildId: 'g2', key: 'c1', eaClubId: '200', name: 'Bravo', skill: 1500, stats: { wins: 2 }, serverName: 'Bravo HQ' },
+    { guildId: 'g2', key: 'c2', eaClubId: '201', name: 'Bravo B', skill: null, stats: { wins: 9 }, serverName: 'Bravo HQ' },
+  ];
+  assert.deepStrictEqual(rankClubs(clubs).map((c) => c.name), ['Bravo', 'Alpha', 'Bravo B']);
+  const recs = networkRecords(clubs, [
+    { guild_id: 'g1', club_key: 'c1', opponent_club_id: '200', result: 'win' },
+    { guild_id: 'g1', club_key: 'c1', opponent_club_id: 200, result: 'draw' },
+    { guild_id: 'g1', club_key: 'c1', opponent_club_id: '999', result: 'win' },
+    { guild_id: 'g2', club_key: 'c1', opponent_club_id: '200', result: 'win' },
+  ]);
+  assert.deepStrictEqual(recs.get('g1:c1'), { w: 1, d: 1, l: 0 });
+  assert.strictEqual(recs.get('g2:c1'), undefined);
+  const servers = rankServers(clubs);
+  assert.deepStrictEqual(servers.map((s) => [s.guildId, s.clubs, s.best, s.w]), [['g2', 2, 1500, 11], ['g1', 1, 1200, 5]]);
+});
