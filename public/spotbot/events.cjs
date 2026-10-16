@@ -1,5 +1,6 @@
 // Club events: /event (new, list, cancel, remind, presets, recurring series, timezone) and /available.
-// Each event announces @everyone once and posts a counts-only live availability board.
+// Each event pings once (@everyone, or the signed-players role for league games) and posts a live
+// board listing only the players who answered, with their positions.
 // The scheduler posts recurring events, reminds non-responders before the deadline and
 // closes events after they finish.
 
@@ -16,6 +17,7 @@ const { missingChannelPerms, canPingRole, missingPermsMessage } = require('./per
 const T = require('./event-time.cjs');
 const { FORMATION_SLOTS } = require('./lineup-autofill.cjs');
 const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const B = require('./event-board.cjs');
 
 // "433", "4-3-3", "4-3-3 flat" -> "4-3-3 FLAT"
 function matchFormation(text) {
@@ -28,7 +30,7 @@ function matchFormation(text) {
   return names.find((n) => squash(n) === squash(t)) || names.find((n) => squash(n).startsWith(squash(t))) || null;
 }
 
-const POSITIONS = ['GK', 'LB', 'CB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'CF', 'ST'];
+const { POSITIONS } = B;
 const EVENT_TYPES = {
   league: { label: 'League match', emoji: '🏆', color: 0xf1c40f },
   friendly: { label: 'Friendly', emoji: '🤝', color: 0x57f287 },
@@ -42,8 +44,8 @@ const EVENT_TYPES = {
 };
 const RESPONSES = {
   yes: { label: 'Available', emoji: '✅', style: ButtonStyle.Success },
-  maybe: { label: 'Maybe', emoji: '❓', style: ButtonStyle.Secondary },
-  no: { label: "Can't make it", emoji: '❌', style: ButtonStyle.Danger },
+  maybe: { label: 'Maybe', emoji: '❓', style: ButtonStyle.Primary },
+  no: { label: 'Unavailable', emoji: '❌', style: ButtonStyle.Danger },
 };
 const ROSTER_OUT = { injured: '🚑', away: '✈️', inactive: '💤' };
 const DEFAULT_DEADLINE_MINUTES = 60;
@@ -85,7 +87,18 @@ const EVENT_COMMANDS = [
               { name: 'Every 2 weeks', value: '2' },
             ],
           },
-          { name: 'ping', description: 'Role to ping and remind (used when the club has no roster).', type: 8, required: false },
+          { name: 'ping', description: 'Role to ping and remind instead of the usual ping.', type: 8, required: false },
+          {
+            name: 'notify',
+            description: 'Who the post pings. Default: signed-players role for league games, @everyone otherwise.',
+            type: 3,
+            required: false,
+            choices: [
+              { name: '@everyone', value: 'everyone' },
+              { name: 'Signed players role', value: 'signed' },
+              { name: 'No ping', value: 'none' },
+            ],
+          },
           { name: 'channel', description: 'Where to post (defaults to here).', type: 7, required: false, channel_types: [ChannelType.GuildText, ChannelType.GuildAnnouncement] },
           { name: 'positions', description: 'Ask players which position they are signing up for (on by default for tryouts).', type: 5, required: false },
           { name: 'club', description: 'Which club (only needed on servers with several).', type: 3, required: false, autocomplete: true },
@@ -153,11 +166,21 @@ const EVENT_COMMANDS = [
             choices: [
               { name: 'Available', value: 'yes' },
               { name: 'Maybe', value: 'maybe' },
-              { name: "Can't make it", value: 'no' },
+              { name: 'Unavailable', value: 'no' },
               { name: 'Clear their answer', value: 'clear' },
             ],
           },
           { name: 'position', description: 'Position they will play (for position sign-ups).', type: 3, required: false },
+        ],
+      },
+      {
+        type: 1,
+        name: 'signedrole',
+        description: 'The role pinged for league game availability (your signed players).',
+        options: [
+          { name: 'role', description: 'e.g. @Signed Players. Leave empty to see or clear the current one.', type: 8, required: false },
+          { name: 'clear', description: 'Stop using a signed-players role (league games ping @everyone).', type: 5, required: false },
+          { name: 'club', description: 'Which club (only needed on servers with several).', type: 3, required: false, autocomplete: true },
         ],
       },
       {
@@ -387,9 +410,11 @@ function createEvents(deps) {
       const out = roster.filter((r) => ROSTER_OUT[r.status]).map((r) => ({ id: r.discord_user_id, status: r.status }));
       return { expected, out, source: 'roster' };
     }
-    if (event.ping_role_id && client) {
-      const guild = client.guilds.cache.get(event.guild_id);
-      const role = guild?.roles.cache.get(event.ping_role_id);
+    const guild = client?.guilds.cache.get(event.guild_id);
+    // A picked ping role, else the signed-players role for league games
+    const roleId = event.ping_role_id || (isLeague(event) ? B.findSignedRole(guild?.roles.cache, club)?.id : null);
+    if (roleId && guild) {
+      const role = guild.roles.cache.get(roleId);
       if (role) {
         // Role members come from the member cache; fill it at most every 10 minutes
         const last = memberFetchAt.get(guild.id) || 0;
@@ -403,94 +428,86 @@ function createEvents(deps) {
     return { expected: [], out: [], source: 'none' };
   }
 
-  // Every non-bot member of the server (cached; refilled at most every 10 minutes).
-  // Used so "Still to answer" covers everyone the @everyone ping reached, not just the roster.
-  async function allMemberIds(event) {
-    if (!client) return null;
-    const guild = client.guilds.cache.get(event.guild_id);
-    if (!guild) return null;
-    const last = memberFetchAt.get(guild.id) || 0;
-    if (Date.now() - last > 10 * 60 * 1000) {
-      memberFetchAt.set(guild.id, Date.now());
-      await guild.members.fetch().catch(() => {});
+  // Positions for each player as position tiers { primary, secondary: [], emergency: [] }, best
+  // source first: player_positions (docs/position-tiers.md), the club roster, saved position
+  // preferences, then their Discord position roles.
+  async function playerPositions(event, ids) {
+    const map = new Map();
+    const unique = [...new Set(ids || [])];
+    if (!unique.length) return map;
+    const tiers = new Map();
+    const { data: tierRows } = await supabase
+      .from('player_positions')
+      .select('discord_user_id, primary_position, secondary_positions, emergency_positions')
+      .eq('guild_id', event.guild_id)
+      .in('discord_user_id', unique);
+    for (const r of tierRows || []) tiers.set(r.discord_user_id, { primary: r.primary_position, secondary: r.secondary_positions, emergency: r.emergency_positions });
+    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    const roster = new Map();
+    if (club?.team_id) {
+      const { data } = await supabase
+        .from('team_rosters')
+        .select('discord_user_id, primary_position, secondary_position')
+        .eq('team_id', club.team_id)
+        .in('discord_user_id', unique);
+      for (const r of data || []) roster.set(r.discord_user_id, { primary: r.primary_position, secondary: r.secondary_position });
     }
-    const ids = guild.members.cache.filter((m) => !m.user.bot).map((m) => m.id);
-    return ids.length ? ids : null;
+    const prefs = new Map();
+    const { data: prefRows } = await supabase.from('position_preferences').select('user_id, preferences').eq('guild_id', event.guild_id).in('user_id', unique);
+    for (const r of prefRows || []) {
+      const list = B.splitPositions(r.preferences);
+      if (list.length) prefs.set(r.user_id, { primary: list[0], secondary: list.slice(1) });
+    }
+    const guild = client?.guilds.cache.get(event.guild_id);
+    for (const id of unique) {
+      const member = guild?.members.cache.get(id);
+      const roleNames = member?.roles?.cache ? [...member.roles.cache.values()].sort((a, b) => (b.position || 0) - (a.position || 0)).map((r) => r.name) : [];
+      const fromRoles = B.rolePositions(roleNames);
+      const entry = B.mergePositions(tiers.get(id), roster.get(id), prefs.get(id), fromRoles.length ? { primary: fromRoles[0], secondary: fromRoles.slice(1) } : null);
+      if (entry) map.set(id, entry);
+    }
+    return map;
   }
 
-  // Compact mention list for an embed field: names, then "+N more" past 12
-  function mentionList(ids, cap = 12) {
-    const shown = ids.slice(0, cap).map((id) => `<@${id}>`).join(', ');
-    return ids.length > cap ? `${shown} … +${ids.length - cap} more` : shown;
+  function isLeague(event) {
+    return typeInfo(event.event_type, event.title) === EVENT_TYPES.league;
   }
 
   // ---------- Board ----------
 
+  // Laid out like a team sheet: status and time up top, then Available (numbered), Maybe and
+  // Unavailable with each player's positions. Only people who answered are listed.
   async function buildBoard(event) {
     const prefs = await serverPrefs(event.guild_id);
-    const info = typeInfo(event.event_type);
+    const info = typeInfo(event.event_type, event.title);
     const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
     const responses = await loadResponses(event.id);
-    const { expected } = await expectedPlayers(event);
+    const positions = await playerPositions(event, responses.map((r) => r.discord_user_id)).catch(() => new Map());
     const deadline = event.deadline_at ? new Date(event.deadline_at) : null;
     const kickoff = T.unix(event.scheduled_at);
     const locked = !event.closed && (await isLocked(event));
 
-    const lines = [`🗓️ <t:${kickoff}:F> (<t:${kickoff}:R>)`, `${info.emoji} ${info.label}${club ? ` · ${club.name}` : ''}`];
-    if (event.cancelled) lines.unshift('**❌ Cancelled**');
-    else if (event.closed) lines.unshift('**Finished.** Answers are closed.');
-    else if (locked) lines.unshift('🔒 **Answers are closed.** Ask a club leader if yours needs changing.');
-    else if (deadline) {
-      lines.push(
-        deadline > new Date()
-          ? `⏰ Answer by <t:${T.unix(deadline)}:f> (<t:${T.unix(deadline)}:R>)`
-          : '⏰ The deadline has passed. Late answers still count but are marked.'
-      );
+    let status = '**🟢 Availability open**';
+    if (event.cancelled) status = '**❌ Cancelled**';
+    else if (event.closed) status = '**🏁 Finished.** Answers are closed.';
+    else if (locked) status = '**🔒 Answers are closed.** Ask a club leader if yours needs changing.';
+    const lines = [status, `🗓️ <t:${kickoff}:F> (<t:${kickoff}:R>)`, `${info.emoji} ${info.label}${club ? ` · ${club.name}` : ''}`];
+    if (!event.closed && !locked && deadline) {
+      lines.push(deadline > new Date() ? `⏰ Respond by <t:${T.unix(deadline)}:f>` : '⏰ The deadline has passed. Late answers still count and are marked ⏰.');
     }
     if (event.formation) lines.push(`📐 Formation: **${event.formation}**`);
     if (event.series_id) lines.push('🔁 Repeats automatically');
     if (event.position_signup) lines.push(`🎯 Pick up to ${MAX_SIGNUP_POSITIONS} positions when you tap Available`);
-    if (event.description) lines.push('', event.description);
+    if (event.description) lines.push('', truncate(event.description, 600));
+    lines.push('', B.availabilitySections(responses, { positions, deadline }));
+    const coverage = B.positionCoverage(responses, positions);
+    if (coverage) lines.push('', `-# Available by position: ${coverage}`);
 
     const embed = new EmbedBuilder()
       .setTitle(`${info.emoji} ${event.title}`)
       .setColor(event.cancelled ? 0x99aab5 : Number(prefs.branding.color) || info.color)
       .setDescription(truncate(lines.join('\n'), 4000))
-      .setFooter({ text: `${prefs.branding.footer || 'GafferBot'} · event ${event.id.slice(0, 8)}` });
-
-    // Names are shown for everyone who has answered; "Still to answer" covers the whole server
-    const answered = new Set(responses.map((r) => r.discord_user_id));
-    const byResponse = {};
-    for (const r of responses) {
-      (byResponse[r.response] = byResponse[r.response] || []).push(r.discord_user_id);
-    }
-    const availLines = Object.entries(RESPONSES)
-      .map(([key, r]) => {
-        const ids = byResponse[key] || [];
-        return ids.length ? `${r.emoji} **${ids.length}** ${r.label}\n${mentionList(ids)}` : `${r.emoji} **0** ${r.label}`;
-      })
-      .join('\n');
-    embed.addFields({ name: 'Availability', value: truncate(availLines, 1020) });
-
-    if (event.position_signup) {
-      const counts = {};
-      for (const r of responses) {
-        if (r.response !== 'yes' || !r.position) continue;
-        for (const p of r.position.split(',')) counts[p] = (counts[p] || 0) + 1;
-      }
-      const byPos = POSITIONS.filter((p) => counts[p]).map((p) => `${p} ${counts[p]}`).join(' · ');
-      if (byPos) embed.addFields({ name: 'By position', value: byPos });
-    }
-
-    const everyone = (await allMemberIds(event)) || expected;
-    const waiting = everyone.filter((id) => !answered.has(id));
-    if (waiting.length && !event.closed && !locked) {
-      embed.addFields({
-        name: '⏳ Still to answer',
-        value: `**${waiting.length}** player${waiting.length === 1 ? '' : 's'}\n${mentionList(waiting)}`,
-      });
-    }
-    embed.addFields({ name: '\u200b', value: '*Anyone in the server can answer. Tap 👥 Who\'s in for the full list with notes.*' });
+      .setFooter({ text: `${prefs.branding.footer || 'GafferBot'} · main position first · 📝 note · ⏰ late · event ${event.id.slice(0, 8)}` });
 
     const components = [];
     if (!event.closed && !locked) {
@@ -501,10 +518,14 @@ function createEvents(deps) {
           )
         )
       );
+      components.push(
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`ev_note:${event.id}`).setLabel('Add / Update Note').setEmoji('📝').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`ev_list:${event.id}`).setLabel('View Players').setEmoji('👥').setStyle(ButtonStyle.Secondary)
+        )
+      );
       const tools = [
-        new ButtonBuilder().setCustomId(`ev_list:${event.id}`).setLabel("Who's in").setEmoji('👥').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`ev_note:${event.id}`).setLabel('Add a note').setEmoji('📝').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`evl_build:${event.id}`).setLabel('Build Lineup').setEmoji('📋').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`evl_build:${event.id}`).setLabel('Build Lineup').setEmoji('📋').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`ev_remind:${event.id}`).setLabel('Remind').setEmoji('🔔').setStyle(ButtonStyle.Secondary),
       ];
       if (dashboardUrl) {
@@ -536,14 +557,25 @@ function createEvents(deps) {
 
   // ---------- Create ----------
 
-  async function postEvent(fields, channel) {
+  // Who an event's announcement pings (see event-board.cjs choosePing)
+  async function pingPlanFor(event, { notify = null } = {}) {
+    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    const guild = client?.guilds.cache.get(event.guild_id);
+    const signed = B.findSignedRole(guild?.roles.cache, club);
+    return B.choosePing({ notify, pingRoleId: event.ping_role_id, league: isLeague(event), signedRoleId: signed?.id || null });
+  }
+
+  // The only place an event pings: once, when it is first posted. Board edits and reposts
+  // suppress mentions.
+  async function postEvent(fields, channel, { notify = null } = {}) {
     const { data: event, error } = await supabase.from('availability_events').insert(fields).select().single();
     if (error) throw new Error(error.message);
     try {
+      const plan = await pingPlanFor(event, { notify });
+      event.pingPlan = plan;
       const message = await channel.send({
         ...(await buildBoard(event)),
-        content: '@everyone',
-        allowedMentions: { parse: ['everyone'], users: [], roles: [], repliedUser: false },
+        ...B.pingMessage(plan),
       });
       await supabase.from('availability_events').update({ message_id: message.id }).eq('id', event.id);
       event.message_id = message.id;
@@ -572,10 +604,11 @@ function createEvents(deps) {
     const rec = captureOptions(interaction);
     // Read every option up front so the time-picker stash keeps the whole form
     // (otherwise an unreadable "when" would replay with title/description/etc. lost).
-    for (const n of ['when', 'title', 'type', 'formation', 'preset', 'deadline', 'repeat', 'club', 'description']) interaction.options.getString(n);
+    for (const n of ['when', 'title', 'type', 'formation', 'preset', 'deadline', 'repeat', 'club', 'description', 'notify']) interaction.options.getString(n);
     interaction.options.getRole('ping');
     interaction.options.getChannel('channel');
     interaction.options.getBoolean('positions');
+    interaction.options.getString('notify');
     const guildId = interaction.guildId;
     const state = await getGuildState(guildId);
     const clubKey = interaction.options.getString('club');
@@ -625,9 +658,22 @@ function createEvents(deps) {
     const me = interaction.guild.members.me;
     const missing = missingChannelPerms(channel, me);
     if (missing.length) return interaction.reply({ content: missingPermsMessage(channel, missing), flags: 64 });
-    if (role && !canPingRole(channel, me, role)) {
+    // Who the post will ping: league games -> signed-players role, everything else -> @everyone
+    const notify = interaction.options.getString('notify');
+    const signedRole = B.findSignedRole(interaction.guild.roles.cache, club);
+    const plan = B.choosePing({
+      notify,
+      pingRoleId: role?.id || null,
+      league: typeInfo(type, title) === EVENT_TYPES.league,
+      signedRoleId: signedRole?.id || null,
+    });
+    if (notify === 'signed' && !signedRole) {
+      return interaction.reply({ content: '❌ No signed-players role is set. Pick one in **/manager → Roster & Squad → Signed Players Role**, or post with another ping.', flags: 64 });
+    }
+    const pingRole = plan.kind === 'role' ? interaction.guild.roles.cache.get(plan.roleId) : null;
+    if (pingRole && !canPingRole(channel, me, pingRole)) {
       return interaction.reply({
-        content: `❌ I can't ping ${role} in <#${channel.id}>. Make the role mentionable or give me **Mention @everyone, @here and All Roles** there.`,
+        content: `❌ I can't ping ${pingRole} in <#${channel.id}>. Make the role mentionable or give me **Mention @everyone, @here and All Roles** there.`,
         flags: 64,
       });
     }
@@ -690,7 +736,8 @@ function createEvents(deps) {
           created_by_discord_id: interaction.user.id,
           channel_id: channel.id,
         },
-        channel
+        channel,
+        { notify }
       );
     } catch (err) {
       if (seriesId) await supabase.from('event_series').delete().eq('id', seriesId);
@@ -700,11 +747,12 @@ function createEvents(deps) {
     const { source } = await expectedPlayers(event);
     const notes = [
       `✅ Posted **${title}** in <#${channel.id}>: ${messageLink(guildId, channel.id, event.message_id)}`,
-      `Kick-off <t:${T.unix(kickoff)}:F>, answers due <t:${T.unix(deadline)}:R>.`,
+      `Kick-off <t:${T.unix(kickoff)}:F>, answers due <t:${T.unix(deadline)}:R>. Pinged ${B.pingLabel(event.pingPlan)}.`,
       source === 'none'
         ? 'Tip: add players with **/manager → Roster & Squad → Add Player** (or pick a role with `ping`) so the board shows who has not answered and I can remind them.'
         : 'I will DM anyone who has not answered before the deadline.',
     ];
+    if (event.pingPlan?.missingSigned) notes.push('Tip: league games ping your signed players instead of @everyone once you pick the role in **/manager → Roster & Squad → Signed Players Role**.');
     if (repeatWeeks) notes.push(`🔁 I'll post the next one ${repeatWeeks === 1 ? 'every week' : 'every 2 weeks'}, a day after the previous kick-off. Stop it with **/manager → Events → Stop Repeating**.`);
     return interaction.editReply({ content: notes.join('\n') });
   }
@@ -815,7 +863,7 @@ function createEvents(deps) {
     const link = event.message_id ? messageLink(event.guild_id, event.channel_id, event.message_id) : null;
 
     let dmSent = 0;
-    let dmFailed = 0;
+    const dmFailedIds = [];
     for (const userId of waiting) {
       try {
         const user = await client.users.fetch(userId);
@@ -831,19 +879,21 @@ function createEvents(deps) {
         });
         dmSent++;
       } catch {
-        dmFailed++;
+        dmFailedIds.push(userId);
       }
       await new Promise((r) => setTimeout(r, 300));
     }
 
-    // One channel nudge under the board for anyone with DMs closed (and as a visible reminder)
+    // In the channel, tag only the players whose DMs are closed; when there is nobody to DM,
+    // post one plain nudge with no tags. Nobody else is tagged.
     const board = await fetchBoardMessage(event);
-    if (board && (waiting.length || source === 'none')) {
-      const content = waiting.length
-        ? `⏰ Still waiting on ${waiting.map((id) => `<@${id}>`).join(' ')}. Answer on the post above by <t:${due}:R>.`
+    if (board && (dmFailedIds.length || source === 'none')) {
+      const content = dmFailedIds.length
+        ? `⏰ ${dmFailedIds.map((id) => `<@${id}>`).join(' ')} I couldn't DM you: can you make **${event.title}**? Answer on the post above by <t:${due}:R>.`
         : `⏰ Answers for **${event.title}** close <t:${due}:R>. Tap a button on the post above.`;
-      await board.reply({ content: truncate(content, 2000), allowedMentions: { users: waiting.slice(0, 100) } }).catch(() => {});
+      await board.reply({ content: truncate(content, 2000), allowedMentions: { parse: [], users: dmFailedIds.slice(0, 100) } }).catch(() => {});
     }
+    const dmFailed = dmFailedIds.length;
     if (!manual) await supabase.from('availability_events').update({ deadline_reminder_sent: true }).eq('id', event.id);
     return { waiting: waiting.length, dmSent, dmFailed, source };
   }
@@ -1229,6 +1279,34 @@ function createEvents(deps) {
     return interaction.reply({ embeds: [embed], components: rows, flags: 64 });
   }
 
+  // ---------- Signed-players role ----------
+
+  async function handleSignedRole(interaction) {
+    const state = await getGuildState(interaction.guildId);
+    const club = resolveClub(state, interaction.member, interaction.options.getString('club'));
+    if (!club) return interaction.reply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.', flags: 64 });
+    if (!(await canManageClub(interaction.member, club))) return interaction.reply({ content: `❌ Only ${club.name}'s leaders can change this.`, flags: 64 });
+    const role = interaction.options.getRole('role');
+    const clear = interaction.options.getBoolean('clear');
+    if (role || clear) {
+      if (role && (role.managed || role.id === interaction.guildId)) return interaction.reply({ content: '❌ Pick a normal role your signed players have.', flags: 64 });
+      const saved = state.clubs.find((c) => c.key === club.key);
+      if (clear) delete saved.signed_role_id;
+      else saved.signed_role_id = role.id;
+      await saveGuildSettings(interaction.guildId, state);
+      club.signed_role_id = saved.signed_role_id;
+    }
+    const current = B.findSignedRole(interaction.guild.roles.cache, club);
+    const channel = club.events_channel_id ? interaction.guild.channels.cache.get(club.events_channel_id) : interaction.channel;
+    const warn = current && channel && !canPingRole(channel, interaction.guild.members.me, current)
+      ? `\n⚠️ I can't ping ${current} in <#${channel.id}> yet. Make the role mentionable or give me **Mention @everyone, @here and All Roles**.`
+      : '';
+    const content = current
+      ? `✅ League games for **${club.name}** ping ${current}${club.signed_role_id ? '' : ' (found by name)'}. BYOT, friendlies, practice and other nights ping @everyone.${warn}`
+      : `League games for **${club.name}** ping @everyone until you pick a signed-players role here (or create a role called **Signed Players**).`;
+    return interaction.reply({ content, flags: 64, allowedMentions: { parse: [] } });
+  }
+
   // ---------- Timezone ----------
 
   async function handleTimezone(interaction) {
@@ -1449,8 +1527,9 @@ function createEvents(deps) {
 
   function start(discordClient) {
     client = discordClient;
-    setInterval(tick, 60 * 1000);
-    setTimeout(tick, 10 * 1000);
+    // unref: the Discord connection keeps the bot alive; tests can exit
+    setInterval(tick, 60 * 1000).unref?.();
+    setTimeout(tick, 10 * 1000).unref?.();
   }
 
   // ---------- Routing ----------
@@ -1474,6 +1553,7 @@ function createEvents(deps) {
     else if (sub === 'post') await handleRepost(interaction);
     else if (sub === 'mark') await handleMark(interaction);
     else if (sub === 'timezone') await handleTimezone(interaction);
+    else if (sub === 'signedrole') await handleSignedRole(interaction);
     else if (sub === 'remind') {
       const event = await loadEvent(interaction.options.getString('event'));
       if (!event || event.guild_id !== interaction.guildId || event.closed) await interaction.reply({ content: '❌ Pick an open event from the list.', flags: 64 });
@@ -1637,6 +1717,8 @@ function createEvents(deps) {
     loadEvent,
     loadResponses,
     expectedPlayers,
+    playerPositions,
+    buildBoard,
     fetchBoardMessage,
     refreshBoard,
     clubFor,
