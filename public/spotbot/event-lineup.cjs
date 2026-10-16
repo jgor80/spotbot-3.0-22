@@ -3,7 +3,7 @@
 // the bot sends a "join the voice channel" DM 30 minutes before and at kick-off to anyone not
 // already in voice.
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { FORMATION_SLOTS, autofillLineup } = require('./lineup-autofill.cjs');
 const { splitPositions } = require('./event-board.cjs');
 
@@ -208,7 +208,11 @@ function createEventLineup(deps) {
     const channel = await client.channels.fetch(event.channel_id).catch(() => null);
     if (!channel?.send) return false;
     const mentions = lineup.slots.map((s) => `<@${s.discord_user_id}>`).join(' ');
-    const msg = await channel.send({ content: mentions.slice(0, 1900), embeds: [lineupEmbed(event, lineup)], components: [confirmRow(lineup.id)], allowedMentions: { users: lineup.slots.map((s) => s.discord_user_id) } }).catch(() => null);
+    // The pitch image (player cards, bench) from lineup-board.cjs; the post goes out without it if it can't be drawn
+    const png = deps.lineupImage ? await deps.lineupImage(lineup.id, { subtitle: event.title }) : null;
+    const embed = lineupEmbed(event, lineup);
+    if (png) embed.setImage('attachment://lineup.png');
+    const msg = await channel.send({ content: mentions.slice(0, 1900), embeds: [embed], components: [confirmRow(lineup.id)], files: png ? [new AttachmentBuilder(png, { name: 'lineup.png' })] : [], allowedMentions: { users: lineup.slots.map((s) => s.discord_user_id) } }).catch(() => null);
     if (!msg) return false;
     await supabase.from('lineups').update({ message_id: msg.id, channel_id: channel.id }).eq('id', lineup.id);
     return true;
@@ -221,7 +225,10 @@ function createEventLineup(deps) {
     if (!lineup?.message_id || !event || !client) return;
     const channel = await client.channels.fetch(lineup.channel_id).catch(() => null);
     const msg = await channel?.messages?.fetch(lineup.message_id).catch(() => null);
-    await msg?.edit({ embeds: [lineupEmbed(event, lineup)], components: [confirmRow(lineup.id)] }).catch(() => {});
+    const embed = lineupEmbed(event, lineup);
+    // Keep the pitch image the post went out with
+    if (msg?.attachments?.some?.((a) => a.name === 'lineup.png')) embed.setImage('attachment://lineup.png');
+    await msg?.edit({ embeds: [embed], components: [confirmRow(lineup.id)] }).catch(() => {});
   }
 
   async function dmPlayer(event, lineup, row) {
