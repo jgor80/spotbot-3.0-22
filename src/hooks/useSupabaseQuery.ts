@@ -36,6 +36,7 @@ export async function fetchPlayerProfile(
     discord_username: player.discord_username,
     discord_avatar: player.discord_avatar,
     primary_position: player.primary_position,
+    position_tiers: player.position_tiers || null,
     overall_rating: player.overall_rating,
     games_played: player.games_played,
     wins: player.wins,

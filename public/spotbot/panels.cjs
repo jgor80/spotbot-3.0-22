@@ -52,7 +52,8 @@ const PLAYER_ACTIONS = [
   { id: 'checkin', label: 'Check In', emoji: '📍', cmd: 'checkin' },
   { id: 'sub', label: 'Need a Sub', emoji: '🔁', cmd: 'sub', ask: true },
   { id: 'whoisplaying', label: "Who's Playing", emoji: '👀', cmd: 'whoisplaying' },
-  { id: 'myprefs', label: 'My Positions', emoji: '🧩', cmd: 'myprefs' },
+  { id: 'mypositions', label: 'My Positions', emoji: '🎯', cmd: 'positions' },
+  { id: 'myprefs', label: 'Spot Preferences', emoji: '🧩', cmd: 'myprefs' },
   { id: 'syncmyprefs', label: 'Positions From Roles', emoji: '🔃', cmd: 'syncprefs', fixed: { scope: 'me' } },
   { id: 'myreliability', label: 'My Reliability', emoji: '📈', cmd: 'reliability' },
   { id: 'linkea', label: 'Link EA', emoji: '🎮', cmd: 'linkea' },
@@ -174,7 +175,7 @@ const AREAS = [
     blurb: 'Who is in the squad, their positions and status, and who runs the club.',
     actions: [
       { id: 'ro_view', label: 'View Roster', emoji: '👥', cmd: 'roster', sub: 'view', ask: true, style: 'primary' },
-      { id: 'ro_add', label: 'Add Player', emoji: '➕', cmd: 'roster', sub: 'add' },
+      { id: 'ro_add', label: 'Add Player', emoji: '➕', cmd: 'roster', sub: 'add', fields: ['user', 'position', 'secondary', 'emergency', 'role'] },
       { id: 'ro_player', label: 'Player Details', emoji: '🔍', cmd: 'roster', sub: 'player' },
       { id: 'ro_status', label: 'Set Status', emoji: '🩹', cmd: 'roster', sub: 'status' },
       { id: 'ro_remove', label: 'Remove Player', emoji: '➖', cmd: 'roster', sub: 'remove', style: 'danger' },

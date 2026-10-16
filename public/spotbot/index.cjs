@@ -40,6 +40,7 @@ const { parseWhen: parseEventWhen } = require('./event-time.cjs');
 const embedStyle = require('./embed-style.cjs');
 const ackGuard = require('./ack-guard.cjs');
 const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
+const positionTiersLib = require('./position-tiers.cjs');
 const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
 const { createEventLineup } = require('./event-lineup.cjs');
 const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
@@ -437,18 +438,19 @@ const clubEvents = createEvents({
 
 embedStyle.install({ loadBranding: async (guildId) => (await clubEvents.serverPrefs(guildId)).branding });
 
-const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub, autoLink: () => autoLink });
+const positionTiers = positionTiersLib.createPositionTiers({ supabase });
+const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub, autoLink: () => autoLink, positionTiers });
 
 const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents, saveGuildSettings, searchClubCandidates: (n, p) => searchClubCandidates(n, p), linkEaClub: (...a) => linkEaClub(...a), clubPickerReply: (...a) => clubPickerReply(...a) });
 
 const eventLineup = createEventLineup({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, getUserPrefs: (g, u) => getUserPrefs(g, u), getGuildState });
-const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState });
+const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState, positionTiers });
 
 const autoLink = createAutoLink({ supabase, getGuildState, isManager });
 const proPhotos = createProPhotos({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, isManager });
 const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
 const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g) });
-const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
+const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, positionTiers });
 const network = createNetwork({ supabase, getGuildState, isManager });
 
 const scouting = createScouting({ supabase, getGuildState, recruitment });
@@ -643,41 +645,62 @@ const POSITION_INFERENCE = Object.freeze({
   ST: ['CF', 'CAM', 'RW', 'LW']
 });
 
-// Competitive position roles: /positionpanel posts a dropdown and the bot gives
-// each member up to three roles named after the position codes. Names match
-// POSITION_PREF_OPTIONS so /syncprefs picks them up.
-const POSITION_ROLE_OPTIONS = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST'];
+// Competitive position roles: /positionpanel posts three dropdowns (comp position, positions you
+// play well, emergency positions; see position-tiers.cjs). The comp position is the main role
+// ("ST"), positions played well get a quiet "ST (2nd)" role, emergency positions are never roles.
+// Main role names match POSITION_PREF_OPTIONS so /syncprefs picks them up.
+const POSITION_ROLE_OPTIONS = positionTiersLib.ROLE_POSITIONS;
 const POSITION_ROLE_SELECT_ID = 'posrole_select';
+const POSITION_TIER_IDS = { primary: POSITION_ROLE_SELECT_ID, secondary: 'posrole_secondary', emergency: 'posrole_emergency' };
 const POSITION_ROLE_CLEAR = 'none';
-const POSITION_ROLE_MAX = 3;
+const isPositionRoleName = (name) => {
+  const held = positionTiersLib.heldFromRoleNames([name]);
+  return held.primary.length > 0 || held.secondary.length > 0;
+};
 
-function buildPositionRolePanel() {
+// The shared panel (no tiers shown), or a player's own editor (`mine` set: their current picks are
+// pre-selected and the menus answer privately)
+function buildPositionRolePanel(mine = null) {
+  const t = mine ? positionTiersLib.normalize(mine) : null;
   const embed = new EmbedBuilder()
-    .setTitle('🎯 Pick Your Position')
-    .setDescription(`Choose up to ${POSITION_ROLE_MAX} competitive positions below and you will get the matching roles. Picking again replaces your choice; choose **Clear my positions** to remove them.`)
-    .setColor(0x5865f2);
-
-  const select = new StringSelectMenuBuilder()
-    .setCustomId(POSITION_ROLE_SELECT_ID)
-    .setPlaceholder(`Select up to ${POSITION_ROLE_MAX} positions`)
+    .setTitle(mine ? '🎯 Your Positions' : '🎯 Pick Your Positions')
+    .setColor(0x5865f2)
+    .setDescription(
+      (mine ? `${positionTiersLib.formatLines(t)}\n\n` : '') +
+      `**${positionTiersLib.TIER_EMOJI.primary} Comp position**: the one you play in competitive matches. It is your main position role and lineups use it first.\n` +
+      `**${positionTiersLib.TIER_EMOJI.secondary} Plays well** (up to ${positionTiersLib.MAX_SECONDARY}): you get a quieter "(2nd)" role for each.\n` +
+      `**${positionTiersLib.TIER_EMOJI.emergency} Emergency** (up to ${positionTiersLib.MAX_EMERGENCY}): no role; managers see them when looking for a sub, on free agent listings and on your profile.\n` +
+      'Picking again replaces that row.'
+    );
+  const suffix = mine ? ':me' : '';
+  const menu = (tier, placeholder, max, selected) => new StringSelectMenuBuilder()
+    .setCustomId(POSITION_TIER_IDS[tier] + suffix)
+    .setPlaceholder(placeholder)
     .setMinValues(1)
-    .setMaxValues(POSITION_ROLE_MAX)
+    .setMaxValues(max)
     .addOptions([
       ...POSITION_ROLE_OPTIONS.map((pos) => ({
         label: `${pos} · ${POSITION_META[pos].label}`,
         value: pos,
-        emoji: { name: POSITION_META[pos].emoji }
+        emoji: { name: POSITION_META[pos].emoji },
+        default: selected.includes(pos)
       })),
-      { label: 'Clear my positions', value: POSITION_ROLE_CLEAR, emoji: { name: '✖️' } }
+      { label: tier === 'primary' ? 'Clear all my positions' : 'None', value: POSITION_ROLE_CLEAR, emoji: { name: '✖️' } }
     ]);
-
-  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)] };
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder().addComponents(menu('primary', '⭐ Comp position (main role)', 1, t?.primary ? [t.primary] : [])),
+      new ActionRowBuilder().addComponents(menu('secondary', `✅ Positions you play well (up to ${positionTiersLib.MAX_SECONDARY})`, positionTiersLib.MAX_SECONDARY, t?.secondary || [])),
+      new ActionRowBuilder().addComponents(menu('emergency', `🆘 Emergency positions (up to ${positionTiersLib.MAX_EMERGENCY})`, positionTiersLib.MAX_EMERGENCY, t?.emergency || []))
+    ]
+  };
 }
 
 // Position roles are labels only: they never carry Discord permissions (no Timeout, kick, manage, etc.).
 async function stripPositionRolePermissions(guild) {
   for (const role of guild.roles.cache.values()) {
-    if (!POSITION_ROLE_OPTIONS.includes(role.name.toUpperCase())) continue;
+    if (!isPositionRoleName(role.name)) continue;
     if (role.permissions.bitfield === 0n) continue;
     if (!role.editable) { console.warn(`[roles] ${guild.name}: can't clear permissions on ${role.name} (role is above mine)`); continue; }
     await role.setPermissions(0n, 'GafferBot: position roles carry no permissions')
@@ -691,8 +714,7 @@ async function ensurePositionRoles(guild) {
   await guild.roles.fetch();
   const roles = {};
   for (const pos of POSITION_ROLE_OPTIONS) {
-    roles[pos] = guild.roles.cache.find((r) => r.name.toUpperCase() === pos)
-      || await guild.roles.create({ name: pos, mentionable: true, permissions: [], reason: 'GafferBot position roles' });
+    roles[pos] = await positionTiers.ensureRole(guild, pos);
   }
   await stripPositionRolePermissions(guild);
   return roles;
@@ -721,6 +743,7 @@ const ACTION_SCHEMAS = [
   { name: 'whoisplaying', description: 'Show who is currently slotted in your voice channel club (if linked).' },
   { name: 'pospanel', description: 'Create the shared position preference panel.' },
   { name: 'myprefs', description: 'Open your personal position preferences editor.' },
+  { name: 'positions', description: 'Set your comp position, positions you play well and emergency positions.' },
   { name: 'posboard', description: 'Show position preferences for players in your current voice channel.' },
   { name: 'posprefs', description: 'View position preferences for VC members or online players.' },
   { name: 'depthchart', description: 'Depth chart: who covers each position and where the squad is thin.' },
@@ -4280,7 +4303,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
 // Position role added (e.g. from /positionpanel or a server admin) -> player joins the club roster
 client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
   const had = new Set(oldMember.roles?.cache?.keys?.() || []);
-  const gained = newMember.roles.cache.some((r) => !had.has(r.id) && POSITION_ROLE_OPTIONS.includes(r.name.toUpperCase()));
+  const gained = newMember.roles.cache.some((r) => !had.has(r.id) && isPositionRoleName(r.name));
   if (!gained) return;
   roster.syncMemberPositions(newMember).catch((err) => console.warn('[roster] auto-add failed:', err.message));
 });
@@ -5805,6 +5828,11 @@ async function routeInteraction(interaction) {
         return interaction.reply({ embeds: [panelEmbed], components: [panelRow] });
       }
 
+      if (cmd === 'positions') {
+        const mine = await positionTiers.load(guildId, interaction.user.id).catch(() => null);
+        return interaction.reply({ ...buildPositionRolePanel(mine || {}), flags: 64 });
+      }
+
       if (cmd === 'myprefs') {
         const existing = await getUserPrefs(guildId, interaction.user.id);
         const formationData = getFormationForUserVc(interaction.member, state);
@@ -6146,7 +6174,7 @@ async function routeInteraction(interaction) {
             .setDescription(
               `Found **${matchedPositions.length}** position role(s) on your account!\n\n` +
               `**Your preferences are now:**\n${summary}\n\n` +
-              `_Use **/me → My Positions** to reorder or adjust these._`
+              `_Use **/me → Spot Preferences** to reorder or adjust these._`
             );
 
           return interaction.editReply({ embeds: [embed] });
@@ -6752,7 +6780,8 @@ async function routeInteraction(interaction) {
           return interaction.editReply({ content: `❌ Failed to fetch profile: ${error}` });
         }
 
-        const embed = buildProfileEmbed(data, targetUser.username);
+        const tiers = await positionTiers.load(guildId, targetUser.id).catch(() => null);
+        const embed = buildProfileEmbed(data, targetUser.username, tiers);
         return interaction.editReply({ embeds: [embed] });
       }
 
@@ -12416,7 +12445,7 @@ async function routeInteraction(interaction) {
             new EmbedBuilder()
               .setTitle('✅ Preferences Saved')
               .setColor(0x57f287)
-              .setDescription(summary + '\n\nYou can update anytime via **/me → My Positions** or the panel.')
+              .setDescription(summary + '\n\nYou can update anytime via **/me → Spot Preferences** or the panel.')
           ],
           components: []
         });
@@ -13760,7 +13789,7 @@ async function routeInteraction(interaction) {
             .setColor(rating >= 70 ? 0x00ff00 : rating >= 50 ? 0xffcc00 : 0xff6b35)
             .addFields(
               { name: '⭐ Overall Rating', value: `**${rating}** \`${ratingBar}\``, inline: true },
-              { name: '🎯 Position', value: summary.primary_position || 'Not set', inline: true },
+              { name: '🎯 Position', value: positionTiersLib.formatInline(await positionTiers.load(guildId, targetUserId).catch(() => null), { empty: summary.primary_position || 'Not set' }), inline: true },
               { name: '📊 Win Rate', value: `${winRate}%`, inline: true },
               { name: '🎮 Games Played', value: `${summary.games_played || 0}`, inline: true },
               { name: '⚽ Goals', value: `${summary.goals || 0}`, inline: true },
@@ -14304,30 +14333,40 @@ async function routeInteraction(interaction) {
         });
       }
 
-      // Position role panel: set the member's position roles (up to POSITION_ROLE_MAX)
-      if (id === POSITION_ROLE_SELECT_ID) {
+      // Position panel / My Positions: one menu per tier (comp position, plays well, emergency)
+      const tierPick = /^(posrole_select|posrole_secondary|posrole_emergency)(:me)?$/.exec(id);
+      if (tierPick) {
+        const tier = Object.keys(POSITION_TIER_IDS).find((k) => POSITION_TIER_IDS[k] === tierPick[1]);
+        const personal = !!tierPick[2];
         const clearing = interaction.values.includes(POSITION_ROLE_CLEAR);
-        const chosen = clearing ? [] : interaction.values.filter((v) => POSITION_ROLE_OPTIONS.includes(v)).slice(0, POSITION_ROLE_MAX);
-        // Re-render the panel so the dropdown resets for the next pick
-        await interaction.update(buildPositionRolePanel());
+        const picked = clearing ? [] : interaction.values.filter((v) => POSITION_ROLE_OPTIONS.includes(v));
+        const current = await positionTiers.load(guildId, interaction.user.id).catch(() => null);
+        let next;
+        if (tier === 'primary' && clearing) next = positionTiersLib.normalize({});
+        // Panels posted before tiers existed had one menu taking up to three positions
+        else if (tier === 'primary' && picked.length > 1) next = positionTiersLib.fromLegacyPick(current, picked);
+        else next = positionTiersLib.applyPick(current, tier, picked);
         try {
-          const roles = await ensurePositionRoles(interaction.guild);
-          const member = await interaction.guild.members.fetch(interaction.user.id);
-          const toRemove = POSITION_ROLE_OPTIONS
-            .filter((pos) => !chosen.includes(pos) && member.roles.cache.has(roles[pos].id))
-            .map((pos) => roles[pos].id);
-          if (toRemove.length) await member.roles.remove(toRemove, 'Position panel');
-          if (!chosen.length) {
-            return interaction.followUp({ content: '✅ Your position roles were removed.', flags: 64 });
-          }
-          const toAdd = chosen.filter((pos) => !member.roles.cache.has(roles[pos].id)).map((pos) => roles[pos].id);
-          if (toAdd.length) await member.roles.add(toAdd, 'Position panel');
-          const label = chosen.map((pos) => `**${pos}** ${POSITION_META[pos].emoji}`).join(', ');
-          return interaction.followUp({ content: `✅ Your positions: ${label}`, flags: 64 });
+          next = await positionTiers.save(guildId, interaction.user.id, next);
         } catch (err) {
-          console.error('Position role update failed:', err);
-          return interaction.followUp({ content: '❌ I could not update your roles. An admin needs to move my role above the position roles.', flags: 64 });
+          console.error('Position tiers save failed:', err);
+          return interaction.reply({ content: '❌ I could not save your positions. Try again in a moment.', flags: 64 });
         }
+        // The shared panel resets for the next person; a personal editor shows the new picks
+        if (personal) await interaction.update(buildPositionRolePanel(next));
+        else await interaction.update(buildPositionRolePanel());
+        let roleNote = '';
+        try {
+          const member = await interaction.guild.members.fetch(interaction.user.id);
+          await positionTiers.syncRoles(member, next);
+          await roster.syncMemberPositions(member).catch(() => 0);
+        } catch (err) {
+          console.warn('Position role update failed:', err.message);
+          roleNote = '\n⚠️ Saved, but I could not update your roles. An admin needs to move my role above the position roles.';
+        }
+        if (personal && !roleNote) return;
+        const summary = positionTiersLib.isEmpty(next) ? 'Your positions were cleared.' : positionTiersLib.formatLines(next);
+        return interaction.followUp({ content: `✅ ${summary}${roleNote}`, flags: 64 });
       }
 
       // =======================
@@ -17645,7 +17684,7 @@ function stringSimilarity(str1, str2) {
 // EMBED BUILDERS FOR NEW FEATURES
 // =======================
 
-function buildProfileEmbed(profile, username) {
+function buildProfileEmbed(profile, username, tiers = null) {
   const rating = profile.overall_rating || 50;
   const ratingBar = buildProgressBar(rating, 100, 10);
   
@@ -17660,12 +17699,15 @@ function buildProfileEmbed(profile, username) {
     .addFields(
       { name: '⭐ Overall Rating', value: `**${rating}** \`${ratingBar}\``, inline: true },
       { name: '📈 Form', value: streakText, inline: true },
-      { name: '🎯 Primary Position', value: profile.primary_position || 'Not set', inline: true },
+      { name: '🎯 Comp Position', value: tiers?.primary || profile.primary_position || 'Not set', inline: true },
       { name: '🎮 Games Played', value: `${profile.games_played || 0}`, inline: true },
       { name: '🏆 Wins', value: `${profile.wins || 0} (${profile.win_rate || 0}%)`, inline: true },
       { name: '⚽ Goals / 🎯 Assists', value: `${profile.goals || 0} / ${profile.assists || 0}`, inline: true },
       { name: '🏅 Achievements', value: achievements, inline: false }
     );
+  if (tiers && !positionTiersLib.isEmpty(tiers)) {
+    embed.addFields({ name: '🧭 Positions', value: positionTiersLib.formatLines(tiers), inline: false });
+  }
   
   if (profile.competition_wins && profile.competition_wins.length > 0) {
     const winsText = profile.competition_wins.slice(0, 3).map(w => 

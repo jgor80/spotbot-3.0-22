@@ -17,6 +17,7 @@ const {
 } = require('discord.js');
 const { resolveClub } = require('./manager-hub.cjs');
 const { missingChannelPerms } = require('./perm-check.cjs');
+const tiersLib = require('./position-tiers.cjs');
 
 const POSITIONS = ['GK', 'LB', 'CB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'CF', 'ST'];
 // Nearby positions count as a partial match when searching
@@ -87,8 +88,8 @@ const RECRUIT_COMMANDS = [
         required: true,
         choices: Object.entries(STATUS).map(([value, s]) => ({ name: s.label, value })),
       },
-      { name: 'position', description: 'Your main position.', type: 3, required: false, choices: positionChoices },
-      { name: 'secondary', description: 'A second position you can cover.', type: 3, required: false, choices: positionChoices },
+      { name: 'position', description: 'Your comp position (defaults to /me → My Positions).', type: 3, required: false, choices: positionChoices },
+      { name: 'secondary', description: 'A position you play well (the rest come from /me → My Positions).', type: 3, required: false, choices: positionChoices },
       { name: 'timezone', description: 'When you play from.', type: 3, required: false, choices: timezoneChoices },
       { name: 'platform', description: 'Your platform.', type: 3, required: false, choices: platformChoices },
       { name: 'notes', description: 'e.g. "Comp experience, free Sun-Thu".', type: 3, required: false, max_length: 200 },
@@ -166,6 +167,7 @@ const NOT_READY = '❌ Recruitment is not switched on for this bot yet (its data
 function createRecruitment(deps) {
   const { supabase, getGuildState, isManager } = deps;
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
+  const positionTiers = deps.positionTiers || null;
   const listedHooks = [];
   const settingsCache = new Map();
   let client = null;
@@ -342,8 +344,15 @@ function createRecruitment(deps) {
     return [...unique.values()].filter(isListed);
   }
 
+  // Listings saved before tiers only have secondary_position
+  function secondaryOf(fa) {
+    const list = fa?.secondary_positions?.length ? fa.secondary_positions : [fa?.secondary_position];
+    return list.filter((p) => p && p !== fa.position);
+  }
+  const emergencyOf = (fa) => (fa?.emergency_positions || []).filter((p) => p && p !== fa.position && !secondaryOf(fa).includes(p));
+
   function positionsText(fa) {
-    return [fa.position, fa.secondary_position].filter(Boolean).join('/');
+    return [fa.position, ...secondaryOf(fa)].filter(Boolean).join('/');
   }
 
   function nameText(fa) {
@@ -360,7 +369,8 @@ function createRecruitment(deps) {
       .addFields(
         { name: 'Status', value: s.label, inline: true },
         { name: 'Timezone', value: TIMEZONES[fa.timezone]?.label || 'Not set', inline: true },
-        { name: 'Platform', value: PLATFORMS[fa.platform] || 'Not set', inline: true }
+        { name: 'Platform', value: PLATFORMS[fa.platform] || 'Not set', inline: true },
+        { name: 'Positions', value: tiersLib.formatLines({ primary: fa.position, secondary: secondaryOf(fa), emergency: emergencyOf(fa) }) }
       )
       .setFooter({ text: `Listed ${new Date(fa.updated_at).toISOString().slice(0, 10)} · ✅ = gamertag linked with /me → Link EA` });
     if (fa.notes) embed.addFields({ name: 'Notes', value: truncate(fa.notes, 300) });
@@ -381,10 +391,19 @@ function createRecruitment(deps) {
       return interaction.editReply({ content: '⚪ Your free agent listing is down. Managers can no longer find or contact you through GafferBot.' });
     }
 
-    const position = interaction.options.getString('position') || existing?.position;
-    if (!position) return interaction.editReply({ content: '❌ Pick your main `position` so managers can find you.' });
-    let secondary = interaction.options.getString('secondary') ?? existing?.secondary_position ?? null;
-    if (secondary === position) secondary = null;
+    // Positions: what was picked here, else the listing's, else the player's tiers in this server
+    const mine = positionTiers && interaction.guildId ? await positionTiers.load(interaction.guildId, userId).catch(() => null) : null;
+    const position = interaction.options.getString('position') || existing?.position || mine?.primary;
+    if (!position) return interaction.editReply({ content: '❌ Pick your comp `position` (or set it in **/me → My Positions**) so managers can find you.' });
+    const tiers = tiersLib.addPositions(
+      {
+        primary: position,
+        secondary: existing && secondaryOf(existing).length ? secondaryOf(existing) : mine?.secondary || [],
+        emergency: existing?.emergency_positions?.length ? existing.emergency_positions : mine?.emergency || [],
+      },
+      { secondary: interaction.options.getString('secondary') }
+    );
+    const secondary = tiers.secondary[0] || null;
 
     const { data: profile } = await supabase.from('profiles').select('ea_username, ea_platform').eq('discord_user_id', userId).maybeSingle();
     const typed = interaction.options.getString('gamertag')?.trim() || null;
@@ -397,6 +416,8 @@ function createRecruitment(deps) {
       status,
       position,
       secondary_position: secondary,
+      secondary_positions: tiers.secondary,
+      emergency_positions: tiers.emergency,
       timezone: interaction.options.getString('timezone') ?? existing?.timezone ?? null,
       platform: interaction.options.getString('platform') ?? existing?.platform ?? (PLATFORMS[profile?.ea_platform] ? profile.ea_platform : null),
       ea_username: gamertag,
@@ -461,7 +482,10 @@ function createRecruitment(deps) {
       .neq('status', 'off')
       .eq('no_contact', false)
       .gte('updated_at', since)
-      .or(`position.in.(${wanted.join(',')}),secondary_position.in.(${wanted.join(',')})`)
+      .or(
+        `position.in.(${wanted.join(',')}),secondary_position.in.(${wanted.join(',')}),` +
+          `secondary_positions.ov.{${wanted.join(',')}},emergency_positions.cs.{${position}}`
+      )
       .limit(200);
     if (error) return interaction.editReply({ content: tablesMissing(error) ? NOT_READY : `❌ ${error.message}` });
 
@@ -482,7 +506,11 @@ function createRecruitment(deps) {
       });
     }
 
-    const fit = (fa) => (fa.position === position ? 3 : fa.secondary_position === position ? 2 : 1);
+    // Comp position, then plays it well, then a nearby position, then emergency cover
+    const fitOf = (fa) =>
+      fa.position === position ? 'primary' : secondaryOf(fa).includes(position) ? 'secondary' : emergencyOf(fa).includes(position) && !RELATED[position]?.some((p) => p === fa.position || secondaryOf(fa).includes(p)) ? 'emergency' : 'nearby';
+    const FIT_SCORE = { primary: 4, secondary: 3, nearby: 2, emergency: 1 };
+    const fit = (fa) => FIT_SCORE[fitOf(fa)];
     pool.sort(
       (a, b) =>
         fit(b) - fit(a) ||
@@ -507,9 +535,10 @@ function createRecruitment(deps) {
         .map((fa, i) => {
           const s = STATUS[fa.status];
           const tzText = TIMEZONES[fa.timezone] ? ` · ${fa.timezone}` : '';
-          const fitText = fa.position === position ? '' : fa.secondary_position === position ? ' (2nd position)' : ' (nearby position)';
+          const fitText = { primary: '', secondary: ' (plays it well)', nearby: ' (nearby position)', emergency: ' (🆘 emergency cover)' }[fitOf(fa)];
+          const pinch = emergencyOf(fa).length ? ` · 🆘 ${emergencyOf(fa).join('/')}` : '';
           return (
-            `**${i + 1}. ${positionsText(fa)}**${fitText} ${s.emoji} ${nameText(fa)}${tzText}\n` +
+            `**${i + 1}. ${positionsText(fa)}**${pinch}${fitText} ${s.emoji} ${nameText(fa)}${tzText}\n` +
             `${statsLine(stats.get(fa.discord_user_id))}` +
             (fa.notes ? `\n> ${truncate(fa.notes.replace(/\n/g, ' '), 150)}` : '')
           );

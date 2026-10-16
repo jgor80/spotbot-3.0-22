@@ -60,8 +60,13 @@ export function PlayerProfileView({ player }: PlayerProfileProps) {
               </h1>
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mt-2">
                 {player.primary_position && (
-                  <Badge variant="secondary">{player.primary_position}</Badge>
+                  <Badge variant="secondary" title="Comp position">⭐ {player.primary_position}</Badge>
                 )}
+                {player.position_tiers?.secondary.map((pos) => (
+                  <Badge key={`s-${pos}`} variant="outline" className="border-primary-foreground/30" title="Plays well">
+                    {pos}
+                  </Badge>
+                ))}
                 <Badge variant="outline" className="border-primary-foreground/30">
                   {player.rating_tier.icon} {player.rating_tier.name}
                 </Badge>
@@ -97,6 +102,11 @@ export function PlayerProfileView({ player }: PlayerProfileProps) {
                   </Tooltip>
                 </TooltipProvider>
               </div>
+              {!!player.position_tiers?.emergency.length && (
+                <p className="mt-2 text-xs text-primary-foreground/70">
+                  Emergency cover: {player.position_tiers.emergency.join(", ")}
+                </p>
+              )}
             </div>
 
             {/* Rating */}
