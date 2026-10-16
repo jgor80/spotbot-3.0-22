@@ -148,6 +148,12 @@ serve(async (req) => {
       const { data } = await supabase.from("player_stats").select("*, drafts(captain_a_discord_id, captain_b_discord_id, team_a_player_ids, team_b_player_ids)").eq("guild_id", guild_id).eq("discord_user_id", discord_user_id).order("recorded_at", { ascending: false }).limit(10);
       recentGames = data;
     }
+    const { data: tierRow } = await supabase.from("player_positions").select("primary_position, secondary_positions, emergency_positions").eq("guild_id", guild_id).eq("discord_user_id", discord_user_id).maybeSingle();
+    const positionTiers = tierRow ? {
+      primary: tierRow.primary_position || null,
+      secondary: tierRow.secondary_positions || [],
+      emergency: tierRow.emergency_positions || []
+    } : null;
     const overallRating = rating?.overall_rating || summary?.overall_rating || 50;
     const ratingTier = getRatingTier(overallRating);
     return new Response(
@@ -158,7 +164,8 @@ serve(async (req) => {
           discord_username: profile?.discord_username || summary?.discord_username,
           discord_avatar: profile?.discord_avatar,
           ea_username: profile?.ea_username,
-          primary_position: profile?.primary_position || summary?.primary_position,
+          primary_position: positionTiers?.primary || profile?.primary_position || summary?.primary_position,
+          position_tiers: positionTiers,
           // Rating
           overall_rating: overallRating,
           rating_tier: ratingTier,

@@ -217,6 +217,21 @@ serve(async (req) => {
       recentGames = data;
     }
 
+    // Comp position, positions played well and emergency positions in this server
+    const { data: tierRow } = await supabase
+      .from("player_positions")
+      .select("primary_position, secondary_positions, emergency_positions")
+      .eq("guild_id", guild_id)
+      .eq("discord_user_id", discord_user_id)
+      .maybeSingle();
+    const positionTiers = tierRow
+      ? {
+          primary: tierRow.primary_position || null,
+          secondary: tierRow.secondary_positions || [],
+          emergency: tierRow.emergency_positions || [],
+        }
+      : null;
+
     // Calculate rating tier
     const overallRating = rating?.overall_rating || summary?.overall_rating || 50;
     const ratingTier = getRatingTier(overallRating);
@@ -229,7 +244,8 @@ serve(async (req) => {
           discord_username: profile?.discord_username || summary?.discord_username,
           discord_avatar: profile?.discord_avatar,
           ea_username: profile?.ea_username,
-          primary_position: profile?.primary_position || summary?.primary_position,
+          primary_position: positionTiers?.primary || profile?.primary_position || summary?.primary_position,
+          position_tiers: positionTiers,
           
           // Rating
           overall_rating: overallRating,

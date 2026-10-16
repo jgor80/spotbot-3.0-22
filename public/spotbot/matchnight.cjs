@@ -52,6 +52,7 @@ function truncate(text, max = 1024) {
 function createMatchNight(deps) {
   const { supabase, events, isManager, callEdgeFunction, getGuildState } = deps;
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
+  const positionTiers = deps.positionTiers || null;
   const programme = createProgramme({ supabase, typeInfo });
 
   // ---------- Data ----------
@@ -227,9 +228,10 @@ function createMatchNight(deps) {
   // ---------- Subs ----------
 
   // Players worth pinging for a sub: the bench, anyone who said maybe, and players who play the
-  // position (a /positionpanel role or a saved preference). Never starters, anyone who dropped out
-  // or said no, and at most 25 so a sub call is never a mass ping.
-  async function subCandidates(event, lineup, position) {
+  // position (comp position first, then those who play it well, then emergency cover, then a
+  // /positionpanel role or a saved preference). Never starters, anyone who dropped out or said no,
+  // and at most 25 so a sub call is never a mass ping. `cover` gets the tier groups when asked.
+  async function subCandidates(event, lineup, position, cover = null) {
     const responses = await events.loadResponses(event.id);
     const checkins = await loadCheckins(event.id);
     const skip = new Set([
@@ -243,11 +245,24 @@ function createMatchNight(deps) {
     ];
     if (position) {
       const guild = events.getClient()?.guilds.cache.get(event.guild_id);
+      let emergencyIds = [];
+      if (positionTiers) {
+        const groups = await positionTiers.covering(event.guild_id, position).catch(() => null);
+        if (groups) {
+          const inServer = (id) => !guild || guild.members.cache.has(id);
+          for (const tier of ['primary', 'secondary', 'emergency']) groups[tier] = groups[tier].filter((id) => inServer(id) && !skip.has(id));
+          if (cover) Object.assign(cover, groups);
+          ids.push(...groups.primary, ...groups.secondary);
+          // Emergency cover goes after everyone who actually plays the position
+          emergencyIds = groups.emergency;
+        }
+      }
       const role = guild?.roles.cache.find((r) => r.name.toUpperCase() === position);
       if (role) ids.push(...role.members.filter((m) => !m.user.bot).map((m) => m.id));
       const { data: prefs } = await supabase.from('position_preferences').select('user_id, preferences').eq('guild_id', event.guild_id).contains('preferences', [position]);
       // Keep it to players who list it in their top three, and who are still on the server
       ids.push(...(prefs || []).filter((p) => (p.preferences || []).slice(0, 3).includes(position) && (!guild || guild.members.cache.has(p.user_id))).map((p) => p.user_id));
+      ids.push(...emergencyIds);
     }
     return [...new Set(ids)].filter((id) => /^\d{17,19}$/.test(id) && !skip.has(id)).slice(0, 25);
   }
@@ -270,7 +285,16 @@ function createMatchNight(deps) {
     if (error) throw new Error(error.message);
 
     const lineup = await lineupFor(event);
-    const pingIds = (await subCandidates(event, lineup, position)).filter((id) => id !== replacing);
+    const cover = {};
+    const pingIds = (await subCandidates(event, lineup, position, cover)).filter((id) => id !== replacing);
+    const pinged = new Set(pingIds);
+    const coverLine = (tier, label) => {
+      const list = (cover[tier] || []).filter((id) => pinged.has(id)).slice(0, 10);
+      return list.length ? `\n${label}: ${list.map((id) => `<@${id}>`).join(' ')}` : '';
+    };
+    const coverText = position
+      ? coverLine('primary', `⭐ ${position} is their comp position`) + coverLine('secondary', `✅ Plays ${position} well`) + coverLine('emergency', '🆘 Can cover in an emergency')
+      : '';
     const rolePing = !pingIds.length && event.ping_role_id ? event.ping_role_id : null;
     const kickoff = T.unix(event.scheduled_at);
     const embed = new EmbedBuilder()
@@ -280,6 +304,7 @@ function createMatchNight(deps) {
         `**${event.title}** kicks off <t:${kickoff}:t> (<t:${kickoff}:R>).` +
           (replacing ? `\nCovering for <@${replacing}>.` : '') +
           (note ? `\n${note}` : '') +
+          coverText +
           '\nFirst to tap **I can cover** gets the spot.'
       );
     const message = await channel.send({

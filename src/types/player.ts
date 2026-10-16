@@ -1,8 +1,16 @@
+// Comp position (one), positions played well (up to 3) and emergency positions (up to 3), per server
+export interface PositionTiers {
+  primary: string | null;
+  secondary: string[];
+  emergency: string[];
+}
+
 export interface PlayerProfile {
   discord_user_id: string;
   discord_username: string | null;
   discord_avatar: string | null;
   primary_position: string | null;
+  position_tiers?: PositionTiers | null;
   overall_rating: number;
   games_played: number;
   wins: number;

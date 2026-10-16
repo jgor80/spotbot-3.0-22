@@ -6,6 +6,7 @@ const { EmbedBuilder, PermissionsBitField } = require('discord.js');
 const { resolveClub } = require('./manager-hub.cjs');
 const { toInsightMatches } = require('./club-insights.cjs');
 const { aggregate } = require('./club-stats.cjs');
+const tiersLib = require('./position-tiers.cjs');
 
 const POSITIONS = ['GK', 'LB', 'CB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'CF', 'ST'];
 const LINES = [
@@ -67,8 +68,9 @@ const ROSTER_COMMANDS = [
         description: 'Add a player (or update their positions).',
         options: [
           { name: 'user', description: 'The player.', type: 6, required: true },
-          { name: 'position', description: 'Main position.', type: 3, required: false, choices: positionChoices },
-          { name: 'secondary', description: 'Second position.', type: 3, required: false, choices: positionChoices },
+          { name: 'position', description: 'Comp position (their main position role).', type: 3, required: false, choices: positionChoices },
+          { name: 'secondary', description: 'A position they play well (adds to their list).', type: 3, required: false, choices: positionChoices },
+          { name: 'emergency', description: 'A position they can fill in an emergency (adds to their list).', type: 3, required: false, choices: positionChoices },
           {
             name: 'role',
             description: 'Squad role.',
@@ -122,6 +124,7 @@ const { isServerAdmin } = require('./perm-check.cjs');
 
 function createRoster(deps) {
   const { supabase, getGuildState, saveGuildSettings, isManager } = deps;
+  const tiers = deps.positionTiers || null;
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
   // Extra fields under the by-position view, e.g. the recruitment gap radar
   let extraFields = null;
@@ -146,11 +149,20 @@ function createRoster(deps) {
   }
 
   // ---------- Automatic team selection from position roles ----------
-  // Anyone holding a position role (ST, CB, ...) joins the club roster with those positions.
+  // Anyone holding a position role (ST, CB, ...) joins the club roster with their comp position.
   // One club: that club. Several clubs: the clubs whose name appears in one of the member's roles.
   // A club opts out with club.auto_roster = false. Positions a manager set by hand are kept.
   function positionsFromRoles(member) {
     return POSITIONS.filter((pos) => member.roles.cache.some((r) => r.name.toUpperCase() === pos));
+  }
+
+  // The member's tiers (roles they hold are folded in first), as [primary, secondary...]
+  async function memberPositions(member) {
+    if (tiers) {
+      const t = await tiers.adoptFromMember(member).catch(() => null);
+      if (t?.primary) return [t.primary, ...t.secondary];
+    }
+    return positionsFromRoles(member);
   }
 
   function clubsForMember(state, member) {
@@ -162,7 +174,7 @@ function createRoster(deps) {
 
   async function syncMemberPositions(member, state) {
     if (!member || member.user?.bot) return 0;
-    const positions = positionsFromRoles(member);
+    const positions = await memberPositions(member);
     if (!positions.length) return 0;
     state = state || (await getGuildState(member.guild.id));
     let added = 0;
@@ -198,7 +210,8 @@ function createRoster(deps) {
     await guild.members.fetch().catch(() => {});
     let added = 0;
     for (const member of guild.members.cache.values()) {
-      if (positionsFromRoles(member).length) added += await syncMemberPositions(member, state).catch(() => 0);
+      const held = tiersLib.heldFromRoleNames(member.roles.cache.map((r) => r.name));
+      if (held.primary.length || held.secondary.length) added += await syncMemberPositions(member, state).catch(() => 0);
     }
     if (added) console.log(`[roster] ${guild.name}: added ${added} player(s) from position roles`);
     return added;
@@ -217,10 +230,15 @@ function createRoster(deps) {
   async function fallbackPositions(guild, userIds) {
     const result = new Map();
     if (!userIds.length) return result;
+    if (tiers) {
+      for (const [id, t] of await tiers.loadMany(guild.id, userIds)) {
+        if (t.primary || t.secondary.length) result.set(id, [t.primary, ...t.secondary].filter(Boolean));
+      }
+    }
     const { data: prefs } = await supabase.from('position_preferences').select('user_id, preferences').eq('guild_id', guild.id).in('user_id', userIds);
     for (const p of prefs || []) {
       const list = (p.preferences || []).filter((x) => POSITIONS.includes(x));
-      if (list.length) result.set(p.user_id, list);
+      if (list.length && !result.has(p.user_id)) result.set(p.user_id, list);
     }
     for (const id of userIds) {
       if (result.has(id)) continue;
@@ -231,11 +249,12 @@ function createRoster(deps) {
     return result;
   }
 
-  function playerLine(r, positions) {
+  function playerLine(r, positions, emergency = []) {
     const status = r.status && r.status !== 'active' ? ` ${STATUSES[r.status]?.emoji || ''}` : '';
     const role = r.role && r.role !== 'player' ? ` *${ROLES[r.role] || r.role}*` : '';
     const pos = positions.length ? ` · ${positions.join('/')}` : '';
-    return `<@${r.discord_user_id}>${pos}${role}${status}`;
+    const pinch = emergency.length ? ` · ${tiersLib.TIER_EMOJI.emergency} ${emergency.join('/')}` : '';
+    return `<@${r.discord_user_id}>${pos}${pinch}${role}${status}`;
   }
 
   async function buildRosterView(guild, club, teamId, by, onlyPosition) {
@@ -246,10 +265,15 @@ function createRoster(deps) {
     }
     const missing = roster.filter((r) => !r.primary_position).map((r) => r.discord_user_id);
     const fallback = await fallbackPositions(guild, missing);
+    const tierMap = tiers ? await tiers.loadMany(guild.id, roster.map((r) => r.discord_user_id)).catch(() => new Map()) : new Map();
+    // [comp position, positions played well...]; the roster's own primary wins (lineups use it)
     const positionsOf = (r) => {
-      const own = [r.primary_position, r.secondary_position].filter(Boolean);
-      return own.length ? own : fallback.get(r.discord_user_id) || [];
+      const t = tierMap.get(r.discord_user_id);
+      const own = [r.primary_position, r.secondary_position, ...(t?.secondary || [])].filter(Boolean);
+      const list = own.length ? own : fallback.get(r.discord_user_id) || [];
+      return [...new Set(list)];
     };
+    const emergencyOf = (r) => (tierMap.get(r.discord_user_id)?.emergency || []).filter((p) => !positionsOf(r).includes(p));
 
     const counts = Object.fromEntries(Object.keys(STATUSES).map((k) => [k, roster.filter((r) => (r.status || 'active') === k).length]));
     embed.setDescription(
@@ -266,7 +290,7 @@ function createRoster(deps) {
         if (!list.length) continue;
         embed.addFields({
           name: `${s.emoji} ${s.label} (${list.length})`,
-          value: truncate(list.map((r) => playerLine(r, positionsOf(r)) + (r.note ? ` (${r.note})` : '')).join('\n')),
+          value: truncate(list.map((r) => playerLine(r, positionsOf(r), emergencyOf(r)) + (r.note ? ` (${r.note})` : '')).join('\n')),
         });
       }
       return embed;
@@ -279,13 +303,16 @@ function createRoster(deps) {
       const parts = [];
       for (const pos of line.positions) {
         const players = roster.filter((r) => positionsOf(r).includes(pos));
-        if (!players.length) continue;
+        const pinch = roster.filter((r) => emergencyOf(r).includes(pos));
+        if (!players.length && !pinch.length) continue;
         players.forEach((r) => placed.add(r.discord_user_id));
         const main = players.filter((r) => positionsOf(r)[0] === pos);
         const cover = players.filter((r) => positionsOf(r)[0] !== pos);
+        const tag = (r) => `<@${r.discord_user_id}>${STATUSES[r.status] && r.status !== 'active' ? STATUSES[r.status].emoji : ''}`;
         parts.push(
           `**${pos}** (${main.length}${cover.length ? ` + ${cover.length} cover` : ''}): ` +
-            [...main, ...cover].map((r) => `<@${r.discord_user_id}>${STATUSES[r.status] && r.status !== 'active' ? STATUSES[r.status].emoji : ''}`).join(' ')
+            [...main.map((r) => `${tiersLib.TIER_EMOJI.primary}${tag(r)}`), ...cover.map(tag)].join(' ') +
+            (pinch.length ? ` · ${tiersLib.TIER_EMOJI.emergency} ${pinch.map(tag).join(' ')}` : '')
         );
       }
       if (parts.length) embed.addFields({ name: line.label, value: truncate(parts.join('\n')) });
@@ -299,7 +326,8 @@ function createRoster(deps) {
       embed.addFields({ name: `❔ No position yet (${unplaced.length})`, value: truncate(unplaced.map((r) => `<@${r.discord_user_id}>`).join(' ')) });
     }
     const gaps = LINES.flatMap((l) => l.positions).filter((p) => ['GK', 'CB', 'CM', 'ST'].includes(p) && !roster.some((r) => positionsOf(r).includes(p)));
-    if (gaps.length) embed.setFooter({ text: `Nobody covers ${gaps.join(', ')} yet` });
+    const legend = `${tiersLib.TIER_EMOJI.primary} comp position · ${tiersLib.TIER_EMOJI.emergency} emergency only`;
+    embed.setFooter({ text: gaps.length ? `Nobody covers ${gaps.join(', ')} yet · ${legend}` : legend });
     return embed;
   }
 
@@ -417,6 +445,7 @@ function createRoster(deps) {
     // add
     const position = interaction.options.getString('position');
     const secondary = interaction.options.getString('secondary');
+    const emergency = interaction.options.getString('emergency');
     const role = interaction.options.getString('role');
     const status = interaction.options.getString('status');
     const update = {};
@@ -428,9 +457,24 @@ function createRoster(deps) {
       ? await supabase.from('team_rosters').update(update).eq('id', current.id)
       : await supabase.from('team_rosters').insert({ team_id: teamId, discord_user_id: user.id, role: role || 'player', status: status || 'active', ...update });
     if (error) return interaction.editReply({ content: `❌ ${error.message}` });
+    // The player's tiers (and their position roles) follow what the manager set
+    let tierText = '';
+    let roleNote = '';
+    if (tiers && (position || secondary || emergency)) {
+      try {
+        const before = (await tiers.load(interaction.guildId, user.id)) || {};
+        const next = tiersLib.addPositions(before, { primary: position, secondary, emergency });
+        const saved = await tiers.save(interaction.guildId, user.id, next);
+        tierText = `\n${tiersLib.formatInline(saved)}`;
+        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        if (member) await tiers.syncRoles(member, saved).catch(() => { roleNote = '\n⚠️ I could not update their position roles; move my role above them in Server Settings → Roles.'; });
+      } catch (err) {
+        console.warn('[roster] tier update failed:', err.message);
+      }
+    }
     const pos = [update.primary_position || current?.primary_position, update.secondary_position || current?.secondary_position].filter(Boolean);
     return interaction.editReply({
-      content: `✅ <@${user.id}> ${current ? 'updated on' : 'added to'} ${club.name}${pos.length ? ` (${pos.join('/')})` : ''}.`,
+      content: `✅ <@${user.id}> ${current ? 'updated on' : 'added to'} ${club.name}${pos.length && !tierText ? ` (${pos.join('/')})` : ''}.${tierText}${roleNote}`,
     });
   }
 
@@ -458,7 +502,10 @@ function createRoster(deps) {
     const embed = new EmbedBuilder().setTitle(`🔎 ${user.displayName || user.username} · ${club.name}`).setColor(0x5865f2).setThumbnail(user.displayAvatarURL());
     if (entry) {
       const s = STATUSES[entry.status] || STATUSES.active;
-      const pos = [entry.primary_position, entry.secondary_position].filter(Boolean).join(' / ') || 'not set';
+      const t = tiers ? await tiers.load(guildId, user.id).catch(() => null) : null;
+      const pos = t && !tiersLib.isEmpty(t)
+        ? tiersLib.formatLines({ ...t, primary: entry.primary_position || t.primary })
+        : [entry.primary_position, entry.secondary_position].filter(Boolean).join(' / ') || 'not set';
       embed.addFields(
         { name: 'Status', value: `${s.emoji} ${s.label}${entry.note ? ` (${entry.note})` : ''}`, inline: true },
         { name: 'Positions', value: pos, inline: true },

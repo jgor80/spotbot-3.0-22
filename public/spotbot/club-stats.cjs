@@ -109,7 +109,7 @@ const HELP_PAGES = [
       ['Set Status', 'Set a player active, trial, injured, away or inactive.'],
       ['Remove Player', 'Move a player to Inactive (or delete them).'],
       ['Import Role', 'Add everyone with a role.'],
-      [`${at('ln_posroles')} · ${at('myprefs')}`, 'Players pick their positions.'],
+      [`${at('ln_posroles')} · ${at('mypositions')}`, 'Players pick their comp position, positions they play well and emergency positions.'],
     ],
   },
   {
