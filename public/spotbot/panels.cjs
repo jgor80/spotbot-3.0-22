@@ -108,6 +108,7 @@ const AREAS = [
       { id: 'mn_reliability', label: 'Reliability', emoji: '📈', cmd: 'reliability', ask: true },
       { id: 'mn_attendance', label: 'Attendance', emoji: '🧾', cmd: 'attendance' },
       { id: 'mn_lfg', label: 'Find a Friendly', emoji: '🤝', cmd: 'lfg', ask: true },
+      { id: 'mn_need', label: 'Need a Player', emoji: '🆘', cmd: 'network', sub: 'need', style: 'primary' },
       { id: 'mn_netclubs', label: 'Network Clubs', emoji: '🌐', cmd: 'network', sub: 'clubs' },
       { id: 'mn_autopilot', label: 'Autopilot', emoji: '🤖', cmd: 'autopilot' },
     ],
