@@ -97,6 +97,10 @@ Every other former command is a panel button. A button that needs input opens a 
 | `/recruit applypanel` | /manager → Recruiting → Apply Button | Leaders |
 | `/recruit setup` | /manager → Recruiting → Recruiting Setup | Leaders |
 | `/scout opponent` | /manager → Recruiting → Opponent Dossier | Leaders |
+| `/network setup` | /manager → Admin → Network Setup | Server admins |
+| `/network status` | /manager → Admin → Network Status | Leaders |
+| `/network clubs` | /manager → Match Night → Network Clubs | Leaders |
+| `/network suspend` | /manager → Admin → Owner: Network Suspend | Bot owners |
 | `/scout watchlist` | /manager → Recruiting → Watchlist | Leaders |
 | `/scout add` | /manager → Recruiting → Watch a Player | Leaders |
 | `/scout remove` | /manager → Recruiting → Unwatch | Leaders |
@@ -192,6 +196,13 @@ Jobs the bot runs by itself for each club, all on by default. **/autopilot** (or
 - **/recruit search position [min_rating] [timezone] [platform]** (managers): the best 10 matches, main position first, then second and nearby positions. Timezone matches an hour either side. Players already on one of this server's rosters are left out.
 - **Reach Out** (the menu under search results, the watchlist, or a scouting alert): the manager adds an optional message and the bot DMs the player with Interested / Not right now / Stop all contact. Interested sends the player a one-use 7-day invite and only then tells the manager who they are. Stop all contact takes the listing down and blocks further reach-outs. One reach-out per server per player per 7 days, and 15 per server per day.
 - **/recruit setup [channel] [invite_channel] [alerts] [min_rating] [trialist_role]**: where scouting alerts and reach-out replies go (without a channel, replies are DMed to the manager), which channel invites open on, and the alert threshold.
+
+## GafferBot Network (`public/spotbot/network.cjs`)
+- Servers that opt in can see each other's clubs; replacement requests, friendly invites and hosted BYOTs build on it. Every server starts off the network.
+- **/network setup enabled [channel] [show_server_name] [region]** (server admins): join or leave. The channel is where requests from other servers land. Other servers see club name, platform, EA division, skill rating, record and region, plus the server's name only with `show_server_name`. Only clubs linked to EA are listed. Leaving hides the clubs at once.
+- **/network clubs [platform] [region]** (anyone on a listed server): the other listed clubs, top 15 by skill rating, with a menu to report or block a server.
+- **/network status** (managers): this server's settings and the servers it blocked, with an Unblock menu.
+- Blocking hides both servers from each other and is silent. Reports (5 per server per day) go to `NETWORK_REPORTS_CHANNEL_ID`, or the bot owners' DMs when it's unset. **/network suspend server_id [reason]** (bot owners) takes a server off the network; no reason lifts it. `NETWORK=off` switches the whole network off. Text typed into network requests has links, invites and mentions stripped and blocked words masked (`NETWORK_BLOCKED_WORDS` adds words).
 
 ## Recruitment: scouting (`public/spotbot/scouting.cjs`)
 - **Recruitment Alerts**: after each synced match (whichever sync stored it), the bot reads the opponent's box score and posts up to two alerts to the recruitment channel for players rated at or above the threshold (default 8.0), with 90%+ passing (15+ attempts), 5+ tackles or a hat-trick. Buttons: Scout Player (their club stats and games against you), Add to Watchlist, and Reach Out when they're a listed free agent. Only matches from the last 6 hours are scanned, so a restart never floods old alerts.

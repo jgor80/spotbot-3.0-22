@@ -30,10 +30,12 @@ function canPingRole(channel, me, role) {
 
 // Bot owners (built-in AirDangus23 + BOT_OWNER_IDS env) get full bot permissions in every server.
 const BUILTIN_OWNER_IDS = ['501557839932948490'];
-function isBotOwner(userId) {
-  if (!userId) return false;
+function ownerIds() {
   const envIds = String(process.env.BOT_OWNER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
-  return BUILTIN_OWNER_IDS.includes(userId) || envIds.includes(userId);
+  return [...new Set([...BUILTIN_OWNER_IDS, ...envIds])];
+}
+function isBotOwner(userId) {
+  return !!userId && ownerIds().includes(userId);
 }
 
 // Is this member a server admin (Administrator or Manage Server)? Works for cached members and for
@@ -58,4 +60,4 @@ function missingPermsMessage(channel, missing) {
   );
 }
 
-module.exports = { missingChannelPerms, canPingRole, missingPermsMessage, isServerAdmin, POST_PERMS };
+module.exports = { missingChannelPerms, canPingRole, missingPermsMessage, isServerAdmin, isBotOwner, ownerIds, POST_PERMS };

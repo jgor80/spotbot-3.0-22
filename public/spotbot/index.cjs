@@ -48,6 +48,7 @@ const { createAiAccess, AI_ACCESS_COMMANDS } = require('./ai-access.cjs');
 const { createGraphicsStudio } = require('./graphics-studio.cjs');
 const { createAutopilot, AUTOPILOT_COMMANDS } = require('./autopilot.cjs');
 const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
+const { createNetwork, NETWORK_COMMANDS } = require('./network.cjs');
 const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
@@ -448,6 +449,7 @@ const proPhotos = createProPhotos({ supabaseUrl, secret: FUNCTION_SECRET, getGui
 const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
 const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g) });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub });
+const network = createNetwork({ supabase, getGuildState, isManager });
 
 const scouting = createScouting({ supabase, getGuildState, recruitment });
 
@@ -993,6 +995,7 @@ const ACTION_SCHEMAS = [
   ...PRO_PHOTO_COMMANDS,
   ...AI_ACCESS_COMMANDS,
   ...RECRUIT_COMMANDS,
+  ...NETWORK_COMMANDS,
   ...SCOUT_COMMANDS,
   ...TRIAL_COMMANDS,
   ...LFC_COMMANDS,
@@ -4402,6 +4405,8 @@ async function routeInteraction(interaction) {
     if (await trials.handleInteraction(interaction)) return;
     if (await recruitCards.handleInteraction(interaction)) return;
     if (await recruitment.handleInteraction(interaction)) return;
+    // GafferBot Network: /network setup|status|clubs|suspend, report/block menus
+    if (await network.handleInteraction(interaction)) return;
 
     // Handle DM button interactions for feedback and welcome
     if (!interaction.guildId && interaction.isButton()) {
