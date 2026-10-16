@@ -175,6 +175,8 @@ serve(async (req) => {
           name: lineup.name,
           formation: lineup.formation,
           share_code: lineup.share_code,
+          team_id: lineup.team_id,
+          event_id: lineup.event_id,
           team_avg_rating: lineup.team_avg_rating,
           win_probability: lineup.win_probability,
           created_at: lineup.created_at,

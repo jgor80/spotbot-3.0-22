@@ -13,14 +13,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useGuild } from "@/contexts/GuildContext";
 import { useAvailablePlayers } from "@/hooks/useAvailablePlayers";
-import { LineupSlot, LeaderboardPlayer } from "@/types/player";
 import { FormationType } from "@/types/formations";
-import { FORMATION_OPTIONS, FORMATIONS } from "@/lib/formations";
-import { FormationPitch } from "@/components/lineup/FormationPitch";
+import { FORMATION_OPTIONS, FORMATIONS, getPositionRatingCategory } from "@/lib/formations";
 import { AnnounceLineupDialog } from "@/components/lineup/AnnounceLineupDialog";
+import { LineupBoardEditor, DEFAULT_LOOK, type BoardLook, type PositionTiers, type Availability } from "@/components/lineup/LineupBoardEditor";
 import { autofillLineup } from "@/lib/lineupAutofill";
-import { PlayerCard } from "@/components/player/PlayerCard";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { BoardSpot, BoardState, MAX_BENCH, boardFromNames, boardToSlots, movePlayer, resizeBoard, slotsToBoard } from "@/lib/lineupBoard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
@@ -56,12 +54,11 @@ import {
   ClipboardList,
   Wand2,
   Save,
-  RotateCcw,
-  Search,
   Download,
   Image,
   Headphones,
-  CalendarCheck
+  CalendarCheck,
+  Megaphone
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -95,6 +92,8 @@ interface PlayerSummary {
   primary_position: string | null;
 }
 
+const emptyBoard = (count: number): BoardState => ({ starters: Array(count).fill(null), bench: [] });
+
 export default function TeamsPage() {
   const { selectedGuildId, isLoading: guildLoading } = useGuild();
   const { toast: toastHook } = useToast();
@@ -112,23 +111,24 @@ export default function TeamsPage() {
 
   // Lineup state
   const [formation, setFormation] = useState<FormationType>("4-3-3 FLAT");
-  const [slots, setSlots] = useState<LineupSlot[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const [board, setBoard] = useState<BoardState>(() => emptyBoard(FORMATIONS["4-3-3 FLAT"].length));
+  const [history, setHistory] = useState<{ past: { board: BoardState; formation: FormationType }[]; future: { board: BoardState; formation: FormationType }[] }>({ past: [], future: [] });
+  const [look, setLook] = useState<BoardLook>(DEFAULT_LOOK);
+  const [announceOpen, setAnnounceOpen] = useState(false);
   const [lineupName, setLineupName] = useState("");
-  const [lineupSearchQuery, setLineupSearchQuery] = useState("");
   const [isLineupLoading, setIsLineupLoading] = useState(false);
   const [lineupTeamId, setLineupTeamId] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
   const [isFillingFromVoice, setIsFillingFromVoice] = useState(false);
   const [voiceChoices, setVoiceChoices] = useState<{ id: string; name: string; user_ids: string[] }[] | null>(null);
-  const [savedLineup, setSavedLineup] = useState<{ id: string; name: string } | null>(null);
+  // The last save, and the board it saved (an edit after that needs a new save before posting)
+  const [savedLineup, setSavedLineup] = useState<{ id: string; name: string; board: BoardState } | null>(null);
   // The event board's Build Lineup link opens /teams?event=<id>
   const [searchParams] = useSearchParams();
   const [lineupEventId, setLineupEventId] = useState<string>(searchParams.get("event") || "");
   const [activeTab, setActiveTab] = useState(searchParams.get("tab") === "teams" ? "teams" : "lineup");
   const [isFillingFromEvent, setIsFillingFromEvent] = useState(false);
   const pitchRef = useRef<HTMLDivElement>(null);
-  const poolRef = useRef<HTMLDivElement>(null);
 
   // Available players for lineup
   const { data: availablePlayers, isLoading: playersLoading } = useAvailablePlayers(selectedGuildId);
@@ -373,56 +373,141 @@ export default function TeamsPage() {
     p => !roster?.some(r => r.discord_user_id === p.discord_user_id)
   ) || [];
 
-  // Lineup functions
-  const filteredLineupPlayers = useMemo(() => {
-    if (!availablePlayers) return [];
-    const assignedIds = new Set(slots.map(s => s.discord_user_id));
-    return availablePlayers.filter(p => {
-      if (assignedIds.has(p.discord_user_id)) return false;
-      if (!lineupSearchQuery) return true;
-      const query = lineupSearchQuery.toLowerCase();
-      return p.ea_username?.toLowerCase().includes(query) ||
-             p.discord_username?.toLowerCase().includes(query) ||
-             p.primary_position?.toLowerCase().includes(query);
-    });
-  }, [availablePlayers, slots, lineupSearchQuery]);
+  // Lineup board: every change goes through commitBoard so Undo/Redo can step through it
+  const commitBoard = (next: BoardState) => {
+    if (next === board) return;
+    setHistory(h => ({ past: [...h.past, { board, formation }].slice(-50), future: [] }));
+    setBoard(next);
+  };
+  const undo = () => {
+    const last = history.past[history.past.length - 1];
+    if (!last) return;
+    setHistory(h => ({ past: h.past.slice(0, -1), future: [{ board, formation }, ...h.future] }));
+    setBoard(last.board);
+    setFormation(last.formation);
+  };
+  const redo = () => {
+    const next = history.future[0];
+    if (!next) return;
+    setHistory(h => ({ past: [...h.past, { board, formation }], future: h.future.slice(1) }));
+    setBoard(next.board);
+    setFormation(next.formation);
+  };
+  const handleMove = (playerId: string, to: BoardSpot) => {
+    const next = movePlayer(board, playerId, to);
+    if (next === board && to.zone === "bench") toast.info(`The bench holds ${MAX_BENCH}`);
+    commitBoard(next);
+  };
+  const handleFormation = (next: FormationType) => {
+    if (next === formation) return;
+    setHistory(h => ({ past: [...h.past, { board, formation }].slice(-50), future: [] }));
+    setFormation(next);
+    setBoard(resizeBoard(board, FORMATIONS[next].length));
+  };
+  const handlePasteNames = (text: string) => {
+    const { state, unmatched } = boardFromNames(
+      text,
+      (availablePlayers || []).map(p => ({ id: p.discord_user_id, names: [p.ea_username, p.discord_username] })),
+      positions.length,
+    );
+    commitBoard(state);
+    if (unmatched.length) toast.warning(`No player found for: ${unmatched.slice(0, 5).join(", ")}${unmatched.length > 5 ? "…" : ""}`);
+    else toast.success("Names applied");
+  };
 
-  const handleSlotClick = (slotIndex: number) => {
-    if (selectedSlot === slotIndex) {
-      setSelectedSlot(null);
-    } else {
-      setSelectedSlot(slotIndex);
-      // On phones the player list sits below the pitch, so bring it into view
-      if (window.matchMedia("(max-width: 1023px)").matches) {
-        poolRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  // The rating shown on a card: the player's rating for that kind of position, else their overall
+  const getPositionRating = (playerId: string, position: string) => {
+    const category = getPositionRatingCategory(position);
+    return positionRatings?.find(r => r.discord_user_id === playerId && r.position === category)?.rating ?? null;
+  };
+
+  // Position tiers (comp / plays well / emergency) colour each card by how well it fits its spot
+  const { data: tierRows } = useQuery({
+    queryKey: ["positionTiers", selectedGuildId],
+    queryFn: async () => {
+      // player_positions is newer than the generated types; a server without it just shows no tiers
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from("player_positions")
+        .select("discord_user_id, primary_position, secondary_positions, emergency_positions")
+        .eq("guild_id", selectedGuildId);
+      if (error) return [];
+      return (data || []) as { discord_user_id: string; primary_position: string | null; secondary_positions: string[] | null; emergency_positions: string[] | null }[];
+    },
+    enabled: !!selectedGuildId,
+    staleTime: 5 * 60 * 1000,
+  });
+  const positionTiers = useMemo(() => new Map<string, PositionTiers>((tierRows || []).map(r => [r.discord_user_id, {
+    primary: r.primary_position,
+    secondary: r.secondary_positions || [],
+    emergency: r.emergency_positions || [],
+  }])), [tierRows]);
+
+  // The chosen event's availability answers mark each squad player Available / Maybe / Out
+  const { data: availabilityRows } = useQuery({
+    queryKey: ["lineupAvailability", lineupEventId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("player_availability")
+        .select("discord_user_id, response, position")
+        .eq("event_id", lineupEventId);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!lineupEventId,
+  });
+  const eventAvailability = useMemo(
+    () => new Map<string, Availability>((availabilityRows || []).filter(r => ["yes", "maybe", "no"].includes(r.response)).map(r => [r.discord_user_id, r.response as Availability])),
+    [availabilityRows],
+  );
+
+  // Open a saved lineup (the Discord team sheet's "Drag & drop on the web" link: /lineup?lineup=<id>)
+  const openLineupId = searchParams.get("lineup");
+  useEffect(() => {
+    if (!openLineupId || !selectedGuildId) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.functions.invoke("get-lineup", { body: { lineup_id: openLineupId } });
+      if (cancelled) return;
+      if (error || !data?.success) {
+        toast.error("Couldn't open that lineup");
+        return;
       }
-    }
-  };
+      const f = (FORMATION_OPTIONS as string[]).includes(data.lineup.formation) ? data.lineup.formation as FormationType : formation;
+      setFormation(f);
+      setBoard(slotsToBoard([...(data.starters || []), ...(data.substitutes || [])], FORMATIONS[f].length));
+      setHistory({ past: [], future: [] });
+      setLineupName(data.lineup.name || "");
+      if (data.lineup.team_id) setLineupTeamId(data.lineup.team_id);
+      if (data.lineup.event_id) setLineupEventId(data.lineup.event_id);
+      if (data.lineup.event?.title) setLook(l => ({ ...l, subtitle: data.lineup.event.title }));
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openLineupId, selectedGuildId]);
 
-  const handlePlayerSelect = (player: LeaderboardPlayer) => {
-    if (selectedSlot === null) {
-      toast.error("Please select a position first");
-      return;
-    }
+  // Remember the graphic's look per server (browser only)
+  useEffect(() => {
+    if (!selectedGuildId) return;
+    try {
+      const saved = localStorage.getItem(`lineupLook:${selectedGuildId}`);
+      if (saved) setLook(l => ({ ...DEFAULT_LOOK, ...JSON.parse(saved), title: l.title, subtitle: l.subtitle }));
+    } catch { /* storage blocked */ }
+  }, [selectedGuildId]);
+  useEffect(() => {
+    if (!selectedGuildId) return;
+    try {
+      const { title: _t, subtitle: _s, ...rest } = look;
+      localStorage.setItem(`lineupLook:${selectedGuildId}`, JSON.stringify(rest));
+    } catch { /* storage blocked */ }
+  }, [look, selectedGuildId]);
 
-    const position = positions[selectedSlot].position;
-    const newSlot: LineupSlot = {
-      slot_index: selectedSlot,
-      position,
-      discord_user_id: player.discord_user_id,
-      discord_username: player.discord_username || undefined,
-      ea_username: player.ea_username || undefined,
-      rating: player.overall_rating,
-      is_substitute: false,
-    };
-
-    setSlots(prev => {
-      const filtered = prev.filter(s => s.slot_index !== selectedSlot);
-      return [...filtered, newSlot];
-    });
-    setSelectedSlot(null);
-  };
-
+  // The squad's name is the graphic's default title
+  const lineupTeamName = teams?.find(t => t.id === lineupTeamId)?.name;
+  useEffect(() => {
+    if (lineupTeamName && !look.title) setLook(l => ({ ...l, title: lineupName || `${lineupTeamName} Starting XI` }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineupTeamName]);
   // Upcoming events this lineup can be saved against
   const { data: upcomingEvents } = useQuery({
     queryKey: ["upcomingEvents", selectedGuildId],
@@ -449,14 +534,13 @@ export default function TeamsPage() {
     if (event?.team_id && !lineupTeamId) setLineupTeamId(event.team_id);
   }, [lineupEventId, upcomingEvents, lineupTeamId]);
 
-  // Fill the empty slots with the players in a voice channel, best position fits first.
-  // signedUpPositions (from an event's position sign-up) win over saved preferences.
+  // Fill the open spots with the players in a voice channel, best position fits first.
+  // signedUpPositions (from an event's position sign-up) win over position tiers, then saved preferences.
   const fillFromVoiceChannel = async (userIds: string[], signedUpPositions?: Map<string, string[]>) => {
     if (!selectedGuildId || !availablePlayers) return;
-    const assigned = new Set(slots.map(s => s.discord_user_id));
-    const candidates = availablePlayers.filter(p => userIds.includes(p.discord_user_id) && !assigned.has(p.discord_user_id));
+    const candidates = availablePlayers.filter(p => userIds.includes(p.discord_user_id) && !onBoard.has(p.discord_user_id));
     if (candidates.length === 0) {
-      toast.info("Everyone there is already on the pitch");
+      toast.info("Everyone there is already on the sheet");
       return;
     }
 
@@ -466,36 +550,37 @@ export default function TeamsPage() {
       .eq("guild_id", selectedGuildId)
       .in("user_id", candidates.map(p => p.discord_user_id));
     const prefsByUser = new Map((prefs || []).map(p => [p.user_id, p.preferences || []]));
+    // Comp position first, then the ones they play well, then emergency cover
+    const tierOrder = (id: string) => {
+      const t = positionTiers.get(id);
+      return t ? [t.primary, ...t.secondary, ...t.emergency].filter(Boolean) as string[] : null;
+    };
 
+    const occupied = new Set(board.starters.flatMap((id, i) => (id ? [i] : [])));
     const picks = autofillLineup(
       positions.map(p => p.position),
       candidates.map(p => ({
         discord_user_id: p.discord_user_id,
         overall_rating: p.overall_rating,
         preferences: signedUpPositions?.get(p.discord_user_id)
+          || tierOrder(p.discord_user_id)
           || prefsByUser.get(p.discord_user_id)
           || (p.primary_position ? [p.primary_position] : []),
       })),
       positionRatings || [],
-      new Set(slots.map(s => s.slot_index)),
+      occupied,
     );
 
-    const byId = new Map(candidates.map(p => [p.discord_user_id, p]));
-    const newSlots: LineupSlot[] = Array.from(picks.entries()).map(([slotIndex, userId]) => {
-      const player = byId.get(userId)!;
-      return {
-        slot_index: slotIndex,
-        position: positions[slotIndex].position,
-        discord_user_id: userId,
-        discord_username: player.discord_username || undefined,
-        ea_username: player.ea_username || undefined,
-        rating: player.overall_rating,
-        is_substitute: false,
-      };
-    });
-    setSlots(prev => [...prev, ...newSlots]);
-    const open = positions.length - slots.length - newSlots.length;
-    toast.success(`Placed ${newSlots.length} players${open > 0 ? `, ${open} spots still open` : ""}`);
+    const starters = [...board.starters];
+    for (const [slotIndex, userId] of picks.entries()) starters[slotIndex] = userId;
+    // Anyone left over waits on the bench
+    const placed = new Set(picks.values());
+    const bench = [...board.bench];
+    for (const p of candidates) if (!placed.has(p.discord_user_id) && bench.length < MAX_BENCH) bench.push(p.discord_user_id);
+    commitBoard({ starters, bench });
+    const open = starters.filter(s => !s).length;
+    const benched = bench.length - board.bench.length;
+    toast.success(`Placed ${picks.size} players${benched ? `, ${benched} on the bench` : ""}${open > 0 ? `, ${open} spots still open` : ""}`);
   };
 
   const handleFillFromVoice = async () => {
@@ -526,25 +611,26 @@ export default function TeamsPage() {
     }
   };
 
-  // Fill from the players who said Available for the chosen event
+  // Fill from the players who said Available for the chosen event (Maybes go to the bench)
   const handleFillFromEvent = async () => {
     if (!lineupEventId) return;
     setIsFillingFromEvent(true);
     try {
       const { data, error } = await supabase
         .from("player_availability")
-        .select("discord_user_id, position")
+        .select("discord_user_id, position, response")
         .eq("event_id", lineupEventId)
-        .eq("response", "yes");
+        .in("response", ["yes", "maybe"]);
       if (error) throw error;
-      if (!data?.length) {
+      const yes = (data || []).filter(r => r.response === "yes");
+      if (!yes.length) {
         toast.info("Nobody has said they're available for this event yet");
         return;
       }
       const signedUp = new Map(
-        data.filter(r => r.position).map(r => [r.discord_user_id, (r.position as string).split(",")]),
+        yes.filter(r => r.position).map(r => [r.discord_user_id, (r.position as string).split(",")]),
       );
-      await fillFromVoiceChannel(data.map(r => r.discord_user_id), signedUp);
+      await fillFromVoiceChannel(yes.map(r => r.discord_user_id), signedUp);
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -552,37 +638,27 @@ export default function TeamsPage() {
     }
   };
 
-  const handleRemoveLineupPlayer = (slotIndex: number) => {
-    setSlots(prev => prev.filter(s => s.slot_index !== slotIndex));
-  };
-
-  const handleReset = () => {
-    setSlots([]);
-    setSelectedSlot(null);
-    setLineupName("");
-    setLineupTeamId("");
-  };
-
-  const handleSaveLineup = async () => {
-    if (slots.length < 11) {
-      toast.error("Please fill all 11 positions");
-      return;
+  // Saves the board as a new lineup for the squad; returns its id (the saved one if nothing changed)
+  const handleSaveLineup = async (quiet = false): Promise<string | null> => {
+    if (savedLineup && savedLineup.board === board) {
+      if (!quiet) toast.info("Already saved");
+      return savedLineup.id;
     }
-
+    if (!filledCount) {
+      toast.error("Put at least one player on the pitch");
+      return null;
+    }
     if (!selectedGuildId) {
       toast.error("No guild selected");
-      return;
+      return null;
     }
-
     if (!lineupTeamId) {
-      toast.error("Please select a team to save this lineup to");
-      return;
+      toast.error("Please select a squad to save this lineup to");
+      return null;
     }
 
     const selectedLineupTeam = teams?.find(t => t.id === lineupTeamId);
-    const defaultName = selectedLineupTeam 
-      ? `${selectedLineupTeam.name} Starting XI` 
-      : "Untitled Lineup";
+    const defaultName = selectedLineupTeam ? `${selectedLineupTeam.name} Starting XI` : "Untitled Lineup";
 
     setIsLineupLoading(true);
     try {
@@ -590,31 +666,34 @@ export default function TeamsPage() {
         body: {
           guild_id: selectedGuildId,
           formation,
-          name: lineupName || defaultName,
+          name: lineupName || look.title || defaultName,
           team_id: lineupTeamId,
           event_id: lineupEventId || undefined,
-          slots: slots.map(s => ({
-            slot_index: s.slot_index,
-            position: s.position,
-            discord_user_id: s.discord_user_id,
-            is_substitute: s.is_substitute,
-          })),
+          slots: boardToSlots(board, positions.map(p => p.position)),
         },
       });
 
       if (error) throw error;
       if (!data.success) throw new Error(data.error || "Failed to save lineup");
 
-      toast.success(`Starting XI saved for ${selectedLineupTeam?.name || "team"}!`);
-      // Offer to announce it; the builder resets once the dialog closes
-      setSavedLineup({ id: data.lineup_id, name: lineupName || defaultName });
+      setSavedLineup({ id: data.lineup_id, name: lineupName || look.title || defaultName, board });
+      if (!quiet) toast.success(`Lineup saved for ${selectedLineupTeam?.name || "team"}`);
+      return data.lineup_id as string;
     } catch (error) {
       toast.error((error as Error).message);
+      return null;
     } finally {
       setIsLineupLoading(false);
     }
   };
 
+  // Post to Discord: save if anything changed, then pick the channel and send the graphic
+  const handlePostToDiscord = async () => {
+    const id = await handleSaveLineup(true);
+    if (id) setAnnounceOpen(true);
+  };
+
+  // Everything in the editor's graphic (title, pitch, cards, bench), as a PNG data URL
   const capturePitchImage = async (): Promise<string | null> => {
     if (!pitchRef.current) return null;
     try {
@@ -622,6 +701,8 @@ export default function TeamsPage() {
         backgroundColor: null,
         scale: 2,
         useCORS: true,
+        // Position-fit outlines help while picking; the posted graphic shouldn't show them
+        onclone: (doc) => doc.querySelectorAll<HTMLElement>("[data-fit]").forEach((el) => { el.style.borderColor = "transparent"; }),
       });
       return canvas.toDataURL("image/png");
     } catch (error) {
@@ -630,48 +711,31 @@ export default function TeamsPage() {
     }
   };
 
-  const handleAnnounceOpenChange = (open: boolean) => {
-    if (!open) {
-      setSavedLineup(null);
-      handleReset();
-    }
-  };
-
   const handleExportImage = async () => {
-    if (!pitchRef.current) {
-      toast.error("Nothing to export");
-      return;
-    }
-
     setIsExporting(true);
     try {
-      const canvas = await html2canvas(pitchRef.current, {
-        backgroundColor: null,
-        scale: 2,
-        useCORS: true,
-      });
-
+      const image = await capturePitchImage();
+      if (!image) throw new Error("Failed to export image");
       const selectedLineupTeam = teams?.find(t => t.id === lineupTeamId);
-      const fileName = selectedLineupTeam 
+      const link = document.createElement("a");
+      link.download = selectedLineupTeam
         ? `${selectedLineupTeam.name.replace(/\s+/g, "_")}_lineup.png`
         : `lineup_${formation.replace(/\s+/g, "_")}.png`;
-
-      const link = document.createElement("a");
-      link.download = fileName;
-      link.href = canvas.toDataURL("image/png");
+      link.href = image;
       link.click();
-
       toast.success("Lineup image downloaded!");
     } catch (error) {
-      console.error("Export error:", error);
-      toast.error("Failed to export image");
+      toast.error((error as Error).message);
     } finally {
       setIsExporting(false);
     }
   };
 
-  const avgRating = slots.length > 0
-    ? slots.reduce((sum, s) => sum + (s.rating || 0), 0) / slots.length
+  const starterIds = board.starters.filter(Boolean) as string[];
+  const filledCount = starterIds.length;
+  const onBoard = new Set([...starterIds, ...board.bench]);
+  const avgRating = filledCount > 0
+    ? starterIds.reduce((sum, id) => sum + (availablePlayers?.find(p => p.discord_user_id === id)?.overall_rating || 0), 0) / filledCount
     : 0;
 
   if (!selectedGuildId && !guildLoading) {
@@ -1015,229 +1079,110 @@ export default function TeamsPage() {
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : availablePlayers && availablePlayers.length > 0 ? (
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-5 lg:items-start">
-                {/* Formation Pitch */}
-                <div className="lg:col-span-3 space-y-4">
-                  <Card>
-                    <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0 p-4 pb-2 sm:p-6 sm:pb-2">
-                      <CardTitle>Formation</CardTitle>
-                      <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleFillFromVoice}
-                          disabled={isFillingFromVoice || slots.length >= positions.length}
-                        >
-                          {isFillingFromVoice ? (
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          ) : (
-                            <Headphones className="h-4 w-4 mr-2" />
-                          )}
-                          <span className="sm:hidden">Voice</span>
-                          <span className="hidden sm:inline">Fill from Voice</span>
+              <div className="space-y-4">
+                <LineupBoardEditor
+                  ref={pitchRef}
+                  board={board}
+                  formation={formation}
+                  players={availablePlayers}
+                  look={look}
+                  onLook={setLook}
+                  onMove={handleMove}
+                  onFormation={handleFormation}
+                  onPasteNames={handlePasteNames}
+                  onClear={() => commitBoard(emptyBoard(positions.length))}
+                  onUndo={undo}
+                  onRedo={redo}
+                  canUndo={history.past.length > 0}
+                  canRedo={history.future.length > 0}
+                  positionRating={getPositionRating}
+                  tiers={positionTiers}
+                  availability={eventAvailability}
+                  status={
+                    savedLineup && savedLineup.board === board
+                      ? <span className="text-emerald-600">● Saved</span>
+                      : <span>● Not saved</span>
+                  }
+                  toolbar={
+                    <>
+                      <Button variant="outline" size="sm" onClick={handleFillFromVoice} disabled={isFillingFromVoice || filledCount >= positions.length}>
+                        {isFillingFromVoice ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Headphones className="h-4 w-4 mr-2" />}
+                        Fill from Voice
+                      </Button>
+                      {lineupEventId && (
+                        <Button variant="outline" size="sm" onClick={handleFillFromEvent} disabled={isFillingFromEvent || filledCount >= positions.length}>
+                          {isFillingFromEvent ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CalendarCheck className="h-4 w-4 mr-2" />}
+                          Fill from Availability
                         </Button>
-                        {lineupEventId && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleFillFromEvent}
-                            disabled={isFillingFromEvent || slots.length >= positions.length}
-                          >
-                            {isFillingFromEvent ? (
-                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            ) : (
-                              <CalendarCheck className="h-4 w-4 mr-2" />
-                            )}
-                            <span className="sm:hidden">Availability</span>
-                            <span className="hidden sm:inline">Fill from Availability</span>
-                          </Button>
-                        )}
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={handleExportImage}
-                          disabled={slots.length === 0 || isExporting}
-                        >
-                          {isExporting ? (
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          ) : (
-                            <Download className="h-4 w-4 mr-2" />
-                          )}
-                          Export
-                        </Button>
-                        <Select value={formation} onValueChange={(v) => setFormation(v as FormationType)}>
-                          <SelectTrigger className="order-first col-span-2 w-full sm:order-none sm:w-40">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {FORMATION_OPTIONS.map((f) => (
-                              <SelectItem key={f} value={f}>{f}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-4 pt-2 sm:p-6 sm:pt-2">
-                      <div ref={pitchRef} className="mx-auto max-w-[540px]">
-                        <FormationPitch
-                          formation={formation}
-                          slots={slots}
-                          onSlotClick={handleSlotClick}
-                          selectedSlot={selectedSlot}
-                          positionRatings={positionRatings || []}
-                        />
-                      </div>
-                    </CardContent>
-                  </Card>
+                      )}
+                      <span className="ml-auto text-xs text-muted-foreground">Avg rating <strong className="text-foreground">{avgRating.toFixed(1)}</strong></span>
+                    </>
+                  }
+                  actions={
+                    <>
+                      <Button variant="secondary" onClick={() => handleSaveLineup()} disabled={!filledCount || isLineupLoading || !lineupTeamId}>
+                        {isLineupLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Save className="h-4 w-4 mr-1.5" />}
+                        Save
+                      </Button>
+                      <Button onClick={handlePostToDiscord} disabled={!filledCount || isLineupLoading || !lineupTeamId}>
+                        <Megaphone className="h-4 w-4 mr-1.5" />
+                        Post
+                      </Button>
+                      <Button variant="outline" onClick={handleExportImage} disabled={!filledCount || isExporting}>
+                        {isExporting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <Download className="h-4 w-4 mr-1.5" />}
+                        Image
+                      </Button>
+                    </>
+                  }
+                />
+                {!lineupTeamId && <p className="text-sm text-muted-foreground">Pick a squad below to save or post this lineup.</p>}
 
-                  {/* Save to Team */}
-                  <Card className="p-4">
-                    <div className="flex flex-wrap items-center gap-4">
+                {/* Save to Team */}
+                <Card className="p-4">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="text-sm font-medium mb-1.5 block">Squad</label>
+                      <Select value={lineupTeamId} onValueChange={setLineupTeamId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a team..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {teams?.map((team) => (
+                            <SelectItem key={team.id} value={team.id}>
+                              {team.name} {team.tag && `[${team.tag}]`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {!!upcomingEvents?.length && (
                       <div className="flex-1 min-w-[200px]">
-                        <label className="text-sm font-medium mb-1.5 block">Save as Starting XI for</label>
-                        <Select value={lineupTeamId} onValueChange={setLineupTeamId}>
+                        <label className="text-sm font-medium mb-1.5 block">For event (shows who's available)</label>
+                        <Select value={lineupEventId || "none"} onValueChange={(v) => setLineupEventId(v === "none" ? "" : v)}>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select a team..." />
+                            <SelectValue placeholder="No event" />
                           </SelectTrigger>
                           <SelectContent>
-                            {teams?.map((team) => (
-                              <SelectItem key={team.id} value={team.id}>
-                                {team.name} {team.tag && `[${team.tag}]`}
+                            <SelectItem value="none">No event</SelectItem>
+                            {upcomingEvents.map((e) => (
+                              <SelectItem key={e.id} value={e.id}>
+                                {eventKind(e.title)} · {e.title} · {format(new Date(e.scheduled_at), "EEE d MMM, HH:mm")}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
-                      {!!upcomingEvents?.length && (
-                        <div className="flex-1 min-w-[200px]">
-                          <label className="text-sm font-medium mb-1.5 block">For event (optional)</label>
-                          <Select value={lineupEventId || "none"} onValueChange={(v) => setLineupEventId(v === "none" ? "" : v)}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="No event" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">No event</SelectItem>
-                              {upcomingEvents.map((e) => (
-                                <SelectItem key={e.id} value={e.id}>
-                                  {eventKind(e.title)} · {e.title} · {format(new Date(e.scheduled_at), "EEE d MMM, HH:mm")}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-[200px]">
-                        <label className="text-sm font-medium mb-1.5 block">Lineup Name (optional)</label>
-                        <Input
-                          placeholder={lineupTeamId ? `${teams?.find(t => t.id === lineupTeamId)?.name || ''} Starting XI` : "Lineup name..."}
-                          value={lineupName}
-                          onChange={(e) => setLineupName(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  </Card>
-
-                  {/* Actions */}
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span>Players: <strong className="text-foreground">{slots.length}/11</strong></span>
-                      <span>Avg Rating: <strong className="text-foreground">{avgRating.toFixed(1)}</strong></span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button onClick={handleReset} variant="outline">
-                        <RotateCcw className="h-4 w-4 mr-2" />
-                        Reset
-                      </Button>
-                      <Button 
-                        onClick={handleSaveLineup} 
-                        disabled={slots.length < 11 || isLineupLoading || !lineupTeamId}
-                      >
-                        {isLineupLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                        <Save className="h-4 w-4 mr-2" />
-                        Publish Lineup
-                      </Button>
+                    )}
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="text-sm font-medium mb-1.5 block">Lineup name (optional)</label>
+                      <Input
+                        placeholder={lineupTeamId ? `${teams?.find(t => t.id === lineupTeamId)?.name || ''} Starting XI` : "Lineup name..."}
+                        value={lineupName}
+                        onChange={(e) => setLineupName(e.target.value)}
+                      />
                     </div>
                   </div>
-                </div>
-
-                {/* Player Pool */}
-                <div ref={poolRef} className="scroll-mt-20 lg:sticky lg:top-24 lg:col-span-2">
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="flex items-center justify-between">
-                        <span>Available Players</span>
-                        <Badge variant="secondary">{filteredLineupPlayers.length}</Badge>
-                      </CardTitle>
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          placeholder="Search players..."
-                          value={lineupSearchQuery}
-                          onChange={(e) => setLineupSearchQuery(e.target.value)}
-                          className="pl-9"
-                        />
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                      <ScrollArea className="h-[420px] px-4 pb-4 lg:h-[calc(100vh-15rem)]">
-                        <div className="space-y-2">
-                          {selectedSlot !== null && (
-                            <div className="sticky top-0 bg-card py-2 z-10 border-b">
-                              <p className="text-sm text-muted-foreground">
-                                Select player for <Badge variant="default">{positions[selectedSlot].position}</Badge>
-                              </p>
-                            </div>
-                          )}
-                          {filteredLineupPlayers.map((player) => (
-                            <PlayerCard
-                              key={player.discord_user_id}
-                              player={player}
-                              compact
-                              onClick={() => handlePlayerSelect(player)}
-                            />
-                          ))}
-                          {filteredLineupPlayers.length === 0 && (
-                            <p className="text-center text-muted-foreground py-8">
-                              No players available
-                            </p>
-                          )}
-                        </div>
-                      </ScrollArea>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Selected Players */}
-                {slots.length > 0 && (
-                  <div className="lg:col-span-5">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Selected Players</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-wrap gap-2">
-                          {slots.sort((a, b) => a.slot_index - b.slot_index).map((slot) => (
-                            <Badge 
-                              key={slot.slot_index} 
-                              variant="secondary"
-                              className="flex items-center gap-2 py-1.5 px-3"
-                            >
-                              <span className="font-bold">{slot.position}</span>
-                              <span>{slot.discord_username || slot.ea_username || "Unknown"}</span>
-                              <span className="text-primary font-bold">{slot.rating?.toFixed(0)}</span>
-                              <button
-                                onClick={() => handleRemoveLineupPlayer(slot.slot_index)}
-                                className="hover:text-destructive"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </Badge>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                )}
+                </Card>
               </div>
             ) : (
               <Card>
@@ -1275,8 +1220,8 @@ export default function TeamsPage() {
       </Dialog>
       {selectedGuildId && (
         <AnnounceLineupDialog
-          open={!!savedLineup}
-          onOpenChange={handleAnnounceOpenChange}
+          open={announceOpen && !!savedLineup}
+          onOpenChange={setAnnounceOpen}
           guildId={selectedGuildId}
           lineupId={savedLineup?.id ?? null}
           lineupName={savedLineup?.name ?? ""}
