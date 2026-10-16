@@ -108,6 +108,7 @@ const AREAS = [
       { id: 'mn_reliability', label: 'Reliability', emoji: '📈', cmd: 'reliability', ask: true },
       { id: 'mn_attendance', label: 'Attendance', emoji: '🧾', cmd: 'attendance' },
       { id: 'mn_lfg', label: 'Find a Friendly', emoji: '🤝', cmd: 'lfg', ask: true },
+      { id: 'mn_netclubs', label: 'Network Clubs', emoji: '🌐', cmd: 'network', sub: 'clubs' },
       { id: 'mn_autopilot', label: 'Autopilot', emoji: '🤖', cmd: 'autopilot' },
     ],
   },
@@ -238,6 +239,9 @@ const AREAS = [
       { id: 'ad_twitchlist', label: 'Twitch List', emoji: '📃', cmd: 'twitchlist' },
       { id: 'ad_pending', label: 'Pending Wins', emoji: '⏳', cmd: 'pendingwins' },
       { id: 'ad_verify', label: 'Verify a Win', emoji: '✔️', cmd: 'verifywin' },
+      { id: 'ad_network', label: 'Network Setup', emoji: '🌐', cmd: 'network', sub: 'setup', perm: F.ManageGuild, ask: true },
+      { id: 'ad_netstatus', label: 'Network Status', emoji: '🛰️', cmd: 'network', sub: 'status' },
+      { id: 'ad_netsuspend', label: 'Owner: Network Suspend', emoji: '⛔', cmd: 'network', sub: 'suspend', ask: true },
     ],
   },
 ];
