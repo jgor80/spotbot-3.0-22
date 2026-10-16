@@ -41,3 +41,25 @@ test('clubLine shows only public club info', () => {
   assert.strictEqual(line, '**Palermo Pros** · PS5 / Xbox Series / PC · Div 3 · SR 1450 · 10W 2D 4L · Europe');
   assert.match(clubLine({ name: 'New FC' }), /no EA stats yet/);
 });
+
+const { faMatches, isOpen } = require('./network-replacements.cjs');
+
+test('faMatches: main or second position, same EA platform, still listed and contactable', () => {
+  const now = Date.parse('2026-10-16T20:00:00Z');
+  const req = { position: 'CB', platform: 'common-gen5' };
+  const fa = { status: 'looking', no_contact: false, updated_at: '2026-10-10T00:00:00Z', position: 'CB', platform: 'ps5' };
+  assert.ok(faMatches(fa, req, now));
+  assert.ok(faMatches({ ...fa, position: 'RB', secondary_position: 'CB', platform: 'xbox-series-xs' }, req, now));
+  assert.ok(!faMatches({ ...fa, position: 'ST' }, req, now));
+  assert.ok(!faMatches({ ...fa, platform: 'switch' }, req, now));
+  assert.ok(!faMatches({ ...fa, no_contact: true }, req, now));
+  assert.ok(!faMatches({ ...fa, status: 'off' }, req, now));
+  assert.ok(!faMatches({ ...fa, updated_at: '2026-09-01T00:00:00Z' }, req, now));
+});
+
+test('isOpen: open until it expires', () => {
+  const now = Date.parse('2026-10-16T20:00:00Z');
+  assert.ok(isOpen({ status: 'open', expires_at: '2026-10-16T21:00:00Z' }, now));
+  assert.ok(!isOpen({ status: 'open', expires_at: '2026-10-16T19:00:00Z' }, now));
+  assert.ok(!isOpen({ status: 'filled', expires_at: '2026-10-16T21:00:00Z' }, now));
+});

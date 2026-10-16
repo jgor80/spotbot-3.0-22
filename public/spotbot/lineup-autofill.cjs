@@ -20,9 +20,18 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/lib/botLineup.ts
 var botLineup_exports = {};
 __export(botLineup_exports, {
+  BENCH_SLOT_OFFSET: () => BENCH_SLOT_OFFSET,
+  FORMATION_COORDS: () => FORMATION_COORDS,
   FORMATION_SLOTS: () => FORMATION_SLOTS,
+  MAX_BENCH: () => MAX_BENCH,
   autofillLineup: () => autofillLineup,
-  getPositionRatingCategory: () => getPositionRatingCategory
+  boardFromNames: () => boardFromNames,
+  boardToSlots: () => boardToSlots,
+  getPositionRatingCategory: () => getPositionRatingCategory,
+  locate: () => locate,
+  movePlayer: () => movePlayer,
+  resizeBoard: () => resizeBoard,
+  slotsToBoard: () => slotsToBoard
 });
 module.exports = __toCommonJS(botLineup_exports);
 
@@ -467,13 +476,129 @@ function autofillLineup(slotPositions, players, positionRatings, lockedSlots = /
   return result;
 }
 
+// src/lib/lineupBoard.ts
+var MAX_BENCH = 9;
+function locate(state, playerId) {
+  const p = state.starters.indexOf(playerId);
+  if (p >= 0) return { zone: "pitch", index: p };
+  const b = state.bench.indexOf(playerId);
+  if (b >= 0) return { zone: "bench", index: b };
+  return { zone: "pool" };
+}
+function movePlayer(state, playerId, to) {
+  if (!playerId) return state;
+  const from = locate(state, playerId);
+  const starters = [...state.starters];
+  const bench = [...state.bench];
+  if (to.zone === "pool") {
+    if (from.zone === "pool") return state;
+    if (from.zone === "pitch") starters[from.index] = null;
+    else bench.splice(from.index, 1);
+    return { starters, bench };
+  }
+  if (to.zone === "pitch") {
+    if (to.index < 0 || to.index >= starters.length) return state;
+    if (from.zone === "pitch" && from.index === to.index) return state;
+    const occupant = starters[to.index];
+    starters[to.index] = playerId;
+    if (from.zone === "pitch") {
+      starters[from.index] = occupant;
+    } else if (from.zone === "bench") {
+      if (occupant) bench[from.index] = occupant;
+      else bench.splice(from.index, 1);
+    } else if (occupant && bench.length < MAX_BENCH) {
+      bench.push(occupant);
+    }
+    return { starters, bench };
+  }
+  const target = to.index;
+  if (from.zone === "pitch" && target !== void 0 && target >= 0 && target < bench.length) {
+    starters[from.index] = bench[target];
+    bench[target] = playerId;
+    return { starters, bench };
+  }
+  if (from.zone === "bench") {
+    if (target === void 0 || target === from.index) return state;
+    bench.splice(from.index, 1);
+    bench.splice(Math.min(Math.max(target, 0), bench.length), 0, playerId);
+    return { starters, bench };
+  }
+  if (bench.length >= MAX_BENCH) return state;
+  if (from.zone === "pitch") starters[from.index] = null;
+  const at = target === void 0 ? bench.length : Math.min(Math.max(target, 0), bench.length);
+  bench.splice(at, 0, playerId);
+  return { starters, bench };
+}
+function resizeBoard(state, slotCount) {
+  const starters = state.starters.slice(0, slotCount);
+  while (starters.length < slotCount) starters.push(null);
+  const bench = [...state.bench];
+  for (const id of state.starters.slice(slotCount)) if (id && bench.length < MAX_BENCH) bench.push(id);
+  return { starters, bench };
+}
+var norm = (s) => s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+function boardFromNames(text, players, slotCount) {
+  const lines = String(text || "").split(/\r?\n/).map((l) => l.replace(/^\s*\d{1,2}\s*[.)\-:]?\s+/, "").trim()).filter(Boolean).slice(0, slotCount + MAX_BENCH);
+  const used = /* @__PURE__ */ new Set();
+  const unmatched = [];
+  const find = (line) => {
+    const q = norm(line);
+    if (!q) return null;
+    const free = players.filter((p) => !used.has(p.id));
+    const keys = (p) => p.names.filter(Boolean).map((n) => norm(n)).filter(Boolean);
+    const hit = free.find((p) => keys(p).some((k) => k === q)) || free.find((p) => keys(p).some((k) => k.startsWith(q))) || (q.length >= 3 ? free.find((p) => keys(p).some((k) => k.includes(q))) : void 0);
+    return hit?.id ?? null;
+  };
+  const starters = Array(slotCount).fill(null);
+  const bench = [];
+  lines.forEach((line, i) => {
+    const id = find(line);
+    if (!id) {
+      unmatched.push(line);
+      return;
+    }
+    used.add(id);
+    if (i < slotCount) starters[i] = id;
+    else bench.push(id);
+  });
+  return { state: { starters, bench }, unmatched };
+}
+var BENCH_SLOT_OFFSET = 11;
+function boardToSlots(state, positions) {
+  return [
+    ...state.starters.flatMap((id, i) => id ? [{ slot_index: i, position: positions[i] || "SUB", discord_user_id: id, is_substitute: false }] : []),
+    ...state.bench.map((id, k) => ({ slot_index: BENCH_SLOT_OFFSET + k, position: "SUB", discord_user_id: id, is_substitute: true }))
+  ];
+}
+function slotsToBoard(slots, slotCount) {
+  const starters = Array(slotCount).fill(null);
+  const bench = [];
+  for (const s of [...slots].sort((a, b) => a.slot_index - b.slot_index)) {
+    if (!s.is_substitute && s.slot_index < slotCount && !starters[s.slot_index]) starters[s.slot_index] = s.discord_user_id;
+    else if (bench.length < MAX_BENCH && !bench.includes(s.discord_user_id) && !starters.includes(s.discord_user_id)) bench.push(s.discord_user_id);
+  }
+  return { starters, bench };
+}
+
 // src/lib/botLineup.ts
 var FORMATION_SLOTS = Object.fromEntries(
   Object.entries(FORMATIONS).map(([name, slots]) => [name, slots.map((s) => s.position)])
 );
+var FORMATION_COORDS = Object.fromEntries(
+  Object.entries(FORMATIONS).map(([name, slots]) => [name, slots.map((s) => ({ position: s.position, x: s.x, y: s.y }))])
+);
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  BENCH_SLOT_OFFSET,
+  FORMATION_COORDS,
   FORMATION_SLOTS,
+  MAX_BENCH,
   autofillLineup,
-  getPositionRatingCategory
+  boardFromNames,
+  boardToSlots,
+  getPositionRatingCategory,
+  locate,
+  movePlayer,
+  resizeBoard,
+  slotsToBoard
 });

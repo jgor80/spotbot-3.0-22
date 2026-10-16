@@ -43,6 +43,7 @@ const { createRoster, ROSTER_COMMANDS } = require('./roster.cjs');
 const positionTiersLib = require('./position-tiers.cjs');
 const { createMatchNight, MATCHNIGHT_COMMANDS } = require('./matchnight.cjs');
 const { createEventLineup } = require('./event-lineup.cjs');
+const { createLineupBoard } = require('./lineup-board.cjs');
 const { createClubSetup, SETUP_COMMANDS } = require('./club-setup.cjs');
 const { createProPhotos, PRO_PHOTO_COMMANDS } = require('./pro-photos.cjs');
 const { createAiAccess, AI_ACCESS_COMMANDS } = require('./ai-access.cjs');
@@ -50,6 +51,7 @@ const { createGraphicsStudio } = require('./graphics-studio.cjs');
 const { createAutopilot, AUTOPILOT_COMMANDS } = require('./autopilot.cjs');
 const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
 const { createNetwork, NETWORK_COMMANDS } = require('./network.cjs');
+const { createReplacements } = require('./network-replacements.cjs');
 const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
@@ -443,7 +445,9 @@ const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isMana
 
 const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents, saveGuildSettings, searchClubCandidates: (n, p) => searchClubCandidates(n, p), linkEaClub: (...a) => linkEaClub(...a), clubPickerReply: (...a) => clubPickerReply(...a) });
 
-const eventLineup = createEventLineup({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, getUserPrefs: (g, u) => getUserPrefs(g, u), getGuildState });
+// Team Sheet → Edit Lineup (pick-and-drop swaps in Discord) and the pitch image every lineup post carries
+const lineupBoard = createLineupBoard({ supabase, callEdgeFunction, getGuildState, resolveClub, canManageClub: squads.canManageClub, dashboardUrl: DASHBOARD_URL });
+const eventLineup = createEventLineup({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, getUserPrefs: (g, u) => getUserPrefs(g, u), getGuildState, lineupImage: lineupBoard.imageForLineup });
 const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState, positionTiers });
 
 const autoLink = createAutoLink({ supabase, getGuildState, isManager });
@@ -452,6 +456,7 @@ const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL 
 const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, positionTiers });
 const network = createNetwork({ supabase, getGuildState, isManager });
+createReplacements({ supabase, getGuildState, network, recruitment, canManageClub: squads.canManageClub });
 
 const scouting = createScouting({ supabase, getGuildState, recruitment });
 
@@ -472,7 +477,8 @@ const managerHub = createManagerHub({
   syncClubHistory,
   buildLeaderboardEmbed,
   dashboardUrl: DASHBOARD_URL,
-  buildEventList: clubEvents.buildEventList
+  buildEventList: clubEvents.buildEventList,
+  lineupImage: lineupBoard.imageForLineup
 });
 
 // Voice check-ins, the auto-drafted XI, match recaps, sub requests on drop-outs and the Monday digest
@@ -4404,6 +4410,7 @@ async function routeInteraction(interaction) {
     if (await aiAccess.handleInteraction(interaction)) return;
     if (await graphicsStudio.handleInteraction(interaction)) return;
     if (await funZone.handleInteraction(interaction)) return;
+    if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;
     // Match night: /checkin, /sub, /reliability, check-in and sub request buttons

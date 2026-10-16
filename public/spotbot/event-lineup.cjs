@@ -3,8 +3,9 @@
 // the bot sends a "join the voice channel" DM 30 minutes before and at kick-off to anyone not
 // already in voice.
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { FORMATION_SLOTS, autofillLineup } = require('./lineup-autofill.cjs');
+const { splitPositions } = require('./event-board.cjs');
 
 const DEFAULT_FORMATION = '4-3-3 FLAT';
 const BENCH_OFFSET = 100;
@@ -20,13 +21,21 @@ function createEventLineup(deps) {
     return club && canManageClub ? canManageClub(interaction.member, club) : isManager(interaction.member);
   }
 
-  // Available first, then Maybe
+  // Available first, then Maybe, each with the positions shown on the availability board:
+  // what they signed up for (position sign-up events), then primary, secondary and emergency.
   async function poolFor(event) {
-    const responses = await events.loadResponses(event.id);
-    return [
-      ...responses.filter((r) => r.response === 'yes').map((r) => ({ id: r.discord_user_id, answer: 'yes', note: r.note })),
-      ...responses.filter((r) => r.response === 'maybe').map((r) => ({ id: r.discord_user_id, answer: 'maybe', note: r.note })),
-    ];
+    const responses = (await events.loadResponses(event.id)).filter((r) => r.response === 'yes' || r.response === 'maybe');
+    const known = events.playerPositions ? await events.playerPositions(event, responses.map((r) => r.discord_user_id)).catch(() => new Map()) : new Map();
+    const entry = (r) => {
+      const usual = known.get(r.discord_user_id);
+      const positions = [...new Set([...splitPositions(r.response === 'yes' ? r.position : null), usual?.primary, ...(usual?.secondary || []), ...(usual?.emergency || [])].filter(Boolean))];
+      return { id: r.discord_user_id, answer: r.response, note: r.note, positions };
+    };
+    return [...responses.filter((r) => r.response === 'yes').map(entry), ...responses.filter((r) => r.response === 'maybe').map(entry)];
+  }
+
+  function posLabel(p) {
+    return p?.positions?.length ? p.positions.slice(0, 3).join('/') : '';
   }
 
   async function autofill(event, formation, pool) {
@@ -36,7 +45,7 @@ function createEventLineup(deps) {
       players.push({
         discord_user_id: p.id,
         overall_rating: p.answer === 'yes' ? 70 : 55,
-        preferences: getUserPrefs ? await getUserPrefs(event.guild_id, p.id).catch(() => []) : [],
+        preferences: [...new Set([...(p.positions || []), ...(getUserPrefs ? await getUserPrefs(event.guild_id, p.id).catch(() => []) : [])])],
       });
     }
     return autofillLineup(slotPositions, players, []);
@@ -61,7 +70,7 @@ function createEventLineup(deps) {
       .setTitle(`📋 Lineup · ${event.title}`)
       .setColor(0x3b82f6)
       .setDescription(`📐 **${d.formation}** · ${d.slots.size}/${positions.length} filled\n\n${lines.join('\n')}`)
-      .addFields({ name: `🪑 Bench (${bench.length})`, value: bench.map((p) => `<@${p.id}>${p.answer === 'maybe' ? ' ❓' : ''}${p.note ? ` 📝 *${p.note.slice(0, 50)}*` : ''}`).join('\n').slice(0, 1024) || '–' })
+      .addFields({ name: `🪑 Bench (${bench.length})`, value: bench.map((p) => `<@${p.id}>${posLabel(p) ? ` · ${posLabel(p)}` : ''}${p.answer === 'maybe' ? ' ❓' : ''}${p.note ? ` 📝 *${p.note.slice(0, 50)}*` : ''}`).join('\n').slice(0, 1024) || '–' })
       .setFooter({ text: 'Pick a position, then a player. ❓ = answered Maybe. Publish posts it and DMs everyone.' });
 
     const fNames = Object.keys(FORMATION_SLOTS);
@@ -81,7 +90,14 @@ function createEventLineup(deps) {
       ),
     ];
     if (d.selectedSlot != null) {
-      const opts = [{ label: '— Leave empty —', value: 'none' }, ...d.pool.map((p) => ({ label: `${nameOf(guild, p.id)}${p.answer === 'maybe' ? ' (maybe)' : ''}${used.has(p.id) ? ' · in XI' : ''}`.slice(0, 100), value: p.id }))].slice(0, 25);
+      // Players who list this position come first, best fit (primary) at the top
+      const slotPos = positions[d.selectedSlot];
+      const fit = (p) => {
+        const i = (p.positions || []).indexOf(slotPos);
+        return i === -1 ? 99 : i;
+      };
+      const ordered = [...d.pool].sort((x, y) => fit(x) - fit(y));
+      const opts = [{ label: '— Leave empty —', value: 'none' }, ...ordered.map((p) => ({ label: `${nameOf(guild, p.id)}${posLabel(p) ? ` · ${posLabel(p)}` : ''}${p.answer === 'maybe' ? ' (maybe)' : ''}${used.has(p.id) ? ' · in XI' : ''}`.slice(0, 100), value: p.id }))].slice(0, 25);
       rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`evl_player:${event.id}`).setPlaceholder(`Who plays ${positions[d.selectedSlot]}?`).addOptions(opts)));
     }
     rows.push(
@@ -192,7 +208,11 @@ function createEventLineup(deps) {
     const channel = await client.channels.fetch(event.channel_id).catch(() => null);
     if (!channel?.send) return false;
     const mentions = lineup.slots.map((s) => `<@${s.discord_user_id}>`).join(' ');
-    const msg = await channel.send({ content: mentions.slice(0, 1900), embeds: [lineupEmbed(event, lineup)], components: [confirmRow(lineup.id)], allowedMentions: { users: lineup.slots.map((s) => s.discord_user_id) } }).catch(() => null);
+    // The pitch image (player cards, bench) from lineup-board.cjs; the post goes out without it if it can't be drawn
+    const png = deps.lineupImage ? await deps.lineupImage(lineup.id, { subtitle: event.title }) : null;
+    const embed = lineupEmbed(event, lineup);
+    if (png) embed.setImage('attachment://lineup.png');
+    const msg = await channel.send({ content: mentions.slice(0, 1900), embeds: [embed], components: [confirmRow(lineup.id)], files: png ? [new AttachmentBuilder(png, { name: 'lineup.png' })] : [], allowedMentions: { users: lineup.slots.map((s) => s.discord_user_id) } }).catch(() => null);
     if (!msg) return false;
     await supabase.from('lineups').update({ message_id: msg.id, channel_id: channel.id }).eq('id', lineup.id);
     return true;
@@ -205,7 +225,10 @@ function createEventLineup(deps) {
     if (!lineup?.message_id || !event || !client) return;
     const channel = await client.channels.fetch(lineup.channel_id).catch(() => null);
     const msg = await channel?.messages?.fetch(lineup.message_id).catch(() => null);
-    await msg?.edit({ embeds: [lineupEmbed(event, lineup)], components: [confirmRow(lineup.id)] }).catch(() => {});
+    const embed = lineupEmbed(event, lineup);
+    // Keep the pitch image the post went out with
+    if (msg?.attachments?.some?.((a) => a.name === 'lineup.png')) embed.setImage('attachment://lineup.png');
+    await msg?.edit({ embeds: [embed], components: [confirmRow(lineup.id)] }).catch(() => {});
   }
 
   async function dmPlayer(event, lineup, row) {

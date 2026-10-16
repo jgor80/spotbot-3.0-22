@@ -501,9 +501,11 @@ function createManagerHub(deps) {
           `${count ?? 0} starters picked${lineup.team_avg_rating ? `, average rating ${Math.round(lineup.team_avg_rating)}` : ''}.`
       );
       buttons.push(
-        new ButtonBuilder().setCustomId(`hub_announce:${lineup.id}:${club.key}`).setLabel('Announce Lineup').setEmoji('📢').setStyle(ButtonStyle.Success)
+        new ButtonBuilder().setCustomId(`hub_announce:${lineup.id}:${club.key}`).setLabel('Announce Lineup').setEmoji('📢').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`lb_open:${lineup.id}:${club.key}`).setLabel('Edit Lineup').setEmoji('🔀').setStyle(ButtonStyle.Primary)
       );
     } else {
+      buttons.push(new ButtonBuilder().setCustomId(`lb_open:new:${club.key}`).setLabel('Build Lineup').setEmoji('🔀').setStyle(ButtonStyle.Primary));
       embed.setDescription(
         club.team_id
           ? 'No lineup saved for this squad yet. In the Lineup Builder, pick this squad when you save.'
@@ -512,7 +514,7 @@ function createManagerHub(deps) {
     }
     if (dashboardUrl) {
       buttons.push(
-        new ButtonBuilder().setURL(`${dashboardUrl.replace(/\/$/, '')}/teams`).setLabel('Open Lineup Builder').setStyle(ButtonStyle.Link)
+        new ButtonBuilder().setURL(`${dashboardUrl.replace(/\/$/, '')}/lineup${lineup ? `?lineup=${lineup.id}` : ''}`).setLabel('Drag & drop on the web').setStyle(ButtonStyle.Link)
       );
     }
     return { embeds: [embed], components: buttons.length ? [new ActionRowBuilder().addComponents(buttons)] : [] };
@@ -531,9 +533,11 @@ function createManagerHub(deps) {
     const { data: previous } = await query.maybeSingle();
     const channelId = previous?.channel_id || interaction.channelId;
 
+    // The pitch image with everyone's player cards, as on the web editor
+    const png = deps.lineupImage ? await deps.lineupImage(lineupId) : null;
     const { error, data } = await callEdgeFunction(
       'announce-lineup',
-      { action: 'announce', lineup_id: lineupId, channel_id: channelId, mention_players: true, dm_players: false, message: '' },
+      { action: 'announce', lineup_id: lineupId, channel_id: channelId, mention_players: true, dm_players: false, message: '', image_base64: png ? Buffer.from(png).toString('base64') : undefined },
       30000
     );
     if (error || !data?.success) throw new Error(error || data?.error || 'unknown error');
