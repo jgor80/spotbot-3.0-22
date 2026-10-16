@@ -38,7 +38,8 @@ function load(name) {
 }
 
 // Lovable AI gateway → your own keys, routed for quality per cost:
-//  - images (Graphics Studio, player cards): OpenAI gpt-image-1, best likeness edits; AI_IMAGE_QUALITY (default medium)
+//  - images (Graphics Studio, player cards): OpenAI gpt-image-1, best likeness edits; AI_IMAGE_QUALITY (default medium),
+//    reference edits at AI_IMAGE_FIDELITY (default high)
 //  - vision with strict JSON (pro-photo checks): OpenAI Responses, AI_VISION_MODEL (default gpt-5-mini)
 //  - plain chat text (match analysis): Gemini Flash when GEMINI_API_KEY is set (cheapest), else Claude Haiku, else OpenAI
 const GATEWAY = 'https://ai.gateway.lovable.dev';
@@ -69,9 +70,22 @@ async function routeAi(url, init = {}) {
     headers.set('Authorization', `Bearer ${need('OPENAI_API_KEY')}`);
     const model = process.env.AI_IMAGE_MODEL || 'gpt-image-1';
     const quality = process.env.AI_IMAGE_QUALITY || 'medium';
-    if (body && typeof body.set === 'function') { body.set('model', model); if (!body.get('quality')) body.set('quality', quality); }
-    else { const j = jsonBody(init) || {}; j.model = model; j.quality ??= quality; body = JSON.stringify(j); }
-    const res = await originalFetch('https://api.openai.com' + pathPart, { ...init, headers, body });
+    // Edits from a player's uploads ask for high input fidelity so the face, hair, beard and glasses
+    // stay as close to the reference as the model allows (AI_IMAGE_FIDELITY=low to save cost).
+    const fidelity = process.env.AI_IMAGE_FIDELITY || 'high';
+    const isEdit = pathPart.startsWith('/v1/images/edits');
+    if (body && typeof body.set === 'function') {
+      body.set('model', model);
+      if (!body.get('quality')) body.set('quality', quality);
+      if (isEdit && fidelity !== 'off' && !body.get('input_fidelity')) body.set('input_fidelity', fidelity);
+    } else { const j = jsonBody(init) || {}; j.model = model; j.quality ??= quality; body = JSON.stringify(j); }
+    let res = await originalFetch('https://api.openai.com' + pathPart, { ...init, headers, body });
+    // Models without input_fidelity reject it; retry once without rather than failing the graphic.
+    if (res.status === 400 && body && typeof body.delete === 'function' && body.get('input_fidelity')
+      && /input_fidelity/i.test(await res.clone().text().catch(() => ''))) {
+      body.delete('input_fidelity');
+      res = await originalFetch('https://api.openai.com' + pathPart, { ...init, headers, body });
+    }
     if (!res.ok) {
       const detail = await res.clone().text().catch(() => '');
       console.warn(`[ai] OpenAI ${pathPart} ${res.status} (model ${model}): ${detail.slice(0, 300)}`);

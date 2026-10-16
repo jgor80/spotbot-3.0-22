@@ -11,6 +11,7 @@ const { toInsightMatches, matchTag, competitionLabel } = require('./club-insight
 const { seasonTotals, lineOf, leaders, num } = require('./player-season.cjs');
 const G = require('./graphics.cjs');
 const { identityOf } = require('./club-identity.cjs');
+const { stillInGuild } = require('./art-players.cjs');
 const T = require('./event-time.cjs');
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -176,10 +177,12 @@ function createBroadcast(deps) {
     await Promise.all(
       (data || []).map(async (p) => {
         if (!p.ea_username || String(p.discord_user_id).startsWith('ea_')) return;
+        const member = guild ? await guild.members.fetch(p.discord_user_id).catch(() => null) : null;
+        // Nobody who has left the server is pictured
+        if (guild && !member) return;
         const pro = photoBy.get(p.discord_user_id);
         const proImg = pro ? await G.fetchImage(pro) : null;
         if (proImg) return out.set(p.ea_username.toLowerCase(), proImg);
-        const member = guild ? await guild.members.fetch(p.discord_user_id).catch(() => null) : null;
         const url = member?.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
         const img = url ? await G.fetchImage(url) : null;
         if (img) out.set(p.ea_username.toLowerCase(), img);
@@ -191,12 +194,13 @@ function createBroadcast(deps) {
   // Each player's pro-photo assets of one kind (newest first), keyed by lowercase gamertag.
   //   'upload'     their own original photos (falls back to the latest-photo compatibility record)
   //   'generated'  the rendered art the Studio made for their player cards from those photos
-  async function assetsFor(names, kind) {
+  //   guildId      when given, players who have left that server are skipped
+  async function assetsFor(names, kind, guildId) {
     const out = new Map();
     if (!names.length) return out;
     const { data: profiles } = await supabase.from('profiles').select('discord_user_id, ea_username').in('ea_username', names);
     const byId = new Map((profiles || []).filter((p) => p.ea_username && /^\d{5,25}$/.test(p.discord_user_id)).map((p) => [p.discord_user_id, p.ea_username.toLowerCase()]));
-    const ids = [...byId.keys()];
+    const ids = guildId ? await stillInGuild(client()?.guilds.cache.get(guildId), [...byId.keys()]) : [...byId.keys()];
     if (!ids.length) return out;
     const [{ data: assets }, { data: latest }] = await Promise.all([
       supabase.from('pro_photo_assets').select('discord_user_id, image_url').in('discord_user_id', ids).eq('source_kind', kind).order('created_at', { ascending: false }).limit(300),
@@ -210,7 +214,7 @@ function createBroadcast(deps) {
     }
     return out;
   }
-  const uploadsFor = (names) => assetsFor(names, 'upload');
+  const uploadsFor = (names, guildId) => assetsFor(names, 'upload', guildId);
 
   // First of a player's uploads that loads, rotated by seed so back-to-back posts vary
   async function photoOf(urls, seed = '') {
@@ -225,8 +229,8 @@ function createBroadcast(deps) {
   }
 
   // Recap backdrop: an original upload from someone in this match, Man of the Match first
-  async function backgroundFor(names, seed = '') {
-    const uploads = await uploadsFor(names);
+  async function backgroundFor(names, seed = '', guildId) {
+    const uploads = await uploadsFor(names, guildId);
     for (const n of names) {
       const urls = uploads.get(n.toLowerCase());
       const img = urls ? await photoOf(urls, seed) : null;
@@ -240,7 +244,7 @@ function createBroadcast(deps) {
   async function editionImage({ guildId, club, cover, prefs = {} }) {
     if (!(await premium.isPremium(guildId))) return null;
     const names = cover.coverStars.map((s) => s.name);
-    const [renders, uploads] = await Promise.all([assetsFor(names, 'generated').catch(() => new Map()), uploadsFor(names).catch(() => new Map())]);
+    const [renders, uploads] = await Promise.all([assetsFor(names, 'generated', guildId).catch(() => new Map()), uploadsFor(names, guildId).catch(() => new Map())]);
     const players = await Promise.all(cover.coverStars.map(async (s) => {
       const key = s.name.toLowerCase();
       const seed = `${cover.seed}${s.name}`;
@@ -269,7 +273,7 @@ function createBroadcast(deps) {
     if (!secret || !url || !names.length) return out;
     try {
       const { data: profiles } = await supabase.from('profiles').select('discord_user_id, ea_username').in('ea_username', names);
-      const ids = [...new Set((profiles || []).map(p => p.discord_user_id).filter(id => /^\d{5,25}$/.test(id)))];
+      const ids = await stillInGuild(client()?.guilds.cache.get(guildId), [...new Set((profiles || []).map(p => p.discord_user_id).filter(id => /^\d{5,25}$/.test(id)))]);
       if (!ids.length) return out;
       const response = await fetch(`${url.replace(/\/$/, '')}/functions/v1/player-cards`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-bot-secret': secret },
@@ -351,7 +355,7 @@ function createBroadcast(deps) {
     const motmLine = players.find((p) => p.motm) || players[0] || null;
     const avatars = motmLine ? await avatarsFor(row.guild_id, [motmLine.name]) : new Map();
     const savedCards = motmLine ? await cardsFor(row.guild_id, [motmLine.name]) : new Map();
-    const background = await backgroundFor([...new Set([motmLine?.name, ...players.map((p) => p.name)].filter(Boolean))], row.id).catch(() => null);
+    const background = await backgroundFor([...new Set([motmLine?.name, ...players.map((p) => p.name)].filter(Boolean))], row.id, row.guild_id).catch(() => null);
 
     return G.recapGraphic({
       clubName: club.name,
