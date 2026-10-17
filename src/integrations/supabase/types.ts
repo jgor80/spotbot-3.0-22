@@ -3500,6 +3500,7 @@ export type Database = {
           xbox_gamertag: string | null
           xbox_last_game: string | null
           xbox_last_online: string | null
+          xbox_lookup_at: string | null
           xbox_xuid: string | null
         }
         Insert: {
@@ -3526,6 +3527,7 @@ export type Database = {
           xbox_gamertag?: string | null
           xbox_last_game?: string | null
           xbox_last_online?: string | null
+          xbox_lookup_at?: string | null
           xbox_xuid?: string | null
         }
         Update: {
@@ -3552,6 +3554,7 @@ export type Database = {
           xbox_gamertag?: string | null
           xbox_last_game?: string | null
           xbox_last_online?: string | null
+          xbox_lookup_at?: string | null
           xbox_xuid?: string | null
         }
         Relationships: []
