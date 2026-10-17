@@ -87,8 +87,8 @@ function harness() {
   let saved = 0;
   const setup = createClubSetup({ supabase, getGuildState: async () => state, events, saveGuildSettings: async () => { saved += 1; } });
   const replies = [];
-  const ix = (customId, fields) => ({
-    guildId: 'g', customId, member: { permissions: { has: () => true } },
+  const ix = (customId, fields, web = true) => ({
+    __webPanel: web, guildId: 'g', customId, member: { permissions: { has: () => true } },
     isButton: () => !fields, isModalSubmit: () => !!fields, isStringSelectMenu: () => false, isChatInputCommand: () => false,
     showModal: async (m) => replies.push(['modal', m]), reply: async (m) => replies.push(['reply', m]),
     deferReply: async () => {}, editReply: async (m) => replies.push(['edit', m]),

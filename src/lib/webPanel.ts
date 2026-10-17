@@ -7,11 +7,11 @@ export interface PanelField {
   name: string;
   label: string;
   description: string | null;
-  type: number; // Discord option type: 3 text, 4 integer, 5 yes/no, 6 user, 7 channel, 8 role, 9 mentionable, 10 number
+  type: number; // Discord option type: 3 text, 4 integer, 5 yes/no, 6 user, 7 channel, 8 role, 9 mentionable, 10 number, 11 file
   required: boolean;
   choices: { name: string; value: string }[] | null;
   autocomplete: boolean;
-  kind?: "when";
+  kind?: "when" | "file";
   channelTypes?: number[];
   min?: number;
   max?: number;

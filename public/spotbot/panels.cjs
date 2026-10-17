@@ -24,6 +24,7 @@ const {
   ChannelType,
 } = require('discord.js');
 const { missingChannelPerms, missingPermsMessage } = require('./perm-check.cjs');
+const { onWeb, webOnlyReply } = require('./web-only.cjs');
 
 const F = PermissionsBitField.Flags;
 const VOICE = [ChannelType.GuildVoice, ChannelType.GuildStageVoice];
@@ -239,9 +240,10 @@ const AREAS = [
       { id: 'ad_control', label: 'Control Panel', emoji: '🎛️', cmd: 'squadiq' },
       { id: 'ad_refresh', label: 'Refresh Panel', emoji: '♻️', cmd: 'refreshpanel' },
       { id: 'ad_eapanel', label: 'EA Panel', emoji: '🎮', cmd: 'eapanel' },
-      { id: 'ad_brand', label: 'Brand', emoji: '🎨', cmd: 'brand', perm: F.ManageGuild, ask: true, fields: ['color', 'footer', 'lineup_title', 'logo_url', 'nickname'] },
-      { id: 'ad_avatar', label: 'Bot Avatar', emoji: '🖼️', cmd: 'brand', perm: F.ManageGuild, fields: ['avatar'], required: ['avatar'] },
-      { id: 'ad_brandreset', label: 'Reset Brand', emoji: '↩️', cmd: 'brand', perm: F.ManageGuild, fixed: { reset: true } },
+      // Branding is web only (web-only.cjs): hidden from Discord's Admin menu, shown in the Control Room
+      { id: 'ad_brand', label: 'Brand', emoji: '🎨', cmd: 'brand', perm: F.ManageGuild, ask: true, web: true, fields: ['color', 'footer', 'lineup_title', 'logo_url', 'nickname', 'crest_history', 'clear_crests'] },
+      { id: 'ad_avatar', label: 'Bot Avatar', emoji: '🖼️', cmd: 'brand', perm: F.ManageGuild, web: true, webFile: true, fields: ['avatar'], required: ['avatar'] },
+      { id: 'ad_brandreset', label: 'Reset Brand', emoji: '↩️', cmd: 'brand', perm: F.ManageGuild, web: true, fixed: { reset: true } },
       { id: 'ad_twitch', label: 'Twitch Alert', emoji: '🟣', cmd: 'twitchsetup' },
       { id: 'ad_twitchremove', label: 'Remove Twitch', emoji: '➖', cmd: 'twitchremove' },
       { id: 'ad_twitchlist', label: 'Twitch List', emoji: '📃', cmd: 'twitchlist' },
@@ -311,7 +313,7 @@ function areaMenu(key) {
     .setTitle(`${area.emoji} ${area.label}`)
     .setColor(0x5865f2)
     .setDescription(`${area.blurb}\n\nButtons that need details open a short form first.`);
-  return { embeds: [embed], components: [...actionButtons(area.actions), areaSelect(area.key, 'Switch area', true)] };
+  return { embeds: [embed], components: [...actionButtons(area.actions.filter((a) => !a.web)), areaSelect(area.key, 'Switch area', true)] };
 }
 
 function playerHub({ persistent = false } = {}) {
@@ -399,6 +401,7 @@ function createPanels(deps) {
   async function startAction(interaction, action) {
     const why = denied(interaction, action);
     if (why) return interaction.reply({ content: `🔒 ${why}`, flags: 64 });
+    if (action.web && !onWeb(interaction)) return interaction.reply(webOnlyReply('Branding'));
 
     if (action.builtin === 'playerhub') {
       const missing = missingChannelPerms(interaction.channel, interaction.guild?.members.me);
