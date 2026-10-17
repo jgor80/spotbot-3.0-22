@@ -15,7 +15,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { Undo2, Redo2, ListPlus, Search, Trash2 } from "lucide-react";
+import { Undo2, Redo2, ListPlus, Search, Trash2, Zap } from "lucide-react";
 import { LeaderboardPlayer } from "@/types/player";
 import { FormationType } from "@/types/formations";
 import { FORMATIONS, FORMATION_OPTIONS } from "@/lib/formations";
@@ -194,7 +194,7 @@ function PlayerMarker({ player, position, look, rating, fit, size = "pitch", hel
           jersey
         ) : (
           <div
-            className={cn(box, "flex aspect-square items-center justify-center rounded-full border-[3px] font-['Oswald',sans-serif] text-base font-bold shadow-lg sm:text-xl")}
+            className={cn(box, "flex aspect-square items-center justify-center rounded-full border-[3px] font-display text-base font-bold shadow-lg sm:text-xl")}
             style={{ background: `linear-gradient(160deg, ${main} 0%, ${darken(main, 0.35)} 100%)`, color: trim, borderColor: trim }}
           >
             {label}
@@ -203,7 +203,7 @@ function PlayerMarker({ player, position, look, rating, fit, size = "pitch", hel
       </div>
       <div className={cn("-mt-1 flex", text)}>
         <span
-          className="whitespace-nowrap rounded-md px-1.5 pb-1 pt-0.5 font-bold uppercase leading-tight tracking-wide"
+          className="whitespace-nowrap rounded-md px-1.5 pb-1.5 pt-0.5 font-bold uppercase leading-tight tracking-wide"
           style={{ background: plateBg, color: ink(plateBg), borderTop: `2px solid ${tagBg}`, boxShadow: `0 2px 8px ${alpha("#000000", 0.45)}` }}
         >
           {name.length > 14 ? `${name.slice(0, 13)}…` : name}
@@ -263,6 +263,15 @@ function spotFromDropId(id: string): BoardSpot | null {
   if (zone === "slot") return { zone: "pitch", index: Number(raw) };
   if (zone === "bench") return { zone: "bench", index: Number(raw) };
   return null;
+}
+
+// The GafferBot mark from the site header (plain hex so html2canvas draws it in the graphic)
+function GafferMark({ className, icon }: { className?: string; icon?: string }) {
+  return (
+    <span className={cn("flex items-center justify-center rounded-md shadow-sm", className)} style={{ background: "linear-gradient(135deg, #22c55e 0%, #0f9d6b 100%)" }}>
+      <Zap className={icon} color="#06130c" fill="#06130c" />
+    </span>
+  );
 }
 
 interface LineupBoardEditorProps {
@@ -393,7 +402,7 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
 
   return (
     <DndContext sensors={sensors} collisionDetection={collision} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setDragging(null)}>
-      <div className="space-y-4" style={vars}>
+      <div className="dark space-y-4 rounded-3xl bg-background p-2 text-foreground sm:p-3" style={vars}>
         {/* Club header: crest, sheet stats, history and the save / post / image actions */}
         <div
           className="relative overflow-hidden rounded-2xl text-white shadow-lg"
@@ -405,8 +414,10 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
             <div className="flex min-w-0 items-center gap-3">
               <Crest url={crestUrl} name={club} primary={chrome.primary} secondary={chrome.secondary} className="h-14 w-12 shrink-0 sm:h-16 sm:w-14" />
               <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70">Lineup Builder</p>
-                <p className="truncate font-['Oswald',sans-serif] text-2xl font-bold uppercase italic leading-tight tracking-wide">{club}</p>
+                <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.3em] text-white/75">
+                  <GafferMark className="h-4 w-4 rounded" icon="h-2.5 w-2.5" />GafferBot · Lineup Builder
+                </p>
+                <p className="truncate font-display text-2xl font-bold uppercase italic leading-tight tracking-wide">{club}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold">
                   <span className="rounded-full bg-white/15 px-2 py-0.5">XI {filled}/{positions.length}</span>
                   <span className="rounded-full bg-white/15 px-2 py-0.5">Bench {board.bench.length}/{MAX_BENCH}</span>
@@ -449,7 +460,7 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
               <div className="relative mb-3 flex items-center gap-3 px-1">
                 <Crest url={crestUrl} name={club} primary={kit.primary} secondary={kit.secondary} className="h-12 w-11 shrink-0 sm:h-14 sm:w-12" />
                 <div className="min-w-0 flex-1">
-                  <p className="break-words pb-1 font-['Oswald',sans-serif] text-xl font-bold uppercase italic leading-snug tracking-wide text-white sm:text-2xl">{look.title || "Starting XI"}</p>
+                  <p className="break-words pb-1 font-display text-xl font-bold uppercase italic leading-snug tracking-wide text-white sm:text-2xl">{look.title || "Starting XI"}</p>
                   <div className="flex flex-wrap items-center gap-1.5 pb-0.5">
                     <span className="rounded px-1.5 pb-1 pt-0.5 text-[10px] font-black leading-tight tracking-wider sm:text-[11px]" style={{ background: kit.secondary, color: ink(kit.secondary) }}>{formation}</span>
                     {look.subtitle && <span className="break-words text-xs leading-snug text-white/80 sm:text-sm">{look.subtitle}</span>}
@@ -457,7 +468,7 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
                 </div>
                 {avg !== null && look.showRatings && (
                   <div className="relative mr-8 hidden shrink-0 flex-col items-center rounded-lg px-2.5 py-1 sm:flex" style={{ background: alpha("#000000", 0.4), border: `1px solid ${alpha(kit.secondary, 0.6)}` }}>
-                    <span className="font-['Oswald',sans-serif] text-2xl font-bold leading-none text-white">{avg}</span>
+                    <span className="font-display text-2xl font-bold leading-none text-white">{avg}</span>
                     <span className="pb-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-white/70">Avg</span>
                   </div>
                 )}
@@ -524,14 +535,14 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
               <Drop
                 id="bench:end"
                 onClick={() => held?.player && tapZone({ zone: "bench" })}
-                className="relative mt-3 flex overflow-hidden rounded-xl"
+                className="relative mt-3 flex rounded-xl"
                 style={{ background: alpha("#000000", 0.38), borderTop: `3px solid ${kit.secondary}` }}
               >
-                <div className="flex w-9 shrink-0 flex-col items-center justify-center gap-1 py-2" style={{ background: kit.primary, color: ink(kit.primary) }}>
-                  <span className="flex flex-col items-center font-['Oswald',sans-serif] text-[11px] font-bold leading-[1.15]">{"SUBS".split("").map((c, i) => <span key={i}>{c}</span>)}</span>
+                <div className="flex w-9 shrink-0 flex-col items-center justify-center gap-1 rounded-bl-xl py-2" style={{ background: kit.primary, color: ink(kit.primary) }}>
+                  <span className="flex flex-col items-center font-display text-[11px] font-bold leading-[1.15]">{"SUBS".split("").map((c, i) => <span key={i}>{c}</span>)}</span>
                   <span className="text-[10px] font-bold opacity-80">{board.bench.length}</span>
                 </div>
-                <div className="flex min-h-[78px] flex-1 flex-wrap items-start justify-center gap-2 p-2 sm:gap-3">
+                <div className="flex min-h-[78px] flex-1 flex-wrap items-start justify-center gap-2 px-2 pb-3 pt-2 sm:gap-3">
                   {board.bench.map((id, k) => {
                     const player = byId.get(id);
                     if (!player) return null;
@@ -547,9 +558,13 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
                 </div>
               </Drop>
 
-              <div className="mt-2 flex items-center justify-between px-1 pb-1 text-[9px] font-bold uppercase leading-normal tracking-[0.25em] text-white/50">
+              <div className="mt-2 flex items-center justify-between px-1 pb-1 text-[9px] font-bold uppercase leading-normal tracking-[0.25em] text-white/55">
                 <span className="whitespace-nowrap">{club}</span>
-                <span>GafferBot</span>
+                <span className="flex items-center gap-1.5 whitespace-nowrap">
+                  <GafferMark className="h-4 w-4 rounded" icon="h-2.5 w-2.5" />
+                  <span className="font-display text-[11px] tracking-[0.2em] text-white/80">GafferBot</span>
+                  <span className="lowercase tracking-normal text-white/45">gafferbot.app</span>
+                </span>
               </div>
             </div>
             <p className="text-center text-xs text-muted-foreground">{hint}</p>
@@ -558,7 +573,7 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
           {/* Squad rail */}
           <div className="overflow-hidden rounded-2xl border bg-card shadow-sm lg:sticky lg:top-20 lg:col-start-1 lg:row-start-1">
             <div className="flex items-center gap-2 px-3 py-2.5" style={{ background: `linear-gradient(90deg, ${alpha(chrome.primary, 0.22)}, transparent)`, borderBottom: `2px solid ${chrome.primary}` }}>
-              <span className="font-['Oswald',sans-serif] text-sm font-bold uppercase tracking-[0.2em]">Squad</span>
+              <span className="font-display text-sm font-bold uppercase tracking-[0.2em]">Squad</span>
               <span className="rounded-full px-1.5 text-[10px] font-bold leading-4" style={{ background: chrome.primary, color: ink(chrome.primary) }}>{pool.reduce((n, g) => n + g.players.length, 0)}</span>
               <Button variant="ghost" size="sm" className="ml-auto h-7 px-2 text-xs" onClick={() => setPasteOpen(true)}><ListPlus className="mr-1 h-3.5 w-3.5" />Paste names</Button>
             </div>
@@ -622,7 +637,7 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
           {/* Style panel */}
           <div className="overflow-hidden rounded-2xl border bg-card shadow-sm lg:col-span-2 xl:sticky xl:top-20 xl:col-span-1 xl:col-start-3 xl:row-start-1">
             <div className="px-3 py-2.5" style={{ background: `linear-gradient(90deg, ${alpha(chrome.primary, 0.22)}, transparent)`, borderBottom: `2px solid ${chrome.primary}` }}>
-              <span className="font-['Oswald',sans-serif] text-sm font-bold uppercase tracking-[0.2em]">Style</span>
+              <span className="font-display text-sm font-bold uppercase tracking-[0.2em]">Style</span>
             </div>
             <Tabs defaultValue="look" className="p-3">
               <TabsList className="grid w-full grid-cols-3">
