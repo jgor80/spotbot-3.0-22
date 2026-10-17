@@ -104,6 +104,7 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
   },
   {
     name: "delete_channel_messages",
+    audience: "leader",
     title: "Delete messages",
     scope: SCOPE_MANAGE,
     readOnly: false,
@@ -149,6 +150,7 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
   },
   {
     name: "clear_channel",
+    audience: "leader",
     title: "Clear a channel",
     scope: SCOPE_MANAGE,
     readOnly: false,
@@ -188,6 +190,7 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
   },
   {
     name: "check_channel_cleanup",
+    audience: "leader",
     title: "Check on a channel cleanup",
     scope: SCOPE_MANAGE,
     description: "Progress of a delete or clear that was still running (job_id from its result). stop: true stops it; what's deleted stays deleted.",
@@ -198,7 +201,7 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
       additionalProperties: false,
     },
     run: async (args, ctx) => {
-      const guildId = await resolveGuild(args, ctx);
+      const guildId = await leaderGuild(args, ctx);
       const j = await call(ctx, "status", { guildId, jobId: str(args.job_id), stop: args.stop === true });
       return { ...j, next: jobNext(j) };
     },

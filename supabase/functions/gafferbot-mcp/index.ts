@@ -1,14 +1,14 @@
 // GafferBot MCP server: lets AI assistants (Claude, ChatGPT, Cursor…) read a player's clubs, stats,
 // events and team sheets, and with manage access run their Discord panel actions. Served at
 // https://gafferbot.app/mcp by the Worker. Callers act as one Discord player, signed in by:
-//   - OAuth (the Worker's /oauth/*, Discord sign-in): Bearer header, clubs:read and maybe clubs:manage
+//   - OAuth (the Worker's /oauth/*, Discord sign-in): Bearer header, clubs:read, plus clubs:manage for club admins
 //   - a personal token from Discord (/me → AI Assistant): read only, header or ?key=
 //   - a signed-in web session (JWT): read only
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createAdminClient, guildAccessLevel, identifyCaller } from "../_shared/auth.ts";
-import { looksLikeToken, resolveToken, SCOPE_MANAGE, SCOPE_READ } from "../_shared/mcp-tokens.ts";
+import { createAdminClient, guildAccessLevel, identifyCaller, isDiscordServerAdmin } from "../_shared/auth.ts";
+import { isClubAdmin, looksLikeToken, resolveToken, SCOPE_MANAGE, SCOPE_READ } from "../_shared/mcp-tokens.ts";
 import { handleBody } from "./protocol.ts";
-import { Ctx, PanelBridge, TOOLS } from "./tools.ts";
+import { Ctx, PanelBridge, TOOLS, visibleTo } from "./tools.ts";
 import { MANAGE_TOOLS } from "./manage.ts";
 import { MODERATION_TOOLS } from "./moderation.ts";
 import { allowCall } from "./limits.ts";
@@ -17,6 +17,21 @@ const SITE = (Deno.env.get("DASHBOARD_URL") || "https://gafferbot.app").replace(
 const ALL_TOOLS = [...TOOLS, ...MANAGE_TOOLS, ...MODERATION_TOOLS];
 
 type Caller = { discordUserId: string; tokenId: string | null; scopes: string[] };
+
+// Manage access is for club admins only. Checked on every request (not just at sign-in) so a player who
+// stops being an admin loses it; cached for a few minutes because the Discord check costs API calls.
+const ADMIN_CACHE_MS = 5 * 60 * 1000;
+const adminCache = new Map<string, { admin: boolean; at: number }>();
+// deno-lint-ignore no-explicit-any
+async function clubAdmin(admin: any, discordUserId: string): Promise<boolean> {
+  const hit = adminCache.get(discordUserId);
+  if (hit && Date.now() - hit.at < ADMIN_CACHE_MS) return hit.admin;
+  const result = await isClubAdmin(admin, discordUserId, async (ids) =>
+    (await Promise.all(ids.slice(0, 100).map((g) => isDiscordServerAdmin(g, discordUserId)))).some(Boolean));
+  if (adminCache.size > 5000) adminCache.clear();
+  adminCache.set(discordUserId, { admin: result, at: Date.now() });
+  return result;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,7 +51,7 @@ async function callerFor(req: Request, admin: any): Promise<Caller | null> {
   if (looksLikeToken(token)) {
     const t = await resolveToken(admin, token);
     if (!t) return null;
-    const manage = t.oauth && !!header && t.scopes.includes(SCOPE_MANAGE);
+    const manage = t.oauth && !!header && t.scopes.includes(SCOPE_MANAGE) && await clubAdmin(admin, t.discordUserId);
     return { discordUserId: t.discordUserId, tokenId: t.id, scopes: manage ? [SCOPE_READ, SCOPE_MANAGE] : [SCOPE_READ] };
   }
   const caller = await identifyCaller(new Request(req.url, { headers: { authorization: `Bearer ${token}` } }), admin);
@@ -84,8 +99,9 @@ serve(async (req) => {
       panels: manage ? ((globalThis as unknown as { __gafferbotWebPanels?: PanelBridge }).__gafferbotWebPanels ?? null) : null,
       moderation: manage ? ((globalThis as unknown as { __gafferbotModeration?: PanelBridge }).__gafferbotModeration ?? null) : null,
     };
+    // Manage tools need a clubs:manage grant; leader tools are also hidden unless the player leads a club.
     const tools = ALL_TOOLS.filter((t) => !t.scope || caller.scopes.includes(t.scope));
-    const reply = await handleBody(body, tools, ctx);
+    const reply = await handleBody(body, tools, ctx, visibleTo(ctx));
     return reply === null ? new Response(null, { status: 202, headers: corsHeaders }) : json(reply);
   } catch (err) {
     console.error("[gafferbot-mcp] error:", err);

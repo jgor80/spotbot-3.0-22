@@ -15,7 +15,8 @@
 // Codes, tokens and the consent nonce are stored only as SHA-256 hashes. Tokens are checked by the
 // gafferbot-mcp function (resolveToken), and the player sees and revokes connected apps in /me.
 import {
-  cleanScopes, hashToken, issueGrant, randomString, refreshGrant, revokeByToken, SCOPE_MANAGE, SCOPE_READ,
+  cleanScopes, hashToken, isClubAdmin, issueGrant, MANAGE_FOR_ADMINS_ONLY, randomString, refreshGrant, revokeByToken,
+  SCOPE_MANAGE, SCOPE_READ,
 } from "../supabase/functions/_shared/mcp-tokens.ts";
 
 // The service-role supabase-js client (kept loose so the Deno tests can pass a stand-in).
@@ -187,7 +188,8 @@ async function authorize(url: URL, db: SupabaseClient, env: OAuthEnv, origin: st
   discord.search = new URLSearchParams({
     client_id: env.DISCORD_CLIENT_ID,
     response_type: "code",
-    scope: "identify",
+    // guilds lets the sign-in see which servers the player admins, for the manage option.
+    scope: scopes.includes(SCOPE_MANAGE) ? "identify guilds" : "identify",
     redirect_uri: `${origin}/auth/callback`,
     state: STATE_PREFIX + id,
     prompt: "none",
@@ -227,9 +229,12 @@ async function discordCallback(url: URL, db: SupabaseClient, env: OAuthEnv, orig
   const me = (await meRes.json()) as { id: string; username: string; global_name?: string };
   if (!/^\d{17,20}$/.test(me.id)) return errorPage("Discord sent an unexpected account id.");
 
+  // Manage is only offered to club admins; everyone else gets the view-only choice.
+  const askedManage = (request.scopes as string[]).includes(SCOPE_MANAGE);
+  const canManage = askedManage && await isClubAdmin(db, me.id, (ids) => discordAdminIn(access_token, ids));
   const nonce = randomString(24);
   const { error } = await db.from("mcp_oauth_requests")
-    .update({ discord_user_id: me.id, consent_hash: await hashToken(nonce) })
+    .update({ discord_user_id: me.id, consent_hash: await hashToken(nonce), scopes: canManage ? [SCOPE_READ, SCOPE_MANAGE] : [SCOPE_READ] })
     .eq("id", request.id).is("code_hash", null);
   if (error) return errorPage("Something went wrong. Try again.", 500);
 
@@ -237,7 +242,6 @@ async function discordCallback(url: URL, db: SupabaseClient, env: OAuthEnv, orig
   const appName = String(client?.client_name || "An AI app");
   const host = new URL(request.redirect_uri).host;
   const known = appFor(request.redirect_uri);
-  const canManage = (request.scopes as string[]).includes(SCOPE_MANAGE);
   const who = esc(me.global_name || me.username);
   const sentTo = known
     ? `<p>Access goes to <b>${esc(known)}</b> (${esc(host)}).</p>`
@@ -250,9 +254,22 @@ ${sentTo}
 <input type="hidden" name="request" value="${esc(request.id)}"><input type="hidden" name="nonce" value="${esc(nonce)}">
 <label><input type="radio" name="access" value="read"${canManage ? "" : " checked"}><div><strong>View only</strong><span>Stats, matches, events, lineups and chemistry.</span></div></label>
 ${canManage ? `<label><input type="radio" name="access" value="manage" checked><div><strong>View and manage</strong><span>Also run the same club actions you can use in Discord (events, team sheets, lineups, match tags), each one only after you say yes in the chat. Every change is logged in /me → AI Assistant.</span></div></label>` : ""}
+${askedManage && !canManage ? `<p>${esc(MANAGE_FOR_ADMINS_ONLY)}</p>` : ""}
 <div class="row"><button type="submit" name="decision" value="deny">Cancel</button><button class="go" type="submit" name="decision" value="allow">Allow</button></div>
 </form>
 <p>Turn it off any time with /me → Revoke AI Access.</p>`);
+}
+
+// Whether the player owns, or has Administrator or Manage Server in, one of these servers, from their own
+// Discord guild list (the sign-in has no bot token).
+async function discordAdminIn(accessToken: string, guildIds: string[]): Promise<boolean> {
+  const res = await fetch("https://discord.com/api/users/@me/guilds", { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!res.ok) return false;
+  const list = (await res.json().catch(() => [])) as { id: string; owner?: boolean; permissions?: string }[];
+  const ours = new Set(guildIds);
+  return Array.isArray(list) && list.some((g) =>
+    ours.has(g.id) && (g.owner || (BigInt(g.permissions || "0") & 0x28n) !== 0n)
+  );
 }
 
 async function consent(req: Request, db: SupabaseClient, origin: string): Promise<Response> {

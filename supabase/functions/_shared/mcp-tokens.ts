@@ -32,6 +32,32 @@ export function generateToken(prefix = TOKEN_PREFIX): string {
   return prefix + randomString();
 }
 
+// Manage access (clubs:manage) is only for club admins: a GafferBot leader role (admin, moderator, manager,
+// captain) in any server, Discord admin or Manage Server rights in a GafferBot server, or a GafferBot web
+// admin. Every other player can still connect read-only. The Discord part needs either the bot's token
+// (functions) or the player's own guild list (the Worker's sign-in), so the caller passes it in.
+export const LEADER_ROLES = ["admin", "moderator", "manager", "captain"];
+export const MANAGE_FOR_ADMINS_ONLY = "Managing clubs with an AI app is only for club admins (managers, captains and server admins). You can still connect view-only.";
+
+export async function isClubAdmin(
+  admin: AdminClient,
+  discordUserId: string,
+  discordAdminIn: (guildIds: string[]) => Promise<boolean>,
+): Promise<boolean> {
+  const { data: roles } = await admin.from("user_roles").select("guild_id")
+    .eq("discord_user_id", discordUserId).in("role", LEADER_ROLES).limit(1);
+  if (roles?.length) return true;
+  const { data: link } = await admin.from("user_discord_links").select("auth_user_id")
+    .eq("discord_user_id", discordUserId).eq("verified", true).maybeSingle();
+  if (link?.auth_user_id) {
+    const { data: webAdmin } = await admin.from("web_admins").select("id").eq("auth_user_id", link.auth_user_id).maybeSingle();
+    if (webAdmin) return true;
+  }
+  const { data: guilds } = await admin.from("guild_settings").select("guild_id").limit(500);
+  const ids = ((guilds || []) as { guild_id: string }[]).map((g) => g.guild_id);
+  return ids.length ? discordAdminIn(ids) : false;
+}
+
 // Only scopes we know, read always included (manage implies read).
 export function cleanScopes(list: unknown): string[] {
   const asked = new Set(Array.isArray(list) ? list.map(String) : String(list || "").split(/\s+/));
