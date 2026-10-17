@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -146,7 +146,7 @@ export default function AuthPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <img src="/brand/badge-256.png" alt="" width={88} height={88} className="mx-auto mb-4 h-[88px] w-[88px]" />
-          <h1 className="text-2xl font-bold leading-none tracking-tight">GafferBot</h1>
+          <CardTitle className="text-2xl font-bold">GafferBot</CardTitle>
           <CardDescription>
             Sign in to run your club: lineups, stats and match night
           </CardDescription>
@@ -303,8 +303,8 @@ export default function AuthPage() {
       <div className="w-full max-w-md rounded-xl border bg-card/60 p-4 text-center">
         <p className="text-sm text-muted-foreground">New to GafferBot? See what it does for your club.</p>
         <Button asChild variant="outline" className="mt-3 w-full">
-          <Link to="/welcome">
-            Learn more about GafferBot
+          <Link to="/">
+            Learn more
             <ArrowRight className="ml-2 h-4 w-4" />
           </Link>
         </Button>

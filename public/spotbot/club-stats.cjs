@@ -147,7 +147,7 @@ const HELP_PAGES = [
     lines: [
       ['/setup', 'Checklist, permissions, disabled commands, bot latency.'],
       ['Link EA Club', 'Link or relink your EA club, and pick the channel for match results.'],
-      ['Brand · Bot Avatar', 'Your colours, crest, lineup title, and the bot\'s name and picture here (needs Manage Server).'],
+      ['Branding (website)', 'Kit, team colours, crest, era crests, club identity, lineup title, and the bot\'s name and picture: set on gafferbot.app/control (needs Manage Server).'],
       ['Post Player Hub', 'A pinned panel players can use without typing a command.'],
       [at('ro_forcelink'), 'Link an EA name to a player, or move it from their old Discord account.'],
       ['EA Panel · Control Panel', 'Button panels for EA links and the admin controls.'],
@@ -393,7 +393,7 @@ function createClubStats(deps) {
   // ---------- EA views: full member list and overall team stats, straight from EA ----------
 
   function notLinked(club) {
-    return { content: `❌ **${club.name}** isn't linked to EA yet. Run **/setup → Club setup** or **/manager → Admin → Link EA Club**.` };
+    return { content: `❌ **${club.name}** isn't linked to EA yet. Run **/setup → Link EA club** or **/manager → Admin → Link EA Club**.` };
   }
   const pct = (v) => (v === undefined || v === null || v === '' ? '–' : `${Math.round(num(v))}%`);
 

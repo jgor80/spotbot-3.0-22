@@ -1,10 +1,11 @@
-# Public pages are /, /welcome, /terms and /privacy. Everything else is the signed-in app.
+# GafferBot: the public pages are /, /terms and /privacy. Everything else is the signed-in app.
 User-agent: *
 Allow: /
-Disallow: /api/
-Disallow: /auth/callback
+Disallow: /auth
 Disallow: /link/
 Disallow: /overlay/
+Disallow: /api/
 Disallow: /oauth/
+Disallow: /mcp
 
 Sitemap: https://gafferbot.app/sitemap.xml

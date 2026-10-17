@@ -1,68 +1,77 @@
-// Writes static HTML for the public pages after `vite build` so search engines and link previews get real
-// content and per-page metadata without running JavaScript. Cloudflare serves dist/welcome.html at /welcome;
-// every other path still falls back to dist/index.html (the "/" metadata). Run via `npm run build`.
-import { readFileSync, writeFileSync, rmSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
+// Runs after `vite build`. Server-renders the public pages (src/entry-prerender.tsx) and writes:
+//   dist/index.html            "/" with the landing page in it (also the SPA fallback for app routes)
+//   dist/welcome.html, dist/terms.html, dist/privacy.html
+//   dist/sitemap.xml
+// Each file gets that page's title, description, canonical, robots, Open Graph tags and, for the home
+// page, JSON-LD. Cloudflare serves /terms from terms.html. The static copy sits in #prerender, outside
+// the React root; an inline script hides it on other routes or when someone is signed in, and the page
+// component removes it once React has drawn the live version.
+import { build } from "vite";
+import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const root = process.cwd();
 const dist = path.join(root, "dist");
-const ssrDir = path.join(root, "dist-ssr");
+const ssrOut = path.join(root, "node_modules/.prerender");
 
-const { render, PRERENDER_PATHS, PUBLIC_PAGES, SITE_URL } = await import(pathToFileURL(path.join(ssrDir, "prerender.js")).href);
-const template = readFileSync(path.join(dist, "index.html"), "utf8");
-const manifestPath = path.join(dist, ".vite", "manifest.json");
-const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+await build({
+  logLevel: "warn",
+  build: { ssr: "src/entry-prerender.tsx", outDir: ssrOut, emptyOutDir: true, rollupOptions: { output: { format: "esm", entryFileNames: "entry.mjs" } } },
+  ssr: { noExternal: true },
+});
+const { render, paths, sitemapPaths } = await import(pathToFileURL(path.join(ssrOut, "entry.mjs")).href);
 
-// The page's own chunk and the chunks it imports, so the browser fetches them alongside the entry
-// instead of after it (main.tsx loads the page before React takes over the static HTML)
-const PAGE_SOURCES = { "/welcome": "src/pages/LandingPage.tsx", "/terms": "src/pages/TermsPage.tsx", "/privacy": "src/pages/PrivacyPage.tsx" };
-function chunkFiles(key, seen = new Set()) {
-  const entry = manifest[key];
-  if (!entry || seen.has(key) || entry.isEntry) return seen;
-  seen.add(key);
-  for (const dep of entry.imports ?? []) chunkFiles(dep, seen);
-  return seen;
-}
-function preloadLinks(route) {
-  const keys = chunkFiles(PAGE_SOURCES[route]);
-  if (!keys.size) throw new Error(`prerender: no build manifest entry for ${PAGE_SOURCES[route]}`);
-  return [...keys]
-    .map((k) => `/${manifest[k].file}`)
-    .filter((href) => !template.includes(`href="${href}"`))
-    .map((href) => `    <link rel="modulepreload" crossorigin href="${href}">`)
-    .join("\n");
-}
+const template = fs.readFileSync(path.join(dist, "index.html"), "utf8");
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const escapeAttr = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-const escapeText = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+// Hide the static copy when this file is being served for some other route (SPA fallback) or when a
+// signed-in user will get the dashboard instead. Runs before first paint.
+const guard = (p) => `<script>(function(){var d=document.documentElement;try{var t=localStorage.getItem("gafferbot-theme");d.classList.add(t==="light"?"light":"dark");var p=location.pathname.replace(/\\/+$/,"")||"/";var s=Object.keys(localStorage).some(function(k){return /^sb-.+-auth-token$/.test(k)});if(p!==${JSON.stringify(p)}||(s&&(p==="/")))d.classList.add("pr-hide")}catch(e){d.classList.add("dark")}})()</script><style>.pr-hide #prerender{display:none}</style>`;
 
-function setTag(html, pattern, replacement) {
-  if (!pattern.test(html)) throw new Error(`prerender: index.html is missing ${pattern}`);
-  return html.replace(pattern, replacement);
-}
-
-for (const route of PRERENDER_PATHS) {
-  const { title, description } = PUBLIC_PAGES[route];
-  const url = `${SITE_URL}${route}`;
-  let html = template;
-  html = setTag(html, /<title>[^<]*<\/title>/, `<title>${escapeText(title)}</title>`);
-  html = setTag(html, /(<meta name="description" content=")[^"]*/, `$1${escapeAttr(description)}`);
-  html = setTag(html, /(<link rel="canonical" href=")[^"]*/, `$1${url}`);
-  html = setTag(html, /(<meta property="og:url" content=")[^"]*/, `$1${url}`);
-  for (const key of ['property="og:title"', 'name="twitter:title"']) {
-    html = setTag(html, new RegExp(`(<meta ${key} content=")[^"]*`), `$1${escapeAttr(title)}`);
-  }
-  for (const key of ['property="og:description"', 'name="twitter:description"']) {
-    html = setTag(html, new RegExp(`(<meta ${key} content=")[^"]*`), `$1${escapeAttr(description)}`);
-  }
-  html = setTag(html, /<\/head>/, `${preloadLinks(route)}\n  </head>`);
-  // Swap the "/" crawler fallback (and the script that removes it) for the rendered page
-  html = setTag(html, /<div id="root">[\s\S]*?<\/div><\/div>/, `<div id="root" data-prerendered>${render(route)}</div>`);
-  html = setTag(html, /\s*<!-- The fallback above[^>]*-->\s*<script>[^<]*<\/script>/, "");
-  writeFileSync(path.join(dist, `${route.slice(1)}.html`), html);
-  console.log(`prerendered ${route} (${Math.round(html.length / 1024)} KB)`);
+function headFor({ meta, canonical, jsonLd }, p) {
+  const tags = [
+    `<title>${esc(meta.title)}</title>`,
+    `<meta name="description" content="${esc(meta.description)}" />`,
+    `<meta name="robots" content="${meta.index === false ? "noindex, nofollow" : "index, follow, max-image-preview:large"}" />`,
+    `<link rel="canonical" href="${esc(canonical)}" />`,
+    `<meta property="og:site_name" content="GafferBot" />`,
+    `<meta property="og:type" content="website" />`,
+    `<meta property="og:title" content="${esc(meta.title)}" />`,
+    `<meta property="og:description" content="${esc(meta.description)}" />`,
+    `<meta property="og:url" content="${esc(canonical)}" />`,
+    `<meta name="twitter:title" content="${esc(meta.title)}" />`,
+    `<meta name="twitter:description" content="${esc(meta.description)}" />`,
+  ];
+  if (jsonLd) tags.push(`<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>`);
+  tags.push(guard(p));
+  return tags.join("\n    ");
 }
 
-rmSync(ssrDir, { recursive: true, force: true });
-rmSync(path.dirname(manifestPath), { recursive: true, force: true });
+// Strip the template's own copies of the tags we write per page.
+const base = template
+  .replace(/<title>[\s\S]*?<\/title>\s*/, "")
+  .replace(/<meta\s+(name|property)="(description|robots|og:title|og:description|og:url|og:type|og:site_name|twitter:title|twitter:description)"[^>]*>\s*/g, "")
+  .replace(/<link\s+rel="canonical"[^>]*>\s*/g, "");
+if (!base.includes('<div id="root"></div>')) throw new Error("prerender: index.html has no empty #root");
+
+const files = { "/": "index.html", "/welcome": "welcome.html", "/terms": "terms.html", "/privacy": "privacy.html" };
+for (const p of paths) {
+  const page = render(p);
+  if (!page.html || page.html.length < 500) throw new Error(`prerender: ${p} rendered almost nothing`);
+  const out = base
+    .replace("</head>", `    ${headFor(page, p)}\n  </head>`)
+    .replace('<div id="root"></div>', `<div id="prerender">${page.html}</div><div id="root"></div>`);
+  fs.writeFileSync(path.join(dist, files[p]), out);
+  console.log(`prerendered ${p} -> dist/${files[p]} (${Math.round(out.length / 1024)} KB)`);
+}
+
+const today = new Date().toISOString().slice(0, 10);
+const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${sitemapPaths.map((p) => `  <url><loc>https://gafferbot.app${p}</loc><lastmod>${today}</lastmod></url>`).join("\n")}
+</urlset>
+`;
+fs.writeFileSync(path.join(dist, "sitemap.xml"), sitemap);
+console.log(`sitemap.xml: ${sitemapPaths.join(", ")}`);
+fs.rmSync(ssrOut, { recursive: true, force: true });

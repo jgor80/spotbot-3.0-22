@@ -7,14 +7,14 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { GuildProvider } from "@/contexts/GuildContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { RouteMeta } from "@/components/RouteMeta";
 import { useAuth } from "@/contexts/AuthContext";
 import { lazy, Suspense } from "react";
-import { LandingPage, PrivacyPage, TermsPage } from "@/publicPages";
-import { RouteSeo } from "@/components/RouteSeo";
 import { Loader2 } from "lucide-react";
 
 // Pages load on demand so the first visit only downloads the page being opened.
 const Index = lazy(() => import("./pages/Index"));
+const LandingPage = lazy(() => import("./pages/LandingPage"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
 const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const LinkInvitePage = lazy(() => import("./pages/LinkInvitePage"));
@@ -34,6 +34,8 @@ const InsightsPage = lazy(() => import("./pages/InsightsPage"));
 const SquadIQPanel = lazy(() => import("./pages/SquadIQPanel"));
 const ControlRoomPage = lazy(() => import("./pages/ControlRoomPage"));
 const StreamOverlay = lazy(() => import("./pages/StreamOverlay"));
+const TermsPage = lazy(() => import("./pages/TermsPage"));
+const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -44,11 +46,11 @@ const PageLoading = () => (
   </div>
 );
 
-// Signed-out visitors get sign-in first (with a link to /welcome); signed-in users keep their club dashboard
+// Signed-out visitors (and search engines) get the landing page; signed-in users keep their club dashboard.
 const HomeRoute = () => {
   const { user, isLoading } = useAuth();
   if (isLoading) return <PageLoading />;
-  return user ? <Index /> : <AuthPage />;
+  return user ? <Index /> : <LandingPage />;
 };
 
 // Dark by default: managers mostly open this on match night
@@ -61,7 +63,7 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
-              <RouteSeo />
+              <RouteMeta />
               <Suspense fallback={<PageLoading />}>
                 <Routes>
                   <Route path="/auth" element={<AuthPage />} />

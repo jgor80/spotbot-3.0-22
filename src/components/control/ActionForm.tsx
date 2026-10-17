@@ -14,6 +14,15 @@ const LONG_TEXT = new Set(["note", "notes", "description", "message", "reason"])
 // Autocomplete inputs where any typed value is fine (as in the Discord forms)
 const TYPED_OK = new Set(["zone", "username"]);
 const NONE = "__none";
+const MAX_FILE_BYTES = 6 * 1024 * 1024;
+
+const readFile = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 
 // Today's date and the next 5 minutes in the server's timezone, as the Discord form preselects
 function nowIn(tz: string) {
@@ -56,6 +65,26 @@ function FieldInput({
           <Input type="time" step={300} value={time} onChange={(e) => onChange(e.target.value ? `${date || nowIn(ctx.timezone).date} ${e.target.value}` : null)} className="w-32" />
         </div>
         <p className="text-xs text-muted-foreground">Server time ({zone}). Change it under Events → Timezone.</p>
+      </div>
+    );
+  }
+  if (field.kind === "file") {
+    return (
+      <div className="space-y-1">
+        <Input
+          type="file"
+          accept="image/png,image/jpeg,image/gif,image/webp"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return onChange(null);
+            if (file.size > MAX_FILE_BYTES) {
+              e.target.value = "";
+              return onChange(null);
+            }
+            onChange(await readFile(file), file.name);
+          }}
+        />
+        <p className="text-xs text-muted-foreground">{label || "PNG, JPG, GIF or WebP, 6 MB at most."}</p>
       </div>
     );
   }
@@ -196,7 +225,9 @@ export function ActionForm({
             if (missing.length) return;
             setBusy(true);
             try {
-              await onSubmit(values);
+              // A picked file goes up as a data URL, with its name beside it
+              const names = Object.fromEntries(action.fields.filter((f) => f.kind === "file" && labels[f.name]).map((f) => [`${f.name}__name`, labels[f.name]]));
+              await onSubmit({ ...values, ...names });
             } finally {
               setBusy(false);
             }

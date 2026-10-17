@@ -41,3 +41,5 @@
   X-Robots-Tag: noindex
 /players
   X-Robots-Tag: noindex
+/billing
+  X-Robots-Tag: noindex

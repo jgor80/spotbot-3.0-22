@@ -47,8 +47,6 @@ export default defineConfig(({ mode }) => {
     },
   },
   build: {
-    // scripts/prerender.mjs reads this to preload each prerendered page's own chunks, then deletes it
-    manifest: true,
     rollupOptions: {
       output: {
         // Split the big libraries into their own files so they cache across deploys.

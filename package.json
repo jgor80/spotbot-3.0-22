@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build && vite build --ssr src/prerender.tsx --outDir dist-ssr && node scripts/prerender.mjs",
+    "build": "vite build && node scripts/prerender.mjs",
     "build:dev": "vite build --mode development",
     "build:bot-lib": "esbuild src/lib/clubInsights.ts --bundle --format=cjs --platform=node --target=node18 --outfile=public/spotbot/club-insights.cjs --banner:js=\"// Generated from src/lib/clubInsights.ts by npm run build:bot-lib. Do not edit by hand.\"",
     "build:bot-lineup": "esbuild src/lib/botLineup.ts --bundle --format=cjs --platform=node --target=node18 --outfile=public/spotbot/lineup-autofill.cjs --banner:js=\"// Generated from src/lib/botLineup.ts by npm run build:bot-lineup. Do not edit by hand.\"",

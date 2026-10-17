@@ -25,14 +25,16 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { DiscordIcon } from "@/components/DiscordIcon";
 import { discordAuthApi } from "@/lib/discordAuthApi";
 import { cn } from "@/lib/utils";
+import { useDropPrerender } from "@/components/RouteMeta";
 
 // Player cards drawn by the bot's own card renderer (graphics-studio.cjs) from its bundled sample art,
 // for a made-up club, so the page shows real GafferBot output without anyone's real photos.
 const CARDS = import.meta.glob<string>("/src/assets/landing/cards/*.webp", { eager: true, import: "default" });
 const card = (name: string) => CARDS[`/src/assets/landing/cards/${name}.webp`];
 
-// Public marketing page at /welcome: sells GafferBot to managers and captains who haven't added it yet.
-// Signed-out visitors to "/" see sign-in first, with a Learn more link here (see HomeRoute in App.tsx).
+// Public marketing page: what signed-out visitors and search engines see at "/" (also at /welcome).
+// scripts/prerender.mjs renders it to static HTML at build time, so keep it free of browser-only
+// code at render time (put that in effects).
 
 // View channels, send/embed/attach, read history, reactions, external emoji, mention roles,
 // manage messages (sticky panels), manage roles (positions, trophies), change nickname,
@@ -154,7 +156,7 @@ const STEPS = [
   { title: "Play", body: "Post your next game. Availability, the lineup, reminders and the recap take care of themselves." },
 ];
 
-const FAQ = [
+export const FAQ = [
   {
     q: "Do my players need an account?",
     a: "No. Players use buttons in Discord. They can sign in here with Discord if they want their own profile and stats on the web, but it's optional.",
@@ -352,6 +354,7 @@ function InsightsMockup({ className }: { className?: string }) {
 
 export default function LandingPage() {
   const inviteUrl = useInviteUrl();
+  useDropPrerender();
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -632,7 +635,8 @@ export default function LandingPage() {
             {FAQ.map((f) => (
               <AccordionItem key={f.q} value={f.q}>
                 <AccordionTrigger className="text-left text-base">{f.q}</AccordionTrigger>
-                <AccordionContent className="text-muted-foreground">{f.a}</AccordionContent>
+                {/* forceMount keeps every answer in the page (and the prerendered HTML) for search engines */}
+                <AccordionContent forceMount className="text-muted-foreground data-[state=closed]:hidden">{f.a}</AccordionContent>
               </AccordionItem>
             ))}
           </Accordion>

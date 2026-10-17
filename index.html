@@ -1,22 +1,19 @@
 <!doctype html>
-<html lang="en" class="dark" style="color-scheme: dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Per-page values below are swapped by scripts/prerender.mjs and src/components/RouteSeo.tsx (see src/lib/seo.ts) -->
-    <title>GafferBot: Pro Clubs club manager for Discord</title>
-    <meta name="description" content="GafferBot runs your EA SPORTS FC Pro Clubs side from Discord: availability, lineups, EA match stats, player cards and recruiting. Free for every server." />
-    <meta name="robots" content="index, follow" />
-    <link rel="canonical" href="https://gafferbot.app/" />
-    <meta name="author" content="GafferBot" />
-    <meta name="application-name" content="GafferBot" />
-    <meta name="theme-color" content="#0B0F1A" />
-
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#0B0F1A" />
+    <title>GafferBot - Run Your Pro Clubs Club</title>
+    <!-- Build cache reset -->
+    <meta name="description" content="GafferBot - Club management for EA FC Pro Clubs: team sheets, club stats, insights and spots in Discord." />
+    <meta name="author" content="GafferBot" />
+    <meta name="application-name" content="GafferBot" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -24,66 +21,23 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;500;600;700&display=swap" media="print" onload="this.media='all'" />
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Exo+2:wght@300;400;500;600;700&display=swap" /></noscript>
 
-    <meta property="og:site_name" content="GafferBot" />
+    <meta property="og:title" content="GafferBot - Run Your Pro Clubs Club" />
+    <meta property="og:description" content="Club management for EA FC Pro Clubs: team sheets, club stats, insights and spots in Discord." />
     <meta property="og:type" content="website" />
-    <meta property="og:locale" content="en_GB" />
     <meta property="og:url" content="https://gafferbot.app/" />
-    <meta property="og:title" content="GafferBot: Pro Clubs club manager for Discord" />
-    <meta property="og:description" content="GafferBot runs your EA SPORTS FC Pro Clubs side from Discord: availability, lineups, EA match stats, player cards and recruiting. Free for every server." />
     <meta property="og:image" content="https://gafferbot.app/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="GafferBot logo: run your Pro Clubs club" />
+    <meta property="og:locale" content="en_GB" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="GafferBot: Pro Clubs club manager for Discord" />
-    <meta name="twitter:description" content="GafferBot runs your EA SPORTS FC Pro Clubs side from Discord: availability, lineups, EA match stats, player cards and recruiting. Free for every server." />
     <meta name="twitter:image" content="https://gafferbot.app/og-image.png" />
     <meta name="twitter:image:alt" content="GafferBot logo: run your Pro Clubs club" />
-
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@graph": [
-          {
-            "@type": "Organization",
-            "@id": "https://gafferbot.app/#org",
-            "name": "GafferBot",
-            "url": "https://gafferbot.app/",
-            "logo": "https://gafferbot.app/icon-512.png"
-          },
-          {
-            "@type": "WebSite",
-            "@id": "https://gafferbot.app/#site",
-            "name": "GafferBot",
-            "url": "https://gafferbot.app/",
-            "publisher": { "@id": "https://gafferbot.app/#org" }
-          },
-          {
-            "@type": "SoftwareApplication",
-            "name": "GafferBot",
-            "url": "https://gafferbot.app/welcome",
-            "applicationCategory": "GameApplication",
-            "applicationSubCategory": "Discord bot",
-            "operatingSystem": "Web, Discord",
-            "description": "A Discord bot and web app for EA SPORTS FC Pro Clubs: availability, lineups, EA match stats, player cards and recruiting.",
-            "image": "https://gafferbot.app/og-image.png",
-            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-            "publisher": { "@id": "https://gafferbot.app/#org" }
-          }
-        ]
-      }
-    </script>
   </head>
 
   <body>
-    <div id="root"><div id="seo-fallback" style="max-width:40rem;margin:0 auto;padding:3rem 1rem;font-family:system-ui,sans-serif;color:#eef1f6;background:#0c111d;line-height:1.5">
-      <h1>GafferBot: run your Pro Clubs side from Discord</h1>
-      <p>GafferBot is a free Discord bot and web app for EA SPORTS FC Pro Clubs. It chases availability, posts the lineup, syncs your EA match stats, makes player cards and helps you recruit, so match night is about playing.</p>
-      <p><a href="/welcome" style="color:#22c55e">Learn more about GafferBot</a> · <a href="/auth" style="color:#22c55e">Sign in</a> · <a href="/terms" style="color:#22c55e">Terms</a> · <a href="/privacy" style="color:#22c55e">Privacy</a></p>
-    </div></div>
-    <!-- The fallback above is for crawlers and link previews without JavaScript; the app renders in its place -->
-    <script>document.getElementById("seo-fallback")?.remove();</script>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

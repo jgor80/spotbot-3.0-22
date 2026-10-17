@@ -30,7 +30,7 @@ const VOICE_TYPES = [ChannelType.GuildVoice, ChannelType.GuildStageVoice];
 // Web-only entries that open an existing bot panel privately instead of posting it
 const EXTRA_ACTIONS = [
   { id: 'wb_graphics', label: 'Graphics Studio', emoji: '🎨', areaKey: 'premium', view: 'graphics', style: 'primary', hint: 'Player cards, match posters, lineups and recruitment art, previewed here.' },
-  { id: 'wb_setup', label: 'Setup Wizard', emoji: '🧭', areaKey: 'admin', cmd: 'setup', hint: 'EA club link and kit, team colours and crest, club identity, then the channels GafferBot posts in.' },
+  { id: 'wb_setup', label: 'Setup Wizard', emoji: '🧭', areaKey: 'admin', cmd: 'setup', hint: 'EA club link and kit, team colours and crest, club identity, then the channels GafferBot posts in. Branding is set here, not in Discord.' },
 ];
 // Actions that read the presser's live Discord voice channel
 const NEEDS_VOICE = new Set(['ln_vcspots', 'ln_posboard', 'dr_start', 'dr_panel']);
@@ -201,6 +201,7 @@ function createWebPanels(deps) {
       autocomplete: !!o.autocomplete,
     };
     if (o.name === 'when') f.kind = 'when';
+    if (o.type === 11) f.kind = 'file';
     if (o.type === 7) f.channelTypes = action.channels?.[o.name] || o.channel_types || TEXT_TYPES;
     if (o.min_value !== undefined) f.min = o.min_value;
     if (o.max_value !== undefined) f.max = o.max_value;
@@ -210,13 +211,14 @@ function createWebPanels(deps) {
 
   function actionInfo(action, member) {
     const fields = action.cmd ? actionFields(schemaByName, action) : [];
-    const needsFile = fields.some((o) => o.type === 11 && o.required);
+    // File inputs work here only for actions marked webFile (their handler accepts a data-URL upload)
+    const needsFile = !action.webFile && fields.some((o) => o.type === 11 && o.required);
     return {
       id: action.id,
       label: action.label,
       emoji: action.emoji,
       style: action.style || 'secondary',
-      fields: fields.filter((o) => o.type !== 11).map((o) => fieldInfo(action, o)),
+      fields: fields.filter((o) => o.type !== 11 || action.webFile).map((o) => fieldInfo(action, o)),
       ask: !!action.ask,
       denied: deniedReason(member, action, isManager),
       discordOnly: needsFile ? 'Needs a file upload: use this one in Discord.' : null,
@@ -594,6 +596,9 @@ function createWebPanels(deps) {
         const role = ctx.guild.roles.cache.get(String(raw));
         if (!role) throw new WebError(400, `${label}: pick a role from this server.`);
         out[o.name] = role;
+      } else if (o.type === 11) {
+        if (!action.webFile) continue;
+        out[o.name] = webFile(typeof raw === 'string' ? { data: raw, name: values?.[`${o.name}__name`] } : raw);
       } else if (o.type === 5) {
         out[o.name] = raw === true || raw === 'true';
       } else if (o.type === 4 || o.type === 10) {
@@ -616,7 +621,7 @@ function createWebPanels(deps) {
     if (!action) throw new WebError(404, 'That action no longer exists. Reload the page.');
     const why = deniedReason(member, action, isManager);
     if (why) throw new WebError(403, why.replace(/\*\*/g, ''));
-    if (actionFields(schemaByName, action).some((o) => o.type === 11 && o.required)) throw new WebError(400, 'This one needs a file upload, so use it in Discord.');
+    if (!action.webFile && actionFields(schemaByName, action).some((o) => o.type === 11 && o.required)) throw new WebError(400, 'This one needs a file upload, so use it in Discord.');
     return action;
   }
 

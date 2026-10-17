@@ -2,10 +2,10 @@ import { supabase } from "@/integrations/supabase/client";
 
 // On gafferbot.app the Cloudflare Worker handles Discord OAuth at /api/auth/discord.
 // Lovable-hosted previews have no Worker, so they keep using the cloud function.
-const lovableHosted = () => /(^|\.)(lovable\.app|lovableproject\.com)$/.test(window.location.hostname);
+const LOVABLE_HOSTED = typeof window !== "undefined" && /(^|\.)(lovable\.app|lovableproject\.com)$/.test(window.location.hostname);
 
 export async function discordAuthApi<T = any>(body?: Record<string, unknown>): Promise<{ data: T | null; error: string | null }> {
-  if (lovableHosted()) {
+  if (LOVABLE_HOSTED) {
     const { data, error } = await supabase.functions.invoke("auth-discord", body ? { body } : { method: "GET" });
     return { data, error: error ? (data?.error ?? error.message) : null };
   }
