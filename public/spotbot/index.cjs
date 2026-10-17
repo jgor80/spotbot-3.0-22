@@ -447,7 +447,14 @@ embedStyle.install({ loadBranding: async (guildId) => (await clubEvents.serverPr
 const positionTiers = positionTiersLib.createPositionTiers({ supabase });
 const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub, autoLink: () => autoLink, positionTiers });
 
-const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents, saveGuildSettings, searchClubCandidates: (n, p) => searchClubCandidates(n, p), linkEaClub: (...a) => linkEaClub(...a), clubPickerReply: (...a) => clubPickerReply(...a) });
+const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents, saveGuildSettings, searchClubCandidates: (n, p) => searchClubCandidates(n, p), linkEaClub: (...a) => linkEaClub(...a), clubPickerReply: (...a) => clubPickerReply(...a),
+  // Panels for channels picked or created in /setup → Channels (those modules are created further down)
+  channelHooks: () => ({
+    graphicsPanel: (channel, club) => graphicsStudio.refreshPanel(channel, club),
+    deskPanel: (channel) => managerHub.refreshDesk(channel),
+    recruitChanged: (guildId) => recruitment.forgetSettings(guildId),
+  }),
+});
 
 // Team Sheet → Edit Lineup (pick-and-drop swaps in Discord) and the pitch image every lineup post carries
 const lineupBoard = createLineupBoard({ supabase, callEdgeFunction, getGuildState, resolveClub, canManageClub: squads.canManageClub, dashboardUrl: DASHBOARD_URL });
