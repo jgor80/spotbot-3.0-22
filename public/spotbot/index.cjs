@@ -65,6 +65,7 @@ const { createStreamKit, OVERLAY_SUBCOMMAND } = require('./stream-kit.cjs');
 const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
 const { createAutoLink } = require('./auto-link.cjs');
+const { createXboxLink } = require('./xbox-link.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
 const permCheck = require('./perm-check.cjs');
 const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
@@ -452,6 +453,7 @@ const eventLineup = createEventLineup({ supabase, events: clubEvents, isManager,
 const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState, positionTiers });
 
 const autoLink = createAutoLink({ supabase, getGuildState, isManager });
+const xboxLink = createXboxLink({ supabase });
 const proPhotos = createProPhotos({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, isManager });
 const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
 const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client });
@@ -4113,6 +4115,9 @@ client.once(Events.ClientReady, async (c) => {
   // Self-hosted: the bot runs the scheduled syncs and refreshes that used to run in the cloud.
   if (!BOT_PROXY_SECRET) require('./scheduler.cjs').startScheduler({ supabase, callFunction: callEdgeFunction });
   for (const guild of [...c.guilds.cache.values()]) await leaveIfNotAllowed(guild);
+  // Find Xbox accounts for Xbox players a few at a time (OpenXBL is rate-limited)
+  setInterval(() => xboxLink.backfill().catch((e) => console.error('[xbox-link]', e.message)), 10 * 60 * 1000);
+  setTimeout(() => xboxLink.backfill().catch(() => {}), 60 * 1000);
   // Pick up players who already hold position roles (runs in the background, one server at a time)
   setTimeout(async () => {
     for (const guild of c.guilds.cache.values()) await roster.syncGuildPositions(guild).catch(() => {});
@@ -13864,6 +13869,8 @@ async function routeInteraction(interaction) {
                 ea_platform: normalizedPlatform
               });
           }
+          // Xbox players get their Xbox account found too, for presence tracking
+          if (normalizedPlatform === 'xbox-series-xs') xboxLink.resolveUser(interaction.user.id).catch(() => {});
           
           return interaction.editReply({
             content: `✅ **EA Account Linked!**\n\n` +
