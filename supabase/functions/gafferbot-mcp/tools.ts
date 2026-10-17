@@ -10,6 +10,8 @@ export interface Ctx {
   // Set for manage-scoped callers: the token (for the action log) and the bot's panel bridge.
   tokenId?: string | null;
   panels?: PanelBridge | null;
+  // Channel read/delete/clear inside the bot (public/spotbot/channel-moderation.cjs), manage callers only.
+  moderation?: PanelBridge | null;
 }
 
 // The web Control Room's bridge into the bot (public/spotbot/web-panels.cjs), in-process.

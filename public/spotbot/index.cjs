@@ -35,6 +35,7 @@ const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.c
 const { createSquads, SQUAD_COMMANDS } = require('./squads.cjs');
 const { createPanels, PANEL_COMMANDS } = require('./panels.cjs');
 const { createWebPanels } = require('./web-panels.cjs');
+const { createChannelModeration } = require('./channel-moderation.cjs');
 const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
 const { parseWhen: parseEventWhen } = require('./event-time.cjs');
 const embedStyle = require('./embed-style.cjs');
@@ -4425,6 +4426,9 @@ globalThis.__gafferbotWebPanels = createWebPanels({
   graphicsPanel: (g) => graphicsStudio.panelFor(g),
   dispatch: (interaction) => embedStyle.runForGuild(interaction.guildId, () => routeInteraction(interaction)),
 });
+
+// Channel read/delete/clear for AI apps with manage access (gafferbot-mcp/moderation.ts)
+globalThis.__gafferbotModeration = createChannelModeration({ getClient: () => client });
 
 // ack-guard defers for any handler still busy near Discord's 3-second deadline
 client.on(Events.InteractionCreate, (interaction) => {
