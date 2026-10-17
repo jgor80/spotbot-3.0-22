@@ -4079,6 +4079,28 @@ function appendReferences(form, refs) {
   for (const ref of refs) form.append(refs.length > 1 ? "image[]" : "image", ref.file);
 }
 
+// supabase/functions/club-art/render-cost.ts
+var IMAGE_PRICES = {
+  "gpt-image-1": { text: 5, image: 10, output: 40 },
+  "gpt-image-1.5": { text: 5, image: 8, output: 32 },
+  "gpt-image-1-mini": { text: 2, image: 2.5, output: 8 }
+};
+var int = (v) => Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v))) : 0;
+function renderCost(model, usage) {
+  if (!usage) return null;
+  const input = int(usage.input_tokens);
+  const image = int(usage.input_tokens_details?.image_tokens);
+  const text = usage.input_tokens_details?.text_tokens !== void 0 ? int(usage.input_tokens_details.text_tokens) : Math.max(0, input - image);
+  const output = int(usage.output_tokens);
+  const price = IMAGE_PRICES[model.replace(/^openai\//, "")];
+  const cost = price ? (text * price.text + image * price.image + output * price.output) / 1e6 : null;
+  return { text_tokens: text, image_tokens: image, output_tokens: output, cost_usd: cost === null ? null : Math.round(cost * 1e5) / 1e5 };
+}
+function referenceLimit(raw) {
+  const n = parseInt(raw ?? "", 10);
+  return Number.isInteger(n) ? Math.min(3, Math.max(1, n)) : 2;
+}
+
 // supabase/functions/club-art/index.ts
 var SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 var AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -4115,8 +4137,13 @@ var Body = external_exports.object({
   // Manually confirmed by the member in the card form; treated like a verified upload number.
   kit_number_override: external_exports.number().int().min(1).max(99).optional(),
   // Member-chosen upload to base a single-player card on.
-  photo_asset_id: external_exports.string().uuid().optional()
+  photo_asset_id: external_exports.string().uuid().optional(),
+  // Studio's key for "the same art": saved with a card so a later card can reuse it (graphics-studio.cjs)
+  reuse_key: external_exports.string().regex(/^[a-f0-9]{16,64}$/).optional(),
+  // The card layout drawn around the art, saved with it so a reused card keeps a matching layout
+  layout: external_exports.enum(["lower-third", "editorial", "side-panel"]).optional()
 });
+var MAX_REFERENCES = referenceLimit(Deno.env.get("AI_IMAGE_REFERENCES"));
 var STYLE = {
   esports: "ultra esports poster look: dramatic neon rim light in the club colours, volumetric smoke, lens flares, sparks, grunge halftone and torn-paper texture, deep black shadows, high contrast",
   modern: "live sports-television broadcast look: night match under floodlights, directional light spill, slight motion blur in the background crowd, crisp rim light on the player, cool broadcast colour grade, glossy and premium like a top-flight TV production",
@@ -4188,7 +4215,7 @@ async function proPhoto(b, team = false) {
       files.push(new File([await res.arrayBuffer()], `original-${files.length + 1}.${type.split("/")[1]}`, { type }));
       assetIds.push(photo.id);
       descriptions.push(description);
-      if (files.length >= (team ? 1 : 3)) break;
+      if (files.length >= (team ? 1 : MAX_REFERENCES)) break;
     } catch {
     }
   }
@@ -4250,6 +4277,28 @@ Deno.serve(async (req) => {
   }
   const out = await res.json().catch(() => null);
   const b64 = out?.data?.[0]?.b64_json;
+  const model = res.headers.get("x-ai-model") || MODEL.replace(/^openai\//, "");
+  const cost = renderCost(model, out?.usage);
+  const referenceCount = refs.length || found?.files.length || 0;
+  console.log(`[club-art] ${b.kind}/${b.style} on ${model}: ${referenceCount} reference(s)${cost ? `, ${cost.image_tokens} image + ${cost.text_tokens} text in, ${cost.output_tokens} out${cost.cost_usd !== null ? `, $${cost.cost_usd}` : ""}` : ", no usage returned"}`);
+  await db.from("ai_image_renders").insert({
+    guild_id: b.guild_id ?? null,
+    discord_user_id: b.discord_user_id ?? null,
+    kind: b.kind,
+    style: b.style,
+    model,
+    quality: out?.quality ?? res.headers.get("x-ai-quality") ?? null,
+    size,
+    reference_count: referenceCount,
+    ok: Boolean(b64),
+    text_tokens: cost?.text_tokens ?? null,
+    image_tokens: cost?.image_tokens ?? null,
+    output_tokens: cost?.output_tokens ?? null,
+    cost_usd: cost?.cost_usd ?? null
+  }).then(({ error }) => {
+    if (error) console.warn(`[club-art] render log failed: ${error.message}`);
+  }, () => {
+  });
   if (!b64) return json({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
   let artworkSaved = !b.discord_user_id;
   if (!teamIds.length && b.discord_user_id && ref) {
@@ -4271,7 +4320,16 @@ Deno.serve(async (req) => {
           source_kind: "generated",
           graphic_kind: b.kind,
           pose: b.pose,
-          analysis: { style: b.style, composition: b.composition, club_name: b.club_name, reference_asset_ids: found?.assetIds }
+          analysis: {
+            style: b.style,
+            composition: b.composition,
+            club_name: b.club_name,
+            reference_asset_ids: found?.assetIds,
+            reuse_key: b.reuse_key ?? null,
+            layout: b.layout ?? null,
+            kit_number: kitNumber,
+            model
+          }
         });
         artworkSaved = !error;
       }

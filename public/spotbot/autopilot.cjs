@@ -37,7 +37,7 @@ const FEATURES = {
   recaps: { label: 'Match recaps', emoji: '🏁', help: 'Post a recap here as soon as EA records a finished match.' },
   subs: { label: 'Auto sub requests', emoji: '🆘', help: 'A starter out of voice for 3 min during the session gets a sub request.' },
   digest: { label: 'Monday digest', emoji: '🗞️', help: 'Formation win rates, best pairings and show-up rates every Monday morning.' },
-  chronicle: { label: 'Daily Chronicle', emoji: '📰', help: 'A newspaper-style beat writer digest at 3 PM and midnight Central covering the day\'s matches, players and events.' },
+  chronicle: { label: 'Daily Chronicle', emoji: '📰', help: 'A newspaper-style beat writer digest at 3 PM and midnight Central covering the day\'s matches, players and events, plus a session edition when the club voice channel empties after 2+ games.' },
   press: { label: 'Newspaper match reports', emoji: '🗞️', help: 'Every match also gets a Chronicle-style write-up in the Chronicle channel (set it with Print Chronicle here).' },
   session: { label: 'Session recap', emoji: '🧾', help: 'When the club voice channel empties, a recap of every match played since it filled up.' },
   ratings: { label: 'Teammate rating DMs', emoji: '⭐', help: 'After a match, players get a DM asking them to rate their teammates.' },
@@ -59,6 +59,8 @@ const RECAPS_PER_TICK = 8;
 const SESSION_SETTLE_MS = 15 * 60 * 1000;
 // Matches EA stamps slightly before anyone joined voice (e.g. a quick rejoin) still count
 const SESSION_EARLY_MS = 5 * 60 * 1000;
+const SESSION_EDITION_MIN_GAMES = 2;
+const COVERED_IDS_KEPT = 60; // games already printed in a session edition, newest last
 const SESSION_MAX_PLAYERS = 24;
 const DIGEST_HOUR = 10;
 const DEFAULT_FORMATION = '4-3-3 FLAT';
@@ -794,17 +796,20 @@ function createAutopilot(deps) {
     const matches = loadMatches ? await loadMatches(guild.id, club.key).catch(() => []) : [];
     const played = matches.filter((m) => m.playedAt.getTime() >= startedAt - SESSION_EARLY_MS && m.playedAt.getTime() <= endedAt);
     if (!played.length) return;
-    const recap = await buildSessionRecap(guild.id, club, played, startedAt, endedAt);
-    // Premium extras (the assistant coach) add embeds to the same message
-    for (const hook of sessionHooks) {
-      const extra = await hook({ guildId: guild.id, club, matches: played, allMatches: matches, startedAt, endedAt }).catch((err) => {
-        console.warn(`[autopilot] session hook failed: ${err.message}`);
-        return null;
-      });
-      if (extra?.embeds) recap.embeds.push(...extra.embeds);
+    if (isOn(club, 'session')) {
+      const recap = await buildSessionRecap(guild.id, club, played, startedAt, endedAt);
+      // Premium extras (the assistant coach) add embeds to the same message
+      for (const hook of sessionHooks) {
+        const extra = await hook({ guildId: guild.id, club, matches: played, allMatches: matches, startedAt, endedAt }).catch((err) => {
+          console.warn(`[autopilot] session hook failed: ${err.message}`);
+          return null;
+        });
+        if (extra?.embeds) recap.embeds.push(...extra.embeds);
+      }
+      const channel = await postChannel(guild.id, club);
+      if (channel) await channel.send(recap).catch((err) => console.warn(`[autopilot] session recap failed: ${err.message}`));
     }
-    const channel = await postChannel(guild.id, club);
-    if (channel) await channel.send(recap).catch((err) => console.warn(`[autopilot] session recap failed: ${err.message}`));
+    if (isOn(club, 'chronicle')) await printSessionEdition(guild, club, played, endedAt).catch((err) => console.warn(`[autopilot] session edition failed: ${err.message}`));
   }
 
   // A session opens when the linked voice channel gets its first player and closes once it has
@@ -829,7 +834,7 @@ function createAutopilot(deps) {
           await updateClub(guild.id, club.key, (ap) => {
             delete ap.session;
           });
-          if (isOn(club, 'session')) await closeSession(guild, club, session).catch((err) => console.warn(`[autopilot] session ${club.key} failed: ${err.message}`));
+          if (isOn(club, 'session') || isOn(club, 'chronicle')) await closeSession(guild, club, session).catch((err) => console.warn(`[autopilot] session ${club.key} failed: ${err.message}`));
         }
       }
     }
@@ -937,11 +942,19 @@ function createAutopilot(deps) {
     }
   }
 
-  async function buildEdition(guildId, club, edition, now = new Date()) {
+  // sessionMatches: the games of one voice session, for the session edition. The 3 PM and midnight
+  // editions leave out games a session edition already printed, and skip printing when that's all of them.
+  async function buildEdition(guildId, club, edition, now = new Date(), sessionMatches = null) {
     const ed = EDITIONS[edition];
     const all = loadMatches ? await loadMatches(guildId, club.key).catch(() => []) : [];
-    const since = now.getTime() - ed.windowH * 60 * 60 * 1000;
-    const matches = all.filter((m) => m.playedAt.getTime() >= since && m.playedAt.getTime() <= now.getTime());
+    let matches = sessionMatches;
+    if (!matches) {
+      const since = now.getTime() - ed.windowH * 60 * 60 * 1000;
+      const inWindow = all.filter((m) => m.playedAt.getTime() >= since && m.playedAt.getTime() <= now.getTime());
+      const covered = new Set(club.autopilot?.chronicle_covered_ids || []);
+      matches = inWindow.filter((m) => !covered.has(String(m.id)));
+      if (inWindow.length && !matches.length) return null;
+    }
     const { data: upcoming } = await supabase
       .from('availability_events')
       .select('title, scheduled_at')
@@ -967,6 +980,24 @@ function createAutopilot(deps) {
     return buildChronicle({ club, edition, matches, upcoming: upcoming || [], seasonMatches: all, now, logoUrl: crestUrl(club, prefs.branding), story, image });
   }
 
+  async function chronicleChannel(guild, club) {
+    const chId = club.autopilot?.chronicle_channel_id || club.autopilot?.channel_id;
+    return chId ? guild.channels.fetch(chId).catch(() => null) : postChannel(guild.id, club);
+  }
+
+  // When a voice session of SESSION_EDITION_MIN_GAMES+ games ends, the Chronicle prints it as its own
+  // edition; a single game already has its match report
+  async function printSessionEdition(guild, club, played, endedAt) {
+    if (played.length < SESSION_EDITION_MIN_GAMES) return;
+    const paper = await buildEdition(guild.id, club, 'session', new Date(endedAt), played);
+    const channel = paper ? await chronicleChannel(guild, club) : null;
+    if (!paper || !channel) return;
+    await channel.send(paper);
+    await updateClub(guild.id, club.key, (ap) => {
+      ap.chronicle_covered_ids = [...(ap.chronicle_covered_ids || []), ...played.map((m) => String(m.id))].slice(-COVERED_IDS_KEPT);
+    });
+  }
+
   async function postChronicles(now) {
     const local = T.localParts(now, CHRONICLE_TZ);
     const edition = local.hour === EDITIONS.afternoon.hour ? 'afternoon' : local.hour === EDITIONS.overnight.hour ? 'overnight' : null;
@@ -980,8 +1011,7 @@ function createAutopilot(deps) {
           ap.chronicle_last = dayKey;
         });
         const paper = await buildEdition(guild.id, club, edition, now).catch((err) => console.warn(`[autopilot] chronicle ${club.key} failed: ${err.message}`));
-        const chId = club.autopilot?.chronicle_channel_id || club.autopilot?.channel_id;
-        const channel = chId ? await guild.channels.fetch(chId).catch(() => null) : await postChannel(guild.id, club);
+        const channel = paper ? await chronicleChannel(guild, club) : null;
         if (paper && channel) await channel.send(paper).catch((err) => console.warn(`[autopilot] chronicle send failed: ${err.message}`));
       }
     }
@@ -1174,6 +1204,7 @@ function createAutopilot(deps) {
     // fn({ guildId, club, matches, allMatches, startedAt, endedAt }) -> { embeds } added to the session recap
     onSessionEnd: (fn) => sessionHooks.push(fn),
     buildSessionRecap,
+    buildEdition,
     // fn({ row, club, match, history, prefs, talkingPoint }) -> PNG buffer or null
     // fn({ guildId, club, cover, prefs }) -> PNG buffer or null (the Chronicle front page)
     setEditionImage: (fn) => {

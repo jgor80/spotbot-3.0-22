@@ -148,6 +148,22 @@ var EA_HEADERS = {
 if (EA_SESSION_COOKIE) {
   console.log("[sync-ea-stats] EA session cookie configured");
 }
+function syncSliceOf(key, slices) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  return (h >>> 0) % slices;
+}
+function syncConcurrency() {
+  const n = parseInt(Deno.env.get("EA_SYNC_CONCURRENCY") ?? "", 10);
+  return Number.isInteger(n) && n > 0 ? Math.min(n, 16) : 4;
+}
+async function runInPool(items, limit, fn) {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) await fn(items[next++]);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
 var EA_RETRY_STATUSES = /* @__PURE__ */ new Set([403, 429, 500, 502, 503, 504]);
 var EA_RETRY_DELAYS_MS = [1e3, 3e3, 7e3];
 var eaThrottledThisRun = false;
@@ -1711,6 +1727,14 @@ Deno.serve(async (req) => {
     const probeHidden = Boolean(requestBody?.probe_hidden) || Deno.env.get("EA_PROBE_HIDDEN") === "true";
     const onlyGuildId = typeof requestBody?.guild_id === "string" && /^\d{17,19}$/.test(requestBody.guild_id) ? requestBody.guild_id : null;
     const onlyClubKey = onlyGuildId && typeof requestBody?.club_key === "string" ? requestBody.club_key : null;
+    const activeKeys = !onlyGuildId && Array.isArray(requestBody?.active) ? new Set(requestBody.active.filter((k) => typeof k === "string")) : null;
+    const slices = Number.isInteger(requestBody?.slices) && requestBody.slices > 0 ? requestBody.slices : 0;
+    const slice = slices && Number.isInteger(requestBody?.slice) ? requestBody.slice % slices : -1;
+    const wanted = (guildId, clubKey) => {
+      if (onlyGuildId || !activeKeys && slice < 0) return true;
+      const key = `${guildId}:${clubKey}`;
+      return Boolean(activeKeys?.has(key)) || slice >= 0 && syncSliceOf(key, slices) === slice;
+    };
     const caller = await identifyCaller(req, supabase);
     const cronSecret = Deno.env.get("CRON_SECRET") ?? "";
     const isCron = cronSecret.length >= 24 && (req.headers.get("x-cron-secret") ?? "") === cronSecret;
@@ -1751,14 +1775,15 @@ Deno.serve(async (req) => {
     let hiddenProbeResults = [];
     const relinkedClubs = [];
     const lastGameSnapshots = [];
-    for (const settings of guildSettings) {
+    const syncGuild = async (settings) => {
       const guildId = settings.guild_id;
       const clubs = settings.clubs;
       const aggregates = /* @__PURE__ */ new Map();
       const guildUpdatedPlayerIds = /* @__PURE__ */ new Set();
-      if (!clubs || !Array.isArray(clubs)) continue;
+      if (!clubs || !Array.isArray(clubs)) return;
       for (const club of clubs) {
         if (onlyClubKey && club.key !== onlyClubKey) continue;
+        if (!wanted(guildId, club.key)) continue;
         if (!club.ea_club_id || !club.ea_platform || !onlyGuildId && !club.monitoring_enabled) {
           continue;
         }
@@ -2469,7 +2494,10 @@ Deno.serve(async (req) => {
           body: { guild_id: guildId, player_ids: recalculationIds, trigger: "ea_sync" }
         });
       }
-    }
+    };
+    await runInPool(guildSettings, syncConcurrency(), (settings) => syncGuild(settings).catch((err) => {
+      console.error(`[sync-ea-stats] Guild ${settings.guild_id} failed:`, err instanceof Error ? err.message : err);
+    }));
     if (unmappedMemberKeys.size > 0) {
       console.log(`[sync-ea-stats] Unmapped member fields seen across clubs: ${[...unmappedMemberKeys].join(", ")}`);
     }
