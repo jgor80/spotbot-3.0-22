@@ -24,10 +24,12 @@ __export(botLineup_exports, {
   FORMATION_COORDS: () => FORMATION_COORDS,
   FORMATION_SLOTS: () => FORMATION_SLOTS,
   MAX_BENCH: () => MAX_BENCH,
+  POSITION_ORDER: () => POSITION_ORDER,
   autofillLineup: () => autofillLineup,
   boardFromNames: () => boardFromNames,
   boardToSlots: () => boardToSlots,
   getPositionRatingCategory: () => getPositionRatingCategory,
+  groupByPosition: () => groupByPosition,
   locate: () => locate,
   movePlayer: () => movePlayer,
   resizeBoard: () => resizeBoard,
@@ -413,6 +415,45 @@ var FORMATIONS = {
     { position: "LW", x: 20, y: 22 },
     { position: "RW", x: 80, y: 22 },
     { position: "ST", x: 50, y: 15 }
+  ],
+  "4-3-3 HOLDING": [
+    { position: "GK", x: 50, y: 90 },
+    { position: "LB", x: 15, y: 70 },
+    { position: "CB", x: 35, y: 75 },
+    { position: "CB", x: 65, y: 75 },
+    { position: "RB", x: 85, y: 70 },
+    { position: "CDM", x: 50, y: 58 },
+    { position: "CM", x: 28, y: 46 },
+    { position: "CM", x: 72, y: 46 },
+    { position: "LW", x: 15, y: 22 },
+    { position: "ST", x: 50, y: 15 },
+    { position: "RW", x: 85, y: 22 }
+  ],
+  "4-3-3 DEFEND": [
+    { position: "GK", x: 50, y: 90 },
+    { position: "LB", x: 15, y: 70 },
+    { position: "CB", x: 35, y: 75 },
+    { position: "CB", x: 65, y: 75 },
+    { position: "RB", x: 85, y: 70 },
+    { position: "CDM", x: 35, y: 56 },
+    { position: "CDM", x: 65, y: 56 },
+    { position: "CM", x: 50, y: 42 },
+    { position: "LW", x: 15, y: 22 },
+    { position: "ST", x: 50, y: 15 },
+    { position: "RW", x: 85, y: 22 }
+  ],
+  "4-3-3 FALSE 9": [
+    { position: "GK", x: 50, y: 90 },
+    { position: "LB", x: 15, y: 70 },
+    { position: "CB", x: 35, y: 75 },
+    { position: "CB", x: 65, y: 75 },
+    { position: "RB", x: 85, y: 70 },
+    { position: "CM", x: 28, y: 46 },
+    { position: "CDM", x: 50, y: 56 },
+    { position: "CM", x: 72, y: 46 },
+    { position: "LW", x: 15, y: 22 },
+    { position: "CF", x: 50, y: 24 },
+    { position: "RW", x: 85, y: 22 }
   ]
 };
 var FORMATION_OPTIONS = Object.keys(FORMATIONS);
@@ -579,6 +620,17 @@ function slotsToBoard(slots, slotCount) {
   }
   return { starters, bench };
 }
+var POSITION_ORDER = ["GK", "RB", "RWB", "CB", "LB", "LWB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", "CF", "ST"];
+function groupByPosition(entries) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const e of entries) {
+    const key = e.position && POSITION_ORDER.includes(e.position) ? e.position : "Any";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+  const rank = (p) => p === "Any" ? POSITION_ORDER.length : POSITION_ORDER.indexOf(p);
+  return [...groups.entries()].sort(([a], [b]) => rank(a) - rank(b)).map(([position, players]) => ({ position, players: players.sort((a, b) => Number(!!a.out) - Number(!!b.out) || b.rating - a.rating) }));
+}
 
 // src/lib/botLineup.ts
 var FORMATION_SLOTS = Object.fromEntries(
@@ -593,10 +645,12 @@ var FORMATION_COORDS = Object.fromEntries(
   FORMATION_COORDS,
   FORMATION_SLOTS,
   MAX_BENCH,
+  POSITION_ORDER,
   autofillLineup,
   boardFromNames,
   boardToSlots,
   getPositionRatingCategory,
+  groupByPosition,
   locate,
   movePlayer,
   resizeBoard,

@@ -114,5 +114,17 @@
   "5-2-3": {
     "positions": ["GK", "CB", "CB", "CB", "LB", "RB", "CM", "CM", "LW", "RW", "ST"],
     "meta": "Strengths: Three attackers with five-back.\nWeaknesses: Midfield easily bypassed.\nBest used: Wing-play focused attacks.\nKey players: Pacey fullbacks."
+  },
+  "4-3-3 HOLDING": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "CM", "CM", "LW", "ST", "RW"],
+    "meta": "Strengths: One CDM screens the back four.\nWeaknesses: Front three can get isolated.\nBest used: Balanced play with width.\nKey players: Positional CDM."
+  },
+  "4-3-3 DEFEND": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CDM", "CDM", "CM", "LW", "ST", "RW"],
+    "meta": "Strengths: Two CDMs make it hard to play through.\nWeaknesses: Fewer runners from midfield.\nBest used: Protecting a lead, countering.\nKey players: Ball-winning CDMs."
+  },
+  "4-3-3 FALSE 9": {
+    "positions": ["GK", "CB", "CB", "LB", "RB", "CM", "CDM", "CM", "LW", "CF", "RW"],
+    "meta": "Strengths: CF drops in to overload midfield.\nWeaknesses: No fixed target in the box.\nBest used: Short passing, wingers cutting in.\nKey players: Creative CF."
   }
 }

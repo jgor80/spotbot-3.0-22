@@ -19,7 +19,7 @@ import { Undo2, Redo2, ListPlus, Search, Trash2 } from "lucide-react";
 import { LeaderboardPlayer } from "@/types/player";
 import { FormationType } from "@/types/formations";
 import { FORMATIONS, FORMATION_OPTIONS } from "@/lib/formations";
-import { BoardSpot, BoardState, MAX_BENCH } from "@/lib/lineupBoard";
+import { BoardSpot, BoardState, MAX_BENCH, groupByPosition } from "@/lib/lineupBoard";
 import { PlayerCardArt } from "@/components/player/PlayerCardArt";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -243,14 +243,20 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
   );
 
   const onSheet = useMemo(() => new Set([...board.starters.filter(Boolean), ...board.bench] as string[]), [board]);
-  const ANSWER_RANK: Record<string, number> = { yes: 0, maybe: 1, none: 2, no: 3 };
+  // Squad list grouped by primary (comp) position, best rated first; players who are out sink to the bottom of their group
   const pool = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return players
+    const rows = players
       .filter((p) => !onSheet.has(p.discord_user_id))
       .filter((p) => !q || [p.ea_username, p.discord_username, p.primary_position, tiers?.get(p.discord_user_id)?.primary].some((v) => v?.toLowerCase().includes(q)))
-      .sort((a, b) => (ANSWER_RANK[availability?.get(a.discord_user_id) || "none"] - ANSWER_RANK[availability?.get(b.discord_user_id) || "none"]) || b.overall_rating - a.overall_rating);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      .map((p) => ({
+        ...p,
+        id: p.discord_user_id,
+        position: (tiers?.get(p.discord_user_id)?.primary || p.primary_position || "").toUpperCase() || null,
+        rating: Number(p.overall_rating) || 0,
+        out: availability?.get(p.discord_user_id) === "no",
+      }));
+    return groupByPosition(rows);
   }, [players, onSheet, search, availability, tiers]);
 
   const update = (patch: Partial<BoardLook>) => onLook({ ...look, ...patch });
@@ -408,27 +414,37 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
               <Drop id="pool" onClick={() => held?.player && onSheet.has(held.player) && tapZone({ zone: "pool" })} className="rounded-lg">
                 <ScrollArea className="h-[380px] pr-2 lg:h-[calc(100vh-24rem)]">
                   <div className="space-y-1.5">
-                    {pool.map((p) => {
-                      const t = tiers?.get(p.discord_user_id);
-                      const answer = availability?.get(p.discord_user_id);
-                      return (
-                        <Draggable key={p.discord_user_id} id={p.discord_user_id} onClick={() => tapPlayer(p.discord_user_id)}>
-                          <div className={cn("flex items-center gap-2 rounded-lg border p-2 transition-colors hover:bg-muted/60", held?.player === p.discord_user_id && "border-primary bg-primary/10", answer === "no" && "opacity-60")}>
-                            <PlayerCardArt discordUserId={p.discord_user_id} name={nameOf(p)} className="w-8 shrink-0" fallback={<Jersey main={look.kit.primary} trim={look.kit.secondary} label={String(Math.round(p.overall_rating))} className="w-8" />} />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium">{nameOf(p)}</p>
-                              <p className="truncate text-[11px] text-muted-foreground">
-                                {t
-                                  ? [t.primary, t.secondary.length ? `also ${t.secondary.join("/")}` : "", t.emergency.length ? `emerg. ${t.emergency.join("/")}` : ""].filter(Boolean).join(" · ")
-                                  : p.primary_position || "Any position"}
-                              </p>
-                            </div>
-                            {answer && <Badge variant={answer === "yes" ? "default" : "secondary"} className="shrink-0 text-[10px]">{answer === "yes" ? "Available" : answer === "maybe" ? "Maybe" : "Out"}</Badge>}
-                            <span className="w-7 shrink-0 text-right text-sm font-bold">{Math.round(p.overall_rating)}</span>
-                          </div>
-                        </Draggable>
-                      );
-                    })}
+                    {pool.map((group) => (
+                      <div key={group.position} className="space-y-1.5">
+                        <div className="sticky top-0 z-10 flex items-center justify-between bg-background/95 px-1 pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <span>{group.position === "Any" ? "No position set" : group.position}</span>
+                          <span>{group.players.length}</span>
+                        </div>
+                        {group.players.map((p) => {
+                          const t = tiers?.get(p.discord_user_id);
+                          const answer = availability?.get(p.discord_user_id);
+                          return (
+                            <Draggable key={p.discord_user_id} id={p.discord_user_id} onClick={() => tapPlayer(p.discord_user_id)}>
+                              <div className={cn("flex items-center gap-2 rounded-lg border p-2 transition-colors hover:bg-muted/60", held?.player === p.discord_user_id && "border-primary bg-primary/10", answer === "no" && "opacity-60")}>
+                                <PlayerCardArt discordUserId={p.discord_user_id} name={nameOf(p)} className="w-8 shrink-0" fallback={<Jersey main={look.kit.primary} trim={look.kit.secondary} label={String(Math.round(p.overall_rating))} className="w-8" />} />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium">
+                                    {p.position && <span className="mr-1.5 rounded bg-muted px-1 py-px text-[10px] font-bold text-muted-foreground">{p.position}</span>}
+                                    {nameOf(p)}
+                                  </p>
+                                  <p className="truncate text-[11px] text-muted-foreground">
+                                    {(t && [t.secondary.length ? `Also ${t.secondary.join("/")}` : "", t.emergency.length ? `emerg. ${t.emergency.join("/")}` : ""].filter(Boolean).join(" · ")) ||
+                                      (p.position ? `${p.position} only` : "Any position")}
+                                  </p>
+                                </div>
+                                {answer && <Badge variant={answer === "yes" ? "default" : "secondary"} className="shrink-0 text-[10px]">{answer === "yes" ? "Available" : answer === "maybe" ? "Maybe" : "Out"}</Badge>}
+                                <span className="w-7 shrink-0 text-right text-sm font-bold">{Math.round(p.overall_rating)}</span>
+                              </div>
+                            </Draggable>
+                          );
+                        })}
+                      </div>
+                    ))}
                     {pool.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Everyone is on the sheet.</p>}
                   </div>
                 </ScrollArea>
