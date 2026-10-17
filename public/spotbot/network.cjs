@@ -22,12 +22,13 @@ const { activeClubs } = require('./manager-hub.cjs');
 const { isServerAdmin, isBotOwner, ownerIds, missingChannelPerms, missingPermsMessage } = require('./perm-check.cjs');
 const { toFcPlatform } = require('./ea-fc27.cjs');
 const { POSITIONS } = require('./recruitment.cjs');
+const T = require('./event-time.cjs');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REGIONS = ['Europe', 'UK & Ireland', 'North America East', 'North America West', 'South America', 'Middle East & Africa', 'Asia', 'Oceania'];
 const PLATFORMS = { 'common-gen5': 'PS5 / Xbox Series / PC', nx: 'Switch' };
 // Per server, per rolling day. Later slices add their own kinds (replacement, friendly...).
-const DAILY_LIMITS = { report: 5, replacement: 10 };
+const DAILY_LIMITS = { report: 5, replacement: 10, friendly: 10 };
 const REGION_CHOICES = REGIONS.map((r) => ({ name: r, value: r }));
 const PLATFORM_CHOICES = Object.entries({ 'common-gen5': 'PS5 / Xbox Series / PC', nx: 'Switch' }).map(([value, name]) => ({ name, value }));
 const PAGE_SIZE = 15;
@@ -68,6 +69,16 @@ const NETWORK_COMMANDS = [
         options: [
           { name: 'platform', description: 'Only clubs on this platform.', type: 3, required: false, choices: Object.entries(PLATFORMS).map(([value, name]) => ({ name, value })) },
           { name: 'region', description: 'Only clubs from this region.', type: 3, required: false, choices: REGIONS.map((r) => ({ name: r, value: r })) },
+        ],
+      },
+      {
+        type: 1,
+        name: 'friendly',
+        description: 'Invite a club on another server to a friendly.',
+        options: [
+          { name: 'when', description: 'Kick-off, e.g. "9pm" or "thu 21:00". Shown in each reader\'s local time.', type: 3, required: true },
+          { name: 'note', description: 'Anything else, e.g. "best of 3" or "need a Div 3-5 side".', type: 3, required: false },
+          { name: 'open', description: 'Post to every network server and take the first club that accepts (default: pick a club).', type: 5, required: false },
         ],
       },
       {
@@ -467,6 +478,15 @@ function createNetwork(deps) {
     return interaction.reply({ content: '✅ Unblocked. You\'ll see that server\'s clubs and requests again.', flags: 64 });
   }
 
+  // Kick-off typed by a manager, read in the server's timezone ("now" = now). Null when unreadable.
+  async function kickoffFor(guildId, text) {
+    const { data: prefs } = await supabase.from('guild_settings').select('timezone').eq('guild_id', guildId).maybeSingle();
+    const tz = T.isValidTimeZone(prefs?.timezone) ? prefs.timezone : 'UTC';
+    const raw = String(text || '').trim();
+    if (!raw || raw.toLowerCase() === 'now') return new Date();
+    return T.parseWhen(raw, tz) || null;
+  }
+
   // Post into a server's network channel; falls back to a DM to fallbackUserId. Returns the message.
   async function postToChannel(client, guildId, payload, fallbackUserId) {
     const row = await serverRow(guildId);
@@ -540,6 +560,7 @@ function createNetwork(deps) {
     logActivity,
     cleanText,
     postToChannel,
+    kickoffFor,
     addSubcommand: (name, fn) => {
       subcommandHandlers[name] = fn;
     },

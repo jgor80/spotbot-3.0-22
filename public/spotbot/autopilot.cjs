@@ -609,7 +609,7 @@ function createAutopilot(deps) {
   async function postRecaps(now) {
     const { data } = await supabase
       .from('club_matches')
-      .select('id, guild_id, club_key, created_at, result, score_for, score_against, opponent_club_name, player_stats, match_data, match_type')
+      .select('id, guild_id, club_key, created_at, result, score_for, score_against, opponent_club_id, opponent_club_name, ea_match_id, player_stats, match_data, match_type')
       .gte('created_at', new Date(now.getTime() - 30 * 60 * 1000).toISOString())
       .order('created_at', { ascending: false })
       .limit(300);
