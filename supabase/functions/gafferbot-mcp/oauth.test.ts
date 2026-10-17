@@ -22,10 +22,15 @@ async function hit(db: any, method: string, path: string, body?: BodyInit, heade
   return res;
 }
 
-function stubDiscord() {
+const SERVER = "222222222222222222";
+// A database where the player is a club manager, so sign-in offers manage.
+const adminDb = () => memoryDb({ user_roles: [{ guild_id: SERVER, discord_user_id: PLAYER, role: "manager" }] });
+
+function stubDiscord(guilds: { id: string; owner?: boolean; permissions?: string }[] = []) {
   const real = globalThis.fetch;
   globalThis.fetch = ((input: RequestInfo | URL) => {
     const u = String(input);
+    if (u.includes("/users/@me/guilds")) return Promise.resolve(new Response(JSON.stringify(guilds)));
     if (u.includes("/oauth2/token")) return Promise.resolve(new Response(JSON.stringify({ access_token: "discord-at" })));
     if (u.includes("/users/@me")) return Promise.resolve(new Response(JSON.stringify({ id: PLAYER, username: "jeff" })));
     return Promise.reject(new Error(`unexpected fetch ${u}`));
@@ -35,7 +40,7 @@ function stubDiscord() {
 
 // Runs the browser part of a sign-in and returns the code the AI app receives.
 // deno-lint-ignore no-explicit-any
-async function signIn(db: any, opts: { access?: string; verifier?: string; scope?: string } = {}) {
+async function signIn(db: any, opts: { access?: string; verifier?: string; scope?: string; guilds?: { id: string; owner?: boolean; permissions?: string }[] } = {}) {
   const reg = await hit(db, "POST", "/oauth/register", JSON.stringify({ client_name: "Claude", redirect_uris: [REDIRECT] }), { "content-type": "application/json" });
   assert(reg.status === 201, "register failed");
   const { client_id } = await reg.json();
@@ -50,7 +55,7 @@ async function signIn(db: any, opts: { access?: string; verifier?: string; scope
   const discord = new URL(auth.headers.get("location")!);
   assert(discord.hostname === "discord.com" && discord.searchParams.get("redirect_uri") === `${ORIGIN}/auth/callback`, "wrong Discord redirect");
   const state = discord.searchParams.get("state")!;
-  const restore = stubDiscord();
+  const restore = stubDiscord(opts.guilds);
   let html: string;
   try {
     const cb = await hit(db, "GET", `/auth/callback?code=discordcode123&state=${state}`);
@@ -88,7 +93,7 @@ Deno.test("redirect URIs must be https or localhost", () => {
 });
 
 Deno.test("full sign-in gives a manage token that refreshes, rotates and revokes", async () => {
-  const db = memoryDb();
+  const db = adminDb();
   const { client_id, verifier, code, html } = await signIn(db);
   assert(html.includes("Claude") && html.includes("View and manage"), "consent page content");
   const tok = await exchange(db, { grant_type: "authorization_code", code, client_id, redirect_uri: REDIRECT, code_verifier: verifier });
@@ -116,7 +121,7 @@ Deno.test("full sign-in gives a manage token that refreshes, rotates and revokes
 });
 
 Deno.test("view-only consent and PKCE are enforced", async () => {
-  const db = memoryDb();
+  const db = adminDb();
   const { client_id, verifier, code } = await signIn(db, { access: "read" });
   const bad = await exchange(db, { grant_type: "authorization_code", code, client_id, redirect_uri: REDIRECT, code_verifier: "w".repeat(50) });
   assert(bad.status === 400, "wrong PKCE verifier accepted");
@@ -149,4 +154,18 @@ Deno.test("unregistered redirects and forged consent are refused", async () => {
   assert(f.status === 400, "forged consent accepted");
   const cross = await hit(db, "POST", "/oauth/consent", forged, { "content-type": "application/x-www-form-urlencoded", origin: "https://evil.example" });
   assert(cross.status === 403, "cross-site consent accepted");
+});
+
+Deno.test("only club admins are offered manage; other players connect view-only", async () => {
+  const db = memoryDb({ guild_settings: [{ guild_id: SERVER }] });
+  const player = await signIn(db, { access: "manage" });
+  assert(!player.html.includes("View and manage") && player.html.includes("only for club admins"), "manage offered to a player");
+  const tok = await (await exchange(db, { grant_type: "authorization_code", code: player.code, client_id: player.client_id, redirect_uri: REDIRECT, code_verifier: player.verifier })).json();
+  assert(tok.scope === "clubs:read", "a player got manage by posting access=manage");
+
+  // Discord server admins (Manage Server) of a GafferBot server count, other servers don't.
+  const elsewhere = await signIn(db, { guilds: [{ id: "999999999999999999", owner: true }] });
+  assert(!elsewhere.html.includes("View and manage"), "admin of an unrelated server got manage");
+  const discordAdmin = await signIn(db, { guilds: [{ id: SERVER, permissions: "32" }] });
+  assert(discordAdmin.html.includes("View and manage"), "Discord server admin not offered manage");
 });

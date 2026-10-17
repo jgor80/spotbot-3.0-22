@@ -8,7 +8,7 @@ export const SERVER_INFO = { name: "gafferbot", title: "GafferBot", version: "1.
 export const INSTRUCTIONS =
   "GafferBot runs EA FC Pro Clubs communities on Discord. You act as the player who created the token and only " +
   "see servers they belong to. Start with list_servers to get a guild_id; when they are in just one server, guild_id " +
-  "can be left out. Stats come from EA's Pro Clubs API; hidden stats are estimates. When the player connected with " +
+  "can be left out. Stats come from EA's Pro Clubs API; hidden stats are estimates. When a club admin connected with " +
   "manage access, the club action tools (list_club_actions, run_club_action, press_button, submit_form) run the same " +
   "Discord panel actions they can use themselves, the channel tools read their channels, and club leaders also get " +
   "delete_channel_messages and clear_channel to clean channels up. Those change real things in their Discord server, so always call " +

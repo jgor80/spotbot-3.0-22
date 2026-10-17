@@ -29,7 +29,7 @@ function createAiAccess({ callEdgeFunction, dashboardUrl }) {
       `\`claude mcp add --transport http gafferbot ${mcpUrl} --header "Authorization: Bearer ${token}"\``,
       '**Other apps**: header `Authorization: Bearer <token>`.',
       '',
-      'Tokens can only read. To let an AI run club actions, connect with Discord sign-in instead. Lost it? Use **/me → Revoke AI Access**.',
+      'Tokens can only read. Club admins who want an AI to run club actions connect with Discord sign-in instead. Lost it? Use **/me → Revoke AI Access**.',
     ].join('\n');
   }
 
@@ -40,7 +40,7 @@ function createAiAccess({ callEdgeFunction, dashboardUrl }) {
       '🤖 **Connect an AI assistant to GafferBot**',
       `In Claude, ChatGPT or another AI app, add a custom connector with this URL and sign in with Discord when it asks:`,
       `\`${mcpUrl}\``,
-      'You pick **View only** or **View and manage**. With manage, the AI can run the same club actions you can in Discord, and it shows you each change and waits for your yes first.',
+      'Every player can connect **View only**. Club admins (managers, captains, server admins) can also pick **View and manage**: the AI runs the same club actions they can in Discord, showing each change and waiting for a yes first.',
       '',
       '**Connected apps**',
       apps.length

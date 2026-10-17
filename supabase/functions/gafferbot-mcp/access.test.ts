@@ -4,7 +4,7 @@ import { handleBody } from "./protocol.ts";
 import { Ctx, TOOLS, visibleTo } from "./tools.ts";
 import { MANAGE_TOOLS } from "./manage.ts";
 import { MODERATION_TOOLS } from "./moderation.ts";
-import { SCOPE_MANAGE, SCOPE_READ } from "../_shared/mcp-tokens.ts";
+import { isClubAdmin, SCOPE_MANAGE, SCOPE_READ } from "../_shared/mcp-tokens.ts";
 import { memoryDb } from "./test-db.ts";
 
 const ME = "111111111111111111";
@@ -66,4 +66,16 @@ Deno.test("Discord server admins with no GafferBot role count as leaders", async
   const { listed } = setup([SCOPE_READ, SCOPE_MANAGE], { [AWAY]: "leader" });
   const names = (await listed()).map((t) => t.name);
   assert(names.includes("clear_channel"), "Discord admin not treated as a leader");
+});
+
+Deno.test("club admins: leader roles, web admins and Discord admins of a GafferBot server", async () => {
+  const never = () => Promise.resolve(false);
+  const base = { guild_settings: [{ guild_id: HOME }], user_discord_links: [], web_admins: [] };
+  assert(!(await isClubAdmin(memoryDb({ ...base, user_roles: [{ guild_id: HOME, discord_user_id: ME, role: "player" }] }), ME, never)), "player counted as admin");
+  assert(await isClubAdmin(memoryDb({ ...base, user_roles: [{ guild_id: HOME, discord_user_id: ME, role: "captain" }] }), ME, never), "captain not an admin");
+  const web = memoryDb({ ...base, user_roles: [], user_discord_links: [{ discord_user_id: ME, auth_user_id: "u1", verified: true }], web_admins: [{ id: "w1", auth_user_id: "u1" }] });
+  assert(await isClubAdmin(web, ME, never), "web admin not an admin");
+  let asked: string[] = [];
+  const discord = await isClubAdmin(memoryDb({ ...base, user_roles: [] }), ME, (ids) => { asked = ids; return Promise.resolve(true); });
+  assert(discord && asked[0] === HOME, "Discord admin check not given GafferBot servers");
 });

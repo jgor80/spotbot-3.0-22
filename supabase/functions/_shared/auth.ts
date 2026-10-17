@@ -102,7 +102,7 @@ function discordGet(path: string) {
 
 const snowflake = (id: string) => /^\d{17,20}$/.test(id);
 
-async function isDiscordServerAdmin(guildId: string, discordUserId: string): Promise<boolean> {
+export async function isDiscordServerAdmin(guildId: string, discordUserId: string): Promise<boolean> {
   if (!snowflake(guildId) || !snowflake(discordUserId)) return false;
   const get = discordGet;
   const [guild, member] = await Promise.all([get(`/guilds/${guildId}`), get(`/guilds/${guildId}/members/${discordUserId}`)]);
