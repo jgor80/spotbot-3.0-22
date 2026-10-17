@@ -44,11 +44,11 @@ const PageLoading = () => (
   </div>
 );
 
-// Signed-out visitors get the sales page; signed-in users keep their club dashboard
+// Signed-out visitors get sign-in first (with a link to /welcome); signed-in users keep their club dashboard
 const HomeRoute = () => {
   const { user, isLoading } = useAuth();
   if (isLoading) return <PageLoading />;
-  return user ? <Index /> : <LandingPage />;
+  return user ? <Index /> : <AuthPage />;
 };
 
 // Dark by default: managers mostly open this on match night
@@ -70,6 +70,7 @@ const App = () => (
                   <Route path="/overlay/:token" element={<StreamOverlay />} />
                   <Route path="/terms" element={<TermsPage />} />
                   <Route path="/privacy" element={<PrivacyPage />} />
+                  <Route path="/welcome" element={<LandingPage />} />
                   <Route path="/" element={<HomeRoute />} />
                   <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
                   <Route path="/lineup" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />

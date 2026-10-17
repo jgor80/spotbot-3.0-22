@@ -6,6 +6,8 @@ import {
   CalendarCheck,
   Check,
   Globe2,
+  MonitorSmartphone,
+  Palette,
   Heart,
   LayoutDashboard,
   Newspaper,
@@ -24,9 +26,12 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { DiscordIcon } from "@/components/DiscordIcon";
 import { discordAuthApi } from "@/lib/discordAuthApi";
 import { cn } from "@/lib/utils";
+import lineupEditorImg from "@/assets/landing/lineup-editor.webp";
+import discordLineupImg from "@/assets/landing/discord-lineup.webp";
+import cardStylesImg from "@/assets/landing/card-styles.webp";
 
-// Signed-out homepage: sells GafferBot to managers and captains who haven't added it yet.
-// Signed-in visitors never see this; "/" shows their club dashboard instead (see HomeRoute in App.tsx).
+// Public marketing page at /welcome: sells GafferBot to managers and captains who haven't added it yet.
+// Signed-out visitors to "/" see sign-in first, with a Learn more link here (see HomeRoute in App.tsx).
 
 // View channels, send/embed/attach, read history, reactions, external emoji, mention roles,
 // manage messages (sticky panels), manage roles (positions, trophies), change nickname,
@@ -102,12 +107,14 @@ const FEATURES = [
 ];
 
 const EXTRAS = [
-  { icon: Newspaper, label: "Match reports and a club newspaper" },
-  { icon: Sparkles, label: "Player cards and graphics" },
-  { icon: Trophy, label: "Stat trophies and roles" },
-  { icon: Bell, label: "Auto recaps after every game" },
-  { icon: Twitch, label: "Twitch go-live alerts" },
-  { icon: UsersRound, label: "Drafts and pick-up spots" },
+  { icon: Newspaper, label: "Match reports and a club newspaper", body: "A newspaper-style report after every game, plus daily editions on your run and season storyline." },
+  { icon: Sparkles, label: "Player cards and graphics", body: "Turn players' own photos into cards, posters and banners in 18 styles, in your club colours." },
+  { icon: Bell, label: "Auto recaps", body: "The score, the standouts and the ratings land in your recap channel as soon as EA has the game." },
+  { icon: Trophy, label: "Stat trophies", body: "Golden Boot, Playmaker, Golden Glove and In-Form roles that move after every synced match." },
+  { icon: MonitorSmartphone, label: "Web Control Room", body: "Every Discord panel action also works here on the website, with the same permissions." },
+  { icon: Palette, label: "Your club's identity", body: "Colours, crest, kits and a newspaper voice that make every post look and sound like your club." },
+  { icon: Twitch, label: "Twitch go-live alerts", body: "Let the server know when your players are streaming." },
+  { icon: UsersRound, label: "Drafts and pick-up spots", body: "Run captain drafts and open spots for pick-up games when you're short." },
 ];
 
 const STEPS = [
@@ -131,7 +138,7 @@ const FAQ = [
   },
   {
     q: "What does it cost?",
-    a: "Nothing right now. Every feature is unlocked for every server while GafferBot grows. If it helps your club, a tip on Venmo (@bleacherjeff) keeps the servers running.",
+    a: "Nothing right now. Every feature is unlocked for every server while GafferBot grows. If it helps your club, a donation keeps the servers running.",
   },
   {
     q: "Is this made by EA?",
@@ -297,6 +304,7 @@ export default function LandingPage() {
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
             <a href="#features" className="hover:text-foreground">Features</a>
+            <a href="#screens" className="hover:text-foreground">Screens</a>
             <a href="#how" className="hover:text-foreground">How it works</a>
             <a href="#pricing" className="hover:text-foreground">Pricing</a>
             <a href="#faq" className="hover:text-foreground">FAQ</a>
@@ -382,13 +390,85 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
-          <div className="mt-6 flex flex-wrap gap-2">
+          <h3 className="mt-16 text-2xl font-bold">And the rest of the kit bag</h3>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {EXTRAS.map((e) => (
-              <span key={e.label} className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-sm text-muted-foreground">
-                <e.icon className="h-4 w-4 text-primary" />
-                {e.label}
-              </span>
+              <div key={e.label} className="rounded-xl border bg-card p-5">
+                <e.icon className="h-5 w-5 text-primary" />
+                <p className="mt-3 font-display text-lg font-bold leading-tight">{e.label}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{e.body}</p>
+              </div>
             ))}
+          </div>
+        </section>
+
+        {/* Screens */}
+        <section id="screens" className="scroll-mt-20 border-t border-border/60">
+          <div className="mx-auto max-w-6xl space-y-20 px-4 py-16 sm:space-y-28 sm:py-24">
+            <div className="text-center">
+              <p className="text-sm font-semibold uppercase tracking-wider text-primary">See it in action</p>
+              <h2 className="mt-2 text-3xl font-bold sm:text-4xl">What your club actually gets</h2>
+            </div>
+
+            <div className="grid items-center gap-10 lg:grid-cols-[1.25fr_1fr]">
+              <div className="relative">
+                <img
+                  src={lineupEditorImg}
+                  alt="The web lineup builder with players on the pitch, a bench and a squad list"
+                  loading="lazy"
+                  className="w-full rounded-2xl border shadow-2xl"
+                />
+                <img
+                  src={discordLineupImg}
+                  alt="The lineup graphic as posted in Discord"
+                  loading="lazy"
+                  className="absolute -bottom-8 -right-2 hidden w-[30%] rotate-3 rounded-xl border-4 border-background shadow-2xl sm:block"
+                />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold sm:text-3xl">Drag, drop, post</h3>
+                <p className="mt-3 text-muted-foreground">
+                  Build the XI on the web or straight from Discord. Swap players, fill the bench, check who is
+                  available and who is playing out of position, then post the graphic to your lineup channel in one
+                  click.
+                </p>
+                <ul className="mt-5 space-y-2 text-sm">
+                  {["Every formation, up to 9 on the bench", "Coloured outlines show comp, backup and emergency positions", "Your kit, colours and players' latest cards on the image"].map((t) => (
+                    <li key={t} className="flex items-start gap-2">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="grid items-center gap-10 lg:grid-cols-[1fr_1.25fr]">
+              <div className="lg:order-2">
+                <img
+                  src={cardStylesImg}
+                  alt="A grid of player card styles from the Graphics Studio"
+                  loading="lazy"
+                  className="w-full rounded-2xl border shadow-2xl"
+                />
+              </div>
+              <div className="lg:order-1">
+                <h3 className="text-2xl font-bold sm:text-3xl">Graphics that look pro</h3>
+                <p className="mt-3 text-muted-foreground">
+                  Players drop a photo of their pro in Discord and GafferBot turns it into player cards, signing
+                  announcements, recruiting posters and match-day banners. Pick from 18 styles, from modern broadcast to
+                  1980s retro, all in your club's colours.
+                </p>
+                <ul className="mt-5 space-y-2 text-sm">
+                  {["Cards carry each player's real season stats", "Recruiting posters list the positions you need", "Front pages and recaps use your players' own photos"].map((t) => (
+                    <li key={t} className="flex items-start gap-2">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -464,7 +544,7 @@ export default function LandingPage() {
                 <Button asChild variant="outline" size="sm" className="mt-3">
                   <a href={DONATE_URL} target="_blank" rel="noopener noreferrer">
                     <Heart className="mr-2 h-4 w-4 text-destructive" />
-                    Tip on Venmo @bleacherjeff
+                    Donate
                   </a>
                 </Button>
               </div>

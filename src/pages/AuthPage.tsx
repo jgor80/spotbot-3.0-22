@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Shield, AlertCircle } from "lucide-react";
+import { Loader2, Shield, AlertCircle, ArrowRight } from "lucide-react";
 import { z } from "zod";
 import { lovable } from "@/integrations/lovable/index";
 import { supabase } from "@/integrations/supabase/client";
@@ -142,7 +142,7 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-background via-background to-primary/5 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
@@ -302,6 +302,15 @@ export default function AuthPage() {
           <a href="/privacy" className="underline hover:text-foreground">Privacy Policy</a>
         </p>
       </Card>
+      <div className="w-full max-w-md rounded-xl border bg-card/60 p-4 text-center">
+        <p className="text-sm text-muted-foreground">New to GafferBot? See what it does for your club.</p>
+        <Button asChild variant="outline" className="mt-3 w-full">
+          <Link to="/welcome">
+            Learn more
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
     </div>
   );
 }
