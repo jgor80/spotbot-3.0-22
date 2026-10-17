@@ -4060,6 +4060,78 @@ function identityInstructions(descriptions) {
   return `IDENTITY IS THE HIGHEST PRIORITY, above pose, era, lighting and style. Stick to the uploaded character as closely as possible: the result must be instantly recognisable as the same Virtual Pro, and wherever a pose, era or style choice would change how they look, follow the reference instead. Reference image 1 is the authoritative original face anchor: preserve its exact face geometry, nose, jaw, skin tone, hair texture and colour, beard length and colour, moustache shape, glasses frame and lens tint. Do not shorten or recolour a beard, replace sports glasses with ordinary eyeglasses, beautify, age or humanize the character. Additional reference images show the SAME player's original uploads for body, tattoos, accessories and pose; never blend them into a new face. If references differ, image 1 controls facial identity. Change only club clothing, body pose and background; retain the anchor's head angle when a new angle would invent facial details. Style and vintage colour grading apply to the surroundings, not to identity-defining hair, beard or eyewear colours. ${descriptions.map((d, i) => d ? `Reference image ${i + 1} visible details: ${d.replace(/\s+/g, " ").slice(0, 600)}` : "").filter(Boolean).join(" ")}`;
 }
 
+// supabase/functions/club-art/variety.ts
+var POSES = {
+  ready: "WAIST-UP three-quarter portrait, shoulders turned, looking towards the camera, camera at chest height",
+  stride: "FULL-BODY action shot sprinting or dribbling at speed, dynamic lean, ball at the feet, boots fully visible",
+  ball: "HALF-BODY shot (from mid-thigh up) holding a football under one arm, confident expression",
+  celebrate: "KNEES-UP goal celebration, both arms out or one fist raised, mouth open shouting, joyful energy",
+  profile: "CLOSE CHEST-UP portrait, head and shoulders filling much of the frame, intense focused stare",
+  captain: "THREE-QUARTER-LENGTH (from knees up) hands-on-hips stance, slight low camera angle",
+  headshot: "TIGHT HEAD-AND-SHOULDERS school portrait, facing the camera straight on with the head tilted very slightly, relaxed smile, shoulders square, camera at eye level",
+  arms_crossed: "WAIST-UP portrait with arms folded across the chest, chin slightly raised, calm confident stare into the lens",
+  chest_tap: "HALF-BODY shot thumping a fist against the chest over the heart, eyes on the camera, proud expression",
+  knee_slide: "FULL-BODY knee-slide celebration across the grass, arms spread wide, spray of turf, face lifted towards the camera, boots inside the frame",
+  walkout: "THREE-QUARTER-LENGTH walk-out shot striding towards the camera, arms relaxed, focused game-day expression",
+  shush: "WAIST-UP celebration with one finger pressed to the lips, silencing the crowd, eyes locked on the camera",
+  strike: "FULL-BODY shooting follow-through, kicking leg swung high after striking the ball, arms out for balance, face visible, boots inside the frame",
+  header: "KNEES-UP leaping header, rising above the frame centre to meet the ball, neck muscles tense, face visible and eyes open",
+  sky_point: "KNEES-UP celebration pointing both index fingers to the sky, head tilted up and face still clearly visible",
+  keepy_uppy: "HALF-BODY shot juggling the ball on one knee, relaxed half-smile, eyes glancing at the camera",
+  hands_on_head: "WAIST-UP shot with both hands on the head in disbelief at a near miss, mouth open, face fully visible"
+};
+var CAMERAS = {
+  low_hero: "low hero angle looking up at the player",
+  eye_level: "straight-on eye-level camera",
+  high_three_quarter: "slightly high three-quarter angle",
+  dutch_tilt: "dramatic Dutch tilt of about 10 degrees",
+  telephoto: "long telephoto lens with heavy background bokeh",
+  wide_close: "wide-angle lens close in, exaggerated depth",
+  side_on: "side-on camera with the face turned back towards the lens",
+  tracking: "sideline tracking-camera shot with motion streaks in the background",
+  symmetrical: "perfectly symmetrical front-on framing",
+  broadcast: "pitch-side broadcast camera at chest height"
+};
+var LIGHTING = {
+  floodlit_rim: "night floodlights with a hard rim light outlining the player",
+  golden_hour: "warm golden-hour sun low across the pitch",
+  overcast: "soft overcast daylight with gentle shadows",
+  spotlight: "a single spotlight from above, everything else falling into shadow",
+  neon_accents: "neon accent lights in the club colours",
+  rain_floodlights: "rain falling through the floodlight beams, wet sheen on the kit",
+  broadcast_key: "clean TV broadcast key light with a cool fill",
+  backlight_flare: "strong backlight with a lens flare behind the player",
+  storm: "dark storm clouds with dramatic breaks of light",
+  haze: "volumetric haze with shafts of light cutting through"
+};
+var SCENES = {
+  packed_stands: "a packed stadium bowl, the crowd a soft blur of club colours",
+  tunnel: "the players' tunnel mouth with the pitch glowing beyond",
+  touchline: "the touchline beside the pitch with blank, out-of-focus advertising boards",
+  empty_stadium: "an empty stadium at night, rows of seats and floodlight towers",
+  ultras: "the ultras end, smoke and flares in the club colours drifting behind",
+  training_ground: "a training ground at dusk with cones and a goal in soft focus",
+  goalmouth: "in front of a goal, the net rippling behind",
+  confetti: "a final-whistle scene with confetti and streamers in the air",
+  centre_circle: "the centre circle seen from pitch level, the stands rising behind",
+  city_rooftop: "a rooftop above the city at night, stadium lights glowing in the distance"
+};
+var ARRANGEMENTS = {
+  staggered: "staggered shoulders at different depths, like a magazine cover",
+  v_formation: "a V formation with the front player at the point",
+  arms_linked: "a line with arms around each other's shoulders",
+  walking_out: "walking out side by side towards the camera",
+  steps: "standing on stadium steps at different heights",
+  huddle_turn: "breaking from a huddle and turning to face the camera",
+  celebration_pile: "jumping and celebrating together, every face still visible",
+  back_to_back: "pairs standing back to back with heads turned to the camera"
+};
+var keysOf = (pool) => Object.keys(pool);
+function line(pool, key, exclude = []) {
+  const keys = Object.keys(pool).filter((k) => !exclude.includes(k));
+  return pool[key && key in pool ? key : keys[Math.floor(Math.random() * keys.length)]];
+}
+
 // supabase/functions/club-art/team-art.ts
 function look(description) {
   const d = (description || "").replace(/\s+/g, " ").trim();
@@ -4071,9 +4143,9 @@ function teamPrompt(b, refs, styleLook, kit) {
     const traits = look(r.description);
     return `Reference image ${i + 1} is player ${i + 1}${who}: copy that player's own face, skin tone, hair colour and style, beard, glasses, headwear, tattoos and accessories exactly from image ${i + 1} only.${traits ? ` Player ${i + 1}'s look: ${traits}` : ""} ${r.kitNumber ? `Only player ${i + 1} may wear verified number ${r.kitNumber}, and only if their face is also clearly visible as player ${i + 1}.` : `Player ${i + 1} must have no shirt or shorts number.`}`;
   }).join(" ");
-  const action = b.kind === "banner" || b.mood === "win" ? "A shared team celebration. Players interact naturally, cheering together; reuse each uploaded celebration as their signature move where visible. For a banner, gather around a large trophy on a stage." : b.mood === "loss" ? "A united, determined team regrouping, focused expressions and calm poses." : b.pose === "stride" ? "A dynamic squad moving forward together with varied running and ball-control poses." : "An editorial squad portrait with staggered shoulders, varied relaxed and captain stances; never clone one posture across every player.";
+  const action = b.kind === "banner" || b.mood === "win" ? "A shared team celebration. Players interact naturally, cheering together; reuse each uploaded celebration as their signature move where visible. For a banner, gather around a large trophy on a stage." : b.mood === "loss" ? "A united, determined team regrouping, focused expressions and calm poses." : b.pose === "stride" ? "A dynamic squad moving forward together with varied running and ball-control poses." : "An editorial squad portrait with varied relaxed and captain stances; never clone one posture across every player.";
   const separation = "IDENTITY LOCK: likeness has priority over pose and style; each player must be instantly recognisable as the character in their own uploaded image. Preserve each original face geometry, nose and jaw, beard length and colour, moustache shape, glasses frame and lens tint. Do not replace sports glasses with ordinary eyeglasses. Keep identity-defining colours unchanged by vintage grading. Each player is a separate person. Never move, swap, merge or duplicate beards, facial hair colour, glasses or visors, headbands, hair colour, tattoos or gloves between players; a trait belongs only to the player whose reference shows it. Do not add glasses, beards or tattoos to a player whose reference lacks them, and do not remove them from a player whose reference has them. Every player faces the camera or three-quarters so their face is recognisable; no player shown from behind.";
-  return `Team-focused artwork for ${b.club_name}${b.competition ? ` \xB7 ${b.competition}` : ""}. Show exactly ${refs.length} distinct saved players together in the foreground, one per reference, not a single featured player with anonymous filler. ${identities} ${separation} ${kit} Apply the same club kit to every player regardless of reference clothing. Preserve EA FC Virtual Pro 3D game-engine materials, never humanize them. ${action} Style: ${styleLook}. Creative edition ${b.variation || "team"}: vary camera, player arrangement and lighting. ${b.kind === "banner" ? "Wide landscape composition: group and trophy in the upper two thirds, lower third clear for lettering." : "Vertical composition: staggered group across the upper half, all faces within the top half, lower third clear for lettering."} Every head, hair, face and visible hand must be fully inside the frame with clear margins; no faces hidden behind other players. Players stay opaque in front of all background effects. No text, letters, logos or watermarks; no numbers except the individually verified kit numbers specified above. Do not copy reference backgrounds or typography.`;
+  return `Team-focused artwork for ${b.club_name}${b.competition ? ` \xB7 ${b.competition}` : ""}. Show exactly ${refs.length} distinct saved players together in the foreground, one per reference, not a single featured player with anonymous filler. ${identities} ${separation} ${kit} Apply the same club kit to every player regardless of reference clothing. Preserve EA FC Virtual Pro 3D game-engine materials, never humanize them. ${action} Style: ${styleLook}. Creative edition ${b.variation || "team"}. Camera: ${line(CAMERAS, b.camera)}. Lighting: ${line(LIGHTING, b.lighting)}, blended into the style. ${b.kind === "banner" ? "" : `Background: ${line(SCENES, b.scene, b.mood === "loss" ? ["confetti"] : [])}. Arrangement: ${line(ARRANGEMENTS, b.arrangement, b.mood === "loss" ? ["celebration_pile"] : [])}. `} ${b.kind === "banner" ? "Wide landscape composition: group and trophy in the upper two thirds, lower third clear for lettering." : "Vertical composition: staggered group across the upper half, all faces within the top half, lower third clear for lettering."} Every head, hair, face and visible hand must be fully inside the frame with clear margins; no faces hidden behind other players. Players stay opaque in front of all background effects. No text, letters, logos or watermarks; no numbers except the individually verified kit numbers specified above. Do not copy reference backgrounds or typography.`;
 }
 function appendReferences(form, refs) {
   for (const ref of refs) form.append(refs.length > 1 ? "image[]" : "image", ref.file);
@@ -4130,18 +4202,19 @@ var Body = external_exports.object({
   mood: external_exports.enum(["win", "draw", "loss", "neutral"]).default("neutral"),
   competition: external_exports.string().max(60).optional(),
   composition: external_exports.enum(["lower-third", "editorial", "side-panel"]).default("lower-third"),
-  pose: external_exports.enum(["ready", "stride", "ball", "celebrate", "profile", "captain", "headshot"]).default("ready"),
+  pose: external_exports.enum(keysOf(POSES)).default("ready"),
+  // Picked per render by the bot (graphics-variants.cjs); random here when left out
+  camera: external_exports.enum(keysOf(CAMERAS)).optional(),
+  lighting: external_exports.enum(keysOf(LIGHTING)).optional(),
+  scene: external_exports.enum(keysOf(SCENES)).optional(),
+  arrangement: external_exports.enum(keysOf(ARRANGEMENTS)).optional(),
   variation: external_exports.string().max(60).optional(),
   has_stats: external_exports.boolean().default(true),
   has_tagline: external_exports.boolean().default(true),
   // Manually confirmed by the member in the card form; treated like a verified upload number.
   kit_number_override: external_exports.number().int().min(1).max(99).optional(),
   // Member-chosen upload to base a single-player card on.
-  photo_asset_id: external_exports.string().uuid().optional(),
-  // Studio's key for "the same art": saved with a card so a later card can reuse it (graphics-studio.cjs)
-  reuse_key: external_exports.string().regex(/^[a-f0-9]{16,64}$/).optional(),
-  // The card layout drawn around the art, saved with it so a reused card keeps a matching layout
-  layout: external_exports.enum(["lower-third", "editorial", "side-panel"]).optional()
+  photo_asset_id: external_exports.string().uuid().optional()
 });
 var MAX_REFERENCES = referenceLimit(Deno.env.get("AI_IMAGE_REFERENCES"));
 var STYLE = {
@@ -4165,25 +4238,18 @@ function promptFor(b, hasRef, kitNumber = null, description = null) {
   const look2 = STYLE[b.style];
   const render = "Keep it looking like an EA SPORTS FC in-game 3D character render (video-game Virtual Pro model, game-engine shading), not a real human photo.";
   const noText = kitNumber ? `No text, letters, logos or watermarks anywhere. The only numerals allowed are the player's verified kit number ${kitNumber}, printed cleanly on the shirt (and optionally shorts) where it is naturally visible; no other numbers.` : "Absolutely no text, letters, numbers, logos or watermarks anywhere, including no shirt or shorts numbers.";
-  const poses = {
-    ready: "WAIST-UP three-quarter portrait, shoulders turned, looking towards the camera, camera at chest height",
-    stride: "FULL-BODY action shot sprinting or dribbling at speed, dynamic lean, ball at the feet, boots fully visible",
-    ball: "HALF-BODY shot (from mid-thigh up) holding a football under one arm, confident expression",
-    celebrate: "KNEES-UP goal celebration, both arms out or one fist raised, mouth open shouting, joyful energy",
-    profile: "CLOSE CHEST-UP portrait, head and shoulders filling much of the frame, intense focused stare",
-    captain: "THREE-QUARTER-LENGTH (from knees up) hands-on-hips stance, slight low camera angle",
-    headshot: "TIGHT HEAD-AND-SHOULDERS school portrait, facing the camera straight on with the head tilted very slightly, relaxed smile, shoulders square, camera at eye level"
-  };
   const framing = "FRAMING RULES (critical): the whole head \u2014 hair, beard, glasses and headwear \u2014 must sit completely inside the image with clear empty space above it; the top of the hair at least 9% below the top edge and the eyes never higher than 15% of the image height. Never crop the top of the head, face, chin or hands at the frame edge. For full-body shots, keep both boots inside the frame too. Centre the subject horizontally unless the composition says otherwise.";
   const placement = b.kind !== "card" ? "Subject in the upper two thirds; keep the lower third empty." : b.pose === "headshot" ? "Yearbook headshot composition: head and shoulders fill the frame, face centred horizontally with the eyes at about 38% height, the top of the hair about 10% below the top edge and the shoulders running off the bottom edge. Plain studio backdrop only, no pitch, crowd or stadium." : !b.has_stats ? `Portrait-first composition: make the virtual pro large and dominant, filling the frame from 9% (top of the hair) to ${b.has_tagline ? "86%" : "90%"} height, using the requested shot type. No empty lower third, blank side panels or reserved stat bands. Keep the top 8% and bottom ${b.has_tagline ? "14%" : "10%"} clear enough for compact club and name lettering. Continue the stadium and kit into the lower frame.` : b.composition === "editorial" ? "Editorial composition: leave a dark empty band from 12% to 28% height for the name; place the character below that band, face between 32% and 50% height, with the lower third empty." : b.composition === "side-panel" ? "Asymmetric composition: character to the right, face in the upper right half. Leave the lower left area and bottom third dark and empty for a nameplate and optional stats." : "Broadcast lower-third composition: character centred, face in the upper half, lower third empty for a nameplate and optional stats.";
   const poseRule = b.pose === "celebrate" ? "SIGNATURE CELEBRATION: if the reference photo shows a celebration pose (raised fists, arms out, knee slide, etc.), reproduce that exact celebration posture, arm and hand positions as this player's signature goal celebration \u2014 vary only the camera angle, framing and background. Take the face, hair, beard and accessories from the reference." : "Vary the body posture only when the original likeness can be preserved; keep the face anchor's head angle and every distinguishing feature. Pose variety must never override identity.";
-  const variation = `Creative edition ${b.variation || crypto.randomUUID()}: independently vary camera angle, stadium detail and lighting within the selected style. The pose must be ${poses[b.pose]}. ${poseRule} Never copy its background or typography. ${placement} ${framing}`;
+  const shot = b.pose === "headshot" ? "" : `Camera: ${line(CAMERAS, b.camera)}. Lighting: ${line(LIGHTING, b.lighting)}, blended into the selected style (the style wins where they clash).`;
+  const variation = `Creative edition ${b.variation || crypto.randomUUID()}. The pose must be ${line(POSES, b.pose)}. ${shot} ${poseRule} Never copy its background or typography. ${placement} ${framing}`;
   if (b.kind === "banner") {
-    return `Championship celebration artwork for the esports football club ${b.club_name}${b.competition ? ` winning ${b.competition}` : ""}. A large gleaming trophy in the centre on a stage, confetti and pyrotechnics, stadium lights. ${hasRef ? `The reference shows one of the club's players: include them lifting or standing beside the trophy, keeping their face, hair and accessories. ${render} ${kitLine(b.kit, b.club_name)}` : `Club colours ${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "throughout"}.`} Style: ${look2}. Wide landscape composition. Independently vary trophy camera angle, lighting and stage arrangement for edition ${b.variation || crypto.randomUUID()}. ${noText}`;
+    return `Championship celebration artwork for the esports football club ${b.club_name}${b.competition ? ` winning ${b.competition}` : ""}. A large gleaming trophy in the centre on a stage, confetti and pyrotechnics, stadium lights. ${hasRef ? `The reference shows one of the club's players: include them lifting or standing beside the trophy, keeping their face, hair and accessories. ${render} ${kitLine(b.kit, b.club_name)}` : `Club colours ${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "throughout"}.`} Style: ${look2}. Wide landscape composition. Camera: ${line(CAMERAS, b.camera)}. Lighting: ${line(LIGHTING, b.lighting)}. Vary the stage arrangement for edition ${b.variation || crypto.randomUUID()}. ${noText}`;
   }
   const action = b.kind === "poster" ? b.mood === "win" ? "celebrating a victory with a fist pump, roaring" : b.mood === "loss" ? "determined, walking off the pitch, focused" : "intense, ready for kick-off" : `player-card portrait${b.position ? `, as a ${b.position}` : ""}`;
   const subject = hasRef ? `Recreate this exact in-game Virtual Pro character (same face, skin tone, hair, beard, glasses and accessories), ${action}. ${description ? `IDENTITY LOCK \u2014 this player looks like: ${description.replace(/\s+/g, " ").slice(0, 300)}. Match that hair colour and style, facial hair (or lack of it), skin tone, face shape and build exactly; do not substitute a different-looking face. ` : ""}Preserve identity and game-render materials, but pose the body freshly as requested; adapt the camera and background to this graphic. ${render} ${kitLine(b.kit, b.club_name)}` : `A stylised silhouette of a footballer in ${b.club_name}'s kit (${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "club colours"}), ${action}, seen from behind or in shadow so no face is shown.`;
-  return `Vertical football club artwork. ${subject} Stadium background lit in the club colours. Style: ${look2}. ${variation} ${noText}`;
+  const background = b.kind === "card" && b.pose === "headshot" ? "" : `Background: ${line(SCENES, b.scene, b.mood === "loss" ? ["confetti"] : [])}, lit in the club colours.`;
+  return `Vertical football club artwork. ${subject} ${background} Style: ${look2}. ${variation} ${noText}`;
 }
 async function proPhoto(b, team = false) {
   if (!b.discord_user_id) return null;
@@ -4325,9 +4391,9 @@ Deno.serve(async (req) => {
             composition: b.composition,
             club_name: b.club_name,
             reference_asset_ids: found?.assetIds,
-            reuse_key: b.reuse_key ?? null,
-            layout: b.layout ?? null,
-            kit_number: kitNumber,
+            camera: b.camera ?? null,
+            lighting: b.lighting ?? null,
+            scene: b.scene ?? null,
             model
           }
         });

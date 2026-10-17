@@ -17,7 +17,6 @@ const { seamlessLogo } = require('./logo-cleanup.cjs');
 const { toFcPlatform } = require('./ea-fc27.cjs');
 const { activeClubs } = require('./manager-hub.cjs');
 const { toInsightMatches, competitionLabel } = require('./club-insights.cjs');
-const { createHash } = require('node:crypto');
 const { nextVariation } = require('./graphics-variants.cjs');
 const { stillInGuild, recentGames, activePool, pickGroup } = require('./art-players.cjs');
 const { UPLOAD_ID: PHOTO_UPLOAD_ID } = require('./pro-photos.cjs');
@@ -400,9 +399,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       .addOptions([{ label: 'Automatic — best match for the pose', value: 'auto' }, ...photos.map((p) => ({ label: p.label, value: p.id, description: p.description || undefined, default: p.id === draft.data.photoId }))]))] : [];
     return { content: kind === 'card' ? `🎴 Pick a kit and ${photos.length ? 'which of your uploaded photos to base it on' : 'style'} (optional), then with stats or just your pro?` : 'Your details are ready. Pick a kit if you like.', components: [...kitRow, ...photoRow, new ActionRowBuilder().addComponents(
       ...choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary)),
-      ...(kind === 'card' ? [new ButtonBuilder().setCustomId(`gs_dback:${token}`).setLabel(draft?.data?.noBack ? 'Back of card: Off' : 'Back of card: On').setEmoji('🔄').setStyle(draft?.data?.noBack ? ButtonStyle.Secondary : ButtonStyle.Success),
-        // Off: reuse the player's last art for this style when only stats, name or frame changed
-        new ButtonBuilder().setCustomId(`gs_dart:${token}`).setLabel(draft?.data?.newArt ? 'Art: New' : 'Art: Reuse last').setEmoji('🎨').setStyle(draft?.data?.newArt ? ButtonStyle.Success : ButtonStyle.Secondary)] : []),
+      ...(kind === 'card' ? [new ButtonBuilder().setCustomId(`gs_dback:${token}`).setLabel(draft?.data?.noBack ? 'Back of card: Off' : 'Back of card: On').setEmoji('🔄').setStyle(draft?.data?.noBack ? ButtonStyle.Secondary : ButtonStyle.Success)] : []),
     )] };
   }
   const input = (id, label, value, { para = false, max = 100, req = false } = {}) => new ActionRowBuilder().addComponents(
@@ -604,23 +601,11 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
     // Cards are only drawn for someone still in the server.
     if (!(await stillInGuild(guildOf(guildId), [d.userId])).length) return { error: 'That player is no longer in this server, so no card was made.' };
+    const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);
     // Print-card lettering and frames are local; artwork reuses the text-free vintage style.
     const printCard = Boolean(STYLES[style]?.cardOnly) || SIGNATURE_STYLES.includes(style);
-    const base = { kind: 'card', style: style === 'sicilia' || style === 'yearbook' ? style : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...(d.photoId ? { photo_asset_id: d.photoId } : {}), ...(style === 'yearbook' ? { pose: 'headshot' } : {}), has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) };
-    const reuseKey = cardArtKey(base);
-    // Same art as last time unless the member asked for new art: new stats, names or frames cost nothing
-    let a = d.newArt ? null : await savedCardArt(d.userId, reuseKey).catch((err) => { console.warn('[studio] saved art lookup failed:', err.message); return null; });
-    let layout;
-    if (a) {
-      layout = a.layout;
-      logRender({ guild_id: guildId, discord_user_id: d.userId, kind: 'card', style: base.style, reused: true, cost_usd: 0 });
-    } else {
-      const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);
-      layout = variation.composition;
-      a = await art({ ...variation, ...base, guild_id: guildId, reuse_key: reuseKey, layout });
-    }
+    const a = await art({ kind: 'card', style: style === 'sicilia' || style === 'yearbook' ? style : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, guild_id: guildId, position: d.position || undefined, ...(d.photoId ? { photo_asset_id: d.photoId } : {}), ...variation, ...(style === 'yearbook' ? { pose: 'headshot' } : {}), has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
     if (a.error) return a;
-    const variation = { composition: layout };
     const number = d.number !== undefined ? d.number : (a.kitNumber || '');
     const png = playerCard({
       art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), name: d.name, position: shortPosition(d.position) || null,
@@ -634,38 +619,6 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     cardsApi({ action: 'save', guild_id: guildId, discord_user_id: d.userId, style, name: String(d.name).slice(0, 40), front_b64: Buffer.from(png).toString('base64'), ...(back ? { back_b64: Buffer.from(back.attachment).toString('base64') } : {}) })
       .then((r) => r.error && console.warn('[studio] card save failed:', r.error)).catch(() => {});
     return { extra: back ? [back] : [], file: new AttachmentBuilder(png, { name: `card-${d.name}.png`.replace(/[^\w.-]/g, '_') }), note: a.usedPro ? null : 'No pro photo on file, so this uses a silhouette — post your pro in #pro-photos for the real thing.' };
-  }
-  // The card's AI-drawn part: everything that changes the artwork (style, kit, photo, number, framing
-  // space), but not the stats, name, card frame or the randomly picked layout and pose.
-  function cardArtKey(base) {
-    const { kind, style, club_name, kit, position, photo_asset_id, pose, has_stats, has_tagline, kit_number_override, composition } = base;
-    const stable = { kind, style, club_name, kit: { primary: kit?.primary || null, secondary: kit?.secondary || null, description: kit?.description || null },
-      position: position || null, photo_asset_id: photo_asset_id || null, pose: pose || null, has_stats, has_tagline,
-      kit_number_override: kit_number_override || null, composition: composition || null };
-    return createHash('sha256').update(JSON.stringify(stable)).digest('hex').slice(0, 32);
-  }
-  // The player's latest card art with that key, unless they've uploaded a newer photo since or deleted a
-  // photo it was drawn from. Reused art is only ever displayed, never sent back to the AI as a reference.
-  async function savedCardArt(userId, reuseKey) {
-    if (!supabase.storage) return null;
-    const [{ data: saved }, { data: uploads }] = await Promise.all([
-      supabase.from('pro_photo_assets').select('storage_path, analysis, created_at').eq('discord_user_id', userId).eq('source_kind', 'generated')
-        .eq('graphic_kind', 'card').eq('analysis->>reuse_key', reuseKey).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('pro_photo_assets').select('id, created_at').eq('discord_user_id', userId).eq('source_kind', 'upload'),
-    ]);
-    if (!saved?.storage_path) return null;
-    const ids = new Set((uploads || []).map((u) => u.id));
-    if ((uploads || []).some((u) => new Date(u.created_at) > new Date(saved.created_at))) return null;
-    if ((saved.analysis?.reference_asset_ids || []).some((id) => !ids.has(id))) return null;
-    const { data: blob } = await supabase.storage.from('pro-photos').download(saved.storage_path);
-    if (!blob) return null;
-    const png = Buffer.from(await blob.arrayBuffer());
-    return { image: `data:image/png;base64,${png.toString('base64')}`, usedPro: true, layout: saved.analysis?.layout || 'lower-third',
-      kitNumber: Number.isInteger(saved.analysis?.kit_number) ? saved.analysis.kit_number : null };
-  }
-  function logRender(row) {
-    Promise.resolve().then(() => supabase.from('ai_image_renders').insert(row))
-      .then((r) => r?.error && console.warn('[studio] render log failed:', r.error.message)).catch(() => {});
   }
   async function buildCard({ guildId, club, userId, displayName, style, noStats = false }) {
     club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
@@ -960,7 +913,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     }
     // Banner style opens a modal, which Discord forbids after a deferral; everything else is acknowledged immediately.
     const deferredSelect = (interaction.isStringSelectMenu() && !(action === 'gs_style' && a1 === 'banner'))
-      || (interaction.isButton() && ['gs_dback', 'gs_dart', 'gs_cdel'].includes(action));
+      || (interaction.isButton() && ['gs_dback', 'gs_cdel'].includes(action));
     const deferredReply = interaction.isModalSubmit() || interaction.isButton() && ['gs_card', 'gs_poster', 'gs_lineup', 'gs_recruit', 'gs_mycards', 'gs_banner'].includes(action);
     if (deferredSelect) await interaction.deferUpdate();
     else if (deferredReply) await interaction.deferReply({ flags: 64 });
@@ -974,14 +927,6 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         await update({ content: 'That form expired — start again from the panel.', components: [], embeds: [], attachments: [] }); return true;
       }
       draft.data.noBack = !draft.data.noBack;
-      await update(await draftMessage(a1, 'card', findClub(draft.clubKey), interaction.guildId)); return true;
-    }
-    if (interaction.isButton() && action === 'gs_dart') {
-      const draft = DRAFTS.get(a1);
-      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
-        await update({ content: 'That form expired — start again from the panel.', components: [], embeds: [], attachments: [] }); return true;
-      }
-      draft.data.newArt = !draft.data.newArt;
       await update(await draftMessage(a1, 'card', findClub(draft.clubKey), interaction.guildId)); return true;
     }
     const manager = async () => isManager(interaction.member, interaction.guildId);
