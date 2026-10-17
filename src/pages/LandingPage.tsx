@@ -26,9 +26,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { DiscordIcon } from "@/components/DiscordIcon";
 import { discordAuthApi } from "@/lib/discordAuthApi";
 import { cn } from "@/lib/utils";
-import lineupEditorImg from "@/assets/landing/lineup-editor.webp";
-import discordLineupImg from "@/assets/landing/discord-lineup.webp";
-import cardStylesImg from "@/assets/landing/card-styles.webp";
+
+// Player cards drawn by the bot's own card renderer (graphics-studio.cjs) from its bundled sample art,
+// for a made-up club, so the page shows real GafferBot output without anyone's real photos.
+const CARDS = import.meta.glob<string>("/src/assets/landing/cards/*.webp", { eager: true, import: "default" });
+const card = (name: string) => CARDS[`/src/assets/landing/cards/${name}.webp`];
 
 // Public marketing page at /welcome: sells GafferBot to managers and captains who haven't added it yet.
 // Signed-out visitors to "/" see sign-in first, with a Learn more link here (see HomeRoute in App.tsx).
@@ -37,6 +39,24 @@ import cardStylesImg from "@/assets/landing/card-styles.webp";
 // manage messages (sticky panels), manage roles (positions, trophies), change nickname,
 // create invites (recruiting), public threads and sending in threads.
 const BOT_PERMISSIONS = "309573708865";
+
+const STYLE_LABELS: Record<string, string> = {
+  chrome: "Liquid Chrome",
+  retro1970s: "1970s Club Archive",
+  y2k: "Y2K Club Chrome",
+  retro2020s: "2020s Club Prism",
+  synthwave: "Synthwave Chill",
+  retro1986: "1986 Club Classic",
+  obsidian: "Obsidian & Gold",
+  esports: "Ultra Esports",
+  retro1990s: "1990s Club Collection",
+  cyber: "Cyber Glitch",
+};
+
+const GALLERY = Object.keys(CARDS).filter((k) => k.includes("/g-")).sort().map((k) => ({
+  src: CARDS[k],
+  label: STYLE_LABELS[k.replace(/.*\/g-\d+-(\w+)\.webp$/, "$1")] ?? "",
+}));
 
 // GafferBot is free; this is where people can chip in to keep it running
 const DONATE_URL = "https://venmo.com/u/bleacherjeff";
@@ -148,53 +168,68 @@ const FAQ = [
 
 // ---------- Mockups (drawn in HTML so they stay sharp and follow the theme) ----------
 
-const PITCH_433: { pos: string; name: string; x: number; y: number }[] = [
-  { pos: "ST", name: "Fontana", x: 50, y: 12 },
-  { pos: "LW", name: "Costa", x: 18, y: 20 },
-  { pos: "RW", name: "Marino", x: 82, y: 20 },
-  { pos: "CM", name: "Greco", x: 28, y: 44 },
-  { pos: "CM", name: "Bruno", x: 50, y: 50 },
-  { pos: "CM", name: "Galli", x: 72, y: 44 },
-  { pos: "LB", name: "Bianchi", x: 14, y: 70 },
-  { pos: "CB", name: "Ferri", x: 38, y: 74 },
-  { pos: "CB", name: "Conte", x: 62, y: 74 },
-  { pos: "RB", name: "Lombardi", x: 86, y: 70 },
-  { pos: "GK", name: "Rossi", x: 50, y: 90 },
+// 4-3-3 with every player shown as their own card, as the lineup image does
+const CARD_XI: { key: string; x: number; y: number }[] = [
+  { key: "lw", x: 17, y: 15 },
+  { key: "st", x: 50, y: 10 },
+  { key: "rw", x: 83, y: 15 },
+  { key: "cm1", x: 26, y: 41 },
+  { key: "cm3", x: 50, y: 37 },
+  { key: "cm2", x: 74, y: 41 },
+  { key: "lb", x: 12, y: 67 },
+  { key: "cb1", x: 37, y: 70 },
+  { key: "cb2", x: 63, y: 70 },
+  { key: "rb", x: 88, y: 67 },
+  { key: "gk", x: 50, y: 91 },
 ];
 
-function PitchMockup({ className }: { className?: string }) {
+function CardPitch({ className }: { className?: string }) {
   return (
-    <div className={cn("rounded-2xl border border-white/10 bg-[hsl(150_45%_9%)] p-3 shadow-2xl", className)}>
-      <div className="mb-2 flex items-baseline justify-between px-1">
-        <p className="font-display text-lg font-bold uppercase tracking-wide text-white">Starting XI</p>
-        <p className="text-xs text-white/60">4-3-3 · League night</p>
+    <div className={cn("relative overflow-hidden rounded-3xl border border-white/10 bg-[hsl(224_30%_6%)] p-4 shadow-2xl sm:p-6", className)}>
+      <div className="mb-4 flex items-end justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Matchday XI</p>
+          <p className="font-display text-2xl font-bold uppercase text-white sm:text-3xl">Northside FC</p>
+        </div>
+        <p className="text-right text-xs text-white/60">4-3-3 · League night<br />vs Wolves Town</p>
       </div>
-      <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-[repeating-linear-gradient(180deg,hsl(122_38%_44%)_0_10%,hsl(122_38%_40%)_10%_20%)]">
-        <div className="absolute inset-3 rounded-sm border border-white/50" />
-        <div className="absolute left-3 right-3 top-1/2 border-t border-white/50" />
-        <div className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/50" />
-        <div className="absolute left-1/2 top-3 h-[14%] w-[44%] -translate-x-1/2 border border-t-0 border-white/50" />
-        <div className="absolute bottom-3 left-1/2 h-[14%] w-[44%] -translate-x-1/2 border border-b-0 border-white/50" />
-        {PITCH_433.map((p) => (
-          <div
-            key={p.name}
-            className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
+      <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-[radial-gradient(ellipse_at_center,hsl(142_45%_22%),hsl(150_50%_9%))]">
+        <div className="absolute inset-0 bg-[repeating-linear-gradient(90deg,transparent_0_9%,hsl(0_0%_100%/0.03)_9%_18%)]" />
+        <div className="absolute inset-[4%] rounded-lg border border-white/20" />
+        <div className="absolute left-[4%] right-[4%] top-1/2 border-t border-white/20" />
+        <div className="absolute left-1/2 top-1/2 h-[18%] w-[22%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/20" />
+        {CARD_XI.map((p) => (
+          <img
+            key={p.key}
+            src={card(`xi-${p.key}`)}
+            alt=""
+            loading="lazy"
+            className="absolute w-[17%] -translate-x-1/2 -translate-y-1/2 rounded-[6%] shadow-[0_8px_20px_rgba(0,0,0,0.55)] ring-1 ring-black/40 transition-transform duration-300 hover:z-10 hover:scale-125"
             style={{ left: `${p.x}%`, top: `${p.y}%` }}
-          >
-            <span
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shadow-md sm:h-8 sm:w-8",
-                p.pos === "GK" ? "bg-accent text-accent-foreground" : "bg-primary text-primary-foreground"
-              )}
-            >
-              {p.pos}
-            </span>
-            <span className="mt-0.5 rounded bg-black/75 px-1.5 py-px text-[9px] font-semibold uppercase text-white sm:text-[10px]">
-              {p.name}
-            </span>
-          </div>
+          />
         ))}
       </div>
+    </div>
+  );
+}
+
+function CardFan({ className }: { className?: string }) {
+  const picks = [GALLERY[1], GALLERY[6], GALLERY[3]].filter(Boolean);
+  return (
+    <div className={cn("relative h-[380px] sm:h-[460px]", className)}>
+      {picks.map((g, i) => (
+        <img
+          key={g.src}
+          src={g.src}
+          alt={`${g.label} player card`}
+          className={cn(
+            "absolute top-0 w-[58%] rounded-2xl shadow-2xl ring-1 ring-white/10 transition-transform duration-500 hover:z-20 hover:-translate-y-3",
+            i === 0 && "left-0 top-8 -rotate-[8deg]",
+            i === 1 && "left-1/2 z-10 -translate-x-1/2",
+            i === 2 && "right-0 top-8 rotate-[8deg]"
+          )}
+        />
+      ))}
     </div>
   );
 }
@@ -303,6 +338,7 @@ export default function LandingPage() {
             <span className="font-display text-xl font-bold">GafferBot</span>
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
+            <a href="#fun" className="hover:text-foreground">Why GafferBot</a>
             <a href="#features" className="hover:text-foreground">Features</a>
             <a href="#screens" className="hover:text-foreground">Screens</a>
             <a href="#how" className="hover:text-foreground">How it works</a>
@@ -348,8 +384,8 @@ export default function LandingPage() {
               </ul>
             </div>
             <div className="relative mx-auto w-full max-w-md">
-              <PitchMockup className="ml-auto w-[78%]" />
-              <AvailabilityMockup className="absolute -bottom-6 -left-2 w-[66%] sm:-left-6" />
+              <CardFan />
+              <AvailabilityMockup className="absolute -bottom-10 -left-2 z-30 w-[66%] sm:-left-8" />
             </div>
           </div>
         </section>
@@ -367,6 +403,83 @@ export default function LandingPage() {
                 <p className="mt-1 text-sm text-muted-foreground">{b}</p>
               </div>
             ))}
+          </div>
+        </section>
+
+        {/* Only on GafferBot */}
+        <section id="fun" className="relative scroll-mt-20 overflow-hidden">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,hsl(var(--accent)/0.12),transparent_55%)]" />
+          <div className="relative mx-auto max-w-6xl px-4 py-16 sm:py-24">
+            <div className="max-w-2xl">
+              <p className="text-sm font-semibold uppercase tracking-wider text-accent">Only on GafferBot</p>
+              <h2 className="mt-2 text-3xl font-bold sm:text-4xl">The bit your group chat will love</h2>
+              <p className="mt-3 text-muted-foreground">
+                Other tools stop at a spreadsheet. GafferBot turns every match night into something your squad talks
+                about: their own player cards, a newspaper about the club, and banter built on real stats.
+              </p>
+            </div>
+
+            <div className="mt-10 grid gap-4 lg:grid-cols-3">
+              <div className="rounded-2xl border bg-card p-5 lg:row-span-2">
+                <p className="font-display text-xl font-bold">🍝 The Roast</p>
+                <p className="mt-1 text-sm text-muted-foreground">After a bad night, the recap hands out awards nobody wants, all from real EA numbers.</p>
+                <div className="mt-4 rounded-xl border-l-4 border-[hsl(335_80%_75%)] bg-[hsl(228_8%_20%)] p-4 text-sm text-white">
+                  <p className="font-bold">🍝 The Roast: Northside FC</p>
+                  <p className="mt-1 text-xs text-white/60">Last night: W1 D0 L2</p>
+                  <div className="mt-3 space-y-3 text-[13px] leading-snug">
+                    <p><span className="font-semibold">🎯 Sniper on the Grassy Knoll</span><br />Marino: 9 shots, 0 goals. The stand behind the goal has been notified.</p>
+                    <p><span className="font-semibold">🏃 The Cardio King</span><br />Bruno: covered every blade of grass, touched the ball 14 times.</p>
+                    <p><span className="font-semibold">🧱 Brick Wall of Regret</span><br />Ferri: 6 tackles tried, 1 won. Respect the effort.</p>
+                  </div>
+                  <p className="mt-3 text-[11px] text-white/50">Banter only. Hug your teammates.</p>
+                </div>
+                <p className="mt-6 font-display text-xl font-bold">🎤 The press conference</p>
+                <p className="mt-1 text-sm text-muted-foreground">Face the tabloids after the final whistle and pick your answer.</p>
+                <div className="mt-3 rounded-xl bg-[hsl(228_8%_20%)] p-4 text-[13px] text-white">
+                  <p><span className="font-semibold">Reporter:</span> Was tonight's defending a tactic, or a cry for help?</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
+                    {["Blame the servers", "Blame the referee", "Walk out"].map((b) => (
+                      <span key={b} className="rounded bg-[hsl(228_7%_32%)] px-2.5 py-1.5">{b}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border bg-[hsl(40_45%_92%)] p-5 text-[hsl(30_15%_12%)] lg:col-span-2">
+                <div className="flex items-center justify-between border-y-2 border-[hsl(30_15%_12%)] py-1 text-[11px] font-semibold uppercase tracking-widest">
+                  <span className="text-[hsl(142_60%_32%)]">Final edition</span>
+                  <span>Last 10: 7-1-2</span>
+                </div>
+                <p className="mt-3 text-center font-display text-3xl font-bold uppercase leading-none sm:text-4xl">The Northside Chronicle</p>
+                <p className="mt-3 text-center font-display text-2xl font-bold uppercase leading-tight sm:text-3xl">Fontana hat-trick sinks Wolves Town</p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-[120px_1fr]">
+                  <img src={card("xi-st")} alt="" loading="lazy" className="mx-auto w-28 rounded-md shadow-lg sm:w-full" />
+                  <p className="text-sm leading-relaxed">
+                    Northside sit 14-3-5 and the arrow points up: 10 points from the last five. Fontana leads the scoring
+                    with 24 while Galli pulls the strings with 14 assists. GafferBot writes a match report after every
+                    game and a full edition twice a day, in your club's own voice, with your players on the front page.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border bg-card p-5">
+                <p className="font-display text-xl font-bold">🚨 The Rumour Mill</p>
+                <p className="mt-2 rounded-lg bg-muted p-3 text-sm">
+                  EXCLUSIVE: Costa spotted at the airport carrying a suitcase and a single sandwich. Agents deny everything.
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">Made-up transfer gossip about your squad, always labelled fiction. Plus a quote wall for voice chat gold.</p>
+              </div>
+
+              <div className="rounded-2xl border bg-card p-5">
+                <p className="font-display text-xl font-bold">🏆 Stat trophies</p>
+                <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                  {["👑 Club Legend", "⚽ Golden Boot", "🎯 Playmaker", "🧤 Golden Glove", "🔥 In-Form"].map((r) => (
+                    <span key={r} className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 font-medium">{r}</span>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">Real Discord roles that move to whoever earns them after every synced match. Bragging rights, updated automatically.</p>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -410,30 +523,16 @@ export default function LandingPage() {
               <h2 className="mt-2 text-3xl font-bold sm:text-4xl">What your club actually gets</h2>
             </div>
 
-            <div className="grid items-center gap-10 lg:grid-cols-[1.25fr_1fr]">
-              <div className="relative">
-                <img
-                  src={lineupEditorImg}
-                  alt="The web lineup builder with players on the pitch, a bench and a squad list"
-                  loading="lazy"
-                  className="w-full rounded-2xl border shadow-2xl"
-                />
-                <img
-                  src={discordLineupImg}
-                  alt="The lineup graphic as posted in Discord"
-                  loading="lazy"
-                  className="absolute -bottom-8 -right-2 hidden w-[30%] rotate-3 rounded-xl border-4 border-background shadow-2xl sm:block"
-                />
-              </div>
+            <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_1fr]">
+              <CardPitch className="mx-auto w-full max-w-xl" />
               <div>
-                <h3 className="text-2xl font-bold sm:text-3xl">Drag, drop, post</h3>
+                <h3 className="text-2xl font-bold sm:text-3xl">Your XI, as player cards</h3>
                 <p className="mt-3 text-muted-foreground">
-                  Build the XI on the web or straight from Discord. Swap players, fill the bench, check who is
-                  available and who is playing out of position, then post the graphic to your lineup channel in one
-                  click.
+                  Pick the team on the web or straight from Discord and GafferBot posts a lineup where every spot is that
+                  player's own card. The squad sees exactly who is starting, and they actually want to share it.
                 </p>
                 <ul className="mt-5 space-y-2 text-sm">
-                  {["Every formation, up to 9 on the bench", "Coloured outlines show comp, backup and emergency positions", "Your kit, colours and players' latest cards on the image"].map((t) => (
+                  {["Drag and drop, any formation, up to 9 on the bench", "Shows who is available and who is out of position", "Posted to your lineup channel in one click"].map((t) => (
                     <li key={t} className="flex items-start gap-2">
                       <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
                       {t}
@@ -443,31 +542,29 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="grid items-center gap-10 lg:grid-cols-[1fr_1.25fr]">
-              <div className="lg:order-2">
-                <img
-                  src={cardStylesImg}
-                  alt="A grid of player card styles from the Graphics Studio"
-                  loading="lazy"
-                  className="w-full rounded-2xl border shadow-2xl"
-                />
-              </div>
-              <div className="lg:order-1">
-                <h3 className="text-2xl font-bold sm:text-3xl">Graphics that look pro</h3>
+            <div>
+              <div className="max-w-2xl">
+                <h3 className="text-2xl font-bold sm:text-3xl">A card for every player, in 18 styles</h3>
                 <p className="mt-3 text-muted-foreground">
-                  Players drop a photo of their pro in Discord and GafferBot turns it into player cards, signing
-                  announcements, recruiting posters and match-day banners. Pick from 18 styles, from modern broadcast to
-                  1980s retro, all in your club's colours.
+                  Players post a photo of their pro and GafferBot turns it into a collectible card with their real season
+                  stats. Go modern broadcast, 1970s archive, Y2K chrome or obsidian and gold. The same art powers signing
+                  announcements, recruiting posters, match-day banners and the Chronicle's front page.
                 </p>
-                <ul className="mt-5 space-y-2 text-sm">
-                  {["Cards carry each player's real season stats", "Recruiting posters list the positions you need", "Front pages and recaps use your players' own photos"].map((t) => (
-                    <li key={t} className="flex items-start gap-2">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                      {t}
-                    </li>
-                  ))}
-                </ul>
               </div>
+              <div className="-mx-4 mt-8 flex snap-x gap-4 overflow-x-auto px-4 pb-4 [scrollbar-width:thin]">
+                {GALLERY.map((g) => (
+                  <figure key={g.src} className="w-44 shrink-0 snap-start sm:w-52">
+                    <img
+                      src={g.src}
+                      alt={`${g.label} player card`}
+                      loading="lazy"
+                      className="w-full rounded-xl shadow-xl ring-1 ring-white/10 transition-transform duration-300 hover:-translate-y-2"
+                    />
+                    <figcaption className="mt-2 text-center text-xs text-muted-foreground">{g.label}</figcaption>
+                  </figure>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">Sample cards for a made-up club. Yours are drawn from your own players' pros.</p>
             </div>
           </div>
         </section>
