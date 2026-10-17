@@ -873,6 +873,7 @@ function createRecruitment(deps) {
     handleInteraction,
     start,
     getSettings,
+    forgetSettings: (guildId) => settingsCache.delete(guildId),
     canRecruit,
     search: handleSearch,
     postToGuild,

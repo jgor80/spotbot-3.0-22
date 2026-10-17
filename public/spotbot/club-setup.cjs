@@ -9,6 +9,7 @@ const { activeClubs } = require('./manager-hub.cjs');
 const { parseCrestHistory } = require('./club-logos.cjs');
 const { VOICES, VOICE_KEYS, identityOf } = require('./club-identity.cjs');
 const { toHex, teamColors, crestUrl } = require('./club-colors.cjs');
+const { createChannelSetup } = require('./channel-setup.cjs');
 
 const F = PermissionsBitField.Flags;
 const SERVER_PERMS = [
@@ -96,6 +97,7 @@ function restrictedByDefault(guild) {
 
 function createClubSetup(deps) {
   const { supabase, getGuildState, events, saveGuildSettings, searchClubCandidates, linkEaClub, clubPickerReply } = deps;
+  const channelSetup = createChannelSetup({ supabase, getGuildState, saveGuildSettings, currentClubOf: (s) => currentClubOf(s), activeClubs, hooks: deps.channelHooks });
 
   // ---------- Setup wizard: EA club and kit in one form ----------
 
@@ -339,6 +341,7 @@ function createClubSetup(deps) {
 
   // ---------- Setup wizard step 3: club identity (newspaper voice, paper name, hometown) ----------
 
+  const channelsButton = () => new ButtonBuilder().setCustomId('setupw:channels').setLabel('Channels').setEmoji('📁').setStyle(ButtonStyle.Secondary);
   const identityButton = () => new ButtonBuilder().setCustomId('setupw:identity').setLabel('Club identity: voice & newspaper').setEmoji('📰').setStyle(ButtonStyle.Secondary);
 
   function identityPanel(club) {
@@ -357,14 +360,15 @@ function createClubSetup(deps) {
         { name: 'Hometown', value: id.city, inline: true },
         { name: 'Opponent name gags', value: id.nameJokes ? 'On' : 'Off', inline: true }
       )
-      .setFooter({ text: 'Run /setup any time to change these.' });
+      .setFooter({ text: 'Next: Channels, to create and wire up every channel GafferBot posts in. Run /setup any time to change these.' });
     const voiceMenu = new StringSelectMenuBuilder()
       .setCustomId('setupw:voice')
       .setPlaceholder('Pick your club’s voice')
       .addOptions(VOICE_KEYS.map((k) => ({ label: VOICES[k].label, value: k, emoji: VOICES[k].emoji, description: VOICES[k].desc.slice(0, 100), default: k === id.voice })));
     const buttons = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('setupw:paper').setLabel('Newspaper name & hometown').setEmoji('✏️').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId('setupw:jokes').setLabel(id.nameJokes ? 'Turn name gags off' : 'Turn name gags on').setEmoji('😏').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('setupw:jokes').setLabel(id.nameJokes ? 'Turn name gags off' : 'Turn name gags on').setEmoji('😏').setStyle(ButtonStyle.Secondary),
+      channelsButton()
     );
     return { embeds: [embed], components: [new ActionRowBuilder().addComponents(voiceMenu), buttons] };
   }
@@ -489,6 +493,13 @@ function createClubSetup(deps) {
     }
     if (recapGaps.length) problems.push(`⚠️ Match recaps for ${recapGaps.join(', ')} have no channel. Pick one with **/manager → Match Night → Autopilot**.`);
 
+    const wired = deps.saveGuildSettings ? await channelSetup.summary(guild).catch(() => null) : null;
+    const channelsText = wired
+      ? wired.set === wired.total
+        ? `✅ All ${wired.total} feature channels are set (results, matchday, Chronicle, clips and more)`
+        : `⬜ ${wired.set} of ${wired.total} feature channels set. Press **Channels** to have me create and wire the rest, or pick your own.`
+      : null;
+
     const access = await commandAccessLines(guild);
     const restricted = restrictedByDefault(guild);
     const accessText = [
@@ -507,6 +518,7 @@ function createClubSetup(deps) {
           steps.map((s) => `${s.done ? '✅' : '⬜'} ${s.text}`).join('\n')
       )
       .addFields(
+        ...(channelsText ? [{ name: 'Feature channels', value: channelsText }] : []),
         { name: 'Channels I post in', value: channelLines.join('\n').slice(0, 1024) || '–' },
         { name: 'Server permissions', value: problems.join('\n').slice(0, 1024) || '✅ Nothing missing' },
         { name: 'Who can use commands', value: accessText.slice(0, 1024) }
@@ -514,7 +526,7 @@ function createClubSetup(deps) {
       .setFooter({ text: `Bot online · ${Math.max(0, Math.round(guild.client.ws.ping))}ms latency · Missing a channel permission? Edit the channel → Permissions → add my role.` });
     const canEdit = interaction.member.permissions.has(F.ManageGuild);
     const components = canEdit && deps.saveGuildSettings
-      ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupw:start').setLabel('Club setup: EA club & kit').setEmoji('🧭').setStyle(ButtonStyle.Primary), colorsButton(), identityButton())]
+      ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupw:start').setLabel('Club setup: EA club & kit').setEmoji('🧭').setStyle(ButtonStyle.Primary), colorsButton(), identityButton(), channelsButton())]
       : [];
     return interaction.editReply({ embeds: [embed], components });
   }
@@ -611,6 +623,7 @@ function createClubSetup(deps) {
 
   async function handleInteraction(interaction) {
     if (!interaction.guildId) return false;
+    if (/^setupw:ch/.test(interaction.customId || '') && (await channelSetup.handleInteraction(interaction))) return true;
     if (/^setupw:(identity|voice|jokes|paper|papersubmit)$/.test(interaction.customId || '') && (interaction.isButton() || interaction.isStringSelectMenu?.() || interaction.isModalSubmit())) {
       await handleIdentity(interaction);
       return true;
@@ -644,7 +657,7 @@ function createClubSetup(deps) {
             .setTitle('👋 Thanks for adding GafferBot')
             .setColor(0x5865f2)
             .setDescription(
-              'Start with **`/setup`** and press **Club setup** to link your EA club and describe your kit, then **Team colours & crest** to pick your colours and upload your crest, then **Club identity** to pick your club\'s voice, newspaper name and hometown. It also shows what to do next and checks my permissions.\n\n' +
+              'Start with **`/setup`** and press **Club setup** to link your EA club and describe your kit, then **Team colours & crest** to pick your colours and upload your crest, then **Club identity** to pick your club\'s voice, newspaper name and hometown, then **Channels** to have me create every channel GafferBot uses and wire them up (or pick your own). It also shows what to do next and checks my permissions.\n\n' +
                 'The usual path, all from `/manager`: **Admin → Link EA Club**, **Roster & Squad → Import Role**, **Events → Timezone**, then **Events → New Event**.'
             ),
         ],

@@ -30,7 +30,7 @@ const VOICE_TYPES = [ChannelType.GuildVoice, ChannelType.GuildStageVoice];
 // Web-only entries that open an existing bot panel privately instead of posting it
 const EXTRA_ACTIONS = [
   { id: 'wb_graphics', label: 'Graphics Studio', emoji: '🎨', areaKey: 'premium', view: 'graphics', style: 'primary', hint: 'Player cards, match posters, lineups and recruitment art, previewed here.' },
-  { id: 'wb_setup', label: 'Setup Wizard', emoji: '🧭', areaKey: 'admin', cmd: 'setup', hint: 'EA club link and kit, team colours and crest, then your club identity.' },
+  { id: 'wb_setup', label: 'Setup Wizard', emoji: '🧭', areaKey: 'admin', cmd: 'setup', hint: 'EA club link and kit, team colours and crest, club identity, then the channels GafferBot posts in.' },
 ];
 // Actions that read the presser's live Discord voice channel
 const NEEDS_VOICE = new Set(['ln_vcspots', 'ln_posboard', 'dr_start', 'dr_panel']);
