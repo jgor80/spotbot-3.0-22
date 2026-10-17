@@ -69,6 +69,12 @@ Bot environment variables:
 | `PREMIUM_PAYWALL` | no | Leave unset to give every server the Premium features free; set to `on` to limit them to Premium servers |
 | `PREMIUM_GUILDS` | no | Comma-separated server ids that always have Premium (testing) |
 | `DISCORD_PREMIUM_SKU_ID` | no | The SKU of a Discord App Subscription; servers holding it get Premium and non-premium servers see Discord's Subscribe button |
+| `IMAGE_LIMITS` | no | Set to `on` to count AI images per server (plans, packs, welcome images); unset means unlimited |
+| `DISCORD_SKUS` | no | JSON mapping plan and pack keys to Discord store SKUs, e.g. `{"starter":"…","club":"…","pro":"…","unlimited":"…","lifetime":"…","pack30":"…","pack80":"…"}` |
+| `LEMONSQUEEZY_API_KEY`, `LEMONSQUEEZY_STORE_ID`, `LEMONSQUEEZY_WEBHOOK_SECRET` | no | Website checkout. Point the Lemon Squeezy webhook at `https://gafferbot.app/api/functions/v1/billing` (order and subscription events) |
+| `LEMONSQUEEZY_VARIANTS` | no | JSON mapping the same keys to Lemon Squeezy variant ids |
+| `BILLING_PLANS`, `BILLING_PACKS` | no | JSON overrides for plan and pack numbers, e.g. `{"free":{"welcome":15},"club":{"monthly":75}}`. Store prices must match on both stores (Discord's price-parity rule) |
+| `PUBLIC_SITE_URL` | no | Website address used in buy links (default `https://gafferbot.app`) |
 
 The bot registers its slash commands on start, so adding or removing a command only needs a restart.
 

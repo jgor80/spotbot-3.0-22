@@ -4173,6 +4173,106 @@ function referenceLimit(raw) {
   return Number.isInteger(n) ? Math.min(3, Math.max(1, n)) : 2;
 }
 
+// supabase/functions/_shared/billing.ts
+var DEFAULT_PLANS = {
+  free: { name: "Free", price: 0, monthly: 0, welcome: 10 },
+  lifetime: { name: "Club Unlock", price: 19.99, monthly: 0, once: true, credits: 60 },
+  starter: { name: "Starter", price: 4.99, monthly: 25 },
+  club: { name: "Club", price: 9.99, monthly: 60 },
+  pro: { name: "Pro", price: 19.99, monthly: 140 },
+  unlimited: { name: "Unlimited", price: 49.99, monthly: 350, daily_after: 10 }
+};
+var DEFAULT_PACKS = {
+  pack30: { name: "30 images", price: 4.99, credits: 30 },
+  pack80: { name: "80 images", price: 12.99, credits: 80 }
+};
+var TIER_RANK = ["free", "lifetime", "starter", "club", "pro", "unlimited"];
+var LIVE = /* @__PURE__ */ new Set(["active", "on_trial", "past_due", "cancelled", "lifetime"]);
+function overrides(base, raw) {
+  if (!raw) return base;
+  try {
+    const extra = JSON.parse(raw);
+    const out = { ...base };
+    for (const [k, v] of Object.entries(extra)) if (v && typeof v === "object") out[k] = { ...base[k] ?? {}, ...v };
+    return out;
+  } catch {
+    console.warn("[billing] ignoring invalid BILLING_PLANS/BILLING_PACKS JSON");
+    return base;
+  }
+}
+function idMap(raw) {
+  try {
+    const v = JSON.parse(raw || "{}");
+    return Object.fromEntries(Object.entries(v).filter(([, id]) => typeof id === "string" || typeof id === "number").map(([k, id]) => [k, String(id)]));
+  } catch {
+    return {};
+  }
+}
+function billingConfig(env = (k) => Deno.env.get(k)) {
+  return {
+    plans: overrides(DEFAULT_PLANS, env("BILLING_PLANS")),
+    packs: overrides(DEFAULT_PACKS, env("BILLING_PACKS")),
+    lemonVariants: idMap(env("LEMONSQUEEZY_VARIANTS")),
+    discordSkus: idMap(env("DISCORD_SKUS")),
+    limitsOn: /^(on|true|1|yes)$/i.test(String(env("IMAGE_LIMITS") || "").trim())
+  };
+}
+function activeTier(rows, manual, now = /* @__PURE__ */ new Date()) {
+  let best = "free";
+  const take = (t) => {
+    if (TIER_RANK.includes(t) && TIER_RANK.indexOf(t) > TIER_RANK.indexOf(best)) best = t;
+  };
+  for (const r of rows) {
+    if (!r.active || !LIVE.has(r.status)) continue;
+    if (r.current_period_end && new Date(r.current_period_end) <= now) continue;
+    take(r.tier);
+  }
+  if (manual?.enabled && (!manual.expires_at || new Date(manual.expires_at) > now)) take(manual.tier || "unlimited");
+  return best;
+}
+function creditsFor(kind, teamPlayers) {
+  return teamPlayers > 0 || kind === "banner" ? 2 : 1;
+}
+async function tierOf(db2, guildId, env = (k) => Deno.env.get(k)) {
+  const listed = new Set(String(env("PREMIUM_GUILDS") || "").split(/[\s,]+/).filter(Boolean));
+  if (listed.has(guildId)) return "unlimited";
+  const [{ data: subs }, { data: manual }] = await Promise.all([
+    db2.from("billing_subscriptions").select("tier,status,active,current_period_end").eq("guild_id", guildId).eq("active", true),
+    db2.from("premium_servers").select("enabled,expires_at,tier").eq("guild_id", guildId).maybeSingle()
+  ]);
+  return activeTier(subs ?? [], manual ?? null);
+}
+async function reserveImages(db2, b, config = billingConfig(), site = siteUrl()) {
+  const tier = await tierOf(db2, b.guild_id);
+  const plan = config.plans[tier] ?? DEFAULT_PLANS.free;
+  const { data, error } = await db2.rpc("reserve_ai_image", {
+    p_guild: b.guild_id,
+    p_user: b.discord_user_id ?? null,
+    p_kind: b.kind,
+    p_credits: b.credits,
+    p_monthly: plan.monthly,
+    p_welcome: config.plans.free?.welcome ?? 0,
+    p_daily: plan.daily_after ?? 0,
+    p_pass: 0
+  });
+  if (error) throw new Error(`image allowance check failed: ${error.message}`);
+  const left = Math.max(0, (data.monthly ?? 0) - (data.used ?? 0)) + (data.pack_balance ?? 0);
+  if (data.ok) return { ok: true, id: data.id, source: data.source, left };
+  const need = b.credits > 1 ? `${b.credits} AI images` : "an AI image";
+  return { ok: false, left: 0, message: `This server is out of AI images (this needs ${need}). Get more at ${site}/billing?guild=${b.guild_id}` };
+}
+async function refundImages(db2, id) {
+  const { error } = await db2.rpc("refund_ai_image", { p_id: id });
+  if (error) console.warn(`[billing] refund failed for ${id}: ${error.message}`);
+}
+async function settleImages(db2, id) {
+  const { error } = await db2.from("image_ledger").update({ status: "done" }).eq("id", id).eq("status", "reserved");
+  if (error) console.warn(`[billing] settle failed for ${id}: ${error.message}`);
+}
+function siteUrl() {
+  return (Deno.env.get("PUBLIC_SITE_URL") || "https://gafferbot.app").replace(/\/$/, "");
+}
+
 // supabase/functions/club-art/index.ts
 var SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 var AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -4319,27 +4419,45 @@ Deno.serve(async (req) => {
   const kitNumber = b.kit_number_override ?? found?.kitNumber ?? null;
   const prompt = refs.length ? teamPrompt(b, refs, STYLE[b.style], kitLine(b.kit, b.club_name)) : `${found ? identityInstructions(found.descriptions) : ""} ${promptFor(b, !!ref, kitNumber, found?.description ?? null)}`;
   const size = b.kind === "banner" ? "1536x1024" : "1024x1536";
+  const billing = billingConfig();
+  let reservation = null;
+  let imagesLeft = null;
+  if (billing.limitsOn) {
+    if (!b.guild_id) return json({ error: "AI images need a server to count against." }, 400);
+    const r = await reserveImages(db, { guild_id: b.guild_id, discord_user_id: b.discord_user_id, kind: b.kind, credits: creditsFor(b.kind, teamIds.length) }, billing);
+    if (!r.ok) return json({ error: r.message, out_of_images: true }, 402);
+    reservation = r.id;
+    imagesLeft = r.left;
+  }
+  const failed = async (body, status) => {
+    if (reservation) await refundImages(db, reservation);
+    return json(body, status);
+  };
   let res;
-  if (ref || refs.length) {
-    const form = new FormData();
-    form.set("model", MODEL);
-    form.set("prompt", prompt);
-    form.set("size", size);
-    appendReferences(form, refs.length ? refs : (found?.files ?? []).map((file) => ({ file })));
-    res = await fetch(`${GATEWAY}/v1/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${AI_KEY}` }, body: form });
-  } else {
-    res = await fetch(`${GATEWAY}/v1/images/generations`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${AI_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: MODEL, prompt, size })
-    });
+  try {
+    if (ref || refs.length) {
+      const form = new FormData();
+      form.set("model", MODEL);
+      form.set("prompt", prompt);
+      form.set("size", size);
+      appendReferences(form, refs.length ? refs : (found?.files ?? []).map((file) => ({ file })));
+      res = await fetch(`${GATEWAY}/v1/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${AI_KEY}` }, body: form });
+    } else {
+      res = await fetch(`${GATEWAY}/v1/images/generations`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${AI_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: MODEL, prompt, size })
+      });
+    }
+  } catch {
+    return failed({ error: "The art studio couldn't reach the AI. Nothing was rendered." }, 502);
   }
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
     console.error(`[club-art] AI failed: ${res.status}`);
     const safeMessage = detail?.error?.message ?? detail?.message ?? (typeof detail?.error === "string" ? detail.error : null);
     const msg = typeof safeMessage === "string" ? safeMessage : "Couldn't create the artwork.";
-    return json({ error: msg }, res.status >= 500 ? 502 : res.status);
+    return failed({ error: msg }, res.status >= 500 ? 502 : res.status);
   }
   const out = await res.json().catch(() => null);
   const b64 = out?.data?.[0]?.b64_json;
@@ -4365,7 +4483,8 @@ Deno.serve(async (req) => {
     if (error) console.warn(`[club-art] render log failed: ${error.message}`);
   }, () => {
   });
-  if (!b64) return json({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
+  if (!b64) return failed({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
+  if (reservation) await settleImages(db, reservation);
   let artworkSaved = !b.discord_user_id;
   if (!teamIds.length && b.discord_user_id && ref) {
     const raw = atob(b64);
@@ -4401,5 +4520,5 @@ Deno.serve(async (req) => {
       }
     }
   }
-  return json({ image_b64: b64, used_pro_photo: !!ref || refs.length > 0, artwork_saved: artworkSaved, kit_number: teamIds.length ? null : kitNumber, team_player_ids: teamIds, reference_asset_ids: refs.length ? refs.flatMap((r) => r.assetIds) : found?.assetIds ?? [] });
+  return json({ image_b64: b64, used_pro_photo: !!ref || refs.length > 0, artwork_saved: artworkSaved, kit_number: teamIds.length ? null : kitNumber, images_left: imagesLeft, team_player_ids: teamIds, reference_asset_ids: refs.length ? refs.flatMap((r) => r.assetIds) : found?.assetIds ?? [] });
 });

@@ -21,6 +21,7 @@ import {
   Sun,
   Medal,
   SlidersHorizontal,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,7 @@ const moreNavItems = [
   { path: "/control", label: "Control Room", icon: SlidersHorizontal },
   { path: "/games", label: "Games", icon: Gamepad2 },
   { path: "/trophy-room", label: "Trophy Room", icon: Medal },
+  { path: "/billing", label: "Plans & AI Images", icon: CreditCard },
   { path: "/ratings", label: "Ratings", icon: Star },
   { path: "/drafts", label: "Drafts", icon: Swords },
   { path: "/scouting", label: "Scouting", icon: Target },
