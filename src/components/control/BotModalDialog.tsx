@@ -17,6 +17,22 @@ interface ModalInput {
 }
 
 const NONE = "__none";
+const MAX_FILE_BYTES = 6 * 1024 * 1024;
+
+export interface PickedFile {
+  name: string;
+  type: string;
+  data: string;
+}
+export type ModalValues = Record<string, string | string[] | PickedFile[] | null>;
+
+const readFile = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 
 // Inputs in order, from both classic action rows and the newer label components
 function inputsOf(json: ApiObject): { inputs: ModalInput[]; notes: string[] } {
@@ -31,13 +47,14 @@ function inputsOf(json: ApiObject): { inputs: ModalInput[]; notes: string[] } {
 }
 
 function initialValues(inputs: ModalInput[]) {
-  const v: Record<string, string | string[] | null> = {};
+  const v: ModalValues = {};
   for (const { c } of inputs) {
     if (c.type === 4) v[c.custom_id] = c.value ?? "";
     else if (c.type === 3) {
       const picked = (c.options || []).filter((o: ApiObject) => o.default).map((o: ApiObject) => o.value);
       v[c.custom_id] = picked;
-    } else v[c.custom_id] = (c.default_values || []).map((d: ApiObject) => d.id);
+    } else if (c.type === 19) v[c.custom_id] = [];
+    else v[c.custom_id] = (c.default_values || []).map((d: ApiObject) => d.id);
   }
   return v;
 }
@@ -51,15 +68,31 @@ export function BotModalDialog({
   modal: ApiObject | null;
   ctx: PanelContext;
   onClose: () => void;
-  onSubmit: (values: Record<string, string | string[] | null>) => Promise<void>;
+  onSubmit: (values: ModalValues) => Promise<void>;
 }) {
   const { inputs, notes } = modal ? inputsOf(modal) : { inputs: [], notes: [] };
-  const [values, setValues] = useState<Record<string, string | string[] | null>>({});
+  const [values, setValues] = useState<ModalValues>({});
+  const [fileError, setFileError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (modal) setValues(initialValues(inputsOf(modal).inputs));
   }, [modal]);
-  const set = (id: string, v: string | string[] | null) => setValues((s) => ({ ...s, [id]: v }));
+  const set = (id: string, v: string | string[] | PickedFile[] | null) => setValues((s) => ({ ...s, [id]: v }));
+  const pickFiles = async (id: string, list: FileList | null, max: number) => {
+    setFileError(null);
+    const files = Array.from(list || []).slice(0, max);
+    if (files.some((f) => f.size > MAX_FILE_BYTES)) {
+      setFileError("Files can be 6 MB at most.");
+      set(id, []);
+      return;
+    }
+    try {
+      set(id, await Promise.all(files.map(async (f) => ({ name: f.name, type: f.type, data: await readFile(f) }))));
+    } catch {
+      setFileError("That file couldn't be read. Try another one.");
+      set(id, []);
+    }
+  };
   const fileOnly = inputs.some(({ c }) => c.type === 19 && c.required !== false);
 
   return (
@@ -157,6 +190,21 @@ export function BotModalDialog({
               );
             } else if (c.type === 5 || c.type === 7) {
               control = <MemberPicker guildId={ctx.guild.id} value={((v as string[]) || [])[0] ?? null} onChange={(x) => set(id, x ? [x] : [])} />;
+            } else if (c.type === 19 && !required) {
+              const picked = (v as PickedFile[]) || [];
+              control = (
+                <div className="space-y-2">
+                  <Input type="file" accept="image/png,image/jpeg,image/webp" multiple={(c.max_values ?? 1) > 1} onChange={(e) => pickFiles(id, e.target.files, c.max_values ?? 1)} />
+                  {picked.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {picked.map((f) => (
+                        <img key={f.name} src={f.data} alt={f.name} className="h-14 w-14 rounded-md border object-contain" />
+                      ))}
+                    </div>
+                  )}
+                  {fileError && <p className="text-xs text-destructive">{fileError}</p>}
+                </div>
+              );
             } else {
               control = <p className="text-sm text-muted-foreground">File uploads only work in Discord.</p>;
             }

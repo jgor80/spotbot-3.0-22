@@ -4,6 +4,7 @@
 // so the page needs no login. Read-only.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { clubAccent, clubCrest } from "../_shared/club-theme.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -116,7 +117,8 @@ serve(async (req) => {
 
     return json({
       club: { name: club.name, key: club.key },
-      branding: { color: Number.isInteger(branding.color) ? branding.color : null, logo_url: branding.logo_url ?? null },
+      // The club's own colours and crest from /setup, else the server's /brand look
+      branding: { color: clubAccent(club, branding, -1) >= 0 ? clubAccent(club, branding, -1) : null, logo_url: clubCrest(club, branding) },
       formation: lineup?.formation ?? null,
       lineup_name: lineup?.name ?? null,
       players,

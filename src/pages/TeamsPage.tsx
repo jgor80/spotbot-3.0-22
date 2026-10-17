@@ -62,6 +62,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { useClubTheme } from "@/hooks/useClubTheme";
 
 interface Team {
   id: string;
@@ -486,14 +487,22 @@ export default function TeamsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openLineupId, selectedGuildId]);
 
-  // Remember the graphic's look per server (browser only)
+  // Remember the graphic's look per server (browser only). Until someone picks kit colours here, the
+  // graphic uses the club's team colours from /setup.
+  const clubTheme = useClubTheme(lineupTeamId || null);
   useEffect(() => {
     if (!selectedGuildId) return;
+    let saved: Partial<BoardLook> = {};
     try {
-      const saved = localStorage.getItem(`lineupLook:${selectedGuildId}`);
-      if (saved) setLook(l => ({ ...DEFAULT_LOOK, ...JSON.parse(saved), title: l.title, subtitle: l.subtitle }));
-    } catch { /* storage blocked */ }
-  }, [selectedGuildId]);
+      saved = JSON.parse(localStorage.getItem(`lineupLook:${selectedGuildId}`) || "{}");
+    } catch { /* storage blocked or bad saved look */ }
+    setLook(l => {
+      const next: BoardLook = { ...DEFAULT_LOOK, ...saved, title: l.title, subtitle: l.subtitle };
+      const untouched = next.kit.primary === DEFAULT_LOOK.kit.primary && next.kit.secondary === DEFAULT_LOOK.kit.secondary;
+      return untouched && clubTheme ? { ...next, kit: { ...next.kit, primary: clubTheme.primary, secondary: clubTheme.secondary } } : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedGuildId, clubTheme?.primary, clubTheme?.secondary]);
   useEffect(() => {
     if (!selectedGuildId) return;
     try {

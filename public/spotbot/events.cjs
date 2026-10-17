@@ -18,6 +18,7 @@ const T = require('./event-time.cjs');
 const { FORMATION_SLOTS } = require('./lineup-autofill.cjs');
 const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const B = require('./event-board.cjs');
+const { clubAccent, crestUrl } = require('./club-colors.cjs');
 
 // "433", "4-3-3", "4-3-3 flat" -> "4-3-3 FLAT"
 function matchFormation(text) {
@@ -505,9 +506,11 @@ function createEvents(deps) {
 
     const embed = new EmbedBuilder()
       .setTitle(`${info.emoji} ${event.title}`)
-      .setColor(event.cancelled ? 0x99aab5 : Number(prefs.branding.color) || info.color)
+      .setColor(event.cancelled ? 0x99aab5 : clubAccent(club, prefs.branding, info.color))
       .setDescription(truncate(lines.join('\n'), 4000))
       .setFooter({ text: `${prefs.branding.footer || 'GafferBot'} · main position first · 📝 note · ⏰ late · event ${event.id.slice(0, 8)}` });
+    const crest = club?.crest_url && crestUrl(club, prefs.branding);
+    if (crest) embed.setThumbnail(crest);
 
     const components = [];
     if (!event.closed && !locked) {

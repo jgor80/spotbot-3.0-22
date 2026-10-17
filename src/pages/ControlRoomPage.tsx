@@ -12,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { ActionForm, type FormValues } from "@/components/control/ActionForm";
 import { BotMessageView } from "@/components/control/BotMessageView";
-import { BotModalDialog } from "@/components/control/BotModalDialog";
+import { BotModalDialog, type ModalValues } from "@/components/control/BotModalDialog";
 import { ChannelPicker } from "@/components/control/Pickers";
 import { useGuild } from "@/contexts/GuildContext";
 import { useToast } from "@/hooks/use-toast";
@@ -147,7 +147,7 @@ export default function ControlRoomPage() {
     }
   };
 
-  const submitModal = async (values: Record<string, string | string[] | null>) => {
+  const submitModal = async (values: ModalValues) => {
     if (!guildId || !modal) return;
     try {
       const res = await webPanel.submit(guildId, modal.runId, values);

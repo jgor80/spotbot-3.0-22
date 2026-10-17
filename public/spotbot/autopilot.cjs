@@ -29,6 +29,7 @@ const { aiStyle } = require('./club-identity.cjs');
 const { storyFacts, buildChronicle, buildMatchReport, editionCover, EDITIONS, CHRONICLE_TZ } = require('./chronicle.cjs');
 const RX = require('./recap-extras.cjs');
 const PRESS = require('./press-copy.cjs');
+const { clubAccent, crestUrl } = require('./club-colors.cjs');
 
 const FEATURES = {
   voice: { label: 'Voice check-ins', emoji: '🎧', help: 'Joining the club voice channel from 30 min before kick-off checks a player in.' },
@@ -600,7 +601,8 @@ function createAutopilot(deps) {
     embed.setDescription(
       truncate([`📰 ${RX.headline(match, club)}`, facts.join(' · '), ...[nugget, ...story].filter(Boolean).slice(0, 2)].filter(Boolean).join('\n'), 1000)
     );
-    if (prefs.branding?.logo_url) embed.setThumbnail(prefs.branding.logo_url);
+    const crest = crestUrl(club, prefs.branding);
+    if (crest) embed.setThumbnail(crest);
     return { embeds: [embed] };
   }
 
@@ -677,7 +679,7 @@ function createAutopilot(deps) {
       "You are a sharp newspaper beat writer covering an EA FC Pro Clubs team. Write a short postgame piece about THIS ONE GAME only: one paragraph, 3 to 5 sentences, under 550 characters. Open with a punchy lede on the result, say in one line how it was won or lost from the stats, and name the standout player or two in **bold** with their rating. Never mention other games, the season, form, streaks, records, head-to-head history or milestones; that belongs to the twice-daily digest. Land at least one funny pun or wordplay (on a player's numbers or the opponent's name) when one genuinely works, and vary your openings, verbs and jokes so no two pieces read alike. Only use the facts given; never invent goals, minutes, scorers' timing or quotes. No headings or bullet points. The game's 'script' tag (demolition, lockdown, shootout, smash-and-grab, heartbreaker, etc.) sets the tone. Clean sheets belong only to goalkeepers and defenders, never attackers. Stats marked (est) are estimates; say 'about'." + ` ${aiStyle(club)}`,
       storyFacts({ club, matches: [match], seasonMatches, single: true })
     );
-    return buildMatchReport({ club, match, logoUrl: prefs.branding?.logo_url, story });
+    return buildMatchReport({ club, match, logoUrl: crestUrl(club, prefs.branding), story });
   }
 
   async function postMatchReports(guildId, club, matches) {
@@ -771,7 +773,7 @@ function createAutopilot(deps) {
     const minutes = Math.round((endedAt - startedAt) / 60000);
     const embed = new EmbedBuilder()
       .setTitle(`🧾 Session recap · ${club.name}`)
-      .setColor(Number(prefs.branding?.color) || 0x5865f2)
+      .setColor(clubAccent(club, prefs.branding, 0x5865f2))
       .setDescription(
         `You played **${ordered.length}** match${ordered.length === 1 ? '' : 'es'} in ${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)}h ` : ''}${minutes % 60}m.\n` +
           `**${record(ordered)}** · ${goalsFor} scored, ${goalsAgainst} conceded\n` +
@@ -840,7 +842,7 @@ function createAutopilot(deps) {
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const week = matches.filter((m) => m.playedAt.getTime() >= weekAgo);
     const o = computeOverview(week);
-    const embed = new EmbedBuilder().setTitle(`🗞️ ${club.name} weekly digest`).setColor(0x5865f2).setTimestamp(new Date());
+    const embed = new EmbedBuilder().setTitle(`🗞️ ${club.name} weekly digest`).setColor(clubAccent(club, null, 0x5865f2)).setTimestamp(new Date());
     embed.setDescription(
       week.length
         ? `This week: **${record(week)}**, ${o.goalsFor} scored and ${o.goalsAgainst} conceded. Form ${week.slice(0, 10).reverse().map((m) => RESULT[m.result].emoji).join('')}`
@@ -962,7 +964,7 @@ function createAutopilot(deps) {
       const cover = editionCover({ club, edition, matches, seasonMatches: all, now });
       image = (await editionImage({ guildId, club, cover, prefs }).catch((err) => console.warn(`[chronicle] front page failed: ${err.message}`))) || undefined;
     }
-    return buildChronicle({ club, edition, matches, upcoming: upcoming || [], seasonMatches: all, now, logoUrl: prefs.branding?.logo_url, story, image });
+    return buildChronicle({ club, edition, matches, upcoming: upcoming || [], seasonMatches: all, now, logoUrl: crestUrl(club, prefs.branding), story, image });
   }
 
   async function postChronicles(now) {
