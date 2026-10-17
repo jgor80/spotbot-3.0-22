@@ -1,4 +1,6 @@
 // Palermo kit catalog, scoped to Palermo-named clubs only. Other clubs keep their saved club.kit.
+// Either way the club's team colours (club.colors) fill missing kit colours and become the accent.
+const { kitOf } = require('./club-colors.cjs');
 // Vintage card styles pair with a matching era kit; members can override per graphic.
 const PALERMO = [
   { key: 'home', label: 'Home 2024–25', era: 'modern', primary: 'pale pink', secondary: 'black',
@@ -26,9 +28,9 @@ function kitsFor(club) {
 // Returns the kit to draw for this style; falls back to the club's saved kit.
 function kitFor(club, style, key) {
   const kits = kitsFor(club);
-  if (!kits.length) return club?.kit || {};
+  if (!kits.length) return kitOf(club);
   const k = kits.find((x) => x.key === key) || kits.find((x) => x.key === (STYLE_KIT[style] || 'home'));
-  return { primary: k.primary, secondary: k.secondary, description: k.description, label: k.label, key: k.key };
+  return kitOf(club, { primary: k.primary, secondary: k.secondary, description: k.description, label: k.label, key: k.key });
 }
 function withKit(club, style, key) {
   return club ? { ...club, kit: kitFor(club, style, key) } : club;

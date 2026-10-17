@@ -30,7 +30,7 @@ const VOICE_TYPES = [ChannelType.GuildVoice, ChannelType.GuildStageVoice];
 // Web-only entries that open an existing bot panel privately instead of posting it
 const EXTRA_ACTIONS = [
   { id: 'wb_graphics', label: 'Graphics Studio', emoji: '🎨', areaKey: 'premium', view: 'graphics', style: 'primary', hint: 'Player cards, match posters, lineups and recruitment art, previewed here.' },
-  { id: 'wb_setup', label: 'Setup Wizard', emoji: '🧭', areaKey: 'admin', cmd: 'setup', hint: 'EA club link, accent colour and kit in one form.' },
+  { id: 'wb_setup', label: 'Setup Wizard', emoji: '🧭', areaKey: 'admin', cmd: 'setup', hint: 'EA club link and kit, team colours and crest, then your club identity.' },
 ];
 // Actions that read the presser's live Discord voice channel
 const NEEDS_VOICE = new Set(['ln_vcspots', 'ln_posboard', 'dr_start', 'dr_panel']);
@@ -92,6 +92,16 @@ function serialize(opts, previous = null) {
     }
   } else if (Array.isArray(opts.attachments) && !opts.attachments.length) out.files = [];
   return out;
+}
+
+// A file picked on the page, as the attachment a modal upload would carry (its url is a data URL)
+function webFile(f) {
+  const m = String(f?.data || '').match(/^data:([\w.+-]+\/[\w.+-]+);base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) throw new WebError(400, 'That file could not be read. Try another one.');
+  const size = Math.floor((m[2].length * 3) / 4);
+  if (size > MAX_FILE_BYTES) throw new WebError(400, 'That file is too large (6 MB at most).');
+  const name = String(f.name || 'upload').replace(/[^\w.-]/g, '_').slice(0, 100);
+  return { id: newId(), name, contentType: m[1], size, url: f.data, proxyURL: f.data };
 }
 
 // Every interactive component in a reply, including ones nested in containers and sections
@@ -723,8 +733,10 @@ function createWebPanels(deps) {
         if (v && c.min_length && v.length < c.min_length) throw new WebError(400, `${c.label || 'A box'} needs at least ${c.min_length} characters.`);
         fieldMap.set(c.custom_id, { customId: c.custom_id, type: 4, value: v });
       } else if (c.type === 19) {
+        // Required uploads (pro photos) must come from Discord; optional ones (a crest) can come from the page
         if (c.required !== false && (c.min_values ?? 1) > 0) throw new WebError(400, 'This form needs a file upload, so finish it in Discord.');
-        fieldMap.set(c.custom_id, { customId: c.custom_id, type: 19, values: [], attachments: new Collection() });
+        const files = (Array.isArray(raw) ? raw : []).slice(0, c.max_values ?? 1).map(webFile);
+        fieldMap.set(c.custom_id, { customId: c.custom_id, type: 19, values: files.map((f) => f.id), attachments: new Collection(files.map((f) => [f.id, f])) });
       } else {
         const picked = (Array.isArray(raw) ? raw : raw ? [raw] : []).map(String).slice(0, c.max_values ?? 1);
         if (picked.length < (c.min_values ?? (c.required === false ? 0 : 1))) throw new WebError(400, 'Pick an option in every required menu.');

@@ -5,6 +5,24 @@ var serve = (h) => globalThis.Deno.serve(h);
 
 // supabase/functions/stream-overlay/index.ts
 var import_supabase_js_2 = require("@supabase/supabase-js");
+
+// supabase/functions/_shared/club-theme.ts
+var hexInt = (v) => {
+  const m = String(v ?? "").trim().match(/^#?([0-9a-f]{6})$/i);
+  return m ? parseInt(m[1], 16) : null;
+};
+var https = (v) => typeof v === "string" && /^https:\/\/\S+$/i.test(v.trim()) ? v.trim() : null;
+function clubAccent(club, branding, fallback) {
+  const picked = hexInt(club?.colors?.primary);
+  if (picked !== null) return picked;
+  const brand = Number(branding?.color);
+  return Number.isInteger(brand) && brand >= 0 && brand <= 16777215 ? brand : fallback;
+}
+function clubCrest(club, branding) {
+  return https(club?.crest_url) || https(branding?.logo_url);
+}
+
+// supabase/functions/stream-overlay/index.ts
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
@@ -83,7 +101,8 @@ serve(async (req) => {
     });
     return json({
       club: { name: club.name, key: club.key },
-      branding: { color: Number.isInteger(branding.color) ? branding.color : null, logo_url: branding.logo_url ?? null },
+      // The club's own colours and crest from /setup, else the server's /brand look
+      branding: { color: clubAccent(club, branding, -1) >= 0 ? clubAccent(club, branding, -1) : null, logo_url: clubCrest(club, branding) },
       formation: lineup?.formation ?? null,
       lineup_name: lineup?.name ?? null,
       players,

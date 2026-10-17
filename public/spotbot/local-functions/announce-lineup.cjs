@@ -31,6 +31,22 @@ function createAdminClient() {
   );
 }
 
+// supabase/functions/_shared/club-theme.ts
+var hexInt = (v) => {
+  const m = String(v ?? "").trim().match(/^#?([0-9a-f]{6})$/i);
+  return m ? parseInt(m[1], 16) : null;
+};
+var https = (v) => typeof v === "string" && /^https:\/\/\S+$/i.test(v.trim()) ? v.trim() : null;
+function clubAccent(club, branding, fallback) {
+  const picked = hexInt(club?.colors?.primary);
+  if (picked !== null) return picked;
+  const brand = Number(branding?.color);
+  return Number.isInteger(brand) && brand >= 0 && brand <= 16777215 ? brand : fallback;
+}
+function clubCrest(club, branding) {
+  return https(club?.crest_url) || https(branding?.logo_url);
+}
+
 // supabase/functions/announce-lineup/index.ts
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -187,8 +203,10 @@ async function announce(supabase, body, caller) {
     const { data } = await supabase.from("availability_events").select("title, scheduled_at").eq("id", lineup.event_id).maybeSingle();
     event = data;
   }
-  const { data: settings } = await supabase.from("guild_settings").select("branding").eq("guild_id", lineup.guild_id).maybeSingle();
+  const { data: settings } = await supabase.from("guild_settings").select("branding, clubs").eq("guild_id", lineup.guild_id).maybeSingle();
   const branding = settings?.branding || {};
+  const clubs = Array.isArray(settings?.clubs) ? settings.clubs : [];
+  const club = lineup.team_id && clubs.find((c) => c?.team_id === lineup.team_id) || (clubs.length === 1 ? clubs[0] : null);
   const starters = (slots || []).filter((s) => !s.is_substitute);
   const subs = (slots || []).filter((s) => s.is_substitute);
   const fields = POSITION_LINES.map((line, idx) => {
@@ -219,7 +237,6 @@ async function announce(supabase, body, caller) {
   const previousNote = previousMessage?.embeds?.[0]?.fields?.find((f) => f.name === "\u{1F4DD} Note")?.value || "";
   const noteText = note || previousNote;
   if (noteText) fields.push({ name: "\u{1F4DD} Note", value: noteText, inline: false });
-  const accent = Number(branding.color);
   const embed = {
     title: `\u{1F4CB} ${title}`,
     description: [
@@ -227,12 +244,12 @@ async function announce(supabase, body, caller) {
       `**Formation:** ${lineup.formation}`,
       lineup.team_avg_rating ? `**Avg rating:** ${Number(lineup.team_avg_rating).toFixed(1)}` : null
     ].filter(Boolean).join("\n"),
-    color: Number.isInteger(accent) && accent >= 0 && accent <= 16777215 ? accent : 2278750,
+    color: clubAccent(club, branding, 2278750),
     fields,
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     footer: { text: typeof branding.footer === "string" && branding.footer ? branding.footer.slice(0, 100) : "Team sheet from GafferBot" }
   };
-  const logo = team?.logo_url || branding.logo_url;
+  const logo = (club?.crest_url ? clubCrest(club, null) : null) || team?.logo_url || clubCrest(club, branding);
   if (typeof logo === "string" && /^https:\/\//.test(logo)) embed.thumbnail = { url: logo };
   const announcedSlots = (slots || []).map((s) => ({
     discord_user_id: s.discord_user_id,

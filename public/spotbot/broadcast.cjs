@@ -11,6 +11,7 @@ const { toInsightMatches, matchTag, competitionLabel } = require('./club-insight
 const { seasonTotals, lineOf, leaders, num } = require('./player-season.cjs');
 const G = require('./graphics.cjs');
 const { identityOf } = require('./club-identity.cjs');
+const { clubAccent, crestUrl } = require('./club-colors.cjs');
 const { stillInGuild } = require('./art-players.cjs');
 const T = require('./event-time.cjs');
 
@@ -262,7 +263,7 @@ function createBroadcast(deps) {
       storyline: cover.storyline,
       run: cover.run,
       players,
-      accent: Number.isInteger(prefs.branding?.color) ? prefs.branding.color : undefined,
+      accent: clubAccent(club, prefs.branding, undefined),
     });
   }
 
@@ -307,7 +308,7 @@ function createBroadcast(deps) {
 
   async function crestFor(guildId, club) {
     const prefs = await events.serverPrefs(guildId);
-    return (await G.fetchImage(prefs.branding?.logo_url)) || null;
+    return (await G.fetchImage(crestUrl(club, prefs.branding))) || null;
   }
 
   // ---------- Recap image ----------
@@ -327,7 +328,9 @@ function createBroadcast(deps) {
       }
       return null;
     };
-    const ourCrest = (await eaCrest(clubs[ourId])) || (await G.fetchImage(prefs.branding?.logo_url));
+    // A crest the club picked in /setup wins over EA's badge; the server's brand logo is the last resort
+    const ownCrest = club.crest_url ? await G.fetchImage(crestUrl(club, null)) : null;
+    const ourCrest = ownCrest || (await eaCrest(clubs[ourId])) || (await G.fetchImage(crestUrl(club, prefs.branding)));
     const theirCrest = theirId ? await eaCrest(clubs[theirId]) : null;
     const ourCount = Object.keys(md.players?.[ourId] || {}).length || match.players.length;
     const theirCount = theirId ? Object.keys(md.players?.[theirId] || {}).length : 0;
@@ -369,7 +372,7 @@ function createBroadcast(deps) {
       motm: motmLine && { ...motmLine, avatar: avatars.get(motmLine.name.toLowerCase()) || null },
       savedCard: motmLine ? savedCards.get(motmLine.name.toLowerCase()) || null : null,
       background,
-      accent: Number.isInteger(prefs.branding?.color) ? prefs.branding.color : undefined,
+      accent: clubAccent(club, prefs.branding, undefined),
       // A manager's League / Tournament / BYOT tag wins over EA's own type
       competition: (matchTag(row) && competitionLabel(matchTag(row))) || MATCH_TYPES[md._matchCategory] || MATCH_TYPES[row.match_type] || null,
       dateText: dateText(match.playedAt, prefs.timezone),
@@ -429,7 +432,7 @@ function createBroadcast(deps) {
     });
 
     const label = { week: 'Last 7 days', month: 'Last 30 days', season: 'All synced matches' }[period] || 'Last 30 days';
-    const accent = Number.isInteger(prefs.branding?.color) ? prefs.branding.color : undefined;
+    const accent = clubAccent(club, prefs.branding, undefined);
     const files = [];
     for (let i = 0; i < cards.length; i += CARDS_PER_IMAGE) {
       const png = G.cardSheet({

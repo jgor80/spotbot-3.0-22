@@ -9,6 +9,7 @@ const crypto = require('crypto');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { missingChannelPerms } = require('./perm-check.cjs');
 const { resolveClub } = require('./manager-hub.cjs');
+const { clubAccent, crestUrl } = require('./club-colors.cjs');
 
 // What a squad needs in each area: `need` to field a side, `want` to cope with absences
 const GROUPS = [
@@ -203,10 +204,10 @@ function createRecruitCards(deps) {
 
     const embed = new EmbedBuilder()
       .setTitle(`📣 ${club.name} are recruiting`)
-      .setColor(Number.isInteger(branding.color) ? branding.color : 0x22c55e)
+      .setColor(clubAccent(club, branding, 0x22c55e))
       .setDescription(`**Looking for: ${positions}**${notes ? `\n${notes}` : ''}`)
       .setFooter({ text: `${branding.footer || 'GafferBot'} · Free agents: list yourself with /me → Free Agent` });
-    const logo = branding.logo_url || interaction.guild.iconURL();
+    const logo = crestUrl(club, branding) || interaction.guild.iconURL();
     if (logo) embed.setThumbnail(logo);
     if (division) embed.addFields({ name: 'Division', value: division, inline: true });
     if (record) embed.addFields({ name: 'Record', value: record, inline: true });

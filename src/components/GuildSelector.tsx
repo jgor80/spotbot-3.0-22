@@ -10,10 +10,19 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Server, ChevronDown, Search, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useClubTheme, themeOf, type ClubTheme } from "@/hooks/useClubTheme";
+
+// The club's crest, else a dot in its team colours, else the server icon
+function ClubMark({ theme, className }: { theme: ClubTheme | null; className?: string }) {
+  if (theme?.crest) return <img src={theme.crest} alt="" className={cn("h-5 w-5 shrink-0 object-contain", className)} />;
+  if (theme) return <span className={cn("h-4 w-4 shrink-0 rounded-full border border-border", className)} style={{ background: `linear-gradient(135deg, ${theme.primary} 50%, ${theme.secondary} 50%)` }} />;
+  return <Server className={cn("h-4 w-4 shrink-0", className)} />;
+}
 
 export function GuildSelector({ className }: { className?: string }) {
   const { selectedGuildId, setSelectedGuildId, guilds, filteredGuilds, isLoading, searchQuery, setSearchQuery, selectedGuild } = useGuild();
   const [open, setOpen] = useState(false);
+  const theme = useClubTheme();
 
   if (isLoading) {
     return (
@@ -41,9 +50,10 @@ export function GuildSelector({ className }: { className?: string }) {
           role="combobox"
           aria-expanded={open}
           className={cn("w-[220px] justify-between bg-card border-border hover:bg-muted", className)}
+          style={theme ? { boxShadow: `inset 0 -3px 0 ${theme.primary}` } : undefined}
         >
           <div className="flex items-center gap-2 truncate">
-            <Server className="h-4 w-4 shrink-0 text-primary" />
+            <ClubMark theme={theme} className={theme ? undefined : "text-primary"} />
             <span className="truncate">
               {selectedGuild?.name || "Select server"}
             </span>
@@ -88,7 +98,7 @@ export function GuildSelector({ className }: { className?: string }) {
                       : "hover:bg-muted"
                   )}
                 >
-                  <Server className="h-4 w-4 shrink-0" />
+                  <ClubMark theme={guild.clubs.filter((c) => c && c.enabled !== false).map(themeOf).find(Boolean) || null} />
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{guild.name || `Server ${guild.guild_id.slice(-6)}`}</p>
                   </div>

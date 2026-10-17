@@ -2,10 +2,20 @@ import { createContext, useContext, useState, ReactNode, useEffect } from "react
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
+// Team colours and crest a club picked in /setup → Team colours & crest
+export interface GuildClub {
+  key: string;
+  name: string;
+  enabled: boolean;
+  team_id?: string | null;
+  colors?: { primary?: string; secondary?: string } | null;
+  crest_url?: string | null;
+}
+
 interface Guild {
   guild_id: string;
   name: string;
-  clubs: Array<{ key: string; name: string; enabled: boolean }>;
+  clubs: GuildClub[];
 }
 
 interface GuildContextType {
@@ -43,12 +53,12 @@ export function GuildProvider({ children }: { children: ReactNode }) {
         if (error) throw error;
 
         const guildList = (data || []).map((g) => {
-          let clubs: Array<{ key: string; name: string; enabled: boolean }> = [];
+          let clubs: GuildClub[] = [];
           
           // Parse clubs JSON safely
           try {
             if (Array.isArray(g.clubs)) {
-              clubs = g.clubs as Array<{ key: string; name: string; enabled: boolean }>;
+              clubs = g.clubs as unknown as GuildClub[];
             }
           } catch {
             clubs = [];

@@ -8,6 +8,7 @@
 const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder } = require('discord.js');
 const G = require('./graphics.cjs');
 const { kitColor } = require('./studio-preview.cjs');
+const { kitOf, crestUrl } = require('./club-colors.cjs');
 const { FORMATION_SLOTS, FORMATION_COORDS, movePlayer, resizeBoard, boardToSlots, slotsToBoard, groupByPosition, MAX_BENCH } = require('./lineup-autofill.cjs');
 
 const DEFAULT_FORMATION = '4-3-3 FLAT';
@@ -54,7 +55,7 @@ function jersey(cx, top, w, main, trim, label) {
     <text x="${cx}" y="${y(70)}" text-anchor="middle" font-family="Oswald" font-weight="700" font-size="${(34 * s).toFixed(0)}" fill="${trim}">${esc(label)}</text>`;
 }
 
-// d: { title, subtitle, formation, kit: {primary, secondary}, pitch, footer,
+// d: { title, subtitle, formation, kit: {primary, secondary, accent?, accent2?}, crest, pitch, footer,
 //      starters: [{ position, name, rating, card }] in slot order (null = open spot),
 //      bench: [{ name, card }] }
 // card is a data URL of the player's latest saved player card; without one they get a kit jersey.
@@ -63,6 +64,10 @@ function boardSvg(d) {
   const P = PITCHES[d.pitch] || PITCHES.classic;
   const main = kitColor(d.kit?.primary, '#b91c1c');
   const trim = kitColor(d.kit?.secondary, main === '#ffffff' ? '#111111' : '#ffffff');
+  // Header stripes in the team colours (kit colours when the club picked none)
+  const band = kitColor(d.kit?.accent, main);
+  const band2 = kitColor(d.kit?.accent2, trim);
+  const titleW = d.crest ? 820 : 960;
   const benchList = (d.bench || []).slice(0, MAX_BENCH);
   const top = 150;
   const pitchH = 1250;
@@ -128,8 +133,10 @@ function boardSvg(d) {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
     <rect width="${W}" height="${H}" fill="${P.bg}"/>
-    <rect width="${W}" height="10" fill="${main}"/>
-    <text x="${px}" y="80" font-family="Oswald" font-weight="700" font-size="${fit(d.title, 700, 60, 28)}" fill="#ffffff">${esc(clip(String(d.title || 'Starting XI').toUpperCase(), 32))}</text>
+    <rect width="${W}" height="10" fill="${band}"/>
+    <rect y="10" width="${W}" height="4" fill="${band2}"/>
+    ${d.crest ? `<image href="${d.crest}" x="${W - px - 110}" y="24" width="110" height="110" preserveAspectRatio="xMidYMid meet"/>` : ''}
+    <text x="${px}" y="80" font-family="Oswald" font-weight="700" font-size="${fit(d.title, titleW - 260, 60, 28)}" fill="#ffffff">${esc(clip(String(d.title || 'Starting XI').toUpperCase(), 32))}</text>
     <text x="${px}" y="122" font-family="Inter" font-size="26" fill="rgba(255,255,255,0.75)">${esc(clip([d.formation, d.subtitle].filter(Boolean).join('  ·  '), 60))}</text>
     <defs><clipPath id="pc"><rect x="${px}" y="${top}" width="${pw}" height="${pitchH}" rx="22"/></clipPath></defs>
     <rect x="${px}" y="${top}" width="${pw}" height="${pitchH}" rx="22" fill="${P.a}"/>
@@ -242,12 +249,15 @@ function createLineupBoard(deps) {
   }
 
   // The pitch image for a board (formation + starters/bench ids)
-  async function imageFor({ guildId, formation, state, title, subtitle, kit, pitch }) {
+  async function imageFor({ guildId, formation, state, title, subtitle, kit, pitch, teamId, clubKey }) {
     const ids = [...state.starters.filter(Boolean), ...state.bench];
-    const [info, art, branding] = await Promise.all([playerInfo(guildId, ids), cardImages(guildId, ids), brandingFor(guildId)]);
+    const [info, art, branding, club] = await Promise.all([playerInfo(guildId, ids), cardImages(guildId, ids), brandingFor(guildId), clubFor(guildId, teamId, clubKey)]);
     const person = (id) => ({ name: info.get(id)?.name, rating: info.get(id)?.rating, card: art.get(id) || null });
+    // The club's crest top right; a crest that won't load just leaves the corner empty
+    const crestLink = crestUrl(club, branding);
+    const crest = crestLink ? await G.fetchImage(crestLink).catch(() => null) : null;
     return renderBoard({
-      title, subtitle, formation, kit, pitch,
+      title, subtitle, formation, kit: club ? kitOf(club, kit) : kit, pitch, crest,
       footer: typeof branding.footer === 'string' && branding.footer ? branding.footer : 'Team sheet from GafferBot',
       starters: state.starters.map((id) => (id ? person(id) : null)),
       bench: state.bench.map(person),
@@ -261,11 +271,14 @@ function createLineupBoard(deps) {
     return { ...lineup, slots: slots || [] };
   }
 
-  async function clubKitFor(guildId, teamId) {
+  async function clubFor(guildId, teamId, clubKey) {
     const state = await getGuildState(guildId).catch(() => null);
     const clubs = Object.values(state?.clubs || {});
-    const club = (teamId && clubs.find((c) => c?.team_id === teamId)) || resolveClub?.(state, null) || clubs[0];
-    return club?.kit || {};
+    return (clubKey && clubs.find((c) => c?.key === clubKey)) || (teamId && clubs.find((c) => c?.team_id === teamId)) || resolveClub?.(state, null) || clubs[0] || null;
+  }
+
+  async function clubKitFor(guildId, teamId) {
+    return kitOf(await clubFor(guildId, teamId));
   }
 
   // A saved lineup's image, for posts made without the editor (Announce Lineup, event lineups)
@@ -275,7 +288,7 @@ function createLineupBoard(deps) {
       if (!lineup) return null;
       const formation = FORMATION_SLOTS[lineup.formation] ? lineup.formation : DEFAULT_FORMATION;
       const state = slotsToBoard(lineup.slots, FORMATION_SLOTS[formation].length);
-      return await imageFor({ guildId: lineup.guild_id, formation, state, title: lineup.name || 'Starting XI', kit: await clubKitFor(lineup.guild_id, lineup.team_id), ...extra });
+      return await imageFor({ guildId: lineup.guild_id, formation, state, title: lineup.name || 'Starting XI', kit: await clubKitFor(lineup.guild_id, lineup.team_id), teamId: lineup.team_id, ...extra });
     } catch (err) {
       console.warn(`[lineup-board] image ${lineupId}: ${err.message}`);
       return null;
@@ -316,7 +329,7 @@ function createLineupBoard(deps) {
       return (o?.positions || []).length ? `Plays ${o.positions.slice(0, 3).join('/')}` : '';
     };
 
-    const png = await imageFor({ guildId: d.guildId, formation: d.formation, state: d.state, title: d.name, subtitle: d.subtitle, kit: d.kit });
+    const png = await imageFor({ guildId: d.guildId, formation: d.formation, state: d.state, title: d.name, subtitle: d.subtitle, kit: d.kit, teamId: d.teamId, clubKey: d.clubKey });
     const rows = [];
 
     const sheetOpts = [
@@ -360,7 +373,7 @@ function createLineupBoard(deps) {
 
     const filled = d.state.starters.filter(Boolean).length;
     const embed = new EmbedBuilder()
-      .setColor(parseInt(kitColor(d.kit?.primary, '#22c55e').slice(1), 16))
+      .setColor(parseInt(kitColor(d.kit?.accent || d.kit?.primary, '#22c55e').slice(1), 16))
       .setTitle(`📋 ${clip(d.name, 200)}`)
       .setDescription(
         `${d.notice ? `${d.notice}\n\n` : ''}${d.picked ? `Holding **${name(d.picked)}**. Pick where to drop them: ⭐ comp position · 👍 plays it well · 🆘 emergency cover.` : 'Pick up a player, then drop them on a spot: a starter there swaps with them. Bring in someone new from the squad list.'}\n` +
@@ -395,7 +408,7 @@ function createLineupBoard(deps) {
       eventId: lineup?.event_id || null,
       sourceId: lineup?.id || null,
       name: lineup?.name || `${club?.name || 'Club'} Starting XI`,
-      kit: club?.kit || {},
+      kit: kitOf(club),
       formation,
       state: lineup ? slotsToBoard(lineup.slots, FORMATION_SLOTS[formation].length) : { starters: Array(FORMATION_SLOTS[formation].length).fill(null), bench: [] },
       history: [],
@@ -483,7 +496,7 @@ function createLineupBoard(deps) {
       try {
         const lineupId = await save(d);
         const channelId = await channelFor(d, interaction.channelId);
-        const png = await imageFor({ guildId: d.guildId, formation: d.formation, state: d.state, title: d.name, subtitle: d.subtitle, kit: d.kit });
+        const png = await imageFor({ guildId: d.guildId, formation: d.formation, state: d.state, title: d.name, subtitle: d.subtitle, kit: d.kit, teamId: d.teamId, clubKey: d.clubKey });
         const { error, data } = await callEdgeFunction('announce-lineup', {
           action: 'announce', lineup_id: lineupId, channel_id: channelId, mention_players: true, dm_players: false, message: '',
           image_base64: Buffer.from(png).toString('base64'),

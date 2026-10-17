@@ -13,6 +13,7 @@
 // Callers: a signed-in web app user (JWT) or the Discord bot (service role key).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createAdminClient, identifyCaller, type Caller } from "../_shared/auth.ts";
+import { clubAccent, clubCrest } from "../_shared/club-theme.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -264,9 +265,12 @@ async function announce(supabase: any, body: any, caller: Caller) {
     event = data;
   }
 
-  // Per-server look: accent colour, footer, title template and logo (set with /brand)
-  const { data: settings } = await supabase.from("guild_settings").select("branding").eq("guild_id", lineup.guild_id).maybeSingle();
+  // Per-server look: accent colour, footer, title template and logo (set with /brand); the squad's
+  // club colours and crest from /setup win over the server-wide ones
+  const { data: settings } = await supabase.from("guild_settings").select("branding, clubs").eq("guild_id", lineup.guild_id).maybeSingle();
   const branding = settings?.branding || {};
+  const clubs: any[] = Array.isArray(settings?.clubs) ? settings.clubs : [];
+  const club = (lineup.team_id && clubs.find((c: any) => c?.team_id === lineup.team_id)) || (clubs.length === 1 ? clubs[0] : null);
 
   const starters = (slots || []).filter((s: any) => !s.is_substitute);
   const subs = (slots || []).filter((s: any) => s.is_substitute);
@@ -307,7 +311,6 @@ async function announce(supabase: any, body: any, caller: Caller) {
   const noteText = note || previousNote;
   if (noteText) fields.push({ name: "📝 Note", value: noteText, inline: false });
 
-  const accent = Number(branding.color);
   const embed: Record<string, unknown> = {
     title: `📋 ${title}`,
     description: [
@@ -315,12 +318,12 @@ async function announce(supabase: any, body: any, caller: Caller) {
       `**Formation:** ${lineup.formation}`,
       lineup.team_avg_rating ? `**Avg rating:** ${Number(lineup.team_avg_rating).toFixed(1)}` : null,
     ].filter(Boolean).join("\n"),
-    color: Number.isInteger(accent) && accent >= 0 && accent <= 0xffffff ? accent : 0x22c55e,
+    color: clubAccent(club, branding, 0x22c55e),
     fields,
     timestamp: new Date().toISOString(),
     footer: { text: typeof branding.footer === "string" && branding.footer ? branding.footer.slice(0, 100) : "Team sheet from GafferBot" },
   };
-  const logo = team?.logo_url || branding.logo_url;
+  const logo = (club?.crest_url ? clubCrest(club, null) : null) || team?.logo_url || clubCrest(club, branding);
   if (typeof logo === "string" && /^https:\/\//.test(logo)) embed.thumbnail = { url: logo };
 
   const announcedSlots: AnnouncedSlot[] = (slots || []).map((s: any) => ({

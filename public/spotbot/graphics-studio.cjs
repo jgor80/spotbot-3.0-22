@@ -34,6 +34,7 @@ const { renderCardBack } = require('./graphics-card-back.cjs');
 const { finishCardSvg } = require('./card-layout.cjs');
 const { cardStats } = require('./card-stats.cjs');
 const { kitsFor, kitFor, withKit } = require('./club-kits.cjs');
+const { kitOf, teamColors, crestUrl } = require('./club-colors.cjs');
 const { logosFor, logoFor, assetUrl } = require('./club-logos.cjs');
 const { pickSheet, crestSheet, styleSheet, thumbSvg, kitColor } = require('./studio-preview.cjs');
 const fs = require('fs');
@@ -87,7 +88,8 @@ const fit = (text, w, max, ratio = 0.5, min = 14) => Math.max(min, Math.min(max,
 const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 function palette(style, kit) {
-  const primary = colorNum(kit?.primary, 0x22c55e);
+  // Team colours (kit.accent from club-colors) lead frames and lettering; else the kit's main colour
+  const primary = colorNum(kit?.accent || kit?.primary, 0x22c55e);
   const base = {
     esports: { ink: '#ffffff', accent: hex(primary), sub: '#e5e7eb', panel: '#000000', panelOpacity: 0.55, skew: -8 },
     modern: { ink: '#ffffff', accent: hex(primary), sub: '#cbd5e1', panel: '#0b1220', panelOpacity: 0.72, skew: 0 },
@@ -130,7 +132,7 @@ function masthead(th, crest, clubName, line, { x = 70, y = 70, r = 46, max = 30 
 function playerCard(d) {
   const print = { retro1986: render1986Card, retro1960s: render1960sCard, retro1970s: render1970sCard, retro1990s: render1990sCard, y2k: renderY2kCard, retro2010s: render2010sCard, retro2020s: render2020sCard, yearbook: renderYearbookCard }[d.style];
   if (d.style === 'sicilia') return renderSiciliaCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d), d.renderWidth) });
-  if (SIGNATURE_STYLES.includes(d.style)) return renderSignatureCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d), d.renderWidth) }, hex(colorNum(d.kit?.primary, 0x22c55e)));
+  if (SIGNATURE_STYLES.includes(d.style)) return renderSignatureCard(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d), d.renderWidth) }, hex(colorNum(d.kit?.accent || d.kit?.primary, 0x22c55e)));
   if (print) return print(d, { ...G, render: (svg) => G.render(finishCardSvg(svg, d), d.renderWidth) }, palette(d.style, d.kit).accent);
   // Ultra Esports and Obsidian & Gold: full-bleed art with their own grade, frame and lettering.
   const W = 1024, H = 1536, th = theme(d.style, palette(d.style, d.kit).accent || '#22c55e');
@@ -268,14 +270,15 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return { state, club: null };
   }
 
-  // Club crest for graphics: the uploaded branding logo wins, then the club's real
+  // Club crest for graphics: an era crest from the club's history wins, then the crest picked in
+  // /setup (or the server's branding logo), then the club's real
   // EA badge (from its crestAssetId), then nothing (renderers fall back to initials).
   const CREST_CACHE = new Map(); // ea:<clubId> -> data url | null
   async function crestFor(guildId, club, style, logoKey) {
     const prefs = serverPrefs ? await serverPrefs(guildId).catch(() => ({})) : {};
     const selected = logoFor(club, style, logoKey, prefs?.branding);
     // Uploaded club identities take precedence even for Automatic; server branding may be an unrelated EA badge.
-    const url = selected ? assetUrl(selected.url) : prefs?.branding?.logo_url;
+    const url = selected ? assetUrl(selected.url) : crestUrl(club, prefs?.branding);
     if (url) {
       const cached = CREST_CACHE.get(url);
       if (cached) return cached;
@@ -316,7 +319,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const kit = club.kit || {};
     return {
       embeds: [new EmbedBuilder()
-        .setColor(colorNum(kit.primary, 0x22c55e))
+        .setColor(teamColors(club).primaryInt)
         .setTitle(`🎨 ${club.name} Graphics Studio`)
         .setDescription([
           'Ask for graphics any time — everyone appears in **our kit**, drawn from their in-game pro.',
@@ -438,7 +441,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const auto = kitFor(club, draft.style);
     const kitTiles = kits.length
       ? kits.map((k) => ({ ...k, picked: (draft.data?.kitKey || auto.key) === k.key, auto: !draft.data?.kitKey }))
-      : [{ ...(club.kit || {}), label: 'Club kit', picked: true }];
+      : [{ ...kitOf(club), label: 'Club kit', picked: true }];
     const prefs = serverPrefs ? await serverPrefs(guildId).catch(() => ({})) : {};
     const logo = logoFor(club, draft.style, draft.data?.logoKey, prefs?.branding);
     const crestImage = await crestFor(guildId, club, draft.style, draft.data?.logoKey).catch(() => null);
@@ -450,7 +453,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (picked && !shown.includes(picked)) shown = [...shown.slice(0, MAX - 1), picked];
     const photos = await Promise.all(shown.map(async (p) => ({ label: p.label, picked: p.id === draft.data?.photoId, image: await photoThumb(p).catch(() => null) })));
     const png = G.render(pickSheet({ kits: kitTiles, crest, photos, photoAuto: !picked, morePhotos: all.length - shown.length }));
-    return { file: previewFile(png), embed: previewEmbed(kind === 'card' ? '👀 Your card picks' : '👀 Your graphic picks', colorNum(club.kit?.primary, 0x22c55e)) };
+    return { file: previewFile(png), embed: previewEmbed(kind === 'card' ? '👀 Your card picks' : '👀 Your graphic picks', teamColors(club).primaryInt) };
   }
   // Draft prompt plus its preview; a failed preview never blocks the draft itself.
   async function draftMessage(token, kind, club, guildId) {
@@ -471,7 +474,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return `data:image/png;base64,${Buffer.from(G.render(`<svg xmlns="http://www.w3.org/2000/svg" width="512" height="768" viewBox="215 90 300 450" preserveAspectRatio="xMidYMid slice"><image href="${raw}" width="1600" height="912"/></svg>`)).toString('base64')}`;
   };
   async function styleGallery(kind, club, guildId) {
-    const key = `${guildId}:${club.key}:${kind}:${club.kit?.primary || ''}:${club.kit?.secondary || ''}`;
+    const key = `${guildId}:${club.key}:${kind}:${club.kit?.primary || ''}:${club.kit?.secondary || ''}:${club.colors?.primary || ''}:${club.colors?.secondary || ''}`;
     if (STYLE_SHEETS.has(key)) return STYLE_SHEETS.get(key);
     const banner_ = kind === 'banner';
     const art = SAMPLE(banner_ ? 'attack3' : kind === 'lineup' ? 'defence' : kind === 'card' ? 'attack2' : 'attack', banner_ ? 768 : 512, banner_ ? 512 : 768);
@@ -504,7 +507,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (!club) return payload;
     try {
       const png = await styleGallery(kind, club, guildId);
-      return { ...payload, embeds: [previewEmbed('👀 Styles', colorNum(club.kit?.primary, 0x22c55e)).setFooter({ text: 'Numbers match the style menu · sample art, yours is drawn from your club\'s pros' })], files: [previewFile(png)] };
+      return { ...payload, embeds: [previewEmbed('👀 Styles', teamColors(club).primaryInt).setFooter({ text: 'Numbers match the style menu · sample art, yours is drawn from your club\'s pros' })], files: [previewFile(png)] };
     } catch (err) { console.warn('[studio] style gallery failed:', err.message); return payload; }
   }
 
@@ -517,7 +520,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const payload = { content: 'Pick your club logo:', components: [pickRow(`gs_rlogo:${token}`, 'Club logo',
       [{ label: 'Automatic — match the style', value: 'auto' }, ...logos.map((l, i) => ({ label: `${i + 1}. ${l.label}`.slice(0, 100), value: l.key }))])] };
     try {
-      return { ...payload, embeds: [previewEmbed('👀 Club logos', colorNum(club.kit?.primary, 0x22c55e)).setFooter({ text: 'Numbers match the menu below' })], files: [previewFile(G.render(crestSheet(crests)))], attachments: [] };
+      return { ...payload, embeds: [previewEmbed('👀 Club logos', teamColors(club).primaryInt).setFooter({ text: 'Numbers match the menu below' })], files: [previewFile(G.render(crestSheet(crests)))], attachments: [] };
     } catch (err) { console.warn('[studio] logo preview failed:', err.message); return payload; }
   }
 
@@ -590,6 +593,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return { ...d, name: f('name') || d.name, position: f('position'), overall, number, stats, dataLabel: changed ? 'MEMBER-EDITED' : d.seasonLabel, overallLabel: changed ? 'MEMBER OVR' : 'EA OVR', seasonLabel: stats.length ? changed ? 'MEMBER-EDITED' : d.seasonLabel : 'VIRTUAL PRO' };
   }
   async function renderCard({ guildId, club, style, d }) {
+    club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
     // Cards are only drawn for someone still in the server.
     if (!(await stillInGuild(guildOf(guildId), [d.userId])).length) return { error: 'That player is no longer in this server, so no card was made.' };
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);
@@ -612,6 +616,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return { extra: back ? [back] : [], file: new AttachmentBuilder(png, { name: `card-${d.name}.png`.replace(/[^\w.-]/g, '_') }), note: a.usedPro ? null : 'No pro photo on file, so this uses a silhouette — post your pro in #pro-photos for the real thing.' };
   }
   async function buildCard({ guildId, club, userId, displayName, style, noStats = false }) {
+    club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
     const d = await cardData({ guildId, club, userId, displayName });
     return renderCard({ guildId, club, style, d: noStats ? { ...d, stats: [], overall: '', seasonLabel: 'VIRTUAL PRO', tagline: '' } : d });
   }
@@ -671,6 +676,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     };
   }
   async function renderPoster({ guildId, club, style, d }) {
+    club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
     const players = await teamPlayers(guildId, club, await idForName(d.motm?.name));
     if (!players.length) return { error: NO_GROUP };
     const mood = d.result === 'win' ? 'win' : d.result === 'loss' ? 'loss' : 'draw';
@@ -680,6 +686,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return { file: new AttachmentBuilder(png, { name: 'full-time.png' }) };
   }
   async function buildPoster({ guildId, club, style }) {
+    club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
     const d = await posterData({ guildId, club });
     return d.error ? d : renderPoster({ guildId, club, style, d });
   }
@@ -732,6 +739,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     };
   }
   async function renderLineup({ guildId, club, style, d }) {
+    club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
     const players = await teamPlayers(guildId, club, d.heroId);
     if (!players.length) return { error: NO_GROUP };
     const a = await art({ kind: 'poster', style, club_name: club.name, kit: club.kit || {}, guild_id: guildId, team_player_ids: players, mood: 'neutral', competition: clip(d.subtitle, 60), ...nextVariation(`${guildId}:lineup:${style}`, style) });
@@ -749,6 +757,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return d.error ? [] : [...d.starters.map((s) => s.name), ...d.subs];
   }
   async function buildBanner({ guild, guildId, club, style, headline: title, competition, seasonTag, rosterText, heroId }) {
+    club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
     let roster = /^lineup$/i.test(String(rosterText || '').trim()) ? await latestTournamentRoster(guild) : String(rosterText || '').split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
     if (!roster.length) {
       const since = new Date(Date.now() - 21 * 864e5).toISOString();
@@ -802,6 +811,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return pickGroup(pool, leadId);
   }
   async function renderRecruit({ guildId, club, style, d }) {
+    club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
     const players = await teamPlayers(guildId, club, d.featured);
     if (!players.length) return { error: NO_GROUP };
     const ART_STYLE = { retro1960s: 'vintage', retro1970s: 'vintage', retro1986: 'vintage', retro1990s: 'esports', y2k: 'chrome', retro2010s: 'chrome', retro2020s: 'cyber' };
