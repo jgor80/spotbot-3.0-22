@@ -4141,6 +4141,10 @@ client.once(Events.ClientReady, async (c) => {
   }, 30 * 1000);
   console.log(`✅ GafferBot logged in as ${c.user.tag}`);
   embedStyle.setFooterIcon(c.user.displayAvatarURL({ size: 64 }));
+  // New logo: set the bot's avatar and profile banner from ./brand (once per image change).
+  require('./brand-profile.cjs').applyBrandProfile(c)
+    .then((changed) => { if (changed) embedStyle.setFooterIcon(c.user.displayAvatarURL({ size: 64 })); })
+    .catch((e) => console.warn('[brand] could not update bot profile:', e.message));
 
   try {
     // One-time cleanup: Remove all guild-specific commands to fix duplicates
