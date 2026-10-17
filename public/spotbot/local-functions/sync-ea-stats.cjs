@@ -958,9 +958,7 @@ async function syncClubStats(supabase, guildId, clubKey, clubId, platform, recen
       // From seasonal stats endpoint with fallback paths
       current_division: extractWithFallback(seasonalStats, ["division", "currentDivision"]) || extractWithFallback(overallStats, ["currentDivision", "division"]) || null,
       skill_rating: parseInt(extractWithFallback(seasonalStats, ["skillRating", "skill_rating"]) || extractWithFallback(overallStats, ["skillRating"]) || extractWithFallback(clubInfo, ["skillRating", "skill_rating"]) || 0),
-      wins: parseInt(extractWithFallback(seasonalStats, ["wins"]) || extractWithFallback(clubInfo, ["wins"]) || 0),
-      draws: parseInt(extractWithFallback(seasonalStats, ["ties", "draws"]) || extractWithFallback(clubInfo, ["draws", "ties"]) || 0),
-      losses: parseInt(extractWithFallback(seasonalStats, ["losses"]) || extractWithFallback(clubInfo, ["losses"]) || 0),
+      ...clubRecord(overallStats, seasonalStats),
       // From overall stats endpoint with fallback paths
       overall_matches_played: parseInt(extractWithFallback(overallStats, ["gamesPlayed", "matchesPlayed"]) || 0),
       goals_scored: parseInt(extractWithFallback(overallStats, ["goals", "goalsFor"]) || extractWithFallback(clubInfo, ["goals", "goalsFor"]) || 0),
@@ -992,6 +990,33 @@ async function syncClubStats(supabase, guildId, clubKey, clubId, platform, recen
     console.error(`[sync-ea-stats] Error syncing club stats:`, err);
     return null;
   }
+}
+function memberRecord(member, gamesPlayed) {
+  const count = (keys) => {
+    const v = extractWithFallback(member, keys);
+    return v === null ? null : parseInt(v) || 0;
+  };
+  const rate = parseFloat(extractWithFallback(member, ["winRate", "winrate"]));
+  let wins = count(["wins"]);
+  if (wins === null) wins = Number.isFinite(rate) && gamesPlayed > 0 ? Math.round(gamesPlayed * rate / 100) : 0;
+  const losses = count(["losses"]) ?? 0;
+  const draws = count(["ties", "draws"]) ?? 0;
+  const winRate = Number.isFinite(rate) ? rate : gamesPlayed > 0 ? wins / gamesPlayed * 100 : 0;
+  return { wins, losses, draws, winRate };
+}
+function clubRecord(overallStats, seasonalStats) {
+  const pick = (keys) => {
+    for (const src of [overallStats, seasonalStats]) {
+      const v = extractWithFallback(src, keys);
+      if (v !== null) return parseInt(v) || 0;
+    }
+    return 0;
+  };
+  return {
+    wins: pick(["wins", "seasonWins"]),
+    draws: pick(["ties", "draws", "seasonTies"]),
+    losses: pick(["losses", "seasonLosses"])
+  };
 }
 function getPrimaryPosition(positionCounts) {
   const sorted = Object.entries(positionCounts).sort((a, b) => b[1] - a[1]);
@@ -1140,9 +1165,7 @@ async function syncMemberStats(supabase, guildId, clubId, platform, clubName, ag
       const goals = parseInt(extractWithFallback(member, ["goals"]) || 0);
       const assists = parseInt(extractWithFallback(member, ["assists"]) || 0);
       const gamesPlayed = parseInt(extractWithFallback(member, ["gamesPlayed", "matches"]) || 0);
-      const wins = parseInt(extractWithFallback(member, ["wins"]) || 0);
-      const losses = parseInt(extractWithFallback(member, ["losses"]) || 0);
-      const draws = gamesPlayed - wins - losses;
+      const { wins, losses, draws, winRate: memberWinRate } = memberRecord(member, gamesPlayed);
       const avgRating = parseFloat(extractWithFallback(member, ["ratingAve", "avgRating"]) || 0);
       const cleanSheets = parseInt(extractWithFallback(member, ["cleanSheetsDef", "cleanSheetsGK", "cleanSheets"]) || 0);
       const manOfMatch = parseInt(extractWithFallback(member, ["manOfTheMatch", "mom"]) || 0);
@@ -1169,8 +1192,8 @@ async function syncMemberStats(supabase, guildId, clubId, platform, clubName, ag
           games_played: gamesPlayed,
           wins,
           losses,
-          draws: Math.max(0, draws),
-          win_rate: gamesPlayed > 0 ? wins / gamesPlayed * 100 : 0,
+          draws,
+          win_rate: memberWinRate,
           goals,
           assists,
           second_assists: secondAssists,
@@ -1259,8 +1282,7 @@ async function persistAggregatedStats(supabase, guildId, aggregates) {
   let persisted = 0;
   for (const aggregate of aggregates.values()) {
     const gamesPlayed = aggregate.games_played;
-    const draws = Math.max(0, gamesPlayed - aggregate.wins - aggregate.losses);
-    aggregate.draws = draws;
+    const draws = aggregate.draws;
     const winRate = gamesPlayed > 0 ? aggregate.wins / gamesPlayed * 100 : 0;
     const avgRating = gamesPlayed > 0 ? aggregate.rating_sum / gamesPlayed : 0;
     const primaryPosition = getPrimaryPosition(aggregate.position_counts);
