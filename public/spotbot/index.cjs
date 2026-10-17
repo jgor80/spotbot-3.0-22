@@ -1798,7 +1798,7 @@ function getInferredMatch(slotLabel, userPrefs) {
   
   // Direct match first
   if (userPrefs.includes(upper)) return { match: true, priority: 0 };
-  // A CDM, LWB, RWB or CF spot is a direct match for the nearest position players pick (CM, LB, RB, ST)
+  // A LWB, RWB or CF spot is a direct match for the nearest position players pick (LB, RB, ST)
   const folded = positionTiersLib.cleanPos(upper);
   if (folded && userPrefs.includes(folded)) return { match: true, priority: 1 };
   

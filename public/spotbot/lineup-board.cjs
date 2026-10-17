@@ -20,7 +20,7 @@ const ANSWER = { yes: '✅', maybe: '❓', no: '❌' };
 // How well the held player fits a spot: comp position, plays it well, emergency cover, or not theirs
 const FIT_EMOJI = { primary: '⭐', secondary: '👍', emergency: '🆘', none: '▫️' };
 const FIT_TEXT = { primary: 'Their comp position', secondary: 'Plays it well', emergency: 'Emergency cover', none: undefined };
-// A CDM, LWB, RWB or CF spot counts as the nearest position players pick (CM, LB, RB, ST)
+// A LWB, RWB or CF spot counts as the nearest position players pick (LB, RB, ST)
 function fitFor(player, pos) {
   if (player?.tiers) return PT.tierOf(player.tiers, pos) || 'none';
   const at = (player?.positions || []).map((p) => PT.cleanPos(p) || p).indexOf(PT.cleanPos(pos) || pos);
