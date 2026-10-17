@@ -7,7 +7,7 @@ const JOBS = [
   { name: 'ea-member-stats-morning', hour: 8, minute: 0, fn: 'sync-ea-stats', body: { sync_type: 'member_stats' } },
   { name: 'ea-member-stats-evening', hour: 20, minute: 0, fn: 'sync-ea-stats', body: { sync_type: 'member_stats' } },
   { name: 'season-card-archive-nightly', hour: 6, minute: 30, rpc: ['refresh_player_season_archive'] },
-  { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences'] },
+  { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences', 'cleanup_mcp_oauth'] },
 ];
 
 function due(job, d) {

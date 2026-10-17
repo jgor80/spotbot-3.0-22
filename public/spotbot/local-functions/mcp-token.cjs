@@ -54,17 +54,21 @@ async function resolveDiscordActor(req, admin, claimedDiscordId) {
 // supabase/functions/_shared/mcp-tokens.ts
 var TOKEN_PREFIX = "gb_";
 var MAX_ACTIVE_TOKENS = 5;
+var ACCESS_TTL_S = 60 * 60;
+var REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1e3;
 async function hashToken(token) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
-function generateToken() {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  const body = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  return TOKEN_PREFIX + body;
+function randomString(bytes = 32) {
+  const raw = crypto.getRandomValues(new Uint8Array(bytes));
+  return btoa(String.fromCharCode(...raw)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function generateToken(prefix = TOKEN_PREFIX) {
+  return prefix + randomString();
 }
 async function createToken(admin, discordUserId, label) {
-  const { count } = await admin.from("mcp_access_tokens").select("id", { count: "exact", head: true }).eq("discord_user_id", discordUserId).is("revoked_at", null);
+  const { count } = await admin.from("mcp_access_tokens").select("id", { count: "exact", head: true }).eq("discord_user_id", discordUserId).is("oauth_client_id", null).is("revoked_at", null);
   if ((count ?? 0) >= MAX_ACTIVE_TOKENS) {
     return { error: `You already have ${MAX_ACTIVE_TOKENS} active AI tokens. Revoke them first.` };
   }
@@ -96,8 +100,12 @@ serve(async (req) => {
       return json(created, "error" in created ? 400 : 200);
     }
     if (body.action === "list") {
-      const { data } = await admin.from("mcp_access_tokens").select("id, label, token_hint, created_at, last_used_at").eq("discord_user_id", userId).is("revoked_at", null).order("created_at", { ascending: false });
+      const { data } = await admin.from("mcp_access_tokens").select("id, label, token_hint, scopes, oauth_client_id, created_at, last_used_at").eq("discord_user_id", userId).is("revoked_at", null).order("created_at", { ascending: false });
       return json({ tokens: data || [] });
+    }
+    if (body.action === "activity") {
+      const { data } = await admin.from("mcp_action_log").select("guild_id, tool, target, ok, error, created_at").eq("discord_user_id", userId).order("created_at", { ascending: false }).limit(10);
+      return json({ actions: data || [] });
     }
     if (body.action === "revoke") {
       let q = admin.from("mcp_access_tokens").update({ revoked_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("discord_user_id", userId).is("revoked_at", null);
@@ -106,7 +114,7 @@ serve(async (req) => {
       if (error) return json({ error: "Could not revoke tokens" }, 500);
       return json({ revoked: (data || []).length });
     }
-    return json({ error: "action must be create, list or revoke" }, 400);
+    return json({ error: "action must be create, list, activity or revoke" }, 400);
   } catch (err) {
     console.error("[mcp-token] error:", err);
     return json({ error: "Internal error" }, 500);

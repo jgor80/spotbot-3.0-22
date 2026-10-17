@@ -1,6 +1,7 @@
 // Cloudflare Worker entry: serves the SPA from ./dist and handles /api/* routes.
 // Discord OAuth runs here so sign-in does not depend on Lovable Cloud functions.
 import { createClient } from "@supabase/supabase-js";
+import { handleOAuth } from "./mcp-oauth";
 
 interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
@@ -126,6 +127,17 @@ function originUrl(origin: string): string {
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    // Sign-in for AI apps on /mcp (OAuth with Discord), see mcp-oauth.ts.
+    if (url.pathname.startsWith("/oauth/") || url.pathname.startsWith("/.well-known/oauth-") || url.pathname === "/auth/callback") {
+      try {
+        const db = () => createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+        const res = await handleOAuth(req, url, env, db);
+        if (res) return res;
+      } catch (e) {
+        console.error("mcp oauth error", e);
+        return json({ error: "server_error" }, 500);
+      }
+    }
     if (url.pathname === "/api/auth/discord") {
       try { return await discordAuth(req, env); }
       catch (e) { console.error("auth-discord error", e); return json({ error: "Discord sign-in failed" }, 500); }

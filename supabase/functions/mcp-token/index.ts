@@ -1,4 +1,5 @@
-// Creates, lists and revokes a player's personal tokens for the GafferBot MCP server.
+// Creates, lists and revokes a player's tokens for the GafferBot MCP server (personal tokens and AI apps
+// signed in with Discord), and shows the changes AI apps made for them (activity).
 // The bot names the member it acts for (/me → AI Assistant); a web user always manages their own.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createAdminClient, resolveDiscordActor } from "../_shared/auth.ts";
@@ -30,11 +31,20 @@ serve(async (req) => {
     if (body.action === "list") {
       const { data } = await admin
         .from("mcp_access_tokens")
-        .select("id, label, token_hint, created_at, last_used_at")
+        .select("id, label, token_hint, scopes, oauth_client_id, created_at, last_used_at")
         .eq("discord_user_id", userId)
         .is("revoked_at", null)
         .order("created_at", { ascending: false });
       return json({ tokens: data || [] });
+    }
+    if (body.action === "activity") {
+      const { data } = await admin
+        .from("mcp_action_log")
+        .select("guild_id, tool, target, ok, error, created_at")
+        .eq("discord_user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      return json({ actions: data || [] });
     }
     if (body.action === "revoke") {
       let q = admin.from("mcp_access_tokens").update({ revoked_at: new Date().toISOString() })
@@ -44,7 +54,7 @@ serve(async (req) => {
       if (error) return json({ error: "Could not revoke tokens" }, 500);
       return json({ revoked: (data || []).length });
     }
-    return json({ error: "action must be create, list or revoke" }, 400);
+    return json({ error: "action must be create, list, activity or revoke" }, 400);
   } catch (err) {
     console.error("[mcp-token] error:", err);
     return json({ error: "Internal error" }, 500);
