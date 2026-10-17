@@ -2,7 +2,7 @@
 // Only players who said they're on Xbox are looked up: a gamertag from their Discord-verified
 // Xbox connection, or their EA name when their saved platform is Xbox. Exact gamertag matches
 // only, so a PlayStation player is never tied to a stranger's Xbox account with the same name.
-const XBOX_PLATFORMS = ['xbox-series-xs', 'xboxone', 'xbox'];
+const XBOX_PLATFORMS = ['xbox-series-xs', 'xbsx', 'xboxone', 'xbox'];
 const RETRY_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 const BATCH = 10;
 

@@ -52,13 +52,18 @@ async function discordAuth(req: Request, env: Env): Promise<Response> {
 
   // Verified console connections (needs the "connections" scope) are the gamertag source of truth.
   let xboxGamertag: string | null = null;
+  let xboxXuid: string | null = null;
   let psnId: string | null = null;
   const connRes = await fetch("https://discord.com/api/users/@me/connections", auth);
   if (connRes.ok) {
-    const connections = (await connRes.json()) as { type?: string; name?: string; verified?: boolean }[];
+    const connections = (await connRes.json()) as { type?: string; id?: string; name?: string; verified?: boolean }[];
     for (const c of connections) {
       if (!c?.name || c.verified === false) continue;
-      if (c.type === "xbox" && !xboxGamertag) xboxGamertag = c.name;
+      if (c.type === "xbox" && !xboxGamertag) {
+        xboxGamertag = c.name;
+        // Discord's Xbox connection id is the XUID that presence polling needs
+        if (c.id && /^\d{10,20}$/.test(String(c.id))) xboxXuid = String(c.id);
+      }
       if (c.type === "psn" && !psnId) psnId = c.name;
     }
   }
@@ -90,12 +95,13 @@ async function discordAuth(req: Request, env: Env): Promise<Response> {
   }
 
   // One profile row per player: refresh name/avatar, fill gamertags only when empty.
-  const { data: profile } = await admin.from("profiles").select("id, ea_username, xbox_gamertag, psn_id").eq("discord_user_id", discordId).maybeSingle();
+  const { data: profile } = await admin.from("profiles").select("id, ea_username, xbox_gamertag, xbox_xuid, psn_id").eq("discord_user_id", discordId).maybeSingle();
   const base: Record<string, unknown> = {
     auth_user_id: userId, discord_user_id: discordId, discord_username: me.username,
     display_name: me.global_name ?? me.username, avatar_url: avatar, discord_avatar: avatar, sign_in_provider: "discord",
   };
   if (xboxGamertag && !profile?.xbox_gamertag) base.xbox_gamertag = xboxGamertag;
+  if (xboxXuid && !profile?.xbox_xuid) base.xbox_xuid = xboxXuid;
   if (psnId && !profile?.psn_id) base.psn_id = psnId;
   if (!profile?.ea_username) {
     if (xboxGamertag) { base.ea_username = xboxGamertag; base.ea_platform = "xbsx"; }
