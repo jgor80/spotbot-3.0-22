@@ -6,6 +6,7 @@ import {
   CalendarCheck,
   Check,
   Globe2,
+  Heart,
   LayoutDashboard,
   Newspaper,
   Search,
@@ -31,6 +32,9 @@ import { cn } from "@/lib/utils";
 // manage messages (sticky panels), manage roles (positions, trophies), change nickname,
 // create invites (recruiting), public threads and sending in threads.
 const BOT_PERMISSIONS = "309573708865";
+
+// GafferBot is free; this is where people can chip in to keep it running
+const DONATE_URL = "https://venmo.com/u/bleacherjeff";
 
 function useInviteUrl() {
   const [url, setUrl] = useState<string | null>(null);
@@ -127,7 +131,7 @@ const FAQ = [
   },
   {
     q: "What does it cost?",
-    a: "Nothing right now. Every feature is unlocked for every server while GafferBot grows.",
+    a: "Nothing right now. Every feature is unlocked for every server while GafferBot grows. If it helps your club, a tip on Venmo (@bleacherjeff) keeps the servers running.",
   },
   {
     q: "Is this made by EA?",
@@ -455,6 +459,15 @@ export default function LandingPage() {
                 ))}
               </ul>
               <AddToDiscord url={inviteUrl} className="mt-8 w-full sm:w-auto" />
+              <div className="mt-6 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                <p>Enjoying GafferBot? It runs on donations.</p>
+                <Button asChild variant="outline" size="sm" className="mt-3">
+                  <a href={DONATE_URL} target="_blank" rel="noopener noreferrer">
+                    <Heart className="mr-2 h-4 w-4 text-destructive" />
+                    Tip on Venmo @bleacherjeff
+                  </a>
+                </Button>
+              </div>
             </div>
           </div>
         </section>
@@ -502,6 +515,7 @@ export default function LandingPage() {
           <nav className="flex gap-4">
             <Link to="/terms" className="hover:text-foreground">Terms of Service</Link>
             <Link to="/privacy" className="hover:text-foreground">Privacy Policy</Link>
+            <a href={DONATE_URL} target="_blank" rel="noopener noreferrer" className="hover:text-foreground">Donate</a>
             <Link to="/auth" className="hover:text-foreground">Sign in</Link>
           </nav>
         </div>
