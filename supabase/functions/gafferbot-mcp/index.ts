@@ -10,10 +10,11 @@ import { looksLikeToken, resolveToken, SCOPE_MANAGE, SCOPE_READ } from "../_shar
 import { handleBody } from "./protocol.ts";
 import { Ctx, PanelBridge, TOOLS } from "./tools.ts";
 import { MANAGE_TOOLS } from "./manage.ts";
+import { MODERATION_TOOLS } from "./moderation.ts";
 import { allowCall } from "./limits.ts";
 
 const SITE = (Deno.env.get("DASHBOARD_URL") || "https://gafferbot.app").replace(/\/+$/, "");
-const ALL_TOOLS = [...TOOLS, ...MANAGE_TOOLS];
+const ALL_TOOLS = [...TOOLS, ...MANAGE_TOOLS, ...MODERATION_TOOLS];
 
 type Caller = { discordUserId: string; tokenId: string | null; scopes: string[] };
 
@@ -81,6 +82,7 @@ serve(async (req) => {
       tokenId: caller.tokenId,
       // The Control Room bridge exists only inside the self-hosted bot process.
       panels: manage ? ((globalThis as unknown as { __gafferbotWebPanels?: PanelBridge }).__gafferbotWebPanels ?? null) : null,
+      moderation: manage ? ((globalThis as unknown as { __gafferbotModeration?: PanelBridge }).__gafferbotModeration ?? null) : null,
     };
     const tools = ALL_TOOLS.filter((t) => !t.scope || caller.scopes.includes(t.scope));
     const reply = await handleBody(body, tools, ctx);

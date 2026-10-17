@@ -182,7 +182,7 @@ async function catalogue(ctx: Ctx, guildId: string) {
   return { raw: c, actions };
 }
 
-async function logChange(ctx: Ctx, guildId: string, tool: string, target: string, detail: Json, outcome: { ok: boolean; error?: string }) {
+export async function logChange(ctx: Ctx, guildId: string, tool: string, target: string, detail: Json, outcome: { ok: boolean; error?: string }) {
   await ctx.db.from("mcp_action_log").insert({
     token_id: ctx.tokenId ?? null,
     discord_user_id: ctx.discordUserId,
@@ -195,7 +195,7 @@ async function logChange(ctx: Ctx, guildId: string, tool: string, target: string
   }).then(() => {}, (e: unknown) => console.error("[gafferbot-mcp] action log failed:", e));
 }
 
-async function underLimit(ctx: Ctx) {
+export async function underLimit(ctx: Ctx) {
   if ((await changesLastHour(ctx.db, ctx.discordUserId)) >= CHANGES_PER_HOUR) {
     throw new ToolError(`That's ${CHANGES_PER_HOUR} changes from AI apps in the last hour, the limit. Try again later or use Discord.`);
   }
