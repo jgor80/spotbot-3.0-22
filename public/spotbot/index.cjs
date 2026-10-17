@@ -487,6 +487,9 @@ const managerHub = createManagerHub({
   lineupImage: lineupBoard.imageForLineup
 });
 
+// Which clubs are playing now, so EA is polled often only for them
+const eaActivity = require('./ea-activity.cjs').createEaActivity({ client: () => client, getGuildState, supabase });
+
 // Voice check-ins, the auto-drafted XI, match recaps, sub requests on drop-outs and the Monday digest
 const autopilot = createAutopilot({
   supabase,
@@ -4119,7 +4122,8 @@ async function leaveIfNotAllowed(guild) {
 
 client.once(Events.ClientReady, async (c) => {
   // Self-hosted: the bot runs the scheduled syncs and refreshes that used to run in the cloud.
-  if (!BOT_PROXY_SECRET) require('./scheduler.cjs').startScheduler({ supabase, callFunction: callEdgeFunction });
+  eaActivity.start();
+  if (!BOT_PROXY_SECRET) require('./scheduler.cjs').startScheduler({ supabase, callFunction: callEdgeFunction, activeClubs: eaActivity.activeKeys });
   for (const guild of [...c.guilds.cache.values()]) await leaveIfNotAllowed(guild);
   // Find Xbox accounts for Xbox players a few at a time (OpenXBL is rate-limited)
   setInterval(() => xboxLink.backfill().catch((e) => console.error('[xbox-link]', e.message)), 10 * 60 * 1000);
@@ -4332,6 +4336,7 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
 // =======================
 
 client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+  eaActivity.onVoiceStateUpdate(oldState, newState);
   autopilot.onVoiceStateUpdate(oldState, newState).catch((err) => console.warn('[autopilot] voice update failed:', err.message));
   try {
     const guildId = oldState.guild?.id || newState.guild?.id;
@@ -16502,7 +16507,7 @@ async function relinkClubForFc27(guildId, clubKey) {
 }
 
 // Start EA monitoring for a specific club
-async function startEaMonitoring(guildId, clubKey) {
+async function startEaMonitoring(guildId, clubKey, { immediate = true } = {}) {
   const monitorKey = `${guildId}_${clubKey}`;
   
   // Don't start duplicate intervals
@@ -16512,11 +16517,12 @@ async function startEaMonitoring(guildId, clubKey) {
   
   console.log(`[EA] Starting monitoring for ${monitorKey}`);
   
-  // Run immediately then every 2 minutes
-  checkForNewMatches(guildId, clubKey);
+  // Run immediately (not on startup, so a restart doesn't hit EA for every club at once), then every
+  // 2 minutes while the club is playing (ea-activity.cjs); the scheduler's hourly sweep covers idle clubs
+  if (immediate) checkForNewMatches(guildId, clubKey);
   
   const intervalId = setInterval(() => {
-    checkForNewMatches(guildId, clubKey);
+    if (eaActivity.isActive(guildId, clubKey)) checkForNewMatches(guildId, clubKey);
   }, 120000); // 2 minutes
   
   eaMonitoringIntervals.set(monitorKey, intervalId);
@@ -17458,7 +17464,7 @@ async function resumeEaMonitoring() {
       const clubs = settings.clubs || [];
       for (const club of clubs) {
         if (club.ea_club_id && club.monitoring_enabled) {
-          startEaMonitoring(settings.guild_id, club.key);
+          startEaMonitoring(settings.guild_id, club.key, { immediate: false });
         }
       }
     }

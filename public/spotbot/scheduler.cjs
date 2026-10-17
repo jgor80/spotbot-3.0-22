@@ -1,11 +1,18 @@
 // Self-hosted replacement for the cloud's scheduled jobs (times in UTC, checked once a minute).
 // Each job runs one at a time; a run that is still going skips the next tick instead of overlapping.
+const EA_SLICES = 12;
+
+function eaSyncBody({ activeClubs, date }) {
+  if (!activeClubs) return { trigger: 'cron' };
+  return { trigger: 'cron', active: activeClubs(), slice: Math.floor(date.getUTCMinutes() / 5) % EA_SLICES, slices: EA_SLICES };
+}
+
 const JOBS = [
-  { name: 'sync-ea-stats', every: 5, fn: 'sync-ea-stats', body: { trigger: 'cron' } },
+  // Every 5 minutes: the clubs playing now (ea-activity.cjs) plus one twelfth of the rest, so every
+  // idle club is still fully synced (matches and member stats) once an hour
+  { name: 'sync-ea-stats', every: 5, fn: 'sync-ea-stats', body: eaSyncBody },
   { name: 'refresh-discord-standings', every: 5, rpc: ['refresh_discord_standings'] },
   { name: 'advanced-stats-refresh', minute: 15, rpc: ['backfill_advanced_player_stats', 'refresh_player_season_archive'] },
-  { name: 'ea-member-stats-morning', hour: 8, minute: 0, fn: 'sync-ea-stats', body: { sync_type: 'member_stats' } },
-  { name: 'ea-member-stats-evening', hour: 20, minute: 0, fn: 'sync-ea-stats', body: { sync_type: 'member_stats' } },
   { name: 'season-card-archive-nightly', hour: 6, minute: 30, rpc: ['refresh_player_season_archive'] },
   { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences'] },
 ];
@@ -19,12 +26,12 @@ function due(job, d) {
   return true;
 }
 
-function startScheduler({ supabase, callFunction }) {
+function startScheduler({ supabase, callFunction, activeClubs }) {
   if (process.env.SCHEDULER === 'off') return;
   const running = new Set();
   const warned = new Set();
   let lastMinute = -1;
-  const run = async (job) => {
+  const run = async (job, date) => {
     if (running.has(job.name)) return;
     running.add(job.name);
     try {
@@ -34,7 +41,8 @@ function startScheduler({ supabase, callFunction }) {
         else if (!error) warned.delete(name);
       }
       if (job.fn) {
-        const { error } = await callFunction(job.fn, job.body, 280000);
+        const body = typeof job.body === 'function' ? job.body({ activeClubs, date }) : job.body;
+        const { error } = await callFunction(job.fn, body, 280000);
         if (error) console.error(`⏰ ${job.name} failed:`, error);
       }
     } catch (e) {
@@ -48,9 +56,9 @@ function startScheduler({ supabase, callFunction }) {
     const key = Math.floor(d.getTime() / 60000);
     if (key === lastMinute) return;
     lastMinute = key;
-    for (const job of JOBS) if (due(job, d)) run(job);
+    for (const job of JOBS) if (due(job, d)) run(job, d);
   }, 15000);
   console.log(`⏰ Scheduler running ${JOBS.length} jobs on this server`);
 }
 
-module.exports = { startScheduler, JOBS, due };
+module.exports = { startScheduler, JOBS, due, eaSyncBody, EA_SLICES };
