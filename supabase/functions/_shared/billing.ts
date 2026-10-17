@@ -11,16 +11,17 @@ export type Plan = { name: string; price: number; monthly: number; welcome?: num
 export type Pack = { name: string; price: number; credits: number };
 
 export const DEFAULT_PLANS: Record<Tier, Plan> = {
-  free: { name: "Free", price: 0, monthly: 0, welcome: 10 },
-  lifetime: { name: "Club Unlock", price: 19.99, monthly: 0, once: true, credits: 60 },
-  starter: { name: "Starter", price: 4.99, monthly: 25 },
-  club: { name: "Club", price: 9.99, monthly: 60 },
-  pro: { name: "Pro", price: 19.99, monthly: 140 },
-  unlimited: { name: "Unlimited", price: 49.99, monthly: 350, daily_after: 10 },
+  free: { name: "Free", price: 0, monthly: 0, welcome: 5 },
+  // One-time $9.99: premium features for good plus 20 images; it pays for its own images up front
+  lifetime: { name: "Club Activation", price: 9.99, monthly: 0, once: true, credits: 20 },
+  starter: { name: "Starter", price: 4.99, monthly: 20 },
+  club: { name: "Club", price: 9.99, monthly: 50 },
+  pro: { name: "Pro", price: 19.99, monthly: 120 },
+  unlimited: { name: "Unlimited", price: 49.99, monthly: 300, daily_after: 10 },
 };
 export const DEFAULT_PACKS: Record<string, Pack> = {
-  pack30: { name: "30 images", price: 4.99, credits: 30 },
-  pack80: { name: "80 images", price: 12.99, credits: 80 },
+  pack25: { name: "25 images", price: 4.99, credits: 25 },
+  pack70: { name: "70 images", price: 12.99, credits: 70 },
 };
 // Higher wins when a server holds more than one (say a Discord and a website plan)
 export const TIER_RANK: Tier[] = ["free", "lifetime", "starter", "club", "pro", "unlimited"];

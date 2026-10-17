@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-process.env.DISCORD_SKUS = JSON.stringify({ club: '1000000000000000001', pack30: '1000000000000000002' });
+process.env.DISCORD_SKUS = JSON.stringify({ club: '1000000000000000001', pack25: '1000000000000000002' });
 const { createPremium } = require('./premium.cjs');
 
 const GUILD = '1529555651762851930';
@@ -41,7 +41,7 @@ test('buy buttons offer Discord store items plus the website, and the panel line
   const { premium, restore } = setup(() => ({}));
   try {
     const status = { limits_on: true, plan: 'Club', monthly: 60, used: 20, pack_balance: 5, left: 45, billing_url: `https://gafferbot.app/billing?guild=${GUILD}`,
-      products: [{ key: 'club', type: 'monthly', discord_sku: '1000000000000000001' }, { key: 'pack30', type: 'pack', discord_sku: '1000000000000000002' }, { key: 'pack80', type: 'pack', discord_sku: null }] };
+      products: [{ key: 'club', type: 'monthly', discord_sku: '1000000000000000001' }, { key: 'pack25', type: 'pack', discord_sku: '1000000000000000002' }, { key: 'pack70', type: 'pack', discord_sku: null }] };
     const rows = premium.buyRows(GUILD, USER, status).map((r) => r.toJSON().components);
     assert.equal(rows[0][0].url, status.billing_url);
     assert.deepEqual(rows[0].slice(1).map((b) => b.sku_id), ['1000000000000000002']);

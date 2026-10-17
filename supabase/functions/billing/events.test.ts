@@ -4,18 +4,18 @@ import { activeTier, billingConfig, creditsFor } from '../_shared/billing.ts';
 import { discordChange, lemonChange, verifyLemonSignature } from './events.ts';
 
 const env: Record<string, string> = {
-  LEMONSQUEEZY_VARIANTS: JSON.stringify({ club: '111', pack30: '222', lifetime: '333' }),
-  DISCORD_SKUS: JSON.stringify({ club: '9001', pack30: '9002', lifetime: '9003' }),
-  BILLING_PACKS: JSON.stringify({ pack30: { credits: 35 } }),
+  LEMONSQUEEZY_VARIANTS: JSON.stringify({ club: '111', pack25: '222', lifetime: '333' }),
+  DISCORD_SKUS: JSON.stringify({ club: '9001', pack25: '9002', lifetime: '9003' }),
+  BILLING_PACKS: JSON.stringify({ pack25: { credits: 35 } }),
 };
 const config = billingConfig((k) => env[k]);
 const GUILD = '1529555651762851930';
 const now = new Date('2026-10-17T12:00:00Z');
 
 test('settings override one field and keep the rest', () => {
-  assert.equal(config.packs.pack30.credits, 35);
-  assert.equal(config.packs.pack30.price, 4.99);
-  assert.equal(config.plans.club.monthly, 60);
+  assert.equal(config.packs.pack25.credits, 35);
+  assert.equal(config.packs.pack25.price, 4.99);
+  assert.equal(config.plans.club.monthly, 50);
   assert.equal(config.limitsOn, false);
 });
 
@@ -40,10 +40,10 @@ test('web subscriptions stay on until a cancelled plan reaches its end date', ()
   assert.equal(lemonChange('subscription_payment_success', sub('active'), config).kind, 'ignore');
 });
 
-test('the one-time Club Unlock gives the plan plus its images, on either store', () => {
+test('the one-time Club Activation gives the plan plus its images, on either store', () => {
   const web = lemonChange('order_created', { meta: { custom_data: { guild_id: GUILD } }, data: { id: '9', attributes: { status: 'paid', first_order_item: { variant_id: '333' } } } }, config);
   assert.equal(web.kind, 'subscription');
-  if (web.kind === 'subscription') { assert.equal(web.tier, 'lifetime'); assert.deepEqual(web.credits, { amount: 60, event_id: 'order:9' }); }
+  if (web.kind === 'subscription') { assert.equal(web.tier, 'lifetime'); assert.deepEqual(web.credits, { amount: 20, event_id: 'order:9' }); }
   const discord = discordChange({ id: 'e1', sku_id: '9003', guild_id: GUILD }, config);
   assert.equal(discord.kind === 'subscription' && discord.status, 'lifetime');
 });
