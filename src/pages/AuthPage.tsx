@@ -13,7 +13,6 @@ import { lovable } from "@/integrations/lovable/index";
 import { supabase } from "@/integrations/supabase/client";
 import { discordAuthApi } from "@/lib/discordAuthApi";
 import { DiscordIcon } from "@/components/DiscordIcon";
-import { GafferMark } from "@/components/GafferMark";
 
 const authSchema = z.object({
   email: z.string().trim().email({ message: "Invalid email address" }),
@@ -146,7 +145,7 @@ export default function AuthPage() {
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-background via-background to-primary/5 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <GafferMark className="mx-auto mb-4 h-12 w-12 rounded-xl" />
+          <img src="/brand/badge-256.png" alt="" width={88} height={88} className="mx-auto mb-4 h-[88px] w-[88px]" />
           <h1 className="text-2xl font-bold leading-none tracking-tight">GafferBot</h1>
           <CardDescription>
             Sign in to run your club: lineups, stats and match night

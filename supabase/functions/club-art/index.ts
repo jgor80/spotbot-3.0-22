@@ -7,6 +7,8 @@ import { z } from "npm:zod@3";
 import { rankPhotos, identityInstructions } from "./photo-selection.ts";
 import { teamPrompt, appendReferences, isRearFacing } from "./team-art.ts";
 import { referenceLimit, renderCost } from "./render-cost.ts";
+import { billingConfig, creditsFor, refundImages, reserveImages, settleImages } from "../_shared/billing.ts";
+import { ARRANGEMENTS, CAMERAS, LIGHTING, POSES, SCENES, keysOf, line } from "./variety.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -38,7 +40,12 @@ const Body = z.object({
   mood: z.enum(["win", "draw", "loss", "neutral"]).default("neutral"),
   competition: z.string().max(60).optional(),
   composition: z.enum(["lower-third", "editorial", "side-panel"]).default("lower-third"),
-  pose: z.enum(["ready", "stride", "ball", "celebrate", "profile", "captain", "headshot"]).default("ready"),
+  pose: z.enum(keysOf(POSES)).default("ready"),
+  // Picked per render by the bot (graphics-variants.cjs); random here when left out
+  camera: z.enum(keysOf(CAMERAS)).optional(),
+  lighting: z.enum(keysOf(LIGHTING)).optional(),
+  scene: z.enum(keysOf(SCENES)).optional(),
+  arrangement: z.enum(keysOf(ARRANGEMENTS)).optional(),
   variation: z.string().max(60).optional(),
   has_stats: z.boolean().default(true),
   has_tagline: z.boolean().default(true),
@@ -46,10 +53,6 @@ const Body = z.object({
   kit_number_override: z.number().int().min(1).max(99).optional(),
   // Member-chosen upload to base a single-player card on.
   photo_asset_id: z.string().uuid().optional(),
-  // Studio's key for "the same art": saved with a card so a later card can reuse it (graphics-studio.cjs)
-  reuse_key: z.string().regex(/^[a-f0-9]{16,64}$/).optional(),
-  // The card layout drawn around the art, saved with it so a reused card keeps a matching layout
-  layout: z.enum(["lower-third", "editorial", "side-panel"]).optional(),
 });
 
 const MAX_REFERENCES = referenceLimit(Deno.env.get("AI_IMAGE_REFERENCES"));
@@ -80,16 +83,6 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number |
   const noText = kitNumber
     ? `No text, letters, logos or watermarks anywhere. The only numerals allowed are the player's verified kit number ${kitNumber}, printed cleanly on the shirt (and optionally shorts) where it is naturally visible; no other numbers.`
     : "Absolutely no text, letters, numbers, logos or watermarks anywhere, including no shirt or shorts numbers.";
-  // Card-style shot variety: tight portraits, waist-up, action and celebration, never the same crop every time.
-  const poses = {
-    ready: "WAIST-UP three-quarter portrait, shoulders turned, looking towards the camera, camera at chest height",
-    stride: "FULL-BODY action shot sprinting or dribbling at speed, dynamic lean, ball at the feet, boots fully visible",
-    ball: "HALF-BODY shot (from mid-thigh up) holding a football under one arm, confident expression",
-    celebrate: "KNEES-UP goal celebration, both arms out or one fist raised, mouth open shouting, joyful energy",
-    profile: "CLOSE CHEST-UP portrait, head and shoulders filling much of the frame, intense focused stare",
-    captain: "THREE-QUARTER-LENGTH (from knees up) hands-on-hips stance, slight low camera angle",
-    headshot: "TIGHT HEAD-AND-SHOULDERS school portrait, facing the camera straight on with the head tilted very slightly, relaxed smile, shoulders square, camera at eye level",
-  };
   const framing = "FRAMING RULES (critical): the whole head — hair, beard, glasses and headwear — must sit completely inside the image with clear empty space above it; the top of the hair at least 9% below the top edge and the eyes never higher than 15% of the image height. Never crop the top of the head, face, chin or hands at the frame edge. For full-body shots, keep both boots inside the frame too. Centre the subject horizontally unless the composition says otherwise.";
   const placement = b.kind !== "card" ? "Subject in the upper two thirds; keep the lower third empty."
     : b.pose === "headshot" ? "Yearbook headshot composition: head and shoulders fill the frame, face centred horizontally with the eyes at about 38% height, the top of the hair about 10% below the top edge and the shoulders running off the bottom edge. Plain studio backdrop only, no pitch, crowd or stadium."
@@ -100,9 +93,11 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number |
    const poseRule = b.pose === "celebrate"
      ? "SIGNATURE CELEBRATION: if the reference photo shows a celebration pose (raised fists, arms out, knee slide, etc.), reproduce that exact celebration posture, arm and hand positions as this player's signature goal celebration — vary only the camera angle, framing and background. Take the face, hair, beard and accessories from the reference."
       : "Vary the body posture only when the original likeness can be preserved; keep the face anchor's head angle and every distinguishing feature. Pose variety must never override identity.";
-   const variation = `Creative edition ${b.variation || crypto.randomUUID()}: independently vary camera angle, stadium detail and lighting within the selected style. The pose must be ${poses[b.pose]}. ${poseRule} Never copy its background or typography. ${placement} ${framing}`;
+   // The yearbook headshot keeps its plain studio backdrop; every other card gets its own camera, light and scene
+   const shot = b.pose === "headshot" ? "" : `Camera: ${line(CAMERAS, b.camera)}. Lighting: ${line(LIGHTING, b.lighting)}, blended into the selected style (the style wins where they clash).`;
+   const variation = `Creative edition ${b.variation || crypto.randomUUID()}. The pose must be ${line(POSES, b.pose)}. ${shot} ${poseRule} Never copy its background or typography. ${placement} ${framing}`;
   if (b.kind === "banner") {
-    return `Championship celebration artwork for the esports football club ${b.club_name}${b.competition ? ` winning ${b.competition}` : ""}. A large gleaming trophy in the centre on a stage, confetti and pyrotechnics, stadium lights. ${hasRef ? `The reference shows one of the club's players: include them lifting or standing beside the trophy, keeping their face, hair and accessories. ${render} ${kitLine(b.kit, b.club_name)}` : `Club colours ${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "throughout"}.`} Style: ${look}. Wide landscape composition. Independently vary trophy camera angle, lighting and stage arrangement for edition ${b.variation || crypto.randomUUID()}. ${noText}`;
+    return `Championship celebration artwork for the esports football club ${b.club_name}${b.competition ? ` winning ${b.competition}` : ""}. A large gleaming trophy in the centre on a stage, confetti and pyrotechnics, stadium lights. ${hasRef ? `The reference shows one of the club's players: include them lifting or standing beside the trophy, keeping their face, hair and accessories. ${render} ${kitLine(b.kit, b.club_name)}` : `Club colours ${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "throughout"}.`} Style: ${look}. Wide landscape composition. Camera: ${line(CAMERAS, b.camera)}. Lighting: ${line(LIGHTING, b.lighting)}. Vary the stage arrangement for edition ${b.variation || crypto.randomUUID()}. ${noText}`;
   }
   const action = b.kind === "poster"
     ? b.mood === "win" ? "celebrating a victory with a fist pump, roaring" : b.mood === "loss" ? "determined, walking off the pitch, focused" : "intense, ready for kick-off"
@@ -110,7 +105,8 @@ function promptFor(b: z.infer<typeof Body>, hasRef: boolean, kitNumber: number |
   const subject = hasRef
     ? `Recreate this exact in-game Virtual Pro character (same face, skin tone, hair, beard, glasses and accessories), ${action}. ${description ? `IDENTITY LOCK — this player looks like: ${description.replace(/\s+/g, ' ').slice(0, 300)}. Match that hair colour and style, facial hair (or lack of it), skin tone, face shape and build exactly; do not substitute a different-looking face. ` : ''}Preserve identity and game-render materials, but pose the body freshly as requested; adapt the camera and background to this graphic. ${render} ${kitLine(b.kit, b.club_name)}`
     : `A stylised silhouette of a footballer in ${b.club_name}'s kit (${[b.kit.primary, b.kit.secondary].filter(Boolean).join(" and ") || "club colours"}), ${action}, seen from behind or in shadow so no face is shown.`;
-  return `Vertical football club artwork. ${subject} Stadium background lit in the club colours. Style: ${look}. ${variation} ${noText}`;
+  const background = b.kind === "card" && b.pose === "headshot" ? "" : `Background: ${line(SCENES, b.scene, b.mood === "loss" ? ["confetti"] : [])}, lit in the club colours.`;
+  return `Vertical football club artwork. ${subject} ${background} Style: ${look}. ${variation} ${noText}`;
 }
 
 async function proPhoto(b: z.infer<typeof Body>, team = false): Promise<{ file: File; files: File[]; assetIds: string[]; descriptions: (string | null)[]; kitNumber: number | null; description: string | null } | null> {
@@ -192,27 +188,46 @@ Deno.serve(async (req) => {
   const kitNumber = b.kit_number_override ?? found?.kitNumber ?? null;
   const prompt = refs.length ? teamPrompt(b, refs, STYLE[b.style], kitLine(b.kit, b.club_name)) : `${found ? identityInstructions(found.descriptions) : ""} ${promptFor(b, !!ref, kitNumber, found?.description ?? null)}`;
   const size = b.kind === "banner" ? "1536x1024" : "1024x1536";
+  // IMAGE_LIMITS=on: spend the server's images before calling the AI, and give them back if it fails
+  const billing = billingConfig();
+  let reservation: string | null = null;
+  let imagesLeft: number | null = null;
+  if (billing.limitsOn) {
+    if (!b.guild_id) return json({ error: "AI images need a server to count against." }, 400);
+    const r = await reserveImages(db, { guild_id: b.guild_id, discord_user_id: b.discord_user_id, kind: b.kind, credits: creditsFor(b.kind, teamIds.length) }, billing);
+    if (!r.ok) return json({ error: r.message, out_of_images: true }, 402);
+    reservation = r.id;
+    imagesLeft = r.left;
+  }
+  const failed = async (body: unknown, status: number) => {
+    if (reservation) await refundImages(db, reservation);
+    return json(body, status);
+  };
   let res: Response;
-  if (ref || refs.length) {
-    const form = new FormData();
-    form.set("model", MODEL);
-    form.set("prompt", prompt);
-    form.set("size", size);
-    appendReferences(form, refs.length ? refs : (found?.files ?? []).map(file => ({ file })));
-    res = await fetch(`${GATEWAY}/v1/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${AI_KEY}` }, body: form });
-  } else {
-    res = await fetch(`${GATEWAY}/v1/images/generations`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${AI_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: MODEL, prompt, size }),
-    });
+  try {
+    if (ref || refs.length) {
+      const form = new FormData();
+      form.set("model", MODEL);
+      form.set("prompt", prompt);
+      form.set("size", size);
+      appendReferences(form, refs.length ? refs : (found?.files ?? []).map(file => ({ file })));
+      res = await fetch(`${GATEWAY}/v1/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${AI_KEY}` }, body: form });
+    } else {
+      res = await fetch(`${GATEWAY}/v1/images/generations`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${AI_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: MODEL, prompt, size }),
+      });
+    }
+  } catch {
+    return failed({ error: "The art studio couldn't reach the AI. Nothing was rendered." }, 502);
   }
   if (!res.ok) {
     const detail = await res.json().catch(() => null);
     console.error(`[club-art] AI failed: ${res.status}`);
     const safeMessage = detail?.error?.message ?? detail?.message ?? (typeof detail?.error === "string" ? detail.error : null);
     const msg = typeof safeMessage === "string" ? safeMessage : "Couldn't create the artwork.";
-    return json({ error: msg }, res.status >= 500 ? 502 : res.status);
+    return failed({ error: msg }, res.status >= 500 ? 502 : res.status);
   }
   const out = await res.json().catch(() => null);
   const b64 = out?.data?.[0]?.b64_json;
@@ -226,7 +241,8 @@ Deno.serve(async (req) => {
     quality: out?.quality ?? res.headers.get("x-ai-quality") ?? null, size, reference_count: referenceCount, ok: Boolean(b64),
     text_tokens: cost?.text_tokens ?? null, image_tokens: cost?.image_tokens ?? null, output_tokens: cost?.output_tokens ?? null, cost_usd: cost?.cost_usd ?? null,
   }).then(({ error }) => { if (error) console.warn(`[club-art] render log failed: ${error.message}`); }, () => {});
-  if (!b64) return json({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
+  if (!b64) return failed({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
+  if (reservation) await settleImages(db, reservation);
   let artworkSaved = !b.discord_user_id;
   if (!teamIds.length && b.discord_user_id && ref) {
     const raw = atob(b64);
@@ -242,11 +258,11 @@ Deno.serve(async (req) => {
         discord_user_id: b.discord_user_id, guild_id: "graphics-studio", image_url: signed.data.signedUrl,
         storage_path: path, source_key: sourceKey, source_kind: "generated", graphic_kind: b.kind,
          pose: b.pose, analysis: { style: b.style, composition: b.composition, club_name: b.club_name, reference_asset_ids: found?.assetIds,
-           reuse_key: b.reuse_key ?? null, layout: b.layout ?? null, kit_number: kitNumber, model },
+           camera: b.camera ?? null, lighting: b.lighting ?? null, scene: b.scene ?? null, model },
         });
         artworkSaved = !error;
       }
     }
   }
-  return json({ image_b64: b64, used_pro_photo: !!ref || refs.length > 0, artwork_saved: artworkSaved, kit_number: teamIds.length ? null : kitNumber, team_player_ids: teamIds, reference_asset_ids: refs.length ? refs.flatMap(r => r.assetIds) : found?.assetIds ?? [] });
+  return json({ image_b64: b64, used_pro_photo: !!ref || refs.length > 0, artwork_saved: artworkSaved, kit_number: teamIds.length ? null : kitNumber, images_left: imagesLeft, team_player_ids: teamIds, reference_asset_ids: refs.length ? refs.flatMap(r => r.assetIds) : found?.assetIds ?? [] });
 });

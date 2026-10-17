@@ -23,7 +23,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { DiscordIcon } from "@/components/DiscordIcon";
-import { GafferMark } from "@/components/GafferMark";
 import { discordAuthApi } from "@/lib/discordAuthApi";
 import { cn } from "@/lib/utils";
 
@@ -273,7 +272,7 @@ function AvailabilityMockup({ className }: { className?: string }) {
   return (
     <div className={cn("rounded-xl border border-white/10 bg-[hsl(228_8%_20%)] p-4 text-left text-white shadow-2xl", className)}>
       <div className="flex items-center gap-2">
-        <GafferMark className="h-8 w-8 rounded-full" />
+        <img src="/brand/badge-128.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0 rounded-full" />
         <p className="text-sm font-semibold">
           GafferBot <span className="ml-1 rounded bg-[hsl(235_86%_65%)] px-1 py-px text-[10px] font-semibold">APP</span>
         </p>
@@ -359,7 +358,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-30 border-b border-border/60 bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4">
           <Link to="/" className="flex items-center gap-2">
-            <GafferMark className="h-9 w-9" />
+            <img src="/brand/badge-128.png" alt="" width={40} height={40} className="h-10 w-10 shrink-0" />
             <span className="font-display text-xl font-bold">GafferBot</span>
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">

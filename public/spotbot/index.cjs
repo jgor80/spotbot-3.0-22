@@ -68,6 +68,7 @@ const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
 const { createAutoLink } = require('./auto-link.cjs');
 const { createXboxLink } = require('./xbox-link.cjs');
+const { createPresenceLog } = require('./xbox-presence-log.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
 const permCheck = require('./perm-check.cjs');
 const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
@@ -465,7 +466,7 @@ const autoLink = createAutoLink({ supabase, getGuildState, isManager });
 const xboxLink = createXboxLink({ supabase });
 const proPhotos = createProPhotos({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, isManager });
 const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
-const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client });
+const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client, getPremium: () => premium });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, positionTiers });
 const network = createNetwork({ supabase, getGuildState, isManager });
 createReplacements({ supabase, getGuildState, network, recruitment, canManageClub: squads.canManageClub });
@@ -529,7 +530,7 @@ autopilot.onNewMatches(async (guildId) => {
 
 
 // GafferBot Premium: the per-server switch, then the features behind it (all under /premium, plus /scout opponent)
-const premium = createPremium({ supabase });
+const premium = createPremium({ supabase, supabaseUrl, secret: FUNCTION_SECRET });
 const premiumDeps = {
   supabase,
   premium,
@@ -4135,12 +4136,18 @@ client.once(Events.ClientReady, async (c) => {
   // Find Xbox accounts for Xbox players a few at a time (OpenXBL is rate-limited)
   setInterval(() => xboxLink.backfill().catch((e) => console.error('[xbox-link]', e.message)), 10 * 60 * 1000);
   setTimeout(() => xboxLink.backfill().catch(() => {}), 60 * 1000);
+  // Save what Xbox shows for players in voice, to learn whether FC puts score/minute there
+  createPresenceLog({ client, supabase }).start();
   // Pick up players who already hold position roles (runs in the background, one server at a time)
   setTimeout(async () => {
     for (const guild of c.guilds.cache.values()) await roster.syncGuildPositions(guild).catch(() => {});
   }, 30 * 1000);
   console.log(`✅ GafferBot logged in as ${c.user.tag}`);
   embedStyle.setFooterIcon(c.user.displayAvatarURL({ size: 64 }));
+  // New logo: set the bot's avatar and profile banner from ./brand (once per image change).
+  require('./brand-profile.cjs').applyBrandProfile(c)
+    .then((changed) => { if (changed) embedStyle.setFooterIcon(c.user.displayAvatarURL({ size: 64 })); })
+    .catch((e) => console.warn('[brand] could not update bot profile:', e.message));
 
   try {
     // One-time cleanup: Remove all guild-specific commands to fix duplicates

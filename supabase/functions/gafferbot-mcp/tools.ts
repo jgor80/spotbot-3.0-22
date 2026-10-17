@@ -121,7 +121,7 @@ export const TOOLS: Tool<Ctx>[] = [
   {
     name: "get_club_stats",
     title: "Club record",
-    description: "Season record for a server's clubs from EA: wins/draws/losses, goals, division, skill rating, streaks and last results.",
+    description: "Club record from EA for this EA FC (overall_matches_played and wins/draws/losses cover the same games), goals, division, skill rating, streaks and last results.",
     inputSchema: { type: "object", properties: { guild_id: guildIdProp, club_key: clubKeyProp }, additionalProperties: false },
     run: async (args, ctx) => {
       const guildId = await resolveGuild(args, ctx);
@@ -187,7 +187,8 @@ export const TOOLS: Tool<Ctx>[] = [
   {
     name: "get_players",
     title: "Player stats",
-    description: "Player stats in a server: one player's full line (with streaks), or a leaderboard sorted by a stat.",
+    description: "Player stats in a server: one player's full line (with streaks), or a leaderboard sorted by a stat. " +
+      "EA only publishes each player's win rate, so wins come from it and draws/losses stay 0 unless EA sends them.",
     inputSchema: {
       type: "object",
       properties: {

@@ -19,21 +19,22 @@ Module._load = function (request, parent, ...args) {
 const { createGraphicsStudio, playerCard, STYLES, recruitmentPoster, palette, matchPoster, lineupPoster, banner } = require('./graphics-studio.cjs');
 Module._load = originalLoad;
 
-function fixture(overrides = {}, { members, savedArt, storage } = {}) {
+function fixture(overrides = {}, { members, premium } = {}) {
   const calls = [], posts = [], requests = [];
   const club = { key: 'palermo', name: 'PCN Palermo', kit: { primary: 'pink', secondary: 'black' } };
   const db = { from(table) {
     assert.ok(calls.includes('deferUpdate'), 'acknowledge before loading player data');
     const result = Object.hasOwn(overrides, table) ? overrides[table] : table === 'teams' ? { id: 'palermo-team' } : table === 'team_rosters' ? [{ discord_user_id: '501557839932948490', status: 'active' }] : table === 'player_club_stats' ? [{ club_key: 'palermo', games_played: 22, goals: 9, assists: 4, wins: 10, draws: 2, losses: 10 }] : table === 'profiles' ? { ea_username: 'AirDangus23' } : table === 'pro_photo_assets' ? [{ discord_user_id: '501557839932948490', analysis: { kit_number: 23 } }] : { position: 'CAM', overall: 90 };
     let selected = result;
-    const query = { select() { return this; }, eq(key, value) { if (table === 'team_rosters') assert.equal(value, 'palermo-team'); if (table === 'pro_photo_assets' && value === 'generated') selected = savedArt ?? null; return this; }, in(key, ids) { assert.ok(ids.includes('501557839932948490')); if (table === 'pro_photos' && !Object.hasOwn(overrides, table)) selected = [{ discord_user_id: '501557839932948490' }]; return this; }, ilike(key, value) { assert.equal(value, club.name); return this; }, order() { return this; }, limit() { return this; }, maybeSingle() { return Promise.resolve({ data: selected }); }, then(resolve) { return Promise.resolve({ data: selected }).then(resolve); } };
+    const query = { select() { return this; }, eq(key, value) { if (table === 'team_rosters') assert.equal(value, 'palermo-team'); return this; }, in(key, ids) { assert.ok(ids.includes('501557839932948490')); if (table === 'pro_photos' && !Object.hasOwn(overrides, table)) selected = [{ discord_user_id: '501557839932948490' }]; return this; }, ilike(key, value) { assert.equal(value, club.name); return this; }, order() { return this; }, limit() { return this; }, maybeSingle() { return Promise.resolve({ data: selected }); }, then(resolve) { return Promise.resolve({ data: selected }).then(resolve); } };
     return query;
-  }, ...(storage ? { storage } : {}) };
+  } };
   const guild = { id: '1529555651762851930', channels: { fetch: async () => null } };
   const channel = { id: 'studio', client: { user: { id: 'bot' } }, messages: { fetch: async () => new Map(), delete: async () => {} }, send: async (p) => { posts.push(p); return { id: 'posted' }; } };
   const studio = createGraphicsStudio({ supabase: db, supabaseUrl: 'https://example.invalid', secret: 'test-only',
     getGuildState: async () => { assert.ok(calls.length, 'acknowledge before settings read'); return { clubs: [club] }; },
     isManager: async () => false, serverPrefs: async () => ({ branding: { logo_url: 'https://example.invalid/unrelated-badge.png' } }),
+    ...(premium ? { getPremium: () => premium } : {}),
     ...(members ? { getClient: () => ({ guilds: { cache: new Map([[guild.id, { members: { fetch: async (id) => { if (!members.includes(id)) throw new Error('Unknown Member'); return { id }; } } }]]) } }) } : {}) });
   function interaction(customId, type, extra = {}) {
     return { customId, guildId: guild.id, guild, channel, user: { id: '501557839932948490', username: 'AirDangus23' },
@@ -58,9 +59,8 @@ test('all styles load safely, portrait option opens a valid stat-free form and r
       const f = fixture();
       assert.equal(await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: [style] })), true);
       const buttons = f.requests.at(-1).components.at(-1).toJSON().components;
-      assert.equal(buttons.length, 4);
+      assert.equal(buttons.length, 3);
       assert.ok(buttons.some((b) => b.label === 'Back of card: On'));
-      assert.ok(buttons.some((b) => b.label === 'Art: Reuse last'));
       const portrait = buttons.find((b) => b.label === 'Portrait Only');
       assert.ok(portrait);
       await f.studio.handleInteraction(f.interaction(portrait.custom_id, 'button'));
@@ -281,7 +281,17 @@ test('consecutive editions never repeat pose or layout; all compositions render'
     if (previous) { assert.notEqual(current.pose, previous.pose); assert.notEqual(current.composition, previous.composition); assert.notEqual(current.variation, previous.variation); }
     previous = current;
   }
-  assert.ok(seen.size >= 5, 'poses should rotate widely');
+  assert.ok(seen.size >= 10, 'poses should rotate widely');
+  // Camera, lighting and scene change every time too, and nothing celebratory follows a defeat
+  const recent = [];
+  for (let i = 0; i < 40; i++) {
+    const v = nextVariation('test-player-loss', 'modern', 'loss');
+    for (const prior of recent.slice(-3)) { assert.notEqual(v.camera, prior.camera); assert.notEqual(v.lighting, prior.lighting); assert.notEqual(v.scene, prior.scene); }
+    assert.ok(!['celebrate', 'knee_slide', 'sky_point', 'shush'].includes(v.pose));
+    assert.notEqual(v.scene, 'confetti');
+    assert.notEqual(v.arrangement, 'celebration_pile');
+    recent.push(v);
+  }
   for (const composition of ['editorial', 'side-panel', 'lower-third']) {
     const png = playerCard({ style: 'modern', kit: { primary: 'pink' }, name: 'AirDangus23', clubName: 'PCN Palermo', tagline: 'Palermo', stats: [], composition });
     assert.equal(png.subarray(1, 4).toString(), 'PNG');
@@ -570,39 +580,20 @@ test("'90s yearbook card asks club-art for a tight headshot and is offered only 
   assert.match(r.requests.at(-1).content, /Pick a style from the panel/);
 });
 
-test('a card reuses the player\'s saved art unless New art is picked', async () => {
-  const savedPng = new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="30"><rect width="20" height="30" fill="pink"/></svg>').render().asPng();
-  const savedArt = { storage_path: 'generated/501557839932948490/a.png', created_at: new Date().toISOString(), analysis: { layout: 'editorial', kit_number: 23, reference_asset_ids: [] } };
-  const downloads = [];
-  const storage = { from: () => ({ download: async (p) => { downloads.push(p); return { data: new Blob([savedPng]) }; } }) };
+test('a server out of AI images gets the reason plus buy buttons, and nothing is posted', async () => {
   const originalFetch = global.fetch;
-  const bodies = [];
-  global.fetch = async (url, options) => { bodies.push(JSON.parse(options.body)); return { ok: true, json: async () => ({ image_b64: savedPng.toString('base64'), used_pro_photo: true }) }; };
-  const post = async (f, toggleNewArt) => {
+  global.fetch = async () => ({ ok: false, json: async () => ({ error: 'This server is out of AI images.', out_of_images: true }) });
+  const premium = { imageStatus: async () => ({ products: [] }), buyRows: (g, u) => [{ toJSON: () => ({ guild: g, user: u }) }] };
+  try {
+    const f = fixture({}, { premium });
     await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: ['modern'] }));
-    if (toggleNewArt) {
-      const art = f.requests.at(-1).components.at(-1).toJSON().components.find((b) => b.label === 'Art: Reuse last');
-      await f.studio.handleInteraction(f.interaction(art.custom_id, 'button', { update: async (p) => f.requests.push(p) }));
-      assert.ok(f.requests.at(-1).components.at(-1).toJSON().components.some((b) => b.label === 'Art: New'));
-    }
     const stats = f.requests.at(-1).components.at(-1).toJSON().components.find((b) => b.label === 'With Stats');
     await f.studio.handleInteraction(f.interaction(stats.custom_id, 'button'));
     const inputs = f.requests.at(-1).components.map((r) => r.components[0]);
     await f.studio.handleInteraction(f.interaction(f.requests.at(-1).custom_id, 'modal', { fields: { getTextInputValue: (k) => inputs.find((i) => i.custom_id === k)?.value || '' } }));
-    assert.equal(f.requests.at(-1), '✅ Posted!');
-  };
-  try {
-    await post(fixture({}, { savedArt, storage }), false);
-    assert.equal(bodies.filter((b) => b.kind === 'card').length, 0, 'saved art reused, no AI call');
-    assert.deepEqual(downloads, [savedArt.storage_path]);
-    await post(fixture({}, { savedArt, storage }), true);
-    const fresh = bodies.filter((b) => b.kind === 'card');
-    assert.equal(fresh.length, 1, 'New art renders fresh');
-    assert.match(fresh[0].reuse_key, /^[a-f0-9]{32}$/);
-    assert.ok(['lower-third', 'editorial', 'side-panel'].includes(fresh[0].layout));
-    // Nothing saved yet: renders, and tells club-art the key to save the art under
-    bodies.length = 0;
-    await post(fixture({}, { storage }), false);
-    assert.equal(bodies.filter((b) => b.kind === 'card').length, 1);
+    const last = f.requests.at(-1);
+    assert.equal(last.content, '❌ This server is out of AI images.');
+    assert.deepEqual(last.components[0].toJSON(), { guild: '1529555651762851930', user: '501557839932948490' });
+    assert.equal(f.posts.length, 0);
   } finally { global.fetch = originalFetch; }
 });
