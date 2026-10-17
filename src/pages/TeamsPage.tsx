@@ -96,7 +96,7 @@ interface PlayerSummary {
 const emptyBoard = (count: number): BoardState => ({ starters: Array(count).fill(null), bench: [] });
 
 export default function TeamsPage() {
-  const { selectedGuildId, isLoading: guildLoading } = useGuild();
+  const { selectedGuildId, selectedGuild, isLoading: guildLoading } = useGuild();
   const { toast: toastHook } = useToast();
   const queryClient = useQueryClient();
   
@@ -499,7 +499,10 @@ export default function TeamsPage() {
     setLook(l => {
       const next: BoardLook = { ...DEFAULT_LOOK, ...saved, title: l.title, subtitle: l.subtitle };
       const untouched = next.kit.primary === DEFAULT_LOOK.kit.primary && next.kit.secondary === DEFAULT_LOOK.kit.secondary;
-      return untouched && clubTheme ? { ...next, kit: { ...next.kit, primary: clubTheme.primary, secondary: clubTheme.secondary } } : next;
+      if (!clubTheme) return next;
+      // Clubs with team colours start on the team-coloured pitch
+      const pitch = saved.pitch ?? "team";
+      return untouched ? { ...next, pitch, kit: { ...next.kit, primary: clubTheme.primary, secondary: clubTheme.secondary } } : { ...next, pitch };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGuildId, clubTheme?.primary, clubTheme?.secondary]);
@@ -536,6 +539,13 @@ export default function TeamsPage() {
     },
     enabled: !!selectedGuildId,
   });
+
+  // Save and Post need a squad, so start on one: the squad a club runs, else the first squad
+  useEffect(() => {
+    if (lineupTeamId || openLineupId || !teams?.length) return;
+    const clubTeam = (selectedGuild?.clubs || []).map(c => c?.team_id).find(id => id && teams.some(t => t.id === id));
+    setLineupTeamId(clubTeam || teams[0].id);
+  }, [teams, lineupTeamId, openLineupId, selectedGuild]);
 
   // Picking an event picks its squad too
   useEffect(() => {
@@ -743,9 +753,6 @@ export default function TeamsPage() {
   const starterIds = board.starters.filter(Boolean) as string[];
   const filledCount = starterIds.length;
   const onBoard = new Set([...starterIds, ...board.bench]);
-  const avgRating = filledCount > 0
-    ? starterIds.reduce((sum, id) => sum + (availablePlayers?.find(p => p.discord_user_id === id)?.overall_rating || 0), 0) / filledCount
-    : 0;
 
   if (!selectedGuildId && !guildLoading) {
     return (
@@ -1091,6 +1098,26 @@ export default function TeamsPage() {
               <div className="space-y-4">
                 <LineupBoardEditor
                   ref={pitchRef}
+                  theme={clubTheme}
+                  squad={
+                    teams?.length ? (
+                      <Select value={lineupTeamId} onValueChange={setLineupTeamId}>
+                        <SelectTrigger aria-label="Squad" className="h-9 border-white/25 bg-black/30 text-white">
+                          <SelectValue placeholder="Pick a squad" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {teams.map((team) => (
+                            <SelectItem key={team.id} value={team.id}>
+                              {team.name} {team.tag && `[${team.tag}]`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : teamsLoading ? null : (
+                      <Button size="sm" variant="secondary" className="h-9" onClick={() => setActiveTab("teams")}>Create a squad first</Button>
+                    )
+                  }
+                  clubName={lineupTeamName || clubTheme?.name}
                   board={board}
                   formation={formation}
                   players={availablePlayers}
@@ -1124,7 +1151,6 @@ export default function TeamsPage() {
                           Fill from Availability
                         </Button>
                       )}
-                      <span className="ml-auto text-xs text-muted-foreground">Avg rating <strong className="text-foreground">{avgRating.toFixed(1)}</strong></span>
                     </>
                   }
                   actions={
@@ -1144,26 +1170,11 @@ export default function TeamsPage() {
                     </>
                   }
                 />
-                {!lineupTeamId && <p className="text-sm text-muted-foreground">Pick a squad below to save or post this lineup.</p>}
+                {!lineupTeamId && !teamsLoading && <p className="text-sm text-muted-foreground">{teams?.length ? "Pick a squad at the top to save or post this lineup." : "Save and Post need a squad. Create one on the Squads tab first."}</p>}
 
                 {/* Save to Team */}
                 <Card className="p-4">
                   <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex-1 min-w-[200px]">
-                      <label className="text-sm font-medium mb-1.5 block">Squad</label>
-                      <Select value={lineupTeamId} onValueChange={setLineupTeamId}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a team..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {teams?.map((team) => (
-                            <SelectItem key={team.id} value={team.id}>
-                              {team.name} {team.tag && `[${team.tag}]`}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                     {!!upcomingEvents?.length && (
                       <div className="flex-1 min-w-[200px]">
                         <label className="text-sm font-medium mb-1.5 block">For event (shows who's available)</label>

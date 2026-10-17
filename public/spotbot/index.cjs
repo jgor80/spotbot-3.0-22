@@ -68,6 +68,7 @@ const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
 const { createAutoLink } = require('./auto-link.cjs');
 const { createXboxLink } = require('./xbox-link.cjs');
+const { createPresenceLog } = require('./xbox-presence-log.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
 const permCheck = require('./perm-check.cjs');
 const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
@@ -447,7 +448,14 @@ embedStyle.install({ loadBranding: async (guildId) => (await clubEvents.serverPr
 const positionTiers = positionTiersLib.createPositionTiers({ supabase });
 const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub, autoLink: () => autoLink, positionTiers });
 
-const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents, saveGuildSettings, searchClubCandidates: (n, p) => searchClubCandidates(n, p), linkEaClub: (...a) => linkEaClub(...a), clubPickerReply: (...a) => clubPickerReply(...a) });
+const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents, saveGuildSettings, searchClubCandidates: (n, p) => searchClubCandidates(n, p), linkEaClub: (...a) => linkEaClub(...a), clubPickerReply: (...a) => clubPickerReply(...a),
+  // Panels for channels picked or created in /setup → Channels (those modules are created further down)
+  channelHooks: () => ({
+    graphicsPanel: (channel, club) => graphicsStudio.refreshPanel(channel, club),
+    deskPanel: (channel) => managerHub.refreshDesk(channel),
+    recruitChanged: (guildId) => recruitment.forgetSettings(guildId),
+  }),
+});
 
 // Team Sheet → Edit Lineup (pick-and-drop swaps in Discord) and the pitch image every lineup post carries
 const lineupBoard = createLineupBoard({ supabase, callEdgeFunction, getGuildState, resolveClub, canManageClub: squads.canManageClub, dashboardUrl: DASHBOARD_URL });
@@ -458,7 +466,7 @@ const autoLink = createAutoLink({ supabase, getGuildState, isManager });
 const xboxLink = createXboxLink({ supabase });
 const proPhotos = createProPhotos({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, isManager });
 const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
-const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client });
+const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client, getPremium: () => premium });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, positionTiers });
 const network = createNetwork({ supabase, getGuildState, isManager });
 createReplacements({ supabase, getGuildState, network, recruitment, canManageClub: squads.canManageClub });
@@ -486,6 +494,9 @@ const managerHub = createManagerHub({
   buildEventList: clubEvents.buildEventList,
   lineupImage: lineupBoard.imageForLineup
 });
+
+// Which clubs are playing now, so EA is polled often only for them
+const eaActivity = require('./ea-activity.cjs').createEaActivity({ client: () => client, getGuildState, supabase });
 
 // Voice check-ins, the auto-drafted XI, match recaps, sub requests on drop-outs and the Monday digest
 const autopilot = createAutopilot({
@@ -519,7 +530,7 @@ autopilot.onNewMatches(async (guildId) => {
 
 
 // GafferBot Premium: the per-server switch, then the features behind it (all under /premium, plus /scout opponent)
-const premium = createPremium({ supabase });
+const premium = createPremium({ supabase, supabaseUrl, secret: FUNCTION_SECRET });
 const premiumDeps = {
   supabase,
   premium,
@@ -4119,17 +4130,24 @@ async function leaveIfNotAllowed(guild) {
 
 client.once(Events.ClientReady, async (c) => {
   // Self-hosted: the bot runs the scheduled syncs and refreshes that used to run in the cloud.
-  if (!BOT_PROXY_SECRET) require('./scheduler.cjs').startScheduler({ supabase, callFunction: callEdgeFunction });
+  eaActivity.start();
+  if (!BOT_PROXY_SECRET) require('./scheduler.cjs').startScheduler({ supabase, callFunction: callEdgeFunction, activeClubs: eaActivity.activeKeys });
   for (const guild of [...c.guilds.cache.values()]) await leaveIfNotAllowed(guild);
   // Find Xbox accounts for Xbox players a few at a time (OpenXBL is rate-limited)
   setInterval(() => xboxLink.backfill().catch((e) => console.error('[xbox-link]', e.message)), 10 * 60 * 1000);
   setTimeout(() => xboxLink.backfill().catch(() => {}), 60 * 1000);
+  // Save what Xbox shows for players in voice, to learn whether FC puts score/minute there
+  createPresenceLog({ client, supabase }).start();
   // Pick up players who already hold position roles (runs in the background, one server at a time)
   setTimeout(async () => {
     for (const guild of c.guilds.cache.values()) await roster.syncGuildPositions(guild).catch(() => {});
   }, 30 * 1000);
   console.log(`✅ GafferBot logged in as ${c.user.tag}`);
   embedStyle.setFooterIcon(c.user.displayAvatarURL({ size: 64 }));
+  // New logo: set the bot's avatar and profile banner from ./brand (once per image change).
+  require('./brand-profile.cjs').applyBrandProfile(c)
+    .then((changed) => { if (changed) embedStyle.setFooterIcon(c.user.displayAvatarURL({ size: 64 })); })
+    .catch((e) => console.warn('[brand] could not update bot profile:', e.message));
 
   try {
     // One-time cleanup: Remove all guild-specific commands to fix duplicates
@@ -4332,6 +4350,7 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
 // =======================
 
 client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+  eaActivity.onVoiceStateUpdate(oldState, newState);
   autopilot.onVoiceStateUpdate(oldState, newState).catch((err) => console.warn('[autopilot] voice update failed:', err.message));
   try {
     const guildId = oldState.guild?.id || newState.guild?.id;
@@ -16502,7 +16521,7 @@ async function relinkClubForFc27(guildId, clubKey) {
 }
 
 // Start EA monitoring for a specific club
-async function startEaMonitoring(guildId, clubKey) {
+async function startEaMonitoring(guildId, clubKey, { immediate = true } = {}) {
   const monitorKey = `${guildId}_${clubKey}`;
   
   // Don't start duplicate intervals
@@ -16512,11 +16531,12 @@ async function startEaMonitoring(guildId, clubKey) {
   
   console.log(`[EA] Starting monitoring for ${monitorKey}`);
   
-  // Run immediately then every 2 minutes
-  checkForNewMatches(guildId, clubKey);
+  // Run immediately (not on startup, so a restart doesn't hit EA for every club at once), then every
+  // 2 minutes while the club is playing (ea-activity.cjs); the scheduler's hourly sweep covers idle clubs
+  if (immediate) checkForNewMatches(guildId, clubKey);
   
   const intervalId = setInterval(() => {
-    checkForNewMatches(guildId, clubKey);
+    if (eaActivity.isActive(guildId, clubKey)) checkForNewMatches(guildId, clubKey);
   }, 120000); // 2 minutes
   
   eaMonitoringIntervals.set(monitorKey, intervalId);
@@ -17458,7 +17478,7 @@ async function resumeEaMonitoring() {
       const clubs = settings.clubs || [];
       for (const club of clubs) {
         if (club.ea_club_id && club.monitoring_enabled) {
-          startEaMonitoring(settings.guild_id, club.key);
+          startEaMonitoring(settings.guild_id, club.key, { immediate: false });
         }
       }
     }

@@ -30,7 +30,7 @@ const VOICE_TYPES = [ChannelType.GuildVoice, ChannelType.GuildStageVoice];
 // Web-only entries that open an existing bot panel privately instead of posting it
 const EXTRA_ACTIONS = [
   { id: 'wb_graphics', label: 'Graphics Studio', emoji: '🎨', areaKey: 'premium', view: 'graphics', style: 'primary', hint: 'Player cards, match posters, lineups and recruitment art, previewed here.' },
-  { id: 'wb_setup', label: 'Setup Wizard', emoji: '🧭', areaKey: 'admin', cmd: 'setup', hint: 'EA club link and kit, team colours and crest, then your club identity. Branding is set here, not in Discord.' },
+  { id: 'wb_setup', label: 'Setup Wizard', emoji: '🧭', areaKey: 'admin', cmd: 'setup', hint: 'EA club link and kit, team colours and crest, club identity, then the channels GafferBot posts in. Branding is set here, not in Discord.' },
 ];
 // Actions that read the presser's live Discord voice channel
 const NEEDS_VOICE = new Set(['ln_vcspots', 'ln_posboard', 'dr_start', 'dr_panel']);
@@ -805,6 +805,22 @@ function createWebPanels(deps) {
     return start(r, ctx, ix);
   }
 
+  // What a button, menu or form is, without pressing it (the AI assistant shows this before it acts)
+  async function describe({ guildId, userId, messageId, customId, runId }) {
+    if (runId) {
+      const opened = runs.get(runId);
+      if (!opened || opened.userId !== userId || opened.guildId !== guildId || !opened.modal) throw new WebError(404, 'That form has expired. Open it again.');
+      return { kind: 'form', form: opened.modal.json };
+    }
+    const rec = ownRecord(messageId, guildId, userId);
+    let comp = null;
+    walkComponents(rec.payload?.components, (c) => {
+      if (c.custom_id === customId) comp = c;
+    });
+    if (!comp || comp.disabled) throw new WebError(400, 'That button is no longer on the panel.');
+    return { kind: comp.type === 2 ? 'button' : 'menu', component: comp, message: rec.payload };
+  }
+
   async function poll({ guildId, userId, runId }) {
     const r = runs.get(runId);
     if (!r || r.userId !== userId || r.guildId !== guildId) throw new WebError(404, 'That result has expired.');
@@ -815,7 +831,7 @@ function createWebPanels(deps) {
 
   // One entry point for the backend function: { op, guildId, userId, ... }
   async function handle(op, args) {
-    const fn = { context, members, run, choices, click, submit, poll }[op];
+    const fn = { context, members, run, choices, click, submit, poll, describe }[op];
     if (!fn) throw new WebError(400, 'Unknown request');
     if (!/^\d{17,20}$/.test(String(args?.guildId || '')) || !/^\d{17,20}$/.test(String(args?.userId || ''))) throw new WebError(400, 'Pick a server');
     return fn(args);

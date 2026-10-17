@@ -6,7 +6,7 @@ var __export = (target, all) => {
 };
 
 // supabase/functions/pro-photo/index.ts
-var import_supabase_js_2 = require("@supabase/supabase-js");
+var import_supabase_js_22 = require("@supabase/supabase-js");
 
 // node_modules/zod/v3/external.js
 var external_exports = {};
@@ -4095,10 +4095,32 @@ async function managePhotos(db2, body) {
   return { status: 200, body: { deleted: true, has_photos: !!remaining } };
 }
 
+// supabase/functions/_shared/auth.ts
+var import_supabase_js_2 = require("@supabase/supabase-js");
+function safeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r === 0;
+}
+async function identifyCaller(req, admin) {
+  const botSecret = Deno.env.get("BOT_PROXY_SECRET") ?? "";
+  const givenSecret = req.headers.get("x-bot-secret") ?? "";
+  if (botSecret.length >= 24 && givenSecret && safeEqual(givenSecret, botSecret)) return { kind: "bot" };
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return null;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (serviceRoleKey && token === serviceRoleKey) return { kind: "bot" };
+  const { data, error } = await admin.auth.getUser(token);
+  if (error || !data?.user) return null;
+  return { kind: "user", userId: data.user.id };
+}
+
 // supabase/functions/pro-photo/index.ts
 var SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 var AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
-var db = (0, import_supabase_js_2.createClient)(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
+var db = (0, import_supabase_js_22.createClient)(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
 var MAX_BYTES = 8 * 1024 * 1024;
 var TEN_YEARS = 60 * 60 * 24 * 365 * 10;
 var Body = external_exports.object({
@@ -4129,13 +4151,20 @@ var schema = {
     description: { type: "string", description: "One short sentence describing the pro's look (kit, hair, boots). No guesses about real identity." }
   }
 };
-function safeEqual(a, b) {
+var WebBody = external_exports.discriminatedUnion("action", [
+  external_exports.object({ action: external_exports.literal("web_upload"), image_b64: external_exports.string().min(100).max(12e6), content_type: external_exports.enum(["image/png", "image/jpeg", "image/webp"]), shot: external_exports.enum(["headshot", "celebration"]).optional(), guild_id: external_exports.string().regex(/^\d{5,25}$/).optional() }),
+  external_exports.object({ action: external_exports.literal("web_list") }),
+  external_exports.object({ action: external_exports.literal("web_delete"), photo_asset_id: external_exports.string().uuid() })
+]);
+var WEB_GUILD = "web-upload";
+function safeEqual2(a, b) {
   if (a.length !== b.length) return false;
   let r = 0;
   for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return r === 0;
 }
-var json = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
+var headers = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bot-secret" };
+var json = (b, status = 200) => new Response(JSON.stringify(b), { status, headers });
 async function analyze(dataUrl) {
   const res = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
     method: "POST",
@@ -4183,9 +4212,54 @@ async function analyze(dataUrl) {
   }
   return JSON.parse(text);
 }
+async function webMember(req) {
+  const caller = await identifyCaller(req, db);
+  if (caller?.kind !== "user") return null;
+  const { data: link } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).maybeSingle();
+  return link?.discord_user_id ?? null;
+}
+async function handleWeb(req, input) {
+  const member = await webMember(req);
+  if (!member) return json({ error: "Sign in with Discord to manage your pro photos." }, 401);
+  const parsed = WebBody.safeParse(input);
+  if (!parsed.success) return json({ error: "Invalid request." }, 400);
+  const b = parsed.data;
+  if (b.action === "web_list") {
+    const { data, error } = await db.from("pro_photo_assets").select("id,storage_path,image_url,pose,analysis,created_at").eq("discord_user_id", member).eq("source_kind", "upload").order("created_at", { ascending: false }).limit(30);
+    if (error) return json({ error: "Couldn't load your photos." }, 500);
+    const photos = await Promise.all((data ?? []).map(async (p) => ({
+      id: p.id,
+      pose: p.pose,
+      description: p.analysis?.description ?? null,
+      created_at: p.created_at,
+      image_url: p.storage_path ? (await db.storage.from("pro-photos").createSignedUrl(p.storage_path, 3600)).data?.signedUrl ?? null : p.image_url
+    })));
+    return json({ photos });
+  }
+  if (b.action === "web_delete") {
+    const result = await managePhotos(db, { action: "delete", discord_user_id: member, requester_id: member, photo_asset_id: b.photo_asset_id });
+    return json(result.body, result.status);
+  }
+  let guildId = WEB_GUILD;
+  if (b.guild_id) {
+    const userDb = (0, import_supabase_js_22.createClient)(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") || req.headers.get("apikey") || "", { global: { headers: { Authorization: req.headers.get("authorization") ?? "" } } });
+    const { data: allowed } = await userDb.rpc("user_has_guild_access", { check_guild_id: b.guild_id });
+    if (allowed === true) guildId = b.guild_id;
+  }
+  let bytes;
+  try {
+    bytes = Uint8Array.from(atob(b.image_b64), (c) => c.charCodeAt(0));
+  } catch {
+    return json({ error: "That file couldn't be read." }, 400);
+  }
+  return ingest({ guild_id: guildId, discord_user_id: member, submitted_by: member, bytes, type: b.content_type, shot: b.shot });
+}
 Deno.serve(async (req) => {
-  if (!SECRET || !safeEqual(req.headers.get("x-bot-secret") ?? "", SECRET)) return json({ error: "unauthorized" }, 401);
+  if (req.method === "OPTIONS") return new Response(null, { headers });
   const input = await req.json().catch(() => null);
+  if (!SECRET || !safeEqual2(req.headers.get("x-bot-secret") ?? "", SECRET)) {
+    return typeof input?.action === "string" && input.action.startsWith("web_") ? handleWeb(req, input) : json({ error: "unauthorized" }, 401);
+  }
   if (input?.action === "list" || input?.action === "delete") {
     const management = ManageBody.safeParse(input);
     if (!management.success) return json({ error: "Invalid photo management request." }, 400);
@@ -4198,7 +4272,9 @@ Deno.serve(async (req) => {
   const img = await fetch(image_url);
   const type = (img.headers.get("content-type") || "").split(";")[0];
   if (!img.ok || !/^image\/(png|jpe?g|webp)$/.test(type)) return json({ error: "Send a PNG, JPG or WebP image." }, 400);
-  const bytes = new Uint8Array(await img.arrayBuffer());
+  return ingest({ guild_id, discord_user_id, submitted_by, bytes: new Uint8Array(await img.arrayBuffer()), type, shot });
+});
+async function ingest({ guild_id, discord_user_id, submitted_by, bytes, type, shot }) {
   if (bytes.length > MAX_BYTES) return json({ error: "Image is over 8 MB." }, 400);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const sourceKey = Array.from(new Uint8Array(digest), (v) => v.toString(16).padStart(2, "0")).join("");
@@ -4253,4 +4329,4 @@ Deno.serve(async (req) => {
   }, { onConflict: "discord_user_id" });
   if (error) return json({ error: "Couldn't save the photo." }, 500);
   return json({ accepted: true, image_url: signed.data.signedUrl, ea_username: prof?.ea_username ?? null, analysis: { ...analysis, position: pos, overall: ovr } });
-});
+}

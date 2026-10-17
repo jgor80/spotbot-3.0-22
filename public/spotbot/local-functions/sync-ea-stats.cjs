@@ -148,6 +148,22 @@ var EA_HEADERS = {
 if (EA_SESSION_COOKIE) {
   console.log("[sync-ea-stats] EA session cookie configured");
 }
+function syncSliceOf(key, slices) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  return (h >>> 0) % slices;
+}
+function syncConcurrency() {
+  const n = parseInt(Deno.env.get("EA_SYNC_CONCURRENCY") ?? "", 10);
+  return Number.isInteger(n) && n > 0 ? Math.min(n, 16) : 4;
+}
+async function runInPool(items, limit, fn) {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) await fn(items[next++]);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
 var EA_RETRY_STATUSES = /* @__PURE__ */ new Set([403, 429, 500, 502, 503, 504]);
 var EA_RETRY_DELAYS_MS = [1e3, 3e3, 7e3];
 var eaThrottledThisRun = false;
@@ -942,9 +958,7 @@ async function syncClubStats(supabase, guildId, clubKey, clubId, platform, recen
       // From seasonal stats endpoint with fallback paths
       current_division: extractWithFallback(seasonalStats, ["division", "currentDivision"]) || extractWithFallback(overallStats, ["currentDivision", "division"]) || null,
       skill_rating: parseInt(extractWithFallback(seasonalStats, ["skillRating", "skill_rating"]) || extractWithFallback(overallStats, ["skillRating"]) || extractWithFallback(clubInfo, ["skillRating", "skill_rating"]) || 0),
-      wins: parseInt(extractWithFallback(seasonalStats, ["wins"]) || extractWithFallback(clubInfo, ["wins"]) || 0),
-      draws: parseInt(extractWithFallback(seasonalStats, ["ties", "draws"]) || extractWithFallback(clubInfo, ["draws", "ties"]) || 0),
-      losses: parseInt(extractWithFallback(seasonalStats, ["losses"]) || extractWithFallback(clubInfo, ["losses"]) || 0),
+      ...clubRecord(overallStats, seasonalStats),
       // From overall stats endpoint with fallback paths
       overall_matches_played: parseInt(extractWithFallback(overallStats, ["gamesPlayed", "matchesPlayed"]) || 0),
       goals_scored: parseInt(extractWithFallback(overallStats, ["goals", "goalsFor"]) || extractWithFallback(clubInfo, ["goals", "goalsFor"]) || 0),
@@ -976,6 +990,33 @@ async function syncClubStats(supabase, guildId, clubKey, clubId, platform, recen
     console.error(`[sync-ea-stats] Error syncing club stats:`, err);
     return null;
   }
+}
+function memberRecord(member, gamesPlayed) {
+  const count = (keys) => {
+    const v = extractWithFallback(member, keys);
+    return v === null ? null : parseInt(v) || 0;
+  };
+  const rate = parseFloat(extractWithFallback(member, ["winRate", "winrate"]));
+  let wins = count(["wins"]);
+  if (wins === null) wins = Number.isFinite(rate) && gamesPlayed > 0 ? Math.round(gamesPlayed * rate / 100) : 0;
+  const losses = count(["losses"]) ?? 0;
+  const draws = count(["ties", "draws"]) ?? 0;
+  const winRate = Number.isFinite(rate) ? rate : gamesPlayed > 0 ? wins / gamesPlayed * 100 : 0;
+  return { wins, losses, draws, winRate };
+}
+function clubRecord(overallStats, seasonalStats) {
+  const pick = (keys) => {
+    for (const src of [overallStats, seasonalStats]) {
+      const v = extractWithFallback(src, keys);
+      if (v !== null) return parseInt(v) || 0;
+    }
+    return 0;
+  };
+  return {
+    wins: pick(["wins", "seasonWins"]),
+    draws: pick(["ties", "draws", "seasonTies"]),
+    losses: pick(["losses", "seasonLosses"])
+  };
 }
 function getPrimaryPosition(positionCounts) {
   const sorted = Object.entries(positionCounts).sort((a, b) => b[1] - a[1]);
@@ -1124,9 +1165,7 @@ async function syncMemberStats(supabase, guildId, clubId, platform, clubName, ag
       const goals = parseInt(extractWithFallback(member, ["goals"]) || 0);
       const assists = parseInt(extractWithFallback(member, ["assists"]) || 0);
       const gamesPlayed = parseInt(extractWithFallback(member, ["gamesPlayed", "matches"]) || 0);
-      const wins = parseInt(extractWithFallback(member, ["wins"]) || 0);
-      const losses = parseInt(extractWithFallback(member, ["losses"]) || 0);
-      const draws = gamesPlayed - wins - losses;
+      const { wins, losses, draws, winRate: memberWinRate } = memberRecord(member, gamesPlayed);
       const avgRating = parseFloat(extractWithFallback(member, ["ratingAve", "avgRating"]) || 0);
       const cleanSheets = parseInt(extractWithFallback(member, ["cleanSheetsDef", "cleanSheetsGK", "cleanSheets"]) || 0);
       const manOfMatch = parseInt(extractWithFallback(member, ["manOfTheMatch", "mom"]) || 0);
@@ -1153,8 +1192,8 @@ async function syncMemberStats(supabase, guildId, clubId, platform, clubName, ag
           games_played: gamesPlayed,
           wins,
           losses,
-          draws: Math.max(0, draws),
-          win_rate: gamesPlayed > 0 ? wins / gamesPlayed * 100 : 0,
+          draws,
+          win_rate: memberWinRate,
           goals,
           assists,
           second_assists: secondAssists,
@@ -1243,8 +1282,7 @@ async function persistAggregatedStats(supabase, guildId, aggregates) {
   let persisted = 0;
   for (const aggregate of aggregates.values()) {
     const gamesPlayed = aggregate.games_played;
-    const draws = Math.max(0, gamesPlayed - aggregate.wins - aggregate.losses);
-    aggregate.draws = draws;
+    const draws = aggregate.draws;
     const winRate = gamesPlayed > 0 ? aggregate.wins / gamesPlayed * 100 : 0;
     const avgRating = gamesPlayed > 0 ? aggregate.rating_sum / gamesPlayed : 0;
     const primaryPosition = getPrimaryPosition(aggregate.position_counts);
@@ -1711,6 +1749,14 @@ Deno.serve(async (req) => {
     const probeHidden = Boolean(requestBody?.probe_hidden) || Deno.env.get("EA_PROBE_HIDDEN") === "true";
     const onlyGuildId = typeof requestBody?.guild_id === "string" && /^\d{17,19}$/.test(requestBody.guild_id) ? requestBody.guild_id : null;
     const onlyClubKey = onlyGuildId && typeof requestBody?.club_key === "string" ? requestBody.club_key : null;
+    const activeKeys = !onlyGuildId && Array.isArray(requestBody?.active) ? new Set(requestBody.active.filter((k) => typeof k === "string")) : null;
+    const slices = Number.isInteger(requestBody?.slices) && requestBody.slices > 0 ? requestBody.slices : 0;
+    const slice = slices && Number.isInteger(requestBody?.slice) ? requestBody.slice % slices : -1;
+    const wanted = (guildId, clubKey) => {
+      if (onlyGuildId || !activeKeys && slice < 0) return true;
+      const key = `${guildId}:${clubKey}`;
+      return Boolean(activeKeys?.has(key)) || slice >= 0 && syncSliceOf(key, slices) === slice;
+    };
     const caller = await identifyCaller(req, supabase);
     const cronSecret = Deno.env.get("CRON_SECRET") ?? "";
     const isCron = cronSecret.length >= 24 && (req.headers.get("x-cron-secret") ?? "") === cronSecret;
@@ -1751,14 +1797,15 @@ Deno.serve(async (req) => {
     let hiddenProbeResults = [];
     const relinkedClubs = [];
     const lastGameSnapshots = [];
-    for (const settings of guildSettings) {
+    const syncGuild = async (settings) => {
       const guildId = settings.guild_id;
       const clubs = settings.clubs;
       const aggregates = /* @__PURE__ */ new Map();
       const guildUpdatedPlayerIds = /* @__PURE__ */ new Set();
-      if (!clubs || !Array.isArray(clubs)) continue;
+      if (!clubs || !Array.isArray(clubs)) return;
       for (const club of clubs) {
         if (onlyClubKey && club.key !== onlyClubKey) continue;
+        if (!wanted(guildId, club.key)) continue;
         if (!club.ea_club_id || !club.ea_platform || !onlyGuildId && !club.monitoring_enabled) {
           continue;
         }
@@ -2469,7 +2516,10 @@ Deno.serve(async (req) => {
           body: { guild_id: guildId, player_ids: recalculationIds, trigger: "ea_sync" }
         });
       }
-    }
+    };
+    await runInPool(guildSettings, syncConcurrency(), (settings) => syncGuild(settings).catch((err) => {
+      console.error(`[sync-ea-stats] Guild ${settings.guild_id} failed:`, err instanceof Error ? err.message : err);
+    }));
     if (unmappedMemberKeys.size > 0) {
       console.log(`[sync-ea-stats] Unmapped member fields seen across clubs: ${[...unmappedMemberKeys].join(", ")}`);
     }

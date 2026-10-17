@@ -816,7 +816,14 @@ function createManagerHub(deps) {
     }
   }
 
-  return { onMessage, initSticky, commands: HUB_COMMANDS, handleCommand, handleButton, handleSelect, buildStats, resolveClub, loadMatches };
+  // Post the desk panel now in a channel just picked as a club's manager desk
+  async function refreshDesk(channel) {
+    const state = await getGuildState(channel.guildId);
+    const club = deskClub(state, channel.id);
+    if (club && channel.isTextBased?.()) await repostSticky(channel, state, club);
+  }
+
+  return { onMessage, initSticky, refreshDesk, commands: HUB_COMMANDS, handleCommand, handleButton, handleSelect, buildStats, resolveClub, loadMatches };
 }
 
 module.exports = { createManagerHub, resolveClub, activeClubs, HUB_COMMANDS };

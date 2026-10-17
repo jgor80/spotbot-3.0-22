@@ -7,7 +7,13 @@ export interface Ctx {
   db: any;
   discordUserId: string;
   access: (guildId: string) => Promise<"leader" | "member" | null>;
+  // Set for manage-scoped callers: the token (for the action log) and the bot's panel bridge.
+  tokenId?: string | null;
+  panels?: PanelBridge | null;
 }
+
+// The web Control Room's bridge into the bot (public/spotbot/web-panels.cjs), in-process.
+export type PanelBridge = { handle: (op: string, args: Record<string, unknown>) => Promise<unknown> };
 
 const SNOWFLAKE = /^\d{17,20}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -46,7 +52,7 @@ async function accessibleServers(ctx: Ctx) {
   }));
 }
 
-async function resolveGuild(args: Record<string, unknown>, ctx: Ctx): Promise<string> {
+export async function resolveGuild(args: Record<string, unknown>, ctx: Ctx): Promise<string> {
   const guildId = str(args.guild_id);
   if (guildId) {
     if (!SNOWFLAKE.test(guildId)) throw new ToolError("guild_id must be a Discord server ID. Call list_servers to find it.");
@@ -115,7 +121,7 @@ export const TOOLS: Tool<Ctx>[] = [
   {
     name: "get_club_stats",
     title: "Club record",
-    description: "Season record for a server's clubs from EA: wins/draws/losses, goals, division, skill rating, streaks and last results.",
+    description: "Club record from EA for this EA FC (overall_matches_played and wins/draws/losses cover the same games), goals, division, skill rating, streaks and last results.",
     inputSchema: { type: "object", properties: { guild_id: guildIdProp, club_key: clubKeyProp }, additionalProperties: false },
     run: async (args, ctx) => {
       const guildId = await resolveGuild(args, ctx);
@@ -181,7 +187,8 @@ export const TOOLS: Tool<Ctx>[] = [
   {
     name: "get_players",
     title: "Player stats",
-    description: "Player stats in a server: one player's full line (with streaks), or a leaderboard sorted by a stat.",
+    description: "Player stats in a server: one player's full line (with streaks), or a leaderboard sorted by a stat. " +
+      "EA only publishes each player's win rate, so wins come from it and draws/losses stay 0 unless EA sends them.",
     inputSchema: {
       type: "object",
       properties: {

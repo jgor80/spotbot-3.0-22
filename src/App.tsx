@@ -7,11 +7,13 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { GuildProvider } from "@/contexts/GuildContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useAuth } from "@/contexts/AuthContext";
 import { lazy, Suspense } from "react";
 import { Loader2 } from "lucide-react";
 
 // Pages load on demand so the first visit only downloads the page being opened.
 const Index = lazy(() => import("./pages/Index"));
+const LandingPage = lazy(() => import("./pages/LandingPage"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
 const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const LinkInvitePage = lazy(() => import("./pages/LinkInvitePage"));
@@ -26,6 +28,7 @@ const TeamsPage = lazy(() => import("./pages/TeamsPage"));
 const RatingsPage = lazy(() => import("./pages/RatingsPage"));
 const RecentGamesPage = lazy(() => import("./pages/RecentGamesPage"));
 const CabinetPage = lazy(() => import("./pages/CabinetPage"));
+const BillingPage = lazy(() => import("./pages/BillingPage"));
 const InsightsPage = lazy(() => import("./pages/InsightsPage"));
 const SquadIQPanel = lazy(() => import("./pages/SquadIQPanel"));
 const ControlRoomPage = lazy(() => import("./pages/ControlRoomPage"));
@@ -41,6 +44,13 @@ const PageLoading = () => (
     <Loader2 className="h-8 w-8 animate-spin text-primary" />
   </div>
 );
+
+// Signed-out visitors get sign-in first (with a link to /welcome); signed-in users keep their club dashboard
+const HomeRoute = () => {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <PageLoading />;
+  return user ? <Index /> : <AuthPage />;
+};
 
 // Dark by default: managers mostly open this on match night
 const App = () => (
@@ -61,7 +71,8 @@ const App = () => (
                   <Route path="/overlay/:token" element={<StreamOverlay />} />
                   <Route path="/terms" element={<TermsPage />} />
                   <Route path="/privacy" element={<PrivacyPage />} />
-                  <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                  <Route path="/welcome" element={<LandingPage />} />
+                  <Route path="/" element={<HomeRoute />} />
                   <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
                   <Route path="/lineup" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
                   <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
@@ -77,6 +88,7 @@ const App = () => (
                   <Route path="/squadiq" element={<ProtectedRoute><SquadIQPanel /></ProtectedRoute>} />
                   <Route path="/control" element={<ProtectedRoute><ControlRoomPage /></ProtectedRoute>} />
                   <Route path="/trophy-room" element={<ProtectedRoute><CabinetPage /></ProtectedRoute>} />
+                  <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
                   <Route path="/players" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>

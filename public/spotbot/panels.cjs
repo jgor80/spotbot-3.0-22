@@ -68,7 +68,7 @@ const PLAYER_ACTIONS = [
   { id: 'lfcverify', label: 'Check a Resume', emoji: '🔎', cmd: 'lfc', sub: 'verify' },
   { id: 'apply', label: 'Apply to Trial', emoji: '✍️', cmd: 'apply' },
   { id: 'claimwin', label: 'Claim a Win', emoji: '🥇', cmd: 'claimwin' },
-  { id: 'aiaccess', label: 'AI Assistant', emoji: '🤖', cmd: 'aiaccess', fixed: { action: 'create' } },
+  { id: 'aiaccess', label: 'AI Assistant', emoji: '🤖', cmd: 'aiaccess', fixed: { action: 'status' } },
   { id: 'airevoke', label: 'Revoke AI Access', emoji: '🔌', cmd: 'aiaccess', fixed: { action: 'revoke' } },
 ];
 

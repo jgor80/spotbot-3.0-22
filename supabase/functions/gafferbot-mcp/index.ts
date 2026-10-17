@@ -1,11 +1,21 @@
 // GafferBot MCP server: lets AI assistants (Claude, ChatGPT, Cursor…) read a player's clubs, stats,
-// events and team sheets. Served at https://gafferbot.app/mcp by the Worker. Callers authenticate with
-// a personal token from Discord (/me → AI Assistant) or a signed-in web session, and act as that player.
+// events and team sheets, and with manage access run their Discord panel actions. Served at
+// https://gafferbot.app/mcp by the Worker. Callers act as one Discord player, signed in by:
+//   - OAuth (the Worker's /oauth/*, Discord sign-in): Bearer header, clubs:read and maybe clubs:manage
+//   - a personal token from Discord (/me → AI Assistant): read only, header or ?key=
+//   - a signed-in web session (JWT): read only
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createAdminClient, guildAccessLevel, identifyCaller } from "../_shared/auth.ts";
-import { looksLikeToken, resolveToken } from "../_shared/mcp-tokens.ts";
+import { looksLikeToken, resolveToken, SCOPE_MANAGE, SCOPE_READ } from "../_shared/mcp-tokens.ts";
 import { handleBody } from "./protocol.ts";
-import { Ctx, TOOLS } from "./tools.ts";
+import { Ctx, PanelBridge, TOOLS } from "./tools.ts";
+import { MANAGE_TOOLS } from "./manage.ts";
+import { allowCall } from "./limits.ts";
+
+const SITE = (Deno.env.get("DASHBOARD_URL") || "https://gafferbot.app").replace(/\/+$/, "");
+const ALL_TOOLS = [...TOOLS, ...MANAGE_TOOLS];
+
+type Caller = { discordUserId: string; tokenId: string | null; scopes: string[] };
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,17 +26,23 @@ const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store", ...extra } });
 
 // deno-lint-ignore no-explicit-any
-async function discordUserFor(req: Request, admin: any): Promise<string | null> {
+async function callerFor(req: Request, admin: any): Promise<Caller | null> {
   const header = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  // Some AI clients can only take a URL, so the token may also come as ?key=.
+  // Some AI clients can only take a URL, so a personal token may also come as ?key=. A URL ends up in
+  // logs and history, so a token sent that way can only ever read.
   const token = header || new URL(req.url).searchParams.get("key") || "";
   if (!token) return null;
-  if (looksLikeToken(token)) return (await resolveToken(admin, token))?.discordUserId ?? null;
+  if (looksLikeToken(token)) {
+    const t = await resolveToken(admin, token);
+    if (!t) return null;
+    const manage = t.oauth && !!header && t.scopes.includes(SCOPE_MANAGE);
+    return { discordUserId: t.discordUserId, tokenId: t.id, scopes: manage ? [SCOPE_READ, SCOPE_MANAGE] : [SCOPE_READ] };
+  }
   const caller = await identifyCaller(new Request(req.url, { headers: { authorization: `Bearer ${token}` } }), admin);
   if (caller?.kind !== "user") return null;
   const { data: link } = await admin.from("user_discord_links").select("discord_user_id")
     .eq("auth_user_id", caller.userId).eq("verified", true).maybeSingle();
-  return (link?.discord_user_id as string) || null;
+  return link?.discord_user_id ? { discordUserId: link.discord_user_id as string, tokenId: null, scopes: [SCOPE_READ] } : null;
 }
 
 serve(async (req) => {
@@ -36,19 +52,25 @@ serve(async (req) => {
 
   try {
     const admin = createAdminClient();
-    const discordUserId = await discordUserFor(req, admin);
-    if (!discordUserId) {
+    const caller = await callerFor(req, admin);
+    if (!caller) {
+      // Points AI apps at the OAuth sign-in (MCP authorization spec), so adding the URL is all it takes.
       return json(
-        { jsonrpc: "2.0", id: null, error: { code: -32001, message: "Unauthorized. Get a token in Discord with /me → AI Assistant and send it as a Bearer token." } },
+        { jsonrpc: "2.0", id: null, error: { code: -32001, message: "Unauthorized. Connect with Discord sign-in, or use a token from /me → AI Assistant as a Bearer token." } },
         401,
-        { "WWW-Authenticate": 'Bearer realm="GafferBot"' },
+        { "WWW-Authenticate": `Bearer realm="GafferBot", resource_metadata="${SITE}/.well-known/oauth-protected-resource"` },
       );
+    }
+    const { discordUserId } = caller;
+    if (!allowCall(caller.tokenId || discordUserId)) {
+      return json({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "Too many requests. Wait a minute and try again." } }, 429, { "Retry-After": "60" });
     }
 
     let body: unknown;
     try { body = await req.json(); } catch { return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400); }
 
     const levels = new Map<string, Promise<"leader" | "member" | null>>();
+    const manage = caller.scopes.includes(SCOPE_MANAGE);
     const ctx: Ctx = {
       db: admin,
       discordUserId,
@@ -56,8 +78,12 @@ serve(async (req) => {
         if (!levels.has(guildId)) levels.set(guildId, guildAccessLevel(admin, guildId, discordUserId));
         return levels.get(guildId)!;
       },
+      tokenId: caller.tokenId,
+      // The Control Room bridge exists only inside the self-hosted bot process.
+      panels: manage ? ((globalThis as unknown as { __gafferbotWebPanels?: PanelBridge }).__gafferbotWebPanels ?? null) : null,
     };
-    const reply = await handleBody(body, TOOLS, ctx);
+    const tools = ALL_TOOLS.filter((t) => !t.scope || caller.scopes.includes(t.scope));
+    const reply = await handleBody(body, tools, ctx);
     return reply === null ? new Response(null, { status: 202, headers: corsHeaders }) : json(reply);
   } catch (err) {
     console.error("[gafferbot-mcp] error:", err);

@@ -33,6 +33,27 @@ if (EA_SESSION_COOKIE) {
   console.log('[sync-ea-stats] EA session cookie configured')
 }
 
+// Which of `slices` hourly sweep slices a "guild_id:club_key" falls in (stable across runs)
+function syncSliceOf(key: string, slices: number): number {
+  let h = 2166136261
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619)
+  return (h >>> 0) % slices
+}
+
+function syncConcurrency(): number {
+  const n = parseInt(Deno.env.get('EA_SYNC_CONCURRENCY') ?? '', 10)
+  return Number.isInteger(n) && n > 0 ? Math.min(n, 16) : 4
+}
+
+// Run fn over items with at most `limit` running at once
+async function runInPool<T>(items: T[], limit: number, fn: (item: T) => Promise<unknown>): Promise<void> {
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) await fn(items[next++])
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+}
+
 // EA sometimes rejects datacenter IPs (403), rate-limits (429) or resets the connection.
 // Retry those with exponential backoff; keep in sync with public/spotbot/ea-retry.cjs.
 const EA_RETRY_STATUSES = new Set([403, 429, 500, 502, 503, 504])
@@ -956,12 +977,7 @@ async function syncClubStats(supabase: any, guildId: string, clubKey: string, cl
       skill_rating: parseInt(extractWithFallback(seasonalStats, ['skillRating', 'skill_rating']) || 
                             extractWithFallback(overallStats, ['skillRating']) ||
                             extractWithFallback(clubInfo, ['skillRating', 'skill_rating']) || 0),
-      wins: parseInt(extractWithFallback(seasonalStats, ['wins']) || 
-                    extractWithFallback(clubInfo, ['wins']) || 0),
-      draws: parseInt(extractWithFallback(seasonalStats, ['ties', 'draws']) || 
-                     extractWithFallback(clubInfo, ['draws', 'ties']) || 0),
-      losses: parseInt(extractWithFallback(seasonalStats, ['losses']) || 
-                      extractWithFallback(clubInfo, ['losses']) || 0),
+      ...clubRecord(overallStats, seasonalStats),
       
       // From overall stats endpoint with fallback paths
       overall_matches_played: parseInt(extractWithFallback(overallStats, ['gamesPlayed', 'matchesPlayed']) || 0),
@@ -1041,6 +1057,38 @@ type AggregatedPlayerStats = {
   offsides: number
   seconds_played: number
   position_counts: Record<string, number>
+}
+
+// EA's members/stats gives each player's games and win rate (a percentage) but no wins, losses or draws.
+// Wins come from the rate; losses and draws stay 0 unless EA sends them, so draws are never games - wins - losses.
+function memberRecord(member: any, gamesPlayed: number) {
+  const count = (keys: string[]) => {
+    const v = extractWithFallback(member, keys)
+    return v === null ? null : parseInt(v) || 0
+  }
+  const rate = parseFloat(extractWithFallback(member, ['winRate', 'winrate']))
+  let wins = count(['wins'])
+  if (wins === null) wins = Number.isFinite(rate) && gamesPlayed > 0 ? Math.round((gamesPlayed * rate) / 100) : 0
+  const losses = count(['losses']) ?? 0
+  const draws = count(['ties', 'draws']) ?? 0
+  const winRate = Number.isFinite(rate) ? rate : gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0
+  return { wins, losses, draws, winRate }
+}
+
+// EA's overallStats carries the club's W/D/L next to gamesPlayed and goals (seasonalStats only has season* fields).
+function clubRecord(overallStats: any, seasonalStats: any) {
+  const pick = (keys: string[]) => {
+    for (const src of [overallStats, seasonalStats]) {
+      const v = extractWithFallback(src, keys)
+      if (v !== null) return parseInt(v) || 0
+    }
+    return 0
+  }
+  return {
+    wins: pick(['wins', 'seasonWins']),
+    draws: pick(['ties', 'draws', 'seasonTies']),
+    losses: pick(['losses', 'seasonLosses']),
+  }
 }
 
 function getPrimaryPosition(positionCounts: Record<string, number>): string | null {
@@ -1253,9 +1301,7 @@ async function syncMemberStats(
       const goals = parseInt(extractWithFallback(member, ['goals']) || 0)
       const assists = parseInt(extractWithFallback(member, ['assists']) || 0)
       const gamesPlayed = parseInt(extractWithFallback(member, ['gamesPlayed', 'matches']) || 0)
-      const wins = parseInt(extractWithFallback(member, ['wins']) || 0)
-      const losses = parseInt(extractWithFallback(member, ['losses']) || 0)
-      const draws = gamesPlayed - wins - losses
+      const { wins, losses, draws, winRate: memberWinRate } = memberRecord(member, gamesPlayed)
       const avgRating = parseFloat(extractWithFallback(member, ['ratingAve', 'avgRating']) || 0)
       const cleanSheets = parseInt(extractWithFallback(member, ['cleanSheetsDef', 'cleanSheetsGK', 'cleanSheets']) || 0)
       const manOfMatch = parseInt(extractWithFallback(member, ['manOfTheMatch', 'mom']) || 0)
@@ -1289,8 +1335,8 @@ async function syncMemberStats(
           discord_user_id: profile.discord_user_id,
           discord_username: profile.discord_username || eaUsername,
           games_played: gamesPlayed,
-          wins, losses, draws: Math.max(0, draws),
-          win_rate: gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0,
+          wins, losses, draws,
+          win_rate: memberWinRate,
           goals, assists, second_assists: secondAssists,
           clean_sheets: cleanSheets,
           man_of_match: manOfMatch,
@@ -1398,8 +1444,8 @@ async function persistAggregatedStats(
   let persisted = 0
   for (const aggregate of aggregates.values()) {
     const gamesPlayed = aggregate.games_played
-    const draws = Math.max(0, gamesPlayed - aggregate.wins - aggregate.losses)
-    aggregate.draws = draws
+    // EA's member list has no draw/loss split (see memberRecord), so never derive draws as games - wins - losses
+    const draws = aggregate.draws
     const winRate = gamesPlayed > 0 ? (aggregate.wins / gamesPlayed) * 100 : 0
     const avgRating = gamesPlayed > 0 ? aggregate.rating_sum / gamesPlayed : 0
     const primaryPosition = getPrimaryPosition(aggregate.position_counts)
@@ -2017,6 +2063,20 @@ Deno.serve(async (req) => {
     const onlyGuildId = typeof requestBody?.guild_id === 'string' && /^\d{17,19}$/.test(requestBody.guild_id) ? requestBody.guild_id : null
     const onlyClubKey = onlyGuildId && typeof requestBody?.club_key === 'string' ? requestBody.club_key : null
 
+    // The bot's scheduler sends the clubs it saw playing (`active`, "guild_id:club_key") and which
+    // twelfth of the rest to sweep this run (`slice` of `slices`), so idle clubs sync once an hour
+    // instead of every 5 minutes. Without them (manual syncs, the cloud cron) every club is synced.
+    const activeKeys = !onlyGuildId && Array.isArray(requestBody?.active)
+      ? new Set<string>(requestBody.active.filter((k: unknown) => typeof k === 'string'))
+      : null
+    const slices = Number.isInteger(requestBody?.slices) && requestBody.slices > 0 ? requestBody.slices : 0
+    const slice = slices && Number.isInteger(requestBody?.slice) ? requestBody.slice % slices : -1
+    const wanted = (guildId: string, clubKey: string) => {
+      if (onlyGuildId || (!activeKeys && slice < 0)) return true
+      const key = `${guildId}:${clubKey}`
+      return Boolean(activeKeys?.has(key)) || (slice >= 0 && syncSliceOf(key, slices) === slice)
+    }
+
     // Who may start a sync: the bot, a leader of the one server being synced, or the scheduled job
     // (x-cron-secret = CRON_SECRET). Until CRON_SECRET is set the scheduled job still runs on the
     // public key, so anonymous full syncs stay allowed only in that case.
@@ -2075,16 +2135,19 @@ Deno.serve(async (req) => {
       player_fields: string[]
     }[] = []
     
-    for (const settings of guildSettings) {
+    // Servers sync a few at a time (EA_SYNC_CONCURRENCY, default 4) so a run with many clubs still
+    // fits the scheduler's 5-minute window; clubs within one server stay in order
+    const syncGuild = async (settings: any) => {
       const guildId = settings.guild_id
       const clubs = settings.clubs as any[]
       const aggregates = new Map<string, AggregatedPlayerStats>()
       const guildUpdatedPlayerIds = new Set<string>()
 
-      if (!clubs || !Array.isArray(clubs)) continue
+      if (!clubs || !Array.isArray(clubs)) return
       
       for (const club of clubs) {
         if (onlyClubKey && club.key !== onlyClubKey) continue
+        if (!wanted(guildId, club.key)) continue
         // A manual sync for one guild still runs when automatic monitoring is off
         if (!club.ea_club_id || !club.ea_platform || (!onlyGuildId && !club.monitoring_enabled)) {
           continue
@@ -2941,6 +3004,9 @@ Deno.serve(async (req) => {
         })
       }
     }
+    await runInPool(guildSettings, syncConcurrency(), (settings) => syncGuild(settings).catch((err) => {
+      console.error(`[sync-ea-stats] Guild ${settings.guild_id} failed:`, err instanceof Error ? err.message : err)
+    }))
 
     if (unmappedMemberKeys.size > 0) {
       console.log(`[sync-ea-stats] Unmapped member fields seen across clubs: ${[...unmappedMemberKeys].join(', ')}`)

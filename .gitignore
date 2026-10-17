@@ -32,3 +32,4 @@ public/spotbot/.env
 .wrangler/
 storage-backup/
 /deploy.sh
+public/spotbot/.brand-applied

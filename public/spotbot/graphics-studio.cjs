@@ -235,7 +235,7 @@ function shortPosition(pos) {
   return POS_SHORT[p] || (p.length > 4 ? p.replace(/[^A-Z]/g, '').slice(0, 3) : p);
 }
 
-function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs, getClient }) {
+function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs, getClient, getPremium = () => null }) {
   const panelIds = new Map(); // channelId -> panel message id
   const guildOf = (guildId) => getClient?.()?.guilds?.cache?.get(guildId) || null;
 
@@ -247,8 +247,16 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       body: JSON.stringify(body),
     }).catch(() => null);
     const out = res ? await res.json().catch(() => ({})) : {};
-    if (!res?.ok || !out.image_b64) return { error: typeof out.error === 'string' ? out.error : typeof out.message === 'string' ? out.message : 'The art studio is unavailable right now.' };
+    if (!res?.ok || !out.image_b64) return { error: typeof out.error === 'string' ? out.error : typeof out.message === 'string' ? out.message : 'The art studio is unavailable right now.', outOfImages: out.out_of_images === true };
     return { image: `data:image/png;base64,${out.image_b64}`, usedPro: out.used_pro_photo, kitNumber: Number.isInteger(out.kit_number) ? out.kit_number : null };
+  }
+
+  // A failed graphic's reply; when the server is out of AI images it carries the buy buttons
+  async function failure(r, guildId, userId) {
+    const premium = getPremium();
+    if (!r.outOfImages || !premium) return `❌ ${r.error}`;
+    const status = await premium.imageStatus(guildId);
+    return { content: `❌ ${r.error}`, components: premium.buyRows(guildId, userId, status.error ? null : status) };
   }
 
   // Saved-card collection (player-cards function): save / list / get / delete, always scoped to the owner.
@@ -347,6 +355,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         new ButtonBuilder().setCustomId(`gs_recruit:${club.key}`).setLabel('Recruiting Poster').setEmoji('📣').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`gs_mycards:${club.key}`).setLabel('My Cards').setEmoji('🗂️').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(PHOTO_UPLOAD_ID).setLabel('Upload Photos').setEmoji('📸').setStyle(ButtonStyle.Success),
+        ...(getPremium()?.IMAGE_LIMITS ? [new ButtonBuilder().setCustomId(`gs_images:${club.key}`).setLabel('AI Images').setEmoji('🖼️').setStyle(ButtonStyle.Secondary)] : []),
       )],
       allowedMentions: { parse: [] },
     };
@@ -464,9 +473,14 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   // Style picker gallery: every style for this graphic drawn locally with bundled sample art (assets/samples, menus only)
   // (no AI calls), small and cached per club kit, so members see each theme before choosing.
   const STYLE_SHEETS = new Map();
+  // Each sample is cropped around its player (viewBox in the 1600x912 source), so style frames show a figure, not empty stadium.
+  const SAMPLE_FOCUS = { attack: '0 140 440 660', attack2: '60 0 608 912', attack3: '0 60 1200 800', defence: '230 110 420 630' };
   const SAMPLE = (file, w, h) => {
     const raw = `data:image/jpeg;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'samples', `${file}.jpg`)).toString('base64')}`;
-    return `data:image/png;base64,${Buffer.from(G.render(thumbSvg(raw, w, h))).toString('base64')}`;
+    const svg = SAMPLE_FOCUS[file]
+      ? `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${SAMPLE_FOCUS[file]}" preserveAspectRatio="xMidYMid slice"><image href="${raw}" width="1600" height="912"/></svg>`
+      : thumbSvg(raw, w, h);
+    return `data:image/png;base64,${Buffer.from(G.render(svg)).toString('base64')}`;
   };
   // A head-and-shoulders crop of the bundled celebration art, standing in for a yearbook headshot.
   const SAMPLE_HEAD = () => {
@@ -599,7 +613,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);
     // Print-card lettering and frames are local; artwork reuses the text-free vintage style.
     const printCard = Boolean(STYLES[style]?.cardOnly) || SIGNATURE_STYLES.includes(style);
-    const a = await art({ kind: 'card', style: style === 'sicilia' || style === 'yearbook' ? style : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, position: d.position || undefined, ...(d.photoId ? { photo_asset_id: d.photoId } : {}), ...variation, ...(style === 'yearbook' ? { pose: 'headshot' } : {}), has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
+    const a = await art({ kind: 'card', style: style === 'sicilia' || style === 'yearbook' ? style : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, guild_id: guildId, position: d.position || undefined, ...(d.photoId ? { photo_asset_id: d.photoId } : {}), ...variation, ...(style === 'yearbook' ? { pose: 'headshot' } : {}), has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
     if (a.error) return a;
     const number = d.number !== undefined ? d.number : (a.kitNumber || '');
     const png = playerCard({
@@ -884,7 +898,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     await message.react('🎨').catch(() => {});
     const r = await deliver({ channel: message.channel, club, guild: message.guild, userId: message.author.id, label, build });
     await message.reactions.cache.get('🎨')?.users.remove(message.client.user.id).catch(() => {});
-    if (r.error) await message.reply(`❌ ${r.error}`).catch(() => {});
+    if (r.error) await message.reply(await failure(r, message.guildId, message.author.id)).catch(() => {});
     else await message.react('✅').catch(() => {});
   }
 
@@ -909,7 +923,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     // Banner style opens a modal, which Discord forbids after a deferral; everything else is acknowledged immediately.
     const deferredSelect = (interaction.isStringSelectMenu() && !(action === 'gs_style' && a1 === 'banner'))
       || (interaction.isButton() && ['gs_dback', 'gs_cdel'].includes(action));
-    const deferredReply = interaction.isModalSubmit() || interaction.isButton() && ['gs_card', 'gs_poster', 'gs_lineup', 'gs_recruit', 'gs_mycards', 'gs_banner'].includes(action);
+    const deferredReply = interaction.isModalSubmit() || interaction.isButton() && ['gs_card', 'gs_poster', 'gs_lineup', 'gs_recruit', 'gs_mycards', 'gs_banner', 'gs_images'].includes(action);
     if (deferredSelect) await interaction.deferUpdate();
     else if (deferredReply) await interaction.deferReply({ flags: 64 });
     const respond = (payload) => deferredReply ? interaction.editReply(payload) : interaction.reply(payload);
@@ -937,6 +951,13 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       const v = interaction.values[0];
       draft.data.photoId = (draft.data.photos || []).some((p) => p.id === v) ? v : undefined;
       await update(await draftMessage(a1, 'card', findClub(draft.clubKey), interaction.guildId)); return true;
+    }
+    if (interaction.isButton() && action === 'gs_images') {
+      const premium = getPremium();
+      const status = premium ? await premium.imageStatus(interaction.guildId) : { error: 'Billing is unavailable right now.' };
+      if (status.error) { await respond({ content: `❌ ${status.error}` }); return true; }
+      await respond({ content: `${premium.imagesLine(status)}\nCards use 1 image; posters, lineups and banners use 2. Anyone in the server can top it up.`, components: premium.buyRows(interaction.guildId, interaction.user.id, status) });
+      return true;
     }
     if (interaction.isButton() && action === 'gs_mycards') {
       const r = await cardsApi({ action: 'list', discord_user_id: interaction.user.id });
@@ -1121,7 +1142,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         label = `📋 **${d.title}** · ${STYLES[style].label}`;
       }
       const r = await deliver({ channel: interaction.channel, club, guild: interaction.guild, userId: interaction.user.id, label, build });
-      await interaction.editReply(r.error ? `❌ ${r.error}` : '✅ Posted!').catch(() => {});
+      await interaction.editReply(r.error ? await failure(r, interaction.guildId, interaction.user.id) : '✅ Posted!').catch(() => {});
       return true;
     }
     if (interaction.isModalSubmit() && action === 'gs_bannerform') {
@@ -1135,7 +1156,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         label: `🏆 **${f('headline')}** — ${f('competition')}`,
         build: () => buildBanner({ guild: interaction.guild, guildId: interaction.guildId, club, style, headline: f('headline'), competition: f('competition'), seasonTag: f('tag'), rosterText: f('roster'), heroId: hero }),
       });
-      await interaction.editReply(r.error ? `❌ ${r.error}` : '✅ Banner posted here and in the Hall of Fame.').catch(() => {});
+      await interaction.editReply(r.error ? await failure(r, interaction.guildId, interaction.user.id) : '✅ Banner posted here and in the Hall of Fame.').catch(() => {});
       return true;
     }
     return false;
