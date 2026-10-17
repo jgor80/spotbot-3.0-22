@@ -7,11 +7,13 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { GuildProvider } from "@/contexts/GuildContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { useAuth } from "@/contexts/AuthContext";
 import { lazy, Suspense } from "react";
 import { Loader2 } from "lucide-react";
 
 // Pages load on demand so the first visit only downloads the page being opened.
 const Index = lazy(() => import("./pages/Index"));
+const LandingPage = lazy(() => import("./pages/LandingPage"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
 const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const LinkInvitePage = lazy(() => import("./pages/LinkInvitePage"));
@@ -42,6 +44,13 @@ const PageLoading = () => (
   </div>
 );
 
+// Signed-out visitors get sign-in first (with a link to /welcome); signed-in users keep their club dashboard
+const HomeRoute = () => {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <PageLoading />;
+  return user ? <Index /> : <AuthPage />;
+};
+
 // Dark by default: managers mostly open this on match night
 const App = () => (
   <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} storageKey="gafferbot-theme">
@@ -61,7 +70,8 @@ const App = () => (
                   <Route path="/overlay/:token" element={<StreamOverlay />} />
                   <Route path="/terms" element={<TermsPage />} />
                   <Route path="/privacy" element={<PrivacyPage />} />
-                  <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                  <Route path="/welcome" element={<LandingPage />} />
+                  <Route path="/" element={<HomeRoute />} />
                   <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
                   <Route path="/lineup" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
                   <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />

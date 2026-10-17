@@ -464,9 +464,14 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   // Style picker gallery: every style for this graphic drawn locally with bundled sample art (assets/samples, menus only)
   // (no AI calls), small and cached per club kit, so members see each theme before choosing.
   const STYLE_SHEETS = new Map();
+  // Each sample is cropped around its player (viewBox in the 1600x912 source), so style frames show a figure, not empty stadium.
+  const SAMPLE_FOCUS = { attack: '0 140 440 660', attack2: '60 0 608 912', attack3: '0 60 1200 800', defence: '230 110 420 630' };
   const SAMPLE = (file, w, h) => {
     const raw = `data:image/jpeg;base64,${fs.readFileSync(path.join(__dirname, 'assets', 'samples', `${file}.jpg`)).toString('base64')}`;
-    return `data:image/png;base64,${Buffer.from(G.render(thumbSvg(raw, w, h))).toString('base64')}`;
+    const svg = SAMPLE_FOCUS[file]
+      ? `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="${SAMPLE_FOCUS[file]}" preserveAspectRatio="xMidYMid slice"><image href="${raw}" width="1600" height="912"/></svg>`
+      : thumbSvg(raw, w, h);
+    return `data:image/png;base64,${Buffer.from(G.render(svg)).toString('base64')}`;
   };
   // A head-and-shoulders crop of the bundled celebration art, standing in for a yearbook headshot.
   const SAMPLE_HEAD = () => {
