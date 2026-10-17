@@ -295,6 +295,7 @@ interface LineupBoardEditorProps {
   actions?: ReactNode; // save / post / download
   status?: ReactNode;
   theme?: ClubTheme | null; // the club's team colours and crest from /setup
+  squad?: ReactNode; // squad picker: saving and posting need one
   clubName?: string;
 }
 
@@ -427,6 +428,7 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 md:ml-auto md:justify-end">
+              {props.squad && <div className="w-44">{props.squad}</div>}
               <div className="w-40">
                 <Select value={formation} onValueChange={(v) => props.onFormation(v as FormationType)}>
                   <SelectTrigger aria-label="Formation" className="h-9 border-white/25 bg-black/30 text-white"><SelectValue /></SelectTrigger>
