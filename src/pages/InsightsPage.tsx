@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { supabase } from "@/integrations/supabase/client";
 import { useGuild } from "@/contexts/GuildContext";
 import { cn } from "@/lib/utils";
+import { DivisionProgressCard } from "@/components/club/DivisionProgressCard";
 import {
   ClubMatchRow,
   LineupRow,
@@ -171,6 +172,12 @@ export default function InsightsPage() {
             </Select>
           </div>
         </div>
+
+        {/* Shown once the EA sync has saved a division snapshot for the club */}
+        {selectedGuildId &&
+          (selectedGuild?.clubs || [])
+            .filter((c) => (clubKey === "all" ? c.enabled !== false : c.key === clubKey))
+            .map((c) => <DivisionProgressCard key={c.key} guildId={selectedGuildId} clubKey={c.key} clubName={c.name} />)}
 
         {isLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>

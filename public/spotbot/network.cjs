@@ -22,12 +22,13 @@ const { activeClubs } = require('./manager-hub.cjs');
 const { isServerAdmin, isBotOwner, ownerIds, missingChannelPerms, missingPermsMessage } = require('./perm-check.cjs');
 const { toFcPlatform } = require('./ea-fc27.cjs');
 const { POSITIONS } = require('./recruitment.cjs');
+const T = require('./event-time.cjs');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REGIONS = ['Europe', 'UK & Ireland', 'North America East', 'North America West', 'South America', 'Middle East & Africa', 'Asia', 'Oceania'];
 const PLATFORMS = { 'common-gen5': 'PS5 / Xbox Series / PC', nx: 'Switch' };
 // Per server, per rolling day. Later slices add their own kinds (replacement, friendly...).
-const DAILY_LIMITS = { report: 5, replacement: 10 };
+const DAILY_LIMITS = { report: 5, replacement: 10, friendly: 10 };
 const REGION_CHOICES = REGIONS.map((r) => ({ name: r, value: r }));
 const PLATFORM_CHOICES = Object.entries({ 'common-gen5': 'PS5 / Xbox Series / PC', nx: 'Switch' }).map(([value, name]) => ({ name, value }));
 const PAGE_SIZE = 15;
@@ -68,6 +69,29 @@ const NETWORK_COMMANDS = [
         options: [
           { name: 'platform', description: 'Only clubs on this platform.', type: 3, required: false, choices: Object.entries(PLATFORMS).map(([value, name]) => ({ name, value })) },
           { name: 'region', description: 'Only clubs from this region.', type: 3, required: false, choices: REGIONS.map((r) => ({ name: r, value: r })) },
+        ],
+      },
+      {
+        type: 1,
+        name: 'friendly',
+        description: 'Invite a club on another server to a friendly.',
+        options: [
+          { name: 'when', description: 'Kick-off, e.g. "9pm" or "thu 21:00". Shown in each reader\'s local time.', type: 3, required: true },
+          { name: 'note', description: 'Anything else, e.g. "best of 3" or "need a Div 3-5 side".', type: 3, required: false },
+          { name: 'open', description: 'Post to every network server and take the first club that accepts (default: pick a club).', type: 5, required: false },
+        ],
+      },
+      { type: 1, name: 'byot', description: 'GafferBot-hosted BYOT tournaments: sign up and see the bracket.' },
+      {
+        type: 1,
+        name: 'byot_create',
+        description: 'Bot owners: host a BYOT tournament for every network server.',
+        options: [
+          { name: 'name', description: 'Tournament name.', type: 3, required: true, max_length: 60 },
+          { name: 'when', description: 'Round 1 kick-off, e.g. "sat 20:00". Sign-ups close then.', type: 3, required: true },
+          { name: 'platform', description: 'Platform.', type: 3, required: true, choices: PLATFORM_CHOICES },
+          { name: 'max_teams', description: 'Most clubs that can enter (default 16).', type: 4, required: false, choices: [4, 8, 16, 32].map((n) => ({ name: String(n), value: n })) },
+          { name: 'round_minutes', description: 'Minutes between rounds (default 45).', type: 4, required: false, min_value: 20, max_value: 1440 },
         ],
       },
       {
@@ -442,19 +466,24 @@ function createNetwork(deps) {
         { name: 'Reason', value: reason.slice(0, 1000) }
       )
       .setFooter({ text: `Report ${reportId} · suspend with /manager → Admin → Owner: Network Suspend` });
+    await notifyHost(client, { embeds: [embed] });
+  }
+
+  // The host's queue (reports, BYOT disputes): NETWORK_REPORTS_CHANNEL_ID if set, else the bot owners' DMs
+  async function notifyHost(client, payload) {
     const channelId = process.env.NETWORK_REPORTS_CHANNEL_ID;
     try {
       if (channelId) {
         const ch = await client.channels.fetch(channelId);
-        if (ch?.isTextBased()) return void (await ch.send({ embeds: [embed] }));
+        if (ch?.isTextBased()) return void (await ch.send(payload));
       }
     } catch (err) {
-      console.warn(`[network] report channel failed: ${err.message}`);
+      console.warn(`[network] host channel failed: ${err.message}`);
     }
     for (const id of ownerIds()) {
       try {
         const user = await client.users.fetch(id);
-        await user.send({ embeds: [embed] });
+        await user.send(payload);
       } catch (err) {
         console.warn(`[network] could not DM owner ${id}: ${err.message}`);
       }
@@ -465,6 +494,15 @@ function createNetwork(deps) {
     if (!(await canModerate(interaction))) return interaction.reply({ content: '❌ Only managers can unblock servers.', flags: 64 });
     await supabase.from('network_blocks').delete().eq('guild_id', interaction.guildId).eq('blocked_guild_id', targetId);
     return interaction.reply({ content: '✅ Unblocked. You\'ll see that server\'s clubs and requests again.', flags: 64 });
+  }
+
+  // Kick-off typed by a manager, read in the server's timezone ("now" = now). Null when unreadable.
+  async function kickoffFor(guildId, text) {
+    const { data: prefs } = await supabase.from('guild_settings').select('timezone').eq('guild_id', guildId).maybeSingle();
+    const tz = T.isValidTimeZone(prefs?.timezone) ? prefs.timezone : 'UTC';
+    const raw = String(text || '').trim();
+    if (!raw || raw.toLowerCase() === 'now') return new Date();
+    return T.parseWhen(raw, tz) || null;
   }
 
   // Post into a server's network channel; falls back to a DM to fallbackUserId. Returns the message.
@@ -540,6 +578,8 @@ function createNetwork(deps) {
     logActivity,
     cleanText,
     postToChannel,
+    kickoffFor,
+    notifyHost,
     addSubcommand: (name, fn) => {
       subcommandHandlers[name] = fn;
     },

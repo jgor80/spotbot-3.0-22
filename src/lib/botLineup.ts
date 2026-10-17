@@ -4,7 +4,7 @@ import { FORMATIONS } from "@/lib/formations";
 
 export { autofillLineup } from "@/lib/lineupAutofill";
 export { getPositionRatingCategory } from "@/lib/formations";
-export { movePlayer, resizeBoard, boardFromNames, boardToSlots, slotsToBoard, locate, MAX_BENCH, BENCH_SLOT_OFFSET } from "@/lib/lineupBoard";
+export { movePlayer, resizeBoard, boardFromNames, boardToSlots, slotsToBoard, locate, groupByPosition, POSITION_ORDER, MAX_BENCH, BENCH_SLOT_OFFSET } from "@/lib/lineupBoard";
 
 // Formation name -> slot positions in Lineup Builder order (slot_index is the array index)
 export const FORMATION_SLOTS: Record<string, string[]> = Object.fromEntries(

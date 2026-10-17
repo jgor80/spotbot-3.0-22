@@ -545,3 +545,6 @@ export function generateInsights(matches: InsightMatch[]): Insight[] {
 
   return insights;
 }
+
+// Division progress (club_division_history), also used by the bot
+export * from "./divisionProgress";

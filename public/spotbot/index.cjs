@@ -53,6 +53,8 @@ const { createRecruitment, RECRUIT_COMMANDS } = require('./recruitment.cjs');
 const { createNetwork, NETWORK_COMMANDS } = require('./network.cjs');
 const { createReplacements } = require('./network-replacements.cjs');
 const { createNetworkLeaderboard } = require('./network-leaderboard.cjs');
+const { createNetworkFriendlies } = require('./network-friendlies.cjs');
+const { createNetworkByot } = require('./network-byot.cjs');
 const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
@@ -65,6 +67,7 @@ const { createStreamKit, OVERLAY_SUBCOMMAND } = require('./stream-kit.cjs');
 const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
 const { createAutoLink } = require('./auto-link.cjs');
+const { createXboxLink } = require('./xbox-link.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
 const permCheck = require('./perm-check.cjs');
 const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
@@ -452,6 +455,7 @@ const eventLineup = createEventLineup({ supabase, events: clubEvents, isManager,
 const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState, positionTiers });
 
 const autoLink = createAutoLink({ supabase, getGuildState, isManager });
+const xboxLink = createXboxLink({ supabase });
 const proPhotos = createProPhotos({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, isManager });
 const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
 const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client });
@@ -503,6 +507,10 @@ const autopilot = createAutopilot({
 // before their recap is built
 const matchTags = createMatchTags({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, callEdgeFunction });
 autopilot.onNewMatches(matchTags.autoTag);
+// GafferBot Network friendlies between servers; their score fills in from the EA sync
+createNetworkFriendlies({ supabase, getGuildState, network, canManageClub: squads.canManageClub, autopilot, client: () => client });
+// GafferBot-hosted BYOT: knockout across network servers; EA results settle games and tag them BYOT
+createNetworkByot({ supabase, getGuildState, network, canManageClub: squads.canManageClub, autopilot, client: () => client, tagMatch: (row, tag, source) => matchTags.saveTag(row, tag, source, null) });
 // After new matches arrive, quietly link gamertags whose name clearly matches a server member
 autopilot.onNewMatches(async (guildId) => {
   const guild = client.guilds.cache.get(guildId);
@@ -4113,6 +4121,9 @@ client.once(Events.ClientReady, async (c) => {
   // Self-hosted: the bot runs the scheduled syncs and refreshes that used to run in the cloud.
   if (!BOT_PROXY_SECRET) require('./scheduler.cjs').startScheduler({ supabase, callFunction: callEdgeFunction });
   for (const guild of [...c.guilds.cache.values()]) await leaveIfNotAllowed(guild);
+  // Find Xbox accounts for Xbox players a few at a time (OpenXBL is rate-limited)
+  setInterval(() => xboxLink.backfill().catch((e) => console.error('[xbox-link]', e.message)), 10 * 60 * 1000);
+  setTimeout(() => xboxLink.backfill().catch(() => {}), 60 * 1000);
   // Pick up players who already hold position roles (runs in the background, one server at a time)
   setTimeout(async () => {
     for (const guild of c.guilds.cache.values()) await roster.syncGuildPositions(guild).catch(() => {});
@@ -13864,6 +13875,8 @@ async function routeInteraction(interaction) {
                 ea_platform: normalizedPlatform
               });
           }
+          // Xbox players get their Xbox account found too, for presence tracking
+          if (normalizedPlatform === 'xbox-series-xs') xboxLink.resolveUser(interaction.user.id).catch(() => {});
           
           return interaction.editReply({
             content: `✅ **EA Account Linked!**\n\n` +

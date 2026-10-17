@@ -27,7 +27,7 @@ const CREATOR_ID_REGEX = /^(\d{17,19}|web:[0-9a-f-]{36})$/i;
 // Players seen in EA matches but not linked to Discord yet have ids like "ea_some_name"
 const PLAYER_ID_REGEX = /^(\d{17,19}|ea_[\w.-]{1,64})$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const VALID_FORMATIONS = ["4-3-3", "4-4-2", "3-5-2", "4-2-3-1", "5-3-2", "5-4-1", "3-4-3", "4-1-4-1", "4-5-1", "4-5-1 ATTACK", "4-3-2-1", "4-3-1-2", "4-3-3 FLAT", "4-4-2 FLAT", "3-1-4-2", "3-4-2-1", "3-4-1-2", "3-4-3 FLAT", "4-2-2-2", "4-5-1 FLAT", "4-2-3-1 WIDE", "4-2-3-1 NARROW", "4-2-1-3", "4-2-4", "4-1-2-1-2 WIDE", "4-1-2-1-2 NARROW", "4-4-1-1", "4-4-2 HOLD", "5-4-1 FLAT", "5-2-1-2", "5-2-2-1", "5-1-2-2", "4-1-3-2", "4-3-3 ATTACK", "5-2-3"];
+const VALID_FORMATIONS = ["4-3-3", "4-4-2", "3-5-2", "4-2-3-1", "5-3-2", "5-4-1", "3-4-3", "4-1-4-1", "4-5-1", "4-5-1 ATTACK", "4-3-2-1", "4-3-1-2", "4-3-3 FLAT", "4-4-2 FLAT", "3-1-4-2", "3-4-2-1", "3-4-1-2", "3-4-3 FLAT", "4-2-2-2", "4-5-1 FLAT", "4-2-3-1 WIDE", "4-2-3-1 NARROW", "4-2-1-3", "4-2-4", "4-1-2-1-2 WIDE", "4-1-2-1-2 NARROW", "4-4-1-1", "4-4-2 HOLD", "5-4-1 FLAT", "5-2-1-2", "5-2-2-1", "5-1-2-2", "4-1-3-2", "4-3-3 ATTACK", "5-2-3", "4-3-3 HOLDING", "4-3-3 DEFEND", "4-3-3 FALSE 9"];
 
 function validateRequest(body: any): string[] {
   const errors: string[] = [];

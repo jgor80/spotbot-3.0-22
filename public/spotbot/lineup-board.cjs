@@ -9,7 +9,7 @@ const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, EmbedBu
 const G = require('./graphics.cjs');
 const { kitColor } = require('./studio-preview.cjs');
 const { kitOf, crestUrl } = require('./club-colors.cjs');
-const { FORMATION_SLOTS, FORMATION_COORDS, movePlayer, resizeBoard, boardToSlots, slotsToBoard, MAX_BENCH } = require('./lineup-autofill.cjs');
+const { FORMATION_SLOTS, FORMATION_COORDS, movePlayer, resizeBoard, boardToSlots, slotsToBoard, groupByPosition, MAX_BENCH } = require('./lineup-autofill.cjs');
 
 const DEFAULT_FORMATION = '4-3-3 FLAT';
 const DRAFT_TTL_MS = 30 * 60 * 1000;
@@ -149,6 +149,31 @@ function boardSvg(d) {
 }
 
 const renderBoard = (d) => G.render(boardSvg(d));
+
+// Bring-in menu: the squad grouped by primary position (keeper, defence, midfield, attack), best
+// rated first, players who are out last in their group. Discord shows 25 options, so a big squad
+// keeps the best few of every position instead of cutting off the forwards.
+function squadMenu(offSheet, info) {
+  const entries = offSheet.map((p) => {
+    const o = info.get(p.id);
+    return { id: p.id, answer: p.answer, position: String(o?.tiers?.primary || o?.positions?.[0] || '').toUpperCase() || null, rating: Number(o?.rating) || 0, out: p.answer === 'no' };
+  });
+  const groups = groupByPosition(entries);
+  let cap = Math.max(1, ...groups.map((g) => g.players.length));
+  while (cap > 1 && groups.reduce((n, g) => n + Math.min(cap, g.players.length), 0) > 25) cap--;
+  return groups.flatMap((g) => g.players.slice(0, cap)).slice(0, 25);
+}
+
+// Formation menu pages (the game has more formations than one 25-option menu holds)
+function formationMenu(current, pageWanted) {
+  const all = Object.keys(FORMATION_SLOTS);
+  const per = 24; // one option left for the page switch
+  const pages = Math.ceil(all.length / per);
+  const page = Number.isInteger(pageWanted) ? Math.min(Math.max(pageWanted, 0), pages - 1) : Math.max(0, Math.floor(all.indexOf(current) / per));
+  const options = all.slice(page * per, page * per + per).map((f) => ({ label: f, value: f, default: f === current }));
+  if (pages > 1) options.push({ label: page + 1 < pages ? 'More formations ▸' : '◂ Back to the first formations', value: `page:${(page + 1) % pages}`, emoji: '📐' });
+  return { options, page, pages };
+}
 
 function createLineupBoard(deps) {
   const { supabase, callEdgeFunction, getGuildState, resolveClub, canManageClub, dashboardUrl } = deps;
@@ -294,8 +319,9 @@ function createLineupBoard(deps) {
   async function view(d) {
     const positions = FORMATION_SLOTS[d.formation];
     const onSheet = [...d.state.starters.filter(Boolean), ...d.state.bench];
-    const pool = d.pool.filter((p) => !onSheet.includes(p.id)).slice(0, 25);
-    const info = await playerInfo(d.guildId, [...new Set([...onSheet, ...pool.map((p) => p.id)])]);
+    const offSheet = d.pool.filter((p) => !onSheet.includes(p.id));
+    const info = await playerInfo(d.guildId, [...new Set([...onSheet, ...offSheet.map((p) => p.id)])]);
+    const pool = squadMenu(offSheet, info);
     const name = (id) => clip(info.get(id)?.name || 'Player', 60);
     const fits = (id) => {
       const o = info.get(id);
@@ -314,8 +340,8 @@ function createLineupBoard(deps) {
       rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`lb_pick:${d.token}`).setPlaceholder('✋ Pick up a player on the sheet...').addOptions(sheetOpts.slice(0, 25).map(clean))));
     }
     if (pool.length) {
-      rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`lb_pick:${d.token}:in`).setPlaceholder(d.eventId ? '➕ Bring in (✅ available first)...' : '➕ Bring in from the squad...')
-        .addOptions(pool.map((p) => clean({ label: `${p.answer ? `${ANSWER[p.answer]} ` : ''}${name(p.id)}`, value: `p:${p.id}`, description: fits(p.id) || undefined, default: d.picked === p.id })))));
+      rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`lb_pick:${d.token}:in`).setPlaceholder('➕ Bring in from the squad (by position, best first)...')
+        .addOptions(pool.map((p) => clean({ label: `${p.position || 'Any'} · ${name(p.id)}${p.rating ? ` · ${Math.round(p.rating)}` : ''}`, value: `p:${p.id}`, emoji: p.answer ? ANSWER[p.answer] : undefined, description: fits(p.id) || undefined, default: d.picked === p.id })))));
     }
     if (d.picked) {
       const from = d.state.starters.indexOf(d.picked);
@@ -330,10 +356,10 @@ function createLineupBoard(deps) {
       if (onSheet.includes(d.picked)) opts.push({ label: 'Take out of the lineup', value: 'out', emoji: '❌' });
       rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`lb_to:${d.token}`).setPlaceholder(`📍 Drop ${clip(name(d.picked), 40)} on...`).addOptions(opts.slice(0, 25).map(clean))));
     }
-    const formations = Object.keys(FORMATION_SLOTS);
-    const shown = [d.formation, ...formations.filter((f) => f !== d.formation)].slice(0, 25).sort((a, b) => formations.indexOf(a) - formations.indexOf(b));
     if (rows.length < 4) {
-      rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`lb_form:${d.token}`).setPlaceholder('📐 Formation').addOptions(shown.map((f) => ({ label: f, value: f, default: f === d.formation })))));
+      const { options, page, pages } = formationMenu(d.formation, d.formPage);
+      rows.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`lb_form:${d.token}`)
+        .setPlaceholder(pages > 1 ? `📐 Formation (page ${page + 1}/${pages})` : '📐 Formation').addOptions(options)));
     }
     const buttons = [
       new ButtonBuilder().setCustomId(`lb_undo:${d.token}`).setLabel('Undo').setEmoji('↩️').setStyle(ButtonStyle.Secondary).setDisabled(!d.history.length),
@@ -497,7 +523,8 @@ function createLineupBoard(deps) {
       d.picked = null;
     } else if (action === 'lb_form') {
       const formation = interaction.values[0];
-      if (FORMATION_SLOTS[formation] && formation !== d.formation) {
+      if (formation.startsWith('page:')) d.formPage = Number(formation.slice(5)) || 0;
+      else if (FORMATION_SLOTS[formation] && formation !== d.formation) {
         d.history = [...d.history, { state: d.state, formation: d.formation }].slice(-HISTORY);
         d.state = resizeBoard(d.state, FORMATION_SLOTS[formation].length);
         d.formation = formation;
@@ -518,4 +545,4 @@ function createLineupBoard(deps) {
   return { handleInteraction, imageForLineup, open };
 }
 
-module.exports = { createLineupBoard, boardSvg, renderBoard, fitFor };
+module.exports = { createLineupBoard, boardSvg, renderBoard, fitFor, squadMenu, formationMenu };

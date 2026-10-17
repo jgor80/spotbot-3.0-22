@@ -150,3 +150,29 @@ export function slotsToBoard(slots: { slot_index: number; discord_user_id: strin
   }
   return { starters, bench };
 }
+
+// Squad list order: keeper, back line, midfield, attack (as the positions read on a team sheet)
+export const POSITION_ORDER = ["GK", "RB", "RWB", "CB", "LB", "LWB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", "CF", "ST"];
+
+export interface SquadEntry {
+  id: string;
+  position: string | null; // primary (comp) position
+  rating: number;
+  out?: boolean; // said they can't make the event
+}
+
+// Squad grouped by primary position in team-sheet order, best rated first in each group;
+// players who said they're out sink to the bottom of their group, and anyone without a
+// position comes last under "Any".
+export function groupByPosition<T extends SquadEntry>(entries: T[]): { position: string; players: T[] }[] {
+  const groups = new Map<string, T[]>();
+  for (const e of entries) {
+    const key = e.position && POSITION_ORDER.includes(e.position) ? e.position : "Any";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(e);
+  }
+  const rank = (p: string) => (p === "Any" ? POSITION_ORDER.length : POSITION_ORDER.indexOf(p));
+  return [...groups.entries()]
+    .sort(([a], [b]) => rank(a) - rank(b))
+    .map(([position, players]) => ({ position, players: players.sort((a, b) => Number(!!a.out) - Number(!!b.out) || b.rating - a.rating) }));
+}

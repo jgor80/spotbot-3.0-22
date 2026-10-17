@@ -28,7 +28,10 @@ export type FormationType =
   | '4-1-4-1'
   | '4-1-3-2'
   | '4-3-3 ATTACK'
-  | '5-2-3';
+  | '5-2-3'
+  | '4-3-3 HOLDING'
+  | '4-3-3 DEFEND'
+  | '4-3-3 FALSE 9';
 
 export interface FormationPosition {
   position: string;

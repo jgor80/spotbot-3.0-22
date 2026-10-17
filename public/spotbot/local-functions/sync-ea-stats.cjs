@@ -820,6 +820,103 @@ async function trackDivisionChange(supabase, guildId, clubKey, currentDivision) 
     console.error(`[sync-ea-stats] Error tracking division change:`, err);
   }
 }
+function divisionNumber(value) {
+  if (value === null || value === void 0 || value === "") return null;
+  const m = String(value).match(/\d+/);
+  return m ? Number(m[0]) : null;
+}
+function intOrNull(value) {
+  if (value === null || value === void 0 || value === "") return null;
+  const n = parseInt(String(value), 10);
+  return Number.isFinite(n) ? n : null;
+}
+var LEADERBOARDS = { season: "seasonRankLeaderboard", alltime: "clubRankLeaderboard" };
+var LEADERBOARD_TTL_MS = 10 * 60 * 1e3;
+var leaderboardCache = /* @__PURE__ */ new Map();
+function fetchLeaderboard(kind, platform) {
+  const fcPlatform = toFcPlatform(platform);
+  const key = `${kind}:${fcPlatform}`;
+  const cached = leaderboardCache.get(key);
+  if (!cached || Date.now() - cached.at > LEADERBOARD_TTL_MS) {
+    leaderboardCache.set(key, { at: Date.now(), rows: (async () => {
+      try {
+        const response = await eaFetch(`https://proclubs.ea.com/api/fc/${LEADERBOARDS[kind]}?platform=${fcPlatform}`, { headers: EA_HEADERS });
+        if (!response.ok) {
+          console.warn(`[EA] ${LEADERBOARDS[kind]} on ${fcPlatform}: HTTP ${response.status}`);
+          await response.body?.cancel();
+          return null;
+        }
+        const data = await response.json();
+        const rows = Array.isArray(data) ? data : Object.values(data || {}).filter((v) => v && typeof v === "object");
+        return rows;
+      } catch (err) {
+        console.warn(`[EA] ${LEADERBOARDS[kind]} on ${fcPlatform} failed:`, err);
+        return null;
+      }
+    })() });
+  }
+  return leaderboardCache.get(key).rows;
+}
+function leaderboardRank(rows, clubId) {
+  const i = rows.findIndex((r) => String(r?.clubId ?? r?.clubInfo?.clubId ?? "") === String(clubId));
+  if (i < 0) return { rank: null, row: null };
+  const row = rows[i];
+  return { rank: intOrNull(extractWithFallback(row, ["rank", "seasonRank", "position"])) ?? i + 1, row };
+}
+var DIVISION_FIELD = /div|point|pts|rank|season|promot|releg|skill/i;
+function divisionFields(...sources) {
+  const out = {};
+  for (const src of sources) {
+    if (!src || typeof src !== "object") continue;
+    for (const [k, v] of Object.entries(src)) {
+      if (DIVISION_FIELD.test(k) && (typeof v !== "object" || v === null) && out[k] === void 0) out[k] = v;
+    }
+  }
+  return out;
+}
+var SNAPSHOT_REFRESH_MS = 30 * 60 * 1e3;
+async function saveDivisionSnapshot(supabase, clubData, seasonalStats, overallStats) {
+  try {
+    const division = divisionNumber(clubData.current_division);
+    const skillRating = intOrNull(clubData.skill_rating) || null;
+    if (division === null && skillRating === null) return;
+    const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    const { data: existing } = await supabase.from("club_division_history").select("captured_at, current_division, skill_rating").eq("guild_id", clubData.guild_id).eq("club_key", clubData.club_key).eq("captured_on", today).maybeSingle();
+    if (existing && existing.current_division === division && existing.skill_rating === skillRating && Date.now() - Date.parse(existing.captured_at) < SNAPSHOT_REFRESH_MS) return;
+    const [seasonBoard, alltimeBoard] = await Promise.all([
+      fetchLeaderboard("season", clubData.ea_platform),
+      fetchLeaderboard("alltime", clubData.ea_platform)
+    ]);
+    const season = seasonBoard ? leaderboardRank(seasonBoard, clubData.ea_club_id) : { rank: null, row: null };
+    const alltime = alltimeBoard ? leaderboardRank(alltimeBoard, clubData.ea_club_id) : { rank: null, row: null };
+    const row = {
+      guild_id: clubData.guild_id,
+      club_key: clubData.club_key,
+      ea_club_id: clubData.ea_club_id,
+      ea_platform: clubData.ea_platform,
+      captured_on: today,
+      captured_at: (/* @__PURE__ */ new Date()).toISOString(),
+      current_division: division,
+      best_division: divisionNumber(clubData.best_division),
+      skill_rating: skillRating,
+      promotions: intOrNull(extractWithFallback(overallStats, ["promotions"])) ?? intOrNull(extractWithFallback(seasonalStats, ["promotions"])),
+      relegations: intOrNull(extractWithFallback(overallStats, ["relegations"])) ?? intOrNull(extractWithFallback(seasonalStats, ["relegations"])),
+      // Season figures only when EA sends them; never the all-time record
+      season_points: intOrNull(extractWithFallback(seasonalStats, ["points", "seasonPoints", "currentPoints"])) ?? intOrNull(extractWithFallback(season.row, ["points"])),
+      season_wins: intOrNull(extractWithFallback(seasonalStats, ["seasonWins"])),
+      season_draws: intOrNull(extractWithFallback(seasonalStats, ["seasonTies", "seasonDraws"])),
+      season_losses: intOrNull(extractWithFallback(seasonalStats, ["seasonLosses"])),
+      season_rank: season.rank,
+      alltime_rank: alltime.rank,
+      leaderboard_checked: !!seasonBoard,
+      ea_fields: divisionFields(seasonalStats, overallStats, season.row)
+    };
+    const { error } = await supabase.from("club_division_history").upsert(row, { onConflict: "guild_id,club_key,captured_on" });
+    if (error) console.error("[sync-ea-stats] Failed to save division snapshot:", error.message);
+  } catch (err) {
+    console.error("[sync-ea-stats] Error saving division snapshot:", err);
+  }
+}
 async function syncClubStats(supabase, guildId, clubKey, clubId, platform, recentMatches) {
   try {
     const clubInfo = await fetchClubInfo(clubId, platform);
@@ -839,12 +936,12 @@ async function syncClubStats(supabase, guildId, clubKey, clubId, platform, recen
       region: extractWithFallback(clubInfo, ["region", "customKit.region"]) || decodeRegionId(extractWithFallback(clubInfo, ["regionId", "customKit.regionId"])) || null,
       custom_kit_home: extractWithFallback(clubInfo, ["customKit.home", "customKit"]) || null,
       total_members: parseInt(extractWithFallback(clubInfo, ["memberCount", "members"]) || 0),
-      best_division: extractWithFallback(clubInfo, ["bestDivision", "divisionName"]) || null,
+      best_division: extractWithFallback(clubInfo, ["bestDivision", "divisionName"]) || extractWithFallback(overallStats, ["bestDivision"]) || null,
       stadium_name: extractWithFallback(clubInfo, ["stadiumName", "stadium"]) || null,
       reputation_tier: extractWithFallback(clubInfo, ["reputationTier", "clubStar"]) || null,
       // From seasonal stats endpoint with fallback paths
-      current_division: extractWithFallback(seasonalStats, ["division", "currentDivision"]) || null,
-      skill_rating: parseInt(extractWithFallback(seasonalStats, ["skillRating", "skill_rating"]) || extractWithFallback(clubInfo, ["skillRating", "skill_rating"]) || 0),
+      current_division: extractWithFallback(seasonalStats, ["division", "currentDivision"]) || extractWithFallback(overallStats, ["currentDivision", "division"]) || null,
+      skill_rating: parseInt(extractWithFallback(seasonalStats, ["skillRating", "skill_rating"]) || extractWithFallback(overallStats, ["skillRating"]) || extractWithFallback(clubInfo, ["skillRating", "skill_rating"]) || 0),
       wins: parseInt(extractWithFallback(seasonalStats, ["wins"]) || extractWithFallback(clubInfo, ["wins"]) || 0),
       draws: parseInt(extractWithFallback(seasonalStats, ["ties", "draws"]) || extractWithFallback(clubInfo, ["draws", "ties"]) || 0),
       losses: parseInt(extractWithFallback(seasonalStats, ["losses"]) || extractWithFallback(clubInfo, ["losses"]) || 0),
@@ -872,6 +969,7 @@ async function syncClubStats(supabase, guildId, clubKey, clubId, platform, recen
       console.error(`[sync-ea-stats] Failed to sync club stats:`, error.message);
       return null;
     }
+    await saveDivisionSnapshot(supabase, clubData, seasonalStats, overallStats);
     console.log(`[sync-ea-stats] Synced club stats for ${clubData.club_name}: ${clubData.skill_rating} SR, div: ${clubData.current_division || "N/A"}, form: ${formData?.last_5_results?.join("") || "N/A"}`);
     return clubData;
   } catch (err) {
@@ -1935,8 +2033,8 @@ Deno.serve(async (req) => {
                 }
               }
             }
-            if (clubStatsResult?.best_division) {
-              await trackDivisionChange(supabase, guildId, club.key, clubStatsResult.best_division);
+            if (clubStatsResult?.current_division) {
+              await trackDivisionChange(supabase, guildId, club.key, String(clubStatsResult.current_division));
             }
             const competitionMatches = allRecentMatches.filter((m) => m._matchCategory === "competition");
             if (competitionMatches && competitionMatches.length > 0) {
