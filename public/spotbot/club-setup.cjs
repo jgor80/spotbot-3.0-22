@@ -1,7 +1,9 @@
 // /setup: a first-run checklist that says what to run next and diagnoses the permissions that
 // stop the bot posting or creating events, plus the onboarding steps (club setup, team colours &
-// crest, club identity). /brand: per-server colours, footer, lineup title, logo,
+// crest, club identity). /brand: per-server colours, footer, lineup title, logo, era crests,
 // and the bot's nickname and avatar in this server.
+// Branding (kit, colours and crest, identity, /brand) runs on gafferbot.app only (web-only.cjs):
+// in Discord /setup links the EA club and points to the website for the rest.
 
 const { EmbedBuilder, PermissionsBitField, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder, LabelBuilder, FileUploadBuilder, AttachmentBuilder } = require('discord.js');
 const { missingChannelPerms } = require('./perm-check.cjs');
@@ -9,6 +11,7 @@ const { activeClubs } = require('./manager-hub.cjs');
 const { parseCrestHistory } = require('./club-logos.cjs');
 const { VOICES, VOICE_KEYS, identityOf } = require('./club-identity.cjs');
 const { toHex, teamColors, crestUrl } = require('./club-colors.cjs');
+const { WEB_URL, onWeb, brandingButton, webOnlyReply } = require('./web-only.cjs');
 const { createChannelSetup } = require('./channel-setup.cjs');
 
 const F = PermissionsBitField.Flags;
@@ -101,7 +104,7 @@ function createClubSetup(deps) {
 
   // ---------- Setup wizard: EA club and kit in one form ----------
 
-  function wizardModal(club) {
+  function wizardModal(club, withKit = true) {
     const kit = club?.kit || {};
     const input = (id, label, value, opts = {}) => {
       const t = new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(opts.long ? TextInputStyle.Paragraph : TextInputStyle.Short).setRequired(!!opts.required).setMaxLength(opts.max || 100);
@@ -109,12 +112,15 @@ function createClubSetup(deps) {
       if (value) t.setValue(String(value).slice(0, opts.max || 100));
       return new ActionRowBuilder().addComponents(t);
     };
-    return new ModalBuilder().setCustomId('setupw:submit').setTitle('Club setup').addComponents(
-      input('ea_name', 'EA club name (exactly as in game)', club?.ea_club_name || '', { placeholder: 'Leave blank to keep the current link' }),
-      input('kit_primary', 'Kit main colour', kit.primary, { placeholder: 'sky blue', max: 40 }),
-      input('kit_secondary', 'Kit second colour', kit.secondary, { placeholder: 'white', max: 40 }),
-      input('kit_description', 'Describe your home kit', kit.description, { long: true, max: 300, placeholder: 'Sky blue shirt with white collar and cuffs, white shorts' })
-    );
+    const rows = [input('ea_name', 'EA club name (exactly as in game)', club?.ea_club_name || '', { placeholder: 'Leave blank to keep the current link' })];
+    if (withKit) {
+      rows.push(
+        input('kit_primary', 'Kit main colour', kit.primary, { placeholder: 'sky blue', max: 40 }),
+        input('kit_secondary', 'Kit second colour', kit.secondary, { placeholder: 'white', max: 40 }),
+        input('kit_description', 'Describe your home kit', kit.description, { long: true, max: 300, placeholder: 'Sky blue shirt with white collar and cuffs, white shorts' })
+      );
+    }
+    return new ModalBuilder().setCustomId('setupw:submit').setTitle(withKit ? 'Club setup' : 'Link your EA club').addComponents(...rows);
   }
 
   function currentClubOf(state) {
@@ -127,24 +133,32 @@ function createClubSetup(deps) {
     }
     if (interaction.isButton()) {
       const state = await getGuildState(interaction.guildId);
-      return interaction.showModal(wizardModal(currentClubOf(state)));
+      return interaction.showModal(wizardModal(currentClubOf(state), onWeb(interaction)));
     }
     // Modal submit
     await interaction.deferReply({ flags: 64 });
-    const get = (id) => (interaction.fields.getTextInputValue(id) || '').trim();
+    const get = (id) => {
+      try {
+        return (interaction.fields.getTextInputValue(id) || '').trim();
+      } catch {
+        return '';
+      }
+    };
     const state = await getGuildState(interaction.guildId);
     const club = currentClubOf(state);
     if (!club) return interaction.editReply({ content: '❌ No club exists on this server yet. Open `/manager` once to create it, then run setup again.' });
     const notes = [];
 
     const kit = { ...(club.kit || {}) };
-    for (const [field, key] of [['kit_primary', 'primary'], ['kit_secondary', 'secondary'], ['kit_description', 'description']]) {
-      const v = get(field);
-      if (v) kit[key] = v;
+    if (onWeb(interaction)) {
+      for (const [field, key] of [['kit_primary', 'primary'], ['kit_secondary', 'secondary'], ['kit_description', 'description']]) {
+        const v = get(field);
+        if (v) kit[key] = v;
+      }
+      club.kit = kit;
+      await saveGuildSettings(interaction.guildId, state);
+      if (kit.primary || kit.description) notes.push('👕 Kit saved — graphics will use it.');
     }
-    club.kit = kit;
-    await saveGuildSettings(interaction.guildId, state);
-    if (kit.primary || kit.description) notes.push('👕 Kit saved — graphics will use it.');
 
     const eaName = get('ea_name');
     let picker = null;
@@ -173,8 +187,9 @@ function createClubSetup(deps) {
         { name: 'Kit', value: [kit.primary, kit.secondary].filter(Boolean).join(' / ') || 'Not set', inline: true },
         { name: 'Kit look', value: (kit.description || '–').slice(0, 1024) }
       )
-      .setFooter({ text: 'Next: pick your team colours and crest. Run /setup again any time to change these.' });
-    await interaction.editReply({ content: notes.join('\n') || null, embeds: [embed], components: [new ActionRowBuilder().addComponents(colorsButton(), identityButton())] });
+      .setFooter({ text: onWeb(interaction) ? 'Next: pick your team colours and crest. Run the Setup Wizard again any time to change these.' : 'Next: kit, team colours, crest and club identity are set on gafferbot.app.' });
+    const next = onWeb(interaction) ? [colorsButton(), identityButton()] : [brandingButton(), channelsButton()];
+    await interaction.editReply({ content: notes.join('\n') || null, embeds: [embed], components: [new ActionRowBuilder().addComponents(...next)] });
     if (picker) await interaction.followUp({ ...picker, flags: 64 });
   }
 
@@ -248,6 +263,7 @@ function createClubSetup(deps) {
   }
 
   async function handleColors(interaction) {
+    if (!onWeb(interaction)) return interaction.reply(webOnlyReply('Team colours and crest'));
     if (!interaction.member.permissions.has(F.ManageGuild)) {
       return interaction.reply({ content: '❌ Only server admins can change the team colours and crest.', flags: 64 });
     }
@@ -326,7 +342,7 @@ function createClubSetup(deps) {
         { name: 'Second colour', value: club.colors?.secondary || `Not picked (using ${c.secondary})`, inline: true },
         { name: 'Crest', value: club.crest_url ? 'Saved' : crestUrl(club, (await events.serverPrefs(interaction.guildId)).branding) ? 'Using the server logo from Brand' : 'None yet', inline: true }
       )
-      .setFooter({ text: 'Next: give the club its own voice and newspaper. Run /setup any time to change these.' });
+      .setFooter({ text: 'Next: give the club its own voice and newspaper. Run the Setup Wizard any time to change these.' });
     const crestLink = crestUrl(club, (await events.serverPrefs(interaction.guildId)).branding);
     if (crestLink) embed.setThumbnail(crestLink);
     const png = await colorsPreview(club, crestLink, crestImage);
@@ -360,7 +376,7 @@ function createClubSetup(deps) {
         { name: 'Hometown', value: id.city, inline: true },
         { name: 'Opponent name gags', value: id.nameJokes ? 'On' : 'Off', inline: true }
       )
-      .setFooter({ text: 'Next: Channels, to create and wire up every channel GafferBot posts in. Run /setup any time to change these.' });
+      .setFooter({ text: 'Next: Channels, to create and wire up every channel GafferBot posts in. Run the Setup Wizard any time to change these.' });
     const voiceMenu = new StringSelectMenuBuilder()
       .setCustomId('setupw:voice')
       .setPlaceholder('Pick your club’s voice')
@@ -388,6 +404,7 @@ function createClubSetup(deps) {
   }
 
   async function handleIdentity(interaction) {
+    if (!onWeb(interaction)) return interaction.reply(webOnlyReply('Club identity'));
     if (!interaction.member.permissions.has(F.ManageGuild)) {
       return interaction.reply({ content: '❌ Only server admins can change the club identity.', flags: 64 });
     }
@@ -525,8 +542,10 @@ function createClubSetup(deps) {
       )
       .setFooter({ text: `Bot online · ${Math.max(0, Math.round(guild.client.ws.ping))}ms latency · Missing a channel permission? Edit the channel → Permissions → add my role.` });
     const canEdit = interaction.member.permissions.has(F.ManageGuild);
+    const web = onWeb(interaction);
+    const start = new ButtonBuilder().setCustomId('setupw:start').setLabel(web ? 'Club setup: EA club & kit' : 'Link EA club').setEmoji('🧭').setStyle(ButtonStyle.Primary);
     const components = canEdit && deps.saveGuildSettings
-      ? [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('setupw:start').setLabel('Club setup: EA club & kit').setEmoji('🧭').setStyle(ButtonStyle.Primary), colorsButton(), identityButton(), channelsButton())]
+      ? [new ActionRowBuilder().addComponents(...(web ? [start, colorsButton(), identityButton(), channelsButton()] : [start, channelsButton(), brandingButton()]))]
       : [];
     return interaction.editReply({ embeds: [embed], components });
   }
@@ -535,6 +554,7 @@ function createClubSetup(deps) {
 
   async function handleBrand(interaction) {
     const guild = interaction.guild;
+    if (!onWeb(interaction)) return interaction.reply(webOnlyReply('Branding'));
     if (!interaction.member.permissions.has(F.ManageGuild)) {
       return interaction.reply({ content: '❌ Only server admins can change the branding.', flags: 64 });
     }
@@ -657,7 +677,8 @@ function createClubSetup(deps) {
             .setTitle('👋 Thanks for adding GafferBot')
             .setColor(0x5865f2)
             .setDescription(
-              'Start with **`/setup`** and press **Club setup** to link your EA club and describe your kit, then **Team colours & crest** to pick your colours and upload your crest, then **Club identity** to pick your club\'s voice, newspaper name and hometown, then **Channels** to have me create every channel GafferBot uses and wire them up (or pick your own). It also shows what to do next and checks my permissions.\n\n' +
+              'Start with **`/setup`** and press **Link EA club**, then **Channels** to have me create every channel GafferBot uses and wire them up (or pick your own). It also shows what to do next and checks my permissions.\n\n' +
+                `Branding lives on the website: sign in at **${WEB_URL.replace(/^https?:\/\//, '')}/control** for your kit, team colours, crest, club identity (voice, newspaper, hometown) and the bot's look in this server.\n\n` +
                 'The usual path, all from `/manager`: **Admin → Link EA Club**, **Roster & Squad → Import Role**, **Events → Timezone**, then **Events → New Event**.'
             ),
         ],

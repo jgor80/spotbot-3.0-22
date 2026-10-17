@@ -61,7 +61,7 @@ test('setup wizard saves the voice, gags and paper name on the club', async () =
   const setup = createClubSetup({ supabase: {}, getGuildState: async () => state, events: {}, saveGuildSettings: async () => { saved += 1; } });
   const replies = [];
   const base = (customId, extra = {}) => ({
-    guildId: 'g', customId, member: { permissions: { has: () => true } },
+    __webPanel: true, guildId: 'g', customId, member: { permissions: { has: () => true } },
     isButton: () => !extra.values && !extra.fields, isStringSelectMenu: () => !!extra.values, isModalSubmit: () => !!extra.fields,
     isChatInputCommand: () => false, isFromMessage: () => true,
     reply: async (m) => replies.push(['reply', m]), update: async (m) => replies.push(['update', m]), showModal: async (m) => replies.push(['modal', m]),
