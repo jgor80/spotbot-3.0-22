@@ -977,12 +977,7 @@ async function syncClubStats(supabase: any, guildId: string, clubKey: string, cl
       skill_rating: parseInt(extractWithFallback(seasonalStats, ['skillRating', 'skill_rating']) || 
                             extractWithFallback(overallStats, ['skillRating']) ||
                             extractWithFallback(clubInfo, ['skillRating', 'skill_rating']) || 0),
-      wins: parseInt(extractWithFallback(seasonalStats, ['wins']) || 
-                    extractWithFallback(clubInfo, ['wins']) || 0),
-      draws: parseInt(extractWithFallback(seasonalStats, ['ties', 'draws']) || 
-                     extractWithFallback(clubInfo, ['draws', 'ties']) || 0),
-      losses: parseInt(extractWithFallback(seasonalStats, ['losses']) || 
-                      extractWithFallback(clubInfo, ['losses']) || 0),
+      ...clubRecord(overallStats, seasonalStats),
       
       // From overall stats endpoint with fallback paths
       overall_matches_played: parseInt(extractWithFallback(overallStats, ['gamesPlayed', 'matchesPlayed']) || 0),
@@ -1062,6 +1057,38 @@ type AggregatedPlayerStats = {
   offsides: number
   seconds_played: number
   position_counts: Record<string, number>
+}
+
+// EA's members/stats gives each player's games and win rate (a percentage) but no wins, losses or draws.
+// Wins come from the rate; losses and draws stay 0 unless EA sends them, so draws are never games - wins - losses.
+function memberRecord(member: any, gamesPlayed: number) {
+  const count = (keys: string[]) => {
+    const v = extractWithFallback(member, keys)
+    return v === null ? null : parseInt(v) || 0
+  }
+  const rate = parseFloat(extractWithFallback(member, ['winRate', 'winrate']))
+  let wins = count(['wins'])
+  if (wins === null) wins = Number.isFinite(rate) && gamesPlayed > 0 ? Math.round((gamesPlayed * rate) / 100) : 0
+  const losses = count(['losses']) ?? 0
+  const draws = count(['ties', 'draws']) ?? 0
+  const winRate = Number.isFinite(rate) ? rate : gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0
+  return { wins, losses, draws, winRate }
+}
+
+// EA's overallStats carries the club's W/D/L next to gamesPlayed and goals (seasonalStats only has season* fields).
+function clubRecord(overallStats: any, seasonalStats: any) {
+  const pick = (keys: string[]) => {
+    for (const src of [overallStats, seasonalStats]) {
+      const v = extractWithFallback(src, keys)
+      if (v !== null) return parseInt(v) || 0
+    }
+    return 0
+  }
+  return {
+    wins: pick(['wins', 'seasonWins']),
+    draws: pick(['ties', 'draws', 'seasonTies']),
+    losses: pick(['losses', 'seasonLosses']),
+  }
 }
 
 function getPrimaryPosition(positionCounts: Record<string, number>): string | null {
@@ -1274,9 +1301,7 @@ async function syncMemberStats(
       const goals = parseInt(extractWithFallback(member, ['goals']) || 0)
       const assists = parseInt(extractWithFallback(member, ['assists']) || 0)
       const gamesPlayed = parseInt(extractWithFallback(member, ['gamesPlayed', 'matches']) || 0)
-      const wins = parseInt(extractWithFallback(member, ['wins']) || 0)
-      const losses = parseInt(extractWithFallback(member, ['losses']) || 0)
-      const draws = gamesPlayed - wins - losses
+      const { wins, losses, draws, winRate: memberWinRate } = memberRecord(member, gamesPlayed)
       const avgRating = parseFloat(extractWithFallback(member, ['ratingAve', 'avgRating']) || 0)
       const cleanSheets = parseInt(extractWithFallback(member, ['cleanSheetsDef', 'cleanSheetsGK', 'cleanSheets']) || 0)
       const manOfMatch = parseInt(extractWithFallback(member, ['manOfTheMatch', 'mom']) || 0)
@@ -1310,8 +1335,8 @@ async function syncMemberStats(
           discord_user_id: profile.discord_user_id,
           discord_username: profile.discord_username || eaUsername,
           games_played: gamesPlayed,
-          wins, losses, draws: Math.max(0, draws),
-          win_rate: gamesPlayed > 0 ? (wins / gamesPlayed) * 100 : 0,
+          wins, losses, draws,
+          win_rate: memberWinRate,
           goals, assists, second_assists: secondAssists,
           clean_sheets: cleanSheets,
           man_of_match: manOfMatch,
@@ -1419,8 +1444,8 @@ async function persistAggregatedStats(
   let persisted = 0
   for (const aggregate of aggregates.values()) {
     const gamesPlayed = aggregate.games_played
-    const draws = Math.max(0, gamesPlayed - aggregate.wins - aggregate.losses)
-    aggregate.draws = draws
+    // EA's member list has no draw/loss split (see memberRecord), so never derive draws as games - wins - losses
+    const draws = aggregate.draws
     const winRate = gamesPlayed > 0 ? (aggregate.wins / gamesPlayed) * 100 : 0
     const avgRating = gamesPlayed > 0 ? aggregate.rating_sum / gamesPlayed : 0
     const primaryPosition = getPrimaryPosition(aggregate.position_counts)
