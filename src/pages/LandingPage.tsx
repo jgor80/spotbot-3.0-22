@@ -126,15 +126,27 @@ const FEATURES = [
   },
 ];
 
+const FLOW = [
+  { icon: CalendarCheck, title: "Post the game", body: "Pick the time and opponent. GafferBot posts the board and pings the right role." },
+  { icon: Bell, title: "Squad replies", body: "Players tap Yes, Maybe or No. Anyone quiet gets a DM reminder before kick-off." },
+  { icon: Shirt, title: "Pick the XI", body: "Drag available players into a formation, then post the lineup to Discord." },
+  { icon: TrendingUp, title: "Results land", body: "EA stats sync after the game: the recap, ratings, form and division update." },
+];
+
+const FUN = [
+  { icon: Newspaper, label: "Club newspaper", body: "A match report after every game and a daily edition on the run, in your club's own voice." },
+  { icon: Trophy, label: "Stat trophies", body: "Golden Boot, Playmaker, Golden Glove and In-Form roles that move after every match." },
+  { icon: Sparkles, label: "Banter, kept honest", body: "Roast awards from real EA numbers, plus transfer rumours that are clearly labelled fiction." },
+  { icon: Palette, label: "Your club's look", body: "Colours, crest and kits on every post and graphic." },
+];
+
 const EXTRAS = [
-  { icon: Newspaper, label: "Match reports and a club newspaper", body: "A newspaper-style report after every game, plus daily editions on your run and season storyline." },
-  { icon: Sparkles, label: "Player cards and graphics", body: "Turn players' own photos into cards, posters and banners in 18 styles, in your club colours." },
-  { icon: Bell, label: "Auto recaps", body: "The score, the standouts and the ratings land in your recap channel as soon as EA has the game." },
-  { icon: Trophy, label: "Stat trophies", body: "Golden Boot, Playmaker, Golden Glove and In-Form roles that move after every synced match." },
-  { icon: MonitorSmartphone, label: "Web Control Room", body: "Every Discord panel action also works here on the website, with the same permissions." },
-  { icon: Palette, label: "Your club's identity", body: "Colours, crest, kits and a newspaper voice that make every post look and sound like your club." },
-  { icon: Twitch, label: "Twitch go-live alerts", body: "Let the server know when your players are streaming." },
-  { icon: UsersRound, label: "Drafts and pick-up spots", body: "Run captain drafts and open spots for pick-up games when you're short." },
+  { icon: MonitorSmartphone, label: "Web Control Room", body: "Every Discord panel action also works on the website, with the same permissions." },
+  { icon: Bell, label: "Auto recaps", body: "Score, standouts and ratings in your recap channel when EA has the game." },
+  { icon: LayoutDashboard, label: "Multi-club servers", body: "Each club keeps its own roster, events, stats and colours." },
+  { icon: Twitch, label: "Twitch alerts", body: "Let the server know when players go live." },
+  { icon: UsersRound, label: "Drafts and pick-up spots", body: "Captain drafts and open spots when you're short." },
+  { icon: Search, label: "Tryouts", body: "Report cards on every trialist with Promote, Second trial or Release." },
 ];
 
 const STEPS = [
@@ -213,23 +225,38 @@ function CardPitch({ className }: { className?: string }) {
   );
 }
 
-function CardFan({ className }: { className?: string }) {
-  const picks = [GALLERY[1], GALLERY[6], GALLERY[3]].filter(Boolean);
+// The hero: one Discord channel showing the real flow, availability board then the posted lineup
+function MatchNightWindow({ className }: { className?: string }) {
   return (
-    <div className={cn("relative h-[380px] sm:h-[460px]", className)}>
-      {picks.map((g, i) => (
-        <img
-          key={g.src}
-          src={g.src}
-          alt={`${g.label} player card`}
-          className={cn(
-            "absolute top-0 w-[58%] rounded-2xl shadow-2xl ring-1 ring-white/10 transition-transform duration-500 hover:z-20 hover:-translate-y-3",
-            i === 0 && "left-0 top-8 -rotate-[8deg]",
-            i === 1 && "left-1/2 z-10 -translate-x-1/2",
-            i === 2 && "right-0 top-8 rotate-[8deg]"
-          )}
-        />
-      ))}
+    <div className={cn("overflow-hidden rounded-2xl border border-white/10 bg-[hsl(228_8%_15%)] shadow-2xl", className)}>
+      <div className="flex items-center gap-2 border-b border-white/10 px-4 py-2.5 text-sm text-white/80">
+        <span className="text-white/40">#</span> match-night
+        <span className="ml-auto flex gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+          <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+          <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        </span>
+      </div>
+      <div className="space-y-4 p-4">
+        <AvailabilityMockup className="border-0 bg-transparent p-0 shadow-none" />
+        <div>
+          <p className="text-xs text-white/50">GafferBot · after the game</p>
+          <div className="mt-2 rounded-xl border-l-4 border-primary bg-[hsl(228_8%_20%)] p-3 text-white">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold">Full time: Northside 3-1 Wolves Town</p>
+              <span className="rounded bg-[hsl(142_60%_36%)] px-1.5 py-0.5 text-[10px] font-bold">W</span>
+            </div>
+            <div className="mt-3 flex gap-3">
+              <img src={card("xi-st")} alt="" className="w-16 shrink-0 rounded-md shadow-lg" />
+              <div className="space-y-1 text-xs">
+                <p><span className="text-white/50">Player of the match</span><br /><span className="font-semibold">Fontana · 8.9 · 2 goals</span></p>
+                <p className="text-white/70">Galli 2 assists · Rossi 5 saves</p>
+                <p className="text-white/70">Form W W D W W · Division 3, up 2 this season</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -338,9 +365,8 @@ export default function LandingPage() {
             <span className="font-display text-xl font-bold">GafferBot</span>
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-            <a href="#fun" className="hover:text-foreground">Why GafferBot</a>
-            <a href="#features" className="hover:text-foreground">Features</a>
-            <a href="#screens" className="hover:text-foreground">Screens</a>
+                        <a href="#features" className="hover:text-foreground">Features</a>
+            <a href="#extras" className="hover:text-foreground">Extras</a>
             <a href="#how" className="hover:text-foreground">How it works</a>
             <a href="#pricing" className="hover:text-foreground">Pricing</a>
             <a href="#faq" className="hover:text-foreground">FAQ</a>
@@ -383,10 +409,7 @@ export default function LandingPage() {
                 ))}
               </ul>
             </div>
-            <div className="relative mx-auto w-full max-w-md">
-              <CardFan />
-              <AvailabilityMockup className="absolute -bottom-10 -left-2 z-30 w-[66%] sm:-left-8" />
-            </div>
+            <MatchNightWindow className="mx-auto w-full max-w-md" />
           </div>
         </section>
 
@@ -406,81 +429,25 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Only on GafferBot */}
-        <section id="fun" className="relative scroll-mt-20 overflow-hidden">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,hsl(var(--accent)/0.12),transparent_55%)]" />
-          <div className="relative mx-auto max-w-6xl px-4 py-16 sm:py-24">
-            <div className="max-w-2xl">
-              <p className="text-sm font-semibold uppercase tracking-wider text-accent">Only on GafferBot</p>
-              <h2 className="mt-2 text-3xl font-bold sm:text-4xl">The bit your group chat will love</h2>
-              <p className="mt-3 text-muted-foreground">
-                Other tools stop at a spreadsheet. GafferBot turns every match night into something your squad talks
-                about: their own player cards, a newspaper about the club, and banter built on real stats.
-              </p>
-            </div>
-
-            <div className="mt-10 grid gap-4 lg:grid-cols-3">
-              <div className="rounded-2xl border bg-card p-5 lg:row-span-2">
-                <p className="font-display text-xl font-bold">🍝 The Roast</p>
-                <p className="mt-1 text-sm text-muted-foreground">After a bad night, the recap hands out awards nobody wants, all from real EA numbers.</p>
-                <div className="mt-4 rounded-xl border-l-4 border-[hsl(335_80%_75%)] bg-[hsl(228_8%_20%)] p-4 text-sm text-white">
-                  <p className="font-bold">🍝 The Roast: Northside FC</p>
-                  <p className="mt-1 text-xs text-white/60">Last night: W1 D0 L2</p>
-                  <div className="mt-3 space-y-3 text-[13px] leading-snug">
-                    <p><span className="font-semibold">🎯 Sniper on the Grassy Knoll</span><br />Marino: 9 shots, 0 goals. The stand behind the goal has been notified.</p>
-                    <p><span className="font-semibold">🏃 The Cardio King</span><br />Bruno: covered every blade of grass, touched the ball 14 times.</p>
-                    <p><span className="font-semibold">🧱 Brick Wall of Regret</span><br />Ferri: 6 tackles tried, 1 won. Respect the effort.</p>
-                  </div>
-                  <p className="mt-3 text-[11px] text-white/50">Banter only. Hug your teammates.</p>
-                </div>
-                <p className="mt-6 font-display text-xl font-bold">🎤 The press conference</p>
-                <p className="mt-1 text-sm text-muted-foreground">Face the tabloids after the final whistle and pick your answer.</p>
-                <div className="mt-3 rounded-xl bg-[hsl(228_8%_20%)] p-4 text-[13px] text-white">
-                  <p><span className="font-semibold">Reporter:</span> Was tonight's defending a tactic, or a cry for help?</p>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
-                    {["Blame the servers", "Blame the referee", "Walk out"].map((b) => (
-                      <span key={b} className="rounded bg-[hsl(228_7%_32%)] px-2.5 py-1.5">{b}</span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border bg-[hsl(40_45%_92%)] p-5 text-[hsl(30_15%_12%)] lg:col-span-2">
-                <div className="flex items-center justify-between border-y-2 border-[hsl(30_15%_12%)] py-1 text-[11px] font-semibold uppercase tracking-widest">
-                  <span className="text-[hsl(142_60%_32%)]">Final edition</span>
-                  <span>Last 10: 7-1-2</span>
-                </div>
-                <p className="mt-3 text-center font-display text-3xl font-bold uppercase leading-none sm:text-4xl">The Northside Chronicle</p>
-                <p className="mt-3 text-center font-display text-2xl font-bold uppercase leading-tight sm:text-3xl">Fontana hat-trick sinks Wolves Town</p>
-                <div className="mt-4 grid gap-4 sm:grid-cols-[120px_1fr]">
-                  <img src={card("xi-st")} alt="" loading="lazy" className="mx-auto w-28 rounded-md shadow-lg sm:w-full" />
-                  <p className="text-sm leading-relaxed">
-                    Northside sit 14-3-5 and the arrow points up: 10 points from the last five. Fontana leads the scoring
-                    with 24 while Galli pulls the strings with 14 assists. GafferBot writes a match report after every
-                    game and a full edition twice a day, in your club's own voice, with your players on the front page.
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border bg-card p-5">
-                <p className="font-display text-xl font-bold">🚨 The Rumour Mill</p>
-                <p className="mt-2 rounded-lg bg-muted p-3 text-sm">
-                  EXCLUSIVE: Costa spotted at the airport carrying a suitcase and a single sandwich. Agents deny everything.
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">Made-up transfer gossip about your squad, always labelled fiction. Plus a quote wall for voice chat gold.</p>
-              </div>
-
-              <div className="rounded-2xl border bg-card p-5">
-                <p className="font-display text-xl font-bold">🏆 Stat trophies</p>
-                <div className="mt-3 flex flex-wrap gap-2 text-sm">
-                  {["👑 Club Legend", "⚽ Golden Boot", "🎯 Playmaker", "🧤 Golden Glove", "🔥 In-Form"].map((r) => (
-                    <span key={r} className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 font-medium">{r}</span>
-                  ))}
-                </div>
-                <p className="mt-3 text-xs text-muted-foreground">Real Discord roles that move to whoever earns them after every synced match. Bragging rights, updated automatically.</p>
-              </div>
-            </div>
+        {/* Match night, start to finish */}
+        <section id="how" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:py-24">
+          <div className="max-w-2xl">
+            <p className="text-sm font-semibold uppercase tracking-wider text-primary">How it works</p>
+            <h2 className="mt-2 text-3xl font-bold sm:text-4xl">Match night, start to finish</h2>
+            <p className="mt-3 text-muted-foreground">Everything happens in your Discord with buttons. The website is there when you want more room.</p>
           </div>
+          <ol className="mt-10 grid gap-px overflow-hidden rounded-2xl border bg-border md:grid-cols-4">
+            {FLOW.map((f, i) => (
+              <li key={f.title} className="bg-card p-6">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 font-display font-bold text-primary">{i + 1}</span>
+                  <f.icon className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <h3 className="mt-4 text-lg font-bold">{f.title}</h3>
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{f.body}</p>
+              </li>
+            ))}
+          </ol>
         </section>
 
         {/* Features */}
@@ -503,25 +470,11 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
-          <h3 className="mt-16 text-2xl font-bold">And the rest of the kit bag</h3>
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {EXTRAS.map((e) => (
-              <div key={e.label} className="rounded-xl border bg-card p-5">
-                <e.icon className="h-5 w-5 text-primary" />
-                <p className="mt-3 font-display text-lg font-bold leading-tight">{e.label}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{e.body}</p>
-              </div>
-            ))}
-          </div>
         </section>
 
         {/* Screens */}
         <section id="screens" className="scroll-mt-20 border-t border-border/60">
-          <div className="mx-auto max-w-6xl space-y-20 px-4 py-16 sm:space-y-28 sm:py-24">
-            <div className="text-center">
-              <p className="text-sm font-semibold uppercase tracking-wider text-primary">See it in action</p>
-              <h2 className="mt-2 text-3xl font-bold sm:text-4xl">What your club actually gets</h2>
-            </div>
+          <div className="mx-auto max-w-6xl px-4 py-16 sm:py-24">
 
             <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_1fr]">
               <CardPitch className="mx-auto w-full max-w-xl" />
@@ -542,30 +495,6 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div>
-              <div className="max-w-2xl">
-                <h3 className="text-2xl font-bold sm:text-3xl">A card for every player, in 18 styles</h3>
-                <p className="mt-3 text-muted-foreground">
-                  Players post a photo of their pro and GafferBot turns it into a collectible card with their real season
-                  stats. Go modern broadcast, 1970s archive, Y2K chrome or obsidian and gold. The same art powers signing
-                  announcements, recruiting posters, match-day banners and the Chronicle's front page.
-                </p>
-              </div>
-              <div className="-mx-4 mt-8 flex snap-x gap-4 overflow-x-auto px-4 pb-4 [scrollbar-width:thin]">
-                {GALLERY.map((g) => (
-                  <figure key={g.src} className="w-44 shrink-0 snap-start sm:w-52">
-                    <img
-                      src={g.src}
-                      alt={`${g.label} player card`}
-                      loading="lazy"
-                      className="w-full rounded-xl shadow-xl ring-1 ring-white/10 transition-transform duration-300 hover:-translate-y-2"
-                    />
-                    <figcaption className="mt-2 text-center text-xs text-muted-foreground">{g.label}</figcaption>
-                  </figure>
-                ))}
-              </div>
-              <p className="mt-2 text-xs text-muted-foreground">Sample cards for a made-up club. Yours are drawn from your own players' pros.</p>
-            </div>
           </div>
         </section>
 
@@ -598,8 +527,56 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* How it works */}
-        <section id="how" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:py-24">
+        {/* Extras */}
+        <section id="extras" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:py-24">
+          <div className="max-w-2xl">
+            <p className="text-sm font-semibold uppercase tracking-wider text-primary">The extras</p>
+            <h2 className="mt-2 text-3xl font-bold sm:text-4xl">The bits that keep a squad together</h2>
+            <p className="mt-3 text-muted-foreground">Small touches that make the server somewhere players want to be, all switched on per club.</p>
+          </div>
+          <div className="mt-10 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+            <div className="flex flex-col gap-6 rounded-2xl border bg-card p-6 sm:flex-row sm:items-center">
+              <div className="flex shrink-0 justify-center -space-x-10 sm:w-60">
+                {[GALLERY[1], GALLERY[6], GALLERY[3]].filter(Boolean).map((g, i) => (
+                  <img
+                    key={g.src}
+                    src={g.src}
+                    alt={`${g.label} player card`}
+                    loading="lazy"
+                    className={cn("w-24 rounded-lg shadow-xl ring-1 ring-black/30", i === 1 && "z-10 -translate-y-2", i === 0 && "-rotate-6", i === 2 && "rotate-6")}
+                  />
+                ))}
+              </div>
+              <div>
+                <p className="flex items-center gap-2 font-display text-xl font-bold"><Sparkles className="h-5 w-5 text-primary" /> Player cards</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Players post a photo of their pro and get a card with their real season stats, in 18 styles and your club
+                  colours. The same art shows up on lineups, signing posts and recruiting posters.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {FUN.map((f) => (
+                <div key={f.label} className="rounded-2xl border bg-card p-5">
+                  <f.icon className="h-5 w-5 text-primary" />
+                  <p className="mt-3 font-bold">{f.label}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{f.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <ul className="mt-8 grid gap-x-8 gap-y-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-3">
+            {EXTRAS.map((e) => (
+              <li key={e.label} className="flex items-start gap-2">
+                <e.icon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <span><span className="font-medium text-foreground">{e.label}.</span> {e.body}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        {/* Setup */}
+        <section className="mx-auto max-w-6xl scroll-mt-20 px-4 py-16 sm:py-24">
           <h2 className="text-center text-3xl font-bold sm:text-4xl">Up and running before kick-off</h2>
           <ol className="mt-10 grid gap-4 md:grid-cols-3">
             {STEPS.map((s, i) => (
