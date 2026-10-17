@@ -8,9 +8,15 @@
 // listings and profiles. Lineups and team sheets keep reading the roster's primary_position, which
 // the bot keeps in step with the primary here.
 
-const POSITIONS = ['GK', 'LB', 'CB', 'RB', 'LWB', 'RWB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'CF', 'ST'];
-// Positions offered on the pickers (and the only ones with Discord roles)
-const ROLE_POSITIONS = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LM', 'RM', 'LW', 'RW', 'ST'];
+// The positions of GafferBot's top formations: the only ones a player can pick, and each has a role
+const POSITIONS = ['ST', 'LW', 'RW', 'CAM', 'CM', 'LM', 'RM', 'LB', 'CB', 'RB', 'GK'];
+const ROLE_POSITIONS = POSITIONS;
+// Button rows on every position picker, attack to defence (Discord allows 5 buttons a row)
+const BUTTON_ROWS = [['ST', 'LW', 'RW', 'CAM'], ['CM', 'LM', 'RM'], ['LB', 'CB', 'RB', 'GK']];
+// Positions players could pick before, and formation spots outside the list, read as their nearest
+// pick: saved tiers, old roles and old panels keep working, and a CM fits a CDM spot.
+const LEGACY_POSITIONS = { CDM: 'CM', LWB: 'LB', RWB: 'RB', CF: 'ST' };
+const LEGACY_ROLE_NAMES = Object.keys(LEGACY_POSITIONS);
 const MAX_SECONDARY = 3;
 const MAX_EMERGENCY = 3;
 const TIERS = ['primary', 'secondary', 'emergency'];
@@ -29,8 +35,12 @@ const SECONDARY_ROLE_RE = /^([A-Z]{2,3}) \(2ND\)$/;
 
 function cleanPos(p) {
   const up = String(p || '').trim().toUpperCase();
-  return POSITIONS.includes(up) ? up : null;
+  const pos = LEGACY_POSITIONS[up] || up;
+  return POSITIONS.includes(pos) ? pos : null;
 }
+
+// Every stored spelling of a position (CM also matches rows saved as CDM before the list changed)
+const storedNames = (pos) => [pos, ...LEGACY_ROLE_NAMES.filter((old) => LEGACY_POSITIONS[old] === pos)];
 
 function uniq(list) {
   const out = [];
@@ -100,6 +110,27 @@ function addPositions(current, { primary, secondary, emergency } = {}) {
   return normalize(next);
 }
 
+// One tap on the button panel: toggles a position in the tier being edited. A position tapped in
+// another tier moves here; a full tier says so instead of dropping an earlier pick. Returns the new
+// tiers and, when nothing changed, why.
+function togglePick(current, tier, pos) {
+  const t = normalize(current);
+  const p = cleanPos(pos);
+  if (!p || !TIERS.includes(tier)) return { tiers: t, note: null };
+  if (tier === 'primary') return { tiers: applyPick(t, 'primary', t.primary === p ? [] : [p]), note: null };
+  const list = t[tier];
+  if (list.includes(p)) return { tiers: normalize({ ...t, [tier]: list.filter((x) => x !== p) }), note: null };
+  const max = tier === 'secondary' ? MAX_SECONDARY : MAX_EMERGENCY;
+  if (list.length >= max) return { tiers: t, note: 'full' };
+  const next = {
+    primary: t.primary === p ? null : t.primary,
+    secondary: t.secondary.filter((x) => x !== p),
+    emergency: t.emergency.filter((x) => x !== p),
+  };
+  next[tier] = [...next[tier], p];
+  return { tiers: normalize(next), note: null };
+}
+
 // Old single-menu panels sent up to three positions at once: first is the primary, the rest secondary
 function fromLegacyPick(current, values) {
   const picked = uniq(values);
@@ -111,12 +142,15 @@ function fromLegacyPick(current, values) {
   });
 }
 
-// Which tier a player covers a position at, or null
+// Which tier a player covers a position at, or null. Formation spots outside the list (CDM, LWB, RWB,
+// CF) count as their nearest pick.
 function tierOf(t, pos) {
   if (!t) return null;
-  if (t.primary === pos) return 'primary';
-  if ((t.secondary || []).includes(pos)) return 'secondary';
-  if ((t.emergency || []).includes(pos)) return 'emergency';
+  const p = cleanPos(pos) || pos;
+  const n = normalize(t);
+  if (n.primary === p) return 'primary';
+  if (n.secondary.includes(p)) return 'secondary';
+  if (n.emergency.includes(p)) return 'emergency';
   return null;
 }
 
@@ -126,9 +160,10 @@ function heldFromRoleNames(names) {
   const secondary = [];
   for (const raw of names || []) {
     const up = String(raw).toUpperCase();
-    if (ROLE_POSITIONS.includes(up)) primary.push(up);
+    const main = cleanPos(up);
+    if (main) primary.push(main);
     const m = up.match(SECONDARY_ROLE_RE);
-    if (m && ROLE_POSITIONS.includes(m[1])) secondary.push(m[1]);
+    if (m && cleanPos(m[1])) secondary.push(cleanPos(m[1]));
   }
   return { primary, secondary };
 }
@@ -162,7 +197,9 @@ function roleChanges(t, heldNames) {
   const wantMain = tiers.primary && ROLE_POSITIONS.includes(tiers.primary) ? [tiers.primary] : [];
   const wantSecond = tiers.secondary.filter((p) => ROLE_POSITIONS.includes(p)).map(secondaryRoleName);
   const want = new Set([...wantMain, ...wantSecond].map((n) => n.toUpperCase()));
-  const all = [...ROLE_POSITIONS, ...ROLE_POSITIONS.map(secondaryRoleName)];
+  // Old position roles (CDM, "CDM (2nd)") come off too once the player's tiers are saved again
+  const names = [...ROLE_POSITIONS, ...LEGACY_ROLE_NAMES];
+  const all = [...names, ...names.map(secondaryRoleName)];
   return {
     add: [...wantMain, ...wantSecond].filter((n) => !held.has(n.toUpperCase())),
     remove: all.filter((n) => held.has(n.toUpperCase()) && !want.has(n.toUpperCase())),
@@ -228,15 +265,17 @@ function createPositionTiers({ supabase }) {
   // Everyone in the server who covers a position, grouped by tier
   async function covering(guildId, pos) {
     const groups = { primary: [], secondary: [], emergency: [] };
-    if (!cleanPos(pos)) return groups;
+    const p = cleanPos(pos);
+    if (!p) return groups;
+    const match = storedNames(p).flatMap((n) => [`primary_position.eq.${n}`, `secondary_positions.cs.{${n}}`, `emergency_positions.cs.{${n}}`]);
     const { data } = await supabase
       .from('player_positions')
       .select('discord_user_id, primary_position, secondary_positions, emergency_positions')
       .eq('guild_id', guildId)
-      .or(`primary_position.eq.${pos},secondary_positions.cs.{${pos}},emergency_positions.cs.{${pos}}`)
+      .or(match.join(','))
       .limit(300);
     for (const row of data || []) {
-      const tier = tierOf(fromRow(row), pos);
+      const tier = tierOf(fromRow(row), p);
       if (tier) groups[tier].push(row.discord_user_id);
     }
     return groups;
@@ -369,6 +408,9 @@ function createPositionTiers({ supabase }) {
 module.exports = {
   POSITIONS,
   ROLE_POSITIONS,
+  LEGACY_POSITIONS,
+  BUTTON_ROWS,
+  cleanPos,
   MAX_SECONDARY,
   MAX_EMERGENCY,
   TIERS,
@@ -379,6 +421,7 @@ module.exports = {
   isEmpty,
   applyPick,
   addPositions,
+  togglePick,
   fromLegacyPick,
   tierOf,
   heldFromRoleNames,

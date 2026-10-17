@@ -132,11 +132,17 @@ const FIT_BORDER: Record<string, string> = {
   none: "border-red-500",
 };
 
+// Players pick from ST, LW, RW, CAM, CM, LM, RM, LB, CB, RB, GK; formation spots and positions saved
+// before that list read as their nearest pick (position-tiers.cjs LEGACY_POSITIONS)
+const NEAREST_PICK: Record<string, string> = { CDM: "CM", LWB: "LB", RWB: "RB", CF: "ST" };
+const pick = (p: string | null | undefined) => (p ? NEAREST_PICK[p] || p : p);
+
 export function tierFor(tiers: PositionTiers | undefined, position: string): "primary" | "secondary" | "emergency" | "none" | null {
   if (!tiers) return null;
-  if (tiers.primary === position) return "primary";
-  if (tiers.secondary.includes(position)) return "secondary";
-  if (tiers.emergency.includes(position)) return "emergency";
+  const at = pick(position);
+  if (pick(tiers.primary) === at) return "primary";
+  if (tiers.secondary.some((p) => pick(p) === at)) return "secondary";
+  if (tiers.emergency.some((p) => pick(p) === at)) return "emergency";
   return "none";
 }
 

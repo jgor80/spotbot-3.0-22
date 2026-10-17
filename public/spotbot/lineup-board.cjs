@@ -7,6 +7,7 @@
 
 const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder } = require('discord.js');
 const G = require('./graphics.cjs');
+const PT = require('./position-tiers.cjs');
 const { kitColor } = require('./studio-preview.cjs');
 const { kitOf, crestUrl } = require('./club-colors.cjs');
 const { FORMATION_SLOTS, FORMATION_COORDS, movePlayer, resizeBoard, boardToSlots, slotsToBoard, groupByPosition, MAX_BENCH } = require('./lineup-autofill.cjs');
@@ -19,14 +20,10 @@ const ANSWER = { yes: '✅', maybe: '❓', no: '❌' };
 // How well the held player fits a spot: comp position, plays it well, emergency cover, or not theirs
 const FIT_EMOJI = { primary: '⭐', secondary: '👍', emergency: '🆘', none: '▫️' };
 const FIT_TEXT = { primary: 'Their comp position', secondary: 'Plays it well', emergency: 'Emergency cover', none: undefined };
+// A CDM, LWB, RWB or CF spot counts as the nearest position players pick (CM, LB, RB, ST)
 function fitFor(player, pos) {
-  if (player?.tiers) {
-    if (player.tiers.primary === pos) return 'primary';
-    if (player.tiers.secondary.includes(pos)) return 'secondary';
-    if (player.tiers.emergency.includes(pos)) return 'emergency';
-    return 'none';
-  }
-  const at = (player?.positions || []).indexOf(pos);
+  if (player?.tiers) return PT.tierOf(player.tiers, pos) || 'none';
+  const at = (player?.positions || []).map((p) => PT.cleanPos(p) || p).indexOf(PT.cleanPos(pos) || pos);
   return at === 0 ? 'primary' : at > 0 ? 'secondary' : 'none';
 }
 

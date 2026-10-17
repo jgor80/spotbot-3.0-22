@@ -16,7 +16,7 @@ const { createChannelSetup } = require('./channel-setup.cjs');
 
 const F = PermissionsBitField.Flags;
 const SERVER_PERMS = [
-  [F.ManageRoles, 'Manage Roles', 'position roles from /manager → Lineups & Spots → Position Roles Panel'],
+  [F.ManageRoles, 'Manage Roles', 'position roles from /manager → Lineups & Spots → Positions Panel'],
   [F.MentionEveryone, 'Mention @everyone, @here and All Roles', 'pinging a role that is not mentionable'],
   [F.ChangeNickname, 'Change Nickname', '/manager → Admin → Brand (nickname)'],
 ];

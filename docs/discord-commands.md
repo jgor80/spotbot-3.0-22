@@ -6,7 +6,7 @@ GafferBot registers four slash commands:
 - **/me** (everyone): the Player Hub, only visible to the person who ran it. Admins can post a shared copy with **/manager → Admin → Post Player Hub**.
 - **/help** and **/setup**.
 
-Every other former command is a panel button. A button that needs input opens a form: players, channels and roles are dropdowns, fixed choices are dropdowns, and lists the old command autocompleted (events, presets, watchlist, EA names) are filled in when the form opens. On submit the button runs the same handler the slash command used (`commandProxy` in panels.cjs), so the behaviour described below is unchanged; the sections below still use the old command names as the names of those actions. Area buttons only work for captains, managers and admins (`isManager`), and actions that used Discord's default permissions (Brand: Manage Server, Position Roles Panel: Manage Roles) check that permission on the button. The old definitions stay in index.cjs as `ACTION_SCHEMAS`, which the forms are built from.
+Every other former command is a panel button. A button that needs input opens a form: players, channels and roles are dropdowns, fixed choices are dropdowns, and lists the old command autocompleted (events, presets, watchlist, EA names) are filled in when the form opens. On submit the button runs the same handler the slash command used (`commandProxy` in panels.cjs), so the behaviour described below is unchanged; the sections below still use the old command names as the names of those actions. Area buttons only work for captains, managers and admins (`isManager`), and actions that used Discord's default permissions (Brand: Manage Server, Positions Panel: Manage Roles) check that permission on the button. The old definitions stay in index.cjs as `ACTION_SCHEMAS`, which the forms are built from.
 
 | Old command | Now | Who |
 |---|---|---|
@@ -57,11 +57,11 @@ Every other former command is a panel button. A button that needs input opens a 
 | `/whoisplaying` | /manager → Lineups & Spots → Who's Playing | Leaders |
 | `/spotblock` | /manager → Lineups & Spots → Block Mover | Leaders |
 | `/autoassign` | /manager → Lineups & Spots → Auto-assign | Leaders |
-| `/pospanel` | /manager → Lineups & Spots → Prefs Panel | Leaders |
+| `/pospanel` | Same as `/positionpanel` (posts the Positions Panel) | Leaders |
 | `/posboard` | /manager → Lineups & Spots → Voice Prefs | Leaders |
 | `/posprefs` | /manager → Lineups & Spots → All Prefs | Leaders |
 | `/syncprefs` | /manager → Lineups & Spots → Prefs From Roles | Leaders |
-| `/positionpanel` | /manager → Lineups & Spots → Position Roles Panel | Leaders |
+| `/positionpanel` | /manager → Lineups & Spots → Positions Panel | Leaders |
 | `/draft` | /manager → Drafts → Start Draft | Leaders |
 | `/draftpanel` | /manager → Drafts → Draft Panel | Leaders |
 | `/draftpick` | /manager → Drafts → Pick Player | Leaders |
