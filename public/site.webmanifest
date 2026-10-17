@@ -1,0 +1,14 @@
+{
+  "name": "GafferBot",
+  "short_name": "GafferBot",
+  "description": "Run your EA SPORTS FC Pro Clubs side from Discord: lineups, availability, EA stats and recruiting.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c111d",
+  "theme_color": "#0c111d",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

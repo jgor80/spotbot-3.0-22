@@ -1,14 +1,10 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
-
+# Public pages are /, /welcome, /terms and /privacy. Everything else is the signed-in app.
 User-agent: *
 Allow: /
+Disallow: /api/
+Disallow: /auth/callback
+Disallow: /link/
+Disallow: /overlay/
+Disallow: /oauth/
+
+Sitemap: https://gafferbot.app/sitemap.xml

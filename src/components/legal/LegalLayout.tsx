@@ -12,7 +12,7 @@ export function LegalLayout({ title, children }: { title: string; children: Reac
   return (
     <div className="min-h-screen bg-background text-foreground">
       <main className="mx-auto max-w-3xl px-4 py-10 sm:py-14">
-        <p className="text-sm text-muted-foreground">GafferBot</p>
+        <Link to="/welcome" className="text-sm text-muted-foreground hover:text-foreground">GafferBot</Link>
         <h1 className="mt-1 text-3xl font-bold">{title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">Last updated {LEGAL_UPDATED}</p>
         <div className="mt-8 space-y-6 leading-relaxed [&_h2]:mt-8 [&_h2]:text-xl [&_h2]:font-semibold [&_li]:ml-5 [&_li]:list-disc [&_ul]:space-y-1 [&_a]:text-primary [&_a]:underline">
