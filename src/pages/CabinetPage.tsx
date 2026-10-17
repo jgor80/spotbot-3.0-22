@@ -6,6 +6,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ProPhotoUploads } from "@/components/ProPhotoUploads";
 
 type BinderCard = { id: string; style: string; name: string; created_at: string; front_url: string | null; back_url: string | null };
 type SeasonRow = { discord_user_id: string; season_code: string; matches: number; goals: number; assists: number; clean_sheets: number; tackles: number; interceptions: number; motm: number };
@@ -99,12 +100,13 @@ export default function CabinetPage() {
       <div className="space-y-6">
         <div>
           <h1 className="font-display text-3xl font-bold">Trophy Room</h1>
-          <p className="text-muted-foreground">Your card binder and the club's all-time trophy cabinet.</p>
+          <p className="text-muted-foreground">Your card binder, your pro photos and the club's all-time trophy cabinet.</p>
         </div>
         <Tabs defaultValue="binder">
           <TabsList>
             <TabsTrigger value="binder">My Binder</TabsTrigger>
             <TabsTrigger value="cabinet">Trophy Cabinet</TabsTrigger>
+            <TabsTrigger value="photos">My Pro Photos</TabsTrigger>
           </TabsList>
 
           <TabsContent value="binder" className="mt-6">
@@ -119,6 +121,10 @@ export default function CabinetPage() {
                 {binder.data.map((c) => <FlipCard key={c.id} card={c} />)}
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="photos" className="mt-6">
+            <ProPhotoUploads />
           </TabsContent>
 
           <TabsContent value="cabinet" className="mt-6 space-y-6">

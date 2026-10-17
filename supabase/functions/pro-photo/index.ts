@@ -1,8 +1,10 @@
 // Ingests an in-game Pro Clubs photo for a player: checks it with AI vision, stores it, and saves
-// what the AI could read from the screen (position, overall, archetype). Called only by the bot.
+// what the AI could read from the screen (position, overall, archetype). Called by the bot (Discord
+// attachments) and by signed-in web users for their own pro (Trophy Room → My Pro Photos).
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
 import { ManageBody, managePhotos } from "./manage.ts";
+import { identifyCaller } from "../_shared/auth.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -40,13 +42,23 @@ const schema = {
   },
 };
 
+// The web app: the member's own photos only, whoever the body names. guild_id is optional; when given it
+// must be a server they can see, and tags the upload like a Discord one from that server.
+const WebBody = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("web_upload"), image_b64: z.string().min(100).max(12_000_000), content_type: z.enum(["image/png", "image/jpeg", "image/webp"]), shot: z.enum(["headshot", "celebration"]).optional(), guild_id: z.string().regex(/^\d{5,25}$/).optional() }),
+  z.object({ action: z.literal("web_list") }),
+  z.object({ action: z.literal("web_delete"), photo_asset_id: z.string().uuid() }),
+]);
+const WEB_GUILD = "web-upload";
+
 function safeEqual(a: string, b: string) {
   if (a.length !== b.length) return false;
   let r = 0;
   for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return r === 0;
 }
-const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
+const headers = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bot-secret" };
+const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers });
 
 async function analyze(dataUrl: string) {
   const res = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
@@ -96,9 +108,56 @@ async function analyze(dataUrl: string) {
   return JSON.parse(text);
 }
 
+// The signed-in web user's verified Discord account, or null
+async function webMember(req: Request): Promise<string | null> {
+  const caller = await identifyCaller(req, db);
+  if (caller?.kind !== "user") return null;
+  const { data: link } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).maybeSingle();
+  return link?.discord_user_id ?? null;
+}
+
+async function handleWeb(req: Request, input: unknown) {
+  const member = await webMember(req);
+  if (!member) return json({ error: "Sign in with Discord to manage your pro photos." }, 401);
+  const parsed = WebBody.safeParse(input);
+  if (!parsed.success) return json({ error: "Invalid request." }, 400);
+  const b = parsed.data;
+  if (b.action === "web_list") {
+    const { data, error } = await db.from("pro_photo_assets").select("id,storage_path,image_url,pose,analysis,created_at")
+      .eq("discord_user_id", member).eq("source_kind", "upload").order("created_at", { ascending: false }).limit(30);
+    if (error) return json({ error: "Couldn't load your photos." }, 500);
+    const photos = await Promise.all((data ?? []).map(async (p) => ({
+      id: p.id, pose: p.pose, description: p.analysis?.description ?? null, created_at: p.created_at,
+      image_url: p.storage_path ? (await db.storage.from("pro-photos").createSignedUrl(p.storage_path, 3600)).data?.signedUrl ?? null : p.image_url,
+    })));
+    return json({ photos });
+  }
+  if (b.action === "web_delete") {
+    const result = await managePhotos(db, { action: "delete", discord_user_id: member, requester_id: member, photo_asset_id: b.photo_asset_id });
+    return json(result.body, result.status);
+  }
+  let guildId = WEB_GUILD;
+  if (b.guild_id) {
+    // Same check the web app's own reads use: the member can see that server
+    const userDb = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") || req.headers.get("apikey") || "", { global: { headers: { Authorization: req.headers.get("authorization") ?? "" } } });
+    const { data: allowed } = await userDb.rpc("user_has_guild_access", { check_guild_id: b.guild_id });
+    if (allowed === true) guildId = b.guild_id;
+  }
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    bytes = Uint8Array.from(atob(b.image_b64), (c) => c.charCodeAt(0));
+  } catch {
+    return json({ error: "That file couldn't be read." }, 400);
+  }
+  return ingest({ guild_id: guildId, discord_user_id: member, submitted_by: member, bytes, type: b.content_type, shot: b.shot });
+}
+
 Deno.serve(async (req) => {
-  if (!SECRET || !safeEqual(req.headers.get("x-bot-secret") ?? "", SECRET)) return json({ error: "unauthorized" }, 401);
+  if (req.method === "OPTIONS") return new Response(null, { headers });
   const input = await req.json().catch(() => null);
+  if (!SECRET || !safeEqual(req.headers.get("x-bot-secret") ?? "", SECRET)) {
+    return typeof input?.action === "string" && input.action.startsWith("web_") ? handleWeb(req, input) : json({ error: "unauthorized" }, 401);
+  }
   if (input?.action === "list" || input?.action === "delete") {
     const management = ManageBody.safeParse(input);
     if (!management.success) return json({ error: "Invalid photo management request." }, 400);
@@ -112,7 +171,11 @@ Deno.serve(async (req) => {
   const img = await fetch(image_url);
   const type = (img.headers.get("content-type") || "").split(";")[0];
   if (!img.ok || !/^image\/(png|jpe?g|webp)$/.test(type)) return json({ error: "Send a PNG, JPG or WebP image." }, 400);
-  const bytes = new Uint8Array(await img.arrayBuffer());
+  return ingest({ guild_id, discord_user_id, submitted_by, bytes: new Uint8Array(await img.arrayBuffer()), type, shot });
+});
+
+// Check, store and record one upload: the same rules for Discord and the web
+async function ingest({ guild_id, discord_user_id, submitted_by, bytes, type, shot }: { guild_id: string; discord_user_id: string; submitted_by?: string; bytes: Uint8Array<ArrayBuffer>; type: string; shot?: "headshot" | "celebration" }) {
   if (bytes.length > MAX_BYTES) return json({ error: "Image is over 8 MB." }, 400);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   const sourceKey = Array.from(new Uint8Array(digest), (v) => v.toString(16).padStart(2, "0")).join("");
@@ -158,4 +221,4 @@ Deno.serve(async (req) => {
   }, { onConflict: "discord_user_id" });
   if (error) return json({ error: "Couldn't save the photo." }, 500);
   return json({ accepted: true, image_url: signed.data.signedUrl, ea_username: prof?.ea_username ?? null, analysis: { ...analysis, position: pos, overall: ovr } });
-});
+}
