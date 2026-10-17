@@ -303,7 +303,7 @@ export default function AuthPage() {
       <div className="w-full max-w-md rounded-xl border bg-card/60 p-4 text-center">
         <p className="text-sm text-muted-foreground">New to GafferBot? See what it does for your club.</p>
         <Button asChild variant="outline" className="mt-3 w-full">
-          <Link to="/welcome">
+          <Link to="/">
             Learn more
             <ArrowRight className="ml-2 h-4 w-4" />
           </Link>
