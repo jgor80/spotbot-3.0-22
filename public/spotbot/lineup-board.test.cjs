@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { movePlayer, resizeBoard, boardFromNames, boardToSlots, slotsToBoard, MAX_BENCH, FORMATION_SLOTS } = require('./lineup-autofill.cjs');
-const { boardSvg, renderBoard, createLineupBoard, fitFor } = require('./lineup-board.cjs');
+const { movePlayer, resizeBoard, boardFromNames, boardToSlots, slotsToBoard, groupByPosition, MAX_BENCH, FORMATION_SLOTS, FORMATION_COORDS } = require('./lineup-autofill.cjs');
+const { boardSvg, renderBoard, createLineupBoard, fitFor, squadMenu, formationMenu } = require('./lineup-board.cjs');
 
 const board = (starters, bench = []) => ({ starters: [...starters, ...Array(11 - starters.length).fill(null)], bench });
 
@@ -104,4 +104,52 @@ test('spot fit follows position tiers: comp, plays well, emergency', () => {
   assert.deepStrictEqual(['ST', 'CAM', 'CM', 'GK'].map((pos) => fitFor(p, pos)), ['primary', 'secondary', 'emergency', 'none']);
   // Without tiers, the ranked spot preferences stand in
   assert.deepStrictEqual(['CB', 'RB', 'ST'].map((pos) => fitFor({ positions: ['CB', 'RB'] }, pos)), ['primary', 'secondary', 'none']);
+});
+
+test('squad list groups by primary position in team-sheet order, best rated first, out players last', () => {
+  const groups = groupByPosition([
+    { id: 'st1', position: 'ST', rating: 70 },
+    { id: 'st2', position: 'ST', rating: 85 },
+    { id: 'gk', position: 'GK', rating: 60 },
+    { id: 'cb', position: 'CB', rating: 75, out: true },
+    { id: 'cb2', position: 'CB', rating: 65 },
+    { id: 'x', position: null, rating: 99 },
+  ]);
+  assert.deepStrictEqual(groups.map((g) => g.position), ['GK', 'CB', 'ST', 'Any']);
+  assert.deepStrictEqual(groups[1].players.map((p) => p.id), ['cb2', 'cb']);
+  assert.deepStrictEqual(groups[2].players.map((p) => p.id), ['st2', 'st1']);
+});
+
+test('Discord bring-in menu keeps every position when the squad is bigger than 25', () => {
+  const info = new Map();
+  const off = [];
+  for (const [pos, n] of [['GK', 4], ['CB', 12], ['CM', 12], ['ST', 6]]) {
+    for (let i = 0; i < n; i++) {
+      const id = `${pos}${i}`;
+      info.set(id, { tiers: { primary: pos }, positions: [pos], rating: 60 + i });
+      off.push({ id, answer: null });
+    }
+  }
+  const menu = squadMenu(off, info);
+  assert.ok(menu.length <= 25);
+  assert.deepStrictEqual([...new Set(menu.map((p) => p.position))], ['GK', 'CB', 'CM', 'ST']);
+  assert.strictEqual(menu.find((p) => p.position === 'ST').id, 'ST5'); // best striker first
+});
+
+test('the in-game 4-3-3 variants are available and the formation menu pages past 25', () => {
+  for (const f of ['4-3-3 HOLDING', '4-3-3 DEFEND', '4-3-3 FALSE 9']) {
+    assert.strictEqual(FORMATION_SLOTS[f]?.length, 11, f);
+    assert.strictEqual(FORMATION_COORDS[f]?.length, 11, f);
+  }
+  const all = Object.keys(FORMATION_SLOTS);
+  const first = formationMenu(all[0]);
+  assert.ok(first.options.length <= 25);
+  assert.ok(first.pages >= 2);
+  const last = formationMenu(all[all.length - 1]);
+  assert.strictEqual(last.page, last.pages - 1);
+  assert.ok(last.options.some((o) => o.default && o.value === all[all.length - 1]));
+  // Every formation is reachable on some page
+  const seen = new Set();
+  for (let p = 0; p < first.pages; p++) for (const o of formationMenu(all[0], p).options) seen.add(o.value);
+  for (const f of all) assert.ok(seen.has(f), f);
 });
