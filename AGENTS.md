@@ -13,6 +13,7 @@
 - Season sets: `player_season_archive` (never purged) feed backs (`graphics-card-back.cjs`) plus exact-club EA total.
 - Hidden EA stats come from match_event_aggregate codes, decoded identically in ea-player-stats.cjs and backfill_advanced_player_stats() (hourly); codes follow the refined OurProClub mapping in docs/ea-event-codes.md (deduplicated hockey assists, derived net possession and defensive stops), always shown as estimates.
 - Graphics Studio rules live in public/spotbot/AGENTS.md.
+- AI images default to gpt-image-1.5 (AI_IMAGE_MODEL; gpt-image-1 is the fallback), send at most AI_IMAGE_REFERENCES (default 2) of a player's photos, and log model, tokens and cost per render in `ai_image_renders`. Studio cards reuse the player's last art for the same `reuse_key` (style, kit, photo, number, framing; not stats, name, card frame or layout) unless the member picks Art: New, a newer upload exists or a reference photo was deleted; reused art is display-only.
 - Club-art filters original uploads before limiting queries and sends a stable face anchor before pose references; generated assets are display-only to prevent cumulative likeness drift.
 - Recruiting artwork is aspect-fitted in a separate lettering-free region with decorative frames behind it, so generated groups are never cropped or covered by poster bands.
 - The /setup wizard (button → one modal in `club-setup.cjs`) saves EA link, accent colour and `club.kit` through the same helpers as /setclub and /brand, so onboarding never diverges from the individual commands.

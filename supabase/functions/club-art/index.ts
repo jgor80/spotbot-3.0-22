@@ -6,6 +6,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
 import { rankPhotos, identityInstructions } from "./photo-selection.ts";
 import { teamPrompt, appendReferences, isRearFacing } from "./team-art.ts";
+import { referenceLimit, renderCost } from "./render-cost.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -45,7 +46,13 @@ const Body = z.object({
   kit_number_override: z.number().int().min(1).max(99).optional(),
   // Member-chosen upload to base a single-player card on.
   photo_asset_id: z.string().uuid().optional(),
+  // Studio's key for "the same art": saved with a card so a later card can reuse it (graphics-studio.cjs)
+  reuse_key: z.string().regex(/^[a-f0-9]{16,64}$/).optional(),
+  // The card layout drawn around the art, saved with it so a reused card keeps a matching layout
+  layout: z.enum(["lower-third", "editorial", "side-panel"]).optional(),
 });
+
+const MAX_REFERENCES = referenceLimit(Deno.env.get("AI_IMAGE_REFERENCES"));
 
 const STYLE: Record<string, string> = {
   esports: "ultra esports poster look: dramatic neon rim light in the club colours, volumetric smoke, lens flares, sparks, grunge halftone and torn-paper texture, deep black shadows, high contrast",
@@ -143,7 +150,7 @@ async function proPhoto(b: z.infer<typeof Body>, team = false): Promise<{ file: 
       files.push(new File([await res.arrayBuffer()], `original-${files.length + 1}.${type.split("/")[1]}`, { type }));
       assetIds.push(photo.id);
       descriptions.push(description);
-      if (files.length >= (team ? 1 : 3)) break;
+      if (files.length >= (team ? 1 : MAX_REFERENCES)) break;
     } catch { /* Try another saved photo when a reference is no longer reachable. */ }
   }
   const file = files[0];
@@ -209,6 +216,16 @@ Deno.serve(async (req) => {
   }
   const out = await res.json().catch(() => null);
   const b64 = out?.data?.[0]?.b64_json;
+  // Log what the render really cost (self-hosted routing says which model ran in x-ai-model)
+  const model = res.headers.get("x-ai-model") || MODEL.replace(/^openai\//, "");
+  const cost = renderCost(model, out?.usage);
+  const referenceCount = refs.length || found?.files.length || 0;
+  console.log(`[club-art] ${b.kind}/${b.style} on ${model}: ${referenceCount} reference(s)${cost ? `, ${cost.image_tokens} image + ${cost.text_tokens} text in, ${cost.output_tokens} out${cost.cost_usd !== null ? `, $${cost.cost_usd}` : ""}` : ", no usage returned"}`);
+  await db.from("ai_image_renders").insert({
+    guild_id: b.guild_id ?? null, discord_user_id: b.discord_user_id ?? null, kind: b.kind, style: b.style, model,
+    quality: out?.quality ?? res.headers.get("x-ai-quality") ?? null, size, reference_count: referenceCount, ok: Boolean(b64),
+    text_tokens: cost?.text_tokens ?? null, image_tokens: cost?.image_tokens ?? null, output_tokens: cost?.output_tokens ?? null, cost_usd: cost?.cost_usd ?? null,
+  }).then(({ error }) => { if (error) console.warn(`[club-art] render log failed: ${error.message}`); }, () => {});
   if (!b64) return json({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
   let artworkSaved = !b.discord_user_id;
   if (!teamIds.length && b.discord_user_id && ref) {
@@ -224,7 +241,8 @@ Deno.serve(async (req) => {
         const { error } = await db.from("pro_photo_assets").insert({
         discord_user_id: b.discord_user_id, guild_id: "graphics-studio", image_url: signed.data.signedUrl,
         storage_path: path, source_key: sourceKey, source_kind: "generated", graphic_kind: b.kind,
-         pose: b.pose, analysis: { style: b.style, composition: b.composition, club_name: b.club_name, reference_asset_ids: found?.assetIds },
+         pose: b.pose, analysis: { style: b.style, composition: b.composition, club_name: b.club_name, reference_asset_ids: found?.assetIds,
+           reuse_key: b.reuse_key ?? null, layout: b.layout ?? null, kit_number: kitNumber, model },
         });
         artworkSaved = !error;
       }
