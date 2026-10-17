@@ -17,6 +17,8 @@ const CHRONICLE_TZ = 'America/Chicago';
 const EDITIONS = {
   afternoon: { hour: 15, label: 'AFTERNOON EDITION', emoji: '☀️', windowH: 15 },
   overnight: { hour: 0, label: 'FINAL EDITION', emoji: '🌙', windowH: 24 },
+  // Printed by autopilot when a club's voice session ends, covering exactly that session's games
+  session: { label: 'SESSION EDITION', emoji: '🎙️' },
 };
 
 const n = (v) => Number(v) || 0;
@@ -395,7 +397,7 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
     .setAuthor({ name: `📰 ${id.paper.toUpperCase()} · ${ed.emoji} ${ed.label}` })
     .setTitle(headline(club.name, matches, seed))
     .setDescription(`*${dateText} · From the beat desk*\n\n${lede(club.name, matches, stars, seed)}`)
-    .setColor(edition === 'overnight' ? 0x2b2d31 : 0xe8d9b5)
+    .setColor(edition === 'afternoon' ? 0xe8d9b5 : 0x2b2d31)
     .setTimestamp(now);
   if (logoUrl) embed.setThumbnail(logoUrl);
 
@@ -478,7 +480,9 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
     embed.addFields({ name: "🗓️ TONIGHT'S SLATE", value: 'Nothing on the schedule yet. Managers: post a session with /manager.' });
   }
 
-  embed.setFooter({ text: 'The Chronicle prints at 3 PM and midnight Central. /autopilot to change where it runs.' });
+  embed.setFooter({ text: edition === 'session'
+    ? 'Session edition: printed when the club voice channel emptied. /autopilot to change where it runs.'
+    : 'The Chronicle prints at 3 PM and midnight Central. /autopilot to change where it runs.' });
   if (image) {
     embed.setImage('attachment://chronicle.png');
     return { embeds: [embed], files: [{ attachment: image, name: 'chronicle.png' }], allowedMentions: { parse: [] } };

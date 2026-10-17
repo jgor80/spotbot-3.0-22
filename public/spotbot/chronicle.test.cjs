@@ -149,3 +149,26 @@ test('postgame copy keeps Italian lines to the Italian voice', () => {
     assert.doesNotMatch(matchLede('Calcio Roma', m, i, british), /lapdogs|howled/);
   }
 });
+
+test('a voice session prints its own edition, and the midnight paper skips games it covered', async () => {
+  const { createAutopilot } = require('./autopilot.cjs');
+  const db = { from: () => { const q = { select: () => q, eq: () => q, gte: () => q, lte: () => q, order: () => q, limit: () => Promise.resolve({ data: [] }) }; return q; } };
+  const early = game('e1', 3, 'loss', 0, 2, 'Wolves Town');
+  const session = [game('s1', 1, 'win', 2, 0), game('s2', 0.5, 'draw', 1, 1)];
+  const ap = createAutopilot({
+    supabase: db,
+    events: { getClient: () => null, serverPrefs: async () => ({}), onTick: () => {}, onClose: () => {} },
+    loadMatches: async () => [early, ...session],
+  });
+  const at = new Date(Date.UTC(2026, 9, 10, 2));
+  const paper = await ap.buildEdition('g1', club, 'session', at, session);
+  const e = paper.embeds[0].toJSON();
+  assert.match(e.author.name, /SESSION EDITION/);
+  assert.match(e.footer.text, /voice channel emptied/);
+  const covered = { ...club, autopilot: { chronicle_covered_ids: ['s1', 's2'] } };
+  const midnight = await ap.buildEdition('g1', covered, 'overnight', new Date(at.getTime() + 3600000));
+  const box = midnight.embeds[0].toJSON().fields.find((f) => f.name.includes('BOX SCORES'));
+  assert.ok(box && !/Rivals FC/.test(box.value) && /Wolves Town/.test(box.value), 'only the game before the session is printed again');
+  const allCovered = { ...club, autopilot: { chronicle_covered_ids: ['e1', 's1', 's2'] } };
+  assert.equal(await ap.buildEdition('g1', allCovered, 'overnight', new Date(at.getTime() + 3600000)), null);
+});
