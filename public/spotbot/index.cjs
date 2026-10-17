@@ -68,6 +68,7 @@ const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
 const { createAutoLink } = require('./auto-link.cjs');
 const { createXboxLink } = require('./xbox-link.cjs');
+const { createPresenceLog } = require('./xbox-presence-log.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
 const permCheck = require('./perm-check.cjs');
 const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
@@ -4135,6 +4136,8 @@ client.once(Events.ClientReady, async (c) => {
   // Find Xbox accounts for Xbox players a few at a time (OpenXBL is rate-limited)
   setInterval(() => xboxLink.backfill().catch((e) => console.error('[xbox-link]', e.message)), 10 * 60 * 1000);
   setTimeout(() => xboxLink.backfill().catch(() => {}), 60 * 1000);
+  // Save what Xbox shows for players in voice, to learn whether FC puts score/minute there
+  createPresenceLog({ client, supabase }).start();
   // Pick up players who already hold position roles (runs in the background, one server at a time)
   setTimeout(async () => {
     for (const guild of c.guilds.cache.values()) await roster.syncGuildPositions(guild).catch(() => {});
