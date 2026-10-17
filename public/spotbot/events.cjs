@@ -18,6 +18,7 @@ const T = require('./event-time.cjs');
 const { FORMATION_SLOTS } = require('./lineup-autofill.cjs');
 const { ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const B = require('./event-board.cjs');
+const PT = require('./position-tiers.cjs');
 const { clubAccent, crestUrl } = require('./club-colors.cjs');
 
 // "433", "4-3-3", "4-3-3 flat" -> "4-3-3 FLAT"
@@ -762,16 +763,25 @@ function createEvents(deps) {
 
   // ---------- Respond ----------
 
+  // The same position buttons as My Positions. The picks so far ride in each button's id, so a tap
+  // needs no stored state: tapping toggles a position, Sign up saves the picks.
   function positionPicker(eventId, current = []) {
-    return new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(`ev_pos:${eventId}`)
-        .setPlaceholder(`Which positions can you play? (up to ${MAX_SIGNUP_POSITIONS})`)
-        .setMinValues(1)
-        .setMaxValues(MAX_SIGNUP_POSITIONS)
-        .addOptions(POSITIONS.map((p) => ({ label: p, value: p, default: current.includes(p) })))
-    );
+    const sel = current.join('.');
+    const rows = PT.BUTTON_ROWS.map((row) => new ActionRowBuilder().addComponents(...row.map((p) => new ButtonBuilder()
+      .setCustomId(`ev_posb:${eventId}:${sel}:${p}`)
+      .setLabel(p)
+      .setEmoji(current.includes(p) ? '✅' : '▫️')
+      .setStyle(current.includes(p) ? ButtonStyle.Success : ButtonStyle.Secondary))));
+    rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder()
+      .setCustomId(`ev_posok:${eventId}:${sel}`)
+      .setLabel(current.length ? `Sign up at ${current.join(', ')}` : 'Pick at least one position')
+      .setEmoji('✅')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(!current.length)));
+    return rows;
   }
+  const signupPrompt = (event) => `🎯 **${event.title}**: which positions are you signing up for? Tap up to ${MAX_SIGNUP_POSITIONS}, then Sign up.`;
+  const pickedFrom = (sel) => [...new Set(String(sel || '').split('.').map(PT.cleanPos).filter(Boolean))].slice(0, MAX_SIGNUP_POSITIONS);
 
   async function saveResponse(event, userId, response, position = null) {
     const { error } = await supabase.from('player_availability').upsert(
@@ -788,9 +798,19 @@ function createEvents(deps) {
     if (error) throw new Error(error.message);
   }
 
-  // The player's usual positions, best first: roster, then /myprefs
+  // The player's usual positions, best first: their position tiers, then roster, then older ranked picks
   async function usualPositions(event, userId) {
     const found = [];
+    const { data: tiers } = await supabase
+      .from('player_positions')
+      .select('primary_position, secondary_positions, emergency_positions')
+      .eq('guild_id', event.guild_id)
+      .eq('discord_user_id', userId)
+      .maybeSingle();
+    if (tiers) {
+      const t = PT.normalize(tiers);
+      found.push(t.primary, ...t.secondary);
+    }
     const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
     if (club?.team_id) {
       const { data } = await supabase
@@ -808,7 +828,7 @@ function createEvents(deps) {
       .eq('user_id', userId)
       .maybeSingle();
     found.push(...(prefs?.preferences || []));
-    return [...new Set(found.filter((p) => POSITIONS.includes(p)))].slice(0, MAX_SIGNUP_POSITIONS);
+    return [...new Set(found.map(PT.cleanPos).filter(Boolean))].slice(0, MAX_SIGNUP_POSITIONS);
   }
 
   async function handleResponse(interaction, response, eventId) {
@@ -820,8 +840,8 @@ function createEvents(deps) {
     if (response === 'yes' && event.position_signup) {
       const current = await usualPositions(event, interaction.user.id);
       return interaction.reply({
-        content: `🎯 **${event.title}**: which positions are you signing up for? Pick up to ${MAX_SIGNUP_POSITIONS}.`,
-        components: [positionPicker(event.id, current)],
+        content: signupPrompt(event),
+        components: positionPicker(event.id, current),
         flags: 64,
       });
     }
@@ -841,10 +861,23 @@ function createEvents(deps) {
     }
   }
 
-  async function handlePositionPick(interaction, eventId) {
+  // A position button tap: toggle it in the picks shown (a fourth pick replaces the oldest)
+  async function handlePositionToggle(interaction, eventId, sel, pos) {
     const event = await loadEvent(eventId);
     if (!event || event.closed || (await isLocked(event))) return interaction.update({ content: '❌ That event is closed.', components: [] });
-    const picked = POSITIONS.filter((p) => interaction.values.includes(p)).slice(0, MAX_SIGNUP_POSITIONS);
+    const current = pickedFrom(sel);
+    const p = PT.cleanPos(pos);
+    let next = current.includes(p) ? current.filter((x) => x !== p) : [...current, p].filter(Boolean);
+    if (next.length > MAX_SIGNUP_POSITIONS) next = next.slice(-MAX_SIGNUP_POSITIONS);
+    return interaction.update({ content: signupPrompt(event), components: positionPicker(event.id, next) });
+  }
+
+  // Sign up from the buttons (`sel`), or from the dropdown on pickers sent before the buttons
+  async function handlePositionPick(interaction, eventId, sel = null) {
+    const event = await loadEvent(eventId);
+    if (!event || event.closed || (await isLocked(event))) return interaction.update({ content: '❌ That event is closed.', components: [] });
+    const picked = sel != null ? pickedFrom(sel) : pickedFrom((interaction.values || []).join('.'));
+    if (!picked.length) return interaction.update({ content: signupPrompt(event), components: positionPicker(event.id, []) });
     try {
       await saveResponse(event, interaction.user.id, 'yes', picked.join(','));
     } catch (err) {
@@ -1136,7 +1169,7 @@ function createEvents(deps) {
       await supabase.from('player_availability').delete().eq('event_id', event.id).eq('discord_user_id', user.id);
     } else {
       const position = interaction.options.getString('position');
-      const picked = position ? position.toUpperCase().split(/[\s,/]+/).filter((p) => POSITIONS.includes(p)).slice(0, MAX_SIGNUP_POSITIONS).join(',') : null;
+      const picked = position ? pickedFrom(position.toUpperCase().split(/[\s,/]+/).join('.')).join(',') : null;
       try {
         await saveResponse(event, user.id, answer, picked || null);
       } catch (err) {
@@ -1620,9 +1653,11 @@ function createEvents(deps) {
   }
 
   async function handleComponent(interaction) {
-    const [action, a, b] = interaction.customId.split(':');
+    const [action, a, b, c] = interaction.customId.split(':');
     if (!action.startsWith('ev_')) return false;
     if (action === 'ev_r' && RESPONSES[a]) await handleResponse(interaction, a, b);
+    else if (action === 'ev_posb') await handlePositionToggle(interaction, a, b, c);
+    else if (action === 'ev_posok') await handlePositionPick(interaction, a, b || '');
     else if (action === 'ev_pos') await handlePositionPick(interaction, a);
     else if (action === 'ev_remind') await handleRemindButton(interaction, a);
     else if (action === 'ev_note') await handleNoteButton(interaction, a);

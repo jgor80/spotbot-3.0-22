@@ -32,6 +32,18 @@ No position appears in more than one tier. Codes are the usual 15: GK LB CB RB L
 
 ## Where players and managers set them
 
-- `/me → My Positions` (also on the web Control Room) and the Position Roles panel (`/manager → Lineups`): three menus.
+- `/me → My Positions` (also on the web Control Room) and the Positions Panel (`/manager → Lineups & Spots`):
+  position buttons, the one picker everywhere. The pickable positions are the ones GafferBot's top
+  formations use: ST, LW, RW, CAM, CM, LM, RM, LB, CB, RB, GK (rows of 5 at most, Discord's limit).
+  On the shared panel a tap sets your comp position and opens your own editor; in the editor the top
+  row picks the tier (Comp position, Plays well, Emergency) and each tap toggles a position, coloured
+  green (comp), blue (plays well) or red (emergency). Old panels with dropdowns still work and turn
+  into the button panel when used.
+- Older positions read as their nearest pick everywhere (`LEGACY_POSITIONS`: CDM → CM, LWB → LB,
+  RWB → RB, CF → ST), so saved tiers, old roles and old panels keep working; a CM fits a CDM spot in
+  lineups and spot auto-assign. Old position roles come off when the player's tiers are next saved.
 - `/manager → Roster & Squad → Add Player`: position, secondary and emergency each add to the player's tiers.
-- The older ranked spot preferences (`/me → Spot Preferences`) still drive voice spot auto-assign and drafts.
+- Voice spot auto-assign, the position board and drafts read the same tiers (comp, then played well,
+  then emergency); players who never set tiers fall back to their position roles and older ranked
+  picks. Spot Preferences, the Prefs Panel and Positions From Roles all open or fill these tiers.
+- Event sign-ups with positions use the same buttons, pre-picked from the player's tiers.

@@ -72,9 +72,45 @@ test('roleChanges: main role for the comp position, (2nd) roles for played well,
   assert.deepEqual(remove.sort(), ['CB', 'CM', 'GK', 'LW (2nd)'].sort());
 });
 
-test('roleChanges: positions without a role (CF, LWB) are skipped', () => {
-  const { add } = T.roleChanges({ primary: 'CF', secondary: ['LWB', 'ST'] }, []);
-  assert.deepEqual(add, ['ST (2nd)']);
+test('the picker offers only the top-formation positions', () => {
+  assert.deepEqual([...T.POSITIONS].sort(), ['CAM', 'CB', 'CM', 'GK', 'LB', 'LM', 'LW', 'RB', 'RM', 'RW', 'ST']);
+});
+
+test('every formation spot maps onto a pickable position', () => {
+  const formations = require('./formations.json');
+  for (const [name, f] of Object.entries(formations)) {
+    for (const pos of f.positions) assert.ok(T.cleanPos(pos), `${name}: ${pos}`);
+  }
+});
+
+test('positions saved before the list changed read as their nearest pick', () => {
+  const t = T.normalize({ primary: 'CDM', secondary: ['CM', 'LWB', 'CF'], emergency: ['RWB'] });
+  assert.deepEqual(t, { primary: 'CM', secondary: ['LB', 'ST'], emergency: ['RB'] });
+  assert.equal(T.tierOf({ primary: 'CM', secondary: [], emergency: [] }, 'CDM'), 'primary');
+  assert.equal(T.tierOf({ primary: 'ST', secondary: ['LB'], emergency: [] }, 'LWB'), 'secondary');
+});
+
+test('old position roles count as their nearest pick and are swapped out', () => {
+  assert.deepEqual(T.heldFromRoleNames(['CDM', 'CF (2nd)', 'Members']), { primary: ['CM'], secondary: ['ST'] });
+  const { add, remove } = T.roleChanges({ primary: 'CM', secondary: ['ST'] }, ['CDM', 'CF (2nd)']);
+  assert.deepEqual(add, ['CM', 'ST (2nd)']);
+  assert.deepEqual(remove.sort(), ['CDM', 'CF (2nd)']);
+});
+
+test('button taps toggle positions within a tier', () => {
+  let r = T.togglePick({}, 'primary', 'ST');
+  assert.deepEqual(r.tiers, { primary: 'ST', secondary: [], emergency: [] });
+  r = T.togglePick(r.tiers, 'primary', 'ST');
+  assert.equal(r.tiers.primary, null);
+  r = T.togglePick({ primary: 'ST', secondary: ['LW'], emergency: ['CB'] }, 'secondary', 'CB');
+  assert.deepEqual(r.tiers, { primary: 'ST', secondary: ['LW', 'CB'], emergency: [] });
+  r = T.togglePick(r.tiers, 'secondary', 'LW');
+  assert.deepEqual(r.tiers, { primary: 'ST', secondary: ['CB'], emergency: [] });
+  r = T.togglePick({ primary: 'ST', secondary: ['LW', 'RW', 'CAM'] }, 'secondary', 'CM');
+  assert.equal(r.note, 'full');
+  assert.deepEqual(r.tiers.secondary, ['LW', 'RW', 'CAM']);
+  r = T.togglePick({ primary: 'ST', secondary: ['LW'] }, 'emergency', 'LW');
+  assert.deepEqual(r.tiers, { primary: 'ST', secondary: [], emergency: ['LW'] });
 });
 
 test('formatting', () => {
