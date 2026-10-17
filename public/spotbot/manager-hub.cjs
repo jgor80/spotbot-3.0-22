@@ -21,8 +21,10 @@ const {
   isSeparateCompetition,
   playerKey,
   winPct,
+  summarizeDivision,
 } = require('./club-insights.cjs');
 const { areaSelect } = require('./panels.cjs');
+const { loadDivisionHistory, buildDivisionView, hubDivisionLine } = require('./division-progress.cjs');
 
 const HUB_COLOR = 0x5865f2;
 const MATCH_LIMIT = 200;
@@ -129,7 +131,10 @@ function createManagerHub(deps) {
   // ---------- Hub ----------
 
   async function buildHub(guildId, state, club) {
-    const all = await loadMatches(guildId, club.key).catch(() => []);
+    const [all, divisionHistory] = await Promise.all([
+      loadMatches(guildId, club.key).catch(() => []),
+      club.ea_club_id ? loadDivisionHistory(supabase, guildId, club.key).catch(() => []) : [],
+    ]);
     // Tournament and BYOT games keep their own record
     const matches = all.filter((m) => !isSeparateCompetition(m.competition));
     const separate = all.filter((m) => isSeparateCompetition(m.competition));
@@ -150,6 +155,8 @@ function createManagerHub(deps) {
       .setFooter({ text: 'Updated' })
       .setTimestamp(new Date());
 
+    const divisionLine = divisionHistory.length ? hubDivisionLine(summarizeDivision(divisionHistory, all)) : null;
+    if (divisionLine) embed.addFields({ name: 'Division', value: divisionLine });
     if (separate.length) {
       const s = computeOverview(separate);
       embed.addFields({ name: 'Tournaments & BYOT', value: `${s.wins}W ${s.draws}D ${s.losses}L (kept separate)`, inline: true });
@@ -178,6 +185,7 @@ function createManagerHub(deps) {
     if (buildEventList) {
       more.push(new ButtonBuilder().setCustomId(`hub_events:${k}`).setLabel('Events').setEmoji('📅').setStyle(ButtonStyle.Secondary));
     }
+    more.push(new ButtonBuilder().setCustomId(`hub_div:${k}`).setLabel('Divisions').setEmoji('🏆').setStyle(ButtonStyle.Secondary));
     // Handled by match-tags.cjs
     more.push(new ButtonBuilder().setCustomId(`mtag_open:${k}`).setLabel('Tag Matches').setEmoji('🏷️').setStyle(ButtonStyle.Secondary));
     more.push(new ButtonBuilder().setCustomId(`hub_photos:${k}`).setLabel('Pro Photos').setEmoji('📸').setStyle(ButtonStyle.Secondary));
@@ -667,6 +675,15 @@ function createManagerHub(deps) {
           await interaction.editReply(await buildStats(interaction.guildId, club));
         } catch (err) {
           await interaction.editReply({ content: `❌ Could not load stats: ${err.message}` });
+        }
+        return true;
+      case 'hub_div':
+        await interaction.deferReply({ flags: 64 });
+        try {
+          const matches = await loadMatches(interaction.guildId, club.key).catch(() => []);
+          await interaction.editReply(await buildDivisionView(supabase, interaction.guildId, club, matches));
+        } catch (err) {
+          await interaction.editReply({ content: `❌ Could not load division progress: ${err.message}` });
         }
         return true;
       case 'hub_events':

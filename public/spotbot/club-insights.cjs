@@ -31,18 +31,111 @@ __export(clubInsights_exports, {
   computeOverview: () => computeOverview,
   computePlayerImpact: () => computePlayerImpact,
   computeWinLossGaps: () => computeWinLossGaps,
+  divisionLabel: () => divisionLabel,
   gdPerGame: () => gdPerGame,
   generateInsights: () => generateInsights,
+  isDivisionMatch: () => isDivisionMatch,
   isSeparateCompetition: () => isSeparateCompetition,
   matchCompetition: () => matchCompetition,
   matchTag: () => matchTag,
+  parseDivision: () => parseDivision,
   playerKey: () => playerKey,
   playerStatsTypeForTag: () => playerStatsTypeForTag,
+  signed: () => signed,
+  summarizeDivision: () => summarizeDivision,
   teamMetrics: () => teamMetrics,
   toInsightMatches: () => toInsightMatches,
   winPct: () => winPct
 });
 module.exports = __toCommonJS(clubInsights_exports);
+
+// src/lib/divisionProgress.ts
+function parseDivision(value) {
+  if (value === null || value === void 0 || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  const m = String(value).match(/\d+/);
+  return m ? Number(m[0]) : null;
+}
+function divisionLabel(division) {
+  return division === null || division === void 0 ? "\u2013" : `Division ${division}`;
+}
+function isDivisionMatch(m) {
+  return !/friendly|competition|cup|playoff|tournament|byot/i.test(String(m.matchType || ""));
+}
+var DAY_MS = 864e5;
+function srAgo(rows, days) {
+  const latest = rows[rows.length - 1];
+  if (!latest || latest.skill_rating === null) return null;
+  const target = Date.parse(latest.captured_on) - days * DAY_MS;
+  let pick = null;
+  for (const r of rows) {
+    if (r === latest || r.skill_rating === null) continue;
+    if (Date.parse(r.captured_on) <= target) pick = r;
+  }
+  if (!pick) {
+    const oldest = rows.find((r) => r !== latest && r.skill_rating !== null);
+    if (!oldest || Date.parse(latest.captured_on) - Date.parse(oldest.captured_on) < Math.min(days, 2) * DAY_MS) return null;
+    pick = oldest;
+  }
+  return latest.skill_rating - pick.skill_rating;
+}
+function summarizeDivision(history, matches = []) {
+  const rows = [...history].sort((a, b) => a.captured_on.localeCompare(b.captured_on));
+  const latest = rows[rows.length - 1] || null;
+  const changes = [];
+  let prevDiv = null;
+  let inDivisionSince = null;
+  for (const r of rows) {
+    if (r.current_division === null) continue;
+    if (prevDiv === null) inDivisionSince = r.captured_on;
+    else if (r.current_division !== prevDiv) {
+      changes.push({ on: r.captured_on, from: prevDiv, to: r.current_division, kind: r.current_division < prevDiv ? "promoted" : "relegated" });
+      inDivisionSince = r.captured_on;
+    }
+    prevDiv = r.current_division;
+  }
+  changes.reverse();
+  const sinceMs = inDivisionSince ? Date.parse(inDivisionSince) : null;
+  const sinceRecord = { wins: 0, draws: 0, losses: 0, points: 0, played: 0 };
+  if (sinceMs !== null) {
+    for (const m of matches) {
+      if (!isDivisionMatch(m) || m.playedAt.getTime() < sinceMs) continue;
+      sinceRecord.played++;
+      if (m.result === "win") sinceRecord.wins++;
+      else if (m.result === "draw") sinceRecord.draws++;
+      else sinceRecord.losses++;
+    }
+    sinceRecord.points = sinceRecord.wins * 3 + sinceRecord.draws;
+  }
+  const ranked = rows.filter((r) => r.season_rank !== null);
+  const seasonRankChange = ranked.length >= 2 && latest?.season_rank !== null && latest?.season_rank !== void 0 ? ranked[ranked.length - 2].season_rank - latest.season_rank : null;
+  const hasSeasonRecord = latest && [latest.season_wins, latest.season_draws, latest.season_losses].some((v) => v !== null);
+  return {
+    division: latest?.current_division ?? null,
+    bestDivision: latest?.best_division ?? null,
+    skillRating: latest?.skill_rating ?? null,
+    srChange7d: srAgo(rows, 7),
+    srChange30d: srAgo(rows, 30),
+    promotions: latest?.promotions ?? null,
+    relegations: latest?.relegations ?? null,
+    seasonPoints: latest?.season_points ?? null,
+    seasonRecord: hasSeasonRecord ? { wins: latest.season_wins || 0, draws: latest.season_draws || 0, losses: latest.season_losses || 0 } : null,
+    seasonRank: latest?.season_rank ?? null,
+    alltimeRank: latest?.alltime_rank ?? null,
+    seasonRankChange,
+    leaderboardChecked: !!latest?.leaderboard_checked,
+    changes,
+    inDivisionSince,
+    sinceRecord,
+    trend: rows.map((r) => ({ date: r.captured_on, division: r.current_division, skillRating: r.skill_rating, seasonRank: r.season_rank })),
+    trackedSince: rows[0]?.captured_on ?? null
+  };
+}
+function signed(n) {
+  return n > 0 ? `+${n}` : String(n);
+}
+
+// src/lib/clubInsights.ts
 var MATCH_TAGS = [
   { value: "league", label: "League", emoji: "\u{1F3C6}" },
   { value: "tournament", label: "Tournament", emoji: "\u{1F3DF}\uFE0F" },
@@ -403,13 +496,18 @@ function generateInsights(matches) {
   computeOverview,
   computePlayerImpact,
   computeWinLossGaps,
+  divisionLabel,
   gdPerGame,
   generateInsights,
+  isDivisionMatch,
   isSeparateCompetition,
   matchCompetition,
   matchTag,
+  parseDivision,
   playerKey,
   playerStatsTypeForTag,
+  signed,
+  summarizeDivision,
   teamMetrics,
   toInsightMatches,
   winPct

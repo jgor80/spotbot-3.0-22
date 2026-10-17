@@ -226,6 +226,75 @@ export type Database = {
         }
         Relationships: []
       }
+      club_division_history: {
+        Row: {
+          alltime_rank: number | null
+          best_division: number | null
+          captured_at: string
+          captured_on: string
+          club_key: string
+          current_division: number | null
+          ea_club_id: string | null
+          ea_fields: Json | null
+          ea_platform: string | null
+          guild_id: string
+          id: string
+          leaderboard_checked: boolean
+          promotions: number | null
+          relegations: number | null
+          season_draws: number | null
+          season_losses: number | null
+          season_points: number | null
+          season_rank: number | null
+          season_wins: number | null
+          skill_rating: number | null
+        }
+        Insert: {
+          alltime_rank?: number | null
+          best_division?: number | null
+          captured_at?: string
+          captured_on?: string
+          club_key: string
+          current_division?: number | null
+          ea_club_id?: string | null
+          ea_fields?: Json | null
+          ea_platform?: string | null
+          guild_id: string
+          id?: string
+          leaderboard_checked?: boolean
+          promotions?: number | null
+          relegations?: number | null
+          season_draws?: number | null
+          season_losses?: number | null
+          season_points?: number | null
+          season_rank?: number | null
+          season_wins?: number | null
+          skill_rating?: number | null
+        }
+        Update: {
+          alltime_rank?: number | null
+          best_division?: number | null
+          captured_at?: string
+          captured_on?: string
+          club_key?: string
+          current_division?: number | null
+          ea_club_id?: string | null
+          ea_fields?: Json | null
+          ea_platform?: string | null
+          guild_id?: string
+          id?: string
+          leaderboard_checked?: boolean
+          promotions?: number | null
+          relegations?: number | null
+          season_draws?: number | null
+          season_losses?: number | null
+          season_points?: number | null
+          season_rank?: number | null
+          season_wins?: number | null
+          skill_rating?: number | null
+        }
+        Relationships: []
+      }
       club_matches: {
         Row: {
           club_key: string
