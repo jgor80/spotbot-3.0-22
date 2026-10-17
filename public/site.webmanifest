@@ -1,7 +1,7 @@
 {
   "name": "GafferBot",
   "short_name": "GafferBot",
-  "description": "Run your Pro Clubs club: team sheets, club stats, insights and spots in Discord.",
+  "description": "Run your EA SPORTS FC Pro Clubs side from Discord: lineups, availability, EA stats and recruiting.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0B0F1A",

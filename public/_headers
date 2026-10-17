@@ -1,0 +1,45 @@
+# Cloudflare static asset headers. Hashed build files never change, so browsers can keep them for a year.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The signed-in app and one-off links stay out of search results (public pages: /, /welcome, /terms, /privacy)
+/auth
+  X-Robots-Tag: noindex
+/link/*
+  X-Robots-Tag: noindex
+/overlay/*
+  X-Robots-Tag: noindex
+/leaderboard
+  X-Robots-Tag: noindex
+/lineup
+  X-Robots-Tag: noindex
+/profile
+  X-Robots-Tag: noindex
+/settings
+  X-Robots-Tag: noindex
+/drafts
+  X-Robots-Tag: noindex
+/scouting
+  X-Robots-Tag: noindex
+/scouting/*
+  X-Robots-Tag: noindex
+/competitions
+  X-Robots-Tag: noindex
+/teams
+  X-Robots-Tag: noindex
+/ratings
+  X-Robots-Tag: noindex
+/games
+  X-Robots-Tag: noindex
+/insights
+  X-Robots-Tag: noindex
+/squadiq
+  X-Robots-Tag: noindex
+/control
+  X-Robots-Tag: noindex
+/trophy-room
+  X-Robots-Tag: noindex
+/players
+  X-Robots-Tag: noindex
+/billing
+  X-Robots-Tag: noindex

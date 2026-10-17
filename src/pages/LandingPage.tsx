@@ -12,7 +12,6 @@ import {
   LayoutDashboard,
   Newspaper,
   Search,
-  Shield,
   Shirt,
   Sparkles,
   TrendingUp,
@@ -217,6 +216,8 @@ function CardPitch({ className }: { className?: string }) {
             key={p.key}
             src={card(`xi-${p.key}`)}
             alt=""
+            width={220}
+            height={308}
             loading="lazy"
             className="absolute w-[17%] -translate-x-1/2 -translate-y-1/2 rounded-[6%] shadow-[0_8px_20px_rgba(0,0,0,0.55)] ring-1 ring-black/40 transition-transform duration-300 hover:z-10 hover:scale-125"
             style={{ left: `${p.x}%`, top: `${p.y}%` }}
@@ -246,10 +247,10 @@ function MatchNightWindow({ className }: { className?: string }) {
           <div className="mt-2 rounded-xl border-l-4 border-primary bg-[hsl(228_8%_20%)] p-3 text-white">
             <div className="flex items-center justify-between">
               <p className="text-sm font-bold">Full time: Northside 3-1 Wolves Town</p>
-              <span className="rounded bg-[hsl(142_60%_36%)] px-1.5 py-0.5 text-[10px] font-bold">W</span>
+              <span className="rounded bg-[hsl(142_60%_30%)] px-1.5 py-0.5 text-[10px] font-bold">W</span>
             </div>
             <div className="mt-3 flex gap-3">
-              <img src={card("xi-st")} alt="" className="w-16 shrink-0 rounded-md shadow-lg" />
+              <img src={card("xi-st")} alt="" width={220} height={308} className="w-16 shrink-0 rounded-md shadow-lg" />
               <div className="space-y-1 text-xs">
                 <p><span className="text-white/50">Player of the match</span><br /><span className="font-semibold">Fontana · 8.9 · 2 goals</span></p>
                 <p className="text-white/70">Galli 2 assists · Rossi 5 saves</p>
@@ -273,9 +274,7 @@ function AvailabilityMockup({ className }: { className?: string }) {
   return (
     <div className={cn("rounded-xl border border-white/10 bg-[hsl(228_8%_20%)] p-4 text-left text-white shadow-2xl", className)}>
       <div className="flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
-          <Shield className="h-4 w-4" />
-        </span>
+        <img src="/brand/badge-128.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0 rounded-full" />
         <p className="text-sm font-semibold">
           GafferBot <span className="ml-1 rounded bg-[hsl(235_86%_65%)] px-1 py-px text-[10px] font-semibold">APP</span>
         </p>
@@ -295,7 +294,7 @@ function AvailabilityMockup({ className }: { className?: string }) {
         </ul>
       </div>
       <div className="mt-3 flex gap-2 text-xs font-medium">
-        <span className="rounded bg-[hsl(142_60%_36%)] px-3 py-1.5">Yes</span>
+        <span className="rounded bg-[hsl(142_60%_30%)] px-3 py-1.5">Yes</span>
         <span className="rounded bg-[hsl(228_7%_32%)] px-3 py-1.5">Maybe</span>
         <span className="rounded bg-[hsl(0_60%_45%)] px-3 py-1.5">No</span>
       </div>
@@ -543,6 +542,8 @@ export default function LandingPage() {
                     key={g.src}
                     src={g.src}
                     alt={`${g.label} player card`}
+                    width={420}
+                    height={588}
                     loading="lazy"
                     className={cn("w-24 rounded-lg shadow-xl ring-1 ring-black/30", i === 1 && "z-10 -translate-y-2", i === 0 && "-rotate-6", i === 2 && "rotate-6")}
                   />
