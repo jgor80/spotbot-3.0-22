@@ -9,13 +9,13 @@
 // the bot keeps in step with the primary here.
 
 // The positions of GafferBot's top formations: the only ones a player can pick, and each has a role
-const POSITIONS = ['ST', 'LW', 'RW', 'CAM', 'CM', 'LM', 'RM', 'LB', 'CB', 'RB', 'GK'];
+const POSITIONS = ['ST', 'LW', 'RW', 'CAM', 'CM', 'CDM', 'LM', 'RM', 'LB', 'CB', 'RB', 'GK'];
 const ROLE_POSITIONS = POSITIONS;
 // Button rows on every position picker, attack to defence (Discord allows 5 buttons a row)
-const BUTTON_ROWS = [['ST', 'LW', 'RW', 'CAM'], ['CM', 'LM', 'RM'], ['LB', 'CB', 'RB', 'GK']];
+const BUTTON_ROWS = [['ST', 'LW', 'RW', 'CAM'], ['CM', 'CDM', 'LM', 'RM'], ['LB', 'CB', 'RB', 'GK']];
 // Positions players could pick before, and formation spots outside the list, read as their nearest
-// pick: saved tiers, old roles and old panels keep working, and a CM fits a CDM spot.
-const LEGACY_POSITIONS = { CDM: 'CM', LWB: 'LB', RWB: 'RB', CF: 'ST' };
+// pick: saved tiers, old roles and old panels keep working, and a LB fits a LWB spot.
+const LEGACY_POSITIONS = { LWB: 'LB', RWB: 'RB', CF: 'ST' };
 const LEGACY_ROLE_NAMES = Object.keys(LEGACY_POSITIONS);
 const MAX_SECONDARY = 3;
 const MAX_EMERGENCY = 3;
@@ -39,7 +39,7 @@ function cleanPos(p) {
   return POSITIONS.includes(pos) ? pos : null;
 }
 
-// Every stored spelling of a position (CM also matches rows saved as CDM before the list changed)
+// Every stored spelling of a position (LB also matches rows saved as LWB before the list changed)
 const storedNames = (pos) => [pos, ...LEGACY_ROLE_NAMES.filter((old) => LEGACY_POSITIONS[old] === pos)];
 
 function uniq(list) {
@@ -142,8 +142,8 @@ function fromLegacyPick(current, values) {
   });
 }
 
-// Which tier a player covers a position at, or null. Formation spots outside the list (CDM, LWB, RWB,
-// CF) count as their nearest pick.
+// Which tier a player covers a position at, or null. Formation spots outside the list (LWB, RWB, CF)
+// count as their nearest pick.
 function tierOf(t, pos) {
   if (!t) return null;
   const p = cleanPos(pos) || pos;
@@ -197,7 +197,7 @@ function roleChanges(t, heldNames) {
   const wantMain = tiers.primary && ROLE_POSITIONS.includes(tiers.primary) ? [tiers.primary] : [];
   const wantSecond = tiers.secondary.filter((p) => ROLE_POSITIONS.includes(p)).map(secondaryRoleName);
   const want = new Set([...wantMain, ...wantSecond].map((n) => n.toUpperCase()));
-  // Old position roles (CDM, "CDM (2nd)") come off too once the player's tiers are saved again
+  // Old position roles (LWB, "LWB (2nd)") come off too once the player's tiers are saved again
   const names = [...ROLE_POSITIONS, ...LEGACY_ROLE_NAMES];
   const all = [...names, ...names.map(secondaryRoleName)];
   return {

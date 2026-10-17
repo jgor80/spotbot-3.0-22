@@ -73,7 +73,7 @@ test('roleChanges: main role for the comp position, (2nd) roles for played well,
 });
 
 test('the picker offers only the top-formation positions', () => {
-  assert.deepEqual([...T.POSITIONS].sort(), ['CAM', 'CB', 'CM', 'GK', 'LB', 'LM', 'LW', 'RB', 'RM', 'RW', 'ST']);
+  assert.deepEqual([...T.POSITIONS].sort(), ['CAM', 'CB', 'CDM', 'CM', 'GK', 'LB', 'LM', 'LW', 'RB', 'RM', 'RW', 'ST']);
 });
 
 test('every formation spot maps onto a pickable position', () => {
@@ -85,16 +85,17 @@ test('every formation spot maps onto a pickable position', () => {
 
 test('positions saved before the list changed read as their nearest pick', () => {
   const t = T.normalize({ primary: 'CDM', secondary: ['CM', 'LWB', 'CF'], emergency: ['RWB'] });
-  assert.deepEqual(t, { primary: 'CM', secondary: ['LB', 'ST'], emergency: ['RB'] });
-  assert.equal(T.tierOf({ primary: 'CM', secondary: [], emergency: [] }, 'CDM'), 'primary');
+  assert.deepEqual(t, { primary: 'CDM', secondary: ['CM', 'LB', 'ST'], emergency: ['RB'] });
+  assert.equal(T.tierOf({ primary: 'CM', secondary: [], emergency: [] }, 'CDM'), null);
+  assert.equal(T.tierOf({ primary: 'CDM', secondary: [], emergency: [] }, 'CDM'), 'primary');
   assert.equal(T.tierOf({ primary: 'ST', secondary: ['LB'], emergency: [] }, 'LWB'), 'secondary');
 });
 
 test('old position roles count as their nearest pick and are swapped out', () => {
-  assert.deepEqual(T.heldFromRoleNames(['CDM', 'CF (2nd)', 'Members']), { primary: ['CM'], secondary: ['ST'] });
-  const { add, remove } = T.roleChanges({ primary: 'CM', secondary: ['ST'] }, ['CDM', 'CF (2nd)']);
-  assert.deepEqual(add, ['CM', 'ST (2nd)']);
-  assert.deepEqual(remove.sort(), ['CDM', 'CF (2nd)']);
+  assert.deepEqual(T.heldFromRoleNames(['CDM', 'LWB', 'CF (2nd)', 'Members']), { primary: ['CDM', 'LB'], secondary: ['ST'] });
+  const { add, remove } = T.roleChanges({ primary: 'LB', secondary: ['ST', 'CDM'] }, ['LWB', 'CF (2nd)', 'CDM (2nd)']);
+  assert.deepEqual(add, ['LB', 'ST (2nd)']);
+  assert.deepEqual(remove.sort(), ['CF (2nd)', 'LWB']);
 });
 
 test('button taps toggle positions within a tier', () => {
