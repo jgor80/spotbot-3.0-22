@@ -8,7 +8,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createAdminClient, guildAccessLevel, identifyCaller } from "../_shared/auth.ts";
 import { looksLikeToken, resolveToken, SCOPE_MANAGE, SCOPE_READ } from "../_shared/mcp-tokens.ts";
 import { handleBody } from "./protocol.ts";
-import { Ctx, PanelBridge, TOOLS } from "./tools.ts";
+import { Ctx, PanelBridge, TOOLS, visibleTo } from "./tools.ts";
 import { MANAGE_TOOLS } from "./manage.ts";
 import { MODERATION_TOOLS } from "./moderation.ts";
 import { allowCall } from "./limits.ts";
@@ -84,8 +84,9 @@ serve(async (req) => {
       panels: manage ? ((globalThis as unknown as { __gafferbotWebPanels?: PanelBridge }).__gafferbotWebPanels ?? null) : null,
       moderation: manage ? ((globalThis as unknown as { __gafferbotModeration?: PanelBridge }).__gafferbotModeration ?? null) : null,
     };
+    // Manage tools need a clubs:manage grant; leader tools are also hidden unless the player leads a club.
     const tools = ALL_TOOLS.filter((t) => !t.scope || caller.scopes.includes(t.scope));
-    const reply = await handleBody(body, tools, ctx);
+    const reply = await handleBody(body, tools, ctx, visibleTo(ctx));
     return reply === null ? new Response(null, { status: 202, headers: corsHeaders }) : json(reply);
   } catch (err) {
     console.error("[gafferbot-mcp] error:", err);

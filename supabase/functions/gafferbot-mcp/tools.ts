@@ -54,6 +54,24 @@ async function accessibleServers(ctx: Ctx) {
   }));
 }
 
+// Whether the player leads (manager, captain, GafferBot admin, or Discord admin) at least one server
+// they can reach. Decides if leader-only tools are listed at all; each call still checks its own server.
+const LEADER_ROLES = ["admin", "moderator", "manager", "captain"];
+export async function leadsAnyServer(ctx: Ctx): Promise<boolean> {
+  const { data: roles } = await ctx.db.from("user_roles").select("guild_id")
+    .eq("discord_user_id", ctx.discordUserId).in("role", LEADER_ROLES).limit(50);
+  const withRole = [...new Set(((roles || []) as { guild_id: string }[]).map((r) => r.guild_id))];
+  for (const guildId of withRole) if ((await ctx.access(guildId)) === "leader") return true;
+  // Discord server admins hold no GafferBot role, so look through every server the player can reach.
+  return (await accessibleServers(ctx)).some((s) => s.your_access === "leader");
+}
+
+// The per-caller tool filter: leader tools only for players who lead a club (checked once per request).
+export function visibleTo(ctx: Ctx): (tool: { audience?: string }) => Promise<boolean> {
+  let leads: Promise<boolean> | null = null;
+  return (tool) => tool.audience !== "leader" ? Promise.resolve(true) : (leads ??= leadsAnyServer(ctx));
+}
+
 export async function resolveGuild(args: Record<string, unknown>, ctx: Ctx): Promise<string> {
   const guildId = str(args.guild_id);
   if (guildId) {
