@@ -499,7 +499,10 @@ export default function TeamsPage() {
     setLook(l => {
       const next: BoardLook = { ...DEFAULT_LOOK, ...saved, title: l.title, subtitle: l.subtitle };
       const untouched = next.kit.primary === DEFAULT_LOOK.kit.primary && next.kit.secondary === DEFAULT_LOOK.kit.secondary;
-      return untouched && clubTheme ? { ...next, kit: { ...next.kit, primary: clubTheme.primary, secondary: clubTheme.secondary } } : next;
+      if (!clubTheme) return next;
+      // Clubs with team colours start on the team-coloured pitch
+      const pitch = saved.pitch ?? "team";
+      return untouched ? { ...next, pitch, kit: { ...next.kit, primary: clubTheme.primary, secondary: clubTheme.secondary } } : { ...next, pitch };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedGuildId, clubTheme?.primary, clubTheme?.secondary]);
@@ -743,9 +746,6 @@ export default function TeamsPage() {
   const starterIds = board.starters.filter(Boolean) as string[];
   const filledCount = starterIds.length;
   const onBoard = new Set([...starterIds, ...board.bench]);
-  const avgRating = filledCount > 0
-    ? starterIds.reduce((sum, id) => sum + (availablePlayers?.find(p => p.discord_user_id === id)?.overall_rating || 0), 0) / filledCount
-    : 0;
 
   if (!selectedGuildId && !guildLoading) {
     return (
@@ -1091,6 +1091,8 @@ export default function TeamsPage() {
               <div className="space-y-4">
                 <LineupBoardEditor
                   ref={pitchRef}
+                  theme={clubTheme}
+                  clubName={lineupTeamName || clubTheme?.name}
                   board={board}
                   formation={formation}
                   players={availablePlayers}
@@ -1124,7 +1126,6 @@ export default function TeamsPage() {
                           Fill from Availability
                         </Button>
                       )}
-                      <span className="ml-auto text-xs text-muted-foreground">Avg rating <strong className="text-foreground">{avgRating.toFixed(1)}</strong></span>
                     </>
                   }
                   actions={
