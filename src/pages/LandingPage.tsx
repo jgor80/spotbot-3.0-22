@@ -359,9 +359,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-30 border-b border-border/60 bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4">
           <Link to="/" className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-hero">
-              <Shield className="h-5 w-5 text-white" />
-            </span>
+            <img src="/brand/badge-128.png" alt="" width={40} height={40} className="h-10 w-10 shrink-0" />
             <span className="font-display text-xl font-bold">GafferBot</span>
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">

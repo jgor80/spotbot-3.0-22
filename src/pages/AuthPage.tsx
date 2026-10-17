@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Shield, AlertCircle, ArrowRight } from "lucide-react";
+import { Loader2, AlertCircle, ArrowRight } from "lucide-react";
 import { z } from "zod";
 import { lovable } from "@/integrations/lovable/index";
 import { supabase } from "@/integrations/supabase/client";
@@ -145,9 +145,7 @@ export default function AuthPage() {
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gradient-to-br from-background via-background to-primary/5 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-            <Shield className="h-6 w-6 text-primary" />
-          </div>
+          <img src="/brand/badge-256.png" alt="" width={88} height={88} className="mx-auto mb-4 h-[88px] w-[88px]" />
           <CardTitle className="text-2xl font-bold">GafferBot</CardTitle>
           <CardDescription>
             Sign in to run your club: lineups, stats and match night

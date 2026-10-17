@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   Trophy,
   User,
-  Zap,
   Gamepad2,
   Swords,
   Target,
@@ -90,9 +89,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur-lg">
         <div className="container flex h-14 items-center gap-3 px-4 sm:px-6 md:h-16 md:gap-6 lg:px-8">
           <Link to="/" className="flex shrink-0 items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-hero shadow-sm">
-              <Zap className="h-4 w-4 text-primary-foreground" />
-            </div>
+            <img src="/brand/badge-128.png" alt="" width={36} height={36} className="h-9 w-9 shrink-0" />
             <span className="hidden font-display text-xl font-bold tracking-tight sm:inline">GafferBot</span>
           </Link>
 
