@@ -465,7 +465,7 @@ const autoLink = createAutoLink({ supabase, getGuildState, isManager });
 const xboxLink = createXboxLink({ supabase });
 const proPhotos = createProPhotos({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, isManager });
 const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
-const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client });
+const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client, getPremium: () => premium });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, positionTiers });
 const network = createNetwork({ supabase, getGuildState, isManager });
 createReplacements({ supabase, getGuildState, network, recruitment, canManageClub: squads.canManageClub });
@@ -529,7 +529,7 @@ autopilot.onNewMatches(async (guildId) => {
 
 
 // GafferBot Premium: the per-server switch, then the features behind it (all under /premium, plus /scout opponent)
-const premium = createPremium({ supabase });
+const premium = createPremium({ supabase, supabaseUrl, secret: FUNCTION_SECRET });
 const premiumDeps = {
   supabase,
   premium,

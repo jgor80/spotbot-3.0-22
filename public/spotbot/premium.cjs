@@ -4,13 +4,28 @@
 //   - the bot owner switched it on with /premium on (stored in premium_servers)
 //   - its id is in the PREMIUM_GUILDS env list (handy for testing before the table exists)
 //   - it holds an active Discord App Subscription for DISCORD_PREMIUM_SKU_ID (Discord's own shop)
-// Billing itself is Discord's job once a SKU is set up; nothing here takes payments.
+// AI image plans and packs (billing function) are sold on the website and in Discord's store at the
+// same price: DISCORD_SKUS maps plan/pack keys to SKUs, and every entitlement is forwarded to the
+// billing function, which owns the plan rows and image balances. IMAGE_LIMITS=on enforces them.
 // BOT_OWNER_IDS (comma separated Discord user ids) says who may use /premium on|off.
 
 const crypto = require('crypto');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const CACHE_MS = 60 * 1000;
+const IMAGE_LIMITS = /^(on|true|1|yes)$/i.test(String(process.env.IMAGE_LIMITS || '').trim());
+// How long a buy button remembers which server it was opened in (Discord ties packs to the buyer)
+const HINT_MS = 2 * 60 * 60 * 1000;
+
+function skuMap(raw) {
+  try {
+    const v = JSON.parse(raw || '{}');
+    return Object.fromEntries(Object.entries(v).filter(([, id]) => /^\d{5,25}$/.test(String(id))).map(([k, id]) => [k, String(id)]));
+  } catch {
+    console.warn('[premium] ignoring invalid DISCORD_SKUS JSON');
+    return {};
+  }
+}
 // Until PREMIUM_PAYWALL=on, every premium feature is free on every server
 const PREMIUM_FREE = !/^(on|true|1|yes)$/i.test(String(process.env.PREMIUM_PAYWALL || '').trim());
 const PREMIUM_COLOR = 0xf5b301;
@@ -68,7 +83,9 @@ function newToken() {
 }
 
 function createPremium(deps) {
-  const { supabase } = deps;
+  const { supabase, supabaseUrl, secret } = deps;
+  const skus = skuMap(process.env.DISCORD_SKUS);
+  const buyHints = new Map();
   const owners = [...new Set([...idList(process.env.BOT_OWNER_IDS), '501557839932948490'])];
   const envGuilds = idList(process.env.PREMIUM_GUILDS);
   const skuId = process.env.DISCORD_PREMIUM_SKU_ID || null;
@@ -113,9 +130,76 @@ function createPremium(deps) {
     if (manual) value = { premium: true, source: 'manual', row };
     else if (envGuilds.has(guildId)) value = { premium: true, source: 'env', row };
     else if (await hasEntitlement(guildId)) value = { premium: true, source: 'discord', row };
+    else if (await hasPlan(guildId)) value = { premium: true, source: 'plan', row };
     else value.row = row;
     cache.set(guildId, { at: Date.now(), value });
     return value;
+  }
+
+  // Any live paid plan (website or Discord) also unlocks the premium features
+  async function hasPlan(guildId) {
+    const { data, error } = await supabase.from('billing_subscriptions').select('status, current_period_end').eq('guild_id', guildId).eq('active', true).limit(5);
+    if (error) return false;
+    return (data || []).some((r) => !r.current_period_end || new Date(r.current_period_end) > new Date());
+  }
+
+  async function billing(body) {
+    if (!secret || !supabaseUrl) return { error: 'Billing needs the bot functions secret.' };
+    const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/billing`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-bot-secret': secret }, body: JSON.stringify(body),
+    }).catch(() => null);
+    const out = res ? await res.json().catch(() => ({})) : {};
+    return res?.ok ? out : { error: out.error || 'Billing is unavailable right now.' };
+  }
+
+  // Sends a Discord store purchase to the billing function; packs are consumed once credited
+  async function forwardEntitlement(e, { deleted = Boolean(e?.deleted) } = {}) {
+    if (!e || !Object.values(skus).includes(e.skuId)) return;
+    const hint = buyHints.get(e.userId);
+    const out = await billing({
+      action: 'discord_entitlement',
+      guild_hint: hint && Date.now() - hint.at < HINT_MS ? hint.guildId : null,
+      entitlement: { id: e.id, sku_id: e.skuId, guild_id: e.guildId || null, user_id: e.userId || null, ends_at: e.endsTimestamp ? new Date(e.endsTimestamp).toISOString() : null, deleted, consumed: Boolean(e.consumed) },
+    });
+    if (out.error) return console.warn(`[premium] entitlement ${e.id} not recorded: ${out.error}`);
+    if (!out.applied) console.warn(`[premium] entitlement ${e.id} skipped: ${out.reason}`);
+    if (out.consume && !e.consumed && typeof e.consume === 'function') await e.consume().catch((err) => console.warn(`[premium] consume ${e.id} failed: ${err.message}`));
+    if (e.guildId) cache.delete(e.guildId);
+    if (hint) cache.delete(hint.guildId);
+  }
+
+  // Purchases made while the bot was offline: Discord keeps them, so replay them at startup
+  async function replayEntitlements() {
+    const ids = Object.values(skus);
+    if (!ids.length || !client?.application) return;
+    const list = await client.application.entitlements.fetch({ skus: ids, excludeEnded: true, cache: false }).catch((err) => { console.warn(`[premium] entitlement replay failed: ${err.message}`); return null; });
+    for (const e of list?.values() || []) await forwardEntitlement(e);
+  }
+
+  // The server's AI image balance, for Studio and /manager
+  async function imageStatus(guildId) {
+    return billing({ action: 'status', guild_id: guildId });
+  }
+
+  // Buttons to buy more: Discord's own store buttons for whatever has a SKU, plus the website
+  function buyRows(guildId, userId, status) {
+    if (userId) buyHints.set(userId, { guildId, at: Date.now() });
+    if (buyHints.size > 5000) buyHints.delete(buyHints.keys().next().value);
+    const products = status?.products || [];
+    const storeButtons = products.filter((p) => p.discord_sku && p.type !== 'monthly').slice(0, 3)
+      .map((p) => new ButtonBuilder().setStyle(ButtonStyle.Premium).setSKUId(p.discord_sku));
+    const plans = products.filter((p) => p.discord_sku && p.type === 'monthly').slice(0, 4)
+      .map((p) => new ButtonBuilder().setStyle(ButtonStyle.Premium).setSKUId(p.discord_sku));
+    const site = new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Plans & packs on gafferbot.app').setURL(status?.billing_url || `https://gafferbot.app/billing?guild=${guildId}`);
+    return [new ActionRowBuilder().addComponents(site, ...storeButtons), ...(plans.length ? [new ActionRowBuilder().addComponents(...plans)] : [])];
+  }
+
+  // One line for panels: "12 AI images left this month (Club)"
+  function imagesLine(status) {
+    if (!status || status.error) return null;
+    if (!status.limits_on) return '🖼️ AI images are unlimited for now.';
+    const monthly = status.monthly ? ` (${Math.max(0, status.monthly - status.used)} of ${status.monthly} this month, ${status.pack_balance} from packs)` : '';
+    return `🖼️ **${status.left}** AI images left on the **${status.plan}** plan${monthly}.`;
   }
 
   async function isPremium(guildId) {
@@ -224,12 +308,14 @@ function createPremium(deps) {
   function start(c) {
     client = c;
     const forget = (e) => e?.guildId && cache.delete(e.guildId);
-    c.on('entitlementCreate', forget);
-    c.on('entitlementUpdate', (_old, e) => forget(e));
-    c.on('entitlementDelete', forget);
+    const handle = (e, opts) => { forget(e); forwardEntitlement(e, opts).catch((err) => console.warn(`[premium] entitlement failed: ${err.message}`)); };
+    c.on('entitlementCreate', (e) => handle(e));
+    c.on('entitlementUpdate', (_old, e) => handle(e));
+    c.on('entitlementDelete', (e) => handle(e, { deleted: true }));
+    setTimeout(() => replayEntitlements().catch(() => {}), 15000);
   }
 
-  return { handleInteraction, start, isPremium, status, gate, upsellMessage, overlayToken };
+  return { handleInteraction, start, isPremium, status, gate, upsellMessage, overlayToken, imageStatus, buyRows, imagesLine, forwardEntitlement, IMAGE_LIMITS };
 }
 
-module.exports = { createPremium, premiumCommands, PREMIUM_FEATURES, PREMIUM_FREE };
+module.exports = { createPremium, premiumCommands, PREMIUM_FEATURES, PREMIUM_FREE, IMAGE_LIMITS };
