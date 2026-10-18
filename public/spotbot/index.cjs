@@ -73,6 +73,7 @@ const { createPresenceLog } = require('./xbox-presence-log.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
+const { createLineupAi } = require('./lineup-ai.cjs');
 const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
 
 installProcessGuards();
@@ -4401,6 +4402,8 @@ globalThis.__gafferbotWebPanels = createWebPanels({
   dispatch: (interaction) => embedStyle.runForGuild(interaction.guildId, () => routeInteraction(interaction)),
 });
 
+// Automatic lineups from availability and position tiers for AI apps (gafferbot-mcp/lineups.ts)
+globalThis.__gafferbotLineups = createLineupAi({ getClient: () => client, events: clubEvents, autopilot, canManageClub: squads.canManageClub, callEdgeFunction, supabase });
 // Channel read/delete/clear for AI apps with manage access (gafferbot-mcp/moderation.ts)
 globalThis.__gafferbotModeration = createChannelModeration({ getClient: () => client });
 

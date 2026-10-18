@@ -28,8 +28,11 @@ function createEventLineup(deps) {
     const known = events.playerPositions ? await events.playerPositions(event, responses.map((r) => r.discord_user_id)).catch(() => new Map()) : new Map();
     const entry = (r) => {
       const usual = known.get(r.discord_user_id);
-      const positions = [...new Set([...splitPositions(r.response === 'yes' ? r.position : null), usual?.primary, ...(usual?.secondary || []), ...(usual?.emergency || [])].filter(Boolean))];
-      return { id: r.discord_user_id, answer: r.response, note: r.note, positions };
+      const signed = splitPositions(r.response === 'yes' ? r.position : null);
+      const positions = [...new Set([...signed, usual?.primary, ...(usual?.secondary || []), ...(usual?.emergency || [])].filter(Boolean))];
+      // A sign-up position counts as their comp position for this event
+      const tiers = signed.length ? { primary: signed[0], secondary: signed.slice(1), emergency: usual?.emergency || [] } : usual || null;
+      return { id: r.discord_user_id, answer: r.response, note: r.note, positions, tiers };
     };
     return [...responses.filter((r) => r.response === 'yes').map(entry), ...responses.filter((r) => r.response === 'maybe').map(entry)];
   }
@@ -44,7 +47,9 @@ function createEventLineup(deps) {
     for (const p of pool) {
       players.push({
         discord_user_id: p.id,
-        overall_rating: p.answer === 'yes' ? 70 : 55,
+        overall_rating: 70,
+        maybe: p.answer === 'maybe',
+        tiers: p.tiers,
         preferences: [...new Set([...(p.positions || []), ...(getUserPrefs ? await getUserPrefs(event.guild_id, p.id).catch(() => []) : [])])],
       });
     }

@@ -12,6 +12,8 @@ export interface Ctx {
   panels?: PanelBridge | null;
   // Channel read/delete/clear inside the bot (public/spotbot/channel-moderation.cjs), manage callers only.
   moderation?: PanelBridge | null;
+  // Automatic lineups inside the bot (public/spotbot/lineup-ai.cjs), every caller (publishing still needs manage).
+  lineups?: PanelBridge | null;
 }
 
 // The web Control Room's bridge into the bot (public/spotbot/web-panels.cjs), in-process.
