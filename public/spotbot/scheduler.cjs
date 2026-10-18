@@ -1,5 +1,6 @@
 // Self-hosted replacement for the cloud's scheduled jobs (times in UTC, checked once a minute).
 // Each job runs one at a time; a run that is still going skips the next tick instead of overlapping.
+const { reportError } = require('./error-reporter.cjs');
 const EA_SLICES = 12;
 
 function eaSyncBody({ activeClubs, date }) {
@@ -37,16 +38,17 @@ function startScheduler({ supabase, callFunction, activeClubs }) {
     try {
       for (const name of job.rpc || []) {
         const { error } = await supabase.rpc(name);
-        if (error && !warned.has(name)) { warned.add(name); console.error(`⏰ ${job.name}: ${name} failed (logged once):`, error.message); }
+        if (error && !warned.has(name)) { warned.add(name); console.error(`⏰ ${job.name}: ${name} failed (logged once):`, error.message); reportError(new Error(error.message), { source: 'scheduler', action: `${job.name} ${name}` }); }
         else if (!error) warned.delete(name);
       }
       if (job.fn) {
         const body = typeof job.body === 'function' ? job.body({ activeClubs, date }) : job.body;
         const { error } = await callFunction(job.fn, body, 280000);
-        if (error) console.error(`⏰ ${job.name} failed:`, error);
+        if (error) { console.error(`⏰ ${job.name} failed:`, error); reportError(error instanceof Error ? error : new Error(String(error?.message || error)), { source: 'scheduler', action: job.name }); }
       }
     } catch (e) {
       console.error(`⏰ ${job.name} crashed:`, e.message);
+      reportError(e, { source: 'scheduler', action: job.name });
     } finally {
       running.delete(job.name);
     }
