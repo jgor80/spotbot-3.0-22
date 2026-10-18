@@ -79,6 +79,7 @@ installProcessGuards();
 const axios = require('axios');
 const { installEaRetry, eaRecentlyThrottled, EA_THROTTLED_MESSAGE } = require('./ea-retry.cjs');
 installEaRetry(axios);
+require('./ea-proxy.cjs').installEaProxy(axios);
 const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');

@@ -15,7 +15,8 @@
     "discord.js": "^14.27.0",
     "dotenv": "^16.4.5",
     "openai": "^4.56.0",
-    "string-similarity": "^4.0.4"
+    "string-similarity": "^4.0.4",
+    "undici": "^6.29.1"
   },
   "engines": {
     "node": ">=22.0.0"
