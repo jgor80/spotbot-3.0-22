@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
+const { reportError } = require('./error-reporter.cjs');
 
 const DIR = path.join(__dirname, 'local-functions');
 const handlers = new Map();
@@ -176,8 +177,8 @@ const CORS = {
 function startServer({ port, supabaseUrl }) {
   wrapFetch(supabaseUrl);
   const server = http.createServer(async (req, res) => {
+    const m = req.url.match(/^\/functions\/v1\/([a-z0-9-]+)(.*)$/);
     try {
-      const m = req.url.match(/^\/functions\/v1\/([a-z0-9-]+)(.*)$/);
       if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
       if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
       const h = m && load(m[1]);
@@ -188,6 +189,7 @@ function startServer({ port, supabaseUrl }) {
       for (const [k, v] of Object.entries(req.headers)) if (k !== 'x-bot-secret' && v != null) headers.set(k, Array.isArray(v) ? v.join(',') : v);
       const body = ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks);
       const out = await h(new Request(`http://local${req.url}`, { method: req.method, headers, body }));
+      if (out.status >= 500) reportError(new Error(`${m[1]} answered ${out.status}`), { source: 'function', fn: m[1], status: out.status });
       const outHeaders = { ...CORS };
       out.headers.forEach((v, k) => { outHeaders[k] = v; });
       delete outHeaders['content-length']; delete outHeaders['content-encoding'];
@@ -195,6 +197,7 @@ function startServer({ port, supabaseUrl }) {
       res.end(Buffer.from(await out.arrayBuffer()));
     } catch (err) {
       console.error('❌ Functions server error:', err);
+      reportError(err, { source: 'function', fn: m?.[1] || req.url.slice(0, 60) });
       if (!res.headersSent) res.writeHead(500, { ...CORS, 'Content-Type': 'application/json' });
       res.end('{"error":"Internal error"}');
     }

@@ -1,4 +1,5 @@
 // Keeps the bot process alive through stray errors and guards slash-command registration.
+const { reportError } = require('./error-reporter.cjs');
 
 // Discord allows 100 global (top-level) commands per application; subcommands don't count.
 const DISCORD_COMMAND_LIMIT = 100;
@@ -19,11 +20,13 @@ function installProcessGuards({ maxExceptionsPerMinute = 20 } = {}) {
   process.on('unhandledRejection', (reason) => {
     if (isIgnorableDiscordError(reason)) return;
     console.error('❌ Unhandled promise rejection:', reason);
+    reportError(reason, { source: 'unhandled rejection' });
   });
 
   process.on('uncaughtException', (err) => {
     if (isIgnorableDiscordError(err)) return;
     console.error('❌ Uncaught exception:', err);
+    reportError(err, { source: 'uncaught exception' });
     const now = Date.now();
     recent = recent.filter((t) => now - t < 60_000);
     recent.push(now);
@@ -36,7 +39,7 @@ function installProcessGuards({ maxExceptionsPerMinute = 20 } = {}) {
 
 // Without an 'error' listener, discord.js re-throws client errors and the process dies.
 function installClientGuards(client) {
-  client.on('error', (err) => console.error('❌ Discord client error:', err));
+  client.on('error', (err) => { console.error('❌ Discord client error:', err); reportError(err, { source: 'discord client' }); });
   client.on('shardError', (err, shardId) => console.error(`❌ Discord shard ${shardId} error:`, err));
   client.on('warn', (msg) => console.warn('⚠️ Discord warning:', msg));
 }

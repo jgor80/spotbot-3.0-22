@@ -72,12 +72,14 @@ const { createXboxLink } = require('./xbox-link.cjs');
 const { createPresenceLog } = require('./xbox-presence-log.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
 const permCheck = require('./perm-check.cjs');
+const { reportError, interactionContext } = require('./error-reporter.cjs');
 const { installProcessGuards, installClientGuards, prepareCommandsForRegistration, replyWithError, isIgnorableDiscordError } = require('./bot-safety.cjs');
 
 installProcessGuards();
 const axios = require('axios');
 const { installEaRetry, eaRecentlyThrottled, EA_THROTTLED_MESSAGE } = require('./ea-retry.cjs');
 installEaRetry(axios);
+require('./ea-proxy.cjs').installEaProxy(axios);
 const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai');
@@ -16118,6 +16120,7 @@ async function routeInteraction(interaction) {
   } catch (err) {
     if (isIgnorableDiscordError(err)) return;
     console.error('❌ Error handling interaction:', err);
+    reportError(err, interactionContext(interaction));
     await replyWithError(interaction);
   }
 }
