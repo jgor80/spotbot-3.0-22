@@ -102,6 +102,13 @@ function discordGet(path: string) {
 
 const snowflake = (id: string) => /^\d{17,20}$/.test(id);
 
+// A server member's name as Discord shows it (server nickname, then display name, then username), or null.
+export async function discordMemberName(guildId: string, discordUserId: string): Promise<string | null> {
+  if (!snowflake(guildId) || !snowflake(discordUserId)) return null;
+  const m = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
+  return m ? m.nick || m.user?.global_name || m.user?.username || null : null;
+}
+
 export async function isDiscordServerAdmin(guildId: string, discordUserId: string): Promise<boolean> {
   if (!snowflake(guildId) || !snowflake(discordUserId)) return false;
   const get = discordGet;

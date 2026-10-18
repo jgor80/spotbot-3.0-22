@@ -36,6 +36,11 @@ function discordGet(path) {
   return fetch(`https://discord.com/api/v10${path}`, { headers: { Authorization: `Bot ${token}` } }).then((r) => r.ok ? r.json() : null).catch(() => null);
 }
 var snowflake = (id) => /^\d{17,20}$/.test(id);
+async function discordMemberName(guildId, discordUserId) {
+  if (!snowflake(guildId) || !snowflake(discordUserId)) return null;
+  const m = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
+  return m ? m.nick || m.user?.global_name || m.user?.username || null : null;
+}
 async function isDiscordServerAdmin(guildId, discordUserId) {
   if (!snowflake(guildId) || !snowflake(discordUserId)) return false;
   const get = discordGet;
@@ -232,6 +237,7 @@ async function resolveGuild(args, ctx) {
   if (!servers.length) throw new ToolError("You aren't in any GafferBot servers yet.");
   throw new ToolError(`You're in ${servers.length} servers; pass guild_id. Call list_servers to see them.`);
 }
+var MAX_DISCORD_LOOKUPS = 40;
 async function namesFor(ctx, guildId, ids) {
   const unique = [...new Set(ids.filter(Boolean))];
   const names = /* @__PURE__ */ new Map();
@@ -241,7 +247,13 @@ async function namesFor(ctx, guildId, ids) {
   const missing = unique.filter((id) => !names.has(id));
   if (missing.length) {
     const { data: profiles } = await ctx.db.from("profiles").select("discord_user_id, discord_username, display_name").in("discord_user_id", missing);
-    for (const p of profiles || []) names.set(p.discord_user_id, p.discord_username || p.display_name || p.discord_user_id);
+    for (const p of profiles || []) if (p.discord_username || p.display_name) names.set(p.discord_user_id, p.discord_username || p.display_name);
+  }
+  const unnamed = unique.filter((id) => !names.has(id)).slice(0, MAX_DISCORD_LOOKUPS);
+  for (let i = 0; i < unnamed.length; i += 5) {
+    const batch = unnamed.slice(i, i + 5);
+    const found = await Promise.all(batch.map((id) => discordMemberName(guildId, id)));
+    batch.forEach((id, j) => found[j] && names.set(id, found[j]));
   }
   return names;
 }
