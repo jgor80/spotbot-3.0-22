@@ -106,6 +106,9 @@ function createLineupAi({ getClient, events, autopilot, canManageClub, callEdgeF
   async function build(args) {
     const ctx = await context(args);
     const { pool, out } = await poolFor(ctx.event);
+    // Names come from the member cache; load anyone who answered but isn't cached yet
+    const uncached = [...pool, ...out].filter((id) => !ctx.guild.members.cache.has(id));
+    await Promise.all(uncached.slice(0, MAX_POOL).map((id) => ctx.guild.members.fetch(id).catch(() => null)));
     if (!pool.length) throw new LineupError(400, "Nobody has answered Available or Maybe for that event yet, so there's no one to pick.");
     const formation = args.formation ? String(args.formation).toUpperCase() : undefined;
     let plan = await autopilot.draft(ctx.event, ctx.club, pool, formation && autopilot.formations().includes(formation) ? formation : undefined);

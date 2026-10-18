@@ -26,6 +26,9 @@ type SupabaseClient = any;
 export interface OAuthEnv {
   DISCORD_CLIENT_ID: string;
   DISCORD_CLIENT_SECRET: string;
+  // Asks the bot whether this player leads a club by GafferBot's Discord rule (admin-named roles, bot
+  // owners), which the player's own guild list can't show.
+  leaderCheck?: (discordUserId: string) => Promise<boolean>;
 }
 
 const REQUEST_TTL_MS = 15 * 60 * 1000;
@@ -231,7 +234,8 @@ async function discordCallback(url: URL, db: SupabaseClient, env: OAuthEnv, orig
 
   // Manage is only offered to club admins; everyone else gets the view-only choice.
   const askedManage = (request.scopes as string[]).includes(SCOPE_MANAGE);
-  const canManage = askedManage && await isClubAdmin(db, me.id, (ids) => discordAdminIn(access_token, ids));
+  const canManage = askedManage && await isClubAdmin(db, me.id, async (ids) =>
+    (await discordAdminIn(access_token, ids)) || (await env.leaderCheck?.(me.id).catch(() => false)) === true);
   const nonce = randomString(24);
   const { error } = await db.from("mcp_oauth_requests")
     .update({ discord_user_id: me.id, consent_hash: await hashToken(nonce), scopes: canManage ? [SCOPE_READ, SCOPE_MANAGE] : [SCOPE_READ] })

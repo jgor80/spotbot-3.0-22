@@ -79,3 +79,29 @@ Deno.test("club admins: leader roles, web admins and Discord admins of a GafferB
   const discord = await isClubAdmin(memoryDb({ ...base, user_roles: [] }), ME, (ids) => { asked = ids; return Promise.resolve(true); });
   assert(discord && asked[0] === HOME, "Discord admin check not given GafferBot servers");
 });
+
+Deno.test("Discord leaders follow the bot's rule: admin-named roles count, plain members don't", async () => {
+  const { isDiscordClubLeader, isBotOwner } = await import("../_shared/auth.ts");
+  const real = globalThis.fetch;
+  const hadToken = Deno.env.get("DISCORD_BOT_TOKEN");
+  Deno.env.set("DISCORD_BOT_TOKEN", "bot");
+  const roles = [{ id: HOME, name: "@everyone", permissions: "0" }, { id: "444444444444444444", name: "Club Admin", permissions: "0" }, { id: "666666666666666666", name: "Players", permissions: "0" }];
+  let memberRoles: string[] = [];
+  globalThis.fetch = ((input: RequestInfo | URL) => {
+    const u = String(input);
+    if (u.endsWith(`/guilds/${HOME}`)) return Promise.resolve(new Response(JSON.stringify({ id: HOME, owner_id: "999999999999999999", roles })));
+    if (u.endsWith(`/guilds/${HOME}/members/${ME}`)) return Promise.resolve(new Response(JSON.stringify({ roles: memberRoles })));
+    return Promise.resolve(new Response("{}", { status: 404 }));
+  }) as typeof fetch;
+  try {
+    memberRoles = ["666666666666666666"];
+    assert(!(await isDiscordClubLeader(HOME, ME)), "plain member counted as a leader");
+    memberRoles = ["444444444444444444"];
+    assert(await isDiscordClubLeader(HOME, ME), "admin-named role without permissions not a leader");
+    assert(isBotOwner("501557839932948490") && !isBotOwner(ME), "bot owner rule");
+  } finally {
+    globalThis.fetch = real;
+    if (hadToken === undefined) Deno.env.delete("DISCORD_BOT_TOKEN");
+    else Deno.env.set("DISCORD_BOT_TOKEN", hadToken);
+  }
+});

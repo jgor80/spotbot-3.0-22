@@ -124,6 +124,19 @@ function originUrl(origin: string): string {
   return origin.replace(/\/$/, "").replace(/^(https?:\/\/)(\d{1,3}(?:\.\d{1,3}){3})(?=[:/]|$)/, "$1$2.sslip.io");
 }
 
+// The bot's answer to "does this player lead a club?" (gafferbot-mcp, authenticated as the backend)
+async function botLeaderCheck(env: Env, discordUserId: string): Promise<boolean> {
+  if (!env.FUNCTIONS_ORIGIN || !env.SUPABASE_SERVICE_ROLE_KEY) return false;
+  const res = await fetch(`${originUrl(env.FUNCTIONS_ORIGIN)}/functions/v1/gafferbot-mcp`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", "x-gafferbot-leader-check": discordUserId },
+    body: "{}",
+  });
+  if (!res.ok) return false;
+  const body = (await res.json().catch(() => null)) as { leader?: boolean } | null;
+  return body?.leader === true;
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -131,7 +144,7 @@ export default {
     if (url.pathname.startsWith("/oauth/") || url.pathname.startsWith("/.well-known/oauth-") || url.pathname === "/auth/callback") {
       try {
         const db = () => createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-        const res = await handleOAuth(req, url, env, db);
+        const res = await handleOAuth(req, url, { ...env, leaderCheck: (id: string) => botLeaderCheck(env, id) }, db);
         if (res) return res;
       } catch (e) {
         console.error("mcp oauth error", e);

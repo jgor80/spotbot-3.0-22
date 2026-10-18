@@ -1,6 +1,7 @@
 // The GafferBot MCP tools. Each one acts as the token's Discord user and checks that user's access to the
 // server before reading anything from it, the same member rule the web app uses (guildAccessLevel).
 import { Tool, ToolError } from "./protocol.ts";
+import { discordMemberName } from "../_shared/auth.ts";
 
 export interface Ctx {
   // deno-lint-ignore no-explicit-any
@@ -89,6 +90,8 @@ export async function resolveGuild(args: Record<string, unknown>, ctx: Ctx): Pro
 
 // ---------- Names ----------
 
+const MAX_DISCORD_LOOKUPS = 40;
+
 async function namesFor(ctx: Ctx, guildId: string, ids: string[]): Promise<Map<string, string>> {
   const unique = [...new Set(ids.filter(Boolean))];
   const names = new Map<string, string>();
@@ -100,7 +103,14 @@ async function namesFor(ctx: Ctx, guildId: string, ids: string[]): Promise<Map<s
   if (missing.length) {
     const { data: profiles } = await ctx.db.from("profiles").select("discord_user_id, discord_username, display_name")
       .in("discord_user_id", missing);
-    for (const p of profiles || []) names.set(p.discord_user_id, p.discord_username || p.display_name || p.discord_user_id);
+    for (const p of profiles || []) if (p.discord_username || p.display_name) names.set(p.discord_user_id, p.discord_username || p.display_name);
+  }
+  // Players with no stats or web profile yet (often most of an event's answers): ask Discord
+  const unnamed = unique.filter((id) => !names.has(id)).slice(0, MAX_DISCORD_LOOKUPS);
+  for (let i = 0; i < unnamed.length; i += 5) {
+    const batch = unnamed.slice(i, i + 5);
+    const found = await Promise.all(batch.map((id) => discordMemberName(guildId, id)));
+    batch.forEach((id, j) => found[j] && names.set(id, found[j]!));
   }
   return names;
 }

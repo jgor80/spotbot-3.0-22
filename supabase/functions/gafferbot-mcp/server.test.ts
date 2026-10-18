@@ -25,7 +25,7 @@ const TABLES: Record<string, Row[]> = {
     { id: EVENT_HOME, guild_id: HOME, title: 'League night', scheduled_at: new Date(Date.now() + 86400000).toISOString(), cancelled: false },
     { id: EVENT_OTHER, guild_id: OTHER, title: 'Secret', scheduled_at: new Date(Date.now() + 86400000).toISOString(), cancelled: false },
   ],
-  player_availability: [{ event_id: EVENT_HOME, discord_user_id: ME, response: 'yes' }, { event_id: EVENT_OTHER, discord_user_id: ME, response: 'no' }],
+  player_availability: [{ event_id: EVENT_HOME, discord_user_id: ME, response: 'yes' }, { event_id: EVENT_HOME, discord_user_id: '555555555555555555', response: 'no' }, { event_id: EVENT_OTHER, discord_user_id: ME, response: 'no' }],
   profiles: [],
 };
 
@@ -116,6 +116,26 @@ Deno.test('guild_id defaults to the only server and leaderboards sort by the sta
 Deno.test('list_events counts answers and shows your own', async () => {
   const { data } = await call('list_events');
   if (data.events.length !== 1 || data.events[0].your_answer !== 'yes' || data.events[0].answers.yes !== 1) throw new Error('Event answers wrong');
+});
+
+Deno.test('get_event names players with no stats or profile from their Discord server name', async () => {
+  const real = globalThis.fetch;
+  const hadToken = Deno.env.get('DISCORD_BOT_TOKEN');
+  Deno.env.set('DISCORD_BOT_TOKEN', 'bot');
+  globalThis.fetch = ((input: RequestInfo | URL) => {
+    const u = String(input);
+    if (u.endsWith(`/guilds/${HOME}/members/555555555555555555`)) return Promise.resolve(new Response(JSON.stringify({ nick: 'Ragnar', user: { username: 'violentragnar' } })));
+    return Promise.resolve(new Response('{}', { status: 404 }));
+  }) as typeof fetch;
+  try {
+    const { data } = await call('get_event', { event_id: EVENT_HOME });
+    if (data.yes[0].player !== 'jeff') throw new Error('Stats name not used');
+    if (data.no[0].player !== 'Ragnar') throw new Error(`Discord name not used: ${data.no[0].player}`);
+  } finally {
+    globalThis.fetch = real;
+    if (hadToken === undefined) Deno.env.delete('DISCORD_BOT_TOKEN');
+    else Deno.env.set('DISCORD_BOT_TOKEN', hadToken);
+  }
 });
 
 Deno.test('tokens are prefixed, random and stored only as a stable hash', async () => {

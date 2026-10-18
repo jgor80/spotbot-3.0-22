@@ -5,7 +5,9 @@ import { resolveToken } from "../_shared/mcp-tokens.ts";
 import { memoryDb } from "./test-db.ts";
 
 const ORIGIN = "https://gafferbot.app";
-const ENV = { DISCORD_CLIENT_ID: "123", DISCORD_CLIENT_SECRET: "shh" };
+// The bot's leader check (admin-named Discord roles), flipped per test
+let botSaysLeader = false;
+const ENV = { DISCORD_CLIENT_ID: "123", DISCORD_CLIENT_SECRET: "shh", leaderCheck: () => Promise.resolve(botSaysLeader) };
 const REDIRECT = "https://claude.ai/api/mcp/auth_callback";
 const PLAYER = "111111111111111111";
 
@@ -168,4 +170,13 @@ Deno.test("only club admins are offered manage; other players connect view-only"
   assert(!elsewhere.html.includes("View and manage"), "admin of an unrelated server got manage");
   const discordAdmin = await signIn(db, { guilds: [{ id: SERVER, permissions: "32" }] });
   assert(discordAdmin.html.includes("View and manage"), "Discord server admin not offered manage");
+
+  // A player the bot counts as a leader (an admin-named role with no Discord permissions) is offered manage too.
+  botSaysLeader = true;
+  try {
+    const roleAdmin = await signIn(db, {});
+    assert(roleAdmin.html.includes("View and manage"), "bot leader not offered manage");
+  } finally {
+    botSaysLeader = false;
+  }
 });

@@ -36,33 +36,41 @@ function discordGet(path) {
   return fetch(`https://discord.com/api/v10${path}`, { headers: { Authorization: `Bot ${token}` } }).then((r) => r.ok ? r.json() : null).catch(() => null);
 }
 var snowflake = (id) => /^\d{17,20}$/.test(id);
-async function isDiscordServerAdmin(guildId, discordUserId) {
+async function discordMemberName(guildId, discordUserId) {
+  if (!snowflake(guildId) || !snowflake(discordUserId)) return null;
+  const m = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
+  return m ? m.nick || m.user?.global_name || m.user?.username || null : null;
+}
+var LEADER_ROLE_WORDS = ["captain", "manager", "owner", "media", "admin"];
+var BUILTIN_OWNER_IDS = ["501557839932948490"];
+function isBotOwner(discordUserId) {
+  const env = String(Deno.env.get("BOT_OWNER_IDS") || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return [...BUILTIN_OWNER_IDS, ...env].includes(discordUserId);
+}
+async function isDiscordClubLeader(guildId, discordUserId) {
   if (!snowflake(guildId) || !snowflake(discordUserId)) return false;
-  const get = discordGet;
-  const [guild, member] = await Promise.all([get(`/guilds/${guildId}`), get(`/guilds/${guildId}/members/${discordUserId}`)]);
+  if (isBotOwner(discordUserId)) return true;
+  const [guild, member] = await Promise.all([discordGet(`/guilds/${guildId}`), discordGet(`/guilds/${guildId}/members/${discordUserId}`)]);
   if (!guild || !member) return false;
   if (guild.owner_id === discordUserId) return true;
   const memberRoles = /* @__PURE__ */ new Set([guildId, ...member.roles || []]);
   let perms = 0n;
   for (const role of guild.roles || []) {
-    if (memberRoles.has(role.id)) perms |= BigInt(role.permissions || "0");
+    if (!memberRoles.has(role.id)) continue;
+    perms |= BigInt(role.permissions || "0");
+    const name = String(role.name || "").toLowerCase();
+    if (role.id !== guildId && LEADER_ROLE_WORDS.some((w) => name.includes(w))) return true;
   }
   return (perms & 0x8n) !== 0n || (perms & 0x20n) !== 0n;
 }
-async function hasGuildRole(admin, args) {
-  if (!args._discord_user_id) return { data: false };
-  const { data } = await admin.rpc("has_any_role", args);
-  if (data) return { data: true };
-  return { data: await isDiscordServerAdmin(args._guild_id, args._discord_user_id) };
-}
 async function guildAccessLevel(admin, guildId, discordUserId) {
   if (!snowflake(guildId) || !snowflake(discordUserId)) return null;
-  const { data: leader } = await hasGuildRole(admin, {
+  const { data: leader } = await admin.rpc("has_any_role", {
     _guild_id: guildId,
     _discord_user_id: discordUserId,
     _roles: ["admin", "moderator", "manager", "captain"]
   });
-  if (leader) return "leader";
+  if (leader || await isDiscordClubLeader(guildId, discordUserId)) return "leader";
   const { data: played } = await admin.from("player_stats").select("id").eq("guild_id", guildId).eq("discord_user_id", discordUserId).limit(1).maybeSingle();
   if (played) return "member";
   const member = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
@@ -232,6 +240,7 @@ async function resolveGuild(args, ctx) {
   if (!servers.length) throw new ToolError("You aren't in any GafferBot servers yet.");
   throw new ToolError(`You're in ${servers.length} servers; pass guild_id. Call list_servers to see them.`);
 }
+var MAX_DISCORD_LOOKUPS = 40;
 async function namesFor(ctx, guildId, ids) {
   const unique = [...new Set(ids.filter(Boolean))];
   const names = /* @__PURE__ */ new Map();
@@ -241,7 +250,13 @@ async function namesFor(ctx, guildId, ids) {
   const missing = unique.filter((id) => !names.has(id));
   if (missing.length) {
     const { data: profiles } = await ctx.db.from("profiles").select("discord_user_id, discord_username, display_name").in("discord_user_id", missing);
-    for (const p of profiles || []) names.set(p.discord_user_id, p.discord_username || p.display_name || p.discord_user_id);
+    for (const p of profiles || []) if (p.discord_username || p.display_name) names.set(p.discord_user_id, p.discord_username || p.display_name);
+  }
+  const unnamed = unique.filter((id) => !names.has(id)).slice(0, MAX_DISCORD_LOOKUPS);
+  for (let i = 0; i < unnamed.length; i += 5) {
+    const batch = unnamed.slice(i, i + 5);
+    const found = await Promise.all(batch.map((id) => discordMemberName(guildId, id)));
+    batch.forEach((id, j) => found[j] && names.set(id, found[j]));
   }
   return names;
 }
@@ -1184,7 +1199,7 @@ var adminCache = /* @__PURE__ */ new Map();
 async function clubAdmin(admin, discordUserId) {
   const hit = adminCache.get(discordUserId);
   if (hit && Date.now() - hit.at < ADMIN_CACHE_MS) return hit.admin;
-  const result = await isClubAdmin(admin, discordUserId, async (ids) => (await Promise.all(ids.slice(0, 100).map((g) => isDiscordServerAdmin(g, discordUserId)))).some(Boolean));
+  const result = isBotOwner(discordUserId) || await isClubAdmin(admin, discordUserId, async (ids) => (await Promise.all(ids.slice(0, 100).map((g) => isDiscordClubLeader(g, discordUserId)))).some(Boolean));
   if (adminCache.size > 5e3) adminCache.clear();
   adminCache.set(discordUserId, { admin: result, at: Date.now() });
   return result;
@@ -1215,6 +1230,11 @@ serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405, { Allow: "POST, OPTIONS" });
   try {
     const admin = createAdminClient();
+    const leaderCheck = req.headers.get("x-gafferbot-leader-check");
+    if (leaderCheck) {
+      if ((await identifyCaller(req, admin))?.kind !== "bot" || !/^\d{17,20}$/.test(leaderCheck)) return json({ error: "Forbidden" }, 403);
+      return json({ leader: await clubAdmin(admin, leaderCheck) });
+    }
     const caller = await callerFor(req, admin);
     if (!caller) {
       return json(
