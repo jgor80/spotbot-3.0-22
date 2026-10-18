@@ -5,7 +5,7 @@
 //   - a personal token from Discord (/me → AI Assistant): read only, header or ?key=
 //   - a signed-in web session (JWT): read only
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createAdminClient, guildAccessLevel, identifyCaller, isDiscordServerAdmin } from "../_shared/auth.ts";
+import { createAdminClient, guildAccessLevel, identifyCaller, isBotOwner, isDiscordClubLeader } from "../_shared/auth.ts";
 import { isClubAdmin, looksLikeToken, resolveToken, SCOPE_MANAGE, SCOPE_READ } from "../_shared/mcp-tokens.ts";
 import { handleBody } from "./protocol.ts";
 import { Ctx, PanelBridge, TOOLS, visibleTo } from "./tools.ts";
@@ -27,8 +27,8 @@ const adminCache = new Map<string, { admin: boolean; at: number }>();
 async function clubAdmin(admin: any, discordUserId: string): Promise<boolean> {
   const hit = adminCache.get(discordUserId);
   if (hit && Date.now() - hit.at < ADMIN_CACHE_MS) return hit.admin;
-  const result = await isClubAdmin(admin, discordUserId, async (ids) =>
-    (await Promise.all(ids.slice(0, 100).map((g) => isDiscordServerAdmin(g, discordUserId)))).some(Boolean));
+  const result = isBotOwner(discordUserId) || await isClubAdmin(admin, discordUserId, async (ids) =>
+    (await Promise.all(ids.slice(0, 100).map((g) => isDiscordClubLeader(g, discordUserId)))).some(Boolean));
   if (adminCache.size > 5000) adminCache.clear();
   adminCache.set(discordUserId, { admin: result, at: Date.now() });
   return result;
@@ -69,6 +69,12 @@ serve(async (req) => {
 
   try {
     const admin = createAdminClient();
+    // The Worker's AI sign-in asks whether a player leads a club before offering manage access
+    const leaderCheck = req.headers.get("x-gafferbot-leader-check");
+    if (leaderCheck) {
+      if ((await identifyCaller(req, admin))?.kind !== "bot" || !/^\d{17,20}$/.test(leaderCheck)) return json({ error: "Forbidden" }, 403);
+      return json({ leader: await clubAdmin(admin, leaderCheck) });
+    }
     const caller = await callerFor(req, admin);
     if (!caller) {
       // Points AI apps at the OAuth sign-in (MCP authorization spec), so adding the URL is all it takes.

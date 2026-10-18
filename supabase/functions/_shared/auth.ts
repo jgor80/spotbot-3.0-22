@@ -123,6 +123,34 @@ export async function isDiscordServerAdmin(guildId: string, discordUserId: strin
   return (perms & 0x8n) !== 0n || (perms & 0x20n) !== 0n;
 }
 
+// The bot's own leader rule (isManager in public/spotbot/index.cjs, isBotOwner in perm-check.cjs): bot owners,
+// server admins, and anyone holding a Discord role whose name contains one of these words. Keep both in step,
+// so the web and AI apps treat a player exactly as GafferBot does in Discord.
+const LEADER_ROLE_WORDS = ["captain", "manager", "owner", "media", "admin"];
+const BUILTIN_OWNER_IDS = ["501557839932948490"];
+
+export function isBotOwner(discordUserId: string): boolean {
+  const env = String(Deno.env.get("BOT_OWNER_IDS") || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return [...BUILTIN_OWNER_IDS, ...env].includes(discordUserId);
+}
+
+export async function isDiscordClubLeader(guildId: string, discordUserId: string): Promise<boolean> {
+  if (!snowflake(guildId) || !snowflake(discordUserId)) return false;
+  if (isBotOwner(discordUserId)) return true;
+  const [guild, member] = await Promise.all([discordGet(`/guilds/${guildId}`), discordGet(`/guilds/${guildId}/members/${discordUserId}`)]);
+  if (!guild || !member) return false;
+  if (guild.owner_id === discordUserId) return true;
+  const memberRoles = new Set<string>([guildId, ...(member.roles || [])]);
+  let perms = 0n;
+  for (const role of guild.roles || []) {
+    if (!memberRoles.has(role.id)) continue;
+    perms |= BigInt(role.permissions || "0");
+    const name = String(role.name || "").toLowerCase();
+    if (role.id !== guildId && LEADER_ROLE_WORDS.some((w) => name.includes(w))) return true;
+  }
+  return (perms & 0x8n) !== 0n || (perms & 0x20n) !== 0n;
+}
+
 // GafferBot role check (has_any_role) that also lets Discord server admins through.
 export async function hasGuildRole(
   admin: AdminClient,
@@ -171,20 +199,21 @@ export async function requireGuildAccess(
   return forbidden;
 }
 
-// What a Discord user may see in a server: "leader" (GafferBot leader role or Discord admin rights),
-// "member" (recorded matches there, or a current Discord member), or null.
+// What a Discord user may see in a server: "leader" (a GafferBot leader role, or a leader in Discord by the
+// bot's own rule: owner, admin rights or a captain/manager/admin-named role), "member" (recorded matches
+// there, or a current Discord member), or null.
 export async function guildAccessLevel(
   admin: AdminClient,
   guildId: string,
   discordUserId: string,
 ): Promise<"leader" | "member" | null> {
   if (!snowflake(guildId) || !snowflake(discordUserId)) return null;
-  const { data: leader } = await hasGuildRole(admin, {
+  const { data: leader } = await admin.rpc("has_any_role", {
     _guild_id: guildId,
     _discord_user_id: discordUserId,
     _roles: ["admin", "moderator", "manager", "captain"],
   });
-  if (leader) return "leader";
+  if (leader || (await isDiscordClubLeader(guildId, discordUserId))) return "leader";
 
   // A player with recorded matches in this server, or a current Discord member, counts as a member.
   const { data: played } = await admin
