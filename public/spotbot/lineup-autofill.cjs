@@ -32,8 +32,10 @@ __export(botLineup_exports, {
   groupByPosition: () => groupByPosition,
   locate: () => locate,
   movePlayer: () => movePlayer,
+  pickLineup: () => pickLineup,
   resizeBoard: () => resizeBoard,
-  slotsToBoard: () => slotsToBoard
+  slotsToBoard: () => slotsToBoard,
+  tierFit: () => tierFit
 });
 module.exports = __toCommonJS(botLineup_exports);
 
@@ -486,9 +488,31 @@ var LINE_OF = {
   LF: "ATT",
   RF: "ATT"
 };
+var LEGACY = { LWB: "LB", RWB: "RB", CF: "ST" };
+var norm = (p) => {
+  const up = String(p || "").trim().toUpperCase();
+  return LEGACY[up] || up;
+};
+function tierFit(tiers, slotPosition) {
+  if (!tiers || !(tiers.primary || tiers.secondary?.length || tiers.emergency?.length)) return null;
+  const at = norm(slotPosition);
+  if (norm(tiers.primary) === at) return "primary";
+  if ((tiers.secondary || []).some((p) => norm(p) === at)) return "secondary";
+  if ((tiers.emergency || []).some((p) => norm(p) === at)) return "emergency";
+  return "none";
+}
+var TIER_BONUS = { primary: 14, secondary: 9, emergency: 2 };
 function fitScore(player, slotPosition, ratings) {
   const rated = ratings.get(`${player.discord_user_id}|${getPositionRatingCategory(slotPosition)}`);
   let score = rated ?? player.overall_rating - 5;
+  if (player.maybe) score -= 6;
+  const fit = tierFit(player.tiers, slotPosition);
+  if (fit && fit !== "none") return score + TIER_BONUS[fit];
+  if (fit === "none") {
+    const all = [player.tiers?.primary, ...player.tiers?.secondary || []].map(norm);
+    const sameLine = all.some((p) => LINE_OF[p] && LINE_OF[p] === LINE_OF[norm(slotPosition)]);
+    return score + (sameLine ? 0 : norm(slotPosition) === "GK" || all.includes("GK") ? -30 : -10);
+  }
   const exact = player.preferences.indexOf(slotPosition);
   if (exact !== -1) {
     score += 12 - Math.min(exact, 4) * 2;
@@ -515,6 +539,12 @@ function autofillLineup(slotPositions, players, positionRatings, lockedSlots = /
     used.add(player);
   }
   return result;
+}
+function pickLineup(slotPositions, players, positionRatings = [], benchMax = 9) {
+  const starters = autofillLineup(slotPositions, players, positionRatings);
+  const used = new Set(starters.values());
+  const bench = players.filter((p) => !used.has(p.discord_user_id)).sort((a, b) => Number(!!a.maybe) - Number(!!b.maybe) || b.overall_rating - a.overall_rating).slice(0, benchMax).map((p) => p.discord_user_id);
+  return { starters, bench };
 }
 
 // src/lib/lineupBoard.ts
@@ -577,16 +607,16 @@ function resizeBoard(state, slotCount) {
   for (const id of state.starters.slice(slotCount)) if (id && bench.length < MAX_BENCH) bench.push(id);
   return { starters, bench };
 }
-var norm = (s) => s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+var norm2 = (s) => s.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
 function boardFromNames(text, players, slotCount) {
   const lines = String(text || "").split(/\r?\n/).map((l) => l.replace(/^\s*\d{1,2}\s*[.)\-:]?\s+/, "").trim()).filter(Boolean).slice(0, slotCount + MAX_BENCH);
   const used = /* @__PURE__ */ new Set();
   const unmatched = [];
   const find = (line) => {
-    const q = norm(line);
+    const q = norm2(line);
     if (!q) return null;
     const free = players.filter((p) => !used.has(p.id));
-    const keys = (p) => p.names.filter(Boolean).map((n) => norm(n)).filter(Boolean);
+    const keys = (p) => p.names.filter(Boolean).map((n) => norm2(n)).filter(Boolean);
     const hit = free.find((p) => keys(p).some((k) => k === q)) || free.find((p) => keys(p).some((k) => k.startsWith(q))) || (q.length >= 3 ? free.find((p) => keys(p).some((k) => k.includes(q))) : void 0);
     return hit?.id ?? null;
   };
@@ -653,6 +683,8 @@ var FORMATION_COORDS = Object.fromEntries(
   groupByPosition,
   locate,
   movePlayer,
+  pickLineup,
   resizeBoard,
-  slotsToBoard
+  slotsToBoard,
+  tierFit
 });

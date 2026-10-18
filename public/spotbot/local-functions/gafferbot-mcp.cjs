@@ -1074,9 +1074,111 @@ var MODERATION_TOOLS = [
   }
 ];
 
+// supabase/functions/gafferbot-mcp/lineups.ts
+var UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+var str4 = (v) => typeof v === "string" && v.trim() ? v.trim() : void 0;
+var confirmed3 = (args) => args.confirm === true || args.confirm === "true";
+function bridge3(ctx) {
+  if (!ctx.lineups) throw new ToolError("Lineup tools only work on the GafferBot server, which isn't reachable from here.");
+  return ctx.lineups;
+}
+async function call3(ctx, op, args) {
+  try {
+    return await bridge3(ctx).handle(op, { ...args, userId: ctx.discordUserId });
+  } catch (err) {
+    const e = err;
+    if (e.status) throw new ToolError(String(e.message || "GafferBot refused that."));
+    throw err;
+  }
+}
+async function eventGuild(args, ctx) {
+  const eventId = str4(args.event_id);
+  if (!eventId || !UUID2.test(eventId)) throw new ToolError("event_id must be an event ID from list_events.");
+  const { data: event } = await ctx.db.from("availability_events").select("guild_id").eq("id", eventId).maybeSingle();
+  if (!event || !await ctx.access(event.guild_id)) throw new ToolError("Event not found.");
+  return { eventId, guildId: event.guild_id };
+}
+function changesArg(args) {
+  if (args.changes === void 0) return void 0;
+  if (!Array.isArray(args.changes)) throw new ToolError("changes must be a list of { slot, player_id }.");
+  return args.changes.slice(0, 20).map((c) => ({ slot: c?.slot, player_id: c?.player_id }));
+}
+var eventProp = { type: "string", description: "Event ID from list_events." };
+var formationProp = { type: "string", description: `Formation name, e.g. "4-3-3 FLAT". Leave out to use the club's best recent formation.` };
+var changesProp = {
+  type: "array",
+  description: "Optional moves on top of the automatic pick: put player_id in slot (the slot number from suggest_lineup). Whoever was there goes to the bench.",
+  items: {
+    type: "object",
+    properties: { slot: { type: "integer" }, player_id: { type: "string", description: "Discord user ID from suggest_lineup." } },
+    required: ["slot", "player_id"],
+    additionalProperties: false
+  }
+};
+var LINEUP_TOOLS = [
+  {
+    name: "suggest_lineup",
+    title: "Suggest a lineup",
+    description: "Builds the best starting XI and bench for an event from the players who said Available (Maybes only fill gaps), using each player's comp, plays-well and emergency positions, ratings and the club's best pairings. Shows how each starter fits their spot and any open spots. Changes nothing. Pass changes to try a swap.",
+    inputSchema: {
+      type: "object",
+      properties: { event_id: eventProp, formation: formationProp, changes: changesProp },
+      required: ["event_id"],
+      additionalProperties: false
+    },
+    run: async (args, ctx) => {
+      const { eventId, guildId } = await eventGuild(args, ctx);
+      const s = await call3(ctx, "suggest", { guildId, eventId, formation: str4(args.formation), changes: changesArg(args) });
+      return { ...s, next: "Show this to the player. A club leader can post it with publish_lineup (same arguments)." };
+    }
+  },
+  {
+    name: "publish_lineup",
+    audience: "leader",
+    title: "Post a lineup",
+    scope: SCOPE_MANAGE,
+    readOnly: false,
+    description: "Posts the automatic lineup (same picks as suggest_lineup, plus any changes) as the event's team sheet in its Discord channel, mentioning the starters. Replaces a team sheet already saved for that event. Club leaders only. Without confirm it only previews.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        event_id: eventProp,
+        formation: formationProp,
+        changes: changesProp,
+        confirm: { type: "boolean", description: "Leave out to preview. true only after the player said yes to the preview." }
+      },
+      required: ["event_id"],
+      additionalProperties: false
+    },
+    run: async (args, ctx) => {
+      const { eventId, guildId } = await eventGuild(args, ctx);
+      const req = { guildId, eventId, formation: str4(args.formation), changes: changesArg(args) };
+      if (!confirmed3(args)) {
+        const p = await call3(ctx, "publish", req);
+        return {
+          preview: true,
+          nothing_changed_yet: true,
+          will: `Post this ${p.formation} team sheet in the event's channel and mention the starting XI` + (p.replaces_existing_team_sheet ? ", replacing the team sheet already saved for this event." : "."),
+          ...p,
+          next: "Show this to the player. Only if they say yes, call publish_lineup again with the same arguments plus confirm: true."
+        };
+      }
+      await underLimit(ctx);
+      try {
+        const r = await call3(ctx, "publish", { ...req, confirm: true });
+        await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId, formation: r.formation, changes: req.changes?.length || 0 }, { ok: true });
+        return r;
+      } catch (err) {
+        await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId }, { ok: false, error: err.message });
+        throw err;
+      }
+    }
+  }
+];
+
 // supabase/functions/gafferbot-mcp/index.ts
 var SITE = (Deno.env.get("DASHBOARD_URL") || "https://gafferbot.app").replace(/\/+$/, "");
-var ALL_TOOLS = [...TOOLS, ...MANAGE_TOOLS, ...MODERATION_TOOLS];
+var ALL_TOOLS = [...TOOLS, ...LINEUP_TOOLS, ...MANAGE_TOOLS, ...MODERATION_TOOLS];
 var ADMIN_CACHE_MS = 5 * 60 * 1e3;
 var adminCache = /* @__PURE__ */ new Map();
 async function clubAdmin(admin, discordUserId) {
@@ -1143,7 +1245,8 @@ serve(async (req) => {
       tokenId: caller.tokenId,
       // The Control Room bridge exists only inside the self-hosted bot process.
       panels: manage ? globalThis.__gafferbotWebPanels ?? null : null,
-      moderation: manage ? globalThis.__gafferbotModeration ?? null : null
+      moderation: manage ? globalThis.__gafferbotModeration ?? null : null,
+      lineups: globalThis.__gafferbotLineups ?? null
     };
     const tools = ALL_TOOLS.filter((t) => !t.scope || caller.scopes.includes(t.scope));
     const reply = await handleBody(body, tools, ctx, visibleTo(ctx));

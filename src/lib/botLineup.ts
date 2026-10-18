@@ -2,7 +2,7 @@
 // so the bot places players exactly like the Lineup Builder's Fill from Voice.
 import { FORMATIONS } from "@/lib/formations";
 
-export { autofillLineup } from "@/lib/lineupAutofill";
+export { autofillLineup, pickLineup, tierFit } from "@/lib/lineupAutofill";
 export { getPositionRatingCategory } from "@/lib/formations";
 export { movePlayer, resizeBoard, boardFromNames, boardToSlots, slotsToBoard, locate, groupByPosition, POSITION_ORDER, MAX_BENCH, BENCH_SLOT_OFFSET } from "@/lib/lineupBoard";
 

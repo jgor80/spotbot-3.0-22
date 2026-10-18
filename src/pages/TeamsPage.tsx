@@ -555,9 +555,12 @@ export default function TeamsPage() {
 
   // Fill the open spots with the players in a voice channel, best position fits first.
   // signedUpPositions (from an event's position sign-up) win over position tiers, then saved preferences.
-  const fillFromVoiceChannel = async (userIds: string[], signedUpPositions?: Map<string, string[]>) => {
+  // Players in `maybes` are picked only ahead of a worse fit and wait on the bench before Yes answers.
+  const fillFromVoiceChannel = async (userIds: string[], signedUpPositions?: Map<string, string[]>, maybes?: Set<string>) => {
     if (!selectedGuildId || !availablePlayers) return;
-    const candidates = availablePlayers.filter(p => userIds.includes(p.discord_user_id) && !onBoard.has(p.discord_user_id));
+    const candidates = availablePlayers
+      .filter(p => userIds.includes(p.discord_user_id) && !onBoard.has(p.discord_user_id))
+      .sort((a, b) => Number(!!maybes?.has(a.discord_user_id)) - Number(!!maybes?.has(b.discord_user_id)));
     if (candidates.length === 0) {
       toast.info("Everyone there is already on the sheet");
       return;
@@ -569,10 +572,12 @@ export default function TeamsPage() {
       .eq("guild_id", selectedGuildId)
       .in("user_id", candidates.map(p => p.discord_user_id));
     const prefsByUser = new Map((prefs || []).map(p => [p.user_id, p.preferences || []]));
-    // Comp position first, then the ones they play well, then emergency cover
-    const tierOrder = (id: string) => {
-      const t = positionTiers.get(id);
-      return t ? [t.primary, ...t.secondary, ...t.emergency].filter(Boolean) as string[] : null;
+    // An event sign-up position counts as their comp position for that game; otherwise their tiers
+    // (comp, plays well, emergency) decide how well they fit each spot
+    const tiersFor = (id: string) => {
+      const signed = signedUpPositions?.get(id);
+      if (signed?.length) return { primary: signed[0], secondary: signed.slice(1), emergency: [] };
+      return positionTiers.get(id) || null;
     };
 
     const occupied = new Set(board.starters.flatMap((id, i) => (id ? [i] : [])));
@@ -581,10 +586,9 @@ export default function TeamsPage() {
       candidates.map(p => ({
         discord_user_id: p.discord_user_id,
         overall_rating: p.overall_rating,
-        preferences: signedUpPositions?.get(p.discord_user_id)
-          || tierOrder(p.discord_user_id)
-          || prefsByUser.get(p.discord_user_id)
-          || (p.primary_position ? [p.primary_position] : []),
+        tiers: tiersFor(p.discord_user_id),
+        maybe: !!maybes?.has(p.discord_user_id),
+        preferences: prefsByUser.get(p.discord_user_id) || (p.primary_position ? [p.primary_position] : []),
       })),
       positionRatings || [],
       occupied,
@@ -630,7 +634,7 @@ export default function TeamsPage() {
     }
   };
 
-  // Fill from the players who said Available for the chosen event (Maybes go to the bench)
+  // Fill from the players who said Available for the chosen event; Maybes fill gaps, then the bench
   const handleFillFromEvent = async () => {
     if (!lineupEventId) return;
     setIsFillingFromEvent(true);
@@ -641,15 +645,16 @@ export default function TeamsPage() {
         .eq("event_id", lineupEventId)
         .in("response", ["yes", "maybe"]);
       if (error) throw error;
-      const yes = (data || []).filter(r => r.response === "yes");
-      if (!yes.length) {
+      const answered = data || [];
+      if (!answered.some(r => r.response === "yes")) {
         toast.info("Nobody has said they're available for this event yet");
         return;
       }
       const signedUp = new Map(
-        yes.filter(r => r.position).map(r => [r.discord_user_id, (r.position as string).split(",")]),
+        answered.filter(r => r.response === "yes" && r.position).map(r => [r.discord_user_id, (r.position as string).split(",")]),
       );
-      await fillFromVoiceChannel(yes.map(r => r.discord_user_id), signedUp);
+      const maybes = new Set(answered.filter(r => r.response === "maybe").map(r => r.discord_user_id));
+      await fillFromVoiceChannel(answered.map(r => r.discord_user_id), signedUp, maybes);
     } catch (error) {
       toast.error((error as Error).message);
     } finally {

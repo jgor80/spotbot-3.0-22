@@ -21,7 +21,7 @@ const {
 const { missingChannelPerms } = require('./perm-check.cjs');
 const { activeClubs, resolveClub } = require('./manager-hub.cjs');
 const { toInsightMatches, computeOverview, computeCombos, computeFormations, playerKey, winPct, competitionLabel, competitionEmoji } = require('./club-insights.cjs');
-const { autofillLineup, FORMATION_SLOTS } = require('./lineup-autofill.cjs');
+const { pickLineup, tierFit, FORMATION_SLOTS } = require('./lineup-autofill.cjs');
 const { seasonTotals } = require('./player-season.cjs');
 const T = require('./event-time.cjs');
 const { PREMIUM_FREE } = require('./premium.cjs');
@@ -281,15 +281,24 @@ function createAutopilot(deps) {
     const pick = formationOverride ? { formation: formationOverride, stat: computeFormations(matches).find((f) => f.formation === formationOverride) || null } : pickFormation(matches, lastFormation);
     const slots = FORMATION_SLOTS[pick.formation];
 
-    const [{ data: ratings }, { data: posRatings }, { data: prefs }, responses] = await Promise.all([
+    const [{ data: ratings }, { data: posRatings }, responses, known] = await Promise.all([
       supabase.from('player_ratings').select('discord_user_id, overall_rating').eq('guild_id', guildId).in('discord_user_id', pool),
       supabase.from('player_position_ratings').select('discord_user_id, position, rating').eq('guild_id', guildId).in('discord_user_id', pool),
-      supabase.from('position_preferences').select('user_id, preferences').eq('guild_id', guildId).in('user_id', pool),
       events.loadResponses(event.id),
+      // Position tiers first (comp, plays well, emergency), then roster, preferences and roles
+      events.playerPositions ? events.playerPositions(event, pool).catch(() => new Map()) : new Map(),
     ]);
     const rating = new Map((ratings || []).map((r) => [r.discord_user_id, Number(r.overall_rating) || 60]));
-    const prefsBy = new Map((prefs || []).map((p) => [p.user_id, p.preferences || []]));
-    const signedUp = new Map(responses.filter((r) => r.position).map((r) => [r.discord_user_id, r.position.split(',')]));
+    const answer = new Map(responses.map((r) => [r.discord_user_id, r.response]));
+    // A position picked when signing up for this event counts as their comp position for it
+    const tiersOf = new Map(pool.map((id) => {
+      const signed = responses.find((r) => r.discord_user_id === id && r.response === 'yes' && r.position);
+      if (signed) {
+        const list = signed.position.split(',').map((p) => p.trim()).filter(Boolean);
+        return [id, { primary: list[0], secondary: list.slice(1), emergency: known.get(id)?.emergency || [] }];
+      }
+      return [id, known.get(id) || null];
+    }));
 
     // Players in the club's best pairings get a small nudge so they start together
     const pairs = await chemistryPairs(guildId, matches, pool);
@@ -299,20 +308,23 @@ function createAutopilot(deps) {
     const players = pool.map((id) => ({
       discord_user_id: id,
       overall_rating: (rating.get(id) ?? 60) + (boost.get(id) || 0),
-      preferences: signedUp.get(id) || prefsBy.get(id) || [],
+      tiers: tiersOf.get(id),
+      maybe: answer.get(id) === 'maybe',
+      preferences: [],
     }));
-    const picks = autofillLineup(slots, players, posRatings || []);
+    const { starters: picks, bench } = pickLineup(slots, players, posRatings || [], 9);
     const starters = new Set(picks.values());
-    const bench = pool.filter((id) => !starters.has(id)).sort((a, b) => (rating.get(b) ?? 0) - (rating.get(a) ?? 0));
     const rows = [
       ...[...picks.entries()].map(([slot, id]) => ({ slot_index: slot, position: slots[slot], discord_user_id: id, is_substitute: false })),
       ...bench.map((id, i) => ({
         slot_index: slots.length + i,
-        position: (signedUp.get(id) || prefsBy.get(id) || ['SUB'])[0],
+        position: tiersOf.get(id)?.primary || 'SUB',
         discord_user_id: id,
         is_substitute: true,
       })),
     ];
+    // How each starter fits their spot, for the AI assistant and anyone checking the pick
+    const fits = new Map([...picks.entries()].map(([slot, id]) => [id, tierFit(tiersOf.get(id), slots[slot]) || 'unknown']));
     const starterRatings = [...starters].map((id) => rating.get(id)).filter((r) => r != null);
     return {
       formation: pick.formation,
@@ -320,11 +332,14 @@ function createAutopilot(deps) {
       slots,
       rows,
       pairs: pairs.filter((p) => p.ids.every((id) => starters.has(id))),
+      fits,
+      answers: answer,
+      tiers: tiersOf,
       avgRating: starterRatings.length ? starterRatings.reduce((a, b) => a + b, 0) / starterRatings.length : null,
     };
   }
 
-  function suggestionEmbed(event, club, lineupId, plan, inVoice) {
+  function suggestionEmbed(event, club, lineupId, plan, inVoice, where = 'in voice') {
     const byIndex = new Map(plan.rows.filter((r) => !r.is_substitute).map((r) => [r.slot_index, r.discord_user_id]));
     const xi = plan.slots.map((pos, i) => `\`${pos.padEnd(3)}\` ${byIndex.has(i) ? `<@${byIndex.get(i)}>` : '*open*'}`);
     const bench = plan.rows.filter((r) => r.is_substitute).map((r) => `<@${r.discord_user_id}>`);
@@ -336,7 +351,7 @@ function createAutopilot(deps) {
       .setTitle(`📋 Suggested XI: ${event.title}`)
       .setColor(0x5865f2)
       .setDescription(
-        `**${inVoice}** player${inVoice === 1 ? '' : 's'} in voice for kick-off <t:${kickoff}:t> (<t:${kickoff}:R>). Here is the suggested **${plan.formation}**.\n${why}`
+        `**${inVoice}** player${inVoice === 1 ? '' : 's'} ${where} for kick-off <t:${kickoff}:t> (<t:${kickoff}:R>). Here is the suggested **${plan.formation}**.\n${why}`
       )
       .addFields({ name: 'Starting XI', value: truncate(xi.join('\n')) });
     if (bench.length) embed.addFields({ name: 'Bench', value: truncate(bench.join(' ')) });
@@ -418,7 +433,13 @@ function createAutopilot(deps) {
     const inVoice = vcId ? voiceMembers(event.guild_id, vcId) : [];
     const checkins = await matchNight.loadCheckins(event.id);
     // Everyone in voice, plus anyone checked in by button who isn't in voice yet
-    const pool = [...new Set([...inVoice, ...checkins.filter((c) => c.status !== 'out').map((c) => c.discord_user_id)])];
+    let pool = [...new Set([...inVoice, ...checkins.filter((c) => c.status !== 'out').map((c) => c.discord_user_id)])];
+    // Nobody in voice or checked in yet: pick from who answered Available, then Maybe
+    const fromAnswers = !pool.length;
+    if (fromAnswers) {
+      const responses = await events.loadResponses(event.id);
+      pool = [...responses.filter((r) => r.response === 'yes'), ...responses.filter((r) => r.response === 'maybe')].map((r) => r.discord_user_id);
+    }
     if (!pool.length) return;
 
     const plan = await draft(event, club, pool.slice(0, 30));
@@ -430,7 +451,7 @@ function createAutopilot(deps) {
     const leaders = await leadersFor(club, event);
     const payload = {
       content: leaders.length ? `${leaders.map((id) => `<@${id}>`).join(' ')} your team sheet is ready to publish.` : undefined,
-      ...suggestionEmbed(event, club, lineupId, plan, inVoice.length || pool.length),
+      ...suggestionEmbed(event, club, lineupId, plan, inVoice.length || pool.length, fromAnswers ? 'available' : 'in voice'),
       allowedMentions: { users: leaders },
     };
     const checkinPost = event.checkin_message_id ? await channel.messages.fetch(event.checkin_message_id).catch(() => null) : null;
@@ -1196,6 +1217,8 @@ function createAutopilot(deps) {
     buildRecap,
     postMatchReports,
     draft,
+    saveDraft,
+    formations: () => Object.keys(FORMATION_SLOTS),
     isOn,
     updateClub,
     postChannel,
