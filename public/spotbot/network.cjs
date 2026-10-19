@@ -29,9 +29,22 @@ const REGIONS = ['Europe', 'UK & Ireland', 'North America East', 'North America 
 const PLATFORMS = { 'common-gen5': 'PS5 / Xbox Series / PC', nx: 'Switch' };
 // Per server, per rolling day. Later slices add their own kinds (replacement, friendly...).
 const DAILY_LIMITS = { report: 5, replacement: 10, friendly: 10 };
+// Per player across every server, per rolling day, so one person can't spam from several servers
+const USER_DAILY_LIMITS = { report: 3, replacement: 5, friendly: 5 };
+// Joining needs a server that isn't brand new and has a few people in it (NETWORK_MIN_SERVER_DAYS,
+// NETWORK_MIN_MEMBERS). Reports from this many different listed servers within REPORT_WINDOW_MS pause
+// a server until the team reviews it (NETWORK_AUTO_SUSPEND_REPORTS, 0 turns it off).
+const REPORT_WINDOW_MS = 30 * DAY_MS;
+const AUTO_SUSPEND_REASON = 'Paused automatically after reports from several servers. The GafferBot team will review it.';
+const envInt = (name, fallback) => {
+  const n = parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+};
 const REGION_CHOICES = REGIONS.map((r) => ({ name: r, value: r }));
 const PLATFORM_CHOICES = Object.entries({ 'common-gen5': 'PS5 / Xbox Series / PC', nx: 'Switch' }).map(([value, name]) => ({ name, value }));
 const PAGE_SIZE = 15;
+const MAX_LISTED = 10000;
+const STATE_BATCH = 10;
 const MAX_TEXT = 200;
 
 const NETWORK_COMMANDS = [
@@ -117,9 +130,14 @@ const NETWORK_COMMANDS = [
   },
 ];
 
-// Strip what should never travel between servers (links, invites, mentions) and mask blocked words.
-// Extra words can be added with NETWORK_BLOCKED_WORDS (comma separated) without a deploy.
-const BUILTIN_BLOCKED = ['fuck', 'cunt', 'retard'];
+// Strip what should never travel between servers (links, bare domains, invites, mentions, invisible
+// characters) and mask blocked words. Extra words can be added with NETWORK_BLOCKED_WORDS (comma
+// separated) without a deploy.
+const BUILTIN_BLOCKED = ['fuck', 'cunt', 'retard', 'nigger', 'nigga', 'faggot', 'tranny'];
+const INVISIBLE = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/g;
+const INVITE = /\b(discord(app)?\s*\.\s*(gg|com\s*\/\s*invite|me)|dsc\s*\.\s*gg|invite\s*\.\s*gg)\s*\/?\s*[\w-]+/gi;
+const TLDS = 'com|net|org|gg|io|co|me|tv|ly|xyz|app|dev|link|club|shop|site|online|live|store|ru|uk|de|fr|es|it|nl|info|biz|us|ca|au|pro|fun|top|win|bet|cc|to|be|eu';
+const BARE_DOMAIN = new RegExp(`\\b[a-z0-9][a-z0-9-]*(\\s*\\.\\s*[a-z0-9-]+)*\\s*\\.\\s*(${TLDS})\\b(\\/\\S*)?`, 'gi');
 function blockedWords() {
   const extra = String(process.env.NETWORK_BLOCKED_WORDS || '').split(',').map((w) => w.trim().toLowerCase()).filter(Boolean);
   return [...new Set([...BUILTIN_BLOCKED, ...extra])];
@@ -127,10 +145,14 @@ function blockedWords() {
 function cleanText(text, max = MAX_TEXT) {
   if (!text) return '';
   let s = String(text)
+    .normalize('NFKC')
+    .replace(INVISIBLE, '')
     .replace(/<[@#][!&]?\d+>/g, '')
     .replace(/@(everyone|here)/gi, '')
     .replace(/(https?:\/\/|www\.)\S+/gi, '')
-    .replace(/\b(discord\.gg|discord(app)?\.com\/invite)\/\S+/gi, '')
+    .replace(INVITE, '')
+    .replace(BARE_DOMAIN, '')
+    .replace(/@/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   for (const word of blockedWords()) {
@@ -148,6 +170,20 @@ function visibleServerIds(rows, blocks, guildId) {
     if (b.blocked_guild_id === guildId) hidden.add(b.guild_id);
   }
   return (rows || []).filter((r) => r.enabled && !r.suspended_at && r.guild_id !== guildId && !hidden.has(r.guild_id)).map((r) => r.guild_id);
+}
+
+// Why a server can't join yet, or null. Bot owners skip this (they run test servers).
+function joinProblem(guild, now = Date.now()) {
+  const minDays = envInt('NETWORK_MIN_SERVER_DAYS', 30);
+  const minMembers = envInt('NETWORK_MIN_MEMBERS', 5);
+  const created = guild?.createdTimestamp;
+  if (minDays && created && now - created < minDays * DAY_MS) {
+    return `Servers can join the GafferBot Network once they're ${minDays} days old. This one can join <t:${Math.ceil((created + minDays * DAY_MS) / 1000)}:R>.`;
+  }
+  if (minMembers && typeof guild?.memberCount === 'number' && guild.memberCount < minMembers) {
+    return `Servers need at least ${minMembers} members to join the GafferBot Network.`;
+  }
+  return null;
 }
 
 function fmtRecord(s) {
@@ -195,35 +231,85 @@ function createNetwork(deps) {
     return blocks.some((x) => (x.guild_id === a && x.blocked_guild_id === b) || (x.guild_id === b && x.blocked_guild_id === a));
   }
 
+  // Every listed server, a page at a time (PostgREST caps one response at 1000 rows)
+  async function listedRows() {
+    const out = [];
+    for (let from = 0; from < MAX_LISTED; from += 1000) {
+      const { data } = await supabase
+        .from('network_servers')
+        .select('*')
+        .eq('enabled', true)
+        .is('suspended_at', null)
+        .order('guild_id')
+        .range(from, from + 999);
+      out.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    return out;
+  }
+
   // Servers this one can reach, with their settings rows
   async function visibleServers(guildId) {
-    const [{ data: rows }, blocks] = await Promise.all([
-      supabase.from('network_servers').select('*').eq('enabled', true).is('suspended_at', null).limit(500),
-      blocksFor(guildId),
-    ]);
+    const [rows, blocks] = await Promise.all([listedRows(), blocksFor(guildId)]);
     const ids = new Set(visibleServerIds(rows, blocks, guildId));
     return (rows || []).filter((r) => ids.has(r.guild_id));
   }
 
-  // Rate limit: how many of this kind a server has sent in the last day. Returns a message when over.
-  async function overLimit(guildId, kind, limit = DAILY_LIMITS[kind]) {
-    if (!limit) return null;
-    const { count } = await supabase
-      .from('network_activity')
-      .select('id', { count: 'exact', head: true })
-      .eq('guild_id', guildId)
-      .eq('kind', kind)
-      .gte('created_at', new Date(Date.now() - DAY_MS).toISOString());
-    return (count || 0) >= limit ? `This server has hit today's network limit (${limit} a day). Try again tomorrow.` : null;
+  // Rate limit: how many of this kind a server, and the player across every server, sent in the last
+  // day. Returns a message when either is over.
+  async function overLimit(guildId, kind, userId) {
+    const since = new Date(Date.now() - DAY_MS).toISOString();
+    const count = async (column, value) => {
+      const { count: n } = await supabase
+        .from('network_activity')
+        .select('id', { count: 'exact', head: true })
+        .eq(column, value)
+        .eq('kind', kind)
+        .gte('created_at', since);
+      return n || 0;
+    };
+    const limit = DAILY_LIMITS[kind];
+    if (limit && (await count('guild_id', guildId)) >= limit) return `This server has hit today's network limit (${limit} a day). Try again tomorrow.`;
+    const userLimit = USER_DAILY_LIMITS[kind];
+    if (userId && userLimit && (await count('discord_user_id', userId)) >= userLimit) return `You've hit today's network limit (${userLimit} a day across all servers). Try again tomorrow.`;
+    return null;
   }
 
-  async function logActivity(guildId, kind) {
-    await supabase.from('network_activity').insert({ guild_id: guildId, kind });
+  async function logActivity(guildId, kind, userId) {
+    await supabase.from('network_activity').insert({ guild_id: guildId, kind, discord_user_id: userId || null });
+  }
+
+  // Enough different listed servers reported this one lately: take it off the network until reviewed.
+  // Returns how many servers reported it when that happened, otherwise null.
+  async function autoSuspend(client, targetId) {
+    const needed = envInt('NETWORK_AUTO_SUSPEND_REPORTS', 3);
+    if (!needed) return null;
+    const { data: reports } = await supabase
+      .from('network_reports')
+      .select('reporter_guild_id')
+      .eq('reported_guild_id', targetId)
+      .gte('created_at', new Date(Date.now() - REPORT_WINDOW_MS).toISOString())
+      .limit(500);
+    const reporters = [...new Set((reports || []).map((r) => r.reporter_guild_id).filter((id) => id && id !== targetId))];
+    if (reporters.length < needed) return null;
+    // Only servers in good standing count, so a ring of throwaway servers can't knock someone off
+    const { data: good } = await supabase.from('network_servers').select('guild_id').in('guild_id', reporters).eq('enabled', true).is('suspended_at', null);
+    const n = (good || []).length;
+    if (n < needed) return null;
+    const { data: hit } = await supabase
+      .from('network_servers')
+      .update({ suspended_at: new Date().toISOString(), suspended_reason: AUTO_SUSPEND_REASON, updated_at: new Date().toISOString() })
+      .eq('guild_id', targetId)
+      .is('suspended_at', null)
+      .select('guild_id');
+    if (!hit?.length) return null;
+    await postToChannel(client, targetId, { content: `⛔ This server is off the GafferBot Network for now: ${AUTO_SUSPEND_REASON}` }).catch(() => null);
+    return n;
   }
 
   function serverLabel(client, row, fallbackClub) {
     if (row?.show_server_name) {
-      const name = client?.guilds?.cache?.get(row.guild_id)?.name;
+      const name = cleanText(client?.guilds?.cache?.get(row.guild_id)?.name, 60);
       if (name) return name;
     }
     return fallbackClub ? `${fallbackClub}'s server` : 'a GafferBot server';
@@ -233,27 +319,40 @@ function createNetwork(deps) {
   async function clubDirectory(client, servers) {
     if (!servers.length) return [];
     const ids = servers.map((s) => s.guild_id);
-    const { data: stats } = await supabase
-      .from('club_stats')
-      .select('guild_id, club_key, club_name, ea_platform, current_division, skill_rating, wins, draws, losses')
-      .in('guild_id', ids);
+    const stats = [];
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await supabase
+        .from('club_stats')
+        .select('guild_id, club_key, club_name, ea_platform, current_division, skill_rating, wins, draws, losses')
+        .in('guild_id', ids.slice(i, i + 200));
+      stats.push(...(data || []));
+    }
+    const statsByClub = new Map(stats.map((x) => [`${x.guild_id}|${x.club_key}`, x]));
+    // Server settings load a few at a time instead of one after another
+    const states = new Map();
+    for (let i = 0; i < servers.length; i += STATE_BATCH) {
+      const batch = servers.slice(i, i + STATE_BATCH);
+      const loaded = await Promise.all(batch.map((row) => getGuildState(row.guild_id).catch(() => null)));
+      batch.forEach((row, j) => states.set(row.guild_id, loaded[j]));
+    }
     const out = [];
     for (const row of servers) {
-      const state = await getGuildState(row.guild_id);
+      const state = states.get(row.guild_id);
+      if (!state) continue;
       for (const club of activeClubs(state)) {
         if (!club.ea_club_id) continue;
-        const s = (stats || []).find((x) => x.guild_id === row.guild_id && x.club_key === club.key);
+        const s = statsByClub.get(`${row.guild_id}|${club.key}`);
         out.push({
           guildId: row.guild_id,
           key: club.key,
           eaClubId: String(club.ea_club_id),
-          name: club.ea_club_name || s?.club_name || club.name,
+          name: cleanText(club.ea_club_name || s?.club_name || club.name, 60) || 'Unnamed club',
           platform: toFcPlatform(club.ea_platform || s?.ea_platform),
           division: s?.current_division || null,
           skill: s?.skill_rating || null,
           stats: s,
           region: row.region || null,
-          serverName: row.show_server_name ? client?.guilds?.cache?.get(row.guild_id)?.name || null : null,
+          serverName: row.show_server_name ? cleanText(client?.guilds?.cache?.get(row.guild_id)?.name, 60) || null : null,
         });
       }
     }
@@ -291,6 +390,8 @@ function createNetwork(deps) {
     if (existing?.suspended_at && enabled) {
       return interaction.reply({ content: `⛔ This server is suspended from the GafferBot Network${existing.suspended_reason ? `: ${existing.suspended_reason}` : ''}. Contact the GafferBot team to appeal.`, flags: 64 });
     }
+    const tooNew = enabled && !existing?.enabled && !isBotOwner(interaction.user.id) ? joinProblem(interaction.guild) : null;
+    if (tooNew) return interaction.reply({ content: `⏳ ${tooNew}`, flags: 64 });
     const channelId = channel?.id || existing?.channel_id || null;
     if (enabled && !channelId) {
       return interaction.reply({ content: '❌ Pick a channel where requests from other servers should land, then switch the network on.', flags: 64 });
@@ -437,7 +538,7 @@ function createNetwork(deps) {
   }
 
   async function sendReport(interaction, targetId, context) {
-    const limited = await overLimit(interaction.guildId, 'report');
+    const limited = await overLimit(interaction.guildId, 'report', interaction.user.id);
     if (limited) return interaction.reply({ content: `⏳ ${limited}`, flags: 64 });
     const reason = cleanText(interaction.fields.getTextInputValue('reason'), 500) || 'No reason given';
     const { data: report, error } = await supabase
@@ -446,13 +547,17 @@ function createNetwork(deps) {
       .select('id')
       .single();
     if (error) return interaction.reply({ content: `❌ ${error.message}`, flags: 64 });
-    await logActivity(interaction.guildId, 'report');
-    await notifyOwners(interaction.client, report.id, interaction.guildId, targetId, context, reason);
+    await logActivity(interaction.guildId, 'report', interaction.user.id);
+    const suspendedAfter = await autoSuspend(interaction.client, targetId).catch((err) => {
+      console.warn(`[network] auto-suspend check failed: ${err.message}`);
+      return null;
+    });
+    await notifyOwners(interaction.client, report.id, interaction.guildId, targetId, context, reason, suspendedAfter);
     return interaction.reply({ content: '🚩 Thanks, the GafferBot team will look at it. If you don\'t want to hear from that server meanwhile, block it from the same menu.', flags: 64 });
   }
 
   // Reports go to NETWORK_REPORTS_CHANNEL_ID if set, otherwise to the bot owners' DMs
-  async function notifyOwners(client, reportId, fromId, targetId, context, reason) {
+  async function notifyOwners(client, reportId, fromId, targetId, context, reason, suspendedAfter = null) {
     const name = (id) => `${client.guilds.cache.get(id)?.name || 'Unknown server'} (${id})`;
     const { count } = await supabase.from('network_reports').select('id', { count: 'exact', head: true }).eq('reported_guild_id', targetId);
     const embed = new EmbedBuilder()
@@ -463,7 +568,8 @@ function createNetwork(deps) {
         { name: 'By', value: name(fromId) },
         { name: 'About', value: context || 'Not given', inline: true },
         { name: 'Reports against them', value: String(count || 1), inline: true },
-        { name: 'Reason', value: reason.slice(0, 1000) }
+        { name: 'Reason', value: reason.slice(0, 1000) },
+        ...(suspendedAfter ? [{ name: 'Automatically suspended', value: `Reported by ${suspendedAfter} servers in 30 days. Lift it with Owner: Network Suspend and an empty reason.` }] : [])
       )
       .setFooter({ text: `Report ${reportId} · suspend with /manager → Admin → Owner: Network Suspend` });
     await notifyHost(client, { embeds: [embed] });
@@ -589,4 +695,4 @@ function createNetwork(deps) {
   };
 }
 
-module.exports = { createNetwork, NETWORK_COMMANDS, cleanText, visibleServerIds, clubLine, PLATFORMS, REGIONS, DAILY_LIMITS };
+module.exports = { createNetwork, NETWORK_COMMANDS, cleanText, visibleServerIds, clubLine, joinProblem, PLATFORMS, REGIONS, DAILY_LIMITS, USER_DAILY_LIMITS };

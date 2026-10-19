@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { cleanText, visibleServerIds, clubLine } = require('./network.cjs');
+const { cleanText, visibleServerIds, clubLine, joinProblem, createNetwork } = require('./network.cjs');
 
 test('cleanText strips links, invites and mentions, and caps the length', () => {
   const out = cleanText('Need a CB <@123456789012345678> @everyone join discord.gg/abc https://x.com/y tonight');
@@ -18,6 +18,95 @@ test('cleanText masks blocked words, including ones added by env', () => {
   } finally {
     delete process.env.NETWORK_BLOCKED_WORDS;
   }
+});
+
+test('cleanText drops bare domains, split invites and invisible characters, and keeps ordinary text', () => {
+  assert.strictEqual(cleanText('visit mysite.com/promo or bit.ly/x'), 'visit or');
+  assert.strictEqual(cleanText('join discord . gg / abc now'), 'join now');
+  assert.strictEqual(cleanText('dsc.gg/team'), '');
+  assert.strictEqual(cleanText('f​uck'), 'f***');
+  assert.strictEqual(cleanText('Need a CB 9pm, 4.5 skill, e.g. tonight'), 'Need a CB 9pm, 4.5 skill, e.g. tonight');
+  assert.strictEqual(cleanText('Real Madrid FC'), 'Real Madrid FC');
+});
+
+test('joinProblem: new or tiny servers wait, older ones with members join', () => {
+  const now = Date.parse('2026-10-19T00:00:00Z');
+  const day = 24 * 60 * 60 * 1000;
+  assert.match(joinProblem({ createdTimestamp: now - 3 * day, memberCount: 50 }, now), /30 days old/);
+  assert.match(joinProblem({ createdTimestamp: now - 90 * day, memberCount: 2 }, now), /at least 5 members/);
+  assert.strictEqual(joinProblem({ createdTimestamp: now - 90 * day, memberCount: 12 }, now), null);
+  process.env.NETWORK_MIN_SERVER_DAYS = '0';
+  process.env.NETWORK_MIN_MEMBERS = '0';
+  try {
+    assert.strictEqual(joinProblem({ createdTimestamp: now - day, memberCount: 1 }, now), null);
+  } finally {
+    delete process.env.NETWORK_MIN_SERVER_DAYS;
+    delete process.env.NETWORK_MIN_MEMBERS;
+  }
+});
+
+// A tiny stand-in for the Supabase client: every query resolves through respond(table, op, filters)
+function fakeSupabase(respond) {
+  const calls = [];
+  const from = (table) => {
+    const q = { table, op: 'select', filters: {}, patch: null };
+    const b = {
+      select: () => b,
+      insert: (row) => { q.op = 'insert'; q.patch = row; return b; },
+      update: (row) => { q.op = 'update'; q.patch = row; return b; },
+      eq: (c, v) => { q.filters[c] = v; return b; },
+      is: (c, v) => { q.filters[c] = v; return b; },
+      in: (c, v) => { q.filters[c] = v; return b; },
+      gte: () => b,
+      limit: () => b,
+      maybeSingle: () => b,
+      single: () => b,
+      then: (ok, bad) => { calls.push(q); return Promise.resolve(respond(q)).then(ok, bad); },
+    };
+    return b;
+  };
+  return { from, calls };
+}
+
+test('overLimit: a player is capped across every server, not just per server', async () => {
+  const sb = fakeSupabase((q) => ({ count: q.filters.discord_user_id ? 5 : 1 }));
+  const network = createNetwork({ supabase: sb, getGuildState: async () => ({}), isManager: () => false });
+  assert.match(await network.overLimit('g1', 'friendly', 'u1'), /You've hit today's network limit \(5 a day/);
+  assert.strictEqual(await network.overLimit('g1', 'friendly'), null);
+  const busy = fakeSupabase(() => ({ count: 10 }));
+  const n2 = createNetwork({ supabase: busy, getGuildState: async () => ({}), isManager: () => false });
+  assert.match(await n2.overLimit('g1', 'friendly', 'u1'), /This server has hit/);
+});
+
+test('reports from three listed servers pause the reported server once', async () => {
+  let suspended = false;
+  const sb = fakeSupabase((q) => {
+    if (q.table === 'network_reports' && q.op === 'insert') return { data: { id: 'r1' } };
+    if (q.table === 'network_reports') return { data: [{ reporter_guild_id: 'a' }, { reporter_guild_id: 'b' }, { reporter_guild_id: 'b' }, { reporter_guild_id: 'c' }], count: 4 };
+    if (q.table === 'network_servers' && q.op === 'update') {
+      if (suspended) return { data: [] };
+      suspended = true;
+      return { data: [{ guild_id: 'bad' }] };
+    }
+    if (q.table === 'network_servers' && Array.isArray(q.filters.guild_id)) return { data: q.filters.guild_id.map((guild_id) => ({ guild_id })) };
+    if (q.table === 'network_servers') return { data: null };
+    return { count: 0, data: null };
+  });
+  const network = createNetwork({ supabase: sb, getGuildState: async () => ({}), isManager: () => true });
+  const replies = [];
+  const interaction = {
+    guildId: 'a',
+    user: { id: 'u1' },
+    member: { permissions: { has: () => true } },
+    client: { guilds: { cache: new Map() }, users: { fetch: async () => null } },
+    fields: { getTextInputValue: () => 'spam' },
+    reply: async (r) => replies.push(r),
+  };
+  await network.handleInteraction(Object.assign(interaction, { isModalSubmit: () => true, isChatInputCommand: () => false, isButton: () => false, isStringSelectMenu: () => false, customId: 'nw_repsend:bad:club card' }));
+  assert.ok(suspended, 'the reported server is suspended');
+  assert.match(replies[0]?.content || '', /Thanks/);
+  const update = sb.calls.find((c) => c.table === 'network_servers' && c.op === 'update');
+  assert.match(update.patch.suspended_reason, /reports from several servers/);
 });
 
 test('visibleServerIds hides self, off, suspended and blocked servers in both directions', () => {
