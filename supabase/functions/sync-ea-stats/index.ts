@@ -2071,10 +2071,17 @@ Deno.serve(async (req) => {
       : null
     const slices = Number.isInteger(requestBody?.slices) && requestBody.slices > 0 ? requestBody.slices : 0
     const slice = slices && Number.isInteger(requestBody?.slice) ? requestBody.slice % slices : -1
+    // Slices whose runs were skipped while an earlier sync was still going; swept now instead
+    const alsoSlices = new Set<number>(slices && Array.isArray(requestBody?.also_slices)
+      ? requestBody.also_slices.filter((s: unknown) => Number.isInteger(s)).map((s: number) => ((s % slices) + slices) % slices)
+      : [])
     const wanted = (guildId: string, clubKey: string) => {
       if (onlyGuildId || (!activeKeys && slice < 0)) return true
       const key = `${guildId}:${clubKey}`
-      return Boolean(activeKeys?.has(key)) || (slice >= 0 && syncSliceOf(key, slices) === slice)
+      if (activeKeys?.has(key)) return true
+      if (slice < 0) return false
+      const s = syncSliceOf(key, slices)
+      return s === slice || alsoSlices.has(s)
     }
 
     // Who may start a sync: the bot, a leader of the one server being synced, or the scheduled job

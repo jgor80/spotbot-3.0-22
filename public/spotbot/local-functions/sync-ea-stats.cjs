@@ -1755,10 +1755,14 @@ Deno.serve(async (req) => {
     const activeKeys = !onlyGuildId && Array.isArray(requestBody?.active) ? new Set(requestBody.active.filter((k) => typeof k === "string")) : null;
     const slices = Number.isInteger(requestBody?.slices) && requestBody.slices > 0 ? requestBody.slices : 0;
     const slice = slices && Number.isInteger(requestBody?.slice) ? requestBody.slice % slices : -1;
+    const alsoSlices = new Set(slices && Array.isArray(requestBody?.also_slices) ? requestBody.also_slices.filter((s) => Number.isInteger(s)).map((s) => (s % slices + slices) % slices) : []);
     const wanted = (guildId, clubKey) => {
       if (onlyGuildId || !activeKeys && slice < 0) return true;
       const key = `${guildId}:${clubKey}`;
-      return Boolean(activeKeys?.has(key)) || slice >= 0 && syncSliceOf(key, slices) === slice;
+      if (activeKeys?.has(key)) return true;
+      if (slice < 0) return false;
+      const s = syncSliceOf(key, slices);
+      return s === slice || alsoSlices.has(s);
     };
     const caller = await identifyCaller(req, supabase);
     const cronSecret = Deno.env.get("CRON_SECRET") ?? "";

@@ -68,7 +68,7 @@ function createReplacements(deps) {
     const club = resolveClub(state, interaction.member);
     if (!club) return interaction.editReply({ content: '❌ No club is set up yet. Run **/manager → Admin → Link EA Club** first.' });
     if (!(await canManageClub(interaction.member, club))) return interaction.editReply({ content: `❌ Only ${club.name}'s leaders can ask for replacements.` });
-    const limited = await network.overLimit(interaction.guildId, 'replacement');
+    const limited = await network.overLimit(interaction.guildId, 'replacement', interaction.user.id);
     if (limited) return interaction.editReply({ content: `⏳ ${limited}` });
 
     const whenText = interaction.options.getString('when');
@@ -91,7 +91,7 @@ function createReplacements(deps) {
     };
     const { data: req, error } = await supabase.from('network_requests').insert(row).select('*').single();
     if (error) return interaction.editReply({ content: `❌ Could not create the request: ${error.message}` });
-    await network.logActivity(interaction.guildId, 'replacement');
+    await network.logActivity(interaction.guildId, 'replacement', interaction.user.id);
 
     const dmed = await offerToFreeAgents(interaction, req);
     const posted = req.reach === 'all' ? await postToServers(interaction.client, req) : 0;

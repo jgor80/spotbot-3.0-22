@@ -96,7 +96,7 @@ function createNetworkFriendlies(deps) {
     const club = resolveClub(state, interaction.member);
     if (!club?.ea_club_id) return interaction.editReply({ content: '❌ Link your club to EA first (**/manager → Admin → Link EA Club**) so the other side can find you in game.' });
     if (!(await leaderOf(interaction, club))) return interaction.editReply({ content: `❌ Only ${club.name}'s leaders can arrange friendlies.` });
-    const limited = await network.overLimit(interaction.guildId, 'friendly');
+    const limited = await network.overLimit(interaction.guildId, 'friendly', interaction.user.id);
     if (limited) return interaction.editReply({ content: `⏳ ${limited}` });
 
     const whenText = interaction.options.getString('when');
@@ -126,7 +126,7 @@ function createNetworkFriendlies(deps) {
 
     if (isOpen) {
       const posted = await postOpen(interaction.client, f);
-      await network.logActivity(interaction.guildId, 'friendly');
+      await network.logActivity(interaction.guildId, 'friendly', interaction.user.id);
       return interaction.editReply({
         content: posted
           ? `✅ Open invite posted to ${posted} network server${posted === 1 ? '' : 's'} for ${when(kickoff)}. The first club to accept plays, and you'll hear about it in your network channel.`
@@ -183,6 +183,8 @@ function createNetworkFriendlies(deps) {
   async function pickClub(interaction, f) {
     if (!f || f.status !== 'draft' || f.created_by_discord_id !== interaction.user.id) return interaction.update({ content: 'This invite has expired.', components: [] });
     const [guildId, clubKey] = String(interaction.values[0] || '').split('|');
+    const limited = await network.overLimit(f.from_guild_id, 'friendly', interaction.user.id);
+    if (limited) return interaction.update({ content: `⏳ ${limited}`, components: [] });
     if (await network.isBlockedBetween(f.from_guild_id, guildId)) return interaction.update({ content: '⚪ That club isn\'t taking invites right now.', components: [] });
     if (!(await network.isListed(guildId))) return interaction.update({ content: '⚪ That club has left the network.', components: [] });
     const target = activeClubs(await getGuildState(guildId)).find((c) => c.key === clubKey);
@@ -219,7 +221,7 @@ function createNetworkFriendlies(deps) {
     });
     if (!msg) return interaction.update({ content: '❌ I couldn\'t post in that club\'s network channel. Try another club.', components: [] });
     await supabase.from('network_fixtures').update({ ...patch, posts: [{ guild_id: guildId, channel_id: msg.channelId, message_id: msg.id }] }).eq('id', f.id).eq('status', 'draft');
-    await network.logActivity(f.from_guild_id, 'friendly');
+    await network.logActivity(f.from_guild_id, 'friendly', interaction.user.id);
     return interaction.update({
       content: `✅ Invite sent to **${patch.to_club_name}** for ${when(f.kickoff_at)}. Their answer lands in your network channel.`,
       components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`nw_fx:cancel:${f.id}`).setLabel('Cancel invite').setStyle(ButtonStyle.Secondary))],
