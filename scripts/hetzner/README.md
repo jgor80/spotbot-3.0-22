@@ -148,3 +148,10 @@ bodies over 16 MB are refused.
 
 `ALLOWED_GUILD_IDS` lists the servers the bot may stay in. Unset keeps only the original home
 server; `ALLOWED_GUILD_IDS=*` allows every server.
+
+**Deleting someone's data.** For a deletion request (the privacy policy promises 30 days), run
+`purge-data.mjs` with the bot's `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`:
+`node scripts/hetzner/purge-data.mjs --user <discord id>` or `--guild <server id>`. It prints what
+would go (rows per table and photo/card/crest files); add `--confirm` to delete. Billing records are
+kept for accounting (a player's id is blanked in them). Rows where the player only appears in a
+required "who did it" column are listed as `keep` for a manual look.

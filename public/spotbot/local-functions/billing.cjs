@@ -4166,6 +4166,11 @@ function siteUrl() {
 
 // supabase/functions/billing/events.ts
 var GUILD = /^\d{5,25}$/;
+var RENEWAL_GRACE_MS = 3 * 24 * 60 * 60 * 1e3;
+function withGrace(at) {
+  const t = typeof at === "string" ? Date.parse(at) : NaN;
+  return Number.isFinite(t) ? new Date(t + RENEWAL_GRACE_MS).toISOString() : null;
+}
 function lemonChange(event, payload, config, now = /* @__PURE__ */ new Date()) {
   const custom2 = payload?.meta?.custom_data ?? {};
   const guild = String(custom2.guild_id ?? "");
@@ -4180,7 +4185,8 @@ function lemonChange(event, payload, config, now = /* @__PURE__ */ new Date()) {
     const refunded = event === "order_refunded" || a.status === "refunded";
     const pack = config.packs[product];
     if (pack) {
-      if (refunded || a.status !== "paid") return { kind: "ignore", reason: "pack not paid" };
+      if (refunded) return { kind: "debit", provider: "lemonsqueezy", guild_id: guild, amount: pack.credits, event_id: `refund:order:${id}` };
+      if (a.status !== "paid") return { kind: "ignore", reason: "pack not paid" };
       return { kind: "credits", provider: "lemonsqueezy", guild_id: guild, amount: pack.credits, event_id: `order:${id}`, buyer };
     }
     const plan = config.plans[product];
@@ -4196,7 +4202,7 @@ function lemonChange(event, payload, config, now = /* @__PURE__ */ new Date()) {
         active: !refunded,
         period_end: null,
         buyer,
-        ...refunded || !plan.credits ? {} : { credits: { amount: plan.credits, event_id: `order:${id}` } }
+        ...!plan.credits ? {} : refunded ? { debit: { amount: plan.credits, event_id: `refund:order:${id}` } } : { credits: { amount: plan.credits, event_id: `order:${id}` } }
       };
     }
     return { kind: "ignore", reason: "subscription orders are handled by subscription events" };
@@ -4205,7 +4211,7 @@ function lemonChange(event, payload, config, now = /* @__PURE__ */ new Date()) {
     const product = productFor(config.lemonVariants, a.variant_id);
     if (!product || !config.plans[product] || config.plans[product].once) return { kind: "ignore", reason: "unknown plan" };
     const status = String(a.status ?? "");
-    const periodEnd = ["cancelled", "expired"].includes(status) ? a.ends_at ?? null : null;
+    const periodEnd = ["cancelled", "expired"].includes(status) ? a.ends_at ?? null : withGrace(a.renews_at);
     return {
       kind: "subscription",
       provider: "lemonsqueezy",
@@ -4215,7 +4221,8 @@ function lemonChange(event, payload, config, now = /* @__PURE__ */ new Date()) {
       status,
       active: isLive(status, periodEnd, now),
       period_end: periodEnd,
-      buyer
+      buyer,
+      source_updated_at: typeof a.updated_at === "string" ? a.updated_at : null
     };
   }
   return { kind: "ignore", reason: `event ${event} not used` };
@@ -4228,7 +4235,7 @@ function discordChange(e, config, guildHint = null, now = /* @__PURE__ */ new Da
   const buyer = e.user_id && GUILD.test(e.user_id) ? e.user_id : null;
   const pack = config.packs[product];
   if (pack) {
-    if (e.deleted) return { kind: "ignore", reason: "pack refunded" };
+    if (e.deleted) return { kind: "debit", provider: "discord", guild_id: guild, amount: pack.credits, event_id: `refund:ent:${e.id}` };
     return { kind: "credits", provider: "discord", guild_id: guild, amount: pack.credits, event_id: `ent:${e.id}`, buyer };
   }
   const plan = config.plans[product];
@@ -4244,7 +4251,7 @@ function discordChange(e, config, guildHint = null, now = /* @__PURE__ */ new Da
       active: !e.deleted,
       period_end: null,
       buyer,
-      ...e.deleted || !plan.credits ? {} : { credits: { amount: plan.credits, event_id: `ent:${e.id}` } }
+      ...!plan.credits ? {} : e.deleted ? { debit: { amount: plan.credits, event_id: `refund:ent:${e.id}` } } : { credits: { amount: plan.credits, event_id: `ent:${e.id}` } }
     };
   }
   const status = e.deleted ? "expired" : "active";
@@ -4296,7 +4303,17 @@ function safeEqual2(a, b) {
 }
 async function apply(change) {
   if (change.kind === "ignore") return { applied: false, reason: change.reason };
+  if (change.kind === "debit") {
+    const removed = await removeCredits(change.guild_id, change.amount, change.provider, change.event_id);
+    return { applied: true, removed };
+  }
   if (change.kind === "subscription") {
+    if (change.source_updated_at) {
+      const { data: current } = await db.from("billing_subscriptions").select("source_updated_at").eq("provider", change.provider).eq("external_id", change.external_id).maybeSingle();
+      if (current?.source_updated_at && new Date(current.source_updated_at) > new Date(change.source_updated_at)) {
+        return { applied: false, reason: "older than the saved state" };
+      }
+    }
     const { error } = await db.from("billing_subscriptions").upsert({
       guild_id: change.guild_id,
       provider: change.provider,
@@ -4306,14 +4323,23 @@ async function apply(change) {
       active: change.active,
       current_period_end: change.period_end,
       buyer_discord_id: change.buyer,
-      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      updated_at: (/* @__PURE__ */ new Date()).toISOString(),
+      ...change.source_updated_at ? { source_updated_at: change.source_updated_at } : {}
     }, { onConflict: "provider,external_id" });
     if (error) throw new Error(`subscription save failed: ${error.message}`);
     if (change.credits) await addCredits(change.guild_id, change.credits.amount, change.provider, change.credits.event_id);
+    if (change.debit) await removeCredits(change.guild_id, change.debit.amount, change.provider, change.debit.event_id);
     return { applied: true, tier: change.tier, active: change.active };
   }
   const added = await addCredits(change.guild_id, change.amount, change.provider, change.event_id);
   return { applied: true, credits: change.amount, added };
+}
+async function removeCredits(guild, amount, provider, eventId) {
+  const { data, error } = await db.rpc("remove_image_credits", { p_guild: guild, p_credits: amount, p_provider: provider, p_event: eventId });
+  if (error) throw new Error(`refund failed: ${error.message}`);
+  const removed = Number(data) || 0;
+  if (removed < amount) console.warn(`[billing] refund ${eventId}: ${amount - removed} of ${amount} images were already spent in ${guild}`);
+  return removed;
 }
 async function addCredits(guild, amount, provider, eventId) {
   const { data, error } = await db.rpc("add_image_credits", { p_guild: guild, p_credits: amount, p_provider: provider, p_event: eventId });

@@ -16,6 +16,8 @@ const CACHE_MS = 60 * 1000;
 const IMAGE_LIMITS = /^(on|true|1|yes)$/i.test(String(process.env.IMAGE_LIMITS || '').trim());
 // How long a buy button remembers which server it was opened in (Discord ties packs to the buyer)
 const HINT_MS = 2 * 60 * 60 * 1000;
+// The saved copy lasts longer, so a purchase replayed after a long outage still finds its server
+const SAVED_HINT_MS = 7 * 24 * 60 * 60 * 1000;
 
 function skuMap(raw) {
   try {
@@ -155,10 +157,10 @@ function createPremium(deps) {
   // Sends a Discord store purchase to the billing function; packs are consumed once credited
   async function forwardEntitlement(e, { deleted = Boolean(e?.deleted) } = {}) {
     if (!e || !Object.values(skus).includes(e.skuId)) return;
-    const hint = buyHints.get(e.userId);
+    const hint = await hintFor(e.userId);
     const out = await billing({
       action: 'discord_entitlement',
-      guild_hint: hint && Date.now() - hint.at < HINT_MS ? hint.guildId : null,
+      guild_hint: hint ? hint.guildId : null,
       entitlement: { id: e.id, sku_id: e.skuId, guild_id: e.guildId || null, user_id: e.userId || null, ends_at: e.endsTimestamp ? new Date(e.endsTimestamp).toISOString() : null, deleted, consumed: Boolean(e.consumed) },
     });
     if (out.error) return console.warn(`[premium] entitlement ${e.id} not recorded: ${out.error}`);
@@ -166,6 +168,17 @@ function createPremium(deps) {
     if (out.consume && !e.consumed && typeof e.consume === 'function') await e.consume().catch((err) => console.warn(`[premium] consume ${e.id} failed: ${err.message}`));
     if (e.guildId) cache.delete(e.guildId);
     if (hint) cache.delete(hint.guildId);
+  }
+
+  // Which server the buyer last opened a buy button in, from memory or (after a restart) the database
+  async function hintFor(userId) {
+    if (!userId) return null;
+    const mem = buyHints.get(userId);
+    if (mem && Date.now() - mem.at < HINT_MS) return mem;
+    const { data } = await supabase.from('billing_buy_hints').select('guild_id, updated_at').eq('discord_user_id', userId).maybeSingle()
+      .then((r) => r, () => ({ data: null }));
+    const at = data ? new Date(data.updated_at).getTime() : 0;
+    return data && Date.now() - at < SAVED_HINT_MS ? { guildId: data.guild_id, at } : null;
   }
 
   // Purchases made while the bot was offline: Discord keeps them, so replay them at startup
@@ -183,7 +196,12 @@ function createPremium(deps) {
 
   // Buttons to buy more: Discord's own store buttons for whatever has a SKU, plus the website
   function buyRows(guildId, userId, status) {
-    if (userId) buyHints.set(userId, { guildId, at: Date.now() });
+    if (userId) {
+      buyHints.set(userId, { guildId, at: Date.now() });
+      // Saved too, so a purchase finished after a restart still credits this server
+      supabase.from('billing_buy_hints').upsert({ discord_user_id: userId, guild_id: guildId, updated_at: new Date().toISOString() })
+        .then(({ error }) => { if (error) console.warn(`[premium] buy hint not saved: ${error.message}`); }, () => {});
+    }
     if (buyHints.size > 5000) buyHints.delete(buyHints.keys().next().value);
     const products = status?.products || [];
     const storeButtons = products.filter((p) => p.discord_sku && p.type !== 'monthly').slice(0, 3)
@@ -279,7 +297,7 @@ function createPremium(deps) {
       return interaction.reply({ embeds: [embed], components: s.premium ? [] : upsellRow(), flags: 64 });
     }
 
-    if (!owners.has(interaction.user.id)) {
+    if (!owners.includes(interaction.user.id)) {
       return interaction.reply({ content: '❌ Only the bot owner can switch Premium on or off.', flags: 64 });
     }
     const guildId = (interaction.options.getString('server_id') || interaction.guildId || '').trim();

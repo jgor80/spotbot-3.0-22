@@ -23,7 +23,8 @@ test('web pack purchases add images once per order; refunds and unpaid orders ad
   const order = (status: string) => ({ meta: { custom_data: { guild_id: GUILD } }, data: { id: '77', attributes: { status, first_order_item: { variant_id: 222 } } } });
   assert.deepEqual(lemonChange('order_created', order('paid'), config), { kind: 'credits', provider: 'lemonsqueezy', guild_id: GUILD, amount: 35, event_id: 'order:77', buyer: null });
   assert.equal(lemonChange('order_created', order('pending'), config).kind, 'ignore');
-  assert.equal(lemonChange('order_refunded', order('refunded'), config).kind, 'ignore');
+  // A refund takes the pack's images back (as far as they're unspent), once per order
+  assert.deepEqual(lemonChange('order_refunded', order('refunded'), config), { kind: 'debit', provider: 'lemonsqueezy', guild_id: GUILD, amount: 35, event_id: 'refund:order:77' });
   // No server on the purchase: nothing is credited anywhere
   assert.equal(lemonChange('order_created', { ...order('paid'), meta: {} }, config).kind, 'ignore');
 });
@@ -56,6 +57,25 @@ test('Discord packs go to the server they were bought for, or the hinted server'
   assert.equal(sub.kind === 'subscription' && sub.active, true);
   const gone = discordChange({ id: 'e4', sku_id: '9001', guild_id: GUILD, deleted: true }, config, null, now);
   assert.equal(gone.kind === 'subscription' && gone.active, false);
+});
+
+test('live web plans lapse on their own a few days after a missed renewal, and carry the store time', () => {
+  const sub = { meta: { custom_data: { guild_id: GUILD } }, data: { id: '6', attributes: { status: 'active', variant_id: 111, renews_at: '2026-11-01T00:00:00Z', updated_at: '2026-10-17T11:00:00Z' } } };
+  const live = lemonChange('subscription_updated', sub, config, now);
+  assert.equal(live.kind === 'subscription' && live.period_end, '2026-11-04T00:00:00.000Z');
+  assert.equal(live.kind === 'subscription' && live.source_updated_at, '2026-10-17T11:00:00Z');
+  assert.equal(live.kind === 'subscription' && live.active, true);
+  const missed = lemonChange('subscription_updated', sub, config, new Date('2026-11-05T00:00:00Z'));
+  assert.equal(missed.kind === 'subscription' && missed.active, false);
+});
+
+test('refunds take images back: Discord packs and Club Activation on either store', () => {
+  assert.deepEqual(discordChange({ id: 'e5', sku_id: '9002', guild_id: GUILD, deleted: true }, config), { kind: 'debit', provider: 'discord', guild_id: GUILD, amount: 35, event_id: 'refund:ent:e5' });
+  const discord = discordChange({ id: 'e6', sku_id: '9003', guild_id: GUILD, deleted: true }, config);
+  assert.deepEqual(discord.kind === 'subscription' && discord.debit, { amount: 20, event_id: 'refund:ent:e6' });
+  const web = lemonChange('order_refunded', { meta: { custom_data: { guild_id: GUILD } }, data: { id: '9', attributes: { status: 'refunded', first_order_item: { variant_id: '333' } } } }, config);
+  assert.equal(web.kind === 'subscription' && web.active, false);
+  assert.deepEqual(web.kind === 'subscription' && web.debit, { amount: 20, event_id: 'refund:order:9' });
 });
 
 test('a server gets the best live plan it holds', () => {

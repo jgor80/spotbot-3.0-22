@@ -7,13 +7,23 @@ const { createPremium } = require('./premium.cjs');
 const GUILD = '1529555651762851930';
 const USER = '501557839932948490';
 
-function setup(reply) {
+function setup(reply, hints = new Map()) {
   const calls = [];
   const originalFetch = global.fetch;
   global.fetch = async (url, options) => { const body = JSON.parse(options.body); calls.push({ url, body }); return { ok: true, json: async () => reply(body) }; };
-  const supabase = { from: () => ({ select() { return this; }, eq() { return this; }, limit() { return Promise.resolve({ data: [] }); }, maybeSingle: () => Promise.resolve({ data: null }) }) };
+  // billing_buy_hints is kept in `hints`, so a second createPremium sees what the first saved (a restart)
+  const supabase = { from: (table) => {
+    let userId = null;
+    return {
+      select() { return this; },
+      eq(col, v) { if (col === 'discord_user_id') userId = v; return this; },
+      limit() { return Promise.resolve({ data: [] }); },
+      maybeSingle: () => Promise.resolve({ data: table === 'billing_buy_hints' ? hints.get(userId) || null : null }),
+      upsert: (row) => { if (table === 'billing_buy_hints') hints.set(row.discord_user_id, row); return Promise.resolve({ error: null }); },
+    };
+  } };
   const premium = createPremium({ supabase, supabaseUrl: 'https://example.invalid', secret: 'test-only' });
-  return { premium, calls, restore: () => { global.fetch = originalFetch; } };
+  return { premium, calls, hints, restore: () => { global.fetch = originalFetch; } };
 }
 
 test('a Discord pack purchase is credited to the server where the buy button was opened, then consumed', async () => {
@@ -35,6 +45,18 @@ test('a Discord pack purchase is credited to the server where the buy button was
     await premium.forwardEntitlement({ id: '79', skuId: '1000000000000000001', guildId: GUILD, consume: async () => { consumed++; } }, { deleted: true });
     assert.equal(calls[1].body.entitlement.deleted, true);
   } finally { restore(); }
+});
+
+test('a pack bought after a restart still goes to the server where the buy button was opened', async () => {
+  const before = setup(() => ({ applied: true, consume: true }));
+  before.premium.buyRows(GUILD, USER, { products: [] });
+  before.restore();
+  // A fresh process has no buttons in memory, only the saved hint
+  const after = setup(() => ({ applied: true, consume: true }), before.hints);
+  try {
+    await after.premium.forwardEntitlement({ id: '80', skuId: '1000000000000000002', userId: USER, guildId: null, consumed: false, consume: async () => {} });
+    assert.equal(after.calls[0].body.guild_hint, GUILD);
+  } finally { after.restore(); }
 });
 
 test('buy buttons offer Discord store items plus the website, and the panel line reads plainly', () => {
