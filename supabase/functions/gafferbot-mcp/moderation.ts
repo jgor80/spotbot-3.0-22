@@ -5,7 +5,7 @@
 // Deleting is also limited to club leaders, previews first, and counts against the hourly change limit.
 import { Tool, ToolError } from "./protocol.ts";
 import { Ctx, PanelBridge, resolveGuild } from "./tools.ts";
-import { logChange, underLimit } from "./manage.ts";
+import { logChange, notePreview, requirePreview, underLimit } from "./manage.ts";
 import { SCOPE_MANAGE } from "../_shared/mcp-tokens.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -129,6 +129,7 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
       const includeKept = args.include_pinned_and_panels === true;
       const req = { guildId, channelId: chId, messageIds, includeKept };
       if (!confirmed(args)) {
+        notePreview(ctx, "delete_channel_messages", guildId, args);
         const p = await call(ctx, "plan", req);
         return preview(`Delete ${p.will_delete} message(s) in #${p.channel.name}` +
           (p.older_one_by_one ? ` (${p.older_one_by_one} older than 14 days go one by one, which is slower).` : "."), {
@@ -137,7 +138,8 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
           messages: p.messages,
         });
       }
-      await underLimit(ctx);
+      requirePreview(ctx, "delete_channel_messages", guildId, args);
+      const release = await underLimit(ctx);
       try {
         const j = await call(ctx, "delete", req);
         await logChange(ctx, guildId, "delete_channel_messages", `#${j.channel?.name ?? chId}`, { channel_id: chId, requested: messageIds.length, include_pinned_and_panels: includeKept }, { ok: true });
@@ -145,6 +147,8 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
       } catch (err) {
         await logChange(ctx, guildId, "delete_channel_messages", chId, { channel_id: chId, requested: messageIds.length }, { ok: false, error: (err as Error).message });
         throw err;
+      } finally {
+        release();
       }
     },
   },
@@ -169,6 +173,7 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
       const includeKept = args.include_pinned_and_panels === true;
       const req = { guildId, channelId: chId, includeKept };
       if (!confirmed(args)) {
+        notePreview(ctx, "clear_channel", guildId, args);
         const p = await call(ctx, "plan", { ...req, mode: "clear" });
         const count = p.more_than_counted ? `at least ${p.will_delete}` : String(p.will_delete);
         return preview(`Clear #${p.channel.name}: delete ${count} message(s)` +
@@ -177,7 +182,8 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
           ...(p.more_than_counted ? { note: `The channel has more messages than a preview counts; one run deletes at most ${p.max_per_run}.` } : {}),
         });
       }
-      await underLimit(ctx);
+      requirePreview(ctx, "clear_channel", guildId, args);
+      const release = await underLimit(ctx);
       try {
         const j = await call(ctx, "clear", req);
         await logChange(ctx, guildId, "clear_channel", `#${j.channel?.name ?? chId}`, { channel_id: chId, include_pinned_and_panels: includeKept }, { ok: true });
@@ -185,6 +191,8 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
       } catch (err) {
         await logChange(ctx, guildId, "clear_channel", chId, { channel_id: chId }, { ok: false, error: (err as Error).message });
         throw err;
+      } finally {
+        release();
       }
     },
   },

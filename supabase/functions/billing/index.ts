@@ -40,17 +40,39 @@ function safeEqual(a: string, b: string) {
 
 async function apply(change: Change) {
   if (change.kind === "ignore") return { applied: false, reason: change.reason };
+  if (change.kind === "debit") {
+    const removed = await removeCredits(change.guild_id, change.amount, change.provider, change.event_id);
+    return { applied: true, removed };
+  }
   if (change.kind === "subscription") {
+    if (change.source_updated_at) {
+      const { data: current } = await db.from("billing_subscriptions").select("source_updated_at")
+        .eq("provider", change.provider).eq("external_id", change.external_id).maybeSingle();
+      if (current?.source_updated_at && new Date(current.source_updated_at) > new Date(change.source_updated_at)) {
+        return { applied: false, reason: "older than the saved state" };
+      }
+    }
     const { error } = await db.from("billing_subscriptions").upsert({
       guild_id: change.guild_id, provider: change.provider, external_id: change.external_id, tier: change.tier, status: change.status,
       active: change.active, current_period_end: change.period_end, buyer_discord_id: change.buyer, updated_at: new Date().toISOString(),
+      ...(change.source_updated_at ? { source_updated_at: change.source_updated_at } : {}),
     }, { onConflict: "provider,external_id" });
     if (error) throw new Error(`subscription save failed: ${error.message}`);
     if (change.credits) await addCredits(change.guild_id, change.credits.amount, change.provider, change.credits.event_id);
+    if (change.debit) await removeCredits(change.guild_id, change.debit.amount, change.provider, change.debit.event_id);
     return { applied: true, tier: change.tier, active: change.active };
   }
   const added = await addCredits(change.guild_id, change.amount, change.provider, change.event_id);
   return { applied: true, credits: change.amount, added };
+}
+
+// Takes back up to `amount` unspent pack images, once per refund event; returns how many were removed.
+async function removeCredits(guild: string, amount: number, provider: string, eventId: string) {
+  const { data, error } = await db.rpc("remove_image_credits", { p_guild: guild, p_credits: amount, p_provider: provider, p_event: eventId });
+  if (error) throw new Error(`refund failed: ${error.message}`);
+  const removed = Number(data) || 0;
+  if (removed < amount) console.warn(`[billing] refund ${eventId}: ${amount - removed} of ${amount} images were already spent in ${guild}`);
+  return removed;
 }
 
 async function addCredits(guild: string, amount: number, provider: string, eventId: string) {

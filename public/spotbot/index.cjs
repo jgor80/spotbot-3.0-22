@@ -427,12 +427,11 @@ const FUNCTION_SECRET = BOT_PROXY_SECRET || (LOCAL_FUNCTIONS_ON ? 'self-hosted' 
 if (LOCAL_FUNCTIONS_ON) {
   const lf = require('./local-functions.cjs');
   lf.wrapFetch(supabaseUrl);
-  if (process.env.FUNCTIONS_PORT !== '0') lf.startServer({ port: Number(process.env.FUNCTIONS_PORT || 8880), supabaseUrl });
-}
-// Remote maintenance: the Lovable agent runs whitelisted ops through the Worker at /api/ops/*.
-// Needs OPS_SECRET in .env; set OPS_PORT=0 to disable.
-if (!BOT_PROXY_SECRET && process.env.OPS_PORT !== '0') {
-  require('./ops-server.cjs').startOpsServer({ port: Number(process.env.OPS_PORT || 9001) });
+  if (process.env.FUNCTIONS_PORT !== '0') {
+    // `client` is created further down; until then (and while disconnected) the bot reports not ready
+    const discordReady = () => { try { return client.isReady(); } catch { return false; } };
+    lf.startServer({ port: Number(process.env.FUNCTIONS_PORT || 8880), supabaseUrl, discordReady });
+  }
 }
 const supabase = createClient(supabaseUrl, supabaseKey, proxyFetch ? { global: { fetch: proxyFetch } } : undefined);
 
@@ -3796,7 +3795,8 @@ function buildDraftPickButtonRows(availablePlayers, draftId, currentPickerId) {
 // =======================
 
 // Servers the bot may stay in (comma-separated IDs). Others are left on startup/join; their saved data is untouched.
-const ALLOWED_GUILD_IDS = new Set((process.env.ALLOWED_GUILD_IDS || '1529555651762851930').split(',').map(s => s.trim()).filter(Boolean));
+// ALLOWED_GUILD_IDS=* (or set but empty) allows every server; left unset, only the original home server is allowed.
+const ALLOWED_GUILD_IDS = new Set(String(process.env.ALLOWED_GUILD_IDS ?? '1529555651762851930').split(',').map(s => s.trim()).filter(s => s && s !== '*'));
 const guildAllowed = (id) => ALLOWED_GUILD_IDS.size === 0 || ALLOWED_GUILD_IDS.has(String(id));
 async function leaveIfNotAllowed(guild) {
   if (guildAllowed(guild.id)) return false;

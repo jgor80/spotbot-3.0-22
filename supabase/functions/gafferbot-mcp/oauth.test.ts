@@ -117,9 +117,24 @@ Deno.test("full sign-in gives a manage token that refreshes, rotates and revokes
   assert(stale.status === 400, "old refresh token still works");
   const otherApp = await exchange(db, { grant_type: "refresh_token", refresh_token: next.refresh_token, client_id: "gbc_other" });
   assert(otherApp.status === 401, "another app used the refresh token");
+  assert(await resolveToken(db, next.access_token), "a quick retry of the old refresh token turned the grant off");
 
   await hit(db, "POST", "/oauth/revoke", new URLSearchParams({ token: next.refresh_token }), { "content-type": "application/x-www-form-urlencoded" });
   assert(!(await resolveToken(db, next.access_token)), "revoke didn't stop the access token");
+});
+
+Deno.test("an old refresh token used again later turns the whole grant off", async () => {
+  const db = adminDb();
+  const { client_id, verifier, code } = await signIn(db, { access: "manage" });
+  const grant = await (await exchange(db, { grant_type: "authorization_code", code, client_id, redirect_uri: REDIRECT, code_verifier: verifier })).json();
+  const next = await (await exchange(db, { grant_type: "refresh_token", refresh_token: grant.refresh_token, client_id })).json();
+  // A minute later someone presents the replaced token: it was copied
+  for (const r of db.tables.mcp_access_tokens) r.last_used_at = new Date(Date.now() - 60_000).toISOString();
+  const thief = await exchange(db, { grant_type: "refresh_token", refresh_token: grant.refresh_token, client_id });
+  assert(thief.status === 400, "replaced refresh token worked");
+  assert(!(await resolveToken(db, next.access_token)), "grant still live after reuse");
+  const legit = await exchange(db, { grant_type: "refresh_token", refresh_token: next.refresh_token, client_id });
+  assert(legit.status !== 200, "revoked grant still refreshes");
 });
 
 Deno.test("view-only consent and PKCE are enforced", async () => {

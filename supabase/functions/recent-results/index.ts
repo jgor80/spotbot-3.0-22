@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { rejectUnlessCaller } from '../_shared/auth.ts';
+import { rejectUnlessCaller, requireGuildAccess, throttleWebUser } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -193,6 +193,12 @@ Deno.serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
+    }
+    const noAccess = await requireGuildAccess(req, supabase, guildId, 'member')
+    if (noAccess) return noAccess
+    if (includeAiSummary) {
+      const throttled = await throttleWebUser(req, supabase, 'recent-results', 30, 60 * 60 * 1000)
+      if (throttled) return throttled
     }
 
     let query = supabase

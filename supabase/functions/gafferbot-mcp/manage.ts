@@ -8,7 +8,7 @@
 // confirm: true it runs, is rate limited (CHANGES_PER_HOUR) and lands in mcp_action_log.
 import { Tool, ToolError } from "./protocol.ts";
 import { Ctx, PanelBridge, resolveGuild } from "./tools.ts";
-import { CHANGES_PER_HOUR, changesLastHour } from "./limits.ts";
+import { CHANGES_PER_HOUR, changesLastHour, previewed, rememberPreview } from "./limits.ts";
 import { SCOPE_MANAGE } from "../_shared/mcp-tokens.ts";
 
 // Kept out of AI hands even for managers: server setup and admin, premium switches and AI art (costs
@@ -182,6 +182,19 @@ async function catalogue(ctx: Ctx, guildId: string) {
   return { raw: c, actions };
 }
 
+// Buttons, menus and forms can open GafferBot's own panel actions too (gp:a:<id>, gp:m:<id>, the area menu),
+// so they get the same blocklist as run_club_action.
+async function refuseBlockedControl(ctx: Ctx, guildId: string, customId: string, values: string[] = []) {
+  const m = customId.match(/^gp:[am]:(.+)$/);
+  if (m) {
+    const { actions } = await catalogue(ctx, guildId);
+    if (!actions.some((a: Json) => a.id === m[1])) throw new ToolError("That opens an action AI apps can't run. Use Discord for it.");
+  }
+  if ((customId === "gp:areas" || customId === "gp:area-switch") && values.some((v) => BLOCKED_AREAS.has(v))) {
+    throw new ToolError("That area is Discord only for AI apps.");
+  }
+}
+
 export async function logChange(ctx: Ctx, guildId: string, tool: string, target: string, detail: Json, outcome: { ok: boolean; error?: string }) {
   await ctx.db.from("mcp_action_log").insert({
     token_id: ctx.tokenId ?? null,
@@ -195,15 +208,44 @@ export async function logChange(ctx: Ctx, guildId: string, tool: string, target:
   }).then(() => {}, (e: unknown) => console.error("[gafferbot-mcp] action log failed:", e));
 }
 
-export async function underLimit(ctx: Ctx) {
-  if ((await changesLastHour(ctx.db, ctx.discordUserId)) >= CHANGES_PER_HOUR) {
+// Changes running right now, per player. They count toward the hourly limit before they reach mcp_action_log,
+// so parallel calls (a JSON-RPC batch, or several requests at once) can't all pass the same check.
+const inFlight = new Map<string, number>();
+
+// Reserves one change under the hourly limit, or throws. Call the returned release once the change is logged.
+export async function underLimit(ctx: Ctx): Promise<() => void> {
+  const key = ctx.discordUserId;
+  inFlight.set(key, (inFlight.get(key) || 0) + 1);
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    const left = (inFlight.get(key) || 1) - 1;
+    if (left > 0) inFlight.set(key, left);
+    else inFlight.delete(key);
+  };
+  let done = 0;
+  try { done = await changesLastHour(ctx.db, key); } catch (err) { release(); throw err; }
+  if (done + (inFlight.get(key) || 0) > CHANGES_PER_HOUR) {
+    release();
     throw new ToolError(`That's ${CHANGES_PER_HOUR} changes from AI apps in the last hour, the limit. Try again later or use Discord.`);
+  }
+  return release;
+}
+
+// The preview step, enforced: remember a preview, and refuse a confirm that wasn't previewed.
+export function notePreview(ctx: Ctx, tool: string, guildId: string, args: Record<string, unknown>) {
+  rememberPreview(ctx.discordUserId, tool, guildId, args);
+}
+export function requirePreview(ctx: Ctx, tool: string, guildId: string, args: Record<string, unknown>) {
+  if (!previewed(ctx.discordUserId, tool, guildId, args)) {
+    throw new ToolError("Preview this first: call the tool without confirm, show the player the preview, and confirm only after they say yes (with exactly the same arguments).");
   }
 }
 
 // Runs a confirmed change, logs it either way.
 async function change(ctx: Ctx, guildId: string, tool: string, target: string, detail: Json, op: string, args: Record<string, unknown>) {
-  await underLimit(ctx);
+  const release = await underLimit(ctx);
   try {
     const snap = await call(ctx, op, { guildId, ...args });
     await logChange(ctx, guildId, tool, target, detail, { ok: !snap?.error, error: snap?.error });
@@ -211,6 +253,8 @@ async function change(ctx: Ctx, guildId: string, tool: string, target: string, d
   } catch (err) {
     await logChange(ctx, guildId, tool, target, detail, { ok: false, error: (err as Error).message });
     throw err;
+  } finally {
+    release();
   }
 }
 
@@ -309,8 +353,10 @@ export const MANAGE_TOOLS: Tool<Ctx>[] = [
       const channel = (raw.channels || []).find((c: Json) => c.id === channelId && c.canSend);
       if (!channel) throw new ToolError("Pick a channel_id from list_club_actions that GafferBot can post in.");
       if (!confirmed(args)) {
+        notePreview(ctx, "run_club_action", guildId, args);
         return preview(`Run "${action.label}" (${action.area}) in ${raw.guild?.name} as you. Anything public goes to #${channel.name}.`, { values });
       }
+      requirePreview(ctx, "run_club_action", guildId, args);
       return change(ctx, guildId, "run_club_action", actionId, { values, channel_id: channelId }, "run", { actionId, values, channelId });
     },
   },
@@ -340,6 +386,7 @@ export const MANAGE_TOOLS: Tool<Ctx>[] = [
       const values = Array.isArray(args.values) ? args.values.map(String).slice(0, 25) : [];
       const d = await call(ctx, "describe", { guildId, messageId, customId });
       const comp = d.component;
+      await refuseBlockedControl(ctx, guildId, customId, values);
       if (!confirmed(args)) {
         const picked = comp.type === 3
           ? values.map((v) => (comp.options || []).find((o: Json) => o.value === v)?.label ?? v)
@@ -347,8 +394,10 @@ export const MANAGE_TOOLS: Tool<Ctx>[] = [
         const what = comp.type === 2
           ? `Press "${comp.label || customId}" on: ${panelText(d.message).split("\n")[0] || "the panel"}`
           : `Pick ${picked.length ? picked.map((p) => `"${p}"`).join(", ") : "nothing yet"} in "${comp.placeholder || customId}"`;
+        notePreview(ctx, "press_button", guildId, args);
         return preview(what);
       }
+      requirePreview(ctx, "press_button", guildId, args);
       return change(ctx, guildId, "press_button", comp.label || comp.placeholder || customId, { custom_id: customId, values }, "click", { messageId, customId, values });
     },
   },
@@ -375,13 +424,16 @@ export const MANAGE_TOOLS: Tool<Ctx>[] = [
       const values = valuesOf(args.values);
       const d = await call(ctx, "describe", { guildId, runId });
       const form = formFields(d.form);
+      await refuseBlockedControl(ctx, guildId, String(d.form?.custom_id || ""));
       const missing = form.fields.filter((f: Json) => f.required && !f.kind.startsWith("file") && (values[f.id] === undefined || values[f.id] === "")).map((f: Json) => f.label);
       if (missing.length) throw new ToolError(`Fill in ${missing.join(", ")} first.`);
       if (!confirmed(args)) {
+        notePreview(ctx, "submit_form", guildId, args);
         return preview(`Send the "${form.title}" form with these answers.`, {
           answers: Object.fromEntries(form.fields.map((f: Json) => [f.label, values[f.id] ?? "(blank)"])),
         });
       }
+      requirePreview(ctx, "submit_form", guildId, args);
       return change(ctx, guildId, "submit_form", form.title, { values }, "submit", { runId, values });
     },
   },

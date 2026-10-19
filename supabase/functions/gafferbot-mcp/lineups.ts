@@ -6,7 +6,7 @@
 // against the hourly change limit.
 import { Tool, ToolError } from "./protocol.ts";
 import { Ctx, PanelBridge } from "./tools.ts";
-import { logChange, underLimit } from "./manage.ts";
+import { logChange, notePreview, requirePreview, underLimit } from "./manage.ts";
 import { SCOPE_MANAGE } from "../_shared/mcp-tokens.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -102,6 +102,7 @@ export const LINEUP_TOOLS: Tool<Ctx>[] = [
       const { eventId, guildId } = await eventGuild(args, ctx);
       const req = { guildId, eventId, formation: str(args.formation), changes: changesArg(args) };
       if (!confirmed(args)) {
+        notePreview(ctx, "publish_lineup", guildId, args);
         const p = await call(ctx, "publish", req);
         return {
           preview: true,
@@ -112,7 +113,8 @@ export const LINEUP_TOOLS: Tool<Ctx>[] = [
           next: "Show this to the player. Only if they say yes, call publish_lineup again with the same arguments plus confirm: true.",
         };
       }
-      await underLimit(ctx);
+      requirePreview(ctx, "publish_lineup", guildId, args);
+      const release = await underLimit(ctx);
       try {
         const r = await call(ctx, "publish", { ...req, confirm: true });
         await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId, formation: r.formation, changes: req.changes?.length || 0 }, { ok: true });
@@ -120,6 +122,8 @@ export const LINEUP_TOOLS: Tool<Ctx>[] = [
       } catch (err) {
         await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId }, { ok: false, error: (err as Error).message });
         throw err;
+      } finally {
+        release();
       }
     },
   },

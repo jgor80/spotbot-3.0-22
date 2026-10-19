@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { rejectUnlessCaller } from "../_shared/auth.ts";
+import { rejectUnlessCaller, requireGuildAccess } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -218,6 +218,9 @@ serve(async (req) => {
     );
 
     const { guild_id }: AutoLinkRequest = await req.json();
+    // Linking rewrites the server's player records, so only its leaders may run it from the web.
+    const noAccess = await requireGuildAccess(req, supabase, guild_id, "leader");
+    if (noAccess) return noAccess;
 
     if (!guild_id) {
       return new Response(

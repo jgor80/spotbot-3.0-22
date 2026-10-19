@@ -12,7 +12,7 @@
 // Callers: a signed-in web user (JWT). They always act as their own verified Discord account and need
 // access to the server (requireGuildAccess); the bot then applies the same checks as in Discord.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createAdminClient, requireGuildAccess, resolveDiscordActor } from "../_shared/auth.ts";
+import { createAdminClient, requireGuildAccess, resolveDiscordActor, throttleWebUser } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,13 +44,20 @@ serve(async (req) => {
   if (!actor.discordUserId) return json({ error: "Sign in with Discord to use the control room" }, 403);
   const denied = await requireGuildAccess(req, admin, guildId, "member");
   if (denied) return denied;
+  // Every action can post in Discord through the bot, so one player can't flood a server or the bot's own
+  // Discord rate limit: changes are capped tighter than reads (pickers, polling).
+  const op = String(body.op || "");
+  const throttled = ["run", "click", "submit"].includes(op)
+    ? await throttleWebUser(req, admin, "web-panel:change", 30, 60 * 1000)
+    : await throttleWebUser(req, admin, "web-panel:read", 240, 60 * 1000);
+  if (throttled) return throttled;
 
   // Only the self-hosted bot process has the panels; elsewhere (cloud previews) there is nothing to call.
   const bridge = (globalThis as unknown as { __gafferbotWebPanels?: Bridge }).__gafferbotWebPanels;
   if (!bridge) return json({ error: "The control room runs on the GafferBot server, which isn't reachable from here." }, 503);
 
   try {
-    const result = await bridge.handle(String(body.op || ""), {
+    const result = await bridge.handle(op, {
       guildId,
       userId: actor.discordUserId,
       actionId: body.action_id,

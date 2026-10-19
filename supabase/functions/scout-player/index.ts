@@ -2,7 +2,7 @@ import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { FC_PLATFORMS, toFcPlatform } from '../_shared/ea.ts'
-import { rejectUnlessCaller } from '../_shared/auth.ts';
+import { rejectUnlessCaller, requireGuildAccess, throttleWebUser } from '../_shared/auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -242,7 +242,16 @@ serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    
+
+    // A Discord-player report reads that server's private stats, so the caller must belong to it.
+    // Every report is an AI call (and a gamertag search hits EA once per tracked club), so web users are throttled.
+    if (!normalizedEaUsername) {
+      const noAccess = await requireGuildAccess(req, supabase, guild_id, 'member');
+      if (noAccess) return noAccess;
+    }
+    const throttled = await throttleWebUser(req, supabase, 'scout-player', 10, 60 * 60 * 1000);
+    if (throttled) return throttled;
+
     let playerData: any = null;
     let eaClubStats: any[] = [];
     let personaProfiles: PersonaProfile[] = [];

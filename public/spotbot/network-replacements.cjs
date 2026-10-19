@@ -205,6 +205,9 @@ function createReplacements(deps) {
     }
     if (interaction.user.id === req.created_by_discord_id) return reply('That\'s your own request.');
     if (!dm && (await network.isBlockedBetween(req.guild_id, interaction.guildId))) return reply('This request has closed.');
+    // A suspended or departed server's requests stop working, and only listed servers can answer from a channel
+    if (!(await network.isListed(req.guild_id))) return reply('This request has closed.');
+    if (!dm && !(await network.isListed(interaction.guildId))) return reply('❌ Switch the GafferBot Network on for this server first (/manager → Admin → Network).');
 
     const { data: existing } = await supabase.from('network_responses').select('*').eq('request_id', req.id).eq('player_discord_id', interaction.user.id).maybeSingle();
     if (existing && existing.status !== 'offered') return reply(`You already answered this one (${existing.status}).`);

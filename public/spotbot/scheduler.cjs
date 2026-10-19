@@ -2,6 +2,7 @@
 // Each job runs one at a time; a run that is still going skips the next tick instead of overlapping.
 const { reportError } = require('./error-reporter.cjs');
 const EA_SLICES = 12;
+const WARN_AGAIN_MS = 24 * 60 * 60 * 1000;
 
 function eaSyncBody({ activeClubs, date }) {
   if (!activeClubs) return { trigger: 'cron' };
@@ -15,7 +16,7 @@ const JOBS = [
   { name: 'refresh-discord-standings', every: 5, rpc: ['refresh_discord_standings'] },
   { name: 'advanced-stats-refresh', minute: 15, rpc: ['backfill_advanced_player_stats', 'refresh_player_season_archive'] },
   { name: 'season-card-archive-nightly', hour: 6, minute: 30, rpc: ['refresh_player_season_archive'] },
-  { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences', 'cleanup_mcp_oauth'] },
+  { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences', 'cleanup_mcp_oauth', 'cleanup_logs'] },
 ];
 
 function due(job, d) {
@@ -30,7 +31,7 @@ function due(job, d) {
 function startScheduler({ supabase, callFunction, activeClubs }) {
   if (process.env.SCHEDULER === 'off') return;
   const running = new Set();
-  const warned = new Set();
+  const warned = new Map();
   let lastMinute = -1;
   const run = async (job, date) => {
     if (running.has(job.name)) return;
@@ -38,7 +39,8 @@ function startScheduler({ supabase, callFunction, activeClubs }) {
     try {
       for (const name of job.rpc || []) {
         const { error } = await supabase.rpc(name);
-        if (error && !warned.has(name)) { warned.add(name); console.error(`⏰ ${job.name}: ${name} failed (logged once):`, error.message); reportError(new Error(error.message), { source: 'scheduler', action: `${job.name} ${name}` }); }
+        // A job that keeps failing alerts again once a day, so it never goes quiet for good
+        if (error && Date.now() - (warned.get(name) || 0) > WARN_AGAIN_MS) { warned.set(name, Date.now()); console.error(`⏰ ${job.name}: ${name} failed (logged once a day):`, error.message); reportError(new Error(error.message), { source: 'scheduler', action: `${job.name} ${name}` }); }
         else if (!error) warned.delete(name);
       }
       if (job.fn) {

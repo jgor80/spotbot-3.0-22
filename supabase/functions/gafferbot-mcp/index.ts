@@ -5,14 +5,14 @@
 //   - a personal token from Discord (/me → AI Assistant): read only, header or ?key=
 //   - a signed-in web session (JWT): read only
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createAdminClient, guildAccessLevel, identifyCaller, isBotOwner, isDiscordClubLeader } from "../_shared/auth.ts";
+import { createAdminClient, guildAccessLevel, identifyCaller, isBotOwner, isDiscordClubLeader, safeEqual } from "../_shared/auth.ts";
 import { isClubAdmin, looksLikeToken, resolveToken, SCOPE_MANAGE, SCOPE_READ } from "../_shared/mcp-tokens.ts";
 import { handleBody } from "./protocol.ts";
 import { Ctx, PanelBridge, TOOLS, visibleTo } from "./tools.ts";
 import { MANAGE_TOOLS } from "./manage.ts";
 import { MODERATION_TOOLS } from "./moderation.ts";
 import { LINEUP_TOOLS } from "./lineups.ts";
-import { allowCall } from "./limits.ts";
+import { allowCall, MAX_BATCH } from "./limits.ts";
 
 const SITE = (Deno.env.get("DASHBOARD_URL") || "https://gafferbot.app").replace(/\/+$/, "");
 const ALL_TOOLS = [...TOOLS, ...LINEUP_TOOLS, ...MANAGE_TOOLS, ...MODERATION_TOOLS];
@@ -72,7 +72,12 @@ serve(async (req) => {
     // The Worker's AI sign-in asks whether a player leads a club before offering manage access
     const leaderCheck = req.headers.get("x-gafferbot-leader-check");
     if (leaderCheck) {
-      if ((await identifyCaller(req, admin))?.kind !== "bot" || !/^\d{17,20}$/.test(leaderCheck)) return json({ error: "Forbidden" }, 403);
+      // The Worker proves itself with MCP_LEADER_CHECK_SECRET (or, until that is set, as the bot).
+      const checkSecret = Deno.env.get("MCP_LEADER_CHECK_SECRET") ?? "";
+      const given = req.headers.get("x-leader-check-secret") ?? "";
+      const trusted = (checkSecret.length >= 24 && safeEqual(given, checkSecret)) ||
+        (await identifyCaller(req, admin))?.kind === "bot";
+      if (!trusted || !/^\d{17,20}$/.test(leaderCheck)) return json({ error: "Forbidden" }, 403);
       return json({ leader: await clubAdmin(admin, leaderCheck) });
     }
     const caller = await callerFor(req, admin);
@@ -91,6 +96,17 @@ serve(async (req) => {
 
     let body: unknown;
     try { body = await req.json(); } catch { return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400); }
+    // A batch is several calls: cap its size and count every message against the per-minute limit.
+    if (Array.isArray(body)) {
+      if (body.length > MAX_BATCH) {
+        return json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: `Send at most ${MAX_BATCH} messages per batch.` } }, 400);
+      }
+      for (let i = 1; i < body.length; i++) {
+        if (!allowCall(caller.tokenId || discordUserId)) {
+          return json({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "Too many requests. Wait a minute and try again." } }, 429, { "Retry-After": "60" });
+        }
+      }
+    }
 
     const levels = new Map<string, Promise<"leader" | "member" | null>>();
     const manage = caller.scopes.includes(SCOPE_MANAGE);

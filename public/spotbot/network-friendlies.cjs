@@ -237,6 +237,9 @@ function createNetworkFriendlies(deps) {
     }
     if (interaction.guildId === f.from_guild_id) return interaction.reply({ content: '❌ That\'s your own invite.', flags: 64 });
     if (await network.isBlockedBetween(f.from_guild_id, interaction.guildId)) return interaction.reply({ content: 'This invite has expired.', flags: 64 });
+    // Both servers must still be on the network: a suspended or departed server's invites stop working
+    if (!(await network.isListed(f.from_guild_id))) return interaction.reply({ content: 'This invite has expired.', flags: 64 });
+    if (!(await network.isListed(interaction.guildId))) return interaction.reply({ content: '❌ Switch the GafferBot Network on for this server first (/manager → Admin → Network).', flags: 64 });
     const state = await getGuildState(interaction.guildId);
     let club;
     if (f.is_open) {

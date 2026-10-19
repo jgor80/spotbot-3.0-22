@@ -19,7 +19,7 @@ async function identifyCaller(req, admin) {
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (serviceRoleKey && token === serviceRoleKey) return { kind: "bot" };
+  if (serviceRoleKey && safeEqual(token, serviceRoleKey)) return { kind: "bot" };
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data?.user) return null;
   return { kind: "user", userId: data.user.id };
@@ -83,6 +83,7 @@ var SCOPE_READ = "clubs:read";
 var SCOPE_MANAGE = "clubs:manage";
 var ACCESS_TTL_S = 60 * 60;
 var REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1e3;
+var PERSONAL_TTL_MS = 365 * 24 * 60 * 60 * 1e3;
 async function hashToken(token) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -120,6 +121,7 @@ async function resolveToken(admin, token) {
     oauth: !!data.oauth_client_id
   };
 }
+var REUSE_GRACE_MS = 30 * 1e3;
 
 // supabase/functions/gafferbot-mcp/protocol.ts
 var SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -527,6 +529,7 @@ var TOOLS = [
 // supabase/functions/gafferbot-mcp/limits.ts
 var CALLS_PER_MINUTE = 60;
 var CHANGES_PER_HOUR = 30;
+var MAX_BATCH = 10;
 var windows = /* @__PURE__ */ new Map();
 function allowCall(key, now = Date.now(), limit = CALLS_PER_MINUTE) {
   const recent = (windows.get(key) || []).filter((t) => now - t < 6e4);
@@ -544,6 +547,27 @@ function allowCall(key, now = Date.now(), limit = CALLS_PER_MINUTE) {
 async function changesLastHour(db, discordUserId) {
   const { count } = await db.from("mcp_action_log").select("id", { count: "exact", head: true }).eq("discord_user_id", discordUserId).gte("created_at", new Date(Date.now() - 60 * 60 * 1e3).toISOString());
   return count ?? 0;
+}
+var PREVIEW_TTL_MS = 15 * 60 * 1e3;
+var previews = /* @__PURE__ */ new Map();
+function stable(v) {
+  if (Array.isArray(v)) return `[${v.map(stable).join(",")}]`;
+  if (v && typeof v === "object") return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`;
+  return JSON.stringify(v ?? null);
+}
+function previewKey(discordUserId, tool, guildId, args) {
+  const { confirm: _confirm, guild_id: _guild, ...rest } = args;
+  return `${discordUserId}|${tool}|${guildId}|${stable(rest)}`;
+}
+function rememberPreview(discordUserId, tool, guildId, args, now = Date.now()) {
+  previews.set(previewKey(discordUserId, tool, guildId, args), now);
+  if (previews.size > 5e3) {
+    for (const [k, at] of previews) if (now - at > PREVIEW_TTL_MS) previews.delete(k);
+  }
+}
+function previewed(discordUserId, tool, guildId, args, now = Date.now()) {
+  const at = previews.get(previewKey(discordUserId, tool, guildId, args));
+  return at !== void 0 && now - at <= PREVIEW_TTL_MS;
 }
 
 // supabase/functions/gafferbot-mcp/manage.ts
@@ -705,6 +729,16 @@ async function catalogue(ctx, guildId) {
   for (const area of c.areas || []) for (const a of area.actions || []) add(a, area.label, area.key);
   return { raw: c, actions };
 }
+async function refuseBlockedControl(ctx, guildId, customId, values = []) {
+  const m = customId.match(/^gp:[am]:(.+)$/);
+  if (m) {
+    const { actions } = await catalogue(ctx, guildId);
+    if (!actions.some((a) => a.id === m[1])) throw new ToolError("That opens an action AI apps can't run. Use Discord for it.");
+  }
+  if ((customId === "gp:areas" || customId === "gp:area-switch") && values.some((v) => BLOCKED_AREAS.has(v))) {
+    throw new ToolError("That area is Discord only for AI apps.");
+  }
+}
 async function logChange(ctx, guildId, tool, target, detail, outcome) {
   await ctx.db.from("mcp_action_log").insert({
     token_id: ctx.tokenId ?? null,
@@ -718,13 +752,41 @@ async function logChange(ctx, guildId, tool, target, detail, outcome) {
   }).then(() => {
   }, (e) => console.error("[gafferbot-mcp] action log failed:", e));
 }
+var inFlight = /* @__PURE__ */ new Map();
 async function underLimit(ctx) {
-  if (await changesLastHour(ctx.db, ctx.discordUserId) >= CHANGES_PER_HOUR) {
+  const key = ctx.discordUserId;
+  inFlight.set(key, (inFlight.get(key) || 0) + 1);
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    const left = (inFlight.get(key) || 1) - 1;
+    if (left > 0) inFlight.set(key, left);
+    else inFlight.delete(key);
+  };
+  let done = 0;
+  try {
+    done = await changesLastHour(ctx.db, key);
+  } catch (err) {
+    release();
+    throw err;
+  }
+  if (done + (inFlight.get(key) || 0) > CHANGES_PER_HOUR) {
+    release();
     throw new ToolError(`That's ${CHANGES_PER_HOUR} changes from AI apps in the last hour, the limit. Try again later or use Discord.`);
+  }
+  return release;
+}
+function notePreview(ctx, tool, guildId, args) {
+  rememberPreview(ctx.discordUserId, tool, guildId, args);
+}
+function requirePreview(ctx, tool, guildId, args) {
+  if (!previewed(ctx.discordUserId, tool, guildId, args)) {
+    throw new ToolError("Preview this first: call the tool without confirm, show the player the preview, and confirm only after they say yes (with exactly the same arguments).");
   }
 }
 async function change(ctx, guildId, tool, target, detail, op, args) {
-  await underLimit(ctx);
+  const release = await underLimit(ctx);
   try {
     const snap = await call(ctx, op, { guildId, ...args });
     await logChange(ctx, guildId, tool, target, detail, { ok: !snap?.error, error: snap?.error });
@@ -732,6 +794,8 @@ async function change(ctx, guildId, tool, target, detail, op, args) {
   } catch (err) {
     await logChange(ctx, guildId, tool, target, detail, { ok: false, error: err.message });
     throw err;
+  } finally {
+    release();
   }
 }
 var preview = (what, extra = {}) => ({
@@ -824,8 +888,10 @@ var MANAGE_TOOLS = [
       const channel = (raw.channels || []).find((c) => c.id === channelId2 && c.canSend);
       if (!channel) throw new ToolError("Pick a channel_id from list_club_actions that GafferBot can post in.");
       if (!confirmed(args)) {
+        notePreview(ctx, "run_club_action", guildId, args);
         return preview(`Run "${action.label}" (${action.area}) in ${raw.guild?.name} as you. Anything public goes to #${channel.name}.`, { values });
       }
+      requirePreview(ctx, "run_club_action", guildId, args);
       return change(ctx, guildId, "run_club_action", actionId, { values, channel_id: channelId2 }, "run", { actionId, values, channelId: channelId2 });
     }
   },
@@ -854,11 +920,14 @@ var MANAGE_TOOLS = [
       const values = Array.isArray(args.values) ? args.values.map(String).slice(0, 25) : [];
       const d = await call(ctx, "describe", { guildId, messageId, customId });
       const comp = d.component;
+      await refuseBlockedControl(ctx, guildId, customId, values);
       if (!confirmed(args)) {
         const picked = comp.type === 3 ? values.map((v) => (comp.options || []).find((o) => o.value === v)?.label ?? v) : values;
         const what = comp.type === 2 ? `Press "${comp.label || customId}" on: ${panelText(d.message).split("\n")[0] || "the panel"}` : `Pick ${picked.length ? picked.map((p) => `"${p}"`).join(", ") : "nothing yet"} in "${comp.placeholder || customId}"`;
+        notePreview(ctx, "press_button", guildId, args);
         return preview(what);
       }
+      requirePreview(ctx, "press_button", guildId, args);
       return change(ctx, guildId, "press_button", comp.label || comp.placeholder || customId, { custom_id: customId, values }, "click", { messageId, customId, values });
     }
   },
@@ -885,13 +954,16 @@ var MANAGE_TOOLS = [
       const values = valuesOf(args.values);
       const d = await call(ctx, "describe", { guildId, runId });
       const form = formFields(d.form);
+      await refuseBlockedControl(ctx, guildId, String(d.form?.custom_id || ""));
       const missing = form.fields.filter((f) => f.required && !f.kind.startsWith("file") && (values[f.id] === void 0 || values[f.id] === "")).map((f) => f.label);
       if (missing.length) throw new ToolError(`Fill in ${missing.join(", ")} first.`);
       if (!confirmed(args)) {
+        notePreview(ctx, "submit_form", guildId, args);
         return preview(`Send the "${form.title}" form with these answers.`, {
           answers: Object.fromEntries(form.fields.map((f) => [f.label, values[f.id] ?? "(blank)"]))
         });
       }
+      requirePreview(ctx, "submit_form", guildId, args);
       return change(ctx, guildId, "submit_form", form.title, { values }, "submit", { runId, values });
     }
   },
@@ -1014,6 +1086,7 @@ var MODERATION_TOOLS = [
       const includeKept = args.include_pinned_and_panels === true;
       const req = { guildId, channelId: chId, messageIds, includeKept };
       if (!confirmed2(args)) {
+        notePreview(ctx, "delete_channel_messages", guildId, args);
         const p = await call2(ctx, "plan", req);
         return preview2(`Delete ${p.will_delete} message(s) in #${p.channel.name}` + (p.older_one_by_one ? ` (${p.older_one_by_one} older than 14 days go one by one, which is slower).` : "."), {
           kept: keptLine(p.kept, includeKept),
@@ -1021,7 +1094,8 @@ var MODERATION_TOOLS = [
           messages: p.messages
         });
       }
-      await underLimit(ctx);
+      requirePreview(ctx, "delete_channel_messages", guildId, args);
+      const release = await underLimit(ctx);
       try {
         const j = await call2(ctx, "delete", req);
         await logChange(ctx, guildId, "delete_channel_messages", `#${j.channel?.name ?? chId}`, { channel_id: chId, requested: messageIds.length, include_pinned_and_panels: includeKept }, { ok: true });
@@ -1029,6 +1103,8 @@ var MODERATION_TOOLS = [
       } catch (err) {
         await logChange(ctx, guildId, "delete_channel_messages", chId, { channel_id: chId, requested: messageIds.length }, { ok: false, error: err.message });
         throw err;
+      } finally {
+        release();
       }
     }
   },
@@ -1051,6 +1127,7 @@ var MODERATION_TOOLS = [
       const includeKept = args.include_pinned_and_panels === true;
       const req = { guildId, channelId: chId, includeKept };
       if (!confirmed2(args)) {
+        notePreview(ctx, "clear_channel", guildId, args);
         const p = await call2(ctx, "plan", { ...req, mode: "clear" });
         const count = p.more_than_counted ? `at least ${p.will_delete}` : String(p.will_delete);
         return preview2(`Clear #${p.channel.name}: delete ${count} message(s)` + (p.older_one_by_one ? `, ${p.older_one_by_one}${p.more_than_counted ? "+" : ""} of them older than 14 days and deleted one by one (slow).` : "."), {
@@ -1058,7 +1135,8 @@ var MODERATION_TOOLS = [
           ...p.more_than_counted ? { note: `The channel has more messages than a preview counts; one run deletes at most ${p.max_per_run}.` } : {}
         });
       }
-      await underLimit(ctx);
+      requirePreview(ctx, "clear_channel", guildId, args);
+      const release = await underLimit(ctx);
       try {
         const j = await call2(ctx, "clear", req);
         await logChange(ctx, guildId, "clear_channel", `#${j.channel?.name ?? chId}`, { channel_id: chId, include_pinned_and_panels: includeKept }, { ok: true });
@@ -1066,6 +1144,8 @@ var MODERATION_TOOLS = [
       } catch (err) {
         await logChange(ctx, guildId, "clear_channel", chId, { channel_id: chId }, { ok: false, error: err.message });
         throw err;
+      } finally {
+        release();
       }
     }
   },
@@ -1169,6 +1249,7 @@ var LINEUP_TOOLS = [
       const { eventId, guildId } = await eventGuild(args, ctx);
       const req = { guildId, eventId, formation: str4(args.formation), changes: changesArg(args) };
       if (!confirmed3(args)) {
+        notePreview(ctx, "publish_lineup", guildId, args);
         const p = await call3(ctx, "publish", req);
         return {
           preview: true,
@@ -1178,7 +1259,8 @@ var LINEUP_TOOLS = [
           next: "Show this to the player. Only if they say yes, call publish_lineup again with the same arguments plus confirm: true."
         };
       }
-      await underLimit(ctx);
+      requirePreview(ctx, "publish_lineup", guildId, args);
+      const release = await underLimit(ctx);
       try {
         const r = await call3(ctx, "publish", { ...req, confirm: true });
         await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId, formation: r.formation, changes: req.changes?.length || 0 }, { ok: true });
@@ -1186,6 +1268,8 @@ var LINEUP_TOOLS = [
       } catch (err) {
         await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId }, { ok: false, error: err.message });
         throw err;
+      } finally {
+        release();
       }
     }
   }
@@ -1232,7 +1316,10 @@ serve(async (req) => {
     const admin = createAdminClient();
     const leaderCheck = req.headers.get("x-gafferbot-leader-check");
     if (leaderCheck) {
-      if ((await identifyCaller(req, admin))?.kind !== "bot" || !/^\d{17,20}$/.test(leaderCheck)) return json({ error: "Forbidden" }, 403);
+      const checkSecret = Deno.env.get("MCP_LEADER_CHECK_SECRET") ?? "";
+      const given = req.headers.get("x-leader-check-secret") ?? "";
+      const trusted = checkSecret.length >= 24 && safeEqual(given, checkSecret) || (await identifyCaller(req, admin))?.kind === "bot";
+      if (!trusted || !/^\d{17,20}$/.test(leaderCheck)) return json({ error: "Forbidden" }, 403);
       return json({ leader: await clubAdmin(admin, leaderCheck) });
     }
     const caller = await callerFor(req, admin);
@@ -1252,6 +1339,16 @@ serve(async (req) => {
       body = await req.json();
     } catch {
       return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400);
+    }
+    if (Array.isArray(body)) {
+      if (body.length > MAX_BATCH) {
+        return json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: `Send at most ${MAX_BATCH} messages per batch.` } }, 400);
+      }
+      for (let i = 1; i < body.length; i++) {
+        if (!allowCall(caller.tokenId || discordUserId)) {
+          return json({ jsonrpc: "2.0", id: null, error: { code: -32e3, message: "Too many requests. Wait a minute and try again." } }, 429, { "Retry-After": "60" });
+        }
+      }
     }
     const levels = /* @__PURE__ */ new Map();
     const manage = caller.scopes.includes(SCOPE_MANAGE);

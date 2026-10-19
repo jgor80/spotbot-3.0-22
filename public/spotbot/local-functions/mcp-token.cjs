@@ -19,7 +19,7 @@ async function identifyCaller(req, admin) {
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (serviceRoleKey && token === serviceRoleKey) return { kind: "bot" };
+  if (serviceRoleKey && safeEqual(token, serviceRoleKey)) return { kind: "bot" };
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data?.user) return null;
   return { kind: "user", userId: data.user.id };
@@ -56,6 +56,7 @@ var TOKEN_PREFIX = "gb_";
 var MAX_ACTIVE_TOKENS = 5;
 var ACCESS_TTL_S = 60 * 60;
 var REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1e3;
+var PERSONAL_TTL_MS = 365 * 24 * 60 * 60 * 1e3;
 async function hashToken(token) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -73,10 +74,11 @@ async function createToken(admin, discordUserId, label) {
     return { error: `You already have ${MAX_ACTIVE_TOKENS} active AI tokens. Revoke them first.` };
   }
   const token = generateToken();
-  const { data, error } = await admin.from("mcp_access_tokens").insert({ discord_user_id: discordUserId, label, token_hash: await hashToken(token), token_hint: token.slice(-4) }).select("id, label, created_at").single();
+  const { data, error } = await admin.from("mcp_access_tokens").insert({ discord_user_id: discordUserId, label, token_hash: await hashToken(token), token_hint: token.slice(-4), expires_at: new Date(Date.now() + PERSONAL_TTL_MS).toISOString() }).select("id, label, created_at").single();
   if (error) return { error: "Could not create a token" };
   return { token, ...data };
 }
+var REUSE_GRACE_MS = 30 * 1e3;
 
 // supabase/functions/mcp-token/index.ts
 var corsHeaders = {
