@@ -157,6 +157,13 @@ export async function settleImages(db: Db, id: string) {
   if (error) console.warn(`[billing] settle failed for ${id}: ${error.message}`);
 }
 
+// A Studio preview keeps its images reserved until the member posts or discards it; marking it held
+// stops the hourly cleanup from refunding it as a render that never finished
+export async function holdImages(db: Db, id: string) {
+  const { error } = await db.from("image_ledger").update({ held_at: new Date().toISOString() }).eq("id", id).eq("status", "reserved");
+  if (error) console.warn(`[billing] hold failed for ${id}: ${error.message}`);
+}
+
 export function siteUrl() {
   return (Deno.env.get("PUBLIC_SITE_URL") || "https://gafferbot.app").replace(/\/$/, "");
 }

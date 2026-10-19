@@ -4270,6 +4270,10 @@ async function settleImages(db2, id) {
   const { error } = await db2.from("image_ledger").update({ status: "done" }).eq("id", id).eq("status", "reserved");
   if (error) console.warn(`[billing] settle failed for ${id}: ${error.message}`);
 }
+async function holdImages(db2, id) {
+  const { error } = await db2.from("image_ledger").update({ held_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id).eq("status", "reserved");
+  if (error) console.warn(`[billing] hold failed for ${id}: ${error.message}`);
+}
 function siteUrl() {
   return (Deno.env.get("PUBLIC_SITE_URL") || "https://gafferbot.app").replace(/\/$/, "");
 }
@@ -4669,7 +4673,7 @@ Deno.serve(async (req) => {
   }
   const best = pickBest(attempts);
   const b64 = best.b64, model = best.model;
-  if (reservation && !b.hold) await settleImages(db, reservation);
+  if (reservation) await (b.hold ? holdImages(db, reservation) : settleImages(db, reservation));
   let artworkSaved = !b.discord_user_id;
   let generatedAssetId = null;
   if (!teamIds.length && b.discord_user_id && ref) {
