@@ -121,7 +121,7 @@ export async function usageOf(db: Db, guildId: string, config = billingConfig())
   month.setUTCDate(1);
   month.setUTCHours(0, 0, 0, 0);
   const [{ data: rows }, { data: credits }] = await Promise.all([
-    db.from("image_ledger").select("credits").eq("guild_id", guildId).eq("source", "allowance").neq("status", "refunded").gte("created_at", month.toISOString()),
+    db.from("image_ledger").select("credits").eq("guild_id", guildId).eq("source", "allowance").not("status", "in", "(refunded,discarded)").gte("created_at", month.toISOString()),
     db.from("image_credits").select("pack_balance,welcome_granted").eq("guild_id", guildId).maybeSingle(),
   ]);
   const used = (rows ?? []).reduce((s: number, r: { credits: number }) => s + r.credits, 0);

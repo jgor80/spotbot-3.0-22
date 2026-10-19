@@ -9,6 +9,7 @@ import { teamPrompt, appendReferences, isRearFacing } from "./team-art.ts";
 import { referenceLimit, renderCost } from "./render-cost.ts";
 import { billingConfig, creditsFor, refundImages, reserveImages, settleImages } from "../_shared/billing.ts";
 import { ARRANGEMENTS, CAMERAS, LIGHTING, POSES, SCENES, keysOf, line } from "./variety.ts";
+import { checkRender, pickBest, qaEnabled, qaRetries, retryHint, type QaInput, type QaVerdict } from "./quality.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -53,7 +54,50 @@ const Body = z.object({
   kit_number_override: z.number().int().min(1).max(99).optional(),
   // Member-chosen upload to base a single-player card on.
   photo_asset_id: z.string().uuid().optional(),
+  // Who asked for it (counts their free discards); defaults to the featured player
+  requester_id: z.string().regex(/^\d{5,25}$/).optional(),
+  // Preview first: leave the server's images reserved until the bot says keep or discard
+  hold: z.boolean().default(false),
 });
+
+// After a held render: keep settles the images; discard gives them back (up to AI_IMAGE_FREE_DISCARDS
+// a day per member, default 5, then a discard is charged) and deletes the unused generated art;
+// refund (the bot failed to finish the graphic) always gives them back.
+const Decision = z.object({
+  action: z.enum(["keep", "discard", "refund"]),
+  guild_id: z.string().regex(/^\d{5,25}$/).optional(),
+  discord_user_id: z.string().regex(/^\d{5,25}$/).optional(),
+  reservation_ids: z.array(z.string().uuid()).max(10).default([]),
+  generated_asset_ids: z.array(z.string().uuid()).max(10).default([]),
+});
+const freeDiscards = Number.parseInt(Deno.env.get("AI_IMAGE_FREE_DISCARDS") ?? "", 10);
+const FREE_DISCARDS = Number.isFinite(freeDiscards) ? Math.max(0, freeDiscards) : 5;
+const QA_ON = qaEnabled((k) => Deno.env.get(k));
+const QA_RETRIES = qaRetries(Deno.env.get("AI_IMAGE_QA_RETRIES"));
+
+async function decide(d: z.infer<typeof Decision>) {
+  let charged = 0;
+  for (const id of d.reservation_ids) {
+    if (d.action === "keep") { await settleImages(db, id); continue; }
+    if (d.action === "refund") { await refundImages(db, id); continue; }
+    const { data, error } = await db.rpc("discard_ai_image", { p_id: id, p_free: FREE_DISCARDS });
+    if (error) console.warn(`[club-art] discard failed for ${id}: ${error.message}`);
+    else if (data?.charged) charged++;
+  }
+  let removed = 0;
+  if (d.action !== "keep" && d.generated_asset_ids.length && d.discord_user_id) {
+    // Only generated art of that player: their own uploads are never touched here
+    const { data: assets } = await db.from("pro_photo_assets").select("id,storage_path")
+      .in("id", d.generated_asset_ids).eq("discord_user_id", d.discord_user_id).eq("source_kind", "generated");
+    const paths = (assets ?? []).map((a) => a.storage_path).filter((p): p is string => typeof p === "string" && p.startsWith("generated/"));
+    if (paths.length) await db.storage.from("pro-photos").remove(paths).catch(() => {});
+    if (assets?.length) {
+      const { error } = await db.from("pro_photo_assets").delete().in("id", assets.map((a) => a.id));
+      if (!error) removed = assets.length;
+    }
+  }
+  return json({ ok: true, charged, removed });
+}
 
 const MAX_REFERENCES = referenceLimit(Deno.env.get("AI_IMAGE_REFERENCES"));
 
@@ -156,7 +200,12 @@ async function proPhoto(b: z.infer<typeof Body>, team = false): Promise<{ file: 
 Deno.serve(async (req) => {
   if (!SECRET || !safeEqual(req.headers.get("x-bot-secret") ?? "", SECRET)) return json({ error: "unauthorized" }, 401);
   if (!AI_KEY) return json({ error: "AI is not configured." }, 500);
-  const parsed = Body.safeParse(await req.json().catch(() => null));
+  const input = await req.json().catch(() => null);
+  if (input && typeof input === "object" && "action" in input) {
+    const d = Decision.safeParse(input);
+    return d.success ? decide(d.data) : json({ error: d.error.flatten().fieldErrors }, 400);
+  }
+  const parsed = Body.safeParse(input);
   if (!parsed.success) return json({ error: parsed.error.flatten().fieldErrors }, 400);
   const b = parsed.data;
 
@@ -194,7 +243,7 @@ Deno.serve(async (req) => {
   let imagesLeft: number | null = null;
   if (billing.limitsOn) {
     if (!b.guild_id) return json({ error: "AI images need a server to count against." }, 400);
-    const r = await reserveImages(db, { guild_id: b.guild_id, discord_user_id: b.discord_user_id, kind: b.kind, credits: creditsFor(b.kind, teamIds.length) }, billing);
+    const r = await reserveImages(db, { guild_id: b.guild_id, discord_user_id: b.requester_id ?? b.discord_user_id, kind: b.kind, credits: creditsFor(b.kind, teamIds.length) }, billing);
     if (!r.ok) return json({ error: r.message, out_of_images: true }, 402);
     reservation = r.id;
     imagesLeft = r.left;
@@ -203,47 +252,77 @@ Deno.serve(async (req) => {
     if (reservation) await refundImages(db, reservation);
     return json(body, status);
   };
-  let res: Response;
-  try {
-    if (ref || refs.length) {
-      const form = new FormData();
-      form.set("model", MODEL);
-      form.set("prompt", prompt);
-      form.set("size", size);
-      appendReferences(form, refs.length ? refs : (found?.files ?? []).map(file => ({ file })));
-      res = await fetch(`${GATEWAY}/v1/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${AI_KEY}` }, body: form });
-    } else {
-      res = await fetch(`${GATEWAY}/v1/images/generations`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${AI_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: MODEL, prompt, size }),
-      });
-    }
-  } catch {
-    return failed({ error: "The art studio couldn't reach the AI. Nothing was rendered." }, 502);
-  }
-  if (!res.ok) {
-    const detail = await res.json().catch(() => null);
-    console.error(`[club-art] AI failed: ${res.status}`);
-    const safeMessage = detail?.error?.message ?? detail?.message ?? (typeof detail?.error === "string" ? detail.error : null);
-    const msg = typeof safeMessage === "string" ? safeMessage : "Couldn't create the artwork.";
-    return failed({ error: msg }, res.status >= 500 ? 502 : res.status);
-  }
-  const out = await res.json().catch(() => null);
-  const b64 = out?.data?.[0]?.b64_json;
-  // Log what the render really cost (self-hosted routing says which model ran in x-ai-model)
-  const model = res.headers.get("x-ai-model") || MODEL.replace(/^openai\//, "");
-  const cost = renderCost(model, out?.usage);
   const referenceCount = refs.length || found?.files.length || 0;
-  console.log(`[club-art] ${b.kind}/${b.style} on ${model}: ${referenceCount} reference(s)${cost ? `, ${cost.image_tokens} image + ${cost.text_tokens} text in, ${cost.output_tokens} out${cost.cost_usd !== null ? `, $${cost.cost_usd}` : ""}` : ", no usage returned"}`);
-  await db.from("ai_image_renders").insert({
-    guild_id: b.guild_id ?? null, discord_user_id: b.discord_user_id ?? null, kind: b.kind, style: b.style, model,
-    quality: out?.quality ?? res.headers.get("x-ai-quality") ?? null, size, reference_count: referenceCount, ok: Boolean(b64),
-    text_tokens: cost?.text_tokens ?? null, image_tokens: cost?.image_tokens ?? null, output_tokens: cost?.output_tokens ?? null, cost_usd: cost?.cost_usd ?? null,
-  }).then(({ error }) => { if (error) console.warn(`[club-art] render log failed: ${error.message}`); }, () => {});
-  if (!b64) return failed({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
-  if (reservation) await settleImages(db, reservation);
+  // Draw, check, and silently redraw a failed render (at our cost, never the server's images)
+  const renderOnce = async (text: string): Promise<{ res: Response; out: any; b64: string | null } | { error: unknown; status: number }> => {
+    let res: Response;
+    try {
+      if (ref || refs.length) {
+        const form = new FormData();
+        form.set("model", MODEL);
+        form.set("prompt", text);
+        form.set("size", size);
+        appendReferences(form, refs.length ? refs : (found?.files ?? []).map(file => ({ file })));
+        res = await fetch(`${GATEWAY}/v1/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${AI_KEY}` }, body: form });
+      } else {
+        res = await fetch(`${GATEWAY}/v1/images/generations`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${AI_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: MODEL, prompt: text, size }),
+        });
+      }
+    } catch {
+      return { error: { error: "The art studio couldn't reach the AI. Nothing was rendered." }, status: 502 };
+    }
+    if (!res.ok) {
+      const detail = await res.json().catch(() => null);
+      console.error(`[club-art] AI failed: ${res.status}`);
+      const safeMessage = detail?.error?.message ?? detail?.message ?? (typeof detail?.error === "string" ? detail.error : null);
+      const msg = typeof safeMessage === "string" ? safeMessage : "Couldn't create the artwork.";
+      return { error: { error: msg }, status: res.status >= 500 ? 502 : res.status };
+    }
+    const out = await res.json().catch(() => null);
+    return { res, out, b64: out?.data?.[0]?.b64_json ?? null };
+  };
+  const qaInput: QaInput = {
+    kind: b.kind,
+    players: refs.length || (ref ? 1 : 0),
+    kitColours: [b.kit.primary, b.kit.secondary].filter((c): c is string => Boolean(c)),
+    kitNumbers: refs.length ? refs.map((r) => r.kitNumber).filter((n): n is number => Number.isInteger(n)) : kitNumber ? [kitNumber] : [],
+    headshot: b.kind === "card" && b.pose === "headshot",
+    likeness: refs.length || (found?.files.length ? 1 : 0),
+  };
+  const qaRefs = refs.length ? refs.map((r) => r.file) : (found?.files ?? []).slice(0, 1);
+  const attempts: { b64: string; model: string; qa: QaVerdict }[] = [];
+  for (let attempt = 0; attempt <= (QA_ON ? QA_RETRIES : 0); attempt++) {
+    const r = await renderOnce(attempt ? `${prompt}${retryHint(attempts.at(-1)?.qa.issues ?? [])}` : prompt);
+    if ("error" in r) {
+      if (attempts.length) break; // a failed redraw keeps the earlier render
+      return failed(r.error, r.status);
+    }
+    // Log what the render really cost (self-hosted routing says which model ran in x-ai-model)
+    const model = r.res.headers.get("x-ai-model") || MODEL.replace(/^openai\//, "");
+    const cost = renderCost(model, r.out?.usage);
+    const qa: QaVerdict = r.b64 && QA_ON ? await checkRender(fetch, GATEWAY, AI_KEY, qaInput, r.b64, qaRefs) : { checked: false, pass: Boolean(r.b64), score: 0, issues: [] };
+    console.log(`[club-art] ${b.kind}/${b.style} on ${model} (attempt ${attempt + 1}): ${referenceCount} reference(s)${cost ? `, ${cost.image_tokens} image + ${cost.text_tokens} text in, ${cost.output_tokens} out${cost.cost_usd !== null ? `, $${cost.cost_usd}` : ""}` : ", no usage returned"}${qa.checked ? `, quality ${qa.pass ? "passed" : `failed (${qa.issues.join("; ")})`}` : ""}`);
+    await db.from("ai_image_renders").insert({
+      guild_id: b.guild_id ?? null, discord_user_id: b.discord_user_id ?? null, kind: b.kind, style: b.style, model,
+      quality: r.out?.quality ?? r.res.headers.get("x-ai-quality") ?? null, size, reference_count: referenceCount, ok: Boolean(r.b64),
+      text_tokens: cost?.text_tokens ?? null, image_tokens: cost?.image_tokens ?? null, output_tokens: cost?.output_tokens ?? null, cost_usd: cost?.cost_usd ?? null,
+      attempt: attempt + 1, qa_pass: qa.checked ? qa.pass : null, qa_issues: qa.checked && !qa.pass ? qa.issues : null,
+    }).then(({ error }) => { if (error) console.warn(`[club-art] render log failed: ${error.message}`); }, () => {});
+    if (!r.b64) {
+      if (attempts.length) break;
+      return failed({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
+    }
+    attempts.push({ b64: r.b64, model, qa });
+    if (qa.pass) break;
+  }
+  const best = pickBest(attempts)!;
+  const b64 = best.b64, model = best.model;
+  if (reservation && !b.hold) await settleImages(db, reservation);
   let artworkSaved = !b.discord_user_id;
+  let generatedAssetId: string | null = null;
   if (!teamIds.length && b.discord_user_id && ref) {
     const raw = atob(b64);
     const bytes = new Uint8Array(raw.length);
@@ -254,15 +333,18 @@ Deno.serve(async (req) => {
     if (!saved.error) {
       const signed = await db.storage.from("pro-photos").createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
       if (!signed.error) {
-        const { error } = await db.from("pro_photo_assets").insert({
+        const { data: row, error } = await db.from("pro_photo_assets").insert({
         discord_user_id: b.discord_user_id, guild_id: "graphics-studio", image_url: signed.data.signedUrl,
         storage_path: path, source_key: sourceKey, source_kind: "generated", graphic_kind: b.kind,
          pose: b.pose, analysis: { style: b.style, composition: b.composition, club_name: b.club_name, reference_asset_ids: found?.assetIds,
-           camera: b.camera ?? null, lighting: b.lighting ?? null, scene: b.scene ?? null, model },
-        });
+           camera: b.camera ?? null, lighting: b.lighting ?? null, scene: b.scene ?? null, model, quality_check: best.qa.checked ? { pass: best.qa.pass, score: best.qa.score } : null },
+        }).select("id").maybeSingle();
         artworkSaved = !error;
+        generatedAssetId = row?.id ?? null;
       }
     }
   }
-  return json({ image_b64: b64, used_pro_photo: !!ref || refs.length > 0, artwork_saved: artworkSaved, kit_number: teamIds.length ? null : kitNumber, images_left: imagesLeft, team_player_ids: teamIds, reference_asset_ids: refs.length ? refs.flatMap(r => r.assetIds) : found?.assetIds ?? [] });
+  return json({ image_b64: b64, used_pro_photo: !!ref || refs.length > 0, artwork_saved: artworkSaved, kit_number: teamIds.length ? null : kitNumber, images_left: imagesLeft,
+    reservation_id: b.hold ? reservation : null, generated_asset_id: generatedAssetId,
+    quality: { checked: best.qa.checked, pass: best.qa.pass, issues: best.qa.issues, attempts: attempts.length }, team_player_ids: teamIds, reference_asset_ids: refs.length ? refs.flatMap(r => r.assetIds) : found?.assetIds ?? [] });
 });

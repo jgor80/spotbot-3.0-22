@@ -4152,7 +4152,7 @@ async function usageOf(db2, guildId2, config = billingConfig()) {
   month.setUTCDate(1);
   month.setUTCHours(0, 0, 0, 0);
   const [{ data: rows }, { data: credits }] = await Promise.all([
-    db2.from("image_ledger").select("credits").eq("guild_id", guildId2).eq("source", "allowance").neq("status", "refunded").gte("created_at", month.toISOString()),
+    db2.from("image_ledger").select("credits").eq("guild_id", guildId2).eq("source", "allowance").not("status", "in", "(refunded,discarded)").gte("created_at", month.toISOString()),
     db2.from("image_credits").select("pack_balance,welcome_granted").eq("guild_id", guildId2).maybeSingle()
   ]);
   const used = (rows ?? []).reduce((s, r) => s + r.credits, 0);

@@ -44,7 +44,13 @@ function fixture(overrides = {}, { members, premium } = {}) {
       reply: async (p) => { calls.push('reply'); requests.push(p); }, update: async () => { throw Error('selection was not deferred'); },
       showModal: async (m) => { calls.push('showModal'); requests.push(m.toJSON()); }, ...extra };
   }
-  return { studio, interaction, calls, posts, requests };
+  // Press "Post it" on the private preview the last step showed
+  async function postPreview() {
+    const keep = requests.at(-1).components[0].toJSON().components.find((b) => b.custom_id.startsWith('gs_keep:'));
+    assert.ok(keep, 'a private preview with a Post button comes before anything is public');
+    await studio.handleInteraction(interaction(keep.custom_id, 'button'));
+  }
+  return { studio, interaction, calls, posts, requests, postPreview };
 }
 
 test('all styles load safely, portrait option opens a valid stat-free form and renders without stats', async () => {
@@ -71,10 +77,13 @@ test('all styles load safely, portrait option opens a valid stat-free form and r
       assert.equal(inputs.find((i) => i.custom_id === 'stats').value, '');
       assert.equal(inputs.find((i) => i.custom_id === 'overall').value, '');
       await f.studio.handleInteraction(f.interaction(modal.custom_id, 'modal', { fields: { getTextInputValue: (key) => inputs.find((i) => i.custom_id === key)?.value || '' } }));
+      assert.equal(f.posts.length, 0, 'nothing is public before the member posts the preview');
+      assert.equal(f.requests.at(-1).files.length, 2, 'the preview shows front and back');
+      await f.postPreview();
       assert.ok(f.posts.some((p) => p.files?.[0]?.attachment?.length > 1000), 'PNG posted');
       assert.ok(f.posts.some((p) => p.files?.length === 2), 'back posted with front');
       assert.doesNotMatch(lastSvg, /EA MATCH DATA|>GAMES<|>RATING<|height="150"/);
-      assert.equal(f.requests.at(-1), '✅ Posted!');
+      assert.equal(f.requests.at(-1).content, '✅ Posted!');
     }
   } finally { global.fetch = originalFetch; }
 });
@@ -127,12 +136,13 @@ test('recruiting poster uses an editable user-bound draft, logo choice and saved
   try {
     const fields = { headline: 'Become Palermo', positions: 'GK · CB · CAM', details: 'Friday 7:30 PM ET · FC27', contact: 'DM our captain', featured: '' };
     await f.studio.handleInteraction(f.interaction(modal.custom_id, 'modal', { fields: { getTextInputValue: (k) => fields[k] || '' } }));
+    await f.postPreview();
     const post = f.posts.find((p) => p.files?.length);
     assert.equal(post.files[0].name, 'recruiting-poster.png');
     assert.deepEqual(post.allowedMentions, { parse: [] });
     assert.match(lastSvg, /BECOME PALERMO/); assert.match(lastSvg, /GK · CB · CAM/);
     assert.doesNotMatch(lastSvg, /FULL TIME|VICTORY|EA MATCH DATA/);
-    assert.equal(f.requests.at(-1), '✅ Posted!');
+    assert.equal(f.requests.at(-1).content, '✅ Posted!');
   } finally { global.fetch = originalFetch; }
 });
 
@@ -176,6 +186,7 @@ test('recruitment groups exclude inactive and unsaved players, reject outside le
       } else {
         assert.deepEqual(bodies.at(-1).team_player_ids, ['501557839932948490']);
         assert.equal(bodies.at(-1).discord_user_id, undefined);
+        await f.postPreview();
         assert.ok(f.posts.some((p) => p.files?.length));
       }
     }
@@ -570,7 +581,8 @@ test("'90s yearbook card asks club-art for a tight headshot and is offered only 
     await f.studio.handleInteraction(f.interaction(f.requests.at(-1).custom_id, 'modal', { fields: { getTextInputValue: (k) => inputs.find((i) => i.custom_id === k)?.value || '' } }));
     assert.equal(body.style, 'yearbook');
     assert.equal(body.pose, 'headshot');
-    assert.equal(f.requests.at(-1), '✅ Posted!');
+    await f.postPreview();
+    assert.equal(f.requests.at(-1).content, '✅ Posted!');
   } finally { global.fetch = originalFetch; }
   playerCard({ style: 'yearbook', kit: { primary: 'pink' }, name: 'AirDangus23', clubName: 'PCN Palermo', position: 'CAM', number: '23', seasonLabel: 'FC27', stats: [['GAMES', '22']] });
   assert.match(lastSvg, /YEARBOOK/); assert.match(lastSvg, /AIRDANGUS23/); assert.match(lastSvg, /CAM  ·  #23/); assert.match(lastSvg, />22 GAMES</);
@@ -595,5 +607,64 @@ test('a server out of AI images gets the reason plus buy buttons, and nothing is
     assert.equal(last.content, '❌ This server is out of AI images.');
     assert.deepEqual(last.components[0].toJSON(), { guild: '1529555651762851930', user: '501557839932948490' });
     assert.equal(f.posts.length, 0);
+  } finally { global.fetch = originalFetch; }
+});
+
+test('previews hold the AI images: Redo and Discard give them back, Post charges them, and only the requester can press', async () => {
+  const originalFetch = global.fetch;
+  const art = [], decisions = [];
+  let n = 0;
+  global.fetch = async (url, options) => {
+    const b = JSON.parse(options.body);
+    if (b.action) { decisions.push(b); return { ok: true, json: async () => ({ ok: true, charged: 0 }) }; }
+    art.push(b);
+    n += 1;
+    return { ok: true, json: async () => ({ image_b64: testLogo.split(',')[1], used_pro_photo: true, reservation_id: `res-${n}`, generated_asset_id: `asset-${n}`,
+      quality: n === 1 ? { checked: true, pass: false, issues: ['distorted face'], attempts: 3 } : { checked: true, pass: true, issues: [], attempts: 1 } }) };
+  };
+  const open = async (f) => {
+    await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: ['modern'] }));
+    const stats = f.requests.at(-1).components.at(-1).toJSON().components.find((b) => b.label === 'With Stats');
+    await f.studio.handleInteraction(f.interaction(stats.custom_id, 'button'));
+    const inputs = f.requests.at(-1).components.map((r) => r.components[0]);
+    await f.studio.handleInteraction(f.interaction(f.requests.at(-1).custom_id, 'modal', { fields: { getTextInputValue: (k) => inputs.find((i) => i.custom_id === k)?.value || '' } }));
+    return Object.fromEntries(f.requests.at(-1).components[0].toJSON().components.map((b) => [b.custom_id.split(':')[0], b]));
+  };
+  try {
+    const f = fixture();
+    const buttons = await open(f);
+    assert.equal(art[0].hold, true);
+    assert.equal(art[0].requester_id, '501557839932948490');
+    assert.match(f.requests.at(-1).content, /Preview[\s\S]*quality check still spotted: distorted face[\s\S]*Nothing is charged until you post/);
+    assert.equal(f.posts.length, 0);
+    await f.studio.handleInteraction(f.interaction(buttons.gs_keep.custom_id, 'button', { user: { id: 'someone-else' } }));
+    assert.match(f.requests.at(-1).content, /Only the member who asked/);
+    assert.equal(f.posts.length, 0);
+    // Redo draws again and gives the first render back
+    await f.studio.handleInteraction(f.interaction(buttons.gs_redo.custom_id, 'button'));
+    assert.equal(art.length, 2);
+    assert.deepEqual(decisions.at(-1), { action: 'discard', discord_user_id: '501557839932948490', reservation_ids: ['res-1'], generated_asset_ids: ['asset-1'] });
+    const redone = f.requests.at(-1);
+    assert.doesNotMatch(redone.content, /still spotted/);
+    assert.equal(redone.components[0].toJSON().components.find((b) => b.custom_id.startsWith('gs_redo')).label, 'Redo (1 left)');
+    await f.studio.handleInteraction(f.interaction(buttons.gs_redo.custom_id, 'button'));
+    const spent = f.requests.at(-1).components[0].toJSON().components.find((b) => b.custom_id.startsWith('gs_redo'));
+    assert.equal(spent.disabled, true, 'free redos are capped');
+    // Post charges only the render that was posted, and saves it to My Cards
+    await f.studio.handleInteraction(f.interaction(buttons.gs_keep.custom_id, 'button'));
+    assert.equal(f.posts.filter((p) => p.files?.length).length, 1);
+    assert.deepEqual(decisions.filter((d) => d.action === 'keep').map((d) => d.reservation_ids), [['res-3']]);
+    assert.ok(decisions.some((d) => d.action === 'save' || d.front_b64), 'card saved to the collection after posting');
+    assert.equal(f.requests.at(-1).content, '✅ Posted!');
+    await f.studio.handleInteraction(f.interaction(buttons.gs_keep.custom_id, 'button'));
+    assert.match(f.requests.at(-1).content, /expired/, 'a preview posts once');
+
+    const g = fixture();
+    const other = await open(g);
+    await g.studio.handleInteraction(g.interaction(other.gs_drop.custom_id, 'button'));
+    assert.equal(g.posts.length, 0);
+    assert.deepEqual(decisions.at(-1).reservation_ids, ['res-4']);
+    assert.equal(decisions.at(-1).action, 'discard');
+    assert.match(g.requests.at(-1).content, /Discarded — nothing was charged/);
   } finally { global.fetch = originalFetch; }
 });
