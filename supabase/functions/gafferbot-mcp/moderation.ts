@@ -137,7 +137,7 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
           messages: p.messages,
         });
       }
-      await underLimit(ctx);
+      const release = await underLimit(ctx);
       try {
         const j = await call(ctx, "delete", req);
         await logChange(ctx, guildId, "delete_channel_messages", `#${j.channel?.name ?? chId}`, { channel_id: chId, requested: messageIds.length, include_pinned_and_panels: includeKept }, { ok: true });
@@ -145,6 +145,8 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
       } catch (err) {
         await logChange(ctx, guildId, "delete_channel_messages", chId, { channel_id: chId, requested: messageIds.length }, { ok: false, error: (err as Error).message });
         throw err;
+      } finally {
+        release();
       }
     },
   },
@@ -177,7 +179,7 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
           ...(p.more_than_counted ? { note: `The channel has more messages than a preview counts; one run deletes at most ${p.max_per_run}.` } : {}),
         });
       }
-      await underLimit(ctx);
+      const release = await underLimit(ctx);
       try {
         const j = await call(ctx, "clear", req);
         await logChange(ctx, guildId, "clear_channel", `#${j.channel?.name ?? chId}`, { channel_id: chId, include_pinned_and_panels: includeKept }, { ok: true });
@@ -185,6 +187,8 @@ export const MODERATION_TOOLS: Tool<Ctx>[] = [
       } catch (err) {
         await logChange(ctx, guildId, "clear_channel", chId, { channel_id: chId }, { ok: false, error: (err as Error).message });
         throw err;
+      } finally {
+        release();
       }
     },
   },

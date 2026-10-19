@@ -19,7 +19,7 @@ async function identifyCaller(req, admin) {
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (serviceRoleKey && token === serviceRoleKey) return { kind: "bot" };
+  if (serviceRoleKey && safeEqual(token, serviceRoleKey)) return { kind: "bot" };
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data?.user) return null;
   return { kind: "user", userId: data.user.id };
@@ -527,6 +527,7 @@ var TOOLS = [
 // supabase/functions/gafferbot-mcp/limits.ts
 var CALLS_PER_MINUTE = 60;
 var CHANGES_PER_HOUR = 30;
+var MAX_BATCH = 10;
 var windows = /* @__PURE__ */ new Map();
 function allowCall(key, now = Date.now(), limit = CALLS_PER_MINUTE) {
   const recent = (windows.get(key) || []).filter((t) => now - t < 6e4);
@@ -718,13 +719,33 @@ async function logChange(ctx, guildId, tool, target, detail, outcome) {
   }).then(() => {
   }, (e) => console.error("[gafferbot-mcp] action log failed:", e));
 }
+var inFlight = /* @__PURE__ */ new Map();
 async function underLimit(ctx) {
-  if (await changesLastHour(ctx.db, ctx.discordUserId) >= CHANGES_PER_HOUR) {
+  const key = ctx.discordUserId;
+  inFlight.set(key, (inFlight.get(key) || 0) + 1);
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    const left = (inFlight.get(key) || 1) - 1;
+    if (left > 0) inFlight.set(key, left);
+    else inFlight.delete(key);
+  };
+  let done = 0;
+  try {
+    done = await changesLastHour(ctx.db, key);
+  } catch (err) {
+    release();
+    throw err;
+  }
+  if (done + (inFlight.get(key) || 0) > CHANGES_PER_HOUR) {
+    release();
     throw new ToolError(`That's ${CHANGES_PER_HOUR} changes from AI apps in the last hour, the limit. Try again later or use Discord.`);
   }
+  return release;
 }
 async function change(ctx, guildId, tool, target, detail, op, args) {
-  await underLimit(ctx);
+  const release = await underLimit(ctx);
   try {
     const snap = await call(ctx, op, { guildId, ...args });
     await logChange(ctx, guildId, tool, target, detail, { ok: !snap?.error, error: snap?.error });
@@ -732,6 +753,8 @@ async function change(ctx, guildId, tool, target, detail, op, args) {
   } catch (err) {
     await logChange(ctx, guildId, tool, target, detail, { ok: false, error: err.message });
     throw err;
+  } finally {
+    release();
   }
 }
 var preview = (what, extra = {}) => ({
@@ -1021,7 +1044,7 @@ var MODERATION_TOOLS = [
           messages: p.messages
         });
       }
-      await underLimit(ctx);
+      const release = await underLimit(ctx);
       try {
         const j = await call2(ctx, "delete", req);
         await logChange(ctx, guildId, "delete_channel_messages", `#${j.channel?.name ?? chId}`, { channel_id: chId, requested: messageIds.length, include_pinned_and_panels: includeKept }, { ok: true });
@@ -1029,6 +1052,8 @@ var MODERATION_TOOLS = [
       } catch (err) {
         await logChange(ctx, guildId, "delete_channel_messages", chId, { channel_id: chId, requested: messageIds.length }, { ok: false, error: err.message });
         throw err;
+      } finally {
+        release();
       }
     }
   },
@@ -1058,7 +1083,7 @@ var MODERATION_TOOLS = [
           ...p.more_than_counted ? { note: `The channel has more messages than a preview counts; one run deletes at most ${p.max_per_run}.` } : {}
         });
       }
-      await underLimit(ctx);
+      const release = await underLimit(ctx);
       try {
         const j = await call2(ctx, "clear", req);
         await logChange(ctx, guildId, "clear_channel", `#${j.channel?.name ?? chId}`, { channel_id: chId, include_pinned_and_panels: includeKept }, { ok: true });
@@ -1066,6 +1091,8 @@ var MODERATION_TOOLS = [
       } catch (err) {
         await logChange(ctx, guildId, "clear_channel", chId, { channel_id: chId }, { ok: false, error: err.message });
         throw err;
+      } finally {
+        release();
       }
     }
   },
@@ -1178,7 +1205,7 @@ var LINEUP_TOOLS = [
           next: "Show this to the player. Only if they say yes, call publish_lineup again with the same arguments plus confirm: true."
         };
       }
-      await underLimit(ctx);
+      const release = await underLimit(ctx);
       try {
         const r = await call3(ctx, "publish", { ...req, confirm: true });
         await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId, formation: r.formation, changes: req.changes?.length || 0 }, { ok: true });
@@ -1186,6 +1213,8 @@ var LINEUP_TOOLS = [
       } catch (err) {
         await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId }, { ok: false, error: err.message });
         throw err;
+      } finally {
+        release();
       }
     }
   }
@@ -1232,7 +1261,10 @@ serve(async (req) => {
     const admin = createAdminClient();
     const leaderCheck = req.headers.get("x-gafferbot-leader-check");
     if (leaderCheck) {
-      if ((await identifyCaller(req, admin))?.kind !== "bot" || !/^\d{17,20}$/.test(leaderCheck)) return json({ error: "Forbidden" }, 403);
+      const checkSecret = Deno.env.get("MCP_LEADER_CHECK_SECRET") ?? "";
+      const given = req.headers.get("x-leader-check-secret") ?? "";
+      const trusted = checkSecret.length >= 24 && safeEqual(given, checkSecret) || (await identifyCaller(req, admin))?.kind === "bot";
+      if (!trusted || !/^\d{17,20}$/.test(leaderCheck)) return json({ error: "Forbidden" }, 403);
       return json({ leader: await clubAdmin(admin, leaderCheck) });
     }
     const caller = await callerFor(req, admin);
@@ -1252,6 +1284,16 @@ serve(async (req) => {
       body = await req.json();
     } catch {
       return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400);
+    }
+    if (Array.isArray(body)) {
+      if (body.length > MAX_BATCH) {
+        return json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: `Send at most ${MAX_BATCH} messages per batch.` } }, 400);
+      }
+      for (let i = 1; i < body.length; i++) {
+        if (!allowCall(caller.tokenId || discordUserId)) {
+          return json({ jsonrpc: "2.0", id: null, error: { code: -32e3, message: "Too many requests. Wait a minute and try again." } }, 429, { "Retry-After": "60" });
+        }
+      }
     }
     const levels = /* @__PURE__ */ new Map();
     const manage = caller.scopes.includes(SCOPE_MANAGE);

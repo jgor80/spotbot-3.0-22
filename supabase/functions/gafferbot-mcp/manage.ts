@@ -195,15 +195,34 @@ export async function logChange(ctx: Ctx, guildId: string, tool: string, target:
   }).then(() => {}, (e: unknown) => console.error("[gafferbot-mcp] action log failed:", e));
 }
 
-export async function underLimit(ctx: Ctx) {
-  if ((await changesLastHour(ctx.db, ctx.discordUserId)) >= CHANGES_PER_HOUR) {
+// Changes running right now, per player. They count toward the hourly limit before they reach mcp_action_log,
+// so parallel calls (a JSON-RPC batch, or several requests at once) can't all pass the same check.
+const inFlight = new Map<string, number>();
+
+// Reserves one change under the hourly limit, or throws. Call the returned release once the change is logged.
+export async function underLimit(ctx: Ctx): Promise<() => void> {
+  const key = ctx.discordUserId;
+  inFlight.set(key, (inFlight.get(key) || 0) + 1);
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    const left = (inFlight.get(key) || 1) - 1;
+    if (left > 0) inFlight.set(key, left);
+    else inFlight.delete(key);
+  };
+  let done = 0;
+  try { done = await changesLastHour(ctx.db, key); } catch (err) { release(); throw err; }
+  if (done + (inFlight.get(key) || 0) > CHANGES_PER_HOUR) {
+    release();
     throw new ToolError(`That's ${CHANGES_PER_HOUR} changes from AI apps in the last hour, the limit. Try again later or use Discord.`);
   }
+  return release;
 }
 
 // Runs a confirmed change, logs it either way.
 async function change(ctx: Ctx, guildId: string, tool: string, target: string, detail: Json, op: string, args: Record<string, unknown>) {
-  await underLimit(ctx);
+  const release = await underLimit(ctx);
   try {
     const snap = await call(ctx, op, { guildId, ...args });
     await logChange(ctx, guildId, tool, target, detail, { ok: !snap?.error, error: snap?.error });
@@ -211,6 +230,8 @@ async function change(ctx: Ctx, guildId: string, tool: string, target: string, d
   } catch (err) {
     await logChange(ctx, guildId, tool, target, detail, { ok: false, error: (err as Error).message });
     throw err;
+  } finally {
+    release();
   }
 }
 

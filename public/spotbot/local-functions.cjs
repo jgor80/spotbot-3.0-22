@@ -172,21 +172,53 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
 };
 
-// Public HTTP endpoint for the web app (via the Cloudflare Worker) and external webhooks.
+// Largest request body accepted (pro-photo uploads are up to 8 MB, sent base64-encoded).
+const MAX_BODY_BYTES = 16 * 1024 * 1024;
+// Headers callers may never pass through to a function: only this process and the Worker set them.
+const STRIPPED_HEADERS = new Set(['x-bot-secret', 'x-origin-secret']);
+
+function sameSecret(given, expected) {
+  const a = Buffer.from(String(given || ''));
+  const b = Buffer.from(String(expected || ''));
+  return a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
+}
+
+// Public HTTP endpoint for the web app and webhooks, reached through the Cloudflare Worker.
 // Incoming requests never receive the internal bot secret, so bot-only functions stay locked.
-function startServer({ port, supabaseUrl }) {
+// With FUNCTIONS_ORIGIN_SECRET set (the same value as the Worker's), anything that didn't come through the
+// Worker is refused, so the open port can't be used to skip Cloudflare. FUNCTIONS_HOST=127.0.0.1 keeps
+// the port off the internet entirely when a Cloudflare Tunnel or local proxy fronts it.
+function startServer({ port, supabaseUrl, host = process.env.FUNCTIONS_HOST || '0.0.0.0', originSecret = process.env.FUNCTIONS_ORIGIN_SECRET || '' }) {
   wrapFetch(supabaseUrl);
+  if (!originSecret) console.warn('⚠️  FUNCTIONS_ORIGIN_SECRET is not set: the functions server accepts requests that skip the Cloudflare Worker');
   const server = http.createServer(async (req, res) => {
     const m = req.url.match(/^\/functions\/v1\/([a-z0-9-]+)(.*)$/);
     try {
       if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
       if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
+      if (originSecret && !sameSecret(req.headers['x-origin-secret'], originSecret)) {
+        res.writeHead(403, { ...CORS, 'Content-Type': 'application/json' });
+        return res.end('{"error":"Forbidden"}');
+      }
+      if (Number(req.headers['content-length'] || 0) > MAX_BODY_BYTES) {
+        res.writeHead(413, { ...CORS, 'Content-Type': 'application/json', Connection: 'close' });
+        return res.end('{"error":"Request too large"}');
+      }
       const h = m && load(m[1]);
       if (!h) { res.writeHead(404, { ...CORS, 'Content-Type': 'application/json' }); return res.end('{"error":"Function not found"}'); }
       const chunks = [];
-      for await (const c of req) chunks.push(c);
+      let size = 0;
+      for await (const c of req) {
+        size += c.length;
+        if (size > MAX_BODY_BYTES) {
+          res.writeHead(413, { ...CORS, 'Content-Type': 'application/json', Connection: 'close' });
+          res.end('{"error":"Request too large"}');
+          return req.destroy();
+        }
+        chunks.push(c);
+      }
       const headers = new Headers();
-      for (const [k, v] of Object.entries(req.headers)) if (k !== 'x-bot-secret' && v != null) headers.set(k, Array.isArray(v) ? v.join(',') : v);
+      for (const [k, v] of Object.entries(req.headers)) if (!STRIPPED_HEADERS.has(k) && v != null) headers.set(k, Array.isArray(v) ? v.join(',') : v);
       const body = ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks);
       const out = await h(new Request(`http://local${req.url}`, { method: req.method, headers, body }));
       if (out.status >= 500) reportError(new Error(`${m[1]} answered ${out.status}`), { source: 'function', fn: m[1], status: out.status });
@@ -202,7 +234,10 @@ function startServer({ port, supabaseUrl }) {
       res.end('{"error":"Internal error"}');
     }
   });
-  server.listen(port, '0.0.0.0', () => console.log(`⚙️  Backend functions served locally on :${port} (${names().length} functions)`));
+  // Slow or stalled clients are cut off instead of holding sockets open.
+  server.headersTimeout = 20_000;
+  server.requestTimeout = 120_000;
+  server.listen(port, host, () => console.log(`⚙️  Backend functions served locally on ${host}:${port} (${names().length} functions)`));
   return server;
 }
 

@@ -10,7 +10,10 @@ interface Env {
   SUPABASE_URL: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   FUNCTIONS_ORIGIN?: string;
-  OPS_ORIGIN?: string;
+  // Shared with the bot's FUNCTIONS_ORIGIN_SECRET: proves a request to the functions server came through here.
+  FUNCTIONS_ORIGIN_SECRET?: string;
+  // Shared with the bot's MCP_LEADER_CHECK_SECRET, so the AI sign-in's leader check needs no service-role key.
+  MCP_LEADER_CHECK_SECRET?: string;
 }
 
 const ALLOWED = [/^https:\/\/(www\.)?gafferbot\.app$/, /^https:\/\/[a-z0-9-]+\.workers\.dev$/, /^http:\/\/localhost:\d+$/];
@@ -124,12 +127,22 @@ function originUrl(origin: string): string {
   return origin.replace(/\/$/, "").replace(/^(https?:\/\/)(\d{1,3}(?:\.\d{1,3}){3})(?=[:/]|$)/, "$1$2.sslip.io");
 }
 
+// Sent with every request to the functions server, which refuses requests without it once both sides set it.
+function originHeaders(env: Env): Record<string, string> {
+  return env.FUNCTIONS_ORIGIN_SECRET ? { "x-origin-secret": env.FUNCTIONS_ORIGIN_SECRET } : {};
+}
+
 // The bot's answer to "does this player lead a club?" (gafferbot-mcp, authenticated as the backend)
 async function botLeaderCheck(env: Env, discordUserId: string): Promise<boolean> {
-  if (!env.FUNCTIONS_ORIGIN || !env.SUPABASE_SERVICE_ROLE_KEY) return false;
+  if (!env.FUNCTIONS_ORIGIN) return false;
+  // The dedicated secret only answers this one question; the service-role key is the fallback until it is set.
+  const auth: Record<string, string> = env.MCP_LEADER_CHECK_SECRET
+    ? { "x-leader-check-secret": env.MCP_LEADER_CHECK_SECRET }
+    : env.SUPABASE_SERVICE_ROLE_KEY ? { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` } : {};
+  if (!Object.keys(auth).length) return false;
   const res = await fetch(`${originUrl(env.FUNCTIONS_ORIGIN)}/functions/v1/gafferbot-mcp`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", "x-gafferbot-leader-check": discordUserId },
+    headers: { ...auth, ...originHeaders(env), "Content-Type": "application/json", "x-gafferbot-leader-check": discordUserId },
     body: "{}",
   });
   if (!res.ok) return false;
@@ -164,16 +177,10 @@ export default {
       const target = originUrl(env.FUNCTIONS_ORIGIN) + path + url.search;
       const headers = new Headers(req.headers);
       headers.delete("x-bot-secret");
+      headers.delete("x-leader-check-secret");
+      headers.delete("x-origin-secret");
+      for (const [k, v] of Object.entries(originHeaders(env))) headers.set(k, v);
       return fetch(target, { method: req.method, headers, body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body });
-    }
-    // Remote maintenance: the Lovable agent runs whitelisted ops on our server.
-    // Auth is enforced by the ops server itself via the x-ops-secret header, which is
-    // forwarded untouched (never logged here).
-    if (url.pathname.startsWith("/api/ops/")) {
-      if (!env.OPS_ORIGIN) return json({ error: "Ops server is not configured" }, 503);
-      if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
-      const target = originUrl(env.OPS_ORIGIN) + url.pathname.slice("/api/ops".length) + url.search;
-      return fetch(target, { method: "POST", headers: req.headers, body: req.body });
     }
     if (url.pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
     return env.ASSETS.fetch(req);

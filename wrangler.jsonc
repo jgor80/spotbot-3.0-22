@@ -11,7 +11,7 @@
     // passes back to the SPA unless it is an AI-app sign-in) must reach the Worker first.
     "run_worker_first": ["/api/*", "/mcp", "/oauth/*", "/.well-known/*", "/auth/callback"]
   },
-  // FUNCTIONS_ORIGIN / OPS_ORIGIN are set in the Cloudflare dashboard; without this
+  // FUNCTIONS_ORIGIN (and the FUNCTIONS_ORIGIN_SECRET / MCP_LEADER_CHECK_SECRET secrets) are set in the Cloudflare dashboard; without this
   // every deploy from a merge wipes them and all /api/functions calls return 503.
   "keep_vars": true,
   // Lets Cloudflare's `wrangler preview` build a preview for each PR branch.

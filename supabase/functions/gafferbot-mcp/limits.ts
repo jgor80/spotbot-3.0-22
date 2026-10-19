@@ -3,6 +3,8 @@
 
 export const CALLS_PER_MINUTE = 60;
 export const CHANGES_PER_HOUR = 30;
+// Most JSON-RPC messages one POST may carry; each one counts as a call.
+export const MAX_BATCH = 10;
 
 const windows = new Map<string, number[]>();
 

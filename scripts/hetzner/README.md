@@ -135,3 +135,16 @@ server (`:8880/health`), Supabase Kong, the pm2 `spotbot` process, free RAM (< 1
 webhook in `ALERT_WEBHOOK_URL` in `/etc/spotbot-ops.env`. pm2 already restarts the bot when it
 crashes; the installer also saves the pm2 process list so `pm2-root.service` brings it back after a
 reboot.
+
+**Locking down the functions server.** The Worker reaches the bot's functions server on `:8880`.
+Set the same random value (`openssl rand -hex 32`) as `FUNCTIONS_ORIGIN_SECRET` in the bot's
+`.env` and as a Worker secret (`wrangler secret put FUNCTIONS_ORIGIN_SECRET`); the server then
+refuses anything that didn't come through the Worker. Set a second value as `MCP_LEADER_CHECK_SECRET`
+in both places so the AI sign-in's leader check stops sending the service-role key. Set the Worker
+secrets first, then the bot's, then restart the bot. To take the port off the internet, run a
+Cloudflare Tunnel to `http://127.0.0.1:8880`, set `FUNCTIONS_HOST=127.0.0.1`, point the Worker's
+`FUNCTIONS_ORIGIN` at the tunnel hostname (https), and remove the ufw rule for 8880. Request
+bodies over 16 MB are refused.
+
+`ALLOWED_GUILD_IDS` lists the servers the bot may stay in. Unset keeps only the original home
+server; `ALLOWED_GUILD_IDS=*` allows every server.

@@ -56,7 +56,7 @@ function setup() {
     try { data = JSON.parse(text); } catch { /* error text */ }
     return { text, isError: reply.result.isError, data };
   };
-  return { calls, db, call };
+  return { calls, db, call, ctx };
 }
 
 Deno.test("list_club_actions hides blocked, denied and admin actions", async () => {
@@ -94,6 +94,16 @@ Deno.test("press_button previews the label and stops at the hourly limit", async
   for (let i = 0; i < CHANGES_PER_HOUR; i++) db.tables.mcp_action_log.push({ discord_user_id: ME, created_at: new Date().toISOString() });
   const limited = await call("press_button", { message_id: "m1", control_id: "ev:yes", confirm: true });
   assert(limited.isError && limited.text.includes("limit") && !calls.some((c) => c.op === "click"), "limit not enforced");
+});
+
+Deno.test("a batch of confirmed changes can't run past the hourly limit", async () => {
+  const { db, ctx } = setup();
+  for (let i = 0; i < CHANGES_PER_HOUR - 1; i++) db.tables.mcp_action_log.push({ discord_user_id: ME, created_at: new Date().toISOString() });
+  const msg = (id: number) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "run_club_action", arguments: { guild_id: HOME, action: "ev_quick_friendly", values: { when: "tomorrow 8pm" }, confirm: true } } });
+  // deno-lint-ignore no-explicit-any
+  const replies: any = await handleBody([1, 2, 3, 4, 5].map(msg), MANAGE_TOOLS, ctx);
+  const ran = replies.filter((r: { result: { isError?: boolean } }) => !r.result.isError).length;
+  assert(ran === 1, `ran ${ran} changes with one left this hour`);
 });
 
 Deno.test("manage tools say clearly when the bot isn't reachable", async () => {

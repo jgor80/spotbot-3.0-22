@@ -19,7 +19,7 @@ async function identifyCaller(req, admin) {
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (serviceRoleKey && token === serviceRoleKey) return { kind: "bot" };
+  if (serviceRoleKey && safeEqual(token, serviceRoleKey)) return { kind: "bot" };
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data?.user) return null;
   return { kind: "user", userId: data.user.id };
@@ -45,6 +45,26 @@ async function rejectUnlessCaller(req, opts = {}) {
   }
   return null;
 }
+var webHits = /* @__PURE__ */ new Map();
+async function throttleWebUser(req, admin, name, max, windowMs) {
+  const caller = await identifyCaller(req, admin);
+  if (!caller || caller.kind === "bot") return null;
+  const key = `${name}:${caller.userId}`;
+  const now = Date.now();
+  const recent = (webHits.get(key) || []).filter((t) => now - t < windowMs);
+  if (recent.length >= max) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Too many requests, please try again in a few minutes" }),
+      { status: 429, headers: rejectHeaders }
+    );
+  }
+  recent.push(now);
+  webHits.set(key, recent);
+  if (webHits.size > 5e3) {
+    for (const [k, times] of webHits) if (!times.some((t) => now - t < windowMs)) webHits.delete(k);
+  }
+  return null;
+}
 
 // supabase/functions/verify-ea-username/index.ts
 var corsHeaders = {
@@ -57,6 +77,8 @@ serve(async (req) => {
   }
   const denied = await rejectUnlessCaller(req);
   if (denied) return denied;
+  const throttled = await throttleWebUser(req, createAdminClient(), "verify-ea-username", 30, 60 * 60 * 1e3);
+  if (throttled) return throttled;
   try {
     const { username, platform } = await req.json();
     if (!username || !platform) {

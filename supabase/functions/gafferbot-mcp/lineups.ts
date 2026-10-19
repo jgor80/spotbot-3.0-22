@@ -112,7 +112,7 @@ export const LINEUP_TOOLS: Tool<Ctx>[] = [
           next: "Show this to the player. Only if they say yes, call publish_lineup again with the same arguments plus confirm: true.",
         };
       }
-      await underLimit(ctx);
+      const release = await underLimit(ctx);
       try {
         const r = await call(ctx, "publish", { ...req, confirm: true });
         await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId, formation: r.formation, changes: req.changes?.length || 0 }, { ok: true });
@@ -120,6 +120,8 @@ export const LINEUP_TOOLS: Tool<Ctx>[] = [
       } catch (err) {
         await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId }, { ok: false, error: (err as Error).message });
         throw err;
+      } finally {
+        release();
       }
     },
   },

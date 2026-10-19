@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { rejectUnlessCaller } from "../_shared/auth.ts";
+import { rejectUnlessCaller, requireGuildAccess, resolveDiscordActor } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -126,6 +126,13 @@ serve(async (req) => {
     );
 
     const data: ManagerEvaluationRequest = await req.json();
+
+    // A web user always rates as their own verified Discord account, and only in a server they belong to.
+    const actor = await resolveDiscordActor(req, supabase, data.evaluator_discord_id);
+    if (actor instanceof Response) return actor;
+    data.evaluator_discord_id = actor.discordUserId as string;
+    const noAccess = await requireGuildAccess(req, supabase, data.guild_id, "member");
+    if (noAccess) return noAccess;
     
     console.log(`[submit-manager-evaluation] Evaluator: ${data.evaluator_discord_id} rating ${data.evaluated_discord_id} at ${data.position_played}`);
 

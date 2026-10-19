@@ -8,7 +8,7 @@ export type Caller =
   | { kind: "bot" }
   | { kind: "user"; userId: string };
 
-function safeEqual(a: string, b: string) {
+export function safeEqual(a: string, b: string) {
   if (a.length !== b.length) return false;
   let r = 0;
   for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
@@ -27,7 +27,7 @@ export async function identifyCaller(req: Request, admin: AdminClient): Promise<
   if (!token) return null;
 
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (serviceRoleKey && token === serviceRoleKey) return { kind: "bot" };
+  if (serviceRoleKey && safeEqual(token, serviceRoleKey)) return { kind: "bot" };
 
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data?.user) return null;
@@ -226,4 +226,34 @@ export async function guildAccessLevel(
   if (played) return "member";
   const member = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
   return member ? "member" : null;
+}
+
+// Per-user throttle for web callers of expensive functions (AI calls, EA lookups). The bot is never throttled.
+// Kept in memory: every function runs inside the one bot process, so a restart only resets the counters.
+const webHits = new Map<string, number[]>();
+
+export async function throttleWebUser(
+  req: Request,
+  admin: AdminClient,
+  name: string,
+  max: number,
+  windowMs: number,
+): Promise<Response | null> {
+  const caller = await identifyCaller(req, admin);
+  if (!caller || caller.kind === "bot") return null;
+  const key = `${name}:${caller.userId}`;
+  const now = Date.now();
+  const recent = (webHits.get(key) || []).filter((t) => now - t < windowMs);
+  if (recent.length >= max) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Too many requests, please try again in a few minutes" }),
+      { status: 429, headers: rejectHeaders },
+    );
+  }
+  recent.push(now);
+  webHits.set(key, recent);
+  if (webHits.size > 5000) {
+    for (const [k, times] of webHits) if (!times.some((t) => now - t < windowMs)) webHits.delete(k);
+  }
+  return null;
 }

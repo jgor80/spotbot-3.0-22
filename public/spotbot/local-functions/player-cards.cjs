@@ -4065,7 +4065,7 @@ async function identifyCaller(req, admin) {
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  if (serviceRoleKey && token === serviceRoleKey) return { kind: "bot" };
+  if (serviceRoleKey && safeEqual(token, serviceRoleKey)) return { kind: "bot" };
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data?.user) return null;
   return { kind: "user", userId: data.user.id };

@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { rejectUnlessCaller } from "../_shared/auth.ts";
+import { rejectUnlessCaller, requireGuildAccess } from "../_shared/auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,6 +40,8 @@ serve(async (req) => {
     );
 
     const { guild_id, discord_user_id, player_ids, trigger }: CalculateRatingsRequest = await req.json();
+    const noAccess = await requireGuildAccess(req, supabase, guild_id, "member");
+    if (noAccess) return noAccess;
 
     console.log(`[calculate-ratings] Calculating for guild ${guild_id}, trigger: ${trigger || 'manual'}`);
 

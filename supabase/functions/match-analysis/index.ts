@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { rejectUnlessCaller } from "../_shared/auth.ts";
+import { createAdminClient, rejectUnlessCaller, throttleWebUser } from "../_shared/auth.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -42,6 +42,9 @@ serve(async (req) => {
   // verify_jwt is off for this function: only the bot or a signed-in web user may call it.
   const denied = await rejectUnlessCaller(req);
   if (denied) return denied;
+  // Every analysis is an AI call, so web users get a fair-use cap.
+  const throttled = await throttleWebUser(req, createAdminClient(), "match-analysis", 20, 60 * 60 * 1000);
+  if (throttled) return throttled;
 
   try {
     const { matchData } = await req.json() as { matchData: MatchData };
