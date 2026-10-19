@@ -4274,6 +4274,112 @@ function siteUrl() {
   return (Deno.env.get("PUBLIC_SITE_URL") || "https://gafferbot.app").replace(/\/$/, "");
 }
 
+// supabase/functions/club-art/quality.ts
+var QA_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["text_free", "number_ok", "player_count", "faces_ok", "anatomy_ok", "framing_ok", "kit_ok", "likeness_ok", "score", "issues"],
+  properties: {
+    text_free: { type: "boolean", description: "True when there are no letters, words, logos, watermarks or garbled glyphs anywhere (the allowed kit number aside)." },
+    number_ok: { type: "boolean", description: "True when no numbers appear except the allowed kit number, printed correctly." },
+    player_count: { type: "integer", description: "How many footballers are clearly shown." },
+    faces_ok: { type: "boolean", description: "True when every visible face is intact: symmetric eyes, one nose and mouth, no melting, smearing or doubled features." },
+    anatomy_ok: { type: "boolean", description: "True when bodies are correct: two arms and two legs each, five fingers per visible hand, no fused or floating limbs, no merged players." },
+    framing_ok: { type: "boolean", description: "True when no player's head, face or chin is cut off by the image edge." },
+    kit_ok: { type: "boolean", description: "True when the players' kit is mainly in the requested colours." },
+    likeness_ok: { type: "boolean", description: "True when the player in the render is clearly the same character as the reference (hair colour and style, facial hair, skin tone, glasses, face shape). True when there is no reference." },
+    score: { type: "integer", description: "Overall quality from 0 (unusable) to 10 (flawless, ready to post)." },
+    issues: { type: "array", items: { type: "string" }, description: "Each problem found, as a short instruction to fix it." }
+  }
+};
+function qaEnabled(env) {
+  return !/^(off|false|0|no)$/i.test(String(env("AI_IMAGE_QA") ?? "").trim());
+}
+function qaRetries(raw) {
+  const n = Number.parseInt(String(raw ?? ""), 10);
+  return Number.isFinite(n) ? Math.min(3, Math.max(0, n)) : 2;
+}
+function qaPrompt(q) {
+  const who = q.players === 0 ? "No player's face should be the focus: any footballer is a silhouette or seen from behind (a distant crowd is fine)." : `Exactly ${q.players} footballer${q.players === 1 ? "" : "s"} should be shown${q.players > 1 ? ", each a distinct person" : ""}.`;
+  return [
+    "You are the quality inspector for paid football club artwork. Be strict: the customer pays for this image, so flag anything a fan would notice.",
+    "The FIRST image is the render to inspect.",
+    q.likeness === 1 ? "The SECOND image is a reference photo of the player; check the render shows the same character." : q.likeness > 1 ? `Images 2 to ${q.likeness + 1} are reference photos of the players; check each one appears in the render as the same character, with no traits swapped between them.` : "There is no reference photo; set likeness_ok true.",
+    who,
+    q.kitNumbers.length ? `The only allowed text is the shirt number${q.kitNumbers.length > 1 ? "s" : ""} ${q.kitNumbers.join(", ")}; any other letters, numbers or logos fail.` : "There must be no text, letters, numbers, logos or watermarks at all, including on shirts.",
+    q.kitColours.length ? `The kit should be ${q.kitColours.join(" and ")}.` : "Any kit colours are fine; set kit_ok true unless the kit is visibly broken.",
+    q.headshot ? "This is a head-and-shoulders portrait; shoulders running off the bottom edge are expected." : "Full or partial bodies are fine, but heads must be fully inside the frame.",
+    "Ignore artistic style, lighting and background choices. Judge only correctness."
+  ].join(" ");
+}
+function judge(raw, q) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const issues = Array.isArray(r.issues) ? r.issues.filter((i) => typeof i === "string" && i.trim().length > 0).map((i) => i.trim().slice(0, 160)).slice(0, 6) : [];
+  const failed = [];
+  if (r.text_free !== true) failed.push("stray text or logos");
+  if (r.number_ok !== true) failed.push(q.kitNumbers.length ? `shirt numbers must be ${q.kitNumbers.join(", ")} only` : "no numbers allowed");
+  if (q.players > 0 && Number(r.player_count) !== q.players) failed.push(`must show exactly ${q.players} player${q.players === 1 ? "" : "s"}`);
+  if (r.faces_ok !== true) failed.push("distorted face");
+  if (r.anatomy_ok !== true) failed.push("broken hands or limbs");
+  if (r.framing_ok !== true) failed.push("head cut off at the edge");
+  if (r.kit_ok !== true) failed.push("wrong kit colours");
+  if (q.likeness > 0 && r.likeness_ok !== true) failed.push("does not look like the reference player");
+  const score = Number.isFinite(Number(r.score)) ? Math.min(10, Math.max(0, Math.round(Number(r.score)))) : 0;
+  const pass = failed.length === 0 && score >= 6;
+  return { checked: true, pass, score, issues: pass ? [] : [.../* @__PURE__ */ new Set([...failed, ...issues])].slice(0, 8) };
+}
+function retryHint(issues) {
+  return issues.length ? ` QUALITY FIX (a previous attempt was rejected): ${issues.join("; ")}. Fix every one of these this time.` : "";
+}
+function pickBest(attempts) {
+  if (!attempts.length) return null;
+  return attempts.find((a) => a.qa.pass) ?? [...attempts].sort((a, b) => b.qa.score - a.qa.score)[0];
+}
+function responseText(out) {
+  const o = out;
+  if (typeof o?.output_text === "string") return o.output_text;
+  return (o?.output ?? []).flatMap((m) => m.content ?? []).filter((c) => c.type === "output_text" && typeof c.text === "string").map((c) => c.text).join("");
+}
+var UNCHECKED = { checked: false, pass: true, score: 0, issues: [] };
+async function checkRender(fetchFn, gateway, key, q, renderB64, references, timeoutMs = 45e3) {
+  const content = [
+    { type: "input_text", text: qaPrompt(q) },
+    { type: "input_image", image_url: `data:image/png;base64,${renderB64}` }
+  ];
+  for (const ref of references.slice(0, q.likeness)) {
+    const bytes = new Uint8Array(await ref.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 32768) bin += String.fromCharCode(...bytes.subarray(i, i + 32768));
+    content.push({ type: "input_image", image_url: `data:${ref.type || "image/png"};base64,${btoa(bin)}` });
+  }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await fetchFn(`${gateway}/v1/responses`, {
+      method: "POST",
+      signal: ctl.signal,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: "openai/gpt-5-mini",
+        store: false,
+        reasoning: { effort: "low" },
+        text: { format: { type: "json_schema", name: "render_qa", strict: true, schema: QA_SCHEMA } },
+        input: [{ role: "user", content }]
+      })
+    });
+    if (!res.ok) {
+      console.warn(`[club-art] quality check unavailable: ${res.status}`);
+      return UNCHECKED;
+    }
+    return judge(JSON.parse(responseText(await res.json())), q);
+  } catch (err) {
+    console.warn(`[club-art] quality check failed: ${err instanceof Error ? err.message : err}`);
+    return UNCHECKED;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // supabase/functions/club-art/index.ts
 var SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 var AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -4315,8 +4421,51 @@ var Body = external_exports.object({
   // Manually confirmed by the member in the card form; treated like a verified upload number.
   kit_number_override: external_exports.number().int().min(1).max(99).optional(),
   // Member-chosen upload to base a single-player card on.
-  photo_asset_id: external_exports.string().uuid().optional()
+  photo_asset_id: external_exports.string().uuid().optional(),
+  // Who asked for it (counts their free discards); defaults to the featured player
+  requester_id: external_exports.string().regex(/^\d{5,25}$/).optional(),
+  // Preview first: leave the server's images reserved until the bot says keep or discard
+  hold: external_exports.boolean().default(false)
 });
+var Decision = external_exports.object({
+  action: external_exports.enum(["keep", "discard", "refund"]),
+  guild_id: external_exports.string().regex(/^\d{5,25}$/).optional(),
+  discord_user_id: external_exports.string().regex(/^\d{5,25}$/).optional(),
+  reservation_ids: external_exports.array(external_exports.string().uuid()).max(10).default([]),
+  generated_asset_ids: external_exports.array(external_exports.string().uuid()).max(10).default([])
+});
+var freeDiscards = Number.parseInt(Deno.env.get("AI_IMAGE_FREE_DISCARDS") ?? "", 10);
+var FREE_DISCARDS = Number.isFinite(freeDiscards) ? Math.max(0, freeDiscards) : 5;
+var QA_ON = qaEnabled((k) => Deno.env.get(k));
+var QA_RETRIES = qaRetries(Deno.env.get("AI_IMAGE_QA_RETRIES"));
+async function decide(d) {
+  let charged = 0;
+  for (const id of d.reservation_ids) {
+    if (d.action === "keep") {
+      await settleImages(db, id);
+      continue;
+    }
+    if (d.action === "refund") {
+      await refundImages(db, id);
+      continue;
+    }
+    const { data, error } = await db.rpc("discard_ai_image", { p_id: id, p_free: FREE_DISCARDS });
+    if (error) console.warn(`[club-art] discard failed for ${id}: ${error.message}`);
+    else if (data?.charged) charged++;
+  }
+  let removed = 0;
+  if (d.action !== "keep" && d.generated_asset_ids.length && d.discord_user_id) {
+    const { data: assets } = await db.from("pro_photo_assets").select("id,storage_path").in("id", d.generated_asset_ids).eq("discord_user_id", d.discord_user_id).eq("source_kind", "generated");
+    const paths = (assets ?? []).map((a) => a.storage_path).filter((p) => typeof p === "string" && p.startsWith("generated/"));
+    if (paths.length) await db.storage.from("pro-photos").remove(paths).catch(() => {
+    });
+    if (assets?.length) {
+      const { error } = await db.from("pro_photo_assets").delete().in("id", assets.map((a) => a.id));
+      if (!error) removed = assets.length;
+    }
+  }
+  return json({ ok: true, charged, removed });
+}
 var MAX_REFERENCES = referenceLimit(Deno.env.get("AI_IMAGE_REFERENCES"));
 var STYLE = {
   esports: "ultra esports poster look: dramatic neon rim light in the club colours, volumetric smoke, lens flares, sparks, grunge halftone and torn-paper texture, deep black shadows, high contrast",
@@ -4392,7 +4541,12 @@ async function proPhoto(b, team = false) {
 Deno.serve(async (req) => {
   if (!SECRET || !safeEqual(req.headers.get("x-bot-secret") ?? "", SECRET)) return json({ error: "unauthorized" }, 401);
   if (!AI_KEY) return json({ error: "AI is not configured." }, 500);
-  const parsed = Body.safeParse(await req.json().catch(() => null));
+  const input = await req.json().catch(() => null);
+  if (input && typeof input === "object" && "action" in input) {
+    const d = Decision.safeParse(input);
+    return d.success ? decide(d.data) : json({ error: d.error.flatten().fieldErrors }, 400);
+  }
+  const parsed = Body.safeParse(input);
   if (!parsed.success) return json({ error: parsed.error.flatten().fieldErrors }, 400);
   const b = parsed.data;
   const teamIds = [...new Set(b.team_player_ids ?? [])];
@@ -4425,7 +4579,7 @@ Deno.serve(async (req) => {
   let imagesLeft = null;
   if (billing.limitsOn) {
     if (!b.guild_id) return json({ error: "AI images need a server to count against." }, 400);
-    const r = await reserveImages(db, { guild_id: b.guild_id, discord_user_id: b.discord_user_id, kind: b.kind, credits: creditsFor(b.kind, teamIds.length) }, billing);
+    const r = await reserveImages(db, { guild_id: b.guild_id, discord_user_id: b.requester_id ?? b.discord_user_id, kind: b.kind, credits: creditsFor(b.kind, teamIds.length) }, billing);
     if (!r.ok) return json({ error: r.message, out_of_images: true }, 402);
     reservation = r.id;
     imagesLeft = r.left;
@@ -4434,59 +4588,90 @@ Deno.serve(async (req) => {
     if (reservation) await refundImages(db, reservation);
     return json(body, status);
   };
-  let res;
-  try {
-    if (ref || refs.length) {
-      const form = new FormData();
-      form.set("model", MODEL);
-      form.set("prompt", prompt);
-      form.set("size", size);
-      appendReferences(form, refs.length ? refs : (found?.files ?? []).map((file) => ({ file })));
-      res = await fetch(`${GATEWAY}/v1/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${AI_KEY}` }, body: form });
-    } else {
-      res = await fetch(`${GATEWAY}/v1/images/generations`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${AI_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: MODEL, prompt, size })
-      });
-    }
-  } catch {
-    return failed({ error: "The art studio couldn't reach the AI. Nothing was rendered." }, 502);
-  }
-  if (!res.ok) {
-    const detail = await res.json().catch(() => null);
-    console.error(`[club-art] AI failed: ${res.status}`);
-    const safeMessage = detail?.error?.message ?? detail?.message ?? (typeof detail?.error === "string" ? detail.error : null);
-    const msg = typeof safeMessage === "string" ? safeMessage : "Couldn't create the artwork.";
-    return failed({ error: msg }, res.status >= 500 ? 502 : res.status);
-  }
-  const out = await res.json().catch(() => null);
-  const b64 = out?.data?.[0]?.b64_json;
-  const model = res.headers.get("x-ai-model") || MODEL.replace(/^openai\//, "");
-  const cost = renderCost(model, out?.usage);
   const referenceCount = refs.length || found?.files.length || 0;
-  console.log(`[club-art] ${b.kind}/${b.style} on ${model}: ${referenceCount} reference(s)${cost ? `, ${cost.image_tokens} image + ${cost.text_tokens} text in, ${cost.output_tokens} out${cost.cost_usd !== null ? `, $${cost.cost_usd}` : ""}` : ", no usage returned"}`);
-  await db.from("ai_image_renders").insert({
-    guild_id: b.guild_id ?? null,
-    discord_user_id: b.discord_user_id ?? null,
+  const renderOnce = async (text) => {
+    let res;
+    try {
+      if (ref || refs.length) {
+        const form = new FormData();
+        form.set("model", MODEL);
+        form.set("prompt", text);
+        form.set("size", size);
+        appendReferences(form, refs.length ? refs : (found?.files ?? []).map((file) => ({ file })));
+        res = await fetch(`${GATEWAY}/v1/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${AI_KEY}` }, body: form });
+      } else {
+        res = await fetch(`${GATEWAY}/v1/images/generations`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${AI_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: MODEL, prompt: text, size })
+        });
+      }
+    } catch {
+      return { error: { error: "The art studio couldn't reach the AI. Nothing was rendered." }, status: 502 };
+    }
+    if (!res.ok) {
+      const detail = await res.json().catch(() => null);
+      console.error(`[club-art] AI failed: ${res.status}`);
+      const safeMessage = detail?.error?.message ?? detail?.message ?? (typeof detail?.error === "string" ? detail.error : null);
+      const msg = typeof safeMessage === "string" ? safeMessage : "Couldn't create the artwork.";
+      return { error: { error: msg }, status: res.status >= 500 ? 502 : res.status };
+    }
+    const out = await res.json().catch(() => null);
+    return { res, out, b64: out?.data?.[0]?.b64_json ?? null };
+  };
+  const qaInput = {
     kind: b.kind,
-    style: b.style,
-    model,
-    quality: out?.quality ?? res.headers.get("x-ai-quality") ?? null,
-    size,
-    reference_count: referenceCount,
-    ok: Boolean(b64),
-    text_tokens: cost?.text_tokens ?? null,
-    image_tokens: cost?.image_tokens ?? null,
-    output_tokens: cost?.output_tokens ?? null,
-    cost_usd: cost?.cost_usd ?? null
-  }).then(({ error }) => {
-    if (error) console.warn(`[club-art] render log failed: ${error.message}`);
-  }, () => {
-  });
-  if (!b64) return failed({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
-  if (reservation) await settleImages(db, reservation);
+    players: refs.length || (ref ? 1 : 0),
+    kitColours: [b.kit.primary, b.kit.secondary].filter((c) => Boolean(c)),
+    kitNumbers: refs.length ? refs.map((r) => r.kitNumber).filter((n) => Number.isInteger(n)) : kitNumber ? [kitNumber] : [],
+    headshot: b.kind === "card" && b.pose === "headshot",
+    likeness: refs.length || (found?.files.length ? 1 : 0)
+  };
+  const qaRefs = refs.length ? refs.map((r) => r.file) : (found?.files ?? []).slice(0, 1);
+  const attempts = [];
+  for (let attempt = 0; attempt <= (QA_ON ? QA_RETRIES : 0); attempt++) {
+    const r = await renderOnce(attempt ? `${prompt}${retryHint(attempts.at(-1)?.qa.issues ?? [])}` : prompt);
+    if ("error" in r) {
+      if (attempts.length) break;
+      return failed(r.error, r.status);
+    }
+    const model2 = r.res.headers.get("x-ai-model") || MODEL.replace(/^openai\//, "");
+    const cost = renderCost(model2, r.out?.usage);
+    const qa = r.b64 && QA_ON ? await checkRender(fetch, GATEWAY, AI_KEY, qaInput, r.b64, qaRefs) : { checked: false, pass: Boolean(r.b64), score: 0, issues: [] };
+    console.log(`[club-art] ${b.kind}/${b.style} on ${model2} (attempt ${attempt + 1}): ${referenceCount} reference(s)${cost ? `, ${cost.image_tokens} image + ${cost.text_tokens} text in, ${cost.output_tokens} out${cost.cost_usd !== null ? `, $${cost.cost_usd}` : ""}` : ", no usage returned"}${qa.checked ? `, quality ${qa.pass ? "passed" : `failed (${qa.issues.join("; ")})`}` : ""}`);
+    await db.from("ai_image_renders").insert({
+      guild_id: b.guild_id ?? null,
+      discord_user_id: b.discord_user_id ?? null,
+      kind: b.kind,
+      style: b.style,
+      model: model2,
+      quality: r.out?.quality ?? r.res.headers.get("x-ai-quality") ?? null,
+      size,
+      reference_count: referenceCount,
+      ok: Boolean(r.b64),
+      text_tokens: cost?.text_tokens ?? null,
+      image_tokens: cost?.image_tokens ?? null,
+      output_tokens: cost?.output_tokens ?? null,
+      cost_usd: cost?.cost_usd ?? null,
+      attempt: attempt + 1,
+      qa_pass: qa.checked ? qa.pass : null,
+      qa_issues: qa.checked && !qa.pass ? qa.issues : null
+    }).then(({ error }) => {
+      if (error) console.warn(`[club-art] render log failed: ${error.message}`);
+    }, () => {
+    });
+    if (!r.b64) {
+      if (attempts.length) break;
+      return failed({ error: "The AI returned no image or declined the request. Nothing was rendered." }, 422);
+    }
+    attempts.push({ b64: r.b64, model: model2, qa });
+    if (qa.pass) break;
+  }
+  const best = pickBest(attempts);
+  const b64 = best.b64, model = best.model;
+  if (reservation && !b.hold) await settleImages(db, reservation);
   let artworkSaved = !b.discord_user_id;
+  let generatedAssetId = null;
   if (!teamIds.length && b.discord_user_id && ref) {
     const raw = atob(b64);
     const bytes = new Uint8Array(raw.length);
@@ -4497,7 +4682,7 @@ Deno.serve(async (req) => {
     if (!saved.error) {
       const signed = await db.storage.from("pro-photos").createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
       if (!signed.error) {
-        const { error } = await db.from("pro_photo_assets").insert({
+        const { data: row, error } = await db.from("pro_photo_assets").insert({
           discord_user_id: b.discord_user_id,
           guild_id: "graphics-studio",
           image_url: signed.data.signedUrl,
@@ -4514,12 +4699,25 @@ Deno.serve(async (req) => {
             camera: b.camera ?? null,
             lighting: b.lighting ?? null,
             scene: b.scene ?? null,
-            model
+            model,
+            quality_check: best.qa.checked ? { pass: best.qa.pass, score: best.qa.score } : null
           }
-        });
+        }).select("id").maybeSingle();
         artworkSaved = !error;
+        generatedAssetId = row?.id ?? null;
       }
     }
   }
-  return json({ image_b64: b64, used_pro_photo: !!ref || refs.length > 0, artwork_saved: artworkSaved, kit_number: teamIds.length ? null : kitNumber, images_left: imagesLeft, team_player_ids: teamIds, reference_asset_ids: refs.length ? refs.flatMap((r) => r.assetIds) : found?.assetIds ?? [] });
+  return json({
+    image_b64: b64,
+    used_pro_photo: !!ref || refs.length > 0,
+    artwork_saved: artworkSaved,
+    kit_number: teamIds.length ? null : kitNumber,
+    images_left: imagesLeft,
+    reservation_id: b.hold ? reservation : null,
+    generated_asset_id: generatedAssetId,
+    quality: { checked: best.qa.checked, pass: best.qa.pass, issues: best.qa.issues, attempts: attempts.length },
+    team_player_ids: teamIds,
+    reference_asset_ids: refs.length ? refs.flatMap((r) => r.assetIds) : found?.assetIds ?? []
+  });
 });

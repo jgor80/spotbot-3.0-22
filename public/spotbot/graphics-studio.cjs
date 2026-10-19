@@ -41,6 +41,8 @@ const fs = require('fs');
 const path = require('path');
 const { recruitmentPoster } = require('./graphics-recruitment.cjs');
 const { theme, themeOpen } = require('./graphics-themes.cjs');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const crypto = require('crypto');
 
 const NAME_RE = /graphic|media-?studio|studio/i;
 const STYLES = {
@@ -72,6 +74,15 @@ const COLOR_WORDS = {
 const BUSY = new Set();
 const NO_GROUP = 'No recently active club players still in this server have an uploaded pro photo yet.';
 const DRAFTS = new Map(); // token -> pending graphic waiting on its edit form
+// Every graphic is previewed privately first (STUDIO_PREVIEW=off posts straight away). The server's AI
+// images stay reserved until the member posts; Redo and Discard give them back (club-art caps free
+// discards per member per day), and an untouched preview is discarded when it expires.
+const PREVIEW_ON = !/^(off|false|0|no)$/i.test(String(process.env.STUDIO_PREVIEW || '').trim());
+const PREVIEWS = new Map(); // token -> graphic waiting on Post / Redo / Discard
+const PREVIEW_TTL = 30 * 60e3;
+const FREE_REDOS = 2;
+// The AI renders one graphic used: reservations, generated art and quality checks, collected per build
+const RENDERS = new AsyncLocalStorage();
 
 function colorNum(v, fallback) {
   const s = String(v || '').trim().toLowerCase();
@@ -241,14 +252,42 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
 
   async function art(body) {
     if (!secret) return { error: 'The studio needs BOT_PROXY_SECRET set on the bot.' };
+    const spend = RENDERS.getStore();
     const res = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/club-art`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-bot-secret': secret },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, ...(spend ? { hold: true, requester_id: spend.requesterId } : {}) }),
     }).catch(() => null);
     const out = res ? await res.json().catch(() => ({})) : {};
     if (!res?.ok || !out.image_b64) return { error: typeof out.error === 'string' ? out.error : typeof out.message === 'string' ? out.message : 'The art studio is unavailable right now.', outOfImages: out.out_of_images === true };
+    if (spend) {
+      if (out.reservation_id) spend.reservations.push(out.reservation_id);
+      if (out.generated_asset_id && body.discord_user_id) spend.assets.push({ id: out.generated_asset_id, userId: body.discord_user_id });
+      if (out.quality) spend.quality.push(out.quality);
+    }
     return { image: `data:image/png;base64,${out.image_b64}`, usedPro: out.used_pro_photo, kitNumber: Number.isInteger(out.kit_number) ? out.kit_number : null };
+  }
+
+  // Tell club-art what happened to a preview's renders: keep (posted), discard (turned down) or
+  // refund (a later drawing step failed; never counts against free discards)
+  async function settleArt(action, spend) {
+    if (!secret || !spend || (!spend.reservations.length && !spend.assets.length)) return {};
+    const url = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/club-art`;
+    const users = action === 'keep' ? [null] : [...new Set(spend.assets.map((a) => a.userId))];
+    let charged = 0;
+    for (const [i, userId] of (users.length ? users : [null]).entries()) {
+      const res = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-bot-secret': secret },
+        body: JSON.stringify({ action, ...(userId ? { discord_user_id: userId } : {}),
+          reservation_ids: i === 0 ? spend.reservations : [],
+          generated_asset_ids: spend.assets.filter((a) => a.userId === userId).map((a) => a.id) }),
+      }).catch(() => null);
+      const out = res ? await res.json().catch(() => ({})) : {};
+      if (!res?.ok) console.warn(`[studio] ${action} of rendered art failed`);
+      charged += Number(out.charged) || 0;
+    }
+    spend.reservations = []; spend.assets = [];
+    return { charged };
   }
 
   // A failed graphic's reply; when the server is out of AI images it carries the buy buttons
@@ -624,10 +663,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const back = d.noBack ? null : style === 'sicilia'
       ? new AttachmentBuilder(renderSiciliaBack({ number, name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: backName })
       : new AttachmentBuilder(renderCardBack({ style, accent: palette(style, club.kit).accent, number, name: d.name, clubName: club.name, position: shortPosition(d.position) || d.position, rows: d.seasonRows || [], totals: d.clubTotals || null, edited: d.dataLabel === 'MEMBER-EDITED' }, G), { name: backName });
-    // Keep a copy in the member's collection (My Cards); a failed save never blocks posting.
-    cardsApi({ action: 'save', guild_id: guildId, discord_user_id: d.userId, style, name: String(d.name).slice(0, 40), front_b64: Buffer.from(png).toString('base64'), ...(back ? { back_b64: Buffer.from(back.attachment).toString('base64') } : {}) })
+    // Once posted, keep a copy in the member's collection (My Cards); a failed save never blocks posting.
+    const afterPost = () => cardsApi({ action: 'save', guild_id: guildId, discord_user_id: d.userId, style, name: String(d.name).slice(0, 40), front_b64: Buffer.from(png).toString('base64'), ...(back ? { back_b64: Buffer.from(back.attachment).toString('base64') } : {}) })
       .then((r) => r.error && console.warn('[studio] card save failed:', r.error)).catch(() => {});
-    return { extra: back ? [back] : [], file: new AttachmentBuilder(png, { name: `card-${d.name}.png`.replace(/[^\w.-]/g, '_') }), note: a.usedPro ? null : 'No pro photo on file, so this uses a silhouette — post your pro in #pro-photos for the real thing.' };
+    return { afterPost, extra: back ? [back] : [], file: new AttachmentBuilder(png, { name: `card-${d.name}.png`.replace(/[^\w.-]/g, '_') }), note: a.usedPro ? null : 'No pro photo on file, so this uses a silhouette — post your pro in #pro-photos for the real thing.' };
   }
   async function buildCard({ guildId, club, userId, displayName, style, noStats = false }) {
     club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
@@ -838,27 +877,133 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return { file: new AttachmentBuilder(png, { name: 'recruiting-poster.png' }) };
   }
 
-  // Run a build, post the result in the studio channel (and Hall of Fame for banners), keep the panel last
-  async function deliver({ channel, club, guild, userId, label, build, hallOfFame }) {
+  // Run a build inside its own render collector; a build that fails after the AI drew something gives the images back
+  async function draw(userId, build) {
+    const spend = { requesterId: userId, reservations: [], assets: [], quality: [] };
+    try {
+      const r = await RENDERS.run(spend, build);
+      if (r.error) await settleArt('refund', spend);
+      return { r, spend };
+    } catch (err) {
+      console.warn('[studio] build failed:', err.message);
+      await settleArt('refund', spend);
+      return { r: { error: 'Something went wrong drawing that graphic.' }, spend };
+    }
+  }
+
+  // Post a finished graphic in the studio channel (and Hall of Fame for banners), keep the panel last
+  async function publish({ channel, club, guild, label, hallOfFame }, r) {
+    const content = `${label}${r.note ? `\n_${r.note}_` : ''}`;
+    await channel.send({ content, files: [r.file, ...(r.extra || [])], allowedMentions: { parse: [] } });
+    if (hallOfFame) {
+      const hof = club.autopilot?.hof_channel_id && (await guild.channels.fetch(club.autopilot.hof_channel_id).catch(() => null));
+      if (hof && hof.id !== channel.id) await hof.send({ content, files: [new AttachmentBuilder(r.file.attachment, { name: r.file.name })], allowedMentions: { parse: [] } }).catch(() => {});
+    }
+    await r.afterPost?.();
+    await refreshPanel(channel, club);
+  }
+
+  // What the requester sees before anything is public: the graphic plus Post / Redo / Discard
+  function previewMessage(token, p) {
+    const flagged = p.spend.quality.find((q) => q.checked && !q.pass);
+    const lines = [
+      `👀 **Preview** · ${p.label}`,
+      p.r.note ? `_${p.r.note}_` : null,
+      flagged ? `⚠️ Our quality check still spotted: ${flagged.issues.slice(0, 3).join('; ')}. Redo is free.` : null,
+      p.spend.reservations.length ? '_Nothing is charged until you post it; Redo and Discard give the image back._' : null,
+    ].filter(Boolean);
+    return {
+      content: lines.join('\n'),
+      files: [p.r.file, ...(p.r.extra || [])],
+      components: [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`gs_keep:${token}`).setLabel('Post it').setEmoji('✅').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`gs_redo:${token}`).setLabel(p.redos < FREE_REDOS ? `Redo (${FREE_REDOS - p.redos} left)` : 'No redos left').setEmoji('🔁').setStyle(ButtonStyle.Secondary).setDisabled(p.redos >= FREE_REDOS),
+        new ButtonBuilder().setCustomId(`gs_drop:${token}`).setLabel('Discard').setEmoji('🗑️').setStyle(ButtonStyle.Danger),
+      )],
+      allowedMentions: { parse: [] },
+    };
+  }
+
+  function forget(token) {
+    const p = PREVIEWS.get(token);
+    if (p) clearTimeout(p.timer);
+    PREVIEWS.delete(token);
+    return p;
+  }
+
+  // Draw a graphic and return the private preview to show (or post straight away with STUDIO_PREVIEW=off)
+  async function deliver({ channel, club, guild, userId, label, build, hallOfFame, publicPreview = false }) {
     const key = `${guild.id}:${userId}`;
     if (BUSY.has(key)) return { error: 'You already have a graphic in the works — give it a minute.' };
     BUSY.add(key);
     try {
-      const r = await build();
+      const { r, spend } = await draw(userId, build);
       if (r.error) return r;
-      const content = `${label}${r.note ? `\n_${r.note}_` : ''}`;
-      await channel.send({ content, files: [r.file, ...(r.extra || [])], allowedMentions: { parse: [] } });
-      if (hallOfFame) {
-        const hof = club.autopilot?.hof_channel_id && (await guild.channels.fetch(club.autopilot.hof_channel_id).catch(() => null));
-        if (hof && hof.id !== channel.id) await hof.send({ content, files: [new AttachmentBuilder(r.file.attachment, { name: r.file.name })], allowedMentions: { parse: [] } }).catch(() => {});
+      const p = { channel, club, guild, userId, label, build, hallOfFame, r, spend, redos: 0, publicPreview };
+      if (!PREVIEW_ON) {
+        await publish(p, r).catch(async (err) => { await settleArt('refund', spend); throw err; });
+        await settleArt('keep', spend);
+        return { ok: true, reply: hallOfFame ? '✅ Banner posted here and in the Hall of Fame.' : '✅ Posted!' };
       }
-      await refreshPanel(channel, club);
-      return { ok: true };
+      const token = crypto.randomBytes(9).toString('base64url');
+      // An untouched preview is turned down when it expires, like Discard
+      p.timer = setTimeout(() => { const gone = forget(token); if (gone) settleArt('discard', gone.spend).catch(() => {}); }, PREVIEW_TTL);
+      p.timer.unref?.();
+      PREVIEWS.set(token, p);
+      return { ok: true, reply: previewMessage(token, p) };
     } catch (err) {
-      console.warn('[studio] build failed:', err.message);
+      console.warn('[studio] posting failed:', err.message);
       return { error: 'Something went wrong drawing that graphic.' };
     } finally {
       BUSY.delete(key);
+    }
+  }
+
+  // Post it / Redo / Discard on a preview; only the member who asked can press them
+  async function onPreviewButton(interaction, action, token) {
+    const p = PREVIEWS.get(token);
+    if (!p) { await interaction.reply({ content: 'That preview expired — start again from the panel.', flags: 64 }); return true; }
+    if (p.userId !== interaction.user.id) { await interaction.reply({ content: 'Only the member who asked for this graphic can post, redo or discard it.', flags: 64 }); return true; }
+    if (p.busy) { await interaction.reply({ content: 'Still working on that one — give it a moment.', flags: 64 }); return true; }
+    await interaction.deferUpdate();
+    p.busy = true;
+    const done = async (content) => {
+      if (p.publicPreview) await interaction.message?.delete?.().catch(() => {});
+      else await interaction.editReply({ content, files: [], attachments: [], components: [] }).catch(() => {});
+    };
+    try {
+      if (action === 'gs_keep') {
+        forget(token);
+        try { await publish(p, p.r); } catch (err) {
+          console.warn('[studio] posting failed:', err.message);
+          await settleArt('refund', p.spend);
+          await done('❌ Couldn\'t post that graphic here, so nothing was charged.');
+          return true;
+        }
+        await settleArt('keep', p.spend);
+        await done(p.hallOfFame ? '✅ Banner posted here and in the Hall of Fame.' : '✅ Posted!');
+        return true;
+      }
+      if (action === 'gs_drop') {
+        forget(token);
+        const out = await settleArt('discard', p.spend);
+        await done(out.charged ? '🗑️ Discarded. You\'ve used today\'s free discards, so this image still counted.' : '🗑️ Discarded — nothing was charged.');
+        return true;
+      }
+      if (p.redos >= FREE_REDOS) return true;
+      await interaction.editReply({ content: `🎨 Redrawing ${p.label}…`, components: [] }).catch(() => {});
+      const { r, spend } = await draw(p.userId, p.build);
+      if (r.error) {
+        await interaction.editReply({ ...previewMessage(token, p), content: `❌ ${r.error}\n${previewMessage(token, p).content}` }).catch(() => {});
+        return true;
+      }
+      // The new drawing replaces the old one, whose images go back
+      await settleArt('discard', p.spend);
+      Object.assign(p, { r, spend, redos: p.redos + 1 });
+      await interaction.editReply({ ...previewMessage(token, p), attachments: [] }).catch(() => {});
+      return true;
+    } finally {
+      p.busy = false;
     }
   }
 
@@ -896,10 +1041,12 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       return message.reply('🏆 Banners are made from the **Banner** button on the studio panel (managers only).').catch(() => {});
     } else return;
     await message.react('🎨').catch(() => {});
-    const r = await deliver({ channel: message.channel, club, guild: message.guild, userId: message.author.id, label, build });
+    // Typed requests can't get a private reply, so the preview is a reply only the author can act on
+    const r = await deliver({ channel: message.channel, club, guild: message.guild, userId: message.author.id, label, build, publicPreview: true });
     await message.reactions.cache.get('🎨')?.users.remove(message.client.user.id).catch(() => {});
     if (r.error) await message.reply(await failure(r, message.guildId, message.author.id)).catch(() => {});
-    else await message.react('✅').catch(() => {});
+    else if (typeof r.reply === 'string') await message.react('✅').catch(() => {});
+    else await message.reply(r.reply).catch(() => {});
   }
 
   // ----- buttons, menus, forms -----
@@ -920,6 +1067,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       await interaction.showModal(draft.kind === 'card' ? cardModal(a1, draft.data) : draft.kind === 'recruit' ? recruitModal(a1, d) : draft.kind === 'poster' ? posterModal(a1, d) : lineupModal(a1, d));
       return true;
     }
+    if (interaction.isButton() && ['gs_keep', 'gs_redo', 'gs_drop'].includes(action)) return onPreviewButton(interaction, action, a1);
     // Banner style opens a modal, which Discord forbids after a deferral; everything else is acknowledged immediately.
     const deferredSelect = (interaction.isStringSelectMenu() && !(action === 'gs_style' && a1 === 'banner'))
       || (interaction.isButton() && ['gs_dback', 'gs_cdel'].includes(action));
@@ -1142,7 +1290,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         label = `📋 **${d.title}** · ${STYLES[style].label}`;
       }
       const r = await deliver({ channel: interaction.channel, club, guild: interaction.guild, userId: interaction.user.id, label, build });
-      await interaction.editReply(r.error ? await failure(r, interaction.guildId, interaction.user.id) : '✅ Posted!').catch(() => {});
+      await interaction.editReply(r.error ? await failure(r, interaction.guildId, interaction.user.id) : r.reply).catch(() => {});
       return true;
     }
     if (interaction.isModalSubmit() && action === 'gs_bannerform') {
@@ -1156,7 +1304,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         label: `🏆 **${f('headline')}** — ${f('competition')}`,
         build: () => buildBanner({ guild: interaction.guild, guildId: interaction.guildId, club, style, headline: f('headline'), competition: f('competition'), seasonTag: f('tag'), rosterText: f('roster'), heroId: hero }),
       });
-      await interaction.editReply(r.error ? await failure(r, interaction.guildId, interaction.user.id) : '✅ Banner posted here and in the Hall of Fame.').catch(() => {});
+      await interaction.editReply(r.error ? await failure(r, interaction.guildId, interaction.user.id) : r.reply).catch(() => {});
       return true;
     }
     return false;
