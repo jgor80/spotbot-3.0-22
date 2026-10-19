@@ -15,6 +15,7 @@ export const SCOPE_READ = "clubs:read";
 export const SCOPE_MANAGE = "clubs:manage";
 export const ACCESS_TTL_S = 60 * 60;
 export const REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+export const PERSONAL_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 export type TokenInfo = { id: string; discordUserId: string; scopes: string[]; oauth: boolean };
 
@@ -100,7 +101,8 @@ export async function createToken(admin: AdminClient, discordUserId: string, lab
   const token = generateToken();
   const { data, error } = await admin
     .from("mcp_access_tokens")
-    .insert({ discord_user_id: discordUserId, label, token_hash: await hashToken(token), token_hint: token.slice(-4) })
+    // Personal tokens expire after a year, so a forgotten or leaked one doesn't work forever
+    .insert({ discord_user_id: discordUserId, label, token_hash: await hashToken(token), token_hint: token.slice(-4), expires_at: new Date(Date.now() + PERSONAL_TTL_MS).toISOString() })
     .select("id, label, created_at")
     .single();
   if (error) return { error: "Could not create a token" };
@@ -153,8 +155,12 @@ export async function issueGrant(
   return grant;
 }
 
+// A replaced refresh token presented again this soon after rotating is treated as a client retry, not theft.
+const REUSE_GRACE_MS = 30 * 1000;
+
 // Swap a refresh token for a new pair. The old refresh token stops working at once (rotation), and only
-// the app it was issued to may use it.
+// the app it was issued to may use it. Presenting an already-replaced one again means it was copied, so
+// the whole grant is turned off (OAuth 2.1 refresh token reuse detection).
 export async function refreshGrant(admin: AdminClient, refreshToken: string, clientId: string): Promise<Grant | null> {
   if (!refreshToken.startsWith(REFRESH_PREFIX) || refreshToken.length > 80) return null;
   const oldHash = await hashToken(refreshToken);
@@ -163,14 +169,25 @@ export async function refreshGrant(admin: AdminClient, refreshToken: string, cli
     .select("id, oauth_client_id, scopes, refresh_expires_at, revoked_at")
     .eq("refresh_hash", oldHash)
     .maybeSingle();
-  if (!data || data.revoked_at || data.oauth_client_id !== clientId) return null;
+  if (!data) {
+    const { data: reused } = await admin
+      .from("mcp_access_tokens")
+      .select("id, last_used_at, revoked_at")
+      .eq("previous_refresh_hash", oldHash)
+      .maybeSingle();
+    if (reused && !reused.revoked_at && Date.now() - new Date(reused.last_used_at || 0).getTime() > REUSE_GRACE_MS) {
+      await admin.from("mcp_access_tokens").update({ revoked_at: new Date().toISOString() }).eq("id", reused.id);
+    }
+    return null;
+  }
+  if (data.revoked_at || data.oauth_client_id !== clientId) return null;
   if (!data.refresh_expires_at || new Date(data.refresh_expires_at).getTime() <= Date.now()) return null;
   const scopes = cleanScopes(data.scopes);
   const { grant, row } = await freshPair(scopes);
   // Conditional on the old hash, so two refreshes racing with the same token can't both succeed.
   const { data: updated } = await admin
     .from("mcp_access_tokens")
-    .update({ ...row, last_used_at: new Date().toISOString() })
+    .update({ ...row, previous_refresh_hash: oldHash, last_used_at: new Date().toISOString() })
     .eq("id", data.id)
     .eq("refresh_hash", oldHash)
     .select("id");

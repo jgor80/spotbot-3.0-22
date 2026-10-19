@@ -14,6 +14,12 @@
   // FUNCTIONS_ORIGIN (and the FUNCTIONS_ORIGIN_SECRET / MCP_LEADER_CHECK_SECRET secrets) are set in the Cloudflare dashboard; without this
   // every deploy from a merge wipes them and all /api/functions calls return 503.
   "keep_vars": true,
+  // Per-IP limits on AI-app sign-in (/oauth/*) and backend calls (/api/functions, /mcp), see worker/index.ts.
+  // Per Cloudflare location, so approximate: a backstop against floods, not an exact quota.
+  "ratelimits": [
+    { "name": "OAUTH_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } },
+    { "name": "API_LIMITER", "namespace_id": "1002", "simple": { "limit": 600, "period": 60 } }
+  ],
   // Lets Cloudflare's `wrangler preview` build a preview for each PR branch.
   "previews": {}
 }

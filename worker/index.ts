@@ -14,7 +14,30 @@ interface Env {
   FUNCTIONS_ORIGIN_SECRET?: string;
   // Shared with the bot's MCP_LEADER_CHECK_SECRET, so the AI sign-in's leader check needs no service-role key.
   MCP_LEADER_CHECK_SECRET?: string;
+  // Workers rate limiting bindings (wrangler.jsonc "ratelimits"); missing in local dev, then nothing is limited
+  OAUTH_LIMITER?: RateLimiter;
+  API_LIMITER?: RateLimiter;
 }
+
+interface RateLimiter {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
+}
+
+// True when this caller (by IP) is over the limiter's budget
+async function overLimit(limiter: RateLimiter | undefined, req: Request, bucket: string): Promise<boolean> {
+  if (!limiter) return false;
+  const ip = req.headers.get("cf-connecting-ip") || "unknown";
+  try {
+    return !(await limiter.limit({ key: `${bucket}:${ip}` })).success;
+  } catch {
+    return false;
+  }
+}
+
+const tooMany = () =>
+  new Response(JSON.stringify({ error: "Too many requests. Wait a minute and try again." }), {
+    status: 429, headers: { "Content-Type": "application/json", "Retry-After": "60", "Cache-Control": "no-store" },
+  });
 
 const ALLOWED = [/^https:\/\/(www\.)?gafferbot\.app$/, /^https:\/\/[a-z0-9-]+\.workers\.dev$/, /^http:\/\/localhost:\d+$/];
 
@@ -155,6 +178,7 @@ export default {
     const url = new URL(req.url);
     // Sign-in for AI apps on /mcp (OAuth with Discord), see mcp-oauth.ts.
     if (url.pathname.startsWith("/oauth/") || url.pathname.startsWith("/.well-known/oauth-") || url.pathname === "/auth/callback") {
+      if (url.pathname.startsWith("/oauth/") && req.method !== "OPTIONS" && (await overLimit(env.OAUTH_LIMITER, req, "oauth"))) return tooMany();
       try {
         const db = () => createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
         const res = await handleOAuth(req, url, { ...env, leaderCheck: (id: string) => botLeaderCheck(env, id) }, db);
@@ -172,6 +196,7 @@ export default {
     // /mcp is the GafferBot MCP server for AI assistants (the gafferbot-mcp function).
     const isMcp = url.pathname === "/mcp";
     if (isMcp || url.pathname.startsWith("/api/functions/v1/")) {
+      if (req.method !== "OPTIONS" && (await overLimit(env.API_LIMITER, req, "api"))) return tooMany();
       if (!env.FUNCTIONS_ORIGIN) return json({ error: "Functions server is not configured" }, 503);
       const path = isMcp ? "/functions/v1/gafferbot-mcp" : url.pathname.slice(4);
       const target = originUrl(env.FUNCTIONS_ORIGIN) + path + url.search;

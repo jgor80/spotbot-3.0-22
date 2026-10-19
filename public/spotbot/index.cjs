@@ -427,7 +427,11 @@ const FUNCTION_SECRET = BOT_PROXY_SECRET || (LOCAL_FUNCTIONS_ON ? 'self-hosted' 
 if (LOCAL_FUNCTIONS_ON) {
   const lf = require('./local-functions.cjs');
   lf.wrapFetch(supabaseUrl);
-  if (process.env.FUNCTIONS_PORT !== '0') lf.startServer({ port: Number(process.env.FUNCTIONS_PORT || 8880), supabaseUrl });
+  if (process.env.FUNCTIONS_PORT !== '0') {
+    // `client` is created further down; until then (and while disconnected) the bot reports not ready
+    const discordReady = () => { try { return client.isReady(); } catch { return false; } };
+    lf.startServer({ port: Number(process.env.FUNCTIONS_PORT || 8880), supabaseUrl, discordReady });
+  }
 }
 const supabase = createClient(supabaseUrl, supabaseKey, proxyFetch ? { global: { fetch: proxyFetch } } : undefined);
 

@@ -43,3 +43,12 @@ test('oversized bodies are refused before they are buffered', async () => {
     assert.strictEqual(status, 413);
   });
 });
+
+test('the Discord health check reports whether the bot is connected, without the origin secret', async () => {
+  let ready = false;
+  await withServer({ originSecret: 'worker-secret-123', discordReady: () => ready }, async (base) => {
+    assert.strictEqual((await fetch(`${base}/health/discord`)).status, 503);
+    ready = true;
+    assert.strictEqual((await fetch(`${base}/health/discord`)).status, 200);
+  });
+});

@@ -111,6 +111,26 @@ async function guildAccessLevel(admin, guildId, discordUserId) {
   const member = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
   return member ? "member" : null;
 }
+var webHits = /* @__PURE__ */ new Map();
+async function throttleWebUser(req, admin, name, max, windowMs) {
+  const caller = await identifyCaller(req, admin);
+  if (!caller || caller.kind === "bot") return null;
+  const key = `${name}:${caller.userId}`;
+  const now = Date.now();
+  const recent = (webHits.get(key) || []).filter((t) => now - t < windowMs);
+  if (recent.length >= max) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Too many requests, please try again in a few minutes" }),
+      { status: 429, headers: rejectHeaders }
+    );
+  }
+  recent.push(now);
+  webHits.set(key, recent);
+  if (webHits.size > 5e3) {
+    for (const [k, times] of webHits) if (!times.some((t) => now - t < windowMs)) webHits.delete(k);
+  }
+  return null;
+}
 
 // supabase/functions/web-panel/index.ts
 var corsHeaders = {
@@ -136,10 +156,13 @@ serve(async (req) => {
   if (!actor.discordUserId) return json({ error: "Sign in with Discord to use the control room" }, 403);
   const denied = await requireGuildAccess(req, admin, guildId, "member");
   if (denied) return denied;
+  const op = String(body.op || "");
+  const throttled = ["run", "click", "submit"].includes(op) ? await throttleWebUser(req, admin, "web-panel:change", 30, 60 * 1e3) : await throttleWebUser(req, admin, "web-panel:read", 240, 60 * 1e3);
+  if (throttled) return throttled;
   const bridge = globalThis.__gafferbotWebPanels;
   if (!bridge) return json({ error: "The control room runs on the GafferBot server, which isn't reachable from here." }, 503);
   try {
-    const result = await bridge.handle(String(body.op || ""), {
+    const result = await bridge.handle(op, {
       guildId,
       userId: actor.discordUserId,
       actionId: body.action_id,

@@ -188,7 +188,8 @@ function sameSecret(given, expected) {
 // With FUNCTIONS_ORIGIN_SECRET set (the same value as the Worker's), anything that didn't come through the
 // Worker is refused, so the open port can't be used to skip Cloudflare. FUNCTIONS_HOST=127.0.0.1 keeps
 // the port off the internet entirely when a Cloudflare Tunnel or local proxy fronts it.
-function startServer({ port, supabaseUrl, host = process.env.FUNCTIONS_HOST || '0.0.0.0', originSecret = process.env.FUNCTIONS_ORIGIN_SECRET || '' }) {
+// discordReady: whether the bot is connected to Discord, answered on /health/discord for the health checks.
+function startServer({ port, supabaseUrl, host = process.env.FUNCTIONS_HOST || '0.0.0.0', originSecret = process.env.FUNCTIONS_ORIGIN_SECRET || '', discordReady = null }) {
   wrapFetch(supabaseUrl);
   if (!originSecret) console.warn('⚠️  FUNCTIONS_ORIGIN_SECRET is not set: the functions server accepts requests that skip the Cloudflare Worker');
   const server = http.createServer(async (req, res) => {
@@ -196,6 +197,11 @@ function startServer({ port, supabaseUrl, host = process.env.FUNCTIONS_HOST || '
     try {
       if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
       if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
+      if (req.url === '/health/discord') {
+        const ready = discordReady ? Boolean(discordReady()) : true;
+        res.writeHead(ready ? 200 : 503, { 'Content-Type': 'text/plain' });
+        return res.end(ready ? 'connected' : 'not connected to Discord');
+      }
       if (originSecret && !sameSecret(req.headers['x-origin-secret'], originSecret)) {
         res.writeHead(403, { ...CORS, 'Content-Type': 'application/json' });
         return res.end('{"error":"Forbidden"}');

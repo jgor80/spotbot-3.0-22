@@ -96,10 +96,34 @@ Deno.test("press_button previews the label and stops at the hourly limit", async
   assert(limited.isError && limited.text.includes("limit") && !calls.some((c) => c.op === "click"), "limit not enforced");
 });
 
+Deno.test("buttons that open a blocked action or area are refused", async () => {
+  const { calls, call } = setup();
+  const blocked = await call("press_button", { message_id: "m1", control_id: "gp:a:ro_remove" });
+  assert(blocked.isError && !calls.some((c) => c.op === "click"), "blocked action button allowed");
+  const area = await call("press_button", { message_id: "m1", control_id: "gp:areas", values: ["admin"] });
+  assert(area.isError, "blocked area allowed");
+  const fine = await call("press_button", { message_id: "m1", control_id: "gp:a:ev_quick_friendly" });
+  assert(!fine.isError, "allowed action button refused");
+});
+
+Deno.test("a change confirmed without a preview of the same call is refused", async () => {
+  const { calls, call } = setup();
+  const skipped = await call("run_club_action", { action: "ev_quick_friendly", values: { when: "friday 9pm" }, confirm: true });
+  assert(skipped.isError && skipped.text.includes("Preview this first") && !calls.some((c) => c.op === "run"), "ran without a preview");
+  await call("run_club_action", { action: "ev_quick_friendly", values: { when: "friday 9pm" } });
+  const other = await call("run_club_action", { action: "ev_quick_friendly", values: { when: "saturday 9pm" }, confirm: true });
+  assert(other.isError && !calls.some((c) => c.op === "run"), "a different call rode on the preview");
+  const ok = await call("run_club_action", { action: "ev_quick_friendly", values: { when: "friday 9pm" }, confirm: true });
+  assert(!ok.isError && calls.some((c) => c.op === "run"), "previewed call refused");
+});
+
 Deno.test("a batch of confirmed changes can't run past the hourly limit", async () => {
   const { db, ctx } = setup();
   for (let i = 0; i < CHANGES_PER_HOUR - 1; i++) db.tables.mcp_action_log.push({ discord_user_id: ME, created_at: new Date().toISOString() });
   const msg = (id: number) => ({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "run_club_action", arguments: { guild_id: HOME, action: "ev_quick_friendly", values: { when: "tomorrow 8pm" }, confirm: true } } });
+  const previewMsg = msg(0);
+  previewMsg.params.arguments = { ...previewMsg.params.arguments, confirm: false };
+  await handleBody(previewMsg, MANAGE_TOOLS, ctx);
   // deno-lint-ignore no-explicit-any
   const replies: any = await handleBody([1, 2, 3, 4, 5].map(msg), MANAGE_TOOLS, ctx);
   const ran = replies.filter((r: { result: { isError?: boolean } }) => !r.result.isError).length;

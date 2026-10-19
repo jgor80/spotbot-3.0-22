@@ -155,3 +155,7 @@ server; `ALLOWED_GUILD_IDS=*` allows every server.
 would go (rows per table and photo/card/crest files); add `--confirm` to delete. Billing records are
 kept for accounting (a player's id is blanked in them). Rows where the player only appears in a
 required "who did it" column are listed as `keep` for a manual look.
+
+Re-run `install-ops.sh` after pulling changes to it: it copies `healthcheck.sh` into place (which now
+also checks the bot is connected to Discord via `:8880/health/discord`) and sets up pm2 log rotation
+(20 MB files, 10 kept, compressed).

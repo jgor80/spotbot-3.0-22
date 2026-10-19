@@ -8,6 +8,7 @@ STACK_ID="${STACK_ID:-xue3q5tb1udz4bvq6oxbg1pv}"
 SITE_URL="${SITE_URL:-https://gafferbot.app}"
 KONG_URL="${KONG_URL:-https://supabasekong-$STACK_ID.65.108.243.142.sslip.io}"
 FUNCTIONS_HEALTH_URL="${FUNCTIONS_HEALTH_URL:-http://127.0.0.1:8880/health}"
+DISCORD_HEALTH_URL="${DISCORD_HEALTH_URL:-http://127.0.0.1:8880/health/discord}"
 MIN_AVAILABLE_MB="${MIN_AVAILABLE_MB:-150}"
 MAX_DISK_PCT="${MAX_DISK_PCT:-85}"
 ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}"
@@ -71,6 +72,8 @@ disk_ok() {
 
 check "Website ($SITE_URL)" http_ok "$SITE_URL" 200
 check "Bot functions (:8880)" http_ok "$FUNCTIONS_HEALTH_URL" 200
+# pm2 can show "online" for a bot that lost its Discord connection; this asks the bot itself.
+check "Bot connected to Discord" http_ok "$DISCORD_HEALTH_URL" 200
 # Kong answers 401 without an apikey; anything but a 5xx or no answer means it is up.
 check "Supabase API (Kong)" http_ok "$KONG_URL/auth/v1/health" 200 401
 check "Bot process (pm2)" bot_online

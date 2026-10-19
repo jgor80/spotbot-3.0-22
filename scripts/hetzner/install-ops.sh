@@ -92,6 +92,16 @@ SUDO
 chmod 440 /etc/sudoers.d/spotbot-ops
 visudo -cf /etc/sudoers.d/spotbot-ops >/dev/null
 
+# Bot logs are rotated (20 MB per file, 10 kept, compressed) so they can't fill the disk.
+if command -v pm2 >/dev/null; then
+  if ! PM2_HOME=/root/.pm2 pm2 jlist 2>/dev/null | grep -q '"name":"pm2-logrotate"'; then
+    PM2_HOME=/root/.pm2 pm2 install pm2-logrotate >/dev/null
+  fi
+  PM2_HOME=/root/.pm2 pm2 set pm2-logrotate:max_size 20M >/dev/null
+  PM2_HOME=/root/.pm2 pm2 set pm2-logrotate:retain 10 >/dev/null
+  PM2_HOME=/root/.pm2 pm2 set pm2-logrotate:compress true >/dev/null
+fi
+
 # Bot comes back after a reboot: pm2-root.service resurrects the saved process list.
 if command -v pm2 >/dev/null; then
   PM2_HOME=/root/.pm2 pm2 save >/dev/null
