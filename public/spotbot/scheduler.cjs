@@ -23,6 +23,8 @@ const JOBS = [
   { name: 'sync-ea-stats', every: 5, fn: 'sync-ea-stats', body: eaSyncBody, catchUp: true },
   { name: 'refresh-discord-standings', every: 5, rpc: ['refresh_discord_standings'] },
   { name: 'advanced-stats-refresh', minute: 15, rpc: ['backfill_advanced_player_stats', 'refresh_player_season_archive'] },
+  // Image reservations left behind by a render that never finished, and previews nobody answered
+  { name: 'image-reservation-cleanup', minute: 45, rpc: ['settle_stale_image_reservations'] },
   { name: 'season-card-archive-nightly', hour: 6, minute: 30, rpc: ['refresh_player_season_archive'] },
   { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences', 'cleanup_mcp_oauth', 'cleanup_logs'] },
 ];

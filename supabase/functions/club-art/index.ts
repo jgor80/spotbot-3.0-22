@@ -7,7 +7,7 @@ import { z } from "npm:zod@3";
 import { rankPhotos, identityInstructions } from "./photo-selection.ts";
 import { teamPrompt, appendReferences, isRearFacing } from "./team-art.ts";
 import { referenceLimit, renderCost } from "./render-cost.ts";
-import { billingConfig, creditsFor, refundImages, reserveImages, settleImages } from "../_shared/billing.ts";
+import { billingConfig, creditsFor, holdImages, refundImages, reserveImages, settleImages } from "../_shared/billing.ts";
 import { ARRANGEMENTS, CAMERAS, LIGHTING, POSES, SCENES, keysOf, line } from "./variety.ts";
 import { checkRender, pickBest, qaEnabled, qaRetries, retryHint, type QaInput, type QaVerdict } from "./quality.ts";
 
@@ -320,7 +320,7 @@ Deno.serve(async (req) => {
   }
   const best = pickBest(attempts)!;
   const b64 = best.b64, model = best.model;
-  if (reservation && !b.hold) await settleImages(db, reservation);
+  if (reservation) await (b.hold ? holdImages(db, reservation) : settleImages(db, reservation));
   let artworkSaved = !b.discord_user_id;
   let generatedAssetId: string | null = null;
   if (!teamIds.length && b.discord_user_id && ref) {
