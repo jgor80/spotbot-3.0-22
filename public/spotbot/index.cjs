@@ -577,6 +577,10 @@ client.on('messageCreate', (message) => {
   graphicsStudio.onMessage(message).catch((err) => console.warn('[studio] failed:', err.message));
   clips.onMessage(message).catch((err) => console.warn('[clips] failed:', err.message));
 });
+// Someone adding permissions to a position role (or making one by hand) gets them cleared straight away,
+// not just at the next restart.
+client.on('roleCreate', (role) => clearPositionRolePermissions(role).catch(() => {}));
+client.on('roleUpdate', (_old, role) => clearPositionRolePermissions(role).catch(() => {}));
 client.once('ready', () => {
   setTimeout(async () => {
     for (const guild of client.guilds.cache.values()) {
@@ -776,15 +780,18 @@ async function savePositionTiers(interaction, tiers) {
 }
 
 // Position roles are labels only: they never carry Discord permissions (no Timeout, kick, manage, etc.).
+async function clearPositionRolePermissions(role) {
+  if (!role || !isPositionRoleName(role.name)) return;
+  if (role.permissions.bitfield === 0n) return;
+  const guild = role.guild;
+  if (!role.editable) { console.warn(`[roles] ${guild.name}: can't clear permissions on ${role.name} (role is above mine)`); return; }
+  await role.setPermissions(0n, 'GafferBot: position roles carry no permissions')
+    .then(() => console.log(`[roles] ${guild.name}: cleared permissions on ${role.name}`))
+    .catch((err) => console.warn(`[roles] ${guild.name}: clear ${role.name} failed:`, err.message));
+}
+
 async function stripPositionRolePermissions(guild) {
-  for (const role of guild.roles.cache.values()) {
-    if (!isPositionRoleName(role.name)) continue;
-    if (role.permissions.bitfield === 0n) continue;
-    if (!role.editable) { console.warn(`[roles] ${guild.name}: can't clear permissions on ${role.name} (role is above mine)`); continue; }
-    await role.setPermissions(0n, 'GafferBot: position roles carry no permissions')
-      .then(() => console.log(`[roles] ${guild.name}: cleared permissions on ${role.name}`))
-      .catch((err) => console.warn(`[roles] ${guild.name}: clear ${role.name} failed:`, err.message));
-  }
+  for (const role of guild.roles.cache.values()) await clearPositionRolePermissions(role);
 }
 
 // Finds the guild's role for each position code, creating any that are missing.
