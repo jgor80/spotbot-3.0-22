@@ -6,8 +6,8 @@ import { useDropPrerender } from "@/components/RouteMeta";
 // can be monetized or listed in the App Directory, so these routes must stay outside ProtectedRoute.
 
 // Shown on both pages. Set before pasting the URLs into the Discord Developer Portal.
-export const LEGAL_CONTACT_EMAIL = "privacy@pennantbot.com";
-export const LEGAL_UPDATED = "15 October 2026";
+export const LEGAL_CONTACT_EMAIL = "privacy@gafferbot.com";
+export const LEGAL_UPDATED = "20 October 2026";
 
 export function LegalLayout({ title, children }: { title: string; children: ReactNode }) {
   useDropPrerender();
