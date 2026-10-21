@@ -154,16 +154,17 @@ test('the in-game 4-3-3 variants are available and the formation menu pages past
   for (const f of all) assert.ok(seen.has(f), f);
 });
 
-test('players with no gamertag or stats show their Discord server name, not "Player"', async () => {
-  const rows = { profiles: [{ discord_user_id: '111111', ea_username: 'Lil_Sunny1' }], player_summary: [], position_preferences: [], player_positions: [] };
+test('players show their current Discord server name, with stored names only for members not found', async () => {
+  const rows = { profiles: [{ discord_user_id: '111111', ea_username: 'Lil_Sunny1' }, { discord_user_id: '444444', ea_username: 'GoneGuy' }], player_summary: [{ discord_user_id: '555555', discord_username: 'RS2 CAPTAIN | Bmac' }], position_preferences: [], player_positions: [] };
   const query = (table) => {
     const q = { select: () => q, eq: () => q, in: () => q, then: (ok) => ok({ data: rows[table] }) };
     return q;
   };
   const member = { displayName: 'CBreezy02' };
-  const guild = { members: { cache: new Map([['222222', member]]), fetch: async () => { throw new Error('unknown member'); } } };
+  const guild = { members: { cache: new Map([['222222', member], ['111111', { displayName: 'Lil Sunny' }], ['555555', { displayName: 'Bmac' }]]), fetch: async () => { throw new Error('unknown member'); } } };
   const client = { guilds: { cache: new Map([['g1', guild]]) } };
   const lb = createLineupBoard({ supabase: { from: query }, getClient: () => client, getGuildState: async () => ({}), resolveClub: () => null });
-  const info = await lb.playerInfo('g1', ['111111', '222222', '333333', 'ea_Bmac']);
-  assert.deepStrictEqual(['111111', '222222', '333333', 'ea_Bmac'].map((id) => info.get(id).name), ['Lil_Sunny1', 'CBreezy02', 'Player', 'Bmac']);
+  const ids = ['111111', '222222', '333333', '444444', '555555', 'ea_Bmac'];
+  const info = await lb.playerInfo('g1', ids);
+  assert.deepStrictEqual(ids.map((id) => info.get(id).name), ['Lil Sunny', 'CBreezy02', 'Player', 'GoneGuy', 'Bmac', 'Bmac']);
 });
