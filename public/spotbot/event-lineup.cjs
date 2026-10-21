@@ -230,10 +230,15 @@ function createEventLineup(deps) {
     if (!lineup?.message_id || !event || !client) return;
     const channel = await client.channels.fetch(lineup.channel_id).catch(() => null);
     const msg = await channel?.messages?.fetch(lineup.message_id).catch(() => null);
+    if (!msg) return;
     const embed = lineupEmbed(event, lineup);
-    // Keep the pitch image the post went out with
-    if (msg?.attachments?.some?.((a) => a.name === 'lineup.png')) embed.setImage('attachment://lineup.png');
-    await msg?.edit({ embeds: [embed], components: [confirmRow(lineup.id)] }).catch(() => {});
+    // Redraw the pitch image the post went out with, so names and swaps stay current; if it can't be
+    // drawn the old one stays
+    const hadImage = msg.attachments?.some?.((a) => a.name === 'lineup.png');
+    const png = hadImage && deps.lineupImage ? await deps.lineupImage(lineup.id, { subtitle: event.title }).catch(() => null) : null;
+    if (hadImage) embed.setImage('attachment://lineup.png');
+    const files = png ? { files: [new AttachmentBuilder(png, { name: 'lineup.png' })], attachments: [] } : {};
+    await msg.edit({ embeds: [embed], components: [confirmRow(lineup.id)], ...files }).catch(() => {});
   }
 
   async function dmPlayer(event, lineup, row) {

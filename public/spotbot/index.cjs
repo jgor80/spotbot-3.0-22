@@ -461,7 +461,7 @@ const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents,
 });
 
 // Team Sheet → Edit Lineup (pick-and-drop swaps in Discord) and the pitch image every lineup post carries
-const lineupBoard = createLineupBoard({ supabase, callEdgeFunction, getGuildState, resolveClub, canManageClub: squads.canManageClub, dashboardUrl: DASHBOARD_URL });
+const lineupBoard = createLineupBoard({ supabase, callEdgeFunction, getGuildState, resolveClub, canManageClub: squads.canManageClub, dashboardUrl: DASHBOARD_URL, getClient: () => client });
 const eventLineup = createEventLineup({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, getUserPrefs: (g, u) => getUserPrefs(g, u), getGuildState, lineupImage: lineupBoard.imageForLineup });
 const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, canManageClub: squads.canManageClub, callEdgeFunction, getGuildState, positionTiers });
 

@@ -173,7 +173,7 @@ function formationMenu(current, pageWanted) {
 }
 
 function createLineupBoard(deps) {
-  const { supabase, callEdgeFunction, getGuildState, resolveClub, canManageClub, dashboardUrl } = deps;
+  const { supabase, callEdgeFunction, getGuildState, resolveClub, canManageClub, dashboardUrl, getClient } = deps;
   const drafts = new Map(); // token -> editor state, bound to the member who opened it
   const cards = new Map(); // guildId:userId -> { at, image }
 
@@ -194,10 +194,10 @@ function createLineupBoard(deps) {
       // Position tiers (comp / plays well / emergency); a server without the table yet just has none
       Promise.resolve(supabase.from('player_positions').select('discord_user_id, primary_position, secondary_positions, emergency_positions').eq('guild_id', guildId).in('discord_user_id', ids)).catch(() => ({ data: null })),
     ]);
-    for (const p of profiles || []) if (p.ea_username) out.get(p.discord_user_id).name = p.ea_username;
+    for (const p of profiles || []) if (p.ea_username) Object.assign(out.get(p.discord_user_id), { name: p.ea_username, named: true });
     for (const s of summary || []) {
       const o = out.get(s.discord_user_id);
-      if (s.discord_username) o.name = s.discord_username;
+      if (s.discord_username) Object.assign(o, { name: s.discord_username, named: true });
       o.rating = s.overall_rating ?? null;
       if (s.primary_position) o.positions = [s.primary_position];
     }
@@ -207,6 +207,17 @@ function createLineupBoard(deps) {
       if (!o || !t.primary_position && !t.secondary_positions?.length && !t.emergency_positions?.length) continue;
       o.tiers = { primary: t.primary_position || null, secondary: t.secondary_positions || [], emergency: t.emergency_positions || [] };
       o.positions = [o.tiers.primary, ...o.tiers.secondary].filter(Boolean);
+    }
+    // Members with no gamertag or stats yet get their Discord server name (the one the post mentions)
+    // instead of a blank "Player"
+    const unnamed = [...out.values()].filter((o) => !o.named && /^\d{5,25}$/.test(o.id));
+    const guild = unnamed.length ? getClient?.()?.guilds?.cache?.get(guildId) : null;
+    if (guild) {
+      await Promise.all(unnamed.map(async (o) => {
+        const m = guild.members.cache.get(o.id) || await guild.members.fetch(o.id).catch(() => null);
+        const name = m?.displayName || m?.user?.globalName || m?.user?.username;
+        if (name) o.name = name;
+      }));
     }
     return out;
   }
@@ -539,7 +550,7 @@ function createLineupBoard(deps) {
     return true;
   }
 
-  return { handleInteraction, imageForLineup, open };
+  return { handleInteraction, imageForLineup, open, playerInfo };
 }
 
 module.exports = { createLineupBoard, boardSvg, renderBoard, fitFor, squadMenu, formationMenu };
