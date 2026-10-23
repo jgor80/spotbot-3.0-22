@@ -178,10 +178,10 @@ const EVENT_COMMANDS = [
       {
         type: 1,
         name: 'signedrole',
-        description: 'The role pinged for league game availability (your signed players).',
+        description: 'Your signed players: only they can sign up for and get pinged about league games.',
         options: [
           { name: 'role', description: 'e.g. @Signed Players. Leave empty to see or clear the current one.', type: 8, required: false },
-          { name: 'clear', description: 'Stop using a signed-players role (league games ping @everyone).', type: 5, required: false },
+          { name: 'clear', description: 'Stop using a signed-players role (league games open to everyone).', type: 5, required: false },
           { name: 'club', description: 'Which club (only needed on servers with several).', type: 3, required: false, autocomplete: true },
         ],
       },
@@ -408,26 +408,65 @@ function createEvents(deps) {
     const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
     const roster = await rosterFor(club);
     if (roster.length) {
-      const expected = roster.filter((r) => !ROSTER_OUT[r.status]).map((r) => r.discord_user_id);
+      // League games: only roster players who hold the signed-players role
+      const expected = await onlySigned(event, roster.filter((r) => !ROSTER_OUT[r.status]).map((r) => r.discord_user_id));
       const out = roster.filter((r) => ROSTER_OUT[r.status]).map((r) => ({ id: r.discord_user_id, status: r.status }));
       return { expected, out, source: 'roster' };
     }
     const guild = client?.guilds.cache.get(event.guild_id);
-    // A picked ping role, else the signed-players role for league games
-    const roleId = event.ping_role_id || (isLeague(event) ? B.findSignedRole(guild?.roles.cache, club)?.id : null);
+    // League games go to the signed-players role, else a picked ping role
+    const roleId = (await signedRoleFor(event, club))?.id || event.ping_role_id;
     if (roleId && guild) {
       const role = guild.roles.cache.get(roleId);
       if (role) {
-        // Role members come from the member cache; fill it at most every 10 minutes
-        const last = memberFetchAt.get(guild.id) || 0;
-        if (Date.now() - last > 10 * 60 * 1000) {
-          memberFetchAt.set(guild.id, Date.now());
-          await guild.members.fetch().catch(() => {});
-        }
+        await fillMembers(guild);
         return { expected: role.members.filter((m) => !m.user.bot).map((m) => m.id), out: [], source: 'role' };
       }
     }
     return { expected: [], out: [], source: 'none' };
+  }
+
+  // Role members come from the member cache; fill it at most every 10 minutes
+  async function fillMembers(guild) {
+    const last = memberFetchAt.get(guild.id) || 0;
+    if (Date.now() - last > 10 * 60 * 1000) {
+      memberFetchAt.set(guild.id, Date.now());
+      await guild.members.fetch().catch(() => {});
+    }
+  }
+
+  // ---------- Signed players only (league games) ----------
+
+  // League games are for signed players only: the club's signed-players role when the event
+  // is a league game and the role exists, else null (anyone can answer and be pinged)
+  async function signedRoleFor(event, club = undefined) {
+    if (!event || !isLeague(event)) return null;
+    if (club === undefined) club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    const guild = client?.guilds.cache.get(event.guild_id);
+    return B.findSignedRole(guild?.roles.cache, club);
+  }
+
+  // Can this person answer (and be reminded about) the event? `member` is the interaction's
+  // member when there is one; DM taps have none, so the member is looked up in the server.
+  async function canAnswer(event, userId, member = null) {
+    const role = await signedRoleFor(event);
+    if (!role) return { ok: true, role: null };
+    if (B.memberHasRole(member, role.id)) return { ok: true, role };
+    const guild = client?.guilds.cache.get(event.guild_id);
+    const found = guild?.members.cache.get(userId) || (await guild?.members.fetch?.(userId).catch(() => null));
+    return { ok: B.memberHasRole(found, role.id), role };
+  }
+
+  // Keep only the ids allowed to hear about the event: everyone, or the signed players for
+  // league games
+  async function onlySigned(event, ids) {
+    const list = [...(ids || [])];
+    const role = await signedRoleFor(event);
+    if (!role || !list.length) return list;
+    const guild = client?.guilds.cache.get(event.guild_id);
+    if (!guild) return [];
+    await fillMembers(guild);
+    return list.filter((id) => B.memberHasRole(guild.members.cache.get(id), role.id));
   }
 
   // Positions for each player as position tiers { primary, secondary: [], emergency: [] }, best
@@ -836,6 +875,8 @@ function createEvents(deps) {
     if (!event) return interaction.reply({ content: '❌ That event no longer exists.', flags: 64 });
     if (event.closed) return interaction.reply({ content: `❌ **${event.title}** is ${event.cancelled ? 'cancelled' : 'finished'}.`, flags: 64 });
     if (await isLocked(event)) return interaction.reply({ content: `🔒 Answers for **${event.title}** are closed. Ask a club leader if yours needs changing.`, flags: 64 });
+    const gate = await canAnswer(event, interaction.user.id, interaction.member);
+    if (!gate.ok) return interaction.reply({ content: B.signedOnlyMessage(event, gate.role), flags: 64, allowedMentions: { parse: [] } });
 
     if (response === 'yes' && event.position_signup) {
       const current = await usualPositions(event, interaction.user.id);
@@ -865,6 +906,8 @@ function createEvents(deps) {
   async function handlePositionToggle(interaction, eventId, sel, pos) {
     const event = await loadEvent(eventId);
     if (!event || event.closed || (await isLocked(event))) return interaction.update({ content: '❌ That event is closed.', components: [] });
+    const gate = await canAnswer(event, interaction.user.id, interaction.member);
+    if (!gate.ok) return interaction.update({ content: B.signedOnlyMessage(event, gate.role), components: [], allowedMentions: { parse: [] } });
     const current = pickedFrom(sel);
     const p = PT.cleanPos(pos);
     let next = current.includes(p) ? current.filter((x) => x !== p) : [...current, p].filter(Boolean);
@@ -876,6 +919,8 @@ function createEvents(deps) {
   async function handlePositionPick(interaction, eventId, sel = null) {
     const event = await loadEvent(eventId);
     if (!event || event.closed || (await isLocked(event))) return interaction.update({ content: '❌ That event is closed.', components: [] });
+    const gate = await canAnswer(event, interaction.user.id, interaction.member);
+    if (!gate.ok) return interaction.update({ content: B.signedOnlyMessage(event, gate.role), components: [], allowedMentions: { parse: [] } });
     const picked = sel != null ? pickedFrom(sel) : pickedFrom((interaction.values || []).join('.'));
     if (!picked.length) return interaction.update({ content: signupPrompt(event), components: positionPicker(event.id, []) });
     try {
@@ -1281,7 +1326,10 @@ function createEvents(deps) {
   // ---------- /available ----------
 
   async function handleAvailable(interaction) {
-    const events = (await upcomingEvents(interaction.guildId, 5)).filter((e) => new Date(e.scheduled_at) > new Date());
+    const upcoming = (await upcomingEvents(interaction.guildId, 5)).filter((e) => new Date(e.scheduled_at) > new Date());
+    // League games are only listed for signed players
+    const events = [];
+    for (const e of upcoming) if ((await canAnswer(e, interaction.user.id, interaction.member)).ok) events.push(e);
     if (!events.length) return interaction.reply({ content: 'No upcoming events right now.', flags: 64 });
     const { data: mine } = await supabase
       .from('player_availability')
@@ -1338,8 +1386,8 @@ function createEvents(deps) {
       ? `\n⚠️ I can't ping ${current} in <#${channel.id}> yet. Make the role mentionable or give me **Mention @everyone, @here and All Roles**.`
       : '';
     const content = current
-      ? `✅ League games for **${club.name}** ping ${current}${club.signed_role_id ? '' : ' (found by name)'}. BYOT, friendlies, practice and other nights ping @everyone.${warn}`
-      : `League games for **${club.name}** ping @everyone until you pick a signed-players role here (or create a role called **Signed Players**).`;
+      ? `✅ League games for **${club.name}** ping ${current}${club.signed_role_id ? '' : ' (found by name)'}, and only players with that role can sign up or get reminders. BYOT, friendlies, practice and other nights are open to everyone and ping @everyone.${warn}`
+      : `League games for **${club.name}** are open to everyone and ping @everyone until you pick a signed-players role here (or create a role called **Signed Players**).`;
     return interaction.reply({ content, flags: 64, allowedMentions: { parse: [] } });
   }
 
@@ -1670,6 +1718,8 @@ function createEvents(deps) {
   async function handleNoteButton(interaction, eventId) {
     const event = await loadEvent(eventId);
     if (!event || event.closed) return interaction.reply({ content: '❌ That event is closed.', flags: 64 });
+    const gate = await canAnswer(event, interaction.user.id, interaction.member);
+    if (!gate.ok) return interaction.reply({ content: B.signedOnlyMessage(event, gate.role), flags: 64, allowedMentions: { parse: [] } });
     const { data: mine } = await supabase.from('player_availability').select('note').eq('event_id', eventId).eq('discord_user_id', interaction.user.id).maybeSingle();
     const input = new TextInputBuilder()
       .setCustomId('note')
@@ -1687,6 +1737,8 @@ function createEvents(deps) {
   async function handleNoteSubmit(interaction, eventId) {
     const event = await loadEvent(eventId);
     if (!event) return interaction.reply({ content: '❌ That event no longer exists.', flags: 64 });
+    const gate = await canAnswer(event, interaction.user.id, interaction.member);
+    if (!gate.ok) return interaction.reply({ content: B.signedOnlyMessage(event, gate.role), flags: 64, allowedMentions: { parse: [] } });
     const note = (interaction.fields.getTextInputValue('note') || '').trim().slice(0, 200) || null;
     const { data: row } = await supabase.from('player_availability').select('id').eq('event_id', eventId).eq('discord_user_id', interaction.user.id).maybeSingle();
     const res = row
@@ -1755,6 +1807,9 @@ function createEvents(deps) {
     loadEvent,
     loadResponses,
     expectedPlayers,
+    signedRoleFor,
+    canAnswer,
+    onlySigned,
     playerPositions,
     buildBoard,
     fetchBoardMessage,

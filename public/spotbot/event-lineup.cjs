@@ -317,13 +317,15 @@ function createEventLineup(deps) {
     responses.filter((r) => r.response !== 'no').forEach((r) => ids.add(r.discord_user_id));
     const { expected } = await events.expectedPlayers(event);
     expected.forEach((id) => { if (!no.has(id)) ids.add(id); });
+    // League games: only signed players get the kickoff DM
+    const allowed = new Set(await events.onlySigned(event, [...ids]));
 
     const kick = Math.floor(new Date(event.scheduled_at).getTime() / 1000);
     const text = stage === 'soon'
       ? `⏰ **${event.title}** kicks off <t:${kick}:R>. Hop in voice${vcLink ? `: ${vcLink}` : ''}`
       : `⚽ **${event.title}** is starting now! Join voice${vcLink ? `: ${vcLink}` : ''}`;
     for (const id of ids) {
-      if (!/^\d{17,19}$/.test(id)) continue;
+      if (!/^\d{17,19}$/.test(id) || !allowed.has(id)) continue;
       const member = guild.members.cache.get(id);
       if (!member || member.user.bot) continue;
       if (member.voice?.channelId) continue; // already in voice — don't DM
