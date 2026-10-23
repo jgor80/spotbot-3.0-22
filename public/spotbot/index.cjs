@@ -35,6 +35,7 @@ const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.c
 const { createSquads, SQUAD_COMMANDS } = require('./squads.cjs');
 const { createPanels, PANEL_COMMANDS } = require('./panels.cjs');
 const { createWebPanels } = require('./web-panels.cjs');
+const eventBoard = require('./event-board.cjs');
 const { createChannelModeration } = require('./channel-moderation.cjs');
 const { createEvents, EVENT_COMMANDS } = require('./events.cjs');
 const { parseWhen: parseEventWhen } = require('./event-time.cjs');
@@ -12088,6 +12089,11 @@ async function routeInteraction(interaction) {
         const parts = id.split('_');
         const response = parts[1]; // yes, no, maybe
         const eventId = parts.slice(2).join('_');
+
+        // League games: signed players only
+        const avEvent = await clubEvents.loadEvent(eventId);
+        const gate = avEvent ? await clubEvents.canAnswer(avEvent, interaction.user.id, interaction.member) : { ok: true };
+        if (!gate.ok) return interaction.reply({ content: eventBoard.signedOnlyMessage(avEvent, gate.role), flags: 64, allowedMentions: { parse: [] } });
 
         await interaction.deferReply({ flags: 64 });
 

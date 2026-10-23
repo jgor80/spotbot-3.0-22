@@ -440,6 +440,8 @@ function createAutopilot(deps) {
       const responses = await events.loadResponses(event.id);
       pool = [...responses.filter((r) => r.response === 'yes'), ...responses.filter((r) => r.response === 'maybe')].map((r) => r.discord_user_id);
     }
+    // League games: only signed players make the team sheet
+    pool = await events.onlySigned(event, pool);
     if (!pool.length) return;
 
     const plan = await draft(event, club, pool.slice(0, 30));

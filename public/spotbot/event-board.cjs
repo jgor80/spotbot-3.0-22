@@ -123,18 +123,35 @@ function findSignedRole(roles, club) {
 }
 
 // Who the announcement pings:
-// - notify "none": nobody; "everyone": @everyone; "signed": the signed-players role
+// - notify "none": nobody
+// - league games with a signed-players role always ping that role and nobody else: only
+//   signed players can answer them, so a picked role or @everyone is ignored
+// - otherwise notify "everyone": @everyone; "signed": the signed-players role
 // - otherwise a role picked on the event (or its preset) wins
-// - league games ping the signed-players role; everything else (BYOT, friendlies, practice,
-//   tournaments, big nights) pings @everyone
-// A league game with no signed-players role falls back to @everyone and says so.
+// - everything else (BYOT, friendlies, practice, tournaments, big nights) pings @everyone
+// A league game with no signed-players role falls back to the normal rules and says so.
 function choosePing({ notify = null, pingRoleId = null, league = false, signedRoleId = null } = {}) {
   if (notify === 'none') return { kind: 'none' };
+  if (league && signedRoleId) return { kind: 'role', roleId: signedRoleId, signed: true };
   if (notify === 'everyone') return { kind: 'everyone' };
   if (notify === 'signed') return signedRoleId ? { kind: 'role', roleId: signedRoleId, signed: true } : { kind: 'everyone', missingSigned: true };
   if (pingRoleId) return { kind: 'role', roleId: pingRoleId };
-  if (league) return signedRoleId ? { kind: 'role', roleId: signedRoleId, signed: true } : { kind: 'everyone', missingSigned: true };
+  if (league) return { kind: 'everyone', missingSigned: true };
   return { kind: 'everyone' };
+}
+
+// Whether a member holds a role: a cached GuildMember (roles.cache) or the raw interaction
+// member Discord sends when the member isn't cached (roles is an array of ids)
+function memberHasRole(member, roleId) {
+  if (!member || !roleId) return false;
+  const roles = member.roles;
+  if (Array.isArray(roles)) return roles.includes(roleId);
+  if (roles?.cache?.has) return roles.cache.has(roleId);
+  return false;
+}
+
+function signedOnlyMessage(event, role) {
+  return `🔒 **${event.title}** is a league game, so only players with the ${role ? `<@&${role.id}>` : 'signed-players'} role can sign up. Ask a club leader if you should have it.`;
 }
 
 function pingMessage(plan) {
@@ -159,6 +176,8 @@ module.exports = {
   positionCoverage,
   findSignedRole,
   choosePing,
+  memberHasRole,
+  signedOnlyMessage,
   pingMessage,
   pingLabel,
 };

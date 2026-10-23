@@ -175,7 +175,10 @@ function createMatchNight(deps) {
     const channel = await client.channels.fetch(event.channel_id).catch(() => null);
     if (!channel?.send) return null;
     if (missingChannelPerms(channel, channel.guild.members.me).length) return null;
-    const { ids, lineup } = await expectedTonight(event);
+    const tonight = await expectedTonight(event);
+    const lineup = tonight.lineup;
+    // League games: only signed players are tagged
+    const ids = await events.onlySigned(event, tonight.ids);
     const board = await events.fetchBoardMessage(event);
     // Matchday Programme goes up once, just before check-in opens
     const prog = await programme.build(event, lineup).catch((err) => console.warn(`[matchnight] programme: ${err.message}`));
