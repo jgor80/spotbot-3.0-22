@@ -226,3 +226,15 @@ test('the Network Wire ranks SR risers and spots promotions', () => {
   assert.deepEqual(risers.map((r) => [r.club.name, r.gain]), [['One', 60]]);
   assert.deepEqual(moves.map((m) => [m.club.name, m.up]), [['One', true]]);
 });
+
+test('the website badge catalogue matches the bot', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { BADGES } = require('./career.cjs');
+  const web = fs.readFileSync(path.join(__dirname, '../../src/lib/clubLife.ts'), 'utf8');
+  for (const [key, b] of Object.entries(BADGES)) {
+    assert.ok(web.includes(`${key}: { name: "${b.name}", glyph: "${b.glyph}", tier: "${b.tier}"`), `src/lib/clubLife.ts is missing or differs on ${key}`);
+  }
+  const { BELTS } = require('./stat-roles.cjs');
+  for (const key of BELTS) assert.ok(web.includes(`  ${key}: { name:`), `belt ${key} missing on the website`);
+});
