@@ -295,6 +295,377 @@ export type Database = {
         }
         Relationships: []
       }
+      club_press: {
+        Row: {
+          body: Json
+          club_key: string
+          guild_id: string
+          headline: string | null
+          id: string
+          kind: string
+          lead_key: string | null
+          match_id: string | null
+          phrase_keys: string[]
+          player_keys: string[]
+          printed_at: string
+          story_keys: string[]
+        }
+        Insert: {
+          body?: Json
+          club_key: string
+          guild_id: string
+          headline?: string | null
+          id?: string
+          kind: string
+          lead_key?: string | null
+          match_id?: string | null
+          phrase_keys?: string[]
+          player_keys?: string[]
+          printed_at?: string
+          story_keys?: string[]
+        }
+        Update: {
+          body?: Json
+          club_key?: string
+          guild_id?: string
+          headline?: string | null
+          id?: string
+          kind?: string
+          lead_key?: string | null
+          match_id?: string | null
+          phrase_keys?: string[]
+          player_keys?: string[]
+          printed_at?: string
+          story_keys?: string[]
+        }
+        Relationships: []
+      }
+      player_career: {
+        Row: {
+          apps: number
+          assists: number
+          best_match_at: string | null
+          best_match_id: string | null
+          best_rating: number | null
+          braces: number
+          clean_sheets: number
+          club_key: string
+          cs_streak: number
+          discord_user_id: string | null
+          first_match_at: string | null
+          goals: number
+          guild_id: string
+          hat_tricks: number
+          last_match_at: string | null
+          lines: Json
+          motm: number
+          player_key: string
+          player_name: string
+          updated_at: string
+          wins: number
+        }
+        Insert: {
+          apps?: number
+          assists?: number
+          best_match_at?: string | null
+          best_match_id?: string | null
+          best_rating?: number | null
+          braces?: number
+          clean_sheets?: number
+          club_key: string
+          cs_streak?: number
+          discord_user_id?: string | null
+          first_match_at?: string | null
+          goals?: number
+          guild_id: string
+          hat_tricks?: number
+          last_match_at?: string | null
+          lines?: Json
+          motm?: number
+          player_key: string
+          player_name: string
+          updated_at?: string
+          wins?: number
+        }
+        Update: {
+          apps?: number
+          assists?: number
+          best_match_at?: string | null
+          best_match_id?: string | null
+          best_rating?: number | null
+          braces?: number
+          clean_sheets?: number
+          club_key?: string
+          cs_streak?: number
+          discord_user_id?: string | null
+          first_match_at?: string | null
+          goals?: number
+          guild_id?: string
+          hat_tricks?: number
+          last_match_at?: string | null
+          lines?: Json
+          motm?: number
+          player_key?: string
+          player_name?: string
+          updated_at?: string
+          wins?: number
+        }
+        Relationships: []
+      }
+      player_badges: {
+        Row: {
+          badge: string
+          club_key: string
+          detail: string | null
+          discord_user_id: string | null
+          earned_at: string
+          featured: boolean
+          guild_id: string
+          id: string
+          match_id: string | null
+          player_key: string
+          player_name: string
+          tier: string
+        }
+        Insert: {
+          badge: string
+          club_key: string
+          detail?: string | null
+          discord_user_id?: string | null
+          earned_at?: string
+          featured?: boolean
+          guild_id: string
+          id?: string
+          match_id?: string | null
+          player_key: string
+          player_name: string
+          tier: string
+        }
+        Update: {
+          badge?: string
+          club_key?: string
+          detail?: string | null
+          discord_user_id?: string | null
+          earned_at?: string
+          featured?: boolean
+          guild_id?: string
+          id?: string
+          match_id?: string | null
+          player_key?: string
+          player_name?: string
+          tier?: string
+        }
+        Relationships: []
+      }
+      trophy_reigns: {
+        Row: {
+          club_key: string
+          discord_user_id: string | null
+          ended_at: string | null
+          guild_id: string
+          id: string
+          player_key: string
+          player_name: string
+          started_at: string
+          trophy: string
+        }
+        Insert: {
+          club_key: string
+          discord_user_id?: string | null
+          ended_at?: string | null
+          guild_id: string
+          id?: string
+          player_key: string
+          player_name: string
+          started_at?: string
+          trophy: string
+        }
+        Update: {
+          club_key?: string
+          discord_user_id?: string | null
+          ended_at?: string | null
+          guild_id?: string
+          id?: string
+          player_key?: string
+          player_name?: string
+          started_at?: string
+          trophy?: string
+        }
+        Relationships: []
+      }
+      club_award_ballots: {
+        Row: {
+          categories: Json
+          channel_id: string | null
+          closed_at: string | null
+          closes_at: string
+          club_key: string
+          created_by_discord_id: string | null
+          guild_id: string
+          id: string
+          kind: string
+          message_id: string | null
+          opens_at: string
+          period_key: string
+          period_label: string
+          results: Json | null
+          status: string
+        }
+        Insert: {
+          categories: Json
+          channel_id?: string | null
+          closed_at?: string | null
+          closes_at: string
+          club_key: string
+          created_by_discord_id?: string | null
+          guild_id: string
+          id?: string
+          kind: string
+          message_id?: string | null
+          opens_at?: string
+          period_key: string
+          period_label: string
+          results?: Json | null
+          status?: string
+        }
+        Update: {
+          categories?: Json
+          channel_id?: string | null
+          closed_at?: string | null
+          closes_at?: string
+          club_key?: string
+          created_by_discord_id?: string | null
+          guild_id?: string
+          id?: string
+          kind?: string
+          message_id?: string | null
+          opens_at?: string
+          period_key?: string
+          period_label?: string
+          results?: Json | null
+          status?: string
+        }
+        Relationships: []
+      }
+      club_award_votes: {
+        Row: {
+          ballot_id: string
+          category: string
+          choice: string
+          discord_user_id: string
+          voted_at: string
+        }
+        Insert: {
+          ballot_id: string
+          category: string
+          choice: string
+          discord_user_id: string
+          voted_at?: string
+        }
+        Update: {
+          ballot_id?: string
+          category?: string
+          choice?: string
+          discord_user_id?: string
+          voted_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "club_award_votes_ballot_id_fkey"
+            columns: ["ballot_id"]
+            isOneToOne: false
+            referencedRelation: "club_award_ballots"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      player_goals: {
+        Row: {
+          baseline: number | null
+          club_key: string
+          discord_user_id: string | null
+          games: number | null
+          guild_id: string
+          id: string
+          label: string
+          metric: string
+          player_key: string
+          player_name: string
+          result: number | null
+          status: string
+          target: number
+          week_start: string
+        }
+        Insert: {
+          baseline?: number | null
+          club_key: string
+          discord_user_id?: string | null
+          games?: number | null
+          guild_id: string
+          id?: string
+          label: string
+          metric: string
+          player_key: string
+          player_name: string
+          result?: number | null
+          status?: string
+          target: number
+          week_start: string
+        }
+        Update: {
+          baseline?: number | null
+          club_key?: string
+          discord_user_id?: string | null
+          games?: number | null
+          guild_id?: string
+          id?: string
+          label?: string
+          metric?: string
+          player_key?: string
+          player_name?: string
+          result?: number | null
+          status?: string
+          target?: number
+          week_start?: string
+        }
+        Relationships: []
+      }
+      player_wrapped: {
+        Row: {
+          club_key: string
+          created_at: string
+          data: Json
+          discord_user_id: string | null
+          guild_id: string
+          period_key: string
+          period_label: string
+          player_key: string
+          player_name: string
+        }
+        Insert: {
+          club_key: string
+          created_at?: string
+          data: Json
+          discord_user_id?: string | null
+          guild_id: string
+          period_key: string
+          period_label: string
+          player_key: string
+          player_name: string
+        }
+        Update: {
+          club_key?: string
+          created_at?: string
+          data?: Json
+          discord_user_id?: string | null
+          guild_id?: string
+          period_key?: string
+          period_label?: string
+          player_key?: string
+          player_name?: string
+        }
+        Relationships: []
+      }
       club_matches: {
         Row: {
           club_key: string
