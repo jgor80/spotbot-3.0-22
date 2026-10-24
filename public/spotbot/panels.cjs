@@ -67,6 +67,8 @@ const PLAYER_ACTIONS = [
   { id: 'lfcverify', label: 'Check a Resume', emoji: '🔎', cmd: 'lfc', sub: 'verify' },
   { id: 'apply', label: 'Apply to Trial', emoji: '✍️', cmd: 'apply' },
   { id: 'claimwin', label: 'Claim a Win', emoji: '🥇', cmd: 'claimwin' },
+  { id: 'mycareer', label: 'My Career', emoji: '🏅', cmd: 'career', sub: 'view' },
+  { id: 'funzone', label: 'Fun Zone', emoji: '🎉', cmd: 'fun', sub: 'panel' },
   { id: 'aiaccess', label: 'AI Assistant', emoji: '🤖', cmd: 'aiaccess', fixed: { action: 'status' } },
   { id: 'airevoke', label: 'Revoke AI Access', emoji: '🔌', cmd: 'aiaccess', fixed: { action: 'revoke' } },
 ];
@@ -209,6 +211,20 @@ const AREAS = [
       { id: 'sc_watchlist', label: 'Watchlist', emoji: '👁️', cmd: 'scout', sub: 'watchlist' },
       { id: 'sc_add', label: 'Watch a Player', emoji: '➕', cmd: 'scout', sub: 'add' },
       { id: 'sc_remove', label: 'Unwatch', emoji: '➖', cmd: 'scout', sub: 'remove' },
+    ],
+  },
+  {
+    key: 'clublife',
+    label: 'Club Life',
+    emoji: '🎉',
+    blurb: 'Badges, Club Wrapped, Awards Night, belts and the Fun Zone: the fun side of the club.',
+    actions: [
+      { id: 'cl_awards', label: 'Start Awards Night', emoji: '🏆', cmd: 'clublife', sub: 'awards', style: 'primary' },
+      { id: 'cl_wrapped', label: 'Post Club Wrapped', emoji: '🎁', cmd: 'clublife', sub: 'wrapped' },
+      { id: 'cl_funzone', label: 'Post Fun Zone', emoji: '🎉', cmd: 'fun', sub: 'panel', fixed: { post: true } },
+      { id: 'cl_badges', label: 'Badge Wall', emoji: '🏅', cmd: 'clublife', sub: 'badges' },
+      { id: 'cl_belts', label: 'Belts', emoji: '🥊', cmd: 'clublife', sub: 'belts' },
+      { id: 'cl_settings', label: 'Club Life Settings', emoji: '⚙️', cmd: 'clublife', sub: 'settings' },
     ],
   },
   {

@@ -362,6 +362,7 @@ function createBroadcast(deps) {
 
     return G.recapGraphic({
       clubName: club.name,
+      paperName: identityOf(club).paper,
       opponentName: match.opponent,
       scoreFor: match.scoreFor,
       scoreAgainst: match.scoreAgainst,
@@ -445,6 +446,75 @@ function createBroadcast(deps) {
       files.push(new AttachmentBuilder(png, { name: `cards-${i / CARDS_PER_IMAGE + 1}.png` }));
     }
     return { content: `🃏 **${club.name}** squad cards · ${label.toLowerCase()}`, files };
+  }
+
+  // ---------- Special edition cards ----------
+
+  // One player's card for a special edition (upgrade, Player of the Night, award winner)
+  async function specialCard(guildId, club, t, edition, editionNote, overall) {
+    const prefs = await events.serverPrefs(guildId);
+    const avatars = await avatarsFor(guildId, [t.name]);
+    const card = {
+      name: t.name,
+      position: LINE_LABEL[t.line],
+      overall: overall || derivedOverall(t.avgRating),
+      avatar: avatars.get(t.key) || null,
+      stats: cardStats(t),
+      badges: badgesFor(t, [t]),
+      edition,
+      editionNote,
+    };
+    return G.cardSheet({ cards: [card], title: club.name, subtitle: G.TIERS?.[edition]?.label || '', accent: clubAccent(club, prefs.branding, undefined), footer: prefs.branding?.footer || 'GafferBot' });
+  }
+
+  // After new matches: a card whose rating (last 30 days) jumps 3+ gets an upgrade card. The first time a
+  // club is seen, ratings are only remembered.
+  const UPGRADE_JUMP = 3;
+  async function cardUpgrades(guildId, club) {
+    if (!autopilot.isOn(club, 'graphics') || !(await premium.isPremium(guildId))) return;
+    const matches = await loadClubMatches(guildId, club.key, Date.now() - 30 * DAY);
+    const totals = [...seasonTotals(matches).values()].filter((t) => t.games >= MIN_CARD_GAMES && t.rated);
+    const overalls = await eaOveralls(club).catch(() => new Map());
+    const now = Object.fromEntries(totals.map((t) => [t.key, overalls.get(t.key) || derivedOverall(t.avgRating)]));
+    const before = club.autopilot?.card_ovr || null;
+    await autopilot.updateClub(guildId, club.key, (ap) => {
+      ap.card_ovr = { ...(ap.card_ovr || {}), ...now };
+    });
+    if (!before) return;
+    const ups = totals.filter((t) => before[t.key] && now[t.key] - before[t.key] >= UPGRADE_JUMP).slice(0, 3);
+    if (!ups.length) return;
+    const channel = await autopilot.postChannel(guildId, club);
+    if (!channel) return;
+    for (const t of ups) {
+      const png = await specialCard(guildId, club, t, 'upgrade', `+${now[t.key] - before[t.key]}`, now[t.key]).catch(() => null);
+      if (!png) continue;
+      await channel.send({ content: `📈 **Card upgrade:** ${t.name} goes ${before[t.key]} → **${now[t.key]}** on recent form.`, files: [new AttachmentBuilder(png, { name: 'upgrade.png' })], allowedMentions: { parse: [] } }).catch(() => {});
+    }
+  }
+
+  // Session recap extra: a Player of the Night card for the best average rating (2+ games)
+  async function playerOfTheNight({ guildId, club, matches }) {
+    if (!autopilot.isOn(club, 'graphics') || !(await premium.isPremium(guildId)) || matches.length < 2) return null;
+    const best = [...seasonTotals(matches).values()].filter((t) => t.games >= 2 && t.rated).sort((a, b) => b.avgRating - a.avgRating || b.goals - a.goals)[0];
+    if (!best) return null;
+    const png = await specialCard(guildId, club, best, 'potn', `${best.avgRating.toFixed(1)}`).catch(() => null);
+    if (!png) return null;
+    return { embeds: [new EmbedBuilder().setTitle(`🌟 Player of the Night · ${best.name}`).setDescription(`${best.avgRating.toFixed(1)} average over ${best.games} games${best.goals ? `, ${best.goals} goal${best.goals === 1 ? '' : 's'}` : ''}${best.assists ? `, ${best.assists} assist${best.assists === 1 ? '' : 's'}` : ''}.`).setImage('attachment://potn.png').setColor(0xa855f7)], files: [new AttachmentBuilder(png, { name: 'potn.png' })] };
+  }
+
+  // Portraits for posters: each player's rendered Studio art, else an original upload, else nothing.
+  // names -> Map(lowercase name -> data URL)
+  async function portraitsFor(guildId, names, seed = '') {
+    const out = new Map();
+    const list = [...new Set(names.filter(Boolean))];
+    if (!list.length) return out;
+    const [renders, uploads] = await Promise.all([assetsFor(list, 'generated', guildId).catch(() => new Map()), uploadsFor(list, guildId).catch(() => new Map())]);
+    await Promise.all(list.map(async (n) => {
+      const key = n.toLowerCase();
+      const img = (renders.has(key) ? await photoOf(renders.get(key), `${seed}${n}`) : null) || (uploads.has(key) ? await photoOf(uploads.get(key), `${seed}${n}`) : null);
+      if (img) out.set(key, img);
+    }));
+    return out;
   }
 
   // ---------- Team of the Week ----------
@@ -578,10 +648,12 @@ function createBroadcast(deps) {
   }
 
   autopilot.setRecapImage(recapImage);
+  autopilot.onNewMatches?.((guildId, club) => cardUpgrades(guildId, club).catch((err) => console.warn(`[broadcast] card upgrades failed: ${err.message}`)));
+  autopilot.onSessionEnd?.(playerOfTheNight);
   if (autopilot.setEditionImage) autopilot.setEditionImage(editionImage);
   events.onTick((now) => tick(now).catch((err) => console.warn(`[broadcast] tick failed: ${err.message}`)));
 
-  return { handleInteraction, buildCards, buildTotw, recapImage, backgroundFor, editionImage };
+  return { handleInteraction, buildCards, buildTotw, recapImage, backgroundFor, editionImage, portraitsFor, specialCard };
 }
 
 module.exports = { createBroadcast, BROADCAST_SUBCOMMANDS, derivedOverall, badgesFor };

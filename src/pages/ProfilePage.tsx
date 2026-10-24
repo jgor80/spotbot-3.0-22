@@ -1,5 +1,6 @@
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PlayerProfileView } from "@/components/player/PlayerProfile";
+import { CareerSection } from "@/components/clublife/CareerSection";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useGuild } from "@/contexts/GuildContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -230,7 +231,10 @@ export default function ProfilePage() {
                   </CardContent>
                 </Card>
               ) : player ? (
-                <PlayerProfileView player={player} />
+                <>
+                  <PlayerProfileView player={player} />
+                  {selectedGuildId && profileDiscordId && <CareerSection guildId={selectedGuildId} discordUserId={profileDiscordId} />}
+                </>
               ) : (
                 <Card>
                   <CardContent className="py-8 text-center text-muted-foreground">

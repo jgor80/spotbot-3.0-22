@@ -200,7 +200,7 @@ function recapGraphic(d) {
   <rect width="${W}" height="${H}" fill="url(#veil)"/>
   <rect width="${W}" height="52" fill="#07120e" fill-opacity="0.94"/>
   <rect width="10" height="52" fill="${accent}"/>
-  <text x="38" y="35" font-family="${HEAD}" font-weight="700" font-size="24" fill="#ffffff">${d.headline ? `<tspan fill="${accent}">LA GAZZETTA</tspan> / ${esc(clip(d.headline, 70)).toUpperCase()}` : 'GAFFERBOT / MATCHDAY'}</text>
+  <text x="38" y="35" font-family="${HEAD}" font-weight="700" font-size="24" fill="#ffffff">${d.headline ? `<tspan fill="${accent}">${esc(clip(d.paperName || 'MATCHDAY', 28).toUpperCase())}</tspan> / ${esc(clip(d.headline, 70)).toUpperCase()}` : 'GAFFERBOT / MATCHDAY'}</text>
   <text x="1550" y="34" text-anchor="end" font-family="${BODY}" font-size="18" fill="#b7c6bf">${esc(clip(d.dateText, 60))}</text>
   <rect x="32" y="74" width="1536" height="166" fill="#07120e" fill-opacity="0.90"/>
   ${crest(110, 157, 52, d.crestFor, d.clubName, accent)}
@@ -237,21 +237,27 @@ const TIERS = {
   gold: { top: '#f7e08b', bottom: '#c9a227', ink: '#3b2f05', sub: '#4a3b07', edge: '#fff4c2', label: 'GOLD' },
   silver: { top: '#e5e7eb', bottom: '#9ca3af', ink: '#1f2937', sub: '#374151', edge: '#ffffff', label: 'SILVER' },
   bronze: { top: '#e0b089', bottom: '#9a5b2e', ink: '#2b1606', sub: '#3d220c', edge: '#f6d3b5', label: 'BRONZE' },
+  // Special editions: a big rating jump, the night's best player, an Awards Night winner
+  upgrade: { top: '#064e3b', bottom: '#022c22', ink: '#6ee7b7', sub: '#d1fae5', edge: '#34d399', label: 'UPGRADE' },
+  potn: { top: '#4c1d95', bottom: '#1e1b4b', ink: '#f0abfc', sub: '#ede9fe', edge: '#e879f9', label: 'PLAYER OF THE NIGHT' },
+  award: { top: '#0a0a0a', bottom: '#1c1917', ink: '#d4af37', sub: '#f5f0e1', edge: '#d4af37', label: 'AWARD WINNER' },
 };
 
-function tierFor(overall, inForm) {
+function tierFor(overall, inForm, edition) {
+  if (edition && TIERS[edition]) return edition;
   if (inForm) return 'inform';
   if (overall >= 75) return 'gold';
   if (overall >= 65) return 'silver';
   return 'bronze';
 }
 
-// card: { name, position, overall, avatar, stats: [[label, value] x6], badges: [], inForm, club }
+// card: { name, position, overall, avatar, stats: [[label, value] x6], badges: [], inForm, club,
+//         edition: 'upgrade' | 'potn' | 'award' for a special card, editionNote: e.g. '+4' }
 function cardSvg(card, x, y) {
-  if (card.savedCard) return `<image href="${card.savedCard}" x="${x}" y="${y}" width="300" height="440" preserveAspectRatio="xMidYMid meet"/>`;
+  if (card.savedCard && !card.edition) return `<image href="${card.savedCard}" x="${x}" y="${y}" width="300" height="440" preserveAspectRatio="xMidYMid meet"/>`;
   const w = 300;
   const h = 440;
-  const t = TIERS[tierFor(card.overall, card.inForm)];
+  const t = TIERS[tierFor(card.overall, card.inForm, card.edition)];
   const id = `k${Math.round(x)}_${Math.round(y)}`;
   const shape = `M${x + 30} ${y} H${x + w - 30} Q${x + w} ${y} ${x + w} ${y + 40} V${y + h - 70} Q${x + w} ${y + h - 30} ${x + w / 2} ${y + h} Q${x} ${y + h - 30} ${x} ${y + h - 70} V${y + 40} Q${x} ${y} ${x + 30} ${y} Z`;
   const stats = (card.stats || []).slice(0, 6);
@@ -285,7 +291,8 @@ function cardSvg(card, x, y) {
     <text x="${x + 56}" y="${y + 90}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="64" fill="${t.ink}">${esc(card.ratingDisplay ?? (Number(card.overall) || '–'))}</text>
     <text x="${x + 56}" y="${y + 126}" text-anchor="middle" font-family="${HEAD}" font-weight="500" font-size="28" fill="${t.ink}">${esc(card.position || '')}</text>
     ${card.ratingLabel ? `<text x="${x + 56}" y="${y + 148}" text-anchor="middle" font-family="${HEAD}" font-size="12" fill="${t.sub}">${esc(card.ratingLabel)}</text>` : ''}
-    ${card.inForm && !card.ratingLabel ? `<text x="${x + 56}" y="${y + 156}" text-anchor="middle" font-family="${HEAD}" font-weight="500" font-size="14" letter-spacing="1" fill="${t.ink}">IN FORM</text>` : ''}
+    ${card.edition ? `<text x="${x + w / 2}" y="${y + 28}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="15" letter-spacing="2" fill="${t.ink}">${esc(t.label)}${card.editionNote ? ` ${esc(card.editionNote)}` : ''}</text>` : ''}
+    ${card.inForm && !card.ratingLabel && !card.edition ? `<text x="${x + 56}" y="${y + 156}" text-anchor="middle" font-family="${HEAD}" font-weight="500" font-size="14" letter-spacing="1" fill="${t.ink}">IN FORM</text>` : ''}
     ${avatar}
     <text x="${x + w / 2}" y="${y + 268}" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="${fit(card.name, 250, 34, 0.5, 16)}" fill="${t.ink}">${esc(clip(card.name, 22).toUpperCase())}</text>
     <line x1="${x + 40}" y1="${y + 286}" x2="${x + w - 40}" y2="${y + 286}" stroke="${t.ink}" stroke-opacity="0.35" stroke-width="2"/>
@@ -457,4 +464,4 @@ function frontPage(d) {
   return render(svg);
 }
 
-module.exports = { render, esc, fetchImage, eaCrestUrl, recapGraphic, cardSheet, totwPoster, frontPage, tierFor, hex };
+module.exports = { render, esc, fetchImage, eaCrestUrl, recapGraphic, cardSheet, totwPoster, frontPage, tierFor, hex, TIERS };

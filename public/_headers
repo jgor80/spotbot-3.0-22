@@ -31,6 +31,10 @@
   X-Robots-Tag: noindex
 /profile
   X-Robots-Tag: noindex
+/paper
+  X-Robots-Tag: noindex
+/wrapped
+  X-Robots-Tag: noindex
 /settings
   X-Robots-Tag: noindex
 /drafts

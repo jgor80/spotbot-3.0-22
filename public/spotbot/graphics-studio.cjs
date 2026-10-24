@@ -645,6 +645,11 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const number = numRaw && Number(numRaw) >= 1 && Number(numRaw) <= 99 ? String(Number(numRaw)) : '';
     return { ...d, name: f('name') || d.name, position: f('position'), overall, number, stats, dataLabel: changed ? 'MEMBER-EDITED' : d.seasonLabel, overallLabel: changed ? 'MEMBER OVR' : 'EA OVR', seasonLabel: stats.length ? changed ? 'MEMBER-EDITED' : d.seasonLabel : 'VIRTUAL PRO' };
   }
+  async function featuredFrame(guildId, userId) {
+    const { data } = await supabase.from('player_badges').select('badge, tier').eq('guild_id', guildId).eq('discord_user_id', userId).eq('featured', true).limit(1).maybeSingle().then((r) => r, () => ({ data: null }));
+    const def = data && require('./career.cjs').BADGES[data.badge];
+    return def && ['rare', 'epic', 'legendary'].includes(data.tier) ? { name: def.name, glyph: def.glyph, tier: data.tier } : null;
+  }
   async function renderCard({ guildId, club, style, d }) {
     club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
     // Cards are only drawn for someone still in the server.
@@ -655,9 +660,11 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const a = await art({ kind: 'card', style: style === 'sicilia' || style === 'yearbook' ? style : STYLES[style]?.cardOnly ? 'vintage' : style, club_name: club.name, kit: club.kit || {}, discord_user_id: d.userId, guild_id: guildId, position: d.position || undefined, ...(d.photoId ? { photo_asset_id: d.photoId } : {}), ...variation, ...(style === 'yearbook' ? { pose: 'headshot' } : {}), has_stats: d.stats.length > 0, has_tagline: Boolean(d.tagline), ...(d.number ? { kit_number_override: Number(d.number) } : {}), ...(printCard || !d.stats.length ? { composition: 'lower-third' } : {}) });
     if (a.error) return a;
     const number = d.number !== undefined ? d.number : (a.kitNumber || '');
+    // A rare badge the player chose to wear (/me → My Career) frames the card
+    const frame = await featuredFrame(guildId, d.userId);
     const png = playerCard({
       art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), name: d.name, position: shortPosition(d.position) || null,
-      overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number,
+      overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number, frame,
     });
     const backName = `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_');
     const back = d.noBack ? null : style === 'sicilia'

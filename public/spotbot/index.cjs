@@ -72,6 +72,10 @@ const { createAutoLink } = require('./auto-link.cjs');
 const { createXboxLink } = require('./xbox-link.cjs');
 const { createPresenceLog } = require('./xbox-presence-log.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
+const { createCareer } = require('./career.cjs');
+const { createDevGoals } = require('./dev-goals.cjs');
+const { createClubLife } = require('./club-life.cjs');
+const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
 const { createLineupAi } = require('./lineup-ai.cjs');
@@ -555,8 +559,18 @@ const coach = createCoach({ ...premiumDeps, openai });
 const funZone = createFunZone({ getGuildState, saveGuildSettings, loadMatches: managerHub.loadMatches });
 autopilot.onSessionEnd(funZone.onSessionEnd);
 // Clips & Highlights: Xbox clips recorded during club matches, plus match tags on shared clips
-const clips = require('./clips.cjs').createClips({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, updateClub: autopilot.updateClub, loadMatches: managerHub.loadMatches, client: () => client });
+const clips = require('./clips.cjs').createClips({
+  supabaseUrl, secret: FUNCTION_SECRET, getGuildState, updateClub: autopilot.updateClub, loadMatches: managerHub.loadMatches, client: () => client,
+  eaNameOf: async (userId) => (await supabase.from('profiles').select('ea_username').eq('discord_user_id', userId).maybeSingle()).data?.ea_username || null,
+});
 autopilot.onNewMatches(clips.onNewMatches);
+// Club Life: careers and badges, weekly coach goals, the belt report, Club Wrapped, Awards Night,
+// division posters and the Network Wire
+const career = createCareer({ supabase, autopilot, events: clubEvents, getGuildState, client: () => client });
+const devGoals = createDevGoals({ supabase, autopilot, loadMatches: managerHub.loadMatches, linkedIds: career.linkedIds });
+autopilot.onDigest((guildId, club) => statRoles.beltReport(guildId, club));
+const networkWire = createNetworkWire({ supabase, network, getGuildState, autopilot, client: () => client, pressLog: autopilot.pressLog });
+const clubLife = createClubLife({ supabase, autopilot, events: clubEvents, getGuildState, canManageClub: squads.canManageClub, loadMatches: managerHub.loadMatches, career, devGoals, statRoles, broadcast, wire: networkWire, dashboardUrl: DASHBOARD_URL });
 
 // MessageContent is required to see attachments on normal channel posts (#pro-photos detection).
 // It's a privileged intent: if it isn't enabled in the Developer Portal, login falls back without it.
@@ -4132,6 +4146,7 @@ async function routeInteraction(interaction) {
     if (await aiAccess.handleInteraction(interaction)) return;
     if (await graphicsStudio.handleInteraction(interaction)) return;
     if (await funZone.handleInteraction(interaction)) return;
+    if (await clubLife.handleInteraction(interaction)) return;
     if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;
