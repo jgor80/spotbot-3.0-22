@@ -111,7 +111,8 @@ function positionCoverage(responses, positions = new Map()) {
 }
 
 // The club's signed-players role: the one picked in Events → Signed Players Role, else a role
-// named like "Signed Players" / "signed-players" / "Signed".
+// named like "Signed Players" / "signed-players" / "Signed", else one with "signed" in its name
+// ("Palermo Signed", "✍️ Signed Player") as long as it isn't an "unsigned" role.
 function findSignedRole(roles, club) {
   const list = roles ? [...(roles.values ? roles.values() : roles)] : [];
   if (club?.signed_role_id) {
@@ -119,24 +120,30 @@ function findSignedRole(roles, club) {
     if (picked) return picked;
   }
   const squash = (n) => String(n || '').toLowerCase().replace(/[^a-z]/g, '');
-  return list.find((r) => ['signedplayers', 'signedplayer', 'signed'].includes(squash(r.name))) || null;
+  return (
+    list.find((r) => ['signedplayers', 'signedplayer', 'signed'].includes(squash(r.name))) ||
+    list.find((r) => /signed/.test(squash(r.name)) && !/unsigned/.test(squash(r.name))) ||
+    null
+  );
 }
 
 // Who the announcement pings:
 // - notify "none": nobody
-// - league games with a signed-players role always ping that role and nobody else: only
-//   signed players can answer them, so a picked role or @everyone is ignored
+// - league games never ping @everyone: the signed-players role and nobody else (a picked role
+//   or @everyone is ignored, since only signed players can answer them). With no signed role
+//   they ping a picked role, else nobody, and the leader is told to pick the role.
 // - otherwise notify "everyone": @everyone; "signed": the signed-players role
 // - otherwise a role picked on the event (or its preset) wins
 // - everything else (BYOT, friendlies, practice, tournaments, big nights) pings @everyone
-// A league game with no signed-players role falls back to the normal rules and says so.
 function choosePing({ notify = null, pingRoleId = null, league = false, signedRoleId = null } = {}) {
   if (notify === 'none') return { kind: 'none' };
-  if (league && signedRoleId) return { kind: 'role', roleId: signedRoleId, signed: true };
+  if (league) {
+    if (signedRoleId) return { kind: 'role', roleId: signedRoleId, signed: true };
+    return pingRoleId ? { kind: 'role', roleId: pingRoleId, missingSigned: true } : { kind: 'none', missingSigned: true };
+  }
   if (notify === 'everyone') return { kind: 'everyone' };
   if (notify === 'signed') return signedRoleId ? { kind: 'role', roleId: signedRoleId, signed: true } : { kind: 'everyone', missingSigned: true };
   if (pingRoleId) return { kind: 'role', roleId: pingRoleId };
-  if (league) return { kind: 'everyone', missingSigned: true };
   return { kind: 'everyone' };
 }
 
