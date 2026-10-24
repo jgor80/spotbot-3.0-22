@@ -5,6 +5,9 @@
 //   In-Form       average match rating above 8.5 over their last 5 games
 // Ties share a trophy. Players need their EA gamertag linked (/linkea) to receive roles.
 // Role ids live on the club (autopilot.trophy_roles); a deleted role is recreated next time.
+// Belts: every server keeps a history of who held each weekly trophy and for how long (trophy_reigns),
+// with or without the roles, so handovers read like title fights ("takes it from X after a 9-day reign"),
+// the Monday digest carries a belt report and the website's Trophy Room shows the longest reigns.
 
 const { EmbedBuilder, PermissionsBitField } = require('discord.js');
 const { activeClubs, resolveClub } = require('./manager-hub.cjs');
@@ -18,6 +21,8 @@ const LEGEND_MIN_CLUB_GAMES = 10;
 const IN_FORM_RATING = 8.5;
 const IN_FORM_GAMES = 5;
 const IRON_MAN_MIN = 3;
+// Weekly trophies that change hands; Club Legend and In-Form are standing honours, not belts
+const BELTS = ['boot', 'playmaker', 'glove', 'wall', 'mvp', 'ironman', 'sniper', 'fantasy'];
 const SNIPER_MIN_GOALS = 3;
 
 const TROPHIES = {
@@ -91,7 +96,7 @@ function createStatRoles(deps) {
     return out;
   }
 
-  async function compute(guildId, club) {
+  async function compute(guildId, club, { ea = true } = {}) {
     const matches = loadMatches ? await loadMatches(guildId, club.key).catch(() => []) : [];
     const since = Date.now() - WINDOW_DAYS * DAY;
     const totalsAll = seasonTotals(matches);
@@ -102,9 +107,9 @@ function createStatRoles(deps) {
       const k = String(p.ea_username || '').trim().toLowerCase();
       if (k) fantasy.set(k, (fantasy.get(k) || 0) + fantasyPoints(p, m));
     }
-    const ea = await eaGamesFor(club);
-    const holders = trophyHolders(totalsRecent, totalsAll, new Map([...ea].map(([k, v]) => [k, v.games])), matches.length, fantasy);
-    const names = new Map([...[...ea].map(([k, v]) => [k, v.name]), ...[...totalsAll.values()].map((t) => [t.key, t.name])]);
+    const eaGames = ea ? await eaGamesFor(club) : new Map();
+    const holders = trophyHolders(totalsRecent, totalsAll, new Map([...eaGames].map(([k, v]) => [k, v.games])), matches.length, fantasy);
+    const names = new Map([...[...eaGames].map(([k, v]) => [k, v.name]), ...[...totalsAll.values()].map((t) => [t.key, t.name])]);
     return { holders, totalsRecent, totalsAll, names, matches: matches.length };
   }
 
@@ -236,23 +241,105 @@ function createStatRoles(deps) {
     return interaction.editReply({ embeds: [await standingsEmbed(interaction.guildId, club, { ...computed, ids })], allowedMentions: { parse: [] } });
   }
 
-  // After new matches land: move the roles and say who took what
-  async function onNewMatches(guildId, club) {
-    if (!autopilot.isOn(club, 'trophies') || !(await premium.isPremium(guildId))) return;
-    const result = await sync(guildId, club);
-    if (result.error) {
-      console.warn(`[trophies] ${guildId}/${club.key}: ${result.error}`);
-      return;
+  // ---------- Belts: reign history ----------
+
+  // Close the reigns of players who lost a belt and open them for new holders. Returns the handovers:
+  // [{ kind, to: [{ key, name }], from: [{ key, name, days }] }]. The first run for a club opens every
+  // reign quietly.
+  async function trackReigns(guildId, club, holders, names) {
+    const { data: open } = await supabase.from('trophy_reigns').select('id, trophy, player_key, player_name, started_at').eq('guild_id', guildId).eq('club_key', club.key).is('ended_at', null);
+    const { count } = open?.length ? { count: open.length } : await supabase.from('trophy_reigns').select('id', { count: 'exact', head: true }).eq('guild_id', guildId).eq('club_key', club.key);
+    const first = !count;
+    const now = new Date();
+    const handovers = [];
+    const ids = await linkedIds([...new Set(BELTS.flatMap((k) => holders[k] || []))], names);
+    for (const kind of BELTS) {
+      const want = new Set(holders[kind] || []);
+      const mine = (open || []).filter((r) => r.trophy === kind);
+      const ending = mine.filter((r) => !want.has(r.player_key));
+      const starting = [...want].filter((k) => !mine.some((r) => r.player_key === k));
+      if (ending.length) await supabase.from('trophy_reigns').update({ ended_at: now.toISOString() }).in('id', ending.map((r) => r.id));
+      if (starting.length) {
+        await supabase.from('trophy_reigns').insert(starting.map((k) => ({ guild_id: guildId, club_key: club.key, trophy: kind, player_key: k, player_name: names.get(k) || k, discord_user_id: ids.get(k) || null, started_at: now.toISOString() })));
+      }
+      if (!first && (ending.length || starting.length)) {
+        handovers.push({
+          kind,
+          to: starting.map((k) => ({ key: k, name: names.get(k) || k, id: ids.get(k) || null })),
+          from: ending.map((r) => ({ key: r.player_key, name: r.player_name, days: Math.max(1, Math.round((now - new Date(r.started_at)) / DAY)) })),
+        });
+      }
     }
-    const lines = changeLines(result.changes || []);
+    return handovers;
+  }
+
+  // Title-fight lines for belt changes, with reign lengths
+  function handoverLines(handovers) {
+    const who = (p) => (p.id ? `<@${p.id}>` : `**${p.name}**`);
+    const reign = (f) => `${f.name}'s ${f.days}-day reign`;
+    return handovers.map(({ kind, to, from }) => {
+      const t = TROPHIES[kind];
+      if (to.length && from.length) return `${t.name}: ${to.map(who).join(', ')} take${to.length === 1 ? 's' : ''} the belt, ending ${from.map(reign).join(' and ')}`;
+      if (to.length) return `${t.name}: ${to.map(who).join(', ')} ${to.length === 1 ? 'joins' : 'join'} the holders`;
+      return `${t.name}: vacated, ending ${from.map(reign).join(' and ')}`;
+    });
+  }
+
+  // Current holders with reign length, and the longest reign on record per belt
+  async function beltStatus(guildId, clubKey) {
+    const { data } = await supabase.from('trophy_reigns').select('trophy, player_name, started_at, ended_at').eq('guild_id', guildId).eq('club_key', clubKey).order('started_at', { ascending: false }).limit(1000);
+    const now = Date.now();
+    const out = [];
+    for (const kind of BELTS) {
+      const rows = (data || []).filter((r) => r.trophy === kind);
+      const days = (r) => Math.max(1, Math.round(((r.ended_at ? new Date(r.ended_at).getTime() : now) - new Date(r.started_at).getTime()) / DAY));
+      const current = rows.filter((r) => !r.ended_at);
+      const longest = [...rows].sort((a, b) => days(b) - days(a))[0];
+      if (!rows.length) continue;
+      out.push({ kind, label: TROPHIES[kind].name, holders: current.map((r) => ({ name: r.player_name, days: days(r) })), longest: longest ? { name: longest.player_name, days: days(longest), current: !longest.ended_at } : null });
+    }
+    return out;
+  }
+
+  // Monday digest field
+  async function beltReport(guildId, club) {
+    const status = await beltStatus(guildId, club.key);
+    if (!status.length) return [];
+    const lines = status.map((b) => {
+      const now = b.holders.length ? b.holders.map((h) => `**${h.name}** (day ${h.days})`).join(', ') : 'vacant';
+      const record = b.longest && b.longest.days >= 7 ? ` · record ${b.longest.days} days, ${b.longest.name}${b.longest.current ? ' (still going)' : ''}` : '';
+      return `${b.label}: ${now}${record}`;
+    });
+    return [{ name: '🥊 Belt report', value: lines.join('\n').slice(0, 1024) }];
+  }
+
+  // After new matches land: track the belts, move the roles (Premium) and say who took what
+  async function onNewMatches(guildId, club) {
+    if (!autopilot.isOn(club, 'trophies')) return;
+    let holders;
+    let names;
+    let honours = [];
+    if (await premium.isPremium(guildId)) {
+      const result = await sync(guildId, club);
+      if (result.error) console.warn(`[trophies] ${guildId}/${club.key}: ${result.error}`);
+      if (result.holders) ({ holders, names } = result);
+      // Club Legend and In-Form are honours, not belts: their role changes keep the old lines
+      honours = changeLines((result.changes || []).filter((c) => !BELTS.includes(c.kind)));
+    }
+    if (!holders) ({ holders, names } = await compute(guildId, club, { ea: false }));
+    const handovers = await trackReigns(guildId, club, holders, names).catch((err) => {
+      console.warn(`[trophies] reigns ${club.key}: ${err.message}`);
+      return [];
+    });
+    const lines = [...handoverLines(handovers), ...honours];
     if (!lines.length) return;
     let channel = null;
     const hofId = club.autopilot?.hof_channel_id;
     if (hofId) channel = await client().guilds.cache.get(guildId)?.channels.fetch(hofId).catch(() => null);
     if (!channel) channel = await autopilot.postChannel(guildId, club);
     if (!channel) return;
-    const embed = new EmbedBuilder().setTitle(`🏆 ${club.name} Hall of Fame`).setColor(0xf5b301).setDescription(lines.join('\n'));
-    embed.setFooter({ text: 'Trophy roles update after every synced match. Players need /me → Link EA to receive them.' });
+    const embed = new EmbedBuilder().setTitle(`🥊 ${club.name} belt news`).setColor(0xf5b301).setDescription(lines.join('\n'));
+    embed.setFooter({ text: 'Weekly belts cover the last 7 days. Reign history is on the website under Trophy Room.' });
     await channel.send({ embeds: [embed], allowedMentions: { parse: [] } }).catch(() => {});
   }
 
@@ -265,7 +352,7 @@ function createStatRoles(deps) {
 
   autopilot.onNewMatches(onNewMatches);
 
-  return { handleInteraction, sync, compute };
+  return { handleInteraction, sync, compute, beltStatus, beltReport, trackReigns };
 }
 
-module.exports = { createStatRoles, TROPHIES_SUBCOMMAND, TROPHIES, trophyHolders };
+module.exports = { createStatRoles, TROPHIES_SUBCOMMAND, TROPHIES, BELTS, trophyHolders };

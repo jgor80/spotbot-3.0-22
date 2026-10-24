@@ -17,6 +17,12 @@ const VOICES = {
     emoji: '🇮🇹',
     desc: 'Operatic and passionate: Mamma mia! Catenaccio! Forza!',
     outlet: (city) => `Gazzetta di ${city}`,
+    columnist: { name: 'Enzo Bellini', title: 'Il Commento' },
+    overheard: {
+      win: ["the espresso machine in the manager's office has been running non-stop.", 'someone is playing music way too loud in the dressing room. Nobody is complaining.', 'the kit man was seen kissing the match ball. Twice.'],
+      loss: ['the video room is booked for a long session tomorrow.', 'nobody touched the post-match cannoli.', 'the tactics board has been turned to face the wall.'],
+      mixed: ['"We take the points and we go again." Classic.', 'the whiteboard in the tactics room has been wiped and redrawn twice.', 'two senior players are arguing about the best pizza in town. Again.'],
+    },
     style:
       'Write like an original columnist for an Italian sports daily (think Gazzetta dello Sport): operatic, passionate, a little melodramatic, with a few natural Italian words or exclamations (mamma mia, che partita, catenaccio, fantasista, tifosi, forza) but never a whole sentence in Italian.',
     kickers: {
@@ -52,6 +58,12 @@ const VOICES = {
     emoji: '🇬🇧',
     desc: 'Tabloid puns and terrace banter: GET IN! Daylight robbery!',
     outlet: (city) => `The ${city} Evening Post`,
+    columnist: { name: 'Reg Hollis', title: 'From the Terraces' },
+    overheard: {
+      win: ['the dressing room speaker is on its third play of the same song. Nobody minds.', 'the gaffer was spotted smiling. Witnesses are being interviewed.', 'someone has ordered a celebratory curry for the whole squad.'],
+      loss: ['the kettle in the gaffer\'s office has not stopped boiling.', 'the video room is booked for a long session tomorrow.', 'the post-match pies went untouched.'],
+      mixed: ['"We go again." Of course we do.', 'the tactics board has been wiped and redrawn twice.', 'a heated debate about who should take free kicks is ongoing.'],
+    },
     style:
       "Write like a British back-page tabloid football writer: punchy, pun-loving, terrace banter, British spelling and football slang (gaffer, worldie, bottled it, scenes, get in) without overdoing it.",
     kickers: {
@@ -87,6 +99,12 @@ const VOICES = {
     emoji: '🇺🇸',
     desc: 'Box-score storytelling, momentum and grit, ESPN-style.',
     outlet: (city) => `${city} Daily Herald`,
+    columnist: { name: 'Dana Brooks', title: 'Postgame Notebook' },
+    overheard: {
+      win: ['the locker room playlist has been turned up to eleven.', 'somebody ordered wings for the whole squad.', 'the film room is quiet tonight. Nobody needs it.'],
+      loss: ['the film room is booked for a long session tomorrow.', 'the postgame pizza went cold.', 'the whiteboard still has the game plan on it. Nobody is looking at it.'],
+      mixed: ['"Next man up." You know the drill.', 'the whiteboard in the war room has been wiped and redrawn twice.', 'the group chat has gone suspiciously quiet.'],
+    },
     style:
       'Write like an American sports beat writer (think ESPN or The Athletic): crisp, confident, stats-forward storytelling about momentum, grit and clutch moments, with natural American sports phrasing.',
     kickers: {
@@ -122,6 +140,12 @@ const VOICES = {
     emoji: '🇪🇸',
     desc: 'Marca-style drama: ¡Golazo! ¡Qué partido! ¡Vamos!',
     outlet: (city) => `Diario Deportivo de ${city}`,
+    columnist: { name: 'Paco Ferrer', title: 'La Columna' },
+    overheard: {
+      win: ['the dressing room speaker is blasting reggaetón. Nobody is complaining.', 'the café machine has not stopped since full time.', 'someone has started a conga line. Again.'],
+      loss: ['the video room is booked for a long session tomorrow.', 'the post-match tortilla went untouched.', 'the tactics board has been turned to face the wall.'],
+      mixed: ['"A seguir." The only way.', 'the tactics board has been wiped and redrawn twice.', 'a debate about the best paella in town is getting out of hand.'],
+    },
     style:
       'Write like an original columnist for a Spanish sports daily (think Marca or AS): dramatic, emotional, a little hyperbolic, with a few natural Spanish words or exclamations (golazo, qué partido, remontada, afición, vamos) but never a whole sentence in Spanish.',
     kickers: {
@@ -157,6 +181,12 @@ const VOICES = {
     emoji: '📰',
     desc: 'Clean, neutral match reporting with no accent or slang.',
     outlet: (city) => `${city} Sports Desk`,
+    columnist: { name: 'The Desk', title: 'Analysis' },
+    overheard: {
+      win: ['the dressing room music got noticeably louder after full time.', 'spirits are high in the squad chat.'],
+      loss: ['the video room is booked for a long session tomorrow.', 'the squad chat has gone quiet.'],
+      mixed: ['"We go again." Fair enough.', 'the tactics board has been wiped and redrawn twice.'],
+    },
     style: 'Write clean, neutral, professional sports reporting: clear and lively, but with no regional slang or foreign words.',
     kickers: {},
     flavor: {

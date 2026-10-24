@@ -26,7 +26,8 @@ const { seasonTotals } = require('./player-season.cjs');
 const T = require('./event-time.cjs');
 const { PREMIUM_FREE } = require('./premium.cjs');
 const { aiStyle } = require('./club-identity.cjs');
-const { storyFacts, buildChronicle, buildMatchReport, editionCover, EDITIONS, CHRONICLE_TZ } = require('./chronicle.cjs');
+const { storyFacts, buildChronicle, buildMatchReport, editionCover, HOLD_UNTIL_HOUR } = require('./chronicle.cjs');
+const { createPressLog, splitPress } = require('./press-log.cjs');
 const RX = require('./recap-extras.cjs');
 const PRESS = require('./press-copy.cjs');
 const { clubAccent, crestUrl } = require('./club-colors.cjs');
@@ -37,7 +38,7 @@ const FEATURES = {
   recaps: { label: 'Match recaps', emoji: '🏁', help: 'Post a recap here as soon as EA records a finished match.' },
   subs: { label: 'Auto sub requests', emoji: '🆘', help: 'A starter out of voice for 3 min during the session gets a sub request.' },
   digest: { label: 'Monday digest', emoji: '🗞️', help: 'Formation win rates, best pairings and show-up rates every Monday morning.' },
-  chronicle: { label: 'Daily Chronicle', emoji: '📰', help: 'A newspaper-style beat writer digest at 3 PM and midnight Central covering the day\'s matches, players and events, plus a session edition when the club voice channel empties after 2+ games.' },
+  chronicle: { label: 'Daily Chronicle', emoji: '📰', help: 'A newspaper-style beat writer digest after midnight (server time) covering the day\'s matches, players and events, plus a session edition when the club voice channel empties after 2+ games. Every edition is saved to the website.' },
   press: { label: 'Newspaper match reports', emoji: '🗞️', help: 'Every match also gets a Chronicle-style write-up in the Chronicle channel (set it with Print Chronicle here).' },
   session: { label: 'Session recap', emoji: '🧾', help: 'When the club voice channel empties, a recap of every match played since it filled up.' },
   ratings: { label: 'Teammate rating DMs', emoji: '⭐', help: 'After a match, players get a DM asking them to rate their teammates.' },
@@ -105,8 +106,17 @@ function createAutopilot(deps) {
   const startedAt = new Date().toISOString();
   const newMatchHooks = [];
   const sessionHooks = [];
+  const digestHooks = [];
   let recapImage = null;
   let editionImage = null;
+  let chronicleExtras = null;
+  const pressLog = createPressLog(supabase);
+
+  // The server's timezone for the paper, or US Central when it was never set
+  async function paperTz(guildId) {
+    const prefs = await events.serverPrefs(guildId).catch(() => ({}));
+    return prefs?.timezone && prefs.timezone !== 'UTC' ? prefs.timezone : 'America/Chicago';
+  }
 
   // ---------- Settings ----------
 
@@ -704,7 +714,7 @@ function createAutopilot(deps) {
       "You are a sharp newspaper beat writer covering an EA FC Pro Clubs team. Write a short postgame piece about THIS ONE GAME only: one paragraph, 3 to 5 sentences, under 550 characters. Open with a punchy lede on the result, say in one line how it was won or lost from the stats, and name the standout player or two in **bold** with their rating. Never mention other games, the season, form, streaks, records, head-to-head history or milestones; that belongs to the twice-daily digest. Land at least one funny pun or wordplay (on a player's numbers or the opponent's name) when one genuinely works, and vary your openings, verbs and jokes so no two pieces read alike. Only use the facts given; never invent goals, minutes, scorers' timing or quotes. No headings or bullet points. The game's 'script' tag (demolition, lockdown, shootout, smash-and-grab, heartbreaker, etc.) sets the tone. Clean sheets belong only to goalkeepers and defenders, never attackers. Stats marked (est) are estimates; say 'about'." + ` ${aiStyle(club)}`,
       storyFacts({ club, matches: [match], seasonMatches, single: true })
     );
-    return buildMatchReport({ club, match, logoUrl: crestUrl(club, prefs.branding), story });
+    return buildMatchReport({ club, match, logoUrl: crestUrl(club, prefs.branding), story, tz: await paperTz(guildId) });
   }
 
   async function postMatchReports(guildId, club, matches) {
@@ -715,8 +725,11 @@ function createAutopilot(deps) {
     if (!channel?.isTextBased?.()) return;
     const all = loadMatches ? await loadMatches(guildId, club.key).catch(() => []) : [];
     for (const m of matches) {
-      const report = await buildMatchStory(guildId, club, m, all).catch((err) => console.warn(`[autopilot] match report ${m.id} failed: ${err.message}`));
-      if (report) await channel.send(report).catch((err) => console.warn(`[autopilot] match report send failed: ${err.message}`));
+      const built = await buildMatchStory(guildId, club, m, all).catch((err) => console.warn(`[autopilot] match report ${m.id} failed: ${err.message}`));
+      const { message, press } = splitPress(built);
+      if (!message) continue;
+      const sent = await channel.send(message).catch((err) => console.warn(`[autopilot] match report send failed: ${err.message}`));
+      if (sent) await pressLog.save(guildId, club.key, 'match_report', message, press);
     }
   }
 
@@ -827,7 +840,8 @@ function createAutopilot(deps) {
           console.warn(`[autopilot] session hook failed: ${err.message}`);
           return null;
         });
-        if (extra?.embeds) recap.embeds.push(...extra.embeds);
+        if (extra?.embeds) recap.embeds.push(...extra.embeds.slice(0, 10 - recap.embeds.length));
+        if (extra?.files) recap.files = [...(recap.files || []), ...extra.files];
       }
       const channel = await postChannel(guild.id, club);
       if (channel) await channel.send(recap).catch((err) => console.warn(`[autopilot] session recap failed: ${err.message}`));
@@ -918,7 +932,17 @@ function createAutopilot(deps) {
     if (reliable.length) embed.addFields({ name: '🟢 Always there (90%+)', value: truncate(reliable.slice(0, 15).map((r) => `<@${r.discord_user_id}> ${Math.round(Number(r.reliability_score))}%`).join(', ')) });
     if (noShows.length) embed.addFields({ name: '🔴 Said yes, didn’t show this week', value: truncate(noShows.map((id) => `<@${id}>`).join(', ')) });
 
-    const hasContent = week.length || formations.length || duos.length || reliable.length || noShows.length;
+    // Belt report, development goals and anything else other modules add
+    let extra = 0;
+    for (const hook of digestHooks) {
+      const fields = await hook(guildId, club).catch((err) => console.warn(`[autopilot] digest hook failed: ${err.message}`));
+      for (const f of (fields || []).slice(0, 25 - (embed.data.fields?.length || 0))) {
+        embed.addFields({ name: f.name, value: truncate(f.value) });
+        extra++;
+      }
+    }
+
+    const hasContent = week.length || formations.length || duos.length || reliable.length || noShows.length || extra;
     embed.setFooter({ text: `Based on ${matches.length} synced matches. /manager → Match Night → Autopilot to switch this off.` });
     return hasContent ? { embeds: [embed], allowedMentions: { parse: [] } } : null;
   }
@@ -943,7 +967,7 @@ function createAutopilot(deps) {
     }
   }
 
-  // ---------- Daily Chronicle (3 PM + midnight Central) ----------
+  // ---------- Daily Chronicle (after midnight, server time) ----------
 
   // AI-written copy when the bot has a key; undefined means the template prose is used
   async function aiStory(system, facts) {
@@ -965,14 +989,16 @@ function createAutopilot(deps) {
     }
   }
 
-  // sessionMatches: the games of one voice session, for the session edition. The 3 PM and midnight
-  // editions leave out games a session edition already printed, and skip printing when that's all of them.
+  // sessionMatches: the games of one voice session, for the session edition. The midnight edition covers
+  // everything since the last paper, leaves out games a session edition already printed, and skips
+  // printing when that's all of them.
   async function buildEdition(guildId, club, edition, now = new Date(), sessionMatches = null) {
-    const ed = EDITIONS[edition];
     const all = loadMatches ? await loadMatches(guildId, club.key).catch(() => []) : [];
+    const tz = await paperTz(guildId);
     let matches = sessionMatches;
     if (!matches) {
-      const since = now.getTime() - ed.windowH * 60 * 60 * 1000;
+      const last = club.autopilot?.chronicle_printed_at ? new Date(club.autopilot.chronicle_printed_at).getTime() : 0;
+      const since = last && now.getTime() - last < 30 * 60 * 60 * 1000 ? last : now.getTime() - 24 * 60 * 60 * 1000;
       const inWindow = all.filter((m) => m.playedAt.getTime() >= since && m.playedAt.getTime() <= now.getTime());
       const covered = new Set(club.autopilot?.chronicle_covered_ids || []);
       matches = inWindow.filter((m) => !covered.has(String(m.id)));
@@ -988,19 +1014,32 @@ function createAutopilot(deps) {
       .order('scheduled_at', { ascending: true })
       .limit(5);
     const prefs = await events.serverPrefs(guildId).catch(() => ({}));
+    const memory = await pressLog.recent(guildId, club.key);
+    const extras = chronicleExtras ? (await chronicleExtras({ guildId, club, since: memory.lastPrinted, now }).catch((err) => console.warn(`[chronicle] extras failed: ${err.message}`))) || {} : {};
+    extras.quotes = club.fun?.quotes || [];
+    extras.usedQuotes = memory.phrases;
     const story = matches.length
       ? await aiStory(
-          "You are a sharp newspaper beat writer covering an EA FC Pro Clubs team. Write 2-3 short paragraphs (under 950 characters total). Lead with the most newsworthy story angle, not the first game. Explain HOW games were won or lost using the stats (passing, tackling, finishing, saves), name standout players in **bold**, mention any milestone, rematch, drought or partnership from the angles, and give the last paragraph to the recent run of games and the overall team storyline (form, streaks, points pace, who is carrying the side). Vary sentence rhythm; no clichés like 'all in all'. Only use the facts given; never invent goals, minutes, scorers' timing or quotes. No headings or bullet points. Each game has a 'script' tag (demolition, lockdown, shootout, smash-and-grab, heartbreaker, etc.): use it to set the tone. Clean sheets belong only to goalkeepers and defenders, never attackers. Stats marked (est) are estimates; say 'about'." + ` ${aiStyle(club)}`,
-          storyFacts({ club, matches, seasonMatches: all })
+          "You are a sharp newspaper beat writer covering an EA FC Pro Clubs team. Write 2-3 short paragraphs (under 950 characters total). Open with the lead story you are given, not the first game. Explain HOW games were won or lost using the stats (passing, tackling, finishing, saves), name standout players in **bold**, mention any milestone, rematch, drought or partnership from the angles, and give the last paragraph to the recent run of games and the overall team storyline (form, streaks, points pace, who is carrying the side). Never reuse an angle or phrasing from the recent headlines listed. Vary sentence rhythm; no clichés like 'all in all'. Only use the facts given; never invent goals, minutes, scorers' timing or quotes. No headings or bullet points. Each game has a 'script' tag (demolition, lockdown, shootout, smash-and-grab, heartbreaker, etc.): use it to set the tone. Clean sheets belong only to goalkeepers and defenders, never attackers. Stats marked (est) are estimates; say 'about'." + ` ${aiStyle(club)}`,
+          storyFacts({ club, matches, seasonMatches: all, memory })
         )
       : undefined;
     // Premium front page drawn from the same cover, with players shown only through their own photos
     let image;
     if (editionImage && isOn(club, 'graphics')) {
-      const cover = editionCover({ club, edition, matches, seasonMatches: all, now });
+      const cover = editionCover({ club, edition, matches, seasonMatches: all, now, memory, extras, tz });
       image = (await editionImage({ guildId, club, cover, prefs }).catch((err) => console.warn(`[chronicle] front page failed: ${err.message}`))) || undefined;
     }
-    return buildChronicle({ club, edition, matches, upcoming: upcoming || [], seasonMatches: all, now, logoUrl: crestUrl(club, prefs.branding), story, image });
+    return buildChronicle({ club, edition, matches, upcoming: upcoming || [], seasonMatches: all, now, logoUrl: crestUrl(club, prefs.branding), story, image, memory, extras, tz });
+  }
+
+  // Send an edition and keep it in the press log (the website's Newspaper page reads it)
+  async function sendEdition(guildId, club, channel, built, kind) {
+    const { message, press } = splitPress(built);
+    if (!message || !channel) return null;
+    const sent = await channel.send(message);
+    if (sent) await pressLog.save(guildId, club.key, kind, message, press);
+    return sent;
   }
 
   async function chronicleChannel(guild, club) {
@@ -1015,27 +1054,33 @@ function createAutopilot(deps) {
     const paper = await buildEdition(guild.id, club, 'session', new Date(endedAt), played);
     const channel = paper ? await chronicleChannel(guild, club) : null;
     if (!paper || !channel) return;
-    await channel.send(paper);
+    await sendEdition(guild.id, club, channel, paper, 'session');
     await updateClub(guild.id, club.key, (ap) => {
       ap.chronicle_covered_ids = [...(ap.chronicle_covered_ids || []), ...played.map((m) => String(m.id))].slice(-COVERED_IDS_KEPT);
     });
   }
 
+  // One paper a night, after midnight in the server's timezone. A club still playing (its voice session
+  // open) gets its paper when the session ends, or at HOLD_UNTIL_HOUR at the latest.
   async function postChronicles(now) {
-    const local = T.localParts(now, CHRONICLE_TZ);
-    const edition = local.hour === EDITIONS.afternoon.hour ? 'afternoon' : local.hour === EDITIONS.overnight.hour ? 'overnight' : null;
-    if (!edition) return;
-    const dayKey = `${local.year}-${local.month}-${local.day}:${edition}`;
     for (const guild of client().guilds.cache.values()) {
+      const local = T.localParts(now, await paperTz(guild.id));
+      if (local.hour >= HOLD_UNTIL_HOUR) continue;
+      const dayKey = `${local.year}-${local.month}-${local.day}:overnight`;
       const state = await getGuildState(guild.id);
       for (const club of activeClubs(state)) {
         if (!club.ea_club_id || !isOn(club, 'chronicle') || club.autopilot?.chronicle_last === dayKey) continue;
+        const playing = club.autopilot?.session && !club.autopilot.session.empty_since;
+        if (playing && local.hour < HOLD_UNTIL_HOUR - 1) continue;
+        // The window starts at the last print, so read it before marking this one printed
+        const before = { ...club, autopilot: { ...(club.autopilot || {}) } };
         await updateClub(guild.id, club.key, (ap) => {
           ap.chronicle_last = dayKey;
+          ap.chronicle_printed_at = now.toISOString();
         });
-        const paper = await buildEdition(guild.id, club, edition, now).catch((err) => console.warn(`[autopilot] chronicle ${club.key} failed: ${err.message}`));
+        const paper = await buildEdition(guild.id, before, 'overnight', now).catch((err) => console.warn(`[autopilot] chronicle ${club.key} failed: ${err.message}`));
         const channel = paper ? await chronicleChannel(guild, club) : null;
-        if (paper && channel) await channel.send(paper).catch((err) => console.warn(`[autopilot] chronicle send failed: ${err.message}`));
+        if (paper && channel) await sendEdition(guild.id, club, channel, paper, 'edition').catch((err) => console.warn(`[autopilot] chronicle send failed: ${err.message}`));
       }
     }
   }
@@ -1142,12 +1187,11 @@ function createAutopilot(deps) {
         ap.off = (ap.off || []).filter((f) => f !== 'chronicle');
       });
       await interaction.update(await buildPanel(interaction.guildId, updated));
-      await interaction.followUp({ content: `📰 The ${club.name} Chronicle will print in <#${targetId}> at 3 PM and midnight Central, with a newspaper match report after every game. Printing the latest edition there now.`, flags: 64 });
-      // Print the edition covering the most recent period straight away
-      const hour = T.localParts(new Date(), CHRONICLE_TZ).hour;
-      const paper = await buildEdition(interaction.guildId, updated, hour >= 15 ? 'afternoon' : 'overnight').catch((err) => console.warn(`[autopilot] chronicle ${club.key} failed: ${err.message}`));
+      await interaction.followUp({ content: `📰 The ${club.name} Chronicle will print in <#${targetId}> after midnight (server time), with a newspaper match report after every game. Printing the latest edition there now.`, flags: 64 });
+      // Print the edition covering the last day straight away
+      const paper = await buildEdition(interaction.guildId, updated, 'overnight').catch((err) => console.warn(`[autopilot] chronicle ${club.key} failed: ${err.message}`));
       const target = await interaction.guild?.channels.fetch(targetId).catch(() => null);
-      if (paper && target?.isTextBased()) await target.send(paper).catch((err) => console.warn(`[autopilot] chronicle send failed: ${err.message}`));
+      if (paper && target?.isTextBased()) await sendEdition(interaction.guildId, updated, target, paper, 'edition').catch((err) => console.warn(`[autopilot] chronicle send failed: ${err.message}`));
     } else if (action === 'ap_hofhere') {
       const club = await withClub(interaction, a);
       if (!club) return true;
@@ -1161,8 +1205,8 @@ function createAutopilot(deps) {
       const club = await withClub(interaction, a);
       if (!club) return true;
       await interaction.deferReply({ flags: 64 });
-      const hour = Number(T.localParts(new Date(), CHRONICLE_TZ).hour);
-      await interaction.editReply(await buildEdition(interaction.guildId, club, hour >= 12 && hour < 20 ? 'afternoon' : 'overnight'));
+      const { message } = splitPress(await buildEdition(interaction.guildId, club, 'overnight'));
+      await interaction.editReply(message || { content: 'Nothing to print yet: no games since the last edition and nothing on record for a feature.' });
     } else if (action === 'ap_digest') {
       const club = await withClub(interaction, a);
       if (!club) return true;
@@ -1228,6 +1272,8 @@ function createAutopilot(deps) {
     onNewMatches: (fn) => newMatchHooks.push(fn),
     // fn({ guildId, club, matches, allMatches, startedAt, endedAt }) -> { embeds } added to the session recap
     onSessionEnd: (fn) => sessionHooks.push(fn),
+    // fn(guildId, club) -> [{ name, value }] fields added to the Monday digest
+    onDigest: (fn) => digestHooks.push(fn),
     buildSessionRecap,
     buildEdition,
     // fn({ row, club, match, history, prefs, talkingPoint }) -> PNG buffer or null
@@ -1238,6 +1284,12 @@ function createAutopilot(deps) {
     setRecapImage: (fn) => {
       recapImage = fn;
     },
+    // fn({ guildId, club, since, now }) -> { careers, belts, badges, badgesHeld, milestones, around } for the Chronicle
+    setChronicleExtras: (fn) => {
+      chronicleExtras = fn;
+    },
+    pressLog,
+    paperTz,
   };
 }
 

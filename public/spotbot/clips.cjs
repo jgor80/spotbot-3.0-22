@@ -3,6 +3,8 @@
 //   recorded inside a match window, tagged with that match.
 // - Any platform (PS5 shares, YouTube/Twitch/Medal links, uploaded videos): when posted in the clips
 //   channel, the bot replies with the club match it was played in, if one lines up.
+// Every tagged clip is also kept in a short log on the club (autopilot.clip_log) so Awards Night can
+// nominate a Goal of the Month from clips of games where that player scored.
 const { EmbedBuilder } = require('discord.js');
 const { activeClubs } = require('./manager-hub.cjs');
 const { competitionLabel } = require('./club-insights.cjs');
@@ -12,6 +14,7 @@ const VIDEO_URL_RE = /https?:\/\/\S*(youtu\.?be|twitch\.tv|medal\.tv|streamable|
 const BEFORE_MS = 20 * 60 * 1000; // EA stamps the match at full time; a game runs ~15 min plus stoppage
 const AFTER_MS = 5 * 60 * 1000;
 const MAX_REMEMBERED = 300;
+const CLIP_LOG_KEPT = 100;
 
 function matchFor(matches, at) {
   const t = at.getTime();
@@ -30,7 +33,29 @@ function playerLine(m, name) {
   return bits.length ? bits.join(' · ') : null;
 }
 
-function createClips({ supabaseUrl, secret, getGuildState, updateClub, loadMatches, client }) {
+// One clip log entry: where the clip was posted, who it shows and the match it came from
+function clipEntry(message, m, name, discordUserId) {
+  const p = name && m.players.find((x) => String(x.ea_username || '').toLowerCase() === String(name).toLowerCase());
+  return {
+    url: message?.url || null,
+    name: name || null,
+    discord_user_id: discordUserId || null,
+    at: new Date().toISOString(),
+    match_id: String(m.id),
+    goals: p ? Number(p.goals) || 0 : null,
+    line: `${m.result === 'win' ? 'W' : m.result === 'loss' ? 'L' : 'D'} ${m.scoreFor}-${m.scoreAgainst} vs ${m.opponent}`,
+  };
+}
+
+// eaNameOf(discordUserId) -> linked EA gamertag or null
+function createClips({ supabaseUrl, secret, getGuildState, updateClub, loadMatches, client, eaNameOf }) {
+  async function logClips(guildId, clubKey, entries) {
+    if (!entries.length) return;
+    await updateClub(guildId, clubKey, (ap) => {
+      ap.clip_log = [...(ap.clip_log || []), ...entries].slice(-CLIP_LOG_KEPT);
+    });
+  }
+
   function clipsChannel(guild, club) {
     const id = club.autopilot?.clips_channel_id;
     if (id) return guild.channels.cache.get(id) || null;
@@ -71,6 +96,7 @@ function createClips({ supabaseUrl, secret, getGuildState, updateClub, loadMatch
       if (!m) continue; // not from a club game
       fresh.push({ c, m });
     }
+    const logged = [];
     for (const { c, m } of fresh.slice(0, 8)) {
       const stat = playerLine(m, c.ea_username);
       const embed = new EmbedBuilder()
@@ -79,9 +105,11 @@ function createClips({ supabaseUrl, secret, getGuildState, updateClub, loadMatch
         .setDescription([`<@${c.discord_user_id}> in ${matchLine(m)}`, stat && `Match line: ${stat}`, `Recorded <t:${Math.floor(new Date(c.recorded_at).getTime() / 1000)}:t>`].filter(Boolean).join('\n'))
         .setFooter({ text: 'Auto-posted from Xbox game clips recorded during a club match' });
       if (c.thumbnail_url) embed.setImage(c.thumbnail_url);
-      await channel.send({ content: c.video_url, embeds: [embed], allowedMentions: { parse: [] } }).catch((err) => console.warn(`[clips] post failed: ${err.message}`));
+      const sent = await channel.send({ content: c.video_url, embeds: [embed], allowedMentions: { parse: [] } }).catch((err) => console.warn(`[clips] post failed: ${err.message}`));
+      if (sent) logged.push(clipEntry(sent, m, c.ea_username, c.discord_user_id));
       posted.add(c.id);
     }
+    await logClips(guildId, club.key, logged);
     if (fresh.length) {
       await updateClub(guildId, club.key, (ap) => {
         ap.clips_posted = [...posted].slice(-MAX_REMEMBERED);
@@ -104,6 +132,9 @@ function createClips({ supabaseUrl, secret, getGuildState, updateClub, loadMatch
     const m = matches.find((x) => x.playedAt.getTime() <= at && at - x.playedAt.getTime() <= 2 * 3600e3);
     if (!m) return;
     await message.reply({ content: `🎥 Tagged: ${matchLine(m)}. Nice one.`, allowedMentions: { parse: [], repliedUser: false } }).catch(() => {});
+    // Who is in it: the poster's linked gamertag, when they played in that game
+    const gamertag = eaNameOf ? await eaNameOf(message.author.id).catch(() => null) : null;
+    await logClips(message.guild.id, club.key, [clipEntry(message, m, gamertag || message.member?.displayName || message.author.username, message.author.id)]);
   }
 
   return { onNewMatches, onMessage, matchFor };
