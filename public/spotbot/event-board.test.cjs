@@ -62,15 +62,21 @@ test('signed-players role: picked role wins, else found by name', () => {
   assert.strictEqual(B.findSignedRole(roles, { signed_role_id: 'gone' }).id, '10');
   assert.strictEqual(B.findSignedRole(new Collection([['12', { id: '12', name: 'signed-players' }]]), null).id, '12');
   assert.strictEqual(B.findSignedRole(new Collection(), {}), null);
+  // Looser names still count; "unsigned" roles never do
+  assert.strictEqual(B.findSignedRole(new Collection([['13', { id: '13', name: 'Palermo Signed ✍️' }]]), {}).id, '13');
+  assert.strictEqual(B.findSignedRole(new Collection([['14', { id: '14', name: 'Unsigned' }]]), {}), null);
+  assert.strictEqual(B.findSignedRole(new Collection([['14', { id: '14', name: 'Unsigned' }], ['15', { id: '15', name: 'signed-players' }]]), {}).id, '15');
 });
 
 test('ping rules: league -> signed role only, everything else -> @everyone, overrides win', () => {
   assert.deepStrictEqual(B.choosePing({ league: true, signedRoleId: '10' }), { kind: 'role', roleId: '10', signed: true });
-  assert.deepStrictEqual(B.choosePing({ league: true }), { kind: 'everyone', missingSigned: true });
+  // League games never ping @everyone, even with no signed role or when @everyone is picked
+  assert.deepStrictEqual(B.choosePing({ league: true }), { kind: 'none', missingSigned: true });
+  assert.deepStrictEqual(B.choosePing({ league: true, notify: 'everyone' }), { kind: 'none', missingSigned: true });
   assert.deepStrictEqual(B.choosePing({ league: false, signedRoleId: '10' }), { kind: 'everyone' });
   // League games with a signed role never ping anyone else
   assert.deepStrictEqual(B.choosePing({ pingRoleId: '7', league: true, signedRoleId: '10' }), { kind: 'role', roleId: '10', signed: true });
-  assert.deepStrictEqual(B.choosePing({ pingRoleId: '7', league: true }), { kind: 'role', roleId: '7' });
+  assert.deepStrictEqual(B.choosePing({ pingRoleId: '7', league: true }), { kind: 'role', roleId: '7', missingSigned: true });
   assert.deepStrictEqual(B.choosePing({ pingRoleId: '7', league: false, signedRoleId: '10' }), { kind: 'role', roleId: '7' });
   assert.deepStrictEqual(B.choosePing({ notify: 'none', league: true, signedRoleId: '10' }), { kind: 'none' });
   assert.deepStrictEqual(B.choosePing({ notify: 'everyone', league: true, signedRoleId: '10' }), { kind: 'role', roleId: '10', signed: true });
@@ -219,11 +225,24 @@ test('league post pings the signed-players role; a friendly pings @everyone', as
   assert.deepStrictEqual(sent[2].allowedMentions.parse, []);
 });
 
-test('league post without a signed-players role falls back to @everyone', async () => {
+test('league post without a signed-players role pings nobody, never @everyone', async () => {
   const { events, sent, channel } = setup();
   const event = await events.postEvent({ guild_id: GUILD, club_key: 'main', title: 'League', event_type: 'league', scheduled_at: later(5), channel_id: 'chan' }, channel);
-  assert.strictEqual(sent[0].content, '@everyone');
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(sent[0].content, undefined);
+  assert.deepStrictEqual(sent[0].allowedMentions.parse, []);
   assert.strictEqual(event.pingPlan.missingSigned, true);
+});
+
+test('the first and only league post mentions just the signed role, even without a club on the event', async () => {
+  const { events, sent, channel, state } = setup({ roles: [{ id: '777', name: 'x' }] });
+  state.clubs[0].signed_role_id = '777';
+  // Posted from the older SquadIQ form: no club_key
+  await events.postEvent({ guild_id: GUILD, title: 'Thursday League', event_type: 'league', scheduled_at: later(5), channel_id: 'chan' }, channel);
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(sent[0].content, '<@&777>');
+  assert.deepStrictEqual(sent[0].allowedMentions, { parse: [], users: [], roles: ['777'], repliedUser: false });
+  assert.ok(!JSON.stringify(sent[0]).includes('@everyone'));
 });
 
 test('playerPositions feeds the lineup builder the same positions as the board', async () => {

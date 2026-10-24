@@ -393,6 +393,14 @@ function createEvents(deps) {
     return activeClubs(state).find((c) => c.key === clubKey) || null;
   }
 
+  // The event's club; events posted without one (the older SquadIQ form) use the server's
+  // club when it has just one, so its signed-players role still applies
+  async function eventClub(event) {
+    if (event.club_key) return clubFor(event.guild_id, event.club_key);
+    const clubs = activeClubs(await getGuildState(event.guild_id));
+    return clubs.length === 1 ? clubs[0] : null;
+  }
+
   async function rosterFor(club) {
     if (!club?.team_id) return [];
     const { data } = await supabase
@@ -441,7 +449,7 @@ function createEvents(deps) {
   // is a league game and the role exists, else null (anyone can answer and be pinged)
   async function signedRoleFor(event, club = undefined) {
     if (!event || !isLeague(event)) return null;
-    if (club === undefined) club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    if (club === undefined) club = await eventClub(event);
     const guild = client?.guilds.cache.get(event.guild_id);
     return B.findSignedRole(guild?.roles.cache, club);
   }
@@ -602,9 +610,7 @@ function createEvents(deps) {
 
   // Who an event's announcement pings (see event-board.cjs choosePing)
   async function pingPlanFor(event, { notify = null } = {}) {
-    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
-    const guild = client?.guilds.cache.get(event.guild_id);
-    const signed = B.findSignedRole(guild?.roles.cache, club);
+    const signed = await signedRoleFor(event);
     return B.choosePing({ notify, pingRoleId: event.ping_role_id, league: isLeague(event), signedRoleId: signed?.id || null });
   }
 
@@ -795,7 +801,7 @@ function createEvents(deps) {
         ? 'Tip: add players with **/manager → Roster & Squad → Add Player** (or pick a role with `ping`) so the board shows who has not answered and I can remind them.'
         : 'I will DM anyone who has not answered before the deadline.',
     ];
-    if (event.pingPlan?.missingSigned) notes.push('Tip: league games ping your signed players instead of @everyone once you pick the role in **/manager → Roster & Squad → Signed Players Role**.');
+    if (event.pingPlan?.missingSigned) notes.push("⚠️ League games never ping @everyone, and I couldn't find your signed-players role. Pick it in **/manager → Events → Signed Players Role** (or name a role **Signed Players**) and league posts will ping it.");
     if (repeatWeeks) notes.push(`🔁 I'll post the next one ${repeatWeeks === 1 ? 'every week' : 'every 2 weeks'}, a day after the previous kick-off. Stop it with **/manager → Events → Stop Repeating**.`);
     return interaction.editReply({ content: notes.join('\n') });
   }
@@ -1387,7 +1393,7 @@ function createEvents(deps) {
       : '';
     const content = current
       ? `✅ League games for **${club.name}** ping ${current}${club.signed_role_id ? '' : ' (found by name)'}, and only players with that role can sign up or get reminders. BYOT, friendlies, practice and other nights are open to everyone and ping @everyone.${warn}`
-      : `League games for **${club.name}** are open to everyone and ping @everyone until you pick a signed-players role here (or create a role called **Signed Players**).`;
+      : `League games for **${club.name}** ping nobody and are open to everyone until you pick a signed-players role here (or create a role called **Signed Players**). League games never ping @everyone.`;
     return interaction.reply({ content, flags: 64, allowedMentions: { parse: [] } });
   }
 
