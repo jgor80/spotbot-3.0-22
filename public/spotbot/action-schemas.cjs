@@ -278,6 +278,14 @@ const ACTION_SCHEMAS = [
     name: 'twitchlist',
     description: 'List all Twitch streamers being monitored in this server.'
   },
+  {
+    name: 'twitchimport',
+    description: 'Link players to their Twitch accounts from the twitch.tv links posted in a channel.',
+    options: [
+      { name: 'channel', description: 'Channel where players posted their Twitch links.', type: 7, required: true },
+      { name: 'save', description: 'True writes the links; leave blank to preview first.', type: 5, required: false }
+    ]
+  },
 
   // Xbox Presence Tracking
   {

@@ -70,6 +70,7 @@ const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
 const { createAutoLink } = require('./auto-link.cjs');
 const { createXboxLink } = require('./xbox-link.cjs');
+const { createTwitchLinks } = require('./twitch-links.cjs');
 const { createPresenceLog } = require('./xbox-presence-log.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
 const { createCareer } = require('./career.cjs');
@@ -472,6 +473,7 @@ const matchNight = createMatchNight({ supabase, events: clubEvents, isManager, c
 
 const autoLink = createAutoLink({ supabase, getGuildState, isManager });
 const xboxLink = createXboxLink({ supabase });
+const twitchLinks = createTwitchLinks({ supabase, getClient: () => client });
 const proPhotos = createProPhotos({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, isManager });
 const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
 const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client, getPremium: () => premium });
@@ -7738,6 +7740,35 @@ async function routeInteraction(interaction) {
           console.error('[TwitchList] Error:', error.response?.data || error.message);
           return interaction.editReply({ content: `❌ Failed to fetch Twitch notifications list.` });
         }
+      }
+
+      if (cmd === 'twitchimport') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only admins can import Twitch links.', flags: 64 });
+        }
+        const channel = interaction.options.getChannel('channel');
+        const save = interaction.options.getBoolean('save') === true;
+        if (!channel?.messages?.fetch) {
+          return interaction.reply({ content: '❌ Pick a text channel.', flags: 64 });
+        }
+        await interaction.deferReply({ flags: 64 });
+        try {
+          const text = await twitchLinks.importFromChannel({ guild: interaction.guild, channel, save });
+          // Long lists go out in several private messages under Discord's 2000 character limit
+          const parts = [];
+          let cur = '';
+          for (const line of text.split('\n')) {
+            if (cur && cur.length + line.length + 1 > 1900) { parts.push(cur); cur = ''; }
+            cur += (cur ? '\n' : '') + line;
+          }
+          if (cur) parts.push(cur);
+          await interaction.editReply({ content: parts[0], allowedMentions: { parse: [] } });
+          for (const part of parts.slice(1)) await interaction.followUp({ content: part, flags: 64, allowedMentions: { parse: [] } });
+        } catch (error) {
+          console.error('[TwitchImport] Error:', error.message);
+          return interaction.editReply({ content: `❌ Couldn't read Twitch links: ${error.message}` });
+        }
+        return;
       }
 
       // =======================

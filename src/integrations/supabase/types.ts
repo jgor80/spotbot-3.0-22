@@ -3867,6 +3867,7 @@ export type Database = {
           primary_position: string | null
           psn_id: string | null
           sign_in_provider: string | null
+          twitch_username: string | null
           updated_at: string
           xbox_gamertag: string | null
           xbox_last_game: string | null
@@ -3894,6 +3895,7 @@ export type Database = {
           primary_position?: string | null
           psn_id?: string | null
           sign_in_provider?: string | null
+          twitch_username?: string | null
           updated_at?: string
           xbox_gamertag?: string | null
           xbox_last_game?: string | null
@@ -3921,6 +3923,7 @@ export type Database = {
           primary_position?: string | null
           psn_id?: string | null
           sign_in_provider?: string | null
+          twitch_username?: string | null
           updated_at?: string
           xbox_gamertag?: string | null
           xbox_last_game?: string | null
