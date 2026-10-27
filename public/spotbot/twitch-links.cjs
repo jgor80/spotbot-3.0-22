@@ -4,7 +4,9 @@
 // Each link belongs to the message's author, unless the message @mentions exactly one other member
 // ("@Sam twitch.tv/samplays"), when it belongs to them. A preview always comes first; Save writes only
 // the clear matches. Anything ambiguous is listed and left alone: a Twitch account claimed by two
-// players, a message with several mentions, or a player already linked to a different account.
+// players, a Twitch account another profile already owns (anywhere, not just this channel), a message
+// with several mentions, or a player already linked to a different account. The database backs this up
+// with a unique index on lower(twitch_username), so one Twitch account can never sit on two profiles.
 
 const { PermissionsBitField } = require('discord.js');
 
@@ -36,8 +38,9 @@ function targetOf(message) {
 }
 
 // Turn messages (newest first, as Discord returns them) into matches and problems.
-// existing: Map discordUserId → current twitch_username. members: Set of user ids still in the server.
-function buildMatches(messages, { existing = new Map(), members = null, botId = null } = {}) {
+// existing: Map discordUserId → current twitch_username. owners: Map login → discordUserId of every
+// profile already holding that login. members: Set of user ids still in the server.
+function buildMatches(messages, { existing = new Map(), owners = new Map(), members = null, botId = null } = {}) {
   const byUser = new Map(); // userId → { login, others: Set, messageId }
   const problems = [];
   for (const msg of messages) {
@@ -61,7 +64,9 @@ function buildMatches(messages, { existing = new Map(), members = null, botId = 
   for (const [userId, m] of byUser) {
     const row = { userId, login: m.login, others: [...m.others], messageId: m.messageId };
     const current = existing.get(userId) ? String(existing.get(userId)).toLowerCase() : null;
+    const owner = owners.get(m.login);
     if (members && !members.has(userId)) problems.push({ kind: 'left', ...row });
+    else if (owner && owner !== userId) problems.push({ kind: 'taken', ...row, owner });
     else if (claims.get(m.login).length > 1) problems.push({ kind: 'shared', ...row, sharedWith: claims.get(m.login).filter((u) => u !== userId) });
     else if (current && current !== m.login) problems.push({ kind: 'different', ...row, current });
     else matches.push({ ...row, already: current === m.login });
@@ -77,6 +82,8 @@ function describe(problem) {
     case 'mentions': return `${who}: ${problem.logins.map(link).join(', ')}: can't tell whose (several mentions or links)`;
     case 'left': return `${who} → ${link(problem.login)}: no longer in the server`;
     case 'shared': return `${who} → ${link(problem.login)}: also posted for ${problem.sharedWith.map((u) => `<@${u}>`).join(', ')}`;
+    case 'taken': return `${who} → ${link(problem.login)}: already linked to <@${problem.owner}>`;
+    case 'failed': return `${who} → ${link(problem.login)}: couldn't save (${problem.reason})`;
     case 'different': return `${who} → ${link(problem.login)}: already linked to ${link(problem.current)}, left as is`;
     default: return who;
   }
@@ -134,7 +141,16 @@ function createTwitchLinks({ supabase, getClient }) {
       if (error) throw new Error(error.message);
       for (const r of data || []) if (r.twitch_username) existing.set(r.discord_user_id, r.twitch_username);
     }
-    const result = buildMatches(messages, { existing, members, botId: getClient()?.user?.id });
+    // Who already owns each posted login, across every profile, not only the people in this channel
+    const logins = [...new Set(messages.flatMap((m) => extractTwitchLogins(m.content)))];
+    const owners = new Map();
+    for (let i = 0; i < logins.length; i += 200) {
+      const { data, error } = await supabase.from('profiles').select('discord_user_id, twitch_username')
+        .in('twitch_username', logins.slice(i, i + 200));
+      if (error) throw new Error(error.message);
+      for (const r of data || []) owners.set(String(r.twitch_username).toLowerCase(), r.discord_user_id);
+    }
+    const result = buildMatches(messages, { existing, owners, members, botId: getClient()?.user?.id });
     if (!save) return report({ ...result, scanned: messages.length, channelId: channel.id });
 
     const fresh = result.matches.filter((m) => !m.already);
@@ -147,8 +163,11 @@ function createTwitchLinks({ supabase, getClient }) {
         ...(member ? { discord_username: member.displayName || member.user?.username } : {}),
         updated_at: new Date().toISOString(),
       }, { onConflict: 'discord_user_id' });
-      if (error) console.error('[twitch-links] save failed for', m.userId, error.message);
-      else saved.push(m);
+      if (error) {
+        // 23505: another profile took this login since the preview (unique index on lower(twitch_username))
+        console.error('[twitch-links] save failed for', m.userId, error.message);
+        result.problems.push({ kind: 'failed', ...m, reason: error.code === '23505' ? 'linked to another player' : 'database error' });
+      } else saved.push(m);
     }
     return report({ ...result, matches: saved, scanned: messages.length, channelId: channel.id, saved: saved.length });
   }
