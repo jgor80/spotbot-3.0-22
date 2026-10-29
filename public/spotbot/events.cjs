@@ -683,7 +683,8 @@ function createEvents(deps) {
       return interaction.reply({ content: `❌ <t:${T.unix(kickoff)}:F> is in the past. ${whenExamples(tz)}`, flags: 64 });
     }
 
-    const type = interaction.options.getString('type') || preset?.event_type || 'match';
+    // Casual clubs (casual.cjs) play friendlies unless told otherwise
+    const type = interaction.options.getString('type') || preset?.event_type || (club.casual?.on ? 'friendly' : 'match');
     const title = (interaction.options.getString('title') || preset?.title || `${club.name} ${typeInfo(type).label}`).slice(0, 100);
     const deadlineText = interaction.options.getString('deadline');
     let deadline;

@@ -316,7 +316,7 @@ var TOOLS = [
       properties: {
         guild_id: guildIdProp,
         club_key: clubKeyProp,
-        match_type: { type: "string", enum: ["league", "cup", "friendly", "tournament", "byot"], description: "Only this kind of match. league, cup and friendly are EA's own types; tournament and byot are games a manager tagged." },
+        match_type: { type: "string", enum: ["league", "cup", "friendly", "tournament", "byot", "smalls"], description: "Only this kind of match. league, cup and friendly are EA's own types; tournament, byot and smalls (short-handed friendlies) are tagged games." },
         limit: { type: "integer", minimum: 1, maximum: 30, default: 10 }
       },
       additionalProperties: false
@@ -329,7 +329,7 @@ var TOOLS = [
       const type = MATCH_TYPES[String(args.match_type)];
       if (type) q = q.eq("match_type", type);
       const tag = String(args.match_type ?? "");
-      if (tag === "tournament" || tag === "byot") q = q.eq("match_data->>_tag", tag);
+      if (tag === "tournament" || tag === "byot" || tag === "smalls") q = q.eq("match_data->>_tag", tag);
       const { data, error } = await q;
       if (error) throw error;
       return {
@@ -582,6 +582,9 @@ var BLOCKED_ACTIONS = /* @__PURE__ */ new Set([
   "mn_netfriendly",
   "mn_netbyot",
   "mn_netclubs",
+  "cs_friendly",
+  "cs_byot",
+  "cs_draft",
   "ro_remove",
   "ro_forcelink",
   "sq_manager",

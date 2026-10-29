@@ -139,7 +139,10 @@ function signed(n) {
 var MATCH_TAGS = [
   { value: "league", label: "League", emoji: "\u{1F3C6}" },
   { value: "tournament", label: "Tournament", emoji: "\u{1F3DF}\uFE0F" },
-  { value: "byot", label: "BYOT", emoji: "\u{1F39F}\uFE0F" }
+  { value: "byot", label: "BYOT", emoji: "\u{1F39F}\uFE0F" },
+  // A friendly played short-handed (AI filling the rest). Counts in the regular record and stats like
+  // any friendly, and has its own filter. Casual clubs get it automatically (casual.cjs).
+  { value: "smalls", label: "Smalls", emoji: "\u{1F465}" }
 ];
 var COMPETITIONS = [
   ...MATCH_TAGS,

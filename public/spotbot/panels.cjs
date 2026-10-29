@@ -55,7 +55,6 @@ const PLAYER_ACTIONS = [
   { id: 'sub', label: 'Need a Sub', emoji: '🔁', cmd: 'sub', ask: true },
   { id: 'whoisplaying', label: "Who's Playing", emoji: '👀', cmd: 'whoisplaying' },
   { id: 'mypositions', label: 'My Positions', emoji: '🎯', cmd: 'positions' },
-  { id: 'syncmyprefs', label: 'Positions From Roles', emoji: '🔃', cmd: 'syncprefs', fixed: { scope: 'me' } },
   { id: 'myreliability', label: 'My Reliability', emoji: '📈', cmd: 'reliability' },
   { id: 'linkea', label: 'Link EA', emoji: '🎮', cmd: 'linkea' },
   { id: 'prophoto', label: 'Pro Photo', emoji: '📸', cmd: 'prophoto', fields: ['photo'], required: ['photo'] },
@@ -69,6 +68,7 @@ const PLAYER_ACTIONS = [
   { id: 'claimwin', label: 'Claim a Win', emoji: '🥇', cmd: 'claimwin' },
   { id: 'mycareer', label: 'My Career', emoji: '🏅', cmd: 'career', sub: 'view' },
   { id: 'funzone', label: 'Fun Zone', emoji: '🎉', cmd: 'fun', sub: 'panel' },
+  { id: 'whoson', label: "Who's On?", emoji: '🙋', cmd: 'casual', sub: 'call', style: 'success' },
   { id: 'aiaccess', label: 'AI Assistant', emoji: '🤖', cmd: 'aiaccess', fixed: { action: 'status' } },
   { id: 'airevoke', label: 'Revoke AI Access', emoji: '🔌', cmd: 'aiaccess', fixed: { action: 'revoke' } },
 ];
@@ -80,7 +80,7 @@ const AREAS = [
     emoji: '📅',
     blurb: 'Schedule sessions with Available / Maybe / Unavailable buttons and manage who answered. League games ping your signed players, everything else pings @everyone.',
     actions: [
-      { id: 'ev_quick_league', label: 'League Game', emoji: '⚽', cmd: 'event', sub: 'new', fields: ['when', 'title', 'description', 'formation'], required: ['when'], fixed: { type: 'league' }, style: 'success' },
+      { id: 'ev_quick_league', label: 'League Game', emoji: '⚽', cmd: 'event', sub: 'new', fields: ['when', 'title', 'description', 'formation'], required: ['when'], fixed: { type: 'league' }, style: 'success', league: true },
       { id: 'ev_quick_byot', label: 'BYOT / Tournament', emoji: '🏆', cmd: 'event', sub: 'new', fields: ['when', 'title', 'description', 'formation'], required: ['when'], fixed: { type: 'tournament' }, style: 'success' },
       { id: 'ev_quick_friendly', label: 'Friendly', emoji: '🤝', cmd: 'event', sub: 'new', fields: ['when', 'title', 'description', 'formation'], required: ['when'], fixed: { type: 'friendly' } },
       { id: 'ev_new', label: 'New Event', emoji: '➕', cmd: 'event', sub: 'new', ask: true, fields: ['when', 'title', 'type', 'description'], required: ['when'], style: 'primary' },
@@ -100,6 +100,24 @@ const AREAS = [
       { id: 'ev_presetdel', label: 'Delete Preset', emoji: '🗑️', cmd: 'event', group: 'preset', sub: 'delete' },
       { id: 'ev_series', label: 'Repeating Events', emoji: '🔁', cmd: 'event', group: 'series', sub: 'list' },
       { id: 'ev_seriesstop', label: 'Stop Repeating', emoji: '⏹️', cmd: 'event', group: 'series', sub: 'stop' },
+    ],
+  },
+  {
+    key: 'casual',
+    label: 'Casual Play',
+    emoji: '🎮',
+    blurb: 'Smalls, friendlies and BYOTs: Who\'s On? calls, a spot board that fills from voice and rotates the bench, and Smalls stats.',
+    actions: [
+      { id: 'cs_call', label: "Who's On?", emoji: '🙋', cmd: 'casual', sub: 'call', style: 'success' },
+      { id: 'cs_settings', label: 'Casual Settings', emoji: '🎮', cmd: 'casual', sub: 'settings', style: 'primary' },
+      { id: 'cs_fill', label: 'Fill Spots From Voice', emoji: '📋', cmd: 'casual', sub: 'fill' },
+      { id: 'cs_rotate', label: 'Rotate Bench Now', emoji: '🔁', cmd: 'casual', sub: 'rotate' },
+      { id: 'cs_smalls', label: 'Smalls Night', emoji: '👥', cmd: 'event', sub: 'new', fields: ['when', 'description', 'formation'], required: ['when'], fixed: { type: 'friendly', title: 'Smalls night' } },
+      { id: 'cs_friendly', label: 'Network Friendly', emoji: '🌐', cmd: 'network', sub: 'friendly' },
+      { id: 'cs_byot', label: 'Network BYOT', emoji: '🏆', cmd: 'network', sub: 'byot' },
+      { id: 'cs_need', label: 'Need a Player', emoji: '🆘', cmd: 'network', sub: 'need' },
+      { id: 'cs_draft', label: 'In-house Draft', emoji: '🎲', cmd: 'draft', ask: true, channels: { team_a_vc: VOICE, team_b_vc: VOICE } },
+      { id: 'cs_funzone', label: 'Post Fun Zone', emoji: '🎉', cmd: 'fun', sub: 'panel', fixed: { post: true } },
     ],
   },
   {
@@ -193,7 +211,7 @@ const AREAS = [
       { id: 'sq_manager', label: 'Add/Remove Manager', emoji: '🧑‍💼', cmd: 'squad', sub: 'manager' },
       { id: 'ro_forcelink', label: 'Link Player to EA', emoji: '🎮', cmd: 'forcelink' },
       { id: 'ro_reviewlinks', label: 'Review EA Links', emoji: '🧐', cmd: 'reviewlinks' },
-      { id: 'ev_signedrole', label: 'Signed Players Role', emoji: '✍️', cmd: 'event', sub: 'signedrole', ask: true, fields: ['role', 'clear'] },
+      { id: 'ev_signedrole', label: 'Signed Players Role', emoji: '✍️', cmd: 'event', sub: 'signedrole', ask: true, fields: ['role', 'clear'], league: true },
     ],
   },
   {
@@ -322,13 +340,15 @@ function areaSelect(selectedKey, placeholder = 'More tools: pick an area', switc
   );
 }
 
-function areaMenu(key) {
+// casual: every club on the server is in casual mode, so league-only buttons are left out
+function areaMenu(key, { casual = false } = {}) {
   const area = AREAS.find((a) => a.key === key) || AREAS[0];
   const embed = new EmbedBuilder()
     .setTitle(`${area.emoji} ${area.label}`)
     .setColor(0x5865f2)
     .setDescription(`${area.blurb}\n\nButtons that need details open a short form first.`);
-  return { embeds: [embed], components: [...actionButtons(area.actions.filter((a) => !a.web)), areaSelect(area.key, 'Switch area', true)] };
+  const shown = area.actions.filter((a) => !a.web && !(casual && a.league));
+  return { embeds: [embed], components: [...actionButtons(shown), areaSelect(area.key, 'Switch area', true)] };
 }
 
 function playerHub({ persistent = false } = {}) {
@@ -621,8 +641,9 @@ function createPanels(deps) {
         await interaction.reply({ content: `🔒 Only captains, managers and admins can use **${area?.label || 'these'}** tools. Players: try \`/me\`.`, flags: 64 });
         return true;
       }
-      if (interaction.customId === 'gp:area-switch') await interaction.update(areaMenu(area?.key));
-      else await interaction.reply({ ...areaMenu(area?.key), flags: 64 });
+      const casual = deps.isCasualGuild ? await deps.isCasualGuild(interaction.guildId).catch(() => false) : false;
+      if (interaction.customId === 'gp:area-switch') await interaction.update(areaMenu(area?.key, { casual }));
+      else await interaction.reply({ ...areaMenu(area?.key, { casual }), flags: 64 });
       return true;
     }
 

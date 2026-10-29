@@ -76,6 +76,7 @@ const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
 const { createCareer } = require('./career.cjs');
 const { createDevGoals } = require('./dev-goals.cjs');
 const { createClubLife } = require('./club-life.cjs');
+const { createCasual, allCasual } = require('./casual.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -575,6 +576,12 @@ const devGoals = createDevGoals({ supabase, autopilot, loadMatches: managerHub.l
 autopilot.onDigest((guildId, club) => statRoles.beltReport(guildId, club));
 const networkWire = createNetworkWire({ supabase, network, getGuildState, autopilot, client: () => client, pressLog: autopilot.pressLog });
 const clubLife = createClubLife({ supabase, autopilot, events: clubEvents, getGuildState, canManageClub: squads.canManageClub, loadMatches: managerHub.loadMatches, career, devGoals, statRoles, broadcast, wire: networkWire, dashboardUrl: DASHBOARD_URL });
+// Casual Play: Who's On? calls, game pings, casual mode, and a spot board that fills from voice and
+// rotates waiting players in after each game
+const casual = createCasual({
+  getGuildState, saveGuildSettings, canManageClub: squads.canManageClub, autopilot, autoAssignPlayer, refreshClubPanels, handleSlotOpened,
+  buildSpotEmbed: buildEmbedForClub, client: () => client,
+});
 
 // MessageContent is required to see attachments on normal channel posts (#pro-photos detection).
 // It's a privileged intent: if it isn't enabled in the Developer Portal, login falls back without it.
@@ -4056,6 +4063,7 @@ client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
 client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   eaActivity.onVoiceStateUpdate(oldState, newState);
   autopilot.onVoiceStateUpdate(oldState, newState).catch((err) => console.warn('[autopilot] voice update failed:', err.message));
+  casual.onVoiceStateUpdate(oldState, newState);
   try {
     const guildId = oldState.guild?.id || newState.guild?.id;
     if (!guildId) return;
@@ -4118,7 +4126,11 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 
 // Every embed sent while handling the interaction picks up the server's /brand style (embed-style.cjs)
 // Panel buttons and forms re-enter routeInteraction as the old slash command (panels.cjs)
-const panels = createPanels({ schemas: ACTION_SCHEMAS, isManager, timezoneFor: async (g) => (await clubEvents.serverPrefs(g)).timezone, dispatch: (interaction) => routeInteraction(interaction) });
+const panels = createPanels({
+  schemas: ACTION_SCHEMAS, isManager, timezoneFor: async (g) => (await clubEvents.serverPrefs(g)).timezone, dispatch: (interaction) => routeInteraction(interaction),
+  // League-only buttons leave the menus once every club on the server is casual
+  isCasualGuild: async (g) => allCasual(await getGuildState(g)),
+});
 // The web app's control room presses the same panel buttons as the signed-in user (web-panels.cjs),
 // reached in-process by the web-panel backend function
 globalThis.__gafferbotWebPanels = createWebPanels({
@@ -4152,6 +4164,7 @@ async function routeInteraction(interaction) {
     if (await graphicsStudio.handleInteraction(interaction)) return;
     if (await funZone.handleInteraction(interaction)) return;
     if (await clubLife.handleInteraction(interaction)) return;
+    if (await casual.handleInteraction(interaction)) return;
     if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;
