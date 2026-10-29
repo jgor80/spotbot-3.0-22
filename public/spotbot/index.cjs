@@ -566,6 +566,8 @@ const clips = require('./clips.cjs').createClips({
   eaNameOf: async (userId) => (await supabase.from('profiles').select('ea_username').eq('discord_user_id', userId).maybeSingle()).data?.ea_username || null,
 });
 autopilot.onNewMatches(clips.onNewMatches);
+// Posted twitch.tv links to a live channel get a card with the stream's live frame, refreshed while live
+const twitchLive = require('./twitch-live.cjs').createTwitchLive({ getClient: () => client });
 // Club Life: careers and badges, weekly coach goals, the belt report, Club Wrapped, Awards Night,
 // division posters and the Network Wire
 const career = createCareer({ supabase, autopilot, events: clubEvents, getGuildState, client: () => client });
@@ -593,6 +595,7 @@ client.on('messageCreate', (message) => {
   proPhotos.onMessage(message).catch((err) => console.warn('[pro-photos] failed:', err.message));
   graphicsStudio.onMessage(message).catch((err) => console.warn('[studio] failed:', err.message));
   clips.onMessage(message).catch((err) => console.warn('[clips] failed:', err.message));
+  twitchLive.onMessage(message).catch((err) => console.warn('[twitch-live] failed:', err.message));
 });
 // Someone adding permissions to a position role (or making one by hand) gets them cleared straight away,
 // not just at the next restart.
