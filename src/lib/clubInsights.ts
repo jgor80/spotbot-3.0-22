@@ -30,7 +30,7 @@ export interface InsightMatch {
   scoreFor: number;
   scoreAgainst: number;
   matchType: string;
-  // Manager's tag (league / tournament / byot), or null when the game keeps EA's own type
+  // Manager's tag (league / tournament / byot / smalls), or null when the game keeps EA's own type
   tag: MatchTag | null;
   // What the game counts as: the tag when set, otherwise EA's match type
   competition: Competition;
@@ -60,13 +60,16 @@ export interface LineupRow {
 // What kind of game a match was. EA only knows league (division), cup/playoff and friendly; BYOT and
 // community tournaments are played as friendlies, so managers tag them. The tag lives in
 // match_data._tag so EA re-syncs never touch it and every existing club_matches query carries it.
-export type MatchTag = "league" | "tournament" | "byot";
+export type MatchTag = "league" | "tournament" | "byot" | "smalls";
 export type Competition = MatchTag | "cup" | "friendly";
 
 export const MATCH_TAGS: { value: MatchTag; label: string; emoji: string }[] = [
   { value: "league", label: "League", emoji: "🏆" },
   { value: "tournament", label: "Tournament", emoji: "🏟️" },
   { value: "byot", label: "BYOT", emoji: "🎟️" },
+  // A friendly played short-handed (AI filling the rest). Counts in the regular record and stats like
+  // any friendly, and has its own filter. Casual clubs get it automatically (casual.cjs).
+  { value: "smalls", label: "Smalls", emoji: "👥" },
 ];
 
 export const COMPETITIONS: { value: Competition; label: string; emoji: string }[] = [
@@ -83,7 +86,8 @@ export function isSeparateCompetition(c: Competition | null | undefined): boolea
   return !!c && SEPARATE_COMPETITIONS.includes(c);
 }
 
-// The player_stats.match_type a game's rows should carry for a tag (null: back to what EA sync wrote)
+// The player_stats.match_type a game's rows should carry for a tag (null: back to what EA sync wrote).
+// Smalls keep EA's own type, so they stay on the regular boards.
 export function playerStatsTypeForTag(tag: MatchTag | null): string | null {
   if (tag === "tournament" || tag === "byot") return tag;
   if (tag === "league") return "club";

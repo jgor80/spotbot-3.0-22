@@ -1,4 +1,4 @@
-// Match tags: managers mark played games as League, Tournament or BYOT. EA only tells league, cup and
+// Match tags: managers mark played games as League, Tournament, BYOT or Smalls. EA only tells league, cup and
 // friendly games apart, and BYOT nights and community tournaments are played as friendlies, so without
 // a tag they all count as friendlies. The tag is stored in club_matches.match_data._tag (EA syncs only
 // insert rows, so it is never overwritten) and read through matchCompetition() in club-insights.cjs,
@@ -9,8 +9,12 @@
 // 'club' / 'friendly' / 'competition') leaves them out, and the Tournaments views and leaderboard filter
 // read them on their own. The type EA sync wrote is kept in match_data._ps_type so clearing a tag restores it.
 //
+// Smalls (a friendly played short-handed) keep their EA type and stay in the regular stats; the tag only
+// gives them their own filter.
+//
 // Two ways a game gets tagged:
-// - Automatically, when a new EA friendly was played during a BYOT, tournament or league event.
+// - Automatically, when a new EA friendly was played during a BYOT, tournament, league or smalls event,
+//   or (casual clubs, casual.cjs) when it was played with few enough humans.
 // - By hand: /manager → Manager Hub → Tag Matches, or /manager → Stats & Scouting → Tag Matches
 //   (also in the web Control Room, which runs the same panel).
 
@@ -31,16 +35,17 @@ const GAME_STAT_TYPES = ['club', 'friendly', 'competition', 'tournament', 'byot'
 
 const ACTION_SCHEMA = {
   name: 'matchtags',
-  description: 'Mark played games as League, Tournament or BYOT so stats and recaps count them right.',
+  description: 'Mark played games as League, Tournament, BYOT or Smalls so stats and recaps count them right.',
   options: [],
 };
 
-// What an event says the night was, or null when it isn't a competitive night
+// What an event says the night was, or null when it isn't a competitive (or smalls) night
 function tagForEvent(event) {
   const title = String(event?.title || '').toLowerCase();
   const type = String(event?.event_type || '').toLowerCase();
   if (/\b(practice|training|session|try ?outs?|scrim)\b/.test(title) || ['training', 'practice', 'tryout', 'scrim', 'draft'].includes(type)) return null;
   if (/\bbyot\b/.test(title)) return 'byot';
+  if (/\bsmalls?\b/.test(title)) return 'smalls';
   if (/\b(tournament|cup|playoffs?)\b/.test(title) || type === 'tournament') return 'tournament';
   if (/\bleague\b/.test(title) || type === 'league') return 'league';
   return null;
@@ -58,6 +63,19 @@ function eventForMatch(events, clubKey, playedAt) {
       return t >= start - EVENT_LEAD_MS && t <= end;
     }) || null
   );
+}
+
+// Humans who played: EA lists only human players, so AI-filled spots don't count
+function humanCount(row) {
+  return Array.isArray(row?.player_stats) ? row.player_stats.length : 0;
+}
+
+// The most humans a casual club's game can have and still be Smalls (null: club isn't casual)
+const DEFAULT_SMALLS_MAX = 6;
+function smallsMax(club) {
+  if (!club?.casual?.on) return null;
+  const n = Number(club.casual.smalls_max);
+  return Number.isFinite(n) && n >= 1 && n <= 10 ? n : DEFAULT_SMALLS_MAX;
 }
 
 function isFriendly(row) {
@@ -126,6 +144,31 @@ function createMatchTags(deps) {
   async function autoTag(guildId, club, recent, rows) {
     const candidates = (rows || []).filter((r) => isFriendly(r) && !r.match_data?._tag && !r.match_data?._tag_source);
     if (!candidates.length) return;
+    const tagged = await tagFromEvents(guildId, club, recent, candidates);
+    // Casual clubs: a friendly no event claimed is Smalls when few enough humans played it
+    const max = smallsMax(club);
+    if (!max) return;
+    for (const row of candidates) {
+      if (tagged.has(row.id) || humanCount(row) > max || humanCount(row) === 0) continue;
+      if (!row.guild_id) row.guild_id = guildId;
+      await saveTag(row, 'smalls', 'auto:smalls', null).catch((err) => console.warn(`[match-tags] smalls tag ${row.id} failed: ${err.message}`));
+      markRecent(recent, row.id, 'smalls');
+    }
+  }
+
+  // Keep the hook's copies in step so later hooks and the recap see the tag
+  function markRecent(recent, id, tag) {
+    for (const x of recent || []) {
+      if (x.id === id) {
+        x.tag = tag;
+        x.competition = tag;
+      }
+    }
+  }
+
+  // Friendlies played during a BYOT, tournament, league or smalls event take the event's tag. Returns their ids.
+  async function tagFromEvents(guildId, club, recent, candidates) {
+    const done = new Set();
     const times = toInsightMatches(candidates);
     const earliest = Math.min(...times.map((m) => m.playedAt.getTime()));
     const { data: events } = await supabase
@@ -137,7 +180,7 @@ function createMatchTags(deps) {
       .order('scheduled_at', { ascending: false })
       .limit(50);
     const competitive = (events || []).filter((e) => tagForEvent(e));
-    if (!competitive.length) return;
+    if (!competitive.length) return done;
     for (const m of times) {
       const event = eventForMatch(competitive, club?.key, m.playedAt);
       if (!event) continue;
@@ -145,14 +188,10 @@ function createMatchTags(deps) {
       const row = candidates.find((r) => r.id === m.id);
       if (!row.guild_id) row.guild_id = guildId;
       await saveTag(row, tag, `event:${event.id}`, null).catch((err) => console.warn(`[match-tags] auto-tag ${m.id} failed: ${err.message}`));
-      // Keep the hook's copies in step so later hooks and the recap see the tag
-      for (const x of recent || []) {
-        if (x.id === m.id) {
-          x.tag = tag;
-          x.competition = tag;
-        }
-      }
+      done.add(m.id);
+      markRecent(recent, m.id, tag);
     }
+    return done;
   }
 
   // ---------- Panel ----------
@@ -185,9 +224,9 @@ function createMatchTags(deps) {
     embed
       .setDescription(
         'EA only knows league, cup and friendly games, and BYOT nights and tournaments are played as friendlies. ' +
-          'Pick a game below to mark it **League**, **Tournament** or **BYOT**. Tournament and BYOT games get their own record and player stats ' +
-          '(stats panel → **Tournaments**) and stay out of the regular stats and leaderboards. ' +
-          'Friendlies played during a BYOT, tournament or league event are tagged for you.\n\n' +
+          'Pick a game below to mark it **League**, **Tournament**, **BYOT** or **Smalls**. Tournament and BYOT games get their own record and player stats ' +
+          '(stats panel → **Tournaments**) and stay out of the regular stats and leaderboards. Smalls stay in the regular stats and get their own filter. ' +
+          'Friendlies played during a BYOT, tournament, league or smalls event are tagged for you, and casual clubs get short-handed friendlies tagged Smalls.\n\n' +
           slice.map((m) => `${RESULT_EMOJI[m.result] || '⚪'} **${m.scoreFor}-${m.scoreAgainst}** vs ${m.opponent} · ${kindLine(m)} · ${when(m)}`).join('\n')
       )
       .setFooter({ text: `(EA) = EA's own type, no tag yet${pages > 1 ? ` · page ${p + 1} of ${pages}` : ''}` });
@@ -331,4 +370,4 @@ function createMatchTags(deps) {
   return { handleInteraction, autoTag, saveTag, listView };
 }
 
-module.exports = { createMatchTags, tagForEvent, eventForMatch, ACTION_SCHEMA };
+module.exports = { createMatchTags, tagForEvent, eventForMatch, humanCount, smallsMax, DEFAULT_SMALLS_MAX, ACTION_SCHEMA };

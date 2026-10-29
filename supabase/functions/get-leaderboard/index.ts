@@ -17,7 +17,8 @@ interface GetLeaderboardRequest {
   club_key?: string;
   stats_source?: "all" | "members" | "games";
   // tournament / byot: games a manager tagged (Discord: Tag Matches); their player_stats rows carry that type
-  match_type?: "division" | "competition" | "friendly" | "tournament" | "byot";
+  // smalls: friendlies tagged Smalls (still friendlies, so they also count in All Games)
+  match_type?: "division" | "competition" | "friendly" | "tournament" | "byot" | "smalls";
 }
 
 // Calculate date range for time period filtering
@@ -118,6 +119,13 @@ serve(async (req) => {
     // Tagged tournament / BYOT games are kept out of every regular board and only counted on their own
     const taggedType = match_type === "tournament" || match_type === "byot" ? match_type : null;
     const gameTypes = taggedType ? [taggedType] : ["club", "friendly"];
+    // Which club_matches a match_type filter keeps: Smalls by tag, Friendly without the Smalls ones
+    // deno-lint-ignore no-explicit-any
+    const byMatchType = (q: any) => {
+      if (match_type === "smalls") return q.eq("match_data->>_tag", "smalls");
+      q = q.eq("match_type", match_type);
+      return match_type === "friendly" ? q.or("match_data->>_tag.is.null,match_data->>_tag.neq.smalls") : q;
+    };
 
     console.log(`[get-leaderboard] Fetching ${type} leaderboard for guild ${guild_id}, club: ${club_key || 'all'}, source: ${stats_source}, matchType: ${match_type || 'all'}, timePeriod: ${time_period || 'all'}`);
     
@@ -340,7 +348,7 @@ serve(async (req) => {
           .eq("club_key", club_key);
         
         if (match_type && !taggedType) {
-          clubMatchesQuery = clubMatchesQuery.eq("match_type", match_type);
+          clubMatchesQuery = byMatchType(clubMatchesQuery);
         }
         
         const { data: clubMatches } = await clubMatchesQuery;
@@ -602,11 +610,9 @@ serve(async (req) => {
       // If match_type filter is set, get the relevant match IDs first
       let matchTypeFilterIds: Set<string> | null = null;
       if (match_type && !taggedType) {
-        const { data: filteredMatches } = await supabase
-          .from("club_matches")
-          .select("ea_match_id")
-          .eq("guild_id", guild_id)
-          .eq("match_type", match_type);
+        const { data: filteredMatches } = await byMatchType(
+          supabase.from("club_matches").select("ea_match_id").eq("guild_id", guild_id)
+        );
         
         matchTypeFilterIds = new Set((filteredMatches || []).map(m => m.ea_match_id));
       }

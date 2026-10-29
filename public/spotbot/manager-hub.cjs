@@ -140,12 +140,16 @@ function createManagerHub(deps) {
     const separate = all.filter((m) => isSeparateCompetition(m.competition));
     const o = computeOverview(matches);
     const last = all[0];
+    // Casual clubs (casual.cjs) play smalls, friendlies and BYOTs: Who's On? replaces Call Session
+    const casual = !!club.casual?.on;
 
     const embed = new EmbedBuilder()
       .setTitle(`🧭 ${club.name} Manager Hub`)
       .setColor(HUB_COLOR)
       .setDescription(
-        'Run match night from here: call the session, publish the team sheet, sync EA matches and check what is working. Everything else is in the **More tools** menu at the bottom.'
+        casual
+          ? 'Casual mode: press **Who\'s On?** to ping everyone up for a game. Spots fill from voice and the bench rotates after each game. Everything else is in the **More tools** menu at the bottom.'
+          : 'Run match night from here: call the session, publish the team sheet, sync EA matches and check what is working. Everything else is in the **More tools** menu at the bottom.'
       )
       .addFields(
         { name: 'Record', value: o.played ? `${o.wins}W ${o.draws}D ${o.losses}L (${fmtPct(o.winPct)})` : 'No matches synced yet', inline: true },
@@ -155,8 +159,18 @@ function createManagerHub(deps) {
       .setFooter({ text: 'Updated' })
       .setTimestamp(new Date());
 
-    const divisionLine = divisionHistory.length ? hubDivisionLine(summarizeDivision(divisionHistory, all)) : null;
+    const divisionLine = !casual && divisionHistory.length ? hubDivisionLine(summarizeDivision(divisionHistory, all)) : null;
     if (divisionLine) embed.addFields({ name: 'Division', value: divisionLine });
+    if (casual) {
+      const line = (list) => {
+        const r = computeOverview(list);
+        return r.played ? `${r.wins}W ${r.draws}D ${r.losses}L (${fmtPct(r.winPct)})` : 'None yet';
+      };
+      embed.addFields(
+        { name: '👥 Smalls', value: line(all.filter((m) => m.competition === 'smalls')), inline: true },
+        { name: '🤝 Friendlies', value: line(all.filter((m) => m.competition === 'friendly')), inline: true }
+      );
+    }
     if (separate.length) {
       const s = computeOverview(separate);
       embed.addFields({ name: 'Tournaments & BYOT', value: `${s.wins}W ${s.draws}D ${s.losses}L (kept separate)`, inline: true });
@@ -174,7 +188,9 @@ function createManagerHub(deps) {
     const k = club.key;
     const rows = [
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`hub_call:${k}`).setLabel('Call Session').setEmoji('📞').setStyle(ButtonStyle.Primary),
+        casual
+          ? new ButtonBuilder().setCustomId(`cw_call:${k}`).setLabel("Who's On?").setEmoji('🙋').setStyle(ButtonStyle.Success)
+          : new ButtonBuilder().setCustomId(`hub_call:${k}`).setLabel('Call Session').setEmoji('📞').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(`hub_sheet:${k}`).setLabel('Team Sheet').setEmoji('📋').setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId(`hub_sync:${k}`).setLabel('Sync Matches').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`hub_stats:${k}`).setLabel('Club Stats').setEmoji('📊').setStyle(ButtonStyle.Secondary),
@@ -185,7 +201,9 @@ function createManagerHub(deps) {
     if (buildEventList) {
       more.push(new ButtonBuilder().setCustomId(`hub_events:${k}`).setLabel('Events').setEmoji('📅').setStyle(ButtonStyle.Secondary));
     }
-    more.push(new ButtonBuilder().setCustomId(`hub_div:${k}`).setLabel('Divisions').setEmoji('🏆').setStyle(ButtonStyle.Secondary));
+    // Handled by casual.cjs
+    if (casual) more.push(new ButtonBuilder().setCustomId(`cw_set:${k}`).setLabel('Casual Settings').setEmoji('🎮').setStyle(ButtonStyle.Secondary));
+    else more.push(new ButtonBuilder().setCustomId(`hub_div:${k}`).setLabel('Divisions').setEmoji('🏆').setStyle(ButtonStyle.Secondary));
     // Handled by match-tags.cjs
     more.push(new ButtonBuilder().setCustomId(`mtag_open:${k}`).setLabel('Tag Matches').setEmoji('🏷️').setStyle(ButtonStyle.Secondary));
     more.push(new ButtonBuilder().setCustomId(`hub_photos:${k}`).setLabel('Pro Photos').setEmoji('📸').setStyle(ButtonStyle.Secondary));

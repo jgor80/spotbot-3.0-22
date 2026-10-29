@@ -25,6 +25,7 @@ const { COACH_SUBCOMMAND } = require('./coach.cjs');
 const { ACTION_SCHEMA: MATCHTAGS_SCHEMA } = require('./match-tags.cjs');
 const { FUN_COMMAND } = require('./fun-zone.cjs');
 const { CLUBLIFE_COMMANDS } = require('./club-life.cjs');
+const { CASUAL_COMMANDS } = require('./casual.cjs');
 
 const ACTION_SCHEMAS = [
   // Spot Management Commands
@@ -333,7 +334,8 @@ const ACTION_SCHEMAS = [
   ...premiumCommands(BROADCAST_SUBCOMMANDS, OVERLAY_SUBCOMMAND, TROPHIES_SUBCOMMAND, COACH_SUBCOMMAND),
   MATCHTAGS_SCHEMA,
   FUN_COMMAND,
-  ...CLUBLIFE_COMMANDS
+  ...CLUBLIFE_COMMANDS,
+  ...CASUAL_COMMANDS
 ];
 
 module.exports = { ACTION_SCHEMAS };

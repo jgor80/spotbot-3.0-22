@@ -158,6 +158,8 @@ export default function RecentGamesPage() {
         return <Badge className="bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/30">Tournament</Badge>;
       case "byot":
         return <Badge className="bg-sky-500/20 text-sky-400 border-sky-500/30">BYOT</Badge>;
+      case "smalls":
+        return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">Smalls</Badge>;
       case "league":
         return <Badge variant="secondary">{tagged ? "League" : "Division"}</Badge>;
       case "cup":

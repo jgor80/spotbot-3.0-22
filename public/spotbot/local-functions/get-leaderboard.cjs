@@ -193,6 +193,11 @@ serve(async (req) => {
     if (noAccess) return noAccess;
     const taggedType = match_type === "tournament" || match_type === "byot" ? match_type : null;
     const gameTypes = taggedType ? [taggedType] : ["club", "friendly"];
+    const byMatchType = (q) => {
+      if (match_type === "smalls") return q.eq("match_data->>_tag", "smalls");
+      q = q.eq("match_type", match_type);
+      return match_type === "friendly" ? q.or("match_data->>_tag.is.null,match_data->>_tag.neq.smalls") : q;
+    };
     console.log(`[get-leaderboard] Fetching ${type} leaderboard for guild ${guild_id}, club: ${club_key || "all"}, source: ${stats_source}, matchType: ${match_type || "all"}, timePeriod: ${time_period || "all"}`);
     let timePeriodMatchIds = null;
     if (time_period) {
@@ -335,7 +340,7 @@ serve(async (req) => {
         if (statsError) throw statsError;
         let clubMatchesQuery = supabase.from("club_matches").select("ea_match_id").eq("guild_id", guild_id).eq("club_key", club_key);
         if (match_type && !taggedType) {
-          clubMatchesQuery = clubMatchesQuery.eq("match_type", match_type);
+          clubMatchesQuery = byMatchType(clubMatchesQuery);
         }
         const { data: clubMatches } = await clubMatchesQuery;
         let clubMatchIds = new Set((clubMatches || []).map((m) => m.ea_match_id));
@@ -549,7 +554,9 @@ serve(async (req) => {
       console.log(`[get-leaderboard] Aggregating from player_stats (games only), matchType: ${match_type || "all"}, position: ${position || "all"}`);
       let matchTypeFilterIds = null;
       if (match_type && !taggedType) {
-        const { data: filteredMatches } = await supabase.from("club_matches").select("ea_match_id").eq("guild_id", guild_id).eq("match_type", match_type);
+        const { data: filteredMatches } = await byMatchType(
+          supabase.from("club_matches").select("ea_match_id").eq("guild_id", guild_id)
+        );
         matchTypeFilterIds = new Set((filteredMatches || []).map((m) => m.ea_match_id));
       }
       const { count: totalCount } = await supabase.from("player_stats").select("*", { count: "exact", head: true }).eq("guild_id", guild_id).in("match_type", gameTypes);

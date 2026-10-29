@@ -18,7 +18,7 @@ export const BLOCKED_AREAS = new Set(["admin", "premium", "drafts"]);
 export const BLOCKED_ACTIONS = new Set([
   "aiaccess", "airevoke", "prophoto", "myphotos",
   "ln_vcspots", "ln_posboard",
-  "mn_netfriendly", "mn_netbyot", "mn_netclubs",
+  "mn_netfriendly", "mn_netbyot", "mn_netclubs", "cs_friendly", "cs_byot", "cs_draft",
   "ro_remove", "ro_forcelink", "sq_manager", "sq_captain",
   "ev_presetdel", "rc_post",
   "wb_graphics", "wb_setup",
