@@ -5001,7 +5001,7 @@ var FutError = class extends Error {
     this.status = status;
   }
 };
-var MAX_CARDS_PER_USER = 300;
+var MAX_CARDS_PER_USER = 1e3;
 var MAX_SQUADS_PER_USER = 50;
 var FACE = ["pac", "sho", "pas", "dri", "def", "phy"];
 var POSITION = /^[A-Z]{2,3}$/;
@@ -5085,21 +5085,30 @@ function parseCardInput(body2) {
 async function hydrate(db, userId, rows) {
   if (!rows.length) return [];
   const ids = rows.map((r2) => r2.id);
-  const [attrs, styles, inv] = await Promise.all([
-    db.from("card_attributes").select("*").in("card_id", ids),
-    db.from("card_playstyles").select("*").in("card_id", ids),
-    db.from("club_inventory").select("*").eq("user_id", userId).in("card_id", ids)
-  ]);
-  fail(attrs.error);
-  fail(styles.error);
-  fail(inv.error);
-  const attrBy = new Map((attrs.data ?? []).map((a) => [a.card_id, a]));
-  const invBy = new Map((inv.data ?? []).map((i) => [i.card_id, i]));
+  const attrs = { data: [] }, styles = { data: [] }, inv = { data: [] };
+  for (let i = 0; i < ids.length; i += 100) {
+    const part = ids.slice(i, i + 100);
+    const [a, s, n] = await Promise.all([
+      db.from("card_attributes").select("*").in("card_id", part),
+      db.from("card_playstyles").select("*").in("card_id", part),
+      db.from("club_inventory").select("*").eq("user_id", userId).in("card_id", part)
+    ]);
+    fail(a.error);
+    fail(s.error);
+    fail(n.error);
+    attrs.data.push(...a.data ?? []);
+    styles.data.push(...s.data ?? []);
+    inv.data.push(...n.data ?? []);
+  }
+  const attrBy = new Map(attrs.data.map((a) => [a.card_id, a]));
+  const invBy = new Map(inv.data.map((i) => [i.card_id, i]));
+  const styleBy = /* @__PURE__ */ new Map();
+  for (const st of styles.data) styleBy.set(st.card_id, [...styleBy.get(st.card_id) ?? [], st]);
   return rows.map((r2) => {
     const a = attrBy.get(r2.id) ?? {};
     const stats = {};
     for (const k of FACE) if (a[k] !== null && a[k] !== void 0) stats[k] = Number(a[k]);
-    const mine = (styles.data ?? []).filter((s) => s.card_id === r2.id);
+    const mine = styleBy.get(r2.id) ?? [];
     const owned = invBy.get(r2.id);
     return {
       id: r2.id,
@@ -5465,6 +5474,184 @@ async function logRun(db, userId, run) {
     via: run.via
   });
   if (error) console.error("[fut] could not log run:", error.message);
+}
+
+// supabase/functions/_shared/fut/club.ts
+var fail2 = (error) => {
+  if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
+};
+var MAX_CLUB_ITEMS = 5e3;
+var FACE2 = ["pac", "sho", "pas", "dri", "def", "phy"];
+var POSITION2 = /^[A-Z]{2,3}$/;
+var BATCH = 200;
+var posInt = (v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v < 2 ** 31 ? v : null;
+var inRange = (v, lo, hi) => typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi ? v : null;
+var clip = (s, n = 60) => s.length > n ? s.slice(0, n).trim() : s;
+function nameMap(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  const out = {};
+  for (const [k, n] of Object.entries(v)) {
+    if (/^\d{1,10}$/.test(k) && typeof n === "string" && n.trim()) out[k] = clip(n.trim().replace(/\s+/g, " "));
+  }
+  return out;
+}
+function parseClubExport(body2) {
+  if (!body2 || typeof body2 !== "object" || Array.isArray(body2)) throw new FutError("Send the club file from the XI Lab helper (a JSON object).");
+  const b = body2;
+  if (b.format !== "xilab-club-capture") throw new FutError(`That isn't a club file. In the XI Lab helper, use "Download club file".`);
+  if (b.version !== 1) throw new FutError("This club file is from a newer helper. Update the site or the helper.");
+  if (!Array.isArray(b.items)) throw new FutError("The club file has no items.");
+  if (b.items.length > MAX_CLUB_ITEMS) throw new FutError(`A club file can hold at most ${MAX_CLUB_ITEMS} items.`);
+  const names = b.names && typeof b.names === "object" ? b.names : {};
+  return {
+    items: b.items,
+    names: { players: nameMap(names.players), teams: nameMap(names.teams), leagues: nameMap(names.leagues), nations: nameMap(names.nations) }
+  };
+}
+async function importClub(db, userId, body2) {
+  const { items, names } = parseClubExport(body2);
+  const skipped = /* @__PURE__ */ new Map();
+  const skip = (reason) => skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
+  const players = /* @__PURE__ */ new Map();
+  const managers = /* @__PURE__ */ new Map();
+  const label = (map, id, kind) => id === null ? null : map[String(id)] ?? `EA ${kind} ${id}`;
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object") {
+      skip("not an item");
+      continue;
+    }
+    const it = raw;
+    if (it.loan === true) {
+      skip("loan item");
+      continue;
+    }
+    const ea_item_id = posInt(it.ea_item_id);
+    if (!ea_item_id) {
+      skip("no EA item id");
+      continue;
+    }
+    const nation_id = posInt(it.nation_id);
+    const league_id = posInt(it.league_id);
+    if (it.kind === "manager") {
+      const nation = label(names.nations, nation_id, "nation");
+      const league = label(names.leagues, league_id, "league");
+      if (!nation && !league) {
+        skip("manager without nation or league");
+        continue;
+      }
+      const key = `${nation ?? ""}|${league ?? ""}`;
+      if (!managers.has(key)) managers.set(key, { nation, league, name: clip(`Manager (${[nation, league].filter(Boolean).join(", ")})`) });
+      continue;
+    }
+    if (it.kind !== "player") {
+      skip("not a player or manager");
+      continue;
+    }
+    const rating2 = inRange(it.rating, 1, 99);
+    if (!rating2) {
+      skip("no rating");
+      continue;
+    }
+    const list2 = Array.isArray(it.positions) ? it.positions : [];
+    const positions = [...new Set([it.position, ...list2].filter((p2) => typeof p2 === "string" && POSITION2.test(p2)))].slice(0, 5);
+    if (!positions.length) {
+      skip("no position");
+      continue;
+    }
+    const stats = Array.isArray(it.stats) && it.stats.length === 6 && it.stats.every((s) => inRange(s, 1, 99) !== null) ? it.stats : null;
+    const p = {
+      ea_item_id,
+      asset_id: posInt(it.asset_id),
+      rating: rating2,
+      positions,
+      team_id: posInt(it.team_id),
+      league_id,
+      nation_id,
+      rare_flag: inRange(it.rare_flag, 0, 255),
+      untradeable: it.untradeable === true,
+      stats,
+      weak_foot: inRange(it.weak_foot, 1, 5)
+    };
+    const had = players.get(ea_item_id);
+    if (had) {
+      had.untradeable ||= p.untradeable;
+      skip("duplicate copy");
+      continue;
+    }
+    players.set(ea_item_id, p);
+  }
+  await ensureAccount(db, userId);
+  const { data: mine, error } = await db.from("player_cards").select("id, source_card_key, is_hero, notes").eq("owner_user_id", userId);
+  fail2(error);
+  const all = mine ?? [];
+  const existing = new Map(all.filter((r2) => /^\d{1,10}$/.test(String(r2.source_card_key ?? ""))).map((r2) => [Number(r2.source_card_key), r2]));
+  let room = MAX_CARDS_PER_USER - all.length;
+  const ordered = [...players.values()].sort((a, b) => b.rating - a.rating);
+  const rows = [];
+  const attrs = [];
+  const inv = [];
+  let added = 0, updated = 0, over = 0;
+  const now2 = (/* @__PURE__ */ new Date()).toISOString();
+  const day = now2.slice(0, 10);
+  for (const p of ordered) {
+    const had = existing.get(p.ea_item_id);
+    if (!had) {
+      if (room <= 0) {
+        over++;
+        continue;
+      }
+      room--;
+    }
+    const id = had?.id ?? crypto.randomUUID();
+    const league = label(names.leagues, p.league_id, "league");
+    const isIcon = !!league && /^icons?$/i.test(league);
+    rows.push({
+      id,
+      owner_user_id: userId,
+      source_id: "user_entered",
+      source_card_key: String(p.ea_item_id),
+      evidence: "game_data",
+      player_name: clip(label(names.players, p.asset_id ?? p.ea_item_id, "player")),
+      version: p.rare_flag === null ? null : p.rare_flag === 0 ? "Common" : p.rare_flag === 1 ? "Rare" : `Special (EA rareflag ${p.rare_flag})`,
+      overall: p.rating,
+      positions: p.positions,
+      club: label(names.teams, p.team_id, "club"),
+      league,
+      nation: label(names.nations, p.nation_id, "nation"),
+      is_icon: isIcon,
+      // Heroes can't be told apart reliably from the capture: keep whatever the user set.
+      is_hero: had ? had.is_hero === true : false,
+      weak_foot: p.weak_foot,
+      notes: had?.notes ?? `Synced from your EA Web App club on ${day} (format not yet verified on FC 27).`,
+      source_updated_at: now2,
+      updated_at: now2
+    });
+    if (p.stats) attrs.push({ card_id: id, ...Object.fromEntries(FACE2.map((k, i) => [k, p.stats[i]])) });
+    inv.push({ user_id: userId, card_id: id, tradeable: !p.untradeable });
+    if (had) updated++;
+    else added++;
+  }
+  for (let i = 0; i < rows.length; i += BATCH) fail2((await db.from("player_cards").upsert(rows.slice(i, i + BATCH), { onConflict: "id" })).error);
+  for (let i = 0; i < attrs.length; i += BATCH) fail2((await db.from("card_attributes").upsert(attrs.slice(i, i + BATCH), { onConflict: "card_id" })).error);
+  for (let i = 0; i < inv.length; i += BATCH) fail2((await db.from("club_inventory").upsert(inv.slice(i, i + BATCH), { onConflict: "user_id,card_id" })).error);
+  let managers_added = 0;
+  if (managers.size) {
+    const { data: ms3, error: me } = await db.from("user_managers").select("nation, league").eq("user_id", userId);
+    fail2(me);
+    const have = new Set((ms3 ?? []).map((m) => `${m.nation ?? ""}|${m.league ?? ""}`));
+    const add = [...managers.entries()].filter(([k]) => !have.has(k)).slice(0, Math.max(0, 100 - have.size)).map(([, m]) => ({ user_id: userId, name: m.name, nation: m.nation, league: m.league, owned: true }));
+    if (add.length) fail2((await db.from("user_managers").insert(add)).error);
+    managers_added = add.length;
+  }
+  return {
+    added,
+    updated,
+    managers_added,
+    skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })),
+    over_limit: over,
+    verified: false,
+    note: "Read from your own club file, not checked by EA. Cards missing from this file are kept (you may not have paged through everything). Heroes aren't detected: mark them on the card. Skill moves aren't imported yet."
+  };
 }
 
 // supabase/functions/_shared/fut/xilab/market/types.ts
@@ -6768,7 +6955,7 @@ function createMarketService(deps) {
 }
 
 // supabase/functions/_shared/fut/market.ts
-var fail2 = (error) => {
+var fail3 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var iso2 = (v) => v === null || v === void 0 ? null : new Date(String(v)).toISOString();
@@ -6780,7 +6967,7 @@ async function allPages(make) {
   const out = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await make().range(from, from + PAGE - 1);
-    fail2(error);
+    fail3(error);
     out.push(...data ?? []);
     if (!data || data.length < PAGE) return out;
     if (out.length >= 2e5) throw new FutError("Too much price history to analyse at once.", 413);
@@ -6823,7 +7010,7 @@ var PgPriceStore = class {
     const have = new Set(existing.map((r2) => `${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
     const fresh = rows.filter((r2) => !have.has(`${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
     const { count, error } = await this.db.from("market_price_observations").select("id", { count: "exact", head: true }).eq("owner_user_id", owner);
-    fail2(error);
+    fail3(error);
     if ((count ?? 0) + fresh.length > MAX_PRICE_ROWS_PER_USER) throw new FutError(`You can keep up to ${MAX_PRICE_ROWS_PER_USER.toLocaleString("en-US")} price rows.`);
     for (let i = 0; i < fresh.length; i += 500) {
       const chunk = fresh.slice(i, i + 500).map((r2) => ({
@@ -6840,7 +7027,7 @@ var PgPriceStore = class {
         evidence: r2.evidence,
         quality: r2.quality ?? null
       }));
-      fail2((await this.db.from("market_price_observations").insert(chunk)).error);
+      fail3((await this.db.from("market_price_observations").insert(chunk)).error);
     }
     return { inserted: fresh.length, skipped: rows.length - fresh.length };
   }
@@ -6860,11 +7047,11 @@ var PgMembershipStore = class {
     const def = DEFAULT_BASKETS.find((b) => b.id === basket_id);
     if (def) {
       const { data, error } = await this.db.from("market_baskets").select("id").eq("id", basket_id).maybeSingle();
-      fail2(error);
-      if (!data) fail2((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
+      fail3(error);
+      if (!data) fail3((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
     }
-    fail2((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
-    if (rows.length) fail2((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
+    fail3((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
+    if (rows.length) fail3((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
   }
 };
 var PgWatchlistStore = class {
@@ -6873,7 +7060,7 @@ var PgWatchlistStore = class {
   }
   async list(owner) {
     const { data, error } = await this.db.from("market_watchlist").select("*").eq("user_id", owner).order("added_at", { ascending: true }).limit(200);
-    fail2(error);
+    fail3(error);
     return (data ?? []).map((r2) => ({
       card_id: String(r2.card_id),
       platform: r2.platform,
@@ -6887,14 +7074,14 @@ var PgWatchlistStore = class {
   }
   async upsert(owner, w) {
     const { count, error } = await this.db.from("market_watchlist").select("card_id", { count: "exact", head: true }).eq("user_id", owner);
-    fail2(error);
-    fail2((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
+    fail3(error);
+    fail3((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
     if ((count ?? 0) >= 200) throw new FutError("Your watchlist can hold up to 200 cards.");
-    fail2((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
+    fail3((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
     return w;
   }
   async remove(owner, card_id, platform) {
-    fail2((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
+    fail3((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
   }
 };
 var PgCaptureHoldStore = class {
@@ -6906,7 +7093,7 @@ var PgCaptureHoldStore = class {
     const fresh = [...new Map(rows.filter((r2) => !have.has(holdKey(r2))).map((r2) => [holdKey(r2), r2])).values()];
     if (have.size + fresh.length > MAX_HELD_CAPTURES_PER_USER) throw new FutError(`You can keep up to ${MAX_HELD_CAPTURES_PER_USER.toLocaleString("en-US")} captured prices for cards you haven't added yet. Add those cards or link them first.`);
     for (let i = 0; i < fresh.length; i += 500)
-      fail2((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
+      fail3((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
         user_id: owner,
         ea_item_id: r2.ea_item_id,
         asset_id: r2.asset_id,
@@ -6922,7 +7109,7 @@ var PgCaptureHoldStore = class {
     const out = [];
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await this.db.from("market_capture_holds").select("*").eq("user_id", owner).order("observed_at", { ascending: true }).range(from, from + PAGE - 1);
-      fail2(error);
+      fail3(error);
       const rows = data ?? [];
       for (const r2 of rows)
         out.push({
@@ -6937,7 +7124,7 @@ var PgCaptureHoldStore = class {
   }
   async release(owner, rows) {
     for (const r2 of rows)
-      fail2((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
+      fail3((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
   }
 };
 var holdKey = (h) => `${h.ea_item_id}|${h.observation.platform}|${new Date(h.observation.observed_at).toISOString()}`;
@@ -6970,7 +7157,7 @@ var PgMarketCardSource = class {
 };
 async function marketSources(db) {
   const { data, error } = await db.from("market_price_sources").select("*").order("id", { ascending: true });
-  fail2(error);
+  fail3(error);
   return (data ?? []).map((r2) => ({
     id: String(r2.id),
     name: String(r2.name),
@@ -6984,7 +7171,7 @@ async function marketSources(db) {
 }
 async function marketRules(db) {
   const { data, error } = await db.from("market_rule_versions").select("*").eq("is_active", true).maybeSingle();
-  fail2(error);
+  fail3(error);
   if (!data) throw new FutError("Market rules aren't set up yet.", 503);
   return { id: String(data.id), status: data.status, notes: String(data.notes), ...data.body };
 }
@@ -7022,6 +7209,7 @@ var json = (body2, status = 200) => new Response(JSON.stringify(body2), { status
 var err = (status, message) => json({ error: message }, status);
 var MAX_BODY = 64 * 1024;
 var MAX_IMPORT_BODY = 1024 * 1024;
+var MAX_CLUB_BODY = 4 * 1024 * 1024;
 async function body(req, max = MAX_BODY) {
   const raw = await req.text();
   if (raw.length > max) throw new FutError("Request body is too large.");
@@ -7114,6 +7302,16 @@ async function handle(req, deps) {
       }
       if (m === "DELETE") return await deleteCard(db, userId, id) ? json({ data: { deleted: id } }) : err(404, "Card not found.");
       return err(405, "Use GET, PUT or DELETE.");
+    }
+    if (route === "/club/import" && m === "POST") {
+      const result = await importClub(db, userId, await body(req, MAX_CLUB_BODY));
+      let prices_linked = 0;
+      try {
+        prices_linked = (await (await marketFor(db)).relinkHeldCaptures(userId)).linked;
+      } catch (e) {
+        console.warn("[fut-api] relink after club sync:", e);
+      }
+      return json({ data: { ...result, prices_linked } });
     }
     if (route === "/managers" && m === "GET") return json({ data: await listManagers(db, userId) });
     if (route === "/managers" && m === "POST") return json({ data: await addManager(db, userId, parseManagerInput(await body(req))) }, 201);

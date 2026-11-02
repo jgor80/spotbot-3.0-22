@@ -6229,7 +6229,7 @@ var FutError = class extends Error {
     this.status = status;
   }
 };
-var MAX_CARDS_PER_USER = 300;
+var MAX_CARDS_PER_USER = 1e3;
 var MAX_SQUADS_PER_USER = 50;
 var FACE = ["pac", "sho", "pas", "dri", "def", "phy"];
 var POSITION = /^[A-Z]{2,3}$/;
@@ -6259,21 +6259,30 @@ var isUuid = (v) => typeof v === "string" && UUID3.test(v);
 async function hydrate(db, userId, rows) {
   if (!rows.length) return [];
   const ids = rows.map((r2) => r2.id);
-  const [attrs, styles, inv] = await Promise.all([
-    db.from("card_attributes").select("*").in("card_id", ids),
-    db.from("card_playstyles").select("*").in("card_id", ids),
-    db.from("club_inventory").select("*").eq("user_id", userId).in("card_id", ids)
-  ]);
-  fail(attrs.error);
-  fail(styles.error);
-  fail(inv.error);
-  const attrBy = new Map((attrs.data ?? []).map((a) => [a.card_id, a]));
-  const invBy = new Map((inv.data ?? []).map((i) => [i.card_id, i]));
+  const attrs = { data: [] }, styles = { data: [] }, inv = { data: [] };
+  for (let i = 0; i < ids.length; i += 100) {
+    const part = ids.slice(i, i + 100);
+    const [a, s, n] = await Promise.all([
+      db.from("card_attributes").select("*").in("card_id", part),
+      db.from("card_playstyles").select("*").in("card_id", part),
+      db.from("club_inventory").select("*").eq("user_id", userId).in("card_id", part)
+    ]);
+    fail(a.error);
+    fail(s.error);
+    fail(n.error);
+    attrs.data.push(...a.data ?? []);
+    styles.data.push(...s.data ?? []);
+    inv.data.push(...n.data ?? []);
+  }
+  const attrBy = new Map(attrs.data.map((a) => [a.card_id, a]));
+  const invBy = new Map(inv.data.map((i) => [i.card_id, i]));
+  const styleBy = /* @__PURE__ */ new Map();
+  for (const st of styles.data) styleBy.set(st.card_id, [...styleBy.get(st.card_id) ?? [], st]);
   return rows.map((r2) => {
     const a = attrBy.get(r2.id) ?? {};
     const stats = {};
     for (const k of FACE) if (a[k] !== null && a[k] !== void 0) stats[k] = Number(a[k]);
-    const mine = (styles.data ?? []).filter((s) => s.card_id === r2.id);
+    const mine = styleBy.get(r2.id) ?? [];
     const owned = invBy.get(r2.id);
     return {
       id: r2.id,
