@@ -216,3 +216,49 @@ Deno.test("market: fc27-market pull imports third-party prices for your synced c
   const again = (await call("POST", "/v1/market/import/fc27-market")).data.data;
   assert(again.import.inserted === 0, JSON.stringify(again));
 });
+
+Deno.test("market: community pool is opt-in, give-to-get, pooled by median, and leaves when you stop sharing", async () => {
+  const { db, call } = setup();
+  const perm = { commercial_use: false, storage: true, retention_days: 30, display: true, derived_analytics: true, model_training: false, redistribution: false, attribution: "XI Lab community" };
+  (db.tables.market_price_sources as unknown[]).push({ id: "community_pool", name: "XI Lab community", kind: "browser_capture", status: "enabled", is_demo: false, status_note: "Pooled.", permissions: perm, evidence: "estimate" });
+  const THIRD = "33333333-3333-4333-8333-333333333333";
+  const club = (user: string) => call("POST", "/v1/club/import", { format: "xilab-club-capture", version: 1, verified: false, captured_at: "x", names: {}, items: [
+    { item_id: 1, ea_item_id: 101, asset_id: 101, kind: "player", rating: 85, position: "CB", positions: ["CB"], team_id: 1, league_id: 2, nation_id: 3, rare_flag: 0, untradeable: false, loan: false, stats: null, skill_moves: null, weak_foot: null, seen_in: "club" },
+  ] }, user);
+  const hour = new Date(Math.floor((Date.now() - 3 * H) / H) * H);
+  const at = (mins: number) => new Date(hour.getTime() + mins * 60_000).toISOString();
+  const capture = (rows: string[]) => ["ea_item_id,asset_id,rating,platform,price,observed_at,kind,listings", ...rows].join("\n");
+
+  // Not sharing: importing a capture adds nothing to the pool, and pulling is refused.
+  await club(ME);
+  let r = await call("POST", "/v1/market/prices/import", { text: capture([`101,101,85,console,10000,${at(5)},lowest_bin,3`]) });
+  assert(r.status === 200 && r.data.data.shared_with_community === 0, JSON.stringify(r.data));
+  assert(!(db.tables.market_community_observations ?? []).length, "nothing pooled without opting in");
+  r = await call("POST", "/v1/market/import/community");
+  assert(r.status === 403, JSON.stringify(r.data));
+
+  // Two others share; one has a typo price that is dropped as an outlier. Lowest price per hour per person is kept.
+  for (const u of [OTHER, THIRD]) {
+    await club(u);
+    assert((await call("POST", "/v1/market/sharing", { sharing: true }, u)).data.data.sharing === true, "opt in");
+  }
+  r = await call("POST", "/v1/market/prices/import", { text: capture([`101,101,85,console,10400,${at(10)},lowest_bin,2`, `101,101,85,console,10200,${at(20)},lowest_bin,4`, `101,101,85,pc,9000,${at(10)},lowest_bin,1`]) }, OTHER);
+  assert(r.data.data.shared_with_community === 2, JSON.stringify(r.data));
+  await call("POST", "/v1/market/prices/import", { text: capture([`101,101,85,console,10600,${at(30)},lowest_bin,1`, `101,101,85,console,99,${at(31)},lowest_bin,1`]) }, THIRD);
+  const pool = db.tables.market_community_observations as { contributor_user_id: string; price: number; platform: string }[];
+  assert(pool.length === 3 && pool.find((x) => x.contributor_user_id === OTHER && x.platform === "console")!.price === 10200, JSON.stringify(pool));
+
+  // I opt in and pull: one console hour (median of 10200 and 10600) and one PC hour.
+  await call("POST", "/v1/market/sharing", { sharing: true });
+  r = await call("POST", "/v1/market/import/community");
+  assert(r.status === 200, JSON.stringify(r.data));
+  const d = r.data.data;
+  assert(d.cards_with_community_prices === 1 && d.observations === 2 && d.import.inserted === 2 && d.sharers === 3 && d.max_contributors === 2, JSON.stringify(d));
+  const mine = (db.tables.market_price_observations as { owner_user_id: string; source_id: string; price: number; platform: string }[]).filter((x) => x.owner_user_id === ME && x.source_id === "community_pool");
+  assert(mine.some((x) => x.platform === "console" && x.price === 10400) && mine.some((x) => x.platform === "pc" && x.price === 9000), JSON.stringify(mine));
+
+  // Stopping deletes what you contributed.
+  const off = (await call("POST", "/v1/market/sharing", { sharing: false }, OTHER)).data.data;
+  assert(off.sharing === false && off.deleted === 2 && off.your_contributions === 0, JSON.stringify(off));
+  assert((db.tables.market_community_observations as { contributor_user_id: string }[]).every((x) => x.contributor_user_id !== OTHER), "contributions removed");
+});

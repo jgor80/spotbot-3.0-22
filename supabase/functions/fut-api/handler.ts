@@ -8,6 +8,7 @@ import {
 } from "../_shared/fut/service.ts";
 import { importClub } from "../_shared/fut/club.ts";
 import { pullFc27Market } from "../_shared/fut/fc27market.ts";
+import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
 import { scanRequestSchema, thesisInputSchema, watchItemInputSchema } from "../_shared/fut/xilab/market/index.ts";
 import { assignCard, cardSchema, createSquad, FORMATIONS, squadSchema, type Squad, type WorkspaceCard } from "../_shared/fut/xilab/workspace/index.ts";
@@ -270,7 +271,19 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         if (typeof b.text !== "string" || !b.text.trim()) throw new FutError("Send the price history as text: CSV with card_id,platform,price,observed_at, or a JSON array.");
         if (b.text.split("\n").length > MAX_IMPORT_ROWS + 1) throw new FutError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`);
         const r = await runWorkspace(() => mk.importPriceHistory(userId, b.text as string));
-        return json({ data: { ...r, rejected: r.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) } });
+        // If you share prices, your helper's capture rows also go into the community pool.
+        const pooled = await contributeCaptures(db, userId, b.text as string);
+        return json({ data: { ...r, shared_with_community: pooled.shared, rejected: r.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) } });
+      }
+      // Community price pool: opt in to share your captures, and pull pooled prices for your own cards.
+      if (route === "/market/sharing" && m === "GET") return json({ data: await getSharing(db, userId) });
+      if (route === "/market/sharing" && m === "POST") {
+        const b = obj(await body(req));
+        if (typeof b.sharing !== "boolean") throw new FutError("sharing must be true or false.");
+        return json({ data: await setSharing(db, userId, b.sharing) });
+      }
+      if (route === "/market/import/community" && m === "POST") {
+        return json({ data: await runWorkspace(() => pullCommunity(db, userId, mk)) });
       }
       // Third-party prices from the public fc27-market API, for the caller's own cards only (Jeff's request).
       if (route === "/market/import/fc27-market" && m === "POST") {

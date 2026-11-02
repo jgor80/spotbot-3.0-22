@@ -110,7 +110,9 @@ export interface MarketThesis { investment: number | null; tax_at_target: number
 export interface MarketSquadComparison { summary: string; options: unknown[]; already_in_squad: string | null; owned: boolean; cost: unknown; skipped_locked: unknown; no_eligible_slot: boolean; rule_version: string; evidence: MarketEvidence }
 export interface MarketWatchItem { card_id: string; name: string; platform: MarketPlatform; added_at: string; note: string | null; target_buy: number | null; target_sell: number | null; price_at_add: number | null; latest_price: number | null; freshness: MarketFreshnessStatus; status: MarketStatus; since_added_pct: number | null; at_target_buy: boolean; at_target_sell: boolean; reasons?: string[]; could_be_wrong?: string[] }
 export interface MarketWatchlist { items: MarketWatchItem[]; note: string }
-export interface MarketImportResult { accepted: number; inserted: number; skipped: number; duplicates: number; rejected: { line: number; reason: string }[]; held: number; linked_from_held: number; still_held: number }
+export interface MarketImportResult { accepted: number; inserted: number; skipped: number; duplicates: number; rejected: { line: number; reason: string }[]; held: number; linked_from_held: number; still_held: number; shared_with_community?: number }
+export interface MarketSharing { sharing: boolean; since: string | null; your_contributions: number; deleted?: number }
+export interface CommunityPull { sharers: number; your_cards_with_ea_id: number; cards_with_community_prices: number; observations: number; max_contributors: number; import: MarketImportResult | null; note: string }
 export interface Fc27MarketPull { updated: string | null; hours_old: number | null; your_cards_with_ea_id: number; matched: number; observations: number; import: MarketImportResult | null; note: string }
 export interface MarketHeld { items: { ea_item_id: string | number; asset_id: string | number; rating: number; details: { rare_flag?: number; team_id?: number; league_id?: number; nation_id?: number; position?: string } | null; special_version: boolean | null; observations: number; platforms: string[]; latest_price: number | null; latest_platform: string; latest_observed_at: string | null; reason: string }[]; total_observations: number; evidence: MarketEvidence; note: string }
 export interface MarketSource { id: string; name: string; kind: string; status: "enabled" | "disabled" | "not_authorized"; is_demo: boolean; status_note: string; permissions: Record<string, boolean | null>; evidence: MarketEvidence }
@@ -129,6 +131,9 @@ export const futApi = {
     unwatch: (id: string, platform: MarketPlatform) => futRequest(marketPath(`/watchlist/${encodeURIComponent(id)}`, platform), "DELETE"),
     importPrices: (text: string, platform: MarketPlatform) => futRequest<MarketImportResult>(marketPath("/prices/import", platform), "POST", { text }),
     pullFc27Market: () => futRequest<Fc27MarketPull>("/market/import/fc27-market", "POST", {}),
+    sharing: () => futRequest<MarketSharing>("/market/sharing"),
+    setSharing: (sharing: boolean) => futRequest<MarketSharing>("/market/sharing", "POST", { sharing }),
+    pullCommunity: () => futRequest<CommunityPull>("/market/import/community", "POST", {}),
     held: (platform: MarketPlatform) => futRequest<MarketHeld>(marketPath("/held", platform)),
     linkHeld: (ea_item_id: string | number, card_id: string, platform: MarketPlatform) => futRequest<{ linked: number }>(marketPath("/held/link", platform), "POST", { ea_item_id, card_id }),
     relink: (platform: MarketPlatform) => futRequest<{ linked: number; still_held: number }>(marketPath("/held/relink", platform), "POST", {}),
