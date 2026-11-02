@@ -5519,13 +5519,30 @@ async function fillReferenceNames(db, items, names) {
     if (n && !names.nations[n]) want.nations.add(n);
   }
   const into = { clubs: names.teams, leagues: names.leagues, nations: names.nations };
+  const clubLeague = /* @__PURE__ */ new Map();
   for (const table of ["clubs", "leagues", "nations"]) {
     const ids = [...want[table]];
     for (let i = 0; i < ids.length; i += 100) {
-      const { data, error } = await db.from(table).select("ea_id, name").in("ea_id", ids.slice(i, i + 100));
-      fail2(error);
-      for (const r2 of data ?? []) if (typeof r2.name === "string" && r2.name.trim()) into[table][String(r2.ea_id)] = clip(r2.name.trim());
+      const { data: data2, error: error2 } = await db.from(table).select(table === "clubs" ? "ea_id, name, league_id" : "ea_id, name").in("ea_id", ids.slice(i, i + 100));
+      fail2(error2);
+      for (const r2 of data2 ?? []) {
+        if (typeof r2.name === "string" && r2.name.trim()) into[table][String(r2.ea_id)] = clip(r2.name.trim());
+        if (table === "clubs" && r2.league_id !== null && r2.league_id !== void 0) clubLeague.set(String(r2.ea_id), r2.league_id);
+      }
     }
+  }
+  const leagueIds = [...new Set(clubLeague.values())];
+  if (!leagueIds.length) return;
+  const { data, error } = await db.from("leagues").select("id, name").in("id", leagueIds);
+  fail2(error);
+  const leagueName = new Map((data ?? []).map((r2) => [r2.id, typeof r2.name === "string" ? clip(r2.name.trim()) : ""]));
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object") continue;
+    const it = raw;
+    const t = posInt(it.team_id), l = posInt(it.league_id);
+    if (!t || !l || names.leagues[l]) continue;
+    const name2 = leagueName.get(clubLeague.get(String(t)));
+    if (name2) names.leagues[l] = name2;
   }
 }
 async function importClub(db, userId, body2) {
@@ -5734,6 +5751,131 @@ async function pullFc27Market(db, userId, market, fetchFn = (u) => fetch(u, { he
   };
 }
 
+// supabase/functions/_shared/fut/community.ts
+var fail3 = (error) => {
+  if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
+};
+var COMMUNITY_SOURCE_ID = "community_pool";
+var MIN_PRICE = 150;
+var MAX_PRICE = 15e6;
+var KEEP_DAYS = 30;
+var MAX_AGE_DAYS = 14;
+var OUTLIER_FACTOR = 3;
+var MAX_PULL_CARDS = 300;
+var H = 36e5;
+var hourOf = (iso3) => new Date(Math.floor(Date.parse(iso3) / H) * H).toISOString();
+async function getSharing(db, userId) {
+  const { data, error } = await db.from("market_sharing").select("*").eq("user_id", userId).maybeSingle();
+  fail3(error);
+  const r2 = data;
+  const { count, error: e2 } = await db.from("market_community_observations").select("id", { count: "exact", head: true }).eq("contributor_user_id", userId);
+  fail3(e2);
+  return { sharing: !!r2?.sharing, since: r2?.sharing && r2.updated_at ? String(r2.updated_at) : null, your_contributions: count ?? 0 };
+}
+async function setSharing(db, userId, on) {
+  fail3((await db.from("market_sharing").upsert({ user_id: userId, sharing: on, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "user_id" })).error);
+  let deleted = 0;
+  if (!on) {
+    const { count } = await db.from("market_community_observations").select("id", { count: "exact", head: true }).eq("contributor_user_id", userId);
+    fail3((await db.from("market_community_observations").delete().eq("contributor_user_id", userId)).error);
+    deleted = count ?? 0;
+  }
+  return { ...await getSharing(db, userId), deleted };
+}
+function captureContributions(text2, now2 = Date.now()) {
+  const lines = text2.trim().split(/\r?\n/);
+  const head = (lines.shift() ?? "").split(",").map((s) => s.trim());
+  const col = (n) => head.indexOf(n);
+  const [iEa, iPl, iPr, iAt, iLs] = ["ea_item_id", "platform", "price", "observed_at", "listings"].map(col);
+  if (iEa !== 0 || iPr < 0 || iAt < 0) return [];
+  const best = /* @__PURE__ */ new Map();
+  for (const line of lines) {
+    const f2 = line.split(",");
+    const ea = Number(f2[iEa]), price = Number(f2[iPr]), at = Date.parse(f2[iAt] ?? "");
+    const platform = iPl >= 0 ? (f2[iPl] ?? "").trim() : "console";
+    if (!Number.isInteger(ea) || ea <= 0 || !Number.isInteger(price) || price < MIN_PRICE || price > MAX_PRICE) continue;
+    if (platform !== "console" && platform !== "pc") continue;
+    if (Number.isNaN(at) || at > now2 + 10 * 6e4 || at < now2 - MAX_AGE_DAYS * 864e5) continue;
+    const observed_at = new Date(at).toISOString(), hour = hourOf(observed_at);
+    const listings = iLs >= 0 && f2[iLs] ? Number(f2[iLs]) : null;
+    const k = `${ea}|${platform}|${hour}`;
+    const prev = best.get(k);
+    if (!prev || price < prev.price) best.set(k, { ea_item_id: ea, platform, hour, price, listings: Number.isInteger(listings) ? listings : null, observed_at });
+  }
+  return [...best.values()];
+}
+async function contributeCaptures(db, userId, text2) {
+  if (!/^\s*ea_item_id,/.test(text2)) return { shared: 0, sharing: false };
+  const { sharing } = await getSharing(db, userId);
+  if (!sharing) return { shared: 0, sharing: false };
+  const rows = captureContributions(text2);
+  const ids = [...new Set(rows.map((r2) => r2.ea_item_id))];
+  const have = /* @__PURE__ */ new Map();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await db.from("market_community_observations").select("ea_item_id, platform, hour, price").eq("contributor_user_id", userId).in("ea_item_id", ids.slice(i, i + 100));
+    fail3(error);
+    for (const r2 of data ?? []) have.set(`${r2.ea_item_id}|${r2.platform}|${new Date(String(r2.hour)).toISOString()}`, Number(r2.price));
+  }
+  const fresh = rows.filter((r2) => {
+    const old = have.get(`${r2.ea_item_id}|${r2.platform}|${r2.hour}`);
+    return old === void 0 || r2.price < old;
+  }).map((r2) => ({ ...r2, contributor_user_id: userId }));
+  for (let i = 0; i < fresh.length; i += 500) {
+    fail3((await db.from("market_community_observations").upsert(fresh.slice(i, i + 500), { onConflict: "contributor_user_id,ea_item_id,platform,hour" })).error);
+  }
+  fail3((await db.from("market_community_observations").delete().lte("hour", new Date(Date.now() - KEEP_DAYS * 864e5).toISOString())).error);
+  return { shared: fresh.length, sharing: true };
+}
+var median = (xs) => {
+  const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
+  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+};
+function poolHours(rows, caller) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const r2 of rows) {
+    const k = `${r2.ea_item_id}|${r2.platform}|${new Date(r2.hour).toISOString()}`;
+    groups.set(k, [...groups.get(k) ?? [], r2]);
+  }
+  const out = [];
+  for (const g of groups.values()) {
+    if (!g.some((r2) => r2.contributor_user_id !== caller)) continue;
+    const m = median(g.map((r2) => r2.price));
+    const kept = g.filter((r2) => r2.price <= m * OUTLIER_FACTOR && r2.price * OUTLIER_FACTOR >= m);
+    if (!kept.length) continue;
+    out.push({ ea_item_id: g[0].ea_item_id, platform: g[0].platform, hour: new Date(g[0].hour).toISOString(), price: median(kept.map((r2) => r2.price)), contributors: new Set(kept.map((r2) => r2.contributor_user_id)).size });
+  }
+  return out;
+}
+async function pullCommunity(db, userId, market) {
+  const { sharing } = await getSharing(db, userId);
+  if (!sharing) throw new FutError("Turn on price sharing first: community prices are for people who share theirs.", 403);
+  const cards = (await searchMyCards(db, userId, { all: true })).filter((c) => c.ea_item_id !== null);
+  const byEa = /* @__PURE__ */ new Map();
+  for (const c of cards) if (!byEa.has(c.ea_item_id)) byEa.set(c.ea_item_id, c.id);
+  const ids = [...byEa.keys()].slice(0, MAX_PULL_CARDS);
+  const since = new Date(Date.now() - KEEP_DAYS * 864e5).toISOString();
+  const rows = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await db.from("market_community_observations").select("contributor_user_id, ea_item_id, platform, hour, price").in("ea_item_id", ids.slice(i, i + 100)).gte("hour", since);
+    fail3(error);
+    rows.push(...data ?? []);
+  }
+  const pooled = poolHours(rows.map((r2) => ({ contributor_user_id: String(r2.contributor_user_id), ea_item_id: Number(r2.ea_item_id), platform: String(r2.platform), hour: String(r2.hour), price: Number(r2.price) })), userId);
+  const lines = pooled.map((p) => `${byEa.get(p.ea_item_id)},${p.platform},${p.price},${p.hour},lowest_bin`);
+  const imported = lines.length ? await market.importPriceHistory(userId, ["card_id,platform,price,observed_at,kind", ...lines].join("\n"), { source_id: COMMUNITY_SOURCE_ID }) : null;
+  const { count } = await db.from("market_sharing").select("user_id", { count: "exact", head: true }).eq("sharing", true);
+  return {
+    source: COMMUNITY_SOURCE_ID,
+    sharers: count ?? 0,
+    your_cards_with_ea_id: byEa.size,
+    cards_with_community_prices: new Set(pooled.map((p) => p.ea_item_id)).size,
+    observations: lines.length,
+    max_contributors: pooled.reduce((m, p) => Math.max(m, p.contributors), 0),
+    import: imported,
+    note: "Pooled from other XI Lab users' own Web App searches: for each hour, the median of each person's lowest price, with outliers dropped. Hours only you saw are skipped (they're already in your history). Stored privately as an estimate."
+  };
+}
+
 // supabase/functions/_shared/fut/xilab/market/types.ts
 var PLATFORMS = ["console", "pc"];
 var WINDOWS = ["1h", "6h", "24h", "72h", "7d"];
@@ -5871,7 +6013,7 @@ function stdev(xs) {
   const m = mean(xs);
   return Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / (xs.length - 1));
 }
-function median(xs) {
+function median2(xs) {
   if (!xs.length) return null;
   const s = [...xs].sort((a, b) => a - b);
   const m = s.length >> 1;
@@ -6096,7 +6238,7 @@ function peerChanges(peerSeries) {
   const out = {};
   for (const w of WINDOWS) {
     const xs = peerSeries.map((s) => change(s, w)).filter((x) => x !== null);
-    out[w] = { value: xs.length >= 3 ? median(xs) : null, n: xs.length };
+    out[w] = { value: xs.length >= 3 ? median2(xs) : null, n: xs.length };
   }
   return out;
 }
@@ -6171,7 +6313,7 @@ function meanReversion(s, peerPrices, rules = DEFAULT_MARKET_RULES) {
   const lo = prices.length ? Math.min(...prices) : null;
   const hi = prices.length ? Math.max(...prices) : null;
   const rp = last && lo !== null && hi !== null && hi > lo ? round((last.price - lo) / (hi - lo)) : null;
-  const pm = median(peerPrices);
+  const pm = median2(peerPrices);
   const ratio = last && pm ? round(last.price / pm) : null;
   const unusually_low = z !== null && z <= rules.thresholds.mean_reversion_z;
   let pattern = null;
@@ -7035,7 +7177,7 @@ function createMarketService(deps) {
 }
 
 // supabase/functions/_shared/fut/market.ts
-var fail3 = (error) => {
+var fail4 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var iso2 = (v) => v === null || v === void 0 ? null : new Date(String(v)).toISOString();
@@ -7047,7 +7189,7 @@ async function allPages(make) {
   const out = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await make().range(from, from + PAGE - 1);
-    fail3(error);
+    fail4(error);
     out.push(...data ?? []);
     if (!data || data.length < PAGE) return out;
     if (out.length >= 2e5) throw new FutError("Too much price history to analyse at once.", 413);
@@ -7090,7 +7232,7 @@ var PgPriceStore = class {
     const have = new Set(existing.map((r2) => `${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
     const fresh = rows.filter((r2) => !have.has(`${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
     const { count, error } = await this.db.from("market_price_observations").select("id", { count: "exact", head: true }).eq("owner_user_id", owner);
-    fail3(error);
+    fail4(error);
     if ((count ?? 0) + fresh.length > MAX_PRICE_ROWS_PER_USER) throw new FutError(`You can keep up to ${MAX_PRICE_ROWS_PER_USER.toLocaleString("en-US")} price rows.`);
     for (let i = 0; i < fresh.length; i += 500) {
       const chunk = fresh.slice(i, i + 500).map((r2) => ({
@@ -7107,7 +7249,7 @@ var PgPriceStore = class {
         evidence: r2.evidence,
         quality: r2.quality ?? null
       }));
-      fail3((await this.db.from("market_price_observations").insert(chunk)).error);
+      fail4((await this.db.from("market_price_observations").insert(chunk)).error);
     }
     return { inserted: fresh.length, skipped: rows.length - fresh.length };
   }
@@ -7127,11 +7269,11 @@ var PgMembershipStore = class {
     const def = DEFAULT_BASKETS.find((b) => b.id === basket_id);
     if (def) {
       const { data, error } = await this.db.from("market_baskets").select("id").eq("id", basket_id).maybeSingle();
-      fail3(error);
-      if (!data) fail3((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
+      fail4(error);
+      if (!data) fail4((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
     }
-    fail3((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
-    if (rows.length) fail3((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
+    fail4((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
+    if (rows.length) fail4((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
   }
 };
 var PgWatchlistStore = class {
@@ -7140,7 +7282,7 @@ var PgWatchlistStore = class {
   }
   async list(owner) {
     const { data, error } = await this.db.from("market_watchlist").select("*").eq("user_id", owner).order("added_at", { ascending: true }).limit(200);
-    fail3(error);
+    fail4(error);
     return (data ?? []).map((r2) => ({
       card_id: String(r2.card_id),
       platform: r2.platform,
@@ -7154,14 +7296,14 @@ var PgWatchlistStore = class {
   }
   async upsert(owner, w) {
     const { count, error } = await this.db.from("market_watchlist").select("card_id", { count: "exact", head: true }).eq("user_id", owner);
-    fail3(error);
-    fail3((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
+    fail4(error);
+    fail4((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
     if ((count ?? 0) >= 200) throw new FutError("Your watchlist can hold up to 200 cards.");
-    fail3((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
+    fail4((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
     return w;
   }
   async remove(owner, card_id, platform) {
-    fail3((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
+    fail4((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
   }
 };
 var PgCaptureHoldStore = class {
@@ -7173,7 +7315,7 @@ var PgCaptureHoldStore = class {
     const fresh = [...new Map(rows.filter((r2) => !have.has(holdKey(r2))).map((r2) => [holdKey(r2), r2])).values()];
     if (have.size + fresh.length > MAX_HELD_CAPTURES_PER_USER) throw new FutError(`You can keep up to ${MAX_HELD_CAPTURES_PER_USER.toLocaleString("en-US")} captured prices for cards you haven't added yet. Add those cards or link them first.`);
     for (let i = 0; i < fresh.length; i += 500)
-      fail3((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
+      fail4((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
         user_id: owner,
         ea_item_id: r2.ea_item_id,
         asset_id: r2.asset_id,
@@ -7189,7 +7331,7 @@ var PgCaptureHoldStore = class {
     const out = [];
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await this.db.from("market_capture_holds").select("*").eq("user_id", owner).order("observed_at", { ascending: true }).range(from, from + PAGE - 1);
-      fail3(error);
+      fail4(error);
       const rows = data ?? [];
       for (const r2 of rows)
         out.push({
@@ -7204,7 +7346,7 @@ var PgCaptureHoldStore = class {
   }
   async release(owner, rows) {
     for (const r2 of rows)
-      fail3((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
+      fail4((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
   }
 };
 var holdKey = (h) => `${h.ea_item_id}|${h.observation.platform}|${new Date(h.observation.observed_at).toISOString()}`;
@@ -7237,7 +7379,7 @@ var PgMarketCardSource = class {
 };
 async function marketSources(db) {
   const { data, error } = await db.from("market_price_sources").select("*").order("id", { ascending: true });
-  fail3(error);
+  fail4(error);
   return (data ?? []).map((r2) => ({
     id: String(r2.id),
     name: String(r2.name),
@@ -7251,7 +7393,7 @@ async function marketSources(db) {
 }
 async function marketRules(db) {
   const { data, error } = await db.from("market_rule_versions").select("*").eq("is_active", true).maybeSingle();
-  fail3(error);
+  fail4(error);
   if (!data) throw new FutError("Market rules aren't set up yet.", 503);
   return { id: String(data.id), status: data.status, notes: String(data.notes), ...data.body };
 }
@@ -7511,7 +7653,17 @@ async function handle(req, deps) {
         if (typeof b.text !== "string" || !b.text.trim()) throw new FutError("Send the price history as text: CSV with card_id,platform,price,observed_at, or a JSON array.");
         if (b.text.split("\n").length > MAX_IMPORT_ROWS + 1) throw new FutError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`);
         const r2 = await runWorkspace(() => mk.importPriceHistory(userId, b.text));
-        return json({ data: { ...r2, rejected: r2.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) } });
+        const pooled = await contributeCaptures(db, userId, b.text);
+        return json({ data: { ...r2, shared_with_community: pooled.shared, rejected: r2.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) } });
+      }
+      if (route === "/market/sharing" && m === "GET") return json({ data: await getSharing(db, userId) });
+      if (route === "/market/sharing" && m === "POST") {
+        const b = obj(await body(req));
+        if (typeof b.sharing !== "boolean") throw new FutError("sharing must be true or false.");
+        return json({ data: await setSharing(db, userId, b.sharing) });
+      }
+      if (route === "/market/import/community" && m === "POST") {
+        return json({ data: await runWorkspace(() => pullCommunity(db, userId, mk)) });
       }
       if (route === "/market/import/fc27-market" && m === "POST") {
         return json({ data: await runWorkspace(() => pullFc27Market(db, userId, mk, deps.fetch)) });
