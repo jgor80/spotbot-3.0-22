@@ -180,3 +180,39 @@ Deno.test("market: captures for cards you don't have yet are held, listed, and l
   assert(ok.status === 200 && ok.data.data.linked === 8, JSON.stringify(ok.data));
   assert((await call("POST", "/v1/market/held/link", { ea_item_id: "x", card_id: hand.data.data.id })).status === 400, "bad ea id");
 });
+
+Deno.test("market: fc27-market pull imports third-party prices for your synced cards only", async () => {
+  const db = futMemoryDb({ ...seededRules(), ...seededMarket() });
+  const perm = { commercial_use: false, storage: true, retention_days: null, display: true, derived_analytics: true, model_training: false, redistribution: false, attribution: "fc27-market" };
+  (db.tables.market_price_sources as unknown[]).push({ id: "fc27_market", name: "fc27-market", kind: "user_import", status: "enabled", is_demo: false, status_note: "Third party.", permissions: perm, evidence: "estimate" });
+  const urls: string[] = [];
+  const updated = new Date(Math.floor((Date.now() - 2 * H) / 60_000) * 60_000);
+  const t = (d: Date) => Math.floor(d.getTime() / 60_000);
+  const fake = (url: string) => {
+    urls.push(url);
+    const body = url.endsWith("/latest")
+      ? { updated: updated.toISOString(), groups: { gold: [{ eaId: 101, name: "X", rating: 85, price: 12_750 }, { eaId: 999, price: 5_000 }] } }
+      : url.endsWith("/history/101") ? { t: [t(new Date(updated.getTime() - H)), t(updated)], p: [13_000, 12_750] } : { t: [], p: [] };
+    return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+  };
+  const deps: Deps = { db, userFor: (req) => Promise.resolve(req.headers.get("x-test-user")), env: (k) => (k === "FUT_ENABLED" ? "true" : undefined), fetch: fake };
+  const call = async (method: string, path: string, body?: unknown, user = ME) => {
+    const res = await handle(new Request(`http://local/functions/v1/fut-api${path}`, { method, headers: { "x-test-user": user }, body: body === undefined ? undefined : JSON.stringify(body) }), deps);
+    return { status: res.status, data: await res.json() };
+  };
+  // A synced club card (EA item id 101) and a typed-in card without an EA id.
+  await call("POST", "/v1/club/import", { format: "xilab-club-capture", version: 1, verified: false, captured_at: "x", names: {}, items: [
+    { item_id: 1, ea_item_id: 101, asset_id: 101, kind: "player", rating: 85, position: "CB", positions: ["CB"], team_id: 1, league_id: 2, nation_id: 3, rare_flag: 0, untradeable: false, loan: false, stats: null, skill_moves: null, weak_foot: null, seen_in: "club" },
+  ] });
+  await call("POST", "/v1/cards", { player_name: "Typed", overall: 80, positions: ["ST"], evidence: "game_data" });
+  const r = await call("POST", "/v1/market/import/fc27-market");
+  assert(r.status === 200, JSON.stringify(r.data));
+  const d = r.data.data;
+  assert(d.matched === 1 && d.observations === 2 && d.import.inserted === 2, JSON.stringify(d));
+  assert(urls.every((u) => u.startsWith("https://fc27-market.val.run/")) && urls.length === 2, JSON.stringify(urls));
+  const rows = db.tables.market_price_observations as { source_id: string; owner_user_id: string; platform: string }[];
+  assert(rows.length === 2 && rows.every((x) => x.source_id === "fc27_market" && x.owner_user_id === ME && x.platform === "console"), JSON.stringify(rows));
+  // Pulling again stores nothing new.
+  const again = (await call("POST", "/v1/market/import/fc27-market")).data.data;
+  assert(again.import.inserted === 0, JSON.stringify(again));
+});

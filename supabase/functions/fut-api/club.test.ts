@@ -94,3 +94,15 @@ Deno.test("club import: Icons league marks Icons", async () => {
   const c = (await call("GET", "/v1/cards")).data.data[0];
   assert(c.is_icon === true, JSON.stringify(c));
 });
+
+Deno.test("club import: names the file lacks come from the reference tables", async () => {
+  const { call, db } = setup();
+  db.tables.clubs = [{ id: 1, ea_id: 99, name: "Reference Rovers" }];
+  db.tables.leagues = [{ id: 1, ea_id: 7, name: "Reference League" }];
+  await call("POST", "/v1/club/import", file([item(401, { team_id: 99, league_id: 7 }), item(402, { team_id: 98 })]));
+  const cards = (await call("GET", "/v1/cards")).data.data;
+  const a = cards.find((c: { ea_item_id: number }) => c.ea_item_id === 401);
+  const b = cards.find((c: { ea_item_id: number }) => c.ea_item_id === 402);
+  assert(a.club === "Reference Rovers" && a.league === "Reference League", JSON.stringify(a));
+  assert(b.club === "EA club 98" && b.league === "Test League", JSON.stringify(b));
+});
