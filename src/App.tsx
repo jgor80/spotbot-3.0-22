@@ -39,6 +39,9 @@ const StreamOverlay = lazy(() => import("./pages/StreamOverlay"));
 const TermsPage = lazy(() => import("./pages/TermsPage"));
 const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const FutHomePage = lazy(() => import("./pages/fut/FutHomePage"));
+const FutSquadPage = lazy(() => import("./pages/fut/FutSquadPage"));
+const FutCardsPage = lazy(() => import("./pages/fut/FutCardsPage"));
 
 const queryClient = new QueryClient();
 
@@ -96,6 +99,9 @@ const App = () => (
                   <Route path="/wrapped" element={<ProtectedRoute><WrappedPage /></ProtectedRoute>} />
                   <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
                   <Route path="/players" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+                  <Route path="/fut" element={<ProtectedRoute><FutHomePage /></ProtectedRoute>} />
+                  <Route path="/fut/squads/:id" element={<ProtectedRoute><FutSquadPage /></ProtectedRoute>} />
+                  <Route path="/fut/cards" element={<ProtectedRoute><FutCardsPage /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
