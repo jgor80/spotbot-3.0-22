@@ -5847,8 +5847,6 @@ function poolHours(rows, caller) {
   return out;
 }
 async function pullCommunity(db, userId, market) {
-  const { sharing } = await getSharing(db, userId);
-  if (!sharing) throw new FutError("Turn on price sharing first: community prices are for people who share theirs.", 403);
   const cards = (await searchMyCards(db, userId, { all: true })).filter((c) => c.ea_item_id !== null);
   const byEa = /* @__PURE__ */ new Map();
   for (const c of cards) if (!byEa.has(c.ea_item_id)) byEa.set(c.ea_item_id, c.id);
