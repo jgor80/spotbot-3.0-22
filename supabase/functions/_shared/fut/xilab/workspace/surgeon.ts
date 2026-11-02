@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@439d3f8 src/workspace/surgeon.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@53e9a20 src/workspace/surgeon.ts by scripts/sync-xilab.mjs. Do not edit.
 // Chemistry Surgeon: explains a slot's chemistry from the engine's breakdown. It never computes links itself.
 import { LINK_TYPES, isInPosition, type ChemistryRules, type LinkType } from "../chemistry/index.ts";
 import { evaluateSquad, getSlot, toSquadInput, type SquadEvaluation } from "./squad.ts";

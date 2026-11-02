@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@439d3f8 src/workspace/demo.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@53e9a20 src/workspace/demo.ts by scripts/sync-xilab.mjs. Do not edit.
 // DEMO DATA. Every player, club and price here is made up so the workflow can be tried and tested
 // without EA data in this public repo. Leagues and nations are real names so the links read naturally.
 // The shape mirrors Jeff's brief: a 3-5-2 with a US/NWSL striker at 2/3 (4/5 nation, 4/5 league, like Wilson in the brief)

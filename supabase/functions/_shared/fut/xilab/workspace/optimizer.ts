@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@439d3f8 src/workspace/optimizer.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@53e9a20 src/workspace/optimizer.ts by scripts/sync-xilab.mjs. Do not edit.
 // Squad Optimizer: constrained search over swaps, validated by the chemistry engine.
 // Stages: read squad -> hard constraints -> prune candidates -> combine 1..N swaps (+ manager) with a beam
 // search -> validate every squad with the engine -> rank -> explain. No link maths happens here.

@@ -6,6 +6,8 @@ import {
   addCard, addManager, compareCards, deleteCard, deleteManager, deleteSquad, futEnabled, FutError, getCard, listManagers, logRun,
   parseCardInput, parseManagerInput, runWorkspace, searchMyCards, toWorkspaceCard, updateCard, workspaceFor, type FutDb,
 } from "../_shared/fut/service.ts";
+import { marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
+import { scanRequestSchema, thesisInputSchema, watchItemInputSchema } from "../_shared/fut/xilab/market/index.ts";
 import { assignCard, cardSchema, createSquad, FORMATIONS, squadSchema, type Squad, type WorkspaceCard } from "../_shared/fut/xilab/workspace/index.ts";
 
 export const corsHeaders = {
@@ -28,9 +30,12 @@ export interface Deps {
   env?: (k: string) => string | undefined;
 }
 
-async function body(req: Request): Promise<unknown> {
+/** Price-history imports can be bigger than other requests (up to MAX_IMPORT_ROWS lines). */
+const MAX_IMPORT_BODY = 1024 * 1024;
+
+async function body(req: Request, max = MAX_BODY): Promise<unknown> {
   const raw = await req.text();
-  if (raw.length > MAX_BODY) throw new FutError("Request body is too large.");
+  if (raw.length > max) throw new FutError("Request body is too large.");
   if (!raw.trim()) return {};
   try { return JSON.parse(raw); } catch { throw new FutError("Request body must be JSON."); }
 }
@@ -40,6 +45,13 @@ function intParam(v: string | null, field: string, min: number, max: number): nu
   const n = Number(v);
   if (!Number.isInteger(n) || n < min || n > max) throw new FutError(`${field} must be a whole number from ${min} to ${max}.`);
   return n;
+}
+
+/** Validate a Market Lab request with XI Lab's schema; a bad field is the caller's to fix. */
+function parse<T>(schema: { safeParse: (v: unknown) => { success: boolean; data?: T; error?: { issues: { path: (string | number)[]; message: string }[] } } }, v: unknown): T {
+  const r = schema.safeParse(v);
+  if (r.success) return r.data as T;
+  throw new FutError(`Invalid request: ${r.error!.issues.slice(0, 5).map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; ")}`);
 }
 
 const obj = (v: unknown): Record<string, unknown> => {
@@ -186,6 +198,64 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         if (m === "DELETE") return (await deleteSquad(db, userId, id)) ? json({ data: { deleted: id } }) : err(404, "Squad not found.");
         return err(405, "Use GET or DELETE (save with POST /squads).");
       }
+    }
+
+    // ---- Market Lab (research and decision support; never buys, sells or bids). Prices are the caller's own imports.
+    if (route.startsWith("/market")) {
+      const mk = await marketFor(db);
+      const p = url.searchParams;
+      if (route === "/market/sources" && m === "GET") return json({ data: mk.getDataSourceStatus() });
+      if (route === "/market/overview" && m === "GET") return json({ data: await runWorkspace(() => mk.getMarketOverview(userId, { platform: platformParam(p.get("platform")) })) });
+      if (route === "/market/opportunities" && m === "GET") {
+        const q = parse(scanRequestSchema, {
+          platform: p.get("platform") || undefined,
+          status: p.get("status") ? p.get("status")!.split(",") : undefined,
+          max_price: intParam(p.get("max_price"), "max_price", 0, 15_000_000),
+          category: p.get("category") || undefined,
+          limit: intParam(p.get("limit"), "limit", 1, 200),
+        });
+        return json({ data: await runWorkspace(() => mk.findMarketOpportunities(userId, q)) });
+      }
+      const ci = route.match(/^\/market\/cards\/([^/]+)$/);
+      if (ci && m === "GET") return json({ data: await runWorkspace(() => mk.getCardMarketIntelligence(userId, marketCardId(ci[1]), { platform: platformParam(p.get("platform")) })) });
+      const rv = route.match(/^\/market\/cards\/([^/]+)\/relative-value$/);
+      if (rv && m === "GET") {
+        const others = (p.get("others") ?? "").split(",").filter(Boolean).slice(0, 10).map(marketCardId);
+        return json({ data: await runWorkspace(() => mk.compareCardRelativeValue(userId, marketCardId(rv[1]), { platform: platformParam(p.get("platform")), others })) });
+      }
+      if (route === "/market/thesis" && m === "POST") {
+        const input = parse(thesisInputSchema, await body(req));
+        marketCardId(input.card_id);
+        return json({ data: await runWorkspace(() => mk.analyzeTradeThesis(userId, input)) });
+      }
+      if (route === "/market/compare-squad" && m === "POST") {
+        const b = obj(await body(req));
+        const ws = await workspaceFor(db);
+        return json({ data: await runWorkspace(async () => {
+          const ref = squadRef(b.squad);
+          const squad = typeof ref === "string" ? await ws.getSquad(userId, ref) : { ...ref, owner_id: userId };
+          return mk.compareInMySquad(userId, marketCardId(b.card_id), squad, { platform: platformParam(b.platform) });
+        }) });
+      }
+      if (route === "/market/watchlist" && m === "GET") return json({ data: await runWorkspace(() => mk.getWatchlist(userId)) });
+      if (route === "/market/watchlist" && m === "POST") {
+        const w = parse(watchItemInputSchema, await body(req));
+        marketCardId(w.card_id);
+        return json({ data: await runWorkspace(() => mk.addToWatchlist(userId, w)) }, 201);
+      }
+      const wl = route.match(/^\/market\/watchlist\/([^/]+)$/);
+      if (wl && m === "DELETE") {
+        await runWorkspace(() => mk.removeFromWatchlist(userId, marketCardId(wl[1]), platformParam(p.get("platform"))));
+        return json({ data: { deleted: wl[1] } });
+      }
+      if (route === "/market/prices/import" && m === "POST") {
+        const b = obj(await body(req, MAX_IMPORT_BODY));
+        if (typeof b.text !== "string" || !b.text.trim()) throw new FutError("Send the price history as text: CSV with card_id,platform,price,observed_at, or a JSON array.");
+        if (b.text.split("\n").length > MAX_IMPORT_ROWS + 1) throw new FutError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`);
+        const r = await runWorkspace(() => mk.importPriceHistory(userId, b.text as string));
+        return json({ data: { ...r, rejected: r.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) } });
+      }
+      return err(404, "No such Market Lab route.");
     }
     return err(404, "No such XI Lab route.");
   } catch (e) {

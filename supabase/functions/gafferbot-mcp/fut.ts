@@ -7,6 +7,8 @@ import { Tool, ToolError } from "./protocol.ts";
 import {
   compareCards, futDb, FutError, getCard, latestSquadId, logRun, runWorkspace, searchMyCards, toWorkspaceCard, workspaceFor, type FutDb,
 } from "../_shared/fut/service.ts";
+import { marketCardId, marketFor, platformParam } from "../_shared/fut/market.ts";
+import { scanRequestSchema, thesisInputSchema } from "../_shared/fut/xilab/market/index.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
 export interface FutCtx {
@@ -231,3 +233,119 @@ export const FUT_TOOLS: Tool<FutCtx>[] = [
     }),
   },
 ];
+
+// ---------------------------------------------------------------- Market Lab (research only)
+
+const MARKET = "Prices are the player's own imported history (XI Lab has no licensed live price feed), so say how old the latest price is and never present it as live. " +
+  "Results are evidence, not predictions: report the status, the reasons and the 'could be wrong' list, and never call anything a guaranteed profit. " +
+  "Nothing here buys, sells, bids or touches the transfer market.";
+const PLATFORM = { type: "string", enum: ["console", "pc"], description: "Market: console (PlayStation and Xbox share one) or pc. Default console." };
+const CARD_ID = { type: "string", description: "One of the player's card ids (from get_my_fut_inventory)." };
+
+function zodArgs<T>(schema: { safeParse: (v: unknown) => { success: boolean; data?: T; error?: { issues: { path: (string | number)[]; message: string }[] } } }, v: unknown): T {
+  const r = schema.safeParse(v);
+  if (r.success) return r.data as T;
+  throw new ToolError(`Invalid arguments: ${r.error!.issues.slice(0, 5).map((i) => `${i.path.join(".") || "args"}: ${i.message}`).join("; ")}`);
+}
+const cardArg = (v: unknown) => {
+  try { return marketCardId(v); } catch (e) { throw new ToolError((e as Error).message); }
+};
+
+FUT_TOOLS.push(
+  {
+    name: "get_fut_market_overview",
+    title: "FUT market overview (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: Market Lab overview for the player's priced cards: benchmark indexes with 1h-7d changes and volatility, a rule-based market regime with the measurements behind it, cards showing unusual relative strength or declines, and price coverage. " + MARKET,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const o = await (await marketFor(db)).getMarketOverview(userId, { platform: platformParam(args.platform) });
+      const { index_history: _h, ...rest } = o;
+      return rest;
+    }),
+  },
+  {
+    name: "get_fut_card_market_intelligence",
+    title: "FUT card market intelligence (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: one card's Market Lab page: latest price and its age, relative strength against five benchmarks, momentum, mean reversion, signal status with reasons and risks, card utility (tactical-fit estimate) and comparable cards. " + MARKET,
+    inputSchema: { type: "object", properties: { card_id: CARD_ID, platform: PLATFORM }, required: ["card_id"], additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const r = await (await marketFor(db)).getCardMarketIntelligence(userId, cardArg(args.card_id), { platform: platformParam(args.platform) });
+      // The full hourly history is for charts; the AI gets the last 24 points.
+      return { ...r, price: { ...r.price, history: r.price.history.slice(-24) } };
+    }),
+  },
+  {
+    name: "find_fut_market_opportunities",
+    title: "Scan FUT market signals (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: Market Lab's scanner over the player's priced cards. Each card gets a status (favorable_setup, research_further, watch, overheated, elevated_risk, insufficient_evidence) with reasons. A favorable setup is not a guaranteed profitable trade. " + MARKET,
+    inputSchema: {
+      type: "object",
+      properties: {
+        platform: PLATFORM,
+        status: { type: "array", items: { type: "string", enum: ["watch", "research_further", "favorable_setup", "overheated", "elevated_risk", "insufficient_evidence"] } },
+        max_price: { type: "integer", minimum: 0 },
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Default 20." },
+      },
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const q = zodArgs(scanRequestSchema, { ...args, limit: args.limit ?? 20 });
+      return await (await marketFor(db)).findMarketOpportunities(userId, q);
+    }),
+  },
+  {
+    name: "compare_fut_card_relative_value",
+    title: "FUT relative value (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: a card's price against its tactical-fit estimate, next to comparable cards (same primary position, overall within 2) or the cards you name. Fit is a face-stat estimate; PlayStyles, roles and chemistry are not in it. " + MARKET,
+    inputSchema: {
+      type: "object",
+      properties: { card_id: CARD_ID, others: { type: "array", items: { type: "string" }, maxItems: 10 }, platform: PLATFORM },
+      required: ["card_id"],
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const others = Array.isArray(args.others) ? args.others.map(cardArg) : undefined;
+      return await (await marketFor(db)).compareCardRelativeValue(userId, cardArg(args.card_id), { platform: platformParam(args.platform), others });
+    }),
+  },
+  {
+    name: "analyze_fut_trade_thesis",
+    title: "FUT trade thesis (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: arithmetic on a trade the player is considering: investment, EA's 5% sale tax, break-even listing price, profit at their target, loss at their downside, risk/reward and the win rate needed to break even. It is not a forecast: any probability comes from the player. Cards held are never counted as coins. " + MARKET,
+    inputSchema: {
+      type: "object",
+      properties: {
+        card_id: CARD_ID,
+        platform: PLATFORM,
+        quantity: { type: "integer", minimum: 1, maximum: 100 },
+        buy_price: { type: "integer", minimum: 1 },
+        target_price: { type: "integer", minimum: 1 },
+        downside_price: { type: "integer", minimum: 0 },
+        coin_balance: { type: "integer", minimum: 0 },
+        assumed_target_probability: { type: "number", minimum: 0, maximum: 1, description: "Only if the player gives one." },
+      },
+      required: ["card_id", "buy_price", "target_price", "downside_price"],
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const input = zodArgs(thesisInputSchema, { platform: "console", quantity: 1, ...args });
+      cardArg(input.card_id);
+      return await (await marketFor(db)).analyzeTradeThesis(userId, input);
+    }),
+  },
+  {
+    name: "get_fut_market_data_sources",
+    title: "FUT market data sources (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: which price sources Market Lab can use and why others are off (not authorised), with what each source's terms allow. Use it to explain where prices come from.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    run: (_args, ctx) => run(async () => {
+      const { db } = await account(ctx);
+      return { sources: (await marketFor(db)).getDataSourceStatus() };
+    }),
+  },
+);

@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@439d3f8 src/workspace/service.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@53e9a20 src/workspace/service.ts by scripts/sync-xilab.mjs. Do not edit.
 // The one service surface. The web workspace, the fut-api HTTP routes and the FUT MCP tools all call these,
 // so a squad never has to be re-entered to ask a new question. Results always carry rule version + evidence.
 import type { ChemistryRules } from "../chemistry/index.ts";

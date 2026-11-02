@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@439d3f8 src/workspace/squad.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@53e9a20 src/workspace/squad.ts by scripts/sync-xilab.mjs. Do not edit.
 // Pure, immutable squad operations. Every function returns a new Squad.
 import { computeSquadChemistry, diffSquadChemistry, ENGINE_VERSION, type ChemistryRules, type SquadChemistryResult, type SquadInput } from "../chemistry/index.ts";
 import { fitScore, type FitProfile, type FitScore } from "./fit.ts";
