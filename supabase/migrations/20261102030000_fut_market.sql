@@ -160,3 +160,6 @@ INSERT INTO fut.market_rule_versions (id, status, is_active, notes, body) VALUES
   ('fc27-market-v1', 'unverified', true,
    'Transfer tax 5% of the sale price (floored) and price bands are community knowledge as of 2026-11-02, not confirmed by EA. Scanner thresholds are XI Lab defaults, not validated against outcomes.',
    '{"transfer_tax_rate":0.05,"price_steps":[{"from":0,"step":50},{"from":1000,"step":100},{"from":10000,"step":250},{"from":50000,"step":500},{"from":100000,"step":1000}],"min_price":200,"stale_after_hours":6,"min_points":6,"thresholds":{"relative_strength_pp":3,"regime_trend_24h":2,"regime_trend_7d":4,"high_volatility":2.5,"sbc_spread_pp":4,"priced_in_72h":25,"mean_reversion_z":-1.5}}');
+
+-- PostgREST caches the schema; reload it so the new market tables are reachable without a restart.
+NOTIFY pgrst, 'reload schema';
