@@ -70,7 +70,9 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
     throw new FutApiError(message, response?.status);
   }
   if (data?.error) throw new FutApiError(data.error);
-  return data?.data as T;
+  // Most routes answer { data }; /health answers { ok, api } on its own. React Query rejects undefined, so never return it.
+  if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
+  return (data ?? null) as T;
 }
 export const futKeys = { market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
