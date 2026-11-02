@@ -51,6 +51,7 @@ const primaryNavItems = [
 ];
 
 const moreNavItems = [
+  { path: "/fut", label: "XI Lab", icon: UsersRound },
   { path: "/control", label: "Control Room", icon: SlidersHorizontal },
   { path: "/games", label: "Games", icon: Gamepad2 },
   { path: "/trophy-room", label: "Trophy Room", icon: Medal },
