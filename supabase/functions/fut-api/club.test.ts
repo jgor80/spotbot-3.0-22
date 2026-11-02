@@ -106,3 +106,12 @@ Deno.test("club import: names the file lacks come from the reference tables", as
   assert(a.club === "Reference Rovers" && a.league === "Reference League", JSON.stringify(a));
   assert(b.club === "EA club 98" && b.league === "Test League", JSON.stringify(b));
 });
+
+Deno.test("club import: a league without an EA id is named through its club", async () => {
+  const { call, db } = setup();
+  db.tables.leagues = [{ id: 5, ea_id: null, name: "Club-Linked League" }];
+  db.tables.clubs = [{ id: 1, ea_id: 77, name: "Linked FC", league_id: 5 }];
+  await call("POST", "/v1/club/import", file([item(501, { team_id: 77, league_id: 13 })], { leagues: {} }));
+  const c = (await call("GET", "/v1/cards")).data.data[0];
+  assert(c.club === "Linked FC" && c.league === "Club-Linked League", JSON.stringify(c));
+});

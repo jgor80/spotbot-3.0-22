@@ -89,13 +89,32 @@ async function fillReferenceNames(db: FutDb, items: unknown[], names: { teams: R
     if (n && !names.nations[n]) want.nations.add(n);
   }
   const into = { clubs: names.teams, leagues: names.leagues, nations: names.nations };
+  // A club's own league (fut.clubs.league_id), by the club's EA id: the reference data may know a club's league
+  // without knowing that league's EA id, so a card's league name can come through its club.
+  const clubLeague = new Map<string, unknown>();
   for (const table of ["clubs", "leagues", "nations"] as const) {
     const ids = [...want[table]];
     for (let i = 0; i < ids.length; i += 100) {
-      const { data, error } = await db.from(table).select("ea_id, name").in("ea_id", ids.slice(i, i + 100));
+      const { data, error } = await db.from(table).select(table === "clubs" ? "ea_id, name, league_id" : "ea_id, name").in("ea_id", ids.slice(i, i + 100));
       fail(error);
-      for (const r of (data ?? []) as Row[]) if (typeof r.name === "string" && r.name.trim()) into[table][String(r.ea_id)] = clip(r.name.trim());
+      for (const r of (data ?? []) as Row[]) {
+        if (typeof r.name === "string" && r.name.trim()) into[table][String(r.ea_id)] = clip(r.name.trim());
+        if (table === "clubs" && r.league_id !== null && r.league_id !== undefined) clubLeague.set(String(r.ea_id), r.league_id);
+      }
     }
+  }
+  const leagueIds = [...new Set(clubLeague.values())];
+  if (!leagueIds.length) return;
+  const { data, error } = await db.from("leagues").select("id, name").in("id", leagueIds);
+  fail(error);
+  const leagueName = new Map(((data ?? []) as Row[]).map((r) => [r.id, typeof r.name === "string" ? clip(r.name.trim()) : ""]));
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object") continue;
+    const it = raw as Row;
+    const t = posInt(it.team_id), l = posInt(it.league_id);
+    if (!t || !l || names.leagues[l]) continue;
+    const name = leagueName.get(clubLeague.get(String(t)));
+    if (name) names.leagues[l] = name;
   }
 }
 
