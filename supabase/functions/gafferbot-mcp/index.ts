@@ -13,9 +13,13 @@ import { MANAGE_TOOLS } from "./manage.ts";
 import { MODERATION_TOOLS } from "./moderation.ts";
 import { LINEUP_TOOLS } from "./lineups.ts";
 import { allowCall, MAX_BATCH } from "./limits.ts";
+import { FUT_TOOLS } from "./fut.ts";
+import { futEnabled } from "../_shared/fut/service.ts";
 
 const SITE = (Deno.env.get("DASHBOARD_URL") || "https://gafferbot.app").replace(/\/+$/, "");
 const ALL_TOOLS = [...TOOLS, ...LINEUP_TOOLS, ...MANAGE_TOOLS, ...MODERATION_TOOLS];
+// XI Lab (FUT) tools: read-only, only while FUT_ENABLED=true (one switch with the website's fut-api).
+const WITH_FUT = [...ALL_TOOLS, ...FUT_TOOLS];
 
 type Caller = { discordUserId: string; tokenId: string | null; scopes: string[] };
 
@@ -124,7 +128,7 @@ serve(async (req) => {
       lineups: (globalThis as unknown as { __gafferbotLineups?: PanelBridge }).__gafferbotLineups ?? null,
     };
     // Manage tools need a clubs:manage grant; leader tools are also hidden unless the player leads a club.
-    const tools = ALL_TOOLS.filter((t) => !t.scope || caller.scopes.includes(t.scope));
+    const tools = (futEnabled() ? WITH_FUT : ALL_TOOLS).filter((t) => !t.scope || caller.scopes.includes(t.scope));
     const reply = await handleBody(body, tools, ctx, visibleTo(ctx));
     return reply === null ? new Response(null, { status: 202, headers: corsHeaders }) : json(reply);
   } catch (err) {
