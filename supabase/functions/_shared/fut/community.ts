@@ -1,11 +1,11 @@
 // Community price pool (Jeff, 2026-11-02): users who opt in share the prices their own XI Lab helper recorded from
-// their own EA Web App (the capture CSV they import), and in return can pull the pooled prices for their own cards.
-// Contributors only ("give to get"); never shown on public pages or through MCP until licensed.
+// their own EA Web App (the capture CSV they import). Every signed-in Gaffer Bot user can pull the pooled prices for
+// their own cards (Jeff's choice, 2026-11-02 18:31Z). Never shown on public pages or through MCP until licensed.
 //
 // What is shared: EA item id, platform, the lowest price seen in an hour, how many listings, and when. Nothing
 // about the account, club or session. A contributor is stored by user id only so their rows can be counted once
 // and deleted when they stop sharing. Turning sharing off deletes everything they contributed.
-import { FutDbError, FutError, searchMyCards, type FutDb } from "./service.ts";
+import { FutDbError, searchMyCards, type FutDb } from "./service.ts";
 
 type Row = Record<string, unknown>;
 const fail = (error: { message?: string } | null) => {
@@ -125,8 +125,6 @@ export function poolHours(rows: { contributor_user_id: string; ea_item_id: numbe
 
 /** Pull pooled prices for the caller's own synced cards into their private history (source community_pool). */
 export async function pullCommunity(db: FutDb, userId: string, market: Importer) {
-  const { sharing } = await getSharing(db, userId);
-  if (!sharing) throw new FutError("Turn on price sharing first: community prices are for people who share theirs.", 403);
   const cards = (await searchMyCards(db, userId, { all: true })).filter((c) => c.ea_item_id !== null);
   const byEa = new Map<number, string>();
   for (const c of cards) if (!byEa.has(c.ea_item_id!)) byEa.set(c.ea_item_id!, c.id);
