@@ -6,6 +6,7 @@ import {
   addCard, addManager, compareCards, deleteCard, deleteManager, deleteSquad, futEnabled, FutError, getCard, listManagers, logRun,
   parseCardInput, parseManagerInput, runWorkspace, searchMyCards, toWorkspaceCard, updateCard, workspaceFor, type FutDb,
 } from "../_shared/fut/service.ts";
+import { importClub } from "../_shared/fut/club.ts";
 import { marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
 import { scanRequestSchema, thesisInputSchema, watchItemInputSchema } from "../_shared/fut/xilab/market/index.ts";
 import { assignCard, cardSchema, createSquad, FORMATIONS, squadSchema, type Squad, type WorkspaceCard } from "../_shared/fut/xilab/workspace/index.ts";
@@ -32,6 +33,8 @@ export interface Deps {
 
 /** Price-history imports can be bigger than other requests (up to MAX_IMPORT_ROWS lines). */
 const MAX_IMPORT_BODY = 1024 * 1024;
+/** A club file from the XI Lab helper: a few hundred bytes per item. */
+const MAX_CLUB_BODY = 4 * 1024 * 1024;
 
 async function body(req: Request, max = MAX_BODY): Promise<unknown> {
   const raw = await req.text();
@@ -126,6 +129,17 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       if (m === "PUT") { const c = await updateCard(db, userId, id, parseCardInput(await body(req))); return c ? json({ data: c }) : err(404, "Card not found."); }
       if (m === "DELETE") return (await deleteCard(db, userId, id)) ? json({ data: { deleted: id } }) : err(404, "Card not found.");
       return err(405, "Use GET, PUT or DELETE.");
+    }
+
+    // Club sync: the file the XI Lab helper saved from the user's own Web App club. Reads nothing from EA.
+    if (route === "/club/import" && m === "POST") {
+      const result = await importClub(db, userId, await body(req, MAX_CLUB_BODY));
+      // Synced cards carry EA item ids, so prices captured before the sync can now find their card.
+      let prices_linked = 0;
+      try {
+        prices_linked = (await (await marketFor(db)).relinkHeldCaptures(userId)).linked;
+      } catch (e) { console.warn("[fut-api] relink after club sync:", e); }
+      return json({ data: { ...result, prices_linked } });
     }
 
     if (route === "/managers" && m === "GET") return json({ data: await listManagers(db, userId) });

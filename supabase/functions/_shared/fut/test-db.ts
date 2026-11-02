@@ -1,5 +1,5 @@
 // In-memory stand-in for the supabase-js query builder on the `fut` schema, for the XI Lab tests only.
-// Supports the calls the FUT services make: select (with count/head), insert(...).select().single(),
+// Supports the calls the FUT services make: select (with count/head), insert(...).select().single(), upsert,
 // update, delete, eq, in, is, gte, lte, order, limit, range, maybeSingle, single.
 type Row = Record<string, unknown>;
 
@@ -46,6 +46,16 @@ export function futMemoryDb(tables: Record<string, Row[]> = {}) {
           t(table).push(...rows);
           const done = { data: rows.map((r) => ({ ...r })), error: null };
           return Object.assign(Promise.resolve(done), { select: () => ({ single: () => Promise.resolve({ data: { ...rows[0] }, error: null }) }) });
+        },
+        upsert: (row: Row | Row[], opts?: { onConflict?: string }) => {
+          const keys = (opts?.onConflict ?? "id").split(",");
+          const now = new Date().toISOString();
+          for (const r of Array.isArray(row) ? row : [row]) {
+            const hit = t(table).find((x) => keys.every((k) => x[k] === r[k]));
+            if (hit) Object.assign(hit, r);
+            else t(table).push({ id: crypto.randomUUID(), created_at: now, updated_at: now, ...r });
+          }
+          return Promise.resolve({ data: null, error: null });
         },
         update: (p: Row) => { mode = "update"; patch = p; return q; },
         delete: () => { mode = "delete"; return q; },
