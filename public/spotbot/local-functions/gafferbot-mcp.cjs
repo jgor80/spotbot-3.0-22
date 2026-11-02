@@ -12,9 +12,9 @@ var serve = (h) => globalThis.Deno.serve(h);
 var import_supabase_js_2 = require("@supabase/supabase-js");
 function safeEqual(a, b) {
   if (a.length !== b.length) return false;
-  let r = 0;
-  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return r === 0;
+  let r2 = 0;
+  for (let i = 0; i < a.length; i++) r2 |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r2 === 0;
 }
 async function identifyCaller(req, admin) {
   const botSecret = Deno.env.get("BOT_PROXY_SECRET") ?? "";
@@ -38,7 +38,7 @@ function createAdminClient() {
 function discordGet(path) {
   const token = Deno.env.get("DISCORD_BOT_TOKEN");
   if (!token) return Promise.resolve(null);
-  return fetch(`https://discord.com/api/v10${path}`, { headers: { Authorization: `Bot ${token}` } }).then((r) => r.ok ? r.json() : null).catch(() => null);
+  return fetch(`https://discord.com/api/v10${path}`, { headers: { Authorization: `Bot ${token}` } }).then((r2) => r2.ok ? r2.json() : null).catch(() => null);
 }
 var snowflake = (id) => /^\d{17,20}$/.test(id);
 async function discordMemberName(guildId, discordUserId) {
@@ -189,7 +189,7 @@ async function handleMessage(msg, tools, ctx, visible = everyTool) {
 async function handleBody(body, tools, ctx, visible = everyTool) {
   if (Array.isArray(body)) {
     if (!body.length) return rpcError(null, -32600, "Invalid Request");
-    const out = (await Promise.all(body.map((m) => handleMessage(m, tools, ctx, visible)))).filter((r) => r !== null);
+    const out = (await Promise.all(body.map((m) => handleMessage(m, tools, ctx, visible)))).filter((r2) => r2 !== null);
     return out.length ? out : null;
   }
   return handleMessage(body, tools, ctx, visible);
@@ -214,7 +214,7 @@ async function accessibleServers(ctx) {
     ctx.db.from("user_roles").select("guild_id").eq("discord_user_id", ctx.discordUserId).limit(200)
   ]);
   const all = settings || [];
-  const linked = new Set([...played || [], ...roles || []].map((r) => r.guild_id));
+  const linked = new Set([...played || [], ...roles || []].map((r2) => r2.guild_id));
   const candidates = all.length <= PROBE_ALL_LIMIT ? all : all.filter((g) => linked.has(g.guild_id));
   const checked = await Promise.all(candidates.map(async (g) => ({ g, level: await ctx.access(g.guild_id) })));
   return checked.filter((c) => c.level).map(({ g, level }) => ({
@@ -227,7 +227,7 @@ async function accessibleServers(ctx) {
 var LEADER_ROLES2 = ["admin", "moderator", "manager", "captain"];
 async function leadsAnyServer(ctx) {
   const { data: roles } = await ctx.db.from("user_roles").select("guild_id").eq("discord_user_id", ctx.discordUserId).in("role", LEADER_ROLES2).limit(50);
-  const withRole = [...new Set((roles || []).map((r) => r.guild_id))];
+  const withRole = [...new Set((roles || []).map((r2) => r2.guild_id))];
   for (const guildId of withRole) if (await ctx.access(guildId) === "leader") return true;
   return (await accessibleServers(ctx)).some((s) => s.your_access === "leader");
 }
@@ -275,13 +275,13 @@ async function resolvePlayer(ctx, guildId, player) {
   const safe = player.replace(/[%_\\,()]/g, "").slice(0, 40);
   const { data } = await ctx.db.from("player_summary").select("discord_user_id, discord_username").eq("guild_id", guildId).ilike("discord_username", `%${safe}%`).limit(5);
   const rows = data || [];
-  const exact = rows.find((r) => r.discord_username?.toLowerCase() === player.toLowerCase());
+  const exact = rows.find((r2) => r2.discord_username?.toLowerCase() === player.toLowerCase());
   if (exact || rows.length === 1) {
-    const r = exact || rows[0];
-    return { id: r.discord_user_id, name: r.discord_username };
+    const r2 = exact || rows[0];
+    return { id: r2.discord_user_id, name: r2.discord_username };
   }
   if (!rows.length) throw new ToolError(`No player matching "${player}" in this server.`);
-  throw new ToolError(`"${player}" matches ${rows.map((r) => r.discord_username).join(", ")}. Be more specific.`);
+  throw new ToolError(`"${player}" matches ${rows.map((r2) => r2.discord_username).join(", ")}. Be more specific.`);
 }
 var MATCH_TYPES = { league: "division", cup: "competition", friendly: "friendly" };
 var PLAYER_SORTS = ["goals", "assists", "avg_match_rating", "games_played", "win_rate", "man_of_match", "clean_sheets", "form_rating", "overall_rating"];
@@ -420,7 +420,7 @@ var TOOLS = [
       return {
         events: (events || []).map((e) => {
           const mine = (answers || []).filter((a) => a.event_id === e.id);
-          const count = (r) => mine.filter((a) => a.response === r).length;
+          const count = (r2) => mine.filter((a) => a.response === r2).length;
           return {
             ...e,
             answers: { yes: count("yes"), maybe: count("maybe"), no: count("no") },
@@ -447,7 +447,7 @@ var TOOLS = [
       if (!event || !await ctx.access(event.guild_id)) throw new ToolError("Event not found.");
       const { data: answers } = await ctx.db.from("player_availability").select("discord_user_id, response, position, note, responded_at").eq("event_id", eventId);
       const names = await namesFor(ctx, event.guild_id, (answers || []).map((a) => a.discord_user_id));
-      const group = (r) => (answers || []).filter((a) => a.response === r).map((a) => ({
+      const group = (r2) => (answers || []).filter((a) => a.response === r2).map((a) => ({
         player: names.get(a.discord_user_id) || a.discord_user_id,
         positions: a.position || void 0,
         note: a.note || void 0,
@@ -520,7 +520,7 @@ var TOOLS = [
       const { data, error } = await q;
       if (error) throw error;
       const rows = data || [];
-      const names = await namesFor(ctx, guildId, rows.flatMap((r) => [r.player_a_discord_id, r.player_b_discord_id]));
+      const names = await namesFor(ctx, guildId, rows.flatMap((r2) => [r2.player_a_discord_id, r2.player_b_discord_id]));
       return {
         pairs: rows.map(({ player_a_discord_id: a, player_b_discord_id: b, ...rest }) => ({
           players: [names.get(a) || a, names.get(b) || b],
@@ -844,8 +844,8 @@ var MANAGE_TOOLS = [
     inputSchema: { type: "object", properties: { guild_id: guildIdProp2, query: { type: "string", description: "Part of a name." } }, required: ["query"], additionalProperties: false },
     run: async (args, ctx) => {
       const guildId = await resolveGuild(args, ctx);
-      const r = await call(ctx, "members", { guildId, query: str2(args.query) || "" });
-      return { members: (r.members || []).map((m) => ({ id: m.id, name: m.name, username: m.username })) };
+      const r2 = await call(ctx, "members", { guildId, query: str2(args.query) || "" });
+      return { members: (r2.members || []).map((m) => ({ id: m.id, name: m.name, username: m.username })) };
     }
   },
   {
@@ -861,8 +861,8 @@ var MANAGE_TOOLS = [
     },
     run: async (args, ctx) => {
       const guildId = await resolveGuild(args, ctx);
-      const r = await call(ctx, "choices", { guildId, actionId: str2(args.action), field: str2(args.field), focused: str2(args.typed) || "" });
-      return { options: r.choices || [] };
+      const r2 = await call(ctx, "choices", { guildId, actionId: str2(args.action), field: str2(args.field), focused: str2(args.typed) || "" });
+      return { options: r2.choices || [] };
     }
   },
   {
@@ -1270,9 +1270,9 @@ var LINEUP_TOOLS = [
       requirePreview(ctx, "publish_lineup", guildId, args);
       const release = await underLimit(ctx);
       try {
-        const r = await call3(ctx, "publish", { ...req, confirm: true });
-        await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId, formation: r.formation, changes: req.changes?.length || 0 }, { ok: true });
-        return r;
+        const r2 = await call3(ctx, "publish", { ...req, confirm: true });
+        await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId, formation: r2.formation, changes: req.changes?.length || 0 }, { ok: true });
+        return r2;
       } catch (err) {
         await logChange(ctx, guildId, "publish_lineup", `event ${eventId}`, { event_id: eventId }, { ok: false, error: err.message });
         throw err;
@@ -1513,7 +1513,7 @@ function diffSquadChemistry(before, after) {
 var FACE_STATS = ["pac", "sho", "pas", "dri", "def", "phy"];
 
 // supabase/functions/_shared/fut/xilab/workspace/formations.ts
-var f = (rows) => rows.flatMap((r, row) => r.map(([slot, position]) => ({ slot, position, row })));
+var f = (rows) => rows.flatMap((r2, row) => r2.map(([slot, position]) => ({ slot, position, row })));
 var FORMATIONS = {
   "3-5-2": f([
     [["GK", "GK"]],
@@ -1581,8 +1581,8 @@ var now = () => (/* @__PURE__ */ new Date()).toISOString();
 var same = (a, b) => a.trim().toUpperCase() === b.trim().toUpperCase();
 var normName = (s) => s.trim().toLowerCase();
 function newId(prefix = "sq") {
-  const r = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36);
-  return `${prefix}_${r}`;
+  const r2 = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return `${prefix}_${r2}`;
 }
 function slotIndex(squad, slot) {
   const i = squad.slots.findIndex((s) => same(s.slot, slot));
@@ -1816,17 +1816,17 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
   }
   const coreCount = (t, key, exceptSlot) => key ? squad.slots.filter((s) => s.card && s.slot !== exceptSlot && norm3(s.card[t]) === key).length : 0;
   const relevance = (c, slot) => {
-    let r = 0;
+    let r2 = 0;
     for (const t of LINK_TYPES) {
       const key = norm3(c[t]);
       if (!key) continue;
       if (wantKeys.get(t) === key) {
         const need = tp?.breakdown[t].needed_for_next;
-        r += need !== null && need !== void 0 && need <= 2 ? 6 : 2;
+        r2 += need !== null && need !== void 0 && need <= 2 ? 6 : 2;
       }
-      r += Math.min(coreCount(t, key, slot), 4) * 0.5;
+      r2 += Math.min(coreCount(t, key, slot), 4) * 0.5;
     }
-    return r;
+    return r2;
   };
   const names = (s, exceptSlot) => new Set(s.slots.filter((x) => x.card && x.slot !== exceptSlot).map((x) => norm3(x.card.name)));
   const moves = [];
@@ -1839,9 +1839,9 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
   }
   let managerCount = 0;
   if (allowMgr && pool.managers) {
-    const ms = pool.managers.filter((m) => m.id !== squad.manager?.id).map((m) => ({ m, cost: costOf(m) })).filter((x) => x.cost !== null && x.cost <= budget).map((x) => ({ ...x, rel: (norm3(x.m.nation) && norm3(x.m.nation) === wantKeys.get("nation") ? 3 : 0) + (norm3(x.m.league) && norm3(x.m.league) === wantKeys.get("league") ? 3 : 0) + coreCount("league", norm3(x.m.league), "") * 0.3 + coreCount("nation", norm3(x.m.nation), "") * 0.3 })).filter((x) => x.rel > 0).sort((a, b) => b.rel - a.rel || a.cost - b.cost).slice(0, 4);
-    managerCount = ms.length;
-    for (const x of ms) moves.push({ kind: "manager", manager: x.m, cost: x.cost });
+    const ms3 = pool.managers.filter((m) => m.id !== squad.manager?.id).map((m) => ({ m, cost: costOf(m) })).filter((x) => x.cost !== null && x.cost <= budget).map((x) => ({ ...x, rel: (norm3(x.m.nation) && norm3(x.m.nation) === wantKeys.get("nation") ? 3 : 0) + (norm3(x.m.league) && norm3(x.m.league) === wantKeys.get("league") ? 3 : 0) + coreCount("league", norm3(x.m.league), "") * 0.3 + coreCount("nation", norm3(x.m.nation), "") * 0.3 })).filter((x) => x.rel > 0).sort((a, b) => b.rel - a.rel || a.cost - b.cost).slice(0, 4);
+    managerCount = ms3.length;
+    for (const x of ms3) moves.push({ kind: "manager", manager: x.m, cost: x.cost });
   }
   const heuristic = (st) => {
     let h = st.ev.chemistry.total;
@@ -1907,12 +1907,12 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
     if (picked.length >= maxResults) break;
   }
   const stats = { candidates: candidateCount, managers: managerCount, squads_checked: checked };
-  const rejectedOut = rejected.sort((a, b) => a.st.cost - b.st.cost).slice(0, 5).map((r) => ({
-    swaps: r.st.moves.map((m) => m.kind === "card" ? `${m.card.name} into ${m.slot}` : `manager ${m.manager.name}`),
-    cost: r.st.cost,
+  const rejectedOut = rejected.sort((a, b) => a.st.cost - b.st.cost).slice(0, 5).map((r2) => ({
+    swaps: r2.st.moves.map((m) => m.kind === "card" ? `${m.card.name} into ${m.slot}` : `manager ${m.manager.name}`),
+    cost: r2.st.cost,
     total_before: base.chemistry.total,
-    total_after: r.st.ev.chemistry.total,
-    reason: r.reason
+    total_after: r2.st.ev.chemistry.total,
+    reason: r2.reason
   }));
   if (picked.length) {
     return result("solutions", { solutions: picked.map((st, i) => toSolution(st, i)), rejected: rejectedOut, stats });
@@ -1921,7 +1921,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
   if (moves.length === 0) blockers.push(`No card or manager in the search pool shares a club, league or nation that would help, within ${budget.toLocaleString("en-US")} coins. Add cards to the pool or raise the budget.`);
   if (options.explain_infeasible !== false && moves.length >= 0) {
     const relaxed = (o, sq = squad) => optimizeSquad(sq, goal, pool, rules, { ...options, ...o, explain_infeasible: false, max_results: 1 });
-    const cheapest = (r) => r.solutions[0];
+    const cheapest = (r2) => r2.solutions[0];
     const rb = relaxed({ budget: Number.MAX_SAFE_INTEGER });
     if (cheapest(rb)) blockers.push(`Budget: possible for ${cheapest(rb).cost.toLocaleString("en-US")} coins, ${(cheapest(rb).cost - budget).toLocaleString("en-US")} more than your budget.`);
     if (maxSwaps < 4 || !allowMgr) {
@@ -2020,7 +2020,7 @@ function compareSquads(a, b, rules, base) {
   if (ca !== null && cb !== null && ca !== cb) verdict.push(`${ca < cb ? a.name : b.name} is ${Math.abs(ca - cb).toLocaleString("en-US")} coins cheaper.`);
   if (ea.fit.average !== null && eb.fit.average !== null && ea.fit.average !== eb.fit.average)
     verdict.push(`${ea.fit.average > eb.fit.average ? a.name : b.name} has the better tactical fit estimate (${Math.max(ea.fit.average, eb.fit.average)} vs ${Math.min(ea.fit.average, eb.fit.average)}).`);
-  const changed = rows.filter((r) => !r.same_player).length;
+  const changed = rows.filter((r2) => !r2.same_player).length;
   verdict.push(`${changed} of ${rows.length} slots differ.`);
   return {
     rule_version: ea.rule_version,
@@ -5976,17 +5976,17 @@ function cleanParams(params, data) {
 function custom(check, _params = {}, fatal) {
   if (check)
     return ZodAny.create().superRefine((data, ctx) => {
-      const r = check(data);
-      if (r instanceof Promise) {
-        return r.then((r2) => {
-          if (!r2) {
+      const r2 = check(data);
+      if (r2 instanceof Promise) {
+        return r2.then((r3) => {
+          if (!r3) {
             const params = cleanParams(_params, data);
             const _fatal = params.fatal ?? fatal ?? true;
             ctx.addIssue({ code: "custom", ...params, fatal: _fatal });
           }
         });
       }
-      if (!r) {
+      if (!r2) {
         const params = cleanParams(_params, data);
         const _fatal = params.fatal ?? fatal ?? true;
         ctx.addIssue({ code: "custom", ...params, fatal: _fatal });
@@ -6200,6 +6200,26 @@ function createWorkspaceService(deps) {
   };
 }
 
+// supabase/functions/_shared/fut/xilab/workspace/default-rules.ts
+var FC27_COMMUNITY_V1 = {
+  id: "fc27-community-v1",
+  season: "FC27",
+  status: "unverified",
+  thresholds: { club: [2, 4, 7], league: [3, 5, 8], nation: [2, 5, 8] },
+  modifiers: {
+    "player.max_chemistry": 3,
+    "manager.nation_count": 1,
+    "manager.league_count": 1,
+    "icon.nation_bonus": 1,
+    "icon.every_league_bonus": 1,
+    "hero.league_bonus": 1,
+    "hero.nation_bonus": 1,
+    "icon.always_max": 1,
+    "hero.always_max": 0
+  }
+};
+var DEFAULT_RULES = FC27_COMMUNITY_V1;
+
 // supabase/functions/_shared/fut/service.ts
 var futDb = (admin) => admin.schema("fut");
 var futEnabled = (env = (k) => Deno.env.get(k)) => env("FUT_ENABLED") === "true";
@@ -6238,7 +6258,7 @@ function positionCode(v, field) {
 var isUuid = (v) => typeof v === "string" && UUID3.test(v);
 async function hydrate(db, userId, rows) {
   if (!rows.length) return [];
-  const ids = rows.map((r) => r.id);
+  const ids = rows.map((r2) => r2.id);
   const [attrs, styles, inv] = await Promise.all([
     db.from("card_attributes").select("*").in("card_id", ids),
     db.from("card_playstyles").select("*").in("card_id", ids),
@@ -6249,36 +6269,37 @@ async function hydrate(db, userId, rows) {
   fail(inv.error);
   const attrBy = new Map((attrs.data ?? []).map((a) => [a.card_id, a]));
   const invBy = new Map((inv.data ?? []).map((i) => [i.card_id, i]));
-  return rows.map((r) => {
-    const a = attrBy.get(r.id) ?? {};
+  return rows.map((r2) => {
+    const a = attrBy.get(r2.id) ?? {};
     const stats = {};
     for (const k of FACE) if (a[k] !== null && a[k] !== void 0) stats[k] = Number(a[k]);
-    const mine = (styles.data ?? []).filter((s) => s.card_id === r.id);
-    const owned = invBy.get(r.id);
+    const mine = (styles.data ?? []).filter((s) => s.card_id === r2.id);
+    const owned = invBy.get(r2.id);
     return {
-      id: r.id,
-      source: r.source_id,
-      player_name: r.player_name,
-      version: r.version ?? null,
-      overall: Number(r.overall),
-      positions: r.positions,
-      club: r.club ?? null,
-      league: r.league ?? null,
-      nation: r.nation ?? null,
-      is_icon: r.is_icon === true,
-      is_hero: r.is_hero === true,
-      skill_moves: r.skill_moves ?? null,
-      weak_foot: r.weak_foot ?? null,
+      id: r2.id,
+      source: r2.source_id,
+      player_name: r2.player_name,
+      version: r2.version ?? null,
+      overall: Number(r2.overall),
+      positions: r2.positions,
+      club: r2.club ?? null,
+      league: r2.league ?? null,
+      nation: r2.nation ?? null,
+      is_icon: r2.is_icon === true,
+      is_hero: r2.is_hero === true,
+      skill_moves: r2.skill_moves ?? null,
+      weak_foot: r2.weak_foot ?? null,
       stats,
       playstyles: mine.filter((s) => !s.is_plus).map((s) => s.name),
       playstyles_plus: mine.filter((s) => s.is_plus).map((s) => s.name),
-      evidence: r.evidence,
-      notes: r.notes ?? null,
+      evidence: r2.evidence,
+      notes: r2.notes ?? null,
       owned: !!owned,
       tradeable: owned?.tradeable ?? null,
       purchase_price: owned?.purchase_price ?? null,
-      price: r.price ?? null,
-      updated_at: r.updated_at
+      price: r2.price ?? null,
+      ea_item_id: /^\d{1,10}$/.test(String(r2.source_card_key ?? "")) ? Number(r2.source_card_key) : null,
+      updated_at: r2.updated_at
     };
   });
 }
@@ -6294,7 +6315,7 @@ async function searchMyCards(db, userId, s = {}) {
   fail(error);
   const q = s.q?.trim().toLowerCase();
   const pos = s.position ? positionCode(s.position, "position") : void 0;
-  const rows = (data ?? []).filter((r) => (!q || [r.player_name, r.club, r.league, r.nation, r.version].some((v) => typeof v === "string" && v.toLowerCase().includes(q))) && (!pos || r.positions.includes(pos)) && (s.min_overall === void 0 || Number(r.overall) >= s.min_overall));
+  const rows = (data ?? []).filter((r2) => (!q || [r2.player_name, r2.club, r2.league, r2.nation, r2.version].some((v) => typeof v === "string" && v.toLowerCase().includes(q))) && (!pos || r2.positions.includes(pos)) && (s.min_overall === void 0 || Number(r2.overall) >= s.min_overall));
   let cards = await hydrate(db, userId, rows);
   if (s.owned_only) cards = cards.filter((c) => c.owned);
   return s.all ? cards : cards.slice(0, Math.min(100, Math.max(1, s.limit ?? 25)));
@@ -6340,13 +6361,13 @@ async function compareCards(db, userId, ids) {
     note: "Compares the numbers entered for each card. It shows who has the higher number, not who plays better in a match; missing numbers are left out, never guessed."
   };
 }
-var toManager = (r) => ({
-  id: r.id,
-  name: r.name,
-  nation: r.nation ?? null,
-  league: r.league ?? null,
-  price: r.price ?? null,
-  owned: r.owned === true,
+var toManager = (r2) => ({
+  id: r2.id,
+  name: r2.name,
+  nation: r2.nation ?? null,
+  league: r2.league ?? null,
+  price: r2.price ?? null,
+  owned: r2.owned === true,
   source: "user"
 });
 async function listManagers(db, userId) {
@@ -6365,8 +6386,8 @@ async function activeRules(db, season = "FC27") {
   fail(t.error);
   fail(m.error);
   const thresholds = { club: [], league: [], nation: [] };
-  for (const r of t.data ?? []) thresholds[r.link_type].push(Number(r.players_required));
-  const modifiers = Object.fromEntries((m.data ?? []).map((r) => [r.key, Number(r.value)]));
+  for (const r2 of t.data ?? []) thresholds[r2.link_type].push(Number(r2.players_required));
+  const modifiers = Object.fromEntries((m.data ?? []).map((r2) => [r2.key, Number(r2.value)]));
   return { id: v.id, season: v.season, status: v.status, thresholds, modifiers };
 }
 var toWorkspaceCard = (c) => ({
@@ -6402,7 +6423,7 @@ var PgSquadStore = class {
   }
   async load(owner, rows) {
     if (!rows.length) return [];
-    const ids = rows.map((r) => r.id);
+    const ids = rows.map((r2) => r2.id);
     const slots = await this.db.from("squad_slots").select("*").in("squad_id", ids).order("sort_order", { ascending: true });
     fail(slots.error);
     const slotRows = slots.data ?? [];
@@ -6411,21 +6432,21 @@ var PgSquadStore = class {
     if (cardIds.length) {
       const { data, error } = await this.db.from("player_cards").select("*").in("id", cardIds);
       fail(error);
-      const visible = (data ?? []).filter((r) => r.owner_user_id === null || r.owner_user_id === owner);
+      const visible = (data ?? []).filter((r2) => r2.owner_user_id === null || r2.owner_user_id === owner);
       for (const c of await hydrate(this.db, owner, visible)) fresh.set(c.id, toWorkspaceCard(c));
     }
-    return rows.map((r) => ({
-      id: r.id,
+    return rows.map((r2) => ({
+      id: r2.id,
       owner_id: owner,
-      name: r.name,
-      formation: r.formation,
-      ...r.platform ? { platform: r.platform } : {},
-      manager: r.manager ?? null,
-      budget: Number(r.budget ?? 0),
-      parent_id: r.parent_id ?? null,
-      created_at: String(r.created_at),
-      updated_at: String(r.updated_at),
-      slots: slotRows.filter((s) => s.squad_id === r.id).map((s) => ({
+      name: r2.name,
+      formation: r2.formation,
+      ...r2.platform ? { platform: r2.platform } : {},
+      manager: r2.manager ?? null,
+      budget: Number(r2.budget ?? 0),
+      parent_id: r2.parent_id ?? null,
+      created_at: String(r2.created_at),
+      updated_at: String(r2.updated_at),
+      slots: slotRows.filter((s) => s.squad_id === r2.id).map((s) => ({
         slot: s.slot,
         position: s.position_code,
         card: isUuid(s.card_id) && fresh.get(s.card_id) || (s.card ?? null),
@@ -6532,6 +6553,1550 @@ async function logRun(db, userId, run2) {
   });
   if (error) console.error("[fut] could not log run:", error.message);
 }
+
+// supabase/functions/_shared/fut/xilab/market/types.ts
+var PLATFORMS = ["console", "pc"];
+var WINDOWS = ["1h", "6h", "24h", "72h", "7d"];
+var WINDOW_HOURS = { "1h": 1, "6h": 6, "24h": 24, "72h": 72, "7d": 168 };
+
+// supabase/functions/_shared/fut/xilab/market/rules.ts
+var MARKET_ENGINE_VERSION = "market-0.1.0";
+var FC27_MARKET_V1 = {
+  id: "fc27-market-v1",
+  status: "unverified",
+  notes: "Transfer tax 5% of the sale price (floored) and the price bands are community knowledge as of 2026-11-02, not confirmed by EA. Scanner thresholds are XI Lab defaults, not validated against outcomes yet.",
+  transfer_tax_rate: 0.05,
+  price_steps: [
+    { from: 0, step: 50 },
+    { from: 1e3, step: 100 },
+    { from: 1e4, step: 250 },
+    { from: 5e4, step: 500 },
+    { from: 1e5, step: 1e3 }
+  ],
+  min_price: 200,
+  stale_after_hours: 6,
+  min_points: 6,
+  thresholds: {
+    relative_strength_pp: 3,
+    regime_trend_24h: 2,
+    regime_trend_7d: 4,
+    high_volatility: 2.5,
+    sbc_spread_pp: 4,
+    priced_in_72h: 25,
+    mean_reversion_z: -1.5
+  }
+};
+var DEFAULT_MARKET_RULES = FC27_MARKET_V1;
+function transferTax(price, rules = DEFAULT_MARKET_RULES) {
+  return Math.floor(price * rules.transfer_tax_rate);
+}
+function netAfterTax(price, rules = DEFAULT_MARKET_RULES) {
+  return price - transferTax(price, rules);
+}
+function stepAt(price, rules = DEFAULT_MARKET_RULES) {
+  let step = rules.price_steps[0].step;
+  for (const s of rules.price_steps) if (price >= s.from) step = s.step;
+  return step;
+}
+function roundToStep(price, dir = "nearest", rules = DEFAULT_MARKET_RULES) {
+  if (price <= rules.min_price) return rules.min_price;
+  const step = stepAt(price, rules);
+  const f2 = dir === "up" ? Math.ceil : dir === "down" ? Math.floor : Math.round;
+  const r2 = f2(price / step) * step;
+  const step2 = stepAt(r2, rules);
+  return step2 === step ? r2 : f2(r2 / step2) * step2;
+}
+function isValidPrice(price, rules = DEFAULT_MARKET_RULES) {
+  return Number.isInteger(price) && price >= rules.min_price && price % stepAt(price, rules) === 0;
+}
+
+// supabase/functions/_shared/fut/xilab/market/series.ts
+var HOUR = 36e5;
+var ms = (iso3) => Date.parse(iso3);
+var iso = (t) => new Date(t).toISOString();
+function knownAt(rows, asOf) {
+  const a = ms(asOf);
+  return rows.filter((r2) => ms(r2.received_at) <= a && ms(r2.observed_at) <= a);
+}
+function toSeries(rows, card_id, platform, asOf) {
+  const byT = /* @__PURE__ */ new Map();
+  for (const r2 of knownAt(rows, asOf)) {
+    if (r2.card_id !== card_id || r2.platform !== platform) continue;
+    const t = ms(r2.observed_at);
+    const rec = ms(r2.received_at);
+    const prev = byT.get(t);
+    if (!prev || rec >= prev.r) byT.set(t, { p: r2.price, r: rec });
+  }
+  return [...byT.entries()].sort((a, b) => a[0] - b[0]).map(([t, v]) => ({ t, price: v.p }));
+}
+function freshness(series, asOf, rules = DEFAULT_MARKET_RULES) {
+  const last = series.at(-1);
+  if (!last) return { status: "missing", latest_observed_at: null, age_hours: null, stale_after_hours: rules.stale_after_hours, message: "No price observations." };
+  const age = (ms(asOf) - last.t) / HOUR;
+  const age_hours = Math.round(age * 10) / 10;
+  if (age > rules.stale_after_hours)
+    return { status: "stale", latest_observed_at: iso(last.t), age_hours, stale_after_hours: rules.stale_after_hours, message: `Last price is ${age_hours}h old (stale after ${rules.stale_after_hours}h). No current value is claimed.` };
+  return { status: "fresh", latest_observed_at: iso(last.t), age_hours, stale_after_hours: rules.stale_after_hours, message: `Last price ${age_hours}h old.` };
+}
+function priceAt(series, t) {
+  let lo = 0;
+  let hi = series.length - 1;
+  let best = null;
+  while (lo <= hi) {
+    const mid = lo + hi >> 1;
+    if (series[mid].t <= t) {
+      best = series[mid];
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return best;
+}
+function change2(series, window2) {
+  const last = series.at(-1);
+  if (!last) return null;
+  const h = WINDOW_HOURS[window2];
+  const target = last.t - h * HOUR;
+  const start = priceAt(series, target);
+  if (!start || start === last) return null;
+  if (target - start.t > Math.max(HOUR, h * HOUR / 2)) return null;
+  return pct(start.price, last.price);
+}
+var pct = (a, b) => a > 0 ? (b - a) / a * 100 : 0;
+var round = (n, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
+function window(series, hours) {
+  const last = series.at(-1);
+  if (!last) return [];
+  const from = last.t - hours * HOUR;
+  return series.filter((p) => p.t >= from);
+}
+function sma(series, hours) {
+  const w = window(series, hours);
+  if (!w.length) return null;
+  return w.reduce((s, p) => s + p.price, 0) / w.length;
+}
+function logReturns(series) {
+  const out = [];
+  for (let i = 1; i < series.length; i++) {
+    const a = series[i - 1].price;
+    const b = series[i].price;
+    if (a > 0 && b > 0) out.push(Math.log(b / a));
+  }
+  return out;
+}
+function mean(xs) {
+  return xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0;
+}
+function stdev(xs) {
+  if (xs.length < 2) return 0;
+  const m = mean(xs);
+  return Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / (xs.length - 1));
+}
+function median(xs) {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+function quantile(xs, q) {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const i = (s.length - 1) * q;
+  const lo = Math.floor(i);
+  const hi = Math.ceil(i);
+  return s[lo] + (s[hi] - s[lo]) * (i - lo);
+}
+function volatility(series, hours) {
+  const r2 = logReturns(window(series, hours));
+  return r2.length >= 3 ? stdev(r2) * 100 : null;
+}
+function maxDrawdown(series, hours) {
+  const w = window(series, hours);
+  if (w.length < 2) return null;
+  let peak = w[0].price;
+  let dd = 0;
+  for (const p of w) {
+    peak = Math.max(peak, p.price);
+    dd = Math.min(dd, pct(peak, p.price));
+  }
+  return dd;
+}
+
+// supabase/functions/_shared/fut/xilab/market/baskets.ts
+var fodder = (r2) => ({
+  id: `fodder-${r2}`,
+  label: `${r2}-rated fodder`,
+  group: "fodder",
+  description: `Tradeable base cards rated exactly ${r2}.`,
+  rule: { categories: ["base"], rating_min: r2, rating_max: r2, tradeable_only: true }
+});
+var DEFAULT_BASKETS = [
+  { id: "market", label: "Whole market", group: "market", description: "Every tradeable card with prices.", rule: { tradeable_only: true } },
+  ...[84, 85, 86, 87, 88, 89, 90].map(fodder),
+  {
+    id: "meta",
+    label: "Meta gameplay",
+    group: "gameplay",
+    description: "Tradeable cards whose best tactical-fit estimate (XI Lab's face-stat profile) is 85 or more. An estimate, not usage data.",
+    rule: { min_best_fit: 85, tradeable_only: true }
+  },
+  { id: "promo", label: "Active promos", group: "promo", description: "Tradeable promo cards.", rule: { categories: ["promo"], tradeable_only: true } },
+  { id: "icons-heroes", label: "Icons & Heroes", group: "icons_heroes", description: "Tradeable Icon and Hero cards.", rule: { categories: ["icon", "hero"], tradeable_only: true } },
+  { id: "evolution", label: "Evolution candidates", group: "evolution", description: "Cards flagged eligible for a live Evolution. Needs event data (Stage B).", rule: { flag: "evolution_candidate", tradeable_only: true } },
+  { id: "live", label: "Live-upgrade cards", group: "live", description: "Cards that upgrade with real-world results. Needs event data (Stage B).", rule: { flag: "live_upgrade", tradeable_only: true } }
+];
+function bestFit(card) {
+  let best = null;
+  for (const p of card.positions) {
+    const s = fitScore(card, p).score;
+    if (s !== null && (best === null || s > best)) best = s;
+  }
+  return best;
+}
+function matchesRule(card, rule) {
+  if (rule.tradeable_only && card.tradeable === false) return false;
+  if (rule.categories && !rule.categories.includes(card.category)) return false;
+  if (rule.rating_min !== void 0 && card.rating < rule.rating_min) return false;
+  if (rule.rating_max !== void 0 && card.rating > rule.rating_max) return false;
+  if (rule.flag && !card[rule.flag]) return false;
+  if (rule.min_best_fit !== void 0) {
+    const f2 = bestFit(card);
+    if (f2 === null || f2 < rule.min_best_fit) return false;
+  }
+  return true;
+}
+function rebalance(def, cards, current, at) {
+  const want = new Set(cards.filter((c) => matchesRule(c, def.rule)).map((c) => c.id));
+  const out = [];
+  const open = /* @__PURE__ */ new Set();
+  for (const m of current) {
+    if (m.basket_id !== def.id) continue;
+    if (m.effective_to === null && !want.has(m.card_id)) out.push({ ...m, effective_to: at });
+    else out.push(m);
+    if (m.effective_to === null && want.has(m.card_id)) open.add(m.card_id);
+  }
+  for (const id of want) if (!open.has(id)) out.push({ basket_id: def.id, card_id: id, effective_from: at, effective_to: null });
+  return out;
+}
+function membersAt(members, basket_id, t) {
+  return members.filter((m) => m.basket_id === basket_id && ms(m.effective_from) <= t && (m.effective_to === null || t < ms(m.effective_to))).map((m) => m.card_id);
+}
+function computeIndex(basket_id, platform, members, seriesByCard, from, to, opts = {}) {
+  const rules = opts.rules ?? DEFAULT_MARKET_RULES;
+  const size = (opts.bucket_hours ?? 1) * 36e5;
+  const stale = rules.stale_after_hours * 36e5;
+  const start = Math.ceil(ms(from) / size) * size;
+  const end = ms(to);
+  const points = [];
+  let value = 100;
+  const fresh = (s, t) => {
+    const p = s && priceAt(s, t);
+    return p && t - p.t <= stale ? p : null;
+  };
+  for (let t = start; t <= end; t += size) {
+    if (!points.length) {
+      points.push({ t: iso(t), value, constituents: membersAt(members, basket_id, t).filter((id) => fresh(seriesByCard.get(id), t)).length });
+      continue;
+    }
+    const logs = [];
+    for (const id of membersAt(members, basket_id, t)) {
+      const s = seriesByCard.get(id);
+      const a = fresh(s, t - size);
+      const b = fresh(s, t);
+      if (a && b && a.price > 0) logs.push(Math.log(b.price / a.price));
+    }
+    if (logs.length) value = value * Math.exp(mean(logs));
+    points.push({ t: iso(t), value: round(value, 3), constituents: logs.length });
+  }
+  return { basket_id, platform, base: 100, points };
+}
+var indexAsSeries = (ix) => ix.points.filter((p) => p.constituents > 0 || ix.points[0].t === p.t).map((p) => ({ t: ms(p.t), price: p.value }));
+function summarizeIndex(def, ix, currentPrices, rules = DEFAULT_MARKET_RULES) {
+  const s = indexAsSeries(ix);
+  const changes = Object.fromEntries(WINDOWS.map((w) => [w, s.length > 1 ? nullRound(change2(s, w)) : null]));
+  const last = ix.points.at(-1);
+  const enough = s.length >= rules.min_points && (last?.constituents ?? 0) > 0;
+  const c24 = changes["24h"];
+  const trend = !enough || c24 === null ? "insufficient_data" : c24 > rules.thresholds.regime_trend_24h ? "rising" : c24 < -rules.thresholds.regime_trend_24h ? "falling" : "sideways";
+  const q = (x) => Math.round(quantile(currentPrices, x));
+  return {
+    basket_id: def.id,
+    label: def.label,
+    description: def.description,
+    platform: ix.platform,
+    value: enough && last ? round(last.value, 2) : null,
+    changes,
+    volatility_24h: nullRound(volatility(s, 24)),
+    trend,
+    constituents_now: last?.constituents ?? 0,
+    distribution: currentPrices.length ? { p10: q(0.1), p25: q(0.25), median: q(0.5), p75: q(0.75), p90: q(0.9) } : null
+  };
+}
+var nullRound = (n, d = 2) => n === null ? null : round(n, d);
+
+// supabase/functions/_shared/fut/xilab/market/regime.ts
+function classifyRegime(indexes, rules = DEFAULT_MARKET_RULES) {
+  const T = rules.thresholds;
+  const by = (id) => indexes.find((i) => i.basket_id === id);
+  const market = by("market");
+  const meta = by("meta");
+  const promo = by("promo");
+  const fodder2 = indexes.filter((i) => i.basket_id.startsWith("fodder-") && i.changes["24h"] !== null);
+  const observations = [];
+  const flags = [];
+  const not_evaluable = [{ regime: "high_supply", reason: "Needs listing depth or pack-supply data; no authorised source provides it yet." }];
+  let primary = "insufficient_data";
+  if (market && market.trend !== "insufficient_data" && market.changes["24h"] !== null) {
+    const c24 = market.changes["24h"];
+    const c7 = market.changes["7d"];
+    observations.push(`Whole-market index ${fmt(c24)} over 24h${c7 === null ? " (7d not available)" : `, ${fmt(c7)} over 7d`}.`);
+    if (c24 > T.regime_trend_24h && (c7 === null || c7 > T.regime_trend_7d)) primary = "broadly_rising";
+    else if (c24 < -T.regime_trend_24h && (c7 === null || c7 < -T.regime_trend_7d)) primary = "broadly_falling";
+    else primary = "sideways";
+  } else observations.push("Whole-market index has too few fresh points to classify.");
+  if (fodder2.length && meta && meta.changes["24h"] !== null) {
+    const m = meta.changes["24h"];
+    const hot = fodder2.filter((i) => i.changes["24h"] - m >= T.sbc_spread_pp);
+    observations.push(`Fodder tiers over 24h: ${fodder2.map((i) => `${i.basket_id.slice(7)} ${fmt(i.changes["24h"])}`).join(", ")}; meta gameplay ${fmt(m)}.`);
+    if (hot.length)
+      flags.push({
+        regime: "sbc_driven_demand",
+        because: `${hot.map((i) => i.label).join(", ")} beat meta gameplay cards by >= ${T.sbc_spread_pp}pp over 24h. Consistent with SBC demand; no SBC event data is linked yet.`
+      });
+  }
+  if (promo && promo.volatility_24h !== null && market?.volatility_24h != null) {
+    observations.push(`Promo basket hourly volatility ${promo.volatility_24h}% vs market ${market.volatility_24h}%.`);
+    if (promo.volatility_24h >= T.high_volatility && promo.volatility_24h >= 1.5 * market.volatility_24h)
+      flags.push({ regime: "promo_volatility", because: `Promo volatility ${promo.volatility_24h}% >= ${T.high_volatility}% and 1.5x the market.` });
+  }
+  return { primary, flags, observations, not_evaluable, strategy_notes: strategyNotes(primary, flags), rules_version: rules.id };
+}
+function strategyNotes(primary, flags) {
+  const n = [];
+  if (primary === "insufficient_data") return ["Not enough fresh market data: Market Lab won't rate any setup as favourable."];
+  if (primary === "broadly_falling") n.push("Falling market: mean-reversion buys carry extra risk; a card holding value while peers fall is worth a look, not a buy signal.");
+  if (primary === "broadly_rising") n.push("Rising market: judge momentum against the index, not in coins; most cards rising is not relative strength.");
+  if (primary === "sideways") n.push("Range-bound market: relative value and mean reversion are the most informative Stage A signals.");
+  if (flags.some((f2) => f2.regime === "sbc_driven_demand")) n.push("Fodder outperforming: fodder momentum may be SBC-driven and can reverse when the SBC expires.");
+  if (flags.some((f2) => f2.regime === "promo_volatility")) n.push("Promo volatility: wider downside scenarios are appropriate for promo cards.");
+  return n;
+}
+var fmt = (n, unit = "%") => `${n >= 0 ? "+" : ""}${Math.round(n * 100) / 100}${unit}`;
+
+// supabase/functions/_shared/fut/xilab/market/signals.ts
+var BENCHMARK_LABEL = {
+  category: "Same card category",
+  rating: "Similar overall (\xB11)",
+  position: "Same primary position",
+  utility: "Similar tactical fit (\xB13, same position line)",
+  market: "Whole-market index"
+};
+var LINE = { GK: "GK", CB: "DEF", LB: "DEF", RB: "DEF", CDM: "MID", CM: "MID", CAM: "MID", LM: "MID", RM: "MID", LW: "ATT", RW: "ATT", ST: "ATT" };
+function isPeer(b, card, other) {
+  if (other.id === card.id) return false;
+  switch (b) {
+    case "category":
+      return other.category === card.category;
+    case "rating":
+      return Math.abs(other.rating - card.rating) <= 1;
+    case "position":
+      return other.positions[0] === card.positions[0];
+    case "utility": {
+      const a = bestFit(card);
+      const o = bestFit(other);
+      return a !== null && o !== null && Math.abs(a - o) <= 3 && LINE[other.positions[0] ?? ""] === LINE[card.positions[0] ?? ""];
+    }
+  }
+}
+function rsVerdict(card, bench, rules = DEFAULT_MARKET_RULES) {
+  if (card === null || bench === null) return "insufficient_data";
+  const d = card - bench;
+  return d >= rules.thresholds.relative_strength_pp ? "outperforming" : d <= -rules.thresholds.relative_strength_pp ? "underperforming" : "in_line";
+}
+function peerChanges(peerSeries) {
+  const out = {};
+  for (const w of WINDOWS) {
+    const xs = peerSeries.map((s) => change2(s, w)).filter((x) => x !== null);
+    out[w] = { value: xs.length >= 3 ? median(xs) : null, n: xs.length };
+  }
+  return out;
+}
+function relativeStrength(cardSeries, benchmarks, rules = DEFAULT_MARKET_RULES) {
+  return benchmarks.map((b) => ({
+    benchmark: b.benchmark,
+    label: BENCHMARK_LABEL[b.benchmark],
+    peers: b.peers,
+    cells: WINDOWS.map((w) => {
+      const c = change2(cardSeries, w);
+      const bv = b.changes[w];
+      return { window: w, card: r(c), benchmark: r(bv), diff_pp: c === null || bv === null ? null : round(c - bv), verdict: rsVerdict(c, bv, rules) };
+    })
+  }));
+}
+function momentum(s) {
+  const changes = Object.fromEntries(WINDOWS.map((w) => [w, r(change2(s, w))]));
+  const s6 = sma(s, 6);
+  const s24 = sma(s, 24);
+  const last = s.at(-1);
+  let breakout = null;
+  if (last) {
+    const recent = s.filter((p) => p.t > last.t - 3 * 36e5);
+    const prior = window(s, 72).filter((p) => p.t <= last.t - 3 * 36e5);
+    if (prior.length >= 6 && recent.length >= 2) {
+      const hi = Math.max(...prior.map((p) => p.price));
+      const lo = Math.min(...prior.map((p) => p.price));
+      breakout = Math.min(...recent.map((p) => p.price)) > hi ? "breakout" : Math.max(...recent.map((p) => p.price)) < lo ? "breakdown" : "inside_range";
+    }
+  }
+  let structure = null;
+  if (last) {
+    const seg = [2, 1, 0].map((k) => s.filter((p) => p.t > last.t - (k + 1) * 24 * 36e5 && p.t <= last.t - k * 24 * 36e5));
+    if (seg.every((x) => x.length >= 3)) {
+      const hi = seg.map((x) => Math.max(...x.map((p) => p.price)));
+      const lo = seg.map((x) => Math.min(...x.map((p) => p.price)));
+      const up = hi[1] > hi[0] && hi[2] > hi[1] && lo[1] > lo[0] && lo[2] > lo[1];
+      const dn = hi[1] < hi[0] && hi[2] < hi[1] && lo[1] < lo[0] && lo[2] < lo[1];
+      structure = up ? "higher_highs_higher_lows" : dn ? "lower_highs_lower_lows" : "mixed";
+    }
+  }
+  const c24 = changes["24h"];
+  const c72 = changes["72h"];
+  let acceleration = null;
+  if (c24 !== null && c72 !== null) {
+    const daily = c72 / 3;
+    acceleration = Math.abs(c24 - daily) < 1 ? "steady" : c24 > daily ? "accelerating" : "decelerating";
+  }
+  const vol = volatility(s, 24);
+  let vol_adjusted_24h = null;
+  if (vol && c24 !== null) vol_adjusted_24h = round(Math.log(1 + c24 / 100) / (vol / 100 * Math.sqrt(24)));
+  return {
+    changes,
+    sma_6h: s6 === null ? null : Math.round(s6),
+    sma_24h: s24 === null ? null : Math.round(s24),
+    short_above_long: s6 === null || s24 === null || window(s, 24).length < 12 ? null : s6 > s24,
+    breakout,
+    structure,
+    acceleration,
+    volatility_24h: r(vol),
+    vol_adjusted_24h,
+    max_drawdown_7d: r(maxDrawdown(s, 168))
+  };
+}
+function meanReversion(s, peerPrices, rules = DEFAULT_MARKET_RULES) {
+  const w = window(s, 168);
+  const last = s.at(-1);
+  const prices = w.map((p) => p.price);
+  const m = mean(prices);
+  const sd = stdev(prices);
+  const z = last && prices.length >= rules.min_points && sd > 0 ? round((last.price - m) / sd) : null;
+  const lo = prices.length ? Math.min(...prices) : null;
+  const hi = prices.length ? Math.max(...prices) : null;
+  const rp = last && lo !== null && hi !== null && hi > lo ? round((last.price - lo) / (hi - lo)) : null;
+  const pm = median(peerPrices);
+  const ratio = last && pm ? round(last.price / pm) : null;
+  const unusually_low = z !== null && z <= rules.thresholds.mean_reversion_z;
+  let pattern = null;
+  if (z !== null) {
+    if (!unusually_low) pattern = "not_low";
+    else {
+      const before = w.filter((p) => last && p.t <= last.t - 24 * 36e5).map((p) => p.price);
+      const earlyMove = before.length >= 2 ? pct(before[0], before.at(-1)) : null;
+      const c24 = change2(s, "24h");
+      const c72 = change2(s, "72h");
+      if (earlyMove !== null && Math.abs(earlyMove) < 5 && c24 !== null && c24 <= -5) pattern = "recent_dislocation";
+      else if (earlyMove !== null && earlyMove <= -5 && c72 !== null && c72 < 0) pattern = "persistent_decline";
+      else pattern = "unclear";
+    }
+  }
+  return { z_7d: z, range_position_7d: rp, low_7d: lo, high_7d: hi, peer_price_ratio: ratio, peer_count: peerPrices.length, pattern, unusually_low };
+}
+function assessSignals(input) {
+  const rules = input.rules ?? DEFAULT_MARKET_RULES;
+  const { fresh, rs, mom, mr } = input;
+  const reasons = [];
+  const could_be_wrong = [
+    "Price history alone shows no listing depth, completed sales or supply; a move can reverse when packs or rewards add supply.",
+    "No SBC, Evolution or promo events are linked yet (Stage B), so a catalyst may already explain the move."
+  ];
+  const categories = [];
+  const c72 = mom.changes["72h"];
+  const entry = {
+    elevated: c72 !== null && c72 >= rules.thresholds.priced_in_72h,
+    change_72h: c72,
+    note: c72 === null ? "72h change not available." : c72 >= rules.thresholds.priced_in_72h ? `Already up ${c72}% in 72h (rule: >= ${rules.thresholds.priced_in_72h}%). Much of any demand change may be priced in.` : `Up ${c72}% in 72h, below the ${rules.thresholds.priced_in_72h}% entry-risk rule.`
+  };
+  if (fresh.status !== "fresh" || input.points < rules.min_points) {
+    reasons.push(fresh.status !== "fresh" ? fresh.message : `Only ${input.points} price points (need ${rules.min_points}).`);
+    return { status: "insufficient_evidence", categories, reasons, could_be_wrong, entry_risk: entry, evidence: "estimate" };
+  }
+  const v = (b, w) => rs.find((x) => x.benchmark === b)?.cells.find((c) => c.window === w)?.verdict ?? "insufficient_data";
+  const outMarket = v("market", "24h") === "outperforming" && v("market", "72h") !== "underperforming";
+  const outPeers = ["category", "rating", "position", "utility"].filter((b) => v(b, "24h") === "outperforming").length;
+  const underPeers = ["category", "rating", "position", "utility"].filter((b) => v(b, "24h") === "underperforming").length;
+  if (entry.elevated) {
+    reasons.push(entry.note);
+    if (mom.acceleration === "decelerating") {
+      categories.push("possible_demand_exhaustion");
+      reasons.push("Momentum is decelerating after the rise.");
+    }
+    could_be_wrong.push("A sustained new use (meta shift, long SBC) can keep a risen card high.");
+    return { status: "overheated", categories, reasons, could_be_wrong, entry_risk: entry, evidence: "estimate" };
+  }
+  const downStructure = mom.structure === "lower_highs_lower_lows" && c72 !== null && c72 <= -3;
+  if (mom.breakout === "breakdown" || downStructure || mr.pattern === "persistent_decline") {
+    categories.push("elevated_downside_risk");
+    if (mom.breakout === "breakdown") reasons.push("The last 3 hours all traded below the previous 72h range.");
+    if (downStructure) reasons.push(`Lower highs and lower lows over three days (${c72}% in 72h).`);
+    if (mr.pattern === "persistent_decline") reasons.push("It is low, but has been falling most of the week (persistent decline, not a dip).");
+    could_be_wrong.push("A falling card can be a bargain once supply dries up; that needs supply data to judge.");
+    return { status: "elevated_risk", categories, reasons, could_be_wrong, entry_risk: entry, evidence: "estimate" };
+  }
+  const momentumOk = mom.short_above_long === true && (mom.structure === "higher_highs_higher_lows" && (c72 ?? 0) >= 3 || mom.breakout === "breakout");
+  if (outMarket && outPeers >= 2 && momentumOk) {
+    categories.push("confirmed_momentum");
+    reasons.push(`Outperforming the market index and ${outPeers} of 4 peer groups over 24h, with short average above long and ${mom.breakout === "breakout" ? "a range breakout" : "higher highs and lows"}.`);
+  }
+  if (mr.unusually_low && mr.pattern === "recent_dislocation") {
+    categories.push("possible_temporary_discount");
+    reasons.push(`Price is ${mr.z_7d} standard deviations below its 7d average after a stable week: a recent dislocation.`);
+  }
+  if (mr.peer_price_ratio !== null && mr.peer_count >= 3 && mr.peer_price_ratio <= 0.85 && underPeers === 0) {
+    categories.push("relative_value_opportunity");
+    reasons.push(`Priced at ${Math.round(mr.peer_price_ratio * 100)}% of the median peer (same rating and position, ${mr.peer_count} peers).`);
+    could_be_wrong.push("Same rating and position isn't the same card: PlayStyles, roles and chemistry can justify the gap.");
+  }
+  const regimeBad = input.regime_primary === "insufficient_data" || input.regime_primary === "broadly_falling";
+  if (categories.length >= 2 && !regimeBad) return { status: "favorable_setup", categories, reasons, could_be_wrong, entry_risk: entry, evidence: "estimate" };
+  if (categories.length) {
+    if (regimeBad) reasons.push(`Market regime is ${input.regime_primary.replace(/_/g, " ")}: not rated favourable.`);
+    return { status: "research_further", categories, reasons, could_be_wrong, entry_risk: entry, evidence: "estimate" };
+  }
+  if (outPeers || outMarket) reasons.push("Some relative strength, not yet confirmed by momentum structure.");
+  else reasons.push("Nothing unusual against its benchmarks.");
+  return { status: "watch", categories, reasons, could_be_wrong, entry_risk: entry, evidence: "estimate" };
+}
+var r = (n) => n === null || n === void 0 ? null : round(n);
+
+// supabase/functions/_shared/fut/xilab/market/thesis.ts
+function analyzeTrade(input, market = { latest_price: null, freshness: null }, rules = DEFAULT_MARKET_RULES) {
+  const q = Math.max(1, Math.floor(input.quantity));
+  const { buy_price: buy, target_price: tgt, downside_price: down } = input;
+  const investment = buy * q;
+  const perTarget = netAfterTax(tgt, rules) - buy;
+  const perDown = netAfterTax(down, rules) - buy;
+  const profit = perTarget * q;
+  const loss = perDown * q;
+  const warnings = [];
+  const price_checks = [
+    ["buy_price", buy],
+    ["target_price", tgt],
+    ["downside_price", down]
+  ].map(([field, price]) => ({ field, price, valid: isValidPrice(price, rules), nearest_valid: roundToStep(price, "nearest", rules) }));
+  for (const c of price_checks) if (!c.valid) warnings.push(`${c.field.replace("_", " ")} ${c.price.toLocaleString("en-US")} isn't a valid market price; nearest is ${c.nearest_valid.toLocaleString("en-US")}.`);
+  if (tgt <= buy) warnings.push("Target is not above the buy price.");
+  if (down >= buy) warnings.push("Downside exit is not below the buy price: that's not a downside scenario.");
+  if (perTarget <= 0 && tgt > buy) warnings.push("After the 5% tax the target sale loses money.");
+  const risk_reward = loss < 0 && profit > 0 ? round2(profit / -loss) : null;
+  const break_even_win_rate = loss < 0 && profit > 0 ? round4(-loss / (profit - loss)) : null;
+  const p = input.assumed_target_probability;
+  const user_scenario_ev = typeof p === "number" && p >= 0 && p <= 1 ? { probability: p, expected_profit: Math.round(p * profit + (1 - p) * loss), label: "Your assumption, not an XI Lab forecast." } : null;
+  const coins2 = input.coin_balance ?? null;
+  const ex = input.existing ?? { quantity: 0, cost_basis: 0 };
+  const exposure = {
+    of_coins_pct: coins2 && coins2 > 0 ? round2(investment / coins2 * 100) : null,
+    affordable: coins2 === null ? null : investment <= coins2,
+    position_after: { quantity: ex.quantity + q, cost_basis: ex.cost_basis + investment }
+  };
+  if (exposure.affordable === false) warnings.push(`Needs ${investment.toLocaleString("en-US")} coins; you have ${coins2.toLocaleString("en-US")}. Cards you hold are not coins until sold (and taxed).`);
+  if (exposure.of_coins_pct !== null && exposure.of_coins_pct > 50) warnings.push(`Uses ${exposure.of_coins_pct}% of your coins on one card.`);
+  const latest = market.freshness?.status === "fresh" ? market.latest_price : null;
+  if (market.freshness && market.freshness.status !== "fresh") warnings.push(`No current price to check against: ${market.freshness.message}`);
+  const buy_vs_latest_pct = latest ? round2((buy - latest) / latest * 100) : null;
+  if (buy_vs_latest_pct !== null && buy_vs_latest_pct < -15) warnings.push(`Buy price is ${-buy_vs_latest_pct}% under the latest observed price; fills that far below are uncommon.`);
+  return {
+    input: { ...input, quantity: q },
+    investment,
+    tax_at_target: transferTax(tgt, rules),
+    tax_at_downside: transferTax(down, rules),
+    break_even_price: breakEvenPrice(buy, rules),
+    profit_at_target: profit,
+    loss_at_downside: loss,
+    return_at_target_pct: round2(perTarget / buy * 100),
+    return_at_downside_pct: round2(perDown / buy * 100),
+    risk_reward,
+    break_even_win_rate,
+    user_scenario_ev,
+    exposure,
+    price_checks,
+    market: { latest_price: latest, freshness: market.freshness, buy_vs_latest_pct },
+    warnings,
+    limitations: [
+      "Liquidity and execution data are unavailable: nothing here says the card will fill at these prices or how many can be sold.",
+      "No calibrated forecast exists yet, so XI Lab gives no probability of reaching the target. The break-even win rate is arithmetic on your inputs.",
+      `Tax ${Math.round(rules.transfer_tax_rate * 100)}% and price steps from rule version ${rules.id} (${rules.status}).`
+    ],
+    rules_version: rules.id,
+    evidence: "estimate"
+  };
+}
+function breakEvenPrice(buy, rules = DEFAULT_MARKET_RULES) {
+  let p = roundToStep(Math.ceil(buy / (1 - rules.transfer_tax_rate)), "up", rules);
+  for (let i = 0; i < 3; i++) {
+    const lower = roundToStep(p - 1, "down", rules);
+    if (lower < p && netAfterTax(lower, rules) >= buy) p = lower;
+    else break;
+  }
+  while (netAfterTax(p, rules) < buy) p = roundToStep(p + 1, "up", rules);
+  return p;
+}
+var round2 = (n) => Math.round(n * 100) / 100;
+var round4 = (n) => Math.round(n * 1e4) / 1e4;
+
+// supabase/functions/_shared/fut/xilab/market/sources.ts
+var NONE = {
+  commercial_use: false,
+  storage: false,
+  retention_days: null,
+  display: false,
+  derived_analytics: false,
+  model_training: false,
+  redistribution: false,
+  attribution: null
+};
+var DEFAULT_PRICE_SOURCES = [
+  {
+    id: "xilab_demo",
+    name: "XI Lab demo dataset",
+    kind: "demo",
+    status: "enabled",
+    is_demo: true,
+    status_note: "Made-up prices for made-up cards, generated so Market Lab can be tried. Not market data. Every screen using it says DEMO.",
+    permissions: { ...NONE, storage: true, display: true, derived_analytics: true },
+    evidence: "hypothesis"
+  },
+  {
+    id: "user_import",
+    name: "Your imported price history",
+    kind: "user_import",
+    status: "enabled",
+    is_demo: false,
+    status_note: "Prices you import (CSV/JSON) or note down yourself. Private to you. XI Lab doesn't check where they came from.",
+    permissions: { ...NONE, storage: true, display: true, derived_analytics: true },
+    evidence: "estimate"
+  },
+  {
+    id: "web_app_capture",
+    name: "Your Web App captures (XI Lab browser helper)",
+    kind: "browser_capture",
+    status: "enabled",
+    is_demo: false,
+    status_note: "Lowest Buy Now prices from transfer-market searches YOU ran in the EA Web App, read from results the Web App already loaded. The helper never searches, clicks or bids. Only the listings you viewed, not the whole market. Private to you. Third-party software on EA's site carries some account risk (Jeff accepted it on 2026-11-02).",
+    permissions: { ...NONE, storage: true, display: true, derived_analytics: true },
+    evidence: "game_data"
+  },
+  {
+    id: "ea_fc_community_api",
+    name: "EA FC Community API",
+    kind: "official_api",
+    status: "not_authorized",
+    is_demo: false,
+    status_note: "Closed to new partners as of 2026-11-02. Not connected.",
+    permissions: NONE,
+    evidence: "verified"
+  },
+  ...["FUTBIN", "FUT.GG", "FUTWIZ"].map(
+    (name2) => ({
+      id: name2.toLowerCase().replace(/\W/g, ""),
+      name: name2,
+      kind: "licensed_feed",
+      status: "not_authorized",
+      is_demo: false,
+      status_note: `No licence or API agreement. ${name2} blocks automated access and isn't scraped. Enable only after a data agreement.`,
+      permissions: NONE,
+      evidence: "game_data"
+    })
+  )
+];
+var SourceNotAllowedError = class extends Error {
+};
+function assertUsable(source, use) {
+  if (!source) throw new SourceNotAllowedError("Unknown price source");
+  if (source.status !== "enabled") throw new SourceNotAllowedError(`${source.name} is ${source.status.replace("_", " ")}: ${source.status_note}`);
+  if (!source.permissions[use]) throw new SourceNotAllowedError(`${source.name}'s terms don't allow ${use.replace("_", " ")}.`);
+}
+
+// supabase/functions/_shared/fut/xilab/shared/csv.ts
+function parseCsv(text2) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let quoted = false;
+  const s = text2.replace(/^﻿/, "");
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quoted) {
+      if (c === '"') {
+        if (s[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else quoted = false;
+      } else field += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") {
+      row.push(field);
+      field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && s[i + 1] === "\n") i++;
+      row.push(field);
+      field = "";
+      if (row.some((f2) => f2 !== "")) rows.push(row);
+      row = [];
+    } else field += c;
+  }
+  row.push(field);
+  if (row.some((f2) => f2 !== "")) rows.push(row);
+  const [header, ...body] = rows;
+  if (!header) return [];
+  const keys = header.map((h) => h.trim());
+  return body.map((r2) => Object.fromEntries(keys.map((k, i) => [k, (r2[i] ?? "").trim()])));
+}
+
+// supabase/functions/_shared/fut/xilab/market/capture.ts
+function captureDetailsFromRow(r2) {
+  const n = (v) => v === void 0 || v === null || v === "" || !Number.isInteger(Number(v)) || Number(v) < 0 ? void 0 : Number(v);
+  const pos = typeof r2.position === "string" && /^[A-Z]{2,3}$/.test(r2.position.trim()) ? r2.position.trim() : void 0;
+  const d = { rare_flag: n(r2.rare_flag), team_id: n(r2.team_id), league_id: n(r2.league_id), nation_id: n(r2.nation_id), position: pos };
+  const kept = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== void 0));
+  return Object.keys(kept).length ? kept : void 0;
+}
+
+// supabase/functions/_shared/fut/xilab/market/import.ts
+var PLATFORM_ALIASES = { console: "console", ps: "console", playstation: "console", xbox: "console", ps5: "console", xsx: "console", pc: "pc" };
+function parsePriceImport(text2, opts) {
+  const t = text2.trim();
+  let raw;
+  if (t.startsWith("[") || t.startsWith("{")) {
+    const j = JSON.parse(t);
+    raw = Array.isArray(j) ? j : Array.isArray(j.observations) ? j.observations : [];
+  } else raw = parseCsv(t);
+  return validatePriceRows(raw, opts);
+}
+function validatePriceRows(raw, opts) {
+  assertUsable(opts.source, "storage");
+  const rules = opts.rules ?? DEFAULT_MARKET_RULES;
+  const received_at = opts.received_at ?? (/* @__PURE__ */ new Date()).toISOString();
+  const recv = Date.parse(received_at);
+  const rows = [];
+  const unmatched = [];
+  const rejected = [];
+  const seen = /* @__PURE__ */ new Set();
+  let duplicates = 0;
+  raw.forEach((r2, i) => {
+    const line = i + 2;
+    const reject = (reason) => rejected.push({ line, reason, raw: r2 });
+    let card_id = String(r2.card_id ?? "").trim();
+    const eaId = Number(r2.ea_item_id);
+    const num = (v) => v === void 0 || v === "" || v === null || !Number.isInteger(Number(v)) ? null : Number(v);
+    let pendingEa = null;
+    if (!card_id && Number.isInteger(eaId) && eaId > 0) {
+      card_id = opts.resolveEaItem?.(eaId, num(r2.asset_id), num(r2.rating)) ?? "";
+      if (!card_id) pendingEa = eaId;
+    }
+    if (!card_id && pendingEa === null) return reject("card_id (or ea_item_id) is empty");
+    if (pendingEa === null && !opts.knownCardIds.has(card_id)) return reject(`Unknown card_id "${card_id}" (import the card first; prices never create cards)`);
+    const platform = PLATFORM_ALIASES[String(r2.platform ?? "").trim().toLowerCase()];
+    if (!platform || !PLATFORMS.includes(platform)) return reject(`platform must be console or pc, got "${r2.platform}"`);
+    const price = Number(r2.price);
+    if (!Number.isInteger(price) || price < rules.min_price || price > 15e6) return reject(`price must be a whole number of coins between ${rules.min_price} and 15,000,000`);
+    const observed = Date.parse(String(r2.observed_at ?? ""));
+    if (!Number.isFinite(observed)) return reject("observed_at is not an ISO date-time");
+    if (observed > recv) return reject("observed_at is after the import time (future data)");
+    const kindRaw = String(r2.kind ?? "").trim();
+    const kind = kindRaw === "" ? "lowest_bin" : kindRaw;
+    if (!["lowest_bin", "sale", "user_quote"].includes(kind)) return reject(`kind must be lowest_bin, sale or user_quote, got "${kindRaw}"`);
+    const ev = String(r2.event_at ?? "").trim();
+    const event_at = ev ? Date.parse(ev) : null;
+    if (event_at !== null && !Number.isFinite(event_at)) return reject("event_at is not an ISO date-time");
+    const key = `${pendingEa === null ? card_id : `ea:${pendingEa}`}|${platform}|${observed}`;
+    if (seen.has(key)) {
+      duplicates++;
+      return;
+    }
+    seen.add(key);
+    const quality = [];
+    if (kind === "sale") quality.push("Provider says this is a completed sale; XI Lab can't verify it.");
+    const listings = Number(r2.listings);
+    if (opts.source.kind === "browser_capture")
+      quality.push(`Lowest Buy Now among ${Number.isInteger(listings) && listings > 0 ? listings : "the"} listing(s) on a results page you viewed; not the whole market.`);
+    const obs = {
+      card_id,
+      platform,
+      price,
+      kind,
+      observed_at: new Date(observed).toISOString(),
+      received_at,
+      event_at: event_at === null ? null : new Date(event_at).toISOString(),
+      season: opts.season ?? "FC27",
+      source_id: opts.source.id,
+      evidence: opts.source.evidence,
+      ...quality.length ? { quality } : {}
+    };
+    if (pendingEa === null) return void rows.push(obs);
+    const details = captureDetailsFromRow(r2);
+    unmatched.push({ ea_item_id: pendingEa, asset_id: num(r2.asset_id), rating: num(r2.rating), ...details ? { details } : {}, observation: obs });
+  });
+  return { rows, unmatched, rejected, duplicates };
+}
+
+// supabase/functions/_shared/fut/xilab/market/squad-link.ts
+function compareInSquad(squad, card, rules, market) {
+  const present = squad.slots.find((s) => s.card?.id === card.id);
+  const owned = !!card.owned;
+  const cost = owned ? 0 : market.latest_price;
+  const options = [];
+  const skipped_locked = [];
+  const baseTotal = evaluateSquad(squad, rules).chemistry.total;
+  const eligible = squad.slots.filter((s) => card.positions.some((p) => p.toUpperCase() === s.position.toUpperCase()));
+  for (const s of eligible) {
+    if (s.card?.id === card.id) continue;
+    if (s.locked) {
+      skipped_locked.push({ slot: s.slot, player: s.card?.name ?? null });
+      continue;
+    }
+    let base = squad;
+    if (present) base = { ...squad, slots: squad.slots.map((x) => x.slot === present.slot ? { ...x, card: null } : x) };
+    const p = previewAssign(base, s.slot, { ...card, price: cost }, rules);
+    const before = baseTotal;
+    options.push({
+      slot: s.slot,
+      position: s.position,
+      replaces: s.card?.name ?? null,
+      chemistry_before: before,
+      chemistry_after: p.total_after,
+      chemistry_delta: p.total_after - before,
+      changes: p.diff.changes.map((c) => ({ slot: c.slot, name: c.name_after ?? c.name_before, delta: c.delta, reasons: c.reasons })),
+      fit_before: p.fit_before,
+      fit_after: p.fit_after,
+      fit_delta: p.fit_before === null || p.fit_after === null ? null : p.fit_after - p.fit_before
+    });
+  }
+  options.sort((a, b) => b.chemistry_delta - a.chemistry_delta || (b.fit_delta ?? -99) - (a.fit_delta ?? -99));
+  const rule_status = options[0] && rules.status === "verified" ? "verified" : "hypothesis";
+  return {
+    card_id: card.id,
+    squad_id: squad.id,
+    already_in_squad: present?.slot ?? null,
+    owned,
+    cost,
+    options,
+    skipped_locked,
+    no_eligible_slot: eligible.length === 0,
+    summary: summarize2(card, options, skipped_locked.length, owned, cost, market.assessment),
+    rule_version: rules.id,
+    evidence: { chemistry: rule_status, fit: "estimate", market: "estimate" }
+  };
+}
+function summarize2(card, options, locked, owned, cost, a) {
+  if (!options.length) return locked ? `${card.name} only fits slots you've locked.` : `${card.name} can't play any position in this formation.`;
+  const best = options[0];
+  const fit = best.fit_delta ?? 0;
+  const upgrade = best.chemistry_delta >= 0 && fit >= 3;
+  const where = best.replaces ? `for ${best.replaces} at ${best.slot}` : `at ${best.slot}`;
+  const chem = best.chemistry_delta === 0 ? "keeps team chemistry" : `${best.chemistry_delta > 0 ? "adds" : "costs"} ${Math.abs(best.chemistry_delta)} team chemistry`;
+  const fitTxt = best.fit_delta === null ? "" : `, fit estimate ${fit >= 0 ? "+" : ""}${fit}`;
+  let s = `${card.name} ${where} ${chem}${fitTxt}.`;
+  if (owned) return `${s} You already own it.`;
+  if (cost === null) return `${s} No current price, so the cost can't be judged.`;
+  if (a && (a.status === "overheated" || a.entry_risk.elevated))
+    s += upgrade ? " It's a meaningful upgrade, but its recent price rise makes waiting or an alternative worth considering." : " Its recent price rise adds entry risk.";
+  else if (a?.status === "elevated_risk") s += " Its price trend shows downside risk.";
+  else if (!upgrade) s += " Not a clear upgrade on fit and chemistry.";
+  return s;
+}
+
+// supabase/functions/_shared/fut/xilab/market/schema.ts
+var platformSchema = external_exports.enum(["console", "pc"]);
+var coins = external_exports.number().int().min(0).max(15e6);
+var thesisInputSchema = external_exports.object({
+  card_id: external_exports.string().min(1).max(200),
+  platform: platformSchema,
+  quantity: external_exports.number().int().min(1).max(100),
+  buy_price: coins.min(1),
+  target_price: coins.min(1),
+  downside_price: coins.min(0),
+  holding_hours: external_exports.number().min(0).max(24 * 60).optional(),
+  coin_balance: coins.nullable().optional(),
+  existing: external_exports.object({ quantity: external_exports.number().int().min(0).max(100), cost_basis: coins }).nullable().optional(),
+  assumed_target_probability: external_exports.number().min(0).max(1).nullable().optional()
+});
+var watchItemInputSchema = external_exports.object({
+  card_id: external_exports.string().min(1).max(200),
+  platform: platformSchema,
+  note: external_exports.string().max(280).nullable().optional(),
+  target_buy: coins.nullable().optional(),
+  target_sell: coins.nullable().optional()
+});
+var scanRequestSchema = external_exports.object({
+  platform: platformSchema.optional(),
+  status: external_exports.array(external_exports.enum(["watch", "research_further", "favorable_setup", "overheated", "elevated_risk", "insufficient_evidence"])).optional(),
+  max_price: coins.optional(),
+  category: external_exports.enum(["base", "promo", "icon", "hero", "evolution", "live", "sbc_reward", "objective"]).optional(),
+  limit: external_exports.number().int().min(1).max(200).optional()
+});
+
+// supabase/functions/_shared/fut/xilab/intelligence/card.ts
+function cardUtility(card, profiles = {}) {
+  const by_position = card.positions.map((p) => {
+    const prof = profiles[p] ?? DEFAULT_PROFILES[p.toUpperCase()];
+    const f2 = fitScore(card, p, prof);
+    return { position: p, profile: f2.profile, score: f2.score };
+  }).sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  return {
+    card_id: card.id,
+    gameplay: {
+      by_position,
+      best: by_position[0] ?? null,
+      versatility: card.positions.length,
+      evidence: "estimate",
+      basis: "Weighted face stats per position profile (same model as the Squad Builder's tactical fit). Chemistry depends on the squad: use Compare in My Squad."
+    },
+    unavailable: [
+      { model: "sbc", reason: "Needs SBC requirement data (Stage B)." },
+      { model: "evolution", reason: "Needs Evolution eligibility and outcome data (Stage B)." },
+      { model: "scarcity", reason: "Needs pack availability and supply data." },
+      { model: "playstyles_roles", reason: "PlayStyles and Role+ are stored but not yet weighted in fit." }
+    ]
+  };
+}
+function comparableCards(card, pool, range = 2) {
+  const r2 = card.rating ?? 0;
+  return pool.filter((c) => c.id !== card.id && c.positions[0] === card.positions[0] && Math.abs((c.rating ?? 0) - r2) <= range);
+}
+
+// supabase/functions/_shared/fut/xilab/market/service.ts
+var MarketNotFoundError = class extends Error {
+};
+var LOOKBACK_H = 8 * 24;
+function createMarketService(deps) {
+  const rules = deps.rules ?? DEFAULT_MARKET_RULES;
+  const chem = deps.chemistry ?? DEFAULT_RULES;
+  const sources = deps.sources ?? DEFAULT_PRICE_SOURCES;
+  const baskets = deps.baskets ?? DEFAULT_BASKETS;
+  const now2 = deps.now ?? (() => (/* @__PURE__ */ new Date()).toISOString());
+  const sourceById = new Map(sources.map((s) => [s.id, s]));
+  const provenance = (snap) => {
+    const used = [...new Set(snap.rows.map((r2) => r2.source_id))];
+    const demo = used.some((id) => sourceById.get(id)?.is_demo);
+    return { rules_version: rules.id, engine_version: MARKET_ENGINE_VERSION, as_of: snap.as_of, demo, sources: used, evidence: demo ? "hypothesis" : "estimate" };
+  };
+  const usable = (rows) => rows.filter((r2) => {
+    const s = sourceById.get(r2.source_id);
+    return s && s.status === "enabled" && s.permissions.derived_analytics;
+  });
+  async function snapshot(owner, platform, as_of = now2()) {
+    const cards = await deps.cards.list(owner);
+    const byId = new Map(cards.map((c) => [c.id, c]));
+    const rows = usable(await deps.prices.query(owner, { platform, as_of, since: iso(ms(as_of) - LOOKBACK_H * 36e5) }));
+    const series = /* @__PURE__ */ new Map();
+    for (const id of new Set(rows.map((r2) => r2.card_id))) series.set(id, toSeries(rows, id, platform, as_of));
+    const members = await deps.memberships.list();
+    const indexSeries = /* @__PURE__ */ new Map();
+    const indexes = baskets.map((b) => {
+      const ix = computeIndex(b.id, platform, members, series, iso(ms(as_of) - LOOKBACK_H * 36e5), as_of, { rules });
+      indexSeries.set(b.id, ix.points.map((p) => ({ t: ms(p.t), price: p.value })));
+      const ids = members.filter((m) => m.basket_id === b.id && m.effective_to === null).map((m) => m.card_id);
+      const current = ids.flatMap((id) => {
+        const s = series.get(id);
+        const f2 = s && freshness(s, as_of, rules);
+        return s && f2?.status === "fresh" ? [s.at(-1).price] : [];
+      });
+      return summarizeIndex(b, ix, current, rules);
+    });
+    return { as_of, platform, cards, byId, series, rows, members, indexes, indexSeries, regime: classifyRegime(indexes, rules) };
+  }
+  function benchmarksFor(snap, card) {
+    const out = [];
+    for (const b of ["category", "rating", "position", "utility"]) {
+      const peers = snap.cards.filter((o) => isPeer(b, card, o)).flatMap((o) => {
+        const s = snap.series.get(o.id);
+        return s && freshness(s, snap.as_of, rules).status === "fresh" ? [s] : [];
+      });
+      const pc = peerChanges(peers);
+      out.push({ benchmark: b, changes: Object.fromEntries(WINDOWS.map((w) => [w, pc[w].value])), peers: pc["24h"].n });
+    }
+    const m = snap.indexes.find((i) => i.basket_id === "market");
+    const ms_ = snap.indexSeries.get("market") ?? [];
+    out.push({ benchmark: "market", changes: Object.fromEntries(WINDOWS.map((w) => [w, m?.value === null ? null : change2(ms_, w)])), peers: m?.constituents_now ?? 0 });
+    return out;
+  }
+  function analyse(snap, card) {
+    const s = snap.series.get(card.id) ?? [];
+    const fresh = freshness(s, snap.as_of, rules);
+    const rs = relativeStrength(s, benchmarksFor(snap, card), rules);
+    const mom = momentum(s);
+    const peerPrices = snap.cards.filter((o) => o.id !== card.id && o.rating === card.rating && o.positions[0] === card.positions[0]).flatMap((o) => {
+      const ps = snap.series.get(o.id);
+      return ps && freshness(ps, snap.as_of, rules).status === "fresh" ? [ps.at(-1).price] : [];
+    });
+    const mr = meanReversion(s, peerPrices, rules);
+    const assessment = assessSignals({ fresh, points: window(s, LOOKBACK_H).length, rs, mom, mr, regime_primary: snap.regime.primary, rules });
+    const latest = fresh.status === "fresh" ? s.at(-1).price : null;
+    return { series: s, fresh, rs, mom, mr, assessment, latest };
+  }
+  const getCard2 = (snap, id) => {
+    const c = snap.byId.get(id);
+    if (!c) throw new MarketNotFoundError(`No card ${id}`);
+    return c;
+  };
+  async function initBaskets(at, opts = {}) {
+    const cards = await deps.cards.catalogue();
+    for (const b of baskets) {
+      const cur = await deps.memberships.list(b.id);
+      if (opts.backfilled && cur.length) continue;
+      const next = rebalance(b, cards, cur, at).map((m) => opts.backfilled && !cur.length ? { ...m, backfilled: true } : m);
+      await deps.memberships.replace(b.id, next);
+    }
+  }
+  function eaResolver(cards) {
+    const byEa = /* @__PURE__ */ new Map();
+    for (const c of cards) if (c.ea_item_id) byEa.set(c.ea_item_id, c);
+    return (ea, asset, rating) => {
+      const hit = byEa.get(ea);
+      if (hit && (rating === null || hit.rating === rating)) return hit.id;
+      const base = asset ? byEa.get(asset) : void 0;
+      return base && rating !== null && base.rating === rating ? base.id : null;
+    };
+  }
+  function unmatchedReason(u) {
+    const special = u.details?.rare_flag !== void 0 && u.details.rare_flag > 1;
+    return `EA item ${u.ea_item_id}${u.rating ? ` (rated ${u.rating})` : ""} isn't in your card database${special ? " (a special version: promo, Icon or Hero)" : ""}. Add the card to use this price.`;
+  }
+  async function relink(owner, cards) {
+    const held = await deps.holds.list(owner);
+    if (!held.length) return { linked: 0, still_held: 0, rows: [] };
+    const resolve = eaResolver(cards);
+    const linked = [];
+    const rows = [];
+    for (const h of held) {
+      const card_id = resolve(h.ea_item_id, h.asset_id, h.rating);
+      if (!card_id) continue;
+      linked.push(h);
+      rows.push({ ...h.observation, card_id, quality: [...h.observation.quality ?? [], `Captured before this card was in your database; linked by EA item id on ${now2().slice(0, 10)}.`] });
+    }
+    if (rows.length) {
+      await deps.prices.insert(owner, rows);
+      await deps.holds.release(owner, linked);
+    }
+    return { linked: rows.length, still_held: held.length - rows.length, rows };
+  }
+  return {
+    rules,
+    /** Data sources panel: every provider, enabled or not, with its terms. */
+    getDataSourceStatus() {
+      return sources.map((s) => ({ ...s }));
+    },
+    /** get_market_overview */
+    async getMarketOverview(owner, opts = {}) {
+      const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
+      const rows = snap.cards.flatMap((c) => {
+        const s = snap.series.get(c.id);
+        if (!s) return [];
+        const f2 = freshness(s, snap.as_of, rules);
+        if (f2.status !== "fresh") return [{ c, f: f2, rel: null, c24: null }];
+        const c24 = change2(s, "24h");
+        const m = snap.indexes.find((i) => i.basket_id === "market")?.changes["24h"] ?? null;
+        return [{ c, f: f2, c24, rel: c24 === null || m === null ? null : c24 - m }];
+      });
+      const ranked = rows.filter((r2) => r2.rel !== null).sort((a, b) => b.rel - a.rel);
+      const mover = (r2) => ({ card_id: r2.c.id, name: r2.c.name, rating: r2.c.rating, change_24h: round(r2.c24), vs_market_pp: round(r2.rel), latest_observed_at: r2.f.latest_observed_at });
+      const backfilled = snap.members.some((m) => m.backfilled);
+      return {
+        platform: snap.platform,
+        indexes: snap.indexes,
+        index_history: Object.fromEntries([...snap.indexSeries.entries()].map(([k, v]) => [k, v.filter((_, i) => i % 6 === 0 || i === v.length - 1).map((p) => ({ t: iso(p.t), value: p.price }))])),
+        regime: snap.regime,
+        relative_strength_leaders: ranked.filter((r2) => r2.rel >= rules.thresholds.relative_strength_pp).slice(0, 8).map(mover),
+        largest_declines: ranked.filter((r2) => r2.rel <= -rules.thresholds.relative_strength_pp).reverse().slice(0, 8).map(mover),
+        coverage: {
+          cards: snap.cards.length,
+          fresh: rows.filter((r2) => r2.f.status === "fresh").length,
+          stale: rows.filter((r2) => r2.f.status === "stale").length,
+          missing: snap.cards.length - rows.length
+        },
+        upcoming_events: { items: [], note: "The catalyst calendar (SBCs, Evolutions, promos) arrives in Stage B. No events are shown rather than invented ones." },
+        notes: [
+          "Indexes are chained equal-weight geometric means of hourly price relatives; a card only counts while it is a member and has a fresh price at both ends of the hour.",
+          ...backfilled ? ["Basket membership was backfilled from today's card list when history was first imported, so early index history may carry survivorship bias."] : [],
+          "Volume, listings and supply are not available from any authorised source yet."
+        ],
+        provenance: provenance(snap)
+      };
+    },
+    /** get_card_market_intelligence: the Card Intelligence page. */
+    async getCardMarketIntelligence(owner, card_id, opts = {}) {
+      const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
+      const card = getCard2(snap, card_id);
+      const a = analyse(snap, card);
+      const comps = comparableCards(card, snap.cards).map((o) => {
+        const s = snap.series.get(o.id) ?? [];
+        const f2 = freshness(s, snap.as_of, rules);
+        const u = cardUtility(o);
+        return {
+          card_id: o.id,
+          name: o.name,
+          rating: o.rating,
+          positions: o.positions,
+          best_fit: u.gameplay.best,
+          latest_price: f2.status === "fresh" ? s.at(-1).price : null,
+          freshness: f2.status,
+          change_24h: f2.status === "fresh" ? round(change2(s, "24h") ?? NaN) : null,
+          price_vs_subject: f2.status === "fresh" && a.latest ? round(s.at(-1).price / a.latest) : null
+        };
+      });
+      const watch = (await deps.watchlists.list(owner)).find((w) => w.card_id === card_id && w.platform === snap.platform) ?? null;
+      const cardRows = snap.rows.filter((r2) => r2.card_id === card_id);
+      return {
+        card,
+        platform: snap.platform,
+        utility: cardUtility(card),
+        price: {
+          latest: a.latest,
+          freshness: a.fresh,
+          /** Hourly last-price series, 7 days, for the chart. */
+          history: window(a.series, 168).map((p) => ({ t: iso(p.t), price: p.price })),
+          sources: [...new Set(cardRows.map((r2) => r2.source_id))]
+        },
+        relative_strength: a.rs,
+        momentum: a.mom,
+        mean_reversion: a.mr,
+        assessment: a.assessment,
+        regime: { primary: snap.regime.primary, flags: snap.regime.flags },
+        comparables: comps,
+        watch,
+        catalysts: { items: [], note: "Event mapping arrives in Stage B." },
+        community: { note: "Community ratings and social signals arrive in Stage C. Nothing is shown rather than guessed." },
+        provenance: provenance({ as_of: snap.as_of, rows: cardRows })
+      };
+    },
+    /** find_market_opportunities: the scanner across every card with prices. */
+    async findMarketOpportunities(owner, opts = {}) {
+      const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
+      const rank = { favorable_setup: 0, research_further: 1, overheated: 2, elevated_risk: 3, watch: 4, insufficient_evidence: 5 };
+      const items = snap.cards.filter((c) => snap.series.has(c.id) && (!opts.category || c.category === opts.category)).map((c) => {
+        const a = analyse(snap, c);
+        return {
+          card_id: c.id,
+          name: c.name,
+          rating: c.rating,
+          category: c.category,
+          platform: snap.platform,
+          latest_price: a.latest,
+          latest_observed_at: a.fresh.latest_observed_at,
+          freshness: a.fresh.status,
+          status: a.assessment.status,
+          categories: a.assessment.categories,
+          reasons: a.assessment.reasons,
+          could_be_wrong: a.assessment.could_be_wrong,
+          change_24h: a.mom.changes["24h"],
+          change_72h: a.mom.changes["72h"],
+          vs_market_24h_pp: a.rs.find((r2) => r2.benchmark === "market")?.cells.find((x) => x.window === "24h")?.diff_pp ?? null
+        };
+      }).filter((i) => (!opts.status || opts.status.includes(i.status)) && (opts.max_price === void 0 || i.latest_price !== null && i.latest_price <= opts.max_price)).sort((x, y) => rank[x.status] - rank[y.status] || (y.vs_market_24h_pp ?? -999) - (x.vs_market_24h_pp ?? -999));
+      return { regime: snap.regime.primary, items: items.slice(0, opts.limit ?? 50), total: items.length, provenance: provenance(snap) };
+    },
+    /** compare_card_relative_value: fit and price against named cards (or its comparables). */
+    async compareCardRelativeValue(owner, card_id, opts = {}) {
+      const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
+      const card = getCard2(snap, card_id);
+      const others = opts.others?.length ? opts.others.map((id) => getCard2(snap, id)) : comparableCards(card, snap.cards);
+      const row = (c) => {
+        const s = snap.series.get(c.id) ?? [];
+        const f2 = freshness(s, snap.as_of, rules);
+        const u = cardUtility(c);
+        const price = f2.status === "fresh" ? s.at(-1).price : null;
+        const fit = u.gameplay.best?.score ?? null;
+        return { card_id: c.id, name: c.name, rating: c.rating, best_fit: u.gameplay.best, versatility: u.gameplay.versatility, latest_price: price, freshness: f2.status, coins_per_fit_point: price !== null && fit ? Math.round(price / fit) : null };
+      };
+      return { subject: row(card), others: others.map(row), note: "Fit is a face-stat estimate. Coins per fit point compares price to that estimate only; PlayStyles, roles and chemistry aren't in it yet.", provenance: provenance(snap) };
+    },
+    /** analyze_trade_thesis */
+    async analyzeTradeThesis(owner, input, opts = {}) {
+      const snap = await snapshot(owner, input.platform, opts.as_of);
+      getCard2(snap, input.card_id);
+      const s = snap.series.get(input.card_id) ?? [];
+      const f2 = freshness(s, snap.as_of, rules);
+      return { ...analyzeTrade(input, { latest_price: f2.status === "fresh" ? s.at(-1).price : null, freshness: f2 }, rules), provenance: provenance({ as_of: snap.as_of, rows: snap.rows.filter((r2) => r2.card_id === input.card_id) }) };
+    },
+    /** Compare in My Squad: respects locks, ownership and the chemistry engine. */
+    async compareInMySquad(owner, card_id, squadInput, opts = {}) {
+      const squad = squadSchema.parse(squadInput);
+      if (squad.owner_id !== owner) throw new Error("Squad owner does not match the signed-in user");
+      const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
+      const card = getCard2(snap, card_id);
+      const a = analyse(snap, card);
+      return compareInSquad(squad, card, chem, { latest_price: a.latest, assessment: a.assessment });
+    },
+    /** Watchlist with change since added. */
+    async getWatchlist(owner, opts = {}) {
+      const items = await deps.watchlists.list(owner);
+      const out = [];
+      for (const platform of ["console", "pc"]) {
+        const mine = items.filter((i) => i.platform === platform && (!opts.platform || opts.platform === platform));
+        if (!mine.length) continue;
+        const snap = await snapshot(owner, platform, opts.as_of);
+        for (const w of mine) {
+          const card = snap.byId.get(w.card_id);
+          const a = card ? analyse(snap, card) : null;
+          out.push({
+            ...w,
+            name: card?.name ?? "(card removed)",
+            latest_price: a?.latest ?? null,
+            freshness: a?.fresh.status ?? "missing",
+            status: a?.assessment.status ?? "insufficient_evidence",
+            since_added_pct: a?.latest && w.price_at_add ? round((a.latest - w.price_at_add) / w.price_at_add * 100) : null,
+            at_target_buy: !!(a?.latest && w.target_buy && a.latest <= w.target_buy),
+            at_target_sell: !!(a?.latest && w.target_sell && a.latest >= w.target_sell)
+          });
+        }
+      }
+      return { items: out, note: "Targets are reminders for you. XI Lab never bids, buys or lists." };
+    },
+    async addToWatchlist(owner, item, opts = {}) {
+      const snap = await snapshot(owner, item.platform, opts.as_of);
+      getCard2(snap, item.card_id);
+      const s = snap.series.get(item.card_id) ?? [];
+      const f2 = freshness(s, snap.as_of, rules);
+      const w = {
+        card_id: item.card_id,
+        platform: item.platform,
+        added_at: snap.as_of,
+        note: item.note ?? null,
+        target_buy: item.target_buy ?? null,
+        target_sell: item.target_sell ?? null,
+        price_at_add: f2.status === "fresh" ? s.at(-1).price : null,
+        price_at_add_observed_at: f2.status === "fresh" ? f2.latest_observed_at : null
+      };
+      return deps.watchlists.upsert(owner, w);
+    },
+    async removeFromWatchlist(owner, card_id, platform) {
+      await deps.watchlists.remove(owner, card_id, platform);
+    },
+    /** Import a CSV/JSON price history the user owns. Rows stay private to them. */
+    async importPriceHistory(owner, text2, opts = {}) {
+      const captured = /^\s*ea_item_id,/.test(text2);
+      const source = sourceById.get(opts.source_id ?? (captured ? "web_app_capture" : "user_import"));
+      assertUsable(source, "storage");
+      const cards = await deps.cards.list(owner);
+      const resolveEaItem = eaResolver(cards);
+      const res = parsePriceImport(text2, { source, received_at: opts.received_at ?? now2(), knownCardIds: new Set(cards.map((c) => c.id)), rules, resolveEaItem });
+      const rejected = [...res.rejected];
+      let held = 0;
+      if (res.unmatched.length && deps.holds) held = (await deps.holds.hold(owner, res.unmatched)).held;
+      else for (const u of res.unmatched) rejected.push({ line: 0, reason: unmatchedReason(u), raw: { ea_item_id: u.ea_item_id, rating: u.rating } });
+      const stored = await deps.prices.insert(source.is_demo ? null : owner, res.rows);
+      const relinked = deps.holds ? await relink(owner, cards) : { linked: 0, still_held: 0, rows: [] };
+      if (res.rows.length || relinked.linked) {
+        const all = [...res.rows, ...relinked.rows];
+        const earliest = all.reduce((m, r2) => r2.observed_at < m ? r2.observed_at : m, all[0].observed_at);
+        await initBaskets(earliest, { backfilled: true });
+      }
+      return { ...res, rows: void 0, unmatched: void 0, rejected, accepted: res.rows.length, held, linked_from_held: relinked.linked, still_held: relinked.still_held, ...stored };
+    },
+    /** Link held captures to cards added since (run after adding cards). */
+    async relinkHeldCaptures(owner) {
+      if (!deps.holds) return { linked: 0, still_held: 0 };
+      const { linked, still_held } = await relink(owner, await deps.cards.list(owner));
+      return { linked, still_held };
+    },
+    /** Link every held capture of one EA item to a card you chose (for cards that don't carry EA's item id). */
+    async linkHeldCapture(owner, ea_item_id, card_id) {
+      if (!deps.holds) return { linked: 0 };
+      const card = (await deps.cards.list(owner)).find((c) => c.id === card_id);
+      if (!card) throw new MarketNotFoundError(`Card ${card_id} isn't one of yours`);
+      const held = (await deps.holds.list(owner)).filter((h) => h.ea_item_id === ea_item_id);
+      if (held.some((h) => h.rating !== null && h.rating !== card.rating)) throw new Error(`EA item ${ea_item_id} is rated ${held.find((h) => h.rating !== null).rating}; ${card.name} is ${card.rating}. Pick the matching card.`);
+      const rows = held.map((h) => ({ ...h.observation, card_id, quality: [...h.observation.quality ?? [], `Linked by you to ${card.name} on ${now2().slice(0, 10)}.`] }));
+      if (rows.length) {
+        await deps.prices.insert(owner, rows);
+        await deps.holds.release(owner, held);
+        const earliest = rows.reduce((m, r2) => r2.observed_at < m ? r2.observed_at : m, rows[0].observed_at);
+        await initBaskets(earliest, { backfilled: true });
+      }
+      return { linked: rows.length };
+    },
+    /** Captured EA items that aren't in your card database yet, one entry per item, so you can add the cards. */
+    async getHeldCaptures(owner) {
+      const held = deps.holds ? await deps.holds.list(owner) : [];
+      const by = /* @__PURE__ */ new Map();
+      for (const h of held) by.set(h.ea_item_id, [...by.get(h.ea_item_id) ?? [], h]);
+      const items = [...by.values()].map((hs) => {
+        const latest = hs.reduce((a, b) => b.observation.observed_at > a.observation.observed_at ? b : a);
+        return {
+          ea_item_id: latest.ea_item_id,
+          asset_id: latest.asset_id,
+          rating: latest.rating,
+          details: latest.details ?? null,
+          special_version: latest.details?.rare_flag !== void 0 ? latest.details.rare_flag > 1 : null,
+          observations: hs.length,
+          platforms: [...new Set(hs.map((h) => h.observation.platform))],
+          latest_price: latest.observation.price,
+          latest_platform: latest.observation.platform,
+          latest_observed_at: latest.observation.observed_at,
+          reason: unmatchedReason(latest)
+        };
+      });
+      items.sort((a, b) => b.latest_observed_at.localeCompare(a.latest_observed_at));
+      return { items, total_observations: held.length, evidence: "game_data", note: "Prices you captured for items XI Lab can't match to a card yet. They're kept privately and linked automatically once the card is added." };
+    },
+    /** Re-apply basket rules at `at` (a scheduled job in production). Closes and opens memberships; never rewrites history. */
+    async rebalanceBaskets(at = now2()) {
+      await initBaskets(at);
+    }
+  };
+}
+
+// supabase/functions/_shared/fut/market.ts
+var fail2 = (error) => {
+  if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
+};
+var iso2 = (v) => v === null || v === void 0 ? null : new Date(String(v)).toISOString();
+var PAGE = 1e3;
+var MAX_PRICE_ROWS_PER_USER = 5e4;
+var MAX_HELD_CAPTURES_PER_USER = 2e4;
+async function allPages(make) {
+  const out = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await make().range(from, from + PAGE - 1);
+    fail2(error);
+    out.push(...data ?? []);
+    if (!data || data.length < PAGE) return out;
+    if (out.length >= 2e5) throw new FutError("Too much price history to analyse at once.", 413);
+  }
+}
+var toObs = (r2) => ({
+  card_id: String(r2.card_id),
+  platform: r2.platform,
+  price: Number(r2.price),
+  kind: r2.kind,
+  observed_at: iso2(r2.observed_at),
+  received_at: iso2(r2.received_at),
+  event_at: iso2(r2.event_at),
+  season: String(r2.season ?? "FC27"),
+  source_id: String(r2.source_id),
+  evidence: r2.evidence,
+  ...Array.isArray(r2.quality) ? { quality: r2.quality } : {}
+});
+var PgPriceStore = class {
+  constructor(db) {
+    this.db = db;
+  }
+  async query(owner, q) {
+    const base = (shared) => () => {
+      let x = this.db.from("market_price_observations").select("*");
+      x = shared ? x.is("owner_user_id", null) : x.eq("owner_user_id", owner);
+      if (q.platform) x = x.eq("platform", q.platform);
+      if (q.card_ids?.length) x = x.in("card_id", q.card_ids);
+      if (q.since) x = x.gte("observed_at", q.since);
+      return x.lte("received_at", q.as_of).lte("observed_at", q.as_of).order("observed_at", { ascending: true });
+    };
+    const rows = [...await allPages(base(true)), ...await allPages(base(false))];
+    return rows.map(toObs);
+  }
+  async insert(owner, rows) {
+    if (!rows.length) return { inserted: 0, skipped: 0 };
+    if (owner === null) throw new FutError("Shared prices come only from an authorised feed.", 403);
+    const ids = [...new Set(rows.map((r2) => r2.card_id))];
+    const existing = await allPages(() => this.db.from("market_price_observations").select("card_id, platform, observed_at, source_id").eq("owner_user_id", owner).in("card_id", ids));
+    const have = new Set(existing.map((r2) => `${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
+    const fresh = rows.filter((r2) => !have.has(`${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
+    const { count, error } = await this.db.from("market_price_observations").select("id", { count: "exact", head: true }).eq("owner_user_id", owner);
+    fail2(error);
+    if ((count ?? 0) + fresh.length > MAX_PRICE_ROWS_PER_USER) throw new FutError(`You can keep up to ${MAX_PRICE_ROWS_PER_USER.toLocaleString("en-US")} price rows.`);
+    for (let i = 0; i < fresh.length; i += 500) {
+      const chunk = fresh.slice(i, i + 500).map((r2) => ({
+        card_id: r2.card_id,
+        platform: r2.platform,
+        price: r2.price,
+        kind: r2.kind ?? "lowest_bin",
+        observed_at: r2.observed_at,
+        received_at: r2.received_at,
+        event_at: r2.event_at ?? null,
+        season: r2.season,
+        source_id: r2.source_id,
+        owner_user_id: owner,
+        evidence: r2.evidence,
+        quality: r2.quality ?? null
+      }));
+      fail2((await this.db.from("market_price_observations").insert(chunk)).error);
+    }
+    return { inserted: fresh.length, skipped: rows.length - fresh.length };
+  }
+};
+var PgMembershipStore = class {
+  constructor(db) {
+    this.db = db;
+  }
+  async list(basket_id) {
+    const rows = await allPages(() => {
+      const x = this.db.from("market_basket_members").select("*");
+      return basket_id ? x.eq("basket_id", basket_id) : x;
+    });
+    return rows.map((r2) => ({ basket_id: String(r2.basket_id), card_id: String(r2.card_id), effective_from: iso2(r2.effective_from), effective_to: iso2(r2.effective_to), ...r2.backfilled ? { backfilled: true } : {} }));
+  }
+  async replace(basket_id, rows) {
+    const def = DEFAULT_BASKETS.find((b) => b.id === basket_id);
+    if (def) {
+      const { data, error } = await this.db.from("market_baskets").select("id").eq("id", basket_id).maybeSingle();
+      fail2(error);
+      if (!data) fail2((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
+    }
+    fail2((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
+    if (rows.length) fail2((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
+  }
+};
+var PgWatchlistStore = class {
+  constructor(db) {
+    this.db = db;
+  }
+  async list(owner) {
+    const { data, error } = await this.db.from("market_watchlist").select("*").eq("user_id", owner).order("added_at", { ascending: true }).limit(200);
+    fail2(error);
+    return (data ?? []).map((r2) => ({
+      card_id: String(r2.card_id),
+      platform: r2.platform,
+      added_at: iso2(r2.added_at),
+      note: r2.note ?? null,
+      target_buy: r2.target_buy ?? null,
+      target_sell: r2.target_sell ?? null,
+      price_at_add: r2.price_at_add ?? null,
+      price_at_add_observed_at: iso2(r2.price_at_add_observed_at)
+    }));
+  }
+  async upsert(owner, w) {
+    const { count, error } = await this.db.from("market_watchlist").select("card_id", { count: "exact", head: true }).eq("user_id", owner);
+    fail2(error);
+    fail2((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
+    if ((count ?? 0) >= 200) throw new FutError("Your watchlist can hold up to 200 cards.");
+    fail2((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
+    return w;
+  }
+  async remove(owner, card_id, platform) {
+    fail2((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
+  }
+};
+var PgCaptureHoldStore = class {
+  constructor(db) {
+    this.db = db;
+  }
+  async hold(owner, rows) {
+    const have = new Set((await this.list(owner)).map(holdKey));
+    const fresh = [...new Map(rows.filter((r2) => !have.has(holdKey(r2))).map((r2) => [holdKey(r2), r2])).values()];
+    if (have.size + fresh.length > MAX_HELD_CAPTURES_PER_USER) throw new FutError(`You can keep up to ${MAX_HELD_CAPTURES_PER_USER.toLocaleString("en-US")} captured prices for cards you haven't added yet. Add those cards or link them first.`);
+    for (let i = 0; i < fresh.length; i += 500)
+      fail2((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
+        user_id: owner,
+        ea_item_id: r2.ea_item_id,
+        asset_id: r2.asset_id,
+        rating: r2.rating,
+        platform: r2.observation.platform,
+        observed_at: r2.observation.observed_at,
+        details: r2.details ?? null,
+        observation: r2.observation
+      })))).error);
+    return { held: fresh.length, skipped: rows.length - fresh.length };
+  }
+  async list(owner) {
+    const out = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await this.db.from("market_capture_holds").select("*").eq("user_id", owner).order("observed_at", { ascending: true }).range(from, from + PAGE - 1);
+      fail2(error);
+      const rows = data ?? [];
+      for (const r2 of rows)
+        out.push({
+          ea_item_id: Number(r2.ea_item_id),
+          asset_id: r2.asset_id === null || r2.asset_id === void 0 ? null : Number(r2.asset_id),
+          rating: r2.rating === null || r2.rating === void 0 ? null : Number(r2.rating),
+          ...r2.details ? { details: r2.details } : {},
+          observation: r2.observation
+        });
+      if (rows.length < PAGE) return out;
+    }
+  }
+  async release(owner, rows) {
+    for (const r2 of rows)
+      fail2((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
+  }
+};
+var holdKey = (h) => `${h.ea_item_id}|${h.observation.platform}|${new Date(h.observation.observed_at).toISOString()}`;
+var categoryOf = (c) => {
+  if (c.is_icon) return "icon";
+  if (c.is_hero) return "hero";
+  const v = (c.version ?? "").toLowerCase();
+  if (!v || v === "base" || v.includes("gold") || v.includes("rare")) return "base";
+  if (v.includes("evo")) return "evolution";
+  return "promo";
+};
+var toMarketCard = (c) => ({
+  ...toWorkspaceCard(c),
+  rating: c.overall,
+  category: categoryOf(c),
+  version: c.version ?? void 0,
+  tradeable: c.tradeable ?? true,
+  ...c.ea_item_id ? { ea_item_id: c.ea_item_id } : {}
+});
+var PgMarketCardSource = class {
+  constructor(db) {
+    this.db = db;
+  }
+  async list(owner) {
+    return (await searchMyCards(this.db, owner, { all: true })).map(toMarketCard);
+  }
+  catalogue() {
+    return Promise.resolve([]);
+  }
+};
+async function marketSources(db) {
+  const { data, error } = await db.from("market_price_sources").select("*").order("id", { ascending: true });
+  fail2(error);
+  return (data ?? []).map((r2) => ({
+    id: String(r2.id),
+    name: String(r2.name),
+    kind: r2.kind,
+    status: r2.status,
+    is_demo: !!r2.is_demo,
+    status_note: String(r2.status_note),
+    permissions: r2.permissions,
+    evidence: r2.evidence
+  }));
+}
+async function marketRules(db) {
+  const { data, error } = await db.from("market_rule_versions").select("*").eq("is_active", true).maybeSingle();
+  fail2(error);
+  if (!data) throw new FutError("Market rules aren't set up yet.", 503);
+  return { id: String(data.id), status: data.status, notes: String(data.notes), ...data.body };
+}
+async function marketFor(db, now2) {
+  const [rules, sources, chemistry] = await Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
+  return createMarketService({
+    prices: new PgPriceStore(db),
+    memberships: new PgMembershipStore(db),
+    watchlists: new PgWatchlistStore(db),
+    cards: new PgMarketCardSource(db),
+    holds: new PgCaptureHoldStore(db),
+    sources,
+    rules,
+    chemistry,
+    ...now2 ? { now: now2 } : {}
+  });
+}
+function marketCardId(v) {
+  if (!isUuid(v)) throw new FutError("card_id must be one of your card ids.");
+  return v;
+}
+var platformParam = (v) => {
+  if (v === void 0 || v === null || v === "") return "console";
+  if (v === "console" || v === "pc") return v;
+  throw new FutError("platform must be console or pc.");
+};
 
 // supabase/functions/gafferbot-mcp/fut.ts
 var SIGN_IN = "XI Lab uses your GafferBot website account. Sign in once at https://gafferbot.app/fut with Discord, then ask again.";
@@ -6741,6 +8306,118 @@ var FUT_TOOLS = [
     })
   }
 ];
+var MARKET = "Prices are the player's own imported history (XI Lab has no licensed live price feed), so say how old the latest price is and never present it as live. Results are evidence, not predictions: report the status, the reasons and the 'could be wrong' list, and never call anything a guaranteed profit. Nothing here buys, sells, bids or touches the transfer market.";
+var PLATFORM = { type: "string", enum: ["console", "pc"], description: "Market: console (PlayStation and Xbox share one) or pc. Default console." };
+var CARD_ID = { type: "string", description: "One of the player's card ids (from get_my_fut_inventory)." };
+function zodArgs(schema, v) {
+  const r2 = schema.safeParse(v);
+  if (r2.success) return r2.data;
+  throw new ToolError(`Invalid arguments: ${r2.error.issues.slice(0, 5).map((i) => `${i.path.join(".") || "args"}: ${i.message}`).join("; ")}`);
+}
+var cardArg = (v) => {
+  try {
+    return marketCardId(v);
+  } catch (e) {
+    throw new ToolError(e.message);
+  }
+};
+FUT_TOOLS.push(
+  {
+    name: "get_fut_market_overview",
+    title: "FUT market overview (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: Market Lab overview for the player's priced cards: benchmark indexes with 1h-7d changes and volatility, a rule-based market regime with the measurements behind it, cards showing unusual relative strength or declines, and price coverage. " + MARKET,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const o = await (await marketFor(db)).getMarketOverview(userId, { platform: platformParam(args.platform) });
+      const { index_history: _h, ...rest } = o;
+      return rest;
+    })
+  },
+  {
+    name: "get_fut_card_market_intelligence",
+    title: "FUT card market intelligence (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: one card's Market Lab page: latest price and its age, relative strength against five benchmarks, momentum, mean reversion, signal status with reasons and risks, card utility (tactical-fit estimate) and comparable cards. " + MARKET,
+    inputSchema: { type: "object", properties: { card_id: CARD_ID, platform: PLATFORM }, required: ["card_id"], additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const r2 = await (await marketFor(db)).getCardMarketIntelligence(userId, cardArg(args.card_id), { platform: platformParam(args.platform) });
+      return { ...r2, price: { ...r2.price, history: r2.price.history.slice(-24) } };
+    })
+  },
+  {
+    name: "find_fut_market_opportunities",
+    title: "Scan FUT market signals (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: Market Lab's scanner over the player's priced cards. Each card gets a status (favorable_setup, research_further, watch, overheated, elevated_risk, insufficient_evidence) with reasons. A favorable setup is not a guaranteed profitable trade. " + MARKET,
+    inputSchema: {
+      type: "object",
+      properties: {
+        platform: PLATFORM,
+        status: { type: "array", items: { type: "string", enum: ["watch", "research_further", "favorable_setup", "overheated", "elevated_risk", "insufficient_evidence"] } },
+        max_price: { type: "integer", minimum: 0 },
+        limit: { type: "integer", minimum: 1, maximum: 50, description: "Default 20." }
+      },
+      additionalProperties: false
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const q = zodArgs(scanRequestSchema, { ...args, limit: args.limit ?? 20 });
+      return await (await marketFor(db)).findMarketOpportunities(userId, q);
+    })
+  },
+  {
+    name: "compare_fut_card_relative_value",
+    title: "FUT relative value (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: a card's price against its tactical-fit estimate, next to comparable cards (same primary position, overall within 2) or the cards you name. Fit is a face-stat estimate; PlayStyles, roles and chemistry are not in it. " + MARKET,
+    inputSchema: {
+      type: "object",
+      properties: { card_id: CARD_ID, others: { type: "array", items: { type: "string" }, maxItems: 10 }, platform: PLATFORM },
+      required: ["card_id"],
+      additionalProperties: false
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const others = Array.isArray(args.others) ? args.others.map(cardArg) : void 0;
+      return await (await marketFor(db)).compareCardRelativeValue(userId, cardArg(args.card_id), { platform: platformParam(args.platform), others });
+    })
+  },
+  {
+    name: "analyze_fut_trade_thesis",
+    title: "FUT trade thesis (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: arithmetic on a trade the player is considering: investment, EA's 5% sale tax, break-even listing price, profit at their target, loss at their downside, risk/reward and the win rate needed to break even. It is not a forecast: any probability comes from the player. Cards held are never counted as coins. " + MARKET,
+    inputSchema: {
+      type: "object",
+      properties: {
+        card_id: CARD_ID,
+        platform: PLATFORM,
+        quantity: { type: "integer", minimum: 1, maximum: 100 },
+        buy_price: { type: "integer", minimum: 1 },
+        target_price: { type: "integer", minimum: 1 },
+        downside_price: { type: "integer", minimum: 0 },
+        coin_balance: { type: "integer", minimum: 0 },
+        assumed_target_probability: { type: "number", minimum: 0, maximum: 1, description: "Only if the player gives one." }
+      },
+      required: ["card_id", "buy_price", "target_price", "downside_price"],
+      additionalProperties: false
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const input = zodArgs(thesisInputSchema, { platform: "console", quantity: 1, ...args });
+      cardArg(input.card_id);
+      return await (await marketFor(db)).analyzeTradeThesis(userId, input);
+    })
+  },
+  {
+    name: "get_fut_market_data_sources",
+    title: "FUT market data sources (XI Lab Market Lab)",
+    description: "EA FC Ultimate Team: which price sources Market Lab can use and why others are off (not authorised), with what each source's terms allow. Use it to explain where prices come from.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    run: (_args, ctx) => run(async () => {
+      const { db } = await account(ctx);
+      return { sources: (await marketFor(db)).getDataSourceStatus() };
+    })
+  }
+);
 
 // supabase/functions/gafferbot-mcp/index.ts
 var SITE = (Deno.env.get("DASHBOARD_URL") || "https://gafferbot.app").replace(/\/+$/, "");
