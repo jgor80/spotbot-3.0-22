@@ -52,7 +52,7 @@ Deno.test("club import: cards, names, placeholders, skips and managers", async (
   const cards = (await call("GET", "/v1/cards?limit=100")).data.data;
   const a = cards.find((c: { ea_item_id: number }) => c.ea_item_id === 101);
   assert(a && a.player_name === "Test Striker" && a.club === "Test Town" && a.league === "Test League" && a.nation === "Testland", JSON.stringify(a));
-  assert(a.evidence === "game_data" && a.owned === true && a.tradeable === false && a.stats.pac === 80 && a.weak_foot === 4 && a.skill_moves === null, "fields");
+  assert(a.evidence === "game_data" && a.owned === true && a.tradeable === false && a.stats.pac === 80 && a.weak_foot === 4 && a.skill_moves === 4, "fields (EA skill moves count from 0)");
   const b = cards.find((c: { ea_item_id: number }) => c.ea_item_id === 102);
   assert(b.player_name === "EA player 1102" && b.club === "EA club 99" && b.tradeable === false, JSON.stringify(b));
   const ms = (await call("GET", "/v1/managers")).data.data;
@@ -79,6 +79,13 @@ Deno.test("club import: per user, and rejects other files", async () => {
   assert((await call("GET", "/v1/cards", undefined, OTHER)).data.data.length === 1, "other sees only theirs");
   const bad = await call("POST", "/v1/club/import", { format: "something-else" });
   assert(bad.status === 400 && /club file/.test(bad.data.error), JSON.stringify(bad.data));
+});
+
+Deno.test("club import: goalkeepers keep no outfield stats", async () => {
+  const { call } = setup();
+  await call("POST", "/v1/club/import", file([item(301, { position: "GK", positions: ["GK"] })]));
+  const c = (await call("GET", "/v1/cards")).data.data[0];
+  assert(c.positions[0] === "GK" && Object.keys(c.stats).length === 0, JSON.stringify(c));
 });
 
 Deno.test("club import: Icons league marks Icons", async () => {

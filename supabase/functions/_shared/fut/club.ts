@@ -4,7 +4,8 @@
 // they were copied from the game), keyed by EA's item id so a later sync updates them and Market Lab price
 // captures find them.
 //
-// UNVERIFIED: the capture's EA field names have not been checked on FC 27 yet. Anything that doesn't fit is
+// PARTLY VERIFIED: Jeff's first FC 27 squad capture (2026-11-02) matched ids, ratings, positions, untradeable,
+// stats and skill moves; the club-list address, weak foot and club/league names are not confirmed yet. Anything that doesn't fit is
 // skipped and counted, never guessed. Names come only from the Web App's own name files; an id without one gets
 // a stable placeholder ("EA club 243") so synced cards still link to each other for chemistry.
 import { ensureAccount, FutDbError, FutError, MAX_CARDS_PER_USER, type FutDb } from "./service.ts";
@@ -40,6 +41,7 @@ interface Parsed {
   rare_flag: number | null;
   untradeable: boolean;
   stats: number[] | null;
+  skill_moves: number | null;
   weak_foot: number | null;
 }
 
@@ -102,10 +104,13 @@ export async function importClub(db: FutDb, userId: string, body: unknown): Prom
     const list = Array.isArray(it.positions) ? it.positions : [];
     const positions = [...new Set([it.position, ...list].filter((p): p is string => typeof p === "string" && POSITION.test(p)))].slice(0, 5);
     if (!positions.length) { skip("no position"); continue; }
-    const stats = Array.isArray(it.stats) && it.stats.length === 6 && it.stats.every((s) => inRange(s, 1, 99) !== null) ? (it.stats as number[]) : null;
+    // A keeper's six numbers are diving, handling, kicking, reflexes, speed, positioning: not the outfield face stats.
+    const stats = positions[0] !== "GK" && Array.isArray(it.stats) && it.stats.length === 6 && it.stats.every((s) => inRange(s, 1, 99) !== null) ? (it.stats as number[]) : null;
+    // EA counts skill moves from 0 (checked against Jeff's FC 27 club, 2026-11-02: Van Dijk 1, Haaland 2, Bruno 3).
+    const sm = inRange(it.skill_moves, 0, 4);
     const p: Parsed = {
       ea_item_id, asset_id: posInt(it.asset_id), rating, positions, team_id: posInt(it.team_id), league_id, nation_id,
-      rare_flag: inRange(it.rare_flag, 0, 255), untradeable: it.untradeable === true, stats, weak_foot: inRange(it.weak_foot, 1, 5),
+      rare_flag: inRange(it.rare_flag, 0, 255), untradeable: it.untradeable === true, stats, skill_moves: sm === null ? null : sm + 1, weak_foot: inRange(it.weak_foot, 1, 5),
     };
     const had = players.get(ea_item_id);
     // Two copies of one card version: keep one card, untradeable if either copy is.
@@ -148,7 +153,7 @@ export async function importClub(db: FutDb, userId: string, body: unknown): Prom
       is_icon: isIcon,
       // Heroes can't be told apart reliably from the capture: keep whatever the user set.
       is_hero: had ? had.is_hero === true : false,
-      weak_foot: p.weak_foot,
+      skill_moves: p.skill_moves, weak_foot: p.weak_foot,
       notes: had?.notes ?? `Synced from your EA Web App club on ${day} (format not yet verified on FC 27).`,
       source_updated_at: now, updated_at: now,
     });
@@ -179,6 +184,6 @@ export async function importClub(db: FutDb, userId: string, body: unknown): Prom
     over_limit: over,
     verified: false,
     note: "Read from your own club file, not checked by EA. Cards missing from this file are kept (you may not have paged through everything). " +
-      "Heroes aren't detected: mark them on the card. Skill moves aren't imported yet.",
+      "Heroes aren't detected: mark them on the card. Goalkeeper stats aren't imported (EA sends keeper stats, not outfield ones).",
   };
 }
