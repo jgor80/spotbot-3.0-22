@@ -42,6 +42,12 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const FutHomePage = lazy(() => import("./pages/fut/FutHomePage"));
 const FutSquadPage = lazy(() => import("./pages/fut/FutSquadPage"));
 const FutCardsPage = lazy(() => import("./pages/fut/FutCardsPage"));
+const MarketOverviewPage = lazy(() => import("./pages/fut/market/MarketOverviewPage"));
+const MarketRadarPage = lazy(() => import("./pages/fut/market/MarketRadarPage"));
+const MarketCardPage = lazy(() => import("./pages/fut/market/MarketCardPage"));
+const MarketWatchlistPage = lazy(() => import("./pages/fut/market/MarketWatchlistPage"));
+const MarketImportPage = lazy(() => import("./pages/fut/market/MarketImportPage"));
+const MarketSourcesPage = lazy(() => import("./pages/fut/market/MarketSourcesPage"));
 
 const queryClient = new QueryClient();
 
@@ -102,6 +108,12 @@ const App = () => (
                   <Route path="/fut" element={<ProtectedRoute><FutHomePage /></ProtectedRoute>} />
                   <Route path="/fut/squads/:id" element={<ProtectedRoute><FutSquadPage /></ProtectedRoute>} />
                   <Route path="/fut/cards" element={<ProtectedRoute><FutCardsPage /></ProtectedRoute>} />
+                  <Route path="/fut/market" element={<ProtectedRoute><MarketOverviewPage /></ProtectedRoute>} />
+                  <Route path="/fut/market/radar" element={<ProtectedRoute><MarketRadarPage /></ProtectedRoute>} />
+                  <Route path="/fut/market/card/:id" element={<ProtectedRoute><MarketCardPage /></ProtectedRoute>} />
+                  <Route path="/fut/market/watchlist" element={<ProtectedRoute><MarketWatchlistPage /></ProtectedRoute>} />
+                  <Route path="/fut/market/import" element={<ProtectedRoute><MarketImportPage /></ProtectedRoute>} />
+                  <Route path="/fut/market/sources" element={<ProtectedRoute><MarketSourcesPage /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
