@@ -7,6 +7,7 @@ import {
   parseCardInput, parseManagerInput, runWorkspace, searchMyCards, toWorkspaceCard, updateCard, workspaceFor, type FutDb,
 } from "../_shared/fut/service.ts";
 import { importClub } from "../_shared/fut/club.ts";
+import { pullFc27Market } from "../_shared/fut/fc27market.ts";
 import { marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
 import { scanRequestSchema, thesisInputSchema, watchItemInputSchema } from "../_shared/fut/xilab/market/index.ts";
 import { assignCard, cardSchema, createSquad, FORMATIONS, squadSchema, type Squad, type WorkspaceCard } from "../_shared/fut/xilab/workspace/index.ts";
@@ -29,6 +30,8 @@ export interface Deps {
   /** Per-user throttle; returns a response when the caller is over it. */
   throttle?: (userId: string) => Response | null;
   env?: (k: string) => string | undefined;
+  /** Outbound HTTP for third-party price pulls (tests pass a fake). */
+  fetch?: (url: string) => Promise<Response>;
 }
 
 /** Price-history imports can be bigger than other requests (up to MAX_IMPORT_ROWS lines). */
@@ -268,6 +271,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         if (b.text.split("\n").length > MAX_IMPORT_ROWS + 1) throw new FutError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`);
         const r = await runWorkspace(() => mk.importPriceHistory(userId, b.text as string));
         return json({ data: { ...r, rejected: r.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) } });
+      }
+      // Third-party prices from the public fc27-market API, for the caller's own cards only (Jeff's request).
+      if (route === "/market/import/fc27-market" && m === "POST") {
+        return json({ data: await runWorkspace(() => pullFc27Market(db, userId, mk, deps.fetch)) });
       }
       if (route === "/market/held" && m === "GET") return json({ data: await runWorkspace(() => mk.getHeldCaptures(userId)) });
       if (route === "/market/held/relink" && m === "POST") return json({ data: await runWorkspace(() => mk.relinkHeldCaptures(userId)) });

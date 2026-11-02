@@ -40,6 +40,7 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | `POST /market/compare-squad` | A card against a saved squad (`squad` id or object), through the chemistry engine; locks respected |
 | `GET/POST /market/watchlist`, `DELETE /market/watchlist/:card_id?platform=` | The user's watchlist |
 | `POST /market/prices/import` | `{ text }`: CSV (`card_id,platform,price,observed_at,kind,event_at`), a Web App capture CSV (`ea_item_id,...`) or JSON; private to the user; up to 5,000 rows |
+| `POST /market/import/fc27-market` | Pull third-party console prices (and their short history) for the caller's synced cards from the public fc27-market API (Val Town bowli/fut-market-api, FUT.GG-derived, unlicensed); stored privately under source `fc27_market`, evidence estimate |
 | `GET /market/held` | Captured prices for EA items not in your cards yet (promos, Icons, Heroes), one entry per item |
 | `POST /market/held/relink` | Link held captures to cards that now carry that EA item id (also runs on every import) |
 | `POST /market/held/link` | `{ ea_item_id, card_id }`: link one item's held captures to your card with the same rating |
