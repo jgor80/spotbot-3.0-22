@@ -1,11 +1,14 @@
 // XI Lab (FUT) services: the one implementation behind both the fut-api function (website) and the MCP FUT
 // tools, so a squad's chemistry is the same number wherever it is asked for. Every function takes the
 // caller's auth user id and only ever reads or writes that user's rows (plus catalogue/reference rows).
-// Chemistry comes from XI Lab's engine (./xilab, copied by scripts/sync-xilab.mjs), never from estimates.
+// Squads, chemistry, the Chemistry Surgeon and the optimizer are XI Lab's squad workspace service
+// (./xilab, copied from jgor80/11-lab by scripts/sync-xilab.mjs); this file adds the cards, managers and the
+// Postgres `fut` storage adapters it runs on. No link maths happens here.
+import { RulesError, SquadInputError, type ChemistryRules } from "./xilab/chemistry/index.ts";
 import {
-  computeSquadChemistry, diffSquadChemistry, RulesError, SquadInputError,
-  type ChemistryRules, type SquadCard, type SquadInput,
-} from "./xilab/chemistry/index.ts";
+  createWorkspaceService, filterCards, NotFoundError,
+  type CardQuery, type CardSource, type Manager, type Squad, type SquadStore, type WorkspaceCard,
+} from "./xilab/workspace/index.ts";
 
 // deno-lint-ignore no-explicit-any
 export type FutDb = any;
@@ -31,8 +34,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const USER_EVIDENCE = ["game_data", "estimate", "hypothesis"] as const;
 export type Evidence = "verified" | "game_data" | "estimate" | "hypothesis";
 
+/** A database failure: never shown to the user as is. */
+export class FutDbError extends Error {}
 const fail = (error: { message?: string } | null) => {
-  if (error) throw new Error(`fut db: ${error.message ?? "error"}`);
+  if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 
 // ---------------------------------------------------------------- input checks
@@ -90,6 +95,8 @@ export interface CardInput {
   owned: boolean;
   tradeable: boolean | null;
   purchase_price: number | null;
+  /** Coins to buy it (a target card), as the user last saw it. */
+  price: number | null;
 }
 
 export function parseCardInput(body: unknown): CardInput {
@@ -109,7 +116,8 @@ export function parseCardInput(body: unknown): CardInput {
     throw new FutError(`evidence must be one of ${USER_EVIDENCE.join(", ")} (game_data means copied from the game screen).`);
   }
   const plus = list(b.playstyles_plus, "playstyles_plus", 3);
-  const price = b.purchase_price;
+  const paid = b.purchase_price;
+  const price = b.price;
   return {
     player_name: text(b.player_name ?? b.name, "player_name", 60, true)!,
     version: text(b.version, "version", 40),
@@ -129,7 +137,8 @@ export function parseCardInput(body: unknown): CardInput {
     notes: text(b.notes, "notes", 280),
     owned: b.owned !== false,
     tradeable: typeof b.tradeable === "boolean" ? b.tradeable : null,
-    purchase_price: price === undefined || price === null ? null : rating(price, "purchase_price", 0, 100_000_000),
+    purchase_price: paid === undefined || paid === null ? null : rating(paid, "purchase_price", 0, 100_000_000),
+    price: price === undefined || price === null ? null : rating(price, "price", 0, 100_000_000),
   };
 }
 
@@ -157,6 +166,7 @@ export interface Card {
   owned: boolean;
   tradeable: boolean | null;
   purchase_price: number | null;
+  price: number | null;
   updated_at: string;
 }
 
@@ -201,6 +211,7 @@ async function hydrate(db: FutDb, userId: string, rows: Row[]): Promise<Card[]> 
       owned: !!owned,
       tradeable: (owned?.tradeable as boolean) ?? null,
       purchase_price: (owned?.purchase_price as number) ?? null,
+      price: (r.price as number) ?? null,
       updated_at: r.updated_at as string,
     };
   });
@@ -215,7 +226,7 @@ export async function getCard(db: FutDb, userId: string, id: string): Promise<Ca
   return (await hydrate(db, userId, [data]))[0]!;
 }
 
-export interface CardSearch { q?: string; position?: string; min_overall?: number; owned_only?: boolean; limit?: number }
+export interface CardSearch { q?: string; position?: string; min_overall?: number; owned_only?: boolean; limit?: number; /** internal: every card, no page cap */ all?: boolean }
 
 /** The caller's own cards (catalogue search arrives when a licensed catalogue exists). */
 export async function searchMyCards(db: FutDb, userId: string, s: CardSearch = {}): Promise<Card[]> {
@@ -230,7 +241,7 @@ export async function searchMyCards(db: FutDb, userId: string, s: CardSearch = {
     (s.min_overall === undefined || Number(r.overall) >= s.min_overall));
   let cards = await hydrate(db, userId, rows);
   if (s.owned_only) cards = cards.filter((c) => c.owned);
-  return cards.slice(0, Math.min(100, Math.max(1, s.limit ?? 25)));
+  return s.all ? cards : cards.slice(0, Math.min(100, Math.max(1, s.limit ?? 25)));
 }
 
 async function writeCardDetails(db: FutDb, userId: string, cardId: string, c: CardInput) {
@@ -248,7 +259,7 @@ async function writeCardDetails(db: FutDb, userId: string, cardId: string, c: Ca
 const cardRow = (c: CardInput) => ({
   player_name: c.player_name, version: c.version, overall: c.overall, positions: c.positions, club: c.club, league: c.league,
   nation: c.nation, is_icon: c.is_icon, is_hero: c.is_hero, skill_moves: c.skill_moves, weak_foot: c.weak_foot,
-  evidence: c.evidence, notes: c.notes,
+  evidence: c.evidence, notes: c.notes, price: c.price,
 });
 
 export async function ensureAccount(db: FutDb, userId: string) {
@@ -326,141 +337,52 @@ export async function compareCards(db: FutDb, userId: string, ids: unknown) {
   };
 }
 
-// ---------------------------------------------------------------- squads
+// ---------------------------------------------------------------- managers
 
-export interface SlotInput { slot: string; position: string; card_id: string | null; locked: boolean; chemistry_style: string | null; role: string | null; focus: string | null }
-export interface SquadSave { name: string; formation: string; manager_nation: string | null; manager_league: string | null; is_active: boolean; slots: SlotInput[]; based_on_squad_id: string | null }
+export interface ManagerInput { name: string; nation: string | null; league: string | null; price: number | null; owned: boolean }
 
-export function parseSquadInput(body: unknown): SquadSave {
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw new FutError("Send the squad as a JSON object.");
+export function parseManagerInput(body: unknown): ManagerInput {
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new FutError("Send the manager as a JSON object.");
   const b = body as Record<string, unknown>;
-  if (!Array.isArray(b.slots) || b.slots.length > 11) throw new FutError("slots must list up to 11 players.");
-  const seen = new Set<string>();
-  const slots = (b.slots as Record<string, unknown>[]).map((s, i) => {
-    const slot = text(s?.slot, `slots[${i}].slot`, 8, true)!.toUpperCase();
-    if (seen.has(slot)) throw new FutError(`Slot ${slot} is used twice.`);
-    seen.add(slot);
-    const cardId = s.card_id === undefined || s.card_id === null || s.card_id === "" ? null : String(s.card_id);
-    if (cardId !== null && !isUuid(cardId)) throw new FutError(`slots[${i}].card_id must be a card id.`);
-    return {
-      slot, position: positionCode(s.position, `slots[${i}].position`), card_id: cardId, locked: s.locked === true,
-      chemistry_style: text(s.chemistry_style, `slots[${i}].chemistry_style`, 30), role: text(s.role, `slots[${i}].role`, 40),
-      focus: text(s.focus, `slots[${i}].focus`, 40),
-    };
-  });
-  const m = (b.manager ?? {}) as Record<string, unknown>;
-  const based = b.based_on_squad_id;
+  const nation = text(b.nation, "nation", 60);
+  const league = text(b.league, "league", 60);
+  if (!nation && !league) throw new FutError("A manager needs a nation or a league (that is all chemistry uses).");
   return {
-    name: text(b.name, "name", 60, true)!,
-    formation: text(b.formation, "formation", 20, true)!,
-    manager_nation: text(m.nation, "manager.nation", 60),
-    manager_league: text(m.league, "manager.league", 60),
-    is_active: b.is_active === true,
-    slots,
-    based_on_squad_id: isUuid(based) ? based : null,
+    name: text(b.name, "name", 60, true)!, nation, league, owned: b.owned !== false,
+    price: b.price === undefined || b.price === null ? null : rating(b.price, "price", 0, 100_000_000),
   };
 }
 
-export interface Squad {
-  id: string;
-  name: string;
-  formation: string;
-  manager: { nation: string | null; league: string | null };
-  is_active: boolean;
-  based_on_squad_id: string | null;
-  slots: (SlotInput & { card: Card | null })[];
-  updated_at: string;
-}
+const toManager = (r: Row): Manager => ({
+  id: r.id as string, name: r.name as string, nation: (r.nation as string) ?? null, league: (r.league as string) ?? null,
+  price: (r.price as number) ?? null, owned: r.owned === true, source: "user",
+});
 
-export async function listSquads(db: FutDb, userId: string) {
-  const { data, error } = await db.from("squads").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(MAX_SQUADS_PER_USER);
+export async function listManagers(db: FutDb, userId: string): Promise<Manager[]> {
+  const { data, error } = await db.from("user_managers").select("*").eq("user_id", userId).order("name", { ascending: true }).limit(100);
   fail(error);
-  return ((data ?? []) as Row[]).map((s) => ({ id: s.id, name: s.name, formation: s.formation, is_active: s.is_active === true, updated_at: s.updated_at }));
+  return ((data ?? []) as Row[]).map(toManager);
 }
 
-export async function getSquad(db: FutDb, userId: string, id: string): Promise<Squad | null> {
-  if (!isUuid(id)) return null;
-  const { data: s, error } = await db.from("squads").select("*").eq("id", id).eq("user_id", userId).maybeSingle();
+export async function addManager(db: FutDb, userId: string, m: ManagerInput): Promise<Manager> {
+  const { count, error } = await db.from("user_managers").select("id", { count: "exact", head: true }).eq("user_id", userId);
   fail(error);
-  if (!s) return null;
-  const slots = await db.from("squad_slots").select("*").eq("squad_id", id).order("sort_order", { ascending: true });
-  fail(slots.error);
-  const rows = (slots.data ?? []) as Row[];
-  const cards = new Map<string, Card>();
-  for (const r of rows) {
-    if (r.card_id && !cards.has(r.card_id as string)) {
-      const c = await getCard(db, userId, r.card_id as string);
-      if (c) cards.set(c.id, c);
-    }
-  }
-  return {
-    id: s.id, name: s.name, formation: s.formation, is_active: s.is_active === true, based_on_squad_id: s.based_on_squad_id ?? null,
-    manager: { nation: s.manager_nation ?? null, league: s.manager_league ?? null }, updated_at: s.updated_at,
-    slots: rows.map((r) => ({
-      slot: r.slot as string, position: r.position_code as string, card_id: (r.card_id as string) ?? null, locked: r.locked === true,
-      chemistry_style: (r.chemistry_style as string) ?? null, role: (r.role as string) ?? null, focus: (r.focus as string) ?? null,
-      card: r.card_id ? cards.get(r.card_id as string) ?? null : null,
-    })),
-  };
+  if ((count ?? 0) >= 100) throw new FutError("You can keep up to 100 managers.");
+  const ins = await db.from("user_managers").insert({ ...m, user_id: userId }).select("*").single();
+  fail(ins.error);
+  return toManager(ins.data);
 }
 
-/** The active squad, else the most recently changed one. */
-export async function currentSquad(db: FutDb, userId: string): Promise<Squad | null> {
-  const all = await listSquads(db, userId);
-  const pick = all.find((s) => s.is_active) ?? all[0];
-  return pick ? getSquad(db, userId, pick.id as string) : null;
-}
-
-async function checkSlotCards(db: FutDb, userId: string, slots: SlotInput[]) {
-  const used = new Set<string>();
-  for (const s of slots) {
-    if (!s.card_id) continue;
-    if (used.has(s.card_id)) throw new FutError(`The same card is in two slots (${s.slot}).`);
-    used.add(s.card_id);
-    if (!(await getCard(db, userId, s.card_id))) throw new FutError(`Slot ${s.slot}: that card wasn't found among your cards.`, 404);
-  }
-}
-
-/** Creates a squad, or replaces one the caller owns (id given). Saving "as new" with based_on_squad_id never touches the original. */
-export async function saveSquad(db: FutDb, userId: string, input: SquadSave, id?: string): Promise<Squad> {
-  await checkSlotCards(db, userId, input.slots);
-  const row = {
-    name: input.name, formation: input.formation, manager_nation: input.manager_nation, manager_league: input.manager_league,
-    is_active: input.is_active, updated_at: new Date().toISOString(),
-  };
-  if (input.is_active) fail((await db.from("squads").update({ is_active: false }).eq("user_id", userId).eq("is_active", true)).error);
-  let squadId: string;
-  if (id) {
-    if (!(await getSquad(db, userId, id))) throw new FutError("Squad not found.", 404);
-    fail((await db.from("squads").update(row).eq("id", id).eq("user_id", userId)).error);
-    fail((await db.from("squad_slots").delete().eq("squad_id", id)).error);
-    squadId = id;
-  } else {
-    const { count, error } = await db.from("squads").select("id", { count: "exact", head: true }).eq("user_id", userId);
-    fail(error);
-    if ((count ?? 0) >= MAX_SQUADS_PER_USER) throw new FutError(`You can keep up to ${MAX_SQUADS_PER_USER} squads.`);
-    await ensureAccount(db, userId);
-    const based = input.based_on_squad_id && (await getSquad(db, userId, input.based_on_squad_id)) ? input.based_on_squad_id : null;
-    const ins = await db.from("squads").insert({ ...row, user_id: userId, based_on_squad_id: based }).select("*").single();
-    fail(ins.error);
-    squadId = ins.data.id;
-  }
-  if (input.slots.length) {
-    fail((await db.from("squad_slots").insert(input.slots.map((s, i) => ({
-      squad_id: squadId, slot: s.slot, position_code: s.position, card_id: s.card_id, locked: s.locked,
-      chemistry_style: s.chemistry_style, role: s.role, focus: s.focus, sort_order: i,
-    })))).error);
-  }
-  return (await getSquad(db, userId, squadId))!;
-}
-
-export async function deleteSquad(db: FutDb, userId: string, id: string): Promise<boolean> {
-  if (!(await getSquad(db, userId, id))) return false;
-  fail((await db.from("squads").delete().eq("id", id).eq("user_id", userId)).error);
+export async function deleteManager(db: FutDb, userId: string, id: string): Promise<boolean> {
+  if (!isUuid(id)) return false;
+  const { data, error } = await db.from("user_managers").select("id").eq("id", id).eq("user_id", userId).maybeSingle();
+  fail(error);
+  if (!data) return false;
+  fail((await db.from("user_managers").delete().eq("id", id).eq("user_id", userId)).error);
   return true;
 }
 
-// ---------------------------------------------------------------- chemistry
+// ---------------------------------------------------------------- rules
 
 /** The active chemistry rule version for a season, from the database (never from code). */
 export async function activeRules(db: FutDb, season = "FC27"): Promise<ChemistryRules> {
@@ -478,78 +400,175 @@ export async function activeRules(db: FutDb, season = "FC27"): Promise<Chemistry
   return { id: v.id, season: v.season, status: v.status, thresholds, modifiers };
 }
 
-const asSquadCard = (c: Card): SquadCard => ({
-  id: c.id, name: c.player_name, club: c.club, league: c.league, nation: c.nation, positions: c.positions, is_icon: c.is_icon, is_hero: c.is_hero,
+// ---------------------------------------------------------------- the workspace's storage, on the fut schema
+
+/** A stored card as the workspace places it. Owned cards cost nothing; a target's price is what the user entered. */
+export const toWorkspaceCard = (c: Card): WorkspaceCard => ({
+  id: c.id, name: c.player_name, club: c.club, league: c.league, nation: c.nation, positions: c.positions,
+  is_icon: c.is_icon, is_hero: c.is_hero, rating: c.overall, price: c.owned ? 0 : c.price, owned: c.owned,
+  stats: c.stats, source: c.source === "user_entered" ? "user" : "database",
 });
 
-function engineInput(squad: Squad): SquadInput {
-  return {
-    formation: squad.formation,
-    manager: { nation: squad.manager.nation ?? undefined, league: squad.manager.league ?? undefined },
-    slots: squad.slots.filter((s) => s.card).map((s) => ({ slot: s.slot, position: s.position, card: asSquadCard(s.card!) })),
-  };
+/** The caller's own cards and managers, the optimizer's candidate pool. */
+export class PgCardSource implements CardSource {
+  constructor(private db: FutDb) {}
+  async search(owner: string, q: CardQuery): Promise<WorkspaceCard[]> {
+    const mine = await searchMyCards(this.db, owner, { limit: MAX_CARDS_PER_USER, all: true });
+    return filterCards(mine.map(toWorkspaceCard), q);
+  }
+  managers(owner: string): Promise<Manager[]> {
+    return listManagers(this.db, owner);
+  }
 }
 
-export interface SwapInput { slot: string; card_id: string | null }
+/** Saved squads in fut.squads / fut.squad_slots, always scoped to the owner. */
+export class PgSquadStore implements SquadStore {
+  constructor(private db: FutDb) {}
 
-function parseSwaps(v: unknown): SwapInput[] {
-  if (v === undefined || v === null) return [];
-  if (!Array.isArray(v) || v.length > 4) throw new FutError("swaps must list up to 4 { slot, card_id } changes (card_id null empties the slot).");
-  return v.map((s, i) => {
-    const slot = text((s as Row)?.slot, `swaps[${i}].slot`, 8, true)!.toUpperCase();
-    const id = (s as Row).card_id;
-    if (id !== null && !isUuid(id)) throw new FutError(`swaps[${i}].card_id must be one of your card ids, or null.`);
-    return { slot, card_id: id as string | null };
-  });
+  private async load(owner: string, rows: Row[]): Promise<Squad[]> {
+    if (!rows.length) return [];
+    const ids = rows.map((r) => r.id as string);
+    const slots = await this.db.from("squad_slots").select("*").in("squad_id", ids).order("sort_order", { ascending: true });
+    fail(slots.error);
+    const slotRows = (slots.data ?? []) as Row[];
+    // Stored cards are read fresh (edits show up); a card that's gone or not the owner's falls back to the saved copy.
+    const cardIds = [...new Set(slotRows.map((s) => s.card_id).filter(isUuid))];
+    const fresh = new Map<string, WorkspaceCard>();
+    if (cardIds.length) {
+      const { data, error } = await this.db.from("player_cards").select("*").in("id", cardIds);
+      fail(error);
+      const visible = ((data ?? []) as Row[]).filter((r) => r.owner_user_id === null || r.owner_user_id === owner);
+      for (const c of await hydrate(this.db, owner, visible)) fresh.set(c.id, toWorkspaceCard(c));
+    }
+    return rows.map((r) => ({
+      id: r.id as string,
+      owner_id: owner,
+      name: r.name as string,
+      formation: r.formation as string,
+      ...(r.platform ? { platform: r.platform as string } : {}),
+      manager: (r.manager as Manager) ?? null,
+      budget: Number(r.budget ?? 0),
+      parent_id: (r.parent_id as string) ?? null,
+      created_at: String(r.created_at),
+      updated_at: String(r.updated_at),
+      slots: slotRows.filter((s) => s.squad_id === r.id).map((s) => ({
+        slot: s.slot as string,
+        position: s.position_code as string,
+        card: (isUuid(s.card_id) && fresh.get(s.card_id)) || ((s.card as WorkspaceCard) ?? null),
+        locked: s.locked === true,
+      })),
+    }));
+  }
+
+  async list(owner: string): Promise<Squad[]> {
+    const { data, error } = await this.db.from("squads").select("*").eq("user_id", owner)
+      .order("updated_at", { ascending: false }).limit(MAX_SQUADS_PER_USER);
+    fail(error);
+    return this.load(owner, (data ?? []) as Row[]);
+  }
+
+  async get(owner: string, id: string): Promise<Squad | null> {
+    const { data, error } = await this.db.from("squads").select("*").eq("id", id).eq("user_id", owner).maybeSingle();
+    fail(error);
+    return data ? (await this.load(owner, [data]))[0]! : null;
+  }
+
+  async save(squad: Squad): Promise<Squad> {
+    const owner = squad.owner_id;
+    for (const s of squad.slots) {
+      if (!/^[A-Z]{2,4}$/.test(s.position.trim().toUpperCase())) throw new FutError(`"${s.position}" is not a position code (e.g. ST, CAM, LB).`);
+    }
+    if (new Set(squad.slots.map((s) => s.slot.trim().toUpperCase())).size !== squad.slots.length) throw new FutError("Each slot name can only appear once.");
+    const { data: existing, error } = await this.db.from("squads").select("id, user_id").eq("id", squad.id).maybeSingle();
+    fail(error);
+    // Someone else's id answers exactly like a missing squad.
+    if (existing && existing.user_id !== owner) throw new NotFoundError(`No squad ${squad.id}`);
+    const parent = squad.parent_id && squad.parent_id !== squad.id && (await this.get(owner, squad.parent_id)) ? squad.parent_id : null;
+    const row = {
+      name: squad.name, formation: squad.formation, platform: squad.platform ?? null, manager: squad.manager ?? null,
+      budget: squad.budget, parent_id: parent, updated_at: squad.updated_at,
+    };
+    if (existing) {
+      fail((await this.db.from("squads").update(row).eq("id", squad.id).eq("user_id", owner)).error);
+      fail((await this.db.from("squad_slots").delete().eq("squad_id", squad.id)).error);
+    } else {
+      const { count, error: e } = await this.db.from("squads").select("id", { count: "exact", head: true }).eq("user_id", owner);
+      fail(e);
+      if ((count ?? 0) >= MAX_SQUADS_PER_USER) throw new FutError(`You can keep up to ${MAX_SQUADS_PER_USER} squads. Delete one first.`);
+      await ensureAccount(this.db, owner);
+      fail((await this.db.from("squads").insert({ ...row, id: squad.id, user_id: owner, created_at: squad.created_at })).error);
+    }
+    const slots = [];
+    for (const [i, s] of squad.slots.entries()) {
+      // Link the stored card only when it really is the owner's (or a catalogue card); otherwise keep just the copy.
+      const linked = s.card && isUuid(s.card.id) && (await getCard(this.db, owner, s.card.id)) ? s.card.id : null;
+      slots.push({
+        squad_id: squad.id, slot: s.slot.trim().toUpperCase(), position_code: s.position.trim().toUpperCase(), card_id: linked,
+        card: s.card ?? null, locked: s.locked === true, sort_order: i,
+      });
+    }
+    if (slots.length) fail((await this.db.from("squad_slots").insert(slots)).error);
+    return (await this.get(owner, squad.id))!;
+  }
+
+  async delete(owner: string, id: string): Promise<void> {
+    fail((await this.db.from("squads").delete().eq("id", id).eq("user_id", owner)).error);
+  }
+}
+
+/** Deletes one of the caller's squads; false when there is no such squad of theirs. */
+export async function deleteSquad(db: FutDb, userId: string, id: string): Promise<boolean> {
+  const store = new PgSquadStore(db);
+  if (!(await store.get(userId, id))) return false;
+  await store.delete(userId, id);
+  return true;
+}
+
+/** The squad an AI means when it names none: the one the player edited most recently. */
+export async function latestSquadId(db: FutDb, userId: string): Promise<string | null> {
+  const { data, error } = await db.from("squads").select("id").eq("user_id", userId).order("updated_at", { ascending: false }).limit(1);
+  fail(error);
+  return ((data ?? []) as Row[])[0]?.id as string ?? null;
+}
+
+/** XI Lab's squad workspace (builder, Chemistry Surgeon, optimizer) on the caller's data and the active rules. */
+export async function workspaceFor(db: FutDb) {
+  return createWorkspaceService({ rules: await activeRules(db), store: new PgSquadStore(db), cards: new PgCardSource(db) });
 }
 
 /**
- * Chemistry for one of the caller's squads (squad_id) or their current squad, with an optional set of up to four
- * simultaneous swaps. Every starter is recalculated after all swaps, so a swap that lifts one player but costs
- * others shows up as a net change.
+ * Runs a workspace call and turns its errors into ones the user or AI can act on. The workspace is pure code,
+ * so anything it throws is about the request (unknown slot, formation, bad squad JSON); database failures and
+ * our own bugs stay 500s.
  */
-export async function squadChemistry(db: FutDb, userId: string, args: { squad_id?: unknown; swaps?: unknown }) {
-  const squad = args.squad_id !== undefined && args.squad_id !== null && args.squad_id !== ""
-    ? await getSquad(db, userId, String(args.squad_id))
-    : await currentSquad(db, userId);
-  if (!squad) throw new FutError(args.squad_id ? "Squad not found." : "You have no saved squads yet. Build one at gafferbot.app/fut first.", 404);
-  const swaps = parseSwaps(args.swaps);
-  const rules = await activeRules(db);
-  const before = engineInput(squad);
-  const evidenceOf = (cards: (Card | null)[]) => weakestEvidence(cards.filter((c): c is Card => !!c).map((c) => c.evidence));
+export async function runWorkspace<T>(fn: () => Promise<T>): Promise<T> {
   try {
-    const result = computeSquadChemistry(before, rules);
-    const base = {
-      squad: { id: squad.id, name: squad.name, formation: squad.formation, empty_slots: squad.slots.filter((s) => !s.card).map((s) => s.slot) },
-      chemistry: result,
-      card_evidence: evidenceOf(squad.slots.map((s) => s.card)),
-      rules_note: rules.status === "verified" ? null : `Chemistry rule version ${rules.id} is ${rules.status}: thresholds come from community guides, not confirmed by EA.`,
-    };
-    if (!swaps.length) return base;
-    const slots = [...squad.slots];
-    const swapped: (Card | null)[] = [];
-    for (const sw of swaps) {
-      const i = slots.findIndex((s) => s.slot === sw.slot);
-      if (i < 0) throw new FutError(`There is no ${sw.slot} slot in ${squad.name}.`);
-      if (slots[i]!.locked) throw new FutError(`${sw.slot} is locked. Unlock it before trying a swap there.`);
-      const card = sw.card_id ? await getCard(db, userId, sw.card_id) : null;
-      if (sw.card_id && !card) throw new FutError(`Card ${sw.card_id} wasn't found among your cards.`, 404);
-      slots[i] = { ...slots[i]!, card_id: card?.id ?? null, card };
-      swapped.push(card);
-    }
-    const ids = slots.filter((s) => s.card).map((s) => s.card!.id);
-    if (new Set(ids).size !== ids.length) throw new FutError("A swap would put the same card in two slots.");
-    const after = computeSquadChemistry(engineInput({ ...squad, slots }), rules);
-    return {
-      ...base,
-      swaps,
-      after: after,
-      diff: diffSquadChemistry(result, after),
-      card_evidence: evidenceOf([...squad.slots.map((s) => s.card), ...swapped]),
-    };
+    return await fn();
   } catch (e) {
-    if (e instanceof SquadInputError) throw new FutError(e.message);
+    if (e instanceof FutError || e instanceof FutDbError) throw e;
+    if (e instanceof NotFoundError) throw new FutError("Squad not found.", 404);
     if (e instanceof RulesError) throw new FutError(`The chemistry rules are incomplete: ${e.message}`, 503);
+    if (e instanceof SquadInputError) throw new FutError(e.message);
+    if (e && typeof e === "object" && (e as { name?: string }).name === "ZodError") {
+      const issues = ((e as { issues?: { path: (string | number)[]; message: string }[] }).issues ?? []).slice(0, 5);
+      throw new FutError(`The squad isn't valid: ${issues.map((i) => `${i.path.join(".") || "squad"}: ${i.message}`).join("; ")}`);
+    }
+    if (e instanceof Error && !(e instanceof TypeError) && !(e instanceof RangeError) && !(e instanceof ReferenceError)) {
+      throw new FutError(e.message);
+    }
     throw e;
   }
+}
+
+/** Every optimizer run is kept with the engine and rule versions that produced it, so a result can be audited later. */
+export async function logRun(db: FutDb, userId: string, run: {
+  squad: unknown; kind: "optimize" | "chemistry" | "swap_preview"; input: unknown; result: { engine_version?: string; rule_version?: string }; via: "web" | "mcp";
+}) {
+  const squadId = typeof run.squad === "string" ? run.squad : null;
+  const { error } = await db.from("optimization_runs").insert({
+    user_id: userId, squad_id: squadId, kind: run.kind, engine_version: run.result.engine_version ?? "unknown",
+    rule_version_id: run.result.rule_version ?? null, input: run.input, result: run.result, via: run.via,
+  });
+  // Auditing must never cost the user their answer.
+  if (error) console.error("[fut] could not log run:", error.message);
 }

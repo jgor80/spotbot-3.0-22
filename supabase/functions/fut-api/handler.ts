@@ -1,11 +1,12 @@
 // XI Lab's website API (gafferbot.app/fut), served at /api/functions/v1/fut-api/v1/... through the Worker.
 // Signed-in users only (their GafferBot session); every route acts on the caller's own XI Lab data, keyed by
 // their auth user id. No GafferBot club or server is needed. Off unless FUT_ENABLED=true.
-// The MCP FUT tools call the same services (../_shared/fut/service.ts), so both always agree.
+// The MCP FUT tools call the same services (../_shared/fut/service.ts and XI Lab's workspace), so both always agree.
 import {
-  addCard, compareCards, deleteCard, deleteSquad, futEnabled, FutError, getCard, getSquad, listSquads, parseCardInput,
-  parseSquadInput, saveSquad, searchMyCards, squadChemistry, updateCard, type FutDb,
+  addCard, addManager, compareCards, deleteCard, deleteManager, deleteSquad, futEnabled, FutError, getCard, listManagers, logRun,
+  parseCardInput, parseManagerInput, runWorkspace, searchMyCards, toWorkspaceCard, updateCard, workspaceFor, type FutDb,
 } from "../_shared/fut/service.ts";
+import { assignCard, cardSchema, createSquad, FORMATIONS, squadSchema, type Squad, type WorkspaceCard } from "../_shared/fut/xilab/workspace/index.ts";
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,7 +17,7 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const err = (status: number, message: string) => json({ error: message }, status);
 
-const MAX_BODY = 32 * 1024;
+const MAX_BODY = 64 * 1024;
 
 export interface Deps {
   db: FutDb;
@@ -39,6 +40,39 @@ function intParam(v: string | null, field: string, min: number, max: number): nu
   const n = Number(v);
   if (!Number.isInteger(n) || n < min || n > max) throw new FutError(`${field} must be a whole number from ${min} to ${max}.`);
   return n;
+}
+
+const obj = (v: unknown): Record<string, unknown> => {
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new FutError("Expected a JSON object.");
+  return v as Record<string, unknown>;
+};
+
+/** A saved squad's id, or a whole squad object (validated by the workspace). */
+function squadRef(v: unknown): string | Record<string, unknown> {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
+  throw new FutError("squad must be a saved squad id or a squad object.");
+}
+
+function slotName(v: unknown, required: boolean): string | undefined {
+  if (v === undefined || v === null || v === "") {
+    if (required) throw new FutError("slot is required (e.g. LCB).");
+    return undefined;
+  }
+  if (typeof v !== "string" || v.length > 8) throw new FutError("slot must be a slot name like LCB.");
+  return v;
+}
+
+/** The card going into a slot: one of the caller's stored cards by card_id, a card object (e.g. a target), or null to empty it. */
+async function incomingCard(db: FutDb, userId: string, b: Record<string, unknown>): Promise<WorkspaceCard | null> {
+  if (typeof b.card_id === "string") {
+    const c = await getCard(db, userId, b.card_id);
+    if (!c) throw new FutError("Card not found among your cards.", 404);
+    return toWorkspaceCard(c);
+  }
+  if (b.card === null || b.card_id === null) return null;
+  if (b.card && typeof b.card === "object") return cardSchema.parse(b.card) as WorkspaceCard;
+  throw new FutError("Send card_id (one of your cards), card (a card object) or card: null to empty the slot.");
 }
 
 export async function handle(req: Request, deps: Deps): Promise<Response> {
@@ -82,19 +116,76 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       return err(405, "Use GET, PUT or DELETE.");
     }
 
-    if (route === "/squads" && m === "GET") return json({ data: await listSquads(db, userId) });
-    if (route === "/squads" && m === "POST") return json({ data: await saveSquad(db, userId, parseSquadInput(await body(req))) }, 201);
-    const squad = route.match(/^\/squads\/([^/]+)$/);
-    if (squad) {
-      const id = squad[1]!;
-      if (m === "GET") { const s = await getSquad(db, userId, id); return s ? json({ data: s }) : err(404, "Squad not found."); }
-      if (m === "PUT") return json({ data: await saveSquad(db, userId, parseSquadInput(await body(req)), id) });
-      if (m === "DELETE") return (await deleteSquad(db, userId, id)) ? json({ data: { deleted: id } }) : err(404, "Squad not found.");
-      return err(405, "Use GET, PUT or DELETE.");
+    if (route === "/managers" && m === "GET") return json({ data: await listManagers(db, userId) });
+    if (route === "/managers" && m === "POST") return json({ data: await addManager(db, userId, parseManagerInput(await body(req))) }, 201);
+    const manager = route.match(/^\/managers\/([^/]+)$/);
+    if (manager) {
+      if (m !== "DELETE") return err(405, "Use DELETE.");
+      return (await deleteManager(db, userId, manager[1]!)) ? json({ data: { deleted: manager[1] } }) : err(404, "Manager not found.");
     }
-    if (route === "/chemistry" && m === "POST") {
-      const b = (await body(req)) as { squad_id?: unknown; swaps?: unknown };
-      return json({ data: await squadChemistry(db, userId, { squad_id: b.squad_id, swaps: b.swaps }) });
+
+    // ---- the squad workspace (XI Lab's builder, Chemistry Surgeon and optimizer). A squad is sent whole, or by saved id.
+    if (route === "/formations" && m === "GET") return json({ data: Object.keys(FORMATIONS) });
+    if (route === "/squads/new" && m === "POST") {
+      const b = obj(await body(req));
+      const formation = typeof b.formation === "string" ? b.formation.trim() : "";
+      const name = typeof b.name === "string" && b.name.trim() ? b.name.trim().slice(0, 120) : undefined;
+      const budget = b.budget === undefined ? 0 : Number(b.budget);
+      if (!Number.isInteger(budget) || budget < 0 || budget > 100_000_000) throw new FutError("budget must be a whole number of coins.");
+      // A blank squad, not saved until the user saves it.
+      return json({ data: await runWorkspace(() => Promise.resolve().then(() => createSquad({ formation, name, owner_id: userId, budget }))) });
+    }
+    if (route.startsWith("/squads")) {
+      const ws = await workspaceFor(db);
+      if (route === "/squads" && m === "GET") return json({ data: await runWorkspace(() => ws.listSquads(userId)) });
+      if (route === "/squads" && m === "POST") {
+        // The squad is always saved as the caller's, whatever owner_id it arrived with.
+        const squad = { ...obj(await body(req)), owner_id: userId };
+        return json({ data: await runWorkspace(() => ws.saveSquad(userId, squad)) });
+      }
+      if (route === "/squads/save-as" && m === "POST") {
+        const b = obj(await body(req));
+        const name = typeof b.name === "string" ? b.name.trim().slice(0, 120) : "";
+        if (!name) throw new FutError("Give the new squad a name.");
+        return json({ data: await runWorkspace(() => ws.saveSquadAs(userId, { ...obj(b.squad), owner_id: userId }, name)) }, 201);
+      }
+      if (route === "/squads/chemistry" && m === "POST") {
+        const b = obj(await body(req));
+        return json({ data: await runWorkspace(() => ws.calculateChemistry(userId, squadRef(b.squad))) });
+      }
+      if (route === "/squads/diagnose" && m === "POST") {
+        const b = obj(await body(req));
+        return json({ data: await runWorkspace(() => ws.diagnose(userId, squadRef(b.squad), slotName(b.slot, false))) });
+      }
+      if (route === "/squads/assign" && m === "POST") {
+        // Puts a card in a slot and returns the edited squad; nothing is saved until POST /squads.
+        const b = obj(await body(req));
+        return json({ data: await runWorkspace(async () => {
+          const squad = squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad;
+          return assignCard(squad, slotName(b.slot, true)!, await incomingCard(db, userId, b));
+        }) });
+      }
+      if (route === "/squads/preview" && m === "POST") {
+        const b = obj(await body(req));
+        return json({ data: await runWorkspace(async () => ws.previewAssign(userId, squadRef(b.squad), slotName(b.slot, true)!, await incomingCard(db, userId, b))) });
+      }
+      if (route === "/squads/optimize" && m === "POST") {
+        const b = obj(await body(req));
+        const result = await runWorkspace(() => ws.optimize(userId, squadRef(b.squad), { goal: obj(b.goal) as never, options: b.options as never }));
+        await logRun(db, userId, { squad: typeof b.squad === "string" ? b.squad : null, kind: "optimize", input: { goal: b.goal, options: b.options }, result, via: "web" });
+        return json({ data: result });
+      }
+      if (route === "/squads/compare" && m === "POST") {
+        const b = obj(await body(req));
+        return json({ data: await runWorkspace(() => ws.compare(userId, squadRef(b.a), squadRef(b.b), b.base === undefined ? undefined : squadRef(b.base))) });
+      }
+      const one = route.match(/^\/squads\/([^/]+)$/);
+      if (one) {
+        const id = decodeURIComponent(one[1]!);
+        if (m === "GET") return json({ data: await runWorkspace(() => ws.getSquad(userId, id)) });
+        if (m === "DELETE") return (await deleteSquad(db, userId, id)) ? json({ data: { deleted: id } }) : err(404, "Squad not found.");
+        return err(405, "Use GET or DELETE (save with POST /squads).");
+      }
     }
     return err(404, "No such XI Lab route.");
   } catch (e) {

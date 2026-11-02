@@ -1,4 +1,4 @@
--- XI Lab (the FUT side of GafferBot), Phase 1 tables. Everything lives in its own `fut` schema:
+-- XI Lab (the FUT side of GafferBot), Phase 1 tables (21). Everything lives in its own `fut` schema:
 --   * GafferBot's existing tables are not touched; `DROP SCHEMA fut CASCADE` removes XI Lab entirely.
 --   * Only the service role (the fut-api function and the MCP FUT tools) is granted the schema. The browser's
 --     anon/authenticated roles get nothing, and RLS with owner-only policies is on as a second wall.
@@ -97,6 +97,8 @@ CREATE TABLE fut.player_cards (
   source_card_key     TEXT,
   source_updated_at   TIMESTAMPTZ,
   import_run_id       BIGINT REFERENCES fut.import_runs(id),
+  -- Coins to buy it as the user last saw it (user cards) or from a permitted price feed (never scraped).
+  price               INTEGER CHECK (price >= 0),
   notes               TEXT CHECK (length(notes) <= 280),
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -194,27 +196,46 @@ CREATE TABLE fut.club_inventory (
   UNIQUE (user_id, card_id)
 );
 
+-- Squads as XI Lab's squad workspace saves them (jgor80/11-lab src/workspace). Ids are the workspace's own
+-- ("sq_<uuid>"), so a squad built in the browser keeps its id when saved.
+-- Managers the user typed in (name, nation, league), so the optimizer can suggest a manager change.
+CREATE TABLE fut.user_managers (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id        UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name           TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
+  nation         TEXT CHECK (length(nation) <= 60),
+  league         TEXT CHECK (length(league) <= 60),
+  price          INTEGER CHECK (price >= 0),
+  owned          BOOLEAN NOT NULL DEFAULT true,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX fut_user_managers_user ON fut.user_managers(user_id);
+
 CREATE TABLE fut.squads (
-  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id          UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  name             TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 60),
-  season           TEXT NOT NULL DEFAULT 'FC27',
-  formation        TEXT NOT NULL CHECK (length(formation) <= 20),
-  manager_nation   TEXT CHECK (length(manager_nation) <= 60),
-  manager_league   TEXT CHECK (length(manager_league) <= 60),
-  is_active        BOOLEAN NOT NULL DEFAULT false,
-  based_on_squad_id UUID REFERENCES fut.squads(id) ON DELETE SET NULL,   -- "save as" keeps the original
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  id           TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 200),
+  user_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 120),
+  season       TEXT NOT NULL DEFAULT 'FC27',
+  formation    TEXT NOT NULL CHECK (length(formation) <= 20),
+  platform     TEXT CHECK (length(platform) <= 40),
+  manager      JSONB,                                             -- {id, name, nation, league, price, owned}
+  budget       INTEGER NOT NULL DEFAULT 0 CHECK (budget >= 0),   -- coins available for upgrades
+  is_active    BOOLEAN NOT NULL DEFAULT false,
+  parent_id    TEXT REFERENCES fut.squads(id) ON DELETE SET NULL, -- "save as" keeps the original
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX fut_squads_user ON fut.squads(user_id, updated_at DESC);
 CREATE UNIQUE INDEX fut_one_active_squad ON fut.squads(user_id) WHERE is_active;
 
 CREATE TABLE fut.squad_slots (
-  squad_id         UUID NOT NULL REFERENCES fut.squads(id) ON DELETE CASCADE,
+  squad_id         TEXT NOT NULL REFERENCES fut.squads(id) ON DELETE CASCADE,
   slot             TEXT NOT NULL CHECK (length(slot) <= 8),       -- 'LCB'
-  position_code    TEXT NOT NULL REFERENCES fut.positions(code),
+  position_code    TEXT NOT NULL CHECK (position_code ~ '^[A-Z]{2,4}$'),
+  -- The stored card when the slot holds one of the user's cards (or a catalogue card); read fresh on load.
   card_id          UUID REFERENCES fut.player_cards(id) ON DELETE SET NULL,
+  -- The card as the workspace saved it, used when it isn't a stored card (e.g. a market target typed into the squad).
+  card             JSONB,
   chemistry_style  TEXT CHECK (length(chemistry_style) <= 30),
   role             TEXT CHECK (length(role) <= 40),
   focus            TEXT CHECK (length(focus) <= 40),
@@ -227,7 +248,7 @@ CREATE TABLE fut.squad_slots (
 CREATE TABLE fut.optimization_runs (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  squad_id        UUID REFERENCES fut.squads(id) ON DELETE SET NULL,
+  squad_id        TEXT REFERENCES fut.squads(id) ON DELETE SET NULL,
   kind            TEXT NOT NULL CHECK (kind IN ('chemistry', 'swap_preview', 'optimize')),
   engine_version  TEXT NOT NULL,
   rule_version_id TEXT REFERENCES fut.chemistry_rule_versions(id),
@@ -254,14 +275,14 @@ DECLARE t TEXT;
 BEGIN
   FOREACH t IN ARRAY ARRAY['data_sources', 'import_runs', 'nations', 'leagues', 'clubs', 'positions', 'formations',
     'formation_slots', 'player_cards', 'card_attributes', 'card_playstyles', 'card_roles', 'chemistry_rule_versions',
-    'chemistry_thresholds', 'chemistry_modifiers', 'accounts', 'club_inventory', 'squads', 'squad_slots', 'optimization_runs'] LOOP
+    'chemistry_thresholds', 'chemistry_modifiers', 'accounts', 'club_inventory', 'user_managers', 'squads', 'squad_slots', 'optimization_runs'] LOOP
     EXECUTE format('ALTER TABLE fut.%I ENABLE ROW LEVEL SECURITY', t);
   END LOOP;
   FOREACH t IN ARRAY ARRAY['data_sources', 'nations', 'leagues', 'clubs', 'positions', 'formations', 'formation_slots',
     'chemistry_rule_versions', 'chemistry_thresholds', 'chemistry_modifiers'] LOOP
     EXECUTE format('CREATE POLICY "Signed-in users read reference data" ON fut.%I FOR SELECT TO authenticated USING (true)', t);
   END LOOP;
-  FOREACH t IN ARRAY ARRAY['accounts', 'club_inventory', 'squads', 'optimization_runs'] LOOP
+  FOREACH t IN ARRAY ARRAY['accounts', 'club_inventory', 'user_managers', 'squads', 'optimization_runs'] LOOP
     EXECUTE format('CREATE POLICY "Owners only" ON fut.%I FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid())', t);
   END LOOP;
 END $$;
@@ -294,10 +315,11 @@ INSERT INTO fut.positions (code, name, line, sort_order) VALUES
   ('RW', 'Right Wing', 'ATT', 10), ('LW', 'Left Wing', 'ATT', 11), ('ST', 'Striker', 'ATT', 12);
 
 INSERT INTO fut.formations (id, season, name) VALUES ('3-5-2', 'FC27', '3-5-2');
+-- Same slot names as XI Lab's workspace (src/workspace/formations.ts).
 INSERT INTO fut.formation_slots (formation_id, slot, position_code, sort_order) VALUES
-  ('3-5-2', 'GK', 'GK', 1), ('3-5-2', 'RCB', 'CB', 2), ('3-5-2', 'CB', 'CB', 3), ('3-5-2', 'LCB', 'CB', 4),
-  ('3-5-2', 'RM', 'RM', 5), ('3-5-2', 'RCDM', 'CDM', 6), ('3-5-2', 'CAM', 'CAM', 7), ('3-5-2', 'LCDM', 'CDM', 8),
-  ('3-5-2', 'LM', 'LM', 9), ('3-5-2', 'RS', 'ST', 10), ('3-5-2', 'LS', 'ST', 11);
+  ('3-5-2', 'GK', 'GK', 1), ('3-5-2', 'LCB', 'CB', 2), ('3-5-2', 'CB', 'CB', 3), ('3-5-2', 'RCB', 'CB', 4),
+  ('3-5-2', 'LCDM', 'CDM', 5), ('3-5-2', 'RCDM', 'CDM', 6), ('3-5-2', 'LM', 'LM', 7), ('3-5-2', 'CAM', 'CAM', 8),
+  ('3-5-2', 'RM', 'RM', 9), ('3-5-2', 'LST', 'ST', 10), ('3-5-2', 'RST', 'ST', 11);
 
 -- Same rule versions as XI Lab (jgor80/11-lab migrations 0002 and 0003). NOT confirmed by EA. v0 is kept for history; v1 is active.
 INSERT INTO fut.chemistry_rule_versions (id, season, label, status, is_active, source_notes) VALUES
