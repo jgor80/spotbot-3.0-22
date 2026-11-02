@@ -54,6 +54,10 @@ export interface Optimization extends RuleInfo {
 }
 export interface Comparison extends RuleInfo { rows: unknown[]; verdict?: string[] }
 export interface Formation { id: string; name: string }
+export interface ClubImportResult {
+  added: number; updated: number; managers_added: number; over_limit: number;
+  skipped: { reason: string; count: number }[]; verified: false; note: string; prices_linked?: number;
+}
 export class FutApiError extends Error {
   constructor(message: string, public status?: number) { super(message); this.name = "FutApiError"; }
 }
@@ -140,6 +144,7 @@ export const futApi = {
   compareCards: (ids: string[]) => { compareCardRules.parse(ids); return futRequest<Comparison>("/cards/compare", "POST", { card_ids: ids }); },
   managers: () => futRequest<FutManager[]>("/managers"),
   addManager: (manager: Omit<FutManager, "id">) => futRequest<FutManager>("/managers", "POST", manager),
+  importClub: (file: unknown) => futRequest<ClubImportResult>("/club/import", "POST", file),
   deleteManager: (id: string) => futRequest(`/managers/${encodeURIComponent(id)}`, "DELETE"),
   formations: async (): Promise<Formation[]> => {
     const result = await futRequest<unknown>("/formations");

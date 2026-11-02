@@ -25,7 +25,8 @@ export class FutError extends Error {
   constructor(message: string, readonly status = 400) { super(message); }
 }
 
-export const MAX_CARDS_PER_USER = 300;
+/** A synced club can be big; 1000 also stays within PostgREST's default row cap for one read. */
+export const MAX_CARDS_PER_USER = 1000;
 export const MAX_SQUADS_PER_USER = 50;
 const FACE = ["pac", "sho", "pas", "dri", "def", "phy"] as const;
 type Face = (typeof FACE)[number];
@@ -177,19 +178,27 @@ type Row = Record<string, unknown>;
 async function hydrate(db: FutDb, userId: string, rows: Row[]): Promise<Card[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.id as string);
-  const [attrs, styles, inv] = await Promise.all([
-    db.from("card_attributes").select("*").in("card_id", ids),
-    db.from("card_playstyles").select("*").in("card_id", ids),
-    db.from("club_inventory").select("*").eq("user_id", userId).in("card_id", ids),
-  ]);
-  fail(attrs.error); fail(styles.error); fail(inv.error);
-  const attrBy = new Map(((attrs.data ?? []) as Row[]).map((a) => [a.card_id, a]));
-  const invBy = new Map(((inv.data ?? []) as Row[]).map((i) => [i.card_id, i]));
+  // In chunks: the ids go in the request URL, and a synced club can have hundreds of cards.
+  const attrs = { data: [] as Row[] }, styles = { data: [] as Row[] }, inv = { data: [] as Row[] };
+  for (let i = 0; i < ids.length; i += 100) {
+    const part = ids.slice(i, i + 100);
+    const [a, s, n] = await Promise.all([
+      db.from("card_attributes").select("*").in("card_id", part),
+      db.from("card_playstyles").select("*").in("card_id", part),
+      db.from("club_inventory").select("*").eq("user_id", userId).in("card_id", part),
+    ]);
+    fail(a.error); fail(s.error); fail(n.error);
+    attrs.data.push(...((a.data ?? []) as Row[])); styles.data.push(...((s.data ?? []) as Row[])); inv.data.push(...((n.data ?? []) as Row[]));
+  }
+  const attrBy = new Map(attrs.data.map((a) => [a.card_id, a]));
+  const invBy = new Map(inv.data.map((i) => [i.card_id, i]));
+  const styleBy = new Map<unknown, Row[]>();
+  for (const st of styles.data) styleBy.set(st.card_id, [...(styleBy.get(st.card_id) ?? []), st]);
   return rows.map((r) => {
     const a = attrBy.get(r.id) ?? {};
     const stats: Card["stats"] = {};
     for (const k of FACE) if (a[k] !== null && a[k] !== undefined) stats[k] = Number(a[k]);
-    const mine = ((styles.data ?? []) as Row[]).filter((s) => s.card_id === r.id);
+    const mine = styleBy.get(r.id) ?? [];
     const owned = invBy.get(r.id);
     return {
       id: r.id as string,
