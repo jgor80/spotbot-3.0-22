@@ -6,8 +6,9 @@
 //
 // PARTLY VERIFIED: Jeff's first FC 27 squad capture (2026-11-02) matched ids, ratings, positions, untradeable,
 // stats and skill moves; the club-list address, weak foot and club/league names are not confirmed yet. Anything that doesn't fit is
-// skipped and counted, never guessed. Names come only from the Web App's own name files; an id without one gets
-// a stable placeholder ("EA club 243") so synced cards still link to each other for chemistry.
+// skipped and counted, never guessed. Names come from the Web App's own name files, then from the fut.clubs /
+// fut.leagues / fut.nations reference tables; an id without either gets a stable placeholder ("EA club 243") so
+// synced cards still link to each other for chemistry.
 import { ensureAccount, FutDbError, FutError, MAX_CARDS_PER_USER, type FutDb } from "./service.ts";
 
 type Row = Record<string, unknown>;
@@ -73,8 +74,34 @@ export function parseClubExport(body: unknown) {
   };
 }
 
+/**
+ * Names the club file didn't carry, from the fut.clubs / fut.leagues / fut.nations reference tables (EA id -> name),
+ * so cards read "Manchester City" rather than "EA club 10". The file's own names win.
+ */
+async function fillReferenceNames(db: FutDb, items: unknown[], names: { teams: Record<string, string>; leagues: Record<string, string>; nations: Record<string, string> }) {
+  const want = { clubs: new Set<number>(), leagues: new Set<number>(), nations: new Set<number>() };
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object") continue;
+    const it = raw as Row;
+    const t = posInt(it.team_id), l = posInt(it.league_id), n = posInt(it.nation_id);
+    if (t && !names.teams[t]) want.clubs.add(t);
+    if (l && !names.leagues[l]) want.leagues.add(l);
+    if (n && !names.nations[n]) want.nations.add(n);
+  }
+  const into = { clubs: names.teams, leagues: names.leagues, nations: names.nations };
+  for (const table of ["clubs", "leagues", "nations"] as const) {
+    const ids = [...want[table]];
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data, error } = await db.from(table).select("ea_id, name").in("ea_id", ids.slice(i, i + 100));
+      fail(error);
+      for (const r of (data ?? []) as Row[]) if (typeof r.name === "string" && r.name.trim()) into[table][String(r.ea_id)] = clip(r.name.trim());
+    }
+  }
+}
+
 export async function importClub(db: FutDb, userId: string, body: unknown): Promise<ClubImportResult> {
   const { items, names } = parseClubExport(body);
+  await fillReferenceNames(db, items, names);
   const skipped = new Map<string, number>();
   const skip = (reason: string) => skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
 
