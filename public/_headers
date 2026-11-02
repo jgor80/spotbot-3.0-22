@@ -63,3 +63,8 @@
   X-Robots-Tag: noindex
 /billing
   X-Robots-Tag: noindex
+# XI Lab (FUT) stays out of search results until it launches
+/fut
+  X-Robots-Tag: noindex
+/fut/*
+  X-Robots-Tag: noindex
