@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/market/thesis.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/market/thesis.ts by scripts/sync-xilab.mjs. Do not edit.
 // Trade Thesis Simulator: arithmetic on the user's own assumptions. No forecast is made here; the only
 // probability shown is the break-even win rate implied by the user's target and downside.
 import { DEFAULT_MARKET_RULES, isValidPrice, netAfterTax, roundToStep, transferTax, type MarketRules } from "./rules.ts";

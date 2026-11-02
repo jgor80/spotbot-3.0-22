@@ -8,7 +8,7 @@
 CREATE TABLE fut.market_price_sources (
   id           TEXT PRIMARY KEY,
   name         TEXT NOT NULL,
-  kind         TEXT NOT NULL CHECK (kind IN ('demo', 'user_import', 'licensed_feed', 'official_api')),
+  kind         TEXT NOT NULL CHECK (kind IN ('demo', 'user_import', 'browser_capture', 'licensed_feed', 'official_api')),
   status       TEXT NOT NULL CHECK (status IN ('enabled', 'disabled', 'not_authorized')),
   is_demo      BOOLEAN NOT NULL DEFAULT false,
   status_note  TEXT NOT NULL,
@@ -124,6 +124,9 @@ INSERT INTO fut.market_price_sources (id, name, kind, status, is_demo, status_no
   ('user_import', 'Your imported price history', 'user_import', 'enabled', false,
    'Prices you import yourself. Private to you; XI Lab does not check where they came from.',
    '{"commercial_use":false,"storage":true,"retention_days":null,"display":true,"derived_analytics":true,"model_training":false,"redistribution":false,"attribution":null}', 'estimate'),
+  ('web_app_capture', 'Your Web App captures (XI Lab browser helper)', 'browser_capture', 'enabled', false,
+   'Lowest Buy Now prices from transfer-market searches YOU ran in the EA Web App, read from results the Web App already loaded. The helper never searches, clicks or bids. Only the listings you viewed, not the whole market. Private to you. Third-party software on EA''s site carries some account risk (Jeff accepted it on 2026-11-02).',
+   '{"commercial_use":false,"storage":true,"retention_days":null,"display":true,"derived_analytics":true,"model_training":false,"redistribution":false,"attribution":null}', 'game_data'),
   ('ea_fc_community_api', 'EA FC Community API', 'official_api', 'not_authorized', false,
    'Closed to new partners as of 2026-11-02. Not connected.',
    '{"commercial_use":false,"storage":false,"retention_days":null,"display":false,"derived_analytics":false,"model_training":false,"redistribution":false,"attribution":null}', 'verified'),

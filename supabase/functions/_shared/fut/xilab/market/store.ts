@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/market/store.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/market/store.ts by scripts/sync-xilab.mjs. Do not edit.
 // Storage interfaces for Market Lab. Async and owner-scoped so Gaffer Bot's Postgres `fut` adapter drops in.
 // Prices from licensed/public sources are shared; user imports are private to their owner.
 import type { BasketMembership } from "./baskets.ts";

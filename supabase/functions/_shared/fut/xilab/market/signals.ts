@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/market/signals.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/market/signals.ts by scripts/sync-xilab.mjs. Do not edit.
 // Relative strength, momentum and mean reversion. Deterministic, explainable, and always supporting evidence:
 // nothing here is a forecast. Each function returns the numbers it used so the UI can show its working.
 import { bestFit } from "./baskets.ts";

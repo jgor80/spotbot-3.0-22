@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/workspace/compare.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/workspace/compare.ts by scripts/sync-xilab.mjs. Do not edit.
 // Side-by-side comparison of two squads (usually two optimizer solutions) against an optional base squad.
 import type { ChemistryRules } from "../chemistry/index.ts";
 import { costBetween, evaluateSquad } from "./squad.ts";

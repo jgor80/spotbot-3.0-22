@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/workspace/store.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/workspace/store.ts by scripts/sync-xilab.mjs. Do not edit.
 // Thin storage adapters. Async and keyed by owner id so a Postgres (GafferBot `fut` schema) adapter drops in.
 import { newId } from "./squad.ts";
 import type { Manager, Squad, WorkspaceCard } from "./types.ts";

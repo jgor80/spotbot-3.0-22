@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/market/rules.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/market/rules.ts by scripts/sync-xilab.mjs. Do not edit.
 // Market rules are data, not code: a versioned object so the tax or price steps can change without a release.
 // Values here are community knowledge, not confirmed by EA, and are labelled that way.
 

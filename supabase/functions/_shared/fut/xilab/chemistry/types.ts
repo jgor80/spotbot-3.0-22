@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/chemistry/types.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/chemistry/types.ts by scripts/sync-xilab.mjs. Do not edit.
 import type { LinkType } from "./rules.ts";
 
 export type Evidence = "verified" | "game_data" | "estimate" | "hypothesis";

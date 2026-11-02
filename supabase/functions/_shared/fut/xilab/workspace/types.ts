@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/workspace/types.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/workspace/types.ts by scripts/sync-xilab.mjs. Do not edit.
 // Squad workspace types. Plain JSON, no DB or Node imports: this module is bundled for Workers and Deno too.
 import type { Evidence, SquadCard } from "../chemistry/index.ts";
 

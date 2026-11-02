@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/market/types.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/market/types.ts by scripts/sync-xilab.mjs. Do not edit.
 // Market Lab types. Plain JSON, no DB or Node imports: bundled for Workers and Deno (Gaffer Bot fut-api) too.
 import type { Evidence } from "../chemistry/index.ts";
 import type { WorkspaceCard } from "../workspace/index.ts";
@@ -47,7 +47,7 @@ export interface SourcePermissions {
 export interface PriceSource {
   id: string;
   name: string;
-  kind: "demo" | "user_import" | "licensed_feed" | "official_api";
+  kind: "demo" | "user_import" | "browser_capture" | "licensed_feed" | "official_api";
   status: SourceStatus;
   /** Demo data is made up. Anything built on it says so. */
   is_demo: boolean;
@@ -70,6 +70,8 @@ export interface MarketCard extends WorkspaceCard {
   evolution_candidate?: boolean;
   live_upgrade?: boolean;
   tradeable?: boolean;
+  /** EA's item id, when the card came from EA's ratings feed. Lets captured Web App prices find the card. */
+  ea_item_id?: number;
 }
 
 export type Freshness = "fresh" | "stale" | "missing";

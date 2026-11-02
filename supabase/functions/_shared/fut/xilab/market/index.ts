@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/market/index.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/market/index.ts by scripts/sync-xilab.mjs. Do not edit.
 // Market Lab: market intelligence for XI Lab. Worker/Deno-safe: no Node-only imports, no DB clients.
 // Stage A: price history, baskets and indexes, relative strength, momentum, mean reversion, trade thesis, watchlist.
 export * from "./types.ts";
@@ -10,6 +10,7 @@ export * from "./signals.ts";
 export * from "./thesis.ts";
 export * from "./sources.ts";
 export * from "./import.ts";
+export * from "./capture.ts";
 export * from "./store.ts";
 export * from "./squad-link.ts";
 export * from "./schema.ts";

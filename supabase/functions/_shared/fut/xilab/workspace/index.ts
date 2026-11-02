@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/workspace/index.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/workspace/index.ts by scripts/sync-xilab.mjs. Do not edit.
 // Squad workspace: the service layer behind the squad builder, Chemistry Surgeon and Squad Optimizer.
 // Worker/Deno-safe: no Node-only imports, no DB clients.
 export * from "./types.ts";

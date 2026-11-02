@@ -140,6 +140,7 @@ export const toMarketCard = (c: Card): MarketCard => ({
   category: categoryOf(c),
   version: c.version ?? undefined,
   tradeable: c.tradeable ?? true,
+  ...(c.ea_item_id ? { ea_item_id: c.ea_item_id } : {}),
 });
 
 /** The caller's own cards. The catalogue (shared baskets) stays empty until a licensed card catalogue exists. */

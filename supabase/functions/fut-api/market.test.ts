@@ -20,6 +20,7 @@ function seededMarket() {
   return {
     market_price_sources: [
       { id: "user_import", name: "Your imported price history", kind: "user_import", status: "enabled", is_demo: false, status_note: "Yours.", permissions: perm(true), evidence: "estimate" },
+      { id: "web_app_capture", name: "Your Web App captures", kind: "browser_capture", status: "enabled", is_demo: false, status_note: "Yours.", permissions: perm(true), evidence: "game_data" },
       { id: "futbin", name: "FUTBIN", kind: "licensed_feed", status: "not_authorized", is_demo: false, status_note: "No licence.", permissions: perm(false), evidence: "game_data" },
       { id: "xilab_demo", name: "XI Lab demo dataset", kind: "demo", status: "disabled", is_demo: true, status_note: "Browser only.", permissions: perm(true), evidence: "hypothesis" },
     ],
@@ -130,6 +131,21 @@ Deno.test("market MCP tools: read-only, fut in the name, same numbers as the web
   assert(!(await tool("find_fut_market_opportunities", {})).isError, "scan");
   assert(!(await tool("get_fut_market_overview", {})).isError, "overview");
   assert(!(await tool("compare_fut_card_relative_value", { card_id: id })).isError, "relative value");
-  assert((await tool("get_fut_market_data_sources")).data.sources.length === 3, "sources");
+  assert((await tool("get_fut_market_data_sources")).data.sources.length === 4, "sources");
   assert((await tool("get_fut_card_market_intelligence", { card_id: "nope" })).isError, "bad id is a tool error");
+});
+
+Deno.test("market: a Web App capture file is matched on EA item ids and stored as your captures", async () => {
+  const { call, db } = setup();
+  const c = await call("POST", "/v1/cards", { player_name: "Captured Striker", overall: 88, positions: ["ST"], evidence: "game_data" });
+  const id = c.data.data.id as string;
+  await db.from("player_cards").update({ source_card_key: "239085" }).eq("id", id); // as a card from EA's feed would carry
+  const rows = Array.from({ length: 8 }, (_, i) => `239085,239085,88,console,${20_000 + i * 250},${new Date(Date.now() - (8 - i) * H).toISOString()},lowest_bin,4`);
+  const text = ["ea_item_id,asset_id,rating,platform,price,observed_at,kind,listings", ...rows, `999999,,,console,500,${new Date(Date.now() - H).toISOString()},lowest_bin,1`].join("\n");
+  const imp = await call("POST", "/v1/market/prices/import", { text });
+  assert(imp.status === 200 && imp.data.data.accepted === 8 && imp.data.data.rejected.length === 1, JSON.stringify(imp.data));
+  const intel = await call("GET", `/v1/market/cards/${id}`);
+  assert(intel.data.data.price.latest === 21_750, JSON.stringify(intel.data.data.price));
+  const other = await call("GET", `/v1/market/cards/${id}`, undefined, OTHER);
+  assert(other.status === 404 || other.data.data?.price?.latest == null, "captures stay private");
 });

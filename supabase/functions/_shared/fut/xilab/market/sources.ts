@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/market/sources.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/market/sources.ts by scripts/sync-xilab.mjs. Do not edit.
 // Price providers. Each is an adapter that can be added, disabled or replaced on its own, with its licence
 // terms as data. A provider that isn't authorised stays listed, disabled, with the reason.
 import type { PriceObservation, PriceSource, SourcePermissions } from "./types.ts";
@@ -34,6 +34,17 @@ export const DEFAULT_PRICE_SOURCES: PriceSource[] = [
     status_note: "Prices you import (CSV/JSON) or note down yourself. Private to you. XI Lab doesn't check where they came from.",
     permissions: { ...NONE, storage: true, display: true, derived_analytics: true },
     evidence: "estimate",
+  },
+  {
+    id: "web_app_capture",
+    name: "Your Web App captures (XI Lab browser helper)",
+    kind: "browser_capture",
+    status: "enabled",
+    is_demo: false,
+    status_note:
+      "Lowest Buy Now prices from transfer-market searches YOU ran in the EA Web App, read from results the Web App already loaded. The helper never searches, clicks or bids. Only the listings you viewed, not the whole market. Private to you. Third-party software on EA's site carries some account risk (Jeff accepted it on 2026-11-02).",
+    permissions: { ...NONE, storage: true, display: true, derived_analytics: true },
+    evidence: "game_data",
   },
   {
     id: "ea_fc_community_api",

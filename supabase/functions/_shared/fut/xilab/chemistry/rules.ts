@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/chemistry/rules.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/chemistry/rules.ts by scripts/sync-xilab.mjs. Do not edit.
 // Chemistry rule version as plain data. No DB or Node imports: this module runs in a Cloudflare Worker too.
 
 export type LinkType = "club" | "league" | "nation";

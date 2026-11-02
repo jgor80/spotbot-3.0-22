@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/market/demo.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/market/demo.ts by scripts/sync-xilab.mjs. Do not edit.
 // DEMO DATASET. Every card and every price here is MADE UP, generated deterministically so Market Lab can be
 // tried without a licensed price feed. It is tagged source "xilab_demo" (is_demo), and every result built on it
 // carries provenance.demo = true, which the UI shows as a DEMO banner. It is not market data and says nothing

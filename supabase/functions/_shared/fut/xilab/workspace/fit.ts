@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@53e9a20 src/workspace/fit.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@bc9b02d src/workspace/fit.ts by scripts/sync-xilab.mjs. Do not edit.
 // Tactical fit: a configurable ESTIMATE of how well a card suits what the user wants from a position.
 // Deliberately separate from chemistry, which comes from game rules. Never mix the two numbers.
 import { FACE_STATS, type FaceStat, type WorkspaceCard } from "./types.ts";
