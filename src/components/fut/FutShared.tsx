@@ -9,7 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { futApi, FutApiError, futKeys, Evidence, RuleInfo } from "@/lib/futApi";
 
-export const evidenceLabels: Record<Evidence, string> = { game_data: "Game data", estimate: "Estimate", hypothesis: "Hypothesis" };
+export const evidenceLabels: Record<Evidence, string> = { game_data: "Game data", estimate: "Estimate", hypothesis: "Hypothesis", verified: "Verified" };
 export function EvidenceBadge({ evidence }: { evidence?: Evidence }) {
   return <Badge variant="outline">{evidence ? evidenceLabels[evidence] : "Evidence not provided"}</Badge>;
 }
