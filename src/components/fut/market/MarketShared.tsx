@@ -1,0 +1,52 @@
+import { ReactNode, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useFutAvailable, FutShell, EvidenceBadge, ApiDetails, Busy, ErrorNotice } from "@/components/fut/FutShared";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import type { MarketEvidence, MarketFreshness, MarketFreshnessStatus, MarketPlatform, MarketProvenance, MarketRegime, MarketStatus } from "@/lib/futApi";
+import { dateText, marketPlatform, numberText, percentText, platformStorageKey, presentationValue, statusStyles } from "./marketPresentation";
+export { numberText, percentText, dateText, bestFitText } from "./marketPresentation";
+export function useMarketPlatform() {
+ const [platform, set] = useState<MarketPlatform>(() => { try { return marketPlatform(localStorage.getItem(platformStorageKey)); } catch { return "console"; } });
+ const setPlatform = (value: string) => { const next = marketPlatform(value); set(next); try { localStorage.setItem(platformStorageKey, next); } catch { /* Preference remains in memory when storage is disabled. */ } };
+ return { platform, setPlatform, enabled: useFutAvailable() };
+}
+const tabs = [{ path: "/fut/market", label: "Overview" }, { path: "/fut/market/radar", label: "Opportunity radar" }, { path: "/fut/market/watchlist", label: "Watchlist" }, { path: "/fut/market/import", label: "Import prices" }, { path: "/fut/market/sources", label: "Data sources" }];
+export function MarketShell({ title, platform, setPlatform, children }: { title: string; platform: MarketPlatform; setPlatform: (value: string) => void; children: ReactNode }) {
+ const location = useLocation(), navigate = useNavigate(); const active = tabs.find(tab => tab.path === location.pathname)?.path ?? "/fut/market";
+ return <FutShell title={title} actions={<Select value={platform} onValueChange={setPlatform}><SelectTrigger className="w-36" aria-label="Platform"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="console">Console</SelectItem><SelectItem value="pc">PC</SelectItem></SelectContent></Select>}>
+ <Tabs value={active} onValueChange={navigate}><div className="max-w-full overflow-x-auto"><TabsList className="h-auto w-max justify-start">{tabs.map(tab => <TabsTrigger className="whitespace-nowrap" key={tab.path} value={tab.path}>{tab.label}</TabsTrigger>)}</TabsList></div></Tabs>
+ {children}<footer className="border-t border-border pt-4 text-sm text-muted-foreground">Research and decision support, not a trading bot. Nothing here buys, sells or bids.</footer></FutShell>;
+}
+export function MarketLoading() { return <div role="status" aria-label="Loading Market Lab" className="space-y-4"><div className="grid gap-4 sm:grid-cols-3">{[0, 1, 2].map(i => <Skeleton key={i} className="h-28 w-full" />)}</div><Skeleton className="h-64 w-full" /></div>; }
+export function MutationState({ pending, error }: { pending: boolean; error: unknown }) { return <><ErrorNotice error={error} />{pending && <Busy />}</>; }
+export function Section({ title, children }: { title: string; children: ReactNode }) { return <section className="min-w-0 space-y-3"><h2 className="font-display text-xl font-semibold tracking-normal">{title}</h2>{children}</section>; }
+export function Notes({ items, title }: { items?: string[]; title?: string }) { return <div className="space-y-2">{title && <h3 className="text-sm font-semibold">{title}</h3>}{items?.length ? <ul className="list-disc space-y-1 break-words pl-5 text-sm">{items.map((text, i) => <li key={i}>{text}</li>)}</ul> : <p className="text-sm text-muted-foreground">Not provided by the API.</p>}</div>; }
+export function MarketDetails({ value }: { value: unknown }) { return <ApiDetails value={presentationValue(value)} />; }
+export function MarketEvidenceLabel({ evidence }: { evidence?: MarketEvidence }) { return <EvidenceBadge evidence={evidence} />; }
+export function Provenance({ value }: { value?: MarketProvenance }) { if (!value) return null; return <div className="space-y-3">{value.demo && <DemoWarning />}<div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><MarketEvidenceLabel evidence={value.evidence} /><span>Rules: {value.rules_version || "–"}</span><span>Engine: {value.engine_version || "–"}</span><span>As of {dateText(value.as_of)}</span></div><details className="text-sm"><summary className="cursor-pointer text-muted-foreground">Sources</summary><MarketDetails value={value.sources} /></details></div>; }
+export function DemoWarning() { return <Alert className="border-warning/30 bg-warning/10"><AlertTitle>Demo data</AlertTitle><AlertDescription>The API marked this data as demo data.</AlertDescription></Alert>; }
+export function StatusBadge({ status }: { status?: MarketStatus | string | null }) { const style = status && status in statusStyles ? statusStyles[status as MarketStatus] : null; return <Badge variant="outline" className={style?.className}>{style?.label ?? status?.replace(/_/g, " ") ?? "–"}</Badge>; }
+export function Assessment({ status, reasons, couldBeWrong }: { status?: MarketStatus; reasons?: string[]; couldBeWrong?: string[] }) { return <div className="space-y-3"><StatusBadge status={status} /><Notes title="Reasons" items={reasons} /><Notes title="Could be wrong if" items={couldBeWrong} /></div>; }
+export function Freshness({ value: raw, observedAt }: { value?: MarketFreshness | MarketFreshnessStatus | null; observedAt?: string | null }) {
+ // Lists send the freshness status as a string; Card Intelligence sends the full freshness object.
+ const value: MarketFreshness | null = typeof raw === "string" ? { status: raw } : raw ?? null;
+ const observed = value?.latest_observed_at ?? observedAt;
+ const age = value?.age_hours ?? (observed && !Number.isNaN(new Date(observed).getTime()) ? Math.max(0, (Date.now() - new Date(observed).getTime()) / 3600000) : null);
+ return <div className="space-y-1 text-xs text-muted-foreground">{value?.status === "missing" ? <p>There is no price yet.</p> : <p>Price age: {numberText(age)}{age != null && " hours"} {value?.status === "stale" && <Badge variant="outline" className="border-warning/30 text-warning">Stale</Badge>}</p>}{observed && <p>{dateText(observed)}</p>}{value?.message && <p>{value.message}</p>}</div>;
+}
+export function MarketPrice({ value, freshness, evidence, observedAt }: { value?: number | null; freshness?: MarketFreshness | MarketFreshnessStatus; evidence?: MarketEvidence; observedAt?: string | null }) { return <div className="space-y-1"><p className="tabular-nums">{numberText(value)}{value != null && " coins"}</p><MarketEvidenceLabel evidence={evidence} /><Freshness value={freshness} observedAt={observedAt} /></div>; }
+export function Delta({ value, unit = "%" }: { value?: number | null; unit?: string }) { return <span className={`tabular-nums ${value == null || value === 0 ? "text-muted-foreground" : value > 0 ? "text-success" : "text-destructive"}`}>{percentText(value, unit)}</span>; }
+export function DataTable({ headers, rows, empty = "No data available yet." }: { headers: string[]; rows: ReactNode[][]; empty?: string }) { return <Table><TableHeader><TableRow>{headers.map(header => <TableHead key={header} className="whitespace-nowrap">{header}</TableHead>)}</TableRow></TableHeader><TableBody>{rows.length ? rows.map((row, i) => <TableRow key={i}>{row.map((cell, j) => <TableCell className="align-top" key={j}>{cell}</TableCell>)}</TableRow>) : <TableRow><TableCell colSpan={headers.length} className="py-8 text-center text-muted-foreground">{empty}</TableCell></TableRow>}</TableBody></Table>; }
+export function CardLink({ id, name }: { id: string; name: string }) { return <Link className="font-medium text-primary underline-offset-4 hover:underline" to={`/fut/market/card/${encodeURIComponent(id)}`}>{name}</Link>; }
+export function HistoryChart({ data, field, label }: { data: { t: string; value?: number | null; price?: number | null }[]; field: "value" | "price"; label: string }) { if (!data.some(item => item[field] != null)) return <p className="py-10 text-center text-muted-foreground">No history available yet.</p>; return <ChartContainer config={{ [field]: { label, color: "hsl(var(--primary))" } }} className="aspect-auto h-64 w-full"><LineChart accessibilityLayer data={data} margin={{ left: 0, right: 12, top: 12, bottom: 0 }}><CartesianGrid vertical={false} /><XAxis dataKey="t" tickFormatter={t => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric" })} minTickGap={36} tickLine={false} /><YAxis width={70} tickFormatter={numberText} tickLine={false} /><ChartTooltip content={<ChartTooltipContent labelFormatter={(_label, payload) => dateText(payload[0]?.payload?.t)} formatter={value => <span>{numberText(Number(value))}</span>} />} /><Line type="linear" dataKey={field} stroke={`var(--color-${field})`} strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} /></LineChart></ChartContainer>; }
+export function Regime({ value }: { value?: MarketRegime }) { if (!value) return <MarketDetails value={value} />; return <div className="space-y-3"><Badge variant="outline">{value.primary?.replace(/_/g, " ") || "–"}</Badge><MarketDetails value={value.flags} /><Notes title="Observations" items={value.observations} /><MarketDetails value={value.not_evaluable} /><Notes title="Strategy notes" items={value.strategy_notes} /></div>; }
+export function ImportEmpty() { return <div className="space-y-3 border-y border-border py-10 text-center"><h2 className="font-display text-xl">No market prices yet</h2><p className="text-sm text-muted-foreground">Import your prices or a CSV from the XI Lab Price Capture extension.</p><Button asChild variant="outline"><Link to="/fut/market/import">Import prices</Link></Button></div>; }
+
