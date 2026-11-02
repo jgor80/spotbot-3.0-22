@@ -217,7 +217,7 @@ Deno.test("market: fc27-market pull imports third-party prices for your synced c
   assert(again.import.inserted === 0, JSON.stringify(again));
 });
 
-Deno.test("market: community pool is opt-in, give-to-get, pooled by median, and leaves when you stop sharing", async () => {
+Deno.test("market: community pool: sharing is opt-in, any signed-in user can pull, pooled by median, and leaves when you stop sharing", async () => {
   const { db, call } = setup();
   const perm = { commercial_use: false, storage: true, retention_days: 30, display: true, derived_analytics: true, model_training: false, redistribution: false, attribution: "XI Lab community" };
   (db.tables.market_price_sources as unknown[]).push({ id: "community_pool", name: "XI Lab community", kind: "browser_capture", status: "enabled", is_demo: false, status_note: "Pooled.", permissions: perm, evidence: "estimate" });
@@ -229,13 +229,11 @@ Deno.test("market: community pool is opt-in, give-to-get, pooled by median, and 
   const at = (mins: number) => new Date(hour.getTime() + mins * 60_000).toISOString();
   const capture = (rows: string[]) => ["ea_item_id,asset_id,rating,platform,price,observed_at,kind,listings", ...rows].join("\n");
 
-  // Not sharing: importing a capture adds nothing to the pool, and pulling is refused.
+  // Not sharing: importing a capture adds nothing to the pool.
   await club(ME);
   let r = await call("POST", "/v1/market/prices/import", { text: capture([`101,101,85,console,10000,${at(5)},lowest_bin,3`]) });
   assert(r.status === 200 && r.data.data.shared_with_community === 0, JSON.stringify(r.data));
   assert(!(db.tables.market_community_observations ?? []).length, "nothing pooled without opting in");
-  r = await call("POST", "/v1/market/import/community");
-  assert(r.status === 403, JSON.stringify(r.data));
 
   // Two others share; one has a typo price that is dropped as an outlier. Lowest price per hour per person is kept.
   for (const u of [OTHER, THIRD]) {
@@ -248,12 +246,11 @@ Deno.test("market: community pool is opt-in, give-to-get, pooled by median, and 
   const pool = db.tables.market_community_observations as { contributor_user_id: string; price: number; platform: string }[];
   assert(pool.length === 3 && pool.find((x) => x.contributor_user_id === OTHER && x.platform === "console")!.price === 10200, JSON.stringify(pool));
 
-  // I opt in and pull: one console hour (median of 10200 and 10600) and one PC hour.
-  await call("POST", "/v1/market/sharing", { sharing: true });
+  // I don't share, but can still pull: one console hour (median of 10200 and 10600) and one PC hour.
   r = await call("POST", "/v1/market/import/community");
   assert(r.status === 200, JSON.stringify(r.data));
   const d = r.data.data;
-  assert(d.cards_with_community_prices === 1 && d.observations === 2 && d.import.inserted === 2 && d.sharers === 3 && d.max_contributors === 2, JSON.stringify(d));
+  assert(d.cards_with_community_prices === 1 && d.observations === 2 && d.import.inserted === 2 && d.sharers === 2 && d.max_contributors === 2, JSON.stringify(d));
   const mine = (db.tables.market_price_observations as { owner_user_id: string; source_id: string; price: number; platform: string }[]).filter((x) => x.owner_user_id === ME && x.source_id === "community_pool");
   assert(mine.some((x) => x.platform === "console" && x.price === 10400) && mine.some((x) => x.platform === "pc" && x.price === 9000), JSON.stringify(mine));
 
