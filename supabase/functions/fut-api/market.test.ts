@@ -259,3 +259,37 @@ Deno.test("market: community pool: sharing is opt-in, any signed-in user can pul
   assert(off.sharing === false && off.deleted === 2 && off.your_contributions === 0, JSON.stringify(off));
   assert((db.tables.market_community_observations as { contributor_user_id: string }[]).every((x) => x.contributor_user_id !== OTHER), "contributions removed");
 });
+
+Deno.test("helper key: shown once, can only upload prices and club, and stops working when turned off", async () => {
+  const { db, call } = setup();
+  const viaKey = async (key: string, method: string, path: string, body?: unknown) => {
+    const res = await handle(new Request(`http://local/functions/v1/fut-api${path}`, { method, headers: { authorization: `Bearer ${key}` }, body: body === undefined ? undefined : JSON.stringify(body) }), { db, userFor: () => Promise.resolve(null), env: (k) => (k === "FUT_ENABLED" ? "true" : undefined) });
+    return { status: res.status, data: await res.json() };
+  };
+  assert((await call("GET", "/v1/helper")).data.data.connected === false, "not connected yet");
+  const made = (await call("POST", "/v1/helper/connect")).data.data;
+  assert(made.key.startsWith("xlh_") && made.connected && made.key_hint === made.key.slice(-4), JSON.stringify(made));
+  assert(!JSON.stringify(db.tables.helper_keys).includes(made.key), "only the hash is stored");
+
+  // Club upload, then a capture upload that matches the synced card.
+  const club = await viaKey(made.key, "POST", "/v1/helper/club", { format: "xilab-club-capture", version: 1, verified: false, captured_at: "x", names: {}, items: [
+    { item_id: 1, ea_item_id: 101, asset_id: 101, kind: "player", rating: 85, position: "CB", positions: ["CB"], team_id: 1, league_id: 2, nation_id: 3, rare_flag: 0, untradeable: false, loan: false, stats: null, skill_moves: null, weak_foot: null, seen_in: "club" },
+  ] });
+  assert(club.status === 200, JSON.stringify(club.data));
+  const text = ["ea_item_id,asset_id,rating,platform,price,observed_at,kind,listings", `101,101,85,console,10000,${new Date(Date.now() - H).toISOString()},lowest_bin,3`].join("\n");
+  const up = await viaKey(made.key, "POST", "/v1/helper/prices", { text });
+  assert(up.status === 200 && up.data.data.inserted === 1, JSON.stringify(up.data));
+  assert((db.tables.market_price_observations as { owner_user_id: string }[]).every((r) => r.owner_user_id === ME), "stored as the key's owner");
+
+  // Nothing else is reachable with the key.
+  for (const [m, p] of [["GET", "/v1/cards"], ["GET", "/v1/helper"], ["POST", "/v1/helper/connect"], ["GET", "/v1/market/overview"], ["POST", "/v1/market/prices/import"]]) {
+    assert((await viaKey(made.key, m!, p!)).status === 403, `${m} ${p} must be refused`);
+  }
+  assert((await viaKey("xlh_wrongwrongwrongwrongwrongwrong", "POST", "/v1/helper/prices", { text })).status === 401, "unknown key");
+
+  // A new key replaces the old one; turning it off stops it.
+  const second = (await call("POST", "/v1/helper/connect")).data.data;
+  assert((await viaKey(made.key, "POST", "/v1/helper/prices", { text })).status === 401, "old key off");
+  assert((await call("DELETE", "/v1/helper")).data.data.connected === false, "turned off");
+  assert((await viaKey(second.key, "POST", "/v1/helper/prices", { text })).status === 401, "turned-off key refused");
+});
