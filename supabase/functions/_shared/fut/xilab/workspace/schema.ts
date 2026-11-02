@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@439d3f8 src/workspace/schema.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/workspace/schema.ts by scripts/sync-xilab.mjs. Do not edit.
 // Validation for squads arriving from outside (HTTP API, MCP tools, pasted JSON).
 import { z } from "npm:zod@3";
 

@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@439d3f8 src/chemistry/diff.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/chemistry/diff.ts by scripts/sync-xilab.mjs. Do not edit.
 // "Who gains or loses chemistry, and why" when a squad changes.
 import { computeSquadChemistry } from "./engine.ts";
 import { LINK_TYPES, type ChemistryRules } from "./rules.ts";

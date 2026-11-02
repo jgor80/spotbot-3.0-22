@@ -167,6 +167,8 @@ export interface Card {
   tradeable: boolean | null;
   purchase_price: number | null;
   price: number | null;
+  /** EA's item id when the card's source key is one (cards from EA's feed). Lets Web App price captures find it. */
+  ea_item_id: number | null;
   updated_at: string;
 }
 
@@ -212,6 +214,7 @@ async function hydrate(db: FutDb, userId: string, rows: Row[]): Promise<Card[]> 
       tradeable: (owned?.tradeable as boolean) ?? null,
       purchase_price: (owned?.purchase_price as number) ?? null,
       price: (r.price as number) ?? null,
+      ea_item_id: /^\d{1,10}$/.test(String(r.source_card_key ?? "")) ? Number(r.source_card_key) : null,
       updated_at: r.updated_at as string,
     };
   });

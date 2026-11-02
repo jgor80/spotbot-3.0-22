@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@439d3f8 src/workspace/default-rules.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/workspace/default-rules.ts by scripts/sync-xilab.mjs. Do not edit.
 // A copy of the active seeded rule version for places with no database (the browser workspace, tests).
 // tests/workspace.test.ts fails if this drifts from the active rule version in migrations/.
 import type { ChemistryRules } from "../chemistry/index.ts";

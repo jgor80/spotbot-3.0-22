@@ -1,4 +1,4 @@
-// Copies XI Lab's engine (jgor80/11-lab: src/chemistry, src/workspace and, once it exists, src/market) into
+// Copies XI Lab's engine (jgor80/11-lab: src/chemistry, src/workspace, src/market, src/intelligence, src/shared) into
 // supabase/functions/_shared/fut/xilab/, so the fut-api function and the MCP FUT tools run the exact code
 // XI Lab tests. Never edit the copies by hand: change XI Lab, then re-run
 //   node scripts/sync-xilab.mjs ../11-lab
@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join, resolve } from "node:path";
 
 const repo = resolve(process.argv[2] || "../11-lab");
-const DIRS = ["chemistry", "workspace", "market"];
+const DIRS = ["chemistry", "workspace", "market", "intelligence", "shared"];
 const OUT = "supabase/functions/_shared/fut/xilab";
 if (!existsSync(join(repo, "src/chemistry/index.ts"))) {
   console.error(`No XI Lab engine at ${repo}/src/chemistry. Pass the path to an 11-lab checkout.`);

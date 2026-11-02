@@ -1,6 +1,6 @@
 // In-memory stand-in for the supabase-js query builder on the `fut` schema, for the XI Lab tests only.
 // Supports the calls the FUT services make: select (with count/head), insert(...).select().single(),
-// update, delete, eq, in, order, limit, maybeSingle, single.
+// update, delete, eq, in, is, gte, lte, order, limit, range, maybeSingle, single.
 type Row = Record<string, unknown>;
 
 export function futMemoryDb(tables: Record<string, Row[]> = {}) {
@@ -17,6 +17,7 @@ export function futMemoryDb(tables: Record<string, Row[]> = {}) {
       let head = false;
       let order: [string, boolean] | null = null;
       let lim = Infinity;
+      let off = 0;
       const match = () => t(table).filter((r) => filters.every((f) => f(r)));
       const result = () => {
         if (mode === "update") {
@@ -34,7 +35,7 @@ export function futMemoryDb(tables: Record<string, Row[]> = {}) {
           const [c, asc] = order;
           rows = [...rows].sort((a, b) => ((a[c] as number) > (b[c] as number) ? 1 : (a[c] as number) < (b[c] as number) ? -1 : 0) * (asc ? 1 : -1));
         }
-        rows = rows.slice(0, lim);
+        rows = rows.slice(off, off + lim);
         return head ? { data: null, count: rows.length, error: null } : { data: rows.map((r) => ({ ...r })), count: rows.length, error: null };
       };
       const q = {
@@ -50,6 +51,11 @@ export function futMemoryDb(tables: Record<string, Row[]> = {}) {
         delete: () => { mode = "delete"; return q; },
         eq: (c: string, v: unknown) => { filters.push((r) => (r[c] ?? null) === v); return q; },
         in: (c: string, v: unknown[]) => { filters.push((r) => v.includes(r[c])); return q; },
+        is: (c: string, v: null) => { filters.push((r) => (r[c] ?? null) === v); return q; },
+        // ISO timestamps and numbers both compare correctly as-is.
+        gte: (c: string, v: string | number) => { filters.push((r) => r[c] !== null && r[c] !== undefined && (r[c] as string | number) >= v); return q; },
+        lte: (c: string, v: string | number) => { filters.push((r) => r[c] !== null && r[c] !== undefined && (r[c] as string | number) <= v); return q; },
+        range: (a: number, b: number) => { off = a; lim = b - a + 1; return q; },
         order: (c: string, o?: { ascending?: boolean }) => { order = [c, o?.ascending !== false]; return q; },
         limit: (n: number) => { lim = n; return q; },
         maybeSingle: () => { const r = result(); return Promise.resolve({ data: (r.data as Row[] | null)?.[0] ?? null, error: null }); },
