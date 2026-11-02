@@ -5558,7 +5558,8 @@ async function importClub(db, userId, body2) {
       skip("no position");
       continue;
     }
-    const stats = Array.isArray(it.stats) && it.stats.length === 6 && it.stats.every((s) => inRange(s, 1, 99) !== null) ? it.stats : null;
+    const stats = positions[0] !== "GK" && Array.isArray(it.stats) && it.stats.length === 6 && it.stats.every((s) => inRange(s, 1, 99) !== null) ? it.stats : null;
+    const sm = inRange(it.skill_moves, 0, 4);
     const p = {
       ea_item_id,
       asset_id: posInt(it.asset_id),
@@ -5570,6 +5571,7 @@ async function importClub(db, userId, body2) {
       rare_flag: inRange(it.rare_flag, 0, 255),
       untradeable: it.untradeable === true,
       stats,
+      skill_moves: sm === null ? null : sm + 1,
       weak_foot: inRange(it.weak_foot, 1, 5)
     };
     const had = players.get(ea_item_id);
@@ -5621,6 +5623,7 @@ async function importClub(db, userId, body2) {
       is_icon: isIcon,
       // Heroes can't be told apart reliably from the capture: keep whatever the user set.
       is_hero: had ? had.is_hero === true : false,
+      skill_moves: p.skill_moves,
       weak_foot: p.weak_foot,
       notes: had?.notes ?? `Synced from your EA Web App club on ${day} (format not yet verified on FC 27).`,
       source_updated_at: now2,
@@ -5650,7 +5653,7 @@ async function importClub(db, userId, body2) {
     skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })),
     over_limit: over,
     verified: false,
-    note: "Read from your own club file, not checked by EA. Cards missing from this file are kept (you may not have paged through everything). Heroes aren't detected: mark them on the card. Skill moves aren't imported yet."
+    note: "Read from your own club file, not checked by EA. Cards missing from this file are kept (you may not have paged through everything). Heroes aren't detected: mark them on the card. Goalkeeper stats aren't imported (EA sends keeper stats, not outfield ones)."
   };
 }
 
