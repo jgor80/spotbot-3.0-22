@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@bc9b02d src/market/types.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/market/types.ts by scripts/sync-xilab.mjs. Do not edit.
 // Market Lab types. Plain JSON, no DB or Node imports: bundled for Workers and Deno (Gaffer Bot fut-api) too.
 import type { Evidence } from "../chemistry/index.ts";
 import type { WorkspaceCard } from "../workspace/index.ts";

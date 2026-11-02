@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@bc9b02d src/shared/csv.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/shared/csv.ts by scripts/sync-xilab.mjs. Do not edit.
 // Runtime-neutral helpers shared by the importers and Market Lab (no Node imports: bundled for Workers/Deno).
 // Minimal RFC 4180 CSV parser (quoted fields, escaped quotes, CRLF). Returns rows as header-keyed objects.
 export function parseCsv(text: string): Record<string, string>[] {

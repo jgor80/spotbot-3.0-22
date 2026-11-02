@@ -4,8 +4,8 @@
 // Baskets are built from catalogue cards only, so a user's private cards never enter a shared index.
 import {
   createMarketService, DEFAULT_BASKETS,
-  type BasketMembership, type CardCategory, type MarketCard, type MarketCardSource, type MarketRules, type MembershipStore,
-  type Platform, type PriceObservation, type PriceQuery, type PriceSource, type PriceStore, type WatchItem, type WatchlistStore,
+  type BasketMembership, type CaptureHoldStore, type CardCategory, type MarketCard, type MarketCardSource, type MarketRules, type MembershipStore,
+  type Platform, type PriceObservation, type PriceQuery, type PriceSource, type PriceStore, type UnmatchedCapture, type WatchItem, type WatchlistStore,
 } from "./xilab/market/index.ts";
 import { activeRules, FutDbError, FutError, isUuid, searchMyCards, toWorkspaceCard, type Card, type FutDb } from "./service.ts";
 
@@ -17,6 +17,7 @@ const iso = (v: unknown) => (v === null || v === undefined ? null : new Date(Str
 const PAGE = 1000;
 export const MAX_IMPORT_ROWS = 5000;
 export const MAX_PRICE_ROWS_PER_USER = 50_000;
+export const MAX_HELD_CAPTURES_PER_USER = 20_000;
 
 /** Fetch every page of a query (PostgREST caps a response at ~1000 rows). */
 async function allPages(make: () => { range: (a: number, b: number) => PromiseLike<{ data: Row[] | null; error: { message?: string } | null }> }): Promise<Row[]> {
@@ -125,6 +126,42 @@ export class PgWatchlistStore implements WatchlistStore {
   }
 }
 
+export class PgCaptureHoldStore implements CaptureHoldStore {
+  constructor(private db: FutDb) {}
+  async hold(owner: string, rows: UnmatchedCapture[]) {
+    const have = new Set((await this.list(owner)).map(holdKey));
+    const fresh = [...new Map(rows.filter((r) => !have.has(holdKey(r))).map((r) => [holdKey(r), r])).values()];
+    if (have.size + fresh.length > MAX_HELD_CAPTURES_PER_USER) throw new FutError(`You can keep up to ${MAX_HELD_CAPTURES_PER_USER.toLocaleString("en-US")} captured prices for cards you haven't added yet. Add those cards or link them first.`);
+    for (let i = 0; i < fresh.length; i += 500)
+      fail((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r) => ({
+        user_id: owner, ea_item_id: r.ea_item_id, asset_id: r.asset_id, rating: r.rating, platform: r.observation.platform,
+        observed_at: r.observation.observed_at, details: r.details ?? null, observation: r.observation,
+      })))).error);
+    return { held: fresh.length, skipped: rows.length - fresh.length };
+  }
+  async list(owner: string): Promise<UnmatchedCapture[]> {
+    const out: UnmatchedCapture[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await this.db.from("market_capture_holds").select("*").eq("user_id", owner).order("observed_at", { ascending: true }).range(from, from + PAGE - 1);
+      fail(error);
+      const rows = (data ?? []) as Row[];
+      for (const r of rows)
+        out.push({
+          ea_item_id: Number(r.ea_item_id), asset_id: r.asset_id === null || r.asset_id === undefined ? null : Number(r.asset_id),
+          rating: r.rating === null || r.rating === undefined ? null : Number(r.rating),
+          ...(r.details ? { details: r.details as UnmatchedCapture["details"] } : {}),
+          observation: r.observation as PriceObservation,
+        });
+      if (rows.length < PAGE) return out;
+    }
+  }
+  async release(owner: string, rows: UnmatchedCapture[]) {
+    for (const r of rows)
+      fail((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r.ea_item_id).eq("platform", r.observation.platform).eq("observed_at", r.observation.observed_at)).error);
+  }
+}
+const holdKey = (h: UnmatchedCapture) => `${h.ea_item_id}|${h.observation.platform}|${new Date(h.observation.observed_at).toISOString()}`;
+
 const categoryOf = (c: Card): CardCategory => {
   if (c.is_icon) return "icon";
   if (c.is_hero) return "hero";
@@ -175,7 +212,7 @@ export async function marketFor(db: FutDb, now?: () => string) {
   const [rules, sources, chemistry] = await Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
   return createMarketService({
     prices: new PgPriceStore(db), memberships: new PgMembershipStore(db), watchlists: new PgWatchlistStore(db),
-    cards: new PgMarketCardSource(db), sources, rules, chemistry, ...(now ? { now } : {}),
+    cards: new PgMarketCardSource(db), holds: new PgCaptureHoldStore(db), sources, rules, chemistry, ...(now ? { now } : {}),
   });
 }
 

@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@bc9b02d src/market/sources.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/market/sources.ts by scripts/sync-xilab.mjs. Do not edit.
 // Price providers. Each is an adapter that can be added, disabled or replaced on its own, with its licence
 // terms as data. A provider that isn't authorised stays listed, disabled, with the reason.
 import type { PriceObservation, PriceSource, SourcePermissions } from "./types.ts";

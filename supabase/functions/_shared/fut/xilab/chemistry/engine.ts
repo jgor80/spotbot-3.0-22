@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@bc9b02d src/chemistry/engine.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/chemistry/engine.ts by scripts/sync-xilab.mjs. Do not edit.
 // Deterministic chemistry engine. Pure: same input + same rule version = same output.
 // Every number comes from the rule version; nothing about thresholds or bonuses is hardcoded here.
 import { LINK_TYPES, mod, nextThreshold, pointsFor, validateRules, type ChemistryRules, type LinkType } from "./rules.ts";

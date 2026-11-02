@@ -143,9 +143,40 @@ Deno.test("market: a Web App capture file is matched on EA item ids and stored a
   const rows = Array.from({ length: 8 }, (_, i) => `239085,239085,88,console,${20_000 + i * 250},${new Date(Date.now() - (8 - i) * H).toISOString()},lowest_bin,4`);
   const text = ["ea_item_id,asset_id,rating,platform,price,observed_at,kind,listings", ...rows, `999999,,,console,500,${new Date(Date.now() - H).toISOString()},lowest_bin,1`].join("\n");
   const imp = await call("POST", "/v1/market/prices/import", { text });
-  assert(imp.status === 200 && imp.data.data.accepted === 8 && imp.data.data.rejected.length === 1, JSON.stringify(imp.data));
+  assert(imp.status === 200 && imp.data.data.accepted === 8 && imp.data.data.held === 1 && imp.data.data.rejected.length === 0, JSON.stringify(imp.data));
   const intel = await call("GET", `/v1/market/cards/${id}`);
   assert(intel.data.data.price.latest === 21_750, JSON.stringify(intel.data.data.price));
   const other = await call("GET", `/v1/market/cards/${id}`, undefined, OTHER);
   assert(other.status === 404 || other.data.data?.price?.latest == null, "captures stay private");
+});
+
+Deno.test("market: captures for cards you don't have yet are held, listed, and linked later", async () => {
+  const { call, db } = setup();
+  const HDR = "ea_item_id,asset_id,rating,platform,price,observed_at,kind,listings,rare_flag,team_id,league_id,nation_id,position";
+  const rows = Array.from({ length: 8 }, (_, i) => `50570001,570001,91,console,${90_000 + i * 1_000},${new Date(Date.now() - (8 - i) * H).toISOString()},lowest_bin,3,3,10,13,14,ST`);
+  const imp = await call("POST", "/v1/market/prices/import", { text: [HDR, ...rows].join("\n") });
+  assert(imp.status === 200 && imp.data.data.held === 8 && imp.data.data.accepted === 0, JSON.stringify(imp.data));
+  const held = await call("GET", "/v1/market/held");
+  assert(held.data.data.items.length === 1 && held.data.data.items[0].special_version === true && held.data.data.items[0].latest_price === 97_000, JSON.stringify(held.data));
+  assert((await call("GET", "/v1/market/held", undefined, OTHER)).data.data.items.length === 0, "held captures are private");
+
+  // Linked automatically once a card carries that EA item id.
+  const c = await call("POST", "/v1/cards", { player_name: "Promo Striker", overall: 91, positions: ["ST"], version: "TOTW", evidence: "game_data" });
+  const id = c.data.data.id as string;
+  await db.from("player_cards").update({ source_card_key: "50570001" }).eq("id", id);
+  const rl = await call("POST", "/v1/market/held/relink", {});
+  assert(rl.status === 200 && rl.data.data.linked === 8 && rl.data.data.still_held === 0, JSON.stringify(rl.data));
+  const intel = await call("GET", `/v1/market/cards/${id}`);
+  assert(intel.data.data.price.latest === 97_000, JSON.stringify(intel.data.data.price));
+
+  // Or by hand, only to a card with the same rating.
+  const more = rows.map((r) => r.replace("50570001,570001", "50570002,570002"));
+  await call("POST", "/v1/market/prices/import", { text: [HDR, ...more].join("\n") });
+  const low = await call("POST", "/v1/cards", { player_name: "Wrong Card", overall: 85, positions: ["ST"], evidence: "game_data" });
+  const bad = await call("POST", "/v1/market/held/link", { ea_item_id: 50570002, card_id: low.data.data.id });
+  assert(bad.status === 400 && /rated 91/.test(bad.data.error ?? JSON.stringify(bad.data)), JSON.stringify(bad.data));
+  const hand = await call("POST", "/v1/cards", { player_name: "Other Promo", overall: 91, positions: ["ST"], evidence: "game_data" });
+  const ok = await call("POST", "/v1/market/held/link", { ea_item_id: 50570002, card_id: hand.data.data.id });
+  assert(ok.status === 200 && ok.data.data.linked === 8, JSON.stringify(ok.data));
+  assert((await call("POST", "/v1/market/held/link", { ea_item_id: "x", card_id: hand.data.data.id })).status === 400, "bad ea id");
 });

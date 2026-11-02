@@ -39,6 +39,9 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | `POST /market/compare-squad` | A card against a saved squad (`squad` id or object), through the chemistry engine; locks respected |
 | `GET/POST /market/watchlist`, `DELETE /market/watchlist/:card_id?platform=` | The user's watchlist |
 | `POST /market/prices/import` | `{ text }`: CSV (`card_id,platform,price,observed_at,kind,event_at`), a Web App capture CSV (`ea_item_id,...`) or JSON; private to the user; up to 5,000 rows |
+| `GET /market/held` | Captured prices for EA items not in your cards yet (promos, Icons, Heroes), one entry per item |
+| `POST /market/held/relink` | Link held captures to cards that now carry that EA item id (also runs on every import) |
+| `POST /market/held/link` | `{ ea_item_id, card_id }`: link one item's held captures to your card with the same rating |
 | `GET /market/sources` | Price providers, their status and what their terms allow |
 
 ## MCP tools
@@ -65,7 +68,8 @@ no `squad_id` they use the squad the player edited last.
   agreement), so Market Lab's only prices are each user's own, private to them: CSV/JSON imports, and capture files
   from the XI Lab Price Capture browser extension (11-lab `extension/`), which records only the transfer-market
   results the EA Web App already loaded when the user searched. Capture rows are stored under `web_app_capture`
-  and matched to cards by EA item id (`player_cards.source_card_key` when it's EA's numeric id). Shared baskets are built
+  and matched to cards by EA item id (`player_cards.source_card_key` when it's EA's numeric id). Captures for items
+  the user has no card for yet are held privately in `fut.market_capture_holds` and linked later. Shared baskets are built
   from catalogue cards only, so until a licensed catalogue and feed exist the market indexes report insufficient
   data and the per-card analysis runs on the user's own history. Nothing on the server buys, sells, bids or uses an EA login, and the extension never searches, clicks or bids.
 - **One switch.** `FUT_ENABLED=true` turns on the API and the MCP tools together; anything else hides both.

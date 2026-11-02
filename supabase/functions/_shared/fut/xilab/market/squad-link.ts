@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@bc9b02d src/market/squad-link.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/market/squad-link.ts by scripts/sync-xilab.mjs. Do not edit.
 // "Compare in My Squad": a market card against the user's saved squad, through the Squad Builder's own engines.
 // Locked players are never replaced, owned cards cost nothing, and chemistry comes from the chemistry engine.
 import type { ChemistryRules } from "../chemistry/index.ts";

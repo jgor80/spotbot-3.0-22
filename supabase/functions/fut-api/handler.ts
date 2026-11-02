@@ -255,6 +255,14 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         const r = await runWorkspace(() => mk.importPriceHistory(userId, b.text as string));
         return json({ data: { ...r, rejected: r.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) } });
       }
+      if (route === "/market/held" && m === "GET") return json({ data: await runWorkspace(() => mk.getHeldCaptures(userId)) });
+      if (route === "/market/held/relink" && m === "POST") return json({ data: await runWorkspace(() => mk.relinkHeldCaptures(userId)) });
+      if (route === "/market/held/link" && m === "POST") {
+        const b = obj(await body(req));
+        const ea = Number(b.ea_item_id);
+        if (!Number.isInteger(ea) || ea <= 0) throw new FutError("ea_item_id must be EA's item id (a whole number).");
+        return json({ data: await runWorkspace(() => mk.linkHeldCapture(userId, ea, marketCardId(b.card_id))) });
+      }
       return err(404, "No such Market Lab route.");
     }
     return err(404, "No such XI Lab route.");

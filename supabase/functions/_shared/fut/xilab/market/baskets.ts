@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@bc9b02d src/market/baskets.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/market/baskets.ts by scripts/sync-xilab.mjs. Do not edit.
 // Market baskets and benchmark indexes.
 // Rules are data (shown to the user), membership is point-in-time (a card added today never changes yesterday's
 // index), and the index is a chained, equal-weighted geometric mean of price relatives, so a newly popular card

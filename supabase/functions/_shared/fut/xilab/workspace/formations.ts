@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@bc9b02d src/workspace/formations.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/workspace/formations.ts by scripts/sync-xilab.mjs. Do not edit.
 // Formation templates: slot names and the position each slot asks for, ordered back to front.
 export interface FormationSlot {
   slot: string;

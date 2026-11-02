@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@bc9b02d src/market/series.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/market/series.ts by scripts/sync-xilab.mjs. Do not edit.
 // Point-in-time price series maths. Everything takes an `asOf` and only uses rows XI Lab had RECEIVED by then,
 // so the same functions serve the live screen and a leak-free backtest.
 import { DEFAULT_MARKET_RULES, type MarketRules } from "./rules.ts";

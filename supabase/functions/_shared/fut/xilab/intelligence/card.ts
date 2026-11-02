@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@bc9b02d src/intelligence/card.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/intelligence/card.ts by scripts/sync-xilab.mjs. Do not edit.
 // Card Intelligence: the ONE place card usefulness is scored. The Squad Builder and Market Lab both call this,
 // so there are never two competing scoring systems. Stage A covers gameplay utility from what we hold today
 // (positions and face-stat fit estimates). SBC, Evolution and scarcity utility are separate models that arrive

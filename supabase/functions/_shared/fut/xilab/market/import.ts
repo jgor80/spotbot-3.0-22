@@ -1,8 +1,9 @@
-// GENERATED from jgor80/11-lab@bc9b02d src/market/import.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/market/import.ts by scripts/sync-xilab.mjs. Do not edit.
 // Price-history import: CSV or JSON in, validated point-in-time observations out, every rejected row with a reason.
 import { parseCsv } from "../shared/csv.ts";
 import { DEFAULT_MARKET_RULES, type MarketRules } from "./rules.ts";
 import { assertUsable } from "./sources.ts";
+import { captureDetailsFromRow, type CaptureDetails } from "./capture.ts";
 import { PLATFORMS, type Platform, type PriceObservation, type PriceSource } from "./types.ts";
 
 export interface ImportOptions {
@@ -17,8 +18,20 @@ export interface ImportOptions {
   resolveEaItem?: (ea_item_id: number, asset_id: number | null, rating: number | null) => string | null;
 }
 
+/** A valid captured price whose EA item isn't in the card database yet. Kept (when a hold store exists) and linked later. */
+export interface UnmatchedCapture {
+  ea_item_id: number;
+  asset_id: number | null;
+  rating: number | null;
+  details?: CaptureDetails;
+  /** The observation, complete except for card_id (""), ready to store once the card exists. */
+  observation: PriceObservation;
+}
+
 export interface ImportResult {
   rows: PriceObservation[];
+  /** Captured rows that passed every check except matching a card. */
+  unmatched: UnmatchedCapture[];
   rejected: { line: number; reason: string; raw: Record<string, unknown> }[];
   duplicates: number;
 }
@@ -44,6 +57,7 @@ export function validatePriceRows(raw: Record<string, unknown>[], opts: ImportOp
   const received_at = opts.received_at ?? new Date().toISOString();
   const recv = Date.parse(received_at);
   const rows: PriceObservation[] = [];
+  const unmatched: UnmatchedCapture[] = [];
   const rejected: ImportResult["rejected"] = [];
   const seen = new Set<string>();
   let duplicates = 0;
@@ -52,13 +66,14 @@ export function validatePriceRows(raw: Record<string, unknown>[], opts: ImportOp
     const reject = (reason: string) => rejected.push({ line, reason, raw: r });
     let card_id = String(r.card_id ?? "").trim();
     const eaId = Number(r.ea_item_id);
+    const num = (v: unknown) => (v === undefined || v === "" || v === null || !Number.isInteger(Number(v)) ? null : Number(v));
+    let pendingEa: number | null = null;
     if (!card_id && Number.isInteger(eaId) && eaId > 0) {
-      const num = (v: unknown) => (v === undefined || v === "" || v === null || !Number.isInteger(Number(v)) ? null : Number(v));
       card_id = opts.resolveEaItem?.(eaId, num(r.asset_id), num(r.rating)) ?? "";
-      if (!card_id) return reject(`EA item ${eaId}${r.rating ? ` (rated ${r.rating})` : ""} isn't in your card database (promos, Icons and Heroes need adding first)`);
+      if (!card_id) pendingEa = eaId;
     }
-    if (!card_id) return reject("card_id (or ea_item_id) is empty");
-    if (!opts.knownCardIds.has(card_id)) return reject(`Unknown card_id "${card_id}" (import the card first; prices never create cards)`);
+    if (!card_id && pendingEa === null) return reject("card_id (or ea_item_id) is empty");
+    if (pendingEa === null && !opts.knownCardIds.has(card_id)) return reject(`Unknown card_id "${card_id}" (import the card first; prices never create cards)`);
     const platform = PLATFORM_ALIASES[String(r.platform ?? "").trim().toLowerCase()];
     if (!platform || !PLATFORMS.includes(platform)) return reject(`platform must be console or pc, got "${r.platform}"`);
     const price = Number(r.price);
@@ -72,7 +87,7 @@ export function validatePriceRows(raw: Record<string, unknown>[], opts: ImportOp
     const ev = String(r.event_at ?? "").trim();
     const event_at = ev ? Date.parse(ev) : null;
     if (event_at !== null && !Number.isFinite(event_at)) return reject("event_at is not an ISO date-time");
-    const key = `${card_id}|${platform}|${observed}`;
+    const key = `${pendingEa === null ? card_id : `ea:${pendingEa}`}|${platform}|${observed}`;
     if (seen.has(key)) {
       duplicates++;
       return;
@@ -83,7 +98,7 @@ export function validatePriceRows(raw: Record<string, unknown>[], opts: ImportOp
     const listings = Number(r.listings);
     if (opts.source.kind === "browser_capture")
       quality.push(`Lowest Buy Now among ${Number.isInteger(listings) && listings > 0 ? listings : "the"} listing(s) on a results page you viewed; not the whole market.`);
-    rows.push({
+    const obs: PriceObservation = {
       card_id,
       platform,
       price,
@@ -95,7 +110,10 @@ export function validatePriceRows(raw: Record<string, unknown>[], opts: ImportOp
       source_id: opts.source.id,
       evidence: opts.source.evidence,
       ...(quality.length ? { quality } : {}),
-    });
+    };
+    if (pendingEa === null) return void rows.push(obs);
+    const details = captureDetailsFromRow(r);
+    unmatched.push({ ea_item_id: pendingEa, asset_id: num(r.asset_id), rating: num(r.rating), ...(details ? { details } : {}), observation: obs });
   });
-  return { rows, rejected, duplicates };
+  return { rows, unmatched, rejected, duplicates };
 }

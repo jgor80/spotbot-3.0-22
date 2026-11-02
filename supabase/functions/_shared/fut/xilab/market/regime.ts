@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@bc9b02d src/market/regime.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@ceb2c77 src/market/regime.ts by scripts/sync-xilab.mjs. Do not edit.
 // Market regime: measured, rule-based. Each regime lists the observations that triggered it, and regimes that
 // need data we don't have (listings, supply) say "not evaluable" instead of guessing.
 import { DEFAULT_MARKET_RULES, type MarketRules } from "./rules.ts";

@@ -78,6 +78,20 @@ CREATE TABLE fut.market_watchlist (
   PRIMARY KEY (user_id, card_id, platform)
 );
 
+-- Captured Web App prices for EA items not in the user's cards yet (promos, Icons, Heroes). Private; moved into
+-- market_price_observations once a card with that EA item id exists, or the user links one by hand.
+CREATE TABLE fut.market_capture_holds (
+  user_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  ea_item_id   BIGINT NOT NULL CHECK (ea_item_id > 0),
+  asset_id     BIGINT,
+  rating       SMALLINT CHECK (rating BETWEEN 1 AND 99),
+  platform     TEXT NOT NULL CHECK (platform IN ('console', 'pc')),
+  observed_at  TIMESTAMPTZ NOT NULL,
+  details      JSONB,
+  observation  JSONB NOT NULL,
+  PRIMARY KEY (user_id, ea_item_id, platform, observed_at)
+);
+
 CREATE TABLE fut.market_provider_runs (
   id           BIGSERIAL PRIMARY KEY,
   source_id    TEXT NOT NULL REFERENCES fut.market_price_sources(id),
@@ -93,7 +107,7 @@ CREATE TABLE fut.market_provider_runs (
 -- ---------------------------------------------------------------- access
 
 GRANT ALL ON fut.market_price_sources, fut.market_price_observations, fut.market_baskets, fut.market_basket_members,
-  fut.market_rule_versions, fut.market_watchlist, fut.market_provider_runs TO service_role;
+  fut.market_rule_versions, fut.market_watchlist, fut.market_capture_holds, fut.market_provider_runs TO service_role;
 GRANT ALL ON SEQUENCE fut.market_price_observations_id_seq, fut.market_provider_runs_id_seq TO service_role;
 
 ALTER TABLE fut.market_price_sources ENABLE ROW LEVEL SECURITY;
@@ -102,6 +116,7 @@ ALTER TABLE fut.market_baskets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fut.market_basket_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fut.market_rule_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fut.market_watchlist ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fut.market_capture_holds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fut.market_provider_runs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Signed-in users read reference data" ON fut.market_price_sources FOR SELECT TO authenticated USING (true);
@@ -113,6 +128,7 @@ CREATE POLICY "Shared or own prices" ON fut.market_price_observations FOR SELECT
 CREATE POLICY "Own prices only" ON fut.market_price_observations FOR ALL TO authenticated
   USING (owner_user_id = auth.uid()) WITH CHECK (owner_user_id = auth.uid());
 CREATE POLICY "Owners only" ON fut.market_watchlist FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Owners only" ON fut.market_capture_holds FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 CREATE POLICY "Owners only" ON fut.market_provider_runs FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
 -- ---------------------------------------------------------------- seed (same values as 11-lab migrations/0004_market_lab.sql)
