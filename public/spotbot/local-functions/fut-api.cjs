@@ -5874,6 +5874,51 @@ async function pullCommunity(db, userId, market) {
   };
 }
 
+// supabase/functions/_shared/mcp-tokens.ts
+var ACCESS_TTL_S = 60 * 60;
+var REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1e3;
+var PERSONAL_TTL_MS = 365 * 24 * 60 * 60 * 1e3;
+async function hashToken(token) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+function randomString(bytes = 32) {
+  const raw = crypto.getRandomValues(new Uint8Array(bytes));
+  return btoa(String.fromCharCode(...raw)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+var REUSE_GRACE_MS = 30 * 1e3;
+
+// supabase/functions/_shared/fut/helper-keys.ts
+var HELPER_KEY_PREFIX = "xlh_";
+var HELPER_ROUTES = /* @__PURE__ */ new Set(["/helper/prices", "/helper/club"]);
+var fail4 = (error) => {
+  if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
+};
+var looksLikeHelperKey = (s) => s.startsWith(HELPER_KEY_PREFIX) && s.length >= 30 && s.length <= 80;
+async function helperKeyUser(db, key) {
+  if (!looksLikeHelperKey(key)) return null;
+  const { data, error } = await db.from("helper_keys").select("id, user_id").eq("key_hash", await hashToken(key)).is("revoked_at", null).maybeSingle();
+  fail4(error);
+  if (!data) return null;
+  fail4((await db.from("helper_keys").update({ last_used_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", data.id)).error);
+  return String(data.user_id);
+}
+async function helperStatus(db, userId) {
+  const { data, error } = await db.from("helper_keys").select("key_hint, created_at, last_used_at").eq("user_id", userId).is("revoked_at", null).maybeSingle();
+  fail4(error);
+  return data ? { connected: true, key_hint: String(data.key_hint), created_at: String(data.created_at), last_used_at: data.last_used_at ? String(data.last_used_at) : null } : { connected: false, key_hint: null, created_at: null, last_used_at: null };
+}
+async function revokeHelperKeys(db, userId) {
+  fail4((await db.from("helper_keys").update({ revoked_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("user_id", userId).is("revoked_at", null)).error);
+  return helperStatus(db, userId);
+}
+async function createHelperKey(db, userId) {
+  await revokeHelperKeys(db, userId);
+  const key = HELPER_KEY_PREFIX + randomString(24);
+  fail4((await db.from("helper_keys").insert({ user_id: userId, key_hash: await hashToken(key), key_hint: key.slice(-4) })).error);
+  return { key, ...await helperStatus(db, userId) };
+}
+
 // supabase/functions/_shared/fut/xilab/market/types.ts
 var PLATFORMS = ["console", "pc"];
 var WINDOWS = ["1h", "6h", "24h", "72h", "7d"];
@@ -7175,7 +7220,7 @@ function createMarketService(deps) {
 }
 
 // supabase/functions/_shared/fut/market.ts
-var fail4 = (error) => {
+var fail5 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var iso2 = (v) => v === null || v === void 0 ? null : new Date(String(v)).toISOString();
@@ -7187,7 +7232,7 @@ async function allPages(make) {
   const out = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await make().range(from, from + PAGE - 1);
-    fail4(error);
+    fail5(error);
     out.push(...data ?? []);
     if (!data || data.length < PAGE) return out;
     if (out.length >= 2e5) throw new FutError("Too much price history to analyse at once.", 413);
@@ -7230,7 +7275,7 @@ var PgPriceStore = class {
     const have = new Set(existing.map((r2) => `${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
     const fresh = rows.filter((r2) => !have.has(`${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
     const { count, error } = await this.db.from("market_price_observations").select("id", { count: "exact", head: true }).eq("owner_user_id", owner);
-    fail4(error);
+    fail5(error);
     if ((count ?? 0) + fresh.length > MAX_PRICE_ROWS_PER_USER) throw new FutError(`You can keep up to ${MAX_PRICE_ROWS_PER_USER.toLocaleString("en-US")} price rows.`);
     for (let i = 0; i < fresh.length; i += 500) {
       const chunk = fresh.slice(i, i + 500).map((r2) => ({
@@ -7247,7 +7292,7 @@ var PgPriceStore = class {
         evidence: r2.evidence,
         quality: r2.quality ?? null
       }));
-      fail4((await this.db.from("market_price_observations").insert(chunk)).error);
+      fail5((await this.db.from("market_price_observations").insert(chunk)).error);
     }
     return { inserted: fresh.length, skipped: rows.length - fresh.length };
   }
@@ -7267,11 +7312,11 @@ var PgMembershipStore = class {
     const def = DEFAULT_BASKETS.find((b) => b.id === basket_id);
     if (def) {
       const { data, error } = await this.db.from("market_baskets").select("id").eq("id", basket_id).maybeSingle();
-      fail4(error);
-      if (!data) fail4((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
+      fail5(error);
+      if (!data) fail5((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
     }
-    fail4((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
-    if (rows.length) fail4((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
+    fail5((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
+    if (rows.length) fail5((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
   }
 };
 var PgWatchlistStore = class {
@@ -7280,7 +7325,7 @@ var PgWatchlistStore = class {
   }
   async list(owner) {
     const { data, error } = await this.db.from("market_watchlist").select("*").eq("user_id", owner).order("added_at", { ascending: true }).limit(200);
-    fail4(error);
+    fail5(error);
     return (data ?? []).map((r2) => ({
       card_id: String(r2.card_id),
       platform: r2.platform,
@@ -7294,14 +7339,14 @@ var PgWatchlistStore = class {
   }
   async upsert(owner, w) {
     const { count, error } = await this.db.from("market_watchlist").select("card_id", { count: "exact", head: true }).eq("user_id", owner);
-    fail4(error);
-    fail4((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
+    fail5(error);
+    fail5((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
     if ((count ?? 0) >= 200) throw new FutError("Your watchlist can hold up to 200 cards.");
-    fail4((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
+    fail5((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
     return w;
   }
   async remove(owner, card_id, platform) {
-    fail4((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
+    fail5((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
   }
 };
 var PgCaptureHoldStore = class {
@@ -7313,7 +7358,7 @@ var PgCaptureHoldStore = class {
     const fresh = [...new Map(rows.filter((r2) => !have.has(holdKey(r2))).map((r2) => [holdKey(r2), r2])).values()];
     if (have.size + fresh.length > MAX_HELD_CAPTURES_PER_USER) throw new FutError(`You can keep up to ${MAX_HELD_CAPTURES_PER_USER.toLocaleString("en-US")} captured prices for cards you haven't added yet. Add those cards or link them first.`);
     for (let i = 0; i < fresh.length; i += 500)
-      fail4((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
+      fail5((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
         user_id: owner,
         ea_item_id: r2.ea_item_id,
         asset_id: r2.asset_id,
@@ -7329,7 +7374,7 @@ var PgCaptureHoldStore = class {
     const out = [];
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await this.db.from("market_capture_holds").select("*").eq("user_id", owner).order("observed_at", { ascending: true }).range(from, from + PAGE - 1);
-      fail4(error);
+      fail5(error);
       const rows = data ?? [];
       for (const r2 of rows)
         out.push({
@@ -7344,7 +7389,7 @@ var PgCaptureHoldStore = class {
   }
   async release(owner, rows) {
     for (const r2 of rows)
-      fail4((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
+      fail5((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
   }
 };
 var holdKey = (h) => `${h.ea_item_id}|${h.observation.platform}|${new Date(h.observation.observed_at).toISOString()}`;
@@ -7377,7 +7422,7 @@ var PgMarketCardSource = class {
 };
 async function marketSources(db) {
   const { data, error } = await db.from("market_price_sources").select("*").order("id", { ascending: true });
-  fail4(error);
+  fail5(error);
   return (data ?? []).map((r2) => ({
     id: String(r2.id),
     name: String(r2.name),
@@ -7391,7 +7436,7 @@ async function marketSources(db) {
 }
 async function marketRules(db) {
   const { data, error } = await db.from("market_rule_versions").select("*").eq("is_active", true).maybeSingle();
-  fail4(error);
+  fail5(error);
   if (!data) throw new FutError("Market rules aren't set up yet.", 503);
   return { id: String(data.id), status: data.status, notes: String(data.notes), ...data.body };
 }
@@ -7478,11 +7523,28 @@ async function incomingCard(db, userId, b) {
   if (b.card && typeof b.card === "object") return cardSchema.parse(b.card);
   throw new FutError("Send card_id (one of your cards), card (a card object) or card: null to empty the slot.");
 }
+async function importPrices(db, userId, raw) {
+  const b = obj(raw);
+  if (typeof b.text !== "string" || !b.text.trim()) throw new FutError("Send the price history as text: CSV with card_id,platform,price,observed_at, or a JSON array.");
+  if (b.text.split("\n").length > MAX_IMPORT_ROWS + 1) throw new FutError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`);
+  const mk = await marketFor(db);
+  const r2 = await runWorkspace(() => mk.importPriceHistory(userId, b.text));
+  const pooled = await contributeCaptures(db, userId, b.text);
+  return { ...r2, shared_with_community: pooled.shared, rejected: r2.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) };
+}
 async function handle(req, deps) {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (!futEnabled(deps.env)) return err(404, "Not found");
-  const userId = await deps.userFor(req);
-  if (!userId) return err(401, "Sign in to GafferBot to use XI Lab.");
+  const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  const viaHelper = bearer.startsWith(HELPER_KEY_PREFIX);
+  let userId;
+  try {
+    userId = viaHelper ? await helperKeyUser(deps.db, bearer) : await deps.userFor(req);
+  } catch (e) {
+    console.error("[fut-api] auth:", e);
+    return err(500, "Something went wrong in XI Lab. Try again.");
+  }
+  if (!userId) return err(401, viaHelper ? "This helper key is turned off or wrong. Connect the helper again from Market Lab > Import prices." : "Sign in to GafferBot to use XI Lab.");
   const limited = deps.throttle?.(userId);
   if (limited) return limited;
   const url = new URL(req.url);
@@ -7491,6 +7553,7 @@ async function handle(req, deps) {
   if (!path.startsWith("/v1")) return err(404, "This API is /fut-api/v1.");
   const route = path.slice(3) || "/";
   const m = req.method;
+  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices and your club.");
   const db = deps.db;
   try {
     if (route === "/health" && m === "GET") return json({ ok: true, api: "v1" });
@@ -7523,7 +7586,11 @@ async function handle(req, deps) {
       if (m === "DELETE") return await deleteCard(db, userId, id) ? json({ data: { deleted: id } }) : err(404, "Card not found.");
       return err(405, "Use GET, PUT or DELETE.");
     }
-    if (route === "/club/import" && m === "POST") {
+    if (route === "/helper" && m === "GET") return json({ data: await helperStatus(db, userId) });
+    if (route === "/helper" && m === "DELETE") return json({ data: await revokeHelperKeys(db, userId) });
+    if (route === "/helper/connect" && m === "POST") return json({ data: await createHelperKey(db, userId) }, 201);
+    if (route === "/helper/prices" && m === "POST") return json({ data: await importPrices(db, userId, await body(req, MAX_IMPORT_BODY)) });
+    if ((route === "/club/import" || route === "/helper/club") && m === "POST") {
       const result = await importClub(db, userId, await body(req, MAX_CLUB_BODY));
       let prices_linked = 0;
       try {
@@ -7646,14 +7713,7 @@ async function handle(req, deps) {
         await runWorkspace(() => mk.removeFromWatchlist(userId, marketCardId(wl[1]), platformParam(p.get("platform"))));
         return json({ data: { deleted: wl[1] } });
       }
-      if (route === "/market/prices/import" && m === "POST") {
-        const b = obj(await body(req, MAX_IMPORT_BODY));
-        if (typeof b.text !== "string" || !b.text.trim()) throw new FutError("Send the price history as text: CSV with card_id,platform,price,observed_at, or a JSON array.");
-        if (b.text.split("\n").length > MAX_IMPORT_ROWS + 1) throw new FutError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`);
-        const r2 = await runWorkspace(() => mk.importPriceHistory(userId, b.text));
-        const pooled = await contributeCaptures(db, userId, b.text);
-        return json({ data: { ...r2, shared_with_community: pooled.shared, rejected: r2.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) } });
-      }
+      if (route === "/market/prices/import" && m === "POST") return json({ data: await importPrices(db, userId, await body(req, MAX_IMPORT_BODY)) });
       if (route === "/market/sharing" && m === "GET") return json({ data: await getSharing(db, userId) });
       if (route === "/market/sharing" && m === "POST") {
         const b = obj(await body(req));
