@@ -9,6 +9,7 @@ import {
 import { importClub } from "../_shared/fut/club.ts";
 import { pullFc27Market } from "../_shared/fut/fc27market.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
+import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
 import { marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
 import { scanRequestSchema, thesisInputSchema, watchItemInputSchema } from "../_shared/fut/xilab/market/index.ts";
 import { assignCard, cardSchema, createSquad, FORMATIONS, squadSchema, type Squad, type WorkspaceCard } from "../_shared/fut/xilab/workspace/index.ts";
@@ -94,11 +95,31 @@ async function incomingCard(db: FutDb, userId: string, b: Record<string, unknown
   throw new FutError("Send card_id (one of your cards), card (a card object) or card: null to empty the slot.");
 }
 
+/** Import price rows (a typed CSV/JSON, or the helper's capture CSV). Capture rows also go to the community pool if you share. */
+async function importPrices(db: FutDb, userId: string, raw: unknown) {
+  const b = obj(raw);
+  if (typeof b.text !== "string" || !b.text.trim()) throw new FutError("Send the price history as text: CSV with card_id,platform,price,observed_at, or a JSON array.");
+  if (b.text.split("\n").length > MAX_IMPORT_ROWS + 1) throw new FutError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`);
+  const mk = await marketFor(db);
+  const r = await runWorkspace(() => mk.importPriceHistory(userId, b.text as string));
+  const pooled = await contributeCaptures(db, userId, b.text as string);
+  return { ...r, shared_with_community: pooled.shared, rejected: r.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) };
+}
+
 export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (!futEnabled(deps.env)) return err(404, "Not found");
-  const userId = await deps.userFor(req);
-  if (!userId) return err(401, "Sign in to GafferBot to use XI Lab.");
+  // The XI Lab browser helper signs in with its own key, which can only upload (HELPER_ROUTES).
+  const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  const viaHelper = bearer.startsWith(HELPER_KEY_PREFIX);
+  let userId: string | null;
+  try {
+    userId = viaHelper ? await helperKeyUser(deps.db, bearer) : await deps.userFor(req);
+  } catch (e) {
+    console.error("[fut-api] auth:", e);
+    return err(500, "Something went wrong in XI Lab. Try again.");
+  }
+  if (!userId) return err(401, viaHelper ? "This helper key is turned off or wrong. Connect the helper again from Market Lab > Import prices." : "Sign in to GafferBot to use XI Lab.");
   const limited = deps.throttle?.(userId);
   if (limited) return limited;
 
@@ -108,6 +129,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (!path.startsWith("/v1")) return err(404, "This API is /fut-api/v1.");
   const route = path.slice(3) || "/";
   const m = req.method;
+  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices and your club.");
   const db = deps.db;
 
   try {
@@ -136,7 +158,13 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     }
 
     // Club sync: the file the XI Lab helper saved from the user's own Web App club. Reads nothing from EA.
-    if (route === "/club/import" && m === "POST") {
+    // XI Lab browser helper: connect (signed in, shows the key once), status, turn off, and its two upload routes.
+    if (route === "/helper" && m === "GET") return json({ data: await helperStatus(db, userId) });
+    if (route === "/helper" && m === "DELETE") return json({ data: await revokeHelperKeys(db, userId) });
+    if (route === "/helper/connect" && m === "POST") return json({ data: await createHelperKey(db, userId) }, 201);
+    if (route === "/helper/prices" && m === "POST") return json({ data: await importPrices(db, userId, await body(req, MAX_IMPORT_BODY)) });
+
+    if ((route === "/club/import" || route === "/helper/club") && m === "POST") {
       const result = await importClub(db, userId, await body(req, MAX_CLUB_BODY));
       // Synced cards carry EA item ids, so prices captured before the sync can now find their card.
       let prices_linked = 0;
@@ -266,15 +294,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         await runWorkspace(() => mk.removeFromWatchlist(userId, marketCardId(wl[1]), platformParam(p.get("platform"))));
         return json({ data: { deleted: wl[1] } });
       }
-      if (route === "/market/prices/import" && m === "POST") {
-        const b = obj(await body(req, MAX_IMPORT_BODY));
-        if (typeof b.text !== "string" || !b.text.trim()) throw new FutError("Send the price history as text: CSV with card_id,platform,price,observed_at, or a JSON array.");
-        if (b.text.split("\n").length > MAX_IMPORT_ROWS + 1) throw new FutError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`);
-        const r = await runWorkspace(() => mk.importPriceHistory(userId, b.text as string));
-        // If you share prices, your helper's capture rows also go into the community pool.
-        const pooled = await contributeCaptures(db, userId, b.text as string);
-        return json({ data: { ...r, shared_with_community: pooled.shared, rejected: r.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) } });
-      }
+      if (route === "/market/prices/import" && m === "POST") return json({ data: await importPrices(db, userId, await body(req, MAX_IMPORT_BODY)) });
       // Community price pool: opt in to share your captures, and pull pooled prices for your own cards.
       if (route === "/market/sharing" && m === "GET") return json({ data: await getSharing(db, userId) });
       if (route === "/market/sharing" && m === "POST") {
