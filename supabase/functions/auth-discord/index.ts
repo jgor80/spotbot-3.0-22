@@ -67,8 +67,11 @@ Deno.serve(async (req) => {
     let email: string | null = null;
     let userId: string | null = null;
 
-    const { data: link } = await admin.from("user_discord_links").select("auth_user_id").eq("discord_user_id", discordId).maybeSingle();
-    if (link?.auth_user_id) {
+    const { data: link } = await admin.from("user_discord_links").select("auth_user_id, verified").eq("discord_user_id", discordId).maybeSingle();
+    // Only a verified link (made by Discord sign-in or a one-time invite) may sign this Discord user in.
+    // An unverified row is just a claim someone typed on the website: drop it and give them their own account.
+    if (link && link.verified !== true) await admin.from("user_discord_links").delete().eq("discord_user_id", discordId).not("verified", "is", true);
+    if (link?.auth_user_id && link.verified === true) {
       const { data } = await admin.auth.admin.getUserById(link.auth_user_id);
       if (data?.user) { email = data.user.email ?? null; userId = data.user.id; }
     }
