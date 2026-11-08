@@ -88,8 +88,25 @@ async function listChannels(supabase: any, guildId: string) {
 }
 
 // Discord's REST API only answers voice state per user, so look each candidate up
+type VoiceChannel = { id: string; name: string; user_ids: string[] };
+// The bot's gateway cache, when this runs inside the bot (public/spotbot/voice-lookup.cjs)
+type VoiceBridge = { channelsFor(guildId: string, userIds: string[]): VoiceChannel[] | null };
+
 async function voiceChannels(supabase: any, guildId: string, userIds: string[]) {
   const ids = Array.from(new Set(userIds.filter((id) => DISCORD_ID_REGEX.test(id)))).slice(0, 60);
+  const bridge = (globalThis as unknown as { __gafferbotVoice?: VoiceBridge }).__gafferbotVoice;
+  const cached = bridge?.channelsFor(guildId, ids) ?? null;
+  const channels: VoiceChannel[] = cached
+    ? [...cached].sort((a, b) => b.user_ids.length - a.user_ids.length)
+    : await voiceChannelsFromDiscord(guildId, ids);
+
+  const checkins = await rollCallCheckins(supabase, guildId);
+  if (checkins.length) channels.push({ id: "checkins", name: "Tonight's roll call (In and Late)", user_ids: checkins });
+  return json({ channels });
+}
+
+// Without the bot's cache: one Discord call per player, five at a time
+async function voiceChannelsFromDiscord(guildId: string, ids: string[]): Promise<VoiceChannel[]> {
   const byChannel = new Map<string, string[]>();
   const queue = [...ids];
   const worker = async () => {
@@ -119,13 +136,9 @@ async function voiceChannels(supabase: any, guildId: string, userIds: string[]) 
     const res = await discord(`/guilds/${guildId}/channels`);
     if (res.ok) names = new Map((await res.json() as any[]).map((c) => [c.id, c.name]));
   }
-  const channels = Array.from(byChannel.entries())
+  return Array.from(byChannel.entries())
     .map(([id, members]) => ({ id, name: names.get(id) || "Voice", user_ids: members }))
     .sort((a, b) => b.user_ids.length - a.user_ids.length);
-
-  const checkins = await rollCallCheckins(supabase, guildId);
-  if (checkins.length) channels.push({ id: "checkins", name: "Tonight's roll call (In and Late)", user_ids: checkins });
-  return json({ channels });
 }
 
 // Players who said In or Late to a roll call started in the last 12 hours

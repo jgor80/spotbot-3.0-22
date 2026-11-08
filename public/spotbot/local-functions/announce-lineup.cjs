@@ -185,6 +185,14 @@ async function listChannels(supabase, guildId) {
 }
 async function voiceChannels(supabase, guildId, userIds) {
   const ids = Array.from(new Set(userIds.filter((id) => DISCORD_ID_REGEX.test(id)))).slice(0, 60);
+  const bridge = globalThis.__gafferbotVoice;
+  const cached = bridge?.channelsFor(guildId, ids) ?? null;
+  const channels = cached ? [...cached].sort((a, b) => b.user_ids.length - a.user_ids.length) : await voiceChannelsFromDiscord(guildId, ids);
+  const checkins = await rollCallCheckins(supabase, guildId);
+  if (checkins.length) channels.push({ id: "checkins", name: "Tonight's roll call (In and Late)", user_ids: checkins });
+  return json({ channels });
+}
+async function voiceChannelsFromDiscord(guildId, ids) {
   const byChannel = /* @__PURE__ */ new Map();
   const queue = [...ids];
   const worker = async () => {
@@ -213,10 +221,7 @@ async function voiceChannels(supabase, guildId, userIds) {
     const res = await discord(`/guilds/${guildId}/channels`);
     if (res.ok) names = new Map((await res.json()).map((c) => [c.id, c.name]));
   }
-  const channels = Array.from(byChannel.entries()).map(([id, members]) => ({ id, name: names.get(id) || "Voice", user_ids: members })).sort((a, b) => b.user_ids.length - a.user_ids.length);
-  const checkins = await rollCallCheckins(supabase, guildId);
-  if (checkins.length) channels.push({ id: "checkins", name: "Tonight's roll call (In and Late)", user_ids: checkins });
-  return json({ channels });
+  return Array.from(byChannel.entries()).map(([id, members]) => ({ id, name: names.get(id) || "Voice", user_ids: members })).sort((a, b) => b.user_ids.length - a.user_ids.length);
 }
 async function rollCallCheckins(supabase, guildId) {
   const since = new Date(Date.now() - 12 * 60 * 60 * 1e3).toISOString();
