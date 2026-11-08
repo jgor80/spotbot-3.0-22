@@ -280,6 +280,7 @@ const AREAS = [
       { id: 'ad_twitchremove', label: 'Remove Twitch', emoji: '➖', cmd: 'twitchremove' },
       { id: 'ad_twitchlist', label: 'Twitch List', emoji: '📃', cmd: 'twitchlist' },
       { id: 'ad_twitchimport', label: 'Import Twitch', emoji: '🔗', cmd: 'twitchimport', ask: true },
+      { id: 'ad_twitchplayerlive', label: 'Player Live Cards', emoji: '🔴', cmd: 'twitchplayerlive', ask: true },
       { id: 'ad_pending', label: 'Pending Wins', emoji: '⏳', cmd: 'pendingwins' },
       { id: 'ad_verify', label: 'Verify a Win', emoji: '✔️', cmd: 'verifywin' },
       { id: 'ad_network', label: 'Network Setup', emoji: '🌐', cmd: 'network', sub: 'setup', perm: F.ManageGuild, ask: true },
