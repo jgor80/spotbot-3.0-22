@@ -30,6 +30,92 @@ function createAdminClient() {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
   );
 }
+var rejectHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-bot-secret",
+  "Content-Type": "application/json"
+};
+function discordGet(path) {
+  const token = Deno.env.get("DISCORD_BOT_TOKEN");
+  if (!token) return Promise.resolve(null);
+  return fetch(`https://discord.com/api/v10${path}`, { headers: { Authorization: `Bot ${token}` } }).then((r) => r.ok ? r.json() : null).catch(() => null);
+}
+var snowflake = (id) => /^\d{17,20}$/.test(id);
+var LEADER_ROLE_WORDS = ["captain", "manager", "owner", "media", "admin"];
+var BUILTIN_OWNER_IDS = ["501557839932948490"];
+function isBotOwner(discordUserId) {
+  const env = String(Deno.env.get("BOT_OWNER_IDS") || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return [...BUILTIN_OWNER_IDS, ...env].includes(discordUserId);
+}
+async function isDiscordClubLeader(guildId, discordUserId) {
+  if (!snowflake(guildId) || !snowflake(discordUserId)) return false;
+  if (isBotOwner(discordUserId)) return true;
+  const [guild, member] = await Promise.all([discordGet(`/guilds/${guildId}`), discordGet(`/guilds/${guildId}/members/${discordUserId}`)]);
+  if (!guild || !member) return false;
+  if (guild.owner_id === discordUserId) return true;
+  const memberRoles = /* @__PURE__ */ new Set([guildId, ...member.roles || []]);
+  let perms = 0n;
+  for (const role of guild.roles || []) {
+    if (!memberRoles.has(role.id)) continue;
+    perms |= BigInt(role.permissions || "0");
+    const name = String(role.name || "").toLowerCase();
+    if (role.id !== guildId && LEADER_ROLE_WORDS.some((w) => name.includes(w))) return true;
+  }
+  return (perms & 0x8n) !== 0n || (perms & 0x20n) !== 0n;
+}
+async function requireGuildAccess(req, admin, guildId, level) {
+  const caller = await identifyCaller(req, admin);
+  if (!caller) {
+    return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: rejectHeaders });
+  }
+  if (caller.kind === "bot") return null;
+  const forbidden = new Response(
+    JSON.stringify({ success: false, error: "You don't have access to this server" }),
+    { status: 403, headers: rejectHeaders }
+  );
+  if (!guildId || !snowflake(guildId)) return forbidden;
+  const { data: webAdmin } = await admin.from("web_admins").select("id").eq("auth_user_id", caller.userId).maybeSingle();
+  if (webAdmin) return null;
+  const { data: link } = await admin.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).maybeSingle();
+  const discordUserId = link?.discord_user_id;
+  if (!discordUserId) return forbidden;
+  const access = await guildAccessLevel(admin, guildId, discordUserId);
+  if (access === "leader" || access === "member" && level === "member") return null;
+  return forbidden;
+}
+async function guildAccessLevel(admin, guildId, discordUserId) {
+  if (!snowflake(guildId) || !snowflake(discordUserId)) return null;
+  const { data: leader } = await admin.rpc("has_any_role", {
+    _guild_id: guildId,
+    _discord_user_id: discordUserId,
+    _roles: ["admin", "moderator", "manager", "captain"]
+  });
+  if (leader || await isDiscordClubLeader(guildId, discordUserId)) return "leader";
+  const { data: played } = await admin.from("player_stats").select("id").eq("guild_id", guildId).eq("discord_user_id", discordUserId).limit(1).maybeSingle();
+  if (played) return "member";
+  const member = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
+  return member ? "member" : null;
+}
+var webHits = /* @__PURE__ */ new Map();
+async function throttleWebUser(req, admin, name, max, windowMs) {
+  const caller = await identifyCaller(req, admin);
+  if (!caller || caller.kind === "bot") return null;
+  const key = `${name}:${caller.userId}`;
+  const now = Date.now();
+  const recent = (webHits.get(key) || []).filter((t) => now - t < windowMs);
+  if (recent.length >= max) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Too many requests, please try again in a few minutes" }),
+      { status: 429, headers: rejectHeaders }
+    );
+  }
+  recent.push(now);
+  webHits.set(key, recent);
+  if (webHits.size > 5e3) {
+    for (const [k, times] of webHits) if (!times.some((t) => now - t < windowMs)) webHits.delete(k);
+  }
+  return null;
+}
 
 // supabase/functions/_shared/club-theme.ts
 var hexInt = (v) => {
@@ -393,11 +479,15 @@ serve(async (req) => {
     const body = await req.json();
     if (body.action === "channels") {
       if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) return json({ error: "guild_id is required" }, 400);
+      const denied = await requireGuildAccess(req, supabase, body.guild_id, "member") ?? await throttleWebUser(req, supabase, "announce-lineup:channels", 30, 10 * 60 * 1e3);
+      if (denied) return denied;
       return await listChannels(supabase, body.guild_id);
     }
     if (body.action === "voice") {
       if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) return json({ error: "guild_id is required" }, 400);
       if (!Array.isArray(body.user_ids)) return json({ error: "user_ids is required" }, 400);
+      const denied = await requireGuildAccess(req, supabase, body.guild_id, "leader") ?? await throttleWebUser(req, supabase, "announce-lineup:voice", 10, 10 * 60 * 1e3);
+      if (denied) return denied;
       return await voiceChannels(supabase, body.guild_id, body.user_ids);
     }
     if (body.action === "announce") {
