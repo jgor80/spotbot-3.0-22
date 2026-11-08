@@ -7754,8 +7754,13 @@ async function routeInteraction(interaction) {
         if (!isManager(interaction.member)) {
           return interaction.reply({ content: '❌ Only admins can set up player live cards.', flags: 64 });
         }
-        const channel = interaction.options.getChannel('channel');
+        // A thread picked from the form may come back as a bare API channel, so fetch the real one
+        const picked = interaction.options.getChannel('channel');
+        const channel = picked && (picked.send ? picked : await interaction.client.channels.fetch(picked.id).catch(() => null));
         const off = interaction.options.getBoolean('off') === true;
+        if (!off && picked && !channel) {
+          return interaction.reply({ content: `❌ I can't see <#${picked.id}>. Make sure I can view it.`, flags: 64 });
+        }
         if (!off && !channel) {
           const { data } = await supabase.from('guild_settings').select('twitch_live_channel_id').eq('guild_id', guildId).maybeSingle();
           return interaction.reply({
@@ -7767,8 +7772,9 @@ async function routeInteraction(interaction) {
         }
         if (!off) {
           const perms = channel.permissionsFor?.(interaction.guild.members.me);
-          if (!channel.send || !perms?.has(PermissionsBitField.Flags.SendMessages) || !perms?.has(PermissionsBitField.Flags.EmbedLinks)) {
-            return interaction.reply({ content: `❌ I need **Send Messages** and **Embed Links** in <#${channel.id}>.`, flags: 64 });
+          const sendPerm = channel.isThread?.() ? PermissionsBitField.Flags.SendMessagesInThreads : PermissionsBitField.Flags.SendMessages;
+          if (!channel.send || !perms?.has(sendPerm) || !perms?.has(PermissionsBitField.Flags.EmbedLinks)) {
+            return interaction.reply({ content: `❌ I need **${channel.isThread?.() ? 'Send Messages in Threads' : 'Send Messages'}** and **Embed Links** in <#${channel.id}>.`, flags: 64 });
           }
         }
         const { data: savedRows, error } = await supabase.from('guild_settings')

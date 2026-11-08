@@ -283,7 +283,8 @@ const ACTION_SCHEMAS = [
     name: 'twitchplayerlive',
     description: 'Post a live card in a channel whenever a linked player goes live on Twitch.',
     options: [
-      { name: 'channel', description: 'Channel for the live cards. Leave blank to see the current setting.', type: 7, required: false },
+      // Text, announcement and thread channels (0, 5, 10, 11, 12)
+      { name: 'channel', description: 'Channel or thread for the live cards. Leave blank to see the current setting.', type: 7, required: false, channel_types: [0, 5, 10, 11, 12] },
       { name: 'off', description: 'True turns the live cards off.', type: 5, required: false }
     ]
   },
