@@ -14,8 +14,9 @@
   // FUNCTIONS_ORIGIN (and the FUNCTIONS_ORIGIN_SECRET / MCP_LEADER_CHECK_SECRET secrets) are set in the Cloudflare dashboard; without this
   // every deploy from a merge wipes them and all /api/functions calls return 503.
   "keep_vars": true,
-  "vars": { "FUT_ENABLED": "true" },
-  "triggers": { "crons": ["0 6,18 * * *"] },
+  // No cron: FUT.GG answers 403 to Cloudflare Workers, so the bot's scheduler collects its prices (scheduler.cjs).
+  // The empty list removes the old 06:00/18:00 trigger on the next deploy.
+  "triggers": { "crons": [] },
   // Per-IP limits on AI-app sign-in (/oauth/*) and backend calls (/api/functions, /mcp), see worker/index.ts.
   // Per Cloudflare location, so approximate: a backstop against floods, not an exact quota.
   "ratelimits": [

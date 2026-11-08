@@ -2,7 +2,6 @@
 // Discord OAuth runs here so sign-in does not depend on Lovable Cloud functions.
 import { createClient } from "@supabase/supabase-js";
 import { handleOAuth } from "./mcp-oauth";
-import { syncFutggPrices } from "./futgg-sync";
 
 interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
@@ -18,10 +17,6 @@ interface Env {
   // Workers rate limiting bindings (wrangler.jsonc "ratelimits"); missing in local dev, then nothing is limited
   OAUTH_LIMITER?: RateLimiter;
   API_LIMITER?: RateLimiter;
-  /** Same explicit opt-in as the FUT API; set on the Worker as well as the backend. */
-  FUT_ENABLED?: string;
-  /** Set to off to pause the twice-daily public bulk-price sync. */
-  FUTGG_SYNC?: string;
 }
 
 interface RateLimiter {
@@ -179,14 +174,6 @@ async function botLeaderCheck(env: Env, discordUserId: string): Promise<boolean>
 }
 
 export default {
-  scheduled(_event: unknown, env: Env, ctx: { waitUntil(promise: Promise<unknown>): void }): void {
-    if (env.FUT_ENABLED !== "true" || env.FUTGG_SYNC === "off") return;
-    ctx.waitUntil((async () => {
-      if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) throw new Error("FUT.GG sync: database is not configured");
-      const db = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } }).schema("fut");
-      console.log("[futgg-sync]", JSON.stringify(await syncFutggPrices(db)));
-    })());
-  },
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     // Sign-in for AI apps on /mcp (OAuth with Discord), see mcp-oauth.ts.
