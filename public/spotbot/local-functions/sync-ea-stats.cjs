@@ -965,6 +965,9 @@ function clubRecord(overallStats, seasonalStats) {
     losses: pick(["losses", "seasonLosses"])
   };
 }
+function escapeLike(value) {
+  return String(value).trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+}
 function getPrimaryPosition(positionCounts) {
   const sorted = Object.entries(positionCounts).sort((a, b) => b[1] - a[1]);
   return sorted[0]?.[0] || null;
@@ -1083,7 +1086,16 @@ async function syncMemberStats(supabase, guildId, clubId, platform, clubName, ag
       const eaUsername = extractWithFallback(member, ["name", "playerName", "personaName"]);
       if (!eaUsername) continue;
       const careerData = careerLookup.get(eaUsername.toLowerCase());
-      let { data: profile } = await supabase.from("profiles").select("discord_user_id, discord_username").ilike("ea_username", eaUsername).limit(1).maybeSingle();
+      const { data: matches } = await supabase.from("profiles").select("discord_user_id, discord_username").ilike("ea_username", escapeLike(eaUsername)).limit(10);
+      const linked = (matches || []).filter((p) => !String(p.discord_user_id).startsWith("ea_"));
+      let profile = linked[0] || (matches || [])[0] || null;
+      if (linked.length && clubKey) {
+        const stale = (matches || []).filter((p) => String(p.discord_user_id).startsWith("ea_")).map((p) => p.discord_user_id);
+        if (stale.length) {
+          const { error: staleErr } = await supabase.from("player_club_stats").delete().eq("guild_id", guildId).eq("club_key", clubKey).in("discord_user_id", stale);
+          if (staleErr) console.warn(`[sync-ea-stats] Couldn't clear placeholder rows for ${eaUsername}:`, staleErr.message);
+        }
+      }
       if (!profile) {
         const placeholder = { discord_user_id: `ea_${eaUsername}`, discord_username: eaUsername, ea_username: eaUsername };
         const { error: phErr } = await supabase.from("profiles").upsert(placeholder, { onConflict: "discord_user_id" });
