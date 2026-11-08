@@ -280,6 +280,14 @@ const ACTION_SCHEMAS = [
     description: 'List all Twitch streamers being monitored in this server.'
   },
   {
+    name: 'twitchplayerlive',
+    description: 'Post a live card in a channel whenever a linked player goes live on Twitch.',
+    options: [
+      { name: 'channel', description: 'Channel for the live cards. Leave blank to see the current setting.', type: 7, required: false },
+      { name: 'off', description: 'True turns the live cards off.', type: 5, required: false }
+    ]
+  },
+  {
     name: 'twitchimport',
     description: 'Link players to their Twitch accounts from the twitch.tv links posted in a channel.',
     options: [

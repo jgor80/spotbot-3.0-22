@@ -1904,6 +1904,7 @@ export type Database = {
           link_dm_enabled: boolean | null
           name: string | null
           timezone: string
+          twitch_live_channel_id: string | null
           updated_at: string
           vc_panels: Json
         }
@@ -1922,6 +1923,7 @@ export type Database = {
           link_dm_enabled?: boolean | null
           name?: string | null
           timezone?: string
+          twitch_live_channel_id?: string | null
           updated_at?: string
           vc_panels?: Json
         }
@@ -1940,6 +1942,7 @@ export type Database = {
           link_dm_enabled?: boolean | null
           name?: string | null
           timezone?: string
+          twitch_live_channel_id?: string | null
           updated_at?: string
           vc_panels?: Json
         }

@@ -33,3 +33,6 @@ public/spotbot/.env
 storage-backup/
 /deploy.sh
 public/spotbot/.brand-applied
+
+# Review Panel run output (CI)
+.review-panel/out/

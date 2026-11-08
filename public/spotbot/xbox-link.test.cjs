@@ -41,7 +41,7 @@ test('backfill saves found accounts, marks misses and skips placeholders and rec
   };
   const out = await createXboxLink({ supabase: sb, apiKey: 'k', fetchFn }).backfill();
   assert.deepStrictEqual(out, { linked: 1, not_found: 1, skipped: 0 });
-  assert.strictEqual(calls.length, 2);
+  assert.strictEqual(calls.length, 4); // two lookup calls each for the two due players
   assert.strictEqual(sb.updates.find((u) => u.id === '10').xbox_xuid, '2535');
   assert.ok(sb.updates.find((u) => u.id === '11').xbox_lookup_at);
   assert.strictEqual(sb.updates.find((u) => u.id === '11').xbox_xuid, undefined);
@@ -54,4 +54,20 @@ test('backfill stops on rate limit', async () => {
   const out = await createXboxLink({ supabase: fakeSupabase(rows), apiKey: 'k', fetchFn }).backfill();
   assert.strictEqual(n, 1);
   assert.strictEqual(out.linked, 0);
+});
+
+const { lookupGamertag } = require('./xbox-link.cjs');
+
+test('lookup reads the friends/search shape first', async () => {
+  const fetchFn = async (url) => ({ ok: true, status: 200, json: async () => url.includes('friends/search')
+    ? { profileUsers: [{ id: '2535411', settings: [{ id: 'Gamertag', value: 'AirDangus23' }] }] } : { people: [] } });
+  assert.deepStrictEqual(await lookupGamertag('airdangus23', { apiKey: 'k', fetchFn }), { xuid: '2535411', gamertag: 'AirDangus23' });
+});
+
+test('lookup falls back to people search, and errors when every call fails', async () => {
+  const ok = async (url) => url.includes('friends/search')
+    ? { ok: false, status: 404 } : { ok: true, status: 200, json: async () => ({ people: [{ xuid: '9', gamertag: 'Pro9' }] }) };
+  assert.strictEqual((await lookupGamertag('Pro9', { apiKey: 'k', fetchFn: ok })).xuid, '9');
+  const bad = async () => ({ ok: false, status: 401 });
+  await assert.rejects(lookupGamertag('Pro9', { apiKey: 'k', fetchFn: bad }), /401/);
 });

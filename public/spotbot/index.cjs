@@ -70,7 +70,7 @@ const { createStreamKit, OVERLAY_SUBCOMMAND } = require('./stream-kit.cjs');
 const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
 const { createAutoLink } = require('./auto-link.cjs');
-const { createXboxLink } = require('./xbox-link.cjs');
+const { createXboxLink, lookupGamertag } = require('./xbox-link.cjs');
 const { createTwitchLinks } = require('./twitch-links.cjs');
 const { createPresenceLog } = require('./xbox-presence-log.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
@@ -570,7 +570,8 @@ const clips = require('./clips.cjs').createClips({
 });
 autopilot.onNewMatches(clips.onNewMatches);
 // Posted twitch.tv links to a live channel get a card with the stream's live frame, refreshed while live
-const twitchLive = require('./twitch-live.cjs').createTwitchLive({ getClient: () => client });
+// and linked players (Import Twitch) get one posted on their own in the server's Player Live Cards channel
+const twitchLive = require('./twitch-live.cjs').createTwitchLive({ getClient: () => client, supabase });
 // Club Life: careers and badges, weekly coach goals, the belt report, Club Wrapped, Awards Night,
 // division posters and the Network Wire
 const career = createCareer({ supabase, autopilot, events: clubEvents, getGuildState, client: () => client });
@@ -610,6 +611,7 @@ client.on('messageCreate', (message) => {
 // not just at the next restart.
 client.on('roleCreate', (role) => clearPositionRolePermissions(role).catch(() => {}));
 client.on('roleUpdate', (_old, role) => clearPositionRolePermissions(role).catch(() => {}));
+client.once('ready', () => twitchLive.start());
 client.once('ready', () => {
   setTimeout(async () => {
     for (const guild of client.guilds.cache.values()) {
@@ -6958,29 +6960,13 @@ async function routeInteraction(interaction) {
         }
 
         try {
-          // Search for the gamertag via OpenXBL
-          const searchResponse = await axios.get(`https://xbl.io/api/v2/search/${encodeURIComponent(gamertag)}`, {
-            headers: {
-              'X-Authorization': openXblApiKey,
-              'Accept': 'application/json'
-            },
-            timeout: 10000
-          });
-
-          const results = searchResponse.data?.people || [];
-          if (results.length === 0) {
+          const match = await lookupGamertag(gamertag, { apiKey: openXblApiKey });
+          if (!match) {
             return interaction.editReply({ 
               content: `❌ Could not find Xbox gamertag **${gamertag}**. Make sure you typed it exactly as it appears on Xbox.` 
             });
           }
-
-          // Find exact match or best match
-          const exactMatch = results.find(p => 
-            p.gamertag?.toLowerCase() === gamertag.toLowerCase()
-          );
-          const match = exactMatch || results[0];
-          const xuid = match.xuid;
-          const foundGamertag = match.gamertag;
+          const { xuid, gamertag: foundGamertag } = match;
 
           // Save to profiles
           const { error } = await supabase
@@ -7013,7 +6999,7 @@ async function routeInteraction(interaction) {
 
         } catch (err) {
           console.error('[linkxbox] Error:', err.message);
-          if (err.response?.status === 429) {
+          if (err.rateLimited || err.response?.status === 429) {
             return interaction.editReply({ content: '❌ Rate limited by Xbox API. Please try again in a few minutes.' });
           }
           return interaction.editReply({ content: `❌ Failed to lookup Xbox gamertag: ${err.message}` });
@@ -7762,6 +7748,42 @@ async function routeInteraction(interaction) {
           console.error('[TwitchList] Error:', error.response?.data || error.message);
           return interaction.editReply({ content: `❌ Failed to fetch Twitch notifications list.` });
         }
+      }
+
+      if (cmd === 'twitchplayerlive') {
+        if (!isManager(interaction.member)) {
+          return interaction.reply({ content: '❌ Only admins can set up player live cards.', flags: 64 });
+        }
+        const channel = interaction.options.getChannel('channel');
+        const off = interaction.options.getBoolean('off') === true;
+        if (!off && !channel) {
+          const { data } = await supabase.from('guild_settings').select('twitch_live_channel_id').eq('guild_id', guildId).maybeSingle();
+          return interaction.reply({
+            content: data?.twitch_live_channel_id
+              ? `🔴 Live cards for linked players post in <#${data.twitch_live_channel_id}>.`
+              : '⚫ Player live cards are off. Pick a channel to turn them on.',
+            flags: 64,
+          });
+        }
+        if (!off) {
+          const perms = channel.permissionsFor?.(interaction.guild.members.me);
+          if (!channel.send || !perms?.has(PermissionsBitField.Flags.SendMessages) || !perms?.has(PermissionsBitField.Flags.EmbedLinks)) {
+            return interaction.reply({ content: `❌ I need **Send Messages** and **Embed Links** in <#${channel.id}>.`, flags: 64 });
+          }
+        }
+        const { data: savedRows, error } = await supabase.from('guild_settings')
+          .update({ twitch_live_channel_id: off ? null : channel.id, updated_at: new Date().toISOString() })
+          .eq('guild_id', guildId).select('guild_id');
+        if (error || !savedRows?.length) {
+          console.error('[TwitchPlayerLive] save failed:', error?.message || 'no settings row');
+          return interaction.reply({ content: '❌ Couldn\'t save that setting.', flags: 64 });
+        }
+        return interaction.reply({
+          content: off
+            ? '⚫ Player live cards are off.'
+            : `✅ When a linked player goes live on Twitch, I'll post their live card in <#${channel.id}>. Players are linked with **Import Twitch**.`,
+          flags: 64,
+        });
       }
 
       if (cmd === 'twitchimport') {

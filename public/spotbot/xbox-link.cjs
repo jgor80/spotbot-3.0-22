@@ -15,21 +15,56 @@ function gamertagFor(p) {
   return null;
 }
 
-// Exact (case-insensitive) match from an OpenXBL search result
+// Exact (case-insensitive) match from an OpenXBL people list; modern gamertags may carry a #suffix
 function pickExact(people, gamertag) {
-  return (people || []).find((p) => p?.xuid && norm(p.gamertag) === norm(gamertag)) || null;
+  const want = norm(gamertag);
+  return (people || []).find((p) => p?.xuid && [p.gamertag, p.modernGamertag, p.uniqueModernGamertag]
+    .some((g) => g && norm(g) === want)) || null;
+}
+
+// friends/search answers with profileUsers: { id: xuid, settings: [{ id: 'Gamertag', value }] }
+function fromProfileUsers(users, gamertag) {
+  const want = norm(gamertag);
+  for (const u of users || []) {
+    const set = Object.fromEntries((u?.settings || []).map((x) => [x.id, x.value]));
+    const names = [set.Gamertag, set.ModernGamertag, set.UniqueModernGamertag,
+      set.ModernGamertag && set.ModernGamertagSuffix ? `${set.ModernGamertag}#${set.ModernGamertagSuffix}` : null];
+    if (u?.id && names.some((g) => g && norm(g) === want)) return { xuid: String(u.id), gamertag: set.Gamertag || gamertag };
+  }
+  return null;
+}
+
+// Find one Xbox account by exact gamertag. Tries OpenXBL's gamertag lookup, then its people
+// search. Returns { xuid, gamertag } or null; throws when every call failed (bad key, outage).
+async function lookupGamertag(gamertag, { apiKey = process.env.OPENXBL_API_KEY, fetchFn = globalThis.fetch } = {}) {
+  const tries = [
+    [`https://xbl.io/api/v2/friends/search?gt=${encodeURIComponent(gamertag)}`, (j) => fromProfileUsers(j?.profileUsers, gamertag)],
+    [`https://xbl.io/api/v2/search/${encodeURIComponent(gamertag)}`, (j) => {
+      const m = pickExact(j?.people, gamertag);
+      return m ? { xuid: String(m.xuid), gamertag: m.gamertag || gamertag } : null;
+    }],
+  ];
+  let answered = false;
+  let lastError = null;
+  for (const [url, read] of tries) {
+    try {
+      const res = await fetchFn(url, { headers: { 'X-Authorization': apiKey, Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+      if (res.status === 429) { const e = new Error('rate limited'); e.rateLimited = true; throw e; }
+      if (!res.ok) { lastError = new Error(`OpenXBL ${res.status}`); console.warn(`[xbox-link] ${url.split('?')[0]} -> ${res.status}`); continue; }
+      answered = true;
+      const found = read(await res.json());
+      if (found) return found;
+    } catch (e) {
+      if (e.rateLimited) throw e;
+      lastError = e;
+    }
+  }
+  if (!answered) throw lastError || new Error('OpenXBL unreachable');
+  return null;
 }
 
 function createXboxLink({ supabase, apiKey = process.env.OPENXBL_API_KEY, fetchFn = globalThis.fetch }) {
-  async function search(gamertag) {
-    const res = await fetchFn(`https://xbl.io/api/v2/search/${encodeURIComponent(gamertag)}`, {
-      headers: { 'X-Authorization': apiKey, Accept: 'application/json' },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (res.status === 429) { const e = new Error('rate limited'); e.rateLimited = true; throw e; }
-    if (!res.ok) throw new Error(`OpenXBL ${res.status}`);
-    return pickExact((await res.json())?.people, gamertag);
-  }
+  const search = (gamertag) => lookupGamertag(gamertag, { apiKey, fetchFn });
 
   // Look up one profile and save what we find. Returns 'linked', 'not_found' or 'skipped'.
   async function resolveProfile(profile) {
@@ -79,4 +114,4 @@ function createXboxLink({ supabase, apiKey = process.env.OPENXBL_API_KEY, fetchF
   return { resolveProfile, resolveUser, backfill };
 }
 
-module.exports = { createXboxLink, gamertagFor, pickExact, XBOX_PLATFORMS };
+module.exports = { createXboxLink, lookupGamertag, gamertagFor, pickExact, XBOX_PLATFORMS };

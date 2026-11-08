@@ -1,0 +1,94 @@
+# Review Panel (nightly) — reviews commits pushed straight to the default branch
+# (e.g. from Lovable or quick fixes) that skipped PR review, and keeps the ledger current.
+# Opens an issue only when something needs attention; opens a PR when the ledger changes.
+name: Review Panel (nightly)
+
+on:
+  schedule:
+    - cron: "17 8 * * *" # 2:17 AM Chicago standard time
+  workflow_dispatch:
+
+concurrency:
+  group: review-panel-nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - run: mkdir -p .review-panel/out
+
+      - name: Run the panel
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          plugin_marketplaces: "https://github.com/jgor80/review-panel.git"
+          plugins: "review-panel@jgor80-tools"
+          prompt: "/review-panel:review-panel ci nightly"
+          claude_args: |
+            --max-turns 150
+            --allowedTools "Read,Grep,Glob,Write,Edit,Agent,Task,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(deno:*),Bash(ls:*),Bash(jq:*)"
+
+      - name: Read verdict
+        id: v
+        if: always()
+        run: |
+          V=$(tr -d '[:space:]' < .review-panel/out/verdict.txt 2>/dev/null || true)
+          echo "verdict=${V:-ERROR}" >> "$GITHUB_OUTPUT"
+          echo "Verdict: ${V:-ERROR}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open an issue when something needs attention
+        if: always() && (steps.v.outputs.verdict == 'BLOCK' || steps.v.outputs.verdict == 'FIX_FIRST')
+        run: |
+          gh label create "review-panel" --color 5319e7 --force > /dev/null
+          {
+            cat .review-panel/out/summary.md
+            echo
+            echo "<details><summary>Full report</summary>"
+            echo
+            head -c 55000 .review-panel/out/report.md
+            echo
+            echo "</details>"
+          } > issue.md
+          gh issue create --label "review-panel" \
+            --title "Review Panel nightly: ${{ steps.v.outputs.verdict }} — $(date -u +%Y-%m-%d)" \
+            --body-file issue.md
+
+      - name: Open a PR with ledger updates
+        if: always()
+        run: |
+          git add -N .review-panel/ledger.md 2>/dev/null || true
+          if git diff --quiet -- .review-panel/ledger.md; then
+            echo "Ledger unchanged."; exit 0
+          fi
+          BR="review-panel/ledger-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BR"
+          git add .review-panel/ledger.md
+          git commit -m "Review Panel: update ledger ($(date -u +%Y-%m-%d))"
+          git push -u origin "$BR"
+          gh pr create --title "Review Panel: ledger update $(date -u +%Y-%m-%d)" \
+            --body "Nightly ledger reconciliation: new findings from merged PRs and direct pushes, and statuses for findings fixed since the last run." \
+            || echo "::warning::Couldn't open the PR. Turn on Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests', or open one from branch $BR."
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-panel-nightly
+          path: .review-panel/out/
+          if-no-files-found: ignore
