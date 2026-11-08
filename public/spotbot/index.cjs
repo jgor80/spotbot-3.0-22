@@ -69,7 +69,7 @@ const { createStreamKit, OVERLAY_SUBCOMMAND } = require('./stream-kit.cjs');
 const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
 const { createAutoLink } = require('./auto-link.cjs');
-const { createXboxLink } = require('./xbox-link.cjs');
+const { createXboxLink, lookupGamertag } = require('./xbox-link.cjs');
 const { createTwitchLinks } = require('./twitch-links.cjs');
 const { createPresenceLog } = require('./xbox-presence-log.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
@@ -6952,29 +6952,13 @@ async function routeInteraction(interaction) {
         }
 
         try {
-          // Search for the gamertag via OpenXBL
-          const searchResponse = await axios.get(`https://xbl.io/api/v2/search/${encodeURIComponent(gamertag)}`, {
-            headers: {
-              'X-Authorization': openXblApiKey,
-              'Accept': 'application/json'
-            },
-            timeout: 10000
-          });
-
-          const results = searchResponse.data?.people || [];
-          if (results.length === 0) {
+          const match = await lookupGamertag(gamertag, { apiKey: openXblApiKey });
+          if (!match) {
             return interaction.editReply({ 
               content: `❌ Could not find Xbox gamertag **${gamertag}**. Make sure you typed it exactly as it appears on Xbox.` 
             });
           }
-
-          // Find exact match or best match
-          const exactMatch = results.find(p => 
-            p.gamertag?.toLowerCase() === gamertag.toLowerCase()
-          );
-          const match = exactMatch || results[0];
-          const xuid = match.xuid;
-          const foundGamertag = match.gamertag;
+          const { xuid, gamertag: foundGamertag } = match;
 
           // Save to profiles
           const { error } = await supabase
@@ -7007,7 +6991,7 @@ async function routeInteraction(interaction) {
 
         } catch (err) {
           console.error('[linkxbox] Error:', err.message);
-          if (err.response?.status === 429) {
+          if (err.rateLimited || err.response?.status === 429) {
             return interaction.editReply({ content: '❌ Rate limited by Xbox API. Please try again in a few minutes.' });
           }
           return interaction.editReply({ content: `❌ Failed to lookup Xbox gamertag: ${err.message}` });
