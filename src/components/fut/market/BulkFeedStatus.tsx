@@ -8,7 +8,7 @@ export function BulkFeedStatus({ enabled, platform }: { enabled: boolean; platfo
   return <section className="space-y-2 rounded-lg border border-border p-4" aria-label="Automatic market prices">
     <h2 className="font-semibold">Automatic market prices</h2>
     <ErrorNotice error={query.error} />
-    {feed?.last_run?.status === "failed" && <p className="text-sm text-amber-500">The last automatic refresh failed. Previously collected prices remain available with their original dates.</p>}
+    {feed?.last_run?.status === "failed" && <p className="text-sm text-amber-500">The last automatic refresh failed{feed.last_run.finished_at ? ` (${new Date(feed.last_run.finished_at).toLocaleString()})` : ""}: {feed.last_run.message || "no reason recorded"}. Previously collected prices remain available with their original dates.</p>}
     {query.isPending ? <p>Checking price collection…</p> : query.isError ? <p>Price collection status is unavailable.</p> : !feed?.enabled ? <p>Automatic bulk prices are not enabled yet.</p>
       : !snapshot?.published_at ? <p>Waiting for the first {platform} snapshot. Scheduled at {feed.schedule}.</p>
       : <><p>{snapshot.market_price_count.toLocaleString()} prices across {snapshot.card_count.toLocaleString()} entries · {platform === "pc" ? "PC" : "Console"}</p>

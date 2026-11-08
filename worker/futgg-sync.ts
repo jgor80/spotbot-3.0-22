@@ -1,4 +1,6 @@
 // Public bulk files used by FUT.GG's client. Four GETs per run, no account/session/challenge solver.
+// Runs on the bot (public/spotbot/futgg-sync.cjs via npm run build:bot-futgg, scheduled in scheduler.cjs):
+// FUT.GG answers 403 to Cloudflare Workers. Rebuild the .cjs after editing this file.
 const ROOT = "https://r2.fut.gg/27";
 const MAX_BYTES = 8 * 1024 * 1024;
 const FILES = { console: "player-prices-ps5-dyn", pc: "player-prices-pc-dyn" } as const;

@@ -1,12 +1,15 @@
-# FUT.GG prices: Cloudflare to the website
+# FUT.GG prices: bot to the website
 
-The website's existing Cloudflare Worker collects the public FUT.GG index and console/PC price files at
-**06:00 and 18:00 UTC** (`wrangler.jsonc`). It uses the existing `SUPABASE_URL` and
-`SUPABASE_SERVICE_ROLE_KEY` Worker bindings to call service-role-only ingestion functions in the `fut` schema.
-No EA login, browser extension, residential proxy, SSH login, Python service or new secret value is required
-for this collection path. `wrangler.jsonc` declares the non-secret Worker variable `FUT_ENABLED=true` for this
-integration; the backend's existing FUT flag still governs API access. `FUTGG_SYNC=off` pauses just this Worker
-job without changing authentication or the website; database source status also gates ingestion.
+The bot's scheduler on the Hetzner server collects the public FUT.GG index and console/PC price files at
+**06:00 and 18:00 UTC** (`futgg-prices` in `public/spotbot/scheduler.cjs`). After a restart it also runs once,
+two minutes in, if the last successful refresh is more than 12 hours old. The code lives in
+`worker/futgg-sync.ts` and is bundled for the bot with `npm run build:bot-futgg` (rebuild after editing).
+It uses the bot's existing service-role database client to call service-role-only ingestion functions in the
+`fut` schema. No EA login, browser extension, residential proxy or new secret is required. It runs only when
+the bot has `FUT_ENABLED=true` (the XI Lab switch); `FUTGG_SYNC=off` pauses just this job.
+
+This started on the Cloudflare Worker's cron, but FUT.GG answers HTTP 403 to requests from Cloudflare
+Workers (first run, 2026-11-08 06:00 UTC), so the Worker cron was removed.
 
 Each refresh performs four public GETs using the current manifest hashes. Both platform blobs are validated
 before ingestion. PostgreSQL decodes the card ID deltas and commits each platform snapshot in one transaction.
@@ -27,20 +30,10 @@ is removed from the bot scheduler; its manual import/status endpoints remain ava
 
 ## Deployment
 
-1. Merge the reviewed change into `jgor80/spotbot-3.0-22` main. The existing Hetzner auto-deploy must apply
-   `20261108030000_futgg_bulk_prices.sql`; the existing function-bundle action rebuilds the changed API.
-2. Cloudflare's Git build deploys the Worker, website assets and cron declaration from that same repository.
-   The existing `keep_vars` setting preserves dashboard bindings. Verify the Worker has its existing database
-   URL and service-role secret configured; never put these values into source or the browser bundle. The
-   repository supplies the new non-secret Worker opt-in, so no extra dashboard toggle is needed to enable it.
-3. After the first scheduled run, check Cloudflare's cron execution logs for `[futgg-sync]` and open Market Lab.
-   The coverage panel should show console/PC snapshot counts and actual publication/check timestamps. A failed
-   run is recorded in `fut.market_provider_runs`, with previous data retained.
-
-Cloudflare Worker deployment and backend database migrations are separate operations. If Cloudflare deploys
-first, ingestion fails until the migration is present; the next scheduled run can then succeed. Existing market
-requests keep working before migration because the new source is absent/disabled. The status panel reports
-automatic collection as not enabled until its source is available.
+Merging to main is enough: the Hetzner auto-deploy applies migrations and restarts the bot, and the first
+refresh runs two minutes after the restart. Check the bot log for `futgg-prices` and open Market Lab. A failed
+run is recorded in `fut.market_provider_runs` (Market Lab shows its message), with previous data retained,
+and is reported through the bot's error webhook.
 
 For a database administrator, read-only checks:
 
