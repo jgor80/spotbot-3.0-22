@@ -46,172 +46,55 @@ async function rejectUnlessCaller(req, opts = {}) {
   return null;
 }
 
+// supabase/functions/_shared/ea-events.ts
+var EA_EVENT_STATS = {
+  interceptions: [6],
+  secondAssists: [115],
+  throughBalls: [152],
+  dribbles: [174],
+  // dribbles completed
+  progressiveCarries: [97],
+  // dribbles carried
+  possessionGains: [108, 109, 110],
+  // possession won in defensive, middle, attacking third
+  possessionsLost: [105, 106, 107],
+  shotsOnTarget: [217],
+  shotsOffTarget: [218],
+  passesCompleted: [215],
+  // excludes offside passes
+  forwardPasses: [30],
+  // completed forward passes
+  tacklesWon: [0],
+  aerialsWon: [265, 266],
+  foulsCommitted: [2, 3],
+  foulsWon: [4],
+  yellowCards: [95, 213]
+};
+function eaEventCounts(p) {
+  const counts = {};
+  for (let i = 0; i < 4; i++) {
+    for (const pair of String(p?.[`match_event_aggregate_${i}`] ?? "").split(",")) {
+      const [k, v] = pair.split(":");
+      if (!/^\d+$/.test(k || "") || !/^\d+$/.test(v || "")) continue;
+      counts[Number(k)] = (counts[Number(k)] || 0) + Number(v);
+    }
+  }
+  return counts;
+}
+function eaEventStats(p) {
+  const c = eaEventCounts(p);
+  const out = {};
+  for (const [name, ids] of Object.entries(EA_EVENT_STATS)) {
+    out[name] = ids.reduce((sum, id) => sum + (c[id] || 0), 0);
+  }
+  return out;
+}
+
 // supabase/functions/backfill-player-stats/index.ts
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
 };
-var EA_EVENT_CODES = {
-  // Defensive stats
-  0: "tackleAttempts",
-  // Discovered: r=0.93 with tackles
-  6: "clearances",
-  // Confirmed: 100% correlation
-  7: "tackleEvents",
-  // Tackle events
-  8: "interceptions",
-  // Confirmed: 100% correlation
-  49: "ballRecoveries",
-  // Ball recoveries
-  61: "blocks",
-  // Blocks
-  109: "successfulChallenges",
-  // NEW: rating_corr: 0.426, tackle_corr: 0.357
-  121: "tackleSuccess",
-  // Discovered: r=0.698 with tackles - successful tackles
-  143: "ballPressure",
-  // NEW: pass_corr: 0.546, high volume
-  145: "pressingActions",
-  // NEW: goal_corr: 0.301, rating_corr: 0.247
-  151: "defensiveTouch",
-  // NEW: goal_corr: 0.178
-  158: "defensiveActions",
-  // Discovered: combined defensive actions
-  163: "ballRecoveriesLoose",
-  // Discovered: r=0.81 with tackles
-  164: "recoveriesOppHalf",
-  // Discovered: r=0.97 with tackles
-  229: "successfulTackles",
-  // Discovered: r=0.690 with tackles (mirror of 121)
-  266: "defensivePositioning",
-  // NEW: tackle_corr: 0.234, defender-only
-  // Passing stats
-  1: "passes",
-  // Pass events
-  24: "passesCompleted",
-  // Discovered: r=0.525 with passes_made
-  25: "keyTouches",
-  // NEW: avg 2.54/match, pass_corr: 0.136
-  26: "backwardPasses",
-  // NEW: avg 5.29/match, pass_corr: 0.533
-  27: "shortPasses",
-  // NEW: avg 1.50/match, pass_corr: 0.189
-  30: "passesAttempted",
-  // Discovered: r=0.477 with passes_made
-  31: "receivingUnderPressure",
-  // NEW: avg 2.87/match
-  33: "keyPassAttempts",
-  // NEW: avg 1.17/match
-  35: "throughBalls",
-  // NEW: avg 1.85/match, playmaker-heavy
-  37: "passIntoBox",
-  // NEW: avg 1.62/match
-  119: "finalThirdPasses",
-  // NEW: goal_corr: 0.330, rating_corr: 0.279
-  174: "forwardPasses",
-  // Discovered: r=0.65 with passes_made
-  176: "possessionGains",
-  // Discovered: r=0.80 with passes_made
-  215: "passAttempts",
-  // Discovered: r=1.0 with passes
-  // Attacking stats
-  3: "takeOns",
-  // Dribble attempts (take-ons)
-  11: "assistEvents",
-  // Discovered: r=0.943 with assists
-  12: "goalsOpenPlay",
-  // Discovered: r=0.42 with goals
-  13: "shots",
-  // Confirmed: 100% correlation
-  14: "shotsInBox",
-  // Discovered: r=0.60 with shots
-  16: "goals",
-  // Goal events
-  32: "dribbleSuccess",
-  // NEW: goal_corr: 0.332, rating_corr: 0.321
-  34: "progressiveCarries",
-  // NEW: pass_corr: 0.558, rating_corr: 0.097
-  36: "keyDribbles",
-  // NEW: goal_corr: 0.324, rating_corr: 0.332
-  106: "aerialDuelsWon",
-  // Discovered: r=0.98 with goals
-  112: "touchesInBox",
-  // NEW: goal_corr: 0.299, rating_corr: 0.313
-  114: "attackingThirdEntries",
-  // NEW: rating_corr: 0.351, assist_corr: 0.248
-  118: "assistChances",
-  // Discovered: r=0.41 with assists - chances created
-  131: "goalsInsideBox",
-  // Discovered: goals from inside box
-  177: "shotsOnTarget",
-  // Discovered: r=0.495 with shots
-  178: "bigChances",
-  // NEW: goal_corr: 0.320, rating_corr: 0.278
-  183: "chancesCreated",
-  // NEW: goal_corr: 0.273, rating_corr: 0.246
-  212: "shotEvents",
-  // NEW: goal_corr: 0.283
-  214: "goalsDirect",
-  // Discovered: r=0.978 with goals
-  217: "shotsOffTarget",
-  // Discovered: r=0.70 with shots
-  218: "shotAttempts",
-  // Discovered: total shot attempts
-  265: "forwardRuns",
-  // NEW: goal_corr: 0.234, forward-only
-  // Duel stats
-  44: "aerialDuels",
-  // Aerial duels total
-  100: "groundDuelsTotal",
-  // Ground duels total
-  101: "groundDuelsWon",
-  // Ground duels won
-  105: "aerialDuelsTotal",
-  // Aerial duels total
-  107: "looseBallDuels",
-  // Loose ball duels
-  152: "offensiveDuels",
-  // NEW: assist_corr: 0.333, rating_corr: 0.303
-  157: "defensiveDuels",
-  // NEW: rating_corr: 0.200
-  // Possession stats
-  182: "possessionTouches",
-  // NEW: pass_corr: 0.588, high volume
-  219: "ballReceipts",
-  // NEW: avg 7.14/match, universal
-  // GK stats
-  10: "savesStandard",
-  // Confirmed: 100% correlation with saves
-  28: "gkSavesParry",
-  // NEW: save_corr: 0.228, GK-heavy distribution
-  50: "savesDiving",
-  // GK diving saves
-  99: "gkClaims",
-  // Discovered: GK catches/claims
-  267: "goodDirectionSaves",
-  // Confirmed: 100% correlation
-  // Meta
-  113: "matchPlayed"
-  // Match played marker
-};
-function parseEventAggregate(agg0, agg1, agg2, agg3) {
-  const result = {};
-  const combined = [agg0, agg1, agg2, agg3].filter((s) => Boolean(s) && typeof s === "string").join(",");
-  if (!combined) return result;
-  const pairs = combined.split(",").filter(Boolean);
-  for (const pair of pairs) {
-    const [eventIdStr, countStr] = pair.split(":");
-    if (!eventIdStr || !countStr) continue;
-    const eventId = parseInt(eventIdStr, 10);
-    const count = parseInt(countStr, 10);
-    if (isNaN(eventId) || isNaN(count)) continue;
-    const eventName = EA_EVENT_CODES[eventId];
-    if (eventName) {
-      result[eventName] = (result[eventName] || 0) + count;
-    }
-  }
-  return result;
-}
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -287,33 +170,28 @@ Deno.serve(async (req) => {
             totalSkipped++;
             continue;
           }
-          const eventStats = parseEventAggregate(
-            pStats.match_event_aggregate_0,
-            pStats.match_event_aggregate_1,
-            pStats.match_event_aggregate_2,
-            pStats.match_event_aggregate_3
-          );
+          const eventStats = eaEventStats(pStats);
           const interceptions = eventStats.interceptions || parseInt(pStats.interceptions || 0);
-          const clearances = eventStats.clearances || parseInt(pStats.clearances || 0);
+          const clearances = parseInt(pStats.clearances || 0);
           const secondAssists = eventStats.secondAssists || parseInt(pStats.secondAssists || pStats.secondassists || 0);
-          const dribbles = eventStats.takeOns || parseInt(pStats.dribblewon || pStats.dribbles || 0);
-          const ballRecoveries = eventStats.ballRecoveries || 0;
+          const dribbles = eventStats.dribbles || parseInt(pStats.dribblewon || pStats.dribbles || 0);
+          const ballRecoveries = eventStats.possessionGains || 0;
           const passesCompleted = eventStats.passesCompleted || 0;
           const shotsOnTarget = eventStats.shotsOnTarget || 0;
-          const tackleSuccess = eventStats.tackleSuccess || eventStats.successfulTackles || 0;
-          const gkClaims = eventStats.gkClaims || 0;
-          const goalsInsideBox = eventStats.goalsInsideBox || 0;
-          const defensiveActions = eventStats.defensiveActions || 0;
+          const tackleSuccess = eventStats.tacklesWon || 0;
+          const gkClaims = 0;
+          const goalsInsideBox = 0;
+          const defensiveActions = (eventStats.tacklesWon || 0) + (eventStats.interceptions || 0);
           const throughBalls = eventStats.throughBalls || 0;
           const progressiveCarries = eventStats.progressiveCarries || 0;
-          const touchesInBox = eventStats.touchesInBox || 0;
-          const pressingActions = eventStats.pressingActions || 0;
-          const dribbleSuccessCount = eventStats.dribbleSuccess || 0;
-          const bigChances = eventStats.bigChances || 0;
-          const forwardRuns = eventStats.forwardRuns || 0;
-          const offensiveDuels = eventStats.offensiveDuels || 0;
-          const defensiveDuels = eventStats.defensiveDuels || 0;
-          const gkSavesParry = eventStats.gkSavesParry || 0;
+          const touchesInBox = 0;
+          const pressingActions = 0;
+          const dribbleSuccessCount = eventStats.dribbles || 0;
+          const bigChances = 0;
+          const forwardRuns = 0;
+          const offensiveDuels = 0;
+          const defensiveDuels = 0;
+          const gkSavesParry = 0;
           const savesDiving = parseInt(pStats.ballDiveSaves || pStats.ballDivesaves || 0);
           const savesCross = parseInt(pStats.crossSaves || pStats.crosssaves || 0);
           const savesParry = parseInt(pStats.parrySaves || pStats.parrysaves || 0) + gkSavesParry;
@@ -336,7 +214,9 @@ Deno.serve(async (req) => {
             clearances,
             second_assists: secondAssists,
             dribbles,
-            fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
+            fouls: parseInt(pStats.fouls || pStats.foulcommited || 0) || eventStats.foulsCommitted,
+            possession_gains: eventStats.possessionGains,
+            possessions_lost: eventStats.possessionsLost,
             offsides: parseInt(pStats.offsides || 0),
             archetypeid: pStats.archetypeid || pStats.archetypeId || null,
             clean_sheet: isCleanSheet,
