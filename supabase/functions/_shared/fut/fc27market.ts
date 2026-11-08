@@ -66,7 +66,7 @@ export async function pullFc27Market(db: FutDb, userId: string, market: Importer
     matched: matched.length,
     observations: lines.size,
     import: imported,
-    note: "Third-party prices (fc27-market on Val Town, from FUT.GG's PlayStation file; console prices are shared with Xbox). " +
+    note: "Third-party PlayStation prices (fc27-market on Val Town, from FUT.GG's PlayStation file; Xbox and PlayStation share one console market). " +
       "Only the top 100 cards per group are listed, so cheaper cards won't match." +
       (hoursOld !== null && hoursOld > 6 ? ` Its latest prices are ${hoursOld} hours old.` : ""),
   };
@@ -171,6 +171,7 @@ export async function fc27MarketStatus(db: FutDb) {
     hours_old: feed ? Math.round((Date.now() - Date.parse(feed)) / 3_600_000) : null,
     cards,
     last_run: run ? { at: run.finished_at, status: run.status, message: run.message } : null,
-    note: "Pulled hourly by the server from fc27-market (a third-party copy of FUT.GG's prices, not EA's market). Platform not identified; stored as console. Your synced cards get each new snapshot automatically.",
+    platform_label: "PlayStation",
+    note: "Pulled hourly by the server from fc27-market, a third-party copy of FUT.GG's PlayStation prices (not EA's market). Xbox and PlayStation share one console market, so they're stored as console prices. Your synced cards get each new snapshot automatically.",
   };
 }

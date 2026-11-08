@@ -327,3 +327,20 @@ Deno.test("fc27-market job: bot only, keeps every card with the feed time, feeds
   const st = (await call("GET", "/v1/market/feeds/fc27-market")).data.data;
   assert(st.feed_updated === updated && st.cards === 2 && st.last_run?.status === "succeeded" && st.hours_old === 1, JSON.stringify(st));
 });
+
+Deno.test("EA reference: marketAverage and past sales from a capture are kept apart and shown per card", async () => {
+  const { db, call } = setup();
+  await call("POST", "/v1/club/import", { format: "xilab-club-capture", version: 1, verified: false, captured_at: "x", names: {}, items: [
+    { item_id: 1, ea_item_id: 101, asset_id: 101, kind: "player", rating: 85, position: "CB", positions: ["CB"], team_id: 1, league_id: 2, nation_id: 3, rare_flag: 0, untradeable: false, loan: false, stats: null, skill_moves: null, weak_foot: null, seen_in: "club" },
+  ] });
+  const at = new Date(Date.now() - H).toISOString();
+  const text = ["ea_item_id,asset_id,rating,platform,price,observed_at,kind,listings,rare_flag,team_id,league_id,nation_id,position,market_average,last_sales", `101,101,85,console,5300,${at},lowest_bin,3,,,,,,4945,1200;16000`].join("\n");
+  const imp = await call("POST", "/v1/market/prices/import", { text });
+  assert(imp.status === 200 && imp.data.data.inserted === 1 && imp.data.data.ea_reference_rows === 1, JSON.stringify(imp.data));
+  const prices = (db.tables.market_price_observations as { price: number }[]).map((o) => o.price);
+  assert(prices.length === 1 && prices[0] === 5300, "marketAverage never enters price history");
+  const card = (db.tables.player_cards as { id: string; source_card_key: string }[]).find((c) => c.source_card_key === "101")!;
+  const ref = (await call("GET", `/v1/market/cards/${card.id}/ea-reference`)).data.data;
+  assert(ref.market_average === 4945 && ref.label === "EA reference price (meaning unconfirmed)" && ref.evidence === "hypothesis" && ref.recent_sales.length === 2, JSON.stringify(ref));
+  assert((await call("GET", `/v1/market/cards/${card.id}/ea-reference`, undefined, OTHER)).data.data.market_average === null, "private to the owner");
+});

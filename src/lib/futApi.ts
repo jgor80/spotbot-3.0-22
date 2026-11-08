@@ -113,6 +113,7 @@ export interface MarketWatchlist { items: MarketWatchItem[]; note: string }
 export interface MarketImportResult { accepted: number; inserted: number; skipped: number; duplicates: number; rejected: { line: number; reason: string }[]; held: number; linked_from_held: number; still_held: number; shared_with_community?: number }
 export interface HelperStatus { connected: boolean; key_hint: string | null; created_at: string | null; last_used_at: string | null; key?: string }
 export interface Fc27FeedStatus { feed_updated: string | null; hours_old: number | null; cards: number; last_run: { at: string; status: string; message: string } | null; note: string }
+export interface MarketEaReference { label: string; evidence: MarketEvidence; market_average: number | null; observed_at: string | null; history: { observed_at: string; market_average: number }[]; recent_sales: { price: number; seen_at: string }[]; note: string }
 export interface MarketSharing { sharing: boolean; since: string | null; your_contributions: number; deleted?: number }
 export interface CommunityPull { sharers: number; your_cards_with_ea_id: number; cards_with_community_prices: number; observations: number; max_contributors: number; import: MarketImportResult | null; note: string }
 export interface Fc27MarketPull { updated: string | null; hours_old: number | null; your_cards_with_ea_id: number; matched: number; observations: number; import: MarketImportResult | null; note: string }
@@ -125,6 +126,7 @@ export const futApi = {
     overview: (platform: MarketPlatform) => futRequest<MarketOverview>(marketPath("/overview", platform)),
     opportunities: (platform: MarketPlatform, filters: Record<string, string> = {}) => futRequest<MarketOpportunities>(marketPath("/opportunities", platform, filters)),
     card: (id: string, platform: MarketPlatform) => futRequest<MarketCardIntel>(marketPath(`/cards/${encodeURIComponent(id)}`, platform)),
+    eaReference: (id: string, platform: MarketPlatform) => futRequest<MarketEaReference>(marketPath(`/cards/${encodeURIComponent(id)}/ea-reference`, platform)),
     relativeValue: (id: string, platform: MarketPlatform, others: string[] = []) => futRequest<MarketRelativeValue>(marketPath(`/cards/${encodeURIComponent(id)}/relative-value`, platform, { others: others.join(",") })),
     thesis: (input: MarketThesisInput) => futRequest<MarketThesis>("/market/thesis", "POST", input),
     compareSquad: (card_id: string, platform: MarketPlatform, squad: string) => futRequest<MarketSquadComparison>("/market/compare-squad", "POST", { card_id, platform, squad }),
