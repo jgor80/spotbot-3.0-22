@@ -1,11 +1,11 @@
-# Review Panel — runs the multi-judge review on every pull request.
-# Posts one comment (updated on each push), labels the PR with the verdict,
-# and fails this check on BLOCK. Panel source: https://github.com/jgor80/review-panel
+# Review Panel — runs the multi-judge review on a pull request when you ask for it
+# (Actions → Review Panel → Run workflow). It no longer runs on every PR; to review any repo
+# from an AI app, use the Review Panel MCP server (https://github.com/jgor80/review-panel/tree/main/mcp).
+# Posts one comment (updated on each run), labels the PR with the verdict,
+# and fails this check on BLOCK.
 name: Review Panel
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       pr:
@@ -13,16 +13,11 @@ on:
         required: true
 
 concurrency:
-  group: review-panel-${{ github.event.pull_request.number || inputs.pr }}
+  group: review-panel-${{ inputs.pr }}
   cancel-in-progress: true
 
 jobs:
   review:
-    # Skip drafts and fork PRs (forks don't get secrets).
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.draft == false &&
-       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -32,13 +27,13 @@ jobs:
       id-token: write
       actions: read
     env:
-      PR: ${{ github.event.pull_request.number || inputs.pr }}
+      PR: ${{ inputs.pr }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr) || '' }}
+          ref: refs/pull/${{ inputs.pr }}/head
 
 
       - name: Check for the Anthropic API key
@@ -68,8 +63,6 @@ jobs:
         uses: anthropics/claude-code-action@v1
         env:
           PANEL_BASE: ${{ steps.pr.outputs.base }}
-          PANEL_PR_TITLE: ${{ github.event.pull_request.title }}
-          PANEL_PR_BODY: ${{ github.event.pull_request.body }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           plugin_marketplaces: "https://github.com/jgor80/review-panel.git"
