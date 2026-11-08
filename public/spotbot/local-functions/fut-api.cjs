@@ -5898,6 +5898,43 @@ async function fc27MarketStatus(db) {
   };
 }
 
+// supabase/functions/_shared/fut/futgg-status.ts
+async function futggStatus(db, now2 = Date.now()) {
+  const { data: source, error } = await db.from("market_price_sources").select("status").eq("id", "futgg_bulk").maybeSingle();
+  if (error) throw new FutDbError(error.message);
+  const enabled = source?.status === "enabled";
+  const platforms = [];
+  if (enabled) for (const platform of ["console", "pc"]) {
+    const { data, error: readError } = await db.from("futgg_snapshots").select("*").eq("game_year", 27).eq("platform", platform).order("published_at", { ascending: false }).limit(1);
+    if (readError) throw new FutDbError(readError.message);
+    const row = data?.[0];
+    const ageHours = row ? Math.max(0, (now2 - Date.parse(row.published_at)) / 36e5) : null;
+    platforms.push({
+      platform,
+      published_at: row?.published_at ?? null,
+      received_at: row?.received_at ?? null,
+      checked_at: row?.checked_at ?? null,
+      card_count: row?.card_count ?? 0,
+      market_price_count: row?.priced_count ?? 0,
+      age_hours: ageHours === null ? null : Math.round(ageHours * 100) / 100,
+      overdue: ageHours === null || ageHours > 12
+    });
+  }
+  let lastRun = null;
+  if (enabled) {
+    const { data, error: runError } = await db.from("market_provider_runs").select("finished_at,status,message").eq("source_id", "futgg_bulk").order("finished_at", { ascending: false }).limit(1);
+    if (runError) throw new FutDbError(runError.message);
+    lastRun = data?.[0] ?? null;
+  }
+  return {
+    enabled,
+    schedule: "06:00 and 18:00 UTC",
+    platforms,
+    last_run: lastRun,
+    note: "Third-party FUT.GG bulk files. Publication time describes the dataset, not each card's last price check. Quotes are estimates; existing market freshness rules still apply. Coverage is limited to the files returned."
+  };
+}
+
 // supabase/functions/_shared/fut/community.ts
 var fail4 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
@@ -7399,8 +7436,9 @@ var toObs = (r2) => ({
   ...Array.isArray(r2.quality) ? { quality: r2.quality } : {}
 });
 var PgPriceStore = class {
-  constructor(db) {
+  constructor(db, futggEnabled = false) {
     this.db = db;
+    this.futggEnabled = futggEnabled;
   }
   async query(owner, q) {
     const base = (shared) => () => {
@@ -7412,7 +7450,45 @@ var PgPriceStore = class {
       return x.lte("received_at", q.as_of).lte("observed_at", q.as_of).order("observed_at", { ascending: true });
     };
     const rows = [...await allPages(base(true)), ...await allPages(base(false))];
-    return rows.map(toObs);
+    return [...rows.map(toObs), ...this.futggEnabled ? await this.futggHistory(owner, q) : []];
+  }
+  async futggHistory(owner, q) {
+    const cards = await allPages(() => {
+      let x = this.db.from("player_cards").select("id,source_card_key").eq("owner_user_id", owner);
+      if (q.card_ids?.length) x = x.in("id", q.card_ids);
+      return x.order("id", { ascending: true });
+    });
+    const byEa = /* @__PURE__ */ new Map();
+    for (const card of cards) {
+      const key = String(card.source_card_key ?? "");
+      if (!/^[1-9]\d*$/.test(key) || !Number.isSafeInteger(Number(key))) continue;
+      byEa.set(Number(key), [...byEa.get(Number(key)) ?? [], String(card.id)]);
+    }
+    const ids = [...byEa.keys()], out = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      const quotes = await allPages(() => {
+        let x = this.db.from("futgg_prices").select("*").eq("game_year", 27).in("ea_item_id", ids.slice(i, i + 100)).gte("price", 1);
+        if (q.platform) x = x.eq("platform", q.platform);
+        if (q.since) x = x.gte("published_at", q.since);
+        return x.lte("received_at", q.as_of).lte("published_at", q.as_of).order("published_at", { ascending: true }).order("ea_item_id", { ascending: true }).order("platform", { ascending: true });
+      });
+      for (const quote of quotes) for (const cardId of byEa.get(Number(quote.ea_item_id)) ?? []) {
+        out.push({
+          card_id: cardId,
+          platform: quote.platform,
+          price: Number(quote.price),
+          observed_at: iso2(quote.published_at),
+          received_at: iso2(quote.received_at),
+          season: "FC27",
+          source_id: "futgg_bulk",
+          evidence: "estimate",
+          kind: "lowest_bin",
+          quality: ["FUT.GG dataset publication time; individual quote update time is unavailable."]
+        });
+      }
+      if (out.length >= 2e5) throw new FutError("Too much bulk price history to analyse at once.", 413);
+    }
+    return out;
   }
   async insert(owner, rows) {
     if (!rows.length) return { inserted: 0, skipped: 0 };
@@ -7590,7 +7666,7 @@ async function marketRules(db) {
 async function marketFor(db, now2) {
   const [rules, sources, chemistry] = await Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
   return createMarketService({
-    prices: new PgPriceStore(db),
+    prices: new PgPriceStore(db, sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled")),
     memberships: new PgMembershipStore(db),
     watchlists: new PgWatchlistStore(db),
     cards: new PgMarketCardSource(db),
@@ -7886,6 +7962,7 @@ async function handle(req, deps) {
         return json({ data: await runWorkspace(() => pullCommunity(db, userId, mk)) });
       }
       if (route === "/market/feeds/fc27-market" && m === "GET") return json({ data: await fc27MarketStatus(db) });
+      if (route === "/market/feeds/futgg" && m === "GET") return json({ data: await futggStatus(db) });
       if (route === "/market/import/fc27-market" && m === "POST") {
         return json({ data: await runWorkspace(() => pullFc27Market(db, userId, mk, deps.fetch)) });
       }

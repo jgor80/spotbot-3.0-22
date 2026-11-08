@@ -25,8 +25,7 @@ const JOBS = [
   { name: 'advanced-stats-refresh', minute: 15, rpc: ['backfill_advanced_player_stats', 'refresh_player_season_archive'] },
   // Image reservations left behind by a render that never finished, and previews nobody answered
   { name: 'image-reservation-cleanup', minute: 45, rpc: ['settle_stale_image_reservations'] },
-  // XI Lab Market Lab: third-party fc27-market price snapshot (not EA's market); only runs when FUT is on
-  { name: 'fut-fc27-market', minute: 20, fn: 'fut-api', body: { job: 'fc27-market' }, when: () => process.env.FUT_ENABLED === 'true' },
+  // FUT bulk prices are collected by the Cloudflare Worker's 06:00/18:00 UTC cron (worker/futgg-sync.ts).
   { name: 'season-card-archive-nightly', hour: 6, minute: 30, rpc: ['refresh_player_season_archive'] },
   { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences', 'cleanup_mcp_oauth', 'cleanup_logs'] },
 ];

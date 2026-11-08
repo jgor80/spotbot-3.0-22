@@ -7895,8 +7895,9 @@ var toObs = (r2) => ({
   ...Array.isArray(r2.quality) ? { quality: r2.quality } : {}
 });
 var PgPriceStore = class {
-  constructor(db) {
+  constructor(db, futggEnabled = false) {
     this.db = db;
+    this.futggEnabled = futggEnabled;
   }
   async query(owner, q) {
     const base = (shared) => () => {
@@ -7908,7 +7909,45 @@ var PgPriceStore = class {
       return x.lte("received_at", q.as_of).lte("observed_at", q.as_of).order("observed_at", { ascending: true });
     };
     const rows = [...await allPages(base(true)), ...await allPages(base(false))];
-    return rows.map(toObs);
+    return [...rows.map(toObs), ...this.futggEnabled ? await this.futggHistory(owner, q) : []];
+  }
+  async futggHistory(owner, q) {
+    const cards = await allPages(() => {
+      let x = this.db.from("player_cards").select("id,source_card_key").eq("owner_user_id", owner);
+      if (q.card_ids?.length) x = x.in("id", q.card_ids);
+      return x.order("id", { ascending: true });
+    });
+    const byEa = /* @__PURE__ */ new Map();
+    for (const card of cards) {
+      const key = String(card.source_card_key ?? "");
+      if (!/^[1-9]\d*$/.test(key) || !Number.isSafeInteger(Number(key))) continue;
+      byEa.set(Number(key), [...byEa.get(Number(key)) ?? [], String(card.id)]);
+    }
+    const ids = [...byEa.keys()], out = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      const quotes = await allPages(() => {
+        let x = this.db.from("futgg_prices").select("*").eq("game_year", 27).in("ea_item_id", ids.slice(i, i + 100)).gte("price", 1);
+        if (q.platform) x = x.eq("platform", q.platform);
+        if (q.since) x = x.gte("published_at", q.since);
+        return x.lte("received_at", q.as_of).lte("published_at", q.as_of).order("published_at", { ascending: true }).order("ea_item_id", { ascending: true }).order("platform", { ascending: true });
+      });
+      for (const quote of quotes) for (const cardId of byEa.get(Number(quote.ea_item_id)) ?? []) {
+        out.push({
+          card_id: cardId,
+          platform: quote.platform,
+          price: Number(quote.price),
+          observed_at: iso2(quote.published_at),
+          received_at: iso2(quote.received_at),
+          season: "FC27",
+          source_id: "futgg_bulk",
+          evidence: "estimate",
+          kind: "lowest_bin",
+          quality: ["FUT.GG dataset publication time; individual quote update time is unavailable."]
+        });
+      }
+      if (out.length >= 2e5) throw new FutError("Too much bulk price history to analyse at once.", 413);
+    }
+    return out;
   }
   async insert(owner, rows) {
     if (!rows.length) return { inserted: 0, skipped: 0 };
@@ -8086,7 +8125,7 @@ async function marketRules(db) {
 async function marketFor(db, now2) {
   const [rules, sources, chemistry] = await Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
   return createMarketService({
-    prices: new PgPriceStore(db),
+    prices: new PgPriceStore(db, sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled")),
     memberships: new PgMembershipStore(db),
     watchlists: new PgWatchlistStore(db),
     cards: new PgMarketCardSource(db),
