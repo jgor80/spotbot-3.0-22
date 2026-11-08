@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useGuild } from "@/contexts/GuildContext";
 import { cn } from "@/lib/utils";
 import { DivisionProgressCard } from "@/components/club/DivisionProgressCard";
+import { AdvancedStatsSection } from "@/components/insights/AdvancedStatsSection";
 import {
   ClubMatchRow,
   LineupRow,
@@ -393,6 +394,8 @@ export default function InsightsPage() {
                 </CardContent>
               </Card>
             </div>
+
+            <AdvancedStatsSection matches={analysis.matches} />
           </>
         )}
       </div>
