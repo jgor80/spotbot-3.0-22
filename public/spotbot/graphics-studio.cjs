@@ -33,6 +33,7 @@ const { renderSiciliaCard, renderSiciliaBack } = require('./graphics-sicilia.cjs
 const { renderCardBack } = require('./graphics-card-back.cjs');
 const { finishCardSvg } = require('./card-layout.cjs');
 const { cardStats } = require('./card-stats.cjs');
+const { createDeepStats } = require('./deep-stats.cjs');
 const { kitsFor, kitFor, withKit } = require('./club-kits.cjs');
 const { kitOf, teamColors, crestUrl } = require('./club-colors.cjs');
 const { logosFor, logoFor, assetUrl } = require('./club-logos.cjs');
@@ -247,6 +248,7 @@ function shortPosition(pos) {
 }
 
 function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs, getClient, getPremium = () => null }) {
+  const deepStats = createDeepStats({ supabase });
   const panelIds = new Map(); // channelId -> panel message id
   const guildOf = (guildId) => getClient?.()?.guilds?.cache?.get(guildId) || null;
 
@@ -608,6 +610,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       supabase.from('ea_seasons').select('code, label, starts_at').order('starts_at'),
     ]);
     const data = cardStats((statsRows || []).map((s) => ({ ...s, primary_position: photo?.position || s.primary_position })), club);
+    // Best FC27 percentile from EA's event data, when it's a real strength (top 25%)
+    const badge = data.stats.length ? await deepStats.badgeFor(guildId, userId).catch(() => null) : null;
+    if (badge) data.tagline = data.tagline ? `${data.tagline.replace(/ · tracked matches$/, '')} · ${badge}` : badge;
     const verified = (assets || []).map((a) => a.analysis?.kit_number).find((n) => Number.isInteger(n) && n >= 1 && n <= 99);
     // Card back: one row per archived season, plus the EA Member List total for this exact club.
     const short = String(club.name || '').split(/\s+/).pop().slice(0, 10).toUpperCase();

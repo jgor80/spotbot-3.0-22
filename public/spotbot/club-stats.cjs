@@ -6,7 +6,9 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelect
 const {
   toInsightMatches, competitionLabel, competitionEmoji, isSeparateCompetition, computeCompetitionRecords,
   computeAdvancedPlayers, computeSessionFatigue, computePressing, computePartnerships, generateAdvancedInsights, ROLE_LABELS,
+  computeFormTrends, computeOpponentProfiles,
 } = require('./club-insights.cjs');
+const { benchmarkLines, signedPts } = require('./deep-stats.cjs');
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
 const { where } = require('./panels.cjs');
 
@@ -399,16 +401,42 @@ function createClubStats(deps) {
       );
     if (pair) embed.addFields({ name: 'Partnership', value: `${pair.names.join(' + ')}: ${oneText(pair.outOfPositionTogether)} out-of-position warnings a game together vs ${oneText(pair.outOfPositionApart)} apart (${pair.games} games)` });
     if (roles) embed.addFields({ name: 'Rates higher in another role', value: roles });
-    embed.setFooter({ text: `${matches.length} matches · players with ${minGames}+ games · pick a player below for their full breakdown` });
+    const trends = computeFormTrends(matches).filter((t) => t.trend !== 'Steady');
+    if (trends.length) {
+      embed.addFields({ name: 'Form (last 10 vs before)', value: trends.slice(0, 4).map((t) => `${t.trend === 'Improving' ? '📈' : '📉'} ${t.name}: decisions ${signedPts(t.decisionChange)}, positioning ${signedPts(t.positioningChange)}`).join('\n').slice(0, 1024) });
+    }
+    embed.setFooter({ text: `${matches.length} matches · players with ${minGames}+ games · pick a player or an opponent below` });
     const options = players.slice(0, 25).map((p) => ({ label: p.name.slice(0, 100), value: p.key.slice(0, 100), description: `${p.games} GP · decisions ${pctText(p.derived.decisionScore)} · positioning ${pctText(p.derived.positionalDiscipline)}`.slice(0, 100) }));
-    const components = options.length
-      ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`statsp:deepsel:${club.key}`).setPlaceholder('Full breakdown for a player').addOptions(options))]
-      : [];
+    const components = [];
+    if (options.length) components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`statsp:deepsel:${club.key}`).setPlaceholder('Full breakdown for a player').addOptions(options)));
+    const opps = computeOpponentProfiles(matches).filter((o) => o.passCompletion !== null).slice(0, 25);
+    if (opps.length) {
+      components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`statsp:deepopp:${club.key}`).setPlaceholder('Scout an opponent').addOptions(
+        opps.map((o) => ({ label: o.opponent.slice(0, 100), value: o.opponent.toLowerCase().slice(0, 100), description: `${o.games} played · ${o.record.wins}W ${o.record.draws}D ${o.record.losses}L`.slice(0, 100) })),
+      )));
+    }
     return { embeds: [embed], components };
   }
 
+  async function deepOpponentView(guildId, club, name) {
+    const { matches } = await deepData(guildId, club);
+    const o = computeOpponentProfiles(matches).find((x) => x.opponent.toLowerCase().slice(0, 100) === name);
+    if (!o || o.passCompletion === null) return { embeds: [new EmbedBuilder().setTitle('🔎 Scouting').setDescription('No event data for that opponent in the recent matches.')] };
+    const embed = new EmbedBuilder()
+      .setTitle(`🔎 Scouting: ${o.opponent}`)
+      .setColor(0x0ea5e9)
+      .setDescription(`${o.games} played · ${o.record.wins}W ${o.record.draws}D ${o.record.losses}L against them`)
+      .addFields(
+        { name: 'How they play', value: `Pass completion ${pctText(o.passCompletion)}${o.passStyle ? ` · ${o.passStyle}` : ''}\nBall wins up front ${oneText(o.perGame.pressing)}/g\nLost in own third ${oneText(o.perGame.lostOwnThird)}/g\nShots ${oneText(o.perGame.shots)}/g (${pctText(o.insideBoxShotShare)} in the box)\nAerials won ${oneText(o.perGame.aerialsWon)}/g`, inline: true },
+        { name: 'Danger men', value: o.threats.map((t) => `${t.name}: ${t.goals} G · ${t.shots} shots${t.avgRating ? ` · ${t.avgRating.toFixed(1)} Rtg` : ''}`).join('\n') || '–', inline: true },
+      );
+    if (o.tips.length) embed.addFields({ name: 'Game plan', value: o.tips.map((t) => `• ${t}`).join('\n').slice(0, 1024) });
+    embed.setFooter({ text: "From EA's event data on their side, compared with FC27 clubs in community research" });
+    return { embeds: [embed] };
+  }
+
   async function deepPlayerView(guildId, club, key) {
-    const { players } = await deepData(guildId, club);
+    const { players, matches } = await deepData(guildId, club);
     const p = players.find((x) => x.key === key);
     if (!p) return { embeds: [new EmbedBuilder().setTitle('🧠 Deep stats').setDescription('No event data for that player in the recent matches.')] };
     const d = p.derived;
@@ -427,6 +455,8 @@ function createClubStats(deps) {
         { name: 'Discipline', value: `Fouls ${t.foulsCommitted} · won ${t.foulsWon}\nYellows ${t.yellowCards} · pens conceded ${t.penaltiesConceded}`, inline: true },
       );
     if (roleLines) embed.addFields({ name: 'By role', value: roleLines.slice(0, 1024) });
+    const bench = benchmarkLines(p, computeFormTrends(matches).find((x) => x.key === p.key), 6);
+    if (bench.length) embed.addFields({ name: 'Against FC27 players', value: bench.join('\n').slice(0, 1024) });
     embed.setFooter({ text: "From EA's hidden event data · ⭐ = role with the best average rating (3+ games)" });
     return { embeds: [embed] };
   }
@@ -644,6 +674,10 @@ function createClubStats(deps) {
         components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`statsp:topsel:${club.key}`).setPlaceholder('Pick a stat').addOptions(TOP_STAT_CHOICES.map((c) => ({ label: c.name, value: c.value }))))],
       });
     }
+    if (action === 'deepopp') {
+      await interaction.deferUpdate();
+      return interaction.editReply({ ...(await deepOpponentView(interaction.guildId, club, interaction.values[0])), components: interaction.message.components });
+    }
     if (action === 'deepsel') {
       await interaction.deferUpdate();
       return interaction.editReply({ ...(await deepPlayerView(interaction.guildId, club, interaction.values[0])), components: interaction.message.components });
@@ -748,7 +782,7 @@ function createClubStats(deps) {
     return true;
   }
 
-  return { handleInteraction, onMessage, initPanels, teamView, eaMembersView, deepView, deepPlayerView, knownEaNames, matchKnownName, helpMessage, glossaryMessage, forgetNames: (guildId) => namesCache.delete(guildId) };
+  return { handleInteraction, onMessage, initPanels, teamView, eaMembersView, deepView, deepPlayerView, deepOpponentView, knownEaNames, matchKnownName, helpMessage, glossaryMessage, forgetNames: (guildId) => namesCache.delete(guildId) };
 }
 
 module.exports = { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES, GLOSSARY, aggregate };

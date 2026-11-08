@@ -61,6 +61,7 @@ const { createScouting, SCOUT_COMMANDS } = require('./scouting.cjs');
 const { createTrials, TRIAL_COMMANDS } = require('./trials.cjs');
 const { createRecruitCards, LFC_COMMANDS } = require('./recruit-cards.cjs');
 const { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES } = require('./club-stats.cjs');
+const { createDeepStats } = require('./deep-stats.cjs');
 const { createMatchTags, ACTION_SCHEMA: MATCHTAGS_SCHEMA } = require('./match-tags.cjs');
 const { createPremium, premiumCommands } = require('./premium.cjs');
 const { createBroadcast, BROADCAST_SUBCOMMANDS } = require('./broadcast.cjs');
@@ -491,6 +492,7 @@ const recruitCards = createRecruitCards({ supabase, getGuildState, recruitment }
 roster.setExtraFields(recruitCards.gapFields);
 
 // /help, /clubstats members|top|form|matches and the EA-name lookup behind /linkea
+const deepStats = createDeepStats({ supabase });
 const clubStats = createClubStats({ supabase, getGuildState, fetchClubMembers, fetchClubOverall, fetchClubInfo, dashboardUrl: DASHBOARD_URL });
 
 const managerHub = createManagerHub({
@@ -6495,8 +6497,12 @@ async function routeInteraction(interaction) {
           return interaction.editReply({ content: `❌ Failed to fetch profile: ${error}` });
         }
 
-        const tiers = await positionTiers.load(guildId, targetUser.id).catch(() => null);
+        const [tiers, deepField] = await Promise.all([
+          positionTiers.load(guildId, targetUser.id).catch(() => null),
+          deepStats.profileField(guildId, targetUser.id).catch(() => null),
+        ]);
         const embed = buildProfileEmbed(data, targetUser.username, tiers);
+        if (deepField) embed.addFields(deepField);
         return interaction.editReply({ embeds: [embed] });
       }
 

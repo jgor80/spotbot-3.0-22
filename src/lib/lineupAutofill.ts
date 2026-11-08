@@ -9,6 +9,8 @@ export interface AutofillPlayer {
   tiers?: PositionTiersInput | null;
   // Answered Maybe for the event: still picked, but after an equally good Yes
   maybe?: boolean;
+  // Pitch line the player rates best in from EA match data (advancedStats bestRole), a small tie-breaker
+  bestLine?: "GK" | "DEF" | "MID" | "ATT" | null;
 }
 
 export interface PositionTiersInput {
@@ -49,11 +51,17 @@ export function tierFit(tiers: PositionTiersInput | null | undefined, slotPositi
 }
 
 const TIER_BONUS = { primary: 14, secondary: 9, emergency: 2 };
+// Smaller than any tier or preference step, so it only settles near ties
+export const BEST_LINE_BONUS = 3;
+
+// advancedStats Role -> pitch line
+export const LINE_OF_ROLE: Record<string, "GK" | "DEF" | "MID" | "ATT"> = { GK: "GK", DEF: "DEF", MID: "MID", FWD: "ATT" };
 
 function fitScore(player: AutofillPlayer, slotPosition: string, ratings: Map<string, number>): number {
   const rated = ratings.get(`${player.discord_user_id}|${getPositionRatingCategory(slotPosition)}`);
   let score = rated ?? player.overall_rating - 5;
   if (player.maybe) score -= 6;
+  if (player.bestLine && LINE_OF[norm(slotPosition)] === player.bestLine) score += BEST_LINE_BONUS;
 
   const fit = tierFit(player.tiers, slotPosition);
   if (fit && fit !== "none") return score + TIER_BONUS[fit];

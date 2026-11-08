@@ -20,8 +20,8 @@ const {
 } = require('discord.js');
 const { missingChannelPerms } = require('./perm-check.cjs');
 const { activeClubs, resolveClub } = require('./manager-hub.cjs');
-const { toInsightMatches, computeOverview, computeCombos, computeFormations, playerKey, winPct, competitionLabel, competitionEmoji } = require('./club-insights.cjs');
-const { pickLineup, tierFit, FORMATION_SLOTS } = require('./lineup-autofill.cjs');
+const { toInsightMatches, computeOverview, computeCombos, computeFormations, playerKey, winPct, competitionLabel, competitionEmoji, matchDeepHighlights, lineupHints } = require('./club-insights.cjs');
+const { pickLineup, tierFit, FORMATION_SLOTS, LINE_OF_ROLE } = require('./lineup-autofill.cjs');
 const { seasonTotals } = require('./player-season.cjs');
 const T = require('./event-time.cjs');
 const { PREMIUM_FREE } = require('./premium.cjs');
@@ -278,6 +278,24 @@ function createAutopilot(deps) {
       .slice(0, 3);
   }
 
+  // Best line per Discord id and partner id pairs, from lineupHints on the club's synced matches
+  async function deepLineupHints(matches, pool) {
+    const out = { bestLine: new Map(), partners: [] };
+    const hints = lineupHints(matches.filter((m) => m.players.some((p) => p.events)));
+    if (!Object.keys(hints.bestRole).length && !hints.partners.length) return out;
+    const { data: profiles } = await supabase.from('profiles').select('discord_user_id, ea_username').in('discord_user_id', pool);
+    const byKey = new Map((profiles || []).filter((p) => p.ea_username).map((p) => [p.ea_username.trim().toLowerCase(), p.discord_user_id]));
+    for (const [name, role] of Object.entries(hints.bestRole)) {
+      const id = byKey.get(name);
+      if (id && LINE_OF_ROLE[role]) out.bestLine.set(id, LINE_OF_ROLE[role]);
+    }
+    for (const pair of hints.partners) {
+      const ids = pair.map((n) => byKey.get(n));
+      if (ids.every(Boolean)) out.partners.push(ids);
+    }
+    return out;
+  }
+
   // Place the pool into the formation like the Lineup Builder's Fill from Voice
   async function draft(event, club, pool, formationOverride) {
     const guildId = event.guild_id;
@@ -314,6 +332,9 @@ function createAutopilot(deps) {
     const pairs = await chemistryPairs(guildId, matches, pool);
     const boost = new Map();
     for (const p of pairs) for (const id of p.ids) boost.set(id, (boost.get(id) || 0) + 3);
+    // EA event data: the line each player rates best in, and defensive pairs who hold their shape together
+    const deep = await deepLineupHints(matches, pool);
+    for (const ids of deep.partners) for (const id of ids) boost.set(id, (boost.get(id) || 0) + 2);
 
     const players = pool.map((id) => ({
       discord_user_id: id,
@@ -321,6 +342,7 @@ function createAutopilot(deps) {
       tiers: tiersOf.get(id),
       maybe: answer.get(id) === 'maybe',
       preferences: [],
+      bestLine: deep.bestLine.get(id) || null,
     }));
     const { starters: picks, bench } = pickLineup(slots, players, posRatings || [], 9);
     const starters = new Set(picks.values());
@@ -606,6 +628,9 @@ function createAutopilot(deps) {
     if (gag && gag !== nugget) story.push(`😂 ${gag}`);
     const cat = RX.catalyst(match);
     if (cat) story.push(cat);
+    // One line from EA's hidden event data (decisions, pressing, through balls; positioning only after a defeat)
+    const deep = matchDeepHighlights(match).find((h) => h.kind !== 'positioning' || match.result === 'loss');
+    if (deep) story.push(`🧠 ${deep.text}`);
     const flop = RX.flop(match);
     if (flop) story.push(flop);
 

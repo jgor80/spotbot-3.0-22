@@ -21,8 +21,10 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var botLineup_exports = {};
 __export(botLineup_exports, {
   BENCH_SLOT_OFFSET: () => BENCH_SLOT_OFFSET,
+  BEST_LINE_BONUS: () => BEST_LINE_BONUS,
   FORMATION_COORDS: () => FORMATION_COORDS,
   FORMATION_SLOTS: () => FORMATION_SLOTS,
+  LINE_OF_ROLE: () => LINE_OF_ROLE,
   MAX_BENCH: () => MAX_BENCH,
   POSITION_ORDER: () => POSITION_ORDER,
   autofillLineup: () => autofillLineup,
@@ -502,10 +504,13 @@ function tierFit(tiers, slotPosition) {
   return "none";
 }
 var TIER_BONUS = { primary: 14, secondary: 9, emergency: 2 };
+var BEST_LINE_BONUS = 3;
+var LINE_OF_ROLE = { GK: "GK", DEF: "DEF", MID: "MID", FWD: "ATT" };
 function fitScore(player, slotPosition, ratings) {
   const rated = ratings.get(`${player.discord_user_id}|${getPositionRatingCategory(slotPosition)}`);
   let score = rated ?? player.overall_rating - 5;
   if (player.maybe) score -= 6;
+  if (player.bestLine && LINE_OF[norm(slotPosition)] === player.bestLine) score += BEST_LINE_BONUS;
   const fit = tierFit(player.tiers, slotPosition);
   if (fit && fit !== "none") return score + TIER_BONUS[fit];
   if (fit === "none") {
@@ -672,8 +677,10 @@ var FORMATION_COORDS = Object.fromEntries(
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   BENCH_SLOT_OFFSET,
+  BEST_LINE_BONUS,
   FORMATION_COORDS,
   FORMATION_SLOTS,
+  LINE_OF_ROLE,
   MAX_BENCH,
   POSITION_ORDER,
   autofillLineup,

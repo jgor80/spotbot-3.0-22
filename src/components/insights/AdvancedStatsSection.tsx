@@ -6,11 +6,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   ROLE_LABELS,
+  benchRole,
+  benchmarkPlayer,
   computeAdvancedPlayers,
+  computeFormTrends,
+  computeOpponentProfiles,
+  percentileText,
   computePartnerships,
   computePressing,
   computeSessionFatigue,
   type AdvancedPlayer,
+  type FormTrend,
   type InsightMatch,
 } from "@/lib/clubInsights";
 
@@ -31,13 +37,51 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function PlayerDetail({ p }: { p: AdvancedPlayer }) {
+function signed(n: number | null | undefined) {
+  if (n === null || n === undefined) return "—";
+  const r = Math.round(n);
+  return `${r > 0 ? "+" : ""}${r} pts`;
+}
+
+const TREND_VARIANT: Record<FormTrend["trend"], "default" | "secondary" | "destructive"> = {
+  Improving: "default",
+  Steady: "secondary",
+  Dipping: "destructive",
+};
+
+function PlayerDetail({ p, trend }: { p: AdvancedPlayer; trend?: FormTrend }) {
   const d = p.derived;
   const t = p.totals;
   const g = p.games;
   const per = (v: number) => (v / g).toFixed(1);
+  const role = benchRole(p);
+  const bench = benchmarkPlayer(p);
   return (
     <div className="grid gap-6 px-6 pb-6 sm:grid-cols-2 lg:grid-cols-4">
+      {role && bench.length > 0 && (
+        <div className="sm:col-span-2 lg:col-span-4">
+          <h4 className="mb-2 text-sm font-semibold">Against FC27 {ROLE_LABELS[role].toLowerCase()}s</h4>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {bench.map((b) => (
+              <div key={b.key} className="text-sm">
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">{b.label}</span>
+                  <span className="font-medium tabular-nums">{percentileText(b.percentile, role)}</span>
+                </div>
+                <div className="mt-1 h-1.5 rounded bg-muted">
+                  <div className="h-1.5 rounded bg-primary" style={{ width: `${Math.max(2, Math.round(b.percentile))}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          {trend && (
+            <p className="mt-3 text-sm">
+              <Badge variant={TREND_VARIANT[trend.trend]} className="mr-2">{trend.trend}</Badge>
+              Last {trend.recentGames} games vs the {trend.earlierGames} before: decisions {signed(trend.decisionChange)}, positioning {signed(trend.positioningChange)}, passing {signed(trend.passCompletionChange)}.
+            </p>
+          )}
+        </div>
+      )}
       <div>
         <h4 className="mb-1 text-sm font-semibold">Passing</h4>
         <Row label="Completion" value={pct(d.passCompletion)} />
@@ -119,11 +163,15 @@ export function AdvancedStatsSection({ matches }: { matches: InsightMatch[] }) {
       sessions: computeSessionFatigue(withEvents),
       pressing: computePressing(withEvents),
       pairs: computePartnerships(withEvents, minGames).slice(0, 8),
+      trends: computeFormTrends(withEvents),
+      opponents: computeOpponentProfiles(withEvents).filter((o) => o.passCompletion !== null),
     }),
     [withEvents, minGames],
   );
   const [selected, setSelected] = useState<string>("");
   const player = data.players.find((p) => p.key === selected) || data.players[0];
+  const [oppKey, setOppKey] = useState<string>("");
+  const opp = data.opponents.find((o) => o.opponent === oppKey) || data.opponents[0];
 
   if (withEvents.length === 0) return null;
 
@@ -194,7 +242,7 @@ export function AdvancedStatsSection({ matches }: { matches: InsightMatch[] }) {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <PlayerDetail p={player} />
+            <PlayerDetail p={player} trend={data.trends.find((t) => t.key === player.key)} />
           </CardContent>
         </Card>
       )}
@@ -303,6 +351,86 @@ export function AdvancedStatsSection({ matches }: { matches: InsightMatch[] }) {
           )}
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Form</CardTitle>
+            <CardDescription>Each player's last 10 games against the games before them. Changes are in percentage points.</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            {data.trends.length === 0 ? (
+              <p className="px-6 pb-6 text-sm text-muted-foreground">Needs 15+ games with EA event data for a player.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Player</TableHead>
+                    <TableHead className="text-right">Trend</TableHead>
+                    <TableHead className="text-right">Decisions</TableHead>
+                    <TableHead className="text-right">Positioning</TableHead>
+                    <TableHead className="text-right">Passing</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.trends.map((t) => (
+                    <TableRow key={t.key}>
+                      <TableCell className="font-medium">{t.name}</TableCell>
+                      <TableCell className="text-right"><Badge variant={TREND_VARIANT[t.trend]}>{t.trend}</Badge></TableCell>
+                      <TableCell className="text-right">{signed(t.decisionChange)}</TableCell>
+                      <TableCell className="text-right">{signed(t.positioningChange)}</TableCell>
+                      <TableCell className="text-right">{signed(t.passCompletionChange)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <CardTitle className="text-base">Opponent scouting</CardTitle>
+                <CardDescription>How clubs you've played look in EA's data on their side, compared with FC27 clubs.</CardDescription>
+              </div>
+              {data.opponents.length > 0 && opp && (
+                <Select value={opp.opponent} onValueChange={setOppKey}>
+                  <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {data.opponents.map((o) => <SelectItem key={o.opponent} value={o.opponent}>{o.opponent} ({o.games})</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!opp ? (
+              <p className="text-sm text-muted-foreground">No opponent event data yet.</p>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <Row label="Your record" value={`${opp.record.wins}W ${opp.record.draws}D ${opp.record.losses}L`} />
+                  <Row label="Pass completion · style" value={`${pct(opp.passCompletion)}${opp.passStyle ? ` · ${opp.passStyle}` : ""}`} />
+                  <Row label="Ball wins up front / game" value={one(opp.perGame.pressing)} />
+                  <Row label="Ball lost in own third / game" value={one(opp.perGame.lostOwnThird)} />
+                  <Row label="Shots / game (inside box)" value={`${one(opp.perGame.shots)} (${pct(opp.insideBoxShotShare)})`} />
+                  <Row label="Aerials won / game" value={one(opp.perGame.aerialsWon)} />
+                </div>
+                {opp.threats.length > 0 && (
+                  <p className="text-sm"><span className="text-muted-foreground">Danger men: </span>{opp.threats.map((t) => `${t.name} (${t.goals}G, ${t.shots} shots)`).join(", ")}</p>
+                )}
+                {opp.tips.length > 0 && (
+                  <ul className="list-disc space-y-1 pl-5 text-sm">
+                    {opp.tips.map((t) => <li key={t}>{t}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
