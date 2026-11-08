@@ -49,6 +49,24 @@ async function rejectUnlessCaller(req, opts = {}) {
   return null;
 }
 
+// supabase/functions/_shared/ea-profiles.ts
+var isPlaceholderId = (id) => String(id ?? "").startsWith("ea_");
+var escapeLike = (value) => String(value).trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+async function profilesForGamertag(db, gamertag) {
+  const name = String(gamertag ?? "").trim();
+  if (!name) return [];
+  const { data, error } = await db.from("profiles").select("discord_user_id, ea_username").ilike("ea_username", escapeLike(name)).limit(20);
+  if (error) {
+    console.error(`[ea-profiles] Profile lookup for ${name} failed:`, error.message);
+    return [];
+  }
+  const rows = data || [];
+  return [...rows.filter((p) => !isPlaceholderId(p.discord_user_id)), ...rows.filter((p) => isPlaceholderId(p.discord_user_id))];
+}
+async function placeholderIdsForGamertag(db, gamertag) {
+  return (await profilesForGamertag(db, gamertag)).map((p) => p.discord_user_id).filter(isPlaceholderId);
+}
+
 // supabase/functions/create-discord-account/index.ts
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -145,8 +163,7 @@ serve(async (req) => {
       }
       console.log(`[create-discord-account] Discord link created`);
     }
-    const tempDiscordId = `ea_${ea_username.replace(/[^a-zA-Z0-9]/g, "_")}`;
-    const { data: tempProfile } = await supabase.from("profiles").select("*").eq("discord_user_id", tempDiscordId).maybeSingle();
+    const tempIds = await placeholderIdsForGamertag(supabase, ea_username);
     const { data: existingProfile } = await supabase.from("profiles").select("*").eq("discord_user_id", discord_user_id).maybeSingle();
     if (existingProfile) {
       await supabase.from("profiles").update({
@@ -163,9 +180,9 @@ serve(async (req) => {
         discord_username
       });
     }
-    if (tempProfile) {
+    for (const tempDiscordId of tempIds) {
       console.log(`[create-discord-account] Migrating data from temp profile ${tempDiscordId}`);
-      await supabase.from("player_stats").update({ discord_user_id }).eq("discord_user_id", tempDiscordId).eq("guild_id", guild_id);
+      await supabase.from("player_stats").update({ discord_user_id }).eq("discord_user_id", tempDiscordId);
       const { data: tempRating } = await supabase.from("player_ratings").select("*").eq("discord_user_id", tempDiscordId).eq("guild_id", guild_id).maybeSingle();
       if (tempRating) {
         const { data: existingRating } = await supabase.from("player_ratings").select("id").eq("discord_user_id", discord_user_id).eq("guild_id", guild_id).maybeSingle();
@@ -202,7 +219,7 @@ serve(async (req) => {
         password,
         // Only returned if new account was created
         message: accountCreated ? `Account created and EA linked for ${discord_username}` : `EA account linked for existing user`,
-        migrated_temp_profile: !!tempProfile
+        migrated_temp_profile: tempIds.length > 0
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

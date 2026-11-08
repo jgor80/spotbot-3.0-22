@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { hasGuildRole, resolveDiscordActor } from "../_shared/auth.ts";
+import { placeholderIdsForGamertag } from "../_shared/ea-profiles.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -64,13 +65,8 @@ serve(async (req) => {
     console.log(`[link-ea-account] Linking Discord ${discord_user_id} to EA ${ea_username}`);
 
     // Check if there's a temp profile with this EA username
-    const tempDiscordId = `ea_${ea_username.replace(/[^a-zA-Z0-9]/g, '_')}`;
-    
-    const { data: tempProfile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('discord_user_id', tempDiscordId)
-      .maybeSingle();
+    // Every placeholder for this gamertag, found by name: older code spelled the ea_ ID several ways
+    const tempIds = await placeholderIdsForGamertag(supabase, ea_username);
 
     // Check if the real Discord user already has a profile
     const { data: existingProfile } = await supabase
@@ -117,15 +113,14 @@ serve(async (req) => {
     }
 
     // If temp profile exists, migrate all related data to real Discord user
-    if (tempProfile) {
+    for (const tempDiscordId of tempIds) {
       console.log(`[link-ea-account] Migrating data from temp profile ${tempDiscordId} to ${discord_user_id}`);
 
       // Migrate player_stats
       await supabase
         .from('player_stats')
         .update({ discord_user_id })
-        .eq('discord_user_id', tempDiscordId)
-        .eq('guild_id', guild_id);
+        .eq('discord_user_id', tempDiscordId); // every server: the placeholder is deleted below for all of them
 
       // Migrate player_ratings
       const { data: tempRating } = await supabase
@@ -217,7 +212,7 @@ serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         message: `Linked Discord user ${discord_user_id} to EA account ${ea_username}`,
-        migrated_temp_profile: !!tempProfile
+        migrated_temp_profile: tempIds.length > 0
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
