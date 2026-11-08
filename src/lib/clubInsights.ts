@@ -1,7 +1,7 @@
 // Club insights computed from synced EA matches (club_matches rows).
 // Pure functions so the page stays thin and the math is easy to check.
-import { eaEventCounts, hasEventData } from "./eaEvents";
-import { generateAdvancedInsights } from "./advancedStats";
+import { eaEventCounts, hasEventData } from "./eaEvents.ts";
+import { generateAdvancedInsights } from "./advancedStats.ts";
 
 export type MatchResult = "win" | "draw" | "loss";
 
@@ -42,6 +42,8 @@ export interface InsightMatch {
   playedAt: Date;
   opponent: string;
   players: PlayerMatchStats[];
+  // The other club's players from EA's match data (name, position, events), for opponent scouting
+  opponentPlayers?: PlayerMatchStats[];
   formation: string | null;
 }
 
@@ -158,10 +160,16 @@ function matchTime(row: ClubMatchRow): Date {
 
 // EA's raw player rows for our club in this match, keyed by lower-case name. match_data.players holds
 // both clubs, so take the club whose names overlap ours the most.
+type RawClubs = Record<string, Record<string, Record<string, unknown>>>;
+function rawClubs(row: ClubMatchRow): RawClubs | null {
+  const byClub = (row.match_data as { players?: RawClubs } | null)?.players;
+  return byClub && typeof byClub === "object" ? byClub : null;
+}
+
 function rawPlayerRows(row: ClubMatchRow, players: PlayerMatchStats[]): Map<string, Record<string, unknown>> {
-  const byClub = (row.match_data as { players?: Record<string, Record<string, Record<string, unknown>>> } | null)?.players;
+  const byClub = rawClubs(row);
   const out = new Map<string, Record<string, unknown>>();
-  if (!byClub || typeof byClub !== "object") return out;
+  if (!byClub) return out;
   const ours = new Set(players.map(playerKey).filter((k): k is string => !!k));
   let best: Record<string, Record<string, unknown>> | null = null;
   let bestHits = 0;
@@ -178,6 +186,31 @@ function rawPlayerRows(row: ClubMatchRow, players: PlayerMatchStats[]): Map<stri
     if (k) out.set(k, r);
   }
   return out;
+}
+
+// The other club's rows: every club in match_data except the one our players are in
+function opponentRows(row: ClubMatchRow, players: PlayerMatchStats[]): PlayerMatchStats[] {
+  const byClub = rawClubs(row);
+  if (!byClub) return [];
+  const ours = new Set(players.map(playerKey).filter((k): k is string => !!k));
+  const clubs = Object.values(byClub).filter((c) => c && typeof c === "object");
+  if (clubs.length < 2) return [];
+  const hits = (c: Record<string, Record<string, unknown>>) => Object.values(c).filter((r) => r && ours.has(String(r.playername || "").trim().toLowerCase())).length;
+  const mine = clubs.reduce((best, c) => (hits(c) > hits(best) ? c : best), clubs[0]);
+  if (!hits(mine)) return [];
+  return clubs
+    .filter((c) => c !== mine)
+    .flatMap((c) => Object.values(c))
+    .filter((r) => r && r.playername)
+    .map((r) => ({
+      ea_username: String(r.playername).trim(),
+      position: (r.pos as string | undefined) ?? null,
+      rating: num(r.rating) ?? undefined,
+      goals: num(r.goals) ?? undefined,
+      assists: num(r.assists) ?? undefined,
+      shots: num(r.shots) ?? undefined,
+      ...(hasEventData(r) ? { events: eaEventCounts(r) } : {}),
+    }));
 }
 
 function withEvents(row: ClubMatchRow, players: PlayerMatchStats[]): PlayerMatchStats[] {
@@ -207,6 +240,7 @@ export function toInsightMatches(rows: ClubMatchRow[], lineups: LineupRow[] = []
       if (l.at > t) break;
       if (t - l.at <= LINEUP_WINDOW_MS) formation = l.formation;
     }
+    const players = Array.isArray(row.player_stats) ? (row.player_stats as PlayerMatchStats[]) : [];
     matches.push({
       id: row.id,
       result,
@@ -217,7 +251,8 @@ export function toInsightMatches(rows: ClubMatchRow[], lineups: LineupRow[] = []
       competition: matchCompetition(row),
       playedAt,
       opponent: row.opponent_club_name || "Unknown",
-      players: withEvents(row, Array.isArray(row.player_stats) ? (row.player_stats as PlayerMatchStats[]) : []),
+      players: withEvents(row, players),
+      opponentPlayers: opponentRows(row, players),
       formation,
     });
   }
@@ -594,6 +629,6 @@ function generateBaseInsights(matches: InsightMatch[]): Insight[] {
 }
 
 // Division progress (club_division_history), also used by the bot
-export * from "./divisionProgress";
+export * from "./divisionProgress.ts";
 // Stats decoded from EA's per-player event counts
-export * from "./advancedStats";
+export * from "./advancedStats.ts";

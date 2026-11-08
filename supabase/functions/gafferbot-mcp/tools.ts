@@ -2,6 +2,11 @@
 // server before reading anything from it, the same member rule the web app uses (guildAccessLevel).
 import { Tool, ToolError } from "./protocol.ts";
 import { discordMemberName } from "../_shared/auth.ts";
+import {
+  toInsightMatches, computeAdvancedPlayers, computeSessionFatigue, computePressing, computePartnerships, computeFormTrends,
+  computeOpponentProfiles, generateAdvancedInsights, benchRole, benchmarkPlayer, percentileText, ROLE_LABELS,
+  type AdvancedPlayer, type InsightMatch,
+} from "../../../src/lib/clubInsights.ts";
 
 export interface Ctx {
   // deno-lint-ignore no-explicit-any
@@ -404,6 +409,88 @@ export const TOOLS: Tool<Ctx>[] = [
           players: [names.get(a as string) || a, names.get(b as string) || b],
           ...rest,
         })),
+      };
+    },
+  },
+  {
+    name: "get_deep_stats",
+    title: "Deep stats",
+    description: "Stats decoded from EA's hidden per-player event data: decision score (how often EA's feedback rated a choice a good option), " +
+      "positional discipline, pass style, pressing, partnerships, results through a session, form trends and FC27 percentiles " +
+      "against 3,500+ players in community research. Pass player for one player's breakdown, opponent to scout a club you've played, or neither for the club overview.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        guild_id: guildIdProp,
+        club_key: clubKeyProp,
+        player: { type: "string", description: "EA name (as in get_recent_matches) for one player's breakdown." },
+        opponent: { type: "string", description: "Opponent club name (partial match) to scout." },
+      },
+      additionalProperties: false,
+    },
+    run: async (args, ctx) => {
+      const guildId = await resolveGuild(args, ctx);
+      let q = ctx.db.from("club_matches")
+        .select("id, result, score_for, score_against, match_type, created_at, opponent_club_name, player_stats, match_data")
+        .eq("guild_id", guildId).order("created_at", { ascending: false }).limit(100);
+      const clubKey = str(args.club_key);
+      if (clubKey) q = q.eq("club_key", clubKey);
+      const { data, error } = await q;
+      if (error) throw error;
+      const matches = toInsightMatches(data || []).filter((m: InsightMatch) => m.players.some((p) => p.events));
+      if (matches.length < 3) throw new ToolError("Needs at least 3 synced matches with EA event data. Play a few games and check back.");
+      const minGames = matches.length >= 40 ? 5 : 3;
+      const players = computeAdvancedPlayers(matches, minGames);
+      const trends = computeFormTrends(matches);
+      const round = (v: number | null) => (v === null ? null : Math.round(v * 10) / 10);
+      const benchmarks = (p: AdvancedPlayer) => {
+        const role = benchRole(p);
+        return role ? benchmarkPlayer(p).map((b) => ({ stat: b.label, value: round(b.value), percentile: Math.round(b.percentile), text: percentileText(b.percentile, role) })) : [];
+      };
+
+      const player = str(args.player);
+      if (player) {
+        const key = player.toLowerCase();
+        const p = players.find((x) => x.key === key) || players.find((x) => x.key.includes(key));
+        if (!p) throw new ToolError(`No event data for "${player}" (needs ${minGames}+ games). Players with data: ${players.map((x) => x.name).join(", ") || "none"}.`);
+        const t = trends.find((x) => x.key === p.key);
+        return {
+          player: p.name,
+          games: p.games,
+          best_role: p.bestRole ? ROLE_LABELS[p.bestRole] : null,
+          derived: Object.fromEntries(Object.entries(p.derived).map(([k, v]) => [k, typeof v === "number" ? round(v) : v])),
+          totals: p.totals,
+          by_role: p.roles.map((r) => ({ ...r, role: ROLE_LABELS[r.role] })),
+          fc27_benchmarks: benchmarks(p),
+          form: t ? { trend: t.trend, recent_games: t.recentGames, earlier_games: t.earlierGames, decision_change_pts: round(t.decisionChange), positioning_change_pts: round(t.positioningChange), pass_completion_change_pts: round(t.passCompletionChange) } : null,
+        };
+      }
+
+      const profiles = computeOpponentProfiles(matches).filter((o) => o.passCompletion !== null);
+      const opponent = str(args.opponent);
+      if (opponent) {
+        const key = opponent.toLowerCase();
+        const o = profiles.find((x) => x.opponent.toLowerCase() === key) || profiles.find((x) => x.opponent.toLowerCase().includes(key));
+        if (!o) throw new ToolError(`No event data for an opponent matching "${opponent}". Recent opponents: ${profiles.slice(0, 15).map((x) => x.opponent).join(", ") || "none"}.`);
+        return o;
+      }
+
+      return {
+        matches_with_event_data: matches.length,
+        min_games: minGames,
+        insights: generateAdvancedInsights(matches).map((i) => i.text),
+        players: players.map((p) => ({
+          player: p.name, games: p.games, best_role: p.bestRole ? ROLE_LABELS[p.bestRole] : null,
+          decision_score: round(p.derived.decisionScore), positional_discipline: round(p.derived.positionalDiscipline),
+          out_of_position_per_game: round(p.derived.outOfPositionPerGame), pass_style: p.derived.passStyle,
+          tackle_success: round(p.derived.tackleSuccess), pressing_per_game: round(p.derived.pressingPerGame),
+          top_benchmark: benchmarks(p)[0] || null,
+        })),
+        form: trends.filter((t) => t.trend !== "Steady").map((t) => ({ player: t.name, trend: t.trend, decision_change_pts: round(t.decisionChange), positioning_change_pts: round(t.positioningChange) })),
+        session: computeSessionFatigue(matches),
+        pressing: computePressing(matches),
+        partnerships: computePartnerships(matches, minGames).slice(0, 8),
+        opponents: profiles.slice(0, 15).map((o) => ({ opponent: o.opponent, games: o.games, record: o.record })),
       };
     },
   },

@@ -7,8 +7,9 @@
 //   position" is a best role.
 // - Positional discipline and decision quality come from EA's own in-game feedback popups. Their
 //   share (not raw counts, which mostly measure involvement) lines up with match rating.
-import { statsFromCounts, type EaEventStats } from "./eaEvents";
-import type { InsightMatch, PlayerMatchStats } from "./clubInsights";
+import { statsFromCounts, type EaEventStats } from "./eaEvents.ts";
+import { FC27_BENCHMARKS } from "./fc27Benchmarks.ts";
+import type { InsightMatch, PlayerMatchStats } from "./clubInsights.ts";
 
 export type Role = "GK" | "DEF" | "MID" | "FWD";
 export const ROLE_LABELS: Record<Role, string> = { GK: "Goalkeeper", DEF: "Defender", MID: "Midfielder", FWD: "Forward" };
@@ -495,4 +496,322 @@ export function generateAdvancedInsights(matches: InsightMatch[]): AdvancedInsig
     out.push({ tone: "good", text: `${pair.names.join(" + ")} cover for each other: ${pair.outOfPositionTogether.toFixed(1)} out-of-position warnings a game together vs ${pair.outOfPositionApart!.toFixed(1)} apart (${pair.games} games).` });
   }
   return out;
+}
+
+// ---------- FC27 benchmarks ----------
+
+export interface BenchMetric {
+  key: string;
+  label: string;
+  lowerIsBetter?: boolean;
+  get: (p: AdvancedPlayer) => number | null;
+}
+
+const perGameOf = (k: string) => (p: AdvancedPlayer) => (p.games ? (p.totals[k] || 0) / p.games : null);
+
+// Stats players are ranked on against every FC27 player in the research data with the same main role
+export const BENCH_METRICS: BenchMetric[] = [
+  { key: "decisionScore", label: "Decisions", get: (p) => p.derived.decisionScore },
+  { key: "positionalDiscipline", label: "Positioning", get: (p) => p.derived.positionalDiscipline },
+  { key: "outOfPositionPerGame", label: "Out of position", lowerIsBetter: true, get: (p) => p.derived.outOfPositionPerGame },
+  { key: "passCompletion", label: "Pass completion", get: (p) => p.derived.passCompletion },
+  { key: "tackleSuccess", label: "Tackle success", get: (p) => p.derived.tackleSuccess },
+  { key: "shotAccuracy", label: "Shot accuracy", get: (p) => p.derived.shotAccuracy },
+  { key: "pressingPerGame", label: "Pressing", get: (p) => p.derived.pressingPerGame },
+  { key: "aerialsPerGame", label: "Aerials", get: (p) => p.derived.aerialsPerGame },
+  { key: "interceptionsPerGame", label: "Interceptions", get: perGameOf("interceptions") },
+  { key: "dribblesPerGame", label: "Dribbles", get: perGameOf("dribbles") },
+  { key: "throughBallsPerGame", label: "Through balls", get: perGameOf("throughBalls") },
+  { key: "secondAssistsPerGame", label: "Second assists", get: perGameOf("secondAssists") },
+];
+
+// The player's main role (most games) when the research data has a benchmark for it
+export function benchRole(p: AdvancedPlayer): Role | null {
+  const r = p.roles[0]?.role;
+  return r && FC27_BENCHMARKS.roles[r] ? r : null;
+}
+
+// Where a value sits among FC27 players of that role: 0-100, higher is better (lower-is-better
+// stats are flipped). Null when there is no benchmark.
+export function fc27Percentile(role: Role, metric: string, value: number | null): number | null {
+  const q = FC27_BENCHMARKS.roles[role]?.[metric];
+  const m = BENCH_METRICS.find((b) => b.key === metric);
+  if (!q || value === null || !m) return null;
+  // q holds the 0th, 5th, ..., 100th percentile values
+  let pct: number;
+  if (value <= q[0]) pct = 0;
+  else if (value >= q[q.length - 1]) pct = 100;
+  else {
+    let i = 0;
+    while (i < q.length - 1 && q[i + 1] < value) i++;
+    // Ties span several steps; land in the middle of them
+    let j = i + 1;
+    while (j < q.length - 1 && q[j + 1] === value) j++;
+    const lo = q[i], hi = q[j];
+    const frac = hi > lo ? (value - lo) / (hi - lo) : 0.5;
+    pct = (i + frac * (j - i)) * (100 / (q.length - 1));
+  }
+  return m.lowerIsBetter ? 100 - pct : pct;
+}
+
+export interface Benchmark {
+  key: string;
+  label: string;
+  value: number;
+  percentile: number;
+}
+
+// Every benchmarked stat for a player, best first
+export function benchmarkPlayer(p: AdvancedPlayer): Benchmark[] {
+  const role = benchRole(p);
+  if (!role) return [];
+  const out: Benchmark[] = [];
+  for (const m of BENCH_METRICS) {
+    const value = m.get(p);
+    const percentile = fc27Percentile(role, m.key, value);
+    if (value !== null && percentile !== null) out.push({ key: m.key, label: m.label, value, percentile });
+  }
+  return out.sort((a, b) => b.percentile - a.percentile);
+}
+
+// "Top 12% of FC27 midfielders" style text
+export function percentileText(percentile: number, role: Role): string {
+  const roleWord = ROLE_LABELS[role].toLowerCase() + "s";
+  if (percentile >= 50) return `top ${Math.max(1, Math.round(100 - percentile))}% of FC27 ${roleWord}`;
+  return `bottom ${Math.max(1, Math.round(percentile))}% of FC27 ${roleWord}`;
+}
+
+// ---------- Form trends ----------
+
+export interface FormTrend {
+  key: string;
+  name: string;
+  recentGames: number;
+  earlierGames: number;
+  // Recent minus earlier, in percentage points
+  decisionChange: number | null;
+  positioningChange: number | null;
+  passCompletionChange: number | null;
+  tackleSuccessChange: number | null;
+  recent: DerivedStats;
+  earlier: DerivedStats;
+  trend: "Improving" | "Dipping" | "Steady";
+}
+
+const diff = (a: number | null, b: number | null) => (a === null || b === null ? null : a - b);
+
+// Each player's last `recent` games (with event data) against the games before them
+export function computeFormTrends(matches: InsightMatch[], recent = 10, minEarlier = 5): FormTrend[] {
+  const sorted = [...matches].sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime());
+  const lines = new Map<string, { name: string; recent: EaEventStats; earlier: EaEventStats; r: number; e: number }>();
+  for (const m of sorted) {
+    for (const p of m.players) {
+      const key = keyOf(p);
+      if (!key || !p.events) continue;
+      let l = lines.get(key);
+      if (!l) lines.set(key, (l = { name: (p.ea_username || "").trim(), recent: emptyTotals(), earlier: emptyTotals(), r: 0, e: 0 }));
+      if (l.r < recent) {
+        addInto(l.recent, statsFromCounts(p.events));
+        l.r++;
+      } else {
+        addInto(l.earlier, statsFromCounts(p.events));
+        l.e++;
+      }
+    }
+  }
+  const out: FormTrend[] = [];
+  for (const [key, l] of lines) {
+    if (l.r < Math.min(recent, 5) || l.e < minEarlier) continue;
+    const r = deriveStats(l.recent, l.r);
+    const e = deriveStats(l.earlier, l.e);
+    const decisionChange = diff(r.decisionScore, e.decisionScore);
+    const positioningChange = diff(r.positionalDiscipline, e.positionalDiscipline);
+    const score = (decisionChange ?? 0) + (positioningChange ?? 0) / 2;
+    out.push({
+      key, name: l.name, recentGames: l.r, earlierGames: l.e,
+      decisionChange, positioningChange,
+      passCompletionChange: diff(r.passCompletion, e.passCompletion),
+      tackleSuccessChange: diff(r.tackleSuccess, e.tackleSuccess),
+      recent: r, earlier: e,
+      trend: score >= 5 ? "Improving" : score <= -5 ? "Dipping" : "Steady",
+    });
+  }
+  const weight = (t: FormTrend) => (t.decisionChange ?? 0) + (t.positioningChange ?? 0) / 2;
+  return out.sort((a, b) => weight(b) - weight(a));
+}
+
+// ---------- One match ----------
+
+export interface MatchHighlight {
+  kind: "decisions" | "positioning" | "pressing" | "passing";
+  name: string;
+  text: string;
+}
+
+// Deep-stat standouts from a single game, for recaps. Only players with enough feedback to mean something.
+export function matchDeepHighlights(m: InsightMatch): MatchHighlight[] {
+  const rows = m.players
+    .filter((p) => p.events && roleOf(p.position) !== "GK")
+    .map((p) => ({ name: (p.ea_username || "").trim(), s: statsFromCounts(p.events) }));
+  if (!rows.length) return [];
+  const out: MatchHighlight[] = [];
+  const decided = rows
+    .map((r) => {
+      const good = r.s.bestOption + r.s.goodOption;
+      const total = good + r.s.shouldHavePassedElsewhere + r.s.useTheBall;
+      return { ...r, good, total, score: total ? good / total : 0 };
+    })
+    .filter((r) => r.total >= 6)
+    .sort((a, b) => b.score - a.score || b.good - a.good);
+  if (decided[0] && decided[0].score >= 0.6) {
+    out.push({ kind: "decisions", name: decided[0].name, text: `${decided[0].name} made the best calls: ${decided[0].good} of ${decided[0].total} rated a good option` });
+  }
+  const loose = [...rows].sort((a, b) => b.s.outOfPosition - a.s.outOfPosition)[0];
+  if (loose && loose.s.outOfPosition >= 5) {
+    out.push({ kind: "positioning", name: loose.name, text: `${loose.name} was caught out of position ${loose.s.outOfPosition} times` });
+  }
+  const presser = [...rows].sort((a, b) => b.s.wonAttackingThird - a.s.wonAttackingThird)[0];
+  if (presser && presser.s.wonAttackingThird >= 2) {
+    out.push({ kind: "pressing", name: presser.name, text: `${presser.name} won the ball back ${presser.s.wonAttackingThird} times in the attacking third` });
+  }
+  const passer = rows
+    .filter((r) => r.s.throughBalls + r.s.secondAssists >= 2)
+    .sort((a, b) => b.s.throughBalls + b.s.secondAssists - (a.s.throughBalls + a.s.secondAssists))[0];
+  if (passer) {
+    out.push({ kind: "passing", name: passer.name, text: `${passer.name} unlocked them with ${passer.s.throughBalls} through balls and ${passer.s.secondAssists} second assists` });
+  }
+  return out;
+}
+
+// ---------- Opponent scouting ----------
+
+export interface OpponentProfile {
+  opponent: string;
+  games: number;
+  record: { wins: number; draws: number; losses: number };
+  perGame: {
+    pressing: number; // their ball wins in our half's end of the pitch (their attacking third)
+    lostOwnThird: number;
+    aerialsWon: number;
+    shots: number;
+  };
+  passCompletion: number | null;
+  forwardShare: number | null;
+  passStyle: PassStyle | null;
+  insideBoxShotShare: number | null;
+  decisionScore: number | null;
+  threats: { name: string; games: number; goals: number; shots: number; avgRating: number | null }[];
+  tips: string[];
+}
+
+export function teamPercentile(metric: string, value: number | null): number | null {
+  const q = FC27_BENCHMARKS.team?.[metric];
+  if (!q || value === null) return null;
+  let i = 0;
+  while (i < q.length - 1 && q[i + 1] <= value) i++;
+  return (i * 100) / (q.length - 1);
+}
+
+// What each club we've played looks like from EA's event data on their side, most-played first
+export function computeOpponentProfiles(matches: InsightMatch[]): OpponentProfile[] {
+  const acc = new Map<string, { name: string; games: number; w: number; d: number; l: number; totals: EaEventStats; withEvents: number; players: Map<string, { name: string; games: number; goals: number; shots: number; rating: number; rated: number }> }>();
+  for (const m of matches) {
+    const opp = m.opponentPlayers || [];
+    if (!opp.length) continue;
+    const key = m.opponent.trim().toLowerCase();
+    let a = acc.get(key);
+    if (!a) acc.set(key, (a = { name: m.opponent, games: 0, w: 0, d: 0, l: 0, totals: emptyTotals(), withEvents: 0, players: new Map() }));
+    a.games++;
+    if (m.result === "win") a.w++;
+    else if (m.result === "draw") a.d++;
+    else a.l++;
+    let any = false;
+    for (const p of opp) {
+      if (p.events) {
+        addInto(a.totals, statsFromCounts(p.events));
+        any = true;
+      }
+      const pk = keyOf(p);
+      if (!pk) continue;
+      let pl = a.players.get(pk);
+      if (!pl) a.players.set(pk, (pl = { name: (p.ea_username || "").trim(), games: 0, goals: 0, shots: 0, rating: 0, rated: 0 }));
+      pl.games++;
+      pl.goals += num(p.goals) ?? 0;
+      pl.shots += num(p.shots) ?? 0;
+      const r = num(p.rating);
+      if (r !== null && r > 0) {
+        pl.rating += r;
+        pl.rated++;
+      }
+    }
+    if (any) a.withEvents++;
+  }
+
+  const out: OpponentProfile[] = [];
+  for (const a of acc.values()) {
+    const g = a.withEvents;
+    const d = deriveStats(a.totals, Math.max(g, 1));
+    const t = a.totals;
+    const perGame = {
+      pressing: g ? t.wonAttackingThird / g : 0,
+      lostOwnThird: g ? t.lostDefensiveThird / g : 0,
+      aerialsWon: g ? t.aerialsWon / g : 0,
+      shots: g ? (t.shotsOnTarget + t.shotsOffTarget) / g : 0,
+    };
+    const tips: string[] = [];
+    if (g) {
+      const press = teamPercentile("pressingPerGame", perGame.pressing);
+      const lost = teamPercentile("lostOwnThirdPerGame", perGame.lostOwnThird);
+      const air = teamPercentile("aerialsPerGame", perGame.aerialsWon);
+      const box = teamPercentile("insideBoxShotShare", d.insideBoxShotShare);
+      const comp = teamPercentile("passCompletion", d.passCompletion);
+      if (press !== null && press >= 75) tips.push("They press high: move the ball quickly and avoid risky passes at the back.");
+      if (lost !== null && lost >= 75) tips.push("They give the ball away in their own third: press them high.");
+      if (air !== null && air <= 25) tips.push("They win few headers: crosses and long balls are worth trying.");
+      if (air !== null && air >= 75) tips.push("They're strong in the air: keep crosses low and defend the back post.");
+      if (box !== null && box >= 75) tips.push("Almost all their shots come from inside the box: protect the middle and block lanes.");
+      if (box !== null && box <= 25) tips.push("They shoot from distance a lot: close down outside the box.");
+      if (comp !== null && comp <= 25) tips.push("Their passing is loose: sit compact and pounce on mistakes.");
+      if (d.passStyle === "Progressive") tips.push("They play forward fast: keep a deep line and track runners.");
+      if (d.passStyle === "Recycler") tips.push("They keep the ball and recycle it: stay patient and don't get dragged out.");
+    }
+    const threats = [...a.players.values()]
+      .filter((p) => p.games >= 1)
+      .sort((x, y) => y.goals - x.goals || y.shots - x.shots)
+      .slice(0, 3)
+      .map((p) => ({ name: p.name, games: p.games, goals: p.goals, shots: p.shots, avgRating: p.rated ? p.rating / p.rated : null }));
+    out.push({
+      opponent: a.name,
+      games: a.games,
+      record: { wins: a.w, draws: a.d, losses: a.l },
+      perGame,
+      passCompletion: g ? d.passCompletion : null,
+      forwardShare: g ? d.forwardShare : null,
+      passStyle: g ? d.passStyle : null,
+      insideBoxShotShare: g ? d.insideBoxShotShare : null,
+      decisionScore: g ? d.decisionScore : null,
+      threats,
+      tips: tips.slice(0, 4),
+    });
+  }
+  return out.sort((x, y) => y.games - x.games || x.opponent.localeCompare(y.opponent));
+}
+
+// ---------- Lineup hints ----------
+
+export interface LineupHints {
+  // lower-case EA name -> best role (only players who have one)
+  bestRole: Record<string, Role>;
+  // Pairs (lower-case EA names) who are clearly tighter together
+  partners: [string, string][];
+}
+
+export function lineupHints(matches: InsightMatch[]): LineupHints {
+  const bestRole: Record<string, Role> = {};
+  for (const p of computeAdvancedPlayers(matches, MIN_ROLE_GAMES)) if (p.bestRole) bestRole[p.key] = p.bestRole;
+  const partners = computePartnerships(matches)
+    .filter((p) => p.outOfPositionApart !== null && p.outOfPositionApart - p.outOfPositionTogether >= 1.5)
+    .slice(0, 5)
+    .map((p) => [p.names[0].toLowerCase(), p.names[1].toLowerCase()] as [string, string]);
+  return { bestRole, partners };
 }

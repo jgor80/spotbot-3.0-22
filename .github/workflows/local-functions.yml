@@ -9,6 +9,8 @@ on:
     paths:
       - "supabase/functions/**"
       - "scripts/build-local-functions.mjs"
+      # Functions that import shared code from the web app (EA events, club insights)
+      - "src/lib/**"
 
 permissions:
   contents: write

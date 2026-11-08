@@ -5,7 +5,10 @@ const assert = require('node:assert/strict');
 const {
   toInsightMatches, computeAdvancedPlayers, computeSessionFatigue, computePressing, computePartnerships,
   generateAdvancedInsights, generateInsights, deriveStats, decisionScore, positionalDiscipline, passStyle, roleOf,
+  fc27Percentile, benchmarkPlayer, percentileText, computeFormTrends, matchDeepHighlights, computeOpponentProfiles, lineupHints, teamPercentile,
 } = require('./club-insights.cjs');
+const { pickLineup } = require('./lineup-autofill.cjs');
+const { benchmarkLines, cardBadge, createDeepStats } = require('./deep-stats.cjs');
 const { statsFromCounts } = require('./ea-events.cjs');
 const { createClubStats } = require('./club-stats.cjs');
 
@@ -13,7 +16,7 @@ const agg = (counts) => Object.entries(counts).map(([k, v]) => `${k}:${v}`).join
 
 // One club_matches row: our club 1 vs club 2, players as [name, pos, rating, eventCounts]
 // Four games a night, 20 minutes apart, one night per day
-function matchRow(i, { result = 'win', players }) {
+function matchRow(i, { result = 'win', players, opponent = 'Rivals', theirs }) {
   const ts = Math.floor((Date.UTC(2026, 10, 1, 19) + Math.floor(i / 4) * 86400000 + (i % 4) * 20 * 60000) / 1000);
   const ours = Object.fromEntries(players.map(([name, pos, , counts], j) => [`p${j}`, { playername: name, pos, match_event_aggregate_0: agg(counts) }]));
   return {
@@ -23,8 +26,8 @@ function matchRow(i, { result = 'win', players }) {
     score_against: result === 'win' ? 0 : 2,
     match_type: 'leagueMatch',
     created_at: new Date(ts * 1000).toISOString(),
-    opponent_club_name: 'Rivals',
-    match_data: { timestamp: ts, players: { 1: ours, 2: { x: { playername: 'Opponent', pos: 'forward', match_event_aggregate_0: '110:9' } } } },
+    opponent_club_name: opponent,
+    match_data: { timestamp: ts, players: { 1: ours, 2: theirs || { x: { playername: 'Opponent', pos: 'forward', match_event_aggregate_0: '110:9' } } } },
     player_stats: players.map(([name, pos, rating]) => ({ ea_username: name, position: pos, rating })),
   };
 }
@@ -170,4 +173,125 @@ test('Discord Deep Stats view and player breakdown', async () => {
 
   const empty = await createClubStats({ supabase: fakeSupabase([]), getGuildState: async () => ({}) }).deepView('g1', club);
   assert.match(empty.embeds[0].toJSON().description, /at least 3 synced matches/);
+});
+
+test('FC27 percentiles: interpolated, flipped for lower-is-better, and worded', () => {
+  assert.equal(fc27Percentile('MID', 'decisionScore', 0), 0);
+  assert.equal(fc27Percentile('MID', 'decisionScore', 100), 100);
+  const mid = fc27Percentile('MID', 'decisionScore', 70);
+  assert.ok(mid > 0 && mid < 100, String(mid));
+  // More out-of-position warnings is worse, so a high count ranks low
+  assert.ok(fc27Percentile('DEF', 'outOfPositionPerGame', 50) < 5);
+  assert.equal(fc27Percentile('MID', 'nope', 1), null);
+  assert.equal(percentileText(88, 'MID'), 'top 12% of FC27 midfielders');
+  assert.equal(percentileText(20, 'DEF'), 'bottom 20% of FC27 defenders');
+  const alpha = computeAdvancedPlayers(season(), 3).find((p) => p.name === 'Alpha');
+  const bench = benchmarkPlayer(alpha);
+  assert.ok(bench.length >= 5);
+  assert.ok(bench.every((b, i) => i === 0 || bench[i - 1].percentile >= b.percentile), 'best first');
+  assert.match(cardBadge(alpha), /^TOP \d+% FC27 DEFS: /);
+  assert.ok(benchmarkLines(alpha, null).every((l) => /^(🟢|🔴) /.test(l)));
+});
+
+test('form trends compare the last 10 games with the ones before', () => {
+  const rows = [];
+  // Oldest first: 8 sloppy games, then 10 sharp ones
+  for (let i = 0; i < 18; i++) {
+    const sharp = i >= 8;
+    rows.push(matchRow(i, { players: [['Echo', 'midfielder', 7, sharp ? { 177: 8, 176: 2, 182: 0, 111: 20, 219: 1 } : { 177: 2, 176: 2, 182: 4, 212: 2, 111: 20, 219: 6 }]] }));
+  }
+  const [t] = computeFormTrends(toInsightMatches(rows));
+  assert.equal(t.name, 'Echo');
+  assert.equal(t.recentGames, 10);
+  assert.equal(t.earlierGames, 8);
+  assert.equal(t.trend, 'Improving');
+  assert.equal(Math.round(t.decisionChange), 60); // 100% now vs 40% before
+  assert.deepEqual(computeFormTrends(toInsightMatches(rows.slice(0, 12))), []); // too few earlier games
+});
+
+test('one-game deep highlights for recaps', () => {
+  const [m] = toInsightMatches([matchRow(0, { players: [
+    ['Alpha', 'defender', 7, { 177: 6, 176: 2, 182: 1, 219: 7 }],
+    ['Bravo', 'forward', 7, { 110: 3, 152: 2, 115: 1 }],
+    ['Keeper', 'goalkeeper', 7, { 219: 9 }],
+  ] })]);
+  const h = matchDeepHighlights(m);
+  assert.deepEqual(h.map((x) => x.kind), ['decisions', 'positioning', 'pressing', 'passing']);
+  assert.match(h[0].text, /Alpha made the best calls: 8 of 9/);
+  assert.match(h[1].text, /Alpha was caught out of position 7 times/); // the keeper is left out
+  assert.match(h[3].text, /Bravo unlocked them with 2 through balls and 1 second assists/);
+  assert.deepEqual(matchDeepHighlights(toInsightMatches([matchRow(1, { players: [['Quiet', 'midfielder', 6, { 177: 1 }]] })])[0]), []);
+});
+
+test('opponent scouting reads the other club and turns extremes into tips', () => {
+  const theirs = {
+    x: { playername: 'Striker', pos: 'forward', goals: '2', shots: '5', rating: '8.1', match_event_aggregate_0: agg({ 110: 9, 215: 10, 216: 10, 217: 3, 13: 3, 30: 12 }) },
+    y: { playername: 'Wall', pos: 'defender', rating: '6.5', match_event_aggregate_0: agg({ 105: 6 }) },
+  };
+  const rows = [0, 1, 2].map((i) => matchRow(i, { result: i ? 'loss' : 'win', opponent: 'Pressers FC', theirs, players: [['Alpha', 'defender', 7, defA]] }));
+  const matches = toInsightMatches(rows);
+  assert.equal(matches[0].opponentPlayers.length, 2);
+  const [o] = computeOpponentProfiles(matches);
+  assert.equal(o.opponent, 'Pressers FC');
+  assert.deepEqual(o.record, { wins: 1, draws: 0, losses: 2 });
+  assert.equal(o.perGame.pressing, 9);
+  assert.equal(o.passCompletion, 50);
+  assert.equal(o.threats[0].name, 'Striker');
+  assert.equal(o.threats[0].goals, 6);
+  assert.ok(o.tips.some((t) => /press high/.test(t)), o.tips.join('\n'));
+  assert.ok(o.tips.some((t) => /give the ball away in their own third/.test(t)), o.tips.join('\n'));
+  assert.ok(o.tips.length <= 4);
+  assert.equal(teamPercentile('nope', 1), null);
+});
+
+test('lineup hints feed the autofill as a small tie-breaker', () => {
+  const hints = lineupHints(season());
+  assert.equal(hints.bestRole.alpha, 'DEF');
+  // Two equal players, one CB slot and one CM slot: the best-line bonus decides who goes where
+  const players = [
+    { discord_user_id: 'a', overall_rating: 70, preferences: [], bestLine: 'MID' },
+    { discord_user_id: 'b', overall_rating: 70, preferences: [], bestLine: 'DEF' },
+  ];
+  const { starters } = pickLineup(['CB', 'CM'], players, [], 0);
+  assert.equal(starters.get(0), 'b');
+  assert.equal(starters.get(1), 'a');
+  // A stated comp position still wins over it
+  const tiered = [{ ...players[0], tiers: { primary: 'CB' } }, players[1]];
+  assert.equal(pickLineup(['CB', 'CM'], tiered, [], 0).starters.get(0), 'a');
+});
+
+test('profile field and card badge from the deep-stats helper', async () => {
+  const rows = [];
+  for (let i = 0; i < 6; i++) rows.push(matchRow(i, { players: [['Alpha', 'defender', 7.5, defA], ['Bravo', 'midfielder', 7, midB]] }));
+  const chain = {
+    select: () => chain, eq: () => chain, order: () => chain,
+    limit: async () => ({ data: rows }),
+    maybeSingle: async () => ({ data: { ea_username: 'Alpha' } }),
+  };
+  const deep = createDeepStats({ supabase: { from: () => chain } });
+  const field = await deep.profileField('g1', 'u1');
+  assert.match(field.name, /Deep stats \(6 games\)/);
+  assert.match(field.value, /^Decisions 89% · positioning 94% · Recycler passer/);
+  assert.match(field.value, /FC27 defenders/);
+  assert.match(await deep.badgeFor('g1', 'u1'), /^TOP \d+% FC27 DEFS/);
+  const noLink = { ...chain, select: () => noLink, eq: () => noLink, maybeSingle: async () => ({ data: null }) };
+  const none = createDeepStats({ supabase: { from: () => noLink } });
+  assert.equal(await none.profileField('g1', 'u2'), null);
+});
+
+test('Discord deep view adds form, opponent scouting and FC27 lines', async () => {
+  const rows = [];
+  const theirs = { x: { playername: 'Opponent', pos: 'forward', match_event_aggregate_0: agg({ 110: 9, 215: 10, 216: 10 }) } };
+  for (let i = 0; i < 6; i++) rows.push(matchRow(i, { theirs, players: [['Alpha', 'defender', 7.5, defA], ['Bravo', 'midfielder', 7, midB]] }));
+  const stats = createClubStats({ supabase: fakeSupabase(rows), getGuildState: async () => ({}) });
+  const club = { key: 'main', name: 'Test FC' };
+  const view = await stats.deepView('g1', club);
+  const opp = view.components[1].toJSON().components[0];
+  assert.equal(opp.custom_id, 'statsp:deepopp:main');
+  assert.deepEqual(opp.options.map((o) => o.value), ['rivals']);
+  const scout = (await stats.deepOpponentView('g1', club, 'rivals')).embeds[0].toJSON();
+  assert.match(scout.title, /Scouting: Rivals/);
+  assert.ok(scout.fields.find((f) => f.name === 'Game plan'));
+  const player = (await stats.deepPlayerView('g1', club, 'alpha')).embeds[0].toJSON();
+  assert.match(player.fields.find((f) => f.name === 'Against FC27 players').value, /FC27 defenders/);
 });
