@@ -10,6 +10,7 @@ import { importClub } from "../_shared/fut/club.ts";
 import { cardEaReference, storeEaReference } from "../_shared/fut/ea-reference.ts";
 import { collectFc27Market, fc27MarketStatus, pullFc27Market } from "../_shared/fut/fc27market.ts";
 import { futggStatus } from "../_shared/fut/futgg-status.ts";
+import { syncFutggCatalogue } from "../_shared/fut/futgg-catalogue.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
 import { marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
@@ -114,18 +115,24 @@ async function importPrices(db: FutDb, userId: string, raw: unknown) {
 export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   if (!futEnabled(deps.env)) return err(404, "Not found");
-  // Scheduled jobs from the bot (scheduler.cjs calls the function with { job }): hourly fc27-market snapshot.
+  // Scheduled jobs from the bot (scheduler.cjs calls the function with { job }): fc27-market snapshot, futgg-catalogue.
   // Only the bare function address takes jobs, and only from the bot; nothing else is reachable this way.
   if (req.method === "POST" && /\/fut-api\/?$/.test(new URL(req.url).pathname)) {
     if (!(await deps.isBot?.(req))) return err(401, "Only the bot's scheduler can run jobs.");
     const job = (await req.json().catch(() => null) as { job?: unknown } | null)?.job;
-    if (job !== "fc27-market") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue") return err(400, "Unknown job.");
     try {
+      if (job === "futgg-catalogue") {
+        // Market-wide card list after the twice-daily FUT.GG prices, then baskets so the indexes include it.
+        const result = await syncFutggCatalogue(deps.db, deps.fetch);
+        await (await marketFor(deps.db)).rebalanceBaskets();
+        return json({ data: result });
+      }
       return json({ data: await collectFc27Market(deps.db, await marketFor(deps.db), deps.fetch) });
     } catch (e) {
       if (e instanceof FutError) return err(e.status, e.message);
-      console.error("[fut-api] fc27-market job:", e);
-      return err(500, "fc27-market job failed.");
+      console.error(`[fut-api] ${job} job:`, e);
+      return err(500, `${job} job failed.`);
     }
   }
   // The XI Lab browser helper signs in with its own key, which can only upload (HELPER_ROUTES).

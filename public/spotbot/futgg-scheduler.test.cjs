@@ -40,3 +40,17 @@ test('the bundled sync records a failed run and stops on an HTTP error', async (
   await assert.rejects(syncFutggPrices(db, () => Promise.resolve(new Response('no', { status: 403 }))), /HTTP 403/);
   assert.deepStrictEqual(runs, [['record_futgg_run', 'failed']]);
 });
+
+test('after prices, the job asks fut-api to refresh the market-wide card list', async () => {
+  const before = process.env.FUT_ENABLED;
+  process.env.FUT_ENABLED = 'true';
+  const syncFutggPrices = async () => ({ console: {}, pc: {} });
+  try {
+    const calls = [];
+    await job.task({ supabase: { schema: () => ({}) }, syncFutggPrices, callFunction: async (name, body) => { calls.push([name, body]); return { data: { data: { cards: 1 } }, error: null }; } });
+    assert.deepStrictEqual(calls, [['fut-api', { job: 'futgg-catalogue' }]]);
+    await assert.rejects(job.task({ supabase: { schema: () => ({}) }, syncFutggPrices, callFunction: async () => ({ data: null, error: 'boom' }) }), /futgg-catalogue: boom/);
+  } finally {
+    if (before === undefined) delete process.env.FUT_ENABLED; else process.env.FUT_ENABLED = before;
+  }
+});

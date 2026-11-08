@@ -20,11 +20,15 @@ function eaSyncBody({ activeClubs, date, skipped = [] }) {
 // Same opt-in as XI Lab (FUT_ENABLED=true); FUTGG_SYNC=off pauses just this job
 const futggOn = () => process.env.FUT_ENABLED === 'true' && process.env.FUTGG_SYNC !== 'off';
 const FUTGG_STALE_MS = 12 * 60 * 60 * 1000;
-async function futggPrices({ supabase }) {
+async function futggPrices({ supabase, callFunction, syncFutggPrices = require('./futgg-sync.cjs').syncFutggPrices }) {
   if (!futggOn()) return;
-  const { syncFutggPrices } = require('./futgg-sync.cjs');
   const result = await syncFutggPrices(supabase.schema('fut'));
   console.log('⏰ futgg-prices:', JSON.stringify(result));
+  // Then the market-wide card list (names from EA's Web App file) and Market Lab's baskets (fut-api job).
+  if (!callFunction) return;
+  const { data, error } = await callFunction('fut-api', { job: 'futgg-catalogue' }, 280000);
+  if (error) throw new Error(`futgg-catalogue: ${error?.message || error}`);
+  console.log('⏰ futgg-catalogue:', JSON.stringify(data?.data ?? data));
 }
 async function futggStale({ supabase }, now = Date.now()) {
   if (!futggOn()) return false;
@@ -86,7 +90,7 @@ function startScheduler({ supabase, callFunction, activeClubs }) {
         if (error && Date.now() - (warned.get(name) || 0) > WARN_AGAIN_MS) { warned.set(name, Date.now()); console.error(`⏰ ${job.name}: ${name} failed (logged once a day):`, error.message); reportError(new Error(error.message), { source: 'scheduler', action: `${job.name} ${name}` }); }
         else if (!error) warned.delete(name);
       }
-      if (job.task) await job.task({ supabase, date });
+      if (job.task) await job.task({ supabase, callFunction, date });
       if (job.fn) {
         const body = typeof job.body === 'function' ? job.body({ activeClubs, date, skipped }) : job.body;
         const { error } = await callFunction(job.fn, body, 280000);
