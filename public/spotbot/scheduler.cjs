@@ -20,18 +20,26 @@ function eaSyncBody({ activeClubs, date, skipped = [] }) {
 // Same opt-in as XI Lab (FUT_ENABLED=true); FUTGG_SYNC=off pauses just this job
 const futggOn = () => process.env.FUT_ENABLED === 'true' && process.env.FUTGG_SYNC !== 'off';
 const FUTGG_STALE_MS = 12 * 60 * 60 * 1000;
-async function futggPrices({ supabase }) {
+async function futggPrices({ supabase, callFunction, syncFutggPrices = require('./futgg-sync.cjs').syncFutggPrices }) {
   if (!futggOn()) return;
-  const { syncFutggPrices } = require('./futgg-sync.cjs');
   const result = await syncFutggPrices(supabase.schema('fut'));
   console.log('⏰ futgg-prices:', JSON.stringify(result));
+  // Then the market-wide card list (names from EA's Web App file) and Market Lab's baskets (fut-api job).
+  if (!callFunction) return;
+  const { data, error } = await callFunction('fut-api', { job: 'futgg-catalogue' }, 280000);
+  if (error) throw new Error(`futgg-catalogue: ${error?.message || error}`);
+  console.log('⏰ futgg-catalogue:', JSON.stringify(data?.data ?? data));
 }
 async function futggStale({ supabase }, now = Date.now()) {
   if (!futggOn()) return false;
   const { data, error } = await supabase.schema('fut').from('market_provider_runs').select('finished_at')
     .eq('source_id', 'futgg_bulk').eq('status', 'succeeded').order('finished_at', { ascending: false }).limit(1);
   if (error) return false;
-  return !data?.[0] || now - Date.parse(data[0].finished_at) > FUTGG_STALE_MS;
+  if (!data?.[0] || now - Date.parse(data[0].finished_at) > FUTGG_STALE_MS) return true;
+  // Also right after the market-wide card list first ships: no catalogue cards yet
+  const { count, error: countError } = await supabase.schema('fut').from('player_cards').select('id', { count: 'exact', head: true })
+    .is('owner_user_id', null).eq('source_id', 'futgg_catalogue');
+  return !countError && count === 0;
 }
 
 const JOBS = [
@@ -43,7 +51,8 @@ const JOBS = [
   // Image reservations left behind by a render that never finished, and previews nobody answered
   { name: 'image-reservation-cleanup', minute: 45, rpc: ['settle_stale_image_reservations'] },
   // FUT.GG bulk market prices (Market Lab). Runs here, not on Cloudflare: FUT.GG answers 403 to requests
-  // from Cloudflare Workers. After a restart it also runs once if the last good refresh is over 12 hours old.
+  // from Cloudflare Workers. After a restart it also runs once if the last good refresh is over 12 hours old or the
+  // market-wide card list is still empty.
   { name: 'futgg-prices', hours: [6, 18], minute: 0, task: futggPrices, onStart: futggStale },
   { name: 'season-card-archive-nightly', hour: 6, minute: 30, rpc: ['refresh_player_season_archive'] },
   { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences', 'cleanup_mcp_oauth', 'cleanup_logs'] },
@@ -86,7 +95,7 @@ function startScheduler({ supabase, callFunction, activeClubs }) {
         if (error && Date.now() - (warned.get(name) || 0) > WARN_AGAIN_MS) { warned.set(name, Date.now()); console.error(`⏰ ${job.name}: ${name} failed (logged once a day):`, error.message); reportError(new Error(error.message), { source: 'scheduler', action: `${job.name} ${name}` }); }
         else if (!error) warned.delete(name);
       }
-      if (job.task) await job.task({ supabase, date });
+      if (job.task) await job.task({ supabase, callFunction, date });
       if (job.fn) {
         const body = typeof job.body === 'function' ? job.body({ activeClubs, date, skipped }) : job.body;
         const { error } = await callFunction(job.fn, body, 280000);

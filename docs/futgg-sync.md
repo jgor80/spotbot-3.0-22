@@ -8,6 +8,14 @@ It uses the bot's existing service-role database client to call service-role-onl
 `fut` schema. No EA login, browser extension, residential proxy or new secret is required. It runs only when
 the bot has `FUT_ENABLED=true` (the XI Lab switch); `FUTGG_SYNC=off` pauses just this job.
 
+Right after the prices, the bot runs the fut-api job `futgg-catalogue` (`_shared/fut/futgg-catalogue.ts`): it reads
+FUT.GG's `streamlined-pool` (rating, position, club, nation, league, card type per price-index id) and `fc-core-data`
+(names for those ids), plus the EA FC Web App's public `players.json` (player names by base id; its address comes from
+the Web App page's `fut_guid`/`fut_year`). Every card is upserted as a catalogue card (`fut.upsert_futgg_catalogue`),
+cards whose latest price on either platform is 1,000+ coins are marked `market_tracked`
+(`fut.refresh_futgg_tracked`), and Market Lab's baskets are rebalanced. Market Lab lists the caller's own cards plus
+the tracked catalogue cards (own copy wins), and FUT.GG quotes map onto both.
+
 This started on the Cloudflare Worker's cron, but FUT.GG answers HTTP 403 to requests from Cloudflare
 Workers (first run, 2026-11-08 06:00 UTC), so the Worker cron was removed.
 

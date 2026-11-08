@@ -62,18 +62,21 @@ no `squad_id` they use the squad the player edited last.
 - **Chemistry is calculated, never guessed.** Only XI Lab's tested engine computes it, from the rule version
   in `fut.chemistry_*`. The seeded FC 27 rules are community numbers marked `unverified`, and every answer
   says so.
-- **No EA ratings database here until it is licensed.** Launch cards are typed in by each user and private to
-  them. Nothing a user types can be labelled `verified`.
+- **Market-wide card list (since 2026-11-08, Jeff's call).** Catalogue cards (`owner_user_id` NULL, source
+  `futgg_catalogue`) come from FUT.GG's public card pool and EA's public Web App player name file, refreshed twice a day
+  by the bot (`_shared/fut/futgg-catalogue.ts`). They carry name, rating, position, club, league, nation and card type
+  only (no face stats or PlayStyles) and aren't a licence from EA or FUT.GG. Users' own cards stay private to them,
+  and nothing a user types can be labelled `verified`.
 - **Read-only AI tools.** The MCP FUT tools never save anything (optimizer runs are logged for audit), never
   touch an EA account and never use the transfer market. Prices are what the user typed in, not live prices.
-- **Prices.** No price feed is authorised (EA's FC Community API is closed; FUTBIN, FUT.GG and FUTWIZ have no
-  agreement), so Market Lab's only prices are each user's own, private to them: CSV/JSON imports, and capture files
+- **Prices.** FUT.GG's public bulk price files (twice a day, `docs/futgg-sync.md`) price the market-wide card list and
+  any synced card with the same EA item id; catalogue cards at 1,000+ coins (`market_tracked`) feed the shared baskets
+  and indexes. No feed is licensed (EA's FC Community API is closed). Users can add their own private prices: CSV/JSON imports, and capture files
   from the XI Lab Price Capture browser extension (11-lab `extension/`), which records only the transfer-market
   results the EA Web App already loaded when the user searched. Capture rows are stored under `web_app_capture`
   and matched to cards by EA item id (`player_cards.source_card_key` when it's EA's numeric id). Captures for items
   the user has no card for yet are held privately in `fut.market_capture_holds` and linked later. Shared baskets are built
-  from catalogue cards only, so until a licensed catalogue and feed exist the market indexes report insufficient
-  data and the per-card analysis runs on the user's own history. Nothing on the server buys, sells, bids or uses an EA login, and the extension never searches, clicks or bids.
+  from catalogue cards only, so a user's private cards never enter an index. Nothing on the server buys, sells, bids or uses an EA login, and the extension never searches, clicks or bids.
 - **One switch.** `FUT_ENABLED=true` turns on the API and the MCP tools together; anything else hides both.
 
 ## Turning it on

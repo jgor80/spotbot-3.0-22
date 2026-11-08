@@ -9713,10 +9713,42 @@ var toObs = (r2) => ({
   evidence: r2.evidence,
   ...Array.isArray(r2.quality) ? { quality: r2.quality } : {}
 });
+function trackedCatalogue(db) {
+  let cached = null;
+  return () => cached ??= allPages(() => db.from("player_cards").select("id,player_name,version,overall,positions,club,league,nation,is_icon,is_hero,source_id,source_card_key,price,updated_at").is("owner_user_id", null).eq("source_id", "futgg_catalogue").eq("market_tracked", true).order("id", { ascending: true }));
+}
+var eaKey = (v) => /^[1-9]\d{0,9}$/.test(String(v ?? "")) ? Number(v) : null;
+var catalogueCard = (r2) => ({
+  id: String(r2.id),
+  source: String(r2.source_id),
+  player_name: String(r2.player_name),
+  version: r2.version ?? null,
+  overall: Number(r2.overall),
+  positions: r2.positions,
+  club: r2.club ?? null,
+  league: r2.league ?? null,
+  nation: r2.nation ?? null,
+  is_icon: r2.is_icon === true,
+  is_hero: r2.is_hero === true,
+  skill_moves: null,
+  weak_foot: null,
+  stats: {},
+  playstyles: [],
+  playstyles_plus: [],
+  evidence: "game_data",
+  notes: null,
+  owned: false,
+  tradeable: null,
+  purchase_price: null,
+  price: r2.price ?? null,
+  ea_item_id: eaKey(r2.source_card_key),
+  updated_at: String(r2.updated_at)
+});
 var PgPriceStore = class {
-  constructor(db, futggEnabled = false) {
+  constructor(db, futggEnabled = false, catalogue2 = () => Promise.resolve([])) {
     this.db = db;
     this.futggEnabled = futggEnabled;
+    this.catalogue = catalogue2;
   }
   async query(owner, q) {
     const base = (shared) => () => {
@@ -9741,6 +9773,12 @@ var PgPriceStore = class {
       const key = String(card.source_card_key ?? "");
       if (!/^[1-9]\d*$/.test(key) || !Number.isSafeInteger(Number(key))) continue;
       byEa.set(Number(key), [...byEa.get(Number(key)) ?? [], String(card.id)]);
+    }
+    const wanted = q.card_ids?.length ? new Set(q.card_ids) : null;
+    for (const row of await this.catalogue()) {
+      const key = eaKey(row.source_card_key);
+      if (key === null || byEa.has(key) || wanted && !wanted.has(String(row.id))) continue;
+      byEa.set(key, [String(row.id)]);
     }
     const ids = [...byEa.keys()], out = [];
     for (let i = 0; i < ids.length; i += 100) {
@@ -9911,14 +9949,17 @@ var toMarketCard = (c) => ({
   ...c.ea_item_id ? { ea_item_id: c.ea_item_id } : {}
 });
 var PgMarketCardSource = class {
-  constructor(db) {
+  constructor(db, rows = trackedCatalogue(db)) {
     this.db = db;
+    this.rows = rows;
   }
   async list(owner) {
-    return (await searchMyCards(this.db, owner, { all: true })).map(toMarketCard);
+    const mine = (await searchMyCards(this.db, owner, { all: true })).map(toMarketCard);
+    const have = new Set(mine.flatMap((c) => c.ea_item_id ? [c.ea_item_id] : []));
+    return [...mine, ...(await this.catalogue()).filter((c) => !c.ea_item_id || !have.has(c.ea_item_id))];
   }
-  catalogue() {
-    return Promise.resolve([]);
+  async catalogue() {
+    return (await this.rows()).map((r2) => toMarketCard(catalogueCard(r2)));
   }
 };
 async function marketSources(db) {
@@ -9943,11 +9984,12 @@ async function marketRules(db) {
 }
 async function marketFor(db, now2) {
   const [rules, sources, chemistry] = await Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
+  const catalogue2 = trackedCatalogue(db);
   return createMarketService({
-    prices: new PgPriceStore(db, sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled")),
+    prices: new PgPriceStore(db, sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled"), catalogue2),
     memberships: new PgMembershipStore(db),
     watchlists: new PgWatchlistStore(db),
-    cards: new PgMarketCardSource(db),
+    cards: new PgMarketCardSource(db, catalogue2),
     holds: new PgCaptureHoldStore(db),
     sources,
     rules,

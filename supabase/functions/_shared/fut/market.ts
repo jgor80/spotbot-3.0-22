@@ -1,7 +1,8 @@
 // XI Lab Market Lab on the `fut` schema: Postgres adapters for XI Lab's market service (./xilab/market, copied from
 // jgor80/11-lab), used by both the fut-api routes and the MCP FUT market tools. No market maths happens here.
-// Prices are the caller's own imports (owner_user_id) plus shared rows from an authorised feed (none exists yet).
-// Baskets are built from catalogue cards only, so a user's private cards never enter a shared index.
+// Prices are the caller's own imports (owner_user_id), shared rows from an authorised feed, and FUT.GG's bulk files.
+// Baskets are built from catalogue cards only (the FUT.GG card list, futgg-catalogue.ts), so a user's private cards
+// never enter a shared index.
 import {
   createMarketService, DEFAULT_BASKETS,
   type BasketMembership, type CaptureHoldStore, type CardCategory, type MarketCard, type MarketCardSource, type MarketRules, type MembershipStore,
@@ -45,8 +46,26 @@ const toObs = (r: Row): PriceObservation => ({
   ...(Array.isArray(r.quality) ? { quality: r.quality as string[] } : {}),
 });
 
+/** Catalogue cards Market Lab analyses: the FUT.GG card list's cards priced at 1,000+ coins (market_tracked). */
+export function trackedCatalogue(db: FutDb): () => Promise<Row[]> {
+  let cached: Promise<Row[]> | null = null;
+  return () => (cached ??= allPages(() => db.from("player_cards")
+    .select("id,player_name,version,overall,positions,club,league,nation,is_icon,is_hero,source_id,source_card_key,price,updated_at")
+    .is("owner_user_id", null).eq("source_id", "futgg_catalogue").eq("market_tracked", true).order("id", { ascending: true })));
+}
+const eaKey = (v: unknown) => (/^[1-9]\d{0,9}$/.test(String(v ?? "")) ? Number(v) : null);
+
+/** A catalogue row as a card (no face stats or PlayStyles in the FUT.GG card list; never owned). */
+const catalogueCard = (r: Row): Card => ({
+  id: String(r.id), source: String(r.source_id), player_name: String(r.player_name), version: (r.version as string) ?? null,
+  overall: Number(r.overall), positions: r.positions as string[], club: (r.club as string) ?? null, league: (r.league as string) ?? null,
+  nation: (r.nation as string) ?? null, is_icon: r.is_icon === true, is_hero: r.is_hero === true, skill_moves: null, weak_foot: null,
+  stats: {}, playstyles: [], playstyles_plus: [], evidence: "game_data", notes: null, owned: false, tradeable: null, purchase_price: null,
+  price: (r.price as number) ?? null, ea_item_id: eaKey(r.source_card_key), updated_at: String(r.updated_at),
+});
+
 export class PgPriceStore implements PriceStore {
-  constructor(private db: FutDb, private futggEnabled = false) {}
+  constructor(private db: FutDb, private futggEnabled = false, private catalogue: () => Promise<Row[]> = () => Promise.resolve([])) {}
   async query(owner: string, q: PriceQuery): Promise<PriceObservation[]> {
     const base = (shared: boolean) => () => {
       let x = this.db.from("market_price_observations").select("*");
@@ -71,6 +90,13 @@ export class PgPriceStore implements PriceStore {
       const key = String(card.source_card_key ?? "");
       if (!/^[1-9]\d*$/.test(key) || !Number.isSafeInteger(Number(key))) continue;
       byEa.set(Number(key), [...(byEa.get(Number(key)) ?? []), String(card.id)]);
+    }
+    // Market-wide catalogue cards take the same quotes, unless the caller has their own card for that item.
+    const wanted = q.card_ids?.length ? new Set(q.card_ids) : null;
+    for (const row of await this.catalogue()) {
+      const key = eaKey(row.source_card_key);
+      if (key === null || byEa.has(key) || (wanted && !wanted.has(String(row.id)))) continue;
+      byEa.set(key, [String(row.id)]);
     }
     const ids = [...byEa.keys()], out: PriceObservation[] = [];
     for (let i = 0; i < ids.length; i += 100) {
@@ -211,14 +237,17 @@ export const toMarketCard = (c: Card): MarketCard => ({
   ...(c.ea_item_id ? { ea_item_id: c.ea_item_id } : {}),
 });
 
-/** The caller's own cards. The catalogue (shared baskets) stays empty until a licensed card catalogue exists. */
+/** The caller's own cards plus the market-wide catalogue (FUT.GG card list, tracked cards only). */
 export class PgMarketCardSource implements MarketCardSource {
-  constructor(private db: FutDb) {}
+  constructor(private db: FutDb, private rows: () => Promise<Row[]> = trackedCatalogue(db)) {}
   async list(owner: string): Promise<MarketCard[]> {
-    return (await searchMyCards(this.db, owner, { all: true })).map(toMarketCard);
+    const mine = (await searchMyCards(this.db, owner, { all: true })).map(toMarketCard);
+    // The caller's own copy of an item wins, so a card isn't listed twice.
+    const have = new Set(mine.flatMap((c) => (c.ea_item_id ? [c.ea_item_id] : [])));
+    return [...mine, ...(await this.catalogue()).filter((c) => !c.ea_item_id || !have.has(c.ea_item_id))];
   }
-  catalogue(): Promise<MarketCard[]> {
-    return Promise.resolve([]);
+  async catalogue(): Promise<MarketCard[]> {
+    return (await this.rows()).map((r) => toMarketCard(catalogueCard(r)));
   }
 }
 
@@ -241,9 +270,10 @@ export async function marketRules(db: FutDb): Promise<MarketRules> {
 /** XI Lab's market service on the caller's data, the active market rules and the active chemistry rules. */
 export async function marketFor(db: FutDb, now?: () => string) {
   const [rules, sources, chemistry] = await Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
+  const catalogue = trackedCatalogue(db);
   return createMarketService({
-    prices: new PgPriceStore(db, sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled")), memberships: new PgMembershipStore(db), watchlists: new PgWatchlistStore(db),
-    cards: new PgMarketCardSource(db), holds: new PgCaptureHoldStore(db), sources, rules, chemistry, ...(now ? { now } : {}),
+    prices: new PgPriceStore(db, sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled"), catalogue), memberships: new PgMembershipStore(db), watchlists: new PgWatchlistStore(db),
+    cards: new PgMarketCardSource(db, catalogue), holds: new PgCaptureHoldStore(db), sources, rules, chemistry, ...(now ? { now } : {}),
   });
 }
 

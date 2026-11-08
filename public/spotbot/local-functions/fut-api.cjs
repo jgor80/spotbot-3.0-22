@@ -945,26 +945,26 @@ var util;
   }
   util2.assertNever = assertNever;
   util2.arrayToEnum = (items) => {
-    const obj2 = {};
+    const obj3 = {};
     for (const item of items) {
-      obj2[item] = item;
+      obj3[item] = item;
     }
-    return obj2;
+    return obj3;
   };
-  util2.getValidEnumValues = (obj2) => {
-    const validKeys = util2.objectKeys(obj2).filter((k) => typeof obj2[obj2[k]] !== "number");
+  util2.getValidEnumValues = (obj3) => {
+    const validKeys = util2.objectKeys(obj3).filter((k) => typeof obj3[obj3[k]] !== "number");
     const filtered = {};
     for (const k of validKeys) {
-      filtered[k] = obj2[k];
+      filtered[k] = obj3[k];
     }
     return util2.objectValues(filtered);
   };
-  util2.objectValues = (obj2) => {
-    return util2.objectKeys(obj2).map(function(e) {
-      return obj2[e];
+  util2.objectValues = (obj3) => {
+    return util2.objectKeys(obj3).map(function(e) {
+      return obj3[e];
     });
   };
-  util2.objectKeys = typeof Object.keys === "function" ? (obj2) => Object.keys(obj2) : (object) => {
+  util2.objectKeys = typeof Object.keys === "function" ? (obj3) => Object.keys(obj3) : (object) => {
     const keys = [];
     for (const key in object) {
       if (Object.prototype.hasOwnProperty.call(object, key)) {
@@ -973,8 +973,8 @@ var util;
     }
     return keys;
   };
-  util2.find = (arr, checker) => {
-    for (const item of arr) {
+  util2.find = (arr2, checker) => {
+    for (const item of arr2) {
       if (checker(item))
         return item;
     }
@@ -1085,8 +1085,8 @@ var ZodIssueCode = util.arrayToEnum([
   "not_multiple_of",
   "not_finite"
 ]);
-var quotelessJson = (obj2) => {
-  const json2 = JSON.stringify(obj2, null, 2);
+var quotelessJson = (obj3) => {
+  const json2 = JSON.stringify(obj3, null, 2);
   return json2.replace(/"([^"]+)":/g, "$1:");
 };
 var ZodError = class _ZodError extends Error {
@@ -5935,6 +5935,148 @@ async function futggStatus(db, now2 = Date.now()) {
   };
 }
 
+// supabase/functions/_shared/fut/futgg-catalogue.ts
+var FUTGG = "https://r2.fut.gg/27";
+var EA_WEB_APP = "https://www.ea.com/ea-sports-fc/ultimate-team/web-app/";
+var MAX_BYTES = 8 * 1024 * 1024;
+var BATCH2 = 2e3;
+var EA_POSITIONS = {
+  0: "GK",
+  2: "RB",
+  3: "RB",
+  4: "CB",
+  5: "CB",
+  6: "CB",
+  7: "LB",
+  8: "LB",
+  9: "CDM",
+  10: "CDM",
+  11: "CDM",
+  12: "RM",
+  13: "CM",
+  14: "CM",
+  15: "CM",
+  16: "LM",
+  17: "CAM",
+  18: "CAM",
+  19: "CAM",
+  20: "ST",
+  21: "ST",
+  22: "ST",
+  23: "RW",
+  24: "ST",
+  25: "ST",
+  26: "ST",
+  27: "LW"
+};
+async function getJson2(fetcher, url) {
+  const res = await fetcher(url);
+  if (!res.ok) throw new FutError(`${new URL(url).host} returned HTTP ${res.status} for the card list`, 502);
+  const text2 = await res.text();
+  if (text2.length > MAX_BYTES) throw new FutError("Card list file is too large", 502);
+  return JSON.parse(text2);
+}
+async function getText(fetcher, url) {
+  const res = await fetcher(url);
+  if (!res.ok) throw new FutError(`${new URL(url).host} returned HTTP ${res.status} for the card list`, 502);
+  return await res.text();
+}
+var obj = (v, what) => {
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new FutError(`Unexpected ${what} format`, 502);
+  return v;
+};
+var arr = (v, n, what) => {
+  if (!Array.isArray(v) || v.length !== n) throw new FutError(`Unexpected ${what} format`, 502);
+  return v;
+};
+function fileUrl(manifest, name2) {
+  const hash = manifest[name2], version = manifest._version;
+  if (!Number.isSafeInteger(version) || typeof hash !== "string" || !/^[a-f0-9]+$/.test(hash)) throw new FutError(`FUT.GG manifest has no ${name2}`, 502);
+  return `${FUTGG}/${name2}.v${version}.${hash}.json`;
+}
+var nameMap2 = (list2, key = "eaId") => {
+  const out = /* @__PURE__ */ new Map();
+  if (Array.isArray(list2)) {
+    for (const x of list2) if (Number.isSafeInteger(x?.[key]) && typeof x.name === "string") out.set(Number(x[key]), x.name);
+  }
+  return out;
+};
+var basePlayerId = (eaItemId) => eaItemId % 16777216;
+function buildCatalogue(input) {
+  const { index, pool, core, players } = input;
+  const d = index.d;
+  if (!Number.isSafeInteger(index.id0) || !Array.isArray(d)) throw new FutError("Unexpected FUT.GG index format", 502);
+  const ids = [Number(index.id0)];
+  for (const delta of d) {
+    if (!Number.isSafeInteger(delta) || Number(delta) <= 0) throw new FutError("Invalid FUT.GG card id", 502);
+    ids.push(ids[ids.length - 1] + Number(delta));
+  }
+  const n = ids.length;
+  if (pool.n !== n || pool.id0 !== ids[0] || pool.idn !== ids[n - 1]) throw new FutError("FUT.GG card pool doesn't match the price index", 502);
+  const o = arr(pool.o, n, "card pool"), r2 = arr(pool.r, n, "card pool"), pos = arr(pool.pos, n, "card pool");
+  const nat = arr(pool.nat, n, "card pool"), lg = arr(pool.lg, n, "card pool"), cl = arr(pool.cl, n, "card pool");
+  const rarities = nameMap2(core.rarities), clubs = nameMap2(core.clubs), nations = nameMap2(core.nations), leagues = nameMap2(core.leagues);
+  const names = /* @__PURE__ */ new Map();
+  for (const list2 of [players.Players, players.LegendsPlayers]) {
+    if (!Array.isArray(list2)) continue;
+    for (const p of list2) {
+      if (!Number.isSafeInteger(p?.id)) continue;
+      const common = typeof p.c === "string" && p.c.trim() ? p.c.trim() : "";
+      const full = [p.f, p.l].filter((x) => typeof x === "string" && x.trim()).join(" ").trim();
+      if (common || full) names.set(Number(p.id), common || full);
+    }
+  }
+  if (names.size < 1e3) throw new FutError("EA's player name file looks incomplete", 502);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const id = ids[i], name2 = names.get(basePlayerId(id)), position = EA_POSITIONS[Number(pos[i])], overall = Number(o[i]);
+    if (!name2 || !position || !Number.isInteger(overall) || overall < 1 || overall > 99) continue;
+    const version = rarities.get(Number(r2[i])) ?? null, v = (version ?? "").toLowerCase();
+    out.push({
+      ea_item_id: id,
+      name: name2.slice(0, 60),
+      version: version?.slice(0, 40) ?? null,
+      overall,
+      position,
+      club: clubs.get(Number(cl[i])) ?? null,
+      league: leagues.get(Number(lg[i])) ?? null,
+      nation: nations.get(Number(nat[i])) ?? null,
+      is_icon: v.includes("icon"),
+      is_hero: !v.includes("icon") && v.includes("hero"),
+      published_at: input.publishedAt ?? null
+    });
+  }
+  return out;
+}
+function eaPlayersUrl(html) {
+  const guid = html.match(/fut_guid\s*=\s*"([A-Za-z0-9-]{8,64})"/)?.[1], year = html.match(/fut_year\s*=\s*"(\d{4})"/)?.[1];
+  if (!guid || !year) throw new FutError("Couldn't find the EA Web App content id", 502);
+  return `${EA_WEB_APP}content/${guid}/${year}/fut/items/web/players.json`;
+}
+async function syncFutggCatalogue(db, fetcher = (u) => fetch(u, { headers: { Accept: "application/json, text/html", "User-Agent": "XI-Lab-Market-Collector/1.0" }, signal: AbortSignal.timeout(3e4) })) {
+  const manifest = obj(await getJson2(fetcher, `${FUTGG}/manifest.json`), "FUT.GG manifest");
+  const [index, pool, core, html] = await Promise.all([
+    getJson2(fetcher, fileUrl(manifest, "player-prices-index")),
+    getJson2(fetcher, fileUrl(manifest, "streamlined-pool")),
+    getJson2(fetcher, fileUrl(manifest, "fc-core-data")),
+    getText(fetcher, EA_WEB_APP)
+  ]);
+  const players = obj(await getJson2(fetcher, eaPlayersUrl(html)), "EA player file");
+  const stamp = obj(manifest._published_at ?? {}, "FUT.GG manifest")["streamlined-pool"];
+  const publishedAt = Number.isSafeInteger(stamp) ? new Date(Number(stamp) * 1e3).toISOString() : null;
+  const cards = buildCatalogue({ index: obj(index, "FUT.GG index"), pool: obj(pool, "card pool"), core: obj(core, "FUT.GG core data"), players, publishedAt });
+  let written = 0;
+  for (let i = 0; i < cards.length; i += BATCH2) {
+    const { data, error: error2 } = await db.rpc("upsert_futgg_catalogue", { p_cards: cards.slice(i, i + BATCH2) });
+    if (error2) throw new FutError(`Card list save failed: ${error2.message}`, 500);
+    written += Number(data ?? 0);
+  }
+  const { data: tracked, error } = await db.rpc("refresh_futgg_tracked", { p_min_price: 1e3 });
+  if (error) throw new FutError(`Card list tracking failed: ${error.message}`, 500);
+  const d = index.d, total = Array.isArray(d) ? d.length + 1 : cards.length;
+  return { cards: cards.length, written, tracked: Number(tracked ?? 0), skipped: total - cards.length };
+}
+
 // supabase/functions/_shared/fut/community.ts
 var fail4 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
@@ -7435,10 +7577,42 @@ var toObs = (r2) => ({
   evidence: r2.evidence,
   ...Array.isArray(r2.quality) ? { quality: r2.quality } : {}
 });
+function trackedCatalogue(db) {
+  let cached = null;
+  return () => cached ??= allPages(() => db.from("player_cards").select("id,player_name,version,overall,positions,club,league,nation,is_icon,is_hero,source_id,source_card_key,price,updated_at").is("owner_user_id", null).eq("source_id", "futgg_catalogue").eq("market_tracked", true).order("id", { ascending: true }));
+}
+var eaKey = (v) => /^[1-9]\d{0,9}$/.test(String(v ?? "")) ? Number(v) : null;
+var catalogueCard = (r2) => ({
+  id: String(r2.id),
+  source: String(r2.source_id),
+  player_name: String(r2.player_name),
+  version: r2.version ?? null,
+  overall: Number(r2.overall),
+  positions: r2.positions,
+  club: r2.club ?? null,
+  league: r2.league ?? null,
+  nation: r2.nation ?? null,
+  is_icon: r2.is_icon === true,
+  is_hero: r2.is_hero === true,
+  skill_moves: null,
+  weak_foot: null,
+  stats: {},
+  playstyles: [],
+  playstyles_plus: [],
+  evidence: "game_data",
+  notes: null,
+  owned: false,
+  tradeable: null,
+  purchase_price: null,
+  price: r2.price ?? null,
+  ea_item_id: eaKey(r2.source_card_key),
+  updated_at: String(r2.updated_at)
+});
 var PgPriceStore = class {
-  constructor(db, futggEnabled = false) {
+  constructor(db, futggEnabled = false, catalogue = () => Promise.resolve([])) {
     this.db = db;
     this.futggEnabled = futggEnabled;
+    this.catalogue = catalogue;
   }
   async query(owner, q) {
     const base = (shared) => () => {
@@ -7463,6 +7637,12 @@ var PgPriceStore = class {
       const key = String(card.source_card_key ?? "");
       if (!/^[1-9]\d*$/.test(key) || !Number.isSafeInteger(Number(key))) continue;
       byEa.set(Number(key), [...byEa.get(Number(key)) ?? [], String(card.id)]);
+    }
+    const wanted = q.card_ids?.length ? new Set(q.card_ids) : null;
+    for (const row of await this.catalogue()) {
+      const key = eaKey(row.source_card_key);
+      if (key === null || byEa.has(key) || wanted && !wanted.has(String(row.id))) continue;
+      byEa.set(key, [String(row.id)]);
     }
     const ids = [...byEa.keys()], out = [];
     for (let i = 0; i < ids.length; i += 100) {
@@ -7633,14 +7813,17 @@ var toMarketCard = (c) => ({
   ...c.ea_item_id ? { ea_item_id: c.ea_item_id } : {}
 });
 var PgMarketCardSource = class {
-  constructor(db) {
+  constructor(db, rows = trackedCatalogue(db)) {
     this.db = db;
+    this.rows = rows;
   }
   async list(owner) {
-    return (await searchMyCards(this.db, owner, { all: true })).map(toMarketCard);
+    const mine = (await searchMyCards(this.db, owner, { all: true })).map(toMarketCard);
+    const have = new Set(mine.flatMap((c) => c.ea_item_id ? [c.ea_item_id] : []));
+    return [...mine, ...(await this.catalogue()).filter((c) => !c.ea_item_id || !have.has(c.ea_item_id))];
   }
-  catalogue() {
-    return Promise.resolve([]);
+  async catalogue() {
+    return (await this.rows()).map((r2) => toMarketCard(catalogueCard(r2)));
   }
 };
 async function marketSources(db) {
@@ -7665,11 +7848,12 @@ async function marketRules(db) {
 }
 async function marketFor(db, now2) {
   const [rules, sources, chemistry] = await Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
+  const catalogue = trackedCatalogue(db);
   return createMarketService({
-    prices: new PgPriceStore(db, sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled")),
+    prices: new PgPriceStore(db, sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled"), catalogue),
     memberships: new PgMembershipStore(db),
     watchlists: new PgWatchlistStore(db),
-    cards: new PgMarketCardSource(db),
+    cards: new PgMarketCardSource(db, catalogue),
     holds: new PgCaptureHoldStore(db),
     sources,
     rules,
@@ -7719,7 +7903,7 @@ function parse(schema, v) {
   if (r2.success) return r2.data;
   throw new FutError(`Invalid request: ${r2.error.issues.slice(0, 5).map((i) => `${i.path.join(".") || "body"}: ${i.message}`).join("; ")}`);
 }
-var obj = (v) => {
+var obj2 = (v) => {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new FutError("Expected a JSON object.");
   return v;
 };
@@ -7747,7 +7931,7 @@ async function incomingCard(db, userId, b) {
   throw new FutError("Send card_id (one of your cards), card (a card object) or card: null to empty the slot.");
 }
 async function importPrices(db, userId, raw) {
-  const b = obj(raw);
+  const b = obj2(raw);
   if (typeof b.text !== "string" || !b.text.trim()) throw new FutError("Send the price history as text: CSV with card_id,platform,price,observed_at, or a JSON array.");
   if (b.text.split("\n").length > MAX_IMPORT_ROWS + 1) throw new FutError(`Import at most ${MAX_IMPORT_ROWS} rows at a time.`);
   const mk = await marketFor(db);
@@ -7762,13 +7946,18 @@ async function handle(req, deps) {
   if (req.method === "POST" && /\/fut-api\/?$/.test(new URL(req.url).pathname)) {
     if (!await deps.isBot?.(req)) return err(401, "Only the bot's scheduler can run jobs.");
     const job = (await req.json().catch(() => null))?.job;
-    if (job !== "fc27-market") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue") return err(400, "Unknown job.");
     try {
+      if (job === "futgg-catalogue") {
+        const result = await syncFutggCatalogue(deps.db, deps.fetch);
+        await (await marketFor(deps.db)).rebalanceBaskets();
+        return json({ data: result });
+      }
       return json({ data: await collectFc27Market(deps.db, await marketFor(deps.db), deps.fetch) });
     } catch (e) {
       if (e instanceof FutError) return err(e.status, e.message);
-      console.error("[fut-api] fc27-market job:", e);
-      return err(500, "fc27-market job failed.");
+      console.error(`[fut-api] ${job} job:`, e);
+      return err(500, `${job} job failed.`);
     }
   }
   const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
@@ -7845,7 +8034,7 @@ async function handle(req, deps) {
     }
     if (route === "/formations" && m === "GET") return json({ data: Object.keys(FORMATIONS) });
     if (route === "/squads/new" && m === "POST") {
-      const b = obj(await body(req));
+      const b = obj2(await body(req));
       const formation = typeof b.formation === "string" ? b.formation.trim() : "";
       const name2 = typeof b.name === "string" && b.name.trim() ? b.name.trim().slice(0, 120) : void 0;
       const budget = b.budget === void 0 ? 0 : Number(b.budget);
@@ -7856,42 +8045,42 @@ async function handle(req, deps) {
       const ws = await workspaceFor(db);
       if (route === "/squads" && m === "GET") return json({ data: await runWorkspace(() => ws.listSquads(userId)) });
       if (route === "/squads" && m === "POST") {
-        const squad = { ...obj(await body(req)), owner_id: userId };
+        const squad = { ...obj2(await body(req)), owner_id: userId };
         return json({ data: await runWorkspace(() => ws.saveSquad(userId, squad)) });
       }
       if (route === "/squads/save-as" && m === "POST") {
-        const b = obj(await body(req));
+        const b = obj2(await body(req));
         const name2 = typeof b.name === "string" ? b.name.trim().slice(0, 120) : "";
         if (!name2) throw new FutError("Give the new squad a name.");
-        return json({ data: await runWorkspace(() => ws.saveSquadAs(userId, { ...obj(b.squad), owner_id: userId }, name2)) }, 201);
+        return json({ data: await runWorkspace(() => ws.saveSquadAs(userId, { ...obj2(b.squad), owner_id: userId }, name2)) }, 201);
       }
       if (route === "/squads/chemistry" && m === "POST") {
-        const b = obj(await body(req));
+        const b = obj2(await body(req));
         return json({ data: await runWorkspace(() => ws.calculateChemistry(userId, squadRef(b.squad))) });
       }
       if (route === "/squads/diagnose" && m === "POST") {
-        const b = obj(await body(req));
+        const b = obj2(await body(req));
         return json({ data: await runWorkspace(() => ws.diagnose(userId, squadRef(b.squad), slotName(b.slot, false))) });
       }
       if (route === "/squads/assign" && m === "POST") {
-        const b = obj(await body(req));
+        const b = obj2(await body(req));
         return json({ data: await runWorkspace(async () => {
-          const squad = squadSchema.parse({ ...obj(b.squad), owner_id: userId });
+          const squad = squadSchema.parse({ ...obj2(b.squad), owner_id: userId });
           return assignCard(squad, slotName(b.slot, true), await incomingCard(db, userId, b));
         }) });
       }
       if (route === "/squads/preview" && m === "POST") {
-        const b = obj(await body(req));
+        const b = obj2(await body(req));
         return json({ data: await runWorkspace(async () => ws.previewAssign(userId, squadRef(b.squad), slotName(b.slot, true), await incomingCard(db, userId, b))) });
       }
       if (route === "/squads/optimize" && m === "POST") {
-        const b = obj(await body(req));
-        const result = await runWorkspace(() => ws.optimize(userId, squadRef(b.squad), { goal: obj(b.goal), options: b.options }));
+        const b = obj2(await body(req));
+        const result = await runWorkspace(() => ws.optimize(userId, squadRef(b.squad), { goal: obj2(b.goal), options: b.options }));
         await logRun(db, userId, { squad: typeof b.squad === "string" ? b.squad : null, kind: "optimize", input: { goal: b.goal, options: b.options }, result, via: "web" });
         return json({ data: result });
       }
       if (route === "/squads/compare" && m === "POST") {
-        const b = obj(await body(req));
+        const b = obj2(await body(req));
         return json({ data: await runWorkspace(() => ws.compare(userId, squadRef(b.a), squadRef(b.b), b.base === void 0 ? void 0 : squadRef(b.base))) });
       }
       const one = route.match(/^\/squads\/([^/]+)$/);
@@ -7932,7 +8121,7 @@ async function handle(req, deps) {
         return json({ data: await runWorkspace(() => mk.analyzeTradeThesis(userId, input)) });
       }
       if (route === "/market/compare-squad" && m === "POST") {
-        const b = obj(await body(req));
+        const b = obj2(await body(req));
         const ws = await workspaceFor(db);
         return json({ data: await runWorkspace(async () => {
           const ref = squadRef(b.squad);
@@ -7954,7 +8143,7 @@ async function handle(req, deps) {
       if (route === "/market/prices/import" && m === "POST") return json({ data: await importPrices(db, userId, await body(req, MAX_IMPORT_BODY)) });
       if (route === "/market/sharing" && m === "GET") return json({ data: await getSharing(db, userId) });
       if (route === "/market/sharing" && m === "POST") {
-        const b = obj(await body(req));
+        const b = obj2(await body(req));
         if (typeof b.sharing !== "boolean") throw new FutError("sharing must be true or false.");
         return json({ data: await setSharing(db, userId, b.sharing) });
       }
@@ -7969,7 +8158,7 @@ async function handle(req, deps) {
       if (route === "/market/held" && m === "GET") return json({ data: await runWorkspace(() => mk.getHeldCaptures(userId)) });
       if (route === "/market/held/relink" && m === "POST") return json({ data: await runWorkspace(() => mk.relinkHeldCaptures(userId)) });
       if (route === "/market/held/link" && m === "POST") {
-        const b = obj(await body(req));
+        const b = obj2(await body(req));
         const ea = Number(b.ea_item_id);
         if (!Number.isInteger(ea) || ea <= 0) throw new FutError("ea_item_id must be EA's item id (a whole number).");
         return json({ data: await runWorkspace(() => mk.linkHeldCapture(userId, ea, marketCardId(b.card_id))) });
