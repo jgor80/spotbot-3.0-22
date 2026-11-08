@@ -2,7 +2,7 @@ import { forwardRef, useMemo, useState, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   KeyboardSensor,
   useDraggable,
@@ -319,8 +319,10 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
   const [pasteText, setPasteText] = useState("");
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
+    // Mouse and touch separately: a pointer sensor also fires on touch and grabbed players on any small
+    // finger move, so the page couldn't scroll. On touch a player is picked up by a short press instead.
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
     useSensor(KeyboardSensor),
   );
 

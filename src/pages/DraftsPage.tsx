@@ -19,7 +19,7 @@ import {
   Trash2
 } from "lucide-react";
 import { format, differenceInMinutes } from "date-fns";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 interface Draft {
   id: string;

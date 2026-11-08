@@ -29,7 +29,7 @@ import {
   RefreshCw,
   Clock
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 import { formatDistanceToNow } from "date-fns";
 
 interface PlayerVibeData {
