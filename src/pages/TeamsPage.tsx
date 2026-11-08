@@ -61,7 +61,7 @@ import {
   Megaphone
 } from "lucide-react";
 import { format } from "date-fns";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 import { useClubTheme } from "@/hooks/useClubTheme";
 
 interface Team {

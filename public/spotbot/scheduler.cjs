@@ -46,7 +46,6 @@ const JOBS = [
   // Every 5 minutes: the clubs playing now (ea-activity.cjs) plus one twelfth of the rest, so every
   // idle club is still fully synced (matches and member stats) once an hour
   { name: 'sync-ea-stats', every: 5, fn: 'sync-ea-stats', body: eaSyncBody, catchUp: true },
-  { name: 'refresh-discord-standings', every: 5, rpc: ['refresh_discord_standings'] },
   { name: 'advanced-stats-refresh', minute: 15, rpc: ['backfill_advanced_player_stats', 'refresh_player_season_archive'] },
   // Image reservations left behind by a render that never finished, and previews nobody answered
   { name: 'image-reservation-cleanup', minute: 45, rpc: ['settle_stale_image_reservations'] },

@@ -37,7 +37,7 @@ interface UpcomingEvent {
 
 const RESULT_STYLE: Record<MatchResult, string> = {
   win: "bg-success text-success-foreground",
-  draw: "bg-muted-foreground/30 text-foreground",
+  draw: "bg-amber-500/20 text-amber-800 dark:text-amber-300",
   loss: "bg-destructive text-destructive-foreground",
 };
 

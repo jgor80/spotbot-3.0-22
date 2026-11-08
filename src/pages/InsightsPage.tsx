@@ -102,13 +102,23 @@ export default function InsightsPage() {
       // Tags live in match_data, so filter by kind of game here; read further back so the range still fills up
       let query = supabase
         .from("club_matches")
-        .select("id, result, score_for, score_against, match_type, created_at, opponent_club_name, player_stats, match_data")
+        // Only the parts of EA's match JSON the insights read (tag, category, kick-off, both squads' rows),
+        // not the whole blob with club details and aggregates
+        .select(
+          "id, result, score_for, score_against, match_type, created_at, opponent_club_name, player_stats, " +
+            "md_tag:match_data->_tag, md_category:match_data->_matchCategory, md_timestamp:match_data->timestamp, md_players:match_data->players",
+        )
         .eq("guild_id", selectedGuildId)
         .order("created_at", { ascending: false })
         .limit(matchType === "everything" ? limit : 1000);
       if (clubKey !== "all") query = query.eq("club_key", clubKey);
-      const { data: all, error } = await query;
+      const { data: slim, error } = await query;
       if (error) throw error;
+      type SlimRow = Omit<ClubMatchRow, "match_data"> & { md_tag?: unknown; md_category?: unknown; md_timestamp?: unknown; md_players?: unknown };
+      const all: ClubMatchRow[] = ((slim || []) as unknown as SlimRow[]).map(({ md_tag, md_category, md_timestamp, md_players, ...row }) => ({
+        ...row,
+        match_data: { _tag: md_tag ?? undefined, _matchCategory: md_category ?? undefined, timestamp: md_timestamp ?? undefined, players: md_players ?? undefined },
+      }));
       const keep = (r: ClubMatchRow) =>
         matchType === "everything" || (matchType === "all" ? !isSeparateCompetition(matchCompetition(r)) : matchCompetition(r) === matchType);
       const rows = (all || []).filter(keep).slice(0, limit);

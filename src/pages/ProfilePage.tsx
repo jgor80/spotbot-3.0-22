@@ -12,7 +12,7 @@ import { Loader2, Link as LinkIcon, Unlink, User, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/notify";
 
 export default function ProfilePage() {
   const { selectedGuildId, isLoading: guildLoading } = useGuild();
