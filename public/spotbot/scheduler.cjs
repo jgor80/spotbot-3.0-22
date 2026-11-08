@@ -35,7 +35,11 @@ async function futggStale({ supabase }, now = Date.now()) {
   const { data, error } = await supabase.schema('fut').from('market_provider_runs').select('finished_at')
     .eq('source_id', 'futgg_bulk').eq('status', 'succeeded').order('finished_at', { ascending: false }).limit(1);
   if (error) return false;
-  return !data?.[0] || now - Date.parse(data[0].finished_at) > FUTGG_STALE_MS;
+  if (!data?.[0] || now - Date.parse(data[0].finished_at) > FUTGG_STALE_MS) return true;
+  // Also right after the market-wide card list first ships: no catalogue cards yet
+  const { count, error: countError } = await supabase.schema('fut').from('player_cards').select('id', { count: 'exact', head: true })
+    .is('owner_user_id', null).eq('source_id', 'futgg_catalogue');
+  return !countError && count === 0;
 }
 
 const JOBS = [
@@ -47,7 +51,8 @@ const JOBS = [
   // Image reservations left behind by a render that never finished, and previews nobody answered
   { name: 'image-reservation-cleanup', minute: 45, rpc: ['settle_stale_image_reservations'] },
   // FUT.GG bulk market prices (Market Lab). Runs here, not on Cloudflare: FUT.GG answers 403 to requests
-  // from Cloudflare Workers. After a restart it also runs once if the last good refresh is over 12 hours old.
+  // from Cloudflare Workers. After a restart it also runs once if the last good refresh is over 12 hours old or the
+  // market-wide card list is still empty.
   { name: 'futgg-prices', hours: [6, 18], minute: 0, task: futggPrices, onStart: futggStale },
   { name: 'season-card-archive-nightly', hour: 6, minute: 30, rpc: ['refresh_player_season_archive'] },
   { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences', 'cleanup_mcp_oauth', 'cleanup_logs'] },

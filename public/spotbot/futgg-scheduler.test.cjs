@@ -14,8 +14,9 @@ test('futgg-prices runs at 06:00 and 18:00 UTC only', () => {
   assert.ok(!due(job, new Date('2026-11-08T12:00:00Z')));
 });
 
-const fakeDb = (rows) => ({ schema: () => ({ from: () => {
-  const q = { select: () => q, eq: () => q, order: () => q, limit: () => Promise.resolve({ data: rows, error: null }) };
+const fakeDb = (rows, catalogue = 5) => ({ schema: () => ({ from: () => {
+  const q = { select: () => q, eq: () => q, is: () => q, order: () => q, limit: () => Promise.resolve({ data: rows, error: null }),
+    then: (resolve) => resolve({ count: catalogue, error: null }) };
   return q;
 } }) });
 
@@ -26,6 +27,7 @@ test('a restart catches up only when the last good refresh is over 12 hours old'
     const now = Date.parse('2026-11-08T15:00:00Z');
     assert.strictEqual(await futggStale({ supabase: fakeDb([]) }, now), true);
     assert.strictEqual(await futggStale({ supabase: fakeDb([{ finished_at: '2026-11-08T06:00:00Z' }]) }, now), false);
+    assert.strictEqual(await futggStale({ supabase: fakeDb([{ finished_at: '2026-11-08T06:00:00Z' }], 0) }, now), true, 'empty card list');
     assert.strictEqual(await futggStale({ supabase: fakeDb([{ finished_at: '2026-11-07T18:00:00Z' }]) }, now), true);
     process.env.FUT_ENABLED = 'false';
     assert.strictEqual(await futggStale({ supabase: fakeDb([]) }, now), false);
