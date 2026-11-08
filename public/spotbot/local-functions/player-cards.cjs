@@ -4112,7 +4112,7 @@ Deno.serve(async (req) => {
   const b = p.data;
   if (b.action === "binder") {
     if (bot || caller?.kind !== "user") return json({ error: "Forbidden" }, 403);
-    const { data: links } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId);
+    const { data: links } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true);
     const ids = (links ?? []).map((l) => l.discord_user_id).filter(Boolean);
     if (!ids.length) return json({ cards: [] });
     const { data } = await db.from("player_cards").select("id,style,name,created_at,storage_path,back_path").in("discord_user_id", ids).order("created_at", { ascending: false }).limit(60);

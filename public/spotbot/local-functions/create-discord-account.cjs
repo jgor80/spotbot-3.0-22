@@ -115,7 +115,11 @@ serve(async (req) => {
       );
     }
     console.log(`[create-discord-account] Creating account for Discord ${discord_user_id} (${discord_username})`);
-    const { data: existingLink } = await supabase.from("user_discord_links").select("auth_user_id").eq("discord_user_id", discord_user_id).maybeSingle();
+    const { data: foundLink } = await supabase.from("user_discord_links").select("auth_user_id, verified").eq("discord_user_id", discord_user_id).maybeSingle();
+    if (foundLink && foundLink.verified !== true) {
+      await supabase.from("user_discord_links").delete().eq("discord_user_id", discord_user_id).not("verified", "is", true);
+    }
+    const existingLink = foundLink?.verified === true ? foundLink : null;
     let authUserId;
     let password = null;
     let accountCreated = false;

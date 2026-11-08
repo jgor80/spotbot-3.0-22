@@ -71,11 +71,16 @@ serve(async (req) => {
     console.log(`[create-discord-account] Creating account for Discord ${discord_user_id} (${discord_username})`);
 
     // Check if Discord user already has a linked website account
-    const { data: existingLink } = await supabase
+    const { data: foundLink } = await supabase
       .from('user_discord_links')
-      .select('auth_user_id')
+      .select('auth_user_id, verified')
       .eq('discord_user_id', discord_user_id)
       .maybeSingle();
+    // An unverified link is only a claim typed on the website; never hand that account to this Discord user
+    if (foundLink && foundLink.verified !== true) {
+      await supabase.from('user_discord_links').delete().eq('discord_user_id', discord_user_id).not('verified', 'is', true);
+    }
+    const existingLink = foundLink?.verified === true ? foundLink : null;
 
     let authUserId: string;
     let password: string | null = null;
