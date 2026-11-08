@@ -4133,6 +4133,20 @@ function activeTier(rows, manual, now = /* @__PURE__ */ new Date()) {
   if (manual?.enabled && (!manual.expires_at || new Date(manual.expires_at) > now)) take(manual.tier || "unlimited");
   return best;
 }
+function checkoutPlan(rows, product, config, now = /* @__PURE__ */ new Date()) {
+  if (config.packs[product] || !config.plans[product]) return { kind: "new" };
+  const live = rows.filter((r) => r.active && isLive(r.status, r.current_period_end, now));
+  const monthly = live.filter((r) => r.status !== "lifetime" && r.status !== "cancelled" && !config.plans[r.tier]?.once);
+  if (live.some((r) => r.tier === product && r.status !== "cancelled")) return { kind: "refuse", message: "This server is already on that plan." };
+  const discord = monthly.find((r) => r.provider === "discord");
+  if (discord) return { kind: "refuse", message: "This server pays monthly through Discord's store. Change or cancel that plan in Discord first." };
+  const web = monthly.find((r) => r.provider === "lemonsqueezy" && r.external_id.startsWith("sub:"));
+  if (!web) return { kind: "new" };
+  if (config.plans[product].once) {
+    return { kind: "refuse", message: "Cancel this server's monthly plan first (Manage plan), then buy the one-time plan, so you aren't billed for both." };
+  }
+  return { kind: "switch", subscription_id: web.external_id.slice(4) };
+}
 function isLive(status, periodEnd, now = /* @__PURE__ */ new Date()) {
   return LIVE.has(status) && (!periodEnd || new Date(periodEnd) > now);
 }
@@ -4355,15 +4369,45 @@ async function statusFor(guild) {
   ].map((p) => ({ ...p, web: Boolean(config.lemonVariants[p.key]), discord_sku: config.discordSkus[p.key] ?? null }));
   return { limits_on: config.limitsOn, tier: usage.tier, plan: usage.plan.name, used: usage.used, monthly: usage.monthly, pack_balance: usage.pack_balance, left: usage.left, products, billing_url: `${siteUrl()}/billing?guild=${guild}` };
 }
+async function planRows(guild) {
+  const { data, error } = await db.from("billing_subscriptions").select("provider, external_id, tier, status, active, current_period_end").eq("guild_id", guild);
+  if (error) throw new Error(`plan lookup failed: ${error.message}`);
+  return data ?? [];
+}
+var lemonHeaders = (key) => ({ Accept: "application/vnd.api+json", "Content-Type": "application/vnd.api+json", Authorization: `Bearer ${key}` });
+async function manageUrl(guild) {
+  const key = Deno.env.get("LEMONSQUEEZY_API_KEY");
+  if (!key) return null;
+  const sub = (await planRows(guild)).find((r) => r.provider === "lemonsqueezy" && r.external_id.startsWith("sub:") && r.active);
+  if (!sub) return null;
+  const res = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${encodeURIComponent(sub.external_id.slice(4))}`, { headers: lemonHeaders(key) });
+  const out = await res.json().catch(() => null);
+  const url = out?.data?.attributes?.urls?.customer_portal;
+  return res.ok && typeof url === "string" ? url : null;
+}
 async function checkout(guild, product, discordUserId) {
   const config = billingConfig();
   const variant = config.lemonVariants[product];
   const key = Deno.env.get("LEMONSQUEEZY_API_KEY");
   const store = Deno.env.get("LEMONSQUEEZY_STORE_ID");
   if (!variant || !key || !store) return json({ error: "That isn't on sale on the website yet." }, 400);
+  const plan = checkoutPlan(await planRows(guild), product, config);
+  if (plan.kind === "refuse") return json({ error: plan.message }, 409);
+  if (plan.kind === "switch") {
+    const res2 = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${encodeURIComponent(plan.subscription_id)}`, {
+      method: "PATCH",
+      headers: lemonHeaders(key),
+      body: JSON.stringify({ data: { type: "subscriptions", id: plan.subscription_id, attributes: { variant_id: Number(variant) } } })
+    });
+    if (!res2.ok) {
+      console.error(`[billing] plan switch failed: ${res2.status}`);
+      return json({ error: "Couldn't change the plan right now. Try again in a minute, or use Manage plan." }, 502);
+    }
+    return json({ switched: true });
+  }
   const res = await fetch("https://api.lemonsqueezy.com/v1/checkouts", {
     method: "POST",
-    headers: { Accept: "application/vnd.api+json", "Content-Type": "application/vnd.api+json", Authorization: `Bearer ${key}` },
+    headers: lemonHeaders(key),
     body: JSON.stringify({
       data: {
         type: "checkouts",
@@ -4408,7 +4452,7 @@ async function handleWeb(req, input) {
   const userDb = (0, import_supabase_js_22.createClient)(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") || req.headers.get("apikey") || "", { global: { headers: { Authorization: req.headers.get("authorization") ?? "" } } });
   const { data: allowed } = await userDb.rpc("user_has_guild_access", { check_guild_id: b.guild_id });
   if (allowed !== true) return json({ error: "You're not in that server." }, 403);
-  if (b.action === "web_status") return json(await statusFor(b.guild_id));
+  if (b.action === "web_status") return json({ ...await statusFor(b.guild_id), manage_url: await manageUrl(b.guild_id).catch(() => null) });
   const { data: link } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).maybeSingle();
   return checkout(b.guild_id, b.product, link?.discord_user_id ?? null);
 }

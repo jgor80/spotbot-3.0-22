@@ -92,6 +92,30 @@ export function activeTier(rows: SubscriptionRow[], manual: { enabled?: boolean;
   return best;
 }
 
+export type PlanRow = SubscriptionRow & { provider: string; external_id: string };
+
+/**
+ * What buying `product` on the website should do, given the server's current plan rows, so a server never
+ * ends up paying for two plans: a live monthly plan from the Discord store blocks it, a live (not cancelled)
+ * web monthly plan is switched in place instead of starting a second subscription, and the same plan twice
+ * is refused. Packs are always fine.
+ */
+export type CheckoutPlan = { kind: "new" } | { kind: "switch"; subscription_id: string } | { kind: "refuse"; message: string };
+export function checkoutPlan(rows: PlanRow[], product: string, config: BillingConfig, now = new Date()): CheckoutPlan {
+  if (config.packs[product] || !config.plans[product]) return { kind: "new" };
+  const live = rows.filter((r) => r.active && isLive(r.status, r.current_period_end, now));
+  const monthly = live.filter((r) => r.status !== "lifetime" && r.status !== "cancelled" && !config.plans[r.tier]?.once);
+  if (live.some((r) => r.tier === product && r.status !== "cancelled")) return { kind: "refuse", message: "This server is already on that plan." };
+  const discord = monthly.find((r) => r.provider === "discord");
+  if (discord) return { kind: "refuse", message: "This server pays monthly through Discord's store. Change or cancel that plan in Discord first." };
+  const web = monthly.find((r) => r.provider === "lemonsqueezy" && r.external_id.startsWith("sub:"));
+  if (!web) return { kind: "new" };
+  if (config.plans[product].once) {
+    return { kind: "refuse", message: "Cancel this server's monthly plan first (Manage plan), then buy the one-time plan, so you aren't billed for both." };
+  }
+  return { kind: "switch", subscription_id: web.external_id.slice(4) };
+}
+
 export function isLive(status: string, periodEnd: string | null, now = new Date()) {
   return LIVE.has(status) && (!periodEnd || new Date(periodEnd) > now);
 }

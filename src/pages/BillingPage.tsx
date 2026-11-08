@@ -13,7 +13,7 @@ import { Loader2 } from "lucide-react";
 // Plans and image packs for one Discord server (the billing function). The same products are on sale
 // in Discord's store at the same price, and both land on the same server balance.
 type Product = { key: string; type: "monthly" | "once" | "pack"; name: string; price: number; images: number; daily_after: number | null; web: boolean; discord_sku: string | null };
-type Status = { limits_on: boolean; tier: string; plan: string; used: number; monthly: number; pack_balance: number; left: number; products: Product[] };
+type Status = { limits_on: boolean; tier: string; plan: string; used: number; monthly: number; pack_balance: number; left: number; products: Product[]; manage_url?: string | null };
 
 async function call<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke("billing", { body });
@@ -57,8 +57,15 @@ export default function BillingPage() {
     if (!selectedGuildId) return;
     setBusy(product);
     try {
-      const { url } = await call<{ url: string }>({ action: "web_checkout", guild_id: selectedGuildId, product });
-      window.location.assign(url);
+      const out = await call<{ url?: string; switched?: boolean }>({ action: "web_checkout", guild_id: selectedGuildId, product });
+      if (out.switched) {
+        // An existing web plan was changed in place (prorated), so there's no second checkout
+        toast({ title: "Plan changed", description: "Your existing subscription was switched. It can take a minute to show up here." });
+        setBusy(null);
+        setTimeout(() => status.refetch(), 4000);
+        return;
+      }
+      if (out.url) window.location.assign(out.url);
     } catch (e) {
       toast({ title: "Couldn't start checkout", description: e instanceof Error ? e.message : undefined, variant: "destructive" });
       setBusy(null);
@@ -91,6 +98,9 @@ export default function BillingPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Current plan</p>
                 <p className="text-2xl font-semibold">{s.plan}</p>
+                {s.manage_url && (
+                  <a className="text-sm text-primary underline" href={s.manage_url} target="_blank" rel="noreferrer">Manage or cancel plan</a>
+                )}
               </div>
               <div className="text-right">
                 <p className="text-sm text-muted-foreground">AI images left</p>
