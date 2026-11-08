@@ -154,6 +154,18 @@ serve(async (req) => {
           { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+      const alreadyReviewed = () => new Response(
+        JSON.stringify({ success: false, error: `Claim was already ${claim.status === "pending" ? "reviewed" : claim.status}` }),
+        { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+      if (claim.status !== "pending") return alreadyReviewed();
+      const { data: reviewed, error: reviewError } = await supabase.from("pending_win_claims").update({
+        status: action === "approve" ? "approved" : "rejected",
+        reviewed_at: (/* @__PURE__ */ new Date()).toISOString(),
+        reviewed_by_discord_id: discord_user_id
+      }).eq("id", claim_id).eq("guild_id", guild_id).eq("status", "pending").select("id").maybeSingle();
+      if (reviewError) throw reviewError;
+      if (!reviewed) return alreadyReviewed();
       if (action === "approve") {
         const { error: insertError } = await supabase.from("competition_wins").insert({
           guild_id,
@@ -166,32 +178,16 @@ serve(async (req) => {
           verified_at: (/* @__PURE__ */ new Date()).toISOString(),
           verified_by_discord_id: discord_user_id
         });
-        if (insertError) throw insertError;
-        const { error: updateError } = await supabase.from("pending_win_claims").update({
-          status: "approved",
-          reviewed_at: (/* @__PURE__ */ new Date()).toISOString(),
-          reviewed_by_discord_id: discord_user_id
-        }).eq("id", claim_id);
-        if (updateError) throw updateError;
-        console.log(`Win claim approved: ${claim.competition_name} by ${discord_user_id}`);
-        return new Response(
-          JSON.stringify({ success: true }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        if (insertError) {
+          await supabase.from("pending_win_claims").update({ status: "pending", reviewed_at: null, reviewed_by_discord_id: null }).eq("id", claim_id);
+          throw insertError;
+        }
       }
-      if (action === "reject") {
-        const { error } = await supabase.from("pending_win_claims").update({
-          status: "rejected",
-          reviewed_at: (/* @__PURE__ */ new Date()).toISOString(),
-          reviewed_by_discord_id: discord_user_id
-        }).eq("id", claim_id);
-        if (error) throw error;
-        console.log(`Win claim rejected: ${claim.competition_name} by ${discord_user_id}`);
-        return new Response(
-          JSON.stringify({ success: true }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+      console.log(`Win claim ${action === "approve" ? "approved" : "rejected"}: ${claim.competition_name} by ${discord_user_id}`);
+      return new Response(
+        JSON.stringify({ success: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
     return new Response(
       JSON.stringify({ success: false, error: "Invalid action" }),
