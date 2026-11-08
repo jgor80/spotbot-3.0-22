@@ -1,0 +1,134 @@
+# Review Panel — runs the multi-judge review on every pull request.
+# Posts one comment (updated on each push), labels the PR with the verdict,
+# and fails this check on BLOCK. Panel source: https://github.com/jgor80/review-panel
+name: Review Panel
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number to review"
+        required: true
+
+concurrency:
+  group: review-panel-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Skip drafts and fork PRs (forks don't get secrets).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.draft == false &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    env:
+      PR: ${{ github.event.pull_request.number || inputs.pr }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr) || '' }}
+
+      - name: PR details
+        id: pr
+        run: |
+          gh pr view "$PR" --json baseRefName,title,body > pr.json
+          echo "base=$(jq -r .baseRefName pr.json)" >> "$GITHUB_OUTPUT"
+          git fetch --no-tags origin "$(jq -r .baseRefName pr.json)"
+          mkdir -p .review-panel/out
+
+      - name: Run the panel
+        uses: anthropics/claude-code-action@v1
+        env:
+          PANEL_BASE: ${{ steps.pr.outputs.base }}
+          PANEL_PR_TITLE: ${{ github.event.pull_request.title }}
+          PANEL_PR_BODY: ${{ github.event.pull_request.body }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          plugin_marketplaces: "https://github.com/jgor80/review-panel.git"
+          plugins: "review-panel@jgor80-tools"
+          prompt: "/review-panel:review-panel ci pr ${{ env.PR }}"
+          claude_args: |
+            --max-turns 120
+            --allowedTools "Read,Grep,Glob,Write,Agent,Task,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(deno:*),Bash(ls:*),Bash(jq:*)"
+
+      - name: Read verdict
+        id: v
+        if: always()
+        run: |
+          V=$(tr -d '[:space:]' < .review-panel/out/verdict.txt 2>/dev/null || true)
+          echo "verdict=${V:-ERROR}" >> "$GITHUB_OUTPUT"
+          echo "Verdict: ${V:-ERROR}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post or update the PR comment
+        if: always() && steps.v.outputs.verdict != 'SKIP' && steps.v.outputs.verdict != 'ERROR'
+        run: |
+          O=.review-panel/out
+          {
+            echo "<!-- review-panel -->"
+            cat "$O/summary.md"
+            echo
+            echo "<details><summary>Full report</summary>"
+            echo
+            head -c 50000 "$O/report.md"
+            echo
+            echo "</details>"
+            if [ -s "$O/ledger-rows.md" ]; then
+              echo
+              echo "<details><summary>Ledger rows</summary>"
+              echo
+              cat "$O/ledger-rows.md"
+              echo
+              echo "</details>"
+            fi
+          } > comment.md
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+                 --jq '.[] | select(.body | startswith("<!-- review-panel -->")) | .id' | tail -1)
+          if [ -n "$ID" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$ID" -F body=@comment.md > /dev/null
+          else
+            gh pr comment "$PR" --body-file comment.md
+          fi
+
+      - name: Label the PR with the verdict
+        if: always() && steps.v.outputs.verdict != 'ERROR'
+        run: |
+          gh label create "panel: ship" --color 0e8a16 --force > /dev/null
+          gh label create "panel: fix-first" --color fbca04 --force > /dev/null
+          gh label create "panel: block" --color b60205 --force > /dev/null
+          for l in "panel: ship" "panel: fix-first" "panel: block"; do
+            gh pr edit "$PR" --remove-label "$l" > /dev/null 2>&1 || true
+          done
+          case "${{ steps.v.outputs.verdict }}" in
+            SHIP) gh pr edit "$PR" --add-label "panel: ship" ;;
+            FIX_FIRST) gh pr edit "$PR" --add-label "panel: fix-first" ;;
+            BLOCK) gh pr edit "$PR" --add-label "panel: block" ;;
+          esac
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-panel-pr-${{ env.PR }}
+          path: .review-panel/out/
+          if-no-files-found: ignore
+
+      - name: Pass or fail the check
+        if: always()
+        run: |
+          case "${{ steps.v.outputs.verdict }}" in
+            BLOCK) echo "::error::Review Panel verdict is BLOCK — see the PR comment."; exit 1 ;;
+            ERROR) echo "::warning::The panel didn't produce a verdict. Check the run log." ;;
+            *) echo "Review Panel verdict: ${{ steps.v.outputs.verdict }}" ;;
+          esac
