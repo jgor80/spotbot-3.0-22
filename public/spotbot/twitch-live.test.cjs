@@ -126,3 +126,9 @@ test('players who are not in the server are not posted there', async () => {
   assert.strictEqual(await tl.pollLinkedPlayers(), 0);
   assert.strictEqual(sent.length, 0);
 });
+
+test('the Player Live Cards picker offers threads as well as text channels', () => {
+  const { ACTION_SCHEMAS } = require('./action-schemas.cjs');
+  const opt = ACTION_SCHEMAS.find((c) => c.name === 'twitchplayerlive').options.find((o) => o.name === 'channel');
+  for (const t of [0, 5, 10, 11, 12]) assert.ok(opt.channel_types.includes(t), `channel type ${t}`);
+});
