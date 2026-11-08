@@ -6,7 +6,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
 import { identifyCaller } from "../_shared/auth.ts";
-import { billingConfig, siteUrl, usageOf } from "../_shared/billing.ts";
+import { billingConfig, checkoutPlan, type PlanRow, siteUrl, usageOf } from "../_shared/billing.ts";
 import { type Change, discordChange, lemonChange, verifyLemonSignature } from "./events.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
@@ -92,15 +92,53 @@ async function statusFor(guild: string) {
   return { limits_on: config.limitsOn, tier: usage.tier, plan: usage.plan.name, used: usage.used, monthly: usage.monthly, pack_balance: usage.pack_balance, left: usage.left, products, billing_url: `${siteUrl()}/billing?guild=${guild}` };
 }
 
+async function planRows(guild: string): Promise<PlanRow[]> {
+  const { data, error } = await db.from("billing_subscriptions").select("provider, external_id, tier, status, active, current_period_end").eq("guild_id", guild);
+  if (error) throw new Error(`plan lookup failed: ${error.message}`);
+  return (data ?? []) as PlanRow[];
+}
+
+const lemonHeaders = (key: string) => ({ Accept: "application/vnd.api+json", "Content-Type": "application/vnd.api+json", Authorization: `Bearer ${key}` });
+
+// Lemon's customer portal for the server's live web subscription (manage card, switch, cancel), or null
+async function manageUrl(guild: string): Promise<string | null> {
+  const key = Deno.env.get("LEMONSQUEEZY_API_KEY");
+  if (!key) return null;
+  const sub = (await planRows(guild)).find((r) => r.provider === "lemonsqueezy" && r.external_id.startsWith("sub:") && r.active);
+  if (!sub) return null;
+  const res = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${encodeURIComponent(sub.external_id.slice(4))}`, { headers: lemonHeaders(key) });
+  const out = await res.json().catch(() => null);
+  const url = out?.data?.attributes?.urls?.customer_portal;
+  return res.ok && typeof url === "string" ? url : null;
+}
+
 async function checkout(guild: string, product: string, discordUserId: string | null) {
   const config = billingConfig();
   const variant = config.lemonVariants[product];
   const key = Deno.env.get("LEMONSQUEEZY_API_KEY");
   const store = Deno.env.get("LEMONSQUEEZY_STORE_ID");
   if (!variant || !key || !store) return json({ error: "That isn't on sale on the website yet." }, 400);
+
+  // Never start a second paid plan for a server that already has one
+  const plan = checkoutPlan(await planRows(guild), product, config);
+  if (plan.kind === "refuse") return json({ error: plan.message }, 409);
+  if (plan.kind === "switch") {
+    const res = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${encodeURIComponent(plan.subscription_id)}`, {
+      method: "PATCH",
+      headers: lemonHeaders(key),
+      body: JSON.stringify({ data: { type: "subscriptions", id: plan.subscription_id, attributes: { variant_id: Number(variant) } } }),
+    });
+    if (!res.ok) {
+      console.error(`[billing] plan switch failed: ${res.status}`);
+      return json({ error: "Couldn't change the plan right now. Try again in a minute, or use Manage plan." }, 502);
+    }
+    // Lemon prorates and sends subscription_updated, which moves the saved plan over
+    return json({ switched: true });
+  }
+
   const res = await fetch("https://api.lemonsqueezy.com/v1/checkouts", {
     method: "POST",
-    headers: { Accept: "application/vnd.api+json", "Content-Type": "application/vnd.api+json", Authorization: `Bearer ${key}` },
+    headers: lemonHeaders(key),
     body: JSON.stringify({
       data: {
         type: "checkouts",
@@ -148,7 +186,7 @@ async function handleWeb(req: Request, input: unknown) {
   const userDb = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") || req.headers.get("apikey") || "", { global: { headers: { Authorization: req.headers.get("authorization") ?? "" } } });
   const { data: allowed } = await userDb.rpc("user_has_guild_access", { check_guild_id: b.guild_id });
   if (allowed !== true) return json({ error: "You're not in that server." }, 403);
-  if (b.action === "web_status") return json(await statusFor(b.guild_id));
+  if (b.action === "web_status") return json({ ...(await statusFor(b.guild_id)), manage_url: await manageUrl(b.guild_id).catch(() => null) });
   const { data: link } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).maybeSingle();
   return checkout(b.guild_id, b.product, link?.discord_user_id ?? null);
 }

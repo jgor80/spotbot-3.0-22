@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { activeTier, billingConfig, creditsFor } from '../_shared/billing.ts';
+import { activeTier, billingConfig, checkoutPlan, creditsFor, type PlanRow } from '../_shared/billing.ts';
 import { discordChange, lemonChange, verifyLemonSignature } from './events.ts';
 
 const env: Record<string, string> = {
@@ -98,4 +98,24 @@ test('webhook signatures must match the raw body', async () => {
   assert.equal(await verifyLemonSignature('shh', body, sig), true);
   assert.equal(await verifyLemonSignature('shh', body + ' ', sig), false);
   assert.equal(await verifyLemonSignature('', body, sig), false);
+});
+
+test('buying on the web never starts a second paid plan', () => {
+  const later = '2026-11-30T00:00:00Z';
+  const row = (o: Partial<PlanRow>): PlanRow => ({ provider: 'lemonsqueezy', external_id: 'sub:77', tier: 'club', status: 'active', active: true, current_period_end: later, ...o });
+  // No plan yet: a normal checkout
+  assert.deepEqual(checkoutPlan([], 'club', config, now), { kind: 'new' });
+  // Live web monthly plan, different plan picked: switch it in place
+  assert.deepEqual(checkoutPlan([row({})], 'pro', config, now), { kind: 'switch', subscription_id: '77' });
+  // Same plan again: refused
+  assert.equal(checkoutPlan([row({})], 'club', config, now).kind, 'refuse');
+  // Monthly through Discord's store: refused on the web
+  assert.equal(checkoutPlan([row({ provider: 'discord', external_id: 'ent:5' })], 'pro', config, now).kind, 'refuse');
+  // One-time plan while a monthly one still bills: refused until it's cancelled
+  assert.equal(checkoutPlan([row({})], 'lifetime', config, now).kind, 'refuse');
+  // A cancelled plan that runs to its end date doesn't block a new one, even the same plan
+  assert.deepEqual(checkoutPlan([row({ status: 'cancelled' })], 'club', config, now), { kind: 'new' });
+  // Expired rows and packs never block
+  assert.deepEqual(checkoutPlan([row({ current_period_end: '2026-10-01T00:00:00Z', active: false })], 'club', config, now), { kind: 'new' });
+  assert.deepEqual(checkoutPlan([row({})], 'pack25', config, now), { kind: 'new' });
 });
