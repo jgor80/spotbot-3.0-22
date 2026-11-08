@@ -1983,9 +1983,9 @@ Deno.serve(async (req) => {
       return s === slice || alsoSlices.has(s)
     }
 
-    // Who may start a sync: the bot, a leader of the one server being synced, or the scheduled job
-    // (x-cron-secret = CRON_SECRET). Until CRON_SECRET is set the scheduled job still runs on the
-    // public key, so anonymous full syncs stay allowed only in that case.
+    // Who may start a sync: the bot (its scheduler included), a leader of the one server being synced,
+    // or an outside scheduled job sending x-cron-secret = CRON_SECRET. Anyone else is refused, even
+    // when CRON_SECRET isn't set: a full sync is the most expensive call there is.
     const caller = await identifyCaller(req, supabase)
     const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
     const isCron = cronSecret.length >= 24 && (req.headers.get('x-cron-secret') ?? '') === cronSecret
@@ -1996,10 +1996,7 @@ Deno.serve(async (req) => {
       const denied = await requireGuildAccess(req, supabase, onlyGuildId, 'leader')
       if (denied) return denied
     } else if (!caller && !isCron) {
-      if (cronSecret) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-      }
-      console.warn('[sync-ea-stats] Unauthenticated call accepted because CRON_SECRET is not set')
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
     
     console.log(`[sync-ea-stats] Starting ${syncType} EA sync...`)

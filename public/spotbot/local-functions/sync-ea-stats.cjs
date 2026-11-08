@@ -1764,10 +1764,7 @@ Deno.serve(async (req) => {
       const denied = await requireGuildAccess(req, supabase, onlyGuildId, "leader");
       if (denied) return denied;
     } else if (!caller && !isCron) {
-      if (cronSecret) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-      console.warn("[sync-ea-stats] Unauthenticated call accepted because CRON_SECRET is not set");
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     console.log(`[sync-ea-stats] Starting ${syncType} EA sync...`);
     let settingsQuery = supabase.from("guild_settings").select("guild_id, clubs");
