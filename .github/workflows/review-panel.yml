@@ -63,6 +63,7 @@ jobs:
           mkdir -p .review-panel/out
 
       - name: Run the panel
+        id: panel
         if: steps.auth.outputs.ok == 'true'
         uses: anthropics/claude-code-action@v1
         env:
@@ -76,7 +77,24 @@ jobs:
           prompt: "/review-panel:review-panel ci pr ${{ env.PR }}"
           claude_args: |
             --max-turns 120
-            --allowedTools "Read,Grep,Glob,Write,Agent,Task,Bash(git:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(deno:*),Bash(ls:*),Bash(jq:*)"
+            --allowedTools "Read,Grep,Glob,Write,Agent,Task,TodoWrite,Bash(git:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*),Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(deno:*),Bash(ls:*),Bash(jq:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(grep:*),Bash(rg:*),Bash(find:*),Bash(sed -n:*),Bash(sort:*),Bash(uniq:*),Bash(diff:*),Bash(mkdir:*),Bash(cd:*),Bash(echo:*),Bash(test:*)"
+
+      # Keep the panel's own log next to the report, and list any tool calls it was refused,
+      # so a run that ends without a verdict says why
+      - name: Panel log
+        if: always() && steps.auth.outputs.ok == 'true'
+        env:
+          EXEC_FILE: ${{ steps.panel.outputs.execution_file }}
+        run: |
+          mkdir -p .review-panel/out
+          F="${EXEC_FILE:-$RUNNER_TEMP/claude-execution-output.json}"
+          [ -f "$F" ] || exit 0
+          cp "$F" .review-panel/out/execution-log.json
+          DENIED=$(jq -r '[.[] | select(.type == "result") | .permission_denials[]? | "\(.tool_name) \(.tool_input.command // .tool_input.file_path // "")"] | .[]' "$F" 2>/dev/null | sort | uniq -c | sort -rn | head -20)
+          if [ -n "$DENIED" ]; then
+            echo "::warning::The panel was refused some tool calls; see the step summary."
+            { echo "### Tool calls the panel was refused"; echo '```'; echo "$DENIED"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Read verdict
         id: v
