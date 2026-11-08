@@ -149,26 +149,28 @@ async function rollCallCheckins(supabase: any, guildId: string): Promise<string[
   return (responses || []).map((r: any) => r.discord_user_id);
 }
 
-// Once a squad has a named captain or managers, only they (or a web admin) can announce from the web
-async function webCallerMayAnnounce(supabase: any, userId: string, teamId: string | null): Promise<boolean> {
-  if (!teamId) return true;
-  const { data: team } = await supabase
-    .from("teams")
-    .select("captain_discord_id, manager_discord_ids")
-    .eq("id", teamId)
-    .maybeSingle();
-  const leaders = [team?.captain_discord_id, ...(team?.manager_discord_ids || [])].filter(Boolean);
-  if (!leaders.length) return true;
-
-  const { data: admin } = await supabase.from("web_admins").select("id").eq("auth_user_id", userId).maybeSingle();
-  if (admin) return true;
-  const { data: link } = await supabase
-    .from("user_discord_links")
-    .select("discord_user_id")
-    .eq("auth_user_id", userId)
-    .eq("verified", true)
-    .maybeSingle();
-  return !!link && leaders.includes(link.discord_user_id);
+// A squad's named captain or managers (or a web admin) can announce its lineup from the web. Anything
+// else, including a lineup with no squad or a squad with no leaders yet, needs a leader of the server.
+async function webCallerMayAnnounce(supabase: any, req: Request, userId: string, lineup: { guild_id: string; team_id: string | null }): Promise<boolean> {
+  if (lineup.team_id) {
+    const { data: team } = await supabase
+      .from("teams")
+      .select("captain_discord_id, manager_discord_ids")
+      .eq("id", lineup.team_id)
+      .maybeSingle();
+    const leaders = [team?.captain_discord_id, ...(team?.manager_discord_ids || [])].filter(Boolean);
+    if (leaders.length) {
+      const { data: link } = await supabase
+        .from("user_discord_links")
+        .select("discord_user_id")
+        .eq("auth_user_id", userId)
+        .eq("verified", true)
+        .maybeSingle();
+      if (link && leaders.includes(link.discord_user_id)) return true;
+    }
+  }
+  // Web admins pass this too
+  return !(await requireGuildAccess(req, supabase, lineup.guild_id, "leader"));
 }
 
 type AnnouncedSlot = { discord_user_id: string; position: string; is_substitute: boolean };
@@ -209,7 +211,7 @@ function lineupChanges(before: AnnouncedSlot[] | null, after: AnnouncedSlot[]) {
   return { added, removed, moved, any: added.length + removed.length + moved.length > 0 };
 }
 
-async function announce(supabase: any, body: any, caller: Caller) {
+async function announce(supabase: any, req: Request, body: any, caller: Caller) {
   const { lineup_id, channel_id } = body;
   const mentionPlayers = body.mention_players !== false;
   const dmPlayers = body.dm_players === true;
@@ -224,8 +226,14 @@ async function announce(supabase: any, body: any, caller: Caller) {
     .eq("id", lineup_id)
     .maybeSingle();
   if (lineupError || !lineup) return json({ error: "Lineup not found" }, 404);
-  if (caller.kind === "user" && !(await webCallerMayAnnounce(supabase, caller.userId, lineup.team_id))) {
-    return json({ error: "Only this squad's captain or managers can announce its lineup" }, 403);
+  if (caller.kind === "user") {
+    // Posting and DMing go out as the bot, so a member of the lineup's server only, and a per-user cap
+    const denied = await requireGuildAccess(req, supabase, lineup.guild_id, "member")
+      ?? await throttleWebUser(req, supabase, "announce-lineup:announce", 20, 10 * 60 * 1000);
+    if (denied) return denied;
+    if (!(await webCallerMayAnnounce(supabase, req, caller.userId, lineup))) {
+      return json({ error: "Only this squad's captain or managers, or a server leader, can announce its lineup" }, 403);
+    }
   }
 
   // Only post into a channel that belongs to the lineup's server
@@ -504,7 +512,7 @@ serve(async (req) => {
       return await voiceChannels(supabase, body.guild_id, body.user_ids);
     }
     if (body.action === "announce") {
-      return await announce(supabase, body, caller);
+      return await announce(supabase, req, body, caller);
     }
     return json({ error: "Unknown action" }, 400);
   } catch (error) {

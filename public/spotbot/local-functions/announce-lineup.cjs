@@ -225,15 +225,16 @@ async function rollCallCheckins(supabase, guildId) {
   const { data: responses } = await supabase.from("player_availability").select("discord_user_id").eq("event_id", event.id).in("response", ["yes", "maybe"]);
   return (responses || []).map((r) => r.discord_user_id);
 }
-async function webCallerMayAnnounce(supabase, userId, teamId) {
-  if (!teamId) return true;
-  const { data: team } = await supabase.from("teams").select("captain_discord_id, manager_discord_ids").eq("id", teamId).maybeSingle();
-  const leaders = [team?.captain_discord_id, ...team?.manager_discord_ids || []].filter(Boolean);
-  if (!leaders.length) return true;
-  const { data: admin } = await supabase.from("web_admins").select("id").eq("auth_user_id", userId).maybeSingle();
-  if (admin) return true;
-  const { data: link } = await supabase.from("user_discord_links").select("discord_user_id").eq("auth_user_id", userId).eq("verified", true).maybeSingle();
-  return !!link && leaders.includes(link.discord_user_id);
+async function webCallerMayAnnounce(supabase, req, userId, lineup) {
+  if (lineup.team_id) {
+    const { data: team } = await supabase.from("teams").select("captain_discord_id, manager_discord_ids").eq("id", lineup.team_id).maybeSingle();
+    const leaders = [team?.captain_discord_id, ...team?.manager_discord_ids || []].filter(Boolean);
+    if (leaders.length) {
+      const { data: link } = await supabase.from("user_discord_links").select("discord_user_id").eq("auth_user_id", userId).eq("verified", true).maybeSingle();
+      if (link && leaders.includes(link.discord_user_id)) return true;
+    }
+  }
+  return !await requireGuildAccess(req, supabase, lineup.guild_id, "leader");
 }
 async function previousAnnouncement(supabase, lineup, channelId) {
   if (lineup.message_id && lineup.channel_id === channelId) {
@@ -256,7 +257,7 @@ function lineupChanges(before, after) {
   const moved = [...now].filter(([id, position]) => was.has(id) && was.get(id) !== position).map(([id, position]) => ({ id, from: was.get(id), position }));
   return { added, removed, moved, any: added.length + removed.length + moved.length > 0 };
 }
-async function announce(supabase, body, caller) {
+async function announce(supabase, req, body, caller) {
   const { lineup_id, channel_id } = body;
   const mentionPlayers = body.mention_players !== false;
   const dmPlayers = body.dm_players === true;
@@ -265,8 +266,12 @@ async function announce(supabase, body, caller) {
   if (!channel_id || !DISCORD_ID_REGEX.test(channel_id)) return json({ error: "channel_id is required" }, 400);
   const { data: lineup, error: lineupError } = await supabase.from("lineups").select("id, guild_id, team_id, event_id, name, formation, team_avg_rating, share_code, channel_id, message_id, announced_slots").eq("id", lineup_id).maybeSingle();
   if (lineupError || !lineup) return json({ error: "Lineup not found" }, 404);
-  if (caller.kind === "user" && !await webCallerMayAnnounce(supabase, caller.userId, lineup.team_id)) {
-    return json({ error: "Only this squad's captain or managers can announce its lineup" }, 403);
+  if (caller.kind === "user") {
+    const denied = await requireGuildAccess(req, supabase, lineup.guild_id, "member") ?? await throttleWebUser(req, supabase, "announce-lineup:announce", 20, 10 * 60 * 1e3);
+    if (denied) return denied;
+    if (!await webCallerMayAnnounce(supabase, req, caller.userId, lineup)) {
+      return json({ error: "Only this squad's captain or managers, or a server leader, can announce its lineup" }, 403);
+    }
   }
   const channelRes = await discord(`/channels/${channel_id}`);
   if (!channelRes.ok) return json({ error: "The bot can't see that channel" }, 400);
@@ -491,7 +496,7 @@ serve(async (req) => {
       return await voiceChannels(supabase, body.guild_id, body.user_ids);
     }
     if (body.action === "announce") {
-      return await announce(supabase, body, caller);
+      return await announce(supabase, req, body, caller);
     }
     return json({ error: "Unknown action" }, 400);
   } catch (error) {
