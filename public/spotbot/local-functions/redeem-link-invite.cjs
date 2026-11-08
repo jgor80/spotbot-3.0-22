@@ -25,6 +25,7 @@ Deno.serve(async (req) => {
     const { data: invite } = await admin.from("link_invites").select("*").eq("token", token).maybeSingle();
     if (!invite) return json({ error: "This link is not valid." }, 404);
     if (new Date(invite.expires_at) < /* @__PURE__ */ new Date()) return json({ error: "This link has expired. Ask your manager for a new one." }, 410);
+    if (invite.used_at) return json({ error: "This link has already been used. Ask your manager for a new one, or use /me \u2192 Link EA in Discord." }, 410);
     const { data: profile } = await admin.from("profiles").select("ea_username, ea_platform").eq("discord_user_id", invite.discord_user_id).maybeSingle();
     const { data: guild } = await admin.from("guild_settings").select("name").eq("guild_id", invite.guild_id).maybeSingle();
     if (body.action === "peek") {
@@ -32,8 +33,7 @@ Deno.serve(async (req) => {
         discord_username: invite.discord_username,
         guild_name: guild?.name ?? null,
         ea_username: profile?.ea_username ?? null,
-        ea_platform: profile?.ea_platform ?? null,
-        used: !!invite.used_at
+        ea_platform: profile?.ea_platform ?? null
       });
     }
     if (body.action !== "redeem") return json({ error: "Unknown action" }, 400);
@@ -45,27 +45,44 @@ Deno.serve(async (req) => {
     if ((owners || []).some((o) => !o.discord_user_id.startsWith("ea_"))) {
       return json({ error: "That gamertag is already linked to another member. Ask a manager to use /forcelink." }, 409);
     }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const { data: claimed } = await admin.from("link_invites").update({ used_at: nowIso }).eq("token", token).is("used_at", null).gt("expires_at", nowIso).select("token").maybeSingle();
+    if (!claimed) return json({ error: "This link has already been used. Ask your manager for a new one." }, 410);
     const fields = { ea_username: gamertag, ea_platform: platform, discord_username: invite.discord_username ?? void 0 };
     const { error: saveErr } = profile ? await admin.from("profiles").update(fields).eq("discord_user_id", invite.discord_user_id) : await admin.from("profiles").insert({ discord_user_id: invite.discord_user_id, ...fields });
-    if (saveErr) return json({ error: saveErr.message }, 500);
+    if (saveErr) {
+      await admin.from("link_invites").update({ used_at: null }).eq("token", token);
+      return json({ error: saveErr.message }, 500);
+    }
     const tempId = `ea_${gamertag.replace(/[^a-zA-Z0-9]/g, "_")}`;
     if ((owners || []).some((o) => o.discord_user_id === tempId)) {
       await admin.from("player_stats").update({ discord_user_id: invite.discord_user_id }).eq("discord_user_id", tempId);
       await admin.from("profiles").delete().eq("discord_user_id", tempId);
     }
     let websiteLinked = false;
+    let websiteNote = null;
     const jwt = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
     if (jwt) {
       const { data } = await admin.auth.getUser(jwt);
       if (data?.user) {
-        await admin.from("user_discord_links").delete().eq("auth_user_id", data.user.id);
-        await admin.from("user_discord_links").delete().eq("discord_user_id", invite.discord_user_id);
-        const { error } = await admin.from("user_discord_links").insert({ auth_user_id: data.user.id, discord_user_id: invite.discord_user_id, verified: true });
-        websiteLinked = !error;
+        const userId = data.user.id;
+        const { data: mine } = await admin.from("user_discord_links").select("discord_user_id, verified").eq("auth_user_id", userId).maybeSingle();
+        const { data: theirs } = await admin.from("user_discord_links").select("auth_user_id, verified").eq("discord_user_id", invite.discord_user_id).maybeSingle();
+        if (mine?.verified && mine.discord_user_id === invite.discord_user_id) {
+          websiteLinked = true;
+        } else if (mine?.verified) {
+          websiteNote = "Your website account is already connected to a different Discord account, so it was left as it is.";
+        } else if (theirs?.verified && theirs.auth_user_id !== userId) {
+          websiteNote = "This Discord account is already connected to another website account. Sign in with Discord to use it.";
+        } else {
+          if (mine) await admin.from("user_discord_links").delete().eq("auth_user_id", userId);
+          if (theirs) await admin.from("user_discord_links").delete().eq("discord_user_id", invite.discord_user_id);
+          const { error } = await admin.from("user_discord_links").insert({ auth_user_id: userId, discord_user_id: invite.discord_user_id, verified: true });
+          websiteLinked = !error;
+        }
       }
     }
-    await admin.from("link_invites").update({ used_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("token", token);
-    return json({ success: true, website_linked: websiteLinked });
+    return json({ success: true, website_linked: websiteLinked, website_note: websiteNote });
   } catch (e) {
     return json({ error: e.message }, 500);
   }

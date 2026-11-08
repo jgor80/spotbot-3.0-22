@@ -41,7 +41,7 @@ export default function LinkInvitePage() {
   const [platform, setPlatform] = useState("ps5");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [done, setDone] = useState<{ website: boolean } | null>(null);
+  const [done, setDone] = useState<{ website: boolean; note: string | null } | null>(null);
 
   useEffect(() => {
     supabase.functions.invoke("redeem-link-invite", { body: { action: "peek", token } }).then(async ({ data, error }) => {
@@ -60,7 +60,7 @@ export default function LinkInvitePage() {
     });
     setSaving(false);
     if (error) return setError(await errorText(error));
-    setDone({ website: !!data?.website_linked });
+    setDone({ website: !!data?.website_linked, note: data?.website_note ?? null });
   };
 
   return (
@@ -80,7 +80,7 @@ export default function LinkInvitePage() {
               <CheckCircle2 className="h-10 w-10 mx-auto text-primary" />
               <p className="font-medium">You're linked as {gamertag}.</p>
               <p className="text-sm text-muted-foreground">
-                {done.website ? "Your website account is connected too." : "Your stats will show up in Discord after your next match."}
+                {done.website ? "Your website account is connected too." : done.note ?? "Your stats will show up in Discord after your next match."}
               </p>
               <Button asChild className="w-full"><Link to={user ? "/profile" : "/auth"}>{user ? "Go to my profile" : "Open the website"}</Link></Button>
             </div>
