@@ -118,6 +118,41 @@ interface AggregatePlayerStats {
   saves: number;
 }
 
+
+type ScoutedPlayer = { name: string; position: string | null; games: number; goals: number; assists: number; rating: number | null };
+
+// A readable report from what scout-opponent-club pulled from EA (only real numbers, nothing made up)
+function clubScoutReport(data: { club_name?: string; platform?: string; scouted_count?: number; message?: string; players?: ScoutedPlayer[] }, platform: string): string {
+  const name = data.club_name || "Club";
+  const lines = [`## Scout Report: ${name}`, "", `- **Platform:** ${(data.platform || platform).toUpperCase()}`];
+  const players = (data.players || []).filter((p) => p.games > 0);
+  if (!players.length) {
+    lines.push("", data.message || "EA didn't return any player stats for this club.");
+    return lines.join("\n");
+  }
+  lines.push(`- **Players scouted:** ${data.scouted_count ?? players.length}`);
+  const top = (key: "goals" | "assists", label: string) => {
+    const list = [...players].sort((a, b) => b[key] - a[key]).filter((p) => p[key] > 0).slice(0, 3);
+    if (!list.length) return;
+    lines.push("", `### Top ${label}`);
+    list.forEach((p, i) => lines.push(`${i + 1}. **${p.name}**${p.position ? ` - ${p.position}` : ""} - ${p[key]} in ${p.games} games`));
+  };
+  top("goals", "Scorers");
+  top("assists", "Creators");
+  const rated = players.filter((p) => p.rating).sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 3);
+  if (rated.length) {
+    lines.push("", "### Best Average Rating");
+    rated.forEach((p, i) => lines.push(`${i + 1}. **${p.name}** - ${p.rating!.toFixed(1)} over ${p.games} games`));
+  }
+  const positions = new Map<string, number>();
+  players.forEach((p) => p.position && positions.set(p.position, (positions.get(p.position) || 0) + 1));
+  if (positions.size) {
+    lines.push("", "### Positions", [...positions].sort((a, b) => b[1] - a[1]).map(([pos, n]) => `${pos} (${n})`).join(", "));
+  }
+  lines.push("", "_Season totals from EA. Saved to your scouted players for this server._");
+  return lines.join("\n");
+}
+
 export default function ScoutingPage() {
   const { selectedGuildId } = useGuild();
   const { toast } = useToast();
@@ -377,6 +412,10 @@ export default function ScoutingPage() {
 
   const handleScoutClub = async () => {
     if (!searchClubName.trim()) return;
+    if (!selectedGuildId) {
+      toast({ title: "Pick a server first", description: "Scouted players are saved to a server", variant: "destructive" });
+      return;
+    }
     
     setIsSearching(true);
     setScoutReport(null);
@@ -387,34 +426,16 @@ export default function ScoutingPage() {
         description: `Searching for ${searchClubName} on ${searchPlatform}...`,
       });
       
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      setScoutReport(`
-## Scout Report: ${searchClubName}
-
-### Overview
-- **Platform:** ${searchPlatform.toUpperCase()}
-- **Division:** Elite Division
-- **Recent Form:** WWDWL
-
-### Key Players
-1. **PlayerOne** - ST - 78 OVR - Top Scorer
-2. **PlayerTwo** - CM - 75 OVR - Playmaker
-3. **PlayerThree** - GK - 72 OVR - Shot Stopper
-
-### Tactical Analysis
-This team plays an aggressive 4-3-3 formation with quick transitions.
-Focus on controlling midfield to limit their counter-attacks.
-
-### Recommendations
-- Press high to disrupt their build-up
-- Target their weak left-back position
-- Be wary of their clinical striker
-      `);
+      const { data, error } = await supabase.functions.invoke("scout-opponent-club", {
+        body: { guild_id: selectedGuildId, club_name: searchClubName.trim(), platform: searchPlatform },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      setScoutReport(clubScoutReport(data, searchPlatform));
 
       toast({
         title: "Scout Report Ready",
-        description: `Report generated for ${searchClubName}`,
+        description: `Report generated for ${data?.club_name || searchClubName}`,
       });
     } catch (error) {
       toast({
@@ -883,8 +904,8 @@ Focus on controlling midfield to limit their counter-attacks.
                 </div>
 
                 {scoutReport && (
-                  <div className="mt-6 p-6 rounded-lg bg-muted/50 border">
-                    <pre className="whitespace-pre-wrap text-sm font-sans">{scoutReport}</pre>
+                  <div className="mt-6 p-6 rounded-lg bg-muted/50 border prose prose-sm dark:prose-invert max-w-none">
+                    <ReactMarkdown>{scoutReport}</ReactMarkdown>
                   </div>
                 )}
 
