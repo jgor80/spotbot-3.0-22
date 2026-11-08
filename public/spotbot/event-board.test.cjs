@@ -151,7 +151,7 @@ function fakeDb(tables) {
 
 const GUILD = '111111111111111111';
 
-function setup({ roles = [], members = [] } = {}) {
+function setup({ roles = [], members = [], deps = {} } = {}) {
   const tables = {
     guild_settings: [{ guild_id: GUILD, timezone: 'Europe/London', branding: {} }],
     team_rosters: [
@@ -174,6 +174,7 @@ function setup({ roles = [], members = [] } = {}) {
     getGuildState: async () => state,
     saveGuildSettings: async () => {},
     isManager: () => true,
+    ...deps,
   });
   events.start(client);
   const channel = { id: 'chan', send: async (opts) => (sent.push(opts), { id: 'msg-1' }) };
@@ -369,4 +370,24 @@ test('league post pings only the signed role, even when another ping role is pic
   await events.postEvent({ guild_id: GUILD, club_key: 'main', title: 'Palermo League', event_type: 'league', scheduled_at: later(5), channel_id: 'chan', ping_role_id: '888' }, channel, { notify: 'everyone' });
   assert.strictEqual(sent[0].content, '<@&777>');
   assert.deepStrictEqual(sent[0].allowedMentions, { parse: [], users: [], roles: ['777'], repliedUser: false });
+});
+
+test('a burst of answers makes one board edit now and one trailing edit, not one per tap', async () => {
+  const { events, tables } = setup({ deps: { boardEditGapMs: 60 } });
+  const edits = [];
+  const message = { edit: async (opts) => { edits.push(opts); return message; } };
+  events.start({
+    guilds: { cache: new Collection() },
+    channels: { fetch: async () => ({ messages: { fetch: async () => message } }) },
+  });
+  const event = { id: '00000000-0000-0000-0000-0000000000bb', guild_id: GUILD, club_key: 'main', title: 'League night', event_type: 'league', scheduled_at: later(5), deadline_at: later(4), channel_id: 'chan', message_id: 'msg-1' };
+  tables.availability_events.push(event);
+  for (let i = 0; i < 6; i++) await events.refreshBoard(event);
+  assert.strictEqual(edits.length, 1);
+  await new Promise((r) => setTimeout(r, 120));
+  assert.strictEqual(edits.length, 2);
+  // Quiet again: the next answer edits straight away
+  await new Promise((r) => setTimeout(r, 80));
+  await events.refreshBoard(event);
+  assert.strictEqual(edits.length, 3);
 });

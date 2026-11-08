@@ -599,11 +599,36 @@ function createEvents(deps) {
     return channel.messages.fetch(event.message_id).catch(() => null);
   }
 
-  async function refreshBoard(event) {
+  async function editBoardNow(event) {
     const message = await fetchBoardMessage(event);
     if (!message) return false;
     await message.edit(await buildBoard(event)).catch((err) => console.warn(`[events] board edit failed: ${err.message}`));
     return true;
+  }
+
+  // Board edits for one event are spaced out: when a squad answers at once, the first answer edits
+  // the board straight away and the rest share one trailing edit with the latest state (it's rebuilt
+  // from the database when it runs). One edit per tap runs into Discord's per-channel edit limit.
+  const BOARD_EDIT_GAP_MS = deps.boardEditGapMs ?? 2500;
+  const boardEdits = new Map(); // event id -> { last, timer, event }
+  function refreshBoard(event) {
+    if (!event?.id) return editBoardNow(event);
+    let slot = boardEdits.get(event.id);
+    if (!slot) {
+      if (boardEdits.size > 500) {
+        for (const [id, s] of boardEdits) if (!s.timer && Date.now() - s.last > 60000) boardEdits.delete(id);
+      }
+      slot = { last: 0, timer: null, event: null };
+      boardEdits.set(event.id, slot);
+    }
+    slot.event = event; // the trailing edit uses whatever came in last (e.g. a closed event)
+    if (slot.timer) return Promise.resolve(true);
+    const run = () => { slot.last = Date.now(); return editBoardNow(slot.event); };
+    const wait = slot.last + BOARD_EDIT_GAP_MS - Date.now();
+    if (wait <= 0) return run();
+    slot.timer = setTimeout(() => { slot.timer = null; run().catch(() => {}); }, wait);
+    slot.timer.unref?.();
+    return Promise.resolve(true);
   }
 
   // ---------- Create ----------
