@@ -20,6 +20,7 @@ Deno.serve(async (req) => {
     const { data: invite } = await admin.from("link_invites").select("*").eq("token", token).maybeSingle();
     if (!invite) return json({ error: "This link is not valid." }, 404);
     if (new Date(invite.expires_at) < new Date()) return json({ error: "This link has expired. Ask your manager for a new one." }, 410);
+    if (invite.used_at) return json({ error: "This link has already been used. Ask your manager for a new one, or use /me → Link EA in Discord." }, 410);
 
     const { data: profile } = await admin.from("profiles").select("ea_username, ea_platform").eq("discord_user_id", invite.discord_user_id).maybeSingle();
     const { data: guild } = await admin.from("guild_settings").select("name").eq("guild_id", invite.guild_id).maybeSingle();
@@ -30,7 +31,6 @@ Deno.serve(async (req) => {
         guild_name: guild?.name ?? null,
         ea_username: profile?.ea_username ?? null,
         ea_platform: profile?.ea_platform ?? null,
-        used: !!invite.used_at,
       });
     }
 
@@ -46,11 +46,23 @@ Deno.serve(async (req) => {
       return json({ error: "That gamertag is already linked to another member. Ask a manager to use /forcelink." }, 409);
     }
 
+    // Claim the invite before writing anything. Only one request can win this, so a link that was
+    // already used (or leaked from a screenshot or browser history) can never be redeemed again.
+    const nowIso = new Date().toISOString();
+    const { data: claimed } = await admin.from("link_invites").update({ used_at: nowIso })
+      .eq("token", token).is("used_at", null).gt("expires_at", nowIso)
+      .select("token").maybeSingle();
+    if (!claimed) return json({ error: "This link has already been used. Ask your manager for a new one." }, 410);
+
     const fields = { ea_username: gamertag, ea_platform: platform, discord_username: invite.discord_username ?? undefined };
     const { error: saveErr } = profile
       ? await admin.from("profiles").update(fields).eq("discord_user_id", invite.discord_user_id)
       : await admin.from("profiles").insert({ discord_user_id: invite.discord_user_id, ...fields });
-    if (saveErr) return json({ error: saveErr.message }, 500);
+    if (saveErr) {
+      // Nothing was saved, so let the member try again with the same link
+      await admin.from("link_invites").update({ used_at: null }).eq("token", token);
+      return json({ error: saveErr.message }, 500);
+    }
 
     // Move stats saved under a placeholder profile for this gamertag
     const tempId = `ea_${gamertag.replace(/[^a-zA-Z0-9]/g, "_")}`;
@@ -59,21 +71,34 @@ Deno.serve(async (req) => {
       await admin.from("profiles").delete().eq("discord_user_id", tempId);
     }
 
-    // Connect the website account when the visitor is signed in
+    // Connect the website account when the visitor is signed in. Never take over a verified link that
+    // belongs to someone else, and never move an account that is already verified to another Discord ID.
     let websiteLinked = false;
+    let websiteNote: string | null = null;
     const jwt = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
     if (jwt) {
       const { data } = await admin.auth.getUser(jwt);
       if (data?.user) {
-        await admin.from("user_discord_links").delete().eq("auth_user_id", data.user.id);
-        await admin.from("user_discord_links").delete().eq("discord_user_id", invite.discord_user_id);
-        const { error } = await admin.from("user_discord_links").insert({ auth_user_id: data.user.id, discord_user_id: invite.discord_user_id, verified: true });
-        websiteLinked = !error;
+        const userId = data.user.id;
+        const { data: mine } = await admin.from("user_discord_links").select("discord_user_id, verified").eq("auth_user_id", userId).maybeSingle();
+        const { data: theirs } = await admin.from("user_discord_links").select("auth_user_id, verified").eq("discord_user_id", invite.discord_user_id).maybeSingle();
+        if (mine?.verified && mine.discord_user_id === invite.discord_user_id) {
+          websiteLinked = true;
+        } else if (mine?.verified) {
+          websiteNote = "Your website account is already connected to a different Discord account, so it was left as it is.";
+        } else if (theirs?.verified && theirs.auth_user_id !== userId) {
+          websiteNote = "This Discord account is already connected to another website account. Sign in with Discord to use it.";
+        } else {
+          // Both rows (if any) are unverified here, so clearing them takes nothing from a verified owner
+          if (mine) await admin.from("user_discord_links").delete().eq("auth_user_id", userId);
+          if (theirs) await admin.from("user_discord_links").delete().eq("discord_user_id", invite.discord_user_id);
+          const { error } = await admin.from("user_discord_links").insert({ auth_user_id: userId, discord_user_id: invite.discord_user_id, verified: true });
+          websiteLinked = !error;
+        }
       }
     }
 
-    await admin.from("link_invites").update({ used_at: new Date().toISOString() }).eq("token", token);
-    return json({ success: true, website_linked: websiteLinked });
+    return json({ success: true, website_linked: websiteLinked, website_note: websiteNote });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }
