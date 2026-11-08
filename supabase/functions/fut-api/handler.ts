@@ -7,6 +7,7 @@ import {
   parseCardInput, parseManagerInput, runWorkspace, searchMyCards, toWorkspaceCard, updateCard, workspaceFor, type FutDb,
 } from "../_shared/fut/service.ts";
 import { importClub } from "../_shared/fut/club.ts";
+import { cardEaReference, storeEaReference } from "../_shared/fut/ea-reference.ts";
 import { collectFc27Market, fc27MarketStatus, pullFc27Market } from "../_shared/fut/fc27market.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
@@ -105,7 +106,8 @@ async function importPrices(db: FutDb, userId: string, raw: unknown) {
   const mk = await marketFor(db);
   const r = await runWorkspace(() => mk.importPriceHistory(userId, b.text as string));
   const pooled = await contributeCaptures(db, userId, b.text as string);
-  return { ...r, shared_with_community: pooled.shared, rejected: r.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) };
+  const ea_reference = await storeEaReference(db, userId, b.text as string);
+  return { ...r, shared_with_community: pooled.shared, ea_reference_rows: ea_reference, rejected: r.rejected.slice(0, 100).map((x) => ({ line: x.line, reason: x.reason })) };
 }
 
 export async function handle(req: Request, deps: Deps): Promise<Response> {
@@ -280,6 +282,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       }
       const ci = route.match(/^\/market\/cards\/([^/]+)$/);
       if (ci && m === "GET") return json({ data: await runWorkspace(() => mk.getCardMarketIntelligence(userId, marketCardId(ci[1]), { platform: platformParam(p.get("platform")) })) });
+      const er = route.match(/^\/market\/cards\/([^/]+)\/ea-reference$/);
+      if (er && m === "GET") return json({ data: await cardEaReference(db, userId, marketCardId(er[1]), platformParam(p.get("platform"))) });
       const rv = route.match(/^\/market\/cards\/([^/]+)\/relative-value$/);
       if (rv && m === "GET") {
         const others = (p.get("others") ?? "").split(",").filter(Boolean).slice(0, 10).map(marketCardId);
