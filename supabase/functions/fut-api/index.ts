@@ -31,6 +31,7 @@ serve((req) => {
       const caller = await identifyCaller(r, admin);
       return caller?.kind === "user" ? caller.userId : null;
     },
+    isBot: async (r) => (await identifyCaller(r, admin))?.kind === "bot",
     throttle,
   });
 });
