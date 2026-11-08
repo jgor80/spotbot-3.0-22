@@ -1925,6 +1925,14 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
+
+    // One profile lookup per gamertag per run: the same squad shows up in every match
+    const linkedByGamertag = new Map<string, Promise<{ discord_user_id: string } | null>>()
+    const linkedFor = (gamertag: string) => {
+      const key = String(gamertag ?? '').trim().toLowerCase()
+      if (!linkedByGamertag.has(key)) linkedByGamertag.set(key, linkedProfileForGamertag(supabase, gamertag))
+      return linkedByGamertag.get(key)!
+    }
     
     // Parse request body for sync type and optional probing
     let syncType = 'full'
@@ -2296,7 +2304,7 @@ Deno.serve(async (req) => {
                   // Record player stats
                   for (const pStat of playerStats) {
                     // Linked account wins even if a placeholder still carries this gamertag (case-insensitive)
-                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username)
+                    const profile = await linkedFor(pStat.ea_username)
                     if (profile) {
                       await supabase.from('player_stats').insert({
                         guild_id: guildId,
@@ -2545,7 +2553,7 @@ Deno.serve(async (req) => {
                   // Record player stats for competition matches
                   for (const pStat of playerStats) {
                     // Linked account wins even if a placeholder still carries this gamertag (case-insensitive)
-                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username)
+                    const profile = await linkedFor(pStat.ea_username)
                     if (profile) {
                       await supabase.from('player_stats').insert({
                         guild_id: guildId,
@@ -2772,7 +2780,7 @@ Deno.serve(async (req) => {
                   // Record player stats for friendly matches
                   for (const pStat of playerStats) {
                     // Linked account wins even if a placeholder still carries this gamertag (case-insensitive)
-                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username)
+                    const profile = await linkedFor(pStat.ea_username)
                     if (profile) {
                       await supabase.from('player_stats').insert({
                         guild_id: guildId,

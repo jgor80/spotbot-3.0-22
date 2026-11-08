@@ -3,7 +3,7 @@
 // signed in to the website, connect that website account to their Discord ID.
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createAdminClient } from "../_shared/auth.ts";
-import { escapeLike, isPlaceholderId } from "../_shared/ea-profiles.ts";
+import { escapeLike, isPlaceholderId, mergePlaceholderInto } from "../_shared/ea-profiles.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -65,12 +65,12 @@ Deno.serve(async (req) => {
       return json({ error: saveErr.message }, 500);
     }
 
-    // Move stats saved under any placeholder profile for this gamertag (whatever spelling made its ID)
+    // Move everything saved under any placeholder for this gamertag (stats, ratings, summaries, club
+    // stats, positions), whatever spelling made its ID; rows the player already has are kept
     for (const { discord_user_id: tempId } of (owners || []) as { discord_user_id: string }[]) {
       if (!isPlaceholderId(tempId)) continue;
-      const { error: moveErr } = await admin.from("player_stats").update({ discord_user_id: invite.discord_user_id }).eq("discord_user_id", tempId);
-      if (moveErr) { console.error(`[redeem-link-invite] Couldn't move stats from ${tempId}:`, moveErr.message); continue; }
-      await admin.from("profiles").delete().eq("discord_user_id", tempId);
+      const res = await mergePlaceholderInto(admin, tempId, invite.discord_user_id);
+      if (!res.ok) console.error(`[redeem-link-invite] Couldn't move ${tempId}:`, res.error);
     }
 
     // Connect the website account when the visitor is signed in. Never take over a verified link that

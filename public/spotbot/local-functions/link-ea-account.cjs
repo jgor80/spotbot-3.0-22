@@ -126,6 +126,65 @@ async function profilesForGamertag(db, gamertag) {
 async function placeholderIdsForGamertag(db, gamertag) {
   return (await profilesForGamertag(db, gamertag)).map((p) => p.discord_user_id).filter(isPlaceholderId);
 }
+var PLAYER_TABLES = [
+  { table: "player_stats", idCol: "discord_user_id", keys: ["guild_id", "ea_match_id"] },
+  { table: "player_ratings", idCol: "discord_user_id", keys: ["guild_id"] },
+  { table: "player_summary", idCol: "discord_user_id", keys: ["guild_id"] },
+  { table: "player_club_stats", idCol: "discord_user_id", keys: ["guild_id", "club_key"] },
+  { table: "position_preferences", idCol: "user_id", keys: ["guild_id"] }
+];
+async function mergePlaceholderInto(db, tempId, realId) {
+  if (!isPlaceholderId(tempId) || !realId || isPlaceholderId(realId)) return { ok: false, error: "not a placeholder" };
+  const errors = [];
+  for (const { table, idCol, keys } of PLAYER_TABLES) {
+    const cols = ["id", ...keys].join(", ");
+    const last = keys[keys.length - 1];
+    const keyOf = (r) => keys.map((k) => r[k] ?? "\0null").join("");
+    for (let page = 0; page < 500; page++) {
+      const { data: temp, error: tErr } = await db.from(table).select(cols).eq(idCol, tempId).limit(200);
+      if (tErr) {
+        errors.push(`${table}: ${tErr.message}`);
+        break;
+      }
+      if (!temp?.length) break;
+      const values = [...new Set(temp.map((r) => r[last]).filter((v) => v != null))];
+      let real = [];
+      if (values.length) {
+        const { data, error: rErr } = await db.from(table).select(cols).eq(idCol, realId).in(last, values);
+        if (rErr) {
+          errors.push(`${table}: ${rErr.message}`);
+          break;
+        }
+        real = data || [];
+      }
+      const taken = new Set(real.map(keyOf));
+      const clashes = (r) => r[last] != null && taken.has(keyOf(r));
+      const drop = temp.filter(clashes).map((r) => r.id);
+      const move = temp.filter((r) => !clashes(r)).map((r) => r.id);
+      if (drop.length) {
+        const { error: error2 } = await db.from(table).delete().in("id", drop);
+        if (error2) {
+          errors.push(`${table} delete: ${error2.message}`);
+          break;
+        }
+      }
+      if (move.length) {
+        const { error: error2 } = await db.from(table).update({ [idCol]: realId }).in("id", move);
+        if (error2) {
+          errors.push(`${table} move: ${error2.message}`);
+          break;
+        }
+      }
+    }
+  }
+  if (errors.length) {
+    console.error(`[ea-profiles] Couldn't fully merge ${tempId} into ${realId}:`, errors.join("; "));
+    return { ok: false, error: errors.join("; ") };
+  }
+  const { error } = await db.from("profiles").delete().eq("discord_user_id", tempId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
 
 // supabase/functions/link-ea-account/index.ts
 var corsHeaders = {
@@ -201,29 +260,8 @@ serve(async (req) => {
       }
     }
     for (const tempDiscordId of tempIds) {
-      console.log(`[link-ea-account] Migrating data from temp profile ${tempDiscordId} to ${discord_user_id}`);
-      await supabase.from("player_stats").update({ discord_user_id }).eq("discord_user_id", tempDiscordId);
-      const { data: tempRating } = await supabase.from("player_ratings").select("*").eq("discord_user_id", tempDiscordId).eq("guild_id", guild_id).maybeSingle();
-      if (tempRating) {
-        const { data: existingRating } = await supabase.from("player_ratings").select("id").eq("discord_user_id", discord_user_id).eq("guild_id", guild_id).maybeSingle();
-        if (!existingRating) {
-          await supabase.from("player_ratings").update({ discord_user_id }).eq("id", tempRating.id);
-        } else {
-          await supabase.from("player_ratings").delete().eq("id", tempRating.id);
-        }
-      }
-      const { data: tempSummary } = await supabase.from("player_summary").select("*").eq("discord_user_id", tempDiscordId).eq("guild_id", guild_id).maybeSingle();
-      if (tempSummary) {
-        const { data: existingSummary } = await supabase.from("player_summary").select("id").eq("discord_user_id", discord_user_id).eq("guild_id", guild_id).maybeSingle();
-        if (!existingSummary) {
-          await supabase.from("player_summary").update({ discord_user_id }).eq("id", tempSummary.id);
-        } else {
-          await supabase.from("player_summary").delete().eq("id", tempSummary.id);
-        }
-      }
-      await supabase.from("position_preferences").update({ user_id: discord_user_id }).eq("user_id", tempDiscordId).eq("guild_id", guild_id);
-      await supabase.from("profiles").delete().eq("discord_user_id", tempDiscordId);
-      console.log(`[link-ea-account] Deleted temp profile ${tempDiscordId}`);
+      const res = await mergePlaceholderInto(supabase, tempDiscordId, discord_user_id);
+      if (!res.ok) console.error(`[link-ea-account] Couldn't move ${tempDiscordId}:`, res.error);
     }
     try {
       await supabase.functions.invoke("calculate-ratings", {

@@ -8173,91 +8173,9 @@ async function routeInteraction(interaction) {
         // also look them up by gamertag (the linked profile above is never a placeholder).
         const tempIds = new Set(await eaProfiles.placeholderIdsForGamertag(supabase, suggestion.ea_username));
         if (suggestion.temp_profile_id && suggestion.temp_profile_id.startsWith('ea_')) tempIds.add(suggestion.temp_profile_id);
+        // Rows that would collide with ones the player already has are dropped, the rest move (every server)
         for (const tempDiscordId of tempIds) {
-          // Migrate player_stats
-          await supabase
-            .from('player_stats')
-            .update({ discord_user_id: suggestion.suggested_discord_id })
-            .eq('discord_user_id', tempDiscordId);
-        
-          // Migrate player_club_stats
-          await supabase
-            .from('player_club_stats')
-            .update({ discord_user_id: suggestion.suggested_discord_id })
-            .eq('discord_user_id', tempDiscordId)
-            .eq('guild_id', guildId);
-        
-          // Migrate player_ratings (check for duplicates)
-          const { data: tempRating } = await supabase
-            .from('player_ratings')
-            .select('id')
-            .eq('discord_user_id', tempDiscordId)
-            .eq('guild_id', guildId)
-            .maybeSingle();
-        
-          if (tempRating) {
-            const { data: existingRating } = await supabase
-              .from('player_ratings')
-              .select('id')
-              .eq('discord_user_id', suggestion.suggested_discord_id)
-              .eq('guild_id', guildId)
-              .maybeSingle();
-          
-            if (!existingRating) {
-              await supabase
-                .from('player_ratings')
-                .update({ discord_user_id: suggestion.suggested_discord_id })
-                .eq('id', tempRating.id);
-            } else {
-              await supabase
-                .from('player_ratings')
-                .delete()
-                .eq('id', tempRating.id);
-            }
-          }
-        
-          // Migrate player_summary (check for duplicates)
-          const { data: tempSummary } = await supabase
-            .from('player_summary')
-            .select('id')
-            .eq('discord_user_id', tempDiscordId)
-            .eq('guild_id', guildId)
-            .maybeSingle();
-        
-          if (tempSummary) {
-            const { data: existingSummary } = await supabase
-              .from('player_summary')
-              .select('id')
-              .eq('discord_user_id', suggestion.suggested_discord_id)
-              .eq('guild_id', guildId)
-              .maybeSingle();
-          
-            if (!existingSummary) {
-              await supabase
-                .from('player_summary')
-                .update({ discord_user_id: suggestion.suggested_discord_id })
-                .eq('id', tempSummary.id);
-            } else {
-              await supabase
-                .from('player_summary')
-                .delete()
-                .eq('id', tempSummary.id);
-            }
-          }
-        
-          // Migrate position_preferences
-          await supabase
-            .from('position_preferences')
-            .update({ user_id: suggestion.suggested_discord_id })
-            .eq('user_id', tempDiscordId)
-            .eq('guild_id', guildId);
-        
-          // Delete temp profile
-          await supabase
-            .from('profiles')
-            .delete()
-            .eq('discord_user_id', tempDiscordId);
-        
+          await eaProfiles.mergePlaceholderInto(supabase, tempDiscordId, suggestion.suggested_discord_id);
         }
         
         // Mark suggestion as approved
@@ -16021,18 +15939,15 @@ async function migrateTempEaProfile(guildId, discordUserId, eaUsername) {
   // Find placeholders by gamertag, not by rebuilding the ID: older code spelled it several ways
   const tempIds = await eaProfiles.placeholderIdsForGamertag(supabase, eaUsername);
   if (!tempIds.length) return false;
+  // Everything the placeholder holds moves in every server (it's global and deleted after), skipping
+  // rows the player already has so unique keys never block the move
+  let merged = false;
   for (const tempDiscordId of tempIds) {
-    // Match history moves in every server, since the placeholder (deleted below) is global
-    const { error: statsErr } = await supabase.from('player_stats').update({ discord_user_id: discordUserId }).eq('discord_user_id', tempDiscordId);
-    if (statsErr) { console.error(`[linkea] Couldn't move stats from ${tempDiscordId}:`, statsErr.message); return false; }
-    for (const table of ['player_ratings', 'player_summary']) {
-      let q = supabase.from(table).update({ discord_user_id: discordUserId }).eq('discord_user_id', tempDiscordId);
-      if (guildId) q = q.eq('guild_id', guildId);
-      await q;
-    }
-    await supabase.from('profiles').delete().eq('discord_user_id', tempDiscordId);
+    const res = await eaProfiles.mergePlaceholderInto(supabase, tempDiscordId, discordUserId);
+    if (res.ok) merged = true;
+    else console.error(`[linkea] Couldn't move ${tempDiscordId}:`, res.error);
   }
-  return true;
+  return merged;
 }
 
 // /linkea and the Link EA Account button. Uses EA's spelling when the name is one of this

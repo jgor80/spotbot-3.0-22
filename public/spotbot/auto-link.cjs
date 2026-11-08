@@ -116,11 +116,8 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
     if (error) return { ok: false, reason: error.message };
 
     // Every placeholder for this gamertag, whatever spelling made its ID
-    for (const tempId of await eaProfiles.placeholderIdsForGamertag(supabase, gamertag)) {
-      const { error: moveErr } = await supabase.from('player_stats').update({ discord_user_id: userId }).eq('discord_user_id', tempId);
-      if (moveErr) { console.error(`[auto-link] Couldn't move stats from ${tempId}:`, moveErr.message); continue; }
-      await supabase.from('profiles').delete().eq('discord_user_id', tempId);
-    }
+    // (stats, ratings, summaries, club stats, positions), skipping rows the player already has
+    await eaProfiles.mergePlaceholdersForGamertag(supabase, gamertag, userId);
     namesCache.clear();
     return { ok: true };
   }

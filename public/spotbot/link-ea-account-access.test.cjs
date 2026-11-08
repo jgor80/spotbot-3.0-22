@@ -20,6 +20,7 @@ function fakeDb(tables, writes) {
         insert: () => { writes.push(name); return Promise.resolve({ error: null }); },
         delete: () => { op = 'delete'; return q; },
         eq: (k, v) => { filters.push((r) => r[k] === v); return q; },
+        in: (k, vs) => { filters.push((r) => vs.includes(r[k])); return q; },
         ilike: (k, v) => { const lit = String(v).replace(/\\([\\%_])/g, '$1').toLowerCase(); filters.push((r) => String(r[k] ?? '').toLowerCase() === lit); return q; },
         limit: () => q,
         maybeSingle: async () => ({ data: rows()[0] ?? null, error: null }),
