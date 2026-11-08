@@ -53,24 +53,60 @@ function discordGet(path) {
   return fetch(`https://discord.com/api/v10${path}`, { headers: { Authorization: `Bot ${token}` } }).then((r) => r.ok ? r.json() : null).catch(() => null);
 }
 var snowflake = (id) => /^\d{17,20}$/.test(id);
-async function isDiscordServerAdmin(guildId, discordUserId) {
+var LEADER_ROLE_WORDS = ["captain", "manager", "owner", "media", "admin"];
+var BUILTIN_OWNER_IDS = ["501557839932948490"];
+function isBotOwner(discordUserId) {
+  const env = String(Deno.env.get("BOT_OWNER_IDS") || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return [...BUILTIN_OWNER_IDS, ...env].includes(discordUserId);
+}
+async function isDiscordClubLeader(guildId, discordUserId) {
   if (!snowflake(guildId) || !snowflake(discordUserId)) return false;
-  const get = discordGet;
-  const [guild, member] = await Promise.all([get(`/guilds/${guildId}`), get(`/guilds/${guildId}/members/${discordUserId}`)]);
+  if (isBotOwner(discordUserId)) return true;
+  const [guild, member] = await Promise.all([discordGet(`/guilds/${guildId}`), discordGet(`/guilds/${guildId}/members/${discordUserId}`)]);
   if (!guild || !member) return false;
   if (guild.owner_id === discordUserId) return true;
   const memberRoles = /* @__PURE__ */ new Set([guildId, ...member.roles || []]);
   let perms = 0n;
   for (const role of guild.roles || []) {
-    if (memberRoles.has(role.id)) perms |= BigInt(role.permissions || "0");
+    if (!memberRoles.has(role.id)) continue;
+    perms |= BigInt(role.permissions || "0");
+    const name = String(role.name || "").toLowerCase();
+    if (role.id !== guildId && LEADER_ROLE_WORDS.some((w) => name.includes(w))) return true;
   }
   return (perms & 0x8n) !== 0n || (perms & 0x20n) !== 0n;
 }
-async function hasGuildRole(admin, args) {
-  if (!args._discord_user_id) return { data: false };
-  const { data } = await admin.rpc("has_any_role", args);
-  if (data) return { data: true };
-  return { data: await isDiscordServerAdmin(args._guild_id, args._discord_user_id) };
+async function requireGuildAccess(req, admin, guildId, level) {
+  const caller = await identifyCaller(req, admin);
+  if (!caller) {
+    return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401, headers: rejectHeaders });
+  }
+  if (caller.kind === "bot") return null;
+  const forbidden = new Response(
+    JSON.stringify({ success: false, error: "You don't have access to this server" }),
+    { status: 403, headers: rejectHeaders }
+  );
+  if (!guildId || !snowflake(guildId)) return forbidden;
+  const { data: webAdmin } = await admin.from("web_admins").select("id").eq("auth_user_id", caller.userId).maybeSingle();
+  if (webAdmin) return null;
+  const { data: link } = await admin.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).maybeSingle();
+  const discordUserId = link?.discord_user_id;
+  if (!discordUserId) return forbidden;
+  const access = await guildAccessLevel(admin, guildId, discordUserId);
+  if (access === "leader" || access === "member" && level === "member") return null;
+  return forbidden;
+}
+async function guildAccessLevel(admin, guildId, discordUserId) {
+  if (!snowflake(guildId) || !snowflake(discordUserId)) return null;
+  const { data: leader } = await admin.rpc("has_any_role", {
+    _guild_id: guildId,
+    _discord_user_id: discordUserId,
+    _roles: ["admin", "moderator", "manager", "captain"]
+  });
+  if (leader || await isDiscordClubLeader(guildId, discordUserId)) return "leader";
+  const { data: played } = await admin.from("player_stats").select("id").eq("guild_id", guildId).eq("discord_user_id", discordUserId).limit(1).maybeSingle();
+  if (played) return "member";
+  const member = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
+  return member ? "member" : null;
 }
 
 // supabase/functions/_shared/ea-profiles.ts
@@ -122,18 +158,17 @@ serve(async (req) => {
     }
     const actor = await resolveDiscordActor(req, supabase, discord_user_id);
     if (actor instanceof Response) return actor;
+    const deny = (status, error) => new Response(JSON.stringify({ success: false, error }), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     if (actor.discordUserId !== discord_user_id) {
-      const { data: canManage } = await hasGuildRole(supabase, {
-        _guild_id: guild_id,
-        _discord_user_id: actor.discordUserId,
-        _roles: ["admin", "moderator", "manager", "captain"]
-      });
-      if (!canManage) {
-        return new Response(
-          JSON.stringify({ success: false, error: "You can only link your own EA account" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      const denied = await requireGuildAccess(req, supabase, guild_id, "leader");
+      if (denied) return deny(403, "You can only link your own EA account");
+      if (!await guildAccessLevel(supabase, guild_id, discord_user_id)) {
+        return deny(403, "That player isn't a member of this server");
       }
+    }
+    const holders = await profilesForGamertag(supabase, ea_username);
+    if (holders.some((p) => !isPlaceholderId(p.discord_user_id) && p.discord_user_id !== discord_user_id)) {
+      return deny(409, "That gamertag is already linked to another member. A manager can move it with /forcelink in Discord.");
     }
     console.log(`[link-ea-account] Linking Discord ${discord_user_id} to EA ${ea_username}`);
     const tempIds = await placeholderIdsForGamertag(supabase, ea_username);

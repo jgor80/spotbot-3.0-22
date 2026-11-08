@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { hasGuildRole, resolveDiscordActor } from "../_shared/auth.ts";
-import { placeholderIdsForGamertag } from "../_shared/ea-profiles.ts";
+import { guildAccessLevel, requireGuildAccess, resolveDiscordActor } from "../_shared/auth.ts";
+import { isPlaceholderId, placeholderIdsForGamertag, profilesForGamertag } from "../_shared/ea-profiles.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -48,23 +48,27 @@ serve(async (req) => {
     // verify_jwt is off: only the bot, or a signed-in web user linking themselves or managing this server.
     const actor = await resolveDiscordActor(req, supabase, discord_user_id);
     if (actor instanceof Response) return actor;
+    const deny = (status: number, error: string) =>
+      new Response(JSON.stringify({ success: false, error }), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     if (actor.discordUserId !== discord_user_id) {
-      const { data: canManage } = await hasGuildRole(supabase, {
-        _guild_id: guild_id,
-        _discord_user_id: actor.discordUserId,
-        _roles: ["admin", "moderator", "manager", "captain"],
-      });
-      if (!canManage) {
-        return new Response(
-          JSON.stringify({ success: false, error: "You can only link your own EA account" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      // Profiles are global, so changing someone else's gamertag needs leader rights in this server
+      // (GafferBot role or Discord leader, same rule as everywhere else) and the player must belong to it.
+      // Otherwise anyone could add the bot to a server of their own and rewrite any player's identity.
+      const denied = await requireGuildAccess(req, supabase, guild_id, "leader");
+      if (denied) return deny(403, "You can only link your own EA account");
+      if (!(await guildAccessLevel(supabase, guild_id, discord_user_id))) {
+        return deny(403, "That player isn't a member of this server");
       }
+    }
+
+    // Never take a gamertag that another real member already holds (a manager can move it with /forcelink in Discord)
+    const holders = await profilesForGamertag(supabase, ea_username);
+    if (holders.some((p) => !isPlaceholderId(p.discord_user_id) && p.discord_user_id !== discord_user_id)) {
+      return deny(409, "That gamertag is already linked to another member. A manager can move it with /forcelink in Discord.");
     }
 
     console.log(`[link-ea-account] Linking Discord ${discord_user_id} to EA ${ea_username}`);
 
-    // Check if there's a temp profile with this EA username
     // Every placeholder for this gamertag, found by name: older code spelled the ea_ ID several ways
     const tempIds = await placeholderIdsForGamertag(supabase, ea_username);
 
