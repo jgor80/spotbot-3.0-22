@@ -9,6 +9,7 @@ import {
 import { importClub } from "../_shared/fut/club.ts";
 import { cardEaReference, storeEaReference } from "../_shared/fut/ea-reference.ts";
 import { collectFc27Market, fc27MarketStatus, pullFc27Market } from "../_shared/fut/fc27market.ts";
+import { futggStatus } from "../_shared/fut/futgg-status.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
 import { marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
@@ -327,6 +328,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       }
       // Third-party prices from the public fc27-market API, for the caller's own cards only (Jeff's request).
       if (route === "/market/feeds/fc27-market" && m === "GET") return json({ data: await fc27MarketStatus(db) });
+      if (route === "/market/feeds/futgg" && m === "GET") return json({ data: await futggStatus(db) });
       if (route === "/market/import/fc27-market" && m === "POST") {
         return json({ data: await runWorkspace(() => pullFc27Market(db, userId, mk, deps.fetch)) });
       }

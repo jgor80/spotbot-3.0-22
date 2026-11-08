@@ -114,6 +114,11 @@ export interface MarketImportResult { accepted: number; inserted: number; skippe
 export interface HelperStatus { connected: boolean; key_hint: string | null; created_at: string | null; last_used_at: string | null; key?: string }
 export interface Fc27FeedStatus { feed_updated: string | null; hours_old: number | null; cards: number; last_run: { at: string; status: string; message: string } | null; note: string }
 export interface MarketEaReference { label: string; evidence: MarketEvidence; market_average: number | null; observed_at: string | null; history: { observed_at: string; market_average: number }[]; recent_sales: { price: number; seen_at: string }[]; note: string }
+export interface FutggFeedStatus {
+  enabled: boolean; schedule: string; note: string;
+  last_run: { finished_at: string; status: string; message: string } | null;
+  platforms: { platform: MarketPlatform; published_at: string | null; received_at: string | null; checked_at: string | null; card_count: number; market_price_count: number; age_hours: number | null; overdue: boolean }[];
+}
 export interface MarketSharing { sharing: boolean; since: string | null; your_contributions: number; deleted?: number }
 export interface CommunityPull { sharers: number; your_cards_with_ea_id: number; cards_with_community_prices: number; observations: number; max_contributors: number; import: MarketImportResult | null; note: string }
 export interface Fc27MarketPull { updated: string | null; hours_old: number | null; your_cards_with_ea_id: number; matched: number; observations: number; import: MarketImportResult | null; note: string }
@@ -135,6 +140,7 @@ export const futApi = {
     unwatch: (id: string, platform: MarketPlatform) => futRequest(marketPath(`/watchlist/${encodeURIComponent(id)}`, platform), "DELETE"),
     importPrices: (text: string, platform: MarketPlatform) => futRequest<MarketImportResult>(marketPath("/prices/import", platform), "POST", { text }),
     fc27Feed: () => futRequest<Fc27FeedStatus>("/market/feeds/fc27-market"),
+    futggFeed: () => futRequest<FutggFeedStatus>("/market/feeds/futgg"),
     pullFc27Market: () => futRequest<Fc27MarketPull>("/market/import/fc27-market", "POST", {}),
     sharing: () => futRequest<MarketSharing>("/market/sharing"),
     helper: () => futRequest<HelperStatus>("/helper"),

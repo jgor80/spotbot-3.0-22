@@ -14,6 +14,8 @@
   // FUNCTIONS_ORIGIN (and the FUNCTIONS_ORIGIN_SECRET / MCP_LEADER_CHECK_SECRET secrets) are set in the Cloudflare dashboard; without this
   // every deploy from a merge wipes them and all /api/functions calls return 503.
   "keep_vars": true,
+  "vars": { "FUT_ENABLED": "true" },
+  "triggers": { "crons": ["0 6,18 * * *"] },
   // Per-IP limits on AI-app sign-in (/oauth/*) and backend calls (/api/functions, /mcp), see worker/index.ts.
   // Per Cloudflare location, so approximate: a backstop against floods, not an exact quota.
   "ratelimits": [
