@@ -4151,6 +4151,7 @@ globalThis.__gafferbotWebPanels = createWebPanels({
 globalThis.__gafferbotLineups = createLineupAi({ getClient: () => client, events: clubEvents, autopilot, canManageClub: squads.canManageClub, callEdgeFunction, supabase });
 // Channel read/delete/clear for AI apps with manage access (gafferbot-mcp/moderation.ts)
 globalThis.__gafferbotModeration = createChannelModeration({ getClient: () => client });
+globalThis.__gafferbotVoice = require('./voice-lookup.cjs').createVoiceLookup({ getClient: () => client });
 
 // ack-guard defers for any handler still busy near Discord's 3-second deadline
 client.on(Events.InteractionCreate, (interaction) => {
