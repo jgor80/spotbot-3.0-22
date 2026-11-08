@@ -78,3 +78,51 @@ test('refresh updates the frame while live and marks the card ended when the str
   assert.strictEqual(ended.image, undefined);
   assert.strictEqual(tl.cards.size, 0);
 });
+
+// Linked players: a server with a live-card channel, one linked member who's live
+function linkedSetup({ startedMinsAgo = 2, member = true } = {}) {
+  const stream = { ...STREAM, started_at: new Date(Date.now() - startedMinsAgo * 60000).toISOString() };
+  const fetchImpl = async (url) => {
+    const json = (body) => ({ ok: true, status: 200, json: async () => body });
+    if (String(url).includes('oauth2/token')) return json({ access_token: 't', expires_in: 3600 });
+    if (String(url).includes('/helix/streams')) return json({ data: [stream] });
+    if (String(url).includes('/helix/users')) return json({ data: [{ login: 'samplays', display_name: 'SamPlays' }] });
+    return json({});
+  };
+  const table = (rows) => ({ select: () => ({ not: async () => ({ data: rows, error: null }) }) });
+  const supabase = {
+    from: (name) => name === 'guild_settings'
+      ? table([{ guild_id: 'g', twitch_live_channel_id: 'live' }, { guild_id: 'other', twitch_live_channel_id: 'x' }])
+      : table([{ discord_user_id: 'u1', twitch_username: 'SamPlays' }]),
+  };
+  const sent = [];
+  const channel = { send: async (p) => { sent.push(p); return { id: `m${sent.length}` }; } };
+  const guild = { members: { fetch: async (id) => (member && id === 'u1' ? { id } : Promise.reject(new Error('unknown'))) } };
+  const client = { guilds: { cache: new Map([['g', guild]]) }, channels: { fetch: async (id) => (id === 'live' ? channel : null) } };
+  const tl = createTwitchLive({ getClient: () => client, supabase, clientId: 'id', clientSecret: 'sec', fetchImpl });
+  return { tl, sent };
+}
+
+test('posts a live card when a linked player goes live, once per stream', async () => {
+  const { tl, sent } = linkedSetup();
+  assert.strictEqual(await tl.pollLinkedPlayers(), 1);
+  assert.match(sent[0].content, /<@u1> just went live/);
+  assert.deepStrictEqual(sent[0].allowedMentions, { parse: [] });
+  assert.match(sent[0].embeds[0].toJSON().title, /SamPlays is live/);
+  assert.strictEqual(await tl.pollLinkedPlayers(), 0);
+  assert.strictEqual(sent.length, 1);
+  tl.cards.clear();
+});
+
+test('after a restart, streams that have been going a while are not reposted', async () => {
+  const { tl, sent } = linkedSetup({ startedMinsAgo: 90 });
+  assert.strictEqual(await tl.pollLinkedPlayers(), 0);
+  assert.strictEqual(await tl.pollLinkedPlayers(), 0);
+  assert.strictEqual(sent.length, 0);
+});
+
+test('players who are not in the server are not posted there', async () => {
+  const { tl, sent } = linkedSetup({ member: false });
+  assert.strictEqual(await tl.pollLinkedPlayers(), 0);
+  assert.strictEqual(sent.length, 0);
+});
