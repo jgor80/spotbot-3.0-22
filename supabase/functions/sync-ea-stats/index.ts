@@ -955,6 +955,20 @@ function clubRecord(overallStats: any, seasonalStats: any) {
   }
 }
 
+// Linked players who already have a player_stats row for this match (used when retrying a match)
+async function recordedPlayerIds(supabase: any, guildId: string, matchId: string): Promise<Set<string>> {
+  const { data } = await supabase.from('player_stats').select('discord_user_id').eq('guild_id', guildId).eq('ea_match_id', matchId)
+  return new Set((data || []).map((r: any) => r.discord_user_id))
+}
+
+// Every player row for this match saved, so later syncs can skip it. Until then each sync retries the
+// missing rows (only while EA still lists the match), instead of skipping the match for good.
+async function markStatsComplete(supabase: any, guildId: string, clubKey: string, matchId: string) {
+  const { error } = await supabase.from('club_matches').update({ stats_complete: true })
+    .eq('guild_id', guildId).eq('club_key', clubKey).eq('ea_match_id', matchId)
+  if (error) console.error(`[sync-ea-stats] Couldn't mark match ${matchId} complete:`, error.message)
+}
+
 function getPrimaryPosition(positionCounts: Record<string, number>): string | null {
   const sorted = Object.entries(positionCounts).sort((a, b) => b[1] - a[1])
   return sorted[0]?.[0] || null
@@ -2122,16 +2136,18 @@ Deno.serve(async (req) => {
 
               const { data: existingMatches } = await supabase
                 .from('club_matches')
-                .select('ea_match_id')
+                .select('ea_match_id, stats_complete')
                 .eq('guild_id', guildId)
                 .eq('club_key', club.key)
               
               const existingIds = new Set((existingMatches || []).map((m: any) => m.ea_match_id))
+              // Matches whose player rows didn't all save last time (stats_complete = false) are retried below
+              const repairIds = new Set((existingMatches || []).filter((m: any) => m.stats_complete === false).map((m: any) => m.ea_match_id))
               
               for (const matchData of matches) {
                 // Use fallback paths per EA data map for match ID and timestamp
                 const matchId = extractWithFallback(matchData, ['matchId', 'id', 'gameId'])?.toString()
-                if (!matchId || existingIds.has(matchId)) {
+                if (!matchId || (existingIds.has(matchId) && !repairIds.has(matchId))) {
                   totalSkipped++
                   continue
                 }
@@ -2268,9 +2284,11 @@ Deno.serve(async (req) => {
                 
                 // Find or create session for this match using fallback paths for timestamp
                 const matchTimestamp = parseInt(extractWithFallback(matchData, ['timestamp', 'matchTimestamp', 'time', 'matchTime']) || Date.now() / 1000);
-                const sessionId = await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
+                const sessionId = repairIds.has(matchId) ? null : await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
 
-                const { error: insertError } = await supabase.from('club_matches').insert({
+                const repairing = repairIds.has(matchId)
+                const { error: insertError } = repairing ? { error: null } : await supabase.from('club_matches').insert({
+                  stats_complete: false,
                   guild_id: guildId,
                   club_key: club.key,
                   ea_match_id: matchId,
@@ -2302,11 +2320,13 @@ Deno.serve(async (req) => {
                   }
                   
                   // Record player stats
+                  const recorded = repairing ? await recordedPlayerIds(supabase, guildId, matchId) : new Set<string>()
+                  let statsFailed = false
                   for (const pStat of playerStats) {
                     // Linked account wins even if a placeholder still carries this gamertag (case-insensitive)
                     const profile = await linkedFor(pStat.ea_username)
-                    if (profile) {
-                      await supabase.from('player_stats').insert({
+                    if (profile && !recorded.has(profile.discord_user_id)) {
+                      const { error: statErr } = await supabase.from('player_stats').insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,
                         ea_match_id: matchId,
@@ -2364,11 +2384,17 @@ Deno.serve(async (req) => {
                         goals_inside_box: pStat.goals_inside_box,
                         defensive_actions: pStat.defensive_actions
                       })
+                      // 23505: the row is already there (another run got it first), which is fine
+                      if (statErr && statErr.code !== '23505') {
+                        statsFailed = true
+                        console.error(`[sync-ea-stats] player_stats for ${pStat.ea_username} in match ${matchId} failed:`, statErr.message)
+                      }
 
                       guildUpdatedPlayerIds.add(profile.discord_user_id)
                       await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id)
                     }
                   }
+                  if (!statsFailed) await markStatsComplete(supabase, guildId, club.key, matchId)
                 }
               }
             }
@@ -2384,15 +2410,17 @@ Deno.serve(async (req) => {
             if (competitionMatches && competitionMatches.length > 0) {
               const { data: existingCompMatches } = await supabase
                 .from('club_matches')
-                .select('ea_match_id')
+                .select('ea_match_id, stats_complete')
                 .eq('guild_id', guildId)
                 .eq('club_key', club.key)
               
               const existingCompIds = new Set((existingCompMatches || []).map((m: any) => m.ea_match_id))
+              // Matches whose player rows didn't all save last time (stats_complete = false) are retried below
+              const repairCompIds = new Set((existingCompMatches || []).filter((m: any) => m.stats_complete === false).map((m: any) => m.ea_match_id))
               
               for (const matchData of competitionMatches) {
                 const matchId = matchData.matchId?.toString()
-                if (!matchId || existingCompIds.has(matchId)) {
+                if (!matchId || (existingCompIds.has(matchId) && !repairCompIds.has(matchId))) {
                   totalSkipped++
                   continue
                 }
@@ -2517,9 +2545,11 @@ Deno.serve(async (req) => {
                 
                 // Find or create session for this match
                 const matchTimestamp = parseInt(matchData.timestamp || matchData.matchTime || Date.now() / 1000);
-                const sessionId = await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
+                const sessionId = repairCompIds.has(matchId) ? null : await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
 
-                const { error: insertError } = await supabase.from('club_matches').insert({
+                const repairing = repairCompIds.has(matchId)
+                const { error: insertError } = repairing ? { error: null } : await supabase.from('club_matches').insert({
+                  stats_complete: false,
                   guild_id: guildId,
                   club_key: club.key,
                   ea_match_id: matchId,
@@ -2551,11 +2581,13 @@ Deno.serve(async (req) => {
                   }
                   
                   // Record player stats for competition matches
+                  const recorded = repairing ? await recordedPlayerIds(supabase, guildId, matchId) : new Set<string>()
+                  let statsFailed = false
                   for (const pStat of playerStats) {
                     // Linked account wins even if a placeholder still carries this gamertag (case-insensitive)
                     const profile = await linkedFor(pStat.ea_username)
-                    if (profile) {
-                      await supabase.from('player_stats').insert({
+                    if (profile && !recorded.has(profile.discord_user_id)) {
+                      const { error: statErr } = await supabase.from('player_stats').insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,
                         ea_match_id: matchId,
@@ -2613,11 +2645,17 @@ Deno.serve(async (req) => {
                         goals_inside_box: pStat.goals_inside_box,
                         defensive_actions: pStat.defensive_actions
                       })
+                      // 23505: the row is already there (another run got it first), which is fine
+                      if (statErr && statErr.code !== '23505') {
+                        statsFailed = true
+                        console.error(`[sync-ea-stats] player_stats for ${pStat.ea_username} in match ${matchId} failed:`, statErr.message)
+                      }
 
                       guildUpdatedPlayerIds.add(profile.discord_user_id)
                       await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id)
                     }
                   }
+                  if (!statsFailed) await markStatsComplete(supabase, guildId, club.key, matchId)
                 }
               }
             }
@@ -2629,15 +2667,17 @@ Deno.serve(async (req) => {
               
               const { data: existingFriendlyMatches } = await supabase
                 .from('club_matches')
-                .select('ea_match_id')
+                .select('ea_match_id, stats_complete')
                 .eq('guild_id', guildId)
                 .eq('club_key', club.key)
               
               const existingFriendlyIds = new Set((existingFriendlyMatches || []).map((m: any) => m.ea_match_id))
+              // Matches whose player rows didn't all save last time (stats_complete = false) are retried below
+              const repairFriendlyIds = new Set((existingFriendlyMatches || []).filter((m: any) => m.stats_complete === false).map((m: any) => m.ea_match_id))
               
               for (const matchData of friendlyMatches) {
                 const matchId = matchData.matchId?.toString()
-                if (!matchId || existingFriendlyIds.has(matchId)) {
+                if (!matchId || (existingFriendlyIds.has(matchId) && !repairFriendlyIds.has(matchId))) {
                   totalSkipped++
                   continue
                 }
@@ -2759,7 +2799,9 @@ Deno.serve(async (req) => {
                   })
                 }
                 
-                const { error: insertError } = await supabase.from('club_matches').insert({
+                const repairing = repairFriendlyIds.has(matchId)
+                const { error: insertError } = repairing ? { error: null } : await supabase.from('club_matches').insert({
+                  stats_complete: false,
                   guild_id: guildId,
                   club_key: club.key,
                   ea_match_id: matchId,
@@ -2778,11 +2820,13 @@ Deno.serve(async (req) => {
                   existingFriendlyIds.add(matchId)
                   
                   // Record player stats for friendly matches
+                  const recorded = repairing ? await recordedPlayerIds(supabase, guildId, matchId) : new Set<string>()
+                  let statsFailed = false
                   for (const pStat of playerStats) {
                     // Linked account wins even if a placeholder still carries this gamertag (case-insensitive)
                     const profile = await linkedFor(pStat.ea_username)
-                    if (profile) {
-                      await supabase.from('player_stats').insert({
+                    if (profile && !recorded.has(profile.discord_user_id)) {
+                      const { error: statErr } = await supabase.from('player_stats').insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,
                         ea_match_id: matchId,
@@ -2839,11 +2883,17 @@ Deno.serve(async (req) => {
                         goals_inside_box: pStat.goals_inside_box,
                         defensive_actions: pStat.defensive_actions
                       })
+                      // 23505: the row is already there (another run got it first), which is fine
+                      if (statErr && statErr.code !== '23505') {
+                        statsFailed = true
+                        console.error(`[sync-ea-stats] player_stats for ${pStat.ea_username} in match ${matchId} failed:`, statErr.message)
+                      }
 
                       guildUpdatedPlayerIds.add(profile.discord_user_id)
                       await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id)
                     }
                   }
+                  if (!statsFailed) await markStatsComplete(supabase, guildId, club.key, matchId)
                 }
               }
             }

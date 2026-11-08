@@ -684,6 +684,7 @@ export type Database = {
           score_against: number | null
           score_for: number | null
           session_id: string | null
+          stats_complete: boolean | null
         }
         Insert: {
           club_key: string
@@ -702,6 +703,7 @@ export type Database = {
           score_against?: number | null
           score_for?: number | null
           session_id?: string | null
+          stats_complete?: boolean | null
         }
         Update: {
           club_key?: string
@@ -720,6 +722,7 @@ export type Database = {
           score_against?: number | null
           score_for?: number | null
           session_id?: string | null
+          stats_complete?: boolean | null
         }
         Relationships: [
           {
