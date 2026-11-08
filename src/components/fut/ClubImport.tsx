@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ErrorNotice } from "@/components/fut/FutShared";
 import { futApi, futKeys } from "@/lib/futApi";
+import { HelperDownload } from "@/components/fut/HelperDownload";
 
 /** Club sync: uploads the club file the XI Lab browser helper saved from the user's own EA Web App club. */
 export function ClubImport() {
@@ -32,6 +33,7 @@ export function ClubImport() {
           <DialogTitle>Sync your club</DialogTitle>
           <DialogDescription>Open your club in the EA Web App with the XI Lab helper installed, page through Players and Managers, then use "Download club file" and pick that file here. XI Lab never signs in to EA or touches your club.</DialogDescription>
         </DialogHeader>
+        <HelperDownload compact />
         <div className="space-y-1.5"><Label htmlFor="club-file">Club file (.json)</Label><Input id="club-file" type="file" accept="application/json,.json" disabled={sync.isPending} onChange={e => { void onFile(e.target.files?.[0]); e.target.value = ""; }} /></div>
         <ErrorNotice error={readError ?? sync.error} />
         {sync.isPending && <p className="text-sm text-muted-foreground">Syncing…</p>}
