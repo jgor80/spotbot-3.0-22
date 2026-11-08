@@ -12,7 +12,7 @@
 //
 // Callers: a signed-in web app user (JWT) or the Discord bot (service role key).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createAdminClient, identifyCaller, type Caller } from "../_shared/auth.ts";
+import { createAdminClient, identifyCaller, requireGuildAccess, throttleWebUser, type Caller } from "../_shared/auth.ts";
 import { clubAccent, clubCrest } from "../_shared/club-theme.ts";
 
 const corsHeaders = {
@@ -485,13 +485,22 @@ serve(async (req) => {
     if (!caller) return json({ error: "Sign in to announce lineups" }, 401);
 
     const body = await req.json();
+    // Both lookups call Discord as the bot, so they need a member of that server (any member for the
+    // channel list, a leader for who is in voice) and a per-user cap: a flood of bad requests can get
+    // the bot's IP banned by Discord for every server.
     if (body.action === "channels") {
       if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) return json({ error: "guild_id is required" }, 400);
+      const denied = await requireGuildAccess(req, supabase, body.guild_id, "member")
+        ?? await throttleWebUser(req, supabase, "announce-lineup:channels", 30, 10 * 60 * 1000);
+      if (denied) return denied;
       return await listChannels(supabase, body.guild_id);
     }
     if (body.action === "voice") {
       if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) return json({ error: "guild_id is required" }, 400);
       if (!Array.isArray(body.user_ids)) return json({ error: "user_ids is required" }, 400);
+      const denied = await requireGuildAccess(req, supabase, body.guild_id, "leader")
+        ?? await throttleWebUser(req, supabase, "announce-lineup:voice", 10, 10 * 60 * 1000);
+      if (denied) return denied;
       return await voiceChannels(supabase, body.guild_id, body.user_ids);
     }
     if (body.action === "announce") {
