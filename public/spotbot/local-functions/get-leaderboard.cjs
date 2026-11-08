@@ -193,6 +193,16 @@ serve(async (req) => {
     if (noAccess) return noAccess;
     const taggedType = match_type === "tournament" || match_type === "byot" ? match_type : null;
     const gameTypes = taggedType ? [taggedType] : ["club", "friendly"];
+    const fetchAllRows = async (build) => {
+      const rows = [];
+      for (let from = 0; ; from += 1e3) {
+        const { data, error } = await build().order("id", { ascending: true }).range(from, from + 999);
+        if (error) throw error;
+        rows.push(...data || []);
+        if (!data || data.length < 1e3) return rows;
+      }
+    };
+    const resultFor = (stat, drawIds) => stat.won === true ? "win" : stat.ea_match_id && drawIds.has(stat.ea_match_id) ? "draw" : stat.won === false ? "loss" : null;
     const byMatchType = (q) => {
       if (match_type === "smalls") return q.eq("match_data->>_tag", "smalls");
       q = q.eq("match_type", match_type);
@@ -286,7 +296,7 @@ serve(async (req) => {
           club_keys: [club_key]
         }));
       } else if (stats_source === "games") {
-        const { data: clubPlayerStats, error: statsError } = await supabase.from("player_stats").select(`
+        const clubPlayerStats = await fetchAllRows(() => supabase.from("player_stats").select(`
             discord_user_id,
             goals,
             assists,
@@ -336,13 +346,13 @@ serve(async (req) => {
             forward_runs,
             offensive_duels,
             defensive_duels
-          `).eq("guild_id", guild_id).eq("match_type", taggedType || "club").range(0, 9999);
-        if (statsError) throw statsError;
-        let clubMatchesQuery = supabase.from("club_matches").select("ea_match_id").eq("guild_id", guild_id).eq("club_key", club_key);
-        if (match_type && !taggedType) {
-          clubMatchesQuery = byMatchType(clubMatchesQuery);
-        }
-        const { data: clubMatches } = await clubMatchesQuery;
+          `).eq("guild_id", guild_id).in("match_type", gameTypes));
+        const clubMatchesQuery = () => {
+          const q = supabase.from("club_matches").select("id, ea_match_id, result").eq("guild_id", guild_id).eq("club_key", club_key);
+          return match_type && !taggedType ? byMatchType(q) : q;
+        };
+        const clubMatches = await fetchAllRows(clubMatchesQuery);
+        const clubDrawIds = new Set(clubMatches.filter((m) => m.result === "draw").map((m) => m.ea_match_id));
         let clubMatchIds = new Set((clubMatches || []).map((m) => m.ea_match_id));
         if (timePeriodMatchIds) {
           clubMatchIds = new Set([...clubMatchIds].filter((id) => timePeriodMatchIds.has(id)));
@@ -482,9 +492,10 @@ serve(async (req) => {
             existing.archetype_counts[stat.archetypeid] = (existing.archetype_counts[stat.archetypeid] || 0) + 1;
           }
           existing.archetypeid = existing.archetypeid || stat.archetypeid;
-          if (stat.won === true) existing.wins += 1;
-          else if (stat.won === false) existing.losses += 1;
-          else existing.draws += 1;
+          const result = resultFor(stat, clubDrawIds);
+          if (result === "win") existing.wins += 1;
+          else if (result === "loss") existing.losses += 1;
+          else if (result === "draw") existing.draws += 1;
           if (stat.position_played) {
             existing.position_counts[stat.position_played] = (existing.position_counts[stat.position_played] || 0) + 1;
           }
@@ -623,21 +634,9 @@ serve(async (req) => {
       }
       const statsError = null;
       console.log(`[get-leaderboard] Fetched ${(allPlayerStats || []).length} player_stats records`);
-      const matchIds = [...new Set((allPlayerStats || []).map((ps) => ps.ea_match_id).filter(Boolean))];
-      const matchResultMap = /* @__PURE__ */ new Map();
-      if (matchIds.length > 0) {
-        const batchSize = 500;
-        for (let i = 0; i < matchIds.length; i += batchSize) {
-          const batchIds = matchIds.slice(i, i + batchSize);
-          const { data: matchResults } = await supabase.from("club_matches").select("ea_match_id, result").in("ea_match_id", batchIds);
-          for (const m of matchResults || []) {
-            if (m.ea_match_id && m.result) {
-              matchResultMap.set(m.ea_match_id, m.result);
-            }
-          }
-        }
-      }
-      console.log(`[get-leaderboard] Built match result map with ${matchResultMap.size} entries`);
+      const drawRows = await fetchAllRows(() => supabase.from("club_matches").select("id, ea_match_id").eq("guild_id", guild_id).eq("result", "draw"));
+      const drawIds = new Set(drawRows.map((m) => m.ea_match_id).filter(Boolean));
+      console.log(`[get-leaderboard] ${drawIds.size} drawn matches`);
       let filteredPlayerStats = matchTypeFilterIds ? (allPlayerStats || []).filter((ps) => ps.ea_match_id && matchTypeFilterIds.has(ps.ea_match_id)) : allPlayerStats || [];
       if (timePeriodMatchIds) {
         filteredPlayerStats = filteredPlayerStats.filter(
@@ -749,12 +748,10 @@ serve(async (req) => {
           existing.archetype_counts[stat.archetypeid] = (existing.archetype_counts[stat.archetypeid] || 0) + 1;
         }
         existing.archetypeid = existing.archetypeid || stat.archetypeid;
-        const matchResult = stat.ea_match_id ? matchResultMap.get(stat.ea_match_id) : null;
+        const matchResult = resultFor(stat, drawIds);
         if (matchResult === "win") existing.wins += 1;
         else if (matchResult === "loss") existing.losses += 1;
         else if (matchResult === "draw") existing.draws += 1;
-        else if (stat.won === true) existing.wins += 1;
-        else if (stat.won === false) existing.losses += 1;
         if (stat.position_played) {
           existing.position_counts[stat.position_played] = (existing.position_counts[stat.position_played] || 0) + 1;
         }
