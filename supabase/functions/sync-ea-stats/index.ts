@@ -1091,6 +1091,11 @@ function clubRecord(overallStats: any, seasonalStats: any) {
   }
 }
 
+// Escape LIKE/ILIKE wildcards so a gamertag is matched literally (same rule as the bot's eaNameOwner).
+function escapeLike(value: string) {
+  return String(value).trim().replace(/[\\%_]/g, (c) => `\\${c}`)
+}
+
 function getPrimaryPosition(positionCounts: Record<string, number>): string | null {
   const sorted = Object.entries(positionCounts).sort((a, b) => b[1] - a[1])
   return sorted[0]?.[0] || null
@@ -1256,12 +1261,25 @@ async function syncMemberStats(
       
       // Find profile for this EA username; unlinked members get an ea_<gamertag> placeholder
       // so their club totals show now and move over when they link.
-      let { data: profile } = await supabase
+      // Exact, case-insensitive match: escape LIKE wildcards so "Ace_10" can't match "AceX10".
+      // If a player linked after a placeholder was made, both rows carry this ea_username; always
+      // use the linked (non-placeholder) profile, and drop the placeholder's club row for this club
+      // so the player isn't listed twice. Its totals come from EA and are rewritten just below.
+      const { data: matches } = await supabase
         .from('profiles')
         .select('discord_user_id, discord_username')
-        .ilike('ea_username', eaUsername)
-        .limit(1)
-        .maybeSingle()
+        .ilike('ea_username', escapeLike(eaUsername))
+        .limit(10)
+      const linked = (matches || []).filter((p: any) => !String(p.discord_user_id).startsWith('ea_'))
+      let profile: any = linked[0] || (matches || [])[0] || null
+      if (linked.length && clubKey) {
+        const stale = (matches || []).filter((p: any) => String(p.discord_user_id).startsWith('ea_')).map((p: any) => p.discord_user_id)
+        if (stale.length) {
+          const { error: staleErr } = await supabase.from('player_club_stats').delete()
+            .eq('guild_id', guildId).eq('club_key', clubKey).in('discord_user_id', stale)
+          if (staleErr) console.warn(`[sync-ea-stats] Couldn't clear placeholder rows for ${eaUsername}:`, staleErr.message)
+        }
+      }
       if (!profile) {
         const placeholder = { discord_user_id: `ea_${eaUsername}`, discord_username: eaUsername, ea_username: eaUsername }
         const { error: phErr } = await supabase.from('profiles').upsert(placeholder, { onConflict: 'discord_user_id' })
