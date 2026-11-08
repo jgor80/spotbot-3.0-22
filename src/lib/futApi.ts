@@ -112,6 +112,7 @@ export interface MarketWatchItem { card_id: string; name: string; platform: Mark
 export interface MarketWatchlist { items: MarketWatchItem[]; note: string }
 export interface MarketImportResult { accepted: number; inserted: number; skipped: number; duplicates: number; rejected: { line: number; reason: string }[]; held: number; linked_from_held: number; still_held: number; shared_with_community?: number }
 export interface HelperStatus { connected: boolean; key_hint: string | null; created_at: string | null; last_used_at: string | null; key?: string }
+export interface Fc27FeedStatus { feed_updated: string | null; hours_old: number | null; cards: number; last_run: { at: string; status: string; message: string } | null; note: string }
 export interface MarketSharing { sharing: boolean; since: string | null; your_contributions: number; deleted?: number }
 export interface CommunityPull { sharers: number; your_cards_with_ea_id: number; cards_with_community_prices: number; observations: number; max_contributors: number; import: MarketImportResult | null; note: string }
 export interface Fc27MarketPull { updated: string | null; hours_old: number | null; your_cards_with_ea_id: number; matched: number; observations: number; import: MarketImportResult | null; note: string }
@@ -131,6 +132,7 @@ export const futApi = {
     watch: (input: { card_id: string; platform: MarketPlatform; target_buy?: number; target_sell?: number; note?: string }) => futRequest<MarketWatchItem>("/market/watchlist", "POST", input),
     unwatch: (id: string, platform: MarketPlatform) => futRequest(marketPath(`/watchlist/${encodeURIComponent(id)}`, platform), "DELETE"),
     importPrices: (text: string, platform: MarketPlatform) => futRequest<MarketImportResult>(marketPath("/prices/import", platform), "POST", { text }),
+    fc27Feed: () => futRequest<Fc27FeedStatus>("/market/feeds/fc27-market"),
     pullFc27Market: () => futRequest<Fc27MarketPull>("/market/import/fc27-market", "POST", {}),
     sharing: () => futRequest<MarketSharing>("/market/sharing"),
     helper: () => futRequest<HelperStatus>("/helper"),

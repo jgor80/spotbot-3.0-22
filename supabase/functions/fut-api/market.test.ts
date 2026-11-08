@@ -293,3 +293,37 @@ Deno.test("helper key: shown once, can only upload prices and club, and stops wo
   assert((await call("DELETE", "/v1/helper")).data.data.connected === false, "turned off");
   assert((await viaKey(second.key, "POST", "/v1/helper/prices", { text })).status === 401, "turned-off key refused");
 });
+
+Deno.test("fc27-market job: bot only, keeps every card with the feed time, feeds users' synced cards, skips a repeat", async () => {
+  const db = futMemoryDb({ ...seededRules(), ...seededMarket() });
+  const perm = { commercial_use: false, storage: true, retention_days: null, display: true, derived_analytics: true, model_training: false, redistribution: false, attribution: "fc27-market" };
+  (db.tables.market_price_sources as unknown[]).push({ id: "fc27_market", name: "fc27-market", kind: "user_import", status: "enabled", is_demo: false, status_note: "Third party.", permissions: perm, evidence: "estimate" });
+  let updated = new Date(Math.floor((Date.now() - 2 * H) / 60_000) * 60_000).toISOString();
+  const fake = () => Promise.resolve(new Response(JSON.stringify({ updated, groups: {
+    icons: [{ eaId: 1, name: "Icon", rating: 90, rarityId: 12, price: 900_000 }], gold: [{ eaId: 101, name: "X", rating: 85, price: 12_750 }, { eaId: 102, price: 0 }],
+  } }), { status: 200 }));
+  const deps: Deps = { db, userFor: (req) => Promise.resolve(req.headers.get("x-test-user")), isBot: (req) => Promise.resolve(req.headers.get("x-test-bot") === "1"), env: (k) => (k === "FUT_ENABLED" ? "true" : undefined), fetch: fake };
+  const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = { "x-test-user": ME }) => {
+    const res = await handle(new Request(`http://local/functions/v1/fut-api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }), deps);
+    return { status: res.status, data: await res.json() };
+  };
+  await call("POST", "/v1/club/import", { format: "xilab-club-capture", version: 1, verified: false, captured_at: "x", names: {}, items: [
+    { item_id: 1, ea_item_id: 101, asset_id: 101, kind: "player", rating: 85, position: "CB", positions: ["CB"], team_id: 1, league_id: 2, nation_id: 3, rare_flag: 0, untradeable: false, loan: false, stats: null, skill_moves: null, weak_foot: null, seen_in: "club" },
+  ] });
+
+  assert((await call("POST", "", { job: "fc27-market" })).status === 401, "a signed-in user can't run the job");
+  const r = await call("POST", "", { job: "fc27-market" }, { "x-test-bot": "1" });
+  assert(r.status === 200 && r.data.data.new_snapshot && r.data.data.cards === 2 && r.data.data.users_updated === 1 && r.data.data.observations === 1, JSON.stringify(r.data));
+  const feed = db.tables.market_feed_prices as { ea_item_id: number; feed_updated: string; grp: string }[];
+  assert(feed.length === 2 && feed.every((f) => f.feed_updated === updated) && feed.some((f) => f.grp === "icons"), JSON.stringify(feed));
+  const mine = (db.tables.market_price_observations as { owner_user_id: string; source_id: string; price: number; observed_at: string }[]).filter((o) => o.source_id === "fc27_market");
+  assert(mine.length === 1 && mine[0]!.owner_user_id === ME && mine[0]!.price === 12_750 && mine[0]!.observed_at === updated, JSON.stringify(mine));
+
+  // Same snapshot again: nothing new. A new snapshot adds a point.
+  assert((await call("POST", "", { job: "fc27-market" }, { "x-test-bot": "1" })).data.data.new_snapshot === false, "repeat skipped");
+  updated = new Date(Date.parse(updated) + H).toISOString();
+  assert((await call("POST", "", { job: "fc27-market" }, { "x-test-bot": "1" })).data.data.observations === 1, "new snapshot adds a point");
+
+  const st = (await call("GET", "/v1/market/feeds/fc27-market")).data.data;
+  assert(st.feed_updated === updated && st.cards === 2 && st.last_run?.status === "succeeded" && st.hours_old === 1, JSON.stringify(st));
+});
