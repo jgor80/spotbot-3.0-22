@@ -1,5 +1,7 @@
 // Club insights computed from synced EA matches (club_matches rows).
 // Pure functions so the page stays thin and the math is easy to check.
+import { eaEventCounts, hasEventData } from "./eaEvents";
+import { generateAdvancedInsights } from "./advancedStats";
 
 export type MatchResult = "win" | "draw" | "loss";
 
@@ -22,6 +24,9 @@ export interface PlayerMatchStats {
   dribble_attempts?: number;
   fouls?: number;
   red_cards?: boolean;
+  // EA's raw event counts (match_event_aggregate_*) for this player, attached by toInsightMatches
+  // from match_data. Decoded by eaEvents.ts; absent when EA sent none.
+  events?: Record<number, number>;
 }
 
 export interface InsightMatch {
@@ -151,6 +156,40 @@ function matchTime(row: ClubMatchRow): Date {
   return new Date(row.created_at || 0);
 }
 
+// EA's raw player rows for our club in this match, keyed by lower-case name. match_data.players holds
+// both clubs, so take the club whose names overlap ours the most.
+function rawPlayerRows(row: ClubMatchRow, players: PlayerMatchStats[]): Map<string, Record<string, unknown>> {
+  const byClub = (row.match_data as { players?: Record<string, Record<string, Record<string, unknown>>> } | null)?.players;
+  const out = new Map<string, Record<string, unknown>>();
+  if (!byClub || typeof byClub !== "object") return out;
+  const ours = new Set(players.map(playerKey).filter((k): k is string => !!k));
+  let best: Record<string, Record<string, unknown>> | null = null;
+  let bestHits = 0;
+  for (const club of Object.values(byClub)) {
+    if (!club || typeof club !== "object") continue;
+    const hits = Object.values(club).filter((r) => r && ours.has(String(r.playername || "").trim().toLowerCase())).length;
+    if (hits > bestHits) {
+      best = club;
+      bestHits = hits;
+    }
+  }
+  for (const r of Object.values(best || {})) {
+    const k = String(r?.playername || "").trim().toLowerCase();
+    if (k) out.set(k, r);
+  }
+  return out;
+}
+
+function withEvents(row: ClubMatchRow, players: PlayerMatchStats[]): PlayerMatchStats[] {
+  const raw = rawPlayerRows(row, players);
+  if (!raw.size) return players;
+  return players.map((p) => {
+    const r = raw.get(playerKey(p) || "");
+    if (!r || !hasEventData(r)) return p;
+    return { ...p, events: eaEventCounts(r), position: p.position ?? (r.pos as string | undefined) ?? null };
+  });
+}
+
 // Attach the formation of the most recent lineup saved before each match (within the window)
 export function toInsightMatches(rows: ClubMatchRow[], lineups: LineupRow[] = []): InsightMatch[] {
   const sortedLineups = lineups
@@ -178,7 +217,7 @@ export function toInsightMatches(rows: ClubMatchRow[], lineups: LineupRow[] = []
       competition: matchCompetition(row),
       playedAt,
       opponent: row.opponent_club_name || "Unknown",
-      players: Array.isArray(row.player_stats) ? (row.player_stats as PlayerMatchStats[]) : [],
+      players: withEvents(row, Array.isArray(row.player_stats) ? (row.player_stats as PlayerMatchStats[]) : []),
       formation,
     });
   }
@@ -495,8 +534,12 @@ function fmt(n: number, unit: "%" | "" = ""): string {
   return unit === "%" ? `${Math.round(n)}%` : n.toFixed(1);
 }
 
-// Plain-language takeaways, strongest first
+// Plain-language takeaways, strongest first. Ends with the ones from EA's event data (advancedStats.ts).
 export function generateInsights(matches: InsightMatch[]): Insight[] {
+  return [...generateBaseInsights(matches), ...generateAdvancedInsights(matches)];
+}
+
+function generateBaseInsights(matches: InsightMatch[]): Insight[] {
   const insights: Insight[] = [];
   if (matches.length < 5) return insights;
 
@@ -552,3 +595,5 @@ export function generateInsights(matches: InsightMatch[]): Insight[] {
 
 // Division progress (club_division_history), also used by the bot
 export * from "./divisionProgress";
+// Stats decoded from EA's per-player event counts
+export * from "./advancedStats";

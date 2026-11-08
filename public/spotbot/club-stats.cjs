@@ -3,7 +3,10 @@
 // Also /help (short guide plus a stats glossary) and the EA-name lookup behind /linkea.
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
-const { toInsightMatches, competitionLabel, competitionEmoji, isSeparateCompetition, computeCompetitionRecords } = require('./club-insights.cjs');
+const {
+  toInsightMatches, competitionLabel, competitionEmoji, isSeparateCompetition, computeCompetitionRecords,
+  computeAdvancedPlayers, computeSessionFatigue, computePressing, computePartnerships, generateAdvancedInsights, ROLE_LABELS,
+} = require('./club-insights.cjs');
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
 const { where } = require('./panels.cjs');
 
@@ -44,6 +47,7 @@ const GLOSSARY =
   '**Rtg** average EA match rating (0-10) · **MOTM** man of the match\n' +
   '**Pass%** passes completed out of passes tried · **Tkl** tackles won · **CS** clean sheets (keepers and defenders)\n' +
   '**W-D-L** wins, draws, losses · **GD** goal difference\n' +
+  '**Deep stats** come from EA\'s hidden per-player event data: **Decisions** is how often EA\'s in-game feedback says "good option" or better, **Positioning** is its "good positioning" praise vs. out-of-position warnings, **Press** is balls won in the attacking third\n' +
   '**Overall rating** (on **/me → My Profile**) is GafferBot\'s 0-100 score from match ratings, form and teammate reviews; it is not an EA number.\n\n' +
   '**Why EA numbers can look off**\n' +
   '• If you play as "Any" or control AI teammates, EA credits you with every pass and tackle those AI players make, but not their possessions won or interceptions.\n' +
@@ -358,6 +362,75 @@ function createClubStats(deps) {
     return { embeds: [embed] };
   }
 
+  // ---------- Deep stats: EA's hidden per-player event data (club-insights advancedStats) ----------
+
+  const pctText = (v) => (v === null || v === undefined ? '–' : `${Math.round(v)}%`);
+  const oneText = (v) => (v === null || v === undefined ? '–' : v.toFixed(1));
+
+  async function deepData(guildId, club) {
+    const matches = (await loadClubMatches(guildId, club.key, MATCH_WINDOW)).filter((m) => m.players.some((p) => p.events));
+    const minGames = matches.length >= 40 ? 5 : 3;
+    return { matches, minGames, players: computeAdvancedPlayers(matches, minGames) };
+  }
+
+  async function deepView(guildId, club) {
+    const { matches, minGames, players } = await deepData(guildId, club);
+    if (matches.length < 3) {
+      return { embeds: [new EmbedBuilder().setTitle(`🧠 ${club.name}: deep stats`).setColor(0x8b5cf6).setDescription('Needs at least 3 synced matches with EA event data. Play a few games and check back.')] };
+    }
+    const top = (key, dir = -1, fmt = pctText) =>
+      players.filter((p) => p.derived[key] !== null).sort((a, b) => dir * (a.derived[key] - b.derived[key])).slice(0, 3).map((p) => `${p.name} ${fmt(p.derived[key])}`).join(' · ') || '–';
+    const sessions = computeSessionFatigue(matches).map((l) => `${l.label}: ${pctText(l.winPct)} won · decisions ${pctText(l.decisionScore)} (${l.games})`).join('\n');
+    const pressing = computePressing(matches).map((b) => `${b.band} (${b.range} a game): ${pctText(b.winPct)} won in ${b.games}`).join('\n');
+    const pair = computePartnerships(matches, minGames).find((p) => p.outOfPositionApart !== null);
+    const roles = players.filter((p) => p.bestRole && p.roles[0].role !== p.bestRole).slice(0, 3).map((p) => `${p.name}: ${ROLE_LABELS[p.bestRole]}`).join(' · ');
+    const takeaways = generateAdvancedInsights(matches).map((i) => `${i.tone === 'good' ? '✅' : i.tone === 'bad' ? '⚠️' : '💡'} ${i.text}`);
+    const embed = new EmbedBuilder()
+      .setTitle(`🧠 ${club.name}: deep stats`)
+      .setColor(0x8b5cf6)
+      .setDescription(takeaways.join('\n').slice(0, 2000) || `From EA's hidden event data over the last ${matches.length} matches.`)
+      .addFields(
+        { name: 'Best decisions', value: top('decisionScore'), inline: false },
+        { name: 'Best positioning', value: top('positionalDiscipline'), inline: false },
+        { name: 'Most out of position (per game)', value: top('outOfPositionPerGame', -1, oneText), inline: false },
+        { name: 'Top pressers (ball wins up front per game)', value: top('pressingPerGame', -1, oneText), inline: false },
+        { name: 'Through a session', value: sessions.slice(0, 1024) || '–', inline: true },
+        { name: 'Pressing vs results', value: pressing.slice(0, 1024) || 'Needs 9+ games', inline: true },
+      );
+    if (pair) embed.addFields({ name: 'Partnership', value: `${pair.names.join(' + ')}: ${oneText(pair.outOfPositionTogether)} out-of-position warnings a game together vs ${oneText(pair.outOfPositionApart)} apart (${pair.games} games)` });
+    if (roles) embed.addFields({ name: 'Rates higher in another role', value: roles });
+    embed.setFooter({ text: `${matches.length} matches · players with ${minGames}+ games · pick a player below for their full breakdown` });
+    const options = players.slice(0, 25).map((p) => ({ label: p.name.slice(0, 100), value: p.key.slice(0, 100), description: `${p.games} GP · decisions ${pctText(p.derived.decisionScore)} · positioning ${pctText(p.derived.positionalDiscipline)}`.slice(0, 100) }));
+    const components = options.length
+      ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`statsp:deepsel:${club.key}`).setPlaceholder('Full breakdown for a player').addOptions(options))]
+      : [];
+    return { embeds: [embed], components };
+  }
+
+  async function deepPlayerView(guildId, club, key) {
+    const { players } = await deepData(guildId, club);
+    const p = players.find((x) => x.key === key);
+    if (!p) return { embeds: [new EmbedBuilder().setTitle('🧠 Deep stats').setDescription('No event data for that player in the recent matches.')] };
+    const d = p.derived;
+    const t = p.totals;
+    const per = (v) => (v / p.games).toFixed(1);
+    const roleLines = p.roles.map((r) => `${ROLE_LABELS[r.role]}${p.bestRole === r.role ? ' ⭐' : ''}: ${r.games} GP · ${oneText(r.avgRating)} Rtg · positioning ${pctText(r.positionalDiscipline)} · decisions ${pctText(r.decisionScore)}`).join('\n');
+    const embed = new EmbedBuilder()
+      .setTitle(`🧠 ${p.name}: deep stats`)
+      .setColor(0x8b5cf6)
+      .setDescription(`${p.games} games with EA event data${p.bestRole ? ` · best role **${ROLE_LABELS[p.bestRole]}**` : ''}${d.passStyle ? ` · **${d.passStyle}** passer` : ''}`)
+      .addFields(
+        { name: 'Passing', value: `Completion ${pctText(d.passCompletion)}\nShort / med / long ${pctText(d.shortPassPct)} / ${pctText(d.mediumPassPct)} / ${pctText(d.longPassPct)}\nCrosses ${pctText(d.crossPct)} · forward ${pctText(d.forwardShare)}\nThrough balls ${per(t.throughBalls)}/g · 2nd assists ${t.secondAssists}`, inline: true },
+        { name: 'Attacking', value: `Shot accuracy ${pctText(d.shotAccuracy)}\nIn the box ${pctText(d.insideBoxShotShare)} of shots\nWeak-foot ${t.weakFootGoals} · first-time ${t.firstTimeGoals} goals\nDribbles ${per(t.dribbles)}/g · beaten ${t.beats}`, inline: true },
+        { name: 'Defending', value: `Tackle success ${pctText(d.tackleSuccess)}\nInterceptions ${per(t.interceptions)}/g\nAerials won ${t.aerialsWonAttacking} att / ${t.aerialsWonDefending} def\nBall won own/mid/att ${t.wonDefensiveThird}/${t.wonMiddleThird}/${t.wonAttackingThird}`, inline: true },
+        { name: 'Positioning & decisions', value: `Positioning ${pctText(d.positionalDiscipline)}\nOut of position ${oneText(d.outOfPositionPerGame)}/g (severe ${oneText(d.severeOutOfPositionPerGame)})\nDecisions ${pctText(d.decisionScore)}`, inline: true },
+        { name: 'Discipline', value: `Fouls ${t.foulsCommitted} · won ${t.foulsWon}\nYellows ${t.yellowCards} · pens conceded ${t.penaltiesConceded}`, inline: true },
+      );
+    if (roleLines) embed.addFields({ name: 'By role', value: roleLines.slice(0, 1024) });
+    embed.setFooter({ text: "From EA's hidden event data · ⭐ = role with the best average rating (3+ games)" });
+    return { embeds: [embed] };
+  }
+
   async function matchesView(guildId, club) {
     const matches = await loadClubMatches(guildId, club.key, 10, 'all');
     if (!matches.length) return noMatches(club);
@@ -487,13 +560,13 @@ function createClubStats(deps) {
     const embed = new EmbedBuilder()
       .setTitle(`📊 ${club.name} stats`)
       .setColor(0x22c55e)
-      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers\n**Tournaments** tournament & BYOT games, kept apart from the rest')
+      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Deep Stats** decisions, positioning, pressing and partnerships from EA\'s hidden event data\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers\n**Tournaments** tournament & BYOT games, kept apart from the rest')
       .setFooter({ text: `${PANEL_MARK} · always stays at the bottom` });
     const b = (id, label, emoji, style = ButtonStyle.Secondary) => new ButtonBuilder().setCustomId(`statsp:${id}:${club.key}`).setLabel(label).setEmoji(emoji).setStyle(style);
     return {
       embeds: [embed],
       components: [
-        new ActionRowBuilder().addComponents(b('team', 'Team Stats', '📊', ButtonStyle.Primary), b('members', 'EA Member List', '👥', ButtonStyle.Primary)),
+        new ActionRowBuilder().addComponents(b('team', 'Team Stats', '📊', ButtonStyle.Primary), b('members', 'EA Member List', '👥', ButtonStyle.Primary), b('deep', 'Deep Stats', '🧠', ButtonStyle.Primary)),
         new ActionRowBuilder().addComponents(b('top', 'Top Players', '🏆'), b('form', 'In Form', '🔥'), b('matches', 'Recent Matches', '📅'), b('tournaments', 'Tournaments', '🏟️'), new ButtonBuilder().setCustomId('help_glossary').setLabel('What the stats mean').setEmoji('❓').setStyle(ButtonStyle.Secondary)),
       ],
     };
@@ -571,6 +644,10 @@ function createClubStats(deps) {
         components: [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`statsp:topsel:${club.key}`).setPlaceholder('Pick a stat').addOptions(TOP_STAT_CHOICES.map((c) => ({ label: c.name, value: c.value }))))],
       });
     }
+    if (action === 'deepsel') {
+      await interaction.deferUpdate();
+      return interaction.editReply({ ...(await deepPlayerView(interaction.guildId, club, interaction.values[0])), components: interaction.message.components });
+    }
     if (action === 'topsel') {
       await interaction.deferUpdate();
       return interaction.editReply({ ...(await topView(interaction.guildId, club, interaction.values[0])), components: interaction.message.components });
@@ -581,6 +658,7 @@ function createClubStats(deps) {
         action === 'team' ? await teamView(club)
         : action === 'members' ? await eaMembersView(club)
         : action === 'form' ? await formView(interaction.guildId, club)
+        : action === 'deep' ? await deepView(interaction.guildId, club)
         : action === 'tournaments' ? await tournamentsView(interaction.guildId, club)
         : await matchesView(interaction.guildId, club);
       return interaction.editReply(view);
@@ -670,7 +748,7 @@ function createClubStats(deps) {
     return true;
   }
 
-  return { handleInteraction, onMessage, initPanels, teamView, eaMembersView, knownEaNames, matchKnownName, helpMessage, glossaryMessage, forgetNames: (guildId) => namesCache.delete(guildId) };
+  return { handleInteraction, onMessage, initPanels, teamView, eaMembersView, deepView, deepPlayerView, knownEaNames, matchKnownName, helpMessage, glossaryMessage, forgetNames: (guildId) => namesCache.delete(guildId) };
 }
 
 module.exports = { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES, GLOSSARY, aggregate };
