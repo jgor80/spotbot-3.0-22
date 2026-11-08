@@ -988,6 +988,14 @@ function clubRecord(overallStats, seasonalStats) {
     losses: pick(["losses", "seasonLosses"])
   };
 }
+async function recordedPlayerIds(supabase, guildId, matchId) {
+  const { data } = await supabase.from("player_stats").select("discord_user_id").eq("guild_id", guildId).eq("ea_match_id", matchId);
+  return new Set((data || []).map((r) => r.discord_user_id));
+}
+async function markStatsComplete(supabase, guildId, clubKey, matchId) {
+  const { error } = await supabase.from("club_matches").update({ stats_complete: true }).eq("guild_id", guildId).eq("club_key", clubKey).eq("ea_match_id", matchId);
+  if (error) console.error(`[sync-ea-stats] Couldn't mark match ${matchId} complete:`, error.message);
+}
 function getPrimaryPosition(positionCounts) {
   const sorted = Object.entries(positionCounts).sort((a, b) => b[1] - a[1]);
   return sorted[0]?.[0] || null;
@@ -1857,11 +1865,12 @@ Deno.serve(async (req) => {
                   player_fields: [...playerFieldSet]
                 });
               }
-              const { data: existingMatches } = await supabase.from("club_matches").select("ea_match_id").eq("guild_id", guildId).eq("club_key", club.key);
+              const { data: existingMatches } = await supabase.from("club_matches").select("ea_match_id, stats_complete").eq("guild_id", guildId).eq("club_key", club.key);
               const existingIds = new Set((existingMatches || []).map((m) => m.ea_match_id));
+              const repairIds = new Set((existingMatches || []).filter((m) => m.stats_complete === false).map((m) => m.ea_match_id));
               for (const matchData of matches) {
                 const matchId = extractWithFallback(matchData, ["matchId", "id", "gameId"])?.toString();
-                if (!matchId || existingIds.has(matchId)) {
+                if (!matchId || existingIds.has(matchId) && !repairIds.has(matchId)) {
                   totalSkipped++;
                   continue;
                 }
@@ -1973,8 +1982,10 @@ Deno.serve(async (req) => {
                   });
                 }
                 const matchTimestamp = parseInt(extractWithFallback(matchData, ["timestamp", "matchTimestamp", "time", "matchTime"]) || Date.now() / 1e3);
-                const sessionId = await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
-                const { error: insertError } = await supabase.from("club_matches").insert({
+                const sessionId = repairIds.has(matchId) ? null : await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
+                const repairing = repairIds.has(matchId);
+                const { error: insertError } = repairing ? { error: null } : await supabase.from("club_matches").insert({
+                  stats_complete: false,
                   guild_id: guildId,
                   club_key: club.key,
                   ea_match_id: matchId,
@@ -2001,10 +2012,12 @@ Deno.serve(async (req) => {
                       playerUsernames
                     });
                   }
+                  const recorded = repairing ? await recordedPlayerIds(supabase, guildId, matchId) : /* @__PURE__ */ new Set();
+                  let statsFailed = false;
                   for (const pStat of playerStats) {
                     const profile = await linkedFor(pStat.ea_username);
-                    if (profile) {
-                      await supabase.from("player_stats").insert({
+                    if (profile && !recorded.has(profile.discord_user_id)) {
+                      const { error: statErr } = await supabase.from("player_stats").insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,
                         ea_match_id: matchId,
@@ -2062,10 +2075,15 @@ Deno.serve(async (req) => {
                         goals_inside_box: pStat.goals_inside_box,
                         defensive_actions: pStat.defensive_actions
                       });
+                      if (statErr && statErr.code !== "23505") {
+                        statsFailed = true;
+                        console.error(`[sync-ea-stats] player_stats for ${pStat.ea_username} in match ${matchId} failed:`, statErr.message);
+                      }
                       guildUpdatedPlayerIds.add(profile.discord_user_id);
                       await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id);
                     }
                   }
+                  if (!statsFailed) await markStatsComplete(supabase, guildId, club.key, matchId);
                 }
               }
             }
@@ -2074,11 +2092,12 @@ Deno.serve(async (req) => {
             }
             const competitionMatches = allRecentMatches.filter((m) => m._matchCategory === "competition");
             if (competitionMatches && competitionMatches.length > 0) {
-              const { data: existingCompMatches } = await supabase.from("club_matches").select("ea_match_id").eq("guild_id", guildId).eq("club_key", club.key);
+              const { data: existingCompMatches } = await supabase.from("club_matches").select("ea_match_id, stats_complete").eq("guild_id", guildId).eq("club_key", club.key);
               const existingCompIds = new Set((existingCompMatches || []).map((m) => m.ea_match_id));
+              const repairCompIds = new Set((existingCompMatches || []).filter((m) => m.stats_complete === false).map((m) => m.ea_match_id));
               for (const matchData of competitionMatches) {
                 const matchId = matchData.matchId?.toString();
-                if (!matchId || existingCompIds.has(matchId)) {
+                if (!matchId || existingCompIds.has(matchId) && !repairCompIds.has(matchId)) {
                   totalSkipped++;
                   continue;
                 }
@@ -2186,8 +2205,10 @@ Deno.serve(async (req) => {
                   });
                 }
                 const matchTimestamp = parseInt(matchData.timestamp || matchData.matchTime || Date.now() / 1e3);
-                const sessionId = await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
-                const { error: insertError } = await supabase.from("club_matches").insert({
+                const sessionId = repairCompIds.has(matchId) ? null : await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
+                const repairing = repairCompIds.has(matchId);
+                const { error: insertError } = repairing ? { error: null } : await supabase.from("club_matches").insert({
+                  stats_complete: false,
                   guild_id: guildId,
                   club_key: club.key,
                   ea_match_id: matchId,
@@ -2215,10 +2236,12 @@ Deno.serve(async (req) => {
                       playerUsernames
                     });
                   }
+                  const recorded = repairing ? await recordedPlayerIds(supabase, guildId, matchId) : /* @__PURE__ */ new Set();
+                  let statsFailed = false;
                   for (const pStat of playerStats) {
                     const profile = await linkedFor(pStat.ea_username);
-                    if (profile) {
-                      await supabase.from("player_stats").insert({
+                    if (profile && !recorded.has(profile.discord_user_id)) {
+                      const { error: statErr } = await supabase.from("player_stats").insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,
                         ea_match_id: matchId,
@@ -2277,21 +2300,27 @@ Deno.serve(async (req) => {
                         goals_inside_box: pStat.goals_inside_box,
                         defensive_actions: pStat.defensive_actions
                       });
+                      if (statErr && statErr.code !== "23505") {
+                        statsFailed = true;
+                        console.error(`[sync-ea-stats] player_stats for ${pStat.ea_username} in match ${matchId} failed:`, statErr.message);
+                      }
                       guildUpdatedPlayerIds.add(profile.discord_user_id);
                       await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id);
                     }
                   }
+                  if (!statsFailed) await markStatsComplete(supabase, guildId, club.key, matchId);
                 }
               }
             }
             const friendlyMatches = allRecentMatches.filter((m) => m._matchCategory === "friendly");
             if (friendlyMatches && friendlyMatches.length > 0) {
               console.log(`[sync-ea-stats] Processing ${friendlyMatches.length} friendly matches for ${club.name}`);
-              const { data: existingFriendlyMatches } = await supabase.from("club_matches").select("ea_match_id").eq("guild_id", guildId).eq("club_key", club.key);
+              const { data: existingFriendlyMatches } = await supabase.from("club_matches").select("ea_match_id, stats_complete").eq("guild_id", guildId).eq("club_key", club.key);
               const existingFriendlyIds = new Set((existingFriendlyMatches || []).map((m) => m.ea_match_id));
+              const repairFriendlyIds = new Set((existingFriendlyMatches || []).filter((m) => m.stats_complete === false).map((m) => m.ea_match_id));
               for (const matchData of friendlyMatches) {
                 const matchId = matchData.matchId?.toString();
-                if (!matchId || existingFriendlyIds.has(matchId)) {
+                if (!matchId || existingFriendlyIds.has(matchId) && !repairFriendlyIds.has(matchId)) {
                   totalSkipped++;
                   continue;
                 }
@@ -2397,7 +2426,9 @@ Deno.serve(async (req) => {
                     defensive_actions: defensiveActions
                   });
                 }
-                const { error: insertError } = await supabase.from("club_matches").insert({
+                const repairing = repairFriendlyIds.has(matchId);
+                const { error: insertError } = repairing ? { error: null } : await supabase.from("club_matches").insert({
+                  stats_complete: false,
                   guild_id: guildId,
                   club_key: club.key,
                   ea_match_id: matchId,
@@ -2413,10 +2444,12 @@ Deno.serve(async (req) => {
                 if (!insertError) {
                   totalSynced++;
                   existingFriendlyIds.add(matchId);
+                  const recorded = repairing ? await recordedPlayerIds(supabase, guildId, matchId) : /* @__PURE__ */ new Set();
+                  let statsFailed = false;
                   for (const pStat of playerStats) {
                     const profile = await linkedFor(pStat.ea_username);
-                    if (profile) {
-                      await supabase.from("player_stats").insert({
+                    if (profile && !recorded.has(profile.discord_user_id)) {
+                      const { error: statErr } = await supabase.from("player_stats").insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,
                         ea_match_id: matchId,
@@ -2473,10 +2506,15 @@ Deno.serve(async (req) => {
                         goals_inside_box: pStat.goals_inside_box,
                         defensive_actions: pStat.defensive_actions
                       });
+                      if (statErr && statErr.code !== "23505") {
+                        statsFailed = true;
+                        console.error(`[sync-ea-stats] player_stats for ${pStat.ea_username} in match ${matchId} failed:`, statErr.message);
+                      }
                       guildUpdatedPlayerIds.add(profile.discord_user_id);
                       await updatePlayerPositionPreferences(supabase, guildId, profile.discord_user_id);
                     }
                   }
+                  if (!statsFailed) await markStatsComplete(supabase, guildId, club.key, matchId);
                 }
               }
             }
