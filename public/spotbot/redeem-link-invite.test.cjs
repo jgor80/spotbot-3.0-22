@@ -19,7 +19,8 @@ function fakeDb(tables, users) {
       neq(k, v) { filters.push((r) => r[k] !== v); return q; },
       is(k, v) { filters.push((r) => (r[k] ?? null) === v); return q; },
       gt(k, v) { filters.push((r) => r[k] > v); return q; },
-      ilike(k, v) { filters.push((r) => String(r[k] ?? '').toLowerCase() === String(v).toLowerCase()); return q; },
+      ilike(k, v) { const lit = String(v).replace(/\\([\\%_])/g, '$1').toLowerCase(); filters.push((r) => String(r[k] ?? '').toLowerCase() === lit); return q; },
+      limit() { return q; },
       maybeSingle() { return run().then(({ data, error }) => ({ data: Array.isArray(data) ? data[0] ?? null : data, error })); },
       then(res, rej) { return run().then(res, rej); },
     };
@@ -101,4 +102,14 @@ test('an unverified claim on the Discord ID is replaced by the invite holder', a
   const res = await redeem(handler, 'victimJwt');
   assert.strictEqual(res.body.website_linked, true);
   assert.deepStrictEqual(tables.user_discord_links.map((l) => [l.auth_user_id, l.verified]), [['victim-auth', true]]);
+});
+
+test('stats move off every placeholder for the gamertag, whatever its ID spelling', async () => {
+  const { tables, handler } = setup();
+  tables.profiles.push({ discord_user_id: 'ea_acestriker', ea_username: 'acestriker' }, { discord_user_id: 'ea_AceStriker', ea_username: 'AceStriker' });
+  tables.player_stats.push({ discord_user_id: 'ea_acestriker', guild_id: 'g1' }, { discord_user_id: 'ea_AceStriker', guild_id: 'g2' });
+  const res = await redeem(handler, null);
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(tables.player_stats.map((r) => r.discord_user_id), ['111111111111111111', '111111111111111111']);
+  assert.deepStrictEqual(tables.profiles.map((p) => p.discord_user_id), ['111111111111111111']);
 });

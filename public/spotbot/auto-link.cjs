@@ -9,6 +9,7 @@
 
 const crypto = require('crypto');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, UserSelectMenuBuilder } = require('discord.js');
+const eaProfiles = require('./ea-profiles.cjs');
 
 const MATCH_SCAN = 60;
 const NAME_MATCH = 0.8;
@@ -103,7 +104,7 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
 
   // Link a Discord user to a gamertag; moves stats saved under a placeholder profile
   async function link(userId, gamertag, platform) {
-    const { data: owner } = await supabase.from('profiles').select('discord_user_id').ilike('ea_username', gamertag).neq('discord_user_id', userId);
+    const { data: owner } = await supabase.from('profiles').select('discord_user_id').ilike('ea_username', eaProfiles.escapeLike(gamertag)).neq('discord_user_id', userId);
     const realOwner = (owner || []).find((p) => !String(p.discord_user_id).startsWith('ea_'));
     if (realOwner) return { ok: false, reason: 'That gamertag is already linked to another member. A manager can move it with /forcelink.' };
 
@@ -114,10 +115,10 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
       : await supabase.from('profiles').insert({ discord_user_id: userId, ...fields });
     if (error) return { ok: false, reason: error.message };
 
-    const tempId = `ea_${gamertag.replace(/[^a-zA-Z0-9]/g, '_')}`;
-    for (const p of owner || []) {
-      if (p.discord_user_id !== tempId) continue;
-      await supabase.from('player_stats').update({ discord_user_id: userId }).eq('discord_user_id', tempId);
+    // Every placeholder for this gamertag, whatever spelling made its ID
+    for (const tempId of await eaProfiles.placeholderIdsForGamertag(supabase, gamertag)) {
+      const { error: moveErr } = await supabase.from('player_stats').update({ discord_user_id: userId }).eq('discord_user_id', tempId);
+      if (moveErr) { console.error(`[auto-link] Couldn't move stats from ${tempId}:`, moveErr.message); continue; }
       await supabase.from('profiles').delete().eq('discord_user_id', tempId);
     }
     namesCache.clear();
@@ -235,7 +236,6 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
   // Reverse a wrong link: give the match history back to the placeholder profile so the real owner
   // gets it when they link, drop the roster spots it created, and never suggest the pair again.
   async function undoLink(guildId, userId, gamertag) {
-    const tempId = `ea_${gamertag.replace(/[^a-zA-Z0-9]/g, '_')}`;
     const key = norm(gamertag);
     const { data: matches } = await supabase.from('club_matches').select('ea_match_id, club_key, player_stats').eq('guild_id', guildId);
     const matchIds = [];
@@ -247,6 +247,7 @@ function createAutoLink({ supabase, getGuildState, isManager }) {
       if (m.club_key) clubKeys.add(m.club_key);
     }
     await supabase.from('profiles').update({ ea_username: null }).eq('discord_user_id', userId);
+    const tempId = (await eaProfiles.placeholderIdsForGamertag(supabase, gamertag))[0] || eaProfiles.placeholderIdFor(gamertag);
     const { data: temp } = await supabase.from('profiles').select('discord_user_id').eq('discord_user_id', tempId).maybeSingle();
     if (!temp) await supabase.from('profiles').insert({ discord_user_id: tempId, ea_username: gamertag });
     for (let i = 0; i < matchIds.length; i += 100) {

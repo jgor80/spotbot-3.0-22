@@ -12,6 +12,10 @@ function createAdminClient() {
   );
 }
 
+// supabase/functions/_shared/ea-profiles.ts
+var isPlaceholderId = (id) => String(id ?? "").startsWith("ea_");
+var escapeLike = (value) => String(value).trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+
 // supabase/functions/redeem-link-invite/index.ts
 var json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 var PLATFORMS = ["ps5", "xbox-series-xs", "pc", "switch"];
@@ -41,7 +45,7 @@ Deno.serve(async (req) => {
     const platform = typeof body.ea_platform === "string" ? body.ea_platform : "ps5";
     if (!/^[A-Za-z0-9_\-. ]{2,24}$/.test(gamertag)) return json({ error: "Enter your gamertag exactly as it shows in game." }, 400);
     if (!PLATFORMS.includes(platform)) return json({ error: "Pick a platform." }, 400);
-    const { data: owners } = await admin.from("profiles").select("discord_user_id").ilike("ea_username", gamertag).neq("discord_user_id", invite.discord_user_id);
+    const { data: owners } = await admin.from("profiles").select("discord_user_id").ilike("ea_username", escapeLike(gamertag)).neq("discord_user_id", invite.discord_user_id);
     if ((owners || []).some((o) => !o.discord_user_id.startsWith("ea_"))) {
       return json({ error: "That gamertag is already linked to another member. Ask a manager to use /forcelink." }, 409);
     }
@@ -54,9 +58,13 @@ Deno.serve(async (req) => {
       await admin.from("link_invites").update({ used_at: null }).eq("token", token);
       return json({ error: saveErr.message }, 500);
     }
-    const tempId = `ea_${gamertag.replace(/[^a-zA-Z0-9]/g, "_")}`;
-    if ((owners || []).some((o) => o.discord_user_id === tempId)) {
-      await admin.from("player_stats").update({ discord_user_id: invite.discord_user_id }).eq("discord_user_id", tempId);
+    for (const { discord_user_id: tempId } of owners || []) {
+      if (!isPlaceholderId(tempId)) continue;
+      const { error: moveErr } = await admin.from("player_stats").update({ discord_user_id: invite.discord_user_id }).eq("discord_user_id", tempId);
+      if (moveErr) {
+        console.error(`[redeem-link-invite] Couldn't move stats from ${tempId}:`, moveErr.message);
+        continue;
+      }
       await admin.from("profiles").delete().eq("discord_user_id", tempId);
     }
     let websiteLinked = false;

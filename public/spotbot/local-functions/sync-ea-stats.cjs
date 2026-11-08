@@ -241,6 +241,29 @@ function eaEventStats(p) {
   return statsFromCounts(eaEventCounts(p));
 }
 
+// supabase/functions/_shared/ea-profiles.ts
+var isPlaceholderId = (id) => String(id ?? "").startsWith("ea_");
+var placeholderIdFor = (gamertag) => `ea_${String(gamertag).trim()}`;
+var escapeLike = (value) => String(value).trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+async function profilesForGamertag(db, gamertag) {
+  const name = String(gamertag ?? "").trim();
+  if (!name) return [];
+  const { data, error } = await db.from("profiles").select("discord_user_id, ea_username").ilike("ea_username", escapeLike(name)).limit(20);
+  if (error) {
+    console.error(`[ea-profiles] Profile lookup for ${name} failed:`, error.message);
+    return [];
+  }
+  const rows = data || [];
+  return [...rows.filter((p) => !isPlaceholderId(p.discord_user_id)), ...rows.filter((p) => isPlaceholderId(p.discord_user_id))];
+}
+async function profileForGamertag(db, gamertag) {
+  return (await profilesForGamertag(db, gamertag))[0] ?? null;
+}
+async function linkedProfileForGamertag(db, gamertag) {
+  const p = await profileForGamertag(db, gamertag);
+  return p && !isPlaceholderId(p.discord_user_id) ? p : null;
+}
+
 // supabase/functions/sync-ea-stats/index.ts
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -965,9 +988,6 @@ function clubRecord(overallStats, seasonalStats) {
     losses: pick(["losses", "seasonLosses"])
   };
 }
-function escapeLike(value) {
-  return String(value).trim().replace(/[\\%_]/g, (c) => `\\${c}`);
-}
 function getPrimaryPosition(positionCounts) {
   const sorted = Object.entries(positionCounts).sort((a, b) => b[1] - a[1]);
   return sorted[0]?.[0] || null;
@@ -1097,7 +1117,7 @@ async function syncMemberStats(supabase, guildId, clubId, platform, clubName, ag
         }
       }
       if (!profile) {
-        const placeholder = { discord_user_id: `ea_${eaUsername}`, discord_username: eaUsername, ea_username: eaUsername };
+        const placeholder = { discord_user_id: placeholderIdFor(eaUsername), discord_username: eaUsername, ea_username: eaUsername };
         const { error: phErr } = await supabase.from("profiles").upsert(placeholder, { onConflict: "discord_user_id" });
         if (phErr) {
           console.error(`[sync-ea-stats] Placeholder for ${eaUsername} failed:`, phErr.message);
@@ -1976,8 +1996,8 @@ Deno.serve(async (req) => {
                     });
                   }
                   for (const pStat of playerStats) {
-                    const { data: profile } = await supabase.from("profiles").select("discord_user_id").eq("ea_username", pStat.ea_username).maybeSingle();
-                    if (profile && !profile.discord_user_id.startsWith("ea_")) {
+                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username);
+                    if (profile) {
                       await supabase.from("player_stats").insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,
@@ -2190,8 +2210,8 @@ Deno.serve(async (req) => {
                     });
                   }
                   for (const pStat of playerStats) {
-                    const { data: profile } = await supabase.from("profiles").select("discord_user_id").eq("ea_username", pStat.ea_username).maybeSingle();
-                    if (profile && !profile.discord_user_id.startsWith("ea_")) {
+                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username);
+                    if (profile) {
                       await supabase.from("player_stats").insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,
@@ -2388,8 +2408,8 @@ Deno.serve(async (req) => {
                   totalSynced++;
                   existingFriendlyIds.add(matchId);
                   for (const pStat of playerStats) {
-                    const { data: profile } = await supabase.from("profiles").select("discord_user_id").eq("ea_username", pStat.ea_username).maybeSingle();
-                    if (profile && !profile.discord_user_id.startsWith("ea_")) {
+                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username);
+                    if (profile) {
                       await supabase.from("player_stats").insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,

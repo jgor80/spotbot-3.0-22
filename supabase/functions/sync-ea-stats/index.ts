@@ -2,6 +2,7 @@ import { identifyCaller, requireGuildAccess } from '../_shared/auth.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { decodeRegionId, toFcPlatform, FC_PLATFORMS, normalizeClubName } from '../_shared/ea.ts'
 import { eaEventStats } from '../_shared/ea-events.ts'
+import { linkedProfileForGamertag, placeholderIdFor, escapeLike } from '../_shared/ea-profiles.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -954,11 +955,6 @@ function clubRecord(overallStats: any, seasonalStats: any) {
   }
 }
 
-// Escape LIKE/ILIKE wildcards so a gamertag is matched literally (same rule as the bot's eaNameOwner).
-function escapeLike(value: string) {
-  return String(value).trim().replace(/[\\%_]/g, (c) => `\\${c}`)
-}
-
 function getPrimaryPosition(positionCounts: Record<string, number>): string | null {
   const sorted = Object.entries(positionCounts).sort((a, b) => b[1] - a[1])
   return sorted[0]?.[0] || null
@@ -1144,7 +1140,7 @@ async function syncMemberStats(
         }
       }
       if (!profile) {
-        const placeholder = { discord_user_id: `ea_${eaUsername}`, discord_username: eaUsername, ea_username: eaUsername }
+        const placeholder = { discord_user_id: placeholderIdFor(eaUsername), discord_username: eaUsername, ea_username: eaUsername }
         const { error: phErr } = await supabase.from('profiles').upsert(placeholder, { onConflict: 'discord_user_id' })
         if (phErr) { console.error(`[sync-ea-stats] Placeholder for ${eaUsername} failed:`, phErr.message); continue }
         profile = placeholder
@@ -2299,13 +2295,9 @@ Deno.serve(async (req) => {
                   
                   // Record player stats
                   for (const pStat of playerStats) {
-                    const { data: profile } = await supabase
-                      .from('profiles')
-                      .select('discord_user_id')
-                      .eq('ea_username', pStat.ea_username)
-                      .maybeSingle()
-                    
-                    if (profile && !profile.discord_user_id.startsWith('ea_')) {
+                    // Linked account wins even if a placeholder still carries this gamertag (case-insensitive)
+                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username)
+                    if (profile) {
                       await supabase.from('player_stats').insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,
@@ -2552,13 +2544,9 @@ Deno.serve(async (req) => {
                   
                   // Record player stats for competition matches
                   for (const pStat of playerStats) {
-                    const { data: profile } = await supabase
-                      .from('profiles')
-                      .select('discord_user_id')
-                      .eq('ea_username', pStat.ea_username)
-                      .maybeSingle()
-                    
-                    if (profile && !profile.discord_user_id.startsWith('ea_')) {
+                    // Linked account wins even if a placeholder still carries this gamertag (case-insensitive)
+                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username)
+                    if (profile) {
                       await supabase.from('player_stats').insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,
@@ -2783,13 +2771,9 @@ Deno.serve(async (req) => {
                   
                   // Record player stats for friendly matches
                   for (const pStat of playerStats) {
-                    const { data: profile } = await supabase
-                      .from('profiles')
-                      .select('discord_user_id')
-                      .eq('ea_username', pStat.ea_username)
-                      .maybeSingle()
-                    
-                    if (profile && !profile.discord_user_id.startsWith('ea_')) {
+                    // Linked account wins even if a placeholder still carries this gamertag (case-insensitive)
+                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username)
+                    if (profile) {
                       await supabase.from('player_stats').insert({
                         guild_id: guildId,
                         discord_user_id: profile.discord_user_id,

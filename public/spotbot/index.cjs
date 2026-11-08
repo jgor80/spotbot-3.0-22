@@ -29,6 +29,7 @@ const {
   ChannelType
 } = require('discord.js');
 const eaPlayerStats = require('./ea-player-stats.cjs');
+const eaProfiles = require('./ea-profiles.cjs');
 
 const { createClient } = require('@supabase/supabase-js');
 const { createManagerHub, resolveClub, HUB_COMMANDS } = require('./manager-hub.cjs');
@@ -8168,100 +8169,96 @@ async function routeInteraction(interaction) {
           return interaction.followUp({ content: `❌ Failed to link: ${upsertError.message}`, flags: 64 });
         }
         
-        // Get temp profile ID - either stored in suggestion or construct it
-        // The temp_profile_id now stores the actual discord_user_id of the temp profile
-        let tempDiscordId = suggestion.temp_profile_id;
+        // Placeholder profiles for this gamertag. The suggestion's stored ID can be an old spelling, so
+        // also look them up by gamertag (the linked profile above is never a placeholder).
+        const tempIds = new Set(await eaProfiles.placeholderIdsForGamertag(supabase, suggestion.ea_username));
+        if (suggestion.temp_profile_id && suggestion.temp_profile_id.startsWith('ea_')) tempIds.add(suggestion.temp_profile_id);
+        for (const tempDiscordId of tempIds) {
+          // Migrate player_stats
+          await supabase
+            .from('player_stats')
+            .update({ discord_user_id: suggestion.suggested_discord_id })
+            .eq('discord_user_id', tempDiscordId);
         
-        // If temp_profile_id looks like a UUID (old format), try to find the actual temp profile
-        if (tempDiscordId && !tempDiscordId.startsWith('ea_')) {
-          // Old format - construct from EA username
-          tempDiscordId = `ea_${suggestion.ea_username.replace(/[\s\-]/g, '_')}`;
-        }
+          // Migrate player_club_stats
+          await supabase
+            .from('player_club_stats')
+            .update({ discord_user_id: suggestion.suggested_discord_id })
+            .eq('discord_user_id', tempDiscordId)
+            .eq('guild_id', guildId);
         
-        // Migrate player_stats
-        await supabase
-          .from('player_stats')
-          .update({ discord_user_id: suggestion.suggested_discord_id })
-          .eq('discord_user_id', tempDiscordId)
-          .eq('guild_id', guildId);
-        
-        // Migrate player_club_stats
-        await supabase
-          .from('player_club_stats')
-          .update({ discord_user_id: suggestion.suggested_discord_id })
-          .eq('discord_user_id', tempDiscordId)
-          .eq('guild_id', guildId);
-        
-        // Migrate player_ratings (check for duplicates)
-        const { data: tempRating } = await supabase
-          .from('player_ratings')
-          .select('id')
-          .eq('discord_user_id', tempDiscordId)
-          .eq('guild_id', guildId)
-          .maybeSingle();
-        
-        if (tempRating) {
-          const { data: existingRating } = await supabase
+          // Migrate player_ratings (check for duplicates)
+          const { data: tempRating } = await supabase
             .from('player_ratings')
             .select('id')
-            .eq('discord_user_id', suggestion.suggested_discord_id)
+            .eq('discord_user_id', tempDiscordId)
             .eq('guild_id', guildId)
             .maybeSingle();
+        
+          if (tempRating) {
+            const { data: existingRating } = await supabase
+              .from('player_ratings')
+              .select('id')
+              .eq('discord_user_id', suggestion.suggested_discord_id)
+              .eq('guild_id', guildId)
+              .maybeSingle();
           
-          if (!existingRating) {
-            await supabase
-              .from('player_ratings')
-              .update({ discord_user_id: suggestion.suggested_discord_id })
-              .eq('id', tempRating.id);
-          } else {
-            await supabase
-              .from('player_ratings')
-              .delete()
-              .eq('id', tempRating.id);
+            if (!existingRating) {
+              await supabase
+                .from('player_ratings')
+                .update({ discord_user_id: suggestion.suggested_discord_id })
+                .eq('id', tempRating.id);
+            } else {
+              await supabase
+                .from('player_ratings')
+                .delete()
+                .eq('id', tempRating.id);
+            }
           }
-        }
         
-        // Migrate player_summary (check for duplicates)
-        const { data: tempSummary } = await supabase
-          .from('player_summary')
-          .select('id')
-          .eq('discord_user_id', tempDiscordId)
-          .eq('guild_id', guildId)
-          .maybeSingle();
-        
-        if (tempSummary) {
-          const { data: existingSummary } = await supabase
+          // Migrate player_summary (check for duplicates)
+          const { data: tempSummary } = await supabase
             .from('player_summary')
             .select('id')
-            .eq('discord_user_id', suggestion.suggested_discord_id)
+            .eq('discord_user_id', tempDiscordId)
             .eq('guild_id', guildId)
             .maybeSingle();
+        
+          if (tempSummary) {
+            const { data: existingSummary } = await supabase
+              .from('player_summary')
+              .select('id')
+              .eq('discord_user_id', suggestion.suggested_discord_id)
+              .eq('guild_id', guildId)
+              .maybeSingle();
           
-          if (!existingSummary) {
-            await supabase
-              .from('player_summary')
-              .update({ discord_user_id: suggestion.suggested_discord_id })
-              .eq('id', tempSummary.id);
-          } else {
-            await supabase
-              .from('player_summary')
-              .delete()
-              .eq('id', tempSummary.id);
+            if (!existingSummary) {
+              await supabase
+                .from('player_summary')
+                .update({ discord_user_id: suggestion.suggested_discord_id })
+                .eq('id', tempSummary.id);
+            } else {
+              await supabase
+                .from('player_summary')
+                .delete()
+                .eq('id', tempSummary.id);
+            }
           }
+        
+          // Migrate position_preferences
+          await supabase
+            .from('position_preferences')
+            .update({ user_id: suggestion.suggested_discord_id })
+            .eq('user_id', tempDiscordId)
+            .eq('guild_id', guildId);
+        
+          // Delete temp profile
+          await supabase
+            .from('profiles')
+            .delete()
+            .eq('discord_user_id', tempDiscordId);
+        
         }
-        
-        // Migrate position_preferences
-        await supabase
-          .from('position_preferences')
-          .update({ user_id: suggestion.suggested_discord_id })
-          .eq('user_id', tempDiscordId)
-          .eq('guild_id', guildId);
-        
-        // Delete temp profile
-        await supabase
-          .from('profiles')
-          .delete()
-          .eq('discord_user_id', tempDiscordId);
         
         // Mark suggestion as approved
         await supabase
@@ -16021,15 +16018,20 @@ async function eaNameOwner(eaUsername, exceptDiscordId) {
 // Stats saved for an EA name before anyone linked it live on an ea_<name> placeholder profile.
 // Move them to the real account and drop the placeholder, so the name maps to one profile.
 async function migrateTempEaProfile(guildId, discordUserId, eaUsername) {
-  const tempDiscordId = `ea_${String(eaUsername).trim().toLowerCase()}`;
-  const { data: tempProfile } = await supabase.from('profiles').select('discord_user_id').eq('discord_user_id', tempDiscordId).maybeSingle();
-  if (!tempProfile) return false;
-  for (const table of ['player_stats', 'player_ratings', 'player_summary']) {
-    let q = supabase.from(table).update({ discord_user_id: discordUserId }).eq('discord_user_id', tempDiscordId);
-    if (guildId) q = q.eq('guild_id', guildId);
-    await q;
+  // Find placeholders by gamertag, not by rebuilding the ID: older code spelled it several ways
+  const tempIds = await eaProfiles.placeholderIdsForGamertag(supabase, eaUsername);
+  if (!tempIds.length) return false;
+  for (const tempDiscordId of tempIds) {
+    // Match history moves in every server, since the placeholder (deleted below) is global
+    const { error: statsErr } = await supabase.from('player_stats').update({ discord_user_id: discordUserId }).eq('discord_user_id', tempDiscordId);
+    if (statsErr) { console.error(`[linkea] Couldn't move stats from ${tempDiscordId}:`, statsErr.message); return false; }
+    for (const table of ['player_ratings', 'player_summary']) {
+      let q = supabase.from(table).update({ discord_user_id: discordUserId }).eq('discord_user_id', tempDiscordId);
+      if (guildId) q = q.eq('guild_id', guildId);
+      await q;
+    }
+    await supabase.from('profiles').delete().eq('discord_user_id', tempDiscordId);
   }
-  await supabase.from('profiles').delete().eq('discord_user_id', tempDiscordId);
   return true;
 }
 
@@ -16372,11 +16374,7 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
     const guild = await client.guilds.fetch(guildId).catch(() => null);
     
     for (const pStat of playerStats) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('discord_user_id')
-        .eq('ea_username', pStat.ea_username)
-        .maybeSingle();
+      const profile = await eaProfiles.linkedProfileForGamertag(supabase, pStat.ea_username);
       
       if (profile) {
         // Verify this player is a member of this guild
@@ -16471,11 +16469,7 @@ async function createClubMatchFeedbackRequests(guildId, eaMatchId, playerStats) 
     const discordPlayerIds = [];
     
     for (const pStat of playerStats) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('discord_user_id')
-        .eq('ea_username', pStat.ea_username)
-        .maybeSingle();
+      const profile = await eaProfiles.linkedProfileForGamertag(supabase, pStat.ea_username);
       
       if (profile) {
         // Verify this player is a member of this guild
@@ -16536,11 +16530,7 @@ async function promptUnlinkedPlayersToLink(guildId, club, playerStats) {
     
     for (const pStat of playerStats) {
       // Check if this EA username is already linked to a profile
-      const { data: existingProfile } = await supabase
-        .from('profiles')
-        .select('discord_user_id')
-        .eq('ea_username', pStat.ea_username)
-        .maybeSingle();
+      const existingProfile = await eaProfiles.profileForGamertag(supabase, pStat.ea_username);
       
       if (existingProfile) {
         // Already linked, skip
@@ -17075,11 +17065,7 @@ async function syncClubHistory(guildId, clubKey, maxMatches = 50) {
       const guild = await client.guilds.fetch(guildId).catch(() => null);
       
       for (const pStat of playerStats) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('discord_user_id')
-          .eq('ea_username', pStat.ea_username)
-          .maybeSingle();
+        const profile = await eaProfiles.linkedProfileForGamertag(supabase, pStat.ea_username);
         
         if (profile) {
           // Verify this player is a member of this guild
