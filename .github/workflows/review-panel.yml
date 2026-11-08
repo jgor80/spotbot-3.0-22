@@ -40,8 +40,22 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr) || '' }}
 
+
+      - name: Check for the Anthropic API key
+        id: auth
+        env:
+          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" = "true" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Review Panel skipped: add the ANTHROPIC_API_KEY secret (Settings → Secrets and variables → Actions), then re-run this check."
+            echo "Review Panel skipped: the ANTHROPIC_API_KEY secret isn't set for this repo." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: PR details
         id: pr
+        if: steps.auth.outputs.ok == 'true'
         run: |
           gh pr view "$PR" --json baseRefName,title,body > pr.json
           echo "base=$(jq -r .baseRefName pr.json)" >> "$GITHUB_OUTPUT"
@@ -49,6 +63,7 @@ jobs:
           mkdir -p .review-panel/out
 
       - name: Run the panel
+        if: steps.auth.outputs.ok == 'true'
         uses: anthropics/claude-code-action@v1
         env:
           PANEL_BASE: ${{ steps.pr.outputs.base }}
@@ -65,14 +80,14 @@ jobs:
 
       - name: Read verdict
         id: v
-        if: always()
+        if: always() && steps.auth.outputs.ok == 'true'
         run: |
           V=$(tr -d '[:space:]' < .review-panel/out/verdict.txt 2>/dev/null || true)
           echo "verdict=${V:-ERROR}" >> "$GITHUB_OUTPUT"
           echo "Verdict: ${V:-ERROR}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post or update the PR comment
-        if: always() && steps.v.outputs.verdict != 'SKIP' && steps.v.outputs.verdict != 'ERROR'
+        if: always() && steps.auth.outputs.ok == 'true' && steps.v.outputs.verdict != 'SKIP' && steps.v.outputs.verdict != 'ERROR'
         run: |
           O=.review-panel/out
           {
@@ -102,7 +117,7 @@ jobs:
           fi
 
       - name: Label the PR with the verdict
-        if: always() && steps.v.outputs.verdict != 'ERROR'
+        if: always() && steps.auth.outputs.ok == 'true' && steps.v.outputs.verdict != 'ERROR'
         run: |
           gh label create "panel: ship" --color 0e8a16 --force > /dev/null
           gh label create "panel: fix-first" --color fbca04 --force > /dev/null
@@ -117,7 +132,7 @@ jobs:
           esac
 
       - name: Keep the report
-        if: always()
+        if: always() && steps.auth.outputs.ok == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: review-panel-pr-${{ env.PR }}
@@ -125,7 +140,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Pass or fail the check
-        if: always()
+        if: always() && steps.auth.outputs.ok == 'true'
         run: |
           case "${{ steps.v.outputs.verdict }}" in
             BLOCK) echo "::error::Review Panel verdict is BLOCK — see the PR comment."; exit 1 ;;

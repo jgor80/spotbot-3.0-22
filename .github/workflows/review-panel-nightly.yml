@@ -29,9 +29,24 @@ jobs:
         with:
           fetch-depth: 0
 
+
+      - name: Check for the Anthropic API key
+        id: auth
+        env:
+          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" = "true" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Review Panel skipped: add the ANTHROPIC_API_KEY secret (Settings → Secrets and variables → Actions), then re-run this check."
+            echo "Review Panel skipped: the ANTHROPIC_API_KEY secret isn't set for this repo." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - run: mkdir -p .review-panel/out
+        if: steps.auth.outputs.ok == 'true'
 
       - name: Run the panel
+        if: steps.auth.outputs.ok == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -44,14 +59,14 @@ jobs:
 
       - name: Read verdict
         id: v
-        if: always()
+        if: always() && steps.auth.outputs.ok == 'true'
         run: |
           V=$(tr -d '[:space:]' < .review-panel/out/verdict.txt 2>/dev/null || true)
           echo "verdict=${V:-ERROR}" >> "$GITHUB_OUTPUT"
           echo "Verdict: ${V:-ERROR}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Open an issue when something needs attention
-        if: always() && (steps.v.outputs.verdict == 'BLOCK' || steps.v.outputs.verdict == 'FIX_FIRST')
+        if: always() && steps.auth.outputs.ok == 'true' && (steps.v.outputs.verdict == 'BLOCK' || steps.v.outputs.verdict == 'FIX_FIRST')
         run: |
           gh label create "review-panel" --color 5319e7 --force > /dev/null
           {
@@ -68,7 +83,7 @@ jobs:
             --body-file issue.md
 
       - name: Open a PR with ledger updates
-        if: always()
+        if: always() && steps.auth.outputs.ok == 'true'
         run: |
           git add -N .review-panel/ledger.md 2>/dev/null || true
           if git diff --quiet -- .review-panel/ledger.md; then
@@ -86,7 +101,7 @@ jobs:
             || echo "::warning::Couldn't open the PR. Turn on Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests', or open one from branch $BR."
 
       - name: Keep the report
-        if: always()
+        if: always() && steps.auth.outputs.ok == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: review-panel-nightly
