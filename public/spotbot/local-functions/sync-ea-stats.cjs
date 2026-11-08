@@ -1718,6 +1718,12 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const supabase = (0, import_supabase_js_22.createClient)(supabaseUrl, supabaseKey);
+    const linkedByGamertag = /* @__PURE__ */ new Map();
+    const linkedFor = (gamertag) => {
+      const key = String(gamertag ?? "").trim().toLowerCase();
+      if (!linkedByGamertag.has(key)) linkedByGamertag.set(key, linkedProfileForGamertag(supabase, gamertag));
+      return linkedByGamertag.get(key);
+    };
     let syncType = "full";
     let requestBody = null;
     try {
@@ -1996,7 +2002,7 @@ Deno.serve(async (req) => {
                     });
                   }
                   for (const pStat of playerStats) {
-                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username);
+                    const profile = await linkedFor(pStat.ea_username);
                     if (profile) {
                       await supabase.from("player_stats").insert({
                         guild_id: guildId,
@@ -2210,7 +2216,7 @@ Deno.serve(async (req) => {
                     });
                   }
                   for (const pStat of playerStats) {
-                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username);
+                    const profile = await linkedFor(pStat.ea_username);
                     if (profile) {
                       await supabase.from("player_stats").insert({
                         guild_id: guildId,
@@ -2408,7 +2414,7 @@ Deno.serve(async (req) => {
                   totalSynced++;
                   existingFriendlyIds.add(matchId);
                   for (const pStat of playerStats) {
-                    const profile = await linkedProfileForGamertag(supabase, pStat.ea_username);
+                    const profile = await linkedFor(pStat.ea_username);
                     if (profile) {
                       await supabase.from("player_stats").insert({
                         guild_id: guildId,

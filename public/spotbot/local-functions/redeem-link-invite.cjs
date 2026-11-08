@@ -15,6 +15,65 @@ function createAdminClient() {
 // supabase/functions/_shared/ea-profiles.ts
 var isPlaceholderId = (id) => String(id ?? "").startsWith("ea_");
 var escapeLike = (value) => String(value).trim().replace(/[\\%_]/g, (c) => `\\${c}`);
+var PLAYER_TABLES = [
+  { table: "player_stats", idCol: "discord_user_id", keys: ["guild_id", "ea_match_id"] },
+  { table: "player_ratings", idCol: "discord_user_id", keys: ["guild_id"] },
+  { table: "player_summary", idCol: "discord_user_id", keys: ["guild_id"] },
+  { table: "player_club_stats", idCol: "discord_user_id", keys: ["guild_id", "club_key"] },
+  { table: "position_preferences", idCol: "user_id", keys: ["guild_id"] }
+];
+async function mergePlaceholderInto(db, tempId, realId) {
+  if (!isPlaceholderId(tempId) || !realId || isPlaceholderId(realId)) return { ok: false, error: "not a placeholder" };
+  const errors = [];
+  for (const { table, idCol, keys } of PLAYER_TABLES) {
+    const cols = ["id", ...keys].join(", ");
+    const last = keys[keys.length - 1];
+    const keyOf = (r) => keys.map((k) => r[k] ?? "\0null").join("");
+    for (let page = 0; page < 500; page++) {
+      const { data: temp, error: tErr } = await db.from(table).select(cols).eq(idCol, tempId).limit(200);
+      if (tErr) {
+        errors.push(`${table}: ${tErr.message}`);
+        break;
+      }
+      if (!temp?.length) break;
+      const values = [...new Set(temp.map((r) => r[last]).filter((v) => v != null))];
+      let real = [];
+      if (values.length) {
+        const { data, error: rErr } = await db.from(table).select(cols).eq(idCol, realId).in(last, values);
+        if (rErr) {
+          errors.push(`${table}: ${rErr.message}`);
+          break;
+        }
+        real = data || [];
+      }
+      const taken = new Set(real.map(keyOf));
+      const clashes = (r) => r[last] != null && taken.has(keyOf(r));
+      const drop = temp.filter(clashes).map((r) => r.id);
+      const move = temp.filter((r) => !clashes(r)).map((r) => r.id);
+      if (drop.length) {
+        const { error: error2 } = await db.from(table).delete().in("id", drop);
+        if (error2) {
+          errors.push(`${table} delete: ${error2.message}`);
+          break;
+        }
+      }
+      if (move.length) {
+        const { error: error2 } = await db.from(table).update({ [idCol]: realId }).in("id", move);
+        if (error2) {
+          errors.push(`${table} move: ${error2.message}`);
+          break;
+        }
+      }
+    }
+  }
+  if (errors.length) {
+    console.error(`[ea-profiles] Couldn't fully merge ${tempId} into ${realId}:`, errors.join("; "));
+    return { ok: false, error: errors.join("; ") };
+  }
+  const { error } = await db.from("profiles").delete().eq("discord_user_id", tempId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
 
 // supabase/functions/redeem-link-invite/index.ts
 var json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -60,12 +119,8 @@ Deno.serve(async (req) => {
     }
     for (const { discord_user_id: tempId } of owners || []) {
       if (!isPlaceholderId(tempId)) continue;
-      const { error: moveErr } = await admin.from("player_stats").update({ discord_user_id: invite.discord_user_id }).eq("discord_user_id", tempId);
-      if (moveErr) {
-        console.error(`[redeem-link-invite] Couldn't move stats from ${tempId}:`, moveErr.message);
-        continue;
-      }
-      await admin.from("profiles").delete().eq("discord_user_id", tempId);
+      const res = await mergePlaceholderInto(admin, tempId, invite.discord_user_id);
+      if (!res.ok) console.error(`[redeem-link-invite] Couldn't move ${tempId}:`, res.error);
     }
     let websiteLinked = false;
     let websiteNote = null;

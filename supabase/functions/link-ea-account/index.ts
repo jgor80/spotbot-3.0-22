@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { guildAccessLevel, requireGuildAccess, resolveDiscordActor } from "../_shared/auth.ts";
-import { isPlaceholderId, placeholderIdsForGamertag, profilesForGamertag } from "../_shared/ea-profiles.ts";
+import { isPlaceholderId, mergePlaceholderInto, placeholderIdsForGamertag, profilesForGamertag } from "../_shared/ea-profiles.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -116,91 +116,10 @@ serve(async (req) => {
       }
     }
 
-    // If temp profile exists, migrate all related data to real Discord user
+    // Move everything each placeholder holds, in every server; rows the player already has are kept
     for (const tempDiscordId of tempIds) {
-      console.log(`[link-ea-account] Migrating data from temp profile ${tempDiscordId} to ${discord_user_id}`);
-
-      // Migrate player_stats
-      await supabase
-        .from('player_stats')
-        .update({ discord_user_id })
-        .eq('discord_user_id', tempDiscordId); // every server: the placeholder is deleted below for all of them
-
-      // Migrate player_ratings
-      const { data: tempRating } = await supabase
-        .from('player_ratings')
-        .select('*')
-        .eq('discord_user_id', tempDiscordId)
-        .eq('guild_id', guild_id)
-        .maybeSingle();
-
-      if (tempRating) {
-        // Check if real user already has ratings
-        const { data: existingRating } = await supabase
-          .from('player_ratings')
-          .select('id')
-          .eq('discord_user_id', discord_user_id)
-          .eq('guild_id', guild_id)
-          .maybeSingle();
-
-        if (!existingRating) {
-          // Move temp ratings to real user
-          await supabase
-            .from('player_ratings')
-            .update({ discord_user_id })
-            .eq('id', tempRating.id);
-        } else {
-          // Delete temp ratings (real user already has ratings)
-          await supabase
-            .from('player_ratings')
-            .delete()
-            .eq('id', tempRating.id);
-        }
-      }
-
-      // Migrate player_summary
-      const { data: tempSummary } = await supabase
-        .from('player_summary')
-        .select('*')
-        .eq('discord_user_id', tempDiscordId)
-        .eq('guild_id', guild_id)
-        .maybeSingle();
-
-      if (tempSummary) {
-        const { data: existingSummary } = await supabase
-          .from('player_summary')
-          .select('id')
-          .eq('discord_user_id', discord_user_id)
-          .eq('guild_id', guild_id)
-          .maybeSingle();
-
-        if (!existingSummary) {
-          await supabase
-            .from('player_summary')
-            .update({ discord_user_id })
-            .eq('id', tempSummary.id);
-        } else {
-          await supabase
-            .from('player_summary')
-            .delete()
-            .eq('id', tempSummary.id);
-        }
-      }
-
-      // Migrate position_preferences
-      await supabase
-        .from('position_preferences')
-        .update({ user_id: discord_user_id })
-        .eq('user_id', tempDiscordId)
-        .eq('guild_id', guild_id);
-
-      // Delete temp profile
-      await supabase
-        .from('profiles')
-        .delete()
-        .eq('discord_user_id', tempDiscordId);
-
-      console.log(`[link-ea-account] Deleted temp profile ${tempDiscordId}`);
+      const res = await mergePlaceholderInto(supabase, tempDiscordId, discord_user_id);
+      if (!res.ok) console.error(`[link-ea-account] Couldn't move ${tempDiscordId}:`, res.error);
     }
 
     // Trigger rating recalculation
