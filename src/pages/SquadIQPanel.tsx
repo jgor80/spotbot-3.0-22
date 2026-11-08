@@ -166,14 +166,14 @@ export default function GafferBotPanel() {
     }
     await runCommand("Scout Club", async () => {
       const { data, error } = await supabase.functions.invoke("scout-opponent-club", {
-        body: { club_name: clubSearchName.trim(), platform: searchPlatform }
+        body: { guild_id: selectedGuildId, club_name: clubSearchName.trim(), platform: searchPlatform }
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);
       
       appendOutput(
         "🏟️ Scout Club",
-        `Found ${clubSearchName} on ${searchPlatform.toUpperCase()}. ${data.message || "Club data retrieved."}`
+        `Found ${data.club_name || clubSearchName} on ${searchPlatform.toUpperCase()}. ${data.message || `${data.scouted_count || 0} players scouted.`}`
       );
       toast({ title: "Club Scouted", description: `Report ready for ${clubSearchName}` });
     });

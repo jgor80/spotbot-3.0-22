@@ -127,6 +127,26 @@ async function guildAccessLevel(admin, guildId, discordUserId) {
   const member = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
   return member ? "member" : null;
 }
+var webHits = /* @__PURE__ */ new Map();
+async function throttleWebUser(req, admin, name, max, windowMs) {
+  const caller = await identifyCaller(req, admin);
+  if (!caller || caller.kind === "bot") return null;
+  const key = `${name}:${caller.userId}`;
+  const now = Date.now();
+  const recent = (webHits.get(key) || []).filter((t) => now - t < windowMs);
+  if (recent.length >= max) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Too many requests, please try again in a few minutes" }),
+      { status: 429, headers: rejectHeaders }
+    );
+  }
+  recent.push(now);
+  webHits.set(key, recent);
+  if (webHits.size > 5e3) {
+    for (const [k, times] of webHits) if (!times.some((t) => now - t < windowMs)) webHits.delete(k);
+  }
+  return null;
+}
 
 // supabase/functions/scout-opponent-club/index.ts
 var corsHeaders = {
@@ -177,6 +197,26 @@ async function fetchClubInfo(clubId, platform) {
     return null;
   }
 }
+async function findClubByName(name, platform) {
+  const fcPlatform = toFcPlatform(platform);
+  try {
+    const url = `https://proclubs.ea.com/api/fc/clubs/search?platform=${fcPlatform}&clubName=${encodeURIComponent(name)}`;
+    const res = await fetch(url, { headers: EA_HEADERS });
+    if (!res.ok) {
+      console.error(`[EA] Club search failed: ${res.status}`);
+      return null;
+    }
+    const data = await res.json();
+    const clubs = Array.isArray(data) ? data : data?.clubs || Object.values(data || {});
+    const nameOf = (c) => String(c?.name ?? c?.clubInfo?.name ?? "");
+    const pick = clubs.find((c) => nameOf(c).toLowerCase() === name.toLowerCase()) ?? clubs[0];
+    const clubId = pick?.clubId ?? pick?.clubInfo?.clubId;
+    return clubId ? { clubId: String(clubId), name: nameOf(pick) || name } : null;
+  } catch (err) {
+    console.error(`[EA] Club search error:`, err);
+    return null;
+  }
+}
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -194,12 +234,24 @@ serve(async (req) => {
       );
     }
     const supabase = (0, import_supabase_js_22.createClient)(supabaseUrl, supabaseKey);
-    const { guild_id, ea_club_id, platform, increment_times_faced } = await req.json();
-    const noAccess = await requireGuildAccess(req, supabase, guild_id, "member");
+    const { guild_id, ea_club_id: givenClubId, club_name, platform, increment_times_faced } = await req.json();
+    const noAccess = await requireGuildAccess(req, supabase, guild_id, "member") ?? await throttleWebUser(req, supabase, "scout-opponent-club", 10, 10 * 60 * 1e3);
     if (noAccess) return noAccess;
+    let ea_club_id = givenClubId ? String(givenClubId) : "";
+    const typedName = typeof club_name === "string" ? club_name.trim().slice(0, 64) : "";
+    if (!ea_club_id && typedName) {
+      const found = await findClubByName(typedName, platform || "ps5");
+      if (!found) {
+        return new Response(
+          JSON.stringify({ error: `EA has no club called "${typedName}" on that platform`, success: false }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      ea_club_id = found.clubId;
+    }
     if (!guild_id || !ea_club_id) {
       return new Response(
-        JSON.stringify({ error: "guild_id and ea_club_id required", success: false }),
+        JSON.stringify({ error: "guild_id and ea_club_id (or club_name) required", success: false }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -220,6 +272,8 @@ serve(async (req) => {
           success: true,
           message: "No members found - may be blocked by EA API from cloud",
           club_name: clubName,
+          ea_club_id,
+          platform: usePlatform,
           scouted_count: 0
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -300,6 +354,8 @@ serve(async (req) => {
       JSON.stringify({
         success: true,
         club_name: clubName,
+        ea_club_id,
+        platform: usePlatform,
         scouted_count: scoutedCount,
         players: scoutedPlayers
       }),

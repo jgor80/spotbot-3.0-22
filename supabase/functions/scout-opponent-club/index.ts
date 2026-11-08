@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { toFcPlatform } from '../_shared/ea.ts'
-import { rejectUnlessCaller, requireGuildAccess } from '../_shared/auth.ts';
+import { rejectUnlessCaller, requireGuildAccess, throttleWebUser } from '../_shared/auth.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -63,6 +63,27 @@ async function fetchClubInfo(clubId: string, platform: string) {
   }
 }
 
+// Find a club by name on one platform: the exact name (any case) if EA lists it, else EA's first match
+async function findClubByName(name: string, platform: string): Promise<{ clubId: string; name: string } | null> {
+  const fcPlatform = toFcPlatform(platform);
+  try {
+    const url = `https://proclubs.ea.com/api/fc/clubs/search?platform=${fcPlatform}&clubName=${encodeURIComponent(name)}`;
+    const res = await fetch(url, { headers: EA_HEADERS });
+    if (!res.ok) { console.error(`[EA] Club search failed: ${res.status}`); return null; }
+    const data = await res.json();
+    // deno-lint-ignore no-explicit-any
+    const clubs: any[] = Array.isArray(data) ? data : data?.clubs || Object.values(data || {});
+    // deno-lint-ignore no-explicit-any
+    const nameOf = (c: any) => String(c?.name ?? c?.clubInfo?.name ?? '');
+    const pick = clubs.find((c) => nameOf(c).toLowerCase() === name.toLowerCase()) ?? clubs[0];
+    const clubId = pick?.clubId ?? pick?.clubInfo?.clubId;
+    return clubId ? { clubId: String(clubId), name: nameOf(pick) || name } : null;
+  } catch (err) {
+    console.error(`[EA] Club search error:`, err);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -85,13 +106,28 @@ serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const { guild_id, ea_club_id, platform, increment_times_faced } = await req.json();
-    const noAccess = await requireGuildAccess(req, supabase, guild_id, 'member');
+    const { guild_id, ea_club_id: givenClubId, club_name, platform, increment_times_faced } = await req.json();
+    // Every scout is several EA calls, so web users get a per-user cap on top of server membership
+    const noAccess = await requireGuildAccess(req, supabase, guild_id, 'member')
+      ?? await throttleWebUser(req, supabase, 'scout-opponent-club', 10, 10 * 60 * 1000);
     if (noAccess) return noAccess;
+
+    let ea_club_id = givenClubId ? String(givenClubId) : '';
+    const typedName = typeof club_name === 'string' ? club_name.trim().slice(0, 64) : '';
+    if (!ea_club_id && typedName) {
+      const found = await findClubByName(typedName, platform || 'ps5');
+      if (!found) {
+        return new Response(
+          JSON.stringify({ error: `EA has no club called "${typedName}" on that platform`, success: false }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      ea_club_id = found.clubId;
+    }
 
     if (!guild_id || !ea_club_id) {
       return new Response(
-        JSON.stringify({ error: "guild_id and ea_club_id required", success: false }),
+        JSON.stringify({ error: "guild_id and ea_club_id (or club_name) required", success: false }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -128,6 +164,8 @@ serve(async (req) => {
           success: true, 
           message: "No members found - may be blocked by EA API from cloud",
           club_name: clubName,
+          ea_club_id,
+          platform: usePlatform,
           scouted_count: 0 
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -232,6 +270,8 @@ serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         club_name: clubName,
+        ea_club_id,
+        platform: usePlatform,
         scouted_count: scoutedCount,
         players: scoutedPlayers
       }),
