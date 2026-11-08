@@ -119,6 +119,23 @@ serve(async (req) => {
     // Tagged tournament / BYOT games are kept out of every regular board and only counted on their own
     const taggedType = match_type === "tournament" || match_type === "byot" ? match_type : null;
     const gameTypes = taggedType ? [taggedType] : ["club", "friendly"];
+    // Every row a query matches, 1,000 at a time (the server never returns more in one go)
+    // deno-lint-ignore no-explicit-any
+    const fetchAllRows = async (build: () => any): Promise<any[]> => {
+      // deno-lint-ignore no-explicit-any
+      const rows: any[] = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await build().order("id", { ascending: true }).range(from, from + 999);
+        if (error) throw error;
+        rows.push(...(data || []));
+        if (!data || data.length < 1000) return rows;
+      }
+    };
+    // A player's result from their own side: player_stats.won is true only for a win, and a draw is a
+    // draw for both clubs. Never read a club_matches result by match ID alone: when two clubs tracked
+    // in this server play each other, that ID has a win row and a loss row.
+    const resultFor = (stat: { won?: boolean | null; ea_match_id?: string | null }, drawIds: Set<string>) =>
+      stat.won === true ? "win" : stat.ea_match_id && drawIds.has(stat.ea_match_id) ? "draw" : stat.won === false ? "loss" : null;
     // Which club_matches a match_type filter keeps: Smalls by tag, Friendly without the Smalls ones
     // deno-lint-ignore no-explicit-any
     const byMatchType = (q: any) => {
@@ -280,8 +297,8 @@ serve(async (req) => {
         }));
       } else if (stats_source === "games") {
         // For "games" source, show ONLY tracked match stats (not EA member board)
-        // Fetch ALL player_stats - use range to bypass 1000 row default limit
-        const { data: clubPlayerStats, error: statsError } = await supabase
+        // Every player_stats row for league and friendly games (or the tagged type), paged
+        const clubPlayerStats = await fetchAllRows(() => supabase
           .from("player_stats")
           .select(`
             discord_user_id,
@@ -335,23 +352,20 @@ serve(async (req) => {
             defensive_duels
           `)
           .eq("guild_id", guild_id)
-          .eq("match_type", taggedType || "club")
-          .range(0, 9999);
-        
-        if (statsError) throw statsError;
+          .in("match_type", gameTypes));
         
         // Get club_matches to filter by club_key and optionally match_type
-        let clubMatchesQuery = supabase
-          .from("club_matches")
-          .select("ea_match_id")
-          .eq("guild_id", guild_id)
-          .eq("club_key", club_key);
+        const clubMatchesQuery = () => {
+          const q = supabase
+            .from("club_matches")
+            .select("id, ea_match_id, result")
+            .eq("guild_id", guild_id)
+            .eq("club_key", club_key);
+          return match_type && !taggedType ? byMatchType(q) : q;
+        };
         
-        if (match_type && !taggedType) {
-          clubMatchesQuery = byMatchType(clubMatchesQuery);
-        }
-        
-        const { data: clubMatches } = await clubMatchesQuery;
+        const clubMatches = await fetchAllRows(clubMatchesQuery);
+        const clubDrawIds = new Set<string>(clubMatches.filter((m) => m.result === "draw").map((m) => m.ea_match_id));
         
         let clubMatchIds = new Set((clubMatches || []).map(m => m.ea_match_id));
         
@@ -511,9 +525,10 @@ serve(async (req) => {
           }
           existing.archetypeid = existing.archetypeid || stat.archetypeid;
           
-          if (stat.won === true) existing.wins += 1;
-          else if (stat.won === false) existing.losses += 1;
-          else existing.draws += 1;
+          const result = resultFor(stat, clubDrawIds);
+          if (result === "win") existing.wins += 1;
+          else if (result === "loss") existing.losses += 1;
+          else if (result === "draw") existing.draws += 1;
           
           if (stat.position_played) {
             existing.position_counts[stat.position_played] = (existing.position_counts[stat.position_played] || 0) + 1;
@@ -701,29 +716,14 @@ serve(async (req) => {
       
       console.log(`[get-leaderboard] Fetched ${(allPlayerStats || []).length} player_stats records`);
       
-      // Fetch club_matches to get accurate win/draw/loss results
-      // The player_stats.won boolean cannot distinguish draws from losses
-      const matchIds = [...new Set((allPlayerStats || []).map(ps => ps.ea_match_id).filter(Boolean))];
-      const matchResultMap = new Map<string, string>();
-      
-      if (matchIds.length > 0) {
-        // Fetch in batches to avoid query limits
-        const batchSize = 500;
-        for (let i = 0; i < matchIds.length; i += batchSize) {
-          const batchIds = matchIds.slice(i, i + batchSize);
-          const { data: matchResults } = await supabase
-            .from("club_matches")
-            .select("ea_match_id, result")
-            .in("ea_match_id", batchIds);
-          
-          for (const m of matchResults || []) {
-            if (m.ea_match_id && m.result) {
-              matchResultMap.set(m.ea_match_id, m.result);
-            }
-          }
-        }
-      }
-      console.log(`[get-leaderboard] Built match result map with ${matchResultMap.size} entries`);
+      // player_stats.won can't tell a draw from a loss, so collect this server's drawn matches
+      const drawRows = await fetchAllRows(() => supabase
+        .from("club_matches")
+        .select("id, ea_match_id")
+        .eq("guild_id", guild_id)
+        .eq("result", "draw"));
+      const drawIds = new Set<string>(drawRows.map((m) => m.ea_match_id).filter(Boolean));
+      console.log(`[get-leaderboard] ${drawIds.size} drawn matches`);
       
       // Filter by match_type if set
       let filteredPlayerStats = matchTypeFilterIds 
@@ -857,14 +857,10 @@ serve(async (req) => {
         }
         existing.archetypeid = existing.archetypeid || stat.archetypeid;
         
-        // Use club_matches result for accurate win/draw/loss counting
-        const matchResult = stat.ea_match_id ? matchResultMap.get(stat.ea_match_id) : null;
+        const matchResult = resultFor(stat, drawIds);
         if (matchResult === 'win') existing.wins += 1;
         else if (matchResult === 'loss') existing.losses += 1;
         else if (matchResult === 'draw') existing.draws += 1;
-        // Fallback to won boolean if no match result found
-        else if (stat.won === true) existing.wins += 1;
-        else if (stat.won === false) existing.losses += 1;
         
         if (stat.position_played) {
           existing.position_counts[stat.position_played] = (existing.position_counts[stat.position_played] || 0) + 1;
