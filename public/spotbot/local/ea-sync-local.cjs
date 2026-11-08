@@ -77,106 +77,8 @@ async function fuzzyMatchEaToDiscord(supabase, guildId, eaUsername) {
   return null;
 }
 
-// EA Event Code mapping (Opta-style event IDs used by EA)
-// These are encoded in match_event_aggregate fields as "eventId:count" pairs
-const EA_EVENT_CODES = {
-  // Core stats (well-established)
-  1: 'passes',           // Pass events
-  3: 'takeOns',          // Dribble attempts (take-ons)
-  6: 'clearances',       // Clearances (confirmed for defenders - 422+ occurrences)
-  7: 'tackleEvents',     // Tackle events
-  8: 'interceptions',    // Interceptions (confirmed - 460+ occurrences)
-  16: 'goals',           // Goal events
-  44: 'aerialDuels',     // Aerial duels
-  49: 'ballRecoveries',  // Ball recoveries
-  50: 'secondAssists',   // Second assists (pre-assists)
-  61: 'blocks',          // Blocks
-  
-  // Defensive metrics (validated Jan 2026)
-  109: 'successfulChallenges', // rating_corr: 0.426, tackle_corr: 0.357
-  143: 'ballPressure',         // pass_corr: 0.546, high volume
-  145: 'pressingActions',      // goal_corr: 0.301, rating_corr: 0.247
-  151: 'defensiveTouch',       // goal_corr: 0.178
-  266: 'defensivePositioning', // tackle_corr: 0.234, defender-only
-  
-  // Passing subtypes (validated Jan 2026)
-  25: 'keyTouches',            // avg 2.54/match, pass_corr: 0.136
-  26: 'backwardPasses',        // avg 5.29/match, pass_corr: 0.533
-  27: 'shortPasses',           // avg 1.50/match, pass_corr: 0.189
-  31: 'receivingUnderPressure',// avg 2.87/match
-  33: 'keyPassAttempts',       // avg 1.17/match
-  35: 'throughBalls',          // avg 1.85/match, playmaker-heavy
-  37: 'passIntoBox',           // avg 1.62/match
-  119: 'finalThirdPasses',     // goal_corr: 0.330, rating_corr: 0.279
-  
-  // Attacking metrics (validated Jan 2026)
-  32: 'dribbleSuccess',        // goal_corr: 0.332, rating_corr: 0.321
-  34: 'progressiveCarries',    // pass_corr: 0.558, rating_corr: 0.097
-  36: 'keyDribbles',           // goal_corr: 0.324, rating_corr: 0.332
-  112: 'touchesInBox',         // goal_corr: 0.299, rating_corr: 0.313
-  114: 'attackingThirdEntries',// rating_corr: 0.351, assist_corr: 0.248
-  178: 'bigChances',           // goal_corr: 0.320, rating_corr: 0.278
-  183: 'chancesCreated',       // goal_corr: 0.273, rating_corr: 0.246
-  212: 'shotEvents',           // goal_corr: 0.283
-  265: 'forwardRuns',          // goal_corr: 0.234, forward-only
-  
-  // Possession metrics (validated Jan 2026)
-  182: 'possessionTouches',    // pass_corr: 0.588, high volume
-  219: 'ballReceipts',         // avg 7.14/match, universal
-  
-  // Duel metrics (validated Jan 2026)
-  152: 'offensiveDuels',       // assist_corr: 0.333, rating_corr: 0.303
-  157: 'defensiveDuels',       // rating_corr: 0.200
-  
-  // GK specific (validated Jan 2026)
-  28: 'gkSavesParry',          // save_corr: 0.228, GK-heavy distribution
-};
-
-// Track unknown event codes for discovery
-const discoveredEventCodes = new Set();
-
-// Parse event aggregate strings to extract hidden stats
-function parseEventAggregate(agg0, agg1, agg2, agg3) {
-  const result = {};
-  const unknownCodes = [];
-  
-  // Combine all aggregate strings
-  const combined = [agg0, agg1, agg2, agg3]
-    .filter(s => Boolean(s) && typeof s === 'string')
-    .join(',');
-  
-  if (!combined) return result;
-  
-  const pairs = combined.split(',').filter(Boolean);
-  
-  for (const pair of pairs) {
-    const [eventIdStr, countStr] = pair.split(':');
-    if (!eventIdStr || !countStr) continue;
-    
-    const eventId = parseInt(eventIdStr, 10);
-    const count = parseInt(countStr, 10);
-    
-    if (isNaN(eventId) || isNaN(count)) continue;
-    
-    const eventName = EA_EVENT_CODES[eventId];
-    if (eventName) {
-      result[eventName] = (result[eventName] || 0) + count;
-    } else {
-      // Track unknown event codes for logging
-      if (!discoveredEventCodes.has(pair)) {
-        discoveredEventCodes.add(pair);
-        unknownCodes.push(pair);
-      }
-    }
-  }
-  
-  // Log any new unknown codes we found (for discovery)
-  if (unknownCodes.length > 0) {
-    console.log(`[EA-Sync] Discovered unknown event codes: ${unknownCodes.join(', ')}`);
-  }
-  
-  return result;
-}
+// Event-code decoding lives in ../ea-events.cjs (shared with the bot and backend functions)
+const { eaEventStats } = require('../ea-events.cjs');
 
 // Thresholds for tiered linking
 const AUTO_LINK_THRESHOLD = 0.75;  // ≥75% = auto-link immediately
@@ -2058,40 +1960,35 @@ async function syncMatches(guildId, clubKey, club) {
     
     for (const [playerId, pStats] of Object.entries(players)) {
       // Parse event aggregates to extract hidden stats (interceptions, clearances, etc.)
-      const eventStats = parseEventAggregate(
-        pStats.match_event_aggregate_0,
-        pStats.match_event_aggregate_1,
-        pStats.match_event_aggregate_2,
-        pStats.match_event_aggregate_3
-      );
+      const eventStats = eaEventStats(pStats);
       
       // Extract interceptions and clearances from event aggregates (hidden stats!)
       const interceptions = eventStats.interceptions || parseInt(pStats.interceptions || 0);
-      const clearances = eventStats.clearances || parseInt(pStats.clearances || 0);
+      const clearances = parseInt(pStats.clearances || 0); // no confirmed EA event for clearances
       const secondAssists = eventStats.secondAssists || parseInt(pStats.secondAssists || pStats.secondassists || 0);
-      const dribbles = eventStats.takeOns || parseInt(pStats.dribblewon || pStats.dribbles || 0);
-      const ballRecoveries = eventStats.ballRecoveries || 0;
+      const dribbles = eventStats.dribbles || parseInt(pStats.dribblewon || pStats.dribbles || 0);
+      const ballRecoveries = eventStats.possessionGains || 0;
       
       // NEW: Extract validated stats from 2026-01-18 event code discovery
       const throughBalls = eventStats.throughBalls || 0;
       const progressiveCarries = eventStats.progressiveCarries || 0;
-      const touchesInBox = eventStats.touchesInBox || 0;
-      const pressingActions = eventStats.pressingActions || 0;
-      const dribbleSuccess = eventStats.dribbleSuccess || 0;
-      const bigChances = eventStats.bigChances || eventStats.chancesCreated || 0;
-      const forwardRuns = eventStats.forwardRuns || 0;
-      const offensiveDuels = eventStats.offensiveDuels || 0;
-      const defensiveDuels = eventStats.defensiveDuels || 0;
-      const gkClaims = eventStats.gkClaims || 0;
-      const gkSavesParry = eventStats.gkSavesParry || 0;
+      const touchesInBox = 0; // no confirmed EA event
+      const pressingActions = 0; // no confirmed EA event
+      const dribbleSuccess = eventStats.dribbles || 0;
+      const bigChances = 0; // no confirmed EA event
+      const forwardRuns = 0; // no confirmed EA event
+      const offensiveDuels = 0; // no confirmed EA event
+      const defensiveDuels = 0; // no confirmed EA event
+      const gkClaims = 0; // no confirmed EA event
+      const gkSavesParry = 0; // no confirmed EA event
       const forwardPasses = eventStats.forwardPasses || 0;
       const possessionGains = eventStats.possessionGains || 0;
       const shotsOnTarget = eventStats.shotsOnTarget || 0;
       const shotsOffTarget = eventStats.shotsOffTarget || 0;
       const passesCompleted = eventStats.passesCompleted || 0;
-      const tackleSuccess = eventStats.tackleSuccess || eventStats.successfulTackles || 0;
-      const goalsInsideBox = eventStats.goalsInsideBox || 0;
-      const defensiveActions = eventStats.defensiveActions || 0;
+      const tackleSuccess = eventStats.tacklesWon || 0;
+      const goalsInsideBox = 0; // no confirmed EA event
+      const defensiveActions = (eventStats.tacklesWon || 0) + (eventStats.interceptions || 0);
       
       // Extract ALL available stats from EA API - comprehensive capture
       playerStats.push({
@@ -2115,7 +2012,8 @@ async function syncMatches(guildId, clubKey, club) {
         ball_recoveries: ballRecoveries,
         possession: parseFloat(pStats.possession || 0),
         dribbles: dribbles,
-        fouls: parseInt(pStats.fouls || pStats.foulcommited || 0),
+        fouls: parseInt(pStats.fouls || pStats.foulcommited || 0) || eventStats.foulsCommitted,
+        possessions_lost: eventStats.possessionsLost,
         offsides: parseInt(pStats.offsides || 0),
         // Player archetype/build from EA (like OurProClub captures)
         archetypeid: pStats.archetypeid || pStats.archetypeId || pStats.archetype || null,

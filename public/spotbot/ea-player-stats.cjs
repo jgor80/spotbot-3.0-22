@@ -6,6 +6,8 @@ const int = (v) => {
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : 0;
 };
+const { eaEventStats, eaEventCounts } = require('./ea-events.cjs');
+
 const flag = (v) => v === '1' || v === 1 || v === true;
 
 // FC27 sends pos as a word ("goalkeeper", "defender", "midfielder", "forward"); older data used codes
@@ -54,35 +56,28 @@ function mapPlayer(p) {
   };
 }
 
-// EA hides extra stats in match_event_aggregate_0..3 as "code:count" pairs.
-// Same code meanings as backfill_advanced_player_stats() in the database.
-function eventCounts(p) {
-  const c = {};
-  for (let i = 0; i < 4; i++) {
-    for (const kv of String(p[`match_event_aggregate_${i}`] || '').split(',')) {
-      const [k, v] = kv.split(':');
-      if (/^\d+$/.test(k) && /^\d+$/.test(v || '')) c[k] = (c[k] || 0) + Number(v);
-    }
-  }
-  return c;
-}
+// EA hides extra stats in match_event_aggregate_0..3 as "code:count" pairs; ea-events.cjs decodes them.
+// Stats without a confirmed event (chances created, take-on attempts, blocks) are left at 0.
 function eventStats(p) {
-  const c = eventCounts(p);
-  const g = (k) => c[k] || 0;
-  // OurProClub mapping, refined (same as backfill_advanced_player_stats()):
-  // 118 raw = their "second assists"; surplus over official assists = true hockey assists.
-  const sa = g(118);
-  const assists = int(p.assists);
+  const e = eaEventStats(p);
   return {
-    second_assists: sa,
-    hockey_assists: Math.max(sa - assists, 0),
-    chances_created: sa + g(35),
-    through_balls: g(35),
-    dribbles: g(32),
-    take_on_attempts: Math.max(g(3), g(32)),
-    possessions_won: g(176),
-    possessions_lost: g(102),
-    blocks: g(61),
+    interceptions: e.interceptions || int(p.interceptions),
+    second_assists: e.secondAssists,
+    hockey_assists: e.secondAssists,
+    chances_created: 0,
+    through_balls: e.throughBalls,
+    dribbles: e.dribbles,
+    take_on_attempts: 0,
+    progressive_carries: e.progressiveCarries,
+    possessions_won: e.possessionGains,
+    possessions_lost: e.possessionsLost,
+    blocks: 0,
+    tackles_won: e.tacklesWon,
+    shots_on_target: e.shotsOnTarget,
+    aerials_won: e.aerialsWon,
+    fouls: e.foulsCommitted,
+    fouls_won: e.foulsWon,
+    yellow_cards: e.yellowCards,
   };
 }
 
@@ -124,10 +119,11 @@ function statColumns(s, scoreAgainst) {
     dribbles: s.dribbles || 0,
     dribble_success: s.dribbles || 0,
     take_on_attempts: s.take_on_attempts || 0,
+    progressive_carries: s.progressive_carries || 0,
     possession_gains: s.possessions_won || 0,
     possessions_lost: s.possessions_lost || 0,
     blocks: s.blocks || 0,
   };
 }
 
-module.exports = { mapPlayer, mapPlayers, statColumns, isKeeper, eventCounts };
+module.exports = { mapPlayer, mapPlayers, statColumns, isKeeper, eventCounts: eaEventCounts };
