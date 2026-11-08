@@ -233,10 +233,12 @@ export default function GafferBotPanel() {
       if (error) throw error;
       if (data.error) throw new Error(data.error);
       
-      const p = data.profile || {};
+      // get-player-profile returns { player }, and win_rate is already a percentage string ("55.0")
+      const p = data.player || {};
+      const rating = Number(p.overall_rating);
       appendOutput(
         "👤 Player Profile",
-        `${p.discord_username || selectedPlayerId} | Rating: ${p.overall_rating?.toFixed(1) || "N/A"} | Pos: ${p.primary_position || "?"} | Games: ${p.games_played || 0} | Win%: ${((p.win_rate || 0) * 100).toFixed(0)}%`
+        `${p.discord_username || selectedPlayerId} | Rating: ${Number.isFinite(rating) && rating > 0 ? rating.toFixed(1) : "N/A"} | Pos: ${p.primary_position || "?"} | Games: ${p.games_played || 0} | Win%: ${Math.round(Number(p.win_rate) || 0)}%`
       );
       toast({ title: "Profile Loaded", description: "Player data retrieved" });
     });
