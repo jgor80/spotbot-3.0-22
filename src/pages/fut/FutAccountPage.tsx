@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, ListTodo, Trash2, Wallet } from "lucide-react";
-import { futApi, futKeys, type AccountOverview, type AccountSection, type AccountTrade, type AccountTradeState } from "@/lib/futApi";
+import { futApi, futKeys, type AccountItem, type AccountOverview, type AccountSection, type AccountTrade, type AccountTradeState } from "@/lib/futApi";
+import { FutCardArt } from "@/components/fut/FutCardArt";
 import { ErrorNotice } from "@/components/fut/FutShared";
 import { HelperDownload } from "@/components/fut/HelperDownload";
 import { Badge } from "@/components/ui/badge";
@@ -43,8 +44,12 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 
 const Seen = ({ at }: { at: string | null }) => <p className="text-xs text-muted-foreground">{at ? `As the Web App showed it ${dateText(at)}` : "Not captured yet."}</p>;
 
-function CardName({ item }: { item: { name: string; version: string | null; untradeable: boolean } }) {
-  return <div className="min-w-0"><span className="font-medium">{item.name}</span>{item.version && <span className="ml-1 text-xs text-muted-foreground">{item.version}</span>}{item.untradeable && <Badge variant="outline" className="ml-2 text-[10px]">Untradeable</Badge>}</div>;
+function CardName({ item }: { item: AccountItem }) {
+  const player = (item.item_type ?? "player").toLowerCase() === "player" && item.rating != null;
+  return <div className="flex min-w-0 items-center gap-2.5">
+    {player && <FutCardArt card={{ name: item.name, rating: item.rating, position: item.position, version: item.version, ea_item_id: item.ea_item_id }} compact className="w-9" />}
+    <div className="min-w-0"><span className="font-medium">{item.name}</span>{item.version && <span className="ml-1 text-xs text-muted-foreground">{item.version}</span>}{item.untradeable && <Badge variant="outline" className="ml-2 text-[10px]">Untradeable</Badge>}</div>
+  </div>;
 }
 
 function TradeTable({ items, watch }: { items: AccountTrade[]; watch: boolean }) {

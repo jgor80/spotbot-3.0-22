@@ -70,7 +70,8 @@ Deno.test("fut-api is hidden while FUT_ENABLED is off and needs a signed-in user
   assert((await off.call("GET", "/v1/health")).status === 404, "should 404 while off");
   const on = setup();
   assert((await on.call("GET", "/v1/health", undefined, null)).status === 401, "should need sign-in");
-  assert((await on.call("GET", "/v1/health")).status === 200, "health");
+  const health = await on.call("GET", "/v1/health");
+  assert(health.status === 200 && health.data.card_images?.faces === false, "health, EA faces off by default");
   assert((await on.call("GET", "/v2/cards")).status === 404, "unknown version");
 });
 
