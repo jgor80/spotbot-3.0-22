@@ -1862,9 +1862,12 @@ Deno.serve(async (req) => {
                   player_fields: [...playerFieldSet]
                 });
               }
-              const { data: existingMatches } = await supabase.from("club_matches").select("ea_match_id, stats_complete").eq("guild_id", guildId).eq("club_key", club.key);
+              const listedIds = matches.map((m) => extractWithFallback(m, ["matchId", "id", "gameId"])?.toString()).filter(Boolean);
+              const { data: existingMatches, error: existingError } = listedIds.length ? await supabase.from("club_matches").select("ea_match_id, stats_complete, session_id").eq("guild_id", guildId).eq("club_key", club.key).in("ea_match_id", listedIds) : { data: [], error: null };
+              if (existingError) console.error(`[sync-ea-stats] existing match lookup failed for ${club.key}:`, existingError.message);
               const existingIds = new Set((existingMatches || []).map((m) => m.ea_match_id));
               const repairIds = new Set((existingMatches || []).filter((m) => m.stats_complete === false).map((m) => m.ea_match_id));
+              const noSessionIds = new Set((existingMatches || []).filter((m) => !m.session_id).map((m) => m.ea_match_id));
               for (const matchData of matches) {
                 const matchId = extractWithFallback(matchData, ["matchId", "id", "gameId"])?.toString();
                 if (!matchId || existingIds.has(matchId) && !repairIds.has(matchId)) {
@@ -1979,8 +1982,12 @@ Deno.serve(async (req) => {
                   });
                 }
                 const matchTimestamp = parseInt(extractWithFallback(matchData, ["timestamp", "matchTimestamp", "time", "matchTime"]) || Date.now() / 1e3);
-                const sessionId = repairIds.has(matchId) ? null : await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
                 const repairing = repairIds.has(matchId);
+                const sessionId = repairing && !noSessionIds.has(matchId) ? null : await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
+                if (repairing && sessionId) {
+                  const { error: sessionErr } = await supabase.from("club_matches").update({ session_id: sessionId }).eq("guild_id", guildId).eq("club_key", club.key).eq("ea_match_id", matchId);
+                  if (sessionErr) console.error(`[sync-ea-stats] Couldn't attach match ${matchId} to its session:`, sessionErr.message);
+                }
                 const { error: insertError } = repairing ? { error: null } : await supabase.from("club_matches").insert({
                   stats_complete: false,
                   guild_id: guildId,

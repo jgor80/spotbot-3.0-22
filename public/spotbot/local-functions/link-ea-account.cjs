@@ -224,6 +224,8 @@ serve(async (req) => {
       if (!await guildAccessLevel(supabase, guild_id, discord_user_id)) {
         return deny(403, "That player isn't a member of this server");
       }
+    } else if ((await identifyCaller(req, supabase))?.kind !== "bot" && !await guildAccessLevel(supabase, guild_id, discord_user_id)) {
+      return deny(403, "Join this Discord server first, then link your EA account from it.");
     }
     const holders = await profilesForGamertag(supabase, ea_username);
     if (holders.some((p) => !isPlaceholderId(p.discord_user_id) && p.discord_user_id !== discord_user_id)) {

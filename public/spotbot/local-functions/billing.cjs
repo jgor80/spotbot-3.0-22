@@ -4070,6 +4070,47 @@ async function identifyCaller(req, admin) {
   if (error || !data?.user) return null;
   return { kind: "user", userId: data.user.id };
 }
+function discordGet(path) {
+  const token = Deno.env.get("DISCORD_BOT_TOKEN");
+  if (!token) return Promise.resolve(null);
+  return fetch(`https://discord.com/api/v10${path}`, { headers: { Authorization: `Bot ${token}` } }).then((r) => r.ok ? r.json() : null).catch(() => null);
+}
+var snowflake = (id) => /^\d{17,20}$/.test(id);
+var LEADER_ROLE_WORDS = ["captain", "manager", "owner", "media", "admin"];
+var BUILTIN_OWNER_IDS = ["501557839932948490"];
+function isBotOwner(discordUserId) {
+  const env = String(Deno.env.get("BOT_OWNER_IDS") || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return [...BUILTIN_OWNER_IDS, ...env].includes(discordUserId);
+}
+async function isDiscordClubLeader(guildId2, discordUserId) {
+  if (!snowflake(guildId2) || !snowflake(discordUserId)) return false;
+  if (isBotOwner(discordUserId)) return true;
+  const [guild, member] = await Promise.all([discordGet(`/guilds/${guildId2}`), discordGet(`/guilds/${guildId2}/members/${discordUserId}`)]);
+  if (!guild || !member) return false;
+  if (guild.owner_id === discordUserId) return true;
+  const memberRoles = /* @__PURE__ */ new Set([guildId2, ...member.roles || []]);
+  let perms = 0n;
+  for (const role of guild.roles || []) {
+    if (!memberRoles.has(role.id)) continue;
+    perms |= BigInt(role.permissions || "0");
+    const name = String(role.name || "").toLowerCase();
+    if (role.id !== guildId2 && LEADER_ROLE_WORDS.some((w) => name.includes(w))) return true;
+  }
+  return (perms & 0x8n) !== 0n || (perms & 0x20n) !== 0n;
+}
+async function guildAccessLevel(admin, guildId2, discordUserId) {
+  if (!snowflake(guildId2) || !snowflake(discordUserId)) return null;
+  const { data: leader } = await admin.rpc("has_any_role", {
+    _guild_id: guildId2,
+    _discord_user_id: discordUserId,
+    _roles: ["admin", "moderator", "manager", "captain"]
+  });
+  if (leader || await isDiscordClubLeader(guildId2, discordUserId)) return "leader";
+  const { data: played } = await admin.from("player_stats").select("id").eq("guild_id", guildId2).eq("discord_user_id", discordUserId).limit(1).maybeSingle();
+  if (played) return "member";
+  const member = await discordGet(`/guilds/${guildId2}/members/${discordUserId}`);
+  return member ? "member" : null;
+}
 
 // supabase/functions/_shared/billing.ts
 var DEFAULT_PLANS = {
@@ -4385,7 +4426,7 @@ async function manageUrl(guild) {
   const url = out?.data?.attributes?.urls?.customer_portal;
   return res.ok && typeof url === "string" ? url : null;
 }
-async function checkout(guild, product, discordUserId) {
+async function checkout(guild, product, discordUserId, leader) {
   const config = billingConfig();
   const variant = config.lemonVariants[product];
   const key = Deno.env.get("LEMONSQUEEZY_API_KEY");
@@ -4394,6 +4435,7 @@ async function checkout(guild, product, discordUserId) {
   const plan = checkoutPlan(await planRows(guild), product, config);
   if (plan.kind === "refuse") return json({ error: plan.message }, 409);
   if (plan.kind === "switch") {
+    if (!leader) return json({ error: "This server already has a paid plan. Ask a server leader to change it." }, 403);
     const res2 = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${encodeURIComponent(plan.subscription_id)}`, {
       method: "PATCH",
       headers: lemonHeaders(key),
@@ -4452,9 +4494,13 @@ async function handleWeb(req, input) {
   const userDb = (0, import_supabase_js_22.createClient)(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") || req.headers.get("apikey") || "", { global: { headers: { Authorization: req.headers.get("authorization") ?? "" } } });
   const { data: allowed } = await userDb.rpc("user_has_guild_access", { check_guild_id: b.guild_id });
   if (allowed !== true) return json({ error: "You're not in that server." }, 403);
-  if (b.action === "web_status") return json({ ...await statusFor(b.guild_id), manage_url: await manageUrl(b.guild_id).catch(() => null) });
   const { data: link } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).maybeSingle();
-  return checkout(b.guild_id, b.product, link?.discord_user_id ?? null);
+  const discordUserId = link?.discord_user_id ?? null;
+  const leader = discordUserId ? await guildAccessLevel(db, b.guild_id, discordUserId) === "leader" : false;
+  if (b.action === "web_status") {
+    return json({ ...await statusFor(b.guild_id), manage_url: leader ? await manageUrl(b.guild_id).catch(() => null) : null, can_manage: leader });
+  }
+  return checkout(b.guild_id, b.product, discordUserId, leader);
 }
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers });
