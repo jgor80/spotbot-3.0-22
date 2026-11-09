@@ -29,6 +29,7 @@ import {
   FlaskConical,
   Layers,
   Package,
+  Wallet,
   Shield,
   type LucideIcon,
 } from "lucide-react";
@@ -88,6 +89,7 @@ const futPrimary: NavItem[] = [
 
 // Five in the bar keeps the phone nav readable; the rest sit under More
 const futMore: NavItem[] = [
+  { path: "/fut/account", label: "My Account", icon: Wallet },
   { path: "/fut/packs", label: "Packs", icon: Package },
 ];
 

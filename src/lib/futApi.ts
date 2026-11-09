@@ -84,7 +84,7 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
   if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
   return (data ?? null) as T;
 }
-export const futKeys = { packs: ["fut", "packs"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
+export const futKeys = { account: ["fut", "account"] as const, packs: ["fut", "packs"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
 export type MarketPlatform = "console" | "pc";
 export type MarketEvidence = Evidence | "verified";
@@ -146,6 +146,24 @@ export interface PackAdvice {
   platform: MarketPlatform; captured_at: string | null; prices_at: string | null; shape: { pack_keys?: string[]; odds_keys?: string[]; category_keys?: string[] } | null;
   packs: PackAdviceItem[]; pulls: { items: number; opens: PackOpening[] }; model: string[]; verified: false;
 }
+export type AccountTradeState = "listed" | "sold" | "expired" | "unlisted" | "winning" | "outbid" | "won" | "lost" | "watching";
+export interface AccountItem { item_id: number; ea_item_id: number; item_type: string | null; rating: number | null; untradeable: boolean; name: string; version: string | null; position: string | null; price: number | null }
+export interface AccountTrade extends AccountItem { trade_id: string | null; state: AccountTradeState; buy_now: number | null; current_bid: number | null; starting_bid: number | null; expires_at: string | null }
+export interface AccountSbc { set_id: number; name: string; category: string | null; description: string | null; challenges: number | null; completed: number | null; times_completed: number | null; repeat_limit: number | null; repeatable: boolean; end_at: string | null; awards: { type: string; value: number | null; count: number | null; untradeable: boolean }[] }
+export interface AccountObjective { id: number | null; name: string; group: string | null; progress: number | null; target: number | null; done: boolean; end_at: string | null; xp: number | null }
+export type AccountSection = "balance" | "profile" | "tradepile" | "watchlist" | "unassigned" | "sbcs" | "objectives" | "season";
+export interface AccountOverview {
+  platform: MarketPlatform; connected: boolean; updated_at: string | null; prices_at: string | null; seen: Record<AccountSection, string | null>;
+  balance: { coins: number | null; points: number | null; draft_tokens: number | null; currencies: { name: string; funds: number }[] } | null;
+  profile: { persona_name: string | null; club_name: string | null; club_abbr: string | null; established: string | null; won: number | null; lost: number | null; draw: number | null; trophies: number | null; division_online: number | null; division_offline: number | null; unopened_packs: number | null; unassigned_count: number | null; tradepile_max: number | null; watchlist_max: number | null } | null;
+  history: { t: string; coins: number | null; points: number | null; draft_tokens: number | null }[];
+  tradepile: { summary: { total: number; max: number | null; listed: number; sold: number; expired: number; unlisted: number; sold_for: number; sold_after_tax: number; listed_buy_now: number; listed_after_tax: number; idle_market_value: number; overpriced: number }; items: AccountTrade[] } | null;
+  watchlist: { summary: { total: number; winning: number; outbid: number; won: number; lost: number; coins_in_bids: number }; items: AccountTrade[] } | null;
+  unassigned: { total: number; duplicates: number; tradeable_value: number; items: (AccountItem & { duplicate: boolean })[] } | null;
+  sbcs: { total: number; open: number; items: AccountSbc[] } | null;
+  objectives: { total: number; done: number; xp_left: number; items: AccountObjective[] } | null;
+  season: Record<string, number> | null; tips: string[]; shape: Record<string, string[]> | null; verified: false;
+}
 export interface ClubValueCard { id: string; player_name: string; version: string | null; overall: number; position: string; club: string | null; league: string | null; nation: string | null; is_icon: boolean; is_hero: boolean; ea_item_id: number | null; tradeable: boolean | null; quantity: number; tradeable_quantity: number; futgg_price: number | null; captured_price: number | null; captured_at: string | null; price: number | null; price_source: "futgg" | "web_app_capture" | null; value: number | null; value_after_tax: number | null; missing_from_last_sync: boolean }
 export interface ClubValue { platform: MarketPlatform; prices_published_at: string | null; last_sync: string | null; totals: { cards: number; tradeable_cards: number; untradeable_cards: number; unknown_cards: number; tradeable_copies: number; priced_tradeable: number; unpriced_tradeable: number; value: number; value_after_tax: number; untradeable_value: number }; cards: ClubValueCard[] }
 export interface PlayerRole { position: string; role: string; level: "plus" | "plusplus" }
@@ -193,6 +211,10 @@ export const futApi = {
   players: {
     search: (query: PlayerQuery, platform: MarketPlatform, page = 0, limit = 50) => futRequest<PlayerSearch>("/players/search", "POST", { query, platform, limit, offset: page * limit }),
     find: (message: string, previous: PlayerQuery | null, history: FinderTurn[], platform: MarketPlatform) => futRequest<FinderResult>("/players/find", "POST", { message, previous, history, platform }),
+  },
+  account: {
+    get: (platform: MarketPlatform) => futRequest<AccountOverview>(`/account?${new URLSearchParams({ platform })}`),
+    clear: (platform: MarketPlatform) => futRequest<{ cleared: boolean }>(`/account?${new URLSearchParams({ platform })}`, "DELETE"),
   },
   packs: {
     advice: (platform: MarketPlatform) => futRequest<PackAdvice>(`/packs?${new URLSearchParams({ platform })}`),
