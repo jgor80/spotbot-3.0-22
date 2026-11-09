@@ -8,12 +8,14 @@
 // POST { action: "announce", lineup_id, channel_id, mention_players?, dm_players?, message?, image_base64? }
 //   -> { success, message_id, channel_id, updated, changes, dm_sent, dm_failed }
 //   Re-publishing a squad's lineup (same event, or within a day) edits the earlier team sheet and
-//   posts who came in, dropped out or moved, instead of a second team sheet.
+//   posts who came in, dropped out or moved, instead of a second team sheet. Publishes for the
+//   same squad and channel are queued (lock.ts), so two leaders at once can't post two sheets.
 //
 // Callers: a signed-in web app user (JWT) or the Discord bot (service role key).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createAdminClient, identifyCaller, requireGuildAccess, throttleWebUser, type Caller } from "../_shared/auth.ts";
 import { clubAccent, clubCrest } from "../_shared/club-theme.ts";
+import { announceKey, withLock } from "./lock.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -525,7 +527,13 @@ serve(async (req) => {
       return await voiceChannels(supabase, body.guild_id, body.user_ids);
     }
     if (body.action === "announce") {
-      return await announce(supabase, req, body, caller);
+      // Publishes for the same squad and channel run one at a time, and announce() reads the lineup
+      // (and the earlier team sheet) only once it holds the lock, so the second one edits the first.
+      const { data: scope } = UUID_REGEX.test(String(body.lineup_id ?? ""))
+        ? await supabase.from("lineups").select("id, guild_id, team_id, event_id").eq("id", body.lineup_id).maybeSingle()
+        : { data: null };
+      if (!scope) return await announce(supabase, req, body, caller);
+      return await withLock(announceKey(scope, String(body.channel_id ?? "")), () => announce(supabase, req, body, caller));
     }
     return json({ error: "Unknown action" }, 400);
   } catch (error) {
