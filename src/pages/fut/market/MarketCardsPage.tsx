@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { futApi, futKeys, MarketCatalogueCard } from "@/lib/futApi";
 import { ErrorNotice } from "@/components/fut/FutShared";
@@ -79,6 +79,13 @@ export default function MarketCardsPage() {
 
   const query = useQuery({ queryKey: [...futKeys.market, "cards", context.platform, filters], queryFn: () => futApi.market.catalogue(context.platform, filters), enabled: context.enabled, placeholderData: keepPreviousData });
   const data = query.data, pages = data ? Math.max(1, Math.ceil(data.total / PAGE)) : 1;
+  // Fetch the next page in the background so Next is instant
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!context.enabled || !data || page + 1 >= pages) return;
+    const next = { ...filters, offset: String((page + 1) * PAGE) };
+    void qc.prefetchQuery({ queryKey: [...futKeys.market, "cards", context.platform, next], queryFn: () => futApi.market.catalogue(context.platform, next) });
+  }, [qc, context.enabled, context.platform, data, page, pages, filters]);
   const goTo = (n: number) => { update({ page: n > 0 ? String(n + 1) : "" }, true); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const clearAll = () => { setSearch(""); setParams(new URLSearchParams(), { replace: true }); };
   const presetActive = (set: Partial<Record<FilterKey, string>>) => Object.entries(set).every(([k, v]) => get(k as FilterKey) === v);

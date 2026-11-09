@@ -16,7 +16,7 @@ export function ClubImport() {
   const [readError, setReadError] = useState<Error | null>(null);
   const sync = useMutation({
     mutationFn: futApi.importClub,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: futKeys.cards }); qc.invalidateQueries({ queryKey: futKeys.managers }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: futKeys.cards }); qc.invalidateQueries({ queryKey: futKeys.market }); qc.invalidateQueries({ queryKey: futKeys.managers }); },
   });
   const onFile = async (file: File | undefined) => {
     setReadError(null); sync.reset();

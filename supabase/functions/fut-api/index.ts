@@ -3,6 +3,13 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createAdminClient, identifyCaller } from "../_shared/auth.ts";
 import { futDb } from "../_shared/fut/service.ts";
 import { handle } from "./handler.ts";
+import { enableMarketCache } from "../_shared/fut/market.ts";
+
+// One service-role client for the life of the process, so Market Lab can keep shared price data in memory
+// between requests (see enableMarketCache). The client holds no per-user state.
+const sharedAdmin = createAdminClient();
+const db = futDb(sharedAdmin);
+enableMarketCache(db);
 
 // 120 calls a minute per user is far above what the squad builder needs; it only stops runaway loops.
 const WINDOW_MS = 60_000;
@@ -25,7 +32,7 @@ function throttle(userId: string): Response | null {
 serve((req) => {
   const admin = createAdminClient();
   return handle(req, {
-    db: futDb(admin),
+    db,
     // Only a signed-in web user's session counts: the bot and the anon key get 401.
     userFor: async (r) => {
       const caller = await identifyCaller(r, admin);

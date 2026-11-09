@@ -9268,7 +9268,8 @@ var scanRequestSchema = external_exports.object({
   status: external_exports.array(external_exports.enum(["watch", "research_further", "favorable_setup", "overheated", "elevated_risk", "insufficient_evidence"])).optional(),
   max_price: coins.optional(),
   category: external_exports.enum(["base", "promo", "icon", "hero", "evolution", "live", "sbc_reward", "objective"]).optional(),
-  limit: external_exports.number().int().min(1).max(200).optional()
+  limit: external_exports.number().int().min(1).max(200).optional(),
+  offset: external_exports.number().int().min(0).max(1e5).optional()
 });
 
 // supabase/functions/_shared/fut/xilab/intelligence/card.ts
@@ -9303,6 +9304,7 @@ function comparableCards(card, pool, range = 2) {
 // supabase/functions/_shared/fut/xilab/market/service.ts
 var MarketNotFoundError = class extends Error {
 };
+var scanned = /* @__PURE__ */ new WeakMap();
 var LOOKBACK_H = 8 * 24;
 function createMarketService(deps) {
   const rules = deps.rules ?? DEFAULT_MARKET_RULES;
@@ -9320,7 +9322,12 @@ function createMarketService(deps) {
     const s = sourceById.get(r2.source_id);
     return s && s.status === "enabled" && s.permissions.derived_analytics;
   });
-  async function snapshot(owner, platform, as_of = now2()) {
+  async function snapshot(owner, platform, as_of) {
+    const cache = deps.snapshots;
+    if (as_of !== void 0 || !cache) return buildSnapshot(owner, platform, as_of ?? now2());
+    return cache.remember(owner, `${platform}|${await cache.version()}`, () => buildSnapshot(owner, platform, now2()));
+  }
+  async function buildSnapshot(owner, platform, as_of) {
     const cards = await deps.cards.list(owner);
     const byId = new Map(cards.map((c) => [c.id, c]));
     const rows = usable(await deps.prices.query(owner, { platform, as_of, since: iso(ms(as_of) - LOOKBACK_H * 36e5) }));
@@ -9416,6 +9423,30 @@ function createMarketService(deps) {
     }
     return { linked: rows.length, still_held: held.length - rows.length, rows };
   }
+  function scan(snap) {
+    const rank = { favorable_setup: 0, research_further: 1, overheated: 2, elevated_risk: 3, watch: 4, insufficient_evidence: 5 };
+    const items = snap.cards.filter((c) => snap.series.has(c.id)).map((c) => {
+      const a = analyse(snap, c);
+      return {
+        card_id: c.id,
+        name: c.name,
+        rating: c.rating,
+        category: c.category,
+        platform: snap.platform,
+        latest_price: a.latest,
+        latest_observed_at: a.fresh.latest_observed_at,
+        freshness: a.fresh.status,
+        status: a.assessment.status,
+        categories: a.assessment.categories,
+        reasons: a.assessment.reasons,
+        could_be_wrong: a.assessment.could_be_wrong,
+        change_24h: a.mom.changes["24h"],
+        change_72h: a.mom.changes["72h"],
+        vs_market_24h_pp: a.rs.find((r2) => r2.benchmark === "market")?.cells.find((x) => x.window === "24h")?.diff_pp ?? null
+      };
+    }).sort((x, y) => rank[x.status] - rank[y.status] || (y.vs_market_24h_pp ?? -999) - (x.vs_market_24h_pp ?? -999));
+    return items;
+  }
   return {
     rules,
     /** Data sources panel: every provider, enabled or not, with its terms. */
@@ -9508,28 +9539,19 @@ function createMarketService(deps) {
     /** find_market_opportunities: the scanner across every card with prices. */
     async findMarketOpportunities(owner, opts = {}) {
       const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
-      const rank = { favorable_setup: 0, research_further: 1, overheated: 2, elevated_risk: 3, watch: 4, insufficient_evidence: 5 };
-      const items = snap.cards.filter((c) => snap.series.has(c.id) && (!opts.category || c.category === opts.category)).map((c) => {
-        const a = analyse(snap, c);
-        return {
-          card_id: c.id,
-          name: c.name,
-          rating: c.rating,
-          category: c.category,
-          platform: snap.platform,
-          latest_price: a.latest,
-          latest_observed_at: a.fresh.latest_observed_at,
-          freshness: a.fresh.status,
-          status: a.assessment.status,
-          categories: a.assessment.categories,
-          reasons: a.assessment.reasons,
-          could_be_wrong: a.assessment.could_be_wrong,
-          change_24h: a.mom.changes["24h"],
-          change_72h: a.mom.changes["72h"],
-          vs_market_24h_pp: a.rs.find((r2) => r2.benchmark === "market")?.cells.find((x) => x.window === "24h")?.diff_pp ?? null
-        };
-      }).filter((i) => (!opts.status || opts.status.includes(i.status)) && (opts.max_price === void 0 || i.latest_price !== null && i.latest_price <= opts.max_price)).sort((x, y) => rank[x.status] - rank[y.status] || (y.vs_market_24h_pp ?? -999) - (x.vs_market_24h_pp ?? -999));
-      return { regime: snap.regime.primary, items: items.slice(0, opts.limit ?? 50), total: items.length, provenance: provenance(snap) };
+      const all = scanned.get(snap) ?? scan(snap);
+      scanned.set(snap, all);
+      const items = all.filter((i) => (!opts.status || opts.status.includes(i.status)) && (!opts.category || i.category === opts.category) && (opts.max_price === void 0 || i.latest_price !== null && i.latest_price <= opts.max_price));
+      const offset = opts.offset ?? 0;
+      return {
+        regime: snap.regime.primary,
+        items: items.slice(offset, offset + (opts.limit ?? 50)),
+        total: items.length,
+        offset,
+        // Every category in the scan, so the filter can list them without a second unfiltered request
+        categories: [...new Set(all.flatMap((i) => [i.category, ...i.categories]).filter(Boolean))].sort(),
+        provenance: provenance(snap)
+      };
     },
     /** compare_card_relative_value: fit and price against named cards (or its comparables). */
     async compareCardRelativeValue(owner, card_id, opts = {}) {
@@ -9690,6 +9712,47 @@ var iso2 = (v) => v === null || v === void 0 ? null : new Date(String(v)).toISOS
 var PAGE = 1e3;
 var MAX_PRICE_ROWS_PER_USER = 5e4;
 var MAX_HELD_CAPTURES_PER_USER = 2e4;
+var caches = /* @__PURE__ */ new WeakMap();
+var cacheOn = (db) => caches.has(db);
+var MAX_ENTRIES = 400;
+var MARKET_CACHE_TTL = { config: 6e4, version: 6e4, shared: 30 * 6e4, snapshot: 2 * 6e4 };
+var SHARED_QUOTES_HOURS = 9 * 24;
+function remember(db, key, ttl, load) {
+  const map = caches.get(db);
+  if (!map) return load();
+  const hit = map.get(key), t = Date.now();
+  if (hit && t - hit.at < ttl) return hit.value;
+  const entry = { at: t, value: load() };
+  map.delete(key);
+  map.set(key, entry);
+  entry.value.catch(() => {
+    if (map.get(key) === entry) map.delete(key);
+  });
+  while (map.size > MAX_ENTRIES) map.delete(map.keys().next().value);
+  return entry.value;
+}
+function forgetMarketOwner(db, owner) {
+  const map = caches.get(db);
+  if (!map) return;
+  for (const key of [...map.keys()]) if (key.startsWith(`snap:${owner}|`)) map.delete(key);
+}
+function feedVersion(db) {
+  return remember(db, "version", MARKET_CACHE_TTL.version, async () => {
+    try {
+      const { data, error } = await db.from("futgg_snapshots").select("platform,published_at").eq("game_year", 27).order("published_at", { ascending: false }).limit(2);
+      if (error) return "unknown";
+      return (data ?? []).map((r2) => `${r2.platform}:${iso2(r2.published_at)}`).sort().join(",") || "none";
+    } catch {
+      return "unknown";
+    }
+  });
+}
+function snapshotCache(db) {
+  return {
+    version: () => feedVersion(db),
+    remember: (owner, key, build) => remember(db, `snap:${owner}|${key}`, MARKET_CACHE_TTL.snapshot, build)
+  };
+}
 async function allPages(make) {
   const out = [];
   for (let from = 0; ; from += PAGE) {
@@ -9714,8 +9777,12 @@ var toObs = (r2) => ({
   ...Array.isArray(r2.quality) ? { quality: r2.quality } : {}
 });
 function trackedCatalogue(db) {
-  let cached = null;
-  return () => cached ??= allPages(() => db.from("player_cards").select("id,player_name,version,overall,positions,club,league,nation,is_icon,is_hero,source_id,source_card_key,price,updated_at").is("owner_user_id", null).eq("source_id", "futgg_catalogue").eq("market_tracked", true).order("id", { ascending: true }));
+  const load = () => allPages(() => db.from("player_cards").select("id,player_name,version,overall,positions,club,league,nation,is_icon,is_hero,source_id,source_card_key,price,updated_at").is("owner_user_id", null).eq("source_id", "futgg_catalogue").eq("market_tracked", true).order("id", { ascending: true }));
+  if (!cacheOn(db)) {
+    let once = null;
+    return () => once ??= load();
+  }
+  return async () => remember(db, `catalogue|${await feedVersion(db)}`, MARKET_CACHE_TTL.shared, load);
 }
 var eaKey = (v) => /^[1-9]\d{0,9}$/.test(String(v ?? "")) ? Number(v) : null;
 var catalogueCard = (r2) => ({
@@ -9744,11 +9811,41 @@ var catalogueCard = (r2) => ({
   ea_item_id: eaKey(r2.source_card_key),
   updated_at: String(r2.updated_at)
 });
+async function fetchFutggQuotes(db, ids, q) {
+  const out = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    out.push(...await allPages(() => {
+      let x = db.from("futgg_prices").select("*").eq("game_year", 27).in("ea_item_id", ids.slice(i, i + 100)).gte("price", 1);
+      if (q.platform) x = x.eq("platform", q.platform);
+      if (q.since) x = x.gte("published_at", q.since);
+      return x.lte("received_at", q.as_of).lte("published_at", q.as_of).order("published_at", { ascending: true }).order("ea_item_id", { ascending: true }).order("platform", { ascending: true });
+    }));
+    if (out.length >= 2e5) throw new FutError("Too much bulk price history to analyse at once.", 413);
+  }
+  return out;
+}
+function sharedFutggQuotes(db, catalogue2) {
+  return async (platform) => remember(db, `quotes:${platform}|${await feedVersion(db)}`, MARKET_CACHE_TTL.shared, async () => {
+    const ids = [...new Set((await catalogue2()).flatMap((r2) => {
+      const k = eaKey(r2.source_card_key);
+      return k === null ? [] : [k];
+    }))];
+    const now2 = (/* @__PURE__ */ new Date()).toISOString();
+    const rows = await fetchFutggQuotes(db, ids, { platform, since: new Date(Date.now() - SHARED_QUOTES_HOURS * 36e5).toISOString(), as_of: now2 });
+    const byEa = /* @__PURE__ */ new Map();
+    for (const r2 of rows) {
+      const k = Number(r2.ea_item_id);
+      (byEa.get(k) ?? byEa.set(k, []).get(k)).push(r2);
+    }
+    return byEa;
+  });
+}
 var PgPriceStore = class {
-  constructor(db, futggEnabled = false, catalogue2 = () => Promise.resolve([])) {
+  constructor(db, futggEnabled = false, catalogue2 = () => Promise.resolve([]), sharedQuotes) {
     this.db = db;
     this.futggEnabled = futggEnabled;
     this.catalogue = catalogue2;
+    this.sharedQuotes = sharedQuotes;
   }
   async query(owner, q) {
     const base = (shared) => () => {
@@ -9775,33 +9872,35 @@ var PgPriceStore = class {
       byEa.set(Number(key), [...byEa.get(Number(key)) ?? [], String(card.id)]);
     }
     const wanted = q.card_ids?.length ? new Set(q.card_ids) : null;
+    const catalogueIds = /* @__PURE__ */ new Map();
     for (const row of await this.catalogue()) {
       const key = eaKey(row.source_card_key);
       if (key === null || byEa.has(key) || wanted && !wanted.has(String(row.id))) continue;
-      byEa.set(key, [String(row.id)]);
+      catalogueIds.set(key, String(row.id));
     }
-    const ids = [...byEa.keys()], out = [];
-    for (let i = 0; i < ids.length; i += 100) {
-      const quotes = await allPages(() => {
-        let x = this.db.from("futgg_prices").select("*").eq("game_year", 27).in("ea_item_id", ids.slice(i, i + 100)).gte("price", 1);
-        if (q.platform) x = x.eq("platform", q.platform);
-        if (q.since) x = x.gte("published_at", q.since);
-        return x.lte("received_at", q.as_of).lte("published_at", q.as_of).order("published_at", { ascending: true }).order("ea_item_id", { ascending: true }).order("platform", { ascending: true });
-      });
-      for (const quote of quotes) for (const cardId of byEa.get(Number(quote.ea_item_id)) ?? []) {
-        out.push({
-          card_id: cardId,
-          platform: quote.platform,
-          price: Number(quote.price),
-          observed_at: iso2(quote.published_at),
-          received_at: iso2(quote.received_at),
-          season: "FC27",
-          source_id: "futgg_bulk",
-          evidence: "estimate",
-          kind: "lowest_bin",
-          quality: ["FUT.GG dataset publication time; individual quote update time is unavailable."]
-        });
+    const out = [];
+    const push = (quote, cardId) => out.push({
+      card_id: cardId,
+      platform: quote.platform,
+      price: Number(quote.price),
+      observed_at: iso2(quote.published_at),
+      received_at: iso2(quote.received_at),
+      season: "FC27",
+      source_id: "futgg_bulk",
+      evidence: "estimate",
+      kind: "lowest_bin",
+      quality: ["FUT.GG dataset publication time; individual quote update time is unavailable."]
+    });
+    const since = q.since ? Date.parse(q.since) : -Infinity, asOf = Date.parse(q.as_of);
+    const shared = this.sharedQuotes && q.platform && !wanted && since >= Date.now() - SHARED_QUOTES_HOURS * 36e5 ? await this.sharedQuotes(q.platform) : null;
+    if (shared) {
+      for (const [key, cardId] of catalogueIds) for (const quote of shared.get(key) ?? []) {
+        const t = Date.parse(String(quote.published_at));
+        if (t >= since && t <= asOf && Date.parse(String(quote.received_at)) <= asOf) push(quote, cardId);
       }
+    } else for (const [key, cardId] of catalogueIds) byEa.set(key, [cardId]);
+    for (const quote of await fetchFutggQuotes(this.db, [...byEa.keys()], q)) for (const cardId of byEa.get(Number(quote.ea_item_id)) ?? []) {
+      push(quote, cardId);
       if (out.length >= 2e5) throw new FutError("Too much bulk price history to analyse at once.", 413);
     }
     return out;
@@ -9833,6 +9932,7 @@ var PgPriceStore = class {
       }));
       fail2((await this.db.from("market_price_observations").insert(chunk)).error);
     }
+    if (fresh.length) forgetMarketOwner(this.db, owner);
     return { inserted: fresh.length, skipped: rows.length - fresh.length };
   }
 };
@@ -9983,10 +10083,13 @@ async function marketRules(db) {
   return { id: String(data.id), status: data.status, notes: String(data.notes), ...data.body };
 }
 async function marketFor(db, now2) {
-  const [rules, sources, chemistry] = await Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
+  const load = () => Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
+  const cache = cacheOn(db) && !now2;
+  const [rules, sources, chemistry] = cache ? await remember(db, "config", MARKET_CACHE_TTL.config, load) : await load();
   const catalogue2 = trackedCatalogue(db);
+  const futgg = sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled");
   return createMarketService({
-    prices: new PgPriceStore(db, sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled"), catalogue2),
+    prices: new PgPriceStore(db, futgg, catalogue2, cache ? sharedFutggQuotes(db, catalogue2) : void 0),
     memberships: new PgMembershipStore(db),
     watchlists: new PgWatchlistStore(db),
     cards: new PgMarketCardSource(db, catalogue2),
@@ -9994,7 +10097,8 @@ async function marketFor(db, now2) {
     sources,
     rules,
     chemistry,
-    ...now2 ? { now: now2 } : {}
+    ...now2 ? { now: now2 } : {},
+    ...cache ? { snapshots: snapshotCache(db) } : {}
   });
 }
 function marketCardId(v) {

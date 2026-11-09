@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useFutAvailable, FutShell, EvidenceBadge, ApiDetails, Busy, ErrorNotice } from "@/components/fut/FutShared";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,17 @@ export function useMarketPlatform() {
  const [platform, set] = useState<MarketPlatform>(() => { try { return marketPlatform(localStorage.getItem(platformStorageKey)); } catch { return "console"; } });
  const setPlatform = (value: string) => { const next = marketPlatform(value); set(next); try { localStorage.setItem(platformStorageKey, next); } catch { /* Preference remains in memory when storage is disabled. */ } };
  return { platform, setPlatform, enabled: useFutAvailable() };
+}
+/** True once the element has come near the screen; used to load lower sections of a page only when they're needed. */
+export function useInView<T extends Element>(margin = "300px") {
+ const ref = useRef<T>(null); const [seen, setSeen] = useState(false);
+ useEffect(() => {
+  const el = ref.current; if (seen || !el) return;
+  if (typeof IntersectionObserver === "undefined") { setSeen(true); return; }
+  const io = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) { setSeen(true); io.disconnect(); } }, { rootMargin: margin });
+  io.observe(el); return () => io.disconnect();
+ }, [seen, margin]);
+ return [ref, seen] as const;
 }
 // Card Search (/fut/market/cards) has its own spot in the FUT nav, so it isn't one of Market Lab's tabs
 const tabs = [{ path: "/fut/market", label: "Overview" }, { path: "/fut/market/radar", label: "Opportunity radar" }, { path: "/fut/market/watchlist", label: "Watchlist" }, { path: "/fut/market/import", label: "Import prices" }, { path: "/fut/market/sources", label: "Data sources" }];

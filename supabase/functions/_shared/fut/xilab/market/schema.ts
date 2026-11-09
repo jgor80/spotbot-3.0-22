@@ -32,4 +32,5 @@ export const scanRequestSchema = z.object({
   max_price: coins.optional(),
   category: z.enum(["base", "promo", "icon", "hero", "evolution", "live", "sbc_reward", "objective"]).optional(),
   limit: z.number().int().min(1).max(200).optional(),
+  offset: z.number().int().min(0).max(100_000).optional(),
 });
