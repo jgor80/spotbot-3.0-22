@@ -58,6 +58,11 @@ export interface ClubImportResult {
   added: number; updated: number; managers_added: number; over_limit: number;
   skipped: { reason: string; count: number }[]; verified: false; note: string; prices_linked?: number;
 }
+export interface SquadImportEntry { slot?: string | null; position?: string | null; name: string; rating?: number | null; version?: string | null }
+export interface SquadImportOption { card: SlotCard; version: string | null; score: number }
+export interface SquadImportRow { input: SquadImportEntry; slot: string | null; card: SlotCard | null; version: string | null; confidence: "sure" | "likely" | "check" | "missing"; options: SquadImportOption[]; reason?: string }
+export interface SquadImportResult { squad: FutSquad; rows: SquadImportRow[]; formation_changed: string | null; cleared: string[]; via: "list" | "ai"; note: string | null }
+export interface SquadImportImage { media_type: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; data: string }
 export class FutApiError extends Error {
   constructor(message: string, public status?: number) { super(message); this.name = "FutApiError"; }
 }
@@ -209,6 +214,7 @@ export const futApi = {
   deleteSquad: (id: string) => futRequest(`/squads/${encodeURIComponent(id)}`, "DELETE"),
   chemistry: (squad: FutSquad | string) => futRequest<Chemistry>("/squads/chemistry", "POST", { squad: typeof squad === "string" ? squad : withBudget(squad) }),
   diagnose: (squad: FutSquad, slot?: string) => futRequest<RuleInfo & Record<string, unknown>>("/squads/diagnose", "POST", { squad: withBudget(squad), ...(slot ? { slot } : {}) }),
+  importSquad: (squad: FutSquad, input: { text?: string; image?: SquadImportImage }) => futRequest<SquadImportResult>("/squads/import", "POST", { squad: withBudget(squad), ...input }),
   preview: (squad: FutSquad, slot: string, cardId: string | null) => futRequest<SwapPreview>("/squads/preview", "POST", { squad: withBudget(squad), slot, ...(cardId === null ? { card: null } : { card_id: cardId }) }),
   optimize: (squad: FutSquad, goal: { slot?: string; slot_target?: number; total_target?: number }, options: { budget?: number; max_swaps: number; allow_manager_change: boolean; allow_net_loss: boolean }) => { optimizerRules.parse(options); return futRequest<Optimization>("/squads/optimize", "POST", { squad: withBudget(squad), goal, options: { ...options, budget: squadBudget(options.budget) } }); },
   compareSquads: (a: FutSquad, b: FutSquad) => futRequest<Comparison>("/squads/compare", "POST", { a: withBudget(a), b: withBudget(b) }),

@@ -11,6 +11,7 @@ import { cardEaReference, storeEaReference } from "../_shared/fut/ea-reference.t
 import { collectFc27Market, fc27MarketStatus, pullFc27Market } from "../_shared/fut/fc27market.ts";
 import { futggStatus } from "../_shared/fut/futgg-status.ts";
 import { clearStore, importStore, packAdvice } from "../_shared/fut/packs.ts";
+import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { syncFutggCatalogue } from "../_shared/fut/futgg-catalogue.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
@@ -46,6 +47,30 @@ export interface Deps {
 const MAX_IMPORT_BODY = 1024 * 1024;
 /** A pack store file: a few hundred packs with their odds lines, plus pulls. */
 const MAX_STORE_BODY = 2 * 1024 * 1024;
+/** A squad import: a chat message, or a screenshot the browser already shrank to ~1600px (a few hundred KB). */
+const MAX_SQUAD_IMPORT_BODY = 6 * 1024 * 1024;
+/** Squad imports that need Claude (free text, screenshots) per user per hour; plain lists don't count. */
+const AI_IMPORTS_PER_HOUR = 30;
+const aiImports = new Map<string, number[]>();
+function aiImportAllowed(userId: string, perHour: number): boolean {
+  const now = Date.now();
+  const recent = (aiImports.get(userId) ?? []).filter((t) => now - t < 3_600_000);
+  if (recent.length >= perHour) return false;
+  recent.push(now);
+  aiImports.set(userId, recent);
+  if (aiImports.size > 5000) aiImports.clear();
+  return true;
+}
+
+function importImage(v: unknown): ImportImage | null {
+  if (v === undefined || v === null) return null;
+  const o = obj(v);
+  const types = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  if (typeof o.media_type !== "string" || !types.includes(o.media_type)) throw new FutError("Upload a JPEG, PNG, WebP or GIF screenshot.");
+  if (typeof o.data !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(o.data) || o.data.length > MAX_SQUAD_IMPORT_BODY) throw new FutError("That screenshot couldn't be read. Try another one.");
+  return { media_type: o.media_type as ImportImage["media_type"], data: o.data };
+}
+
 /** A club file from the XI Lab helper: a few hundred bytes per item. */
 const MAX_CLUB_BODY = 4 * 1024 * 1024;
 
@@ -265,6 +290,23 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           const squad = squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad;
           return assignCard(squad, slotName(b.slot, true)!, await incomingCard(db, userId, b));
         }) });
+      }
+      if (route === "/squads/import" && m === "POST") {
+        // Type your squad or upload a screenshot/list: matched to your cards and the market card list, placed into
+        // the squad sent along. Nothing is saved until POST /squads.
+        const b = obj(await body(req, MAX_SQUAD_IMPORT_BODY));
+        const text = typeof b.text === "string" ? b.text : null;
+        const image = importImage(b.image);
+        const env = deps.env ?? ((k: string) => Deno.env.get(k));
+        const perHour = Number(env("FUT_IMPORT_AI_PER_HOUR")) || AI_IMPORTS_PER_HOUR;
+        const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
+        const result = await runWorkspace(async () => {
+          const squad = squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad;
+          return importSquad(db, userId, squad, { text, image }, env, fetchFn, {
+            beforeAi: () => { if (!aiImportAllowed(userId, perHour)) throw new FutError("That's a lot of squad reads this hour. Try again later, or type the squad as a list.", 429); },
+          });
+        });
+        return json({ data: result });
       }
       if (route === "/squads/preview" && m === "POST") {
         const b = obj(await body(req));
