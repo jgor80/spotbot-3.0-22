@@ -1,4 +1,5 @@
 import { identifyCaller, requireGuildAccess } from '../_shared/auth.ts'
+import { type SessionMatch, sessionTotals } from './session-totals.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { decodeRegionId, toFcPlatform, FC_PLATFORMS, normalizeClubName } from '../_shared/ea.ts'
 import { eaEventStats } from '../_shared/ea-events.ts'
@@ -537,79 +538,30 @@ async function findOrCreateSession(
   }
 }
 
-// Update session aggregate stats after adding a match
-async function updateSessionStats(
-  supabase: any,
-  sessionId: string,
-  matchData: {
-    result: string;
-    scoreFor: number;
-    scoreAgainst: number;
-    playerStats: any[];
-    playerUsernames: string[];
-  }
-) {
+// Rebuild a session's totals from the matches attached to it (session-totals.ts). Idempotent, so a
+// failure is repaired by the next sync: callers keep the match's stats incomplete when this fails.
+async function refreshSessionStats(supabase: any, sessionId: string): Promise<boolean> {
   try {
-    // Get current session data
-    const { data: session, error: fetchError } = await supabase
-      .from('club_sessions')
-      .select('*')
-      .eq('id', sessionId)
-      .single();
-
-    if (fetchError || !session) {
-      console.error(`[sync-ea-stats] Error fetching session for update:`, fetchError);
-      return;
+    const { data: matches, error: fetchError } = await supabase
+      .from('club_matches')
+      .select('result, score_for, score_against, player_stats')
+      .eq('session_id', sessionId)
+    if (fetchError) {
+      console.error(`[sync-ea-stats] Error reading matches for session ${sessionId}:`, fetchError.message)
+      return false
     }
-
-    // Aggregate new values
-    const isCleanSheet = matchData.scoreAgainst === 0;
-    const existingPlayers = (session.players as string[]) || [];
-    const newPlayers = [...new Set([...existingPlayers, ...matchData.playerUsernames])];
-
-    // Sum up player stats
-    let totalShots = 0, totalShotsOnTarget = 0, totalPassesMade = 0, totalPassAttempts = 0;
-    let totalTackles = 0, totalTackleAttempts = 0, totalAssists = 0, redCards = 0;
-
-    for (const pStat of matchData.playerStats) {
-      totalShots += pStat.shots || 0;
-      totalShotsOnTarget += pStat.goals || 0; // Using goals as proxy for shots on target
-      totalPassesMade += pStat.passes_made || 0;
-      totalPassAttempts += pStat.pass_attempts || 0;
-      totalTackles += pStat.tackles || 0;
-      totalTackleAttempts += pStat.tackle_attempts || 0;
-      totalAssists += pStat.assists || 0;
-      if (pStat.red_cards) redCards++;
-    }
-
     const { error: updateError } = await supabase
       .from('club_sessions')
-      .update({
-        match_count: (session.match_count || 0) + 1,
-        wins: (session.wins || 0) + (matchData.result === 'win' ? 1 : 0),
-        draws: (session.draws || 0) + (matchData.result === 'draw' ? 1 : 0),
-        losses: (session.losses || 0) + (matchData.result === 'loss' ? 1 : 0),
-        goals_for: (session.goals_for || 0) + matchData.scoreFor,
-        goals_against: (session.goals_against || 0) + matchData.scoreAgainst,
-        total_shots: (session.total_shots || 0) + totalShots,
-        total_shots_on_target: (session.total_shots_on_target || 0) + totalShotsOnTarget,
-        total_passes_made: (session.total_passes_made || 0) + totalPassesMade,
-        total_pass_attempts: (session.total_pass_attempts || 0) + totalPassAttempts,
-        total_tackles: (session.total_tackles || 0) + totalTackles,
-        total_tackle_attempts: (session.total_tackle_attempts || 0) + totalTackleAttempts,
-        total_assists: (session.total_assists || 0) + totalAssists,
-        red_cards: (session.red_cards || 0) + redCards,
-        clean_sheets: (session.clean_sheets || 0) + (isCleanSheet ? 1 : 0),
-        players: newPlayers,
-        player_count: newPlayers.length,
-      })
-      .eq('id', sessionId);
-
+      .update(sessionTotals((matches || []) as SessionMatch[]))
+      .eq('id', sessionId)
     if (updateError) {
-      console.error(`[sync-ea-stats] Error updating session stats:`, updateError);
+      console.error(`[sync-ea-stats] Error updating session ${sessionId}:`, updateError.message)
+      return false
     }
+    return true
   } catch (err) {
-    console.error(`[sync-ea-stats] Error in updateSessionStats:`, err);
+    console.error(`[sync-ea-stats] Error in refreshSessionStats:`, err)
+    return false
   }
 }
 
@@ -2147,6 +2099,7 @@ Deno.serve(async (req) => {
               // The bot's live monitor also inserts matches this way, without a session, so a retry adds the session.
               const repairIds = new Set((existingMatches || []).filter((m: any) => m.stats_complete === false).map((m: any) => m.ea_match_id))
               const noSessionIds = new Set((existingMatches || []).filter((m: any) => !m.session_id).map((m: any) => m.ea_match_id))
+              const sessionOf = new Map<string, string>((existingMatches || []).filter((m: any) => m.session_id).map((m: any) => [m.ea_match_id, m.session_id]))
               
               for (const matchData of matches) {
                 // Use fallback paths per EA data map for match ID and timestamp
@@ -2289,8 +2242,9 @@ Deno.serve(async (req) => {
                 // Find or create session for this match using fallback paths for timestamp
                 const matchTimestamp = parseInt(extractWithFallback(matchData, ['timestamp', 'matchTimestamp', 'time', 'matchTime']) || Date.now() / 1000);
                 const repairing = repairIds.has(matchId)
-                const sessionId = repairing && !noSessionIds.has(matchId) ? null : await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
-                if (repairing && sessionId) {
+                // A repaired match keeps its session (whose totals are rebuilt below); one without gets one now
+                const sessionId = repairing && !noSessionIds.has(matchId) ? (sessionOf.get(matchId) ?? null) : await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
+                if (repairing && sessionId && noSessionIds.has(matchId)) {
                   const { error: sessionErr } = await supabase.from('club_matches').update({ session_id: sessionId })
                     .eq('guild_id', guildId).eq('club_key', club.key).eq('ea_match_id', matchId)
                   if (sessionErr) console.error(`[sync-ea-stats] Couldn't attach match ${matchId} to its session:`, sessionErr.message)
@@ -2316,21 +2270,12 @@ Deno.serve(async (req) => {
                   totalSynced++
                   existingIds.add(matchId)
                   
-                  // Update session stats
-                  if (sessionId) {
-                    const playerUsernames = playerStats.map(p => p.ea_username).filter(Boolean);
-                    await updateSessionStats(supabase, sessionId, {
-                      result,
-                      scoreFor,
-                      scoreAgainst,
-                      playerStats,
-                      playerUsernames
-                    });
-                  }
-                  
+                  // Rebuild the session's totals; on failure the match stays incomplete so the next sync retries
+                  const sessionOk = sessionId ? await refreshSessionStats(supabase, sessionId) : true
+
                   // Record player stats
                   const recorded = repairing ? await recordedPlayerIds(supabase, guildId, matchId) : new Set<string>()
-                  let statsFailed = false
+                  let statsFailed = !sessionOk
                   for (const pStat of playerStats) {
                     // Linked account wins even if a placeholder still carries this gamertag (case-insensitive)
                     const profile = await linkedFor(pStat.ea_username)
@@ -2419,11 +2364,12 @@ Deno.serve(async (req) => {
             if (competitionMatches && competitionMatches.length > 0) {
               const { data: existingCompMatches } = await supabase
                 .from('club_matches')
-                .select('ea_match_id, stats_complete')
+                .select('ea_match_id, stats_complete, session_id')
                 .eq('guild_id', guildId)
                 .eq('club_key', club.key)
-              
+
               const existingCompIds = new Set((existingCompMatches || []).map((m: any) => m.ea_match_id))
+              const compSessionOf = new Map<string, string>((existingCompMatches || []).filter((m: any) => m.session_id).map((m: any) => [m.ea_match_id, m.session_id]))
               // Matches whose player rows didn't all save last time (stats_complete = false) are retried below
               const repairCompIds = new Set((existingCompMatches || []).filter((m: any) => m.stats_complete === false).map((m: any) => m.ea_match_id))
               
@@ -2554,7 +2500,8 @@ Deno.serve(async (req) => {
                 
                 // Find or create session for this match
                 const matchTimestamp = parseInt(matchData.timestamp || matchData.matchTime || Date.now() / 1000);
-                const sessionId = repairCompIds.has(matchId) ? null : await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
+                // A repaired match keeps its session, whose totals are rebuilt below
+                const sessionId = repairCompIds.has(matchId) ? (compSessionOf.get(matchId) ?? null) : await findOrCreateSession(supabase, guildId, club.key, matchTimestamp);
 
                 const repairing = repairCompIds.has(matchId)
                 const { error: insertError } = repairing ? { error: null } : await supabase.from('club_matches').insert({
@@ -2577,21 +2524,12 @@ Deno.serve(async (req) => {
                   totalSynced++
                   existingCompIds.add(matchId)
                   
-                  // Update session stats
-                  if (sessionId) {
-                    const playerUsernames = playerStats.map(p => p.ea_username).filter(Boolean);
-                    await updateSessionStats(supabase, sessionId, {
-                      result,
-                      scoreFor,
-                      scoreAgainst,
-                      playerStats,
-                      playerUsernames
-                    });
-                  }
-                  
+                  // Rebuild the session's totals; on failure the match stays incomplete so the next sync retries
+                  const sessionOk = sessionId ? await refreshSessionStats(supabase, sessionId) : true
+
                   // Record player stats for competition matches
                   const recorded = repairing ? await recordedPlayerIds(supabase, guildId, matchId) : new Set<string>()
-                  let statsFailed = false
+                  let statsFailed = !sessionOk
                   for (const pStat of playerStats) {
                     // Linked account wins even if a placeholder still carries this gamertag (case-insensitive)
                     const profile = await linkedFor(pStat.ea_username)
