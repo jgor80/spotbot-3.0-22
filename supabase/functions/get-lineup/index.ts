@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { requireGuildAccess } from "../_shared/auth.ts";
+import { lineupLookup } from "./lookup.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,16 +24,16 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { lineup_id, share_code }: GetLineupRequest = await req.json();
+    const lookup = lineupLookup(((await req.json().catch(() => null)) || {}) as GetLineupRequest);
 
-    if (!lineup_id && !share_code) {
+    if (!lookup) {
       return new Response(
         JSON.stringify({ error: "Either lineup_id or share_code is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`[get-lineup] Fetching lineup ${lineup_id || share_code}`);
+    console.log(`[get-lineup] Fetching lineup by ${lookup.by}`);
 
     // Get lineup
     let query = supabase
@@ -40,11 +41,7 @@ serve(async (req) => {
       .select("*, teams(name, tag), availability_events(title, scheduled_at)")
       .limit(1);
 
-    if (lineup_id) {
-      query = query.eq("id", lineup_id);
-    } else {
-      query = query.eq("share_code", share_code);
-    }
+    query = query.eq(lookup.by === "id" ? "id" : "share_code", lookup.value);
 
     const { data: lineup, error: lineupError } = await query.single();
 
@@ -55,8 +52,9 @@ serve(async (req) => {
       );
     }
 
-    // A share code is a public link; looking a lineup up by ID needs access to its server.
-    if (!share_code) {
+    // A share code is a public link; looking a lineup up by ID always needs access to its server,
+    // even if a share_code was sent too (lookup.ts).
+    if (lookup.needsAccess) {
       const denied = await requireGuildAccess(req, supabase, lineup.guild_id, "member");
       if (denied) return denied;
     }
