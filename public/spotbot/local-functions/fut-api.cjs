@@ -379,6 +379,25 @@ function assignCard(squad, slot, card) {
 function setManager(squad, manager) {
   return touch(squad, squad.slots, { manager });
 }
+function setFormation(squad, formation) {
+  const target = formationSlots(formation).map((s) => ({ slot: s.slot, position: s.position, card: null, locked: false }));
+  const pending = squad.slots.filter((s) => s.card);
+  const place = (pick) => {
+    for (const s of [...pending]) {
+      const t = target.find((t2) => !t2.card && pick(t2, s));
+      if (t) {
+        t.card = s.card;
+        t.locked = s.locked;
+        pending.splice(pending.indexOf(s), 1);
+      }
+    }
+  };
+  place((t, s) => same(t.slot, s.slot) && s.card.positions.some((p) => same(p, t.position)));
+  place((t, s) => s.card.positions.some((p) => same(p, t.position)));
+  place((t, s) => same(t.slot, s.slot));
+  place(() => true);
+  return touch(squad, target, { formation });
+}
 function toSquadInput(squad) {
   return {
     formation: squad.formation,
@@ -6317,6 +6336,358 @@ async function pullSummary(db2, platform, pulls, packs) {
   };
 }
 
+// supabase/functions/_shared/fut/squad-import.ts
+var POSITIONS = ["GK", "RB", "CB", "LB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", "ST"];
+var ALIASES = { RWB: "RB", LWB: "LB", CF: "ST", RF: "RW", LF: "LW", GOALKEEPER: "GK", STRIKER: "ST", KEEPER: "GK" };
+var SLOT_POSITION = new Map(Object.values(FORMATIONS).flatMap((f2) => f2.map((s) => [s.slot, s.position])));
+var SLOT_NAMES = new Set(SLOT_POSITION.keys());
+var MAX_IMPORT_TEXT = 4e3;
+var MAX_IMPORT_ENTRIES = 30;
+function normalize(s) {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/ø/g, "o").replace(/æ/g, "ae").replace(/ß/g, "ss").replace(/[đð]/g, "d").replace(/ł/g, "l").replace(/ı/g, "i").replace(/[^a-z0-9]+/g, " ").trim();
+}
+function positionOf(v) {
+  if (typeof v !== "string") return null;
+  const p = v.trim().toUpperCase();
+  if (POSITIONS.includes(p)) return p;
+  return ALIASES[p] ?? SLOT_POSITION.get(p) ?? null;
+}
+var clean = (v, max) => typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+function cleanEntries(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const r2 of raw.slice(0, MAX_IMPORT_ENTRIES)) {
+    if (!r2 || typeof r2 !== "object") continue;
+    const e = r2;
+    const name2 = clean(e.name, 60);
+    if (!name2 || !normalize(name2)) continue;
+    const rating3 = Number(e.rating);
+    const slot = clean(e.slot, 8)?.toUpperCase() ?? null;
+    out.push({
+      name: name2,
+      slot: slot && SLOT_NAMES.has(slot) ? slot : null,
+      position: positionOf(e.position) ?? (slot ? positionOf(slot) : null),
+      rating: Number.isInteger(rating3) && rating3 >= 40 && rating3 <= 99 ? rating3 : null,
+      version: clean(e.version, 40)
+    });
+  }
+  return out;
+}
+var POS_RE = "(GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST|RWB|LWB|CF|RF|LF|LCB|RCB|LCM|RCM|LCDM|RCDM|LST|RST)";
+var LINE = new RegExp(`^${POS_RE}\\s*[:\\-\u2013.)]?\\s+(.+?)\\s*$`, "i");
+var LINE_REVERSED = new RegExp(`^(.+?)\\s*[:\\-\u2013(,]\\s*${POS_RE}\\)?\\s*$`, "i");
+function nameAndRating(rest) {
+  let s = rest.replace(/[()[\]]/g, " ").trim();
+  let rating3 = null;
+  let version = null;
+  const num = s.match(/(?:^|\s)(\d{2})(?:\s|$)/);
+  if (num) {
+    rating3 = Number(num[1]);
+    s = s.replace(num[0], " ").trim();
+  }
+  const parts = s.split(/\s+[-–,|]\s+|,\s*/);
+  if (parts.length > 1) {
+    s = parts[0].trim();
+    version = parts.slice(1).join(" ").trim() || null;
+  }
+  return { name: s.replace(/\s+/g, " "), rating: rating3 && rating3 >= 40 && rating3 <= 99 ? rating3 : null, version };
+}
+function parseSquadList(text3) {
+  const lines = text3.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return null;
+  let formation = null;
+  const first = lines[0].match(/^(?:formation\s*[:\-]?\s*)?(\d-\d-\d(?:-\d)?)\s*$/i);
+  if (first) {
+    formation = first[1];
+    lines.shift();
+  }
+  const header = lines[0]?.toLowerCase().split(/[,;\t]/).map((h) => h.trim());
+  if (header && header.includes("name") && lines.length > 1) {
+    const col = (k) => header.findIndex((h) => k.includes(h));
+    const ci = { name: col(["name", "player", "player_name"]), pos: col(["position", "pos", "slot"]), rating: col(["rating", "overall", "ovr"]), version: col(["version", "card", "type"]) };
+    const entries2 = cleanEntries(lines.slice(1).map((l) => {
+      const c = l.split(/[,;\t]/).map((x) => x.trim());
+      const pos = ci.pos >= 0 ? c[ci.pos] : null;
+      return { name: c[ci.name], position: pos, slot: pos, rating: ci.rating >= 0 ? c[ci.rating] : null, version: ci.version >= 0 ? c[ci.version] : null };
+    }));
+    return entries2.length ? { formation, entries: entries2, via: "list" } : null;
+  }
+  const items = lines.length === 1 ? lines[0].split(/\s*[,;]\s*(?=(?:GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST|RWB|LWB|CF|LCB|RCB|LCM|RCM|LCDM|RCDM|LST|RST)\b)/i) : lines;
+  const raw = [];
+  for (const item of items) {
+    const m = item.match(LINE);
+    const r2 = m ? null : item.match(LINE_REVERSED);
+    if (!m && !r2) return null;
+    const pos = (m ? m[1] : r2[2]).toUpperCase();
+    const rest = m ? m[2] : r2[1];
+    if (/\b(put|swap|move|replace|add|remove|change|with|instead|bench|sub)\b/i.test(rest)) return null;
+    const { name: name2, rating: rating3, version } = nameAndRating(rest);
+    raw.push({ name: name2, position: pos, slot: pos, rating: rating3, version });
+  }
+  const entries = cleanEntries(raw);
+  return entries.length ? { formation, entries, via: "list" } : null;
+}
+var ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+var DEFAULT_MODEL = "claude-opus-5-5";
+var nullable = (type, extra = {}) => ({ anyOf: [{ type, ...extra }, { type: "null" }] });
+var SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["formation", "players", "clear_slots", "note"],
+  properties: {
+    formation: nullable("string"),
+    players: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["slot", "position", "name", "rating", "version"],
+        properties: { slot: nullable("string"), position: nullable("string"), name: { type: "string" }, rating: nullable("integer"), version: nullable("string") }
+      }
+    },
+    clear_slots: { type: "array", items: { type: "string" } },
+    note: nullable("string")
+  }
+};
+function systemPrompt(squad) {
+  const slots = squad.slots.map((s) => `${s.slot} (${s.position}): ${s.card ? `${s.card.name} ${s.card.rating ?? ""}`.trim() : "empty"}`).join("\n");
+  return [
+    "You read EA SPORTS FC 27 Ultimate Team squads for a squad builder and return the players as JSON.",
+    `The builder's formations are ${Object.keys(FORMATIONS).join(", ")}. Position codes: ${POSITIONS.join(", ")}.`,
+    `The squad is currently ${squad.formation}, with these slots:
+${slots}`,
+    "For each player the user names or the screenshot shows on the pitch, give: slot (one of the slot names above when you can tell which one, else null), position (a position code, else null), name (the player's name as shown on the card, keeping accents), rating (overall, else null), version (the card type such as TOTW, Icon, Hero, Rare or a promo name, else null).",
+    "Only list starting players, not substitutes or reserves, unless the user says to put one in a slot.",
+    "If the user asks for a formation the builder has, set formation; otherwise null. If they ask to empty slots, list them in clear_slots.",
+    "Never invent players. If a name is unreadable, leave that player out and say so in note. note is one short sentence for the user, or null."
+  ].join("\n");
+}
+async function callClaude(env, fetchFn, body2) {
+  const key = env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY");
+  if (!key) throw new FutError('Reading free text and screenshots needs ANTHROPIC_API_KEY on the server. Typed lists like "ST Mbappe 91" still work.', 503);
+  const send = (b, beta) => fetchFn(ANTHROPIC_URL, {
+    method: "POST",
+    headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json", ...beta ? { "anthropic-beta": "server-side-fallback-2026-07-01" } : {} },
+    body: JSON.stringify(b)
+  });
+  let res = await send({ ...body2, fallbacks: "default" }, true);
+  if (res.status === 400 && /fallback/i.test(await res.clone().text().catch(() => ""))) res = await send(body2, false);
+  return res;
+}
+async function readWithClaude(squad, input, env, fetchFn = fetch) {
+  const content = [];
+  if (input.image) content.push({ type: "image", source: { type: "base64", media_type: input.image.media_type, data: input.image.data } });
+  content.push({ type: "text", text: input.text?.trim() || "Read my squad from this screenshot." });
+  const res = await callClaude(env, fetchFn, {
+    model: env("FUT_IMPORT_MODEL") || DEFAULT_MODEL,
+    max_tokens: 8e3,
+    output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
+    system: systemPrompt(squad),
+    messages: [{ role: "user", content }]
+  });
+  const out = await res.json().catch(() => null);
+  if (!res.ok) {
+    console.error("[fut-api] squad import AI:", res.status, out?.error?.message);
+    throw new FutError(res.status === 429 || res.status >= 500 ? "The squad reader is busy. Try again in a minute." : "The squad reader couldn't read that. Try typing the squad as a list.", 502);
+  }
+  if (out?.stop_reason === "refusal") throw new FutError("The squad reader declined that request. Try typing the squad as a list.", 422);
+  const text3 = (out?.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
+  let parsed;
+  try {
+    parsed = JSON.parse(text3);
+  } catch {
+    throw new FutError("The squad reader returned something unreadable. Try again.", 502);
+  }
+  const formation = typeof parsed.formation === "string" && FORMATIONS[parsed.formation] ? parsed.formation : null;
+  const clear_slots = Array.isArray(parsed.clear_slots) ? parsed.clear_slots.filter((s) => typeof s === "string").map((s) => s.toUpperCase()).filter((s) => SLOT_NAMES.has(s)) : [];
+  return { formation, entries: cleanEntries(parsed.players), clear_slots, note: clean(parsed.note, 300), via: "ai" };
+}
+function editSimilarity(a, b) {
+  if (a === b) return 1;
+  const d = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0];
+    d[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = d[j];
+      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return 1 - d[b.length] / Math.max(a.length, b.length);
+}
+function nameScore(typed, cardName) {
+  const q = normalize(typed), c = normalize(cardName);
+  if (!q || !c) return 0;
+  if (q === c) return 100;
+  const qt = q.split(" "), ct = c.split(" ");
+  if (qt.every((t) => ct.includes(t))) return 90;
+  if (ct.every((t) => qt.includes(t))) return 85;
+  if (q.replace(/ /g, "") === c.replace(/ /g, "")) return 85;
+  if (qt.every((t) => t.length >= 3 && ct.some((x) => x.startsWith(t)))) return 70;
+  const last = editSimilarity(qt[qt.length - 1], ct[ct.length - 1]);
+  if (last >= 0.8 && qt[qt.length - 1].length >= 4) return Math.round(50 + last * 15);
+  const whole = editSimilarity(q, c);
+  return whole >= 0.8 ? Math.round(45 + whole * 15) : 0;
+}
+var BASE = /* @__PURE__ */ new Set(["", "rare", "common", "gold", "silver", "bronze", "non rare"]);
+function score(e, cand) {
+  const n = nameScore(e.name, cand.card.name);
+  if (!n) return 0;
+  let s = n;
+  if (e.rating) s += cand.card.rating === e.rating ? 25 : -4 * Math.abs((cand.card.rating ?? 0) - e.rating);
+  const v = normalize(cand.version ?? "");
+  if (e.version) {
+    const want = normalize(e.version);
+    const icon = /\bicon\b/.test(want) && cand.card.is_icon, hero = /\bhero\b/.test(want) && cand.card.is_hero;
+    s += icon || hero || want && v && (v.includes(want) || want.includes(v)) ? 15 : -5;
+  } else if (BASE.has(v)) s += 3;
+  if (cand.card.owned) s += 20;
+  if (e.position && cand.card.positions.includes(e.position)) s += 8;
+  return s;
+}
+function likePattern(name2) {
+  const tokens = normalize(name2).split(" ").filter((t2) => t2.length >= 3 && !/^\d+$/.test(t2));
+  const t = tokens.sort((a, b) => b.length - a.length)[0];
+  return t ? `%${t.replace(/[aeiouycnszgl]/g, "_")}%` : null;
+}
+var catalogueCard = (r2) => ({
+  key: String(r2.source_card_key ?? r2.id),
+  version: r2.version ?? null,
+  card: {
+    id: String(r2.id),
+    name: String(r2.player_name),
+    club: r2.club ?? null,
+    league: r2.league ?? null,
+    nation: r2.nation ?? null,
+    positions: r2.positions ?? [],
+    is_icon: r2.is_icon === true,
+    is_hero: r2.is_hero === true,
+    rating: Number(r2.overall),
+    price: r2.price ?? null,
+    owned: false,
+    stats: {},
+    source: "database"
+  }
+});
+async function matchEntries(db2, userId, entries) {
+  const mine = (await searchMyCards(db2, userId, { all: true })).map((c) => ({ card: toWorkspaceCard(c), version: c.version, key: c.ea_item_id ? String(c.ea_item_id) : c.id }));
+  const out = [];
+  const looked = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    const pattern = likePattern(entry.name);
+    let market = [];
+    if (pattern) {
+      if (!looked.has(pattern)) {
+        const { data, error } = await db2.from("player_cards").select("id,player_name,version,overall,positions,club,league,nation,is_icon,is_hero,source_card_key,price").is("owner_user_id", null).eq("source_id", "futgg_catalogue").ilike("player_name", pattern).order("overall", { ascending: false }).limit(200);
+        if (error) throw new FutError(`Card list is unavailable: ${error.message}`, 500);
+        looked.set(pattern, (data ?? []).map(catalogueCard));
+      }
+      market = looked.get(pattern);
+    }
+    const ownKeys = new Set(mine.map((c) => c.key));
+    const pool = [...mine, ...market.filter((c) => !ownKeys.has(c.key))];
+    const options = pool.map((c) => ({ card: c.card, version: c.version, score: score(entry, c) })).filter((o) => o.score > 0).sort((a, b) => b.score - a.score || (b.card.rating ?? 0) - (a.card.rating ?? 0)).slice(0, 6);
+    out.push({ entry, options });
+  }
+  return out;
+}
+function confidence(options) {
+  const [a, b] = options;
+  if (!a) return "missing";
+  if (a.score >= 110 && (!b || a.score - b.score >= 10)) return "sure";
+  if (a.score >= 85 && (!b || a.score - b.score >= 5)) return "likely";
+  return "check";
+}
+function placeMatches(start, parsed, matches) {
+  let squad = start;
+  let formation_changed = null;
+  if (parsed.formation && FORMATIONS[parsed.formation] && parsed.formation !== squad.formation) {
+    squad = setFormation(squad, parsed.formation);
+    formation_changed = parsed.formation;
+  }
+  const slots = squad.slots.map((s) => ({ ...s }));
+  const cleared = [];
+  for (const name2 of parsed.clear_slots ?? []) {
+    const s = slots.find((x) => x.slot === name2);
+    if (s?.card) {
+      s.card = null;
+      s.locked = false;
+      cleared.push(s.slot);
+    }
+  }
+  const full = matches.length >= 11;
+  const taken = /* @__PURE__ */ new Set();
+  const rows = matches.map(({ entry, options }) => {
+    const best = options[0];
+    return { input: entry, slot: null, card: best?.card ?? null, version: best?.version ?? null, confidence: confidence(options), options };
+  });
+  const free = (s, explicit) => !taken.has(s.slot) && (explicit || !s.locked);
+  const put = (row, s) => {
+    row.slot = s.slot;
+    taken.add(s.slot);
+  };
+  const usedNames = /* @__PURE__ */ new Set();
+  for (const row of rows) {
+    if (!row.card) {
+      row.reason = "No card with that name in your club or the market card list.";
+      continue;
+    }
+    const n = normalize(row.card.name);
+    if (usedNames.has(n)) {
+      row.reason = "This player is already in the import.";
+      row.card = null;
+      row.confidence = "missing";
+      continue;
+    }
+    usedNames.add(n);
+  }
+  const live = rows.filter((r2) => r2.card);
+  for (const row of live) {
+    const s = row.input.slot ? slots.find((x) => x.slot === row.input.slot && free(x, true)) : void 0;
+    if (s) put(row, s);
+  }
+  for (const row of live.filter((r2) => !r2.slot && r2.input.position)) {
+    const s = slots.find((x) => x.position === row.input.position && free(x, false) && (full || !x.card)) ?? slots.find((x) => x.position === row.input.position && free(x, false));
+    if (s) put(row, s);
+  }
+  for (const row of live.filter((r2) => !r2.slot)) {
+    const plays = (x) => row.card.positions.includes(x.position) && free(x, false);
+    const s = slots.find((x) => plays(x) && !x.card) ?? (full ? slots.find(plays) : void 0);
+    if (s) put(row, s);
+  }
+  for (const row of live.filter((r2) => !r2.slot)) {
+    const s = slots.find((x) => free(x, false) && (full || !x.card));
+    if (s) put(row, s);
+    else row.reason = 'No free slot for this player. Name the slot (e.g. "RW Saka") to replace someone.';
+  }
+  for (const row of live) {
+    if (!row.slot) continue;
+    const target = slots.find((x) => x.slot === row.slot);
+    for (const other of slots) if (other !== target && !taken.has(other.slot) && other.card && normalize(other.card.name) === normalize(row.card.name)) {
+      other.card = null;
+      other.locked = false;
+    }
+    target.card = row.card;
+  }
+  return { squad: { ...squad, slots, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, rows, formation_changed, cleared, via: parsed.via, note: parsed.note ?? null };
+}
+async function importSquad(db2, userId, squad, input, env, fetchFn = fetch, hooks = {}) {
+  const text3 = input.text?.trim() ?? "";
+  if (text3.length > MAX_IMPORT_TEXT) throw new FutError(`Keep it under ${MAX_IMPORT_TEXT} characters.`);
+  if (!text3 && !input.image) throw new FutError("Type your squad or upload a screenshot or list.");
+  let parsed = input.image ? null : parseSquadList(text3);
+  if (!parsed) {
+    hooks.beforeAi?.();
+    parsed = await readWithClaude(squad, { text: text3, image: input.image }, env, fetchFn);
+  }
+  if (!parsed.entries.length && !parsed.formation && !parsed.clear_slots?.length) {
+    throw new FutError(parsed.note || 'No players found in that. Try a list like "ST Mbappe 91", one player per line.', 422);
+  }
+  const matches = await matchEntries(db2, userId, parsed.entries);
+  return placeMatches(squad, parsed, matches);
+}
+
 // supabase/functions/_shared/fut/futgg-catalogue.ts
 var FUTGG = "https://r2.fut.gg/27";
 var EA_WEB_APP = "https://www.ea.com/ea-sports-fc/ultimate-team/web-app/";
@@ -6963,7 +7334,7 @@ var BENCHMARK_LABEL = {
   utility: "Similar tactical fit (\xB13, same position line)",
   market: "Whole-market index"
 };
-var LINE = { GK: "GK", CB: "DEF", LB: "DEF", RB: "DEF", CDM: "MID", CM: "MID", CAM: "MID", LM: "MID", RM: "MID", LW: "ATT", RW: "ATT", ST: "ATT" };
+var LINE2 = { GK: "GK", CB: "DEF", LB: "DEF", RB: "DEF", CDM: "MID", CM: "MID", CAM: "MID", LM: "MID", RM: "MID", LW: "ATT", RW: "ATT", ST: "ATT" };
 function isPeer(b, card, other) {
   if (other.id === card.id) return false;
   switch (b) {
@@ -6976,7 +7347,7 @@ function isPeer(b, card, other) {
     case "utility": {
       const a = bestFit(card);
       const o = bestFit(other);
-      return a !== null && o !== null && Math.abs(a - o) <= 3 && LINE[other.positions[0] ?? ""] === LINE[card.positions[0] ?? ""];
+      return a !== null && o !== null && Math.abs(a - o) <= 3 && LINE2[other.positions[0] ?? ""] === LINE2[card.positions[0] ?? ""];
     }
   }
 }
@@ -8034,7 +8405,7 @@ function trackedCatalogue(db2) {
   return async () => remember(db2, `catalogue|${await feedVersion(db2)}`, MARKET_CACHE_TTL.shared, load);
 }
 var eaKey = (v) => /^[1-9]\d{0,9}$/.test(String(v ?? "")) ? Number(v) : null;
-var catalogueCard = (r2) => ({
+var catalogueCard2 = (r2) => ({
   id: String(r2.id),
   source: String(r2.source_id),
   player_name: String(r2.player_name),
@@ -8308,7 +8679,7 @@ var PgMarketCardSource = class {
     return [...mine, ...(await this.catalogue()).filter((c) => !c.ea_item_id || !have.has(c.ea_item_id))];
   }
   async catalogue() {
-    return (await this.rows()).map((r2) => toMarketCard(catalogueCard(r2)));
+    return (await this.rows()).map((r2) => toMarketCard(catalogueCard2(r2)));
   }
 };
 async function marketSources(db2) {
@@ -8371,6 +8742,26 @@ var err = (status, message) => json({ error: message }, status);
 var MAX_BODY = 64 * 1024;
 var MAX_IMPORT_BODY = 1024 * 1024;
 var MAX_STORE_BODY = 2 * 1024 * 1024;
+var MAX_SQUAD_IMPORT_BODY = 6 * 1024 * 1024;
+var AI_IMPORTS_PER_HOUR = 30;
+var aiImports = /* @__PURE__ */ new Map();
+function aiImportAllowed(userId, perHour) {
+  const now2 = Date.now();
+  const recent = (aiImports.get(userId) ?? []).filter((t) => now2 - t < 36e5);
+  if (recent.length >= perHour) return false;
+  recent.push(now2);
+  aiImports.set(userId, recent);
+  if (aiImports.size > 5e3) aiImports.clear();
+  return true;
+}
+function importImage(v) {
+  if (v === void 0 || v === null) return null;
+  const o = obj2(v);
+  const types = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  if (typeof o.media_type !== "string" || !types.includes(o.media_type)) throw new FutError("Upload a JPEG, PNG, WebP or GIF screenshot.");
+  if (typeof o.data !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(o.data) || o.data.length > MAX_SQUAD_IMPORT_BODY) throw new FutError("That screenshot couldn't be read. Try another one.");
+  return { media_type: o.media_type, data: o.data };
+}
 var MAX_CLUB_BODY = 4 * 1024 * 1024;
 async function body(req, max = MAX_BODY) {
   const raw = await req.text();
@@ -8567,6 +8958,23 @@ async function handle(req, deps) {
           const squad = squadSchema.parse({ ...obj2(b.squad), owner_id: userId });
           return assignCard(squad, slotName(b.slot, true), await incomingCard(db2, userId, b));
         }) });
+      }
+      if (route === "/squads/import" && m === "POST") {
+        const b = obj2(await body(req, MAX_SQUAD_IMPORT_BODY));
+        const text3 = typeof b.text === "string" ? b.text : null;
+        const image = importImage(b.image);
+        const env = deps.env ?? ((k) => Deno.env.get(k));
+        const perHour = Number(env("FUT_IMPORT_AI_PER_HOUR")) || AI_IMPORTS_PER_HOUR;
+        const fetchFn = deps.fetch ?? fetch;
+        const result = await runWorkspace(async () => {
+          const squad = squadSchema.parse({ ...obj2(b.squad), owner_id: userId });
+          return importSquad(db2, userId, squad, { text: text3, image }, env, fetchFn, {
+            beforeAi: () => {
+              if (!aiImportAllowed(userId, perHour)) throw new FutError("That's a lot of squad reads this hour. Try again later, or type the squad as a list.", 429);
+            }
+          });
+        });
+        return json({ data: result });
       }
       if (route === "/squads/preview" && m === "POST") {
         const b = obj2(await body(req));
