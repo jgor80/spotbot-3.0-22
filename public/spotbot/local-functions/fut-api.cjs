@@ -7108,10 +7108,13 @@ function buildCatalogue(input) {
   }
   return out;
 }
-function eaPlayersUrl(html) {
+function eaContentBase(html) {
   const guid = html.match(/fut_guid\s*=\s*"([A-Za-z0-9-]{8,64})"/)?.[1], year = html.match(/fut_year\s*=\s*"(\d{4})"/)?.[1];
   if (!guid || !year) throw new FutError("Couldn't find the EA Web App content id", 502);
-  return `${EA_WEB_APP}content/${guid}/${year}/fut/items/web/players.json`;
+  return `${EA_WEB_APP}content/${guid}/${year}/fut/`;
+}
+function eaPlayersUrl(html) {
+  return `${eaContentBase(html)}items/web/players.json`;
 }
 async function syncFutggCatalogue(db2, fetcher = (u) => fetch(u, { headers: { Accept: "application/json, text/html", "User-Agent": "XI-Lab-Market-Collector/1.0" }, signal: AbortSignal.timeout(3e4) })) {
   const manifest = obj(await getJson2(fetcher, `${FUTGG}/manifest.json`), "FUT.GG manifest");
@@ -7768,6 +7771,31 @@ async function findPlayers(db2, userId, input, env, fetchFn = fetch, hooks = {})
     }
   }
   return { reply, query, summary: describeQuery(query), via, relaxed, result };
+}
+
+// supabase/functions/_shared/fut/card-images.ts
+var OFF = { faces: false, portrait_base: null, credit: null };
+var FOUND_FOR = 6 * 36e5;
+var MISSED_FOR = 10 * 6e4;
+var cached = null;
+function facesOn(env) {
+  return (env("FUT_EA_FACES") ?? "").trim().toLowerCase() === "on";
+}
+async function cardImages(env, fetcher, now2 = Date.now()) {
+  if (!facesOn(env)) return OFF;
+  if (!cached || now2 - cached.at > (cached.base ? FOUND_FOR : MISSED_FOR)) {
+    let base = null;
+    try {
+      const res = await fetcher(EA_WEB_APP);
+      if (res.ok) base = `${eaContentBase(await res.text())}items/images/mobile/portraits/`;
+      else await res.body?.cancel();
+    } catch (e) {
+      console.warn("[fut-api] EA Web App folder lookup failed:", e instanceof Error ? e.message : e);
+    }
+    cached = { base: base ?? cached?.base ?? null, at: now2 };
+  }
+  if (!cached.base) return OFF;
+  return { faces: true, portrait_base: cached.base, credit: "Player faces \xA9 EA, loaded from EA's FC Web App" };
 }
 
 // supabase/functions/_shared/fut/community.ts
@@ -9813,7 +9841,10 @@ async function handle(req, deps) {
   const db2 = deps.db;
   if (m !== "GET" && !route.startsWith("/players/")) forgetMarketOwner(db2, userId);
   try {
-    if (route === "/health" && m === "GET") return json({ ok: true, api: "v1" });
+    if (route === "/health" && m === "GET") {
+      const images = await cardImages(deps.env ?? ((k) => Deno.env.get(k)), deps.fetch ?? ((u) => fetch(u, { signal: AbortSignal.timeout(1e4) })));
+      return json({ ok: true, api: "v1", card_images: images });
+    }
     if (route === "/cards" && m === "GET") {
       const p = url.searchParams;
       const cards = await searchMyCards(db2, userId, {
