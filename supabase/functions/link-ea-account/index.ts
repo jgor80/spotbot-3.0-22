@@ -60,8 +60,9 @@ serve(async (req) => {
         return deny(403, "That player isn't a member of this server");
       }
     } else if ((await identifyCaller(req, supabase))?.kind !== "bot" && !(await guildAccessLevel(supabase, guild_id, discord_user_id))) {
-      // The bot only links members it sees in the server. Claiming a gamertag merges its match history into your account, which then counts as access to
-      // every server it played in. Only members of this server can claim one here.
+      // A web user claiming a gamertag merges its match history into their account, which then counts as
+      // access to every server it played in, so only members of this server can claim one here. (The bot
+      // only links members it already sees in the server.)
       return deny(403, "Join this Discord server first, then link your EA account from it.");
     }
 
