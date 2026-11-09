@@ -469,6 +469,8 @@ embedStyle.install({ loadBranding: async (guildId) => (await clubEvents.serverPr
 
 const positionTiers = positionTiersLib.createPositionTiers({ supabase });
 const roster = createRoster({ supabase, getGuildState, saveGuildSettings, isManager, canManageClub: squads.canManageClub, autoLink: () => autoLink, positionTiers });
+// Who is in each server, for the website's row-level security (guild-members.cjs)
+const guildMembers = require('./guild-members.cjs').createGuildMembers({ supabase });
 
 const clubSetup = createClubSetup({ supabase, getGuildState, events: clubEvents, saveGuildSettings, searchClubCandidates: (n, p) => searchClubCandidates(n, p), linkEaClub: (...a) => linkEaClub(...a), clubPickerReply: (...a) => clubPickerReply(...a),
   // Panels for channels picked or created in /setup → Channels (those modules are created further down)
@@ -3867,6 +3869,8 @@ client.once(Events.ClientReady, async (c) => {
   // Pick up players who already hold position roles (runs in the background, one server at a time)
   setTimeout(async () => {
     for (const guild of c.guilds.cache.values()) await roster.syncGuildPositions(guild).catch(() => {});
+    const synced = await guildMembers.syncAll([...c.guilds.cache.values()]);
+    console.log(`[guild-members] synced ${synced} member(s) across ${c.guilds.cache.size} server(s)`);
   }, 30 * 1000);
   console.log(`✅ GafferBot logged in as ${c.user.tag}`);
   embedStyle.setFooterIcon(c.user.displayAvatarURL({ size: 64 }));
@@ -3958,8 +3962,22 @@ async function syncGuildNames(discordClient) {
   }
 }
 
+// Keep guild_members (website access) in step with Discord
+client.on(Events.GuildMemberAdd, (member) => {
+  guildMembers.memberJoined(member).catch((e) => console.warn('[guild-members]', e.message));
+});
+client.on(Events.GuildMemberRemove, (member) => {
+  guildMembers.memberLeft(member).catch((e) => console.warn('[guild-members]', e.message));
+});
+client.on(Events.GuildDelete, (guild) => {
+  // A Discord outage also fires GuildDelete (available === false); only clear when the bot really left
+  if (guild.available === false) return;
+  guildMembers.botLeft(guild).catch((e) => console.warn('[guild-members]', e.message));
+});
+
 client.on(Events.GuildCreate, async (guild) => {
   if (await leaveIfNotAllowed(guild)) return;
+  guildMembers.syncGuild(guild).catch((e) => console.warn('[guild-members]', e.message));
   // Commands are registered globally, no need to register per-guild (causes duplicates)
   console.log(`✅ Joined new guild: ${guild.name} (${guild.id})`);
   // Sync guild name to database
