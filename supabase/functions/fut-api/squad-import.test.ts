@@ -134,3 +134,20 @@ Deno.test("without an API key, lists still work and free text explains what's mi
   const sq2 = (await busy.call("POST", "/v1/squads/new", { formation: "4-3-3" })).data.data;
   assert((await busy.call("POST", "/v1/squads/import", { squad: sq2, text: "my striker is Mbappe" })).status === 502, "AI outage is a clear error");
 });
+
+Deno.test("every FC 27 formation is available, drawn from its own rows, and a squad can switch between them", async () => {
+  const { call } = setup();
+  const slots = (await call("GET", "/v1/formations/slots")).data.data;
+  assert(Object.keys(slots).length === 28 && slots["4-3-3 (2)"].length === 11, "28 formations with 11 slots");
+  assert(!JSON.stringify(slots).match(/"(LWB|RWB|CF|LF|RF)"/), "only FC 27's 12 positions");
+  const squad = (await call("POST", "/v1/squads/new", { formation: "4-2-3-1 (2)" })).data.data;
+  const filled = (await call("POST", "/v1/squads/import", { squad, text: "ST Mbappe\nRM Saka\nGK Alisson" })).data.data.squad;
+  const moved = await call("POST", "/v1/squads/formation", { squad: filled, formation: "5-2-3" });
+  assert(moved.status === 200 && moved.data.data.formation === "5-2-3", `switch ${JSON.stringify(moved.data)}`);
+  assert(slotOf(moved.data.data, "ST")?.name === "Kylian Mbappé" && slotOf(moved.data.data, "GK")?.name === "Alisson", "cards kept");
+  assert(moved.data.data.slots.filter((s: { card: unknown }) => s.card).length === 3, "nobody lost");
+  assert((await call("POST", "/v1/squads/formation", { squad: filled, formation: "4-4-1-1" })).status === 400, "unknown formation");
+  const listed = parseSquadList("4-3-3 (4)\nCAM Odegaard");
+  assert(listed?.formation === "4-3-3 (4)", "variant formation in a list");
+  assert(parseSquadList("4-3-3(2)\nST Mbappe")?.formation === "4-3-3 (2)", "variant without a space");
+});

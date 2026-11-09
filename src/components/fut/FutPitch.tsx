@@ -1,7 +1,7 @@
 import { Lock, LockOpen, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Chemistry, Evidence, FutSlot, FutSquad } from "@/lib/futApi";
+import { Chemistry, Evidence, FormationSlot, FutSlot, FutSquad } from "@/lib/futApi";
 import { cn } from "@/lib/utils";
 import { evidenceLabels } from "./FutShared";
 import { FutCardArt } from "./FutCardArt";
@@ -25,8 +25,17 @@ function lateral(slot: FutSlot) {
 export function ChemistryPips({ value }: { value?: number }) {
   return <div aria-label={value === undefined ? "Chemistry unavailable" : `${value} of 3 chemistry`} className="flex justify-center gap-1">{[1, 2, 3].map(pip => <span key={pip} className={cn("h-2 w-2 rounded-full border border-primary/40", value !== undefined && pip <= value ? "bg-primary" : "bg-muted")} />)}{value === undefined && <span className="text-[10px] text-muted-foreground">—</span>}</div>;
 }
-export function FutPitch({ squad, chemistry, evidence, lookup, selected, onSelect, onLock }: { squad: FutSquad; chemistry?: Chemistry; evidence?: Record<string, Evidence>; lookup?: CardLookup; selected?: string; onSelect: (slot: string) => void; onLock: (slot: string) => void }) {
-  const rows = [0, 1, 2, 3, 4].map(row => squad.slots.filter(slot => line(slot.position) === row).sort((a, b) => lateral(a) - lateral(b))).filter(row => row.length);
+/** The formation's own rows (attack on top, left to right as the formation lists them); falls back to position lines. */
+function pitchRows(squad: FutSquad, layout?: FormationSlot[]): FutSlot[][] {
+  const at = new Map((layout ?? []).map((s, i) => [s.slot, { row: s.row, i }]));
+  if (layout && squad.slots.every(slot => at.has(slot.slot))) {
+    const rows = [...new Set(layout.map(s => s.row))].sort((a, b) => b - a);
+    return rows.map(row => squad.slots.filter(slot => at.get(slot.slot)!.row === row).sort((a, b) => at.get(a.slot)!.i - at.get(b.slot)!.i)).filter(row => row.length);
+  }
+  return [0, 1, 2, 3, 4].map(row => squad.slots.filter(slot => line(slot.position) === row).sort((a, b) => lateral(a) - lateral(b))).filter(row => row.length);
+}
+export function FutPitch({ squad, layout, chemistry, evidence, lookup, selected, onSelect, onLock }: { squad: FutSquad; layout?: FormationSlot[]; chemistry?: Chemistry; evidence?: Record<string, Evidence>; lookup?: CardLookup; selected?: string; onSelect: (slot: string) => void; onLock: (slot: string) => void }) {
+  const rows = pitchRows(squad, layout);
   return <div className="relative isolate min-w-0 overflow-hidden rounded-md border border-primary/30 bg-primary/5 px-2 py-6 sm:px-5">
     <svg className="pointer-events-none absolute inset-0 h-full w-full text-primary/20" viewBox="0 0 600 800" preserveAspectRatio="none" aria-hidden="true"><rect x="15" y="15" width="570" height="770" fill="none" stroke="currentColor" strokeWidth="2" /><path d="M15 400H585M180 15V130H420V15M180 785V670H420V785M240 15V65H360V15M240 785V735H360V785" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="300" cy="400" r="70" fill="none" stroke="currentColor" strokeWidth="2" /></svg>
     <div className="relative flex min-h-[570px] flex-col justify-between gap-5 sm:min-h-[640px]">{rows.map((row, i) => <div key={i} className="flex justify-evenly gap-1.5 sm:gap-3">{row.map(slot => {
