@@ -15,7 +15,7 @@ export function HelperDownload({ compact = false }: { compact?: boolean }) {
         <li>In Chrome (or Edge, Brave), open <span className="font-mono text-xs">chrome://extensions</span> and turn on <strong>Developer mode</strong>.</li>
         <li>Click <strong>Load unpacked</strong> and pick the unzipped folder.</li>
         <li>Connect it: <strong>Market Lab → Import prices → Connect helper</strong>, then paste the key into the helper's Gaffer Bot section and save.</li>
-        <li>Open your club in the EA FC Web App and page through Players. The helper uploads your club and the prices you see.</li>
+        <li>Open your club in the EA FC Web App and page through Players. The helper uploads your club and the prices you see. Open Store → Packs (and each pack's odds) for Pack Advisor.</li>
       </ol>
       <p className="mt-2 text-xs text-muted-foreground">To update, download it again, replace the folder's files and press the reload button on the extension. It never bids, buys, lists or signs in for you.</p>
     </details>

@@ -78,7 +78,7 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
   if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
   return (data ?? null) as T;
 }
-export const futKeys = { market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
+export const futKeys = { packs: ["fut", "packs"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
 export type MarketPlatform = "console" | "pc";
 export type MarketEvidence = Evidence | "verified";
@@ -126,6 +126,20 @@ export interface CommunityPull { sharers: number; your_cards_with_ea_id: number;
 export interface Fc27MarketPull { updated: string | null; hours_old: number | null; your_cards_with_ea_id: number; matched: number; observations: number; import: MarketImportResult | null; note: string }
 export interface MarketHeld { items: { ea_item_id: string | number; asset_id: string | number; rating: number; details: { rare_flag?: number; team_id?: number; league_id?: number; nation_id?: number; position?: string } | null; special_version: boolean | null; observations: number; platforms: string[]; latest_price: number | null; latest_platform: string; latest_observed_at: string | null; reason: string }[]; total_observations: number; evidence: MarketEvidence; note: string }
 export interface MarketSource { id: string; name: string; kind: string; status: "enabled" | "disabled" | "not_authorized"; is_demo: boolean; status_note: string; permissions: Record<string, boolean | null>; evidence: MarketEvidence }
+export type PackVerdict = "buy" | "only_for_fodder" | "skip" | "points_only" | "no_odds" | "no_prices";
+export interface PackOddsLine { label: string; odds_text: string; probability: number | null; covers: string | null; value_low: number | null; value_high: number | null; used: boolean; note?: string }
+export interface PackAdviceItem {
+  pack_id: number; name: string; description: string | null; coins: number | null; points: number | null; untradeable: boolean; is_player_pick: boolean;
+  item_count: number | null; rare: number | null; end_at: string | null; start_at: string | null; unopened: boolean;
+  ev_low: number | null; ev_high: number | null; ev_after_tax: number | null; value_per_100_points: number | null;
+  verdict: PackVerdict; ratio: number | null; why: string; lines: PackOddsLine[]; notes: string[]; fodder_each: number | null; fodder_items: number;
+  trend_pct: number | null; tips: string[]; history: { t: string; value: number }[];
+}
+export interface PackOpening { pack_id: number | null; pack_name: string; pack_coins: number | null; opened_at: string; items: number; tradeable_value: number; untradeable_value: number; after_tax: number; profit: number | null; best: { ea_item_id: number; rating: number | null; price: number | null } | null }
+export interface PackAdvice {
+  platform: MarketPlatform; captured_at: string | null; prices_at: string | null; shape: { pack_keys?: string[]; odds_keys?: string[]; category_keys?: string[] } | null;
+  packs: PackAdviceItem[]; pulls: { items: number; opens: PackOpening[] }; model: string[]; verified: false;
+}
 const marketPath = (path: string, platform: MarketPlatform, filters: Record<string, string> = {}) => `/market${path}?${new URLSearchParams({ ...filters, platform })}`;
 
 export const futApi = {
@@ -155,6 +169,10 @@ export const futApi = {
     linkHeld: (ea_item_id: string | number, card_id: string, platform: MarketPlatform) => futRequest<{ linked: number }>(marketPath("/held/link", platform), "POST", { ea_item_id, card_id }),
     relink: (platform: MarketPlatform) => futRequest<{ linked: number; still_held: number }>(marketPath("/held/relink", platform), "POST", {}),
     sources: (platform: MarketPlatform) => futRequest<MarketSource[]>(marketPath("/sources", platform)),
+  },
+  packs: {
+    advice: (platform: MarketPlatform) => futRequest<PackAdvice>(`/packs?${new URLSearchParams({ platform })}`),
+    clear: (platform: MarketPlatform) => futRequest<{ cleared: boolean }>(`/packs?${new URLSearchParams({ platform })}`, "DELETE"),
   },
   health: () => futRequest<RuleInfo>("/health"),
   cards: (filters: Record<string, string> = {}) => {

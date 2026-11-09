@@ -27,6 +27,7 @@ import {
   ChartNoAxesCombined,
   FlaskConical,
   Layers,
+  Package,
   Shield,
   type LucideIcon,
 } from "lucide-react";
@@ -79,6 +80,7 @@ const clubMore: NavItem[] = [
 const futPrimary: NavItem[] = [
   { path: "/fut/market/cards", label: "Card Search", short: "Search", icon: Search },
   { path: "/fut/market", label: "Market Lab", short: "Market", icon: ChartNoAxesCombined },
+  { path: "/fut/packs", label: "Packs", short: "Packs", icon: Package },
   { path: "/fut", label: "Squad Builder", short: "Squads", icon: FlaskConical },
   { path: "/fut/cards", label: "My Cards", short: "Cards", icon: Layers },
 ];
@@ -285,7 +287,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-background/95 backdrop-blur-lg lg:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <div className="mx-auto grid max-w-lg grid-cols-5">
+        <div className="mx-auto grid max-w-lg" style={{ gridTemplateColumns: `repeat(${primaryNavItems.length + 1}, minmax(0, 1fr))` }}>
           {primaryNavItems.map((item) => {
             const active = item.path === activePath;
             return (
