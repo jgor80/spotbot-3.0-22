@@ -45,6 +45,9 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | `POST /market/held/relink` | Link held captures to cards that now carry that EA item id (also runs on every import) |
 | `POST /market/held/link` | `{ ea_item_id, card_id }`: link one item's held captures to your card with the same rating |
 | `GET /market/sources` | Price providers, their status and what their terms allow |
+| `POST /helper/packs` | Helper key only: the pack store and pack pulls the helper copied from the user's Web App (format `xilab-store-capture`). Replaces that platform's stored packs; pulls add up |
+| `GET /packs?platform=` | Pack Advisor: each stored pack valued on FUT.GG rating-band prices (typical and average), a verdict (worth buying, only for SBC fodder, skip, FC Points only, needs odds), timing tips, the user's own pack openings and the store field names seen |
+| `DELETE /packs?platform=` | Clear the stored packs and pulls for one platform |
 
 ## MCP tools
 
@@ -77,6 +80,12 @@ no `squad_id` they use the squad the player edited last.
   and matched to cards by EA item id (`player_cards.source_card_key` when it's EA's numeric id). Captures for items
   the user has no card for yet are held privately in `fut.market_capture_holds` and linked later. Shared baskets are built
   from catalogue cards only, so a user's private cards never enter an index. Nothing on the server buys, sells, bids or uses an EA login, and the extension never searches, clicks or bids.
+- **Pack Advisor (since 2026-11-09, Jeff's call).** The helper (v0.5.0+) copies the pack store the Web App loads
+  when the user opens the Store (prices, contents and EA's published pack odds) and the items packs gave when the user
+  opened them. Values come from `fut.pack_value_bands` (FUT.GG prices grouped by rating and kind, last 8 days).
+  The model is an estimate and the store's field names are unverified on FC 27 (`fut.pack_store_captures.shape` keeps
+  what the helper saw). Judged on the typical (median) pack; the mean-based average is shown but never makes a pack a buy.
+  Nothing buys or opens packs.
 - **One switch.** `FUT_ENABLED=true` turns on the API and the MCP tools together; anything else hides both.
 
 ## Turning it on

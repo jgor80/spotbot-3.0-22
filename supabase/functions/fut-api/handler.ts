@@ -10,6 +10,7 @@ import { importClub } from "../_shared/fut/club.ts";
 import { cardEaReference, storeEaReference } from "../_shared/fut/ea-reference.ts";
 import { collectFc27Market, fc27MarketStatus, pullFc27Market } from "../_shared/fut/fc27market.ts";
 import { futggStatus } from "../_shared/fut/futgg-status.ts";
+import { clearStore, importStore, packAdvice } from "../_shared/fut/packs.ts";
 import { syncFutggCatalogue } from "../_shared/fut/futgg-catalogue.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
@@ -43,6 +44,8 @@ export interface Deps {
 
 /** Price-history imports can be bigger than other requests (up to MAX_IMPORT_ROWS lines). */
 const MAX_IMPORT_BODY = 1024 * 1024;
+/** A pack store file: a few hundred packs with their odds lines, plus pulls. */
+const MAX_STORE_BODY = 2 * 1024 * 1024;
 /** A club file from the XI Lab helper: a few hundred bytes per item. */
 const MAX_CLUB_BODY = 4 * 1024 * 1024;
 
@@ -155,7 +158,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (!path.startsWith("/v1")) return err(404, "This API is /fut-api/v1.");
   const route = path.slice(3) || "/";
   const m = req.method;
-  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices and your club.");
+  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices, your club and the pack store.");
   const db = deps.db;
   // Any change (cards, prices, club import, helper upload) makes the caller's cached Market Lab snapshot stale
   if (m !== "GET") forgetMarketOwner(db, userId);
@@ -191,6 +194,11 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (route === "/helper" && m === "DELETE") return json({ data: await revokeHelperKeys(db, userId) });
     if (route === "/helper/connect" && m === "POST") return json({ data: await createHelperKey(db, userId) }, 201);
     if (route === "/helper/prices" && m === "POST") return json({ data: await importPrices(db, userId, await body(req, MAX_IMPORT_BODY)) });
+
+    // Pack Advisor: the pack store and pack pulls the helper copied from the user's own Web App, scored on FUT.GG prices.
+    if (route === "/helper/packs" && m === "POST") return json({ data: await importStore(db, userId, await body(req, MAX_STORE_BODY)) });
+    if (route === "/packs" && m === "GET") return json({ data: await packAdvice(db, userId, platformParam(url.searchParams.get("platform"))) });
+    if (route === "/packs" && m === "DELETE") return json({ data: await clearStore(db, userId, platformParam(url.searchParams.get("platform"))) });
 
     if ((route === "/club/import" || route === "/helper/club") && m === "POST") {
       const result = await importClub(db, userId, await body(req, MAX_CLUB_BODY));
