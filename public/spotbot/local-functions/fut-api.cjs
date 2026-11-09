@@ -8152,6 +8152,30 @@ async function handle(req, deps) {
       }
       if (route === "/market/feeds/fc27-market" && m === "GET") return json({ data: await fc27MarketStatus(db) });
       if (route === "/market/feeds/futgg" && m === "GET") return json({ data: await futggStatus(db) });
+      if (route === "/market/cards" && m === "GET") {
+        const p2 = url.searchParams, text2 = (k) => (p2.get(k) ?? "").trim() || null;
+        const position = text2("position"), type = text2("type"), sort = text2("sort") ?? "price_desc";
+        if (position && !/^(GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST)$/.test(position)) throw new FutError("position must be a position code like ST or CB.");
+        if (type && !["icon", "hero", "promo", "base"].includes(type)) throw new FutError("type must be icon, hero, promo or base.");
+        if (!["price_desc", "price_asc", "rating_desc", "change_desc", "change_asc", "name"].includes(sort)) throw new FutError("Unknown sort.");
+        const q = text2("q");
+        if (q && q.length > 60) throw new FutError("Search is too long.");
+        const { data, error } = await db.rpc("futgg_market_cards", {
+          p_platform: platformParam(p2.get("platform")),
+          p_q: q,
+          p_position: position,
+          p_type: type,
+          p_min_rating: intParam(p2.get("min_rating"), "min_rating", 1, 99) ?? null,
+          p_max_rating: intParam(p2.get("max_rating"), "max_rating", 1, 99) ?? null,
+          p_min_price: intParam(p2.get("min_price"), "min_price", 0, 15e6) ?? null,
+          p_max_price: intParam(p2.get("max_price"), "max_price", 0, 15e6) ?? null,
+          p_sort: sort,
+          p_limit: intParam(p2.get("limit"), "limit", 1, 100) ?? 50,
+          p_offset: intParam(p2.get("offset"), "offset", 0, 1e5) ?? 0
+        });
+        if (error) throw new FutError(`Market cards are unavailable: ${error.message}`, 500);
+        return json({ data });
+      }
       if (route === "/market/import/fc27-market" && m === "POST") {
         return json({ data: await runWorkspace(() => pullFc27Market(db, userId, mk, deps.fetch)) });
       }

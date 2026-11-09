@@ -43,6 +43,7 @@ const FutSquadPage = lazy(() => import("./pages/fut/FutSquadPage"));
 const FutCardsPage = lazy(() => import("./pages/fut/FutCardsPage"));
 const MarketOverviewPage = lazy(() => import("./pages/fut/market/MarketOverviewPage"));
 const MarketRadarPage = lazy(() => import("./pages/fut/market/MarketRadarPage"));
+const MarketCardsPage = lazy(() => import("./pages/fut/market/MarketCardsPage"));
 const MarketCardPage = lazy(() => import("./pages/fut/market/MarketCardPage"));
 const MarketWatchlistPage = lazy(() => import("./pages/fut/market/MarketWatchlistPage"));
 const MarketImportPage = lazy(() => import("./pages/fut/market/MarketImportPage"));
@@ -107,6 +108,7 @@ const App = () => (
                   <Route path="/fut/squads/:id" element={<ProtectedRoute><FutSquadPage /></ProtectedRoute>} />
                   <Route path="/fut/cards" element={<ProtectedRoute><FutCardsPage /></ProtectedRoute>} />
                   <Route path="/fut/market" element={<ProtectedRoute><MarketOverviewPage /></ProtectedRoute>} />
+                  <Route path="/fut/market/cards" element={<ProtectedRoute><MarketCardsPage /></ProtectedRoute>} />
                   <Route path="/fut/market/radar" element={<ProtectedRoute><MarketRadarPage /></ProtectedRoute>} />
                   <Route path="/fut/market/card/:id" element={<ProtectedRoute><MarketCardPage /></ProtectedRoute>} />
                   <Route path="/fut/market/watchlist" element={<ProtectedRoute><MarketWatchlistPage /></ProtectedRoute>} />
