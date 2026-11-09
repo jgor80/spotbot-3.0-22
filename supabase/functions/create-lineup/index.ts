@@ -54,6 +54,9 @@ function validateRequest(body: any): string[] {
   if (!Array.isArray(body.slots) || body.slots.length === 0 || body.slots.length > 20) {
     errors.push("slots must be an array with 1-20 items");
   } else {
+    // lineup_slots is unique on (lineup_id, slot_index), so a repeat would fail the whole save
+    const indexes = body.slots.map((s: any) => s?.slot_index);
+    if (new Set(indexes).size !== indexes.length) errors.push("each slot needs its own slot_index");
     for (let i = 0; i < body.slots.length; i++) {
       const slot = body.slots[i];
       if (!slot.discord_user_id || !PLAYER_ID_REGEX.test(slot.discord_user_id)) {
@@ -172,7 +175,17 @@ serve(async (req) => {
       is_substitute: slot.is_substitute || false,
     }));
 
-    await supabase.from("lineup_slots").insert(slotInserts);
+    // The lineup and its slots must save together: an empty lineup reported as saved loses the players
+    // on reload and announces an empty sheet. Slots cascade with the lineup, so removing it is enough.
+    const { error: slotError } = await supabase.from("lineup_slots").insert(slotInserts);
+    if (slotError) {
+      console.error(`[create-lineup] slots for ${lineup.id} failed, removing the lineup:`, slotError);
+      await supabase.from("lineups").delete().eq("id", lineup.id);
+      return new Response(
+        JSON.stringify({ error: "Couldn't save the lineup's players. Nothing was saved; try again." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Get full player details for response
     const allPlayerIds = slots.map(s => s.discord_user_id);
