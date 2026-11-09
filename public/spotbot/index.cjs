@@ -444,6 +444,16 @@ if (LOCAL_FUNCTIONS_ON) {
 }
 const supabase = createClient(supabaseUrl, supabaseKey, proxyFetch ? { global: { fetch: proxyFetch } } : undefined);
 
+// player_summary / player_club_stats have no gamertag column: gamertags live on the global profile
+async function withEaNames(rows) {
+  const list = rows || [];
+  const ids = [...new Set(list.map((r) => r.discord_user_id).filter(Boolean))];
+  if (!ids.length) return list;
+  const { data } = await supabase.from('profiles').select('discord_user_id, ea_username').in('discord_user_id', ids);
+  const names = new Map((data || []).map((p) => [p.discord_user_id, p.ea_username]));
+  return list.map((r) => ({ ...r, ea_username: names.get(r.discord_user_id) || null }));
+}
+
 const squads = createSquads({ supabase, getGuildState, saveGuildSettings, isManager });
 
 const clubEvents = createEvents({
@@ -10590,12 +10600,14 @@ async function routeInteraction(interaction) {
       if (id === 'scoutpanel_form') {
         await interaction.deferReply({ flags: 64 });
 
-        const { data: players } = await supabase
+        const { data: rows, error: formError } = await supabase
           .from('player_summary')
-          .select('discord_username, ea_username, form_rating, current_streak, streak_type')
+          .select('discord_user_id, discord_username, form_rating, current_streak, streak_type')
           .eq('guild_id', guildId)
           .order('form_rating', { ascending: false, nullsFirst: false })
           .limit(15);
+        if (formError) return interaction.editReply({ content: `❌ Couldn't load player form: ${formError.message}` });
+        const players = await withEaNames(rows);
 
         if (!players || players.length === 0) {
           return interaction.editReply({ content: 'No player form data available yet. Players need games to build form.' });
@@ -10809,12 +10821,14 @@ async function routeInteraction(interaction) {
         await interaction.deferReply({ flags: 64 });
 
         // Fetch players for selection
-        const { data: players } = await supabase
+        const { data: rows, error: listError } = await supabase
           .from('player_summary')
-          .select('discord_user_id, discord_username, ea_username, overall_rating, primary_position')
+          .select('discord_user_id, discord_username, overall_rating, primary_position')
           .eq('guild_id', guildId)
           .order('overall_rating', { ascending: false })
           .limit(25);
+        if (listError) return interaction.editReply({ content: `❌ Couldn't load players: ${listError.message}` });
+        const players = await withEaNames(rows);
 
         if (!players || players.length < 2) {
           return interaction.editReply({ content: 'Need at least 2 players with stats to compare.' });
@@ -10844,13 +10858,15 @@ async function routeInteraction(interaction) {
         const player1Id = interaction.values[0];
 
         // Store player1 selection and show player2 selection
-        const { data: players } = await supabase
+        const { data: rows, error: listError } = await supabase
           .from('player_summary')
-          .select('discord_user_id, discord_username, ea_username, overall_rating, primary_position')
+          .select('discord_user_id, discord_username, overall_rating, primary_position')
           .eq('guild_id', guildId)
           .neq('discord_user_id', player1Id) // Exclude already selected player
           .order('overall_rating', { ascending: false })
           .limit(25);
+        if (listError) return interaction.update({ content: `❌ Couldn't load players: ${listError.message}`, components: [] });
+        const players = await withEaNames(rows);
 
         if (!players || players.length === 0) {
           return interaction.update({ content: 'No other players available to compare.', components: [] });
@@ -16270,8 +16286,10 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
     
     playerStats.push(...eaPlayerStats.mapPlayers(matchData, club.ea_club_id));
     
-    // Save to club_matches table
-    await supabase.from('club_matches').insert({
+    // Save to club_matches table. stats_complete=false hands the match to the cloud sync's retry, which
+    // fills any player row that fails here and attaches the match to its session (this path sets neither).
+    const { error: matchError } = await supabase.from('club_matches').insert({
+      stats_complete: false,
       guild_id: guildId,
       club_key: clubKey,
       ea_match_id: matchId,
@@ -16284,6 +16302,10 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
       match_data: matchData,
       player_stats: playerStats
     });
+    if (matchError && matchError.code !== '23505') {
+      console.error(`[EA] Couldn't save match ${matchId}: ${matchError.message}`);
+      return;
+    }
     
     // Map EA usernames to Discord users and record stats
     // Only track stats for players who are members of THIS guild
@@ -16310,7 +16332,7 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
         }
         
         // Record player stats with expanded fields
-        await supabase.from('player_stats').insert({
+        const { error: statError } = await supabase.from('player_stats').insert({
           guild_id: guildId,
           discord_user_id: profile.discord_user_id,
           draft_id: null,
@@ -16319,6 +16341,9 @@ async function processNewMatch(guildId, clubKey, club, matchData, state) {
           won: result === 'win',
           ...eaPlayerStats.statColumns(pStat, scoreAgainst)
         });
+        if (statError && statError.code !== '23505') {
+          console.error(`[EA] Couldn't save ${pStat.ea_username}'s stats for ${matchId} (the next sync retries): ${statError.message}`);
+        }
         
         // Trigger rating recalculation
         await callEdgeFunction('calculate-ratings', {

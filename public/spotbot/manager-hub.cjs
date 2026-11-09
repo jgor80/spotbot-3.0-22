@@ -340,14 +340,22 @@ function createManagerHub(deps) {
 
     const list = photos || [];
     // Roster names so we can show who still needs a photo
-    const { data: roster } = await supabase
+    // (player_club_stats has no gamertag column; gamertags live on the global profile)
+    const { data: roster, error: rosterError } = await supabase
       .from('player_club_stats')
-      .select('discord_user_id, ea_username')
+      .select('discord_user_id, discord_username')
       .eq('guild_id', guildId)
       .eq('club_key', club.key)
       .limit(100);
+    if (rosterError) console.warn(`[hub] pro photo roster lookup failed: ${rosterError.message}`);
     const withPhoto = new Set(list.map((p) => p.discord_user_id));
-    const missing = (roster || []).filter((r) => !withPhoto.has(r.discord_user_id));
+    const missingRows = (roster || []).filter((r) => r.discord_user_id && !withPhoto.has(r.discord_user_id));
+    const tags = new Map();
+    if (missingRows.length) {
+      const { data: profs } = await supabase.from('profiles').select('discord_user_id, ea_username').in('discord_user_id', missingRows.map((r) => r.discord_user_id));
+      for (const pr of profs || []) tags.set(pr.discord_user_id, pr.ea_username);
+    }
+    const missing = missingRows.map((r) => ({ ...r, ea_username: tags.get(r.discord_user_id) || null }));
 
     const PAGE = 8;
     const pages = Math.max(1, Math.ceil(list.length / PAGE));
