@@ -230,7 +230,7 @@ export function packValue(p: Pick<PackOffer, "odds" | "item_count" | "gold" | "s
 
   // Plain lines, best first. Each band runs up to just below the next better line's minimum.
   const sorted = [...plain].sort((a, b) => range(b)![0] - range(a)![0]);
-  let best: { low: number; high: number } | null = null;
+  let best = null as { low: number; high: number } | null;
   let cum = 0, upper = 99;
   for (const o of sorted) {
     const [lo, hiRaw] = range(o)!;
