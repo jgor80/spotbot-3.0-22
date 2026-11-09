@@ -50,6 +50,9 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | `POST /helper/packs` | Helper key only: the pack store and pack pulls the helper copied from the user's Web App (format `xilab-store-capture`). Replaces that platform's stored packs; pulls add up |
 | `GET /packs?platform=` | Pack Advisor: each stored pack valued on FUT.GG rating-band prices (typical and average), a verdict (worth buying, only for SBC fodder, skip, FC Points only, needs odds), timing tips, the user's own pack openings and the store field names seen |
 | `DELETE /packs?platform=` | Clear the stored packs and pulls for one platform |
+| `POST /helper/account` | Helper key only: the user's account as the helper copied it from Web App answers (format `xilab-account-capture`): balance, club record, transfer list, watchlist, unassigned, SBCs, objectives, season. Each section replaces the stored one only when it was seen later; coins/points add a history point when they change (or every 6 hours) |
+| `GET /account?platform=` | My Account: balance and its history, transfer list / watchlist / unassigned with FUT.GG names and prices, SBCs, objectives, season numbers, tips and the field names seen |
+| `DELETE /account?platform=` | Clear the stored account and balance history for one platform |
 
 ## MCP tools
 

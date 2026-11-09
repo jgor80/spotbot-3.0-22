@@ -7,7 +7,7 @@ import { FutDbError, type FutDb } from "./service.ts";
 
 export const HELPER_KEY_PREFIX = "xlh_";
 /** The only routes a helper key may call. */
-export const HELPER_ROUTES = new Set(["/helper/prices", "/helper/club", "/helper/packs"]);
+export const HELPER_ROUTES = new Set(["/helper/prices", "/helper/club", "/helper/packs", "/helper/account"]);
 
 const fail = (error: { message?: string } | null) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);

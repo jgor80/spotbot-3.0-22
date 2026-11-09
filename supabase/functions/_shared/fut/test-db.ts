@@ -1,6 +1,6 @@
 // In-memory stand-in for the supabase-js query builder on the `fut` schema, for the XI Lab tests only.
 // Supports the calls the FUT services make: select (with count/head), insert(...).select().single(), upsert,
-// update, delete, eq, in, ilike, is, gte, lte, order, limit, range, maybeSingle, single.
+// update, delete, eq, in, ilike, is, gte, lt, lte, order, limit, range, maybeSingle, single.
 type Row = Record<string, unknown>;
 
 export function futMemoryDb(tables: Record<string, Row[]> = {}) {
@@ -69,6 +69,7 @@ export function futMemoryDb(tables: Record<string, Row[]> = {}) {
         is: (c: string, v: null) => { filters.push((r) => (r[c] ?? null) === v); return q; },
         // ISO timestamps and numbers both compare correctly as-is.
         gte: (c: string, v: string | number) => { filters.push((r) => r[c] !== null && r[c] !== undefined && (r[c] as string | number) >= v); return q; },
+        lt: (c: string, v: string | number) => { filters.push((r) => r[c] !== null && r[c] !== undefined && (r[c] as string | number) < v); return q; },
         lte: (c: string, v: string | number) => { filters.push((r) => r[c] !== null && r[c] !== undefined && (r[c] as string | number) <= v); return q; },
         range: (a: number, b: number) => { off = a; lim = b - a + 1; return q; },
         order: (c: string, o?: { ascending?: boolean }) => { order = [c, o?.ascending !== false]; return q; },
