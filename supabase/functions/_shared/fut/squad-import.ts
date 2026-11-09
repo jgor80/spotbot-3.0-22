@@ -45,6 +45,12 @@ export function positionOf(v: unknown): string | null {
   return ALIASES[p] ?? SLOT_POSITION.get(p) ?? null;
 }
 
+/** "4-3-3", "4-3-3 (2)", "4-3-3(2)" → the builder's formation name, or null when FC 27 has no such formation. */
+export function formationName(shape: string, variant?: string | null): string | null {
+  const name = variant && variant !== "1" ? `${shape} (${variant})` : shape;
+  return FORMATIONS[name] ? name : null;
+}
+
 const clean = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
 
 /** Validate entries from any source (AI output or our own parser) into the shape the matcher trusts. */
@@ -69,7 +75,7 @@ export function cleanEntries(raw: unknown): ImportEntry[] {
   return out;
 }
 
-const POS_RE = "(GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST|RWB|LWB|CF|RF|LF|LCB|RCB|LCM|RCM|LCDM|RCDM|LST|RST)";
+const POS_RE = "(GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST|RWB|LWB|CF|RF|LF|LCB|RCB|LCM|RCM|LCDM|RCDM|LCAM|RCAM|LST|RST)";
 const LINE = new RegExp(`^${POS_RE}\\s*[:\\-–.)]?\\s+(.+?)\\s*$`, "i");
 const LINE_REVERSED = new RegExp(`^(.+?)\\s*[:\\-–(,]\\s*${POS_RE}\\)?\\s*$`, "i");
 
@@ -94,8 +100,8 @@ export function parseSquadList(text: string): ParsedSquad | null {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return null;
   let formation: string | null = null;
-  const first = lines[0]!.match(/^(?:formation\s*[:\-]?\s*)?(\d-\d-\d(?:-\d)?)\s*$/i);
-  if (first) { formation = first[1]!; lines.shift(); }
+  const first = lines[0]!.match(/^(?:formation\s*[:\-]?\s*)?(\d(?:-\d){2,4})\s*(?:\(\s*(\d)\s*\))?\s*$/i);
+  if (first) { formation = formationName(first[1]!, first[2]); lines.shift(); }
 
   // CSV with a header row
   const header = lines[0]?.toLowerCase().split(/[,;\t]/).map((h) => h.trim());
@@ -110,7 +116,7 @@ export function parseSquadList(text: string): ParsedSquad | null {
     return entries.length ? { formation, entries, via: "list" } : null;
   }
 
-  const items = lines.length === 1 ? lines[0]!.split(/\s*[,;]\s*(?=(?:GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST|RWB|LWB|CF|LCB|RCB|LCM|RCM|LCDM|RCDM|LST|RST)\b)/i) : lines;
+  const items = lines.length === 1 ? lines[0]!.split(/\s*[,;]\s*(?=(?:GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST|RWB|LWB|CF|LCB|RCB|LCM|RCM|LCDM|RCDM|LCAM|RCAM|LST|RST)\b)/i) : lines;
   const raw: Record<string, unknown>[] = [];
   for (const item of items) {
     const m = item.match(LINE);
@@ -159,7 +165,7 @@ function systemPrompt(squad: Squad) {
   const slots = squad.slots.map((s) => `${s.slot} (${s.position}): ${s.card ? `${s.card.name} ${s.card.rating ?? ""}`.trim() : "empty"}`).join("\n");
   return [
     "You read EA SPORTS FC 27 Ultimate Team squads for a squad builder and return the players as JSON.",
-    `The builder's formations are ${Object.keys(FORMATIONS).join(", ")}. Position codes: ${POSITIONS.join(", ")}.`,
+    `The builder has every FC 27 Ultimate Team formation, named as in the game: ${Object.keys(FORMATIONS).join(", ")}. Position codes (FC 27 has only these 12): ${POSITIONS.join(", ")}.`,
     `The squad is currently ${squad.formation}, with these slots:\n${slots}`,
     "For each player the user names or the screenshot shows on the pitch, give: slot (one of the slot names above when you can tell which one, else null), position (a position code, else null), name (the player's name as shown on the card, keeping accents), rating (overall, else null), version (the card type such as TOTW, Icon, Hero, Rare or a promo name, else null).",
     "Only list starting players, not substitutes or reserves, unless the user says to put one in a slot.",
@@ -206,7 +212,8 @@ export async function readWithClaude(
   const text = (out?.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
   let parsed: Record<string, unknown>;
   try { parsed = JSON.parse(text); } catch { throw new FutError("The squad reader returned something unreadable. Try again.", 502); }
-  const formation = typeof parsed.formation === "string" && FORMATIONS[parsed.formation] ? parsed.formation : null;
+  const fm = typeof parsed.formation === "string" ? parsed.formation.match(/^\s*(\d(?:-\d){2,4})\s*(?:\(\s*(\d)\s*\))?\s*$/) : null;
+  const formation = fm ? formationName(fm[1]!, fm[2]) : null;
   const clear_slots = Array.isArray(parsed.clear_slots) ? parsed.clear_slots.filter((s): s is string => typeof s === "string").map((s) => s.toUpperCase()).filter((s) => SLOT_NAMES.has(s)) : [];
   return { formation, entries: cleanEntries(parsed.players), clear_slots, note: clean(parsed.note, 300), via: "ai" };
 }

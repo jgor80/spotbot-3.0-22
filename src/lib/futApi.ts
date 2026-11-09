@@ -55,6 +55,7 @@ export interface Optimization extends RuleInfo {
 }
 export interface Comparison extends RuleInfo { rows: unknown[]; verdict?: string[] }
 export interface Formation { id: string; name: string }
+export interface FormationSlot { slot: string; position: string; row: number }
 export interface ClubImportResult {
   added: number; updated: number; managers_added: number; over_limit: number;
   skipped: { reason: string; count: number }[]; verified: false; note: string; prices_linked?: number;
@@ -84,7 +85,7 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
   if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
   return (data ?? null) as T;
 }
-export const futKeys = { account: ["fut", "account"] as const, packs: ["fut", "packs"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
+export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, packs: ["fut", "packs"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
 export type MarketPlatform = "console" | "pc";
 export type MarketEvidence = Evidence | "verified";
@@ -244,6 +245,8 @@ export const futApi = {
       return { id, name: row.name ?? id };
     }).filter(row => row.id);
   },
+  formationSlots: () => futRequest<Record<string, FormationSlot[]>>("/formations/slots"),
+  changeFormation: (squad: FutSquad, formation: string) => futRequest<FutSquad>("/squads/formation", "POST", { squad: withBudget(squad), formation }),
   squads: () => futRequest<FutSquad[]>("/squads"),
   squad: (id: string) => futRequest<FutSquad>(`/squads/${encodeURIComponent(id)}`),
   newSquad: (input: { formation: string; name?: string; budget?: number }) => futRequest<FutSquad>("/squads/new", "POST", { ...input, budget: squadBudget(input.budget) }),

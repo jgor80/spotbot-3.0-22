@@ -21,7 +21,7 @@ import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_s
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
 import { forgetMarketOwner, marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
 import { scanRequestSchema, thesisInputSchema, watchItemInputSchema } from "../_shared/fut/xilab/market/index.ts";
-import { assignCard, cardSchema, createSquad, FORMATIONS, squadSchema, type Squad, type WorkspaceCard } from "../_shared/fut/xilab/workspace/index.ts";
+import { assignCard, cardSchema, createSquad, FORMATIONS, setFormation, squadSchema, type Squad, type WorkspaceCard } from "../_shared/fut/xilab/workspace/index.ts";
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -277,6 +277,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
     // ---- the squad workspace (XI Lab's builder, Chemistry Surgeon and optimizer). A squad is sent whole, or by saved id.
     if (route === "/formations" && m === "GET") return json({ data: Object.keys(FORMATIONS) });
+    // Each formation's slots, positions and pitch rows (row 0 = goalkeeper), for drawing the pitch.
+    if (route === "/formations/slots" && m === "GET") return json({ data: FORMATIONS });
     if (route === "/squads/new" && m === "POST") {
       const b = obj(await body(req));
       const formation = typeof b.formation === "string" ? b.formation.trim() : "";
@@ -315,6 +317,12 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           const squad = squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad;
           return assignCard(squad, slotName(b.slot, true)!, await incomingCard(db, userId, b));
         }) });
+      }
+      if (route === "/squads/formation" && m === "POST") {
+        // Switch formation, keeping every card (same slot name, then a slot it plays, then any free slot). Not saved.
+        const b = obj(await body(req));
+        if (typeof b.formation !== "string" || !FORMATIONS[b.formation]) throw new FutError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
+        return json({ data: await runWorkspace(async () => setFormation(squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad, b.formation as string)) });
       }
       if (route === "/squads/import" && m === "POST") {
         // Type your squad or upload a screenshot/list: matched to your cards and the market card list, placed into
