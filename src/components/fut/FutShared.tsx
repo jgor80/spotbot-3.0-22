@@ -24,17 +24,13 @@ export function ErrorNotice({ error }: { error: unknown }) {
   if (!error) return null;
   return <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{error instanceof Error ? error.message : String(error)}</AlertDescription></Alert>;
 }
-export function Busy() { return <div role="status" aria-label="Loading XI Lab" className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>; }
+export function Busy() { return <div role="status" aria-label="Loading" className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>; }
 export function FutShell({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 60_000 });
   const unavailable = health.error instanceof FutApiError && health.error.status === 404;
   return <DashboardLayout><div className="space-y-6">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <Button asChild variant="ghost" size="sm"><Link to="/fut"><FlaskConical className="mr-2 h-4 w-4" />XI Lab</Link></Button>
-      <Button asChild variant="outline" size="sm"><Link to="/fut/cards">My cards</Link></Button>
-    </div>
     <PageHeader title={title} actions={!unavailable && !health.isPending && !health.isError ? actions : undefined} />
-    {health.isPending ? <Busy /> : unavailable ? <div className="space-y-3 py-12 text-center"><FlaskConical className="mx-auto h-10 w-10 text-muted-foreground" /><h2 className="font-display text-xl font-semibold">XI Lab isn't available yet</h2><Button variant="outline" onClick={() => health.refetch()}>Try again</Button><Button asChild variant="ghost"><Link to="/"><ArrowLeft className="mr-2 h-4 w-4" />Back to GafferBot</Link></Button></div> : health.isError ? <div className="space-y-3"><ErrorNotice error={health.error} /><Button variant="outline" onClick={() => health.refetch()}>Try again</Button></div> : <><Rules info={health.data} />{children}</>}
+    {health.isPending ? <Busy /> : unavailable ? <div className="space-y-3 py-12 text-center"><FlaskConical className="mx-auto h-10 w-10 text-muted-foreground" /><h2 className="font-display text-xl font-semibold">GafferBot FUT isn't available yet</h2><Button variant="outline" onClick={() => health.refetch()}>Try again</Button><Button asChild variant="ghost"><Link to="/"><ArrowLeft className="mr-2 h-4 w-4" />Back to the Club app</Link></Button></div> : health.isError ? <div className="space-y-3"><ErrorNotice error={health.error} /><Button variant="outline" onClick={() => health.refetch()}>Try again</Button></div> : <><Rules info={health.data} />{children}</>}
   </div></DashboardLayout>;
 }
 export function useFutAvailable() {
