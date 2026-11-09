@@ -140,6 +140,8 @@ export interface PackAdvice {
   platform: MarketPlatform; captured_at: string | null; prices_at: string | null; shape: { pack_keys?: string[]; odds_keys?: string[]; category_keys?: string[] } | null;
   packs: PackAdviceItem[]; pulls: { items: number; opens: PackOpening[] }; model: string[]; verified: false;
 }
+export interface ClubValueCard { id: string; player_name: string; version: string | null; overall: number; position: string; club: string | null; league: string | null; nation: string | null; is_icon: boolean; is_hero: boolean; ea_item_id: number | null; tradeable: boolean | null; quantity: number; tradeable_quantity: number; futgg_price: number | null; captured_price: number | null; captured_at: string | null; price: number | null; price_source: "futgg" | "web_app_capture" | null; value: number | null; value_after_tax: number | null; missing_from_last_sync: boolean }
+export interface ClubValue { platform: MarketPlatform; prices_published_at: string | null; last_sync: string | null; totals: { cards: number; tradeable_cards: number; untradeable_cards: number; unknown_cards: number; tradeable_copies: number; priced_tradeable: number; unpriced_tradeable: number; value: number; value_after_tax: number; untradeable_value: number }; cards: ClubValueCard[] }
 const marketPath = (path: string, platform: MarketPlatform, filters: Record<string, string> = {}) => `/market${path}?${new URLSearchParams({ ...filters, platform })}`;
 
 export const futApi = {
@@ -175,6 +177,7 @@ export const futApi = {
     clear: (platform: MarketPlatform) => futRequest<{ cleared: boolean }>(`/packs?${new URLSearchParams({ platform })}`, "DELETE"),
   },
   health: () => futRequest<RuleInfo>("/health"),
+  clubValue: (platform: MarketPlatform) => futRequest<ClubValue>(`/club/value?${new URLSearchParams({ platform })}`),
   cards: (filters: Record<string, string> = {}) => {
     const limit = filters.limit ?? CARD_LIST_LIMIT;
     cardLimitRules.parse(Number(limit));
