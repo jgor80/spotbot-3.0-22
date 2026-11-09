@@ -115,3 +115,18 @@ Deno.test("club import: a league without an EA id is named through its club", as
   const c = (await call("GET", "/v1/cards")).data.data[0];
   assert(c.club === "Linked FC" && c.league === "Club-Linked League", JSON.stringify(c));
 });
+
+Deno.test("club import: counts copies, tradeable copies apart, and one copy seen twice once", async () => {
+  const { db, call } = setup();
+  const r = await call("POST", "/v1/club/import", file([
+    item(101, { item_id: 1, untradeable: true }),
+    item(101, { item_id: 2 }),
+    item(101, { item_id: 2, seen_in: "squad" }),
+    item(102, { item_id: 3 }),
+  ]));
+  assert(r.status === 200, JSON.stringify(r.data));
+  const cards = (await call("GET", "/v1/cards")).data.data as { id: string; ea_item_id: number }[];
+  const inv = (ea: number) => db.tables.club_inventory.find((i) => i.card_id === cards.find((c) => c.ea_item_id === ea)!.id)!;
+  assert(inv(101).quantity === 2 && inv(101).tradeable_quantity === 1 && inv(101).tradeable === false, JSON.stringify(inv(101)));
+  assert(inv(102).quantity === 1 && inv(102).tradeable_quantity === 1 && inv(102).tradeable === true, JSON.stringify(inv(102)));
+});

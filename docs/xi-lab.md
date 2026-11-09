@@ -24,6 +24,7 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | --- | --- |
 | `GET/POST /cards`, `GET/PUT/DELETE /cards/:id`, `POST /cards/compare` | The user's own cards (typed in from the game) |
 | `POST /club/import` | Club sync: the club file the XI Lab helper saves from the user's own EA Web App club (format `xilab-club-capture`). Upserts the user's cards by EA item id (evidence `game_data`, format unverified on FC 27), adds missing managers, keeps cards not in the file, then relinks held price captures |
+| `GET /club/value?platform=` | Club trade value: the user's synced cards split tradeable / untradeable (copies counted from the club file), each priced at the latest FUT.GG price or the user's own newer Web App capture, with totals before and after EA's 5% tax (`fut.club_trade_value`) |
 | `GET/POST /managers`, `DELETE /managers/:id` | The user's managers (nation and league are all chemistry uses) |
 | `GET /formations`, `POST /squads/new` | A blank squad for a formation (not saved yet) |
 | `POST /squads/assign` | Put a card (`card_id`, a `card` object, or `null`) in a slot; returns the edited squad |
