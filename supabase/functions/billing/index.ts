@@ -2,10 +2,11 @@
 // - Lemon Squeezy webhooks (X-Signature, LEMONSQUEEZY_WEBHOOK_SECRET): plans and packs bought on the web.
 // - Bot (x-bot-secret): `discord_entitlement` for purchases in Discord's store, `status` for Studio.
 // - Signed-in web users: `web_status` and `web_checkout` for servers they can see (user_has_guild_access).
+//   Only server leaders get the payer's Lemon portal link or can switch an existing paid plan.
 // Both stores write the same billing_subscriptions rows and image_credits balance, at the same prices.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
-import { identifyCaller } from "../_shared/auth.ts";
+import { guildAccessLevel, identifyCaller } from "../_shared/auth.ts";
 import { billingConfig, checkoutPlan, type PlanRow, siteUrl, usageOf } from "../_shared/billing.ts";
 import { type Change, discordChange, lemonChange, verifyLemonSignature } from "./events.ts";
 
@@ -112,7 +113,7 @@ async function manageUrl(guild: string): Promise<string | null> {
   return res.ok && typeof url === "string" ? url : null;
 }
 
-async function checkout(guild: string, product: string, discordUserId: string | null) {
+async function checkout(guild: string, product: string, discordUserId: string | null, leader: boolean) {
   const config = billingConfig();
   const variant = config.lemonVariants[product];
   const key = Deno.env.get("LEMONSQUEEZY_API_KEY");
@@ -123,6 +124,8 @@ async function checkout(guild: string, product: string, discordUserId: string | 
   const plan = checkoutPlan(await planRows(guild), product, config);
   if (plan.kind === "refuse") return json({ error: plan.message }, 409);
   if (plan.kind === "switch") {
+    // Switching changes what the payer is charged, so only a server leader can do it
+    if (!leader) return json({ error: "This server already has a paid plan. Ask a server leader to change it." }, 403);
     const res = await fetch(`https://api.lemonsqueezy.com/v1/subscriptions/${encodeURIComponent(plan.subscription_id)}`, {
       method: "PATCH",
       headers: lemonHeaders(key),
@@ -186,9 +189,14 @@ async function handleWeb(req: Request, input: unknown) {
   const userDb = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_ANON_KEY") || req.headers.get("apikey") || "", { global: { headers: { Authorization: req.headers.get("authorization") ?? "" } } });
   const { data: allowed } = await userDb.rpc("user_has_guild_access", { check_guild_id: b.guild_id });
   if (allowed !== true) return json({ error: "You're not in that server." }, 403);
-  if (b.action === "web_status") return json({ ...(await statusFor(b.guild_id)), manage_url: await manageUrl(b.guild_id).catch(() => null) });
   const { data: link } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).maybeSingle();
-  return checkout(b.guild_id, b.product, link?.discord_user_id ?? null);
+  const discordUserId = (link?.discord_user_id as string | undefined) ?? null;
+  const leader = discordUserId ? (await guildAccessLevel(db, b.guild_id, discordUserId)) === "leader" : false;
+  if (b.action === "web_status") {
+    // The portal shows the payer's card and lets them cancel, so it's for leaders only
+    return json({ ...(await statusFor(b.guild_id)), manage_url: leader ? await manageUrl(b.guild_id).catch(() => null) : null, can_manage: leader });
+  }
+  return checkout(b.guild_id, b.product, discordUserId, leader);
 }
 
 Deno.serve(async (req) => {

@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { guildAccessLevel, requireGuildAccess, resolveDiscordActor } from "../_shared/auth.ts";
+import { guildAccessLevel, identifyCaller, requireGuildAccess, resolveDiscordActor } from "../_shared/auth.ts";
 import { isPlaceholderId, mergePlaceholderInto, placeholderIdsForGamertag, profilesForGamertag } from "../_shared/ea-profiles.ts";
 
 const corsHeaders = {
@@ -59,6 +59,10 @@ serve(async (req) => {
       if (!(await guildAccessLevel(supabase, guild_id, discord_user_id))) {
         return deny(403, "That player isn't a member of this server");
       }
+    } else if ((await identifyCaller(req, supabase))?.kind !== "bot" && !(await guildAccessLevel(supabase, guild_id, discord_user_id))) {
+      // The bot only links members it sees in the server. Claiming a gamertag merges its match history into your account, which then counts as access to
+      // every server it played in. Only members of this server can claim one here.
+      return deny(403, "Join this Discord server first, then link your EA account from it.");
     }
 
     // Never take a gamertag that another real member already holds (a manager can move it with /forcelink in Discord)
