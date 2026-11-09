@@ -30,6 +30,16 @@ async function futggPrices({ supabase, callFunction, syncFutggPrices = require('
   if (error) throw new Error(`futgg-catalogue: ${error?.message || error}`);
   console.log('⏰ futgg-catalogue:', JSON.stringify(data?.data ?? data));
 }
+// Full card stats for Player Ratings (fut-api job): a few hundred cards per run until the whole card list has them,
+// then only new and dynamic cards. FUTGG_ATTRIBUTES=off pauses just this job.
+const futggAttributesOn = () => futggOn() && process.env.FUTGG_ATTRIBUTES !== 'off';
+async function futggAttributes({ callFunction }) {
+  if (!futggAttributesOn() || !callFunction) return;
+  const { data, error } = await callFunction('fut-api', { job: 'futgg-attributes' }, 280000);
+  if (error) throw new Error(`futgg-attributes: ${error?.message || error}`);
+  const result = data?.data ?? data;
+  if (result?.queued) console.log('⏰ futgg-attributes:', JSON.stringify(result));
+}
 async function futggStale({ supabase }, now = Date.now()) {
   if (!futggOn()) return false;
   const { data, error } = await supabase.schema('fut').from('market_provider_runs').select('finished_at')
@@ -53,6 +63,8 @@ const JOBS = [
   // from Cloudflare Workers. After a restart it also runs once if the last good refresh is over 12 hours old or the
   // market-wide card list is still empty.
   { name: 'futgg-prices', hours: [6, 18], minute: 0, task: futggPrices, onStart: futggStale },
+  // Card stats from FUT.GG's card pages, off the hour so they never overlap the price refresh
+  { name: 'futgg-attributes', minutes: [7, 22, 37, 52], task: futggAttributes },
   { name: 'season-card-archive-nightly', hour: 6, minute: 30, rpc: ['refresh_player_season_archive'] },
   { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences', 'cleanup_mcp_oauth', 'cleanup_logs'] },
 ];
@@ -61,6 +73,7 @@ function due(job, d) {
   const m = d.getUTCMinutes();
   if (job.every) return m % job.every === 0;
   if (job.minute !== undefined && m !== job.minute) return false;
+  if (job.minutes && !job.minutes.includes(m)) return false;
   if (job.hour !== undefined && d.getUTCHours() !== job.hour) return false;
   if (job.hours && !job.hours.includes(d.getUTCHours())) return false;
   if (job.day !== undefined && d.getUTCDate() !== job.day) return false;
@@ -122,4 +135,4 @@ function startScheduler({ supabase, callFunction, activeClubs }) {
   console.log(`⏰ Scheduler running ${JOBS.length} jobs on this server`);
 }
 
-module.exports = { startScheduler, JOBS, due, eaSyncBody, futggStale, EA_SLICES, STUCK_MS };
+module.exports = { startScheduler, JOBS, due, eaSyncBody, futggStale, futggAttributes, EA_SLICES, STUCK_MS };

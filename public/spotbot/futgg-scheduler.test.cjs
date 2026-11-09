@@ -56,3 +56,24 @@ test('after prices, the job asks fut-api to refresh the market-wide card list', 
     if (before === undefined) delete process.env.FUT_ENABLED; else process.env.FUT_ENABLED = before;
   }
 });
+
+test('futgg-attributes asks fut-api for card stats every 15 minutes, off the hour, and can be paused', async () => {
+  const stats = JOBS.find((j) => j.name === 'futgg-attributes');
+  assert.ok(stats && stats.task);
+  assert.ok(due(stats, new Date('2026-11-08T06:07:00Z')) && due(stats, new Date('2026-11-08T13:52:10Z')));
+  assert.ok(!due(stats, new Date('2026-11-08T06:00:00Z')) && !due(stats, new Date('2026-11-08T06:08:00Z')));
+  const before = { f: process.env.FUT_ENABLED, a: process.env.FUTGG_ATTRIBUTES };
+  try {
+    process.env.FUT_ENABLED = 'true';
+    const calls = [];
+    const callFunction = async (fn, body) => { calls.push([fn, body]); return { data: { data: { queued: 0 } }, error: null }; };
+    await stats.task({ callFunction });
+    assert.deepStrictEqual(calls, [['fut-api', { job: 'futgg-attributes' }]]);
+    await assert.rejects(stats.task({ callFunction: async () => ({ data: null, error: 'boom' }) }), /futgg-attributes: boom/);
+    process.env.FUTGG_ATTRIBUTES = 'off';
+    await stats.task({ callFunction });
+    assert.strictEqual(calls.length, 1, 'paused');
+  } finally {
+    for (const [k, v] of [['FUT_ENABLED', before.f], ['FUTGG_ATTRIBUTES', before.a]]) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
+});
