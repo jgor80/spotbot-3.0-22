@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FutCardArt } from "./FutCardArt";
 import { useQuery } from "@tanstack/react-query";
 import { Coins } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -54,7 +55,7 @@ export function ClubValue() {
         </Tabs>
         <div className="min-w-0 overflow-x-auto rounded-md border border-border"><Table><TableHeader><TableRow><TableHead>Player</TableHead><TableHead>OVR</TableHead><TableHead>Pos</TableHead><TableHead>Copies</TableHead><TableHead>Price</TableHead>{tab === "tradeable" && <TableHead>Worth after tax</TableHead>}</TableRow></TableHeader>
           <TableBody>{shown.map(c => <TableRow key={c.id}>
-            <TableCell><p className="font-medium">{c.player_name}</p><p className="text-xs text-muted-foreground">{c.version || "Base"}{c.tradeable === null ? " · tradeable status unknown" : ""}{c.missing_from_last_sync ? " · not in your last sync" : ""}</p></TableCell>
+            <TableCell><div className="flex items-center gap-3"><FutCardArt card={{ name: c.player_name, rating: c.overall, position: c.position, version: c.version, is_icon: c.is_icon, is_hero: c.is_hero, ea_item_id: c.ea_item_id }} compact className="w-10" /><div className="min-w-0"><p className="font-medium">{c.player_name}</p><p className="text-xs text-muted-foreground">{c.version || "Base"}{c.tradeable === null ? " · tradeable status unknown" : ""}{c.missing_from_last_sync ? " · not in your last sync" : ""}</p></div></div></TableCell>
             <TableCell className="font-display text-lg font-semibold">{c.overall}</TableCell>
             <TableCell>{c.position}</TableCell>
             <TableCell>{tab === "tradeable" ? (c.tradeable_quantity < c.quantity ? `${c.tradeable_quantity} of ${c.quantity}` : c.quantity) : (c.tradeable_quantity > 0 ? `${c.quantity - c.tradeable_quantity} of ${c.quantity}` : c.quantity)}</TableCell>

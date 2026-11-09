@@ -20,6 +20,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { FutCardArt, type CardArtCard } from "@/components/fut/FutCardArt";
+
+const art = (card: PlayerCard): CardArtCard => ({ name: card.player_name, rating: card.overall, position: card.position, version: card.version, is_icon: card.is_icon, is_hero: card.is_hero, ea_item_id: card.ea_item_id });
 
 const PAGE = 50;
 const COLUMNS_KEY = "fut-player-ratings-columns";
@@ -256,7 +259,7 @@ export default function PlayerRatingsPage() {
             const face = gk ? GK_FACE.map(g => ({ key: g.key, short: g.short })) : FACE_STATS.map(s => ({ key: s.key, short: s.short }));
             return <li key={card.id} className="p-3">
               <button type="button" className="flex w-full items-center gap-3 text-left" aria-expanded={open === card.id} onClick={() => setOpen(o => o === card.id ? null : card.id)}>
-                <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-md bg-primary/10 font-display leading-none text-primary"><span className="text-lg font-bold tabular-nums">{card.overall}</span><span className="text-[10px] font-semibold">{card.position}</span></span>
+                <FutCardArt card={art(card)} compact className="w-11" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium">{card.player_name}{card.owned && <Badge variant="outline" className="ml-2 align-middle text-[10px]">Owned</Badge>}</span>
                   <span className="block truncate text-xs text-muted-foreground">{[card.version ?? "Card", card.club].filter(Boolean).join(" · ")}</span>
@@ -283,10 +286,10 @@ export default function PlayerRatingsPage() {
             <TableBody>
               {data.cards.length ? data.cards.map(card => <Fragment key={card.id}>
                 <TableRow className="cursor-pointer" onClick={() => setOpen(o => o === card.id ? null : card.id)}>
-                  <TableCell className="max-w-[16rem]">
+                  <TableCell className="max-w-[19rem]"><div className="flex items-center gap-3"><FutCardArt card={art(card)} compact className="w-9" /><div className="min-w-0">
                     <p className="truncate font-medium">{card.player_name}{card.owned && <Badge variant="outline" className="ml-2 text-[10px]">Owned</Badge>}</p>
                     <p className="truncate text-xs text-muted-foreground">{[card.version ?? "Card", card.club, card.nation].filter(Boolean).join(" · ")}</p>
-                  </TableCell>
+                  </div></div></TableCell>
                   <TableCell className="font-display text-base font-semibold tabular-nums">{card.overall}</TableCell>
                   <TableCell className="whitespace-nowrap">{card.position}{card.alt_positions?.length ? <span className="text-xs text-muted-foreground"> {card.alt_positions.join(" ")}</span> : null}</TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">{card.price != null ? numberText(card.price) : <span className="text-xs text-muted-foreground">Not on market</span>}</TableCell>

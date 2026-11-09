@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { LayoutGrid, List, Search, SlidersHorizontal, X } from "lucide-react";
+import { Link } from "react-router-dom";
 import { futApi, futKeys, MarketCatalogueCard } from "@/lib/futApi";
 import { ErrorNotice } from "@/components/fut/FutShared";
 import { Badge } from "@/components/ui/badge";
@@ -11,13 +12,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CardLink, DataTable, Delta, MarketLoading, MarketShell, numberText, useMarketPlatform } from "@/components/fut/market/MarketShared";
 import { cn } from "@/lib/utils";
+import { FutCardArt, type CardArtCard } from "@/components/fut/FutCardArt";
 
 const PAGE = 50;
 const POSITIONS = ["GK", "RB", "CB", "LB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", "ST"];
 const SORTS: Record<string, string> = { price_desc: "Price: high to low", price_asc: "Price: low to high", rating_desc: "Rating", change_desc: "Biggest risers", change_asc: "Biggest fallers", name: "Name" };
 const TYPES: Record<string, string> = { all: "All card types", base: "Base (gold/silver/bronze)", promo: "Promo", icon: "Icons", hero: "Heroes" };
 // Filters live in the address bar so a search survives a refresh, the back button and a shared link
-const FILTER_KEYS = ["q", "position", "type", "min_rating", "max_rating", "min_price", "max_price", "sort", "page"] as const;
+const FILTER_KEYS = ["q", "position", "type", "min_rating", "max_rating", "min_price", "max_price", "sort", "page", "view"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
 const DEFAULTS: Partial<Record<FilterKey, string>> = { sort: "price_desc" };
 
@@ -33,6 +35,18 @@ const PRESETS: { label: string; set: Partial<Record<FilterKey, string>> }[] = [
 ];
 
 const digits = (value: string, max: number) => value.replace(/\D/g, "").slice(0, max);
+
+const art = (card: MarketCatalogueCard): CardArtCard => ({ name: card.player_name, rating: card.overall, position: card.position, version: card.version, is_icon: card.is_icon, is_hero: card.is_hero, ea_item_id: card.ea_item_id });
+
+/** The card picture, opening the card's analysis page when it has one. */
+function CardTile({ card }: { card: MarketCatalogueCard }) {
+  const picture = <FutCardArt card={art(card)} className="w-full" />;
+  return <li className="flex min-w-0 flex-col items-center gap-1.5 text-center">
+    {card.market_tracked ? <Link to={`/fut/market/card/${encodeURIComponent(card.id)}`} className="block w-full max-w-36 rounded-md transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{picture}</Link> : <div className="w-full max-w-36">{picture}</div>}
+    <p className="w-full truncate text-xs text-muted-foreground" title={card.player_name}>{card.player_name}</p>
+    <p className="text-sm font-medium tabular-nums">{numberText(card.price)} {card.change_pct !== null && <span className="text-xs font-normal"><Delta value={card.change_pct} /></span>}</p>
+  </li>;
+}
 
 function CardName({ card }: { card: MarketCatalogueCard }) {
   return card.market_tracked ? <CardLink id={card.id} name={card.player_name} /> : <span className="font-medium">{card.player_name}</span>;
@@ -69,13 +83,14 @@ export default function MarketCardsPage() {
   }, [search]);
 
   const page = Math.max(0, Number(get("page") || "1") - 1);
+  const grid = get("view") !== "list";
   const filters = useMemo(() => {
     const out: Record<string, string> = { sort: get("sort"), limit: String(PAGE), offset: String(page * PAGE) };
     for (const key of ["q", "position", "type", "min_rating", "max_rating", "min_price", "max_price"] as const) { const v = get(key); if (v) out[key] = v; }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params, page]);
-  const activeFilters = FILTER_KEYS.filter(key => key !== "page" && params.get(key)).length;
+  const activeFilters = FILTER_KEYS.filter(key => key !== "page" && key !== "view" && params.get(key)).length;
 
   const query = useQuery({ queryKey: [...futKeys.market, "cards", context.platform, filters], queryFn: () => futApi.market.catalogue(context.platform, filters), enabled: context.enabled, placeholderData: keepPreviousData });
   const data = query.data, pages = data ? Math.max(1, Math.ceil(data.total / PAGE)) : 1;
@@ -87,7 +102,7 @@ export default function MarketCardsPage() {
     void qc.prefetchQuery({ queryKey: [...futKeys.market, "cards", context.platform, next], queryFn: () => futApi.market.catalogue(context.platform, next) });
   }, [qc, context.enabled, context.platform, data, page, pages, filters]);
   const goTo = (n: number) => { update({ page: n > 0 ? String(n + 1) : "" }, true); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const clearAll = () => { setSearch(""); setParams(new URLSearchParams(), { replace: true }); };
+  const clearAll = () => { setSearch(""); setParams(new URLSearchParams(grid ? "" : "view=list"), { replace: true }); };
   const presetActive = (set: Partial<Record<FilterKey, string>>) => Object.entries(set).every(([k, v]) => get(k as FilterKey) === v);
 
   return <MarketShell title="Card Search" showTabs={false} {...context}>
@@ -129,15 +144,24 @@ export default function MarketCardsPage() {
       <div className="col-span-2 space-y-1.5 md:col-span-2 xl:col-span-1"><Label>Sort</Label><Select value={get("sort")} onValueChange={v => update({ sort: v })}><SelectTrigger aria-label="Sort"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(SORTS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent></Select></div>
     </div>
 
-    {data && <p className={cn("text-sm text-muted-foreground", query.isFetching && "opacity-60")} aria-live="polite">{numberText(data.total)} cards with a {context.platform === "pc" ? "PC" : "console"} price{data.published_at ? ` · FUT.GG data from ${new Date(data.published_at).toLocaleString()}` : ""}</p>}
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      {data ? <p className={cn("text-sm text-muted-foreground", query.isFetching && "opacity-60")} aria-live="polite">{numberText(data.total)} cards with a {context.platform === "pc" ? "PC" : "console"} price{data.published_at ? ` · FUT.GG data from ${new Date(data.published_at).toLocaleString()}` : ""}</p> : <span />}
+      <div className="flex rounded-md border border-border p-0.5" role="group" aria-label="Show results as">
+        <Button type="button" size="sm" variant={grid ? "secondary" : "ghost"} className="h-8 gap-1.5 px-2.5" aria-pressed={grid} onClick={() => update({ view: "" }, true)}><LayoutGrid className="h-4 w-4" />Cards</Button>
+        <Button type="button" size="sm" variant={grid ? "ghost" : "secondary"} className="h-8 gap-1.5 px-2.5" aria-pressed={!grid} onClick={() => update({ view: "list" }, true)}><List className="h-4 w-4" />List</Button>
+      </div>
+    </div>
     <ErrorNotice error={query.error} />
     {query.isPending ? <MarketLoading /> : data && (data.catalogue_cards === 0
       ? <div className="space-y-2 border-y border-border py-10 text-center"><h2 className="font-display text-xl">The market card list hasn't loaded yet</h2><p className="text-sm text-muted-foreground">It refreshes with FUT.GG prices at 06:00 and 18:00 UTC.</p></div>
       : <>
+        {grid ? (data.cards.length
+          ? <ul className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8" aria-label="Cards">{data.cards.map(card => <CardTile key={card.id} card={card} />)}</ul>
+          : <p className="py-8 text-center text-muted-foreground">No cards match these filters.</p>) : <>
         {/* Phones get a stacked list; wider screens get the full table */}
         <ul className="divide-y divide-border rounded-md border border-border md:hidden">
           {data.cards.length ? data.cards.map(card => <li key={card.id} className="flex items-center gap-3 p-3">
-            <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-md bg-primary/10 font-display leading-none text-primary"><span className="text-lg font-bold tabular-nums">{card.overall}</span><span className="text-[10px] font-semibold">{card.position}</span></span>
+            <FutCardArt card={art(card)} compact className="w-11" />
             <div className="min-w-0 flex-1">
               <p className="truncate"><CardName card={card} /></p>
               <p className="truncate text-xs text-muted-foreground">{[card.version ?? "Card", card.club, card.nation].filter(Boolean).join(" · ")}</p>
@@ -147,7 +171,7 @@ export default function MarketCardsPage() {
         </ul>
         <div className="hidden md:block">
           <DataTable headers={["Card", "Rating", "Pos", "Type", "Club · Nation", "Price", "Since last refresh"]} empty="No cards match these filters." rows={data.cards.map(card => [
-            <CardName card={card} />,
+            <span className="flex items-center gap-3"><FutCardArt card={art(card)} compact className="w-9" /><CardName card={card} /></span>,
             <span className="tabular-nums">{card.overall}</span>,
             card.position,
             <Badge variant="outline" className="whitespace-nowrap">{card.version ?? "Card"}</Badge>,
@@ -155,7 +179,7 @@ export default function MarketCardsPage() {
             <span className="tabular-nums font-medium">{numberText(card.price)}</span>,
             card.change_pct === null ? <span className="text-muted-foreground">–</span> : <Delta value={card.change_pct} />,
           ])} />
-        </div>
+        </div></>}
         <div className="flex items-center justify-between gap-3">
           <Button variant="outline" disabled={page === 0 || query.isFetching} onClick={() => goTo(page - 1)}>Previous</Button>
           <span className="text-sm text-muted-foreground">Page {page + 1} of {pages}</span>

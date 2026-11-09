@@ -17,6 +17,7 @@ import { syncFutggCatalogue } from "../_shared/fut/futgg-catalogue.ts";
 import { syncFutggAttributes } from "../_shared/fut/futgg-attributes.ts";
 import { findPlayers, MAX_FINDER_TEXT, searchPlayers, type FinderTurn } from "../_shared/fut/player-finder.ts";
 import { cleanPlayerQuery } from "../_shared/fut/stats.ts";
+import { cardImages } from "../_shared/fut/card-images.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
 import { forgetMarketOwner, marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
@@ -209,7 +210,11 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (m !== "GET" && !route.startsWith("/players/")) forgetMarketOwner(db, userId);
 
   try {
-    if (route === "/health" && m === "GET") return json({ ok: true, api: "v1" });
+    if (route === "/health" && m === "GET") {
+      // card_images tells the browser whether cards may show EA player faces (FUT_EA_FACES=on) and where they live
+      const images = await cardImages(deps.env ?? ((k: string) => Deno.env.get(k)), deps.fetch ?? ((u: string) => fetch(u, { signal: AbortSignal.timeout(10_000) })));
+      return json({ ok: true, api: "v1", card_images: images });
+    }
 
     if (route === "/cards" && m === "GET") {
       const p = url.searchParams;

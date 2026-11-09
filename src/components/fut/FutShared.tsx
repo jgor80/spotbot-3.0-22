@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { futApi, FutApiError, futKeys, Evidence, RuleInfo } from "@/lib/futApi";
+import { CardImageCredit } from "./FutCardArt";
 
 export const evidenceLabels: Record<Evidence, string> = { game_data: "Game data", estimate: "Estimate", hypothesis: "Hypothesis", verified: "Verified" };
 export function EvidenceBadge({ evidence }: { evidence?: Evidence }) {
@@ -26,15 +27,15 @@ export function ErrorNotice({ error }: { error: unknown }) {
 }
 export function Busy() { return <div role="status" aria-label="Loading" className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>; }
 export function FutShell({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
-  const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 60_000 });
+  const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 30 * 60_000 });
   const unavailable = health.error instanceof FutApiError && health.error.status === 404;
   return <DashboardLayout><div className="space-y-6">
     <PageHeader title={title} actions={!unavailable && !health.isPending && !health.isError ? actions : undefined} />
-    {health.isPending ? <Busy /> : unavailable ? <div className="space-y-3 py-12 text-center"><FlaskConical className="mx-auto h-10 w-10 text-muted-foreground" /><h2 className="font-display text-xl font-semibold">GafferBot FUT isn't available yet</h2><Button variant="outline" onClick={() => health.refetch()}>Try again</Button><Button asChild variant="ghost"><Link to="/"><ArrowLeft className="mr-2 h-4 w-4" />Back to the Club app</Link></Button></div> : health.isError ? <div className="space-y-3"><ErrorNotice error={health.error} /><Button variant="outline" onClick={() => health.refetch()}>Try again</Button></div> : <><Rules info={health.data} />{children}</>}
+    {health.isPending ? <Busy /> : unavailable ? <div className="space-y-3 py-12 text-center"><FlaskConical className="mx-auto h-10 w-10 text-muted-foreground" /><h2 className="font-display text-xl font-semibold">GafferBot FUT isn't available yet</h2><Button variant="outline" onClick={() => health.refetch()}>Try again</Button><Button asChild variant="ghost"><Link to="/"><ArrowLeft className="mr-2 h-4 w-4" />Back to the Club app</Link></Button></div> : health.isError ? <div className="space-y-3"><ErrorNotice error={health.error} /><Button variant="outline" onClick={() => health.refetch()}>Try again</Button></div> : <><Rules info={health.data} />{children}<CardImageCredit /></>}
   </div></DashboardLayout>;
 }
 export function useFutAvailable() {
-  const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 60_000 });
+  const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 30 * 60_000 });
   return health.isSuccess;
 }
 export function Price({ value }: { value?: number | null }) { return <span>{value == null ? "—" : value.toLocaleString()} <span className="text-xs text-muted-foreground">user-entered coins</span></span>; }

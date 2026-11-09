@@ -8,7 +8,7 @@
 import { FutError, type FutDb } from "./service.ts";
 
 const FUTGG = "https://r2.fut.gg/27";
-const EA_WEB_APP = "https://www.ea.com/ea-sports-fc/ultimate-team/web-app/";
+export const EA_WEB_APP = "https://www.ea.com/ea-sports-fc/ultimate-team/web-app/";
 const MAX_BYTES = 8 * 1024 * 1024;
 const BATCH = 2000;
 type Json = Record<string, unknown>;
@@ -100,11 +100,16 @@ export function buildCatalogue(input: { index: Json; pool: Json; core: Json; pla
   return out;
 }
 
-/** Finds the current player name file from the Web App page (it moves every game year and content update). */
-export function eaPlayersUrl(html: string): string {
+/** The Web App's current content folder (it moves every game year and content update), ending in "/fut/". */
+export function eaContentBase(html: string): string {
   const guid = html.match(/fut_guid\s*=\s*"([A-Za-z0-9-]{8,64})"/)?.[1], year = html.match(/fut_year\s*=\s*"(\d{4})"/)?.[1];
   if (!guid || !year) throw new FutError("Couldn't find the EA Web App content id", 502);
-  return `${EA_WEB_APP}content/${guid}/${year}/fut/items/web/players.json`;
+  return `${EA_WEB_APP}content/${guid}/${year}/fut/`;
+}
+
+/** Finds the current player name file from the Web App page. */
+export function eaPlayersUrl(html: string): string {
+  return `${eaContentBase(html)}items/web/players.json`;
 }
 
 export interface CatalogueResult { cards: number; written: number; tracked: number; skipped: number }

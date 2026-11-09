@@ -27,6 +27,8 @@ export interface FutCard {
   skill_moves: number; weak_foot: number; stats: Stats; playstyles: string[]; playstyles_plus: string[];
   evidence: Evidence; notes: string; owned: boolean; tradeable: boolean;
   purchase_price?: number | null; price?: number | null; source?: string; updated_at?: string;
+  /** EA's item id, for cards from EA's feed or the market card list (lets the card show its player's face). */
+  ea_item_id?: number | null;
 }
 export interface FutManager { id: string; name: string; nation: string; league: string; price?: number | null; owned?: boolean }
 export interface SlotCard {
@@ -40,6 +42,9 @@ export interface FutSquad {
   budget?: number | null; parent_id?: string | null; created_at?: string; updated_at?: string; slots: FutSlot[];
 }
 export interface RuleInfo { rule_version?: string; rule_status?: string; evidence?: string }
+/** EA player faces on cards: only when the server's FUT_EA_FACES switch is on. Faces load straight from EA. */
+export interface CardImages { faces: boolean; portrait_base: string | null; credit: string | null }
+export interface FutHealth extends RuleInfo { ok?: boolean; api?: string; card_images?: CardImages }
 export interface Chemistry extends RuleInfo {
   chemistry: { total: number; players: { slot: string; name: string; chemistry: number; links?: unknown }[] };
   fit: { slots: unknown; average: number; evidence: "estimate" };
@@ -220,7 +225,7 @@ export const futApi = {
     advice: (platform: MarketPlatform) => futRequest<PackAdvice>(`/packs?${new URLSearchParams({ platform })}`),
     clear: (platform: MarketPlatform) => futRequest<{ cleared: boolean }>(`/packs?${new URLSearchParams({ platform })}`, "DELETE"),
   },
-  health: () => futRequest<RuleInfo>("/health"),
+  health: () => futRequest<FutHealth>("/health"),
   clubValue: (platform: MarketPlatform) => futRequest<ClubValue>(`/club/value?${new URLSearchParams({ platform })}`),
   cards: (filters: Record<string, string> = {}) => {
     const limit = filters.limit ?? CARD_LIST_LIMIT;
