@@ -28,6 +28,7 @@ import {
   FlaskConical,
   Layers,
   Package,
+  Wallet,
   Shield,
   type LucideIcon,
 } from "lucide-react";
@@ -83,6 +84,7 @@ const futPrimary: NavItem[] = [
   { path: "/fut/packs", label: "Packs", short: "Packs", icon: Package },
   { path: "/fut", label: "Squad Builder", short: "Squads", icon: FlaskConical },
   { path: "/fut/cards", label: "My Cards", short: "Cards", icon: Layers },
+  { path: "/fut/account", label: "My Account", short: "Account", icon: Wallet },
 ];
 
 const futMore: NavItem[] = [];
