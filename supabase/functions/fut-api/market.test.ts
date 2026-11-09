@@ -5,6 +5,7 @@ import { futMemoryDb, seededRules } from "../_shared/fut/test-db.ts";
 import { handleBody } from "../gafferbot-mcp/protocol.ts";
 import { FUT_TOOLS, type FutCtx } from "../gafferbot-mcp/fut.ts";
 import { memoryDb } from "../gafferbot-mcp/test-db.ts";
+import { enableMarketCache } from "../_shared/fut/market.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -97,6 +98,32 @@ Deno.test("market: thesis does the tax arithmetic, watchlist and scanner work, o
   assert(o.data.data.indexes.every((i: { trend: string }) => i.trend === "insufficient_data"), "no shared index from private cards");
   const src = (await call("GET", "/v1/market/sources")).data.data;
   assert(src.find((s: { id: string }) => s.id === "futbin").status === "not_authorized", "unauthorised provider listed as such");
+});
+
+Deno.test("market: with the cache on, pages reuse one snapshot, a write refreshes it, and the radar pages", async () => {
+  const { call, db } = setup();
+  enableMarketCache(db);
+  const a = await cardWithHistory(call, Array.from({ length: 30 }, () => 5_000), ME, "Cached One");
+  const b = await cardWithHistory(call, Array.from({ length: 30 }, () => 7_000), ME, "Cached Two");
+  const first = await call("GET", `/v1/market/cards/${a.id}`);
+  assert(first.status === 200 && first.data.data.price.latest === 5_000, JSON.stringify(first.data).slice(0, 300));
+  // A row written behind the API's back isn't seen while the snapshot is cached...
+  const rows = db.tables.market_price_observations as Record<string, unknown>[];
+  const last = rows.filter((r) => r.card_id === a.id).at(-1)!;
+  rows.push({ ...last, id: 999_999, price: 9_900, observed_at: new Date(Date.now() - 1_000).toISOString(), received_at: new Date().toISOString() });
+  assert((await call("GET", `/v1/market/cards/${a.id}`)).data.data.price.latest === 5_000, "served from the cached snapshot");
+  // ...but any change made through the API drops the caller's snapshot.
+  await call("POST", "/v1/market/watchlist", { card_id: b.id, platform: "console" });
+  assert((await call("GET", `/v1/market/cards/${a.id}`)).data.data.price.latest === 9_900, "a write refreshes the snapshot");
+  // Someone else's snapshot is their own.
+  assert((await call("GET", "/v1/market/opportunities", undefined, OTHER)).data.data.total === 0, "other user sees none of my cards");
+
+  const p1 = (await call("GET", "/v1/market/opportunities?limit=1")).data.data;
+  const p2 = (await call("GET", "/v1/market/opportunities?limit=1&offset=1")).data.data;
+  assert(p1.total === 2 && p2.total === 2 && p1.items.length === 1 && p2.items.length === 1, JSON.stringify([p1.total, p2.total]));
+  assert(p1.items[0].card_id !== p2.items[0].card_id, "pages don't repeat");
+  assert(Array.isArray(p1.categories) && p1.categories.includes("base"), JSON.stringify(p1.categories));
+  assert((await call("GET", "/v1/market/opportunities?offset=-1")).status === 400, "bad offset rejected");
 });
 
 Deno.test("market: Compare in My Squad respects locks and uses the chemistry engine", async () => {

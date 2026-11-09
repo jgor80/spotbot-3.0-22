@@ -4,7 +4,7 @@
 // Baskets are built from catalogue cards only (the FUT.GG card list, futgg-catalogue.ts), so a user's private cards
 // never enter a shared index.
 import {
-  createMarketService, DEFAULT_BASKETS,
+  createMarketService, DEFAULT_BASKETS, type SnapshotCache,
   type BasketMembership, type CaptureHoldStore, type CardCategory, type MarketCard, type MarketCardSource, type MarketRules, type MembershipStore,
   type Platform, type PriceObservation, type PriceQuery, type PriceSource, type PriceStore, type UnmatchedCapture, type WatchItem, type WatchlistStore,
 } from "./xilab/market/index.ts";
@@ -19,6 +19,62 @@ const PAGE = 1000;
 export const MAX_IMPORT_ROWS = 5000;
 export const MAX_PRICE_ROWS_PER_USER = 50_000;
 export const MAX_HELD_CAPTURES_PER_USER = 20_000;
+
+// ---- In-memory cache. The self-hosted function server is one long-lived process and fut-api keeps one database
+// client for it, which it registers with enableMarketCache. Any other client (MCP, tests) reads straight through.
+// Shared market data (rules, the FUT.GG card list and its prices) only changes when a FUT.GG refresh lands, twice a
+// day, so it is reused across users. A user's own snapshot is reused for a couple of minutes, or until they change
+// something (forgetMarketOwner on every write).
+type Entry = { at: number; value: Promise<unknown> };
+const caches = new WeakMap<object, Map<string, Entry>>();
+/** Turn the cache on for a database client that lives as long as the process. */
+export function enableMarketCache(db: FutDb) {
+  if (!caches.has(db)) caches.set(db, new Map());
+}
+const cacheOn = (db: FutDb) => caches.has(db);
+const MAX_ENTRIES = 400;
+export const MARKET_CACHE_TTL = { config: 60_000, version: 60_000, shared: 30 * 60_000, snapshot: 2 * 60_000 };
+/** Shared FUT.GG prices are kept for this long a window, a day more than the analysis lookback (8 days). */
+const SHARED_QUOTES_HOURS = 9 * 24;
+
+function remember<T>(db: FutDb, key: string, ttl: number, load: () => Promise<T>): Promise<T> {
+  const map = caches.get(db);
+  if (!map) return load();
+  const hit = map.get(key), t = Date.now();
+  if (hit && t - hit.at < ttl) return hit.value as Promise<T>;
+  const entry: Entry = { at: t, value: load() };
+  map.delete(key);
+  map.set(key, entry);
+  // A failed load isn't kept, so the next request tries again
+  entry.value.catch(() => { if (map.get(key) === entry) map.delete(key); });
+  // Oldest first: Map keeps insertion order
+  while (map.size > MAX_ENTRIES) map.delete(map.keys().next().value!);
+  return entry.value as Promise<T>;
+}
+/** Drop a user's cached snapshots after they change their cards, prices or holds. */
+export function forgetMarketOwner(db: FutDb, owner: string) {
+  const map = caches.get(db);
+  if (!map) return;
+  for (const key of [...map.keys()]) if (key.startsWith(`snap:${owner}|`)) map.delete(key);
+}
+/** Latest FUT.GG refresh: when it changes, every cached snapshot and the shared prices are out of date. */
+function feedVersion(db: FutDb): Promise<string> {
+  return remember(db, "version", MARKET_CACHE_TTL.version, async () => {
+    try {
+      const { data, error } = await db.from("futgg_snapshots").select("platform,published_at").eq("game_year", 27).order("published_at", { ascending: false }).limit(2);
+      if (error) return "unknown";
+      return ((data ?? []) as Row[]).map((r) => `${r.platform}:${iso(r.published_at)}`).sort().join(",") || "none";
+    } catch {
+      return "unknown"; // entries still expire on their own timers
+    }
+  });
+}
+function snapshotCache(db: FutDb): SnapshotCache {
+  return {
+    version: () => feedVersion(db),
+    remember: (owner, key, build) => remember(db, `snap:${owner}|${key}`, MARKET_CACHE_TTL.snapshot, build),
+  };
+}
 
 /** Fetch every page of a query (PostgREST caps a response at ~1000 rows). */
 async function allPages(make: () => { range: (a: number, b: number) => PromiseLike<{ data: Row[] | null; error: { message?: string } | null }> }): Promise<Row[]> {
@@ -48,10 +104,14 @@ const toObs = (r: Row): PriceObservation => ({
 
 /** Catalogue cards Market Lab analyses: the FUT.GG card list's cards priced at 1,000+ coins (market_tracked). */
 export function trackedCatalogue(db: FutDb): () => Promise<Row[]> {
-  let cached: Promise<Row[]> | null = null;
-  return () => (cached ??= allPages(() => db.from("player_cards")
+  const load = () => allPages(() => db.from("player_cards")
     .select("id,player_name,version,overall,positions,club,league,nation,is_icon,is_hero,source_id,source_card_key,price,updated_at")
-    .is("owner_user_id", null).eq("source_id", "futgg_catalogue").eq("market_tracked", true).order("id", { ascending: true })));
+    .is("owner_user_id", null).eq("source_id", "futgg_catalogue").eq("market_tracked", true).order("id", { ascending: true }));
+  if (!cacheOn(db)) {
+    let once: Promise<Row[]> | null = null; // one load per request, as before
+    return () => (once ??= load());
+  }
+  return async () => remember(db, `catalogue|${await feedVersion(db)}`, MARKET_CACHE_TTL.shared, load);
 }
 const eaKey = (v: unknown) => (/^[1-9]\d{0,9}$/.test(String(v ?? "")) ? Number(v) : null);
 
@@ -64,8 +124,36 @@ const catalogueCard = (r: Row): Card => ({
   price: (r.price as number) ?? null, ea_item_id: eaKey(r.source_card_key), updated_at: String(r.updated_at),
 });
 
+/** FUT.GG quotes for these EA items, oldest first, in batches of 100 ids. */
+async function fetchFutggQuotes(db: FutDb, ids: number[], q: { platform?: Platform; since?: string; as_of: string }): Promise<Row[]> {
+  const out: Row[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    out.push(...await allPages(() => {
+      let x = db.from("futgg_prices").select("*").eq("game_year", 27).in("ea_item_id", ids.slice(i, i + 100)).gte("price", 1);
+      if (q.platform) x = x.eq("platform", q.platform);
+      if (q.since) x = x.gte("published_at", q.since);
+      return x.lte("received_at", q.as_of).lte("published_at", q.as_of).order("published_at", { ascending: true }).order("ea_item_id", { ascending: true }).order("platform", { ascending: true });
+    }));
+    if (out.length >= 200_000) throw new FutError("Too much bulk price history to analyse at once.", 413);
+  }
+  return out;
+}
+
+/** Every tracked catalogue card's FUT.GG quotes on one platform over the last 9 days, by EA item id, cached per refresh. */
+export function sharedFutggQuotes(db: FutDb, catalogue: () => Promise<Row[]>) {
+  return async (platform: Platform) => remember(db, `quotes:${platform}|${await feedVersion(db)}`, MARKET_CACHE_TTL.shared, async () => {
+    const ids = [...new Set((await catalogue()).flatMap((r) => { const k = eaKey(r.source_card_key); return k === null ? [] : [k]; }))];
+    const now = new Date().toISOString();
+    const rows = await fetchFutggQuotes(db, ids, { platform, since: new Date(Date.now() - SHARED_QUOTES_HOURS * 3_600_000).toISOString(), as_of: now });
+    const byEa = new Map<number, Row[]>();
+    for (const r of rows) { const k = Number(r.ea_item_id); (byEa.get(k) ?? byEa.set(k, []).get(k)!).push(r); }
+    return byEa;
+  });
+}
+
 export class PgPriceStore implements PriceStore {
-  constructor(private db: FutDb, private futggEnabled = false, private catalogue: () => Promise<Row[]> = () => Promise.resolve([])) {}
+  constructor(private db: FutDb, private futggEnabled = false, private catalogue: () => Promise<Row[]> = () => Promise.resolve([]),
+    private sharedQuotes?: (platform: Platform) => Promise<Map<number, Row[]>>) {}
   async query(owner: string, q: PriceQuery): Promise<PriceObservation[]> {
     const base = (shared: boolean) => () => {
       let x = this.db.from("market_price_observations").select("*");
@@ -93,25 +181,28 @@ export class PgPriceStore implements PriceStore {
     }
     // Market-wide catalogue cards take the same quotes, unless the caller has their own card for that item.
     const wanted = q.card_ids?.length ? new Set(q.card_ids) : null;
+    const catalogueIds = new Map<number, string>();
     for (const row of await this.catalogue()) {
       const key = eaKey(row.source_card_key);
       if (key === null || byEa.has(key) || (wanted && !wanted.has(String(row.id)))) continue;
-      byEa.set(key, [String(row.id)]);
+      catalogueIds.set(key, String(row.id));
     }
-    const ids = [...byEa.keys()], out: PriceObservation[] = [];
-    for (let i = 0; i < ids.length; i += 100) {
-      const quotes = await allPages(() => {
-        let x = this.db.from("futgg_prices").select("*").eq("game_year", 27).in("ea_item_id", ids.slice(i, i + 100)).gte("price", 1);
-        if (q.platform) x = x.eq("platform", q.platform);
-        if (q.since) x = x.gte("published_at", q.since);
-        return x.lte("received_at", q.as_of).lte("published_at", q.as_of).order("published_at", { ascending: true }).order("ea_item_id", { ascending: true }).order("platform", { ascending: true });
-      });
-      for (const quote of quotes) for (const cardId of byEa.get(Number(quote.ea_item_id)) ?? []) {
-        out.push({ card_id: cardId, platform: quote.platform as Platform, price: Number(quote.price),
-          observed_at: iso(quote.published_at)!, received_at: iso(quote.received_at)!, season: "FC27",
-          source_id: "futgg_bulk", evidence: "estimate", kind: "lowest_bin",
-          quality: ["FUT.GG dataset publication time; individual quote update time is unavailable."] });
+    const out: PriceObservation[] = [];
+    const push = (quote: Row, cardId: string) => out.push({ card_id: cardId, platform: quote.platform as Platform, price: Number(quote.price),
+      observed_at: iso(quote.published_at)!, received_at: iso(quote.received_at)!, season: "FC27",
+      source_id: "futgg_bulk", evidence: "estimate", kind: "lowest_bin",
+      quality: ["FUT.GG dataset publication time; individual quote update time is unavailable."] });
+    // The whole card list's prices are the same for every caller: read them once per FUT.GG refresh, not per page view.
+    const since = q.since ? Date.parse(q.since) : -Infinity, asOf = Date.parse(q.as_of);
+    const shared = this.sharedQuotes && q.platform && !wanted && since >= Date.now() - SHARED_QUOTES_HOURS * 3_600_000 ? await this.sharedQuotes(q.platform) : null;
+    if (shared) {
+      for (const [key, cardId] of catalogueIds) for (const quote of shared.get(key) ?? []) {
+        const t = Date.parse(String(quote.published_at));
+        if (t >= since && t <= asOf && Date.parse(String(quote.received_at)) <= asOf) push(quote, cardId);
       }
+    } else for (const [key, cardId] of catalogueIds) byEa.set(key, [cardId]);
+    for (const quote of await fetchFutggQuotes(this.db, [...byEa.keys()], q)) for (const cardId of byEa.get(Number(quote.ea_item_id)) ?? []) {
+      push(quote, cardId);
       if (out.length >= 200_000) throw new FutError("Too much bulk price history to analyse at once.", 413);
     }
     return out;
@@ -134,6 +225,7 @@ export class PgPriceStore implements PriceStore {
       }));
       fail((await this.db.from("market_price_observations").insert(chunk)).error);
     }
+    if (fresh.length) forgetMarketOwner(this.db, owner);
     return { inserted: fresh.length, skipped: rows.length - fresh.length };
   }
 }
@@ -269,11 +361,16 @@ export async function marketRules(db: FutDb): Promise<MarketRules> {
 
 /** XI Lab's market service on the caller's data, the active market rules and the active chemistry rules. */
 export async function marketFor(db: FutDb, now?: () => string) {
-  const [rules, sources, chemistry] = await Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
+  // Rules and sources rarely change; a minute's delay after an admin edit is fine. A fixed clock turns caching off.
+  const load = () => Promise.all([marketRules(db), marketSources(db), activeRules(db)]);
+  const cache = cacheOn(db) && !now;
+  const [rules, sources, chemistry] = cache ? await remember(db, "config", MARKET_CACHE_TTL.config, load) : await load();
   const catalogue = trackedCatalogue(db);
+  const futgg = sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled");
   return createMarketService({
-    prices: new PgPriceStore(db, sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled"), catalogue), memberships: new PgMembershipStore(db), watchlists: new PgWatchlistStore(db),
-    cards: new PgMarketCardSource(db, catalogue), holds: new PgCaptureHoldStore(db), sources, rules, chemistry, ...(now ? { now } : {}),
+    prices: new PgPriceStore(db, futgg, catalogue, cache ? sharedFutggQuotes(db, catalogue) : undefined), memberships: new PgMembershipStore(db), watchlists: new PgWatchlistStore(db),
+    cards: new PgMarketCardSource(db, catalogue), holds: new PgCaptureHoldStore(db), sources, rules, chemistry,
+    ...(now ? { now } : {}), ...(cache ? { snapshots: snapshotCache(db) } : {}),
   });
 }
 

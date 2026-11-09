@@ -29,9 +29,23 @@ export interface MarketDeps {
   chemistry?: ChemistryRules;
   /** Injectable clock for tests and backtests. */
   now?: () => string;
+  /**
+   * Optional: keeps a built snapshot between requests. Building one loads every tracked card and eight days of
+   * prices, so pages opened within a short time share it. Only "now" snapshots are cached, never a backtest's as_of.
+   */
+  snapshots?: SnapshotCache;
+}
+
+/** Remembers a snapshot under a key until the cache decides it is too old or the owner changed their data. */
+export interface SnapshotCache {
+  /** Part of the key that changes when shared data changes (e.g. the latest FUT.GG refresh). */
+  version(): Promise<string>;
+  remember<T>(owner: string, key: string, build: () => Promise<T>): Promise<T>;
 }
 
 export class MarketNotFoundError extends Error {}
+
+const scanned = new WeakMap<object, unknown>();
 
 const LOOKBACK_H = 8 * 24;
 
@@ -69,7 +83,13 @@ export function createMarketService(deps: MarketDeps) {
     return s && s.status === "enabled" && s.permissions.derived_analytics;
   });
 
-  async function snapshot(owner: string, platform: Platform, as_of = now()): Promise<Snapshot> {
+  async function snapshot(owner: string, platform: Platform, as_of?: string): Promise<Snapshot> {
+    const cache = deps.snapshots;
+    if (as_of !== undefined || !cache) return buildSnapshot(owner, platform, as_of ?? now());
+    return cache.remember(owner, `${platform}|${await cache.version()}`, () => buildSnapshot(owner, platform, now()));
+  }
+
+  async function buildSnapshot(owner: string, platform: Platform, as_of: string): Promise<Snapshot> {
     const cards = await deps.cards.list(owner);
     const byId = new Map(cards.map((c) => [c.id, c]));
     const rows = usable(await deps.prices.query(owner, { platform, as_of, since: iso(ms(as_of) - LOOKBACK_H * 3_600_000) }));
@@ -176,6 +196,35 @@ export function createMarketService(deps: MarketDeps) {
     return { linked: rows.length, still_held: held.length - rows.length, rows };
   }
 
+  /** Scores every card with prices once per snapshot; filters and pages then reuse it. */
+  function scan(snap: Snapshot) {
+    const rank: Record<SignalStatus, number> = { favorable_setup: 0, research_further: 1, overheated: 2, elevated_risk: 3, watch: 4, insufficient_evidence: 5 };
+    const items = snap.cards
+      .filter((c) => snap.series.has(c.id))
+      .map((c) => {
+        const a = analyse(snap, c);
+        return {
+          card_id: c.id,
+          name: c.name,
+          rating: c.rating,
+          category: c.category,
+          platform: snap.platform,
+          latest_price: a.latest,
+          latest_observed_at: a.fresh.latest_observed_at,
+          freshness: a.fresh.status,
+          status: a.assessment.status,
+          categories: a.assessment.categories,
+          reasons: a.assessment.reasons,
+          could_be_wrong: a.assessment.could_be_wrong,
+          change_24h: a.mom.changes["24h"],
+          change_72h: a.mom.changes["72h"],
+          vs_market_24h_pp: a.rs.find((r) => r.benchmark === "market")?.cells.find((x) => x.window === "24h")?.diff_pp ?? null,
+        };
+      })
+      .sort((x, y) => rank[x.status] - rank[y.status] || (y.vs_market_24h_pp ?? -999) - (x.vs_market_24h_pp ?? -999));
+    return items;
+  }
+
   return {
     rules,
     /** Data sources panel: every provider, enabled or not, with its terms. */
@@ -269,34 +318,22 @@ export function createMarketService(deps: MarketDeps) {
     },
 
     /** find_market_opportunities: the scanner across every card with prices. */
-    async findMarketOpportunities(owner: string, opts: { platform?: Platform; as_of?: string; status?: SignalStatus[]; max_price?: number; category?: MarketCard["category"]; limit?: number } = {}) {
+    async findMarketOpportunities(owner: string, opts: { platform?: Platform; as_of?: string; status?: SignalStatus[]; max_price?: number; category?: MarketCard["category"]; limit?: number; offset?: number } = {}) {
       const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
-      const rank: Record<SignalStatus, number> = { favorable_setup: 0, research_further: 1, overheated: 2, elevated_risk: 3, watch: 4, insufficient_evidence: 5 };
-      const items = snap.cards
-        .filter((c) => snap.series.has(c.id) && (!opts.category || c.category === opts.category))
-        .map((c) => {
-          const a = analyse(snap, c);
-          return {
-            card_id: c.id,
-            name: c.name,
-            rating: c.rating,
-            category: c.category,
-            platform: snap.platform,
-            latest_price: a.latest,
-            latest_observed_at: a.fresh.latest_observed_at,
-            freshness: a.fresh.status,
-            status: a.assessment.status,
-            categories: a.assessment.categories,
-            reasons: a.assessment.reasons,
-            could_be_wrong: a.assessment.could_be_wrong,
-            change_24h: a.mom.changes["24h"],
-            change_72h: a.mom.changes["72h"],
-            vs_market_24h_pp: a.rs.find((r) => r.benchmark === "market")?.cells.find((x) => x.window === "24h")?.diff_pp ?? null,
-          };
-        })
-        .filter((i) => (!opts.status || opts.status.includes(i.status)) && (opts.max_price === undefined || (i.latest_price !== null && i.latest_price <= opts.max_price)))
-        .sort((x, y) => rank[x.status] - rank[y.status] || (y.vs_market_24h_pp ?? -999) - (x.vs_market_24h_pp ?? -999));
-      return { regime: snap.regime.primary, items: items.slice(0, opts.limit ?? 50), total: items.length, provenance: provenance(snap) };
+      // A cached snapshot keeps its scan too, so paging and filtering the radar doesn't rescore every card
+      const all = (scanned.get(snap) as ReturnType<typeof scan> | undefined) ?? scan(snap);
+      scanned.set(snap, all);
+      const items = all.filter((i) => (!opts.status || opts.status.includes(i.status)) && (!opts.category || i.category === opts.category) && (opts.max_price === undefined || (i.latest_price !== null && i.latest_price <= opts.max_price)));
+      const offset = opts.offset ?? 0;
+      return {
+        regime: snap.regime.primary,
+        items: items.slice(offset, offset + (opts.limit ?? 50)),
+        total: items.length,
+        offset,
+        // Every category in the scan, so the filter can list them without a second unfiltered request
+        categories: [...new Set(all.flatMap((i) => [i.category, ...i.categories]).filter(Boolean))].sort(),
+        provenance: provenance(snap),
+      };
     },
 
     /** compare_card_relative_value: fit and price against named cards (or its comparables). */

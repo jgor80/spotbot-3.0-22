@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
 import {
@@ -23,6 +23,12 @@ import {
   CreditCard,
   Newspaper,
   Gift,
+  Search,
+  ChartNoAxesCombined,
+  FlaskConical,
+  Layers,
+  Shield,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,16 +48,18 @@ interface DashboardLayoutProps {
   children: ReactNode;
 }
 
-// The four views a manager uses on match night
-const primaryNavItems = [
+type NavItem = { path: string; label: string; short?: string; icon: LucideIcon };
+type AppSection = "club" | "fut";
+
+// Club app: the four views a manager uses on match night
+const clubPrimary: NavItem[] = [
   { path: "/", label: "Match Night", short: "Match", icon: LayoutDashboard },
   { path: "/teams", label: "Lineup Builder", short: "Lineup", icon: UsersRound },
   { path: "/leaderboard", label: "Club Stats", short: "Stats", icon: Trophy },
   { path: "/insights", label: "Tactical Insights", short: "Insights", icon: Lightbulb },
 ];
 
-const moreNavItems = [
-  { path: "/fut", label: "XI Lab", icon: UsersRound },
+const clubMore: NavItem[] = [
   { path: "/control", label: "Control Room", icon: SlidersHorizontal },
   { path: "/games", label: "Games", icon: Gamepad2 },
   { path: "/trophy-room", label: "Trophy Room", icon: Medal },
@@ -67,12 +75,81 @@ const moreNavItems = [
   { path: "/settings", label: "Settings", icon: Settings },
 ];
 
+// FUT app: Ultimate Team market and squad tools. Personal, not tied to a Discord club.
+const futPrimary: NavItem[] = [
+  { path: "/fut/market/cards", label: "Card Search", short: "Search", icon: Search },
+  { path: "/fut/market", label: "Market Lab", short: "Market", icon: ChartNoAxesCombined },
+  { path: "/fut", label: "Squad Builder", short: "Squads", icon: FlaskConical },
+  { path: "/fut/cards", label: "My Cards", short: "Cards", icon: Layers },
+];
+
+const futMore: NavItem[] = [];
+
+const SECTION_HOME: Record<AppSection, string> = { club: "/", fut: "/fut/market/cards" };
+const LAST_PATH_KEY = "gafferbot-last-path-";
+
+function sectionOf(path: string): AppSection {
+  return path === "/fut" || path.startsWith("/fut/") ? "fut" : "club";
+}
+
 // /lineup is an alias of /teams and /players of /leaderboard
 const ALIASES: Record<string, string> = { "/lineup": "/teams", "/players": "/leaderboard" };
 
-function isActivePath(current: string, path: string) {
+// The nav item with the longest path that contains the current page, so /fut/market/cards
+// lights up Card Search and not Market Lab or Squad Builder.
+function activeNavPath(current: string, items: NavItem[]) {
   const resolved = ALIASES[current] ?? current;
-  return path === "/" ? resolved === "/" : resolved === path || resolved.startsWith(path + "/");
+  let best: string | null = null;
+  for (const { path } of items) {
+    const hit = path === "/" ? resolved === "/" : resolved === path || resolved.startsWith(path + "/");
+    if (hit && (!best || path.length > best.length)) best = path;
+  }
+  return best;
+}
+
+function rememberPath(section: AppSection, path: string) {
+  try { sessionStorage.setItem(LAST_PATH_KEY + section, path); } catch { /* storage blocked: the switch falls back to the section home */ }
+}
+function lastPath(section: AppSection) {
+  try {
+    const saved = sessionStorage.getItem(LAST_PATH_KEY + section);
+    if (saved && sectionOf(saved) === section) return saved;
+  } catch { /* storage blocked */ }
+  return SECTION_HOME[section];
+}
+
+// Club / FUT switch: the two halves of GafferBot, each with its own nav and colour
+function SectionSwitch({ section }: { section: AppSection }) {
+  const options: { key: AppSection; label: string; icon: LucideIcon }[] = [
+    { key: "club", label: "Club", icon: Shield },
+    { key: "fut", label: "FUT", icon: Layers },
+  ];
+  return (
+    <div role="tablist" aria-label="App section" className="flex shrink-0 items-center rounded-full border border-border/70 bg-muted/50 p-0.5">
+      {options.map((option) => {
+        const active = option.key === section;
+        return (
+          <Link
+            key={option.key}
+            role="tab"
+            aria-selected={active}
+            to={active ? SECTION_HOME[option.key] : lastPath(option.key)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors sm:px-3 sm:text-sm",
+              active
+                ? option.key === "fut"
+                  ? "bg-fut text-fut-foreground shadow-sm"
+                  : "bg-club text-club-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <option.icon className="h-3.5 w-3.5" />
+            {option.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -82,7 +159,20 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const { user, signOut } = useAuth();
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme !== "light";
-  const moreActive = moreNavItems.some((item) => isActivePath(location.pathname, item.path));
+  const section = sectionOf(location.pathname);
+  const primaryNavItems = section === "fut" ? futPrimary : clubPrimary;
+  const moreNavItems = section === "fut" ? futMore : clubMore;
+  const activePath = activeNavPath(location.pathname, [...primaryNavItems, ...moreNavItems]);
+  const moreActive = moreNavItems.some((item) => item.path === activePath);
+
+  // FUT pages swap the brand colour from pitch green to gold, including dialogs and menus
+  // that render outside this layout, so the two halves of the app never look alike.
+  useEffect(() => {
+    rememberPath(section, location.pathname + location.search);
+    const root = document.documentElement;
+    root.dataset.app = section;
+    return () => { delete root.dataset.app; };
+  }, [section, location.pathname, location.search]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -95,15 +185,20 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur-lg">
         <div className="container flex h-14 items-center gap-3 px-4 sm:px-6 md:h-16 md:gap-6 lg:px-8">
-          <Link to="/" className="flex shrink-0 items-center gap-2">
-            <img src="/brand/badge-128.png" alt="" width={36} height={36} className="h-9 w-9 shrink-0" />
-            <span className="hidden font-display text-xl font-bold tracking-tight sm:inline">GafferBot</span>
-          </Link>
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <Link to={SECTION_HOME[section]} className="flex shrink-0 items-center gap-2">
+              <img src="/brand/badge-128.png" alt="" width={36} height={36} className="h-9 w-9 shrink-0" />
+              <span className="hidden font-display text-xl font-bold tracking-tight sm:inline lg:hidden xl:inline">
+                GafferBot{section === "fut" && <span className="text-primary"> FUT</span>}
+              </span>
+            </Link>
+            <SectionSwitch section={section} />
+          </div>
 
           {/* Desktop navigation */}
           <nav className="hidden items-center gap-1 lg:flex" aria-label="Main">
             {primaryNavItems.map((item) => {
-              const active = isActivePath(location.pathname, item.path);
+              const active = item.path === activePath;
               return (
                 <Link
                   key={item.path}
@@ -120,7 +215,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 </Link>
               );
             })}
-            <DropdownMenu>
+            {moreNavItems.length > 0 && <DropdownMenu>
               <DropdownMenuTrigger
                 className={cn(
                   "flex items-center gap-1 rounded-md px-3 py-2 text-sm font-medium transition-colors outline-none",
@@ -140,11 +235,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
-            </DropdownMenu>
+            </DropdownMenu>}
           </nav>
 
           <div className="ml-auto flex min-w-0 items-center gap-2">
-            <GuildSelector className="h-9 w-auto min-w-0 max-w-[190px] sm:max-w-[240px]" />
+            {/* FUT tools are personal, so the Discord server picker only shows in the Club app */}
+            {section === "club" && <GuildSelector className="h-9 w-auto min-w-0 max-w-[190px] sm:max-w-[240px]" />}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0 rounded-full" aria-label="Account">
@@ -191,7 +287,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       >
         <div className="mx-auto grid max-w-lg grid-cols-5">
           {primaryNavItems.map((item) => {
-            const active = isActivePath(location.pathname, item.path);
+            const active = item.path === activePath;
             return (
               <Link
                 key={item.path}
@@ -224,11 +320,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
         <SheetContent side="bottom" className="rounded-t-2xl pb-8">
           <SheetHeader className="text-left">
-            <SheetTitle>More</SheetTitle>
+            <SheetTitle>{section === "fut" ? "GafferBot FUT" : "More"}</SheetTitle>
           </SheetHeader>
-          <div className="mt-4 grid grid-cols-4 gap-2">
+          {moreNavItems.length > 0 && <div className="mt-4 grid grid-cols-4 gap-2">
             {moreNavItems.map((item) => {
-              const active = isActivePath(location.pathname, item.path);
+              const active = item.path === activePath;
               return (
                 <Link
                   key={item.path}
@@ -244,7 +340,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 </Link>
               );
             })}
-          </div>
+          </div>}
           <div className="mt-4 flex gap-2 border-t pt-4">
             <Button variant="outline" className="flex-1" onClick={toggleTheme}>
               {isDark ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}

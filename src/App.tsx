@@ -50,6 +50,9 @@ const MarketImportPage = lazy(() => import("./pages/fut/market/MarketImportPage"
 const MarketSourcesPage = lazy(() => import("./pages/fut/market/MarketSourcesPage"));
 
 const queryClient = new QueryClient();
+// Market Lab data changes when FUT.GG refreshes (twice a day) or you import prices (which refetches it), so keep it
+// for a few minutes instead of reloading it on every page and every return to the tab.
+queryClient.setQueryDefaults(["fut", "market"], { staleTime: 5 * 60_000, gcTime: 30 * 60_000, refetchOnWindowFocus: false });
 
 const PageLoading = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">

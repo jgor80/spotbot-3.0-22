@@ -49,6 +49,8 @@ async function call(body, tables) {
 }
 
 const base = () => ({ user_discord_links: [{ auth_user_id: 'me-auth', discord_user_id: ME, verified: true }], web_admins: [], profiles: [], player_stats: [] });
+// Linking your own gamertag needs membership of that server (recorded matches there count)
+const member = () => { const t = base(); t.player_stats.push({ id: 'ps1', guild_id: GUILD, discord_user_id: ME }); return t; };
 
 test("a leader of some other server can't rewrite a player's gamertag", async () => {
   const res = await call({ guild_id: GUILD, discord_user_id: VICTIM, ea_username: 'Hijacked' }, base());
@@ -57,7 +59,7 @@ test("a leader of some other server can't rewrite a player's gamertag", async ()
 });
 
 test("a gamertag another real member holds can't be taken", async () => {
-  const t = base();
+  const t = member();
   t.profiles.push({ discord_user_id: OTHER, ea_username: 'AceStriker' });
   const res = await call({ guild_id: GUILD, discord_user_id: ME, ea_username: 'acestriker' }, t);
   assert.strictEqual(res.status, 409);
@@ -65,7 +67,13 @@ test("a gamertag another real member holds can't be taken", async () => {
 });
 
 test('a member can still link their own free gamertag', async () => {
-  const res = await call({ guild_id: GUILD, discord_user_id: ME, ea_username: 'FreeName' }, base());
+  const res = await call({ guild_id: GUILD, discord_user_id: ME, ea_username: 'FreeName' }, member());
   assert.strictEqual(res.status, 200);
   assert.ok(res.writes.includes('profiles'));
+});
+
+test("you can't link a gamertag in a server you aren't in", async () => {
+  const res = await call({ guild_id: GUILD, discord_user_id: ME, ea_username: 'FreeName' }, base());
+  assert.strictEqual(res.status, 403);
+  assert.deepStrictEqual(res.writes, []);
 });
