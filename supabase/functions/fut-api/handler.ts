@@ -199,6 +199,13 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       } catch (e) { console.warn("[fut-api] relink after club sync:", e); }
       return json({ data: { ...result, prices_linked } });
     }
+    // Club trade value: which synced cards are tradeable and what the tradeable copies sell for now (latest FUT.GG
+    // price, or the user's own newer Web App capture), with totals before and after EA's 5% tax.
+    if (route === "/club/value" && m === "GET") {
+      const { data, error } = await db.rpc("club_trade_value", { p_user: userId, p_platform: platformParam(url.searchParams.get("platform")) });
+      if (error) throw new FutError(`Club value is unavailable: ${error.message}`, 500);
+      return json({ data });
+    }
 
     if (route === "/managers" && m === "GET") return json({ data: await listManagers(db, userId) });
     if (route === "/managers" && m === "POST") return json({ data: await addManager(db, userId, parseManagerInput(await body(req))) }, 201);

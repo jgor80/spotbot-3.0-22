@@ -44,10 +44,23 @@ interface Parsed {
   stats: number[] | null;
   skill_moves: number | null;
   weak_foot: number | null;
+  /** Untradeable flag per owned copy, by EA's id for that copy (the helper's item_id; one copy can show up twice). */
+  copies: Map<number, boolean>;
+  /** Copies without an item id. */
+  unkeyed: boolean[];
 }
 
 const posInt = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) && v > 0 && v < 2 ** 31 ? v : null);
 const inRange = (v: unknown, lo: number, hi: number): number | null => (typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi ? v : null);
+const copyId = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) && v > 0 ? v : null);
+function addCopy(p: Parsed, id: number | null, untradeable: boolean) {
+  if (id === null) p.unkeyed.push(untradeable);
+  else p.copies.set(id, (p.copies.get(id) ?? false) || untradeable);
+}
+const copyCounts = (p: Parsed) => {
+  const all = [...p.copies.values(), ...p.unkeyed];
+  return { quantity: Math.min(Math.max(all.length, 1), 99), tradeable_quantity: Math.min(all.filter((u) => !u).length, 99) };
+};
 const clip = (s: string, n = 60) => (s.length > n ? s.slice(0, n).trim() : s);
 
 function nameMap(v: unknown): Record<string, string> {
@@ -157,10 +170,12 @@ export async function importClub(db: FutDb, userId: string, body: unknown): Prom
     const p: Parsed = {
       ea_item_id, asset_id: posInt(it.asset_id), rating, positions, team_id: posInt(it.team_id), league_id, nation_id,
       rare_flag: inRange(it.rare_flag, 0, 255), untradeable: it.untradeable === true, stats, skill_moves: sm === null ? null : sm + 1, weak_foot: inRange(it.weak_foot, 1, 5),
+      copies: new Map(), unkeyed: [],
     };
+    addCopy(p, copyId(it.item_id), p.untradeable);
     const had = players.get(ea_item_id);
-    // Two copies of one card version: keep one card, untradeable if either copy is.
-    if (had) { had.untradeable ||= p.untradeable; skip("duplicate copy"); continue; }
+    // Two copies of one card version: keep one card, untradeable if either copy is, and count the copies.
+    if (had) { had.untradeable ||= p.untradeable; addCopy(had, copyId(it.item_id), p.untradeable); skip("duplicate copy"); continue; }
     players.set(ea_item_id, p);
   }
 
@@ -204,7 +219,7 @@ export async function importClub(db: FutDb, userId: string, body: unknown): Prom
       source_updated_at: now, updated_at: now,
     });
     if (p.stats) attrs.push({ card_id: id, ...Object.fromEntries(FACE.map((k, i) => [k, p.stats![i]])) });
-    inv.push({ user_id: userId, card_id: id, tradeable: !p.untradeable });
+    inv.push({ user_id: userId, card_id: id, tradeable: !p.untradeable, ...copyCounts(p) });
     if (had) updated++; else added++;
   }
 

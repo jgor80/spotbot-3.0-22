@@ -126,6 +126,8 @@ export interface CommunityPull { sharers: number; your_cards_with_ea_id: number;
 export interface Fc27MarketPull { updated: string | null; hours_old: number | null; your_cards_with_ea_id: number; matched: number; observations: number; import: MarketImportResult | null; note: string }
 export interface MarketHeld { items: { ea_item_id: string | number; asset_id: string | number; rating: number; details: { rare_flag?: number; team_id?: number; league_id?: number; nation_id?: number; position?: string } | null; special_version: boolean | null; observations: number; platforms: string[]; latest_price: number | null; latest_platform: string; latest_observed_at: string | null; reason: string }[]; total_observations: number; evidence: MarketEvidence; note: string }
 export interface MarketSource { id: string; name: string; kind: string; status: "enabled" | "disabled" | "not_authorized"; is_demo: boolean; status_note: string; permissions: Record<string, boolean | null>; evidence: MarketEvidence }
+export interface ClubValueCard { id: string; player_name: string; version: string | null; overall: number; position: string; club: string | null; league: string | null; nation: string | null; is_icon: boolean; is_hero: boolean; ea_item_id: number | null; tradeable: boolean | null; quantity: number; tradeable_quantity: number; futgg_price: number | null; captured_price: number | null; captured_at: string | null; price: number | null; price_source: "futgg" | "web_app_capture" | null; value: number | null; value_after_tax: number | null; missing_from_last_sync: boolean }
+export interface ClubValue { platform: MarketPlatform; prices_published_at: string | null; last_sync: string | null; totals: { cards: number; tradeable_cards: number; untradeable_cards: number; unknown_cards: number; tradeable_copies: number; priced_tradeable: number; unpriced_tradeable: number; value: number; value_after_tax: number; untradeable_value: number }; cards: ClubValueCard[] }
 const marketPath = (path: string, platform: MarketPlatform, filters: Record<string, string> = {}) => `/market${path}?${new URLSearchParams({ ...filters, platform })}`;
 
 export const futApi = {
@@ -157,6 +159,7 @@ export const futApi = {
     sources: (platform: MarketPlatform) => futRequest<MarketSource[]>(marketPath("/sources", platform)),
   },
   health: () => futRequest<RuleInfo>("/health"),
+  clubValue: (platform: MarketPlatform) => futRequest<ClubValue>(`/club/value?${new URLSearchParams({ platform })}`),
   cards: (filters: Record<string, string> = {}) => {
     const limit = filters.limit ?? CARD_LIST_LIMIT;
     cardLimitRules.parse(Number(limit));
