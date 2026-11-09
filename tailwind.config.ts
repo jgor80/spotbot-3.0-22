@@ -66,6 +66,14 @@ export default {
           DEFAULT: "hsl(var(--success))",
           foreground: "hsl(var(--success-foreground))",
         },
+        club: {
+          DEFAULT: "hsl(var(--club))",
+          foreground: "hsl(var(--club-foreground))",
+        },
+        fut: {
+          DEFAULT: "hsl(var(--fut))",
+          foreground: "hsl(var(--fut-foreground))",
+        },
         warning: {
           DEFAULT: "hsl(var(--warning))",
           foreground: "hsl(var(--warning-foreground))",

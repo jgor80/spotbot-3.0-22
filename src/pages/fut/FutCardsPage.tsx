@@ -45,8 +45,8 @@ export default function FutCardsPage() {
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const filters = { q, limit: "100", ...(position !== "all" ? { position } : {}), ...(min ? { min_overall: min } : {}), ...(owned ? { owned: "true" } : {}) };
   const cards = useQuery({ queryKey: [...futKeys.cards, filters], queryFn: () => futApi.cards(filters), enabled });
-  const save = useMutation({ mutationFn: (card: Omit<FutCard, "id">) => futApi.saveCard(card, editing?.id), onSuccess: () => { qc.invalidateQueries({ queryKey: futKeys.cards }); setFormOpen(false); } });
-  const remove = useMutation({ mutationFn: futApi.deleteCard, onSuccess: () => { qc.invalidateQueries({ queryKey: futKeys.cards }); setSelected(ids => ids.filter(id => id !== deleting?.id)); setDeleting(null); } });
+  const save = useMutation({ mutationFn: (card: Omit<FutCard, "id">) => futApi.saveCard(card, editing?.id), onSuccess: () => { qc.invalidateQueries({ queryKey: futKeys.cards }); qc.invalidateQueries({ queryKey: futKeys.market }); setFormOpen(false); } });
+  const remove = useMutation({ mutationFn: futApi.deleteCard, onSuccess: () => { qc.invalidateQueries({ queryKey: futKeys.cards }); qc.invalidateQueries({ queryKey: futKeys.market }); setSelected(ids => ids.filter(id => id !== deleting?.id)); setDeleting(null); } });
   const compare = useMutation({ mutationFn: futApi.compareCards });
   return <FutShell title="My cards" actions={<><Button variant="outline" disabled={selected.length < 2} onClick={() => { setComparisonOpen(true); compare.mutate(selected); }}><Columns2 className="mr-2 h-4 w-4" />Compare ({selected.length}/4)</Button><ClubImport /><Button onClick={() => { save.reset(); setEditing(null); setFormOpen(true); }}><Plus className="mr-2 h-4 w-4" />Add card</Button></>}>
     {enabled && <ClubValue />}

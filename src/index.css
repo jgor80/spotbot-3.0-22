@@ -42,6 +42,12 @@
     --info: 210 100% 50%;
     --info-foreground: 0 0% 100%;
 
+    /* App sections: Club app (pitch green) and FUT app (gold) */
+    --club: 142 70% 45%;
+    --club-foreground: 0 0% 100%;
+    --fut: 40 92% 44%;
+    --fut-foreground: 220 25% 10%;
+
     /* Rating tiers */
     --tier-elite: 142 70% 45%;
     --tier-gold: 45 95% 55%;
@@ -100,6 +106,18 @@
     --sidebar-accent-foreground: 220 15% 90%;
     --sidebar-border: 220 20% 15%;
     --sidebar-ring: 142 70% 50%;
+
+    --club: 142 70% 50%;
+    --club-foreground: 220 25% 8%;
+    --fut: 45 95% 55%;
+    --fut-foreground: 220 25% 8%;
+  }
+
+  /* FUT pages (set by DashboardLayout) take gold as the brand colour in place of green */
+  html[data-app="fut"] {
+    --primary: var(--fut);
+    --primary-foreground: var(--fut-foreground);
+    --ring: var(--fut);
   }
 }
 

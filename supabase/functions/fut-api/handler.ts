@@ -13,7 +13,7 @@ import { futggStatus } from "../_shared/fut/futgg-status.ts";
 import { syncFutggCatalogue } from "../_shared/fut/futgg-catalogue.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
-import { marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
+import { forgetMarketOwner, marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
 import { scanRequestSchema, thesisInputSchema, watchItemInputSchema } from "../_shared/fut/xilab/market/index.ts";
 import { assignCard, cardSchema, createSquad, FORMATIONS, squadSchema, type Squad, type WorkspaceCard } from "../_shared/fut/xilab/workspace/index.ts";
 
@@ -157,6 +157,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   const m = req.method;
   if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices and your club.");
   const db = deps.db;
+  // Any change (cards, prices, club import, helper upload) makes the caller's cached Market Lab snapshot stale
+  if (m !== "GET") forgetMarketOwner(db, userId);
 
   try {
     if (route === "/health" && m === "GET") return json({ ok: true, api: "v1" });
@@ -292,6 +294,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           max_price: intParam(p.get("max_price"), "max_price", 0, 15_000_000),
           category: p.get("category") || undefined,
           limit: intParam(p.get("limit"), "limit", 1, 200),
+          offset: intParam(p.get("offset"), "offset", 0, 100_000),
         });
         return json({ data: await runWorkspace(() => mk.findMarketOpportunities(userId, q)) });
       }
