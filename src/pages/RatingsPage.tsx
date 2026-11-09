@@ -541,7 +541,7 @@ export default function RatingsPage() {
                   <Clock className="h-5 w-5" />
                   Recent Peer Vibe Ratings
                 </CardTitle>
-                <p className="text-sm text-muted-foreground">Anonymous feedback from recent matches</p>
+                <p className="text-sm text-muted-foreground">Feedback from recent matches (rater names aren't shown here)</p>
               </CardHeader>
               <CardContent>
                 {recentLoading ? (

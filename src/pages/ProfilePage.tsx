@@ -17,13 +17,12 @@ import { toast } from "@/lib/notify";
 export default function ProfilePage() {
   const { selectedGuildId, isLoading: guildLoading } = useGuild();
   const { user, isLoading: authLoading } = useAuth();
-  const { discordLink, isLoading: linkLoading, linkDiscord, unlinkDiscord, isLinking, isUnlinking, linkError } = useDiscordLink();
+  const { discordLink, isLoading: linkLoading, unlinkDiscord, isUnlinking } = useDiscordLink();
   
   const [searchParams, setSearchParams] = useSearchParams();
   const userIdFromUrl = searchParams.get("user");
   
   const [inputUsername, setInputUsername] = useState("");
-  const [discordUsernameInput, setDiscordUsernameInput] = useState("");
   const [showSearch, setShowSearch] = useState(!!userIdFromUrl);
   
   // Determine which Discord ID to use for profile
@@ -49,22 +48,6 @@ export default function ProfilePage() {
         toast.error("Discord username not found");
       }
     }
-  };
-
-  const handleLinkDiscord = () => {
-    if (!discordUsernameInput.trim()) {
-      toast.error("Please enter your Discord username");
-      return;
-    }
-    linkDiscord(discordUsernameInput.trim(), {
-      onSuccess: () => {
-        toast.success("Discord account linked successfully!");
-        setDiscordUsernameInput("");
-      },
-      onError: (err) => {
-        toast.error(err.message);
-      },
-    });
   };
 
   const handleUnlink = () => {
@@ -129,25 +112,18 @@ export default function ProfilePage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Typing a username only ever made an unverified link, which unlocks nothing (anyone could
+                      type anyone's name). Only Discord sign-in or a one-time invite verifies an account. */}
                   <p className="text-sm text-muted-foreground">
-                    Enter your Discord username (e.g., johndoe or johndoe#1234) to link your account.
-                    You must have played at least one tracked game for your username to be recognized.
+                    Sign in with Discord to connect your player profile. If you signed in another way, ask a club
+                    leader to send you a link invite from Discord: it arrives as a DM with a one-time link.
                   </p>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Enter your Discord username"
-                      value={discordUsernameInput}
-                      onChange={(e) => setDiscordUsernameInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleLinkDiscord()}
-                    />
-                    <Button onClick={handleLinkDiscord} disabled={isLinking}>
-                      {isLinking ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <LinkIcon className="h-4 w-4 mr-2" />}
-                      Link
-                    </Button>
-                  </div>
-                  {linkError && (
-                    <p className="text-sm text-destructive">{linkError.message}</p>
-                  )}
+                  <Button asChild>
+                    <Link to="/auth">
+                      <LinkIcon className="h-4 w-4 mr-2" />
+                      Sign in with Discord
+                    </Link>
+                  </Button>
                 </CardContent>
               </Card>
             ) : (
@@ -163,6 +139,11 @@ export default function ProfilePage() {
                     <div className="space-y-1">
                       <p className="text-sm font-medium">Discord User ID</p>
                       <p className="text-sm text-muted-foreground font-mono">{discordLink.discord_user_id}</p>
+                      {!discordLink.verified && (
+                        <p className="text-sm text-amber-600 dark:text-amber-400">
+                          Not verified, so it doesn't unlock your servers yet. Unlink it, then sign in with Discord.
+                        </p>
+                      )}
                     </div>
                     <Button 
                       variant="outline" 

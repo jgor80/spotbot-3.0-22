@@ -78,14 +78,14 @@ function createEventLineup(deps) {
       .addFields({ name: `🪑 Bench (${bench.length})`, value: bench.map((p) => `<@${p.id}>${posLabel(p) ? ` · ${posLabel(p)}` : ''}${p.answer === 'maybe' ? ' ❓' : ''}${p.note ? ` 📝 *${p.note.slice(0, 50)}*` : ''}`).join('\n').slice(0, 1024) || '–' })
       .setFooter({ text: 'Pick a position, then a player. ❓ = answered Maybe. Publish posts it and DMs everyone.' });
 
-    const fNames = Object.keys(FORMATION_SLOTS);
-    const fOptions = [d.formation, ...fNames.filter((n) => n !== d.formation)].slice(0, 25);
+    // Paged like Team Sheet → Edit Lineup: there are more formations than one 25-option menu holds
+    const { options: fOptions } = require('./lineup-board.cjs').formationMenu(d.formation, d.formPage);
     const rows = [
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId(`evl_form:${event.id}`)
           .setPlaceholder('Formation')
-          .addOptions(fOptions.map((n) => ({ label: n, value: n, default: n === d.formation })))
+          .addOptions(fOptions)
       ),
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
@@ -156,7 +156,14 @@ function createEventLineup(deps) {
       ...[...d.slots.entries()].map(([i, id]) => ({ lineup_id: lineup.id, discord_user_id: id, position: positions[i], slot_index: i, is_substitute: false })),
       ...bench.map((id, k) => ({ lineup_id: lineup.id, discord_user_id: id, position: 'SUB', slot_index: BENCH_OFFSET + k, is_substitute: true })),
     ];
-    if (slotRows.length) await supabase.from('lineup_slots').insert(slotRows);
+    if (slotRows.length) {
+      const { error: slotError } = await supabase.from('lineup_slots').insert(slotRows);
+      if (slotError) {
+        // Don't post or DM a lineup with no players in it
+        await supabase.from('lineups').delete().eq('id', lineup.id);
+        return interaction.editReply({ content: `❌ Could not save the lineup's players: ${slotError.message}. Nothing was posted; try Publish again.`, embeds: [], components: [] });
+      }
+    }
     await supabase.from('availability_events').update({ formation: d.formation }).eq('id', event.id);
 
     const posted = await postLineup(lineup.id);
@@ -258,7 +265,8 @@ function createEventLineup(deps) {
     const slot = lineup?.slots.find((s) => s.discord_user_id === interaction.user.id);
     if (!slot) return interaction.reply({ content: "You're not in this lineup.", flags: 64 });
     const now = new Date().toISOString();
-    await supabase.from('lineup_slots').update(ok ? { confirmed_at: now, declined_at: null } : { declined_at: now, confirmed_at: null }).eq('id', slot.id);
+    const { error } = await supabase.from('lineup_slots').update(ok ? { confirmed_at: now, declined_at: null } : { declined_at: now, confirmed_at: null }).eq('id', slot.id);
+    if (error) return interaction.reply({ content: `❌ Couldn't save your answer (${error.message}). Please tap again in a moment.`, flags: 64 });
     await interaction.reply({ content: ok ? "✅ Confirmed — see you there. I'll send a voice invite before kick-off." : "❌ Got it. I've told the captain so they can find a sub.", flags: 64 });
     await refreshLineupPost(lineupId);
     if (!ok) {
@@ -349,7 +357,10 @@ function createEventLineup(deps) {
       await interaction.update({ content: 'Lineup discarded.', embeds: [], components: [] });
     } else if (action === 'evl_form') {
       await withDraft(interaction, id, async (d, event) => {
-        d.formation = interaction.values[0];
+        const picked = interaction.values[0];
+        if (picked.startsWith('page:')) { d.formPage = Number(picked.slice(5)) || 0; return; }
+        d.formation = picked;
+        d.formPage = undefined;
         d.selectedSlot = null;
         d.slots = await autofill(event, d.formation, d.pool);
       });

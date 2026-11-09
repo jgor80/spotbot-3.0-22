@@ -34,15 +34,18 @@ function describe(p: Product) {
 
 export default function BillingPage() {
   const [params] = useSearchParams();
-  const { selectedGuildId, setSelectedGuildId, selectedGuild } = useGuild();
+  const { selectedGuildId, setSelectedGuildId, selectedGuild, guilds, isLoading: guildsLoading } = useGuild();
   const { toast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const linked = params.get("guild");
 
-  // A link from Discord names its server; switch to it
+  // A link from Discord names its server; switch to it if it's one of yours (otherwise the picker would
+  // remember a server you can't see and every page would come up empty)
   useEffect(() => {
-    if (linked && /^\d{5,25}$/.test(linked) && linked !== selectedGuildId) setSelectedGuildId(linked);
-  }, [linked, selectedGuildId, setSelectedGuildId]);
+    if (guildsLoading || !linked || linked === selectedGuildId) return;
+    if (guilds.some((g) => g.guild_id === linked)) setSelectedGuildId(linked);
+    else toast({ title: "That server isn't on your list", description: "Sign in with the Discord account that's in it, or play a match there first.", variant: "destructive" });
+  }, [linked, selectedGuildId, setSelectedGuildId, guilds, guildsLoading, toast]);
   useEffect(() => {
     if (params.get("done")) toast({ title: "Thanks for your purchase", description: "It can take a minute to show up here and in Discord." });
   }, [params, toast]);

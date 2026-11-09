@@ -383,7 +383,11 @@ function whenDropdowns(tz, preselect, now = new Date()) {
   const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
   const pretty = (m) => `${((Math.floor(m / 60) + 11) % 12) + 1}:${String(m % 60).padStart(2, '0')} ${m < 720 ? 'AM' : 'PM'}`;
   const times = [{ label: `Right now · ${pretty(mins)} ${zoneName}`, value: hhmm(mins), default: !!preselect }];
-  for (let m = 12 * 60; m < 24 * 60; m += 30) if (m !== mins) times.push({ label: `${pretty(m)} ${zoneName}`, value: hhmm(m) });
+  // Discord allows 25 options: hourly from 8 AM, then every half hour from 4:30 PM, when most games are
+  const slots = [];
+  for (let m = 8 * 60; m <= 16 * 60; m += 60) slots.push(m);
+  for (let m = 16 * 60 + 30; m < 24 * 60; m += 30) slots.push(m);
+  for (const m of slots) if (m !== mins) times.push({ label: `${pretty(m)} ${zoneName}`, value: hhmm(m) });
   return { days, times: times.slice(0, 25), zoneName };
 }
 
@@ -561,9 +565,11 @@ function createPanels(deps) {
         let day, time;
         try { day = interaction.fields.getStringSelectValues('when__day')[0]; } catch {}
         try { time = interaction.fields.getStringSelectValues('when__time')[0]; } catch {}
-        if (day || time) {
-          if (!day || !time) return { error: 'Pick both a **day** and a **time** for kick-off.' };
-          values.when = `${day} ${time}`;
+        if (day && time) values.when = `${day} ${time}`;
+        else if (day || time) {
+          if (o.required) return { error: 'Pick both a **day** and a **time** for kick-off.' };
+          // "Keep current day/time" on the other one: the edit handler fills it in from the event
+          values.when = day ? `day:${day}` : `time:${time}`;
         } else if (o.required) return { error: 'Pick a kick-off **day** and **time**.' };
         continue;
       }
