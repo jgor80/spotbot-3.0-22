@@ -4162,6 +4162,9 @@ globalThis.__gafferbotLineups = createLineupAi({ getClient: () => client, events
 // Channel read/delete/clear for AI apps with manage access (gafferbot-mcp/moderation.ts)
 globalThis.__gafferbotModeration = createChannelModeration({ getClient: () => client });
 globalThis.__gafferbotVoice = require('./voice-lookup.cjs').createVoiceLookup({ getClient: () => client });
+// manage-guild-settings (website) changed this server's settings: drop the cached copy so the bot's next
+// save doesn't write the old values back
+globalThis.__gafferbotGuildSettingsChanged = (guildId) => refreshGuildState(guildId).catch(() => null);
 
 // ack-guard defers for any handler still busy near Discord's 3-second deadline
 client.on(Events.InteractionCreate, (interaction) => {
@@ -11397,7 +11400,7 @@ async function routeInteraction(interaction) {
             { name: '👑 Manager Rating', value: `${Math.round(ratingBreakdown.manager_evaluation || 50)}`, inline: true },
             { name: '📈 Recent Form', value: formText, inline: false }
           )
-          .setFooter({ text: 'Ratings are anonymous • No rater info shown' });
+          .setFooter({ text: 'Rater names are not shown' });
 
         return interaction.editReply({ embeds: [embed] });
       }
@@ -11580,7 +11583,7 @@ async function routeInteraction(interaction) {
           inline: true 
         });
 
-        embed.setFooter({ text: 'Peer & Manager ratings are anonymous • Use web dashboard for full details' });
+        embed.setFooter({ text: 'Rater names are not shown • Use the web dashboard for full details' });
         embed.setTimestamp();
 
         return interaction.editReply({ embeds: [embed] });
@@ -12948,7 +12951,7 @@ async function routeInteraction(interaction) {
             { name: 'Overall Score', value: `${overall}/5 ⭐`, inline: true },
             { name: 'Trust Weight', value: trustWeight, inline: true }
           )
-          .setFooter({ text: 'Rating recorded • Player rating updated anonymously' })
+          .setFooter({ text: 'Rating recorded • Player rating updated' })
           .setTimestamp();
 
         return interaction.editReply({ embeds: [embed] });

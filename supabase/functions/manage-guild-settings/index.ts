@@ -92,6 +92,8 @@ serve(async (req) => {
       .eq("guild_id", guild_id);
 
     if (error) throw error;
+    // Running inside the bot: refresh its cached copy, or its next save writes the old values back
+    (globalThis as { __gafferbotGuildSettingsChanged?: (id: string) => unknown }).__gafferbotGuildSettingsChanged?.(guild_id);
 
     console.log(`Guild settings updated for ${guild_id}${discord_user_id ? ` by ${discord_user_id}` : ''}`);
 

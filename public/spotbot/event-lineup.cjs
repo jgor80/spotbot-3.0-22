@@ -78,14 +78,14 @@ function createEventLineup(deps) {
       .addFields({ name: `🪑 Bench (${bench.length})`, value: bench.map((p) => `<@${p.id}>${posLabel(p) ? ` · ${posLabel(p)}` : ''}${p.answer === 'maybe' ? ' ❓' : ''}${p.note ? ` 📝 *${p.note.slice(0, 50)}*` : ''}`).join('\n').slice(0, 1024) || '–' })
       .setFooter({ text: 'Pick a position, then a player. ❓ = answered Maybe. Publish posts it and DMs everyone.' });
 
-    const fNames = Object.keys(FORMATION_SLOTS);
-    const fOptions = [d.formation, ...fNames.filter((n) => n !== d.formation)].slice(0, 25);
+    // Paged like Team Sheet → Edit Lineup: there are more formations than one 25-option menu holds
+    const { options: fOptions } = require('./lineup-board.cjs').formationMenu(d.formation, d.formPage);
     const rows = [
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId(`evl_form:${event.id}`)
           .setPlaceholder('Formation')
-          .addOptions(fOptions.map((n) => ({ label: n, value: n, default: n === d.formation })))
+          .addOptions(fOptions)
       ),
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
@@ -357,7 +357,10 @@ function createEventLineup(deps) {
       await interaction.update({ content: 'Lineup discarded.', embeds: [], components: [] });
     } else if (action === 'evl_form') {
       await withDraft(interaction, id, async (d, event) => {
-        d.formation = interaction.values[0];
+        const picked = interaction.values[0];
+        if (picked.startsWith('page:')) { d.formPage = Number(picked.slice(5)) || 0; return; }
+        d.formation = picked;
+        d.formPage = undefined;
         d.selectedSlot = null;
         d.slots = await autofill(event, d.formation, d.pool);
       });

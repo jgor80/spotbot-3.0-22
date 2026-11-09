@@ -927,11 +927,10 @@ function createEvents(deps) {
     } catch (err) {
       return onBoard ? interaction.followUp({ content: `❌ ${err.message}`, flags: 64 }) : interaction.editReply({ content: `❌ ${err.message}` });
     }
-    if (onBoard) await interaction.editReply(await buildBoard(event));
-    else {
-      await refreshBoard(event);
-      await interaction.editReply({ content: `${RESPONSES[response].emoji} You're down as **${RESPONSES[response].label}** for **${event.title}**.` });
-    }
+    // Through refreshBoard even when tapped on the board: when several players answer at once, a direct
+    // edit per tap could land out of order and leave the board showing an older state
+    await refreshBoard(event);
+    if (!onBoard) await interaction.editReply({ content: `${RESPONSES[response].emoji} You're down as **${RESPONSES[response].label}** for **${event.title}**.` });
   }
 
   // A position button tap: toggle it in the picks shown (a fourth pick replaces the oldest)
@@ -1086,16 +1085,39 @@ function createEvents(deps) {
     return { embeds: [embed] };
   }
 
+  // Who may cancel this event: null if allowed, else the reason to show
+  async function cancelBlocked(interaction, event) {
+    if (!event || event.guild_id !== interaction.guildId) return '❌ Pick an event from the list.';
+    if (event.closed) return `❌ **${event.title}** is already ${event.cancelled ? 'cancelled' : 'finished'}.`;
+    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
+    if (!(club ? await canManageClub(interaction.member, club) : isManager(interaction.member))) return '❌ Only club leaders can cancel events.';
+    return null;
+  }
+
+  // Cancelling pings everyone who said they could play and can't be undone, so it asks first
   async function handleCancel(interaction) {
     const event = await loadEvent(interaction.options.getString('event'));
-    if (!event || event.guild_id !== interaction.guildId) return interaction.reply({ content: '❌ Pick an event from the list.', flags: 64 });
-    if (event.closed) return interaction.reply({ content: `❌ **${event.title}** is already ${event.cancelled ? 'cancelled' : 'finished'}.`, flags: 64 });
-    const club = event.club_key ? await clubFor(event.guild_id, event.club_key) : null;
-    if (!(club ? await canManageClub(interaction.member, club) : isManager(interaction.member))) {
-      return interaction.reply({ content: '❌ Only club leaders can cancel events.', flags: 64 });
-    }
-    await interaction.deferReply({ flags: 64 });
-    await supabase.from('availability_events').update({ cancelled: true, closed: true, updated_at: new Date().toISOString() }).eq('id', event.id);
+    const blocked = await cancelBlocked(interaction, event);
+    if (blocked) return interaction.reply({ content: blocked, flags: 64 });
+    return interaction.reply({
+      content: `Cancel **${event.title}** (<t:${T.unix(event.scheduled_at)}:F>)? Everyone who said they could play gets pinged, and it can't be reopened.`,
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`ev_cancelok:${event.id}`).setLabel('Yes, cancel it').setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId(`ev_cancelno:${event.id}`).setLabel('Keep it').setStyle(ButtonStyle.Secondary)
+        ),
+      ],
+      flags: 64,
+    });
+  }
+
+  async function handleCancelConfirm(interaction, eventId) {
+    const event = await loadEvent(eventId);
+    const blocked = await cancelBlocked(interaction, event);
+    if (blocked) return interaction.update({ content: blocked, components: [] });
+    await interaction.update({ content: `Cancelling **${event.title}**…`, components: [] });
+    const { error } = await supabase.from('availability_events').update({ cancelled: true, closed: true, updated_at: new Date().toISOString() }).eq('id', event.id);
+    if (error) return interaction.editReply({ content: `❌ Couldn't cancel **${event.title}**: ${error.message}. Nothing was changed.` });
     const updated = { ...event, cancelled: true, closed: true };
     const board = await fetchBoardMessage(updated);
     let notified = 0;
@@ -1144,8 +1166,17 @@ function createEvents(deps) {
     const { timezone: tz } = await serverPrefs(event.guild_id);
     const update = {};
     const changes = [];
-    const whenText = interaction.options.getString('when');
+    let whenText = interaction.options.getString('when');
     let kickoff = new Date(event.scheduled_at);
+    // The panel form sends only the half that changed ("Keep current time" / "Keep current day")
+    const half = /^(day|time):(.+)$/.exec(whenText || '');
+    if (half) {
+      const cur = T.localParts(kickoff, tz);
+      const pad = (n) => String(n).padStart(2, '0');
+      whenText = half[1] === 'day'
+        ? `${half[2]} ${pad(cur.hour)}:${pad(cur.minute)}`
+        : `${cur.year}-${pad(cur.month)}-${pad(cur.day)} ${half[2]}`;
+    }
     if (whenText) {
       const at = T.parseWhen(whenText, tz);
       if (!at) return interaction.reply(whenPicker(tz, stashWhen(interaction, 'edit', rec), whenText));
@@ -1743,6 +1774,8 @@ function createEvents(deps) {
     else if (action === 'ev_note') await handleNoteButton(interaction, a);
     else if (action === 'ev_list') await handleListButton(interaction, a);
     else if (action === 'ev_when') await handleWhenPick(interaction, a);
+    else if (action === 'ev_cancelok') await handleCancelConfirm(interaction, a);
+    else if (action === 'ev_cancelno') await interaction.update({ content: '👍 Kept it. Nothing was changed.', components: [] });
     else return false;
     return true;
   }
@@ -1769,13 +1802,19 @@ function createEvents(deps) {
   async function handleNoteSubmit(interaction, eventId) {
     const event = await loadEvent(eventId);
     if (!event) return interaction.reply({ content: '❌ That event no longer exists.', flags: 64 });
+    // Same gate as the answer buttons: answers may have closed while the form was open
+    if (event.closed) return interaction.reply({ content: `❌ **${event.title}** is ${event.cancelled ? 'cancelled' : 'finished'}.`, flags: 64 });
+    if (await isLocked(event)) return interaction.reply({ content: `🔒 Answers for **${event.title}** are closed. Ask a club leader if yours needs changing.`, flags: 64 });
     const gate = await canAnswer(event, interaction.user.id, interaction.member);
     if (!gate.ok) return interaction.reply({ content: B.signedOnlyMessage(event, gate.role), flags: 64, allowedMentions: { parse: [] } });
     const note = (interaction.fields.getTextInputValue('note') || '').trim().slice(0, 200) || null;
     const { data: row } = await supabase.from('player_availability').select('id').eq('event_id', eventId).eq('discord_user_id', interaction.user.id).maybeSingle();
+    // No answer yet: add one as Maybe, unless an answer button beat us to it (then just set the note)
     const res = row
       ? await supabase.from('player_availability').update({ note }).eq('id', row.id)
-      : await supabase.from('player_availability').insert({ event_id: eventId, discord_user_id: interaction.user.id, response: 'maybe', note, responded_at: new Date().toISOString() });
+      : await supabase.from('player_availability')
+          .upsert({ event_id: eventId, discord_user_id: interaction.user.id, response: 'maybe', note, responded_at: new Date().toISOString() }, { onConflict: 'event_id,discord_user_id', ignoreDuplicates: true })
+          .then(async (r) => (r.error ? r : supabase.from('player_availability').update({ note }).eq('event_id', eventId).eq('discord_user_id', interaction.user.id)));
     if (res.error) return interaction.reply({ content: `❌ ${res.error.message}`, flags: 64 });
     await interaction.reply({ content: note ? `📝 Note saved for **${event.title}**.${row ? '' : ' You were marked **Maybe** — tap Available if you can play.'}` : '📝 Note cleared.', flags: 64 });
     await refreshBoard(event);

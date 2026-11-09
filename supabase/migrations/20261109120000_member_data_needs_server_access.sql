@@ -153,3 +153,36 @@ END $$;
 -- Profiles are written only through the service role (Discord sign-in in the Worker, link functions)
 DROP POLICY IF EXISTS "Users update own profile" ON public.profiles;
 REVOKE INSERT, UPDATE, DELETE ON public.profiles FROM authenticated;
+
+-- Settings → Save Preferences and Save Build write from the browser, but these tables had no write policy
+-- for signed-in users, so every save failed. A player may save their own rows (any of their verified
+-- Discord accounts) in a server they can access.
+CREATE OR REPLACE FUNCTION public.my_discord_ids()
+RETURNS SETOF text
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT discord_user_id FROM public.user_discord_links WHERE auth_user_id = auth.uid() AND verified IS TRUE
+$$;
+REVOKE ALL ON FUNCTION public.my_discord_ids() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.my_discord_ids() TO authenticated, service_role;
+
+DROP POLICY IF EXISTS "Players save their own preferences" ON public.position_preferences;
+CREATE POLICY "Players save their own preferences" ON public.position_preferences FOR INSERT TO authenticated
+  WITH CHECK (user_id IN (SELECT public.my_discord_ids()) AND guild_id IN (SELECT public.my_guild_ids()));
+DROP POLICY IF EXISTS "Players update their own preferences" ON public.position_preferences;
+CREATE POLICY "Players update their own preferences" ON public.position_preferences FOR UPDATE TO authenticated
+  USING (user_id IN (SELECT public.my_discord_ids()))
+  WITH CHECK (user_id IN (SELECT public.my_discord_ids()) AND guild_id IN (SELECT public.my_guild_ids()));
+GRANT INSERT, UPDATE ON public.position_preferences TO authenticated;
+
+DROP POLICY IF EXISTS "Players save their own builds" ON public.player_build_profiles;
+CREATE POLICY "Players save their own builds" ON public.player_build_profiles FOR INSERT TO authenticated
+  WITH CHECK (discord_user_id IN (SELECT public.my_discord_ids()) AND guild_id IN (SELECT public.my_guild_ids()));
+DROP POLICY IF EXISTS "Players update their own builds" ON public.player_build_profiles;
+CREATE POLICY "Players update their own builds" ON public.player_build_profiles FOR UPDATE TO authenticated
+  USING (discord_user_id IN (SELECT public.my_discord_ids()))
+  WITH CHECK (discord_user_id IN (SELECT public.my_discord_ids()) AND guild_id IN (SELECT public.my_guild_ids()));
+GRANT INSERT, UPDATE ON public.player_build_profiles TO authenticated;

@@ -79,7 +79,7 @@ export function GuildProvider({ children }: { children: ReactNode }) {
 
         // Keep the saved server if it's still listed, otherwise pick the first one
         setSelectedGuildId((current) =>
-          guildList.some((g) => g.guild_id === current) ? current : guildList[0]?.guild_id ?? current
+          guildList.some((g) => g.guild_id === current) ? current : guildList[0]?.guild_id ?? null
         );
       } catch (err) {
         console.error("Failed to fetch guilds:", err);

@@ -64,8 +64,13 @@ export default function ControlRoomPage() {
     };
   }, []);
 
-  // New server: clear replies, pick the remembered channel and the right first area
+  // New server: clear replies, pick the remembered channel and the right first area. A refetch of the
+  // same server's context (focus, staleTime) keeps the feed, open form and area as they are.
+  const shownGuild = useRef<string | null>(null);
   useEffect(() => {
+    const id = ctx?.guild.id ?? null;
+    if (id && id === shownGuild.current) return;
+    shownGuild.current = id;
     setFeed([]);
     setNames(EMPTY_NAMES);
     setModal(null);

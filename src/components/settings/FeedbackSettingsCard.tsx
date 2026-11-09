@@ -57,12 +57,16 @@ export function FeedbackSettingsCard({ guildId }: FeedbackSettingsCardProps) {
 
     setIsSaving(true);
     try {
-      const { error } = await supabase
-        .from("guild_settings")
-        .update({ feedback_enabled: enabled })
-        .eq("guild_id", guildId);
-
-      if (error) throw error;
+      // Through the function: the browser can't write guild_settings (RLS), and an update it isn't allowed
+      // to make comes back with no error, which used to show "Feedback Disabled" while nothing changed
+      const { data, error } = await supabase.functions.invoke("manage-guild-settings", {
+        body: { guild_id: guildId, feedback_enabled: enabled },
+      });
+      if (error) {
+        const detail = await (error as { context?: Response }).context?.json?.().catch(() => null);
+        throw new Error(detail?.error === "Insufficient permissions" ? "Only server admins can change this." : detail?.error || error.message);
+      }
+      if (!data?.success) throw new Error(data?.error || "Couldn't save the setting.");
 
       setFeedbackEnabled(enabled);
       toast({
