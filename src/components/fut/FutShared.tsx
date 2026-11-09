@@ -27,7 +27,7 @@ export function ErrorNotice({ error }: { error: unknown }) {
 }
 export function Busy() { return <div role="status" aria-label="Loading" className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>; }
 export function FutShell({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
-  const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 60_000 });
+  const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 30 * 60_000 });
   const unavailable = health.error instanceof FutApiError && health.error.status === 404;
   return <DashboardLayout><div className="space-y-6">
     <PageHeader title={title} actions={!unavailable && !health.isPending && !health.isError ? actions : undefined} />
@@ -35,7 +35,7 @@ export function FutShell({ title, actions, children }: { title: string; actions?
   </div></DashboardLayout>;
 }
 export function useFutAvailable() {
-  const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 60_000 });
+  const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 30 * 60_000 });
   return health.isSuccess;
 }
 export function Price({ value }: { value?: number | null }) { return <span>{value == null ? "—" : value.toLocaleString()} <span className="text-xs text-muted-foreground">user-entered coins</span></span>; }

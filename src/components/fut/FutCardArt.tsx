@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { futApi, futKeys, Stats } from "@/lib/futApi";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,7 @@ export interface CardArtCard extends CardArtInput {
 
 /** Whether cards may show EA player faces, and where they load from (the server's FUT_EA_FACES switch). */
 export function useCardImages() {
-  const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 60_000 });
+  const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 30 * 60_000 });
   const images = health.data?.card_images;
   return images?.faces && images.portrait_base ? images : null;
 }
@@ -34,7 +34,7 @@ function Silhouette({ color }: { color: string }) {
  * `compact` keeps just rating, position and face for list thumbnails. Size it with a width class; it scales.
  * With EA faces switched on, the face loads straight from EA in the browser and falls back to a silhouette.
  */
-export function FutCardArt({ card, compact = false, showStats = false, className, title }: { card: CardArtCard; compact?: boolean; showStats?: boolean; className?: string; title?: string }) {
+function CardArt({ card, compact = false, showStats = false, className, title }: { card: CardArtCard; compact?: boolean; showStats?: boolean; className?: string; title?: string }) {
   const images = useCardImages();
   const theme = cardTheme(card);
   const src = faceUrl(images?.portrait_base, card.ea_item_id);
@@ -67,6 +67,12 @@ export function FutCardArt({ card, compact = false, showStats = false, className
     </div>
   </div>;
 }
+
+// Card details rarely change while a page is open: skip redrawing a card unless what it shows changed
+const same = (a: CardArtCard, b: CardArtCard) => a.name === b.name && a.rating === b.rating && a.position === b.position && a.version === b.version
+  && a.is_icon === b.is_icon && a.is_hero === b.is_hero && a.category === b.category && a.ea_item_id === b.ea_item_id
+  && JSON.stringify(a.stats ?? null) === JSON.stringify(b.stats ?? null);
+export const FutCardArt = memo(CardArt, (a, b) => same(a.card, b.card) && a.compact === b.compact && a.showStats === b.showStats && a.className === b.className && a.title === b.title);
 
 /** The small "Player faces © EA" line, shown only when faces are switched on. */
 export function CardImageCredit() {
