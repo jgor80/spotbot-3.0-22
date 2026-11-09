@@ -75,6 +75,17 @@ export function lemonChange(event: string, payload: Json, config: BillingConfig,
 
 export type Entitlement = { id: string; sku_id: string; guild_id?: string | null; user_id?: string | null; ends_at?: string | null; deleted?: boolean; consumed?: boolean };
 
+/**
+ * Which server a Discord entitlement belongs to, for discordChange's guildHint. Discord's own guild_id
+ * wins; then the server the purchase was first credited to (`bound`); only a never-applied purchase
+ * falls back to where the buyer last opened a buy button (`buyHint`), so later hints in another
+ * server can't move a plan or send a refund's debit there.
+ */
+export function entitlementGuild(e: Pick<Entitlement, "guild_id">, bound: string | null, buyHint: string | null): string | null {
+  for (const g of [e.guild_id, bound, buyHint]) if (g && GUILD.test(g)) return g;
+  return null;
+}
+
 /** guildHint: the server where the buyer last opened a buy button, for purchases Discord ties to a user. */
 export function discordChange(e: Entitlement, config: BillingConfig, guildHint: string | null = null, now = new Date()): Change {
   const product = productFor(config.discordSkus, e.sku_id);

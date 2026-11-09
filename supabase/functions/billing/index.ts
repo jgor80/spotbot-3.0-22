@@ -8,7 +8,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
 import { guildAccessLevel, identifyCaller } from "../_shared/auth.ts";
 import { billingConfig, checkoutPlan, type PlanRow, siteUrl, usageOf } from "../_shared/billing.ts";
-import { type Change, discordChange, lemonChange, verifyLemonSignature } from "./events.ts";
+import { type Change, discordChange, entitlementGuild, lemonChange, verifyLemonSignature } from "./events.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
@@ -65,6 +65,26 @@ async function apply(change: Change) {
   }
   const added = await addCredits(change.guild_id, change.amount, change.provider, change.event_id);
   return { applied: true, credits: change.amount, added };
+}
+
+// The server a Discord entitlement was first applied to. Saved in billing_events (kept by purge_data)
+// under `bind:ent:<id>`; older purchases fall back to their billing_subscriptions row.
+const bindingEvent = (entitlementId: string) => `bind:ent:${entitlementId}`;
+
+async function boundGuild(entitlementId: string): Promise<string | null> {
+  const { data: bind, error } = await db.from("billing_events").select("guild_id")
+    .eq("provider", "discord").eq("event_id", bindingEvent(entitlementId)).maybeSingle();
+  if (error) throw new Error(`entitlement lookup failed: ${error.message}`);
+  if (bind?.guild_id) return bind.guild_id as string;
+  const { data: sub } = await db.from("billing_subscriptions").select("guild_id")
+    .eq("provider", "discord").eq("external_id", `ent:${entitlementId}`).maybeSingle();
+  return (sub?.guild_id as string | undefined) ?? null;
+}
+
+async function bindGuild(entitlementId: string, guild: string) {
+  const { error } = await db.from("billing_events")
+    .upsert({ provider: "discord", event_id: bindingEvent(entitlementId), guild_id: guild }, { onConflict: "provider,event_id", ignoreDuplicates: true });
+  if (error) console.error(`[billing] could not remember the server for entitlement ${entitlementId}: ${error.message}`);
 }
 
 // Takes back up to `amount` unspent pack images, once per refund event; returns how many were removed.
@@ -209,8 +229,12 @@ Deno.serve(async (req) => {
       if (!parsed.success) return json({ error: "Invalid request." }, 400);
       const b = parsed.data;
       if (b.action === "status") return json(await statusFor(b.guild_id));
-      const change = discordChange(b.entitlement, billingConfig(), b.guild_hint ?? null);
+      // A purchase stays with the server it was first credited to. The buy hint only tells us where
+      // the buyer last opened a buy button, so refunds and replays must not follow it.
+      const bound = await boundGuild(b.entitlement.id);
+      const change = discordChange(b.entitlement, billingConfig(), entitlementGuild(b.entitlement, bound, b.guild_hint ?? null));
       const result = await apply(change);
+      if (change.kind !== "ignore" && !bound) await bindGuild(b.entitlement.id, change.guild_id);
       // Packs are Discord consumables: the bot consumes them once credited so they can be bought again
       return json({ ...result, consume: change.kind === "credits" });
     }

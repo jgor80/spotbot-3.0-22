@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { activeTier, billingConfig, checkoutPlan, creditsFor, type PlanRow } from '../_shared/billing.ts';
-import { discordChange, lemonChange, verifyLemonSignature } from './events.ts';
+import { discordChange, entitlementGuild, lemonChange, verifyLemonSignature } from './events.ts';
 
 const env: Record<string, string> = {
   LEMONSQUEEZY_VARIANTS: JSON.stringify({ club: '111', pack25: '222', lifetime: '333' }),
@@ -89,6 +89,23 @@ test('a server gets the best live plan it holds', () => {
   assert.equal(activeTier([], { enabled: true, expires_at: '2026-01-01T00:00:00Z' }, now), 'free');
   assert.equal(creditsFor('card', 0), 1);
   assert.equal(creditsFor('poster', 3), 2);
+});
+
+test('a Discord purchase stays with the server it was first credited to', () => {
+  const OTHER = '1111111111111111111';
+  // First time: no binding yet, so the buy hint decides
+  assert.equal(entitlementGuild({ guild_id: null }, null, GUILD), GUILD);
+  // Bought in GUILD, then the buyer opened a buy button in OTHER: the refund still debits GUILD
+  const where = entitlementGuild({ guild_id: null }, GUILD, OTHER);
+  assert.equal(where, GUILD);
+  const refund = discordChange({ id: '7', sku_id: '9002', user_id: '501557839932948490', deleted: true }, config, where);
+  assert.equal(refund.kind === 'debit' && refund.guild_id, GUILD);
+  // A replayed plan keeps its server too
+  const replay = discordChange({ id: '8', sku_id: '9001', user_id: '501557839932948490' }, config, entitlementGuild({ guild_id: null }, GUILD, OTHER), now);
+  assert.equal(replay.kind === 'subscription' && replay.guild_id, GUILD);
+  // Discord's own guild id always wins; bad ids are skipped
+  assert.equal(entitlementGuild({ guild_id: OTHER }, GUILD, null), OTHER);
+  assert.equal(entitlementGuild({ guild_id: 'x' }, 'bad', null), null);
 });
 
 test('webhook signatures must match the raw body', async () => {
