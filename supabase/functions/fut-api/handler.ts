@@ -4,7 +4,7 @@
 // The MCP FUT tools call the same services (../_shared/fut/service.ts and XI Lab's workspace), so both always agree.
 import {
   addCard, addManager, compareCards, deleteCard, deleteManager, deleteSquad, futEnabled, FutError, getCard, listManagers, logRun,
-  parseCardInput, parseManagerInput, runWorkspace, searchMyCards, toWorkspaceCard, updateCard, workspaceFor, type FutDb,
+  activeRules, parseCardInput, parseManagerInput, runWorkspace, searchMyCards, toWorkspaceCard, updateCard, workspaceFor, type FutDb,
 } from "../_shared/fut/service.ts";
 import { importClub } from "../_shared/fut/club.ts";
 import { cardEaReference, storeEaReference } from "../_shared/fut/ea-reference.ts";
@@ -13,6 +13,7 @@ import { futggStatus } from "../_shared/fut/futgg-status.ts";
 import { clearStore, importStore, packAdvice } from "../_shared/fut/packs.ts";
 import { accountOverview, clearAccount, importAccount } from "../_shared/fut/account.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
+import { bestSquads, squadRoles, suggestForSlot } from "../_shared/fut/squad-suggest.ts";
 import { syncFutggCatalogue } from "../_shared/fut/futgg-catalogue.ts";
 import { syncFutggAttributes } from "../_shared/fut/futgg-attributes.ts";
 import { findPlayers, MAX_FINDER_TEXT, searchPlayers, type FinderTurn } from "../_shared/fut/player-finder.ts";
@@ -328,6 +329,27 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         const b = obj(await body(req));
         if (typeof b.formation !== "string" || !FORMATIONS[b.formation]) throw new FutError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
         return json({ data: await runWorkspace(async () => setFormation(squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad, b.formation as string)) });
+      }
+      if ((route === "/squads/best" || route === "/squads/suggest") && m === "POST") {
+        // Best XI from the user's club cards (one formation or all of them), or ranked picks for one slot. by: ovr | chem.
+        const b = obj(await body(req));
+        const by = b.by === "chem" ? "chem" : b.by === "ovr" || b.by === undefined ? "ovr" : null;
+        if (!by) throw new FutError('by must be "ovr" or "chem".');
+        return json({ data: await runWorkspace(async () => {
+          const squad = squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad;
+          const [rules, mine] = await Promise.all([activeRules(db), searchMyCards(db, userId, { all: true, owned_only: true })]);
+          const pool = mine.map(toWorkspaceCard);
+          if (route === "/squads/suggest") return suggestForSlot(squad, slotName(b.slot, true)!, pool, rules, by);
+          const formation = b.formation === undefined ? squad.formation : b.formation;
+          if (typeof formation !== "string" || (formation !== "all" && !FORMATIONS[formation])) throw new FutError(`formation must be "all" or one of: ${Object.keys(FORMATIONS).join(", ")}.`);
+          if (!pool.length) throw new FutError("You have no club cards yet. Sync your club or add cards on My cards first.");
+          return { by, owned_cards: pool.length, results: bestSquads(squad, formation, pool, rules, by) };
+        }) });
+      }
+      if (route === "/squads/roles" && m === "POST") {
+        // Each squad card's FC 27 player roles (+ / ++) for the position it plays.
+        const b = obj(await body(req));
+        return json({ data: await runWorkspace(async () => squadRoles(db, userId, squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad)) });
       }
       if (route === "/squads/import" && m === "POST") {
         // Type your squad or upload a screenshot/list: matched to your cards and the market card list, placed into

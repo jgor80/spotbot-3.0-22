@@ -37,7 +37,7 @@ export type Evidence = "verified" | "game_data" | "estimate" | "hypothesis";
 
 /** A database failure: never shown to the user as is. */
 export class FutDbError extends Error {}
-const fail = (error: { message?: string } | null) => {
+export const fail = (error: { message?: string } | null) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 
