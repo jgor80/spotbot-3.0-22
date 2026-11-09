@@ -63,6 +63,9 @@ Deno.test("card list SQL: upsert is idempotent, tracked follows latest prices, a
     }
     await pg.exec(await Deno.readTextFile(new URL("../../../migrations/20261108030000_futgg_bulk_prices.sql", import.meta.url)));
     await pg.exec(await Deno.readTextFile(new URL("../../../migrations/20261108160000_futgg_catalogue.sql", import.meta.url)));
+    // The production key index (partial on owner_user_id IS NULL since club sync) and the fixed upsert.
+    for (const stmt of (await Deno.readTextFile(new URL("../../../migrations/20261102090000_fut_club_sync.sql", import.meta.url))).match(/(DROP INDEX[^;]*;|CREATE UNIQUE INDEX[^;]*;)/g) ?? []) await pg.exec(stmt);
+    await pg.exec(await Deno.readTextFile(new URL("../../../migrations/20261109090000_futgg_market_cards.sql", import.meta.url)));
     const cards = buildCatalogue({ index, pool, core, players, publishedAt: "2026-11-08T06:00:00.000Z" });
     const upsert = async (c = cards) => Number((await pg.query<{ n: number }>("SELECT fut.upsert_futgg_catalogue($1) AS n", [JSON.stringify(c)])).rows[0].n);
     assert(await upsert() === 2);
@@ -72,6 +75,16 @@ Deno.test("card list SQL: upsert is idempotent, tracked follows latest prices, a
     await pg.query("SELECT fut.ingest_futgg_snapshot('console',27,$1,$2,$3)", [published, index, { v: 2, p: [500, 25000, 900], s: [0, 0, 0] }]);
     const tracked = Number((await pg.query<{ n: number }>("SELECT fut.refresh_futgg_tracked() AS n")).rows[0].n);
     assert(tracked === 1, `only the 25,000-coin card is tracked, got ${tracked}`);
+
+    // Market cards list: latest price per card, filters, sort and paging in SQL.
+    const list = async (args: string) => (await pg.query<{ r: { total: number; catalogue_cards: number; cards: { player_name: string; price: number; market_tracked: boolean }[] } }>(`SELECT fut.futgg_market_cards(${args}) AS r`)).rows[0].r;
+    const all = await list("'console'");
+    assert(all.catalogue_cards === 2 && all.total === 2 && all.cards[0].player_name === "Iniesta" && all.cards[0].price === 25000 && all.cards[0].market_tracked, JSON.stringify(all));
+    assert((await list("'console', 'cole'")).cards.map((c) => c.player_name).join() === "Joe Cole");
+    assert((await list("'console', p_type => 'icon'")).total === 1);
+    assert((await list("'console', p_sort => 'price_asc', p_limit => 1")).cards[0].price === 500);
+    assert((await list("'console', p_limit => 1, p_offset => 1")).cards[0].player_name === "Joe Cole");
+    assert((await list("'pc'")).total === 0, "no PC snapshot yet");
 
     // Market Lab adapters over a tiny PostgREST-like shim of this database.
     const tracker = (await pg.query<{ id: string }>("SELECT id FROM fut.player_cards WHERE market_tracked")).rows[0].id;

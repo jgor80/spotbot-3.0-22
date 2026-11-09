@@ -336,6 +336,24 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       // Third-party prices from the public fc27-market API, for the caller's own cards only (Jeff's request).
       if (route === "/market/feeds/fc27-market" && m === "GET") return json({ data: await fc27MarketStatus(db) });
       if (route === "/market/feeds/futgg" && m === "GET") return json({ data: await futggStatus(db) });
+      // Market cards: the FUT.GG card list with latest prices, filtered and paged in SQL.
+      if (route === "/market/cards" && m === "GET") {
+        const p = url.searchParams, text = (k: string) => (p.get(k) ?? "").trim() || null;
+        const position = text("position"), type = text("type"), sort = text("sort") ?? "price_desc";
+        if (position && !/^(GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST)$/.test(position)) throw new FutError("position must be a position code like ST or CB.");
+        if (type && !["icon", "hero", "promo", "base"].includes(type)) throw new FutError("type must be icon, hero, promo or base.");
+        if (!["price_desc", "price_asc", "rating_desc", "change_desc", "change_asc", "name"].includes(sort)) throw new FutError("Unknown sort.");
+        const q = text("q");
+        if (q && q.length > 60) throw new FutError("Search is too long.");
+        const { data, error } = await db.rpc("futgg_market_cards", {
+          p_platform: platformParam(p.get("platform")), p_q: q, p_position: position, p_type: type,
+          p_min_rating: intParam(p.get("min_rating"), "min_rating", 1, 99) ?? null, p_max_rating: intParam(p.get("max_rating"), "max_rating", 1, 99) ?? null,
+          p_min_price: intParam(p.get("min_price"), "min_price", 0, 15_000_000) ?? null, p_max_price: intParam(p.get("max_price"), "max_price", 0, 15_000_000) ?? null,
+          p_sort: sort, p_limit: intParam(p.get("limit"), "limit", 1, 100) ?? 50, p_offset: intParam(p.get("offset"), "offset", 0, 100_000) ?? 0,
+        });
+        if (error) throw new FutError(`Market cards are unavailable: ${error.message}`, 500);
+        return json({ data });
+      }
       if (route === "/market/import/fc27-market" && m === "POST") {
         return json({ data: await runWorkspace(() => pullFc27Market(db, userId, mk, deps.fetch)) });
       }

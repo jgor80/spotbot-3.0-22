@@ -119,6 +119,8 @@ export interface FutggFeedStatus {
   last_run: { finished_at: string; status: string; message: string } | null;
   platforms: { platform: MarketPlatform; published_at: string | null; received_at: string | null; checked_at: string | null; card_count: number; market_price_count: number; age_hours: number | null; overdue: boolean }[];
 }
+export interface MarketCatalogueCard { id: string; player_name: string; version: string | null; overall: number; position: string; club: string | null; league: string | null; nation: string | null; is_icon: boolean; is_hero: boolean; market_tracked: boolean; ea_item_id: number; price: number; previous_price: number | null; change_pct: number | null }
+export interface MarketCatalogue { platform: MarketPlatform; published_at: string | null; previous_published_at: string | null; catalogue_cards: number; total: number; cards: MarketCatalogueCard[] }
 export interface MarketSharing { sharing: boolean; since: string | null; your_contributions: number; deleted?: number }
 export interface CommunityPull { sharers: number; your_cards_with_ea_id: number; cards_with_community_prices: number; observations: number; max_contributors: number; import: MarketImportResult | null; note: string }
 export interface Fc27MarketPull { updated: string | null; hours_old: number | null; your_cards_with_ea_id: number; matched: number; observations: number; import: MarketImportResult | null; note: string }
@@ -141,6 +143,7 @@ export const futApi = {
     importPrices: (text: string, platform: MarketPlatform) => futRequest<MarketImportResult>(marketPath("/prices/import", platform), "POST", { text }),
     fc27Feed: () => futRequest<Fc27FeedStatus>("/market/feeds/fc27-market"),
     futggFeed: () => futRequest<FutggFeedStatus>("/market/feeds/futgg"),
+    catalogue: (platform: MarketPlatform, filters: Record<string, string> = {}) => futRequest<MarketCatalogue>(marketPath("/cards", platform, filters)),
     pullFc27Market: () => futRequest<Fc27MarketPull>("/market/import/fc27-market", "POST", {}),
     sharing: () => futRequest<MarketSharing>("/market/sharing"),
     helper: () => futRequest<HelperStatus>("/helper"),
