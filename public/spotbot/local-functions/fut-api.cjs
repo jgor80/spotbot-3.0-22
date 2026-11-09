@@ -5486,6 +5486,15 @@ var POSITION2 = /^[A-Z]{2,3}$/;
 var BATCH = 200;
 var posInt = (v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v < 2 ** 31 ? v : null;
 var inRange = (v, lo, hi) => typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi ? v : null;
+var copyId = (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0 ? v : null;
+function addCopy(p, id, untradeable) {
+  if (id === null) p.unkeyed.push(untradeable);
+  else p.copies.set(id, (p.copies.get(id) ?? false) || untradeable);
+}
+var copyCounts = (p) => {
+  const all = [...p.copies.values(), ...p.unkeyed];
+  return { quantity: Math.min(Math.max(all.length, 1), 99), tradeable_quantity: Math.min(all.filter((u) => !u).length, 99) };
+};
 var clip = (s, n = 60) => s.length > n ? s.slice(0, n).trim() : s;
 function nameMap(v) {
   if (!v || typeof v !== "object" || Array.isArray(v)) return {};
@@ -5610,11 +5619,15 @@ async function importClub(db2, userId, body2) {
       untradeable: it.untradeable === true,
       stats,
       skill_moves: sm === null ? null : sm + 1,
-      weak_foot: inRange(it.weak_foot, 1, 5)
+      weak_foot: inRange(it.weak_foot, 1, 5),
+      copies: /* @__PURE__ */ new Map(),
+      unkeyed: []
     };
+    addCopy(p, copyId(it.item_id), p.untradeable);
     const had = players.get(ea_item_id);
     if (had) {
       had.untradeable ||= p.untradeable;
+      addCopy(had, copyId(it.item_id), p.untradeable);
       skip("duplicate copy");
       continue;
     }
@@ -5668,7 +5681,7 @@ async function importClub(db2, userId, body2) {
       updated_at: now2
     });
     if (p.stats) attrs.push({ card_id: id, ...Object.fromEntries(FACE2.map((k, i) => [k, p.stats[i]])) });
-    inv.push({ user_id: userId, card_id: id, tradeable: !p.untradeable });
+    inv.push({ user_id: userId, card_id: id, tradeable: !p.untradeable, ...copyCounts(p) });
     if (had) updated++;
     else added++;
   }
@@ -8132,6 +8145,11 @@ async function handle(req, deps) {
         console.warn("[fut-api] relink after club sync:", e);
       }
       return json({ data: { ...result, prices_linked } });
+    }
+    if (route === "/club/value" && m === "GET") {
+      const { data, error } = await db2.rpc("club_trade_value", { p_user: userId, p_platform: platformParam(url.searchParams.get("platform")) });
+      if (error) throw new FutError(`Club value is unavailable: ${error.message}`, 500);
+      return json({ data });
     }
     if (route === "/managers" && m === "GET") return json({ data: await listManagers(db2, userId) });
     if (route === "/managers" && m === "POST") return json({ data: await addManager(db2, userId, parseManagerInput(await body(req))) }, 201);
