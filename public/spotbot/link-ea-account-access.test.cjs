@@ -48,7 +48,8 @@ async function call(body, tables) {
   } finally { globalThis.fetch = realFetch; }
 }
 
-const base = () => ({ user_discord_links: [{ auth_user_id: 'me-auth', discord_user_id: ME, verified: true }], web_admins: [], profiles: [], player_stats: [] });
+// ME has played for GUILD, so they count as a member of it (linking your own gamertag needs that since PR #157).
+const base = () => ({ user_discord_links: [{ auth_user_id: 'me-auth', discord_user_id: ME, verified: true }], web_admins: [], profiles: [], player_stats: [{ id: 1, guild_id: GUILD, discord_user_id: ME }] });
 
 test("a leader of some other server can't rewrite a player's gamertag", async () => {
   const res = await call({ guild_id: GUILD, discord_user_id: VICTIM, ea_username: 'Hijacked' }, base());
@@ -68,4 +69,12 @@ test('a member can still link their own free gamertag', async () => {
   const res = await call({ guild_id: GUILD, discord_user_id: ME, ea_username: 'FreeName' }, base());
   assert.strictEqual(res.status, 200);
   assert.ok(res.writes.includes('profiles'));
+});
+
+test("someone who isn't in the server can't link a gamertag there", async () => {
+  const t = base();
+  t.player_stats = [];
+  const res = await call({ guild_id: GUILD, discord_user_id: ME, ea_username: 'FreeName' }, t);
+  assert.strictEqual(res.status, 403);
+  assert.deepStrictEqual(res.writes, []);
 });
