@@ -267,36 +267,55 @@ var FACE_STATS = ["pac", "sho", "pas", "dri", "def", "phy"];
 
 // supabase/functions/_shared/fut/xilab/workspace/formations.ts
 var f = (rows) => rows.flatMap((r2, row) => r2.map(([slot, position]) => ({ slot, position, row })));
+var GK = [["GK", "GK"]];
+var BACK3 = [["LCB", "CB"], ["CB", "CB"], ["RCB", "CB"]];
+var BACK4 = [["LB", "LB"], ["LCB", "CB"], ["RCB", "CB"], ["RB", "RB"]];
+var BACK5 = [["LB", "LB"], ["LCB", "CB"], ["CB", "CB"], ["RCB", "CB"], ["RB", "RB"]];
+var CDM = [["CDM", "CDM"]];
+var CDM2 = [["LCDM", "CDM"], ["RCDM", "CDM"]];
+var CM = [["CM", "CM"]];
+var CM2 = [["LCM", "CM"], ["RCM", "CM"]];
+var CM3 = [["LCM", "CM"], ["CM", "CM"], ["RCM", "CM"]];
+var MID4 = [["LM", "LM"], ["LCM", "CM"], ["RCM", "CM"], ["RM", "RM"]];
+var CAM = [["CAM", "CAM"]];
+var CAM2 = [["LCAM", "CAM"], ["RCAM", "CAM"]];
+var ST = [["ST", "ST"]];
+var ST2 = [["LST", "ST"], ["RST", "ST"]];
+var FRONT3 = [["LW", "LW"], ["ST", "ST"], ["RW", "RW"]];
 var FORMATIONS = {
-  "3-5-2": f([
-    [["GK", "GK"]],
-    [["LCB", "CB"], ["CB", "CB"], ["RCB", "CB"]],
-    [["LCDM", "CDM"], ["RCDM", "CDM"]],
-    [["LM", "LM"], ["CAM", "CAM"], ["RM", "RM"]],
-    [["LST", "ST"], ["RST", "ST"]]
-  ]),
-  "4-4-2": f([
-    [["GK", "GK"]],
-    [["LB", "LB"], ["LCB", "CB"], ["RCB", "CB"], ["RB", "RB"]],
-    [["LM", "LM"], ["LCM", "CM"], ["RCM", "CM"], ["RM", "RM"]],
-    [["LST", "ST"], ["RST", "ST"]]
-  ]),
-  "4-3-3": f([
-    [["GK", "GK"]],
-    [["LB", "LB"], ["LCB", "CB"], ["RCB", "CB"], ["RB", "RB"]],
-    [["LCM", "CM"], ["CM", "CM"], ["RCM", "CM"]],
-    [["LW", "LW"], ["ST", "ST"], ["RW", "RW"]]
-  ]),
-  "3-4-3": f([
-    [["GK", "GK"]],
-    [["LCB", "CB"], ["CB", "CB"], ["RCB", "CB"]],
-    [["LM", "LM"], ["LCM", "CM"], ["RCM", "CM"], ["RM", "RM"]],
-    [["LW", "LW"], ["ST", "ST"], ["RW", "RW"]]
-  ])
+  "3-1-4-2": f([GK, BACK3, CDM, MID4, ST2]),
+  "3-4-1-2": f([GK, BACK3, MID4, CAM, ST2]),
+  "3-4-2-1": f([GK, BACK3, MID4, CAM2, ST]),
+  "3-4-3": f([GK, BACK3, MID4, FRONT3]),
+  "3-5-2": f([GK, BACK3, CDM2, [["LM", "LM"], ["CAM", "CAM"], ["RM", "RM"]], ST2]),
+  "4-1-2-1-2": f([GK, BACK4, CDM, [["LM", "LM"], ["RM", "RM"]], CAM, ST2]),
+  "4-1-2-1-2 (2)": f([GK, BACK4, CDM, CM2, CAM, ST2]),
+  "4-1-3-2": f([GK, BACK4, CDM, [["LM", "LM"], ["CM", "CM"], ["RM", "RM"]], ST2]),
+  "4-1-4-1": f([GK, BACK4, CDM, MID4, ST]),
+  "4-2-1-3": f([GK, BACK4, CDM2, CAM, FRONT3]),
+  "4-2-2-2": f([GK, BACK4, CDM2, CAM2, ST2]),
+  "4-2-3-1": f([GK, BACK4, CDM2, [["LCAM", "CAM"], ["CAM", "CAM"], ["RCAM", "CAM"]], ST]),
+  "4-2-3-1 (2)": f([GK, BACK4, CDM2, [["LM", "LM"], ["CAM", "CAM"], ["RM", "RM"]], ST]),
+  "4-2-4": f([GK, BACK4, CM2, [["LW", "LW"], ["LST", "ST"], ["RST", "ST"], ["RW", "RW"]]]),
+  "4-3-1-2": f([GK, BACK4, CM3, CAM, ST2]),
+  "4-3-2-1": f([GK, BACK4, CM3, CAM2, ST]),
+  "4-3-3": f([GK, BACK4, CM3, FRONT3]),
+  "4-3-3 (2)": f([GK, BACK4, CDM, CM2, FRONT3]),
+  "4-3-3 (3)": f([GK, BACK4, CDM2, CM, FRONT3]),
+  "4-3-3 (4)": f([GK, BACK4, CM2, CAM, FRONT3]),
+  "4-4-2": f([GK, BACK4, MID4, ST2]),
+  "4-4-2 (2)": f([GK, BACK4, CDM2, [["LM", "LM"], ["RM", "RM"]], ST2]),
+  "4-5-1": f([GK, BACK4, [["LM", "LM"], ["CM", "CM"], ["RM", "RM"]], CAM2, ST]),
+  "4-5-1 (2)": f([GK, BACK4, [["LM", "LM"], ["LCM", "CM"], ["CM", "CM"], ["RCM", "CM"], ["RM", "RM"]], ST]),
+  "5-2-1-2": f([GK, BACK5, CM2, CAM, ST2]),
+  "5-2-3": f([GK, BACK5, CM2, FRONT3]),
+  "5-3-2": f([GK, BACK5, CDM, CM2, ST2]),
+  "5-4-1": f([GK, BACK5, MID4, ST])
 };
+var FORMATION_NAMES = Object.keys(FORMATIONS);
 function formationSlots(formation) {
   const slots = FORMATIONS[formation];
-  if (!slots) throw new Error(`Unknown formation "${formation}". Known: ${Object.keys(FORMATIONS).join(", ")}`);
+  if (!slots) throw new Error(`Unknown formation "${formation}". Known: ${FORMATION_NAMES.join(", ")}`);
   return slots;
 }
 
@@ -6659,6 +6678,10 @@ function positionOf(v) {
   if (POSITIONS.includes(p)) return p;
   return ALIASES[p] ?? SLOT_POSITION.get(p) ?? null;
 }
+function formationName(shape, variant) {
+  const name2 = variant && variant !== "1" ? `${shape} (${variant})` : shape;
+  return FORMATIONS[name2] ? name2 : null;
+}
 var clean = (v, max) => typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
 function cleanEntries(raw) {
   if (!Array.isArray(raw)) return [];
@@ -6680,7 +6703,7 @@ function cleanEntries(raw) {
   }
   return out;
 }
-var POS_RE = "(GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST|RWB|LWB|CF|RF|LF|LCB|RCB|LCM|RCM|LCDM|RCDM|LST|RST)";
+var POS_RE = "(GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST|RWB|LWB|CF|RF|LF|LCB|RCB|LCM|RCM|LCDM|RCDM|LCAM|RCAM|LST|RST)";
 var LINE = new RegExp(`^${POS_RE}\\s*[:\\-\u2013.)]?\\s+(.+?)\\s*$`, "i");
 var LINE_REVERSED = new RegExp(`^(.+?)\\s*[:\\-\u2013(,]\\s*${POS_RE}\\)?\\s*$`, "i");
 function nameAndRating(rest) {
@@ -6703,9 +6726,9 @@ function parseSquadList(text4) {
   const lines = text4.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return null;
   let formation = null;
-  const first = lines[0].match(/^(?:formation\s*[:\-]?\s*)?(\d-\d-\d(?:-\d)?)\s*$/i);
+  const first = lines[0].match(/^(?:formation\s*[:\-]?\s*)?(\d(?:-\d){2,4})\s*(?:\(\s*(\d)\s*\))?\s*$/i);
   if (first) {
-    formation = first[1];
+    formation = formationName(first[1], first[2]);
     lines.shift();
   }
   const header = lines[0]?.toLowerCase().split(/[,;\t]/).map((h) => h.trim());
@@ -6719,7 +6742,7 @@ function parseSquadList(text4) {
     }));
     return entries2.length ? { formation, entries: entries2, via: "list" } : null;
   }
-  const items = lines.length === 1 ? lines[0].split(/\s*[,;]\s*(?=(?:GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST|RWB|LWB|CF|LCB|RCB|LCM|RCM|LCDM|RCDM|LST|RST)\b)/i) : lines;
+  const items = lines.length === 1 ? lines[0].split(/\s*[,;]\s*(?=(?:GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST|RWB|LWB|CF|LCB|RCB|LCM|RCM|LCDM|RCDM|LCAM|RCAM|LST|RST)\b)/i) : lines;
   const raw = [];
   for (const item of items) {
     const m = item.match(LINE);
@@ -6760,7 +6783,7 @@ function systemPrompt(squad) {
   const slots = squad.slots.map((s) => `${s.slot} (${s.position}): ${s.card ? `${s.card.name} ${s.card.rating ?? ""}`.trim() : "empty"}`).join("\n");
   return [
     "You read EA SPORTS FC 27 Ultimate Team squads for a squad builder and return the players as JSON.",
-    `The builder's formations are ${Object.keys(FORMATIONS).join(", ")}. Position codes: ${POSITIONS.join(", ")}.`,
+    `The builder has every FC 27 Ultimate Team formation, named as in the game: ${Object.keys(FORMATIONS).join(", ")}. Position codes (FC 27 has only these 12): ${POSITIONS.join(", ")}.`,
     `The squad is currently ${squad.formation}, with these slots:
 ${slots}`,
     "For each player the user names or the screenshot shows on the pitch, give: slot (one of the slot names above when you can tell which one, else null), position (a position code, else null), name (the player's name as shown on the card, keeping accents), rating (overall, else null), version (the card type such as TOTW, Icon, Hero, Rare or a promo name, else null).",
@@ -6805,7 +6828,8 @@ async function readWithClaude(squad, input, env, fetchFn = fetch) {
   } catch {
     throw new FutError("The squad reader returned something unreadable. Try again.", 502);
   }
-  const formation = typeof parsed.formation === "string" && FORMATIONS[parsed.formation] ? parsed.formation : null;
+  const fm = typeof parsed.formation === "string" ? parsed.formation.match(/^\s*(\d(?:-\d){2,4})\s*(?:\(\s*(\d)\s*\))?\s*$/) : null;
+  const formation = fm ? formationName(fm[1], fm[2]) : null;
   const clear_slots = Array.isArray(parsed.clear_slots) ? parsed.clear_slots.filter((s) => typeof s === "string").map((s) => s.toUpperCase()).filter((s) => SLOT_NAMES.has(s)) : [];
   return { formation, entries: cleanEntries(parsed.players), clear_slots, note: clean(parsed.note, 300), via: "ai" };
 }
@@ -9907,6 +9931,7 @@ async function handle(req, deps) {
       return await deleteManager(db2, userId, manager[1]) ? json({ data: { deleted: manager[1] } }) : err(404, "Manager not found.");
     }
     if (route === "/formations" && m === "GET") return json({ data: Object.keys(FORMATIONS) });
+    if (route === "/formations/slots" && m === "GET") return json({ data: FORMATIONS });
     if (route === "/squads/new" && m === "POST") {
       const b = obj2(await body(req));
       const formation = typeof b.formation === "string" ? b.formation.trim() : "";
@@ -9942,6 +9967,11 @@ async function handle(req, deps) {
           const squad = squadSchema.parse({ ...obj2(b.squad), owner_id: userId });
           return assignCard(squad, slotName(b.slot, true), await incomingCard(db2, userId, b));
         }) });
+      }
+      if (route === "/squads/formation" && m === "POST") {
+        const b = obj2(await body(req));
+        if (typeof b.formation !== "string" || !FORMATIONS[b.formation]) throw new FutError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
+        return json({ data: await runWorkspace(async () => setFormation(squadSchema.parse({ ...obj2(b.squad), owner_id: userId }), b.formation)) });
       }
       if (route === "/squads/import" && m === "POST") {
         const b = obj2(await body(req, MAX_SQUAD_IMPORT_BODY));

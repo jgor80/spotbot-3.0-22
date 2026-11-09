@@ -3333,33 +3333,52 @@ var FACE_STATS = ["pac", "sho", "pas", "dri", "def", "phy"];
 
 // supabase/functions/_shared/fut/xilab/workspace/formations.ts
 var f = (rows) => rows.flatMap((r2, row) => r2.map(([slot, position]) => ({ slot, position, row })));
+var GK = [["GK", "GK"]];
+var BACK3 = [["LCB", "CB"], ["CB", "CB"], ["RCB", "CB"]];
+var BACK4 = [["LB", "LB"], ["LCB", "CB"], ["RCB", "CB"], ["RB", "RB"]];
+var BACK5 = [["LB", "LB"], ["LCB", "CB"], ["CB", "CB"], ["RCB", "CB"], ["RB", "RB"]];
+var CDM = [["CDM", "CDM"]];
+var CDM2 = [["LCDM", "CDM"], ["RCDM", "CDM"]];
+var CM = [["CM", "CM"]];
+var CM2 = [["LCM", "CM"], ["RCM", "CM"]];
+var CM3 = [["LCM", "CM"], ["CM", "CM"], ["RCM", "CM"]];
+var MID4 = [["LM", "LM"], ["LCM", "CM"], ["RCM", "CM"], ["RM", "RM"]];
+var CAM = [["CAM", "CAM"]];
+var CAM2 = [["LCAM", "CAM"], ["RCAM", "CAM"]];
+var ST = [["ST", "ST"]];
+var ST2 = [["LST", "ST"], ["RST", "ST"]];
+var FRONT3 = [["LW", "LW"], ["ST", "ST"], ["RW", "RW"]];
 var FORMATIONS = {
-  "3-5-2": f([
-    [["GK", "GK"]],
-    [["LCB", "CB"], ["CB", "CB"], ["RCB", "CB"]],
-    [["LCDM", "CDM"], ["RCDM", "CDM"]],
-    [["LM", "LM"], ["CAM", "CAM"], ["RM", "RM"]],
-    [["LST", "ST"], ["RST", "ST"]]
-  ]),
-  "4-4-2": f([
-    [["GK", "GK"]],
-    [["LB", "LB"], ["LCB", "CB"], ["RCB", "CB"], ["RB", "RB"]],
-    [["LM", "LM"], ["LCM", "CM"], ["RCM", "CM"], ["RM", "RM"]],
-    [["LST", "ST"], ["RST", "ST"]]
-  ]),
-  "4-3-3": f([
-    [["GK", "GK"]],
-    [["LB", "LB"], ["LCB", "CB"], ["RCB", "CB"], ["RB", "RB"]],
-    [["LCM", "CM"], ["CM", "CM"], ["RCM", "CM"]],
-    [["LW", "LW"], ["ST", "ST"], ["RW", "RW"]]
-  ]),
-  "3-4-3": f([
-    [["GK", "GK"]],
-    [["LCB", "CB"], ["CB", "CB"], ["RCB", "CB"]],
-    [["LM", "LM"], ["LCM", "CM"], ["RCM", "CM"], ["RM", "RM"]],
-    [["LW", "LW"], ["ST", "ST"], ["RW", "RW"]]
-  ])
+  "3-1-4-2": f([GK, BACK3, CDM, MID4, ST2]),
+  "3-4-1-2": f([GK, BACK3, MID4, CAM, ST2]),
+  "3-4-2-1": f([GK, BACK3, MID4, CAM2, ST]),
+  "3-4-3": f([GK, BACK3, MID4, FRONT3]),
+  "3-5-2": f([GK, BACK3, CDM2, [["LM", "LM"], ["CAM", "CAM"], ["RM", "RM"]], ST2]),
+  "4-1-2-1-2": f([GK, BACK4, CDM, [["LM", "LM"], ["RM", "RM"]], CAM, ST2]),
+  "4-1-2-1-2 (2)": f([GK, BACK4, CDM, CM2, CAM, ST2]),
+  "4-1-3-2": f([GK, BACK4, CDM, [["LM", "LM"], ["CM", "CM"], ["RM", "RM"]], ST2]),
+  "4-1-4-1": f([GK, BACK4, CDM, MID4, ST]),
+  "4-2-1-3": f([GK, BACK4, CDM2, CAM, FRONT3]),
+  "4-2-2-2": f([GK, BACK4, CDM2, CAM2, ST2]),
+  "4-2-3-1": f([GK, BACK4, CDM2, [["LCAM", "CAM"], ["CAM", "CAM"], ["RCAM", "CAM"]], ST]),
+  "4-2-3-1 (2)": f([GK, BACK4, CDM2, [["LM", "LM"], ["CAM", "CAM"], ["RM", "RM"]], ST]),
+  "4-2-4": f([GK, BACK4, CM2, [["LW", "LW"], ["LST", "ST"], ["RST", "ST"], ["RW", "RW"]]]),
+  "4-3-1-2": f([GK, BACK4, CM3, CAM, ST2]),
+  "4-3-2-1": f([GK, BACK4, CM3, CAM2, ST]),
+  "4-3-3": f([GK, BACK4, CM3, FRONT3]),
+  "4-3-3 (2)": f([GK, BACK4, CDM, CM2, FRONT3]),
+  "4-3-3 (3)": f([GK, BACK4, CDM2, CM, FRONT3]),
+  "4-3-3 (4)": f([GK, BACK4, CM2, CAM, FRONT3]),
+  "4-4-2": f([GK, BACK4, MID4, ST2]),
+  "4-4-2 (2)": f([GK, BACK4, CDM2, [["LM", "LM"], ["RM", "RM"]], ST2]),
+  "4-5-1": f([GK, BACK4, [["LM", "LM"], ["CM", "CM"], ["RM", "RM"]], CAM2, ST]),
+  "4-5-1 (2)": f([GK, BACK4, [["LM", "LM"], ["LCM", "CM"], ["CM", "CM"], ["RCM", "CM"], ["RM", "RM"]], ST]),
+  "5-2-1-2": f([GK, BACK5, CM2, CAM, ST2]),
+  "5-2-3": f([GK, BACK5, CM2, FRONT3]),
+  "5-3-2": f([GK, BACK5, CDM, CM2, ST2]),
+  "5-4-1": f([GK, BACK5, MID4, ST])
 };
+var FORMATION_NAMES = Object.keys(FORMATIONS);
 
 // supabase/functions/_shared/fut/xilab/workspace/fit.ts
 var DEFAULT_PROFILES = {
