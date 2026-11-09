@@ -168,7 +168,7 @@ function systemPrompt(squad: Squad) {
   ].join("\n");
 }
 
-async function callClaude(env: (k: string) => string | undefined, fetchFn: typeof fetch, body: Record<string, unknown>): Promise<Response> {
+export async function callClaude(env: (k: string) => string | undefined, fetchFn: typeof fetch, body: Record<string, unknown>): Promise<Response> {
   const key = env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY");
   if (!key) throw new FutError("Reading free text and screenshots needs ANTHROPIC_API_KEY on the server. Typed lists like \"ST Mbappe 91\" still work.", 503);
   const send = (b: Record<string, unknown>, beta: boolean) => fetchFn(ANTHROPIC_URL, {

@@ -14,6 +14,9 @@ import { clearStore, importStore, packAdvice } from "../_shared/fut/packs.ts";
 import { accountOverview, clearAccount, importAccount } from "../_shared/fut/account.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { syncFutggCatalogue } from "../_shared/fut/futgg-catalogue.ts";
+import { syncFutggAttributes } from "../_shared/fut/futgg-attributes.ts";
+import { findPlayers, MAX_FINDER_TEXT, searchPlayers, type FinderTurn } from "../_shared/fut/player-finder.ts";
+import { cleanPlayerQuery } from "../_shared/fut/stats.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
 import { forgetMarketOwner, marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
@@ -53,14 +56,27 @@ const MAX_SQUAD_IMPORT_BODY = 6 * 1024 * 1024;
 /** Squad imports that need Claude (free text, screenshots) per user per hour; plain lists don't count. */
 const AI_IMPORTS_PER_HOUR = 30;
 const aiImports = new Map<string, number[]>();
-function aiImportAllowed(userId: string, perHour: number): boolean {
+/** Player finder messages that need Claude, per user per hour. */
+const AI_FINDS_PER_HOUR = 60;
+const aiFinds = new Map<string, number[]>();
+function aiImportAllowed(userId: string, perHour: number, uses = aiImports): boolean {
   const now = Date.now();
-  const recent = (aiImports.get(userId) ?? []).filter((t) => now - t < 3_600_000);
+  const recent = (uses.get(userId) ?? []).filter((t) => now - t < 3_600_000);
   if (recent.length >= perHour) return false;
   recent.push(now);
-  aiImports.set(userId, recent);
-  if (aiImports.size > 5000) aiImports.clear();
+  uses.set(userId, recent);
+  if (uses.size > 5000) uses.clear();
   return true;
+}
+
+/** The finder chat's last few turns, as the browser sends them back. */
+function finderHistory(v: unknown): FinderTurn[] {
+  if (!Array.isArray(v)) return [];
+  return v.slice(-6).flatMap((t) => {
+    const o = t && typeof t === "object" ? t as Record<string, unknown> : {};
+    return (o.role === "user" || o.role === "assistant") && typeof o.text === "string" && o.text.trim()
+      ? [{ role: o.role, text: o.text.slice(0, MAX_FINDER_TEXT) } as FinderTurn] : [];
+  });
 }
 
 function importImage(v: unknown): ImportImage | null {
@@ -149,8 +165,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (req.method === "POST" && /\/fut-api\/?$/.test(new URL(req.url).pathname)) {
     if (!(await deps.isBot?.(req))) return err(401, "Only the bot's scheduler can run jobs.");
     const job = (await req.json().catch(() => null) as { job?: unknown } | null)?.job;
-    if (job !== "fc27-market" && job !== "futgg-catalogue") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes") return err(400, "Unknown job.");
     try {
+      // Full card stats for Player Ratings, a few hundred cards per run (see futgg-attributes.ts)
+      if (job === "futgg-attributes") return json({ data: await syncFutggAttributes(deps.db, deps.fetch) });
       if (job === "futgg-catalogue") {
         // Market-wide card list after the twice-daily FUT.GG prices, then baskets so the indexes include it.
         const result = await syncFutggCatalogue(deps.db, deps.fetch);
@@ -187,7 +205,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices, your club, the pack store and your account.");
   const db = deps.db;
   // Any change (cards, prices, club import, helper upload) makes the caller's cached Market Lab snapshot stale
-  if (m !== "GET") forgetMarketOwner(db, userId);
+  // (Player searches are POSTs that change nothing, so they keep it.)
+  if (m !== "GET" && !route.startsWith("/players/")) forgetMarketOwner(db, userId);
 
   try {
     if (route === "/health" && m === "GET") return json({ ok: true, api: "v1" });
@@ -335,6 +354,33 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         if (m === "DELETE") return (await deleteSquad(db, userId, id)) ? json({ data: { deleted: id } }) : err(404, "Squad not found.");
         return err(405, "Use GET or DELETE (save with POST /squads).");
       }
+    }
+
+    // ---- Player Ratings: every card on the market-wide list with its full stats, sorted and filtered by any stat, and
+    // the player finder chat that turns "fast CB under 50k with good passing" into a ranked search.
+    if (route === "/players/search" && m === "POST") {
+      const b = obj(await body(req));
+      return json({ data: await searchPlayers(db, userId, cleanPlayerQuery(b.query), {
+        platform: platformParam(typeof b.platform === "string" ? b.platform : null),
+        limit: intParam(b.limit === undefined ? null : String(b.limit), "limit", 1, 100) ?? 50,
+        offset: intParam(b.offset === undefined ? null : String(b.offset), "offset", 0, 100_000) ?? 0,
+      }) });
+    }
+    if (route === "/players/find" && m === "POST") {
+      const b = obj(await body(req));
+      if (typeof b.message !== "string" || !b.message.trim()) throw new FutError("Tell me what kind of player you're looking for.");
+      if (b.message.length > MAX_FINDER_TEXT) throw new FutError(`Keep it under ${MAX_FINDER_TEXT} characters.`);
+      const env = deps.env ?? ((k: string) => Deno.env.get(k));
+      const perHour = Number(env("FUT_FINDER_AI_PER_HOUR")) || AI_FINDS_PER_HOUR;
+      const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
+      return json({ data: await findPlayers(db, userId, {
+        message: b.message,
+        previous: b.previous && typeof b.previous === "object" ? cleanPlayerQuery(b.previous) : null,
+        history: finderHistory(b.history),
+        platform: platformParam(typeof b.platform === "string" ? b.platform : null),
+      }, env, fetchFn, {
+        beforeAi: () => { if (!aiImportAllowed(userId, perHour, aiFinds)) throw new FutError("That's a lot of player searches this hour. Try again later, or use the filters.", 429); },
+      }) });
     }
 
     // ---- Market Lab (research and decision support; never buys, sells or bids). Prices are the caller's own imports.

@@ -24,6 +24,7 @@ import {
   Newspaper,
   Gift,
   Search,
+  UserSearch,
   ChartNoAxesCombined,
   FlaskConical,
   Layers,
@@ -80,14 +81,17 @@ const clubMore: NavItem[] = [
 // FUT app: Ultimate Team market and squad tools. Personal, not tied to a Discord club.
 const futPrimary: NavItem[] = [
   { path: "/fut/market/cards", label: "Card Search", short: "Search", icon: Search },
+  { path: "/fut/players", label: "Player Ratings", short: "Ratings", icon: UserSearch },
   { path: "/fut/market", label: "Market Lab", short: "Market", icon: ChartNoAxesCombined },
-  { path: "/fut/packs", label: "Packs", short: "Packs", icon: Package },
   { path: "/fut", label: "Squad Builder", short: "Squads", icon: FlaskConical },
   { path: "/fut/cards", label: "My Cards", short: "Cards", icon: Layers },
-  { path: "/fut/account", label: "My Account", short: "Account", icon: Wallet },
 ];
 
-const futMore: NavItem[] = [];
+// Five in the bar keeps the phone nav readable; the rest sit under More
+const futMore: NavItem[] = [
+  { path: "/fut/account", label: "My Account", icon: Wallet },
+  { path: "/fut/packs", label: "Packs", icon: Package },
+];
 
 const SECTION_HOME: Record<AppSection, string> = { club: "/", fut: "/fut/market/cards" };
 const LAST_PATH_KEY = "gafferbot-last-path-";

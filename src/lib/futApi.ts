@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { z } from "zod";
+import type { PlayerQuery } from "@/lib/futStats";
 
 export const cardInputRules = z.object({
   overall: z.number().int().min(1).max(99),
@@ -165,6 +166,18 @@ export interface AccountOverview {
 }
 export interface ClubValueCard { id: string; player_name: string; version: string | null; overall: number; position: string; club: string | null; league: string | null; nation: string | null; is_icon: boolean; is_hero: boolean; ea_item_id: number | null; tradeable: boolean | null; quantity: number; tradeable_quantity: number; futgg_price: number | null; captured_price: number | null; captured_at: string | null; price: number | null; price_source: "futgg" | "web_app_capture" | null; value: number | null; value_after_tax: number | null; missing_from_last_sync: boolean }
 export interface ClubValue { platform: MarketPlatform; prices_published_at: string | null; last_sync: string | null; totals: { cards: number; tradeable_cards: number; untradeable_cards: number; unknown_cards: number; tradeable_copies: number; priced_tradeable: number; unpriced_tradeable: number; value: number; value_after_tax: number; untradeable_value: number }; cards: ClubValueCard[] }
+export interface PlayerRole { position: string; role: string; level: "plus" | "plusplus" }
+export interface PlayerCard {
+  id: string; player_name: string; version: string | null; overall: number; position: string; alt_positions: string[];
+  club: string | null; league: string | null; nation: string | null; is_icon: boolean; is_hero: boolean; market_tracked: boolean;
+  ea_item_id: number; price: number | null; skill_moves: number | null; weak_foot: number | null; foot: "left" | "right" | null;
+  height_cm: number | null; accelerate_type: string | null; pac: number | null; sho: number | null; pas: number | null; dri: number | null;
+  def: number | null; phy: number | null; has_stats: boolean; owned: boolean; fit: number | null; stats: Record<string, number>;
+  playstyles: string[]; playstyles_plus: string[]; roles: PlayerRole[];
+}
+export interface PlayerSearch { platform: MarketPlatform; published_at: string | null; sort: string; direction: "asc" | "desc"; catalogue_cards: number; with_stats: number; total: number; cards: PlayerCard[] }
+export interface FinderTurn { role: "user" | "assistant"; text: string }
+export interface FinderResult { reply: string; query: PlayerQuery; summary: string[]; via: "ai" | "words"; relaxed: string | null; result: PlayerSearch }
 const marketPath = (path: string, platform: MarketPlatform, filters: Record<string, string> = {}) => `/market${path}?${new URLSearchParams({ ...filters, platform })}`;
 
 export const futApi = {
@@ -194,6 +207,10 @@ export const futApi = {
     linkHeld: (ea_item_id: string | number, card_id: string, platform: MarketPlatform) => futRequest<{ linked: number }>(marketPath("/held/link", platform), "POST", { ea_item_id, card_id }),
     relink: (platform: MarketPlatform) => futRequest<{ linked: number; still_held: number }>(marketPath("/held/relink", platform), "POST", {}),
     sources: (platform: MarketPlatform) => futRequest<MarketSource[]>(marketPath("/sources", platform)),
+  },
+  players: {
+    search: (query: PlayerQuery, platform: MarketPlatform, page = 0, limit = 50) => futRequest<PlayerSearch>("/players/search", "POST", { query, platform, limit, offset: page * limit }),
+    find: (message: string, previous: PlayerQuery | null, history: FinderTurn[], platform: MarketPlatform) => futRequest<FinderResult>("/players/find", "POST", { message, previous, history, platform }),
   },
   account: {
     get: (platform: MarketPlatform) => futRequest<AccountOverview>(`/account?${new URLSearchParams({ platform })}`),
