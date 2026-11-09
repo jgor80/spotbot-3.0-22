@@ -72,13 +72,13 @@ function validateRules(rules) {
   const known = new Set(KNOWN_MODIFIERS);
   return Object.keys(rules.modifiers).filter((k) => !known.has(k)).map((k) => `Rule version ${rules.id} has modifier "${k}" that this engine doesn't apply`);
 }
-function pointsFor(thresholds, count) {
+function pointsFor(thresholds, count2) {
   let p = 0;
-  for (const t of thresholds) if (count >= t) p++;
+  for (const t of thresholds) if (count2 >= t) p++;
   return p;
 }
-function nextThreshold(thresholds, count) {
-  for (const t of thresholds) if (count < t) return t;
+function nextThreshold(thresholds, count2) {
+  for (const t of thresholds) if (count2 < t) return t;
   return null;
 }
 
@@ -152,15 +152,15 @@ function computeSquadChemistry(input, rules) {
     const links = {};
     for (const t of LINK_TYPES) {
       const key = cardKey(s, t);
-      const count = key === null ? 0 : counts[t].get(key) ?? 0;
-      const points = inPos && key !== null ? pointsFor(rules.thresholds[t], count) : 0;
-      const next = key === null ? null : nextThreshold(rules.thresholds[t], count);
+      const count2 = key === null ? 0 : counts[t].get(key) ?? 0;
+      const points = inPos && key !== null ? pointsFor(rules.thresholds[t], count2) : 0;
+      const next = key === null ? null : nextThreshold(rules.thresholds[t], count2);
       breakdown[t] = {
         key: s.card[t]?.trim() || null,
-        count,
+        count: count2,
         points,
         next_threshold: next,
-        needed_for_next: next === null ? null : next - count
+        needed_for_next: next === null ? null : next - count2
       };
       links[t] = points;
       if (key === null) notes.push(`No ${t} entered, so no ${t} links`);
@@ -814,9 +814,9 @@ async function saveSquadAs(store, squad, name2) {
 }
 var norm4 = (s) => s?.trim().toLowerCase() ?? "";
 function filterCards(cards, q) {
-  const text2 = norm4(q.text);
+  const text3 = norm4(q.text);
   return cards.filter(
-    (c) => (!text2 || [c.name, c.club, c.league, c.nation].some((v) => norm4(v).includes(text2))) && (!q.position || c.positions.some((p) => p.toUpperCase() === q.position.toUpperCase())) && (!q.league || norm4(c.league) === norm4(q.league)) && (!q.nation || norm4(c.nation) === norm4(q.nation)) && (!q.club || norm4(c.club) === norm4(q.club)) && (!q.owned_only || c.owned) && (q.max_price === void 0 || c.owned || typeof c.price === "number" && c.price <= q.max_price)
+    (c) => (!text3 || [c.name, c.club, c.league, c.nation].some((v) => norm4(v).includes(text3))) && (!q.position || c.positions.some((p) => p.toUpperCase() === q.position.toUpperCase())) && (!q.league || norm4(c.league) === norm4(q.league)) && (!q.nation || norm4(c.nation) === norm4(q.nation)) && (!q.club || norm4(c.club) === norm4(q.club)) && (!q.owned_only || c.owned) && (q.max_price === void 0 || c.owned || typeof c.price === "number" && c.price <= q.max_price)
   ).slice(0, q.limit ?? 200);
 }
 
@@ -4918,9 +4918,9 @@ var NotFoundError = class extends Error {
 function createWorkspaceService(deps) {
   const { rules, store, cards } = deps;
   const parse2 = (squad) => squadSchema.parse(squad);
-  const load = async (owner, id) => {
-    const s = await store.get(owner, id);
-    if (!s) throw new NotFoundError(`No squad ${id}`);
+  const load = async (owner, id2) => {
+    const s = await store.get(owner, id2);
+    if (!s) throw new NotFoundError(`No squad ${id2}`);
     return s;
   };
   const resolve = async (owner, ref) => typeof ref === "string" ? load(owner, ref) : parse2(ref);
@@ -4952,8 +4952,8 @@ function createWorkspaceService(deps) {
     async listSquads(owner) {
       return store.list(owner);
     },
-    async getSquad(owner, id) {
-      return load(owner, id);
+    async getSquad(owner, id2) {
+      return load(owner, id2);
     },
     async saveSquad(owner, squad) {
       const s = parse2(squad);
@@ -5138,9 +5138,9 @@ async function hydrate(db2, userId, rows) {
     };
   });
 }
-async function getCard(db2, userId, id) {
-  if (!isUuid(id)) return null;
-  const { data, error } = await db2.from("player_cards").select("*").eq("id", id).maybeSingle();
+async function getCard(db2, userId, id2) {
+  if (!isUuid(id2)) return null;
+  const { data, error } = await db2.from("player_cards").select("*").eq("id", id2).maybeSingle();
   fail(error);
   if (!data || data.owner_user_id !== null && data.owner_user_id !== userId) return null;
   return (await hydrate(db2, userId, [data]))[0];
@@ -5190,30 +5190,30 @@ async function ensureAccount(db2, userId) {
   if (!data) fail((await db2.from("accounts").insert({ user_id: userId })).error);
 }
 async function addCard(db2, userId, c) {
-  const { count, error } = await db2.from("player_cards").select("id", { count: "exact", head: true }).eq("owner_user_id", userId);
+  const { count: count2, error } = await db2.from("player_cards").select("id", { count: "exact", head: true }).eq("owner_user_id", userId);
   fail(error);
-  if ((count ?? 0) >= MAX_CARDS_PER_USER) throw new FutError(`You can keep up to ${MAX_CARDS_PER_USER} cards. Delete some before adding more.`);
+  if ((count2 ?? 0) >= MAX_CARDS_PER_USER) throw new FutError(`You can keep up to ${MAX_CARDS_PER_USER} cards. Delete some before adding more.`);
   await ensureAccount(db2, userId);
   const ins = await db2.from("player_cards").insert({ ...cardRow(c), owner_user_id: userId, source_id: "user_entered" }).select("*").single();
   fail(ins.error);
   await writeCardDetails(db2, userId, ins.data.id, c);
   return await getCard(db2, userId, ins.data.id);
 }
-async function ownCardRow(db2, userId, id) {
-  if (!isUuid(id)) return null;
-  const { data, error } = await db2.from("player_cards").select("*").eq("id", id).eq("owner_user_id", userId).maybeSingle();
+async function ownCardRow(db2, userId, id2) {
+  if (!isUuid(id2)) return null;
+  const { data, error } = await db2.from("player_cards").select("*").eq("id", id2).eq("owner_user_id", userId).maybeSingle();
   fail(error);
   return data ?? null;
 }
-async function updateCard(db2, userId, id, c) {
-  if (!await ownCardRow(db2, userId, id)) return null;
-  fail((await db2.from("player_cards").update({ ...cardRow(c), updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id).eq("owner_user_id", userId)).error);
-  await writeCardDetails(db2, userId, id, c);
-  return getCard(db2, userId, id);
+async function updateCard(db2, userId, id2, c) {
+  if (!await ownCardRow(db2, userId, id2)) return null;
+  fail((await db2.from("player_cards").update({ ...cardRow(c), updated_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id2).eq("owner_user_id", userId)).error);
+  await writeCardDetails(db2, userId, id2, c);
+  return getCard(db2, userId, id2);
 }
-async function deleteCard(db2, userId, id) {
-  if (!await ownCardRow(db2, userId, id)) return false;
-  fail((await db2.from("player_cards").delete().eq("id", id).eq("owner_user_id", userId)).error);
+async function deleteCard(db2, userId, id2) {
+  if (!await ownCardRow(db2, userId, id2)) return false;
+  fail((await db2.from("player_cards").delete().eq("id", id2).eq("owner_user_id", userId)).error);
   return true;
 }
 var TRUST = ["hypothesis", "estimate", "game_data", "verified"];
@@ -5221,9 +5221,9 @@ var weakestEvidence = (labels) => labels.reduce((w, e) => TRUST.indexOf(e) < TRU
 async function compareCards(db2, userId, ids) {
   if (!Array.isArray(ids) || ids.length < 2 || ids.length > 4) throw new FutError("card_ids must list 2 to 4 card ids.");
   const cards = [];
-  for (const id of [...new Set(ids.map(String))]) {
-    const c = await getCard(db2, userId, id);
-    if (!c) throw new FutError(`Card ${id} wasn't found among your cards.`, 404);
+  for (const id2 of [...new Set(ids.map(String))]) {
+    const c = await getCard(db2, userId, id2);
+    if (!c) throw new FutError(`Card ${id2} wasn't found among your cards.`, 404);
     cards.push(c);
   }
   if (cards.length < 2) throw new FutError("Pick at least two different cards.");
@@ -5281,19 +5281,19 @@ async function listManagers(db2, userId) {
   return (data ?? []).map(toManager);
 }
 async function addManager(db2, userId, m) {
-  const { count, error } = await db2.from("user_managers").select("id", { count: "exact", head: true }).eq("user_id", userId);
+  const { count: count2, error } = await db2.from("user_managers").select("id", { count: "exact", head: true }).eq("user_id", userId);
   fail(error);
-  if ((count ?? 0) >= 100) throw new FutError("You can keep up to 100 managers.");
+  if ((count2 ?? 0) >= 100) throw new FutError("You can keep up to 100 managers.");
   const ins = await db2.from("user_managers").insert({ ...m, user_id: userId }).select("*").single();
   fail(ins.error);
   return toManager(ins.data);
 }
-async function deleteManager(db2, userId, id) {
-  if (!isUuid(id)) return false;
-  const { data, error } = await db2.from("user_managers").select("id").eq("id", id).eq("user_id", userId).maybeSingle();
+async function deleteManager(db2, userId, id2) {
+  if (!isUuid(id2)) return false;
+  const { data, error } = await db2.from("user_managers").select("id").eq("id", id2).eq("user_id", userId).maybeSingle();
   fail(error);
   if (!data) return false;
-  fail((await db2.from("user_managers").delete().eq("id", id).eq("user_id", userId)).error);
+  fail((await db2.from("user_managers").delete().eq("id", id2).eq("user_id", userId)).error);
   return true;
 }
 async function activeRules(db2, season = "FC27") {
@@ -5380,8 +5380,8 @@ var PgSquadStore = class {
     fail(error);
     return this.load(owner, data ?? []);
   }
-  async get(owner, id) {
-    const { data, error } = await this.db.from("squads").select("*").eq("id", id).eq("user_id", owner).maybeSingle();
+  async get(owner, id2) {
+    const { data, error } = await this.db.from("squads").select("*").eq("id", id2).eq("user_id", owner).maybeSingle();
     fail(error);
     return data ? (await this.load(owner, [data]))[0] : null;
   }
@@ -5408,9 +5408,9 @@ var PgSquadStore = class {
       fail((await this.db.from("squads").update(row).eq("id", squad.id).eq("user_id", owner)).error);
       fail((await this.db.from("squad_slots").delete().eq("squad_id", squad.id)).error);
     } else {
-      const { count, error: e } = await this.db.from("squads").select("id", { count: "exact", head: true }).eq("user_id", owner);
+      const { count: count2, error: e } = await this.db.from("squads").select("id", { count: "exact", head: true }).eq("user_id", owner);
       fail(e);
-      if ((count ?? 0) >= MAX_SQUADS_PER_USER) throw new FutError(`You can keep up to ${MAX_SQUADS_PER_USER} squads. Delete one first.`);
+      if ((count2 ?? 0) >= MAX_SQUADS_PER_USER) throw new FutError(`You can keep up to ${MAX_SQUADS_PER_USER} squads. Delete one first.`);
       await ensureAccount(this.db, owner);
       fail((await this.db.from("squads").insert({ ...row, id: squad.id, user_id: owner, created_at: squad.created_at })).error);
     }
@@ -5430,14 +5430,14 @@ var PgSquadStore = class {
     if (slots.length) fail((await this.db.from("squad_slots").insert(slots)).error);
     return await this.get(owner, squad.id);
   }
-  async delete(owner, id) {
-    fail((await this.db.from("squads").delete().eq("id", id).eq("user_id", owner)).error);
+  async delete(owner, id2) {
+    fail((await this.db.from("squads").delete().eq("id", id2).eq("user_id", owner)).error);
   }
 };
-async function deleteSquad(db2, userId, id) {
+async function deleteSquad(db2, userId, id2) {
   const store = new PgSquadStore(db2);
-  if (!await store.get(userId, id)) return false;
-  await store.delete(userId, id);
+  if (!await store.get(userId, id2)) return false;
+  await store.delete(userId, id2);
   return true;
 }
 async function workspaceFor(db2) {
@@ -5487,9 +5487,9 @@ var BATCH = 200;
 var posInt = (v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v < 2 ** 31 ? v : null;
 var inRange = (v, lo, hi) => typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi ? v : null;
 var copyId = (v) => typeof v === "number" && Number.isSafeInteger(v) && v > 0 ? v : null;
-function addCopy(p, id, untradeable) {
-  if (id === null) p.unkeyed.push(untradeable);
-  else p.copies.set(id, (p.copies.get(id) ?? false) || untradeable);
+function addCopy(p, id2, untradeable) {
+  if (id2 === null) p.unkeyed.push(untradeable);
+  else p.copies.set(id2, (p.copies.get(id2) ?? false) || untradeable);
 }
 var copyCounts = (p) => {
   const all = [...p.copies.values(), ...p.unkeyed];
@@ -5561,7 +5561,7 @@ async function importClub(db2, userId, body2) {
   const skip = (reason) => skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
   const players = /* @__PURE__ */ new Map();
   const managers = /* @__PURE__ */ new Map();
-  const label = (map, id, kind) => id === null ? null : map[String(id)] ?? `EA ${kind} ${id}`;
+  const label = (map, id2, kind) => id2 === null ? null : map[String(id2)] ?? `EA ${kind} ${id2}`;
   for (const raw of items) {
     if (!raw || typeof raw !== "object") {
       skip("not an item");
@@ -5594,8 +5594,8 @@ async function importClub(db2, userId, body2) {
       skip("not a player or manager");
       continue;
     }
-    const rating2 = inRange(it.rating, 1, 99);
-    if (!rating2) {
+    const rating3 = inRange(it.rating, 1, 99);
+    if (!rating3) {
       skip("no rating");
       continue;
     }
@@ -5610,7 +5610,7 @@ async function importClub(db2, userId, body2) {
     const p = {
       ea_item_id,
       asset_id: posInt(it.asset_id),
-      rating: rating2,
+      rating: rating3,
       positions,
       team_id: posInt(it.team_id),
       league_id,
@@ -5655,11 +5655,11 @@ async function importClub(db2, userId, body2) {
       }
       room--;
     }
-    const id = had?.id ?? crypto.randomUUID();
+    const id2 = had?.id ?? crypto.randomUUID();
     const league = label(names.leagues, p.league_id, "league");
     const isIcon = !!league && /^icons?$/i.test(league);
     rows.push({
-      id,
+      id: id2,
       owner_user_id: userId,
       source_id: "user_entered",
       source_card_key: String(p.ea_item_id),
@@ -5680,8 +5680,8 @@ async function importClub(db2, userId, body2) {
       source_updated_at: now2,
       updated_at: now2
     });
-    if (p.stats) attrs.push({ card_id: id, ...Object.fromEntries(FACE2.map((k, i) => [k, p.stats[i]])) });
-    inv.push({ user_id: userId, card_id: id, tradeable: !p.untradeable, ...copyCounts(p) });
+    if (p.stats) attrs.push({ card_id: id2, ...Object.fromEntries(FACE2.map((k, i) => [k, p.stats[i]])) });
+    inv.push({ user_id: userId, card_id: id2, tradeable: !p.untradeable, ...copyCounts(p) });
     if (had) updated++;
     else added++;
   }
@@ -5701,7 +5701,7 @@ async function importClub(db2, userId, body2) {
     added,
     updated,
     managers_added,
-    skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })),
+    skipped: [...skipped.entries()].map(([reason, count2]) => ({ reason, count: count2 })),
     over_limit: over,
     verified: false,
     note: "Read from your own club file, not checked by EA. Cards missing from this file are kept (you may not have paged through everything). Heroes aren't detected: mark them on the card. Goalkeeper stats aren't imported (EA sends keeper stats, not outfield ones)."
@@ -5714,8 +5714,8 @@ var fail3 = (error) => {
 };
 var EA_REFERENCE_LABEL = "EA reference price (meaning unconfirmed)";
 var MAX_PRICE = 15e6;
-function referenceRows(text2) {
-  const lines = text2.trim().split(/\r?\n/);
+function referenceRows(text3) {
+  const lines = text3.trim().split(/\r?\n/);
   const head = (lines.shift() ?? "").split(",").map((h) => h.trim());
   const at = (n) => head.indexOf(n);
   const [iEa, iPl, iAt, iAvg, iSales] = ["ea_item_id", "platform", "observed_at", "market_average", "last_sales"].map(at);
@@ -5734,9 +5734,9 @@ function referenceRows(text2) {
   }
   return [...out.values()];
 }
-async function storeEaReference(db2, userId, text2) {
-  if (!/^\s*ea_item_id,/.test(text2)) return 0;
-  const rows = referenceRows(text2).map((r2) => ({ ...r2, owner_user_id: userId }));
+async function storeEaReference(db2, userId, text3) {
+  if (!/^\s*ea_item_id,/.test(text3)) return 0;
+  const rows = referenceRows(text3).map((r2) => ({ ...r2, owner_user_id: userId }));
   for (let i = 0; i < rows.length; i += 500) {
     fail3((await db2.from("market_ea_reference").upsert(rows.slice(i, i + 500), { onConflict: "owner_user_id,ea_item_id,platform,observed_at" })).error);
   }
@@ -5893,9 +5893,9 @@ async function fc27MarketStatus(db2) {
   const latest = (last ?? [])[0];
   let cards = 0;
   if (latest) {
-    const { count, error: e2 } = await db2.from("market_feed_prices").select("ea_item_id", { count: "exact", head: true }).eq("source_id", "fc27_market").eq("feed_updated", latest.feed_updated);
+    const { count: count2, error: e2 } = await db2.from("market_feed_prices").select("ea_item_id", { count: "exact", head: true }).eq("source_id", "fc27_market").eq("feed_updated", latest.feed_updated);
     failDb(e2);
-    cards = count ?? 0;
+    cards = count2 ?? 0;
   }
   const { data: runs, error: e3 } = await db2.from("market_provider_runs").select("finished_at, status, message").eq("source_id", "fc27_market").order("finished_at", { ascending: false }).limit(1);
   failDb(e3);
@@ -5948,6 +5948,375 @@ async function futggStatus(db2, now2 = Date.now()) {
   };
 }
 
+// supabase/functions/_shared/fut/packs.ts
+var fail4 = (error) => {
+  if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
+};
+var MAX_PACKS = 400;
+var MAX_PULLS = 1e3;
+var MAX_ODDS = 30;
+var EA_TAX = 0.05;
+var isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+var id = (v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v < 2 ** 53 ? v : null;
+var count = (v, max = 1e3) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= max ? v : null;
+var coins = (v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 5e7 ? v : null;
+var rating2 = (v) => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 99 ? v : null;
+var text2 = (v, max = 120) => typeof v === "string" && v.trim() ? v.trim().replace(/\s+/g, " ").slice(0, max) : null;
+var when = (v) => {
+  if (typeof v !== "string") return null;
+  const t = Date.parse(v);
+  return Number.isFinite(t) && t > Date.UTC(2020, 0, 1) && t < Date.UTC(2040, 0, 1) ? new Date(t).toISOString() : null;
+};
+function parseOdd(v) {
+  if (!isObj(v)) return null;
+  const odds_text = text2(v.odds_text, 40);
+  if (!odds_text) return null;
+  const p = typeof v.probability === "number" && v.probability >= 0 && v.probability <= 1 ? v.probability : null;
+  const rules = Array.isArray(v.rules) ? v.rules.filter(isObj).slice(0, 10).flatMap((r2) => typeof r2.value === "number" && Number.isFinite(r2.value) ? [{ type: count(r2.type, 1e4) ?? 0, value: r2.value, ...text2(r2.text) ? { text: text2(r2.text) } : {} }] : []) : [];
+  return {
+    label: text2(v.label) ?? "Pack line",
+    odds_text,
+    probability: p,
+    min_rating: rating2(v.min_rating),
+    max_rating: rating2(v.max_rating),
+    special: v.special === true,
+    category_id: count(v.category_id, 1e9),
+    tier_id: count(v.tier_id, 1e9),
+    quality_id: count(v.quality_id, 1e9),
+    rarity_asset_id: count(v.rarity_asset_id, 1e9),
+    rules
+  };
+}
+function parsePack(v) {
+  if (!isObj(v)) return null;
+  const pack_id = id(v.pack_id);
+  if (!pack_id) return null;
+  return {
+    pack_id,
+    name: text2(v.name),
+    name_key: text2(v.name_key),
+    description: text2(v.description, 400),
+    state: text2(v.state, 40),
+    pack_type: text2(v.pack_type, 40),
+    coins: coins(v.coins),
+    points: coins(v.points),
+    untradeable: v.untradeable === true,
+    is_player_pick: v.is_player_pick === true,
+    item_count: count(v.item_count, 100),
+    gold: count(v.gold, 100),
+    silver: count(v.silver, 100),
+    bronze: count(v.bronze, 100),
+    rare: count(v.rare, 100),
+    content_type: text2(v.content_type, 40),
+    start_at: when(v.start_at),
+    end_at: when(v.end_at),
+    purchase_limit: count(v.purchase_limit, 1e6),
+    purchase_count: count(v.purchase_count, 1e6),
+    unopened: v.unopened === true,
+    odds: (Array.isArray(v.odds) ? v.odds : []).slice(0, MAX_ODDS).map(parseOdd).filter((o) => !!o)
+  };
+}
+function parsePull(v) {
+  if (!isObj(v)) return null;
+  const item_id = id(v.item_id), ea_item_id = id(v.ea_item_id), opened_at = when(v.opened_at);
+  if (!item_id || !ea_item_id || !opened_at) return null;
+  return { item_id, ea_item_id, item_type: text2(v.item_type, 40), rating: rating2(v.rating), rare_flag: count(v.rare_flag, 1e6), untradeable: v.untradeable === true, pack_id: id(v.pack_id), opened_at };
+}
+function parseStoreUpload(raw) {
+  if (!isObj(raw) || raw.format !== "xilab-store-capture") throw new FutError("This isn't a pack store file from the XI Lab helper (format xilab-store-capture).");
+  if (raw.version !== 1) throw new FutError("Unknown pack store file version. Update the XI Lab helper.");
+  const packsIn = Array.isArray(raw.packs) ? raw.packs : [], pullsIn = Array.isArray(raw.pulls) ? raw.pulls : [];
+  if (packsIn.length > MAX_PACKS) throw new FutError(`Send at most ${MAX_PACKS} packs at a time.`);
+  if (pullsIn.length > MAX_PULLS) throw new FutError(`Send at most ${MAX_PULLS} pulls at a time.`);
+  const packs = packsIn.map(parsePack).filter((p) => !!p);
+  const pulls = pullsIn.map(parsePull).filter((p) => !!p);
+  const shape = isObj(raw.shape) ? Object.fromEntries(["pack_keys", "odds_keys", "category_keys"].map((k) => [
+    k,
+    Array.isArray(raw.shape[k]) ? raw.shape[k].filter((x) => typeof x === "string" && x.length <= 60).slice(0, 120) : []
+  ])) : {};
+  return {
+    platform: raw.platform === "pc" ? "pc" : "console",
+    captured_at: when(raw.captured_at) ?? (/* @__PURE__ */ new Date()).toISOString(),
+    packs,
+    pulls,
+    shape,
+    skipped: packsIn.length - packs.length + pullsIn.length - pulls.length
+  };
+}
+async function importStore(db2, userId, raw) {
+  const u = parseStoreUpload(raw);
+  const now2 = (/* @__PURE__ */ new Date()).toISOString();
+  if (u.packs.length) {
+    fail4((await db2.from("pack_offers").delete().eq("user_id", userId).eq("platform", u.platform)).error);
+    const rows = u.packs.map((p) => ({ user_id: userId, platform: u.platform, ...p, seen_at: u.captured_at, updated_at: now2 }));
+    for (let i = 0; i < rows.length; i += 200) fail4((await db2.from("pack_offers").insert(rows.slice(i, i + 200))).error);
+    fail4((await db2.from("pack_store_captures").upsert({ user_id: userId, platform: u.platform, captured_at: u.captured_at, pack_count: u.packs.length, shape: u.shape }, { onConflict: "user_id,platform" })).error);
+  }
+  if (u.pulls.length) {
+    const rows = u.pulls.map((p) => ({ user_id: userId, platform: u.platform, ...p }));
+    for (let i = 0; i < rows.length; i += 200) fail4((await db2.from("pack_pulls").upsert(rows.slice(i, i + 200), { onConflict: "user_id,item_id" })).error);
+  }
+  return { packs: u.packs.length, pulls: u.pulls.length, skipped: u.skipped, platform: u.platform, verified: false };
+}
+async function clearStore(db2, userId, platform) {
+  for (const t of ["pack_offers", "pack_pulls", "pack_store_captures"]) fail4((await db2.from(t).delete().eq("user_id", userId).eq("platform", platform)).error);
+  return { cleared: true };
+}
+function bandValue(bands, lo, hi, kinds) {
+  let n = 0, low = 0, high = 0;
+  for (const [o, k, c, , med, mean2] of bands) {
+    if (o < lo || o > hi || !kinds.includes(k) || c <= 0) continue;
+    n += c;
+    low += med * c;
+    high += mean2 * c;
+  }
+  return n ? { low: low / n, high: high / n, cards: n } : null;
+}
+var QUALITY = { gold: [75, 99], silver: [65, 74], bronze: [45, 64] };
+function qualityOf(label) {
+  const m = label.toLowerCase().match(/\b(gold|silver|bronze)\b/);
+  return m ? QUALITY[m[1]] : null;
+}
+var rareOnly = (label) => /\brare\b/i.test(label) && !/\bnon[- ]?rare\b/i.test(label);
+function packValue(p, bands) {
+  const notes = [];
+  const lines = [];
+  const range = (o) => {
+    if (o.min_rating) return [o.min_rating, o.max_rating ?? 99];
+    return qualityOf(o.label);
+  };
+  const floorRange = p.gold ? [75, 79] : p.silver ? [65, 74] : p.bronze ? [45, 64] : [75, 79];
+  const commonFodder = bandValue(bands, floorRange[0], floorRange[1], ["common"]) ?? bandValue(bands, floorRange[0], floorRange[1], ["rare", "common"]);
+  const rareFodder = bandValue(bands, floorRange[0], floorRange[1], ["rare"]) ?? commonFodder;
+  const items = p.item_count ?? ((p.gold ?? 0) + (p.silver ?? 0) + (p.bronze ?? 0) || null);
+  if (!items) notes.push("EA didn't say how many items the pack holds; only its odds lines are counted.");
+  const plain = p.odds.filter((o) => !o.special && o.probability !== null && range(o));
+  const special = p.odds.filter((o) => o.special && o.probability !== null && range(o));
+  for (const o of p.odds) {
+    if (o.probability === null) lines.push({ label: o.label, odds_text: o.odds_text, probability: null, covers: null, value_low: null, value_high: null, used: false, note: "Couldn't read these odds." });
+    else if (!range(o)) lines.push({ label: o.label, odds_text: o.odds_text, probability: o.probability, covers: null, value_low: null, value_high: null, used: false, note: "No rating range in this line, so it isn't priced." });
+  }
+  const sorted = [...plain].sort((a, b) => range(b)[0] - range(a)[0]);
+  let best = null;
+  let cum = 0, upper = 99;
+  for (const o of sorted) {
+    const [lo, hiRaw] = range(o);
+    const hi = Math.min(hiRaw, upper);
+    const kinds = rareOnly(o.label) ? ["rare"] : ["rare", "common"];
+    const v = hi >= lo ? bandValue(bands, lo, hi, kinds) : null;
+    const pr = Math.max(cum, Math.min(1, o.probability));
+    const extra = pr - cum;
+    lines.push({ label: o.label, odds_text: o.odds_text, probability: o.probability, covers: `${lo}${hi > lo ? `-${hi}` : ""}`, value_low: v?.low ?? null, value_high: v?.high ?? null, used: !!v, ...v ? {} : { note: "No priced cards in this range." } });
+    if (v) {
+      best = { low: (best?.low ?? 0) + extra * v.low, high: (best?.high ?? 0) + extra * v.high };
+      cum = pr;
+    }
+    upper = lo - 1;
+  }
+  if (best && cum < 1 && rareFodder) best = { low: best.low + (1 - cum) * rareFodder.low, high: best.high + (1 - cum) * rareFodder.high };
+  let upLow = 0, upHigh = 0;
+  for (const o of special) {
+    const [lo, hi] = range(o);
+    const v = bandValue(bands, lo, hi, ["special"]);
+    lines.push({ label: o.label, odds_text: o.odds_text, probability: o.probability, covers: `${lo}${hi > lo ? `-${hi}` : ""} special`, value_low: v?.low ?? null, value_high: v?.high ?? null, used: !!v, ...v ? {} : { note: "No priced special cards in this range." } });
+    if (v) {
+      upLow += o.probability * Math.max(0, v.low - (rareFodder?.low ?? 0));
+      upHigh += o.probability * Math.max(0, v.high - (rareFodder?.high ?? 0));
+    }
+  }
+  const rares = p.rare ?? 0;
+  const restItems = Math.max(0, (items ?? 0) - (best ? 1 : 0));
+  const restRares = Math.max(0, rares - (best ? 1 : 0));
+  const restCommon = Math.max(0, restItems - restRares);
+  const fodderLow = restRares * (rareFodder?.low ?? 0) + restCommon * (commonFodder?.low ?? 0);
+  const fodderHigh = restRares * (rareFodder?.high ?? 0) + restCommon * (commonFodder?.high ?? 0);
+  if (!plain.length && !special.length) notes.push("No odds lines with a rating range: open this pack's odds in the Store so the helper can read them.");
+  if (!rareFodder) notes.push("No fodder prices for this pack's quality yet.");
+  const anything = p.odds.length > 0 && (best || upLow || restItems && rareFodder);
+  return {
+    ev_low: anything ? Math.round((best?.low ?? 0) + upLow + fodderLow) : null,
+    ev_high: anything ? Math.round((best?.high ?? 0) + upHigh + fodderHigh) : null,
+    lines,
+    fodder_each: rareFodder ? Math.round(rareFodder.low) : null,
+    fodder_items: restItems,
+    notes
+  };
+}
+function verdictFor(p, v) {
+  if (v.ev_low === null || v.ev_high === null) {
+    return v.lines.length ? { verdict: "no_prices", ratio: null, why: "There aren't enough FUT.GG prices for the cards in this pack's odds yet." } : { verdict: "no_odds", ratio: null, why: "The helper hasn't seen this pack's odds. Open the pack's odds (Pack Probability) in the Web App Store." };
+  }
+  if (!p.coins) return { verdict: "points_only", ratio: null, why: p.points ? "FC Points only. Compare value per 100 points with other points packs." : "No coin price in the store." };
+  const net = p.untradeable ? 1 : 1 - EA_TAX;
+  const typical = v.ev_low * net / p.coins, withLuck = v.ev_high * net / p.coins;
+  const pct2 = (x) => `${Math.round(x * 100)}%`;
+  const both = `about ${pct2(typical)} of the price in a typical pack, ${pct2(withLuck)} on average with the big pulls`;
+  if (p.untradeable) {
+    return typical >= 0.75 ? { verdict: "only_for_fodder", ratio: typical, why: `Untradeable, so you can't sell what you pull. If you'd otherwise buy these cards for SBCs, they're worth ${both}.` } : { verdict: "skip", ratio: typical, why: `Untradeable, and even as SBC fodder the cards are worth ${both}.` };
+  }
+  if (typical >= 1) return { verdict: "buy", ratio: typical, why: `Expected to return ${both}, after EA's tax.` };
+  if (typical >= 0.75 || withLuck >= 1) return { verdict: "only_for_fodder", ratio: typical, why: `Returns ${both}, after tax. Worth it only if you need the fodder for SBCs or want the gamble.` };
+  return { verdict: "skip", ratio: typical, why: `Returns ${both}, after tax. You lose coins on most openings.` };
+}
+function nextPromoSlot(now2) {
+  const ukOffsetHours = (t) => {
+    const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "2-digit", hourCycle: "h23" }).formatToParts(new Date(t));
+    const h = Number(parts.find((x) => x.type === "hour")?.value ?? new Date(t).getUTCHours());
+    return (h - new Date(t).getUTCHours() + 24) % 24;
+  };
+  const d = new Date(now2);
+  for (let i = 0; i < 8; i++) {
+    const day = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + i, 18));
+    if (day.getUTCDay() !== 5) continue;
+    const t = day.getTime() - ukOffsetHours(day.getTime()) * 36e5;
+    if (t > now2) return t;
+  }
+  return now2 + 7 * 864e5;
+}
+function timingFor(t) {
+  const tips = [];
+  let trend_pct = null;
+  const latest = t.ev_series.at(-1);
+  if (latest) {
+    const cutoff = Date.parse(latest.at) - 3 * 864e5;
+    const before = t.ev_series.filter((x) => Date.parse(x.at) <= cutoff);
+    const base = before.length ? before.reduce((s, x) => s + x.ev, 0) / before.length : null;
+    if (base && base > 0) {
+      trend_pct = Math.round((latest.ev - base) / base * 1e3) / 10;
+      if (trend_pct >= 5) tips.push(`Pack value is up ${trend_pct}% on 3+ days ago: the cards inside are selling for more. A good time to open packs you already have and sell what you pull.`);
+      else if (trend_pct <= -5) tips.push(`Pack value is down ${Math.abs(trend_pct)}% on 3+ days ago: prices are falling. Hold stored packs until prices recover, and sell anything you pull quickly.`);
+      else tips.push("Pack value has been steady over the last few days.");
+    }
+  }
+  const ends = t.end_at ? Date.parse(t.end_at) - t.now : null;
+  if (ends !== null && ends > 0 && ends < 72 * 36e5) tips.push(`Leaves the store in ${ends < 36e5 ? `${Math.max(1, Math.round(ends / 6e4))} min` : `${Math.round(ends / 36e5)} h`}.`);
+  const starts = t.start_at ? Date.parse(t.start_at) - t.now : null;
+  if (starts !== null && starts > 0) tips.push(`Not on sale yet: arrives in ${Math.round(starts / 36e5)} h.`);
+  if (t.purchase_limit) tips.push(`Limited to ${t.purchase_limit}${t.purchase_count !== null ? `; you've bought ${t.purchase_count}` : ""}.`);
+  if (t.has_special) {
+    const slot = nextPromoSlot(t.now), hoursTo = (slot - t.now) / 36e5, sinceLast = 168 - hoursTo;
+    if (hoursTo <= 30) tips.push(`A new promo usually lands Friday 6pm UK, in about ${Math.round(hoursTo)} h. If you want the new cards in the pool, wait for it.`);
+    else if (sinceLast <= 24) tips.push("A promo landed in the last day: the new cards are in the pool, and older cards often dip in price, so sell pulls quickly.");
+  }
+  if (t.verdict === "skip") tips.push("At these prices it's cheaper to buy the cards you want on the market.");
+  return { trend_pct, tips };
+}
+var bandCache = /* @__PURE__ */ new Map();
+var BAND_TTL_MS = 15 * 6e4;
+async function valueBands(db2, platform, now2 = Date.now()) {
+  const hit = bandCache.get(platform);
+  if (hit && now2 - hit.at < BAND_TTL_MS) return hit.data;
+  const { data, error } = await db2.rpc("pack_value_bands", { p_platform: platform, p_days: 8 });
+  if (error) throw new FutError(`Pack prices are unavailable: ${error.message}`, 500);
+  const snaps = Array.isArray(data?.snapshots) ? data.snapshots : [];
+  bandCache.set(platform, { at: now2, data: snaps });
+  return snaps;
+}
+var VERDICT_ORDER = ["buy", "only_for_fodder", "points_only", "skip", "no_prices", "no_odds"];
+async function packAdvice(db2, userId, platform, now2 = Date.now()) {
+  const [packsRes, capRes, pullsRes] = await Promise.all([
+    db2.from("pack_offers").select("*").eq("user_id", userId).eq("platform", platform),
+    db2.from("pack_store_captures").select("captured_at, pack_count, shape").eq("user_id", userId).eq("platform", platform).maybeSingle(),
+    db2.from("pack_pulls").select("item_id, ea_item_id, rating, untradeable, pack_id, opened_at, item_type").eq("user_id", userId).eq("platform", platform).order("opened_at", { ascending: false }).limit(MAX_PULLS)
+  ]);
+  fail4(packsRes.error);
+  fail4(capRes.error);
+  fail4(pullsRes.error);
+  const packs = packsRes.data ?? [];
+  const snaps = packs.length || (pullsRes.data ?? []).length ? await valueBands(db2, platform, now2) : [];
+  const latest = snaps.at(-1);
+  const advice = packs.map((p) => {
+    const odds = Array.isArray(p.odds) ? p.odds : [];
+    const pack = { ...p, odds };
+    const value = latest ? packValue(pack, latest.bands) : { ev_low: null, ev_high: null, lines: [], fodder_each: null, fodder_items: 0, notes: ["No FUT.GG prices yet."] };
+    const v = verdictFor(pack, value);
+    const ev_series = snaps.map((s) => ({ at: s.published_at, ev: packValue(pack, s.bands).ev_high })).filter((x) => x.ev !== null);
+    const timing = timingFor({ now: now2, ev_series, end_at: p.end_at, start_at: p.start_at, purchase_limit: p.purchase_limit, purchase_count: p.purchase_count, has_special: odds.some((o) => o.special), verdict: v.verdict });
+    return {
+      pack_id: p.pack_id,
+      name: p.name ?? (p.name_key ? String(p.name_key) : `Pack ${p.pack_id}`),
+      description: p.description,
+      coins: p.coins,
+      points: p.points,
+      untradeable: p.untradeable,
+      is_player_pick: p.is_player_pick,
+      item_count: p.item_count,
+      rare: p.rare,
+      end_at: p.end_at,
+      start_at: p.start_at,
+      unopened: p.unopened,
+      ev_low: value.ev_low,
+      ev_high: value.ev_high,
+      ev_after_tax: value.ev_high === null ? null : Math.round(value.ev_high * (p.untradeable ? 1 : 1 - EA_TAX)),
+      value_per_100_points: p.points && value.ev_high !== null ? Math.round(value.ev_high * (p.untradeable ? 1 : 1 - EA_TAX) / (p.points / 100)) : null,
+      ...v,
+      lines: value.lines,
+      notes: value.notes,
+      fodder_each: value.fodder_each,
+      fodder_items: value.fodder_items,
+      trend_pct: timing.trend_pct,
+      tips: timing.tips,
+      history: ev_series.map((x) => ({ t: x.at, value: x.ev }))
+    };
+  }).sort((a, b) => VERDICT_ORDER.indexOf(a.verdict) - VERDICT_ORDER.indexOf(b.verdict) || (b.ratio ?? -1) - (a.ratio ?? -1) || (b.value_per_100_points ?? -1) - (a.value_per_100_points ?? -1));
+  return {
+    platform,
+    captured_at: capRes.data?.captured_at ?? null,
+    shape: capRes.data?.shape ?? null,
+    prices_at: latest?.published_at ?? null,
+    packs: advice,
+    pulls: await pullSummary(db2, platform, pullsRes.data ?? [], new Map(packs.map((p) => [Number(p.pack_id), p]))),
+    model: [
+      "EA lists the chance of getting at least one card of each kind. The best card is assumed to sit in the highest line it hit, and every other item is fodder for the pack's quality.",
+      "Card values are FUT.GG's latest prices for every card in each rating band: the typical figure uses each band's median, the average uses its mean (so it counts the rare big pull).",
+      "Tradeable packs are judged after EA's 5% sales tax. Cheap fodder often doesn't sell at its listed price, so real returns are usually lower.",
+      "Untradeable packs can't be sold, so their value only counts if you'd otherwise buy those cards for SBCs."
+    ],
+    verified: false
+  };
+}
+async function pullSummary(db2, platform, pulls, packs) {
+  if (!pulls.length) return { opens: [], items: 0 };
+  const ids = [...new Set(pulls.map((p) => p.ea_item_id))];
+  const { data: snap, error: e1 } = await db2.from("futgg_snapshots").select("published_at").eq("game_year", 27).eq("platform", platform).order("published_at", { ascending: false }).limit(1).maybeSingle();
+  fail4(e1);
+  const price = /* @__PURE__ */ new Map();
+  if (snap?.published_at) {
+    for (let i = 0; i < ids.length; i += 300) {
+      const { data, error } = await db2.from("futgg_prices").select("ea_item_id, price").eq("game_year", 27).eq("platform", platform).eq("published_at", snap.published_at).in("ea_item_id", ids.slice(i, i + 300));
+      fail4(error);
+      for (const r2 of data ?? []) if (typeof r2.price === "number") price.set(Number(r2.ea_item_id), r2.price);
+    }
+  }
+  const opens = /* @__PURE__ */ new Map();
+  for (const p of pulls) {
+    const key = `${p.pack_id ?? "?"}|${p.opened_at.slice(0, 16)}`;
+    const o = opens.get(key) ?? { pack_id: p.pack_id, opened_at: p.opened_at, items: 0, tradeable_value: 0, untradeable_value: 0, best: null };
+    const v = price.get(p.ea_item_id) ?? null;
+    o.items++;
+    if (v) {
+      if (p.untradeable) o.untradeable_value += v;
+      else o.tradeable_value += v;
+    }
+    if (!o.best || (v ?? 0) > (o.best.price ?? 0)) o.best = { ea_item_id: p.ea_item_id, rating: p.rating, price: v };
+    opens.set(key, o);
+  }
+  return {
+    items: pulls.length,
+    opens: [...opens.values()].sort((a, b) => b.opened_at.localeCompare(a.opened_at)).slice(0, 50).map((o) => {
+      const pack = o.pack_id ? packs.get(o.pack_id) : void 0;
+      const cost = pack?.coins ? Number(pack.coins) : null;
+      return {
+        ...o,
+        pack_name: pack?.name ?? (o.pack_id ? `Pack ${o.pack_id}` : "Unknown pack"),
+        pack_coins: cost,
+        after_tax: Math.round(o.tradeable_value * (1 - EA_TAX)),
+        profit: cost ? Math.round(o.tradeable_value * (1 - EA_TAX)) - cost : null
+      };
+    })
+  };
+}
+
 // supabase/functions/_shared/fut/futgg-catalogue.ts
 var FUTGG = "https://r2.fut.gg/27";
 var EA_WEB_APP = "https://www.ea.com/ea-sports-fc/ultimate-team/web-app/";
@@ -5985,9 +6354,9 @@ var EA_POSITIONS = {
 async function getJson2(fetcher, url) {
   const res = await fetcher(url);
   if (!res.ok) throw new FutError(`${new URL(url).host} returned HTTP ${res.status} for the card list`, 502);
-  const text2 = await res.text();
-  if (text2.length > MAX_BYTES) throw new FutError("Card list file is too large", 502);
-  return JSON.parse(text2);
+  const text3 = await res.text();
+  if (text3.length > MAX_BYTES) throw new FutError("Card list file is too large", 502);
+  return JSON.parse(text3);
 }
 async function getText(fetcher, url) {
   const res = await fetcher(url);
@@ -6042,11 +6411,11 @@ function buildCatalogue(input) {
   if (names.size < 1e3) throw new FutError("EA's player name file looks incomplete", 502);
   const out = [];
   for (let i = 0; i < n; i++) {
-    const id = ids[i], name2 = names.get(basePlayerId(id)), position = EA_POSITIONS[Number(pos[i])], overall = Number(o[i]);
+    const id2 = ids[i], name2 = names.get(basePlayerId(id2)), position = EA_POSITIONS[Number(pos[i])], overall = Number(o[i]);
     if (!name2 || !position || !Number.isInteger(overall) || overall < 1 || overall > 99) continue;
     const version = rarities.get(Number(r2[i])) ?? null, v = (version ?? "").toLowerCase();
     out.push({
-      ea_item_id: id,
+      ea_item_id: id2,
       name: name2.slice(0, 60),
       version: version?.slice(0, 40) ?? null,
       overall,
@@ -6091,7 +6460,7 @@ async function syncFutggCatalogue(db2, fetcher = (u) => fetch(u, { headers: { Ac
 }
 
 // supabase/functions/_shared/fut/community.ts
-var fail4 = (error) => {
+var fail5 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var COMMUNITY_SOURCE_ID = "community_pool";
@@ -6105,24 +6474,24 @@ var H = 36e5;
 var hourOf = (iso3) => new Date(Math.floor(Date.parse(iso3) / H) * H).toISOString();
 async function getSharing(db2, userId) {
   const { data, error } = await db2.from("market_sharing").select("*").eq("user_id", userId).maybeSingle();
-  fail4(error);
+  fail5(error);
   const r2 = data;
-  const { count, error: e2 } = await db2.from("market_community_observations").select("id", { count: "exact", head: true }).eq("contributor_user_id", userId);
-  fail4(e2);
-  return { sharing: !!r2?.sharing, since: r2?.sharing && r2.updated_at ? String(r2.updated_at) : null, your_contributions: count ?? 0 };
+  const { count: count2, error: e2 } = await db2.from("market_community_observations").select("id", { count: "exact", head: true }).eq("contributor_user_id", userId);
+  fail5(e2);
+  return { sharing: !!r2?.sharing, since: r2?.sharing && r2.updated_at ? String(r2.updated_at) : null, your_contributions: count2 ?? 0 };
 }
 async function setSharing(db2, userId, on) {
-  fail4((await db2.from("market_sharing").upsert({ user_id: userId, sharing: on, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "user_id" })).error);
+  fail5((await db2.from("market_sharing").upsert({ user_id: userId, sharing: on, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "user_id" })).error);
   let deleted = 0;
   if (!on) {
-    const { count } = await db2.from("market_community_observations").select("id", { count: "exact", head: true }).eq("contributor_user_id", userId);
-    fail4((await db2.from("market_community_observations").delete().eq("contributor_user_id", userId)).error);
-    deleted = count ?? 0;
+    const { count: count2 } = await db2.from("market_community_observations").select("id", { count: "exact", head: true }).eq("contributor_user_id", userId);
+    fail5((await db2.from("market_community_observations").delete().eq("contributor_user_id", userId)).error);
+    deleted = count2 ?? 0;
   }
   return { ...await getSharing(db2, userId), deleted };
 }
-function captureContributions(text2, now2 = Date.now()) {
-  const lines = text2.trim().split(/\r?\n/);
+function captureContributions(text3, now2 = Date.now()) {
+  const lines = text3.trim().split(/\r?\n/);
   const head = (lines.shift() ?? "").split(",").map((s) => s.trim());
   const col = (n) => head.indexOf(n);
   const [iEa, iPl, iPr, iAt, iLs] = ["ea_item_id", "platform", "price", "observed_at", "listings"].map(col);
@@ -6143,16 +6512,16 @@ function captureContributions(text2, now2 = Date.now()) {
   }
   return [...best.values()];
 }
-async function contributeCaptures(db2, userId, text2) {
-  if (!/^\s*ea_item_id,/.test(text2)) return { shared: 0, sharing: false };
+async function contributeCaptures(db2, userId, text3) {
+  if (!/^\s*ea_item_id,/.test(text3)) return { shared: 0, sharing: false };
   const { sharing } = await getSharing(db2, userId);
   if (!sharing) return { shared: 0, sharing: false };
-  const rows = captureContributions(text2);
+  const rows = captureContributions(text3);
   const ids = [...new Set(rows.map((r2) => r2.ea_item_id))];
   const have = /* @__PURE__ */ new Map();
   for (let i = 0; i < ids.length; i += 100) {
     const { data, error } = await db2.from("market_community_observations").select("ea_item_id, platform, hour, price").eq("contributor_user_id", userId).in("ea_item_id", ids.slice(i, i + 100));
-    fail4(error);
+    fail5(error);
     for (const r2 of data ?? []) have.set(`${r2.ea_item_id}|${r2.platform}|${new Date(String(r2.hour)).toISOString()}`, Number(r2.price));
   }
   const fresh = rows.filter((r2) => {
@@ -6160,9 +6529,9 @@ async function contributeCaptures(db2, userId, text2) {
     return old === void 0 || r2.price < old;
   }).map((r2) => ({ ...r2, contributor_user_id: userId }));
   for (let i = 0; i < fresh.length; i += 500) {
-    fail4((await db2.from("market_community_observations").upsert(fresh.slice(i, i + 500), { onConflict: "contributor_user_id,ea_item_id,platform,hour" })).error);
+    fail5((await db2.from("market_community_observations").upsert(fresh.slice(i, i + 500), { onConflict: "contributor_user_id,ea_item_id,platform,hour" })).error);
   }
-  fail4((await db2.from("market_community_observations").delete().lte("hour", new Date(Date.now() - KEEP_DAYS * 864e5).toISOString())).error);
+  fail5((await db2.from("market_community_observations").delete().lte("hour", new Date(Date.now() - KEEP_DAYS * 864e5).toISOString())).error);
   return { shared: fresh.length, sharing: true };
 }
 var median = (xs) => {
@@ -6194,16 +6563,16 @@ async function pullCommunity(db2, userId, market) {
   const rows = [];
   for (let i = 0; i < ids.length; i += 100) {
     const { data, error } = await db2.from("market_community_observations").select("contributor_user_id, ea_item_id, platform, hour, price").in("ea_item_id", ids.slice(i, i + 100)).gte("hour", since);
-    fail4(error);
+    fail5(error);
     rows.push(...data ?? []);
   }
   const pooled = poolHours(rows.map((r2) => ({ contributor_user_id: String(r2.contributor_user_id), ea_item_id: Number(r2.ea_item_id), platform: String(r2.platform), hour: String(r2.hour), price: Number(r2.price) })), userId);
   const lines = pooled.map((p) => `${byEa.get(p.ea_item_id)},${p.platform},${p.price},${p.hour},lowest_bin`);
   const imported = lines.length ? await market.importPriceHistory(userId, ["card_id,platform,price,observed_at,kind", ...lines].join("\n"), { source_id: COMMUNITY_SOURCE_ID }) : null;
-  const { count } = await db2.from("market_sharing").select("user_id", { count: "exact", head: true }).eq("sharing", true);
+  const { count: count2 } = await db2.from("market_sharing").select("user_id", { count: "exact", head: true }).eq("sharing", true);
   return {
     source: COMMUNITY_SOURCE_ID,
-    sharers: count ?? 0,
+    sharers: count2 ?? 0,
     your_cards_with_ea_id: byEa.size,
     cards_with_community_prices: new Set(pooled.map((p) => p.ea_item_id)).size,
     observations: lines.length,
@@ -6229,32 +6598,32 @@ var REUSE_GRACE_MS = 30 * 1e3;
 
 // supabase/functions/_shared/fut/helper-keys.ts
 var HELPER_KEY_PREFIX = "xlh_";
-var HELPER_ROUTES = /* @__PURE__ */ new Set(["/helper/prices", "/helper/club"]);
-var fail5 = (error) => {
+var HELPER_ROUTES = /* @__PURE__ */ new Set(["/helper/prices", "/helper/club", "/helper/packs"]);
+var fail6 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var looksLikeHelperKey = (s) => s.startsWith(HELPER_KEY_PREFIX) && s.length >= 30 && s.length <= 80;
 async function helperKeyUser(db2, key) {
   if (!looksLikeHelperKey(key)) return null;
   const { data, error } = await db2.from("helper_keys").select("id, user_id").eq("key_hash", await hashToken(key)).is("revoked_at", null).maybeSingle();
-  fail5(error);
+  fail6(error);
   if (!data) return null;
-  fail5((await db2.from("helper_keys").update({ last_used_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", data.id)).error);
+  fail6((await db2.from("helper_keys").update({ last_used_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", data.id)).error);
   return String(data.user_id);
 }
 async function helperStatus(db2, userId) {
   const { data, error } = await db2.from("helper_keys").select("key_hint, created_at, last_used_at").eq("user_id", userId).is("revoked_at", null).maybeSingle();
-  fail5(error);
+  fail6(error);
   return data ? { connected: true, key_hint: String(data.key_hint), created_at: String(data.created_at), last_used_at: data.last_used_at ? String(data.last_used_at) : null } : { connected: false, key_hint: null, created_at: null, last_used_at: null };
 }
 async function revokeHelperKeys(db2, userId) {
-  fail5((await db2.from("helper_keys").update({ revoked_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("user_id", userId).is("revoked_at", null)).error);
+  fail6((await db2.from("helper_keys").update({ revoked_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("user_id", userId).is("revoked_at", null)).error);
   return helperStatus(db2, userId);
 }
 async function createHelperKey(db2, userId) {
   await revokeHelperKeys(db2, userId);
   const key = HELPER_KEY_PREFIX + randomString(24);
-  fail5((await db2.from("helper_keys").insert({ user_id: userId, key_hash: await hashToken(key), key_hint: key.slice(-4) })).error);
+  fail6((await db2.from("helper_keys").insert({ user_id: userId, key_hash: await hashToken(key), key_hint: key.slice(-4) })).error);
   return { key, ...await helperStatus(db2, userId) };
 }
 
@@ -6478,7 +6847,7 @@ function rebalance(def, cards, current, at) {
     else out.push(m);
     if (m.effective_to === null && want.has(m.card_id)) open.add(m.card_id);
   }
-  for (const id of want) if (!open.has(id)) out.push({ basket_id: def.id, card_id: id, effective_from: at, effective_to: null });
+  for (const id2 of want) if (!open.has(id2)) out.push({ basket_id: def.id, card_id: id2, effective_from: at, effective_to: null });
   return out;
 }
 function membersAt(members, basket_id, t) {
@@ -6498,12 +6867,12 @@ function computeIndex(basket_id, platform, members, seriesByCard, from, to, opts
   };
   for (let t = start; t <= end; t += size) {
     if (!points.length) {
-      points.push({ t: iso(t), value, constituents: membersAt(members, basket_id, t).filter((id) => fresh(seriesByCard.get(id), t)).length });
+      points.push({ t: iso(t), value, constituents: membersAt(members, basket_id, t).filter((id2) => fresh(seriesByCard.get(id2), t)).length });
       continue;
     }
     const logs = [];
-    for (const id of membersAt(members, basket_id, t)) {
-      const s = seriesByCard.get(id);
+    for (const id2 of membersAt(members, basket_id, t)) {
+      const s = seriesByCard.get(id2);
       const a = fresh(s, t - size);
       const b = fresh(s, t);
       if (a && b && a.price > 0) logs.push(Math.log(b.price / a.price));
@@ -6540,7 +6909,7 @@ var nullRound = (n, d = 2) => n === null ? null : round(n, d);
 // supabase/functions/_shared/fut/xilab/market/regime.ts
 function classifyRegime(indexes, rules = DEFAULT_MARKET_RULES) {
   const T = rules.thresholds;
-  const by = (id) => indexes.find((i) => i.basket_id === id);
+  const by = (id2) => indexes.find((i) => i.basket_id === id2);
   const market = by("market");
   const meta = by("meta");
   const promo = by("promo");
@@ -6803,14 +7172,14 @@ function analyzeTrade(input, market = { latest_price: null, freshness: null }, r
   const break_even_win_rate = loss < 0 && profit > 0 ? round4(-loss / (profit - loss)) : null;
   const p = input.assumed_target_probability;
   const user_scenario_ev = typeof p === "number" && p >= 0 && p <= 1 ? { probability: p, expected_profit: Math.round(p * profit + (1 - p) * loss), label: "Your assumption, not an XI Lab forecast." } : null;
-  const coins2 = input.coin_balance ?? null;
+  const coins3 = input.coin_balance ?? null;
   const ex = input.existing ?? { quantity: 0, cost_basis: 0 };
   const exposure = {
-    of_coins_pct: coins2 && coins2 > 0 ? round2(investment / coins2 * 100) : null,
-    affordable: coins2 === null ? null : investment <= coins2,
+    of_coins_pct: coins3 && coins3 > 0 ? round2(investment / coins3 * 100) : null,
+    affordable: coins3 === null ? null : investment <= coins3,
     position_after: { quantity: ex.quantity + q, cost_basis: ex.cost_basis + investment }
   };
-  if (exposure.affordable === false) warnings.push(`Needs ${investment.toLocaleString("en-US")} coins; you have ${coins2.toLocaleString("en-US")}. Cards you hold are not coins until sold (and taxed).`);
+  if (exposure.affordable === false) warnings.push(`Needs ${investment.toLocaleString("en-US")} coins; you have ${coins3.toLocaleString("en-US")}. Cards you hold are not coins until sold (and taxed).`);
   if (exposure.of_coins_pct !== null && exposure.of_coins_pct > 50) warnings.push(`Uses ${exposure.of_coins_pct}% of your coins on one card.`);
   const latest = market.freshness?.status === "fresh" ? market.latest_price : null;
   if (market.freshness && market.freshness.status !== "fresh") warnings.push(`No current price to check against: ${market.freshness.message}`);
@@ -6929,12 +7298,12 @@ function assertUsable(source, use) {
 }
 
 // supabase/functions/_shared/fut/xilab/shared/csv.ts
-function parseCsv(text2) {
+function parseCsv(text3) {
   const rows = [];
   let row = [];
   let field = "";
   let quoted = false;
-  const s = text2.replace(/^﻿/, "");
+  const s = text3.replace(/^﻿/, "");
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (quoted) {
@@ -6975,8 +7344,8 @@ function captureDetailsFromRow(r2) {
 
 // supabase/functions/_shared/fut/xilab/market/import.ts
 var PLATFORM_ALIASES = { console: "console", ps: "console", playstation: "console", xbox: "console", ps5: "console", xsx: "console", pc: "pc" };
-function parsePriceImport(text2, opts) {
-  const t = text2.trim();
+function parsePriceImport(text3, opts) {
+  const t = text3.trim();
   let raw;
   if (t.startsWith("[") || t.startsWith("{")) {
     const j = JSON.parse(t);
@@ -7119,30 +7488,30 @@ function summarize(card, options, locked, owned, cost, a) {
 
 // supabase/functions/_shared/fut/xilab/market/schema.ts
 var platformSchema = external_exports.enum(["console", "pc"]);
-var coins = external_exports.number().int().min(0).max(15e6);
+var coins2 = external_exports.number().int().min(0).max(15e6);
 var thesisInputSchema = external_exports.object({
   card_id: external_exports.string().min(1).max(200),
   platform: platformSchema,
   quantity: external_exports.number().int().min(1).max(100),
-  buy_price: coins.min(1),
-  target_price: coins.min(1),
-  downside_price: coins.min(0),
+  buy_price: coins2.min(1),
+  target_price: coins2.min(1),
+  downside_price: coins2.min(0),
   holding_hours: external_exports.number().min(0).max(24 * 60).optional(),
-  coin_balance: coins.nullable().optional(),
-  existing: external_exports.object({ quantity: external_exports.number().int().min(0).max(100), cost_basis: coins }).nullable().optional(),
+  coin_balance: coins2.nullable().optional(),
+  existing: external_exports.object({ quantity: external_exports.number().int().min(0).max(100), cost_basis: coins2 }).nullable().optional(),
   assumed_target_probability: external_exports.number().min(0).max(1).nullable().optional()
 });
 var watchItemInputSchema = external_exports.object({
   card_id: external_exports.string().min(1).max(200),
   platform: platformSchema,
   note: external_exports.string().max(280).nullable().optional(),
-  target_buy: coins.nullable().optional(),
-  target_sell: coins.nullable().optional()
+  target_buy: coins2.nullable().optional(),
+  target_sell: coins2.nullable().optional()
 });
 var scanRequestSchema = external_exports.object({
   platform: platformSchema.optional(),
   status: external_exports.array(external_exports.enum(["watch", "research_further", "favorable_setup", "overheated", "elevated_risk", "insufficient_evidence"])).optional(),
-  max_price: coins.optional(),
+  max_price: coins2.optional(),
   category: external_exports.enum(["base", "promo", "icon", "hero", "evolution", "live", "sbc_reward", "objective"]).optional(),
   limit: external_exports.number().int().min(1).max(200).optional(),
   offset: external_exports.number().int().min(0).max(1e5).optional()
@@ -7191,7 +7560,7 @@ function createMarketService(deps) {
   const sourceById = new Map(sources.map((s) => [s.id, s]));
   const provenance = (snap) => {
     const used = [...new Set(snap.rows.map((r2) => r2.source_id))];
-    const demo = used.some((id) => sourceById.get(id)?.is_demo);
+    const demo = used.some((id2) => sourceById.get(id2)?.is_demo);
     return { rules_version: rules.id, engine_version: MARKET_ENGINE_VERSION, as_of: snap.as_of, demo, sources: used, evidence: demo ? "hypothesis" : "estimate" };
   };
   const usable = (rows) => rows.filter((r2) => {
@@ -7208,15 +7577,15 @@ function createMarketService(deps) {
     const byId = new Map(cards.map((c) => [c.id, c]));
     const rows = usable(await deps.prices.query(owner, { platform, as_of, since: iso(ms(as_of) - LOOKBACK_H * 36e5) }));
     const series = /* @__PURE__ */ new Map();
-    for (const id of new Set(rows.map((r2) => r2.card_id))) series.set(id, toSeries(rows, id, platform, as_of));
+    for (const id2 of new Set(rows.map((r2) => r2.card_id))) series.set(id2, toSeries(rows, id2, platform, as_of));
     const members = await deps.memberships.list();
     const indexSeries = /* @__PURE__ */ new Map();
     const indexes = baskets.map((b) => {
       const ix = computeIndex(b.id, platform, members, series, iso(ms(as_of) - LOOKBACK_H * 36e5), as_of, { rules });
       indexSeries.set(b.id, ix.points.map((p) => ({ t: ms(p.t), price: p.value })));
       const ids = members.filter((m) => m.basket_id === b.id && m.effective_to === null).map((m) => m.card_id);
-      const current = ids.flatMap((id) => {
-        const s = series.get(id);
+      const current = ids.flatMap((id2) => {
+        const s = series.get(id2);
         const f2 = s && freshness(s, as_of, rules);
         return s && f2?.status === "fresh" ? [s.at(-1).price] : [];
       });
@@ -7253,9 +7622,9 @@ function createMarketService(deps) {
     const latest = fresh.status === "fresh" ? s.at(-1).price : null;
     return { series: s, fresh, rs, mom, mr, assessment, latest };
   }
-  const getCard2 = (snap, id) => {
-    const c = snap.byId.get(id);
-    if (!c) throw new MarketNotFoundError(`No card ${id}`);
+  const getCard2 = (snap, id2) => {
+    const c = snap.byId.get(id2);
+    if (!c) throw new MarketNotFoundError(`No card ${id2}`);
     return c;
   };
   async function initBaskets(at, opts = {}) {
@@ -7270,11 +7639,11 @@ function createMarketService(deps) {
   function eaResolver(cards) {
     const byEa = /* @__PURE__ */ new Map();
     for (const c of cards) if (c.ea_item_id) byEa.set(c.ea_item_id, c);
-    return (ea, asset, rating2) => {
+    return (ea, asset, rating3) => {
       const hit = byEa.get(ea);
-      if (hit && (rating2 === null || hit.rating === rating2)) return hit.id;
+      if (hit && (rating3 === null || hit.rating === rating3)) return hit.id;
       const base = asset ? byEa.get(asset) : void 0;
-      return base && rating2 !== null && base.rating === rating2 ? base.id : null;
+      return base && rating3 !== null && base.rating === rating3 ? base.id : null;
     };
   }
   function unmatchedReason(u) {
@@ -7433,7 +7802,7 @@ function createMarketService(deps) {
     async compareCardRelativeValue(owner, card_id, opts = {}) {
       const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
       const card = getCard2(snap, card_id);
-      const others = opts.others?.length ? opts.others.map((id) => getCard2(snap, id)) : comparableCards(card, snap.cards);
+      const others = opts.others?.length ? opts.others.map((id2) => getCard2(snap, id2)) : comparableCards(card, snap.cards);
       const row = (c) => {
         const s = snap.series.get(c.id) ?? [];
         const f2 = freshness(s, snap.as_of, rules);
@@ -7507,13 +7876,13 @@ function createMarketService(deps) {
       await deps.watchlists.remove(owner, card_id, platform);
     },
     /** Import a CSV/JSON price history the user owns. Rows stay private to them. */
-    async importPriceHistory(owner, text2, opts = {}) {
-      const captured = /^\s*ea_item_id,/.test(text2);
+    async importPriceHistory(owner, text3, opts = {}) {
+      const captured = /^\s*ea_item_id,/.test(text3);
       const source = sourceById.get(opts.source_id ?? (captured ? "web_app_capture" : "user_import"));
       assertUsable(source, "storage");
       const cards = await deps.cards.list(owner);
       const resolveEaItem = eaResolver(cards);
-      const res = parsePriceImport(text2, { source, received_at: opts.received_at ?? now2(), knownCardIds: new Set(cards.map((c) => c.id)), rules, resolveEaItem });
+      const res = parsePriceImport(text3, { source, received_at: opts.received_at ?? now2(), knownCardIds: new Set(cards.map((c) => c.id)), rules, resolveEaItem });
       const rejected = [...res.rejected];
       let held = 0;
       if (res.unmatched.length && deps.holds) held = (await deps.holds.hold(owner, res.unmatched)).held;
@@ -7581,7 +7950,7 @@ function createMarketService(deps) {
 }
 
 // supabase/functions/_shared/fut/market.ts
-var fail6 = (error) => {
+var fail7 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var iso2 = (v) => v === null || v === void 0 ? null : new Date(String(v)).toISOString();
@@ -7637,7 +8006,7 @@ async function allPages(make) {
   const out = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await make().range(from, from + PAGE - 1);
-    fail6(error);
+    fail7(error);
     out.push(...data ?? []);
     if (!data || data.length < PAGE) return out;
     if (out.length >= 2e5) throw new FutError("Too much price history to analyse at once.", 413);
@@ -7792,9 +8161,9 @@ var PgPriceStore = class {
     const existing = await allPages(() => this.db.from("market_price_observations").select("card_id, platform, observed_at, source_id").eq("owner_user_id", owner).in("card_id", ids));
     const have = new Set(existing.map((r2) => `${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
     const fresh = rows.filter((r2) => !have.has(`${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
-    const { count, error } = await this.db.from("market_price_observations").select("id", { count: "exact", head: true }).eq("owner_user_id", owner);
-    fail6(error);
-    if ((count ?? 0) + fresh.length > MAX_PRICE_ROWS_PER_USER) throw new FutError(`You can keep up to ${MAX_PRICE_ROWS_PER_USER.toLocaleString("en-US")} price rows.`);
+    const { count: count2, error } = await this.db.from("market_price_observations").select("id", { count: "exact", head: true }).eq("owner_user_id", owner);
+    fail7(error);
+    if ((count2 ?? 0) + fresh.length > MAX_PRICE_ROWS_PER_USER) throw new FutError(`You can keep up to ${MAX_PRICE_ROWS_PER_USER.toLocaleString("en-US")} price rows.`);
     for (let i = 0; i < fresh.length; i += 500) {
       const chunk = fresh.slice(i, i + 500).map((r2) => ({
         card_id: r2.card_id,
@@ -7810,7 +8179,7 @@ var PgPriceStore = class {
         evidence: r2.evidence,
         quality: r2.quality ?? null
       }));
-      fail6((await this.db.from("market_price_observations").insert(chunk)).error);
+      fail7((await this.db.from("market_price_observations").insert(chunk)).error);
     }
     if (fresh.length) forgetMarketOwner(this.db, owner);
     return { inserted: fresh.length, skipped: rows.length - fresh.length };
@@ -7831,11 +8200,11 @@ var PgMembershipStore = class {
     const def = DEFAULT_BASKETS.find((b) => b.id === basket_id);
     if (def) {
       const { data, error } = await this.db.from("market_baskets").select("id").eq("id", basket_id).maybeSingle();
-      fail6(error);
-      if (!data) fail6((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
+      fail7(error);
+      if (!data) fail7((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
     }
-    fail6((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
-    if (rows.length) fail6((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
+    fail7((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
+    if (rows.length) fail7((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
   }
 };
 var PgWatchlistStore = class {
@@ -7844,7 +8213,7 @@ var PgWatchlistStore = class {
   }
   async list(owner) {
     const { data, error } = await this.db.from("market_watchlist").select("*").eq("user_id", owner).order("added_at", { ascending: true }).limit(200);
-    fail6(error);
+    fail7(error);
     return (data ?? []).map((r2) => ({
       card_id: String(r2.card_id),
       platform: r2.platform,
@@ -7857,15 +8226,15 @@ var PgWatchlistStore = class {
     }));
   }
   async upsert(owner, w) {
-    const { count, error } = await this.db.from("market_watchlist").select("card_id", { count: "exact", head: true }).eq("user_id", owner);
-    fail6(error);
-    fail6((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
-    if ((count ?? 0) >= 200) throw new FutError("Your watchlist can hold up to 200 cards.");
-    fail6((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
+    const { count: count2, error } = await this.db.from("market_watchlist").select("card_id", { count: "exact", head: true }).eq("user_id", owner);
+    fail7(error);
+    fail7((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
+    if ((count2 ?? 0) >= 200) throw new FutError("Your watchlist can hold up to 200 cards.");
+    fail7((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
     return w;
   }
   async remove(owner, card_id, platform) {
-    fail6((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
+    fail7((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
   }
 };
 var PgCaptureHoldStore = class {
@@ -7877,7 +8246,7 @@ var PgCaptureHoldStore = class {
     const fresh = [...new Map(rows.filter((r2) => !have.has(holdKey(r2))).map((r2) => [holdKey(r2), r2])).values()];
     if (have.size + fresh.length > MAX_HELD_CAPTURES_PER_USER) throw new FutError(`You can keep up to ${MAX_HELD_CAPTURES_PER_USER.toLocaleString("en-US")} captured prices for cards you haven't added yet. Add those cards or link them first.`);
     for (let i = 0; i < fresh.length; i += 500)
-      fail6((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
+      fail7((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
         user_id: owner,
         ea_item_id: r2.ea_item_id,
         asset_id: r2.asset_id,
@@ -7893,7 +8262,7 @@ var PgCaptureHoldStore = class {
     const out = [];
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await this.db.from("market_capture_holds").select("*").eq("user_id", owner).order("observed_at", { ascending: true }).range(from, from + PAGE - 1);
-      fail6(error);
+      fail7(error);
       const rows = data ?? [];
       for (const r2 of rows)
         out.push({
@@ -7908,7 +8277,7 @@ var PgCaptureHoldStore = class {
   }
   async release(owner, rows) {
     for (const r2 of rows)
-      fail6((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
+      fail7((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
   }
 };
 var holdKey = (h) => `${h.ea_item_id}|${h.observation.platform}|${new Date(h.observation.observed_at).toISOString()}`;
@@ -7944,7 +8313,7 @@ var PgMarketCardSource = class {
 };
 async function marketSources(db2) {
   const { data, error } = await db2.from("market_price_sources").select("*").order("id", { ascending: true });
-  fail6(error);
+  fail7(error);
   return (data ?? []).map((r2) => ({
     id: String(r2.id),
     name: String(r2.name),
@@ -7958,7 +8327,7 @@ async function marketSources(db2) {
 }
 async function marketRules(db2) {
   const { data, error } = await db2.from("market_rule_versions").select("*").eq("is_active", true).maybeSingle();
-  fail6(error);
+  fail7(error);
   if (!data) throw new FutError("Market rules aren't set up yet.", 503);
   return { id: String(data.id), status: data.status, notes: String(data.notes), ...data.body };
 }
@@ -8001,6 +8370,7 @@ var json = (body2, status = 200) => new Response(JSON.stringify(body2), { status
 var err = (status, message) => json({ error: message }, status);
 var MAX_BODY = 64 * 1024;
 var MAX_IMPORT_BODY = 1024 * 1024;
+var MAX_STORE_BODY = 2 * 1024 * 1024;
 var MAX_CLUB_BODY = 4 * 1024 * 1024;
 async function body(req, max = MAX_BODY) {
   const raw = await req.text();
@@ -8098,7 +8468,7 @@ async function handle(req, deps) {
   if (!path.startsWith("/v1")) return err(404, "This API is /fut-api/v1.");
   const route = path.slice(3) || "/";
   const m = req.method;
-  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices and your club.");
+  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices, your club and the pack store.");
   const db2 = deps.db;
   if (m !== "GET") forgetMarketOwner(db2, userId);
   try {
@@ -8120,22 +8490,25 @@ async function handle(req, deps) {
     }
     const card = route.match(/^\/cards\/([^/]+)$/);
     if (card) {
-      const id = card[1];
+      const id2 = card[1];
       if (m === "GET") {
-        const c = await getCard(db2, userId, id);
+        const c = await getCard(db2, userId, id2);
         return c ? json({ data: c }) : err(404, "Card not found.");
       }
       if (m === "PUT") {
-        const c = await updateCard(db2, userId, id, parseCardInput(await body(req)));
+        const c = await updateCard(db2, userId, id2, parseCardInput(await body(req)));
         return c ? json({ data: c }) : err(404, "Card not found.");
       }
-      if (m === "DELETE") return await deleteCard(db2, userId, id) ? json({ data: { deleted: id } }) : err(404, "Card not found.");
+      if (m === "DELETE") return await deleteCard(db2, userId, id2) ? json({ data: { deleted: id2 } }) : err(404, "Card not found.");
       return err(405, "Use GET, PUT or DELETE.");
     }
     if (route === "/helper" && m === "GET") return json({ data: await helperStatus(db2, userId) });
     if (route === "/helper" && m === "DELETE") return json({ data: await revokeHelperKeys(db2, userId) });
     if (route === "/helper/connect" && m === "POST") return json({ data: await createHelperKey(db2, userId) }, 201);
     if (route === "/helper/prices" && m === "POST") return json({ data: await importPrices(db2, userId, await body(req, MAX_IMPORT_BODY)) });
+    if (route === "/helper/packs" && m === "POST") return json({ data: await importStore(db2, userId, await body(req, MAX_STORE_BODY)) });
+    if (route === "/packs" && m === "GET") return json({ data: await packAdvice(db2, userId, platformParam(url.searchParams.get("platform"))) });
+    if (route === "/packs" && m === "DELETE") return json({ data: await clearStore(db2, userId, platformParam(url.searchParams.get("platform"))) });
     if ((route === "/club/import" || route === "/helper/club") && m === "POST") {
       const result = await importClub(db2, userId, await body(req, MAX_CLUB_BODY));
       let prices_linked = 0;
@@ -8211,9 +8584,9 @@ async function handle(req, deps) {
       }
       const one = route.match(/^\/squads\/([^/]+)$/);
       if (one) {
-        const id = decodeURIComponent(one[1]);
-        if (m === "GET") return json({ data: await runWorkspace(() => ws.getSquad(userId, id)) });
-        if (m === "DELETE") return await deleteSquad(db2, userId, id) ? json({ data: { deleted: id } }) : err(404, "Squad not found.");
+        const id2 = decodeURIComponent(one[1]);
+        if (m === "GET") return json({ data: await runWorkspace(() => ws.getSquad(userId, id2)) });
+        if (m === "DELETE") return await deleteSquad(db2, userId, id2) ? json({ data: { deleted: id2 } }) : err(404, "Squad not found.");
         return err(405, "Use GET or DELETE (save with POST /squads).");
       }
     }
@@ -8280,12 +8653,12 @@ async function handle(req, deps) {
       if (route === "/market/feeds/fc27-market" && m === "GET") return json({ data: await fc27MarketStatus(db2) });
       if (route === "/market/feeds/futgg" && m === "GET") return json({ data: await futggStatus(db2) });
       if (route === "/market/cards" && m === "GET") {
-        const p2 = url.searchParams, text2 = (k) => (p2.get(k) ?? "").trim() || null;
-        const position = text2("position"), type = text2("type"), sort = text2("sort") ?? "price_desc";
+        const p2 = url.searchParams, text3 = (k) => (p2.get(k) ?? "").trim() || null;
+        const position = text3("position"), type = text3("type"), sort = text3("sort") ?? "price_desc";
         if (position && !/^(GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST)$/.test(position)) throw new FutError("position must be a position code like ST or CB.");
         if (type && !["icon", "hero", "promo", "base"].includes(type)) throw new FutError("type must be icon, hero, promo or base.");
         if (!["price_desc", "price_asc", "rating_desc", "change_desc", "change_asc", "name"].includes(sort)) throw new FutError("Unknown sort.");
-        const q = text2("q");
+        const q = text3("q");
         if (q && q.length > 60) throw new FutError("Search is too long.");
         const { data, error } = await db2.rpc("futgg_market_cards", {
           p_platform: platformParam(p2.get("platform")),

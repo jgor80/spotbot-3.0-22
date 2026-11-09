@@ -1,5 +1,5 @@
 // Helper keys (Jeff, 2026-11-02): the XI Lab browser helper uploads what it captured (prices, club) straight to
-// the user's XI Lab account instead of the user downloading a file and importing it. A key can ONLY call the two
+// the user's XI Lab account instead of the user downloading a file and importing it. A key can ONLY call the
 // upload routes; it can't read squads, cards or prices. One active key per user; making a new one turns the old one
 // off. Only a SHA-256 hash is stored, so the key is shown once.
 import { hashToken, randomString } from "../mcp-tokens.ts";
@@ -7,7 +7,7 @@ import { FutDbError, type FutDb } from "./service.ts";
 
 export const HELPER_KEY_PREFIX = "xlh_";
 /** The only routes a helper key may call. */
-export const HELPER_ROUTES = new Set(["/helper/prices", "/helper/club"]);
+export const HELPER_ROUTES = new Set(["/helper/prices", "/helper/club", "/helper/packs"]);
 
 const fail = (error: { message?: string } | null) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
