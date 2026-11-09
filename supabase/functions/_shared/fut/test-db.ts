@@ -1,6 +1,6 @@
 // In-memory stand-in for the supabase-js query builder on the `fut` schema, for the XI Lab tests only.
 // Supports the calls the FUT services make: select (with count/head), insert(...).select().single(), upsert,
-// update, delete, eq, in, is, gte, lte, order, limit, range, maybeSingle, single.
+// update, delete, eq, in, ilike, is, gte, lte, order, limit, range, maybeSingle, single.
 type Row = Record<string, unknown>;
 
 export function futMemoryDb(tables: Record<string, Row[]> = {}) {
@@ -61,6 +61,11 @@ export function futMemoryDb(tables: Record<string, Row[]> = {}) {
         delete: () => { mode = "delete"; return q; },
         eq: (c: string, v: unknown) => { filters.push((r) => (r[c] ?? null) === v); return q; },
         in: (c: string, v: unknown[]) => { filters.push((r) => v.includes(r[c])); return q; },
+        ilike: (c: string, pattern: string) => {
+          const re = new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*").replace(/_/g, ".")}$`, "is");
+          filters.push((r) => typeof r[c] === "string" && re.test(r[c] as string));
+          return q;
+        },
         is: (c: string, v: null) => { filters.push((r) => (r[c] ?? null) === v); return q; },
         // ISO timestamps and numbers both compare correctly as-is.
         gte: (c: string, v: string | number) => { filters.push((r) => r[c] !== null && r[c] !== undefined && (r[c] as string | number) >= v); return q; },
