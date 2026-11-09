@@ -327,6 +327,8 @@ function createEvents(deps) {
   const canManageClub = deps.canManageClub || (async (member) => isManager(member));
   let client = null;
   let ticking = false;
+  // Series occurrences already warned about, so a retry every minute logs once
+  const seriesRetryWarned = new Set();
   const prefsCache = new Map();
   const memberFetchAt = new Map();
   const manualRemindAt = new Map();
@@ -1560,15 +1562,29 @@ function createEvents(deps) {
         continue;
       }
 
-      // Advance first so a failure can't post the same occurrence twice
+      // The series moves on only once this occurrence is posted (or already was). A failed fetch or send
+      // leaves next_at here, so the next tick retries it until kick-off; the loop above then skips it.
+      // Ticks never overlap (`ticking`), and the existing-row check stops a second post.
       const after = T.addLocalDays(nextAt, 7 * s.interval_weeks, s.timezone);
-      await supabase.from('event_series').update({ next_at: after.toISOString(), updated_at: now.toISOString() }).eq('id', s.id);
+      const advance = () => supabase.from('event_series').update({ next_at: after.toISOString(), updated_at: now.toISOString() }).eq('id', s.id);
+      const retryLater = (why) => {
+        const key = `${s.id}:${nextAt.getTime()}`;
+        if (!seriesRetryWarned.has(key)) console.warn(`[events] series ${s.id}: ${why}; retrying until kick-off`);
+        seriesRetryWarned.add(key);
+      };
 
-      const { data: existing } = await supabase.from('availability_events').select('id').eq('series_id', s.id).eq('scheduled_at', nextAt.toISOString()).maybeSingle();
-      if (existing) continue;
+      const { data: existing, error: existingError } = await supabase.from('availability_events').select('id').eq('series_id', s.id).eq('scheduled_at', nextAt.toISOString()).maybeSingle();
+      if (existingError) {
+        retryLater(`lookup failed (${existingError.message})`);
+        continue;
+      }
+      if (existing) {
+        await advance();
+        continue;
+      }
       const channel = await guild.channels.fetch(s.channel_id).catch(() => null);
       if (!channel || missingChannelPerms(channel, guild.members.me).length) {
-        console.warn(`[events] series ${s.id}: can't post in ${s.channel_id}`);
+        retryLater(`can't post in ${s.channel_id}`);
         continue;
       }
       const club = s.club_key ? await clubFor(s.guild_id, s.club_key) : null;
@@ -1592,7 +1608,9 @@ function createEvents(deps) {
           channel_id: s.channel_id,
         },
         channel
-      ).catch((err) => console.warn(`[events] series ${s.id} post failed: ${err.message}`));
+      )
+        .then(() => advance())
+        .catch((err) => retryLater(`post failed (${err.message})`));
     }
   }
 
