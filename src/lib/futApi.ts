@@ -45,8 +45,14 @@ export interface RuleInfo { rule_version?: string; rule_status?: string; evidenc
 /** EA player faces on cards: only when the server's FUT_EA_FACES switch is on. Faces load straight from EA. */
 export interface CardImages { faces: boolean; portrait_base: string | null; credit: string | null }
 export interface FutHealth extends RuleInfo { ok?: boolean; api?: string; card_images?: CardImages }
+export type LinkType = "club" | "league" | "nation";
+export interface LinkBreakdown { key: string | null; count: number; points: number; next_threshold: number | null; needed_for_next: number | null }
+export interface PlayerChemistry {
+  slot: string; card_id?: string; name: string; chemistry: number; in_position?: boolean; links?: Record<LinkType, number>;
+  manager_bonus?: number; breakdown?: Record<LinkType, LinkBreakdown>; notes?: string[];
+}
 export interface Chemistry extends RuleInfo {
-  chemistry: { total: number; players: { slot: string; name: string; chemistry: number; links?: unknown }[] };
+  chemistry: { total: number; players: PlayerChemistry[] };
   fit: { slots: unknown; average: number; evidence: "estimate" };
 }
 export interface SwapPreview extends RuleInfo {
@@ -69,6 +75,13 @@ export interface SquadImportEntry { slot?: string | null; position?: string | nu
 export interface SquadImportOption { card: SlotCard; version: string | null; score: number }
 export interface SquadImportRow { input: SquadImportEntry; slot: string | null; card: SlotCard | null; version: string | null; confidence: "sure" | "likely" | "check" | "missing"; options: SquadImportOption[]; reason?: string }
 export interface SquadImportResult { squad: FutSquad; rows: SquadImportRow[]; formation_changed: string | null; cleared: string[]; via: "list" | "ai"; note: string | null }
+export type SuggestBy = "ovr" | "chem";
+export interface BestSquad { formation: string; squad: FutSquad; chemistry: number; rating: number; filled: number; empty: string[] }
+export interface BestSquadResult { by: SuggestBy; owned_cards: number; results: BestSquad[] }
+export interface SlotSuggestion { card: SlotCard; team_chemistry: number; chemistry: number; change: number }
+export interface SlotSuggestions { slot: string; position: string; before: number; suggestions: SlotSuggestion[] }
+export interface CardRole { position: string; role: string; level: "plus" | "plusplus" }
+export type SquadRoles = Record<string, { position: string; roles: CardRole[] }>;
 export interface SquadImportImage { media_type: "image/jpeg" | "image/png" | "image/webp" | "image/gif"; data: string }
 export class FutApiError extends Error {
   constructor(message: string, public status?: number) { super(message); this.name = "FutApiError"; }
@@ -261,6 +274,9 @@ export const futApi = {
   deleteSquad: (id: string) => futRequest(`/squads/${encodeURIComponent(id)}`, "DELETE"),
   chemistry: (squad: FutSquad | string) => futRequest<Chemistry>("/squads/chemistry", "POST", { squad: typeof squad === "string" ? squad : withBudget(squad) }),
   diagnose: (squad: FutSquad, slot?: string) => futRequest<RuleInfo & Record<string, unknown>>("/squads/diagnose", "POST", { squad: withBudget(squad), ...(slot ? { slot } : {}) }),
+  bestSquad: (squad: FutSquad, by: SuggestBy, formation: string) => futRequest<BestSquadResult>("/squads/best", "POST", { squad: withBudget(squad), by, formation }),
+  suggestSlot: (squad: FutSquad, slot: string, by: SuggestBy) => futRequest<SlotSuggestions>("/squads/suggest", "POST", { squad: withBudget(squad), slot, by }),
+  squadRoles: (squad: FutSquad) => futRequest<SquadRoles>("/squads/roles", "POST", { squad: withBudget(squad) }),
   importSquad: (squad: FutSquad, input: { text?: string; image?: SquadImportImage }) => futRequest<SquadImportResult>("/squads/import", "POST", { squad: withBudget(squad), ...input }),
   preview: (squad: FutSquad, slot: string, cardId: string | null) => futRequest<SwapPreview>("/squads/preview", "POST", { squad: withBudget(squad), slot, ...(cardId === null ? { card: null } : { card_id: cardId }) }),
   optimize: (squad: FutSquad, goal: { slot?: string; slot_target?: number; total_target?: number }, options: { budget?: number; max_swaps: number; allow_manager_change: boolean; allow_net_loss: boolean }) => { optimizerRules.parse(options); return futRequest<Optimization>("/squads/optimize", "POST", { squad: withBudget(squad), goal, options: { ...options, budget: squadBudget(options.budget) } }); },
