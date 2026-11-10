@@ -14,7 +14,7 @@ Status: open · accepted · wontfix · false-alarm · escaped · dismissed · se
 | RP-0008 | 2026-11-08 | seed A | skep, corr, adv | Medium | High | Approved link suggestion stays pending | open | check on main |
 | RP-0009 | 2026-11-08 | seed B | skep, corr, adv | High | Medium | Discord pack with no hint never credited | accepted | fixed later d6deedc |
 | RP-0010 | 2026-11-08 | seed B | sec, skep, corr | Medium | Medium | Stale Lemon webhook revives ended plan | accepted | fixed later d6deedc |
-| RP-0011 | 2026-11-08 | seed B | skep, corr, adv | Medium | Medium | Second web subscription instead of upgrade | open | no fix found |
+| RP-0011 | 2026-11-08 | seed B | skep, corr, adv | Medium | Medium | Second web subscription instead of upgrade | accepted | fixed e06e5b6 (billing checkoutPlan refuses a second plan) |
 | RP-0012 | 2026-11-08 | seed B | skep, corr | Medium | Medium | Stranded reservation never refunded | seed-caught | fixed 11daef3 |
 | RP-0013 | 2026-11-08 | seed B | — | Medium | — | Welcome images farmable per server | seed-missed | security raised as open question only; correctness called it correct. Fixed 11daef3 |
 | RP-0014 | 2026-11-08 | seed C | skep, corr, adv, maint | High | Medium | Player W/D/L from fields EA doesn't send | seed-caught | fixed a63ad36 |
