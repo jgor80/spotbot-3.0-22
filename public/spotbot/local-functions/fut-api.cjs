@@ -7988,12 +7988,12 @@ async function findPlayers(db2, userId, input, env, fetchFn = fetch, hooks = {})
 }
 
 // supabase/functions/_shared/fut/card-images.ts
-var OFF = { faces: false, portrait_base: null, credit: null };
+var OFF = { faces: false, portrait_base: null, background_base: null, credit: null };
 var FOUND_FOR = 6 * 36e5;
 var MISSED_FOR = 10 * 6e4;
 var cached = null;
 function facesOn(env) {
-  return (env("FUT_EA_FACES") ?? "").trim().toLowerCase() === "on";
+  return ["FUT_EA_IMAGES", "FUT_EA_FACES"].some((k) => (env(k) ?? "").trim().toLowerCase() === "on");
 }
 async function cardImages(env, fetcher, now2 = Date.now()) {
   if (!facesOn(env)) return OFF;
@@ -8001,7 +8001,7 @@ async function cardImages(env, fetcher, now2 = Date.now()) {
     let base = null;
     try {
       const res = await fetcher(EA_WEB_APP);
-      if (res.ok) base = `${eaContentBase(await res.text())}items/images/mobile/portraits/`;
+      if (res.ok) base = `${eaContentBase(await res.text())}items/images/`;
       else await res.body?.cancel();
     } catch (e) {
       console.warn("[fut-api] EA Web App folder lookup failed:", e instanceof Error ? e.message : e);
@@ -8009,7 +8009,12 @@ async function cardImages(env, fetcher, now2 = Date.now()) {
     cached = { base: base ?? cached?.base ?? null, at: now2 };
   }
   if (!cached.base) return OFF;
-  return { faces: true, portrait_base: cached.base, credit: "Player faces \xA9 EA, loaded from EA's FC Web App" };
+  return {
+    faces: true,
+    portrait_base: `${cached.base}mobile/portraits/`,
+    background_base: `${cached.base}backgrounds/itemBGs/large/`,
+    credit: "Player faces and card backgrounds \xA9 EA, loaded from EA's FC Web App"
+  };
 }
 
 // supabase/functions/_shared/fut/community.ts
