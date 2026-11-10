@@ -161,8 +161,10 @@ export interface PackAdviceItem {
   trend_pct: number | null; tips: string[]; history: { t: string; value: number }[];
 }
 export interface PackOpening { pack_id: number | null; pack_name: string; pack_coins: number | null; opened_at: string; items: number; tradeable_value: number; untradeable_value: number; after_tax: number; profit: number | null; best: { ea_item_id: number; rating: number | null; price: number | null } | null }
+/** A store-like answer the helper saw (address with ids as N, top-level field names) and how much it could read. */
+export interface PackStoreSeen { path: string; keys: string[]; packs: number; odds: number; at: string | null }
 export interface PackAdvice {
-  platform: MarketPlatform; captured_at: string | null; prices_at: string | null; shape: { pack_keys?: string[]; odds_keys?: string[]; category_keys?: string[] } | null;
+  platform: MarketPlatform; captured_at: string | null; prices_at: string | null; shape: { pack_keys?: string[]; odds_keys?: string[]; category_keys?: string[]; seen?: PackStoreSeen[]; seen_at?: string } | null;
   packs: PackAdviceItem[]; pulls: { items: number; opens: PackOpening[] }; model: string[]; verified: false;
 }
 export type AccountTradeState = "listed" | "sold" | "expired" | "unlisted" | "winning" | "outbid" | "won" | "lost" | "watching";

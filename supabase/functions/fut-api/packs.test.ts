@@ -127,6 +127,13 @@ Deno.test("routes: the helper key uploads the store, the user gets advice, nobod
   await call("POST", "/v1/helper/packs", { ...file, packs: [pack], pulls: [] }, { authorization: `Bearer ${key}` });
   assert((await call("GET", "/v1/packs")).data.data.packs.length === 1, "store list replaced");
   assert((await call("GET", "/v1/packs", undefined, { "x-test-user": OTHER })).data.data.packs.length === 0, "private to the uploader");
+  // Helper 0.7.0: store answers seen with no packs read are kept for the page, and the stored packs stay.
+  const seen = [{ path: "/store/vN/list", keys: ["groups", "x".repeat(80)], packs: 0, odds: 0, at: new Date().toISOString() }, { nope: 1 }];
+  const miss = await call("POST", "/v1/helper/packs", { ...file, packs: [], pulls: [], shape: { pack_keys: [], seen } }, { authorization: `Bearer ${key}` });
+  assert(miss.status === 200 && miss.data.data.packs === 0, JSON.stringify(miss.data));
+  const afterMiss = (await call("GET", "/v1/packs")).data.data;
+  assert(afterMiss.packs.length === 1 && afterMiss.shape.seen.length === 1 && afterMiss.shape.seen[0].path === "/store/vN/list", JSON.stringify(afterMiss.shape));
+  assert(JSON.stringify(afterMiss.shape.seen[0].keys) === '["groups"]' && afterMiss.shape.pack_keys.includes("packOdds"), "long names dropped, earlier field names kept");
   assert((await call("DELETE", "/v1/packs?platform=console")).data.data.cleared === true, "clear");
   assert((await call("GET", "/v1/packs")).data.data.packs.length === 0 && db.tables.pack_pulls!.length === 0, "cleared");
 });

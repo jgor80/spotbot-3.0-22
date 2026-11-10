@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock, Package, Trash2 } from "lucide-react";
-import { futApi, futKeys, type PackAdviceItem, type PackVerdict } from "@/lib/futApi";
+import { futApi, futKeys, type PackAdviceItem, type PackStoreSeen, type PackVerdict } from "@/lib/futApi";
 import { ErrorNotice } from "@/components/fut/FutShared";
 import { HelperDownload } from "@/components/fut/HelperDownload";
 import { Badge } from "@/components/ui/badge";
@@ -56,12 +56,25 @@ function PackCard({ pack }: { pack: PackAdviceItem }) {
   </article>;
 }
 
+/** What the helper saw in the Store (addresses and field names only), so a store it couldn't read can be fixed. */
+function SeenStore({ seen, missed }: { seen: PackStoreSeen[]; missed: boolean }) {
+  return <div className="space-y-2 rounded-lg border border-border bg-card p-4 text-left text-sm">
+    <h3 className="font-semibold">{missed ? "The helper saw the Store but couldn't read any packs from it" : "Store answers the helper saw"}</h3>
+    {missed && <p className="text-muted-foreground">EA's FC 27 store doesn't look the way the helper expects yet. Send a screenshot of this box and it can be taught to read it. Only addresses and field names are listed, never your data.</p>}
+    <ul className="space-y-2">{seen.map((x, i) => <li key={i} className="min-w-0 border-t border-border pt-2">
+      <p className="break-all font-mono text-xs">{x.path}</p>
+      <p className="text-xs text-muted-foreground">{x.packs} packs, {x.odds} odds lines read{x.at ? ` · ${dateText(x.at)}` : ""}</p>
+      <p className="break-words font-mono text-xs text-muted-foreground">Fields: {x.keys.join(", ") || "–"}</p>
+    </li>)}</ul>
+  </div>;
+}
+
 function Empty() {
   return <div className="space-y-4 border-y border-border py-10 text-center">
     <Package className="mx-auto h-10 w-10 text-muted-foreground" />
     <h2 className="font-display text-xl">No packs yet</h2>
     <ol className="mx-auto max-w-lg list-decimal space-y-1 pl-5 text-left text-sm text-muted-foreground">
-      <li>Install the XI Lab helper (v0.5.0 or newer) and connect it in Market Lab → Import prices.</li>
+      <li>Install the XI Lab helper (v0.7.0 or newer), reload it in chrome://extensions, then reload the Web App and connect the helper in Market Lab → Import prices.</li>
       <li>In the EA FC Web App, open <strong>Store → Packs</strong> and look through the tabs.</li>
       <li>Open a pack's odds (Pack Probability) so the helper can read them.</li>
       <li>Come back here: the helper uploads within a few minutes.</li>
@@ -76,10 +89,11 @@ export default function PackAdvisorPage() {
   const clear = useMutation({ mutationFn: () => futApi.packs.clear(context.platform), onSuccess: () => qc.invalidateQueries({ queryKey: futKeys.packs }) });
   const d = query.data;
   const opens = d?.pulls.opens ?? [];
+  const seen = d?.shape?.seen ?? [];
   return <MarketShell title="Pack Advisor" showTabs={false} {...context}>
     <ErrorNotice error={query.error || clear.error} />
     <p className="text-sm text-muted-foreground">Which store packs are worth your coins, and when to open them. The helper copies the packs, prices and EA's pack odds from the Store screen when you open it; card values come from FUT.GG's latest prices. It never buys or opens anything.</p>
-    {query.isPending ? <MarketLoading /> : d && (d.packs.length === 0 && opens.length === 0 ? <Empty /> : <>
+    {query.isPending ? <MarketLoading /> : d && (d.packs.length === 0 && opens.length === 0 ? <>{seen.length > 0 && <SeenStore seen={seen} missed />}<Empty /></> : <>
       <p className="text-xs text-muted-foreground">Store seen {d.captured_at ? dateText(d.captured_at) : "–"} · Prices from FUT.GG {d.prices_at ? dateText(d.prices_at) : "not loaded yet"} · Estimates, not checked against FC 27 yet</p>
       <Section title="Packs in the store">
         {d.packs.length ? <div className="grid items-start gap-4 lg:grid-cols-2">{d.packs.map(p => <PackCard key={p.pack_id} pack={p} />)}</div>
@@ -90,6 +104,7 @@ export default function PackAdvisorPage() {
       </Section>
       <Section title="How it's worked out">
         <Notes items={d.model} />
+        {seen.length > 0 && <details className="text-sm"><summary className="cursor-pointer text-muted-foreground">Store answers the helper saw</summary><div className="mt-2"><SeenStore seen={seen} missed={false} /></div></details>}
         {d.shape && <details className="text-sm"><summary className="cursor-pointer text-muted-foreground">Store fields the helper saw</summary><p className="mt-2 break-words font-mono text-xs text-muted-foreground">{[...(d.shape.pack_keys ?? []), ...(d.shape.odds_keys ?? []), ...(d.shape.category_keys ?? [])].join(", ") || "–"}</p></details>}
         <Button variant="outline" size="sm" disabled={clear.isPending} onClick={() => { if (window.confirm("Delete the stored packs and pack openings for this platform? The helper uploads the store again next time you open it.")) clear.mutate(); }}><Trash2 className="mr-2 h-4 w-4" />Clear stored packs</Button>
       </Section>
