@@ -20,7 +20,7 @@ function eaSyncBody({ activeClubs, date, skipped = [] }) {
 // Same opt-in as XI Lab (FUT_ENABLED=true); FUTGG_SYNC=off pauses just this job
 const futggOn = () => process.env.FUT_ENABLED === 'true' && process.env.FUTGG_SYNC !== 'off';
 const FUTGG_STALE_MS = 12 * 60 * 60 * 1000;
-async function futggPrices({ supabase, callFunction, syncFutggPrices = require('./futgg-sync.cjs').syncFutggPrices }) {
+async function futggPrices({ supabase, callFunction, sendDM, syncFutggPrices = require('./futgg-sync.cjs').syncFutggPrices }) {
   if (!futggOn()) return;
   const result = await syncFutggPrices(supabase.schema('fut'));
   console.log('⏰ futgg-prices:', JSON.stringify(result));
@@ -29,6 +29,29 @@ async function futggPrices({ supabase, callFunction, syncFutggPrices = require('
   const { data, error } = await callFunction('fut-api', { job: 'futgg-catalogue' }, 280000);
   if (error) throw new Error(`futgg-catalogue: ${error?.message || error}`);
   console.log('⏰ futgg-catalogue:', JSON.stringify(data?.data ?? data));
+  await priceAlerts({ supabase, callFunction, sendDM });
+}
+// Market Lab price alerts after each refresh: fut-api says what fired per website account; the bot DMs the
+// Discord account linked to it. PRICE_ALERTS=off pauses just this.
+async function priceAlerts({ supabase, callFunction, sendDM }) {
+  if (!futggOn() || process.env.PRICE_ALERTS === 'off' || !callFunction || !sendDM) return { sent: 0 };
+  const { data, error } = await callFunction('fut-api', { job: 'price-alerts' }, 120000);
+  if (error) throw new Error(`price-alerts: ${error?.message || error}`);
+  const deliveries = (data?.data ?? data)?.deliveries || [];
+  if (!deliveries.length) return { sent: 0 };
+  const ids = deliveries.map((d) => d.user_id);
+  const { data: links, error: linkError } = await supabase.from('user_discord_links').select('auth_user_id, discord_user_id').in('auth_user_id', ids).eq('verified', true);
+  if (linkError) throw new Error(`price-alerts links: ${linkError.message}`);
+  const discordOf = new Map((links || []).map((l) => [l.auth_user_id, l.discord_user_id]));
+  let sent = 0, failed = 0;
+  for (const d of deliveries) {
+    const to = discordOf.get(d.user_id);
+    if (!to) continue;
+    const ok = await sendDM(to, String(d.text).slice(0, 2000)).then(() => true).catch(() => false);
+    if (ok) sent++; else failed++;
+  }
+  console.log(`⏰ price-alerts: ${sent} DMs sent${failed ? `, ${failed} failed (DMs closed)` : ''}`);
+  return { sent, failed };
 }
 // Full card stats for Player Ratings (fut-api job): a few hundred cards per run until the whole card list has them,
 // then only new and dynamic cards. FUTGG_ATTRIBUTES=off pauses just this job.
@@ -91,7 +114,7 @@ function due(job, d) {
   return true;
 }
 
-function startScheduler({ supabase, callFunction, activeClubs }) {
+function startScheduler({ supabase, callFunction, activeClubs, sendDM }) {
   if (process.env.SCHEDULER === 'off') return;
   const running = new Map();
   const warned = new Map();
@@ -118,7 +141,7 @@ function startScheduler({ supabase, callFunction, activeClubs }) {
         if (error && Date.now() - (warned.get(name) || 0) > WARN_AGAIN_MS) { warned.set(name, Date.now()); console.error(`⏰ ${job.name}: ${name} failed (logged once a day):`, error.message); reportError(new Error(error.message), { source: 'scheduler', action: `${job.name} ${name}` }); }
         else if (!error) warned.delete(name);
       }
-      if (job.task) await job.task({ supabase, callFunction, date });
+      if (job.task) await job.task({ supabase, callFunction, sendDM, date });
       if (job.fn) {
         const body = typeof job.body === 'function' ? job.body({ activeClubs, date, skipped }) : job.body;
         const { error } = await callFunction(job.fn, body, 280000);
@@ -146,4 +169,4 @@ function startScheduler({ supabase, callFunction, activeClubs }) {
   console.log(`⏰ Scheduler running ${JOBS.length} jobs on this server`);
 }
 
-module.exports = { startScheduler, JOBS, due, eaSyncBody, futggStale, futggAttributes, EA_SLICES, STUCK_MS };
+module.exports = { startScheduler, JOBS, due, eaSyncBody, futggStale, futggAttributes, priceAlerts, EA_SLICES, STUCK_MS };
