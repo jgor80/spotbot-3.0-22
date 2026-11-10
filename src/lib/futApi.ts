@@ -295,6 +295,10 @@ export const futApi = {
     search: (query: PlayerQuery, platform: MarketPlatform, page = 0, limit = 50) => futRequest<PlayerSearch>("/players/search", "POST", { query, platform, limit, offset: page * limit }),
     find: (message: string, previous: PlayerQuery | null, history: FinderTurn[], platform: MarketPlatform) => futRequest<FinderResult>("/players/find", "POST", { message, previous, history, platform }),
   },
+  alerts: {
+    settings: () => futRequest<{ dm: boolean; move_pct: number | null; needs_discord: string }>("/alerts/settings"),
+    save: (input: { dm: boolean; move_pct: number | null }) => futRequest<{ dm: boolean; move_pct: number | null; needs_discord: string }>("/alerts/settings", "POST", input),
+  },
   evolutions: {
     overview: (platform: MarketPlatform) => futRequest<EvolutionsOverview>(`/evolutions?${new URLSearchParams({ platform })}`),
     check: (input: { name: string; requirements: string; upgrades: string }) => futRequest<{ club_cards: number; squad: string | null; evolution: EvolutionView; verified: false }>("/evolutions/check", "POST", input),

@@ -3861,7 +3861,11 @@ async function leaveIfNotAllowed(guild) {
 client.once(Events.ClientReady, async (c) => {
   // Self-hosted: the bot runs the scheduled syncs and refreshes that used to run in the cloud.
   eaActivity.start();
-  if (!BOT_PROXY_SECRET) require('./scheduler.cjs').startScheduler({ supabase, callFunction: callEdgeFunction, activeClubs: eaActivity.activeKeys });
+  if (!BOT_PROXY_SECRET) require('./scheduler.cjs').startScheduler({
+    supabase, callFunction: callEdgeFunction, activeClubs: eaActivity.activeKeys,
+    // FUT price alerts go to the player's own DMs
+    sendDM: async (discordUserId, content) => { const user = await client.users.fetch(discordUserId); await user.send({ content, allowedMentions: { parse: [] } }); },
+  });
   for (const guild of [...c.guilds.cache.values()]) await leaveIfNotAllowed(guild);
   // Find Xbox accounts for Xbox players a few at a time (OpenXBL is rate-limited)
   setInterval(() => xboxLink.backfill().catch((e) => console.error('[xbox-link]', e.message)), 10 * 60 * 1000);

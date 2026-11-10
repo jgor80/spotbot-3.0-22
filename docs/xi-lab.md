@@ -67,6 +67,8 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | `GET /knowledge/status` | Bank totals, the last collection run, and which feeds have keys |
 | `GET /evolutions?platform=` | Evolutions finder: live evolutions the helper saw (ended ones dropped), each with its rules and level upgrades in plain lines, the user's club cards that can enter (eligible, or "maybe" when a rule needs data the card lacks), each card after every level, the overall gain in the latest saved squad, and the best evolution per card |
 | `POST /evolutions/check` | `{ name, requirements, upgrades }`: one pasted evolution (text, "Level N" lines split levels) matched the same way |
+| `GET/POST /alerts/settings` | Price alerts: `{ dm, move_pct }` (DMs on/off; also alert on moves of at least move_pct% between refreshes) |
+| `POST /` `{ job: "price-alerts" }` | Bot only, after each FUT.GG refresh: watchlist targets reached and big moves since the last refresh (`fut.price_alert_candidates`), each target firing once until the price moves back 2% past it; returns one DM text per website account. The bot maps accounts to verified Discord links and DMs them (`PRICE_ALERTS=off` pauses) |
 
 ## MCP tools
 

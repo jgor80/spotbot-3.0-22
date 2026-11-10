@@ -15,6 +15,7 @@ import { accountOverview, clearAccount, importAccount } from "../_shared/fut/acc
 import { dailyStrategy, riskParam } from "../_shared/fut/strategy.ts";
 import { parseSolveBody, sbcOverview, solveForUser } from "../_shared/fut/sbc-data.ts";
 import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evolutions-data.ts";
+import { getAlertSettings, runPriceAlerts, setAlertSettings } from "../_shared/fut/alerts.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { bestSquads, squadRoles, suggestForSlot } from "../_shared/fut/squad-suggest.ts";
@@ -181,7 +182,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (req.method === "POST" && /\/fut-api\/?$/.test(new URL(req.url).pathname)) {
     if (!(await deps.isBot?.(req))) return err(401, "Only the bot's scheduler can run jobs.");
     const job = (await req.json().catch(() => null) as { job?: unknown } | null)?.job;
-    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts") return err(400, "Unknown job.");
     try {
       // Knowledge bank: collect Reddit/YouTube sources and read what's waiting (see knowledge.ts)
       if (job === "knowledge-ingest") {
@@ -201,6 +202,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       }
       // Full card stats for Player Ratings, a few hundred cards per run (see futgg-attributes.ts)
       if (job === "futgg-attributes") return json({ data: await syncFutggAttributes(deps.db, deps.fetch) });
+      // Watchlist targets and big moves after a price refresh; the bot DMs each player the text it gets back.
+      if (job === "price-alerts") return json({ data: await runPriceAlerts(deps.db) });
       if (job === "futgg-catalogue") {
         // Market-wide card list after the twice-daily FUT.GG prices, then baskets so the indexes include it.
         const result = await syncFutggCatalogue(deps.db, deps.fetch);
@@ -290,6 +293,9 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (route === "/account" && m === "DELETE") return json({ data: await clearAccount(db, userId, platformParam(url.searchParams.get("platform"))) });
 
     // SBC Solver: the SBCs the helper saw, requirement text → requirements, and the cheapest squad from your club.
+    // Price alerts: Discord DMs for watchlist targets and big moves (the bot sends them after each price refresh).
+    if (route === "/alerts/settings" && m === "GET") return json({ data: await getAlertSettings(db, userId) });
+    if (route === "/alerts/settings" && m === "POST") return json({ data: await setAlertSettings(db, userId, obj(await body(req))) });
     // Evolutions finder: live evolutions the helper saw (or one pasted), matched to the user's club cards and squad.
     if (route === "/evolutions" && m === "GET") return json({ data: await runWorkspace(() => evolutionsOverview(db, userId, platformParam(url.searchParams.get("platform")))) });
     if (route === "/evolutions/check" && m === "POST") return json({ data: await runWorkspace(async () => checkPastedEvolution(db, userId, obj(await body(req)))) });
