@@ -11,6 +11,7 @@ import { marketCardId, marketFor, platformParam } from "../_shared/fut/market.ts
 import { KB_CATEGORIES, knowledgeMap, knowledgeTopic } from "../_shared/fut/knowledge.ts";
 import { scanRequestSchema, thesisInputSchema } from "../_shared/fut/xilab/market/index.ts";
 import { parseSolveBody, sbcOverview, solveForUser } from "../_shared/fut/sbc-data.ts";
+import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evolutions-data.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
 export interface FutCtx {
@@ -400,6 +401,27 @@ FUT_TOOLS.push(
       const { db, userId } = await account(ctx);
       const b = args as Record<string, unknown>;
       return await runWorkspace(() => solveForUser(db, userId, platformParam(b.platform), parseSolveBody(b)));
+    }),
+  },
+  {
+    name: "find_fut_evolutions",
+    title: "Evolutions for my club (XI Lab Evolutions finder)",
+    description: "EA FC Ultimate Team: live evolutions the XI Lab helper saw in the EA Web App (or one the player pastes as requirement and upgrade text), each with the player's club cards that can enter it, what they become after every level, and the overall gain in their latest saved squad; plus the best evolution per card. New ratings add EA's +OVR upgrades, so they're estimates; EA's FC 27 evolution fields are unverified (report anything under unread). " + READ_ONLY,
+    inputSchema: {
+      type: "object",
+      properties: {
+        platform: PLATFORM,
+        name: { type: "string", description: "Pasted evolution's name." },
+        requirements: { type: "string", description: "Pasted requirements, one per line (e.g. 'Overall: Max 82', 'Position: CM')." },
+        upgrades: { type: "string", description: "Pasted upgrades, one per line, 'Level N' lines between levels (e.g. '+3 OVR', 'PlayStyle+: Finesse Shot')." },
+      },
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const b = args as Record<string, unknown>;
+      if (str(b.requirements) || str(b.upgrades)) return await runWorkspace(() => checkPastedEvolution(db, userId, b));
+      return await runWorkspace(() => evolutionsOverview(db, userId, platformParam(b.platform)));
     }),
   },
 );

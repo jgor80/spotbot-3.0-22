@@ -65,6 +65,8 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | `GET /knowledge/sources?mine=&limit=&offset=`, `POST /knowledge/sources`, `DELETE /knowledge/sources/:id` | Sources (newest first). POST `{ url?, text?, title?, share? }` adds a Reddit/YouTube link (fetched through their APIs when configured) or pasted text and reads it straight away (`FUT_KB_ADDS_PER_HOUR`, default 20). Notes are always private; a linked source is shared only when asked. Users delete only their own |
 | `POST /knowledge/ask` | `{ question, history? }`: an answer from the bank's claims with numbered sources (Claude, `FUT_KB_ASK_PER_HOUR` default 60), or the best matching claims grouped by topic without a key |
 | `GET /knowledge/status` | Bank totals, the last collection run, and which feeds have keys |
+| `GET /evolutions?platform=` | Evolutions finder: live evolutions the helper saw (ended ones dropped), each with its rules and level upgrades in plain lines, the user's club cards that can enter (eligible, or "maybe" when a rule needs data the card lacks), each card after every level, the overall gain in the latest saved squad, and the best evolution per card |
+| `POST /evolutions/check` | `{ name, requirements, upgrades }`: one pasted evolution (text, "Level N" lines split levels) matched the same way |
 
 ## MCP tools
 
@@ -110,6 +112,11 @@ no `squad_id` they use the squad the player edited last.
   shown, never guessed). Requirements can also be pasted. Cost model: a spare duplicate costs almost nothing, an
   untradeable a quarter of its price, a tradeable club card its after-tax price, a market card its FUT.GG price.
   Team rating uses the community formula and chemistry XI Lab's engine; both are estimates. Never submits anything.
+- **Evolutions finder (since 2026-11-10).** `_shared/fut/evolutions.ts` (pure) and `evolutions-data.ts`. The helper
+  (v0.10.0+) copies evolution-looking objects from the Web App's `academy` answers (`account_state.evolutions`); EA's
+  FC 27 names are UNVERIFIED, mapped where known (`fromEa`) and listed as unread otherwise. Club cards borrow face stats
+  and PlayStyles from the catalogue copy of the same EA item. New overall = card overall plus the +OVR upgrades (an
+  estimate, not EA's rating formula). Never starts or pays for an evolution.
 - **Card pictures (since 2026-11-09).** Cards are drawn by GafferBot itself (`src/components/fut/FutCardArt.tsx`):
   rating, position, name and face stats, coloured by card type. FUT.GG's card renders are never used (its terms ban
   reusing its content). EA images are off unless `FUT_EA_IMAGES=on` (`FUT_EA_FACES=on` also works; Jeff's call,

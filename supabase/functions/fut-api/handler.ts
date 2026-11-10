@@ -14,6 +14,7 @@ import { clearStore, importStore, packAdvice } from "../_shared/fut/packs.ts";
 import { accountOverview, clearAccount, importAccount } from "../_shared/fut/account.ts";
 import { dailyStrategy, riskParam } from "../_shared/fut/strategy.ts";
 import { parseSolveBody, sbcOverview, solveForUser } from "../_shared/fut/sbc-data.ts";
+import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evolutions-data.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { bestSquads, squadRoles, suggestForSlot } from "../_shared/fut/squad-suggest.ts";
@@ -289,6 +290,9 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (route === "/account" && m === "DELETE") return json({ data: await clearAccount(db, userId, platformParam(url.searchParams.get("platform"))) });
 
     // SBC Solver: the SBCs the helper saw, requirement text → requirements, and the cheapest squad from your club.
+    // Evolutions finder: live evolutions the helper saw (or one pasted), matched to the user's club cards and squad.
+    if (route === "/evolutions" && m === "GET") return json({ data: await runWorkspace(() => evolutionsOverview(db, userId, platformParam(url.searchParams.get("platform")))) });
+    if (route === "/evolutions/check" && m === "POST") return json({ data: await runWorkspace(async () => checkPastedEvolution(db, userId, obj(await body(req)))) });
     if (route === "/sbc" && m === "GET") return json({ data: await sbcOverview(db, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/sbc/parse" && m === "POST") {
       const b = obj(await body(req));

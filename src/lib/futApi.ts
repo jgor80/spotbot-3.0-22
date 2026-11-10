@@ -104,7 +104,7 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
   if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
   return (data ?? null) as T;
 }
-export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
+export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, evolutions: ["fut", "evolutions"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
 export type MarketPlatform = "console" | "pc";
 
@@ -189,7 +189,7 @@ export interface AccountItem { item_id: number; ea_item_id: number; item_type: s
 export interface AccountTrade extends AccountItem { trade_id: string | null; state: AccountTradeState; buy_now: number | null; current_bid: number | null; starting_bid: number | null; expires_at: string | null }
 export interface AccountSbc { set_id: number; name: string; category: string | null; description: string | null; challenges: number | null; completed: number | null; times_completed: number | null; repeat_limit: number | null; repeatable: boolean; end_at: string | null; awards: { type: string; value: number | null; count: number | null; untradeable: boolean }[] }
 export interface AccountObjective { id: number | null; name: string; group: string | null; progress: number | null; target: number | null; done: boolean; end_at: string | null; xp: number | null }
-export type AccountSection = "balance" | "profile" | "tradepile" | "watchlist" | "unassigned" | "sbcs" | "sbc_challenges" | "objectives" | "season";
+export type AccountSection = "balance" | "profile" | "tradepile" | "watchlist" | "unassigned" | "sbcs" | "sbc_challenges" | "evolutions" | "objectives" | "season";
 export interface AccountOverview {
   platform: MarketPlatform; connected: boolean; updated_at: string | null; prices_at: string | null; seen: Record<AccountSection, string | null>;
   balance: { coins: number | null; points: number | null; draft_tokens: number | null; currencies: { name: string; funds: number }[] } | null;
@@ -219,6 +219,10 @@ export interface SbcSolved { name: string; formation: string; feasible: boolean;
 export type SbcWorthVerdict = "do_it" | "close" | "skip" | "unknown" | "free";
 export interface SbcSolution { platform: MarketPlatform; prices_at: string | null; owned_cards: number; spare_duplicates: number; dropped_requirements: number; challenges: SbcSolved[]; total_cost: number; buy_cost: number; feasible: boolean; reward: { value: number | null; label: string | null }; worth: { verdict: SbcWorthVerdict; why: string }; verified: false }
 export interface SbcSolveInput { platform: MarketPlatform; set_id?: number; reward?: number; challenges: { name: string; formation: string; requirements?: SbcRequirement[]; text?: string }[]; options: { use_tradeables: boolean; buy: boolean; protect_from: number | null; exclude?: string[] } }
+export interface EvoCard { id: string; name: string; version: string | null; overall: number; positions: string[]; league: string | null; nation: string | null; club: string | null; is_icon?: boolean; is_hero?: boolean; stats: Partial<Record<"pac" | "sho" | "pas" | "dri" | "def" | "phy", number>>; skill_moves: number | null; weak_foot: number | null; playstyles: string[]; playstyles_plus: string[]; ea_item_id?: number | null; untradeable?: boolean }
+export interface EvoMatch { card: EvoCard; after: EvoCard; checks: { label: string; ok: boolean | null }[]; eligible: boolean | null; squad: { slot: string | null; gain: number } }
+export interface EvolutionView { id: string; name: string; description: string | null; end_at: string | null; coins: number | null; points: number | null; unread: string[]; source: "helper" | "pasted"; rule_lines: string[]; level_lines: string[][]; eligible: number; maybe: number; matches: EvoMatch[] }
+export interface EvolutionsOverview { platform: MarketPlatform; seen_at: string | null; club_cards: number; squad: string | null; evolutions: EvolutionView[]; best_upgrades: { card_id: string; name: string; evolution: string; gain: number; after: number; slot: string | null }[]; shape: Record<string, string[]>; verified: false }
 export interface ClubValueCard { id: string; player_name: string; version: string | null; overall: number; position: string; club: string | null; league: string | null; nation: string | null; is_icon: boolean; is_hero: boolean; ea_item_id: number | null; tradeable: boolean | null; quantity: number; tradeable_quantity: number; futgg_price: number | null; captured_price: number | null; captured_at: string | null; price: number | null; price_source: "futgg" | "web_app_capture" | null; value: number | null; value_after_tax: number | null; missing_from_last_sync: boolean }
 export interface ClubValue { platform: MarketPlatform; prices_published_at: string | null; last_sync: string | null; totals: { cards: number; tradeable_cards: number; untradeable_cards: number; unknown_cards: number; tradeable_copies: number; priced_tradeable: number; unpriced_tradeable: number; value: number; value_after_tax: number; untradeable_value: number }; cards: ClubValueCard[] }
 export interface PlayerRole { position: string; role: string; level: "plus" | "plusplus" }
@@ -290,6 +294,10 @@ export const futApi = {
   players: {
     search: (query: PlayerQuery, platform: MarketPlatform, page = 0, limit = 50) => futRequest<PlayerSearch>("/players/search", "POST", { query, platform, limit, offset: page * limit }),
     find: (message: string, previous: PlayerQuery | null, history: FinderTurn[], platform: MarketPlatform) => futRequest<FinderResult>("/players/find", "POST", { message, previous, history, platform }),
+  },
+  evolutions: {
+    overview: (platform: MarketPlatform) => futRequest<EvolutionsOverview>(`/evolutions?${new URLSearchParams({ platform })}`),
+    check: (input: { name: string; requirements: string; upgrades: string }) => futRequest<{ club_cards: number; squad: string | null; evolution: EvolutionView; verified: false }>("/evolutions/check", "POST", input),
   },
   sbc: {
     overview: (platform: MarketPlatform) => futRequest<SbcOverview>(`/sbc?${new URLSearchParams({ platform })}`),

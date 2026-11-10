@@ -5478,6 +5478,11 @@ async function deleteSquad(db2, userId, id3) {
   await store.delete(userId, id3);
   return true;
 }
+async function latestSquadId(db2, userId) {
+  const { data, error } = await db2.from("squads").select("id").eq("user_id", userId).order("updated_at", { ascending: false }).limit(1);
+  fail(error);
+  return (data ?? [])[0]?.id ?? null;
+}
 async function workspaceFor(db2) {
   return createWorkspaceService({ rules: await activeRules(db2), store: new PgSquadStore(db2), cards: new PgCardSource(db2) });
 }
@@ -6372,7 +6377,7 @@ async function pullSummary(db2, platform, pulls, packs) {
 var fail5 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
-var SECTIONS = ["balance", "profile", "tradepile", "watchlist", "unassigned", "sbcs", "sbc_challenges", "objectives", "season"];
+var SECTIONS = ["balance", "profile", "tradepile", "watchlist", "unassigned", "sbcs", "sbc_challenges", "evolutions", "objectives", "season"];
 var EA_TAX2 = 0.05;
 var MAX_TRADE = 300;
 var MAX_UNASSIGNED = 500;
@@ -6494,6 +6499,30 @@ function parseSbcChallenges(v) {
     };
   }).filter((c2) => !!c2);
 }
+function parseEvolutions(v) {
+  if (!Array.isArray(v)) return null;
+  const entry = (r2) => ({
+    type: (text3(r2.type, 60) ?? "").toUpperCase(),
+    scope: text3(r2.scope, 20)?.toUpperCase() ?? null,
+    values: (Array.isArray(r2.values) ? r2.values : []).filter((x) => typeof x === "number" && Number.isFinite(x) && Math.abs(x) < 2 ** 31 || typeof x === "string" && x.length <= 40).slice(0, 20)
+  });
+  const ok = (e) => /^[A-Z0-9_ +]{1,60}$/.test(e.type);
+  return v.slice(0, 150).filter(isObj2).map((e) => {
+    const evo_id = id2(e.evo_id), name2 = text3(e.name, 120);
+    if (!evo_id || !name2) return null;
+    return {
+      evo_id,
+      name: name2,
+      description: text3(e.description, 300),
+      end_at: when2(e.end_at),
+      coins: num(e.coins),
+      points: num(e.points),
+      status: text3(e.status, 30),
+      requirements: (Array.isArray(e.requirements) ? e.requirements : []).filter(isObj2).slice(0, 20).map(entry).filter(ok),
+      levels: (Array.isArray(e.levels) ? e.levels : []).filter(isObj2).slice(0, 12).map((l) => ({ upgrades: (Array.isArray(l.upgrades) ? l.upgrades : []).filter(isObj2).slice(0, 20).map(entry).filter(ok) }))
+    };
+  }).filter((e) => !!e);
+}
 function parseObjectives(v) {
   if (!Array.isArray(v)) return null;
   return v.slice(0, MAX_OBJECTIVES).filter(isObj2).map((o) => {
@@ -6516,6 +6545,7 @@ var PARSERS = {
   unassigned: parseUnassigned,
   sbcs: parseSbcs,
   sbc_challenges: parseSbcChallenges,
+  evolutions: parseEvolutions,
   objectives: parseObjectives,
   season: parseSeason
 };
@@ -7974,6 +8004,338 @@ async function solveForUser(db2, userId, platform, req) {
   };
 }
 
+// supabase/functions/_shared/fut/evolutions.ts
+var FACE3 = ["pac", "sho", "pas", "dri", "def", "phy"];
+var STAT_WORDS = [
+  [/^(ovr|overall|rating|player ?rating)$/i, "overall"],
+  [/^(pac|pace)$/i, "pac"],
+  [/^(sho|shooting)$/i, "sho"],
+  [/^(pas|passing)$/i, "pas"],
+  [/^(dri|dribbling)$/i, "dri"],
+  [/^(def|defending|defence|defense)$/i, "def"],
+  [/^(phy|physical|physicality)$/i, "phy"],
+  [/^skill ?moves?$|^sm$/i, "skill_moves"],
+  [/^weak ?foot$|^wf$/i, "weak_foot"],
+  [/^playstyles? ?(\+|plus)$|^playstyles?_plus$/i, "playstyles_plus"],
+  [/^playstyles?$/i, "playstyles"]
+];
+var statOf = (word) => STAT_WORDS.find(([re]) => re.test(word.trim()))?.[1] ?? null;
+var POSITION3 = /^(GK|LB|LWB|CB|RB|RWB|CDM|CM|CAM|LM|RM|LW|RW|CF|ST)$/;
+var norm6 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+var opOf2 = (s) => /\bmax(imum)?\.?\b|or (less|lower|fewer)|at most|\bunder\b/i.test(s) ? "max" : /\bexactly\b/i.test(s) ? "exact" : "min";
+function parseRuleLine(raw) {
+  const line = raw.replace(/^[•·*\-–]\s*/, "").replace(/\s+/g, " ").trim();
+  const colon = line.indexOf(":");
+  let label = colon > 0 ? line.slice(0, colon) : line.replace(/\s*(min(imum)?\.?|max(imum)?\.?|exactly|\d).*$/i, "");
+  const rest = colon > 0 ? line.slice(colon + 1).trim() : line.slice(label.length).trim();
+  const lead = /^(min(imum)?\.?|max(imum)?\.?|exactly)\s+(\d+)\s+([A-Za-z +]+)$/i.exec(line) ?? /^(min(imum)?\.?|max(imum)?\.?|exactly)\s+([A-Za-z +]+?)\s+(\d+)$/i.exec(line);
+  if (lead) {
+    const num2 = Number(lead[4] && /^\d+$/.test(lead[4]) ? lead[4] : lead[5]);
+    const word = /^\d+$/.test(lead[4] ?? "") ? lead[5] : lead[4];
+    const f3 = statOf(word);
+    return f3 && Number.isFinite(num2) ? { field: f3, op: opOf2(lead[1]), value: num2 } : null;
+  }
+  label = label.trim();
+  const f2 = statOf(label);
+  const n = /(\d+)/.exec(rest)?.[1];
+  if (f2 && n) return { field: f2, op: opOf2(rest), value: Number(n) };
+  const values = rest.split(/\s*(?:,|\bor\b|\/|\|)\s*/i).map((s) => s.trim()).filter(Boolean).slice(0, 15);
+  const not = /\bnot\b|\bexcept\b|\bexclud/i.test(label + " " + rest);
+  const clean2 = values.map((v) => v.replace(/^(not|except)\s+/i, ""));
+  if (/^(positions?|preferred positions?)$/i.test(label)) {
+    const pos = clean2.map((v) => v.toUpperCase()).filter((v) => POSITION3.test(v));
+    return pos.length ? { field: "position", op: not ? "not_in" : "in", values: pos } : null;
+  }
+  if (/^(league|nation|country\/region|nationality|club|rarity|card type)s?$/i.test(label) && clean2.length) {
+    const field = /^league/i.test(label) ? "league" : /^(nation|country|nationality)/i.test(label) ? "nation" : /^club/i.test(label) ? "club" : "rarity";
+    return { field, op: not ? "not_in" : "in", values: clean2 };
+  }
+  return null;
+}
+function parseUpgradeLine(raw) {
+  const line = raw.replace(/^[•·*\-–]\s*/, "").replace(/\s+/g, " ").trim();
+  const out = [];
+  const ps = /^(new )?playstyles?\s*(\+|plus)?\s*:?\s*(.+)$/i.exec(line);
+  if (ps) {
+    for (const name2 of ps[3].split(/\s*(?:,|\band\b)\s*/i).map((s) => s.trim()).filter(Boolean).slice(0, 6)) out.push({ field: "playstyle", name: name2.slice(0, 40), plus: !!ps[2] });
+    return out;
+  }
+  const pos = /^(new |added |alt(ernative)? )?positions?\s*:?\s*(.+)$/i.exec(line);
+  if (pos) {
+    for (const p of pos[3].split(/\s*(?:,|\/|\band\b)\s*/i).map((s) => s.trim().toUpperCase()).filter((p2) => POSITION3.test(p2))) out.push({ field: "position", name: p });
+    return out;
+  }
+  for (const part of line.split(/\s*,\s*/)) {
+    const a = /^\+?\s*(\d+)\s+([A-Za-z ]+)$/.exec(part) ?? null;
+    const b = /^([A-Za-z ]+?)\s*:?\s*\+\s*(\d+)$/.exec(part) ?? null;
+    const word = a ? a[2] : b ? b[1] : null, num2 = a ? Number(a[1]) : b ? Number(b[2]) : NaN;
+    const f2 = word ? statOf(word) : null;
+    if (f2 && f2 !== "playstyles" && f2 !== "playstyles_plus" && num2 > 0 && num2 <= 30) out.push({ field: f2, add: num2 });
+  }
+  return out;
+}
+function parseEvolutionText(name2, rulesText, upgradesText) {
+  const rules = [], unread = [];
+  for (const l of rulesText.split(/\r?\n|;/).map((s) => s.trim()).filter(Boolean).slice(0, 30)) {
+    const r2 = parseRuleLine(l);
+    if (r2) rules.push(r2);
+    else unread.push(l.slice(0, 160));
+  }
+  const levels = [];
+  let cur = [];
+  for (const l of upgradesText.split(/\r?\n|;/).map((s) => s.trim()).filter(Boolean).slice(0, 60)) {
+    if (/^(level|stage|step|tier)\s*\d+\s*:?$/i.test(l)) {
+      if (cur.length) levels.push(cur);
+      cur = [];
+      continue;
+    }
+    const ups = parseUpgradeLine(l.replace(/^(level|stage)\s*\d+\s*:\s*/i, ""));
+    if (ups.length) cur.push(...ups);
+    else unread.push(l.slice(0, 160));
+  }
+  if (cur.length) levels.push(cur);
+  return { id: `pasted:${norm6(name2).slice(0, 40) || "evolution"}`, name: name2.trim().slice(0, 120) || "My evolution", description: null, end_at: null, coins: null, points: null, rules, levels, unread, source: "pasted" };
+}
+var eaWord = (t) => t.toUpperCase().replace(/^(PLAYER|ATTRIBUTE|ATTR|STAT|ELIGIBILITY)_/, "").replace(/_(MIN|MAX|VALUE)$/, "");
+var eaOp = (scope, type) => scope === "LOWER" || /_MAX$|^MAX_/.test(type) ? "max" : scope === "EXACT" ? "exact" : "min";
+function fromEa2(e, names) {
+  const unread = [];
+  const rules = [];
+  const show = (x) => [x.type, x.scope, x.values.join(",")].filter(Boolean).join(" ");
+  for (const r2 of e.requirements) {
+    const w = eaWord(r2.type), f2 = statOf(w.replace(/_/g, " "));
+    const nums = r2.values.filter((v) => typeof v === "number"), strs = r2.values.filter((v) => typeof v === "string");
+    if (f2 && nums.length) {
+      rules.push({ field: f2, op: eaOp(r2.scope, r2.type), value: nums[0] });
+      continue;
+    }
+    if (/^(POSITION|PREFERRED_POSITION|POSITIONS)$/.test(w) && strs.some((s) => POSITION3.test(s.toUpperCase()))) {
+      rules.push({ field: "position", op: r2.scope === "NOT" || r2.scope === "EXCLUDE" ? "not_in" : "in", values: strs.map((s) => s.toUpperCase()).filter((s) => POSITION3.test(s)) });
+      continue;
+    }
+    const idField = w === "LEAGUE_ID" || w === "LEAGUE" ? "league" : w === "NATION_ID" || w === "NATION" ? "nation" : w === "CLUB_ID" || w === "CLUB" || w === "TEAM_ID" ? "club" : null;
+    if (idField && nums.length) {
+      const m = idField === "league" ? names.leagues : idField === "nation" ? names.nations : names.clubs;
+      rules.push({ field: idField, op: "in", values: nums.map((n) => m.get(n) ?? `EA ${n}`) });
+      continue;
+    }
+    unread.push(show(r2));
+  }
+  const levels = e.levels.map((l) => l.upgrades.flatMap((u) => {
+    const w = eaWord(u.type), f2 = statOf(w.replace(/_/g, " "));
+    const n = u.values.find((v) => typeof v === "number");
+    if (f2 && f2 !== "playstyles" && f2 !== "playstyles_plus" && n !== void 0 && n > 0 && n <= 30) return [{ field: f2, add: n }];
+    const s = u.values.find((v) => typeof v === "string");
+    if (/^(PLAYSTYLE|TRAIT)S?$/.test(w) && s) return [{ field: "playstyle", name: s, plus: false }];
+    if (/^(PLAYSTYLE|TRAIT)S?_?(PLUS|\+)$|^ICON_TRAIT$/.test(w) && s) return [{ field: "playstyle", name: s, plus: true }];
+    if (/^POSITIONS?$/.test(w) && s && POSITION3.test(s.toUpperCase())) return [{ field: "position", name: s.toUpperCase() }];
+    unread.push(show(u));
+    return [];
+  })).filter((l) => l.length);
+  return { id: `ea:${e.evo_id}`, name: e.name, description: e.description, end_at: e.end_at, coins: e.coins, points: e.points, rules, levels, unread, source: "helper" };
+}
+var rarityWords = (c2) => {
+  const v = (c2.version ?? "").toLowerCase();
+  const out = [v];
+  if (c2.is_icon) out.push("icon");
+  if (c2.is_hero) out.push("hero");
+  if (/^(rare|common)$/.test(v) || !v) out.push("base");
+  else out.push("special", "promo");
+  if (v === "rare") out.push("rare");
+  if (v === "common") out.push("common", "non-rare");
+  return out;
+};
+function numValue(c2, f2) {
+  if (f2 === "overall") return c2.overall;
+  if (f2 === "skill_moves") return c2.skill_moves;
+  if (f2 === "weak_foot") return c2.weak_foot;
+  if (f2 === "playstyles") return c2.playstyles.length + c2.playstyles_plus.length;
+  if (f2 === "playstyles_plus") return c2.playstyles_plus.length;
+  return c2.stats[f2] ?? null;
+}
+function describeRule(r2) {
+  const LABEL2 = { overall: "Overall", pac: "Pace", sho: "Shooting", pas: "Passing", dri: "Dribbling", def: "Defending", phy: "Physical", skill_moves: "Skill moves", weak_foot: "Weak foot", playstyles: "PlayStyles", playstyles_plus: "PlayStyles+", position: "Position", league: "League", nation: "Nation", club: "Club", rarity: "Card type" };
+  if ("value" in r2) return `${LABEL2[r2.field]}: ${r2.op === "min" ? "Min." : r2.op === "max" ? "Max." : "Exactly"} ${r2.value}`;
+  return `${LABEL2[r2.field]}: ${r2.op === "not_in" ? "not " : ""}${r2.values.join(" or ")}`;
+}
+function describeUpgrade(u) {
+  if (u.field === "playstyle") return `PlayStyle${u.plus ? "+" : ""}: ${u.name}`;
+  if (u.field === "position") return `New position: ${u.name}`;
+  const LABEL2 = { overall: "OVR", pac: "Pace", sho: "Shooting", pas: "Passing", dri: "Dribbling", def: "Defending", phy: "Physical", skill_moves: "Skill moves", weak_foot: "Weak foot" };
+  return `+${u.add} ${LABEL2[u.field]}`;
+}
+function checkRules(c2, rules) {
+  return rules.map((r2) => {
+    let ok;
+    if ("value" in r2) {
+      const v = numValue(c2, r2.field);
+      ok = v === null ? null : r2.op === "min" ? v >= r2.value : r2.op === "max" ? v <= r2.value : v === r2.value;
+    } else {
+      const want = new Set(r2.values.map(norm6));
+      const have = r2.field === "position" ? c2.positions.map(norm6) : r2.field === "rarity" ? rarityWords(c2).map(norm6) : [norm6(c2[r2.field] ?? "")];
+      const hit = have.some((h) => want.has(h));
+      ok = r2.op === "in" ? hit : !hit;
+      if (r2.field !== "position" && r2.field !== "rarity" && !c2[r2.field]) ok = null;
+    }
+    return { label: describeRule(r2), ok };
+  });
+}
+function evolve(c2, levels) {
+  const out = { ...c2, stats: { ...c2.stats }, positions: [...c2.positions], playstyles: [...c2.playstyles], playstyles_plus: [...c2.playstyles_plus] };
+  for (const u of levels.flat()) {
+    if (u.field === "overall") out.overall = Math.min(99, out.overall + u.add);
+    else if (u.field === "skill_moves") out.skill_moves = Math.min(5, (out.skill_moves ?? 1) + u.add);
+    else if (u.field === "weak_foot") out.weak_foot = Math.min(5, (out.weak_foot ?? 1) + u.add);
+    else if (u.field === "playstyle") {
+      if (u.plus) {
+        if (!out.playstyles_plus.includes(u.name)) out.playstyles_plus.push(u.name);
+        out.playstyles = out.playstyles.filter((p) => p !== u.name);
+      } else if (!out.playstyles.includes(u.name) && !out.playstyles_plus.includes(u.name)) out.playstyles.push(u.name);
+    } else if (u.field === "position") {
+      if (!out.positions.includes(u.name)) out.positions.push(u.name);
+    } else if (FACE3.includes(u.field)) {
+      const k = u.field;
+      if (out.stats[k] !== void 0) out.stats[k] = Math.min(99, out.stats[k] + u.add);
+    }
+  }
+  return out;
+}
+function squadGain(before, after, slots) {
+  let best = { slot: null, gain: 0 };
+  for (const s of slots) {
+    if (!after.positions.some((p) => p === s.position)) continue;
+    const now2 = s.card_id === before.id ? before.overall : s.rating ?? 0;
+    const g = after.overall - now2;
+    if (g > best.gain) best = { slot: s.slot, gain: g };
+  }
+  return best;
+}
+function matchEvolution(evo, cards, slots, limit = 15) {
+  const all = [];
+  for (const c2 of cards) {
+    const checks = checkRules(c2, evo.rules);
+    if (checks.some((x) => x.ok === false)) continue;
+    const after = evolve(c2, evo.levels);
+    all.push({ card: c2, after, checks, eligible: checks.every((x) => x.ok === true) ? true : null, squad: squadGain(c2, after, slots) });
+  }
+  all.sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true) || b.squad.gain - a.squad.gain || b.after.overall - a.after.overall || (a.card.untradeable === b.card.untradeable ? 0 : a.card.untradeable ? -1 : 1));
+  return { eligible: all.filter((m) => m.eligible === true).length, maybe: all.filter((m) => m.eligible === null).length, matches: all.slice(0, limit) };
+}
+
+// supabase/functions/_shared/fut/evolutions-data.ts
+var FACE4 = ["pac", "sho", "pas", "dri", "def", "phy"];
+var CHUNK = 100;
+async function evoCards(db2, userId) {
+  const mine = await searchMyCards(db2, userId, { all: true, owned_only: true });
+  const keys = [...new Set(mine.map((c2) => c2.ea_item_id).filter((x) => !!x).map(String))];
+  const catBy = /* @__PURE__ */ new Map();
+  for (let i = 0; i < keys.length; i += CHUNK) {
+    const { data, error } = await db2.from("player_cards").select("id, source_card_key").eq("source_id", "futgg_catalogue").is("owner_user_id", null).in("source_card_key", keys.slice(i, i + CHUNK));
+    fail(error);
+    for (const r2 of data ?? []) catBy.set(String(r2.source_card_key), r2.id);
+  }
+  const catIds = [...new Set(catBy.values())];
+  const attrs = /* @__PURE__ */ new Map(), styles = /* @__PURE__ */ new Map();
+  for (let i = 0; i < catIds.length; i += CHUNK) {
+    const part = catIds.slice(i, i + CHUNK);
+    const [a, s] = await Promise.all([db2.from("card_attributes").select("*").in("card_id", part), db2.from("card_playstyles").select("*").in("card_id", part)]);
+    fail(a.error);
+    fail(s.error);
+    for (const r2 of a.data ?? []) attrs.set(r2.card_id, r2);
+    for (const r2 of s.data ?? []) styles.set(r2.card_id, [...styles.get(r2.card_id) ?? [], r2]);
+  }
+  return mine.map((c2) => {
+    const cat = c2.ea_item_id ? catBy.get(String(c2.ea_item_id)) : void 0;
+    const a = cat ? attrs.get(cat) : void 0, st = cat ? styles.get(cat) ?? [] : [];
+    const stats = { ...c2.stats };
+    if (a) {
+      for (const k of FACE4) if (stats[k] === void 0 && typeof a[k] === "number") stats[k] = a[k];
+    }
+    return {
+      id: c2.id,
+      name: c2.player_name,
+      version: c2.version,
+      overall: c2.overall,
+      positions: c2.positions,
+      league: c2.league,
+      nation: c2.nation,
+      club: c2.club,
+      is_icon: c2.is_icon,
+      is_hero: c2.is_hero,
+      stats,
+      skill_moves: c2.skill_moves,
+      weak_foot: c2.weak_foot,
+      playstyles: c2.playstyles.length || c2.playstyles_plus.length ? c2.playstyles : st.filter((x) => !x.is_plus).map((x) => x.name),
+      playstyles_plus: c2.playstyles.length || c2.playstyles_plus.length ? c2.playstyles_plus : st.filter((x) => x.is_plus).map((x) => x.name),
+      ea_item_id: c2.ea_item_id,
+      untradeable: c2.tradeable === false
+    };
+  });
+}
+async function squadSlots(db2, userId) {
+  const id3 = await latestSquadId(db2, userId);
+  if (!id3) return { name: null, slots: [] };
+  const squad = await (await workspaceFor(db2)).getSquad(userId, id3);
+  return { name: squad.name ?? null, slots: squad.slots.map((s) => ({ slot: s.slot, position: s.position, rating: s.card?.rating ?? null, card_id: s.card?.id ?? null })) };
+}
+async function eaNames2(db2, evos) {
+  const want = { leagues: /* @__PURE__ */ new Set(), nations: /* @__PURE__ */ new Set(), clubs: /* @__PURE__ */ new Set() };
+  for (const e of evos) for (const r2 of e.requirements) {
+    const t = /LEAGUE/.test(r2.type) ? "leagues" : /NATION/.test(r2.type) ? "nations" : /CLUB|TEAM/.test(r2.type) ? "clubs" : null;
+    if (t) {
+      for (const v of r2.values) if (typeof v === "number") want[t].add(v);
+    }
+  }
+  const out = { leagues: /* @__PURE__ */ new Map(), nations: /* @__PURE__ */ new Map(), clubs: /* @__PURE__ */ new Map() };
+  for (const t of ["leagues", "nations", "clubs"]) {
+    const ids = [...want[t]].slice(0, 200);
+    if (!ids.length) continue;
+    const { data, error } = await db2.from(t).select("ea_id, name").in("ea_id", ids);
+    fail(error);
+    for (const r2 of data ?? []) if (typeof r2.name === "string") out[t].set(Number(r2.ea_id), r2.name);
+  }
+  return out;
+}
+var present = (evo, cards, slots) => ({
+  ...evo,
+  rule_lines: evo.rules.map(describeRule),
+  level_lines: evo.levels.map((l) => l.map(describeUpgrade)),
+  ...matchEvolution(evo, cards, slots)
+});
+async function evolutionsOverview(db2, userId, platform, now2 = Date.now()) {
+  const { data, error } = await db2.from("account_state").select("evolutions, evolutions_at, shape").eq("user_id", userId).eq("platform", platform).maybeSingle();
+  fail(error);
+  const raw = (data?.evolutions ?? []).filter((e) => !e.end_at || Date.parse(e.end_at) > now2);
+  const [cards, squad, names] = await Promise.all([evoCards(db2, userId), squadSlots(db2, userId), eaNames2(db2, raw)]);
+  const evos = raw.map((e) => present(fromEa2(e, names), cards, squad.slots));
+  const byCard = /* @__PURE__ */ new Map();
+  for (const e of evos) for (const m of e.matches) {
+    if (m.eligible !== true || m.squad.gain <= 0) continue;
+    const had = byCard.get(m.card.id);
+    if (!had || m.squad.gain > had.gain) byCard.set(m.card.id, { card_id: m.card.id, name: m.card.name, evolution: e.name, gain: m.squad.gain, after: m.after.overall, slot: m.squad.slot });
+  }
+  const shape = data?.shape ?? {};
+  return {
+    platform,
+    seen_at: data?.evolutions_at ?? null,
+    club_cards: cards.length,
+    squad: squad.name,
+    evolutions: evos.sort((a, b) => (b.matches[0]?.squad.gain ?? 0) - (a.matches[0]?.squad.gain ?? 0) || b.eligible - a.eligible),
+    best_upgrades: [...byCard.values()].sort((a, b) => b.gain - a.gain).slice(0, 10),
+    shape: Object.fromEntries(Object.entries(shape).filter(([k]) => /^evolution|^academy/.test(k))),
+    verified: false
+  };
+}
+async function checkPastedEvolution(db2, userId, b) {
+  const rules = typeof b.requirements === "string" ? b.requirements.slice(0, 4e3) : "";
+  const ups = typeof b.upgrades === "string" ? b.upgrades.slice(0, 4e3) : "";
+  if (!rules.trim() && !ups.trim()) throw new FutError("Paste the evolution's requirements and upgrades.");
+  const evo = parseEvolutionText(typeof b.name === "string" ? b.name : "", rules, ups);
+  if (!evo.rules.length && !evo.levels.length) throw new FutError("Couldn't read any requirements or upgrades from that text.");
+  const [cards, squad] = await Promise.all([evoCards(db2, userId), squadSlots(db2, userId)]);
+  return { club_cards: cards.length, squad: squad.name, evolution: present(evo, cards, squad.slots), verified: false };
+}
+
 // supabase/functions/_shared/fut/squad-import.ts
 var POSITIONS = ["GK", "RB", "CB", "LB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", "ST"];
 var ALIASES = { RWB: "RB", LWB: "LB", CF: "ST", RF: "RW", LF: "LW", GOALKEEPER: "GK", STRIKER: "ST", KEEPER: "GK" };
@@ -8332,7 +8694,7 @@ async function importSquad(db2, userId, squad, input, env, fetchFn = fetch, hook
 }
 
 // supabase/functions/_shared/fut/squad-suggest.ts
-var norm6 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+var norm7 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 var plays2 = (card, position) => card.positions.some((p) => p.toUpperCase() === position.toUpperCase());
 function evaluate(formation, slots, manager, rules) {
   const filled = slots.filter((s) => s.card);
@@ -8348,7 +8710,7 @@ function score2(e, by) {
   return e.filled * 1e7 + (by === "ovr" ? e.rating * 100 + e.total : e.total * 1e4 + e.rating);
 }
 function pickPool(pool, taken) {
-  return pool.filter((c2) => !taken.has(norm6(c2.name)));
+  return pool.filter((c2) => !taken.has(norm7(c2.name)));
 }
 function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
   const layout = FORMATIONS[formation];
@@ -8362,7 +8724,7 @@ function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
       at.locked = true;
     }
   }
-  const taken = new Set(slots.filter((s) => s.card).map((s) => norm6(s.card.name)));
+  const taken = new Set(slots.filter((s) => s.card).map((s) => norm7(s.card.name)));
   const cards = pickPool(pool, taken);
   const byPos = /* @__PURE__ */ new Map();
   for (const s of slots) {
@@ -8376,10 +8738,10 @@ function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
     const used = new Set(taken);
     for (const o of order) {
       const list2 = byPos.get(o.position);
-      const pick = prefer && list2.find((c2) => !used.has(norm6(c2.name)) && prefer(c2)) || list2.find((c2) => !used.has(norm6(c2.name)));
+      const pick = prefer && list2.find((c2) => !used.has(norm7(c2.name)) && prefer(c2)) || list2.find((c2) => !used.has(norm7(c2.name)));
       if (pick) {
         out.find((s) => s.slot === o.slot).card = pick;
-        used.add(norm6(pick.name));
+        used.add(norm7(pick.name));
       }
     }
     return out;
@@ -8391,9 +8753,9 @@ function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
       let changed = false;
       for (const o of open) {
         const i = cur.findIndex((s) => s.slot === o.slot);
-        const used = new Set(cur.filter((s, j) => j !== i && s.card).map((s) => norm6(s.card.name)));
+        const used = new Set(cur.filter((s, j) => j !== i && s.card).map((s) => norm7(s.card.name)));
         for (const c2 of byPos.get(o.position).slice(0, limit2)) {
-          if (used.has(norm6(c2.name)) || c2.id === cur[i].card?.id) continue;
+          if (used.has(norm7(c2.name)) || c2.id === cur[i].card?.id) continue;
           const next = cur.map((s, j) => j === i ? { ...s, card: c2 } : s);
           const v = score2(evaluate(formation, next, base.manager, rules), by);
           if (v > best) {
@@ -8460,7 +8822,7 @@ function suggestForSlot(squad, slot, pool, rules, by, limit = 12) {
   if (i < 0) throw new Error(`No slot "${slot}" in ${squad.formation}`);
   const target = squad.slots[i];
   const before = evaluate(squad.formation, squad.slots, squad.manager, rules).total;
-  const taken = new Set(squad.slots.filter((s, j) => j !== i && s.card).map((s) => norm6(s.card.name)));
+  const taken = new Set(squad.slots.filter((s, j) => j !== i && s.card).map((s) => norm7(s.card.name)));
   const out = [];
   for (const c2 of pickPool(pool, taken)) {
     if (!plays2(c2, target.position) || c2.id === target.card?.id) continue;
@@ -10776,7 +11138,7 @@ function validatePriceRows(raw, opts) {
 
 // supabase/functions/_shared/fut/xilab/market/squad-link.ts
 function compareInSquad(squad, card, rules, market) {
-  const present = squad.slots.find((s) => s.card?.id === card.id);
+  const present2 = squad.slots.find((s) => s.card?.id === card.id);
   const owned = !!card.owned;
   const cost = owned ? 0 : market.latest_price;
   const options = [];
@@ -10790,7 +11152,7 @@ function compareInSquad(squad, card, rules, market) {
       continue;
     }
     let base = squad;
-    if (present) base = { ...squad, slots: squad.slots.map((x) => x.slot === present.slot ? { ...x, card: null } : x) };
+    if (present2) base = { ...squad, slots: squad.slots.map((x) => x.slot === present2.slot ? { ...x, card: null } : x) };
     const p = previewAssign(base, s.slot, { ...card, price: cost }, rules);
     const before = baseTotal;
     options.push({
@@ -10811,7 +11173,7 @@ function compareInSquad(squad, card, rules, market) {
   return {
     card_id: card.id,
     squad_id: squad.id,
-    already_in_squad: present?.slot ?? null,
+    already_in_squad: present2?.slot ?? null,
     owned,
     cost,
     options,
@@ -11930,6 +12292,8 @@ async function handle(req, deps) {
     if (route === "/helper/account" && m === "POST") return json({ data: await importAccount(db2, userId, await body(req, MAX_STORE_BODY)) });
     if (route === "/account" && m === "GET") return json({ data: await accountOverview(db2, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/account" && m === "DELETE") return json({ data: await clearAccount(db2, userId, platformParam(url.searchParams.get("platform"))) });
+    if (route === "/evolutions" && m === "GET") return json({ data: await runWorkspace(() => evolutionsOverview(db2, userId, platformParam(url.searchParams.get("platform")))) });
+    if (route === "/evolutions/check" && m === "POST") return json({ data: await runWorkspace(async () => checkPastedEvolution(db2, userId, obj2(await body(req)))) });
     if (route === "/sbc" && m === "GET") return json({ data: await sbcOverview(db2, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/sbc/parse" && m === "POST") {
       const b = obj2(await body(req));
