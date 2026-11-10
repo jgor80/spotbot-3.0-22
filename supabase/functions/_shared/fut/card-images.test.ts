@@ -21,7 +21,9 @@ Deno.test("card images: finds the Web App folder, caches it and keeps it through
   const env = (k: string) => (k === "FUT_EA_FACES" ? "On" : undefined);
   const r = await cardImages(env, fetcher, 0);
   assert(r.faces && r.portrait_base === "https://www.ea.com/ea-sports-fc/ultimate-team/web-app/content/ABCDEF12-3456/2027/fut/items/images/mobile/portraits/", `base ${r.portrait_base}`);
+  assert(r.background_base === "https://www.ea.com/ea-sports-fc/ultimate-team/web-app/content/ABCDEF12-3456/2027/fut/items/images/backgrounds/itemBGs/large/", `bg ${r.background_base}`);
   assert(r.credit?.includes("EA"), "credit");
+  assert((await cardImages((k) => (k === "FUT_EA_IMAGES" ? "on" : undefined), fetcher, 60_000)).faces, "FUT_EA_IMAGES works too");
   await cardImages(env, fetcher, 60_000);
   assert(calls === 1, "cached");
   fail = true;

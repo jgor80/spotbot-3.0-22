@@ -96,11 +96,13 @@ no `squad_id` they use the squad the player edited last.
   what the helper saw). Judged on the typical (median) pack; the mean-based average is shown but never makes a pack a buy.
   Nothing buys or opens packs.
 - **Card pictures (since 2026-11-09).** Cards are drawn by GafferBot itself (`src/components/fut/FutCardArt.tsx`):
-  rating, position, name and face stats, coloured by card type. No EA or FUT.GG artwork is used (FUT.GG's terms ban
-  reusing its content). EA player faces are off unless `FUT_EA_FACES=on`; then `GET /health` returns
-  `card_images.portrait_base` (looked up from the Web App page, cached 6h) and each browser loads faces straight from
-  EA, with a "Player faces © EA" credit. Nothing is downloaded, stored or re-served. EA's terms only allow personal,
-  non-commercial use, so this stays a deliberate switch.
+  rating, position, name and face stats, coloured by card type. FUT.GG's card renders are never used (its terms ban
+  reusing its content). EA images are off unless `FUT_EA_IMAGES=on` (`FUT_EA_FACES=on` also works; Jeff's call,
+  2026-11-10): then `GET /health` returns `card_images.portrait_base` (player faces) and `background_base` (EA's common
+  and rare gold/silver/bronze card backgrounds), looked up from the Web App page and cached 6h, and each browser loads
+  them straight from EA with a "© EA" credit. Nothing is downloaded, stored or re-served. EA doesn't publish promo,
+  Icon or Hero backgrounds there, so those keep GafferBot's design. EA's terms only allow personal, non-commercial use,
+  so this stays a deliberate switch.
 - **One switch.** `FUT_ENABLED=true` turns on the API and the MCP tools together; anything else hides both.
 
 ## Turning it on

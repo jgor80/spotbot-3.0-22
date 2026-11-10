@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-const { cardTheme, cardName, faceUrl, isBaseVersion } = await import("./cardArt");
+const { cardTheme, cardName, faceUrl, isBaseVersion, backgroundUrl } = await import("./cardArt");
 
 describe("FUT card art (GafferBot's own design)", () => {
   test("base cards are coloured by rating", () => {
@@ -30,5 +30,19 @@ describe("FUT card art (GafferBot's own design)", () => {
     expect(cardName("Kylian Mbappé")).toBe("Mbappé");
     expect(cardName("Virgil van Dijk")).toBe("van Dijk");
     expect(cardName("Vinícius")).toBe("Vinícius");
+  });
+});
+
+describe("EA card backgrounds (only with FUT_EA_IMAGES on)", () => {
+  test("base cards map to EA's common/rare gold, silver, bronze", () => {
+    expect(backgroundUrl("B/", cardTheme({ rating: 88, version: "Rare" }))).toBe("B/cards_bg_e_1_1_3.png");
+    expect(backgroundUrl("B/", cardTheme({ rating: 80 }))).toBe("B/cards_bg_e_1_0_3.png");
+    expect(backgroundUrl("B/", cardTheme({ rating: 70, version: "Rare" }))).toBe("B/cards_bg_e_1_1_2.png");
+    expect(backgroundUrl("B/", cardTheme({ rating: 60, version: "Common" }))).toBe("B/cards_bg_e_1_0_1.png");
+  });
+  test("promos, icons and heroes and the switch off get none", () => {
+    expect(backgroundUrl("B/", cardTheme({ rating: 90, version: "Team of the Week" }))).toBeNull();
+    expect(backgroundUrl("B/", cardTheme({ rating: 90, is_icon: true }))).toBeNull();
+    expect(backgroundUrl(null, cardTheme({ rating: 88 }))).toBeNull();
   });
 });
