@@ -107,6 +107,9 @@ function createAutopilot(deps) {
   const newMatchHooks = [];
   const sessionHooks = [];
   const digestHooks = [];
+  const recapExtraHooks = [];
+  const sessionStartHooks = [];
+  const sessionClosedHooks = [];
   let recapImage = null;
   let editionImage = null;
   let chronicleExtras = null;
@@ -706,12 +709,12 @@ function createAutopilot(deps) {
       const shown = recent.length > RECAPS_PER_TICK ? recent.slice(-RECAPS_PER_TICK) : recent;
       const channel = isOn(club, 'recaps') ? await postChannel(guildId, club) : null;
       if (isOn(club, 'recaps') && !channel) console.warn(`[autopilot] ${recent.length} recap(s) for ${guildId}/${clubKey} not posted: no channel I can post in`);
-      if (channel) await sendRecaps(channel, club, recent, shown, fresh);
+      if (channel) await sendRecaps(channel, club, recent, shown, fresh, guildId);
       await postMatchReports(guildId, club, shown);
     }
   }
 
-  async function sendRecaps(channel, club, recent, shown, fresh) {
+  async function sendRecaps(channel, club, recent, shown, fresh, guildId) {
     const rowsById = new Map(fresh.map((r) => [r.id, r]));
     if (shown.length < recent.length) {
       const older = recent.slice(0, recent.length - shown.length);
@@ -726,6 +729,13 @@ function createAutopilot(deps) {
         const tags = recapRow.player_stats.map((p) => p?.ea_username).filter(Boolean);
         deps.autoLink.promptMatchPlayers(channel.guild, tags).catch(() => {});
       }
+      // One-line extras (a rivalry note) ride along as message text, whatever shape the recap is
+      const extras = [];
+      for (const hook of recapExtraHooks) {
+        const line = await hook(guildId, club, m).catch((err) => console.warn(`[autopilot] recap extra failed: ${err.message}`));
+        if (line) extras.push(line);
+      }
+      if (recapMsg && extras.length) recapMsg.content = [recapMsg.content, ...extras].filter(Boolean).join('\n').slice(0, 2000);
       await channel.send(recapMsg).catch((err) => console.warn(`[autopilot] recap ${m.id} failed: ${err.message}`));
     }
   }
@@ -888,6 +898,7 @@ function createAutopilot(deps) {
           await updateClub(guild.id, club.key, (ap) => {
             ap.session = session ? { started_at: session.started_at } : { started_at: now.toISOString() };
           });
+          if (!session) for (const hook of sessionStartHooks) await hook({ guildId: guild.id, club, startedAt: now }).catch((err) => console.warn(`[autopilot] session start hook failed: ${err.message}`));
         } else if (!busy && session && !session.empty_since) {
           await updateClub(guild.id, club.key, (ap) => {
             ap.session = { ...session, empty_since: now.toISOString() };
@@ -897,6 +908,7 @@ function createAutopilot(deps) {
             delete ap.session;
           });
           if (isOn(club, 'session') || isOn(club, 'chronicle')) await closeSession(guild, club, session).catch((err) => console.warn(`[autopilot] session ${club.key} failed: ${err.message}`));
+          for (const hook of sessionClosedHooks) await hook({ guildId: guild.id, club, startedAt: new Date(session.started_at), endedAt: new Date(session.empty_since) }).catch((err) => console.warn(`[autopilot] session closed hook failed: ${err.message}`));
         }
       }
     }
@@ -1299,6 +1311,12 @@ function createAutopilot(deps) {
     onSessionEnd: (fn) => sessionHooks.push(fn),
     // fn(guildId, club) -> [{ name, value }] fields added to the Monday digest
     onDigest: (fn) => digestHooks.push(fn),
+    // fn(guildId, club, match) -> one line added to that match's recap, or null
+    onRecapExtra: (fn) => recapExtraHooks.push(fn),
+    // fn({ guildId, club, startedAt }) when the club's linked voice channel gets its first player
+    onSessionStart: (fn) => sessionStartHooks.push(fn),
+    // fn({ guildId, club, startedAt, endedAt }) once a voice session has settled, whatever autopilot posts
+    onSessionClosed: (fn) => sessionClosedHooks.push(fn),
     buildSessionRecap,
     buildEdition,
     // fn({ row, club, match, history, prefs, talkingPoint }) -> PNG buffer or null
