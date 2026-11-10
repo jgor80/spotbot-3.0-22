@@ -15,7 +15,7 @@ const fail = (error: { message?: string } | null) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 
-export const SECTIONS = ["balance", "profile", "tradepile", "watchlist", "unassigned", "sbcs", "sbc_challenges", "objectives", "season"] as const;
+export const SECTIONS = ["balance", "profile", "tradepile", "watchlist", "unassigned", "sbcs", "sbc_challenges", "evolutions", "objectives", "season"] as const;
 export type SectionName = typeof SECTIONS[number];
 export const EA_TAX = 0.05;
 const MAX_TRADE = 300, MAX_UNASSIGNED = 500, MAX_SBCS = 600, MAX_OBJECTIVES = 600;
@@ -136,6 +136,24 @@ function parseSbcChallenges(v: unknown): SbcChallenge[] | null {
   }).filter((c): c is SbcChallenge => !!c);
 }
 
+function parseEvolutions(v: unknown) {
+  if (!Array.isArray(v)) return null;
+  const entry = (r: Row) => ({
+    type: (text(r.type, 60) ?? "").toUpperCase(), scope: text(r.scope, 20)?.toUpperCase() ?? null,
+    values: (Array.isArray(r.values) ? r.values : []).filter((x) => (typeof x === "number" && Number.isFinite(x) && Math.abs(x) < 2 ** 31) || (typeof x === "string" && x.length <= 40)).slice(0, 20),
+  });
+  const ok = (e: { type: string }) => /^[A-Z0-9_ +]{1,60}$/.test(e.type);
+  return v.slice(0, 150).filter(isObj).map((e) => {
+    const evo_id = id(e.evo_id), name = text(e.name, 120);
+    if (!evo_id || !name) return null;
+    return {
+      evo_id, name, description: text(e.description, 300), end_at: when(e.end_at), coins: num(e.coins), points: num(e.points), status: text(e.status, 30),
+      requirements: (Array.isArray(e.requirements) ? e.requirements : []).filter(isObj).slice(0, 20).map(entry).filter(ok),
+      levels: (Array.isArray(e.levels) ? e.levels : []).filter(isObj).slice(0, 12).map((l) => ({ upgrades: (Array.isArray(l.upgrades) ? l.upgrades : []).filter(isObj).slice(0, 20).map(entry).filter(ok) })),
+    };
+  }).filter((e) => !!e);
+}
+
 function parseObjectives(v: unknown): Objective[] | null {
   if (!Array.isArray(v)) return null;
   return v.slice(0, MAX_OBJECTIVES).filter(isObj).map((o) => {
@@ -154,7 +172,7 @@ function parseSeason(v: unknown): Record<string, number> | null {
 
 const PARSERS: Record<SectionName, (v: unknown) => unknown> = {
   balance: parseBalance, profile: parseProfile, tradepile: parseTrades, watchlist: parseTrades, unassigned: parseUnassigned,
-  sbcs: parseSbcs, sbc_challenges: parseSbcChallenges, objectives: parseObjectives, season: parseSeason,
+  sbcs: parseSbcs, sbc_challenges: parseSbcChallenges, evolutions: parseEvolutions, objectives: parseObjectives, season: parseSeason,
 };
 
 export interface AccountUpload {

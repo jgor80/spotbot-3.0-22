@@ -74,7 +74,7 @@ function Empty() {
   </div>;
 }
 
-const SECTION_LABEL: Record<AccountSection, string> = { balance: "Balance", profile: "Club", tradepile: "Transfer list", watchlist: "Transfer Targets", unassigned: "Unassigned", sbcs: "SBCs", sbc_challenges: "SBC challenges", objectives: "Objectives", season: "Season" };
+const SECTION_LABEL: Record<AccountSection, string> = { balance: "Balance", profile: "Club", tradepile: "Transfer list", watchlist: "Transfer Targets", unassigned: "Unassigned", sbcs: "SBCs", sbc_challenges: "SBC challenges", evolutions: "Evolutions", objectives: "Objectives", season: "Season" };
 
 function Overview({ d }: { d: AccountOverview }) {
   const [allSbcs, setAllSbcs] = useState(false);

@@ -33,6 +33,7 @@ import {
   Shield,
   Puzzle,
   BookOpenText,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -96,6 +97,7 @@ const futMore: NavItem[] = [
   { path: "/fut/packs", label: "Packs", icon: Package },
   { path: "/fut/sbc", label: "SBC Solver", icon: Puzzle },
   { path: "/fut/knowledge", label: "Knowledge Bank", icon: BookOpenText },
+  { path: "/fut/evolutions", label: "Evolutions", icon: TrendingUp },
 ];
 
 const SECTION_HOME: Record<AppSection, string> = { club: "/", fut: "/fut/market/cards" };

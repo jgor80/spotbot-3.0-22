@@ -9196,7 +9196,7 @@ function validatePriceRows(raw, opts) {
 
 // supabase/functions/_shared/fut/xilab/market/squad-link.ts
 function compareInSquad(squad, card, rules, market) {
-  const present = squad.slots.find((s) => s.card?.id === card.id);
+  const present2 = squad.slots.find((s) => s.card?.id === card.id);
   const owned = !!card.owned;
   const cost = owned ? 0 : market.latest_price;
   const options = [];
@@ -9210,7 +9210,7 @@ function compareInSquad(squad, card, rules, market) {
       continue;
     }
     let base = squad;
-    if (present) base = { ...squad, slots: squad.slots.map((x) => x.slot === present.slot ? { ...x, card: null } : x) };
+    if (present2) base = { ...squad, slots: squad.slots.map((x) => x.slot === present2.slot ? { ...x, card: null } : x) };
     const p = previewAssign(base, s.slot, { ...card, price: cost }, rules);
     const before = baseTotal;
     options.push({
@@ -9231,7 +9231,7 @@ function compareInSquad(squad, card, rules, market) {
   return {
     card_id: card.id,
     squad_id: squad.id,
-    already_in_squad: present?.slot ?? null,
+    already_in_squad: present2?.slot ?? null,
     owned,
     cost,
     options,
@@ -11181,6 +11181,338 @@ async function solveForUser(db, userId, platform, req) {
   };
 }
 
+// supabase/functions/_shared/fut/evolutions.ts
+var FACE2 = ["pac", "sho", "pas", "dri", "def", "phy"];
+var STAT_WORDS = [
+  [/^(ovr|overall|rating|player ?rating)$/i, "overall"],
+  [/^(pac|pace)$/i, "pac"],
+  [/^(sho|shooting)$/i, "sho"],
+  [/^(pas|passing)$/i, "pas"],
+  [/^(dri|dribbling)$/i, "dri"],
+  [/^(def|defending|defence|defense)$/i, "def"],
+  [/^(phy|physical|physicality)$/i, "phy"],
+  [/^skill ?moves?$|^sm$/i, "skill_moves"],
+  [/^weak ?foot$|^wf$/i, "weak_foot"],
+  [/^playstyles? ?(\+|plus)$|^playstyles?_plus$/i, "playstyles_plus"],
+  [/^playstyles?$/i, "playstyles"]
+];
+var statOf = (word) => STAT_WORDS.find(([re]) => re.test(word.trim()))?.[1] ?? null;
+var POSITION2 = /^(GK|LB|LWB|CB|RB|RWB|CDM|CM|CAM|LM|RM|LW|RW|CF|ST)$/;
+var norm6 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+var opOf2 = (s) => /\bmax(imum)?\.?\b|or (less|lower|fewer)|at most|\bunder\b/i.test(s) ? "max" : /\bexactly\b/i.test(s) ? "exact" : "min";
+function parseRuleLine(raw) {
+  const line = raw.replace(/^[•·*\-–]\s*/, "").replace(/\s+/g, " ").trim();
+  const colon = line.indexOf(":");
+  let label = colon > 0 ? line.slice(0, colon) : line.replace(/\s*(min(imum)?\.?|max(imum)?\.?|exactly|\d).*$/i, "");
+  const rest = colon > 0 ? line.slice(colon + 1).trim() : line.slice(label.length).trim();
+  const lead = /^(min(imum)?\.?|max(imum)?\.?|exactly)\s+(\d+)\s+([A-Za-z +]+)$/i.exec(line) ?? /^(min(imum)?\.?|max(imum)?\.?|exactly)\s+([A-Za-z +]+?)\s+(\d+)$/i.exec(line);
+  if (lead) {
+    const num3 = Number(lead[4] && /^\d+$/.test(lead[4]) ? lead[4] : lead[5]);
+    const word = /^\d+$/.test(lead[4] ?? "") ? lead[5] : lead[4];
+    const f3 = statOf(word);
+    return f3 && Number.isFinite(num3) ? { field: f3, op: opOf2(lead[1]), value: num3 } : null;
+  }
+  label = label.trim();
+  const f2 = statOf(label);
+  const n = /(\d+)/.exec(rest)?.[1];
+  if (f2 && n) return { field: f2, op: opOf2(rest), value: Number(n) };
+  const values = rest.split(/\s*(?:,|\bor\b|\/|\|)\s*/i).map((s) => s.trim()).filter(Boolean).slice(0, 15);
+  const not = /\bnot\b|\bexcept\b|\bexclud/i.test(label + " " + rest);
+  const clean = values.map((v) => v.replace(/^(not|except)\s+/i, ""));
+  if (/^(positions?|preferred positions?)$/i.test(label)) {
+    const pos = clean.map((v) => v.toUpperCase()).filter((v) => POSITION2.test(v));
+    return pos.length ? { field: "position", op: not ? "not_in" : "in", values: pos } : null;
+  }
+  if (/^(league|nation|country\/region|nationality|club|rarity|card type)s?$/i.test(label) && clean.length) {
+    const field = /^league/i.test(label) ? "league" : /^(nation|country|nationality)/i.test(label) ? "nation" : /^club/i.test(label) ? "club" : "rarity";
+    return { field, op: not ? "not_in" : "in", values: clean };
+  }
+  return null;
+}
+function parseUpgradeLine(raw) {
+  const line = raw.replace(/^[•·*\-–]\s*/, "").replace(/\s+/g, " ").trim();
+  const out = [];
+  const ps = /^(new )?playstyles?\s*(\+|plus)?\s*:?\s*(.+)$/i.exec(line);
+  if (ps) {
+    for (const name2 of ps[3].split(/\s*(?:,|\band\b)\s*/i).map((s) => s.trim()).filter(Boolean).slice(0, 6)) out.push({ field: "playstyle", name: name2.slice(0, 40), plus: !!ps[2] });
+    return out;
+  }
+  const pos = /^(new |added |alt(ernative)? )?positions?\s*:?\s*(.+)$/i.exec(line);
+  if (pos) {
+    for (const p of pos[3].split(/\s*(?:,|\/|\band\b)\s*/i).map((s) => s.trim().toUpperCase()).filter((p2) => POSITION2.test(p2))) out.push({ field: "position", name: p });
+    return out;
+  }
+  for (const part of line.split(/\s*,\s*/)) {
+    const a = /^\+?\s*(\d+)\s+([A-Za-z ]+)$/.exec(part) ?? null;
+    const b = /^([A-Za-z ]+?)\s*:?\s*\+\s*(\d+)$/.exec(part) ?? null;
+    const word = a ? a[2] : b ? b[1] : null, num3 = a ? Number(a[1]) : b ? Number(b[2]) : NaN;
+    const f2 = word ? statOf(word) : null;
+    if (f2 && f2 !== "playstyles" && f2 !== "playstyles_plus" && num3 > 0 && num3 <= 30) out.push({ field: f2, add: num3 });
+  }
+  return out;
+}
+function parseEvolutionText(name2, rulesText, upgradesText) {
+  const rules = [], unread = [];
+  for (const l of rulesText.split(/\r?\n|;/).map((s) => s.trim()).filter(Boolean).slice(0, 30)) {
+    const r2 = parseRuleLine(l);
+    if (r2) rules.push(r2);
+    else unread.push(l.slice(0, 160));
+  }
+  const levels = [];
+  let cur = [];
+  for (const l of upgradesText.split(/\r?\n|;/).map((s) => s.trim()).filter(Boolean).slice(0, 60)) {
+    if (/^(level|stage|step|tier)\s*\d+\s*:?$/i.test(l)) {
+      if (cur.length) levels.push(cur);
+      cur = [];
+      continue;
+    }
+    const ups = parseUpgradeLine(l.replace(/^(level|stage)\s*\d+\s*:\s*/i, ""));
+    if (ups.length) cur.push(...ups);
+    else unread.push(l.slice(0, 160));
+  }
+  if (cur.length) levels.push(cur);
+  return { id: `pasted:${norm6(name2).slice(0, 40) || "evolution"}`, name: name2.trim().slice(0, 120) || "My evolution", description: null, end_at: null, coins: null, points: null, rules, levels, unread, source: "pasted" };
+}
+var eaWord = (t) => t.toUpperCase().replace(/^(PLAYER|ATTRIBUTE|ATTR|STAT|ELIGIBILITY)_/, "").replace(/_(MIN|MAX|VALUE)$/, "");
+var eaOp = (scope, type) => scope === "LOWER" || /_MAX$|^MAX_/.test(type) ? "max" : scope === "EXACT" ? "exact" : "min";
+function fromEa2(e, names) {
+  const unread = [];
+  const rules = [];
+  const show = (x) => [x.type, x.scope, x.values.join(",")].filter(Boolean).join(" ");
+  for (const r2 of e.requirements) {
+    const w = eaWord(r2.type), f2 = statOf(w.replace(/_/g, " "));
+    const nums = r2.values.filter((v) => typeof v === "number"), strs = r2.values.filter((v) => typeof v === "string");
+    if (f2 && nums.length) {
+      rules.push({ field: f2, op: eaOp(r2.scope, r2.type), value: nums[0] });
+      continue;
+    }
+    if (/^(POSITION|PREFERRED_POSITION|POSITIONS)$/.test(w) && strs.some((s) => POSITION2.test(s.toUpperCase()))) {
+      rules.push({ field: "position", op: r2.scope === "NOT" || r2.scope === "EXCLUDE" ? "not_in" : "in", values: strs.map((s) => s.toUpperCase()).filter((s) => POSITION2.test(s)) });
+      continue;
+    }
+    const idField = w === "LEAGUE_ID" || w === "LEAGUE" ? "league" : w === "NATION_ID" || w === "NATION" ? "nation" : w === "CLUB_ID" || w === "CLUB" || w === "TEAM_ID" ? "club" : null;
+    if (idField && nums.length) {
+      const m = idField === "league" ? names.leagues : idField === "nation" ? names.nations : names.clubs;
+      rules.push({ field: idField, op: "in", values: nums.map((n) => m.get(n) ?? `EA ${n}`) });
+      continue;
+    }
+    unread.push(show(r2));
+  }
+  const levels = e.levels.map((l) => l.upgrades.flatMap((u) => {
+    const w = eaWord(u.type), f2 = statOf(w.replace(/_/g, " "));
+    const n = u.values.find((v) => typeof v === "number");
+    if (f2 && f2 !== "playstyles" && f2 !== "playstyles_plus" && n !== void 0 && n > 0 && n <= 30) return [{ field: f2, add: n }];
+    const s = u.values.find((v) => typeof v === "string");
+    if (/^(PLAYSTYLE|TRAIT)S?$/.test(w) && s) return [{ field: "playstyle", name: s, plus: false }];
+    if (/^(PLAYSTYLE|TRAIT)S?_?(PLUS|\+)$|^ICON_TRAIT$/.test(w) && s) return [{ field: "playstyle", name: s, plus: true }];
+    if (/^POSITIONS?$/.test(w) && s && POSITION2.test(s.toUpperCase())) return [{ field: "position", name: s.toUpperCase() }];
+    unread.push(show(u));
+    return [];
+  })).filter((l) => l.length);
+  return { id: `ea:${e.evo_id}`, name: e.name, description: e.description, end_at: e.end_at, coins: e.coins, points: e.points, rules, levels, unread, source: "helper" };
+}
+var rarityWords = (c) => {
+  const v = (c.version ?? "").toLowerCase();
+  const out = [v];
+  if (c.is_icon) out.push("icon");
+  if (c.is_hero) out.push("hero");
+  if (/^(rare|common)$/.test(v) || !v) out.push("base");
+  else out.push("special", "promo");
+  if (v === "rare") out.push("rare");
+  if (v === "common") out.push("common", "non-rare");
+  return out;
+};
+function numValue(c, f2) {
+  if (f2 === "overall") return c.overall;
+  if (f2 === "skill_moves") return c.skill_moves;
+  if (f2 === "weak_foot") return c.weak_foot;
+  if (f2 === "playstyles") return c.playstyles.length + c.playstyles_plus.length;
+  if (f2 === "playstyles_plus") return c.playstyles_plus.length;
+  return c.stats[f2] ?? null;
+}
+function describeRule(r2) {
+  const LABEL2 = { overall: "Overall", pac: "Pace", sho: "Shooting", pas: "Passing", dri: "Dribbling", def: "Defending", phy: "Physical", skill_moves: "Skill moves", weak_foot: "Weak foot", playstyles: "PlayStyles", playstyles_plus: "PlayStyles+", position: "Position", league: "League", nation: "Nation", club: "Club", rarity: "Card type" };
+  if ("value" in r2) return `${LABEL2[r2.field]}: ${r2.op === "min" ? "Min." : r2.op === "max" ? "Max." : "Exactly"} ${r2.value}`;
+  return `${LABEL2[r2.field]}: ${r2.op === "not_in" ? "not " : ""}${r2.values.join(" or ")}`;
+}
+function describeUpgrade(u) {
+  if (u.field === "playstyle") return `PlayStyle${u.plus ? "+" : ""}: ${u.name}`;
+  if (u.field === "position") return `New position: ${u.name}`;
+  const LABEL2 = { overall: "OVR", pac: "Pace", sho: "Shooting", pas: "Passing", dri: "Dribbling", def: "Defending", phy: "Physical", skill_moves: "Skill moves", weak_foot: "Weak foot" };
+  return `+${u.add} ${LABEL2[u.field]}`;
+}
+function checkRules(c, rules) {
+  return rules.map((r2) => {
+    let ok;
+    if ("value" in r2) {
+      const v = numValue(c, r2.field);
+      ok = v === null ? null : r2.op === "min" ? v >= r2.value : r2.op === "max" ? v <= r2.value : v === r2.value;
+    } else {
+      const want = new Set(r2.values.map(norm6));
+      const have = r2.field === "position" ? c.positions.map(norm6) : r2.field === "rarity" ? rarityWords(c).map(norm6) : [norm6(c[r2.field] ?? "")];
+      const hit = have.some((h) => want.has(h));
+      ok = r2.op === "in" ? hit : !hit;
+      if (r2.field !== "position" && r2.field !== "rarity" && !c[r2.field]) ok = null;
+    }
+    return { label: describeRule(r2), ok };
+  });
+}
+function evolve(c, levels) {
+  const out = { ...c, stats: { ...c.stats }, positions: [...c.positions], playstyles: [...c.playstyles], playstyles_plus: [...c.playstyles_plus] };
+  for (const u of levels.flat()) {
+    if (u.field === "overall") out.overall = Math.min(99, out.overall + u.add);
+    else if (u.field === "skill_moves") out.skill_moves = Math.min(5, (out.skill_moves ?? 1) + u.add);
+    else if (u.field === "weak_foot") out.weak_foot = Math.min(5, (out.weak_foot ?? 1) + u.add);
+    else if (u.field === "playstyle") {
+      if (u.plus) {
+        if (!out.playstyles_plus.includes(u.name)) out.playstyles_plus.push(u.name);
+        out.playstyles = out.playstyles.filter((p) => p !== u.name);
+      } else if (!out.playstyles.includes(u.name) && !out.playstyles_plus.includes(u.name)) out.playstyles.push(u.name);
+    } else if (u.field === "position") {
+      if (!out.positions.includes(u.name)) out.positions.push(u.name);
+    } else if (FACE2.includes(u.field)) {
+      const k = u.field;
+      if (out.stats[k] !== void 0) out.stats[k] = Math.min(99, out.stats[k] + u.add);
+    }
+  }
+  return out;
+}
+function squadGain(before, after, slots) {
+  let best = { slot: null, gain: 0 };
+  for (const s of slots) {
+    if (!after.positions.some((p) => p === s.position)) continue;
+    const now2 = s.card_id === before.id ? before.overall : s.rating ?? 0;
+    const g = after.overall - now2;
+    if (g > best.gain) best = { slot: s.slot, gain: g };
+  }
+  return best;
+}
+function matchEvolution(evo, cards, slots, limit = 15) {
+  const all = [];
+  for (const c of cards) {
+    const checks = checkRules(c, evo.rules);
+    if (checks.some((x) => x.ok === false)) continue;
+    const after = evolve(c, evo.levels);
+    all.push({ card: c, after, checks, eligible: checks.every((x) => x.ok === true) ? true : null, squad: squadGain(c, after, slots) });
+  }
+  all.sort((a, b) => Number(b.eligible === true) - Number(a.eligible === true) || b.squad.gain - a.squad.gain || b.after.overall - a.after.overall || (a.card.untradeable === b.card.untradeable ? 0 : a.card.untradeable ? -1 : 1));
+  return { eligible: all.filter((m) => m.eligible === true).length, maybe: all.filter((m) => m.eligible === null).length, matches: all.slice(0, limit) };
+}
+
+// supabase/functions/_shared/fut/evolutions-data.ts
+var FACE3 = ["pac", "sho", "pas", "dri", "def", "phy"];
+var CHUNK = 100;
+async function evoCards(db, userId) {
+  const mine = await searchMyCards(db, userId, { all: true, owned_only: true });
+  const keys = [...new Set(mine.map((c) => c.ea_item_id).filter((x) => !!x).map(String))];
+  const catBy = /* @__PURE__ */ new Map();
+  for (let i = 0; i < keys.length; i += CHUNK) {
+    const { data, error } = await db.from("player_cards").select("id, source_card_key").eq("source_id", "futgg_catalogue").is("owner_user_id", null).in("source_card_key", keys.slice(i, i + CHUNK));
+    fail(error);
+    for (const r2 of data ?? []) catBy.set(String(r2.source_card_key), r2.id);
+  }
+  const catIds = [...new Set(catBy.values())];
+  const attrs = /* @__PURE__ */ new Map(), styles = /* @__PURE__ */ new Map();
+  for (let i = 0; i < catIds.length; i += CHUNK) {
+    const part = catIds.slice(i, i + CHUNK);
+    const [a, s] = await Promise.all([db.from("card_attributes").select("*").in("card_id", part), db.from("card_playstyles").select("*").in("card_id", part)]);
+    fail(a.error);
+    fail(s.error);
+    for (const r2 of a.data ?? []) attrs.set(r2.card_id, r2);
+    for (const r2 of s.data ?? []) styles.set(r2.card_id, [...styles.get(r2.card_id) ?? [], r2]);
+  }
+  return mine.map((c) => {
+    const cat = c.ea_item_id ? catBy.get(String(c.ea_item_id)) : void 0;
+    const a = cat ? attrs.get(cat) : void 0, st = cat ? styles.get(cat) ?? [] : [];
+    const stats = { ...c.stats };
+    if (a) {
+      for (const k of FACE3) if (stats[k] === void 0 && typeof a[k] === "number") stats[k] = a[k];
+    }
+    return {
+      id: c.id,
+      name: c.player_name,
+      version: c.version,
+      overall: c.overall,
+      positions: c.positions,
+      league: c.league,
+      nation: c.nation,
+      club: c.club,
+      is_icon: c.is_icon,
+      is_hero: c.is_hero,
+      stats,
+      skill_moves: c.skill_moves,
+      weak_foot: c.weak_foot,
+      playstyles: c.playstyles.length || c.playstyles_plus.length ? c.playstyles : st.filter((x) => !x.is_plus).map((x) => x.name),
+      playstyles_plus: c.playstyles.length || c.playstyles_plus.length ? c.playstyles_plus : st.filter((x) => x.is_plus).map((x) => x.name),
+      ea_item_id: c.ea_item_id,
+      untradeable: c.tradeable === false
+    };
+  });
+}
+async function squadSlots(db, userId) {
+  const id = await latestSquadId(db, userId);
+  if (!id) return { name: null, slots: [] };
+  const squad = await (await workspaceFor(db)).getSquad(userId, id);
+  return { name: squad.name ?? null, slots: squad.slots.map((s) => ({ slot: s.slot, position: s.position, rating: s.card?.rating ?? null, card_id: s.card?.id ?? null })) };
+}
+async function eaNames2(db, evos) {
+  const want = { leagues: /* @__PURE__ */ new Set(), nations: /* @__PURE__ */ new Set(), clubs: /* @__PURE__ */ new Set() };
+  for (const e of evos) for (const r2 of e.requirements) {
+    const t = /LEAGUE/.test(r2.type) ? "leagues" : /NATION/.test(r2.type) ? "nations" : /CLUB|TEAM/.test(r2.type) ? "clubs" : null;
+    if (t) {
+      for (const v of r2.values) if (typeof v === "number") want[t].add(v);
+    }
+  }
+  const out = { leagues: /* @__PURE__ */ new Map(), nations: /* @__PURE__ */ new Map(), clubs: /* @__PURE__ */ new Map() };
+  for (const t of ["leagues", "nations", "clubs"]) {
+    const ids = [...want[t]].slice(0, 200);
+    if (!ids.length) continue;
+    const { data, error } = await db.from(t).select("ea_id, name").in("ea_id", ids);
+    fail(error);
+    for (const r2 of data ?? []) if (typeof r2.name === "string") out[t].set(Number(r2.ea_id), r2.name);
+  }
+  return out;
+}
+var present = (evo, cards, slots) => ({
+  ...evo,
+  rule_lines: evo.rules.map(describeRule),
+  level_lines: evo.levels.map((l) => l.map(describeUpgrade)),
+  ...matchEvolution(evo, cards, slots)
+});
+async function evolutionsOverview(db, userId, platform, now2 = Date.now()) {
+  const { data, error } = await db.from("account_state").select("evolutions, evolutions_at, shape").eq("user_id", userId).eq("platform", platform).maybeSingle();
+  fail(error);
+  const raw = (data?.evolutions ?? []).filter((e) => !e.end_at || Date.parse(e.end_at) > now2);
+  const [cards, squad, names] = await Promise.all([evoCards(db, userId), squadSlots(db, userId), eaNames2(db, raw)]);
+  const evos = raw.map((e) => present(fromEa2(e, names), cards, squad.slots));
+  const byCard = /* @__PURE__ */ new Map();
+  for (const e of evos) for (const m of e.matches) {
+    if (m.eligible !== true || m.squad.gain <= 0) continue;
+    const had = byCard.get(m.card.id);
+    if (!had || m.squad.gain > had.gain) byCard.set(m.card.id, { card_id: m.card.id, name: m.card.name, evolution: e.name, gain: m.squad.gain, after: m.after.overall, slot: m.squad.slot });
+  }
+  const shape = data?.shape ?? {};
+  return {
+    platform,
+    seen_at: data?.evolutions_at ?? null,
+    club_cards: cards.length,
+    squad: squad.name,
+    evolutions: evos.sort((a, b) => (b.matches[0]?.squad.gain ?? 0) - (a.matches[0]?.squad.gain ?? 0) || b.eligible - a.eligible),
+    best_upgrades: [...byCard.values()].sort((a, b) => b.gain - a.gain).slice(0, 10),
+    shape: Object.fromEntries(Object.entries(shape).filter(([k]) => /^evolution|^academy/.test(k))),
+    verified: false
+  };
+}
+async function checkPastedEvolution(db, userId, b) {
+  const rules = typeof b.requirements === "string" ? b.requirements.slice(0, 4e3) : "";
+  const ups = typeof b.upgrades === "string" ? b.upgrades.slice(0, 4e3) : "";
+  if (!rules.trim() && !ups.trim()) throw new FutError("Paste the evolution's requirements and upgrades.");
+  const evo = parseEvolutionText(typeof b.name === "string" ? b.name : "", rules, ups);
+  if (!evo.rules.length && !evo.levels.length) throw new FutError("Couldn't read any requirements or upgrades from that text.");
+  const [cards, squad] = await Promise.all([evoCards(db, userId), squadSlots(db, userId)]);
+  return { club_cards: cards.length, squad: squad.name, evolution: present(evo, cards, squad.slots), verified: false };
+}
+
 // supabase/functions/gafferbot-mcp/fut.ts
 var SIGN_IN = "XI Lab uses your GafferBot website account. Sign in once at https://gafferbot.app/fut with Discord, then ask again.";
 async function account(ctx) {
@@ -11552,6 +11884,27 @@ FUT_TOOLS.push(
       const { db, userId } = await account(ctx);
       const b = args;
       return await runWorkspace(() => solveForUser(db, userId, platformParam(b.platform), parseSolveBody(b)));
+    })
+  },
+  {
+    name: "find_fut_evolutions",
+    title: "Evolutions for my club (XI Lab Evolutions finder)",
+    description: "EA FC Ultimate Team: live evolutions the XI Lab helper saw in the EA Web App (or one the player pastes as requirement and upgrade text), each with the player's club cards that can enter it, what they become after every level, and the overall gain in their latest saved squad; plus the best evolution per card. New ratings add EA's +OVR upgrades, so they're estimates; EA's FC 27 evolution fields are unverified (report anything under unread). " + READ_ONLY,
+    inputSchema: {
+      type: "object",
+      properties: {
+        platform: PLATFORM,
+        name: { type: "string", description: "Pasted evolution's name." },
+        requirements: { type: "string", description: "Pasted requirements, one per line (e.g. 'Overall: Max 82', 'Position: CM')." },
+        upgrades: { type: "string", description: "Pasted upgrades, one per line, 'Level N' lines between levels (e.g. '+3 OVR', 'PlayStyle+: Finesse Shot')." }
+      },
+      additionalProperties: false
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const b = args;
+      if (str5(b.requirements) || str5(b.upgrades)) return await runWorkspace(() => checkPastedEvolution(db, userId, b));
+      return await runWorkspace(() => evolutionsOverview(db, userId, platformParam(b.platform)));
     })
   }
 );
