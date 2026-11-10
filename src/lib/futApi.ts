@@ -104,7 +104,7 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
   if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
   return (data ?? null) as T;
 }
-export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, evolutions: ["fut", "evolutions"] as const, trades: ["fut", "trades"] as const, sellKeep: ["fut", "sell-keep"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
+export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, evolutions: ["fut", "evolutions"] as const, trades: ["fut", "trades"] as const, sellKeep: ["fut", "sell-keep"] as const, meta: ["fut", "meta"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
 export type MarketPlatform = "console" | "pc";
 
@@ -222,6 +222,9 @@ export interface SbcSolveInput { platform: MarketPlatform; set_id?: number; rewa
 export interface EvoCard { id: string; name: string; version: string | null; overall: number; positions: string[]; league: string | null; nation: string | null; club: string | null; is_icon?: boolean; is_hero?: boolean; stats: Partial<Record<"pac" | "sho" | "pas" | "dri" | "def" | "phy", number>>; skill_moves: number | null; weak_foot: number | null; playstyles: string[]; playstyles_plus: string[]; ea_item_id?: number | null; untradeable?: boolean }
 export interface EvoMatch { card: EvoCard; after: EvoCard; checks: { label: string; ok: boolean | null }[]; eligible: boolean | null; squad: { slot: string | null; gain: number } }
 export interface EvolutionView { id: string; name: string; description: string | null; end_at: string | null; coins: number | null; points: number | null; unread: string[]; source: "helper" | "pasted"; rule_lines: string[]; level_lines: string[][]; eligible: number; maybe: number; matches: EvoMatch[] }
+export interface MetaRoleScore { position: string; role: string; score: number; tier: string; chem_style: string | null; base: number; bonuses: { playstyles: number; height: number; accelerate: number; weak_foot: number; skill_moves: number }; strengths: string[]; weaknesses: string[]; playstyles: string[] }
+export interface MetaCardRating { card_id: string; name: string; rating: number; positions: string[]; best: MetaRoleScore | null; roles: MetaRoleScore[]; verdict: string; estimated: boolean; note: string; verified: false }
+export interface MetaTop { platform: MarketPlatform; position: string; role: string | null; roles: string[]; max_price: number | null; published_at: string | null; with_stats: number; note: string; verified: false; cards: { card_id: string; ea_item_id: number | null; name: string; rating: number; version: string | null; position: string; owned: boolean; price: number | null; meta: MetaRoleScore }[] }
 export interface PriceHistoryData { card_id: string; ea_item_id?: number; name?: string; platform: MarketPlatform; days: number; note: string; points: { t: string; price: number; kind: "full" | "hourly" }[]; market_drops: { t: string; median_move: number; cards: number }[]; stats: { latest: number | null; latest_at?: string; low: number | null; high: number | null; change_24h: number | null; change_7d: number | null; change_range: number | null; hourly_points: number } }
 export type SellVerdict = "keep" | "keep_evo" | "hold_fodder" | "sell_now" | "sell_high" | "wait" | "sell" | "no_price";
 export interface SellAdvice { id: string; name: string; rating: number; version: string | null; positions: string[]; ea_item_id: number | null; purchase_price: number | null; squads: string[]; evo: { name: string; gain: number } | null; floor: number | null; verdict: SellVerdict; reason: string; price: number | null; after_tax: number | null; change_3d: number | null; change_7d: number | null; profit: number | null }
@@ -310,6 +313,10 @@ export const futApi = {
   alerts: {
     settings: () => futRequest<{ dm: boolean; move_pct: number | null; needs_discord: string }>("/alerts/settings"),
     save: (input: { dm: boolean; move_pct: number | null }) => futRequest<{ dm: boolean; move_pct: number | null; needs_discord: string }>("/alerts/settings", "POST", input),
+  },
+  meta: {
+    card: (cardId: string) => futRequest<MetaCardRating>(`/meta/card?${new URLSearchParams({ card_id: cardId })}`),
+    top: (q: { position: string; role?: string; max_price?: number | null; owned_only?: boolean; platform: MarketPlatform }) => futRequest<MetaTop>(`/meta/top?${new URLSearchParams({ position: q.position, platform: q.platform, ...(q.role ? { role: q.role } : {}), ...(q.max_price ? { max_price: String(q.max_price) } : {}), ...(q.owned_only ? { owned_only: "1" } : {}) })}`),
   },
   priceHistory: (cardId: string, platform: MarketPlatform, days: number) => futRequest<PriceHistoryData>(`/prices/history?${new URLSearchParams({ card_id: cardId, platform, days: String(days) })}`),
   sellOrKeep: (platform: MarketPlatform) => futRequest<SellOrKeep>(`/club/sell-or-keep?${new URLSearchParams({ platform })}`),

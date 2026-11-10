@@ -36,6 +36,7 @@ import {
   TrendingUp,
   Coins,
   Scale,
+  Gauge,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -102,6 +103,7 @@ const futMore: NavItem[] = [
   { path: "/fut/evolutions", label: "Evolutions", icon: TrendingUp },
   { path: "/fut/trades", label: "Trade Log", icon: Coins },
   { path: "/fut/sell", label: "Sell or Keep", icon: Scale },
+  { path: "/fut/meta", label: "Meta Ratings", icon: Gauge },
 ];
 
 const SECTION_HOME: Record<AppSection, string> = { club: "/", fut: "/fut/market/cards" };

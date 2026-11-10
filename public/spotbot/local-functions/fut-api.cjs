@@ -8239,9 +8239,9 @@ function fromEa2(e, names) {
   const show = (x) => [x.type, x.scope, x.values.join(",")].filter(Boolean).join(" ");
   for (const r2 of e.requirements) {
     const w = eaWord(r2.type), f2 = statOf(w.replace(/_/g, " "));
-    const nums = r2.values.filter((v) => typeof v === "number"), strs = r2.values.filter((v) => typeof v === "string");
-    if (f2 && nums.length) {
-      rules.push({ field: f2, op: eaOp(r2.scope, r2.type), value: nums[0] });
+    const nums2 = r2.values.filter((v) => typeof v === "number"), strs = r2.values.filter((v) => typeof v === "string");
+    if (f2 && nums2.length) {
+      rules.push({ field: f2, op: eaOp(r2.scope, r2.type), value: nums2[0] });
       continue;
     }
     if (/^(POSITION|PREFERRED_POSITION|POSITIONS)$/.test(w) && strs.some((s) => POSITION3.test(s.toUpperCase()))) {
@@ -8249,9 +8249,9 @@ function fromEa2(e, names) {
       continue;
     }
     const idField = w === "LEAGUE_ID" || w === "LEAGUE" ? "league" : w === "NATION_ID" || w === "NATION" ? "nation" : w === "CLUB_ID" || w === "CLUB" || w === "TEAM_ID" ? "club" : null;
-    if (idField && nums.length) {
+    if (idField && nums2.length) {
       const m = idField === "league" ? names.leagues : idField === "nation" ? names.nations : names.clubs;
-      rules.push({ field: idField, op: "in", values: nums.map((n) => m.get(n) ?? `EA ${n}`) });
+      rules.push({ field: idField, op: "in", values: nums2.map((n) => m.get(n) ?? `EA ${n}`) });
       continue;
     }
     unread.push(show(r2));
@@ -8289,15 +8289,15 @@ function numValue(c4, f2) {
   return c4.stats[f2] ?? null;
 }
 function describeRule(r2) {
-  const LABEL2 = { overall: "Overall", pac: "Pace", sho: "Shooting", pas: "Passing", dri: "Dribbling", def: "Defending", phy: "Physical", skill_moves: "Skill moves", weak_foot: "Weak foot", playstyles: "PlayStyles", playstyles_plus: "PlayStyles+", position: "Position", league: "League", nation: "Nation", club: "Club", rarity: "Card type" };
-  if ("value" in r2) return `${LABEL2[r2.field]}: ${r2.op === "min" ? "Min." : r2.op === "max" ? "Max." : "Exactly"} ${r2.value}`;
-  return `${LABEL2[r2.field]}: ${r2.op === "not_in" ? "not " : ""}${r2.values.join(" or ")}`;
+  const LABEL3 = { overall: "Overall", pac: "Pace", sho: "Shooting", pas: "Passing", dri: "Dribbling", def: "Defending", phy: "Physical", skill_moves: "Skill moves", weak_foot: "Weak foot", playstyles: "PlayStyles", playstyles_plus: "PlayStyles+", position: "Position", league: "League", nation: "Nation", club: "Club", rarity: "Card type" };
+  if ("value" in r2) return `${LABEL3[r2.field]}: ${r2.op === "min" ? "Min." : r2.op === "max" ? "Max." : "Exactly"} ${r2.value}`;
+  return `${LABEL3[r2.field]}: ${r2.op === "not_in" ? "not " : ""}${r2.values.join(" or ")}`;
 }
 function describeUpgrade(u) {
   if (u.field === "playstyle") return `PlayStyle${u.plus ? "+" : ""}: ${u.name}`;
   if (u.field === "position") return `New position: ${u.name}`;
-  const LABEL2 = { overall: "OVR", pac: "Pace", sho: "Shooting", pas: "Passing", dri: "Dribbling", def: "Defending", phy: "Physical", skill_moves: "Skill moves", weak_foot: "Weak foot" };
-  return `+${u.add} ${LABEL2[u.field]}`;
+  const LABEL3 = { overall: "OVR", pac: "Pace", sho: "Shooting", pas: "Passing", dri: "Dribbling", def: "Defending", phy: "Physical", skill_moves: "Skill moves", weak_foot: "Weak foot" };
+  return `+${u.add} ${LABEL3[u.field]}`;
 }
 function checkRules(c4, rules) {
   return rules.map((r2) => {
@@ -8685,6 +8685,203 @@ async function cardPriceHistory(db2, userId, platform, cardId, days, now2 = Date
   };
 }
 
+// src/lib/futStats.ts
+var FACE_STATS2 = [
+  { key: "pac", label: "Pace", short: "PAC", group: "Face", futgg: "facePace" },
+  { key: "sho", label: "Shooting", short: "SHO", group: "Face", futgg: "faceShooting" },
+  { key: "pas", label: "Passing", short: "PAS", group: "Face", futgg: "facePassing" },
+  { key: "dri", label: "Dribbling", short: "DRI", group: "Face", futgg: "faceDribbling" },
+  { key: "def", label: "Defending", short: "DEF", group: "Face", futgg: "faceDefending" },
+  { key: "phy", label: "Physical", short: "PHY", group: "Face", futgg: "facePhysicality" }
+];
+var DETAIL_STATS = [
+  { key: "acceleration", label: "Acceleration", short: "ACC", group: "Pace", futgg: "attributeAcceleration" },
+  { key: "sprint_speed", label: "Sprint Speed", short: "SPD", group: "Pace", futgg: "attributeSprintSpeed" },
+  { key: "positioning", label: "Positioning", short: "POS", group: "Shooting", futgg: "attributePositioning" },
+  { key: "finishing", label: "Finishing", short: "FIN", group: "Shooting", futgg: "attributeFinishing" },
+  { key: "shot_power", label: "Shot Power", short: "SPW", group: "Shooting", futgg: "attributeShotPower" },
+  { key: "long_shots", label: "Long Shots", short: "LSH", group: "Shooting", futgg: "attributeLongShots" },
+  { key: "volleys", label: "Volleys", short: "VOL", group: "Shooting", futgg: "attributeVolleys" },
+  { key: "penalties", label: "Penalties", short: "PEN", group: "Shooting", futgg: "attributePenalties" },
+  { key: "vision", label: "Vision", short: "VIS", group: "Passing", futgg: "attributeVision" },
+  { key: "crossing", label: "Crossing", short: "CRO", group: "Passing", futgg: "attributeCrossing" },
+  { key: "fk_accuracy", label: "Free Kick Accuracy", short: "FKA", group: "Passing", futgg: "attributeFkAccuracy" },
+  { key: "short_passing", label: "Short Passing", short: "SPA", group: "Passing", futgg: "attributeShortPassing" },
+  { key: "long_passing", label: "Long Passing", short: "LPA", group: "Passing", futgg: "attributeLongPassing" },
+  { key: "curve", label: "Curve", short: "CUR", group: "Passing", futgg: "attributeCurve" },
+  { key: "agility", label: "Agility", short: "AGI", group: "Dribbling", futgg: "attributeAgility" },
+  { key: "balance", label: "Balance", short: "BAL", group: "Dribbling", futgg: "attributeBalance" },
+  { key: "reactions", label: "Reactions", short: "REA", group: "Dribbling", futgg: "attributeReactions" },
+  { key: "ball_control", label: "Ball Control", short: "BCO", group: "Dribbling", futgg: "attributeBallControl" },
+  { key: "dribbling", label: "Dribbling", short: "DRB", group: "Dribbling", futgg: "attributeDribbling" },
+  { key: "composure", label: "Composure", short: "COM", group: "Dribbling", futgg: "attributeComposure" },
+  { key: "interceptions", label: "Interceptions", short: "INT", group: "Defending", futgg: "attributeInterceptions" },
+  { key: "heading_accuracy", label: "Heading Accuracy", short: "HEA", group: "Defending", futgg: "attributeHeadingAccuracy" },
+  { key: "defensive_awareness", label: "Defensive Awareness", short: "DAW", group: "Defending", futgg: "attributeDefensiveAwareness" },
+  { key: "standing_tackle", label: "Standing Tackle", short: "STA", group: "Defending", futgg: "attributeStandingTackle" },
+  { key: "sliding_tackle", label: "Sliding Tackle", short: "SLI", group: "Defending", futgg: "attributeSlidingTackle" },
+  { key: "jumping", label: "Jumping", short: "JUM", group: "Physical", futgg: "attributeJumping" },
+  { key: "stamina", label: "Stamina", short: "STA", group: "Physical", futgg: "attributeStamina" },
+  { key: "strength", label: "Strength", short: "STR", group: "Physical", futgg: "attributeStrength" },
+  { key: "aggression", label: "Aggression", short: "AGG", group: "Physical", futgg: "attributeAggression" },
+  { key: "gk_diving", label: "GK Diving", short: "DIV", group: "Goalkeeping", futgg: "attributeGkDiving" },
+  { key: "gk_handling", label: "GK Handling", short: "HAN", group: "Goalkeeping", futgg: "attributeGkHandling" },
+  { key: "gk_kicking", label: "GK Kicking", short: "KIC", group: "Goalkeeping", futgg: "attributeGkKicking" },
+  { key: "gk_reflexes", label: "GK Reflexes", short: "REF", group: "Goalkeeping", futgg: "attributeGkReflexes" },
+  { key: "gk_positioning", label: "GK Positioning", short: "POS", group: "Goalkeeping", futgg: "attributeGkPositioning" },
+  { key: "gk_speed", label: "GK Speed", short: "SPD", group: "Goalkeeping", futgg: "gkFaceSpeed" }
+];
+var CARD_STATS = [
+  { key: "overall", label: "Overall", short: "OVR", group: "Card" },
+  { key: "weak_foot", label: "Weak Foot", short: "WF", group: "Card" },
+  { key: "skill_moves", label: "Skill Moves", short: "SM", group: "Card" },
+  { key: "height_cm", label: "Height (cm)", short: "HT", group: "Card" },
+  { key: "total_stats", label: "Face stat total", short: "TOT", group: "Card" },
+  { key: "total_igs", label: "In-game stat total", short: "IGS", group: "Card" }
+];
+var ALL_STATS = [...FACE_STATS2, ...DETAIL_STATS, ...CARD_STATS];
+var STAT_KEYS = new Set(ALL_STATS.map((s) => s.key));
+var statDef = (key2) => ALL_STATS.find((s) => s.key === key2);
+var statLabel = (key2) => statDef(key2)?.label ?? key2.replace(/_/g, " ");
+var PLAYER_POSITIONS = ["GK", "RB", "CB", "LB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", "ST"];
+var PLAYSTYLES = [
+  "Finesse Shot",
+  "Chip Shot",
+  "Power Shot",
+  "Dead Ball",
+  "Precision Header",
+  "Acrobatic",
+  "Low Driven Shot",
+  "Gamechanger",
+  "Incisive Pass",
+  "Pinged Pass",
+  "Long Ball Pass",
+  "Tiki Taka",
+  "Whipped Pass",
+  "Inventive",
+  "Jockey",
+  "Block",
+  "Intercept",
+  "Anticipate",
+  "Slide Tackle",
+  "Bruiser",
+  "Aerial Fortress",
+  "Enforcer",
+  "Technical",
+  "Rapid",
+  "First Touch",
+  "Trickster",
+  "Press Proven",
+  "Quick Step",
+  "Relentless",
+  "Long Throw",
+  "Far Throw",
+  "Footwork",
+  "Cross Claimer",
+  "1v1 Close Down",
+  "Far Reach",
+  "Deflector"
+];
+var ACCELERATE_TYPES = ["EXPLOSIVE", "MOSTLY_EXPLOSIVE", "CONTROLLED_EXPLOSIVE", "CONTROLLED", "CONTROLLED_LENGTHY", "MOSTLY_LENGTHY", "LENGTHY"];
+var accelerateLabel = (v) => v ? v.toLowerCase().replace(/_/g, " ").replace(/^./, (c4) => c4.toUpperCase()) : "\u2013";
+var SORT_EXTRAS = ["fit", "price", "name"];
+var MAX_QUERY_PRICE = 15e6;
+var intIn = (v, min, max) => {
+  if (v === null || v === void 0 || v === "") return null;
+  const n = typeof v === "string" ? Number(v.replace(/[,\s]/g, "")) : Number(v);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : null;
+};
+var textOr = (v, max) => typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+var listOf = (v, ok, max) => {
+  if (!Array.isArray(v)) return [];
+  const out = [];
+  for (const x of v) {
+    const s = typeof x === "string" ? ok(x) : null;
+    if (s && !out.includes(s)) out.push(s);
+  }
+  return out.slice(0, max);
+};
+var posOf = (s) => {
+  const p = s.trim().toUpperCase();
+  return PLAYER_POSITIONS.includes(p) ? p : null;
+};
+var playstyleOf = (s) => PLAYSTYLES.find((p) => p.toLowerCase() === s.trim().toLowerCase().replace(/\+$/, "")) ?? null;
+var accelOf = (s) => {
+  const a = s.trim().toUpperCase().replace(/[\s-]+/g, "_");
+  return ACCELERATE_TYPES.includes(a) ? a : null;
+};
+var bounds = (v, max) => {
+  if (!Array.isArray(v)) return [];
+  const out = /* @__PURE__ */ new Map();
+  for (const b of v) {
+    const stat2 = typeof b?.stat === "string" ? b.stat.trim().toLowerCase() : "";
+    const value = intIn(b?.value, 0, 300);
+    if (STAT_KEYS.has(stat2) && value !== null) out.set(stat2, value);
+  }
+  return [...out].slice(0, max).map(([stat2, value]) => ({ stat: stat2, value }));
+};
+function cleanPlayerQuery(raw) {
+  const r2 = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const weights = /* @__PURE__ */ new Map();
+  if (Array.isArray(r2.weights)) for (const w of r2.weights) {
+    const stat2 = typeof w?.stat === "string" ? w.stat.trim().toLowerCase() : "";
+    const weight = intIn(w?.weight, 1, 5);
+    if (STAT_KEYS.has(stat2) && weight !== null) weights.set(stat2, weight);
+  }
+  const type = typeof r2.card_type === "string" && ["icon", "hero", "promo", "base"].includes(r2.card_type) ? r2.card_type : null;
+  const sortRaw = typeof r2.sort === "string" ? r2.sort.trim().toLowerCase() : "";
+  const sort = STAT_KEYS.has(sortRaw) || SORT_EXTRAS.includes(sortRaw) ? sortRaw : null;
+  const foot = r2.foot === "left" || r2.foot === "right" ? r2.foot : null;
+  return {
+    text: textOr(r2.text, 60),
+    positions: listOf(r2.positions, posOf, 12),
+    include_alt_positions: r2.include_alt_positions !== false,
+    card_type: type,
+    min_rating: intIn(r2.min_rating, 1, 99),
+    max_rating: intIn(r2.max_rating, 1, 99),
+    min_price: intIn(r2.min_price, 0, MAX_QUERY_PRICE),
+    max_price: intIn(r2.max_price, 0, MAX_QUERY_PRICE),
+    priced_only: r2.priced_only === true,
+    minimums: bounds(r2.minimums, 12),
+    maximums: bounds(r2.maximums, 12),
+    foot,
+    playstyles: listOf(r2.playstyles, playstyleOf, 6),
+    playstyles_plus: listOf(r2.playstyles_plus, playstyleOf, 4),
+    accelerate_types: listOf(r2.accelerate_types, accelOf, 7),
+    league: textOr(r2.league, 60),
+    nation: textOr(r2.nation, 60),
+    club: textOr(r2.club, 60),
+    owned_only: r2.owned_only === true,
+    weights: [...weights].slice(0, 12).map(([stat2, weight]) => ({ stat: stat2, weight })),
+    sort: sort === "fit" && !weights.size ? null : sort,
+    direction: r2.direction === "asc" ? "asc" : r2.direction === "desc" ? "desc" : null
+  };
+}
+function describeQuery(q) {
+  const out = [];
+  if (q.positions?.length) out.push(q.positions.join("/"));
+  if (q.card_type) out.push({ icon: "Icons", hero: "Heroes", promo: "Promo cards", base: "Base cards" }[q.card_type]);
+  if (q.min_rating != null || q.max_rating != null) out.push(q.min_rating != null && q.max_rating != null ? `${q.min_rating}-${q.max_rating} rated` : q.min_rating != null ? `${q.min_rating}+ rated` : `up to ${q.max_rating} rated`);
+  if (q.max_price != null) out.push(`under ${coins2(q.max_price)}`);
+  if (q.min_price != null) out.push(`over ${coins2(q.min_price)}`);
+  for (const b of q.minimums ?? []) out.push(`${statLabel(b.stat)} ${b.value}+`);
+  for (const b of q.maximums ?? []) out.push(`${statLabel(b.stat)} up to ${b.value}`);
+  if (q.foot) out.push(`${q.foot} footed`);
+  for (const p of q.playstyles ?? []) out.push(p);
+  for (const p of q.playstyles_plus ?? []) out.push(`${p}+`);
+  if (q.accelerate_types?.length) out.push(q.accelerate_types.map(accelerateLabel).join(" or "));
+  for (const k of ["league", "nation", "club"]) if (q[k]) out.push(q[k]);
+  if (q.owned_only) out.push("in my club");
+  if (q.text) out.push(`"${q.text}"`);
+  if (q.weights?.length) out.push(`best for ${[...q.weights].sort((a, b) => b.weight - a.weight).map((w) => statLabel(w.stat).toLowerCase()).join(", ")}`);
+  return out;
+}
+function coins2(n) {
+  if (n >= 1e6) return `${+(n / 1e6).toFixed(n % 1e6 ? 1 : 0)}M`;
+  if (n >= 1e3) return `${+(n / 1e3).toFixed(n % 1e3 ? 1 : 0)}k`;
+  return String(n);
+}
+
 // supabase/functions/_shared/fut/squad-import.ts
 var POSITIONS = ["GK", "RB", "CB", "LB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", "ST"];
 var ALIASES = { RWB: "RB", LWB: "LB", CF: "ST", RF: "RW", LF: "LW", GOALKEEPER: "GK", STRIKER: "ST", KEEPER: "GK" };
@@ -9042,6 +9239,512 @@ async function importSquad(db2, userId, squad, input, env, fetchFn = fetch, hook
   return placeMatches(squad, parsed, matches);
 }
 
+// supabase/functions/_shared/fut/player-finder.ts
+var MAX_FINDER_TEXT = 600;
+var DEFAULT_MODEL2 = "claude-opus-5-5";
+async function searchPlayers(db2, userId, query, page = {}) {
+  const platform = page.platform === "pc" ? "pc" : "console";
+  const { data, error } = await db2.rpc("futgg_player_search", {
+    p_query: { ...query, platform, limit: page.limit ?? 50, offset: page.offset ?? 0 },
+    p_user: userId
+  });
+  if (error) throw new FutError(`Player search is unavailable: ${error.message}`, 500);
+  return data;
+}
+var WORD_POSITIONS = [
+  [/\b(goal ?keepers?|keepers?|gks?)\b/, ["GK"]],
+  [/\b(centre[- ]?backs?|center[- ]?backs?|cbs?)\b/, ["CB"]],
+  [/\b(full[- ]?backs?|wing[- ]?backs?)\b/, ["LB", "RB"]],
+  [/\b(left[- ]?backs?|lbs?|lwbs?)\b/, ["LB"]],
+  [/\b(right[- ]?backs?|rbs?|rwbs?)\b/, ["RB"]],
+  [/\b(cdms?|defensive mid(fielder)?s?|holding mid(fielder)?s?|anchors?)\b/, ["CDM"]],
+  [/\b(cms?|central mid(fielder)?s?|box[- ]to[- ]box)\b/, ["CM"]],
+  [/\b(cams?|attacking mid(fielder)?s?|number 10s?|playmakers?)\b/, ["CAM"]],
+  [/\b(wingers?|wide (players?|men))\b/, ["LW", "RW", "LM", "RM"]],
+  [/\b(lws?|left wingers?)\b/, ["LW"]],
+  [/\b(rws?|right wingers?)\b/, ["RW"]],
+  [/\b(lms?|left mid(fielder)?s?)\b/, ["LM"]],
+  [/\b(rms?|right mid(fielder)?s?)\b/, ["RM"]],
+  [/\b(sts?|strikers?|forwards?|cfs?|number 9s?)\b/, ["ST"]]
+];
+var WORD_WEIGHTS = [
+  [/\b(fast|pacey|pacy|quick|rapid|speed(y)?|pace)\b/, [{ stat: "pac", weight: 5 }]],
+  [/\b(passing|passer|playmak\w*|vision|distribut\w*)\b/, [{ stat: "pas", weight: 4 }]],
+  [/\b(shoot\w*|finish\w*|clinical|goal ?scor\w*|shot)\b/, [{ stat: "sho", weight: 5 }]],
+  [/\b(dribbl\w*|skill(ful|ed)|tricky|agile|on the ball)\b/, [{ stat: "dri", weight: 4 }]],
+  [/\b(defend\w*|tackl\w*|defensive|solid at the back)\b/, [{ stat: "def", weight: 5 }]],
+  [/\b(strong|physical|strength|bully|tank|hard)\b/, [{ stat: "phy", weight: 4 }]],
+  [/\b(stamina|engine|work ?rate|relentless)\b/, [{ stat: "stamina", weight: 3 }]],
+  [/\b(aerial|header|heading|in the air|tall|height)\b/, [{ stat: "heading_accuracy", weight: 3 }, { stat: "jumping", weight: 2 }, { stat: "height_cm", weight: 3 }]],
+  [/\b(cross\w*)\b/, [{ stat: "crossing", weight: 4 }]],
+  [/\b(long shots?|from distance|outside the box)\b/, [{ stat: "long_shots", weight: 4 }]],
+  [/\b(free ?kicks?|set pieces?|dead ball)\b/, [{ stat: "fk_accuracy", weight: 4 }, { stat: "curve", weight: 2 }]],
+  [/\b(composed|composure)\b/, [{ stat: "composure", weight: 3 }]],
+  [/\b(shot ?stopp\w*|reflex\w*|diving|saves?)\b/, [{ stat: "gk_reflexes", weight: 4 }, { stat: "gk_diving", weight: 4 }]],
+  [/\b(sweeper keeper|rushes out|good with (his|her|their) feet)\b/, [{ stat: "gk_kicking", weight: 3 }, { stat: "gk_speed", weight: 3 }]]
+];
+function money(raw, unit) {
+  const n = Number(raw.replace(/,/g, ""));
+  if (!Number.isFinite(n)) return null;
+  const u = (unit ?? "").toLowerCase();
+  return Math.round(u.startsWith("m") ? n * 1e6 : u.startsWith("k") ? n * 1e3 : n);
+}
+function quickParse(message, previous = null) {
+  const t = ` ${message.toLowerCase()} `;
+  const q = previous ? { ...previous, weights: [...previous.weights ?? []], minimums: [...previous.minimums ?? []] } : {};
+  let understood = false;
+  const positions = /* @__PURE__ */ new Set();
+  for (const [re, ps] of WORD_POSITIONS) if (re.test(t)) ps.forEach((p) => positions.add(p));
+  for (const p of PLAYER_POSITIONS) if (new RegExp(`\\b${p.toLowerCase()}s?\\b`).test(t)) positions.add(p);
+  if (positions.size) {
+    q.positions = [...positions];
+    understood = true;
+  }
+  const under = t.match(/\b(?:under|below|less than|max(?:imum)?|up to|budget(?: of)?|<)\s*([\d.,]+)\s*(k|m|mil\w*|coins?)?\b/);
+  if (under) {
+    const v = money(under[1], under[2]);
+    if (v !== null) {
+      q.max_price = v;
+      understood = true;
+    }
+  }
+  const over = t.match(/\b(?:over|above|more than|at least|min(?:imum)?)\s*([\d.,]+)\s*(k|m|mil\w*)\b/);
+  if (over) {
+    const v = money(over[1], over[2]);
+    if (v !== null) {
+      q.min_price = v;
+      understood = true;
+    }
+  }
+  if (/\b(cheap|budget|bargain)\b/.test(t) && q.max_price == null) {
+    q.max_price = 1e4;
+    understood = true;
+  }
+  if (/\b(cheaper)\b/.test(t) && previous?.max_price) {
+    q.max_price = Math.round(previous.max_price * 0.6);
+    understood = true;
+  }
+  const rated = t.match(/\b([4-9]\d)\s*(?:\+|plus|or (?:higher|above|more)|rated|ovr|overall)/);
+  if (rated) {
+    q.min_rating = Number(rated[1]);
+    understood = true;
+  }
+  const wf = t.match(/\b([2-5])\s*(?:\*|star|stars|☆|★)?\s*(?:weak ?foot|wf)\b/) ?? t.match(/\b(?:weak ?foot|wf)\s*([2-5])\b/);
+  if (wf) {
+    q.minimums = [...(q.minimums ?? []).filter((b) => b.stat !== "weak_foot"), { stat: "weak_foot", value: Number(wf[1]) }];
+    understood = true;
+  }
+  const sm = t.match(/\b([2-5])\s*(?:\*|star|stars|☆|★)?\s*(?:skill(?:s| moves)?|sm)\b/) ?? t.match(/\b(?:skill moves|skills|sm)\s*([2-5])\b/);
+  if (sm) {
+    q.minimums = [...(q.minimums ?? []).filter((b) => b.stat !== "skill_moves"), { stat: "skill_moves", value: Number(sm[1]) }];
+    understood = true;
+  }
+  if (/\bleft[- ]?(foot(ed)?|footer)\b/.test(t)) {
+    q.foot = "left";
+    understood = true;
+  }
+  if (/\bright[- ]?(foot(ed)?|footer)\b/.test(t)) {
+    q.foot = "right";
+    understood = true;
+  }
+  if (/\bicons?\b/.test(t)) {
+    q.card_type = "icon";
+    understood = true;
+  } else if (/\bheroe?s?\b/.test(t)) {
+    q.card_type = "hero";
+    understood = true;
+  }
+  if (/\b(my club|i own|my cards|already have)\b/.test(t)) {
+    q.owned_only = true;
+    understood = true;
+  }
+  if (/\bexplosive\b/.test(t)) {
+    q.accelerate_types = ["EXPLOSIVE", "MOSTLY_EXPLOSIVE", "CONTROLLED_EXPLOSIVE"];
+    understood = true;
+  }
+  if (/\blengthy\b/.test(t)) {
+    q.accelerate_types = ["LENGTHY", "MOSTLY_LENGTHY", "CONTROLLED_LENGTHY"];
+    understood = true;
+  }
+  for (const p of PLAYSTYLES) {
+    const name2 = p.toLowerCase();
+    if (t.includes(` ${name2}+`) || t.includes(`${name2} plus`)) {
+      q.playstyles_plus = [.../* @__PURE__ */ new Set([...q.playstyles_plus ?? [], p])];
+      understood = true;
+    } else if (t.includes(` ${name2} `) || t.includes(` ${name2},`) || t.includes(` ${name2}.`)) {
+      q.playstyles = [.../* @__PURE__ */ new Set([...q.playstyles ?? [], p])];
+      understood = true;
+    }
+  }
+  const weights = new Map((q.weights ?? []).map((w) => [w.stat, w.weight]));
+  for (const [re, ws] of WORD_WEIGHTS) if (re.test(t)) {
+    for (const w of ws) weights.set(w.stat, Math.max(weights.get(w.stat) ?? 0, w.weight));
+    understood = true;
+  }
+  if (weights.size) {
+    q.weights = [...weights].map(([stat2, weight]) => ({ stat: stat2, weight }));
+    q.sort = "fit";
+  }
+  return { query: cleanPlayerQuery(q), understood };
+}
+var STAT_ENUM = ALL_STATS.map((s) => s.key);
+var nullable2 = (schema) => ({ anyOf: [schema, { type: "null" }] });
+var bound = { type: "object", additionalProperties: false, required: ["stat", "value"], properties: { stat: { type: "string", enum: STAT_ENUM }, value: { type: "integer" } } };
+var SCHEMA2 = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "reply",
+    "text",
+    "positions",
+    "card_type",
+    "min_rating",
+    "max_rating",
+    "min_price",
+    "max_price",
+    "priced_only",
+    "minimums",
+    "maximums",
+    "foot",
+    "playstyles",
+    "playstyles_plus",
+    "accelerate_types",
+    "league",
+    "nation",
+    "club",
+    "owned_only",
+    "weights"
+  ],
+  properties: {
+    reply: { type: "string" },
+    text: nullable2({ type: "string" }),
+    positions: { type: "array", items: { type: "string", enum: [...PLAYER_POSITIONS] } },
+    card_type: nullable2({ type: "string", enum: ["icon", "hero", "promo", "base"] }),
+    min_rating: nullable2({ type: "integer" }),
+    max_rating: nullable2({ type: "integer" }),
+    min_price: nullable2({ type: "integer" }),
+    max_price: nullable2({ type: "integer" }),
+    priced_only: { type: "boolean" },
+    minimums: { type: "array", items: bound },
+    maximums: { type: "array", items: bound },
+    foot: nullable2({ type: "string", enum: ["left", "right"] }),
+    playstyles: { type: "array", items: { type: "string", enum: [...PLAYSTYLES] } },
+    playstyles_plus: { type: "array", items: { type: "string", enum: [...PLAYSTYLES] } },
+    accelerate_types: { type: "array", items: { type: "string", enum: [...ACCELERATE_TYPES] } },
+    league: nullable2({ type: "string" }),
+    nation: nullable2({ type: "string" }),
+    club: nullable2({ type: "string" }),
+    owned_only: { type: "boolean" },
+    weights: { type: "array", items: { type: "object", additionalProperties: false, required: ["stat", "weight"], properties: { stat: { type: "string", enum: STAT_ENUM }, weight: { type: "integer" } } } }
+  }
+};
+function systemPrompt2(previous) {
+  const stats = [...FACE_STATS2, ...DETAIL_STATS].map((s) => `${s.key} (${s.label})`).join(", ");
+  return [
+    "You turn an EA SPORTS FC 27 Ultimate Team player request into a search over every FUT card. Return JSON only.",
+    `Stats you can use (1-99): ${stats}. Card numbers: overall, weak_foot (1-5 stars), skill_moves (1-5 stars), height_cm, total_stats, total_igs.`,
+    `Position codes: ${PLAYER_POSITIONS.join(", ")}. A card matches a position if it's the card's main or alternative position.`,
+    "weights rank the results: list the 2 to 6 stats that matter most for what the user describes, weight 1 (nice to have) to 5 (essential). Use face stats (pac, sho, pas, dri, def, phy) for broad wishes and in-game attributes for specific ones (e.g. acceleration for quick off the mark, short_passing for tiki-taka, heading_accuracy and jumping for aerial threat, interceptions and defensive_awareness for reading the game). Goalkeepers: gk_diving, gk_handling, gk_kicking, gk_reflexes, gk_positioning, gk_speed.",
+    'minimums and maximums are hard limits: only use them when the user states a number ("at least 85 pace", "4 star weak foot", "under 185cm") or a must-have; otherwise prefer weights so there are always results.',
+    'Prices are in coins: 50k = 50000, 1.2m = 1200000. "Under 50k" sets max_price 50000. "Cheap" with no number: max_price 10000. Set priced_only when the user wants to buy the card.',
+    'card_type: icon, hero, promo (any special card) or base (gold/silver/bronze rare or common), only when asked. foot only when asked. owned_only when they mean cards they already own ("in my club").',
+    "playstyles must be on the card (plain or plus); playstyles_plus only when they ask for the plus version. accelerate_types only when they mention AcceleRATE (explosive, controlled, lengthy).",
+    "text is a name, club, nation, league or card version to look for, only when they name one that isn't a league, nation or club field.",
+    previous ? `The user's current search is ${JSON.stringify(previous)}. If the new message refines it ("cheaper", "left footed only", "what about strikers"), return the whole updated search, keeping what they didn't change. If it's a new request, start fresh.` : "This is a new search.",
+    `reply is one or two short, friendly sentences telling the user what you're looking for (e.g. "Looking for quick centre-backs under 50k who can pass, ranked on pace, defending and passing."). Don't list players and don't promise results.`,
+    "If the message isn't about finding a FUT player, keep the current search and say in reply what you can help with."
+  ].join("\n");
+}
+async function readRequestWithClaude(message, previous, history, env, fetchFn = fetch) {
+  const messages = [
+    ...history.slice(-6).map((h) => ({ role: h.role, content: h.text.slice(0, MAX_FINDER_TEXT) })),
+    { role: "user", content: message }
+  ];
+  while (messages.length && messages[0].role !== "user") messages.shift();
+  const merged = [];
+  for (const m of messages) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === m.role) last.content += `
+${m.content}`;
+    else merged.push({ ...m });
+  }
+  const res = await callClaude(env, fetchFn, {
+    model: env("FUT_FINDER_MODEL") || env("FUT_IMPORT_MODEL") || DEFAULT_MODEL2,
+    max_tokens: 4e3,
+    output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA2 } },
+    system: systemPrompt2(previous),
+    messages: merged
+  });
+  const out = await res.json().catch(() => null);
+  if (!res.ok) {
+    console.error("[fut-api] player finder AI:", res.status, out?.error?.message);
+    throw new FutError(res.status === 429 || res.status >= 500 ? "The player finder is busy. Try again in a minute." : "The player finder couldn't read that. Try saying it another way.", 502);
+  }
+  if (out?.stop_reason === "refusal") throw new FutError("The player finder declined that request.", 422);
+  const text4 = (out?.content ?? []).filter((c4) => c4.type === "text").map((c4) => c4.text ?? "").join("");
+  let parsed;
+  try {
+    parsed = JSON.parse(text4);
+  } catch {
+    throw new FutError("The player finder returned something unreadable. Try again.", 502);
+  }
+  const reply = typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim().slice(0, 400) : "Here are the best fits I found.";
+  const query = cleanPlayerQuery(parsed);
+  if (query.weights?.length) query.sort = "fit";
+  return { query, reply };
+}
+async function findPlayers(db2, userId, input, env, fetchFn = fetch, hooks = {}) {
+  const message = input.message.trim().slice(0, MAX_FINDER_TEXT);
+  if (!message) throw new FutError("Tell me what kind of player you're looking for.");
+  let query, reply, via;
+  if (env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) {
+    hooks.beforeAi?.();
+    ({ query, reply } = await readRequestWithClaude(message, input.previous, input.history, env, fetchFn));
+    via = "ai";
+  } else {
+    const quick = quickParse(message, input.previous);
+    if (!quick.understood) throw new FutError(`I couldn't tell what you're after. Try something like "fast CB under 50k with good passing".`, 422);
+    query = quick.query;
+    via = "words";
+    reply = `Looking for ${describeQuery(query).join(", ") || "the best cards"}.`;
+  }
+  let result = await searchPlayers(db2, userId, query, { platform: input.platform, limit: 50 });
+  let relaxed = null;
+  if (result.total === 0 && (query.minimums?.length || query.maximums?.length || query.playstyles?.length || query.accelerate_types?.length)) {
+    const extra = (query.minimums ?? []).map((b) => ({ stat: b.stat, weight: 3 }));
+    const looser = cleanPlayerQuery({ ...query, minimums: [], maximums: [], playstyles: [], playstyles_plus: [], accelerate_types: [], weights: [...query.weights ?? [], ...extra], sort: "fit" });
+    const second = await searchPlayers(db2, userId, looser, { platform: input.platform, limit: 50 });
+    if (second.total > 0) {
+      result = second;
+      query = looser;
+      relaxed = "Nothing matched every must-have, so these are the closest fits without the hard limits.";
+    }
+  }
+  return { reply, query, summary: describeQuery(query), via, relaxed, result };
+}
+
+// supabase/functions/_shared/fut/meta.ts
+var PACE = { acceleration: 2, sprint_speed: 2 };
+var DEF_CORE = { defensive_awareness: 3, standing_tackle: 3, interceptions: 2 };
+var ROLES = {
+  GK: [
+    { role: "Goalkeeper", weights: { gk_diving: 3, gk_reflexes: 3, gk_handling: 2, gk_positioning: 2, gk_kicking: 1, reactions: 1 }, playstyles: ["Far Reach", "Deflector", "Cross Claimer", "Footwork"], tall: 188 },
+    { role: "Sweeper Keeper", weights: { gk_reflexes: 2, gk_diving: 2, gk_positioning: 1, gk_kicking: 2, gk_speed: 2 }, playstyles: ["1v1 Close Down", "Far Throw", "Footwork", "Cross Claimer"], tall: 186 }
+  ],
+  CB: [
+    { role: "Defender", weights: { ...DEF_CORE, sliding_tackle: 1, strength: 2, jumping: 1, heading_accuracy: 1, ...PACE }, playstyles: ["Block", "Intercept", "Anticipate", "Jockey", "Slide Tackle", "Aerial Fortress"], tall: 185, wf: 0.5 },
+    { role: "Ball-Playing Defender", weights: { ...DEF_CORE, short_passing: 2, long_passing: 2, composure: 2, vision: 1, ...PACE }, playstyles: ["Intercept", "Anticipate", "Long Ball Pass", "Pinged Pass", "Block"], tall: 184, wf: 1 },
+    { role: "Stopper", weights: { defensive_awareness: 2, standing_tackle: 3, strength: 3, aggression: 2, heading_accuracy: 2, jumping: 2 }, playstyles: ["Bruiser", "Aerial Fortress", "Block", "Anticipate", "Enforcer"], tall: 187, strong: true }
+  ],
+  FB: [
+    { role: "Fullback", weights: { ...PACE, standing_tackle: 2, defensive_awareness: 2, interceptions: 2, stamina: 2, crossing: 1 }, playstyles: ["Jockey", "Intercept", "Anticipate", "Relentless", "Whipped Pass"], explosive: true },
+    { role: "Wingback", weights: { acceleration: 3, sprint_speed: 3, crossing: 2, stamina: 2, dribbling: 2, ball_control: 1, short_passing: 1, standing_tackle: 1 }, playstyles: ["Whipped Pass", "Relentless", "Rapid", "Quick Step", "Incisive Pass"], explosive: true, sm: 0.6 },
+    { role: "Falseback", weights: { short_passing: 3, interceptions: 2, defensive_awareness: 2, ball_control: 2, composure: 2, stamina: 1 }, playstyles: ["Tiki Taka", "Intercept", "Press Proven", "Anticipate"], wf: 1 }
+  ],
+  CDM: [
+    { role: "Holding", weights: { ...DEF_CORE, strength: 2, short_passing: 2, stamina: 1, aggression: 1 }, playstyles: ["Intercept", "Anticipate", "Block", "Bruiser", "Press Proven", "Long Ball Pass"], tall: 180, wf: 1 },
+    { role: "Deep-Lying Playmaker", weights: { short_passing: 3, long_passing: 3, vision: 2, composure: 2, interceptions: 1, ball_control: 1 }, playstyles: ["Pinged Pass", "Long Ball Pass", "Tiki Taka", "Incisive Pass", "Press Proven"], wf: 1.5 }
+  ],
+  CM: [
+    { role: "Box-to-Box", weights: { stamina: 3, short_passing: 2, standing_tackle: 2, interceptions: 1, long_shots: 1, ...PACE, strength: 1, ball_control: 1 }, playstyles: ["Relentless", "Intercept", "Press Proven", "Power Shot", "Tiki Taka"], wf: 1.5, sm: 0.5 },
+    { role: "Playmaker", weights: { short_passing: 3, vision: 3, long_passing: 2, ball_control: 2, composure: 2, dribbling: 1 }, playstyles: ["Incisive Pass", "Pinged Pass", "Tiki Taka", "Long Ball Pass", "Technical", "Press Proven"], wf: 1.5, sm: 0.5 },
+    { role: "Holding", weights: { ...DEF_CORE, strength: 2, short_passing: 2, stamina: 1 }, playstyles: ["Intercept", "Anticipate", "Block", "Bruiser", "Press Proven"], wf: 1 }
+  ],
+  CAM: [
+    { role: "Playmaker", weights: { short_passing: 3, vision: 3, ball_control: 2, dribbling: 2, composure: 2, long_shots: 1 }, playstyles: ["Incisive Pass", "Tiki Taka", "Technical", "Finesse Shot", "Press Proven", "Inventive"], agile: true, wf: 1.5, sm: 1 },
+    { role: "Shadow Striker", weights: { finishing: 3, positioning: 3, acceleration: 2, composure: 2, dribbling: 1, agility: 1, reactions: 1 }, playstyles: ["Finesse Shot", "Low Driven Shot", "Quick Step", "Rapid", "Technical"], explosive: true, wf: 1.5, sm: 1 },
+    { role: "Classic 10", weights: { vision: 3, dribbling: 3, short_passing: 2, ball_control: 2, agility: 2, curve: 1 }, playstyles: ["Technical", "Trickster", "Incisive Pass", "First Touch", "Finesse Shot"], agile: true, wf: 1, sm: 1.2 }
+  ],
+  W: [
+    { role: "Winger", weights: { acceleration: 3, sprint_speed: 2, dribbling: 3, agility: 2, ball_control: 2, crossing: 2, balance: 1 }, playstyles: ["Rapid", "Quick Step", "Technical", "Trickster", "Whipped Pass", "First Touch"], agile: true, explosive: true, sm: 1.2, wf: 0.8 },
+    { role: "Inside Forward", weights: { finishing: 3, dribbling: 3, acceleration: 2, agility: 2, positioning: 2, curve: 1, composure: 1 }, playstyles: ["Finesse Shot", "Technical", "Rapid", "Quick Step", "Low Driven Shot", "Trickster"], agile: true, explosive: true, sm: 1.2, wf: 1.5 },
+    { role: "Wide Playmaker", weights: { short_passing: 3, vision: 2, crossing: 2, dribbling: 2, ball_control: 2, curve: 1 }, playstyles: ["Incisive Pass", "Whipped Pass", "Tiki Taka", "Technical", "First Touch"], agile: true, sm: 1, wf: 1.2 }
+  ],
+  ST: [
+    { role: "Advanced Forward", weights: { acceleration: 3, sprint_speed: 2, finishing: 3, positioning: 3, composure: 2, ball_control: 1, dribbling: 1 }, playstyles: ["Finesse Shot", "Rapid", "Quick Step", "Low Driven Shot", "Power Shot", "Technical"], explosive: true, sm: 0.8, wf: 1.8 },
+    { role: "Target Forward", weights: { strength: 3, heading_accuracy: 3, jumping: 2, finishing: 2, positioning: 2, shot_power: 1 }, playstyles: ["Precision Header", "Aerial Fortress", "Power Shot", "Bruiser", "Acrobatic"], tall: 186, strong: true, wf: 1 },
+    { role: "Poacher", weights: { finishing: 3, positioning: 3, reactions: 2, composure: 2, acceleration: 2, heading_accuracy: 1 }, playstyles: ["Finesse Shot", "Low Driven Shot", "Acrobatic", "Quick Step", "Precision Header"], explosive: true, wf: 1.8 },
+    { role: "False 9", weights: { short_passing: 2, vision: 2, dribbling: 3, ball_control: 3, agility: 1, finishing: 2, composure: 1 }, playstyles: ["Technical", "Incisive Pass", "Tiki Taka", "First Touch", "Finesse Shot"], agile: true, sm: 1, wf: 1.5 }
+  ]
+};
+var GROUP = { GK: "GK", CB: "CB", LB: "FB", RB: "FB", LWB: "FB", RWB: "FB", CDM: "CDM", CM: "CM", CAM: "CAM", LM: "W", RM: "W", LW: "W", RW: "W", ST: "ST", CF: "ST" };
+var META_POSITIONS = Object.keys(GROUP);
+var rolesFor = (position) => ROLES[GROUP[position.toUpperCase()] ?? ""] ?? [];
+var CHEM_STYLES = {
+  Hunter: { acceleration: 6, sprint_speed: 6, finishing: 6, volleys: 6, shot_power: 6 },
+  Hawk: { acceleration: 4, sprint_speed: 4, finishing: 4, shot_power: 4, long_shots: 4, jumping: 4, strength: 4, aggression: 4 },
+  Finisher: { finishing: 6, shot_power: 6, long_shots: 6, dribbling: 4, agility: 4, balance: 4 },
+  Marksman: { finishing: 4, shot_power: 4, long_shots: 4, reactions: 4, ball_control: 4, dribbling: 4, jumping: 4, strength: 4 },
+  Deadeye: { positioning: 6, finishing: 6, long_shots: 6, short_passing: 6, vision: 6, curve: 4 },
+  Engine: { acceleration: 4, sprint_speed: 4, short_passing: 4, vision: 4, curve: 4, dribbling: 4, balance: 4, agility: 4 },
+  Catalyst: { acceleration: 6, sprint_speed: 6, short_passing: 6, crossing: 6, curve: 6 },
+  Artist: { vision: 6, crossing: 6, long_passing: 6, agility: 6, reactions: 6 },
+  Maestro: { shot_power: 4, long_shots: 4, short_passing: 4, vision: 4, long_passing: 4, ball_control: 4, dribbling: 4, agility: 4 },
+  Architect: { short_passing: 6, long_passing: 6, curve: 6, strength: 6, aggression: 6 },
+  Powerhouse: { short_passing: 6, vision: 6, long_passing: 6, standing_tackle: 6, interceptions: 6 },
+  Shadow: { acceleration: 6, sprint_speed: 6, interceptions: 6, defensive_awareness: 6, standing_tackle: 6, sliding_tackle: 6 },
+  Anchor: { acceleration: 4, sprint_speed: 4, defensive_awareness: 4, standing_tackle: 4, sliding_tackle: 4, jumping: 4, strength: 4, aggression: 4 },
+  Sentinel: { interceptions: 6, defensive_awareness: 6, standing_tackle: 6, heading_accuracy: 6, jumping: 6, strength: 6 },
+  Gladiator: { finishing: 4, shot_power: 4, long_shots: 4, interceptions: 4, defensive_awareness: 4, standing_tackle: 4, sliding_tackle: 4 }
+};
+var GK_CHEM_STYLES = {
+  Wall: { gk_diving: 6, gk_handling: 6, gk_kicking: 6 },
+  Shield: { gk_kicking: 6, gk_reflexes: 6, gk_speed: 6 },
+  Cat: { gk_reflexes: 6, gk_speed: 6, gk_positioning: 6 },
+  Glove: { gk_diving: 6, gk_handling: 6, gk_positioning: 6 }
+};
+var FROM_FACE = {
+  acceleration: "pac",
+  sprint_speed: "pac",
+  positioning: "sho",
+  finishing: "sho",
+  shot_power: "sho",
+  long_shots: "sho",
+  volleys: "sho",
+  penalties: "sho",
+  vision: "pas",
+  crossing: "pas",
+  fk_accuracy: "pas",
+  short_passing: "pas",
+  long_passing: "pas",
+  curve: "pas",
+  agility: "dri",
+  balance: "dri",
+  reactions: "dri",
+  ball_control: "dri",
+  dribbling: "dri",
+  composure: "dri",
+  interceptions: "def",
+  heading_accuracy: "def",
+  defensive_awareness: "def",
+  standing_tackle: "def",
+  sliding_tackle: "def",
+  jumping: "phy",
+  stamina: "phy",
+  strength: "phy",
+  aggression: "phy"
+};
+var LABEL2 = Object.fromEntries(Object.keys({ ...FROM_FACE, gk_diving: 1, gk_handling: 1, gk_kicking: 1, gk_reflexes: 1, gk_positioning: 1, gk_speed: 1 }).map((k) => [k, k.replace(/^gk_/, "GK ").replace(/_/g, " ")]));
+LABEL2.fk_accuracy = "free kicks";
+var clamp2 = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+var r1 = (v) => Math.round(v * 10) / 10;
+var tier = (s) => s >= 90 ? "Elite" : s >= 85 ? "Very good" : s >= 80 ? "Good" : s >= 74 ? "Decent" : "Weak";
+function scoreRole(card, position, role, estimated = false) {
+  const value = (k, boost = {}) => clamp2((card.stats[k] ?? (estimated ? card.stats[FROM_FACE[k] ?? ""] : void 0) ?? 50) + (boost[k] ?? 0), 1, 99);
+  const total = Object.values(role.weights).reduce((a2, b) => a2 + b, 0);
+  const weighted = (boost = {}) => Object.entries(role.weights).reduce((a2, [k, w]) => a2 + value(k, boost) * w, 0) / total;
+  const styles = position === "GK" ? GK_CHEM_STYLES : CHEM_STYLES;
+  let base = weighted(), chem = null;
+  for (const [name2, boost] of Object.entries(styles)) {
+    const s = weighted(boost);
+    if (s > base + 0.05) {
+      base = s;
+      chem = name2;
+    }
+  }
+  const ps = role.playstyles.filter((p) => card.playstyles_plus.includes(p)).length * 2.5 + role.playstyles.filter((p) => card.playstyles.includes(p) && !card.playstyles_plus.includes(p)).length * 1.2;
+  const h = card.height_cm;
+  const height = h === null ? 0 : role.tall ? clamp2((h - role.tall) * 0.35, -4, 4) : role.agile ? clamp2((181 - h) * 0.12, -2, 1.5) : 0;
+  const a = (card.accelerate_type ?? "").toUpperCase();
+  const accel = !a ? 0 : role.explosive ? /EXPLOSIVE/.test(a) && !/CONTROLLED/.test(a) ? 2 : /LENGTHY/.test(a) ? -1.5 : 0 : role.strong ? /LENGTHY/.test(a) ? 1 : 0 : 0;
+  const wf = card.weak_foot === null || !role.wf ? 0 : (card.weak_foot - 3) * role.wf;
+  const sm = card.skill_moves === null || !role.sm ? 0 : (card.skill_moves - 3) * role.sm;
+  const score3 = Math.round(clamp2(base + Math.min(6, ps) + height + accel + wf + sm, 1, 99));
+  const ranked = Object.entries(role.weights).map(([k, w]) => ({ k, w, v: value(k) })).sort((x, y) => y.w - x.w || y.v - x.v);
+  const strengths = ranked.filter((x) => x.v >= 85).sort((x, y) => y.v - x.v).slice(0, 3).map((x) => `${x.v} ${LABEL2[x.k] ?? x.k}`);
+  const weaknesses = ranked.filter((x) => x.v < 72 && x.w >= 2).sort((x, y) => x.v - y.v).slice(0, 2).map((x) => `${x.v} ${LABEL2[x.k] ?? x.k}`);
+  if (wf <= -1.5) weaknesses.push(`${card.weak_foot}\u2605 weak foot`);
+  if (height <= -2) weaknesses.push(`${h} cm is short for this role`);
+  if (height >= 2) strengths.push(`${h} cm`);
+  if (accel >= 2) strengths.push("explosive acceleration");
+  return {
+    position,
+    role: role.role,
+    score: score3,
+    tier: tier(score3),
+    chem_style: chem,
+    base: r1(base),
+    bonuses: { playstyles: r1(Math.min(6, ps)), height: r1(height), accelerate: r1(accel), weak_foot: r1(wf), skill_moves: r1(sm) },
+    strengths,
+    weaknesses,
+    playstyles: role.playstyles.filter((p) => card.playstyles.includes(p) || card.playstyles_plus.includes(p)).map((p) => card.playstyles_plus.includes(p) ? `${p}+` : p)
+  };
+}
+function metaRate(card, positions = card.positions) {
+  const estimated = !Object.keys(card.stats).some((k) => k in FROM_FACE || k.startsWith("gk_"));
+  const roles = [...new Set(positions.map((p) => p.toUpperCase()))].flatMap((p) => rolesFor(p).map((r2) => scoreRole(card, p, r2, estimated))).sort((a, b) => b.score - a.score);
+  const best = roles[0] ?? null;
+  const gap = best ? best.score - card.rating : 0;
+  const verdict = !best ? "No roles for these positions." : `${tier(best.score)} as a ${best.position} ${best.role} (${best.score}${best.chem_style ? ` with ${best.chem_style}` : ""}). ` + (gap >= 3 ? `Plays better than its ${card.rating} rating.` : gap <= -4 ? `Plays worse than its ${card.rating} rating suggests.` : `About what its ${card.rating} rating suggests.`) + (best.strengths.length ? ` Strengths: ${best.strengths.join(", ")}.` : "") + (best.weaknesses.length ? ` Watch: ${best.weaknesses.join(", ")}.` : "");
+  return { best, roles, verdict, estimated };
+}
+var roleWeights = (position, role) => {
+  const r2 = rolesFor(position).find((x) => !role || x.role.toLowerCase() === role.toLowerCase()) ?? rolesFor(position)[0];
+  return r2 ? Object.entries(r2.weights).map(([stat2, weight]) => ({ stat: stat2, weight })) : [];
+};
+
+// supabase/functions/_shared/fut/meta-data.ts
+var nums = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([, v]) => typeof v === "number"));
+var fromSearch = (c4) => ({
+  name: String(c4.player_name),
+  rating: Number(c4.overall),
+  positions: [String(c4.position), ...c4.alt_positions ?? []].filter(Boolean),
+  stats: nums(c4.stats),
+  playstyles: c4.playstyles ?? [],
+  playstyles_plus: c4.playstyles_plus ?? [],
+  height_cm: c4.height_cm ?? null,
+  accelerate_type: c4.accelerate_type ?? null,
+  weak_foot: c4.weak_foot ?? null,
+  skill_moves: c4.skill_moves ?? null
+});
+async function metaForCard(db2, userId, cardId) {
+  const card = await getCard(db2, userId, cardId);
+  if (!card) throw new FutError("Card not found.", 404);
+  let source = card.id, alt = [], height = null, accel = null, stats = { ...card.stats };
+  let ps = card.playstyles, psp = card.playstyles_plus;
+  if (card.ea_item_id) {
+    const { data, error } = await db2.from("player_cards").select("id").eq("source_id", "futgg_catalogue").is("owner_user_id", null).eq("source_card_key", String(card.ea_item_id)).limit(1);
+    if (error) throw new FutError(`Card stats are unavailable: ${error.message}`, 500);
+    const cat = (data ?? [])[0]?.id;
+    if (cat) source = cat;
+  }
+  const [a, s] = await Promise.all([db2.from("card_attributes").select("*").eq("card_id", source).maybeSingle(), db2.from("card_playstyles").select("*").eq("card_id", source)]);
+  if (a.error || s.error) throw new FutError(`Card stats are unavailable: ${(a.error ?? s.error).message}`, 500);
+  const attr = a.data ?? null;
+  if (attr) {
+    stats = { ...nums(attr.detail), ...Object.fromEntries(["pac", "sho", "pas", "dri", "def", "phy"].filter((k) => typeof attr[k] === "number").map((k) => [k, attr[k]])), ...stats };
+    alt = Array.isArray(attr.alt_positions) ? attr.alt_positions : [];
+    height = attr.height_cm ?? null;
+    accel = attr.accelerate_type ?? null;
+  }
+  const styles = s.data ?? [];
+  if (!ps.length && !psp.length && styles.length) {
+    ps = styles.filter((x) => !x.is_plus).map((x) => x.name);
+    psp = styles.filter((x) => x.is_plus).map((x) => x.name);
+  }
+  const meta = { name: card.player_name, rating: card.overall, positions: [.../* @__PURE__ */ new Set([...card.positions, ...alt])], stats, playstyles: ps, playstyles_plus: psp, height_cm: height, accelerate_type: accel, weak_foot: card.weak_foot, skill_moves: card.skill_moves };
+  return { card_id: card.id, name: card.player_name, rating: card.overall, positions: meta.positions, ...metaRate(meta), note: NOTE, verified: false };
+}
+var NOTE = "GafferBot's own estimate from in-game attributes, PlayStyles, height, AcceleRATE, weak foot and skill moves under the best chem style. Chem style boosts follow recent games and aren't confirmed for FC 27.";
+async function metaTop(db2, userId, b) {
+  const position = String(b.position ?? "").toUpperCase();
+  if (!META_POSITIONS.includes(position)) throw new FutError(`position must be one of ${META_POSITIONS.join(", ")}.`);
+  const roles = rolesFor(position), role = typeof b.role === "string" && b.role ? roles.find((r2) => r2.role.toLowerCase() === String(b.role).toLowerCase()) : void 0;
+  if (b.role && !role) throw new FutError(`role must be one of ${roles.map((r2) => r2.role).join(", ")}.`);
+  const platform = b.platform === "pc" ? "pc" : "console";
+  const maxPrice = b.max_price === void 0 || b.max_price === null || b.max_price === "" ? null : Number(b.max_price);
+  if (maxPrice !== null && (!Number.isInteger(maxPrice) || maxPrice < 0)) throw new FutError("max_price must be whole coins.");
+  const query = cleanPlayerQuery({ positions: [position === "CF" ? "ST" : position === "LWB" ? "LB" : position === "RWB" ? "RB" : position], weights: roleWeights(position, role?.role), max_price: maxPrice, priced_only: maxPrice !== null, owned_only: b.owned_only === true, sort: "fit" });
+  const res = await searchPlayers(db2, userId, query, { platform, limit: 100 });
+  const cards = res.cards.map((c4) => {
+    const m = fromSearch(c4);
+    const r2 = metaRate(m, [position]);
+    const pick = role ? r2.roles.find((x) => x.role === role.role) ?? r2.best : r2.best;
+    return { card_id: String(c4.id), ea_item_id: c4.ea_item_id ?? null, name: m.name, rating: m.rating, version: c4.version ?? null, position: String(c4.position), owned: c4.owned === true, price: c4.price ?? null, meta: pick };
+  }).filter((c4) => c4.meta).sort((a, b2) => b2.meta.score - a.meta.score || (a.price ?? Infinity) - (b2.price ?? Infinity));
+  return { platform, position, role: role?.role ?? null, roles: roles.map((r2) => r2.role), max_price: maxPrice, published_at: res.published_at, cards: cards.slice(0, 30), with_stats: res.with_stats, note: NOTE, verified: false };
+}
+
 // supabase/functions/_shared/fut/squad-suggest.ts
 var norm7 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 var plays2 = (card, position) => card.positions.some((p) => p.toUpperCase() === position.toUpperCase());
@@ -9364,203 +10067,6 @@ async function syncFutggCatalogue(db2, fetcher = (u) => fetch(u, { headers: { Ac
   return { cards: cards.length, written, tracked: Number(tracked ?? 0), skipped: total - cards.length };
 }
 
-// src/lib/futStats.ts
-var FACE_STATS2 = [
-  { key: "pac", label: "Pace", short: "PAC", group: "Face", futgg: "facePace" },
-  { key: "sho", label: "Shooting", short: "SHO", group: "Face", futgg: "faceShooting" },
-  { key: "pas", label: "Passing", short: "PAS", group: "Face", futgg: "facePassing" },
-  { key: "dri", label: "Dribbling", short: "DRI", group: "Face", futgg: "faceDribbling" },
-  { key: "def", label: "Defending", short: "DEF", group: "Face", futgg: "faceDefending" },
-  { key: "phy", label: "Physical", short: "PHY", group: "Face", futgg: "facePhysicality" }
-];
-var DETAIL_STATS = [
-  { key: "acceleration", label: "Acceleration", short: "ACC", group: "Pace", futgg: "attributeAcceleration" },
-  { key: "sprint_speed", label: "Sprint Speed", short: "SPD", group: "Pace", futgg: "attributeSprintSpeed" },
-  { key: "positioning", label: "Positioning", short: "POS", group: "Shooting", futgg: "attributePositioning" },
-  { key: "finishing", label: "Finishing", short: "FIN", group: "Shooting", futgg: "attributeFinishing" },
-  { key: "shot_power", label: "Shot Power", short: "SPW", group: "Shooting", futgg: "attributeShotPower" },
-  { key: "long_shots", label: "Long Shots", short: "LSH", group: "Shooting", futgg: "attributeLongShots" },
-  { key: "volleys", label: "Volleys", short: "VOL", group: "Shooting", futgg: "attributeVolleys" },
-  { key: "penalties", label: "Penalties", short: "PEN", group: "Shooting", futgg: "attributePenalties" },
-  { key: "vision", label: "Vision", short: "VIS", group: "Passing", futgg: "attributeVision" },
-  { key: "crossing", label: "Crossing", short: "CRO", group: "Passing", futgg: "attributeCrossing" },
-  { key: "fk_accuracy", label: "Free Kick Accuracy", short: "FKA", group: "Passing", futgg: "attributeFkAccuracy" },
-  { key: "short_passing", label: "Short Passing", short: "SPA", group: "Passing", futgg: "attributeShortPassing" },
-  { key: "long_passing", label: "Long Passing", short: "LPA", group: "Passing", futgg: "attributeLongPassing" },
-  { key: "curve", label: "Curve", short: "CUR", group: "Passing", futgg: "attributeCurve" },
-  { key: "agility", label: "Agility", short: "AGI", group: "Dribbling", futgg: "attributeAgility" },
-  { key: "balance", label: "Balance", short: "BAL", group: "Dribbling", futgg: "attributeBalance" },
-  { key: "reactions", label: "Reactions", short: "REA", group: "Dribbling", futgg: "attributeReactions" },
-  { key: "ball_control", label: "Ball Control", short: "BCO", group: "Dribbling", futgg: "attributeBallControl" },
-  { key: "dribbling", label: "Dribbling", short: "DRB", group: "Dribbling", futgg: "attributeDribbling" },
-  { key: "composure", label: "Composure", short: "COM", group: "Dribbling", futgg: "attributeComposure" },
-  { key: "interceptions", label: "Interceptions", short: "INT", group: "Defending", futgg: "attributeInterceptions" },
-  { key: "heading_accuracy", label: "Heading Accuracy", short: "HEA", group: "Defending", futgg: "attributeHeadingAccuracy" },
-  { key: "defensive_awareness", label: "Defensive Awareness", short: "DAW", group: "Defending", futgg: "attributeDefensiveAwareness" },
-  { key: "standing_tackle", label: "Standing Tackle", short: "STA", group: "Defending", futgg: "attributeStandingTackle" },
-  { key: "sliding_tackle", label: "Sliding Tackle", short: "SLI", group: "Defending", futgg: "attributeSlidingTackle" },
-  { key: "jumping", label: "Jumping", short: "JUM", group: "Physical", futgg: "attributeJumping" },
-  { key: "stamina", label: "Stamina", short: "STA", group: "Physical", futgg: "attributeStamina" },
-  { key: "strength", label: "Strength", short: "STR", group: "Physical", futgg: "attributeStrength" },
-  { key: "aggression", label: "Aggression", short: "AGG", group: "Physical", futgg: "attributeAggression" },
-  { key: "gk_diving", label: "GK Diving", short: "DIV", group: "Goalkeeping", futgg: "attributeGkDiving" },
-  { key: "gk_handling", label: "GK Handling", short: "HAN", group: "Goalkeeping", futgg: "attributeGkHandling" },
-  { key: "gk_kicking", label: "GK Kicking", short: "KIC", group: "Goalkeeping", futgg: "attributeGkKicking" },
-  { key: "gk_reflexes", label: "GK Reflexes", short: "REF", group: "Goalkeeping", futgg: "attributeGkReflexes" },
-  { key: "gk_positioning", label: "GK Positioning", short: "POS", group: "Goalkeeping", futgg: "attributeGkPositioning" },
-  { key: "gk_speed", label: "GK Speed", short: "SPD", group: "Goalkeeping", futgg: "gkFaceSpeed" }
-];
-var CARD_STATS = [
-  { key: "overall", label: "Overall", short: "OVR", group: "Card" },
-  { key: "weak_foot", label: "Weak Foot", short: "WF", group: "Card" },
-  { key: "skill_moves", label: "Skill Moves", short: "SM", group: "Card" },
-  { key: "height_cm", label: "Height (cm)", short: "HT", group: "Card" },
-  { key: "total_stats", label: "Face stat total", short: "TOT", group: "Card" },
-  { key: "total_igs", label: "In-game stat total", short: "IGS", group: "Card" }
-];
-var ALL_STATS = [...FACE_STATS2, ...DETAIL_STATS, ...CARD_STATS];
-var STAT_KEYS = new Set(ALL_STATS.map((s) => s.key));
-var statDef = (key2) => ALL_STATS.find((s) => s.key === key2);
-var statLabel = (key2) => statDef(key2)?.label ?? key2.replace(/_/g, " ");
-var PLAYER_POSITIONS = ["GK", "RB", "CB", "LB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", "ST"];
-var PLAYSTYLES = [
-  "Finesse Shot",
-  "Chip Shot",
-  "Power Shot",
-  "Dead Ball",
-  "Precision Header",
-  "Acrobatic",
-  "Low Driven Shot",
-  "Gamechanger",
-  "Incisive Pass",
-  "Pinged Pass",
-  "Long Ball Pass",
-  "Tiki Taka",
-  "Whipped Pass",
-  "Inventive",
-  "Jockey",
-  "Block",
-  "Intercept",
-  "Anticipate",
-  "Slide Tackle",
-  "Bruiser",
-  "Aerial Fortress",
-  "Enforcer",
-  "Technical",
-  "Rapid",
-  "First Touch",
-  "Trickster",
-  "Press Proven",
-  "Quick Step",
-  "Relentless",
-  "Long Throw",
-  "Far Throw",
-  "Footwork",
-  "Cross Claimer",
-  "1v1 Close Down",
-  "Far Reach",
-  "Deflector"
-];
-var ACCELERATE_TYPES = ["EXPLOSIVE", "MOSTLY_EXPLOSIVE", "CONTROLLED_EXPLOSIVE", "CONTROLLED", "CONTROLLED_LENGTHY", "MOSTLY_LENGTHY", "LENGTHY"];
-var accelerateLabel = (v) => v ? v.toLowerCase().replace(/_/g, " ").replace(/^./, (c4) => c4.toUpperCase()) : "\u2013";
-var SORT_EXTRAS = ["fit", "price", "name"];
-var MAX_QUERY_PRICE = 15e6;
-var intIn = (v, min, max) => {
-  if (v === null || v === void 0 || v === "") return null;
-  const n = typeof v === "string" ? Number(v.replace(/[,\s]/g, "")) : Number(v);
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : null;
-};
-var textOr = (v, max) => typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
-var listOf = (v, ok, max) => {
-  if (!Array.isArray(v)) return [];
-  const out = [];
-  for (const x of v) {
-    const s = typeof x === "string" ? ok(x) : null;
-    if (s && !out.includes(s)) out.push(s);
-  }
-  return out.slice(0, max);
-};
-var posOf = (s) => {
-  const p = s.trim().toUpperCase();
-  return PLAYER_POSITIONS.includes(p) ? p : null;
-};
-var playstyleOf = (s) => PLAYSTYLES.find((p) => p.toLowerCase() === s.trim().toLowerCase().replace(/\+$/, "")) ?? null;
-var accelOf = (s) => {
-  const a = s.trim().toUpperCase().replace(/[\s-]+/g, "_");
-  return ACCELERATE_TYPES.includes(a) ? a : null;
-};
-var bounds = (v, max) => {
-  if (!Array.isArray(v)) return [];
-  const out = /* @__PURE__ */ new Map();
-  for (const b of v) {
-    const stat2 = typeof b?.stat === "string" ? b.stat.trim().toLowerCase() : "";
-    const value = intIn(b?.value, 0, 300);
-    if (STAT_KEYS.has(stat2) && value !== null) out.set(stat2, value);
-  }
-  return [...out].slice(0, max).map(([stat2, value]) => ({ stat: stat2, value }));
-};
-function cleanPlayerQuery(raw) {
-  const r2 = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  const weights = /* @__PURE__ */ new Map();
-  if (Array.isArray(r2.weights)) for (const w of r2.weights) {
-    const stat2 = typeof w?.stat === "string" ? w.stat.trim().toLowerCase() : "";
-    const weight = intIn(w?.weight, 1, 5);
-    if (STAT_KEYS.has(stat2) && weight !== null) weights.set(stat2, weight);
-  }
-  const type = typeof r2.card_type === "string" && ["icon", "hero", "promo", "base"].includes(r2.card_type) ? r2.card_type : null;
-  const sortRaw = typeof r2.sort === "string" ? r2.sort.trim().toLowerCase() : "";
-  const sort = STAT_KEYS.has(sortRaw) || SORT_EXTRAS.includes(sortRaw) ? sortRaw : null;
-  const foot = r2.foot === "left" || r2.foot === "right" ? r2.foot : null;
-  return {
-    text: textOr(r2.text, 60),
-    positions: listOf(r2.positions, posOf, 12),
-    include_alt_positions: r2.include_alt_positions !== false,
-    card_type: type,
-    min_rating: intIn(r2.min_rating, 1, 99),
-    max_rating: intIn(r2.max_rating, 1, 99),
-    min_price: intIn(r2.min_price, 0, MAX_QUERY_PRICE),
-    max_price: intIn(r2.max_price, 0, MAX_QUERY_PRICE),
-    priced_only: r2.priced_only === true,
-    minimums: bounds(r2.minimums, 12),
-    maximums: bounds(r2.maximums, 12),
-    foot,
-    playstyles: listOf(r2.playstyles, playstyleOf, 6),
-    playstyles_plus: listOf(r2.playstyles_plus, playstyleOf, 4),
-    accelerate_types: listOf(r2.accelerate_types, accelOf, 7),
-    league: textOr(r2.league, 60),
-    nation: textOr(r2.nation, 60),
-    club: textOr(r2.club, 60),
-    owned_only: r2.owned_only === true,
-    weights: [...weights].slice(0, 12).map(([stat2, weight]) => ({ stat: stat2, weight })),
-    sort: sort === "fit" && !weights.size ? null : sort,
-    direction: r2.direction === "asc" ? "asc" : r2.direction === "desc" ? "desc" : null
-  };
-}
-function describeQuery(q) {
-  const out = [];
-  if (q.positions?.length) out.push(q.positions.join("/"));
-  if (q.card_type) out.push({ icon: "Icons", hero: "Heroes", promo: "Promo cards", base: "Base cards" }[q.card_type]);
-  if (q.min_rating != null || q.max_rating != null) out.push(q.min_rating != null && q.max_rating != null ? `${q.min_rating}-${q.max_rating} rated` : q.min_rating != null ? `${q.min_rating}+ rated` : `up to ${q.max_rating} rated`);
-  if (q.max_price != null) out.push(`under ${coins2(q.max_price)}`);
-  if (q.min_price != null) out.push(`over ${coins2(q.min_price)}`);
-  for (const b of q.minimums ?? []) out.push(`${statLabel(b.stat)} ${b.value}+`);
-  for (const b of q.maximums ?? []) out.push(`${statLabel(b.stat)} up to ${b.value}`);
-  if (q.foot) out.push(`${q.foot} footed`);
-  for (const p of q.playstyles ?? []) out.push(p);
-  for (const p of q.playstyles_plus ?? []) out.push(`${p}+`);
-  if (q.accelerate_types?.length) out.push(q.accelerate_types.map(accelerateLabel).join(" or "));
-  for (const k of ["league", "nation", "club"]) if (q[k]) out.push(q[k]);
-  if (q.owned_only) out.push("in my club");
-  if (q.text) out.push(`"${q.text}"`);
-  if (q.weights?.length) out.push(`best for ${[...q.weights].sort((a, b) => b.weight - a.weight).map((w) => statLabel(w.stat).toLowerCase()).join(", ")}`);
-  return out;
-}
-function coins2(n) {
-  if (n >= 1e6) return `${+(n / 1e6).toFixed(n % 1e6 ? 1 : 0)}M`;
-  if (n >= 1e3) return `${+(n / 1e3).toFixed(n % 1e3 ? 1 : 0)}k`;
-  return String(n);
-}
-
 // supabase/functions/_shared/fut/futgg-attributes.ts
 var FUTGG_R2 = "https://r2.fut.gg/27";
 var CARD_URL = (id3) => `https://www.fut.gg/api/fut/player-item-definitions/27/${id3}/`;
@@ -9712,290 +10218,6 @@ var defaultFetcher = (u) => fetch(u, {
   headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; XI-Lab-Card-Stats/1.0)" },
   signal: AbortSignal.timeout(2e4)
 });
-
-// supabase/functions/_shared/fut/player-finder.ts
-var MAX_FINDER_TEXT = 600;
-var DEFAULT_MODEL2 = "claude-opus-5-5";
-async function searchPlayers(db2, userId, query, page = {}) {
-  const platform = page.platform === "pc" ? "pc" : "console";
-  const { data, error } = await db2.rpc("futgg_player_search", {
-    p_query: { ...query, platform, limit: page.limit ?? 50, offset: page.offset ?? 0 },
-    p_user: userId
-  });
-  if (error) throw new FutError(`Player search is unavailable: ${error.message}`, 500);
-  return data;
-}
-var WORD_POSITIONS = [
-  [/\b(goal ?keepers?|keepers?|gks?)\b/, ["GK"]],
-  [/\b(centre[- ]?backs?|center[- ]?backs?|cbs?)\b/, ["CB"]],
-  [/\b(full[- ]?backs?|wing[- ]?backs?)\b/, ["LB", "RB"]],
-  [/\b(left[- ]?backs?|lbs?|lwbs?)\b/, ["LB"]],
-  [/\b(right[- ]?backs?|rbs?|rwbs?)\b/, ["RB"]],
-  [/\b(cdms?|defensive mid(fielder)?s?|holding mid(fielder)?s?|anchors?)\b/, ["CDM"]],
-  [/\b(cms?|central mid(fielder)?s?|box[- ]to[- ]box)\b/, ["CM"]],
-  [/\b(cams?|attacking mid(fielder)?s?|number 10s?|playmakers?)\b/, ["CAM"]],
-  [/\b(wingers?|wide (players?|men))\b/, ["LW", "RW", "LM", "RM"]],
-  [/\b(lws?|left wingers?)\b/, ["LW"]],
-  [/\b(rws?|right wingers?)\b/, ["RW"]],
-  [/\b(lms?|left mid(fielder)?s?)\b/, ["LM"]],
-  [/\b(rms?|right mid(fielder)?s?)\b/, ["RM"]],
-  [/\b(sts?|strikers?|forwards?|cfs?|number 9s?)\b/, ["ST"]]
-];
-var WORD_WEIGHTS = [
-  [/\b(fast|pacey|pacy|quick|rapid|speed(y)?|pace)\b/, [{ stat: "pac", weight: 5 }]],
-  [/\b(passing|passer|playmak\w*|vision|distribut\w*)\b/, [{ stat: "pas", weight: 4 }]],
-  [/\b(shoot\w*|finish\w*|clinical|goal ?scor\w*|shot)\b/, [{ stat: "sho", weight: 5 }]],
-  [/\b(dribbl\w*|skill(ful|ed)|tricky|agile|on the ball)\b/, [{ stat: "dri", weight: 4 }]],
-  [/\b(defend\w*|tackl\w*|defensive|solid at the back)\b/, [{ stat: "def", weight: 5 }]],
-  [/\b(strong|physical|strength|bully|tank|hard)\b/, [{ stat: "phy", weight: 4 }]],
-  [/\b(stamina|engine|work ?rate|relentless)\b/, [{ stat: "stamina", weight: 3 }]],
-  [/\b(aerial|header|heading|in the air|tall|height)\b/, [{ stat: "heading_accuracy", weight: 3 }, { stat: "jumping", weight: 2 }, { stat: "height_cm", weight: 3 }]],
-  [/\b(cross\w*)\b/, [{ stat: "crossing", weight: 4 }]],
-  [/\b(long shots?|from distance|outside the box)\b/, [{ stat: "long_shots", weight: 4 }]],
-  [/\b(free ?kicks?|set pieces?|dead ball)\b/, [{ stat: "fk_accuracy", weight: 4 }, { stat: "curve", weight: 2 }]],
-  [/\b(composed|composure)\b/, [{ stat: "composure", weight: 3 }]],
-  [/\b(shot ?stopp\w*|reflex\w*|diving|saves?)\b/, [{ stat: "gk_reflexes", weight: 4 }, { stat: "gk_diving", weight: 4 }]],
-  [/\b(sweeper keeper|rushes out|good with (his|her|their) feet)\b/, [{ stat: "gk_kicking", weight: 3 }, { stat: "gk_speed", weight: 3 }]]
-];
-function money(raw, unit) {
-  const n = Number(raw.replace(/,/g, ""));
-  if (!Number.isFinite(n)) return null;
-  const u = (unit ?? "").toLowerCase();
-  return Math.round(u.startsWith("m") ? n * 1e6 : u.startsWith("k") ? n * 1e3 : n);
-}
-function quickParse(message, previous = null) {
-  const t = ` ${message.toLowerCase()} `;
-  const q = previous ? { ...previous, weights: [...previous.weights ?? []], minimums: [...previous.minimums ?? []] } : {};
-  let understood = false;
-  const positions = /* @__PURE__ */ new Set();
-  for (const [re, ps] of WORD_POSITIONS) if (re.test(t)) ps.forEach((p) => positions.add(p));
-  for (const p of PLAYER_POSITIONS) if (new RegExp(`\\b${p.toLowerCase()}s?\\b`).test(t)) positions.add(p);
-  if (positions.size) {
-    q.positions = [...positions];
-    understood = true;
-  }
-  const under = t.match(/\b(?:under|below|less than|max(?:imum)?|up to|budget(?: of)?|<)\s*([\d.,]+)\s*(k|m|mil\w*|coins?)?\b/);
-  if (under) {
-    const v = money(under[1], under[2]);
-    if (v !== null) {
-      q.max_price = v;
-      understood = true;
-    }
-  }
-  const over = t.match(/\b(?:over|above|more than|at least|min(?:imum)?)\s*([\d.,]+)\s*(k|m|mil\w*)\b/);
-  if (over) {
-    const v = money(over[1], over[2]);
-    if (v !== null) {
-      q.min_price = v;
-      understood = true;
-    }
-  }
-  if (/\b(cheap|budget|bargain)\b/.test(t) && q.max_price == null) {
-    q.max_price = 1e4;
-    understood = true;
-  }
-  if (/\b(cheaper)\b/.test(t) && previous?.max_price) {
-    q.max_price = Math.round(previous.max_price * 0.6);
-    understood = true;
-  }
-  const rated = t.match(/\b([4-9]\d)\s*(?:\+|plus|or (?:higher|above|more)|rated|ovr|overall)/);
-  if (rated) {
-    q.min_rating = Number(rated[1]);
-    understood = true;
-  }
-  const wf = t.match(/\b([2-5])\s*(?:\*|star|stars|☆|★)?\s*(?:weak ?foot|wf)\b/) ?? t.match(/\b(?:weak ?foot|wf)\s*([2-5])\b/);
-  if (wf) {
-    q.minimums = [...(q.minimums ?? []).filter((b) => b.stat !== "weak_foot"), { stat: "weak_foot", value: Number(wf[1]) }];
-    understood = true;
-  }
-  const sm = t.match(/\b([2-5])\s*(?:\*|star|stars|☆|★)?\s*(?:skill(?:s| moves)?|sm)\b/) ?? t.match(/\b(?:skill moves|skills|sm)\s*([2-5])\b/);
-  if (sm) {
-    q.minimums = [...(q.minimums ?? []).filter((b) => b.stat !== "skill_moves"), { stat: "skill_moves", value: Number(sm[1]) }];
-    understood = true;
-  }
-  if (/\bleft[- ]?(foot(ed)?|footer)\b/.test(t)) {
-    q.foot = "left";
-    understood = true;
-  }
-  if (/\bright[- ]?(foot(ed)?|footer)\b/.test(t)) {
-    q.foot = "right";
-    understood = true;
-  }
-  if (/\bicons?\b/.test(t)) {
-    q.card_type = "icon";
-    understood = true;
-  } else if (/\bheroe?s?\b/.test(t)) {
-    q.card_type = "hero";
-    understood = true;
-  }
-  if (/\b(my club|i own|my cards|already have)\b/.test(t)) {
-    q.owned_only = true;
-    understood = true;
-  }
-  if (/\bexplosive\b/.test(t)) {
-    q.accelerate_types = ["EXPLOSIVE", "MOSTLY_EXPLOSIVE", "CONTROLLED_EXPLOSIVE"];
-    understood = true;
-  }
-  if (/\blengthy\b/.test(t)) {
-    q.accelerate_types = ["LENGTHY", "MOSTLY_LENGTHY", "CONTROLLED_LENGTHY"];
-    understood = true;
-  }
-  for (const p of PLAYSTYLES) {
-    const name2 = p.toLowerCase();
-    if (t.includes(` ${name2}+`) || t.includes(`${name2} plus`)) {
-      q.playstyles_plus = [.../* @__PURE__ */ new Set([...q.playstyles_plus ?? [], p])];
-      understood = true;
-    } else if (t.includes(` ${name2} `) || t.includes(` ${name2},`) || t.includes(` ${name2}.`)) {
-      q.playstyles = [.../* @__PURE__ */ new Set([...q.playstyles ?? [], p])];
-      understood = true;
-    }
-  }
-  const weights = new Map((q.weights ?? []).map((w) => [w.stat, w.weight]));
-  for (const [re, ws] of WORD_WEIGHTS) if (re.test(t)) {
-    for (const w of ws) weights.set(w.stat, Math.max(weights.get(w.stat) ?? 0, w.weight));
-    understood = true;
-  }
-  if (weights.size) {
-    q.weights = [...weights].map(([stat2, weight]) => ({ stat: stat2, weight }));
-    q.sort = "fit";
-  }
-  return { query: cleanPlayerQuery(q), understood };
-}
-var STAT_ENUM = ALL_STATS.map((s) => s.key);
-var nullable2 = (schema) => ({ anyOf: [schema, { type: "null" }] });
-var bound = { type: "object", additionalProperties: false, required: ["stat", "value"], properties: { stat: { type: "string", enum: STAT_ENUM }, value: { type: "integer" } } };
-var SCHEMA2 = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "reply",
-    "text",
-    "positions",
-    "card_type",
-    "min_rating",
-    "max_rating",
-    "min_price",
-    "max_price",
-    "priced_only",
-    "minimums",
-    "maximums",
-    "foot",
-    "playstyles",
-    "playstyles_plus",
-    "accelerate_types",
-    "league",
-    "nation",
-    "club",
-    "owned_only",
-    "weights"
-  ],
-  properties: {
-    reply: { type: "string" },
-    text: nullable2({ type: "string" }),
-    positions: { type: "array", items: { type: "string", enum: [...PLAYER_POSITIONS] } },
-    card_type: nullable2({ type: "string", enum: ["icon", "hero", "promo", "base"] }),
-    min_rating: nullable2({ type: "integer" }),
-    max_rating: nullable2({ type: "integer" }),
-    min_price: nullable2({ type: "integer" }),
-    max_price: nullable2({ type: "integer" }),
-    priced_only: { type: "boolean" },
-    minimums: { type: "array", items: bound },
-    maximums: { type: "array", items: bound },
-    foot: nullable2({ type: "string", enum: ["left", "right"] }),
-    playstyles: { type: "array", items: { type: "string", enum: [...PLAYSTYLES] } },
-    playstyles_plus: { type: "array", items: { type: "string", enum: [...PLAYSTYLES] } },
-    accelerate_types: { type: "array", items: { type: "string", enum: [...ACCELERATE_TYPES] } },
-    league: nullable2({ type: "string" }),
-    nation: nullable2({ type: "string" }),
-    club: nullable2({ type: "string" }),
-    owned_only: { type: "boolean" },
-    weights: { type: "array", items: { type: "object", additionalProperties: false, required: ["stat", "weight"], properties: { stat: { type: "string", enum: STAT_ENUM }, weight: { type: "integer" } } } }
-  }
-};
-function systemPrompt2(previous) {
-  const stats = [...FACE_STATS2, ...DETAIL_STATS].map((s) => `${s.key} (${s.label})`).join(", ");
-  return [
-    "You turn an EA SPORTS FC 27 Ultimate Team player request into a search over every FUT card. Return JSON only.",
-    `Stats you can use (1-99): ${stats}. Card numbers: overall, weak_foot (1-5 stars), skill_moves (1-5 stars), height_cm, total_stats, total_igs.`,
-    `Position codes: ${PLAYER_POSITIONS.join(", ")}. A card matches a position if it's the card's main or alternative position.`,
-    "weights rank the results: list the 2 to 6 stats that matter most for what the user describes, weight 1 (nice to have) to 5 (essential). Use face stats (pac, sho, pas, dri, def, phy) for broad wishes and in-game attributes for specific ones (e.g. acceleration for quick off the mark, short_passing for tiki-taka, heading_accuracy and jumping for aerial threat, interceptions and defensive_awareness for reading the game). Goalkeepers: gk_diving, gk_handling, gk_kicking, gk_reflexes, gk_positioning, gk_speed.",
-    'minimums and maximums are hard limits: only use them when the user states a number ("at least 85 pace", "4 star weak foot", "under 185cm") or a must-have; otherwise prefer weights so there are always results.',
-    'Prices are in coins: 50k = 50000, 1.2m = 1200000. "Under 50k" sets max_price 50000. "Cheap" with no number: max_price 10000. Set priced_only when the user wants to buy the card.',
-    'card_type: icon, hero, promo (any special card) or base (gold/silver/bronze rare or common), only when asked. foot only when asked. owned_only when they mean cards they already own ("in my club").',
-    "playstyles must be on the card (plain or plus); playstyles_plus only when they ask for the plus version. accelerate_types only when they mention AcceleRATE (explosive, controlled, lengthy).",
-    "text is a name, club, nation, league or card version to look for, only when they name one that isn't a league, nation or club field.",
-    previous ? `The user's current search is ${JSON.stringify(previous)}. If the new message refines it ("cheaper", "left footed only", "what about strikers"), return the whole updated search, keeping what they didn't change. If it's a new request, start fresh.` : "This is a new search.",
-    `reply is one or two short, friendly sentences telling the user what you're looking for (e.g. "Looking for quick centre-backs under 50k who can pass, ranked on pace, defending and passing."). Don't list players and don't promise results.`,
-    "If the message isn't about finding a FUT player, keep the current search and say in reply what you can help with."
-  ].join("\n");
-}
-async function readRequestWithClaude(message, previous, history, env, fetchFn = fetch) {
-  const messages = [
-    ...history.slice(-6).map((h) => ({ role: h.role, content: h.text.slice(0, MAX_FINDER_TEXT) })),
-    { role: "user", content: message }
-  ];
-  while (messages.length && messages[0].role !== "user") messages.shift();
-  const merged = [];
-  for (const m of messages) {
-    const last = merged[merged.length - 1];
-    if (last && last.role === m.role) last.content += `
-${m.content}`;
-    else merged.push({ ...m });
-  }
-  const res = await callClaude(env, fetchFn, {
-    model: env("FUT_FINDER_MODEL") || env("FUT_IMPORT_MODEL") || DEFAULT_MODEL2,
-    max_tokens: 4e3,
-    output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA2 } },
-    system: systemPrompt2(previous),
-    messages: merged
-  });
-  const out = await res.json().catch(() => null);
-  if (!res.ok) {
-    console.error("[fut-api] player finder AI:", res.status, out?.error?.message);
-    throw new FutError(res.status === 429 || res.status >= 500 ? "The player finder is busy. Try again in a minute." : "The player finder couldn't read that. Try saying it another way.", 502);
-  }
-  if (out?.stop_reason === "refusal") throw new FutError("The player finder declined that request.", 422);
-  const text4 = (out?.content ?? []).filter((c4) => c4.type === "text").map((c4) => c4.text ?? "").join("");
-  let parsed;
-  try {
-    parsed = JSON.parse(text4);
-  } catch {
-    throw new FutError("The player finder returned something unreadable. Try again.", 502);
-  }
-  const reply = typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim().slice(0, 400) : "Here are the best fits I found.";
-  const query = cleanPlayerQuery(parsed);
-  if (query.weights?.length) query.sort = "fit";
-  return { query, reply };
-}
-async function findPlayers(db2, userId, input, env, fetchFn = fetch, hooks = {}) {
-  const message = input.message.trim().slice(0, MAX_FINDER_TEXT);
-  if (!message) throw new FutError("Tell me what kind of player you're looking for.");
-  let query, reply, via;
-  if (env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) {
-    hooks.beforeAi?.();
-    ({ query, reply } = await readRequestWithClaude(message, input.previous, input.history, env, fetchFn));
-    via = "ai";
-  } else {
-    const quick = quickParse(message, input.previous);
-    if (!quick.understood) throw new FutError(`I couldn't tell what you're after. Try something like "fast CB under 50k with good passing".`, 422);
-    query = quick.query;
-    via = "words";
-    reply = `Looking for ${describeQuery(query).join(", ") || "the best cards"}.`;
-  }
-  let result = await searchPlayers(db2, userId, query, { platform: input.platform, limit: 50 });
-  let relaxed = null;
-  if (result.total === 0 && (query.minimums?.length || query.maximums?.length || query.playstyles?.length || query.accelerate_types?.length)) {
-    const extra = (query.minimums ?? []).map((b) => ({ stat: b.stat, weight: 3 }));
-    const looser = cleanPlayerQuery({ ...query, minimums: [], maximums: [], playstyles: [], playstyles_plus: [], accelerate_types: [], weights: [...query.weights ?? [], ...extra], sort: "fit" });
-    const second = await searchPlayers(db2, userId, looser, { platform: input.platform, limit: 50 });
-    if (second.total > 0) {
-      result = second;
-      query = looser;
-      relaxed = "Nothing matched every must-have, so these are the closest fits without the hard limits.";
-    }
-  }
-  return { reply, query, summary: describeQuery(query), via, relaxed, result };
-}
 
 // supabase/functions/_shared/fut/card-images.ts
 var OFF = { faces: false, portrait_base: null, background_base: null, credit: null };
@@ -12678,6 +12900,11 @@ async function handle(req, deps) {
       return json({ data });
     }
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db2, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2e9) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
+    if (route === "/meta/card" && m === "GET") return json({ data: await metaForCard(db2, userId, url.searchParams.get("card_id") ?? "") });
+    if (route === "/meta/top" && m === "GET") {
+      const q = url.searchParams;
+      return json({ data: await metaTop(db2, userId, { position: q.get("position"), role: q.get("role"), max_price: q.get("max_price"), platform: q.get("platform"), owned_only: q.get("owned_only") === "1" }) });
+    }
     if (route === "/prices/history" && m === "GET") {
       const days = Number(url.searchParams.get("days") ?? 30);
       if (!Number.isInteger(days) || days < 1 || days > 90) throw new FutError("days must be a whole number from 1 to 90.");

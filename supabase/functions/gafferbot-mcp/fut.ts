@@ -14,6 +14,7 @@ import { parseSolveBody, sbcOverview, solveForUser } from "../_shared/fut/sbc-da
 import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evolutions-data.ts";
 import { tradeOverview } from "../_shared/fut/trades.ts";
 import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
+import { metaForCard, metaTop } from "../_shared/fut/meta-data.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
 export interface FutCtx {
@@ -447,6 +448,31 @@ FUT_TOOLS.push(
       const platform = platformParam((args as Record<string, unknown>).platform);
       const r = await runWorkspace(() => sellOrKeep(db, userId, platform, async () => new Map((await evolutionsOverview(db, userId, platform)).best_upgrades.map((b) => [b.card_id, { name: b.evolution, gain: b.gain }]))));
       return { ...r, advice: r.advice.slice(0, 60).map(({ trend: _t, ...a }) => a) };
+    }),
+  },
+  {
+    name: "fut_meta_rating",
+    title: "Metarating: how good a FUT card actually plays",
+    description: "EA FC Ultimate Team: GafferBot's metarating. With card_id: the card's score (1-99) in each role at each of its positions, from in-game attributes, PlayStyles and PlayStyles+, height, AcceleRATE, weak foot and skill moves under the best chem style, with strengths, weaknesses and a one-line verdict vs its overall. With position (and optional role, max_price, owned_only): the best-scoring cards for that position on FUT.GG's card list. An estimate, not EA's numbers. " + READ_ONLY,
+    inputSchema: {
+      type: "object",
+      properties: {
+        card_id: { type: "string", description: "A card id from search_my_fut_cards or the market tools." },
+        position: { type: "string", description: "GK, CB, LB, RB, CDM, CM, CAM, LM, RM, LW, RW or ST, to list the best cards there." },
+        role: { type: "string", description: "Optional role at that position, e.g. 'Advanced Forward', 'Ball-Playing Defender'." },
+        max_price: { type: "integer", description: "Optional budget in coins." },
+        owned_only: { type: "boolean", description: "Only cards in the player's synced club." },
+        platform: PLATFORM,
+      },
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const b = args as Record<string, unknown>;
+      if (str(b.card_id)) return await metaForCard(db, userId, String(b.card_id));
+      if (!str(b.position)) throw new ToolError("Give card_id, or a position to list the best cards for it.");
+      const r = await metaTop(db, userId, b);
+      return { ...r, cards: r.cards.slice(0, 15) };
     }),
   },
 );

@@ -67,6 +67,8 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | `GET /knowledge/status` | Bank totals, the last collection run, and which feeds have keys |
 | `GET /evolutions?platform=` | Evolutions finder: live evolutions the helper saw (ended ones dropped), each with its rules and level upgrades in plain lines, the user's club cards that can enter (eligible, or "maybe" when a rule needs data the card lacks), each card after every level, the overall gain in the latest saved squad, and the best evolution per card |
 | `POST /evolutions/check` | `{ name, requirements, upgrades }`: one pasted evolution (text, "Level N" lines split levels) matched the same way |
+| `GET /meta/card?card_id=` | Metarating for one card: a 1-99 score in each role at each of its positions (attributes, PlayStyles/PlayStyles+, height, AcceleRATE, weak foot, skill moves, best chem style), strengths, weaknesses and a verdict vs its overall. A club card borrows the catalogue copy's full stats |
+| `GET /meta/top?position=&role=&max_price=&owned_only=1&platform=` | The best metarated cards for a position (and role) within a budget: the player search pre-ranks 100 by weighted fit, then each is scored in full |
 | `GET /prices/history?platform=&card_id=&days=` | Price chart for one of the caller's cards or a catalogue card (1-90 days): FUT.GG prices twice daily plus hourly hot-card rows (`FUTGG_HOURLY=on`), latest/low/high, 24h and 7d change, and market-wide drops (median tracked card down 4%+ between refreshes) |
 | `GET /club/sell-or-keep?platform=` | Sell or keep: a verdict and reason for every tradeable club card (keep / keep_evo / hold_fodder / sell_now / sell_high / wait / sell / no_price), price after tax, 3- and 7-day change, profit vs purchase price, and coin totals (`fut.card_price_trend`) |
 | `GET /trades?platform=` | Trade log: buys (won Transfer Targets) and sales (sold transfer-list items) the helper saw, matched by EA item id: after-tax profit totals, week/month, win rate, tax paid, best/worst, cumulative profit by day, flips, cards still held (valued at FUT.GG after tax), sales with no buy price |
@@ -123,6 +125,11 @@ no `squad_id` they use the squad the player edited last.
   FC 27 names are UNVERIFIED, mapped where known (`fromEa`) and listed as unread otherwise. Club cards borrow face stats
   and PlayStyles from the catalogue copy of the same EA item. New overall = card overall plus the +OVR upgrades (an
   estimate, not EA's rating formula). Never starts or pays for an evolution.
+- **Metaratings (since 2026-11-10).** `_shared/fut/meta.ts` (pure) and `meta-data.ts`. Roles per position group
+  (GK, CB, FB, CDM, CM, CAM, wide, ST) weight in-game attributes; each card is scored under every chem style and the
+  best kept. PlayStyles add 1.2 each and PlayStyles+ 2.5 (capped at 6); height, AcceleRATE, weak foot and skill moves
+  adjust by role. Weights and chem style boosts are GafferBot's own estimates (FC 27's chem style numbers aren't
+  confirmed), so the page and API say so. Cards without FUT.GG's full stats fall back to face stats (`estimated`).
 - **Sell or keep (since 2026-11-10).** `_shared/fut/sell-keep.ts`. Order of verdicts: a card in any saved squad is
   kept; one a live evolution would make start (Evolutions finder `best_upgrades`) is kept for that; an 83+ card within
   25% of the cheapest price for its overall is held as SBC fodder; otherwise FUT.GG's trend decides: down 4% in 3 days
