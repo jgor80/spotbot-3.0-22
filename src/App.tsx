@@ -62,6 +62,7 @@ const CardComparePage = lazy(() => import("./pages/fut/CardComparePage"));
 const ChampsTrackerPage = lazy(() => import("./pages/fut/ChampsTrackerPage"));
 const MarketCalendarPage = lazy(() => import("./pages/fut/MarketCalendarPage"));
 const FodderIndexPage = lazy(() => import("./pages/fut/FodderIndexPage"));
+const ObjectivesPlannerPage = lazy(() => import("./pages/fut/ObjectivesPlannerPage"));
 
 const queryClient = new QueryClient();
 // Market Lab data changes when FUT.GG refreshes (twice a day) or you import prices (which refetches it), so keep it
@@ -145,6 +146,7 @@ const App = () => (
                   <Route path="/fut/champs" element={<ProtectedRoute><ChampsTrackerPage /></ProtectedRoute>} />
                   <Route path="/fut/calendar" element={<ProtectedRoute><MarketCalendarPage /></ProtectedRoute>} />
                   <Route path="/fut/fodder" element={<ProtectedRoute><FodderIndexPage /></ProtectedRoute>} />
+                  <Route path="/fut/objectives" element={<ProtectedRoute><ObjectivesPlannerPage /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>

@@ -17,6 +17,7 @@ import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
 import { metaForCard, metaTop } from "../_shared/fut/meta-data.ts";
 import { calendarFor } from "../_shared/fut/calendar.ts";
 import { fodderIndex } from "../_shared/fut/fodder.ts";
+import { objectivesPlan } from "../_shared/fut/objectives.ts";
 import { champsOverview } from "../_shared/fut/champs.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
@@ -510,6 +511,18 @@ FUT_TOOLS.push(
       const a = args as Record<string, unknown>;
       const r = await fodderIndex(db, platformParam(a.platform), typeof a.days === "number" ? a.days : 30);
       return { ...r, index_history: r.index_history.slice(-60), ratings: r.ratings.map(({ history: _h, ...x }) => x) };
+    }),
+  },
+  {
+    name: "fut_plan_objectives",
+    title: "Plan one XI for my FUT objectives",
+    description: "EA FC Ultimate Team: reads the player requirements in the player's open objectives (captured by the XI Lab helper, or pasted as text, one per line), such as 'with 3 Premier League players in your starting XI' or 'using a Brazilian player', and builds one XI from their club cards that covers as many at once as possible (best-overall XI first, cheapest swaps in overall). Per objective: covered (with which players), can't cover (and why), any XI, or not read; plus the game mode it's for. Formation: the latest saved squad's unless given. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM, formation: { type: "string", description: "e.g. 4-3-3; default the latest saved squad's" }, text: { type: "string", maxLength: 20000, description: "Optional: objectives pasted one per line, instead of the helper's capture." } }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args as Record<string, unknown>;
+      const r = await runWorkspace(() => objectivesPlan(db, userId, platformParam(a.platform), a));
+      return { ...r, squad: r.squad ? { formation: r.squad.formation, slots: r.squad.slots.map((s) => ({ slot: s.slot, position: s.position, card: s.card ? { id: s.card.id, name: s.card.name, rating: s.card.rating ?? null } : null })) } : null };
     }),
   },
 );
