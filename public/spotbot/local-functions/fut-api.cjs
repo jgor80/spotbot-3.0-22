@@ -10824,6 +10824,121 @@ async function objectivesPlan(db2, userId, platform, b) {
   return { platform, source, seen_at: seenAt, club_cards: mine.length, ...plan, note, verified: false };
 }
 
+// supabase/functions/_shared/fut/draft.ts
+var OPTIONS = 5;
+var newSeed = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
+var seedOf = (v) => {
+  if (v === void 0 || v === null || v === "") return newSeed();
+  const s = String(v).toLowerCase().trim();
+  if (!/^[a-z0-9]{6,16}$/.test(s)) throw new FutError("A draft code is 6 to 16 letters and numbers.");
+  return s;
+};
+async function randomCards(db2, seed, count2, min, max, position, power) {
+  const { data, error } = await db2.rpc("random_cards", { p_seed: seed, p_count: count2, p_min: min, p_max: max, p_position: position, p_power: power });
+  if (error) throw new FutError(`The card list is unavailable: ${error.message}`, 500);
+  return (data ?? []).map((c4) => ({
+    id: String(c4.id),
+    name: String(c4.name),
+    overall: Number(c4.overall),
+    positions: c4.positions ?? [],
+    club: c4.club ?? null,
+    league: c4.league ?? null,
+    nation: c4.nation ?? null,
+    is_icon: c4.is_icon === true,
+    is_hero: c4.is_hero === true,
+    version: c4.version ?? null,
+    ea_item_id: c4.ea_item_id ? Number(c4.ea_item_id) : null
+  }));
+}
+async function draftOptions(db2, formationIn, seedIn) {
+  const formation = typeof formationIn === "string" && FORMATIONS[formationIn] ? formationIn : formationIn === void 0 ? "4-3-3" : null;
+  if (!formation) throw new FutError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
+  const seed = seedOf(seedIn);
+  const layout = FORMATIONS[formation];
+  const slots = await Promise.all(layout.map(async (l) => ({ slot: l.slot, position: l.position, options: await randomCards(db2, `${seed}:${formation}:${l.slot}`, OPTIONS, 75, 99, l.position, 2) })));
+  if (slots.some((s) => !s.options.length)) throw new FutError("Not enough cards on FUT.GG's card list yet to run a draft.", 503);
+  return { seed, formation, slots, rules: "Pick one card per slot. Score = team rating + team chemistry. Same code, same options, so friends can compare." };
+}
+var toWorkspace = (c4) => ({ id: c4.id, name: c4.name, club: c4.club, league: c4.league, nation: c4.nation, positions: c4.positions, is_icon: c4.is_icon, is_hero: c4.is_hero, rating: c4.overall, source: "database" });
+function scorePicks(options, picks, formation, rules) {
+  const names2 = /* @__PURE__ */ new Set();
+  const slots = options.map((s) => {
+    const id3 = picks[s.slot];
+    const card = s.options.find((c4) => c4.id === id3);
+    if (!card) throw new FutError(`Pick one of the ${OPTIONS} options for ${s.slot}.`);
+    const n = card.name.toLowerCase();
+    if (names2.has(n)) throw new FutError(`${card.name} is in the XI twice; pick someone else for ${s.slot}.`);
+    names2.add(n);
+    return { slot: s.slot, position: s.position, card: toWorkspace(card), locked: false };
+  });
+  const chem = evaluate(formation, slots, null, rules).total;
+  const rating4 = teamRating(slots.map((s) => s.card.rating ?? 0));
+  return { rating: rating4, chemistry: chem, score: rating4 + chem, slots };
+}
+async function finishDraft(db2, userId, b) {
+  const opts = await draftOptions(db2, b.formation, b.seed ?? "missing!");
+  const picks = b.picks && typeof b.picks === "object" && !Array.isArray(b.picks) ? b.picks : {};
+  const s = scorePicks(opts.slots, picks, opts.formation, await activeRules(db2));
+  const { data: had, error: e1 } = await db2.from("draft_scores").select("score").eq("user_id", userId).eq("seed", opts.seed).maybeSingle();
+  fail(e1);
+  const best = !had || Number(had.score) < s.score;
+  if (best) {
+    fail((await db2.from("draft_scores").upsert({ user_id: userId, seed: opts.seed, formation: opts.formation, rating: s.rating, chemistry: s.chemistry, score: s.score, squad: s.slots.map((x) => ({ slot: x.slot, name: x.card.name, overall: x.card.rating })), finished_at: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "user_id,seed" })).error);
+  }
+  return { seed: opts.seed, formation: opts.formation, rating: s.rating, chemistry: s.chemistry, score: s.score, personal_best: best, previous_best: had ? Number(had.score) : null };
+}
+async function draftBoard(db2, seedIn, userIds) {
+  const seed = seedOf(seedIn);
+  if (!Array.isArray(userIds)) throw new FutError("user_ids must be a list.");
+  const ids = userIds.filter((x) => typeof x === "string" && /^[0-9a-f-]{36}$/i.test(x)).slice(0, 500);
+  if (!ids.length) return { seed, rows: [] };
+  const { data, error } = await db2.from("draft_scores").select("user_id, formation, rating, chemistry, score, finished_at").eq("seed", seed).in("user_id", ids).order("score", { ascending: false }).limit(50);
+  fail(error);
+  return { seed, rows: data ?? [] };
+}
+var SIM_PACKS = [
+  { key: "gold", label: "Gold Players Pack", parts: [{ count: 12, min: 75, max: 99, power: 0.6 }] },
+  { key: "rare", label: "Rare Players Pack", parts: [{ count: 11, min: 75, max: 99, power: 1 }, { count: 1, min: 83, max: 99, power: 1 }] },
+  { key: "x10_84", label: "84+ x10 Pack", parts: [{ count: 10, min: 84, max: 99, power: 1.5 }] },
+  { key: "x5_87", label: "87+ x5 Pack", parts: [{ count: 5, min: 87, max: 99, power: 2 }] }
+];
+async function openSimPack(db2, b) {
+  const pack = SIM_PACKS.find((p) => p.key === b.pack);
+  if (!pack) throw new FutError(`pack must be one of: ${SIM_PACKS.map((p) => p.key).join(", ")}.`);
+  const platform = b.platform === "pc" ? "pc" : "console";
+  const seed = newSeed();
+  const seen = /* @__PURE__ */ new Set();
+  const cards = [];
+  for (const [i, part] of pack.parts.entries()) {
+    let taken = 0;
+    for (const c4 of await randomCards(db2, `${seed}:${i}`, part.count + 4, part.min, part.max, null, part.power)) {
+      if (taken >= part.count) break;
+      if (seen.has(c4.id)) continue;
+      seen.add(c4.id);
+      cards.push(c4);
+      taken++;
+    }
+  }
+  const total = pack.parts.reduce((n, p) => n + p.count, 0);
+  const items = cards.slice(0, total).sort((a, b2) => b2.overall - a.overall);
+  const ids = items.map((c4) => c4.ea_item_id).filter((x) => !!x);
+  const price = /* @__PURE__ */ new Map();
+  if (ids.length) {
+    const { data, error } = await db2.rpc("account_item_prices", { p_platform: platform, p_ids: ids });
+    if (!error) for (const i of data?.items ?? []) price.set(Number(i.ea_item_id), i.price ?? null);
+  }
+  const out = items.map((c4) => ({ ...c4, price: c4.ea_item_id ? price.get(c4.ea_item_id) ?? null : null }));
+  return {
+    pack: pack.key,
+    label: pack.label,
+    platform,
+    cards: out,
+    best: out[0] ?? null,
+    value: out.reduce((n, c4) => n + (c4.price ?? 0), 0),
+    note: "Simulated for fun with made-up odds (not EA's), from FUT.GG's card list and prices. Nothing is opened in your club."
+  };
+}
+
 // supabase/functions/_shared/fut/champs.ts
 var MODES2 = ["champs", "rivals", "squad_battles", "other"];
 var MODE_LABEL = { champs: "Champions", rivals: "Rivals", squad_battles: "Squad Battles", other: "Games" };
@@ -14001,7 +14116,7 @@ async function handle(req, deps) {
     if (!await deps.isBot?.(req)) return err(401, "Only the bot's scheduler can run jobs.");
     const jobBody = await req.json().catch(() => null) ?? {};
     const job = jobBody.job;
-    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts" && job !== "strategy-learn" && job !== "club-pulls" && job !== "club-board" && job !== "club-whohas") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts" && job !== "strategy-learn" && job !== "club-pulls" && job !== "club-board" && job !== "club-whohas" && job !== "draft-board") return err(400, "Unknown job.");
     try {
       if (job === "knowledge-ingest") {
         const env = deps.env ?? ((k) => Deno.env.get(k));
@@ -14034,6 +14149,7 @@ async function handle(req, deps) {
       if (job === "club-pulls") return json({ data: await runClubPulls(deps.db) });
       if (job === "club-board") return json({ data: await clubBoard(deps.db, jobBody.user_ids) });
       if (job === "club-whohas") return json({ data: await whoHas(deps.db, jobBody.user_ids, jobBody.query) });
+      if (job === "draft-board") return json({ data: await draftBoard(deps.db, jobBody.seed, jobBody.user_ids) });
       if (job === "futgg-catalogue") {
         const result2 = await syncFutggCatalogue(deps.db, deps.fetch);
         await (await marketFor(deps.db)).rebalanceBaskets();
@@ -14152,6 +14268,9 @@ async function handle(req, deps) {
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db2, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2e9) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
     if (route === "/club-share" && m === "GET") return json({ data: await getShare(db2, userId) });
     if (route === "/club-share" && m === "PUT") return json({ data: await setShare(db2, userId, obj2(await body(req))) });
+    if (route === "/draft" && m === "GET") return json({ data: await draftOptions(db2, url.searchParams.get("formation") ?? void 0, url.searchParams.get("seed") ?? void 0) });
+    if (route === "/draft/finish" && m === "POST") return json({ data: await finishDraft(db2, userId, obj2(await body(req))) });
+    if (route === "/packs/simulate" && m === "POST") return json({ data: await openSimPack(db2, obj2(await body(req))) });
     if (route === "/objectives/plan" && m === "POST") {
       const b = obj2(await body(req));
       return json({ data: await runWorkspace(() => objectivesPlan(db2, userId, platformParam(b.platform), b)) });

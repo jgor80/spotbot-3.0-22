@@ -247,6 +247,7 @@ const AREAS = [
       { id: 'cl_rivals', label: 'Rivals', emoji: '⚔️', cmd: 'clublife', sub: 'rivals' },
       { id: 'cl_futboard', label: 'FUT Board', emoji: '🃏', cmd: 'clublife', sub: 'futboard' },
       { id: 'cl_whohas', label: 'Who Has This Card', emoji: '🔎', cmd: 'clublife', sub: 'whohas', fields: ['card'], required: ['card'] },
+      { id: 'cl_draft', label: 'FUT Draft Night', emoji: '🎲', cmd: 'clublife', sub: 'draft' },
       { id: 'cl_settings', label: 'Club Life Settings', emoji: '⚙️', cmd: 'clublife', sub: 'settings' },
     ],
   },
