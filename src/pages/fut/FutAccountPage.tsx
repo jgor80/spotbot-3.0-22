@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, ListTodo, Trash2, Wallet } from "lucide-react";
@@ -73,7 +74,7 @@ function Empty() {
   </div>;
 }
 
-const SECTION_LABEL: Record<AccountSection, string> = { balance: "Balance", profile: "Club", tradepile: "Transfer list", watchlist: "Transfer Targets", unassigned: "Unassigned", sbcs: "SBCs", objectives: "Objectives", season: "Season" };
+const SECTION_LABEL: Record<AccountSection, string> = { balance: "Balance", profile: "Club", tradepile: "Transfer list", watchlist: "Transfer Targets", unassigned: "Unassigned", sbcs: "SBCs", sbc_challenges: "SBC challenges", objectives: "Objectives", season: "Season" };
 
 function Overview({ d }: { d: AccountOverview }) {
   const [allSbcs, setAllSbcs] = useState(false);
@@ -132,7 +133,7 @@ function Overview({ d }: { d: AccountOverview }) {
     <Section title="Squad Building Challenges">
       <Seen at={d.seen.sbcs} />
       {d.sbcs && <>
-        <p className="text-sm text-muted-foreground">{d.sbcs.open} open of {d.sbcs.total}, ending soonest first.</p>
+        <p className="text-sm text-muted-foreground">{d.sbcs.open} open of {d.sbcs.total}, ending soonest first. <Link className="text-primary underline-offset-4 hover:underline" to="/fut/sbc">Solve them from your club in the SBC Solver</Link>.</p>
         <div className="overflow-x-auto"><DataTable headers={["SBC", "Group", "Progress", "Ends", "Reward"]} rows={sbcs.map(s => [
           <div className="min-w-[10rem]"><span className="font-medium">{s.name}</span>{s.repeatable && <Badge variant="outline" className="ml-2 text-[10px]">Repeatable{s.repeat_limit ? ` ×${s.repeat_limit}` : ""}</Badge>}{s.description && <p className="text-xs text-muted-foreground">{s.description}</p>}</div>,
           s.category ?? "–",

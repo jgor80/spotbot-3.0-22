@@ -31,6 +31,7 @@ import {
   Package,
   Wallet,
   Shield,
+  Puzzle,
   BookOpenText,
   type LucideIcon,
 } from "lucide-react";
@@ -93,6 +94,7 @@ const futMore: NavItem[] = [
   { path: "/fut/strategy", label: "Daily Strategy", icon: Target },
   { path: "/fut/account", label: "My Account", icon: Wallet },
   { path: "/fut/packs", label: "Packs", icon: Package },
+  { path: "/fut/sbc", label: "SBC Solver", icon: Puzzle },
   { path: "/fut/knowledge", label: "Knowledge Bank", icon: BookOpenText },
 ];
 

@@ -57,6 +57,9 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | `POST /helper/account` | Helper key only: the user's account as the helper copied it from Web App answers (format `xilab-account-capture`): balance, club record, transfer list, watchlist, unassigned, SBCs, objectives, season. Each section replaces the stored one only when it was seen later; coins/points add a history point when they change (or every 6 hours) |
 | `GET /account?platform=` | My Account: balance and its history, transfer list / watchlist / unassigned with FUT.GG names and prices, SBCs, objectives, season numbers, tips and the field names seen |
 | `DELETE /account?platform=` | Clear the stored account and balance history for one platform |
+| `GET /sbc?platform=` | SBC Solver: open SBC sets the helper saw, each opened challenge's requirements read into plain lines (anything not understood under `unread`), formation, and the requirement field names seen |
+| `POST /sbc/parse` | `{ text }`: pasted requirement lines (EA, FUT.GG or FUTBIN wording) to requirements |
+| `POST /sbc/solve` | `{ platform, challenges: [{ name, formation, requirements?, text? }] (1-10), options: { use_tradeables, buy, protect_from }, set_id?, reward? }`: cheapest squad per challenge (spares, untradeables, tradeables, then market cards from `fut.sbc_card_pool`), never reusing a card across a set; buy list, real cost, and a worth-it verdict against the reward (coins, a Pack Advisor pack's typical value, or a player's price) |
 | `GET /knowledge/map?days=&category=` | Knowledge Bank map: every topic the community talked about in the period (shared sources plus the caller's own), with for/against/mixed counts, net sentiment (-1..1, weighted by upvotes/views), agreement (agreed, leaning, split, early) and trend (-1..1, newer half of the period against the older half) |
 | `GET /knowledge/topics/:key?days=` | One topic: totals, claims per week and its statements with their source links |
 | `GET /knowledge/sources?mine=&limit=&offset=`, `POST /knowledge/sources`, `DELETE /knowledge/sources/:id` | Sources (newest first). POST `{ url?, text?, title?, share? }` adds a Reddit/YouTube link (fetched through their APIs when configured) or pasted text and reads it straight away (`FUT_KB_ADDS_PER_HOUR`, default 20). Notes are always private; a linked source is shared only when asked. Users delete only their own |
@@ -101,6 +104,12 @@ no `squad_id` they use the squad the player edited last.
   The model is an estimate and the store's field names are unverified on FC 27 (`fut.pack_store_captures.shape` keeps
   what the helper saw). Judged on the typical (median) pack; the mean-based average is shown but never makes a pack a buy.
   Nothing buys or opens packs.
+- **SBC Solver (since 2026-11-10).** `_shared/fut/sbc.ts` (pure) and `sbc-data.ts`. The helper (v0.9.0+) copies the
+  challenges of each SBC set the user opens (`sbs/setId/<id>/challenges`, `account_state.sbc_challenges`); EA's
+  requirement types are mapped from community-client names and are UNVERIFIED on FC 27 (`fromEa`; unknown types are
+  shown, never guessed). Requirements can also be pasted. Cost model: a spare duplicate costs almost nothing, an
+  untradeable a quarter of its price, a tradeable club card its after-tax price, a market card its FUT.GG price.
+  Team rating uses the community formula and chemistry XI Lab's engine; both are estimates. Never submits anything.
 - **Card pictures (since 2026-11-09).** Cards are drawn by GafferBot itself (`src/components/fut/FutCardArt.tsx`):
   rating, position, name and face stats, coloured by card type. FUT.GG's card renders are never used (its terms ban
   reusing its content). EA images are off unless `FUT_EA_IMAGES=on` (`FUT_EA_FACES=on` also works; Jeff's call,

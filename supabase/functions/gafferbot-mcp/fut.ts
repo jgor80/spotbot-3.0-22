@@ -10,6 +10,7 @@ import {
 import { marketCardId, marketFor, platformParam } from "../_shared/fut/market.ts";
 import { KB_CATEGORIES, knowledgeMap, knowledgeTopic } from "../_shared/fut/knowledge.ts";
 import { scanRequestSchema, thesisInputSchema } from "../_shared/fut/xilab/market/index.ts";
+import { parseSolveBody, sbcOverview, solveForUser } from "../_shared/fut/sbc-data.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
 export interface FutCtx {
@@ -347,6 +348,58 @@ FUT_TOOLS.push(
     run: (_args, ctx) => run(async () => {
       const { db } = await account(ctx);
       return { sources: (await marketFor(db)).getDataSourceStatus() };
+    }),
+  },
+  {
+    name: "list_my_fut_sbcs",
+    title: "My SBCs (XI Lab SBC Solver)",
+    description: "EA FC Ultimate Team: the player's open Squad Building Challenge sets as the XI Lab helper last saw them in the EA Web App, with each opened challenge's requirements read into plain lines (EA's field names are unverified on FC 27; list anything under unread). Use before solve_fut_sbc. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      return await sbcOverview(db, userId, platformParam(args.platform));
+    }),
+  },
+  {
+    name: "solve_fut_sbc",
+    title: "Solve an SBC (XI Lab SBC Solver)",
+    description: "EA FC Ultimate Team: the cheapest squad for one SBC challenge (or up to 10 in a set, never reusing a card) from the player's spare duplicates and untradeables first, then tradeable club cards, then the cheapest market cards at FUT.GG's latest prices; plus what to buy, the real coin cost, and whether the reward is worth it. Give requirements as pasted text (one per line, e.g. 'Min. Team Rating: 84') or as the requirement objects list_my_fut_sbcs returns. Team rating and chemistry are estimates; the player builds and submits the squad themselves. " + READ_ONLY,
+    inputSchema: {
+      type: "object",
+      properties: {
+        platform: PLATFORM,
+        set_id: { type: "integer", description: "The SBC set (from list_my_fut_sbcs), to value its reward." },
+        reward: { type: "integer", minimum: 0, description: "What the reward is worth in coins, if the player says." },
+        challenges: {
+          type: "array", minItems: 1, maxItems: 10,
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              formation: { type: "string", description: "e.g. 4-3-3 or EA's f433. Default 4-3-3." },
+              text: { type: "string", description: "Requirements, one per line." },
+              requirements: { type: "array", items: { type: "object" }, description: "Requirement objects from list_my_fut_sbcs." },
+            },
+            additionalProperties: false,
+          },
+        },
+        options: {
+          type: "object",
+          properties: {
+            use_tradeables: { type: "boolean", description: "Use tradeable club cards. Default true." },
+            buy: { type: "boolean", description: "Buy missing cards. Default true." },
+            protect_from: { type: "integer", minimum: 1, maximum: 99, description: "Never use club cards rated this or higher." },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ["challenges"],
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const b = args as Record<string, unknown>;
+      return await runWorkspace(() => solveForUser(db, userId, platformParam(b.platform), parseSolveBody(b)));
     }),
   },
 );
