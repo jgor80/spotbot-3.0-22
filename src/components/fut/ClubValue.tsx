@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FutCardArt } from "./FutCardArt";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { Coins } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,7 @@ export function ClubValue() {
   return <section className="space-y-4 rounded-lg border border-border p-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="flex items-center gap-2 font-display text-xl font-semibold"><Coins className="h-5 w-5" />Club value</h2>
-      <Select value={platform} onValueChange={v => setPlatform(v as MarketPlatform)}><SelectTrigger className="w-32" aria-label="Platform"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="console">Console</SelectItem><SelectItem value="pc">PC</SelectItem></SelectContent></Select>
+      <div className="flex items-center gap-2"><Button asChild variant="outline" size="sm"><Link to="/fut/sell">Sell or keep?</Link></Button><Select value={platform} onValueChange={v => setPlatform(v as MarketPlatform)}><SelectTrigger className="w-32" aria-label="Platform"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="console">Console</SelectItem><SelectItem value="pc">PC</SelectItem></SelectContent></Select></div>
     </div>
     <ErrorNotice error={value.error} />
     {value.isPending ? <Busy /> : d && (d.totals.cards === 0

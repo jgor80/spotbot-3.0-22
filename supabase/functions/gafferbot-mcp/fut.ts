@@ -13,6 +13,7 @@ import { scanRequestSchema, thesisInputSchema } from "../_shared/fut/xilab/marke
 import { parseSolveBody, sbcOverview, solveForUser } from "../_shared/fut/sbc-data.ts";
 import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evolutions-data.ts";
 import { tradeOverview } from "../_shared/fut/trades.ts";
+import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
 export interface FutCtx {
@@ -434,6 +435,18 @@ FUT_TOOLS.push(
       const { db, userId } = await account(ctx);
       const t = await tradeOverview(db, userId, platformParam((args as Record<string, unknown>).platform));
       return { ...t, flips: t.flips.slice(0, 30), open: t.open.slice(0, 30), sales_without_buy: t.sales_without_buy.slice(0, 20) };
+    }),
+  },
+  {
+    name: "fut_sell_or_keep",
+    title: "Sell or keep my club cards",
+    description: "EA FC Ultimate Team: a verdict for every tradeable card in the player's synced club, with the reason: keep (starts in a saved squad), keep_evo (a live evolution would make it start), hold_fodder (high-rated card at the cheapest price for its rating, better used in SBCs), sell_now (falling on FUT.GG), sell_high (near its two-week high), wait (still rising) or sell (steady, unused); plus coins after tax from selling. Prices are FUT.GG's. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const platform = platformParam((args as Record<string, unknown>).platform);
+      const r = await runWorkspace(() => sellOrKeep(db, userId, platform, async () => new Map((await evolutionsOverview(db, userId, platform)).best_upgrades.map((b) => [b.card_id, { name: b.evolution, gain: b.gain }]))));
+      return { ...r, advice: r.advice.slice(0, 60).map(({ trend: _t, ...a }) => a) };
     }),
   },
 );

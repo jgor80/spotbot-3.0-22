@@ -17,6 +17,7 @@ import { parseSolveBody, sbcOverview, solveForUser } from "../_shared/fut/sbc-da
 import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evolutions-data.ts";
 import { getAlertSettings, runPriceAlerts, setAlertSettings } from "../_shared/fut/alerts.ts";
 import { setBuyPrice, tradeOverview } from "../_shared/fut/trades.ts";
+import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { bestSquads, squadRoles, suggestForSlot } from "../_shared/fut/squad-suggest.ts";
@@ -337,6 +338,11 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
     // Daily strategy: today's buys, sells, transfer list fixes and budget split from prices, coins and club. Advice only.
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2_000_000_000) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
+    // Sell or keep: a verdict for every tradeable club card (saved squads, live evolutions, SBC fodder, FUT.GG trend).
+    if (route === "/club/sell-or-keep" && m === "GET") {
+      const platform = platformParam(url.searchParams.get("platform"));
+      return json({ data: await runWorkspace(() => sellOrKeep(db, userId, platform, async () => new Map((await evolutionsOverview(db, userId, platform)).best_upgrades.map((b) => [b.card_id, { name: b.evolution, gain: b.gain }])))) });
+    }
 
     if (route === "/managers" && m === "GET") return json({ data: await listManagers(db, userId) });
     if (route === "/managers" && m === "POST") return json({ data: await addManager(db, userId, parseManagerInput(await body(req))) }, 201);
