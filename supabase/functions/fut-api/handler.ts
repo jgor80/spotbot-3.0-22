@@ -21,6 +21,7 @@ import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
 import { cardPriceHistory } from "../_shared/fut/price-history.ts";
 import { metaForCard, metaTop } from "../_shared/fut/meta-data.ts";
 import { compareAnyCards } from "../_shared/fut/card-compare.ts";
+import { addGame, champsOverview, createRun, deleteGame, deleteRun, updateRun } from "../_shared/fut/champs.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { bestSquads, squadRoles, suggestForSlot } from "../_shared/fut/squad-suggest.ts";
@@ -341,6 +342,18 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
     // Daily strategy: today's buys, sells, transfer list fixes and budget split from prices, coins and club. Advice only.
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2_000_000_000) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
+    // Champs / Rivals tracker: runs and games the user logs themselves.
+    if (route === "/champs" && m === "GET") return json({ data: await champsOverview(db, userId, platformParam(url.searchParams.get("platform"))) });
+    if (route === "/champs/runs" && m === "POST") return json({ data: await createRun(db, userId, obj(await body(req))) }, 201);
+    const champRun = route.match(/^\/champs\/runs\/([^/]+)(\/games)?$/);
+    if (champRun) {
+      if (champRun[2] && m === "POST") return json({ data: await addGame(db, userId, champRun[1]!, obj(await body(req))) }, 201);
+      if (!champRun[2] && m === "POST") return json({ data: await updateRun(db, userId, champRun[1]!, obj(await body(req))) });
+      if (!champRun[2] && m === "DELETE") return json({ data: await deleteRun(db, userId, champRun[1]!) });
+      return err(405, "Use POST or DELETE.");
+    }
+    const champGame = route.match(/^\/champs\/games\/([^/]+)$/);
+    if (champGame && m === "DELETE") return json({ data: await deleteGame(db, userId, champGame[1]!) });
     // Card compare: 2-4 of any cards with full stats, chem styles applied, PlayStyles diff, metaratings and value.
     if (route === "/compare/cards" && m === "POST") return json({ data: await compareAnyCards(db, userId, obj(await body(req))) });
     // Metaratings: how good a card plays in each role (attributes, PlayStyles, body, chem style), and the best per position.

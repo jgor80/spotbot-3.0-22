@@ -15,6 +15,7 @@ import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evoluti
 import { tradeOverview } from "../_shared/fut/trades.ts";
 import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
 import { metaForCard, metaTop } from "../_shared/fut/meta-data.ts";
+import { champsOverview } from "../_shared/fut/champs.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
 export interface FutCtx {
@@ -473,6 +474,17 @@ FUT_TOOLS.push(
       if (!str(b.position)) throw new ToolError("Give card_id, or a position to list the best cards for it.");
       const r = await metaTop(db, userId, b);
       return { ...r, cards: r.cards.slice(0, 15) };
+    }),
+  },
+  {
+    name: "get_my_fut_champs",
+    title: "My Champs and Rivals record (XI Lab tracker)",
+    description: "EA FC Ultimate Team: the Champions, Rivals and Squad Battles games the player logged on the website, grouped into runs (a Champs weekend, a Rivals week): record, goals, form, streaks, results against each opponent formation, how the run went early vs late, what they still need for their win target, and a Discord-ready recap per run. Logged by the player, not read from EA. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const o = await champsOverview(db, userId, platformParam((args as Record<string, unknown>).platform));
+      return { ...o, formations: undefined, runs: o.runs.slice(0, 8).map((r) => ({ ...r, games: r.games.slice(-30) })) };
     }),
   },
 );
