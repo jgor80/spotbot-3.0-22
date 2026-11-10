@@ -52,6 +52,7 @@ const PackAdvisorPage = lazy(() => import("./pages/fut/PackAdvisorPage"));
 const PlayerRatingsPage = lazy(() => import("./pages/fut/PlayerRatingsPage"));
 const FutAccountPage = lazy(() => import("./pages/fut/FutAccountPage"));
 const SbcSolverPage = lazy(() => import("./pages/fut/SbcSolverPage"));
+const KnowledgePage = lazy(() => import("./pages/fut/KnowledgePage"));
 
 const queryClient = new QueryClient();
 // Market Lab data changes when FUT.GG refreshes (twice a day) or you import prices (which refetches it), so keep it
@@ -125,6 +126,7 @@ const App = () => (
                   <Route path="/fut/players" element={<ProtectedRoute><PlayerRatingsPage /></ProtectedRoute>} />
                   <Route path="/fut/account" element={<ProtectedRoute><FutAccountPage /></ProtectedRoute>} />
                   <Route path="/fut/sbc" element={<ProtectedRoute><SbcSolverPage /></ProtectedRoute>} />
+                  <Route path="/fut/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
