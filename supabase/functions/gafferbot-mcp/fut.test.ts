@@ -53,7 +53,7 @@ Deno.test("FUT tools are all read-only and say fut in their names", async () => 
     assert(t.name.includes("fut"), `${t.name} needs fut in its name`);
     assert(t.annotations.readOnlyHint === true, `${t.name} must be read-only`);
   }
-  assert(reply.result.tools.length === 25, `twenty-five tools (nine squad, seven Market Lab, two knowledge bank, two SBC, one evolutions, one trades, one sell or keep, one metarating, one champs), got ${reply.result.tools.length}`);
+  assert(reply.result.tools.length === 26, `twenty-six tools (nine squad, eight Market Lab, two knowledge bank, two SBC, one evolutions, one trades, one sell or keep, one metarating, one champs), got ${reply.result.tools.length}`);
 });
 
 Deno.test("calculate_fut_chemistry matches the website's numbers exactly", async () => {

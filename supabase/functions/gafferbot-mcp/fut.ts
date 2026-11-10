@@ -16,6 +16,7 @@ import { tradeOverview } from "../_shared/fut/trades.ts";
 import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
 import { metaForCard, metaTop } from "../_shared/fut/meta-data.ts";
 import { calendarFor } from "../_shared/fut/calendar.ts";
+import { fodderIndex } from "../_shared/fut/fodder.ts";
 import { champsOverview } from "../_shared/fut/champs.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
@@ -497,6 +498,18 @@ FUT_TOOLS.push(
       const { db, userId } = await account(ctx);
       const a = args as Record<string, unknown>;
       return await calendarFor(db, userId, platformParam(a.platform), typeof a.card_id === "string" && a.card_id ? a.card_id : null);
+    }),
+  },
+  {
+    name: "fut_fodder_index",
+    title: "FUT fodder index: what SBC fodder costs now",
+    description: "EA FC Ultimate Team: the price of SBC fodder, the cheapest cards of each rating from 81 to 91 (average of the 5 cheapest on FUT.GG), at every twice-daily refresh over the last days (1-90, default 30), with an equal-weighted index (100 = start of the period), each rating's change over 24 hours and 7 days, and a signal: spike (15%+ above its 7-day median, likely SBC demand: sell spares, don't buy) or cheap (10%+ below: stock up). " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM, days: { type: "integer", minimum: 1, maximum: 90 } }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db } = await account(ctx);
+      const a = args as Record<string, unknown>;
+      const r = await fodderIndex(db, platformParam(a.platform), typeof a.days === "number" ? a.days : 30);
+      return { ...r, index_history: r.index_history.slice(-60), ratings: r.ratings.map(({ history: _h, ...x }) => x) };
     }),
   },
 );
