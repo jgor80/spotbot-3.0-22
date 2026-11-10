@@ -12144,6 +12144,130 @@ async function metaTop(db, userId, b) {
   return { platform, position, role: role?.role ?? null, roles: roles.map((r2) => r2.role), max_price: maxPrice, published_at: res.published_at, cards: cards.slice(0, 30), with_stats: res.with_stats, note: NOTE, verified: false };
 }
 
+// supabase/functions/_shared/fut/price-history.ts
+function historyStats(points, now2 = Date.now()) {
+  if (!points.length) return { latest: null, low: null, high: null, change_24h: null, change_7d: null, change_range: null, hourly_points: 0 };
+  const latest = points[points.length - 1];
+  const at = (ms3) => [...points].reverse().find((p) => Date.parse(p.t) <= now2 - ms3) ?? null;
+  const pct5 = (then) => then && then.price > 0 ? Math.round((latest.price - then.price) / then.price * 1e3) / 10 : null;
+  return {
+    latest: latest.price,
+    latest_at: latest.t,
+    low: Math.min(...points.map((p) => p.price)),
+    high: Math.max(...points.map((p) => p.price)),
+    change_24h: pct5(at(24 * 36e5)),
+    change_7d: pct5(at(7 * 864e5)),
+    change_range: pct5(points[0]),
+    hourly_points: points.filter((p) => p.kind === "hourly").length
+  };
+}
+async function cardPriceHistory(db, userId, platform, cardId, days, now2 = Date.now()) {
+  const card = await getCard(db, userId, cardId);
+  if (!card) throw new FutError("Card not found.", 404);
+  if (!card.ea_item_id) return { card_id: cardId, platform, days, points: [], market_drops: [], stats: historyStats([]), note: "This card has no EA item id, so FUT.GG prices can't be matched to it." };
+  const { data, error } = await db.rpc("card_price_history", { p_platform: platform, p_ea_item_id: card.ea_item_id, p_days: days });
+  if (error) throw new FutError(`Price history is unavailable: ${error.message}`, 500);
+  const d = data ?? {};
+  const points = (d.points ?? []).filter((p) => typeof p.price === "number").map((p) => ({ t: String(p.t), price: p.price, kind: p.kind === "hourly" ? "hourly" : "full" }));
+  return {
+    card_id: cardId,
+    ea_item_id: card.ea_item_id,
+    name: card.player_name,
+    platform,
+    days,
+    points,
+    market_drops: (d.market_drops ?? []).map((m) => ({ t: String(m.t), median_move: Number(m.median_move), cards: Number(m.cards) })),
+    stats: historyStats(points, now2),
+    note: "FUT.GG prices: every card twice a day, plus hourly for tracked, watched and club cards when hourly refresh is on. Market drops mark refreshes where the median tracked card fell 4% or more."
+  };
+}
+
+// supabase/functions/_shared/fut/calendar.ts
+var UK_TZ = "Europe/London";
+var MIN_WEEKS = 4;
+var BANDS = ["all", "82-84", "85-87", "88-90", "91+"];
+var EVENTS = [
+  { key: "totw", label: "Team of the Week", weekday: 3, hour: 18, window_hours: 24, why: "New TOTW informs go in packs; players chase the in-forms and sell what they had." },
+  { key: "rewards", label: "Rivals and Champs rewards", weekday: 4, hour: 8, window_hours: 24, why: "Reward packs open and flood the market with cards." },
+  { key: "promo", label: "Friday content / promo", weekday: 5, hour: 18, window_hours: 24, why: "New promos and SBCs arrive; packs get opened and older cards drop." },
+  { key: "weekend", label: "Champs weekend", weekday: 6, hour: 8, window_hours: 48, why: "Players build their best squads for Champs: meta cards are in demand." },
+  { key: "monday", label: "After the weekend", weekday: 1, hour: 8, window_hours: 24, why: "Champs is over: meta cards are listed again." }
+];
+function ukParts(ms3) {
+  const f2 = new Intl.DateTimeFormat("en-GB", { timeZone: UK_TZ, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit" });
+  const p = Object.fromEntries(f2.formatToParts(new Date(ms3)).map((x) => [x.type, x.value]));
+  return { weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday), hour: Number(p.hour), minute: Number(p.minute), date: `${p.year}-${p.month}-${p.day}` };
+}
+function occurrences(e, from, to) {
+  const out = [];
+  for (let t = Math.ceil(from / 36e5) * 36e5; t < to; t += 36e5) {
+    const p = ukParts(t);
+    if (p.weekday === e.weekday && p.hour === e.hour && p.minute === 0) out.push(t);
+  }
+  return out;
+}
+var median2 = (xs) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+var r12 = (n) => Math.round(n * 10) / 10;
+function windowMove(steps, band, start, hours) {
+  const inside = steps.filter((s) => s.band === band && Date.parse(s.t) > start && Date.parse(s.t) <= start + hours * 36e5);
+  if (!inside.length) return null;
+  return (inside.reduce((m, s) => m * (1 + s.move / 100), 1) - 1) * 100;
+}
+function eventStats(e, steps, band, now2, days = 90) {
+  const moves = occurrences(e, now2 - days * 864e5, now2 - e.window_hours * 36e5).map((t) => windowMove(steps, band, t, e.window_hours)).filter((m) => m !== null);
+  const med = median2(moves), falls = moves.filter((m) => m <= -1).length, rises = moves.filter((m) => m >= 1).length;
+  const label = band === "all" ? "Tracked cards" : band === "card" ? "This card" : `${band} cards`;
+  if (moves.length < MIN_WEEKS || med === null) {
+    return { band, weeks: moves.length, median: med === null ? null : r12(med), falls, rises, verdict: "not_enough_data", line: `Only ${moves.length} week${moves.length === 1 ? "" : "s"} of prices so far; GafferBot needs ${MIN_WEEKS} before it says anything.` };
+  }
+  const share = (n) => n / moves.length;
+  const drop = med <= -2 && share(falls) >= 0.6, rise = med >= 2 && share(rises) >= 0.6;
+  const verdict = drop ? "sell_before" : rise ? "buy_before" : "no_pattern";
+  const span = e.window_hours === 24 ? "the next day" : `the next ${e.window_hours / 24} days`;
+  const line = drop ? `${label} fell a median ${Math.abs(r12(med))}% over ${span} (down in ${falls} of ${moves.length} weeks): sell before, or buy after.` : rise ? `${label} rose a median ${r12(med)}% over ${span} (up in ${rises} of ${moves.length} weeks): buy before, or sell into it.` : `No clear pattern for ${label.toLowerCase()}: median ${r12(med) > 0 ? "+" : ""}${r12(med)}% over ${moves.length} weeks.`;
+  return { band, weeks: moves.length, median: r12(med), falls, rises, verdict, line };
+}
+function crashes(steps) {
+  return steps.filter((s) => s.band === "all" && s.move <= -4 && s.cards >= 50).map((s) => {
+    const p = ukParts(Date.parse(s.t));
+    return { t: s.t, move: s.move, cards: s.cards, uk_weekday: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][p.weekday], uk_date: p.date };
+  }).sort((a, b) => b.t.localeCompare(a.t));
+}
+function marketCalendar(steps, now2 = Date.now(), days = 90) {
+  const upcoming = EVENTS.flatMap((e) => occurrences(e, now2, now2 + 7 * 864e5).map((t) => ({ e, t }))).sort((a, b) => a.t - b.t).map(({ e, t }) => {
+    const stats = BANDS.map((b) => eventStats(e, steps, b, now2, days));
+    const all = stats[0];
+    return { key: e.key, label: e.label, at: new Date(t).toISOString(), uk: `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][e.weekday]} ${String(e.hour).padStart(2, "0")}:00 UK`, why: e.why, window_hours: e.window_hours, headline: all.line, verdict: all.verdict, bands: stats };
+  });
+  const weeks = new Set(steps.filter((s) => s.band === "all").map((s) => ukParts(Date.parse(s.t)).date)).size;
+  return {
+    upcoming,
+    crashes: crashes(steps).slice(0, 20),
+    days_of_prices: weeks,
+    note: "The usual Ultimate Team weekly schedule in UK time (not confirmed for FC 27; promos and EA's timings change). Moves are medians of FUT.GG prices across market-tracked cards, compounded over the window after each event, from GafferBot's own twice-daily snapshots. Past patterns aren't promises.",
+    verified: false
+  };
+}
+function cardRhythm(points, now2 = Date.now(), days = 90) {
+  const sorted = [...points].sort((a, b) => a.t.localeCompare(b.t));
+  const steps = sorted.slice(1).map((p, i) => ({ t: p.t, band: "card", move: (p.price / sorted[i].price - 1) * 100, cards: 1 }));
+  return EVENTS.map((e) => ({ key: e.key, label: e.label, ...eventStats(e, steps, "card", now2, days) }));
+}
+async function calendarFor(db, userId, platform, cardId, now2 = Date.now()) {
+  const { data, error } = await db.rpc("market_steps", { p_platform: platform, p_days: 90 });
+  if (error) throw new FutError(`Market calendar is unavailable: ${error.message}`, 500);
+  const steps = (data?.steps ?? []).map((s) => ({ ...s, move: Number(s.move), cards: Number(s.cards) }));
+  const out = { platform, ...marketCalendar(steps, now2) };
+  if (!cardId) return { ...out, card: null };
+  const h = await cardPriceHistory(db, userId, platform, cardId, 90, now2);
+  const points = h.points.filter((p) => p.kind === "full");
+  return { ...out, card: { card_id: cardId, name: h.name ?? null, points: points.length, events: cardRhythm(points, now2) } };
+}
+
 // supabase/functions/_shared/fut/champs.ts
 var MODES = ["champs", "rivals", "squad_battles", "other"];
 var MODE_LABEL = { champs: "Champions", rivals: "Rivals", squad_battles: "Squad Battles", other: "Games" };
@@ -12691,6 +12815,17 @@ FUT_TOOLS.push(
       const { db, userId } = await account(ctx);
       const o = await champsOverview(db, userId, platformParam(args.platform));
       return { ...o, formations: void 0, runs: o.runs.slice(0, 8).map((r2) => ({ ...r2, games: r2.games.slice(-30) })) };
+    })
+  },
+  {
+    name: "fut_market_calendar",
+    title: "FUT market calendar: when prices usually rise and crash",
+    description: "EA FC Ultimate Team: the next 7 days of FUT's usual weekly rhythm in UK time (Team of the Week, Rivals and Champs rewards, Friday promos, Champs weekend, Monday) with a back-test from GafferBot's own FUT.GG snapshots: how tracked cards in each rating band moved after each of the last weeks' events, and whether that's a pattern (sell before, buy before) or not enough data yet; plus recent market-wide crashes. With card_id: the same back-test on that card's own price. The schedule is the usual one, not confirmed for FC 27. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM, card_id: { type: "string", description: "Optional: one card (from search or the club) to back-test on its own price." } }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args;
+      return await calendarFor(db, userId, platformParam(a.platform), typeof a.card_id === "string" && a.card_id ? a.card_id : null);
     })
   }
 );

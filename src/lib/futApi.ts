@@ -108,7 +108,7 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
   if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
   return (data ?? null) as T;
 }
-export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, evolutions: ["fut", "evolutions"] as const, clubShare: ["fut", "club-share"] as const, trades: ["fut", "trades"] as const, sellKeep: ["fut", "sell-keep"] as const, champs: ["fut", "champs"] as const, meta: ["fut", "meta"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
+export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, evolutions: ["fut", "evolutions"] as const, calendar: ["fut", "calendar"] as const, clubShare: ["fut", "club-share"] as const, trades: ["fut", "trades"] as const, sellKeep: ["fut", "sell-keep"] as const, champs: ["fut", "champs"] as const, meta: ["fut", "meta"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
 export type MarketPlatform = "console" | "pc";
 
@@ -244,6 +244,12 @@ export interface CardCompare {
 }
 export interface MetaCardRating { card_id: string; name: string; rating: number; positions: string[]; best: MetaRoleScore | null; roles: MetaRoleScore[]; verdict: string; estimated: boolean; note: string; verified: false }
 export interface MetaTop { platform: MarketPlatform; position: string; role: string | null; roles: string[]; max_price: number | null; published_at: string | null; with_stats: number; note: string; verified: false; cards: { card_id: string; ea_item_id: number | null; name: string; rating: number; version: string | null; position: string; owned: boolean; price: number | null; meta: MetaRoleScore }[] }
+export type CalendarVerdict = "sell_before" | "buy_before" | "no_pattern" | "not_enough_data";
+export interface CalendarStats { band: string; weeks: number; median: number | null; falls: number; rises: number; verdict: CalendarVerdict; line: string }
+export interface MarketCalendar { platform: MarketPlatform; days_of_prices: number; note: string; verified: false;
+  upcoming: { key: string; label: string; at: string; uk: string; why: string; window_hours: number; headline: string; verdict: CalendarVerdict; bands: CalendarStats[] }[];
+  crashes: { t: string; move: number; cards: number; uk_weekday: string; uk_date: string }[];
+  card: { card_id: string; name: string | null; points: number; events: (CalendarStats & { key: string; label: string })[] } | null }
 export interface PriceHistoryData { card_id: string; ea_item_id?: number; name?: string; platform: MarketPlatform; days: number; note: string; points: { t: string; price: number; kind: "full" | "hourly" }[]; market_drops: { t: string; median_move: number; cards: number }[]; stats: { latest: number | null; latest_at?: string; low: number | null; high: number | null; change_24h: number | null; change_7d: number | null; change_range: number | null; hourly_points: number } }
 export type SellVerdict = "keep" | "keep_evo" | "hold_fodder" | "sell_now" | "sell_high" | "wait" | "sell" | "no_price";
 export interface SellAdvice { id: string; name: string; rating: number; version: string | null; positions: string[]; ea_item_id: number | null; purchase_price: number | null; squads: string[]; evo: { name: string; gain: number } | null; floor: number | null; verdict: SellVerdict; reason: string; price: number | null; after_tax: number | null; change_3d: number | null; change_7d: number | null; profit: number | null }
@@ -347,6 +353,7 @@ export const futApi = {
     card: (cardId: string) => futRequest<MetaCardRating>(`/meta/card?${new URLSearchParams({ card_id: cardId })}`),
     top: (q: { position: string; role?: string; max_price?: number | null; owned_only?: boolean; platform: MarketPlatform }) => futRequest<MetaTop>(`/meta/top?${new URLSearchParams({ position: q.position, platform: q.platform, ...(q.role ? { role: q.role } : {}), ...(q.max_price ? { max_price: String(q.max_price) } : {}), ...(q.owned_only ? { owned_only: "1" } : {}) })}`),
   },
+  marketCalendar: (platform: MarketPlatform, cardId?: string) => futRequest<MarketCalendar>(`/market/calendar?${new URLSearchParams({ platform, ...(cardId ? { card_id: cardId } : {}) })}`),
   priceHistory: (cardId: string, platform: MarketPlatform, days: number) => futRequest<PriceHistoryData>(`/prices/history?${new URLSearchParams({ card_id: cardId, platform, days: String(days) })}`),
   sellOrKeep: (platform: MarketPlatform) => futRequest<SellOrKeep>(`/club/sell-or-keep?${new URLSearchParams({ platform })}`),
   trades: {
