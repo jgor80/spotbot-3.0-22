@@ -133,8 +133,14 @@ export function parseStoreUpload(raw: unknown): StoreUpload {
   if (pullsIn.length > MAX_PULLS) throw new FutError(`Send at most ${MAX_PULLS} pulls at a time.`);
   const packs = packsIn.map(parsePack).filter((p): p is PackOffer => !!p);
   const pulls = pullsIn.map(parsePull).filter((p): p is PackPull => !!p);
-  const shape = isObj(raw.shape) ? Object.fromEntries(["pack_keys", "odds_keys", "category_keys"].map((k) => [k,
-    Array.isArray((raw.shape as Row)[k]) ? ((raw.shape as Row)[k] as unknown[]).filter((x): x is string => typeof x === "string" && x.length <= 60).slice(0, 120) : []])) : {};
+  const names = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length <= 60).slice(0, max) : []);
+  const shape: Row = isObj(raw.shape) ? Object.fromEntries(["pack_keys", "odds_keys", "category_keys"].map((k) => [k, names((raw.shape as Row)[k], 120)])) : {};
+  // Helper 0.7.0+: every store-like answer it saw (address with ids as N, top-level field names, packs and odds read).
+  const seenIn = isObj(raw.shape) && Array.isArray((raw.shape as Row).seen) ? ((raw.shape as Row).seen as unknown[]) : [];
+  const seen = seenIn.filter(isObj).slice(0, 20).map((x) => ({
+    path: text(x.path, 120), keys: names(x.keys, 40), packs: count(x.packs, 10_000) ?? 0, odds: count(x.odds, 100_000) ?? 0, at: when(x.at),
+  })).filter((x) => x.path);
+  if (seen.length) shape.seen = seen;
   return {
     platform: raw.platform === "pc" ? "pc" : "console", captured_at: when(raw.captured_at) ?? new Date().toISOString(),
     packs, pulls, shape, skipped: packsIn.length - packs.length + pullsIn.length - pulls.length,
@@ -150,6 +156,13 @@ export async function importStore(db: FutDb, userId: string, raw: unknown) {
     const rows = u.packs.map((p) => ({ user_id: userId, platform: u.platform, ...p, seen_at: u.captured_at, updated_at: now }));
     for (let i = 0; i < rows.length; i += 200) fail((await db.from("pack_offers").insert(rows.slice(i, i + 200))).error);
     fail((await db.from("pack_store_captures").upsert({ user_id: userId, platform: u.platform, captured_at: u.captured_at, pack_count: u.packs.length, shape: u.shape }, { onConflict: "user_id,platform" })).error);
+  } else if (Array.isArray(u.shape.seen)) {
+    // Store answers seen but no packs read: keep the packs stored before, update only what the helper saw.
+    const prev = await db.from("pack_store_captures").select("captured_at, pack_count, shape").eq("user_id", userId).eq("platform", u.platform).maybeSingle();
+    fail(prev.error);
+    const p = prev.data as Row | null;
+    const shape = { ...(isObj(p?.shape) ? (p!.shape as Row) : {}), seen: u.shape.seen, seen_at: u.captured_at };
+    fail((await db.from("pack_store_captures").upsert({ user_id: userId, platform: u.platform, captured_at: p?.captured_at ?? u.captured_at, pack_count: p?.pack_count ?? 0, shape }, { onConflict: "user_id,platform" })).error);
   }
   if (u.pulls.length) {
     const rows = u.pulls.map((p) => ({ user_id: userId, platform: u.platform, ...p }));
