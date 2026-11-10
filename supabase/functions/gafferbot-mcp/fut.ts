@@ -12,6 +12,7 @@ import { KB_CATEGORIES, knowledgeMap, knowledgeTopic } from "../_shared/fut/know
 import { scanRequestSchema, thesisInputSchema } from "../_shared/fut/xilab/market/index.ts";
 import { parseSolveBody, sbcOverview, solveForUser } from "../_shared/fut/sbc-data.ts";
 import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evolutions-data.ts";
+import { tradeOverview } from "../_shared/fut/trades.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
 export interface FutCtx {
@@ -422,6 +423,17 @@ FUT_TOOLS.push(
       const b = args as Record<string, unknown>;
       if (str(b.requirements) || str(b.upgrades)) return await runWorkspace(() => checkPastedEvolution(db, userId, b));
       return await runWorkspace(() => evolutionsOverview(db, userId, platformParam(b.platform)));
+    }),
+  },
+  {
+    name: "get_my_fut_trades",
+    title: "My trading profit (XI Lab trade log)",
+    description: "EA FC Ultimate Team: the player's buys and sales as the XI Lab helper saw them on their transfer list and Transfer Targets (won items are buys, sold items are sales, matched by EA's item id): after-tax profit in total, this week and this month, win rate, tax paid, best and worst flips, recent flips, cards still held valued at FUT.GG's price after tax, and sales with no buy price on record. Buys straight from a search to the club aren't seen. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const t = await tradeOverview(db, userId, platformParam((args as Record<string, unknown>).platform));
+      return { ...t, flips: t.flips.slice(0, 30), open: t.open.slice(0, 30), sales_without_buy: t.sales_without_buy.slice(0, 20) };
     }),
   },
 );
