@@ -1,4 +1,4 @@
-import { syncFutggPrices, validateBlob } from "../../../../worker/futgg-sync.ts";
+import { syncFutggHot, syncFutggPrices, validateBlob } from "../../../../worker/futgg-sync.ts";
 
 function assert(value: unknown, message = "Assertion failed"): asserts value { if (!value) throw new Error(message); }
 const now = Date.now(), published = Math.floor(now / 1000) - 60;
@@ -51,4 +51,25 @@ Deno.test("FUT.GG format validation refuses unknown versions and bad IDs/statuse
   for (const [i, p] of [[{ ...index, v: 3 }, prices], [{ ...index, d: [0, 20] }, prices], [index, { ...prices, s: [0, 0, 7] }]]) {
     let failed = false; try { validateBlob(i, p); } catch { failed = true; } assert(failed);
   }
+});
+
+Deno.test("FUT.GG hourly check: one GET when nothing new, then index + only the newer platform file", async () => {
+  const fetchWith = (urls: string[]): typeof fetch => (input) => {
+    const url = String(input); urls.push(url);
+    return Promise.resolve(new Response(JSON.stringify(url.endsWith("manifest.json") ? manifest : url.includes("index.") ? index : prices)));
+  };
+  const at = new Date(published * 1000).toISOString();
+  const same: string[] = [];
+  const r1 = await syncFutggHot({ rpc: () => Promise.resolve({ data: at, error: null }) }, fetchWith(same), now);
+  assert(r1.unchanged === true && same.length === 1, `only the manifest: ${same}`);
+  const urls: string[] = [], writes: { name: string; args: Record<string, unknown> }[] = [];
+  const db = { rpc(name: string, args: Record<string, unknown>) {
+    writes.push({ name, args });
+    if (name === "futgg_latest_published") return Promise.resolve({ data: args.p_platform === "pc" ? at : new Date((published - 3600) * 1000).toISOString(), error: null });
+    return Promise.resolve({ data: { kept: 2 }, error: null });
+  } };
+  const r2 = await syncFutggHot(db, fetchWith(urls), now);
+  assert(urls.length === 3 && urls[2]!.includes("ps5-dyn") && r2.requests === 3, `manifest, index, console file: ${urls}`);
+  const ing = writes.filter((w) => w.name === "ingest_futgg_hot");
+  assert(ing.length === 1 && ing[0]!.args.p_platform === "console" && ing[0]!.args.p_published_at === at, JSON.stringify(ing));
 });

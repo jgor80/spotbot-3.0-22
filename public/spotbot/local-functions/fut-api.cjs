@@ -8647,6 +8647,44 @@ async function sellOrKeep(db2, userId, platform, bestEvo) {
   };
 }
 
+// supabase/functions/_shared/fut/price-history.ts
+function historyStats(points, now2 = Date.now()) {
+  if (!points.length) return { latest: null, low: null, high: null, change_24h: null, change_7d: null, change_range: null, hourly_points: 0 };
+  const latest = points[points.length - 1];
+  const at = (ms3) => [...points].reverse().find((p) => Date.parse(p.t) <= now2 - ms3) ?? null;
+  const pct4 = (then) => then && then.price > 0 ? Math.round((latest.price - then.price) / then.price * 1e3) / 10 : null;
+  return {
+    latest: latest.price,
+    latest_at: latest.t,
+    low: Math.min(...points.map((p) => p.price)),
+    high: Math.max(...points.map((p) => p.price)),
+    change_24h: pct4(at(24 * 36e5)),
+    change_7d: pct4(at(7 * 864e5)),
+    change_range: pct4(points[0]),
+    hourly_points: points.filter((p) => p.kind === "hourly").length
+  };
+}
+async function cardPriceHistory(db2, userId, platform, cardId, days, now2 = Date.now()) {
+  const card = await getCard(db2, userId, cardId);
+  if (!card) throw new FutError("Card not found.", 404);
+  if (!card.ea_item_id) return { card_id: cardId, platform, days, points: [], market_drops: [], stats: historyStats([]), note: "This card has no EA item id, so FUT.GG prices can't be matched to it." };
+  const { data, error } = await db2.rpc("card_price_history", { p_platform: platform, p_ea_item_id: card.ea_item_id, p_days: days });
+  if (error) throw new FutError(`Price history is unavailable: ${error.message}`, 500);
+  const d = data ?? {};
+  const points = (d.points ?? []).filter((p) => typeof p.price === "number").map((p) => ({ t: String(p.t), price: p.price, kind: p.kind === "hourly" ? "hourly" : "full" }));
+  return {
+    card_id: cardId,
+    ea_item_id: card.ea_item_id,
+    name: card.player_name,
+    platform,
+    days,
+    points,
+    market_drops: (d.market_drops ?? []).map((m) => ({ t: String(m.t), median_move: Number(m.median_move), cards: Number(m.cards) })),
+    stats: historyStats(points, now2),
+    note: "FUT.GG prices: every card twice a day, plus hourly for tracked, watched and club cards when hourly refresh is on. Market drops mark refreshes where the median tracked card fell 4% or more."
+  };
+}
+
 // supabase/functions/_shared/fut/squad-import.ts
 var POSITIONS = ["GK", "RB", "CB", "LB", "CDM", "CM", "CAM", "RM", "LM", "RW", "LW", "ST"];
 var ALIASES = { RWB: "RB", LWB: "LB", CF: "ST", RF: "RW", LF: "LW", GOALKEEPER: "GK", STRIKER: "ST", KEEPER: "GK" };
@@ -12640,6 +12678,11 @@ async function handle(req, deps) {
       return json({ data });
     }
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db2, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2e9) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
+    if (route === "/prices/history" && m === "GET") {
+      const days = Number(url.searchParams.get("days") ?? 30);
+      if (!Number.isInteger(days) || days < 1 || days > 90) throw new FutError("days must be a whole number from 1 to 90.");
+      return json({ data: await cardPriceHistory(db2, userId, platformParam(url.searchParams.get("platform")), url.searchParams.get("card_id") ?? "", days) });
+    }
     if (route === "/club/sell-or-keep" && m === "GET") {
       const platform = platformParam(url.searchParams.get("platform"));
       return json({ data: await runWorkspace(() => sellOrKeep(db2, userId, platform, async () => new Map((await evolutionsOverview(db2, userId, platform)).best_upgrades.map((b) => [b.card_id, { name: b.evolution, gain: b.gain }])))) });

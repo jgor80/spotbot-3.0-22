@@ -72,6 +72,15 @@ async function futKnowledge({ callFunction }) {
   if (error) throw new Error(`fut-knowledge: ${error?.message || error}`);
   console.log('⏰ fut-knowledge:', JSON.stringify(data?.data ?? data));
 }
+// Hourly FUT.GG check for charts (FUTGG_HOURLY=on, off by default): one manifest GET, and only when FUT.GG has newer
+// price files the index and those files, keeping just the hot cards (tracked, watched, in someone's club) for 14 days.
+const futggHourlyOn = () => futggOn() && process.env.FUTGG_HOURLY === 'on';
+async function futggHourly({ supabase, syncFutggHot = require('./futgg-sync.cjs').syncFutggHot }) {
+  if (!futggHourlyOn()) return null;
+  const result = await syncFutggHot(supabase.schema('fut'));
+  if (!result.unchanged) console.log('⏰ futgg-hourly:', JSON.stringify(result));
+  return result;
+}
 async function futggStale({ supabase }, now = Date.now()) {
   if (!futggOn()) return false;
   const { data, error } = await supabase.schema('fut').from('market_provider_runs').select('finished_at')
@@ -95,6 +104,8 @@ const JOBS = [
   // from Cloudflare Workers. After a restart it also runs once if the last good refresh is over 12 hours old or the
   // market-wide card list is still empty.
   { name: 'futgg-prices', hours: [6, 18], minute: 0, task: futggPrices, onStart: futggStale },
+  // Hot cards' prices between the full refreshes (charts), 20 minutes past every hour, only with FUTGG_HOURLY=on
+  { name: 'futgg-hourly', minute: 20, task: futggHourly },
   // Card stats from FUT.GG's card pages, off the hour so they never overlap the price refresh
   { name: 'futgg-attributes', minutes: [7, 22, 37, 52], task: futggAttributes },
   // FUT knowledge bank: community posts and videos, read into claims (YouTube only on hours 1, 7, 13, 19 for its quota)
@@ -169,4 +180,4 @@ function startScheduler({ supabase, callFunction, activeClubs, sendDM }) {
   console.log(`⏰ Scheduler running ${JOBS.length} jobs on this server`);
 }
 
-module.exports = { startScheduler, JOBS, due, eaSyncBody, futggStale, futggAttributes, priceAlerts, EA_SLICES, STUCK_MS };
+module.exports = { startScheduler, JOBS, due, eaSyncBody, futggStale, futggAttributes, futggHourly, priceAlerts, EA_SLICES, STUCK_MS };
