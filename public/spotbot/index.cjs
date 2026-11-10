@@ -78,6 +78,7 @@ const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
 const { createCareer } = require('./career.cjs');
 const { createDevGoals } = require('./dev-goals.cjs');
 const { createClubLife } = require('./club-life.cjs');
+const { createFutClub } = require('./fut-club.cjs');
 const { createMatchdayPicks } = require('./matchday-picks.cjs');
 const { createRivalries } = require('./rivalries.cjs');
 const { createCasual, allCasual } = require('./casual.cjs');
@@ -593,7 +594,8 @@ autopilot.onDigest((guildId, club) => statRoles.beltReport(guildId, club));
 const networkWire = createNetworkWire({ supabase, network, getGuildState, autopilot, client: () => client, pressLog: autopilot.pressLog });
 const picks = createMatchdayPicks({ supabase, autopilot, events: clubEvents, getGuildState, loadMatches: managerHub.loadMatches, canManageClub: squads.canManageClub, dashboardUrl: DASHBOARD_URL });
 const rivalries = createRivalries({ supabase, autopilot, loadMatches: managerHub.loadMatches });
-const clubLife = createClubLife({ supabase, autopilot, events: clubEvents, getGuildState, canManageClub: squads.canManageClub, loadMatches: managerHub.loadMatches, career, devGoals, statRoles, broadcast, wire: networkWire, dashboardUrl: DASHBOARD_URL, picks, rivalries });
+const futClub = createFutClub({ supabase, callFunction: callEdgeFunction, autopilot, events: clubEvents, getGuildState, dashboardUrl: DASHBOARD_URL });
+const clubLife = createClubLife({ futClub, supabase, autopilot, events: clubEvents, getGuildState, canManageClub: squads.canManageClub, loadMatches: managerHub.loadMatches, career, devGoals, statRoles, broadcast, wire: networkWire, dashboardUrl: DASHBOARD_URL, picks, rivalries });
 // Casual Play: Who's On? calls, game pings, casual mode, and a spot board that fills from voice and
 // rotates waiting players in after each game
 const casual = createCasual({
