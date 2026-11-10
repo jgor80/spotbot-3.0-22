@@ -212,7 +212,7 @@ export interface KbStatement { id: number; statement: string; stance: -1 | 0 | 1
 export interface KbTopicDetail extends Omit<KbTopic, "buzz" | "trend" | "last_said" | "has_mine"> { days: number; weeks: { week: string; for: number; against: number; mixed: number }[]; statements: KbStatement[] }
 export interface KbSource extends KbSourceRef { author: string | null; excerpt: string | null; collected_at: string; comments: number; status: "pending" | "read" | "skipped" | "failed"; note: string | null; shared: boolean; claims: number }
 export interface KbRun { started_at: string; finished_at: string | null; feeds: Record<string, { status: string; collected?: number; error?: string }>; read: number; skipped: number; failed: number; error: string | null }
-export interface KbStatus { sources: number; claims: number; topics: number; waiting: number; last_run: KbRun | null; last_success: string | null; feeds: { reddit: boolean; youtube: boolean; reader: boolean }; paused: boolean }
+export interface KbStatus { sources: number; claims: number; topics: number; waiting: number; last_run: KbRun | null; last_success: string | null; feeds: { reddit: boolean; reddit_mode?: "api" | "rss" | "off"; youtube: boolean; reader: boolean }; paused: boolean }
 export interface KbAddResult { id: string; claims: number; relevant: boolean; summary: string; shared: boolean; topics: string[] }
 export interface KbAnswer { answer: string; via: "ai" | "search"; sources: (KbSourceRef & { n: number })[]; topics: string[]; claims: number }
 

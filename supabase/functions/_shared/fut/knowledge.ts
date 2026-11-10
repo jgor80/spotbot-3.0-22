@@ -1,7 +1,7 @@
 // Knowledge bank (Jeff, 2026-11-10): FUT gameplay and strategy knowledge from the community, and a map of what people
 // are saying. The bot's scheduler runs the fut-api job "knowledge-ingest" every 3 hours:
 //   1. Collect: Reddit posts with their top comments (official Data API, app-only OAuth with REDDIT_CLIENT_ID /
-//      REDDIT_CLIENT_SECRET) and, four times a day, YouTube videos with their top comments (YouTube Data API with
+//      REDDIT_CLIENT_SECRET, or Reddit's public RSS feeds when those keys aren't set) and, four times a day, YouTube videos with their top comments (YouTube Data API with
 //      YOUTUBE_API_KEY). A feed without its keys is simply off. Nothing is scraped from web pages.
 //   2. Read: Claude turns each source into short claims (topic, category, stance) that link back to it.
 // Users can also add a source themselves: a Reddit or YouTube link (fetched through the same APIs when configured) or
@@ -59,18 +59,23 @@ export function isGameplayPost(p: { title?: string; selftext?: string; link_flai
   return GAMEPLAY.test(`${p.title ?? ""} ${(p.selftext ?? "").slice(0, 2000)}`) || ON_TOPIC_FLAIR.test(flair);
 }
 
-function threadBody(head: string[], text: string, comments: { body: string; score: number }[]): string {
+function threadBody(head: string[], text: string, comments: { body: string; score: number | null }[]): string {
   let out = `${head.join("\n")}\n\n${text ? `${keep(text, 5000)}\n\n` : ""}`;
   if (comments.length) out += "Top comments:\n";
   for (const c of comments) {
-    const line = `- (${c.score} ${c.score === 1 ? "point" : "points"}) ${squash(c.body, 700)}\n`;
+    const line = `- ${c.score == null ? "" : `(${c.score} ${c.score === 1 ? "point" : "points"}) `}${squash(c.body, 700)}\n`;
     if (out.length + line.length > MAX_BODY) break;
     out += line;
   }
   return out.trim();
 }
 
-export function redditFeedOn(env: Env) { return !!(env("REDDIT_CLIENT_ID") && env("REDDIT_CLIENT_SECRET")); }
+/** Reddit through the Data API when its keys are set, otherwise through Reddit's public RSS feeds (FUT_KB_REDDIT_RSS=off turns those off). */
+export function redditMode(env: Env): "api" | "rss" | "off" {
+  if (env("REDDIT_CLIENT_ID") && env("REDDIT_CLIENT_SECRET")) return "api";
+  return env("FUT_KB_REDDIT_RSS") === "off" ? "off" : "rss";
+}
+export function redditFeedOn(env: Env) { return redditMode(env) !== "off"; }
 export function youtubeFeedOn(env: Env) { return !!env("YOUTUBE_API_KEY"); }
 
 async function redditToken(env: Env, fetchFn: Fetch): Promise<string> {
@@ -115,19 +120,96 @@ function redditSource(p: RedditPost, comments: { body: string; score: number }[]
   };
 }
 
+function redditSubs(env: Env): string[] {
+  const subs = (env("FUT_KB_SUBREDDITS") ?? "").split(",").map((s) => s.trim().replace(/^r\//i, "")).filter((s) => /^[A-Za-z0-9_]{2,30}$/.test(s));
+  return subs.length ? subs : DEFAULT_SUBREDDITS;
+}
+
 /** The day's top gameplay posts from each subreddit, with their top comments. */
 export async function collectReddit(env: Env, fetchFn: Fetch): Promise<CollectedSource[]> {
+  if (redditMode(env) === "rss") return collectRedditRss(env, fetchFn);
   const token = await redditToken(env, fetchFn);
-  const subs = (env("FUT_KB_SUBREDDITS") ?? "").split(",").map((s) => s.trim().replace(/^r\//i, "")).filter((s) => /^[A-Za-z0-9_]{2,30}$/.test(s));
   const minScore = Number(env("FUT_KB_REDDIT_MIN_SCORE")) || 20;
   const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 8;
   const out: CollectedSource[] = [];
-  for (const sub of subs.length ? subs : DEFAULT_SUBREDDITS) {
+  for (const sub of redditSubs(env)) {
     const listing = await redditJson(`https://oauth.reddit.com/r/${sub}/top?t=day&limit=50&raw_json=1`, token, env, fetchFn) as { data?: { children?: { data: RedditPost }[] } };
     const posts = (listing?.data?.children ?? []).map((c) => c.data).filter((p) => p?.id && p.score >= minScore && isGameplayPost(p)).slice(0, perSub);
     for (const p of posts) {
       const comments = redditComments(await redditJson(`https://oauth.reddit.com/r/${sub}/comments/${p.id}?sort=top&limit=15&depth=1&raw_json=1`, token, env, fetchFn).catch(() => null));
       out.push(redditSource(p, comments));
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- Reddit RSS (no API keys)
+// Reddit publishes Atom feeds for feed readers: a subreddit's top posts, and a post with its top comments. They carry
+// no scores, so the day's top listing order stands in for popularity. Read politely: a few posts per run, one at a time.
+
+const XML_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+function decodeEntities(s: string): string {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
+    if (e[0] === "#") { const n = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1)); return n > 0 && n < 0x110000 ? String.fromCodePoint(n) : ""; }
+    return XML_ENTITIES[e.toLowerCase()] ?? m;
+  });
+}
+/** Reddit's entry HTML → plain text: paragraphs kept, the "submitted by … [link] [comments]" footer dropped. */
+export function rssHtmlText(html: string): string {
+  const h = decodeEntities(html).replace(/<!--\s*SC_ON\s*-->[\s\S]*$/i, "").replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(br|\/p|\/li|\/h\d|\/blockquote|\/pre)\b[^>]*>/gi, "\n").replace(/<li\b[^>]*>/gi, "- ").replace(/<[^>]+>/g, "");
+  return keep(decodeEntities(h).replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n"), MAX_BODY);
+}
+export interface RssEntry { id: string; title: string; author: string | null; link: string; published: string | null; text: string }
+export function parseRedditRss(xml: string): RssEntry[] {
+  const tag = (e: string, t: string) => e.match(new RegExp(`<${t}\\b[^>]*>([\\s\\S]*?)</${t}>`))?.[1] ?? "";
+  return [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].flatMap(([, e]) => {
+    const id = tag(e!, "id").trim();
+    if (!/^t[13]_[a-z0-9]{2,16}$/.test(id)) return [];
+    const author = decodeEntities(tag(tag(e!, "author"), "name")).trim().replace(/^\/u\//, "");
+    return [{ id, title: squash(decodeEntities(tag(e!, "title")), 300), author: author || null, link: decodeEntities(e!.match(/<link\b[^>]*href="([^"]+)"/)?.[1] ?? ""),
+      published: tag(e!, "published").trim() || tag(e!, "updated").trim() || null, text: rssHtmlText(tag(e!, "content")) }];
+  });
+}
+
+async function redditRss(url: string, env: Env, fetchFn: Fetch): Promise<RssEntry[]> {
+  const res = await fetchFn(url, { headers: { "user-agent": env("REDDIT_USER_AGENT") || UA, accept: "application/atom+xml" } });
+  if (!res.ok) throw new Error(`Reddit's RSS feed answered HTTP ${res.status}`);
+  return parseRedditRss(await res.text());
+}
+
+const redditPermalink = (link: string) => { try { const u = new URL(link); return /(^|\.)reddit\.com$/.test(u.hostname) && u.pathname.startsWith("/r/") ? u.pathname : null; } catch { return null; } };
+
+/** One post with its top comments, from the post's RSS feed. */
+async function redditRssThread(sub: string, id: string, env: Env, fetchFn: Fetch, rank = 0): Promise<CollectedSource | null> {
+  const entries = await redditRss(`https://www.reddit.com/r/${sub}/comments/${id}/.rss?sort=top&limit=15`, env, fetchFn);
+  const post = entries.find((e) => e.id === `t3_${id}`);
+  if (!post) return null;
+  const comments = entries.filter((e) => e.id.startsWith("t1_") && e.text.length > 15 && e.author !== "AutoModerator").slice(0, 12).map((e) => ({ body: e.text, score: null }));
+  return rssSource(sub, post, comments, rank);
+}
+
+function rssSource(sub: string, post: RssEntry, comments: { body: string; score: null }[], rank: number): CollectedSource {
+  const community = `r/${sub}`;
+  const permalink = redditPermalink(post.link) ?? `/r/${sub}/comments/${post.id.slice(3)}/`;
+  return {
+    kind: "reddit", external_id: post.id.slice(3), url: `https://www.reddit.com${permalink}`, title: post.title, author: post.author ? squash(post.author, 100) : null,
+    community, published_at: post.published ?? new Date().toISOString(), score: 0, comments: comments.length,
+    body: threadBody([`Reddit post in ${community}${rank ? ` (number ${rank} in today's top posts)` : ""}`, `Title: ${post.title}`], post.text, comments),
+    excerpt: squash(post.text || post.title, 280),
+  };
+}
+
+/** The day's top gameplay posts from each subreddit's RSS feed, with each post's top comments. */
+export async function collectRedditRss(env: Env, fetchFn: Fetch): Promise<CollectedSource[]> {
+  const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 6;
+  const out: CollectedSource[] = [];
+  for (const sub of redditSubs(env)) {
+    const top = (await redditRss(`https://www.reddit.com/r/${sub}/top/.rss?t=day&limit=40`, env, fetchFn)).filter((e) => e.id.startsWith("t3_"));
+    const posts = top.map((e, i) => ({ e, rank: i + 1 })).filter(({ e }) => isGameplayPost({ title: e.title, selftext: e.text })).slice(0, perSub);
+    for (const { e, rank } of posts) {
+      const full = await redditRssThread(sub, e.id.slice(3), env, fetchFn, rank).catch(() => null);
+      out.push(full ?? rssSource(sub, e, [], rank));
     }
   }
   return out;
@@ -203,7 +285,8 @@ async function fetchLinked(link: NonNullable<ReturnType<typeof parseSourceLink>>
     if (!youtubeFeedOn(env)) return null;
     return (await youtubeSources([link.id], env, fetchFn, 0))[0] ?? null;
   }
-  if (!redditFeedOn(env)) return null;
+  if (redditMode(env) === "off") return null;
+  if (redditMode(env) === "rss") return link.sub ? redditRssThread(link.sub, link.id, env, fetchFn) : null;
   const token = await redditToken(env, fetchFn);
   const thread = await redditJson(`https://oauth.reddit.com/r/${link.sub}/comments/${link.id}?sort=top&limit=15&depth=1&raw_json=1`, token, env, fetchFn);
   const post = (Array.isArray(thread) ? (thread[0] as { data?: { children?: { data: RedditPost }[] } })?.data?.children?.[0]?.data : null);
@@ -436,6 +519,6 @@ export const knowledgeSources = (db: Rpc, userId: string, mine: boolean, limit: 
 export const deleteKnowledgeSource = (db: Rpc, userId: string, id: string) => rpcData<boolean>(db, "kb_delete", { p_user: userId, p_id: id });
 export async function knowledgeStatus(db: Rpc, env: Env) {
   const status = await rpcData<Record<string, unknown>>(db, "kb_status", {});
-  return { ...status, feeds: { reddit: redditFeedOn(env), youtube: youtubeFeedOn(env), reader: !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) },
+  return { ...status, feeds: { reddit: redditFeedOn(env), reddit_mode: redditMode(env), youtube: youtubeFeedOn(env), reader: !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) },
     paused: env("FUT_KNOWLEDGE") === "off", categories: KB_CATEGORIES };
 }

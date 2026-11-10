@@ -142,10 +142,18 @@ Code in `_shared/fut/knowledge.ts`, tables and queries in `20261110160000_fut_kn
   `scheduler.cjs`; `FUT_KNOWLEDGE=off` pauses it). Reddit: the day's top gameplay posts (keyword and flair filter, no
   NSFW, pack pulls or memes, at least `FUT_KB_REDDIT_MIN_SCORE` upvotes, default 20) from `FUT_KB_SUBREDDITS` (default
   `EASportsFC,fut`) with their top comments, through Reddit's Data API with an app-only token (`REDDIT_CLIENT_ID`,
-  `REDDIT_CLIENT_SECRET`, optional `REDDIT_USER_AGENT`; Reddit has to approve the app). YouTube: the last 3 days'
+  `REDDIT_CLIENT_SECRET`, optional `REDDIT_USER_AGENT`; Reddit has to approve the app). Without those keys Reddit is
+  read from its public RSS feeds instead (`/r/<sub>/top/.rss?t=day`, then each post's `/comments/<id>/.rss` for its top
+  comments; `FUT_KB_REDDIT_PER_SUB`, default 6 in this mode). Feeds carry no scores, so the post's rank in the day's
+  top list is told to the reader and score stays 0; pasted Reddit links are fetched the same way. `FUT_KB_REDDIT_RSS=off`
+  turns this off. Checked from the Hetzner server 2026-11-10 (HTTP 200). YouTube: the last 3 days'
   most-watched videos for each of `FUT_KB_YOUTUBE_QUERIES` (`|`-separated) with their top comments, through the YouTube
   Data API (`YOUTUBE_API_KEY`), only at `FUT_KB_YOUTUBE_HOURS` (default 1,7,13,19 UTC) to stay inside the free quota.
   Video transcripts aren't available through the API; users can paste them. Nothing is scraped from web pages.
+- **Send to Knowledge Bank.** The Sources tab has a bookmarklet (`sendToBank.ts`). Clicked on a page the user is
+  reading, it opens `/fut/knowledge?tab=sources#kb=<json>` with the link, title and text (selected text, else the
+  Reddit post and top comments on new or old Reddit, else the page's main text; YouTube sends only the link) filled in.
+  The text rides in the #fragment, so it never reaches a server, and nothing is added until the user presses Add.
 - **Reading.** Claude (`FUT_KB_MODEL`, default claude-opus-5-5 at low effort) reads up to `FUT_KB_READ_PER_RUN`
   (default 25) waiting sources per run, most popular first, into at most 12 claims each: topic (reusing known topic
   names), category, a paraphrased statement, stance (for / against / mixed) and strength. A source gets three tries.

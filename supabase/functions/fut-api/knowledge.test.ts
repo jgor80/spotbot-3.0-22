@@ -1,7 +1,7 @@
 // Knowledge bank through the fut-api routes and the scheduler job, on real PostgreSQL (PGlite), with Reddit, YouTube and
 // Claude faked.
 import { handle, type Deps } from "./handler.ts";
-import { cleanReading, isGameplayPost, parseSourceLink, topicKey } from "../_shared/fut/knowledge.ts";
+import { cleanReading, collectReddit, isGameplayPost, parseRedditRss, parseSourceLink, redditMode, rssHtmlText, topicKey } from "../_shared/fut/knowledge.ts";
 import { knowledgeDb, ME, OTHER, rpcOver } from "../_shared/fut/knowledge-test-db.ts";
 
 function assert(ok: unknown, msg = "Assertion failed"): asserts ok { if (!ok) throw new Error(msg); }
@@ -49,6 +49,7 @@ function fakes() {
     if (url.includes("oauth.reddit.com/r/EASportsFC/top")) return ok(redditListing);
     if (url.includes("oauth.reddit.com/r/fut/top")) return ok({ data: { children: [] } });
     if (url.includes("/comments/p1")) return ok(redditThread);
+    if (url === "https://www.reddit.com/r/fut/comments/rss1/.rss?sort=top&limit=15") return Promise.resolve(new Response(rssThread));
     if (url.includes("youtube/v3/search")) return ok({ items: [{ id: { videoId: "vid00000001" } }] });
     if (url.includes("youtube/v3/videos")) return ok({ items: [{ id: "vid00000001", snippet: { title: "BEST META TACTICS FC 27", description: "4-4-2 custom tactics inside", channelTitle: "Some Creator", publishedAt: new Date().toISOString() }, statistics: { viewCount: "120000", commentCount: "3" } }] });
     if (url.includes("youtube/v3/commentThreads")) return ok({ items: [{ snippet: { topLevelComment: { snippet: { textDisplay: "4-4-2 with these tactics is broken, thanks!", likeCount: 40 } } } }] });
@@ -61,13 +62,46 @@ function fakes() {
   return { calls, fetcher, setReading: (v: unknown) => { reading = v; }, setAnswer: (v: unknown) => { answer = v; } };
 }
 
+const rssEntry = (id: string, title: string, html: string, author = "someone") =>
+  `<entry><author><name>/u/${author}</name></author><content type="html">${html.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")}</content>` +
+  `<id>${id}</id><link href="https://www.reddit.com/r/fut/comments/${id.slice(3)}/x/" /><updated>2026-11-09T10:00:00+00:00</updated><published>2026-11-09T10:00:00+00:00</published><title>${title}</title></entry>`;
+const rssTop = `<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"><id>/r/fut/top/.rss</id>` +
+  rssEntry("t3_rss1", "Best formation after the patch?", `<!-- SC_OFF --><div class="md"><p>Play 4-4-2 with two strikers &amp; it&#39;s great.</p><ul><li>Depth 60</li></ul></div><!-- SC_ON --> &#32; submitted by &#32; <a href="https://www.reddit.com/user/someone"> /u/someone </a>`) +
+  rssEntry("t3_rss2", "Look at my new kit", `<div class="md"><p>My club kit</p></div>`) + `</feed>`;
+const rssThread = `<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">` +
+  rssEntry("t3_rss1", "Best formation after the patch?", `<div class="md"><p>Play 4-4-2 with two strikers.</p></div>`) +
+  rssEntry("t1_c1", "/u/a on Best formation", `<div class="md"><p>Agree, 4-4-2 is the meta right now.</p></div>`, "a") +
+  rssEntry("t1_c2", "/u/AutoModerator on Best formation", `<div class="md"><p>AutoMod text that is long enough</p></div>`, "AutoModerator") + `</feed>`;
+
+Deno.test("Reddit through its RSS feeds when there are no API keys", async () => {
+  assert(redditMode(() => undefined) === "rss" && redditMode((k) => k === "FUT_KB_REDDIT_RSS" ? "off" : undefined) === "off");
+  assert(redditMode((k) => ({ REDDIT_CLIENT_ID: "i", REDDIT_CLIENT_SECRET: "s" } as Record<string, string>)[k]) === "api");
+  assert(rssHtmlText("&lt;p&gt;One &amp;amp; two&lt;/p&gt;&lt;p&gt;Three&lt;/p&gt;") === "One & two\nThree");
+  const entries = parseRedditRss(rssTop);
+  assert(entries.length === 2 && entries[0]!.id === "t3_rss1" && entries[0]!.author === "someone" && entries[0]!.text === "Play 4-4-2 with two strikers & it's great.\n- Depth 60", JSON.stringify(entries[0]));
+  const urls: string[] = [];
+  const fetcher = (url: string) => {
+    urls.push(url);
+    if (url.includes("/r/fut/top/.rss")) return Promise.resolve(new Response(rssTop));
+    if (url.includes("/comments/rss1/.rss")) return Promise.resolve(new Response(rssThread));
+    return Promise.resolve(new Response("blocked", { status: 403 }));
+  };
+  const got = await collectReddit((k) => k === "FUT_KB_SUBREDDITS" ? "fut" : undefined, fetcher);
+  assert(got.length === 1 && got[0]!.external_id === "rss1" && got[0]!.url === "https://www.reddit.com/r/fut/comments/rss1/x/" && got[0]!.score === 0, JSON.stringify(got));
+  assert(got[0]!.body.includes("number 1 in today's top posts") && got[0]!.body.includes("- Agree, 4-4-2 is the meta") && !got[0]!.body.includes("AutoMod"), got[0]!.body);
+  assert(urls.length === 2 && !urls.some((u) => u.includes("oauth")), "no sign-in, the kit post isn't fetched");
+  let failed = "";
+  await collectReddit(() => undefined, fetcher).catch((e) => { failed = (e as Error).message; });
+  assert(failed.includes("HTTP 403"), "a blocked feed fails the run's Reddit step so it shows on the page");
+});
+
 Deno.test("knowledge routes and the ingest job", async () => {
   const pg = await knowledgeDb();
   try {
     const runs: Record<string, unknown>[] = [];
     const db = { ...rpcOver(pg), from: (t: string) => ({ insert: (row: Record<string, unknown>) => { runs.push({ t, ...row }); return Promise.resolve({ data: null, error: null }); } }) };
     const f = fakes();
-    const env0: Record<string, string> = { FUT_ENABLED: "true" };
+    const env0: Record<string, string> = { FUT_ENABLED: "true", FUT_KB_REDDIT_RSS: "off" };
     const deps = (env: Record<string, string> = {}, bot = false): Deps => ({
       db: db as unknown as Deps["db"], userFor: (req) => Promise.resolve(req.headers.get("x-test-user")), env: (k) => ({ ...env0, ...env })[k],
       isBot: () => Promise.resolve(bot), fetch: f.fetcher as unknown as Deps["fetch"],
@@ -127,6 +161,10 @@ Deno.test("knowledge routes and the ingest job", async () => {
     assert(mine.data.data.total === 1 && mine.data.data.sources[0].mine, JSON.stringify(mine.data));
     const linked = await call("/knowledge/sources", "POST", { url: "https://www.reddit.com/r/EASportsFC/comments/p1/x/" }, { ...keys });
     assert(linked.status === 201 && linked.data.data.shared === true, `a link already in the bank is read again: ${JSON.stringify(linked.data)}`);
+    const viaRss = await call("/knowledge/sources", "POST", { url: "https://www.reddit.com/r/fut/comments/rss1/x/" }, { ANTHROPIC_API_KEY: "k", FUT_KB_REDDIT_RSS: "" });
+    assert(viaRss.status === 201 && viaRss.data.data.shared === true, `without Reddit keys a link is fetched from its RSS feed: ${JSON.stringify(viaRss.data)}`);
+    const rssRead = JSON.stringify(f.calls.filter((c) => c.url.includes("anthropic")).at(-1)!.body);
+    assert(rssRead.includes("Play 4-4-2 with two strikers") && rssRead.includes("Agree, 4-4-2 is the meta") && !rssRead.includes("submitted by"), rssRead.slice(0, 600));
 
     // Ask: search fallback without a key, Claude with citations with one
     const plain = await call("/knowledge/ask", "POST", { question: "Is 4-2-3-1 still good?" });

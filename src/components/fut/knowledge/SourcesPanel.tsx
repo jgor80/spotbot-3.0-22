@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, CircleOff, ExternalLink, Lock, Plus, Trash2, Users } from "lucide-react";
+import { Bookmark, CheckCircle2, CircleOff, ExternalLink, Lock, Plus, Trash2, Users } from "lucide-react";
 import { futApi, futKeys, type KbSource, type KbStatus } from "@/lib/futApi";
 import { Busy, ErrorNotice } from "@/components/fut/FutShared";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ago, sourceLabel } from "./knowledgePresentation";
+import { bookmarkletSource, readSentSource } from "./sendToBank";
 
 const MAX_TEXT = 12_000;
 
@@ -26,7 +27,9 @@ export function FeedStatus({ status }: { status: KbStatus }) {
   const failures = run ? Object.entries(run.feeds).filter(([, f]) => f.status === "failed") : [];
   return <section className="space-y-3">
     <div className="grid gap-2 sm:grid-cols-3">
-      <Feed on={status.feeds.reddit} name="Reddit" detail={status.feeds.reddit ? "Top gameplay posts and comments from r/EASportsFC and r/fut, every 3 hours." : "Needs a Reddit app approved by Reddit (REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET on the server)."} />
+      <Feed on={status.feeds.reddit} name="Reddit" detail={!status.feeds.reddit ? "Turned off (FUT_KB_REDDIT_RSS=off)." : status.feeds.reddit_mode === "rss"
+        ? "Top gameplay posts and comments from r/EASportsFC and r/fut through Reddit's public feeds, every 3 hours. Upvotes aren't included."
+        : "Top gameplay posts and comments from r/EASportsFC and r/fut, every 3 hours."} />
       <Feed on={status.feeds.youtube} name="YouTube" detail={status.feeds.youtube ? "Most-watched FC 27 meta videos and their top comments, 4 times a day." : "Needs a YouTube Data API key (YOUTUBE_API_KEY on the server)."} />
       <Feed on={status.feeds.reader} name="Reader" detail={status.feeds.reader ? "Claude reads each source into short claims." : "Needs ANTHROPIC_API_KEY on the server."} />
     </div>
@@ -41,9 +44,17 @@ export function FeedStatus({ status }: { status: KbStatus }) {
 function AddSource() {
   const qc = useQueryClient();
   const [url, setUrl] = useState(""), [title, setTitle] = useState(""), [text, setText] = useState(""), [share, setShare] = useState(false);
+  const [sent, setSent] = useState(false);
+  // A page sent with the "Send to Knowledge Bank" button arrives in the #fragment: fill the form, then clear it.
+  useEffect(() => {
+    const got = readSentSource(window.location.hash);
+    if (!got) return;
+    setUrl(got.url); setTitle(got.title); setText(got.text); setShare(!!got.url); setSent(true);
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+  }, []);
   const add = useMutation({
     mutationFn: () => futApi.knowledge.add({ url: url.trim() || undefined, title: title.trim() || undefined, text: text.trim() || undefined, share }),
-    onSuccess: () => { setUrl(""); setTitle(""); setText(""); qc.invalidateQueries({ queryKey: futKeys.knowledge }); },
+    onSuccess: () => { setUrl(""); setTitle(""); setText(""); setSent(false); qc.invalidateQueries({ queryKey: futKeys.knowledge }); },
   });
   const r = add.data;
   return <section aria-labelledby="add-title" className="space-y-3 rounded-xl border border-border bg-card p-4">
@@ -51,6 +62,7 @@ function AddSource() {
       <h2 id="add-title" className="flex items-center gap-2 font-display text-lg font-semibold"><Plus className="h-4 w-4 text-primary" />Add a source</h2>
       <p className="text-sm text-muted-foreground">Paste a Reddit or YouTube link, or any post, guide, video transcript or your own notes. Claude reads it into claims that join the map. GafferBot doesn't copy other websites, so for other links paste the text too.</p>
     </div>
+    {sent && <p className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm" role="status">Here's the page you sent. Check it, trim anything that isn't gameplay talk, then press Add and read.</p>}
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!add.isPending) add.mutate(); }}>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1"><Label htmlFor="kb-url">Link (optional)</Label><Input id="kb-url" type="url" inputMode="url" placeholder="https://www.reddit.com/r/EASportsFC/comments/…" value={url} maxLength={600} onChange={(e) => setUrl(e.target.value)} /></div>
@@ -69,6 +81,22 @@ function AddSource() {
     </form>
     <ErrorNotice error={add.error} />
     {r && <p className="rounded-lg bg-muted p-3 text-sm" role="status">{r.claims ? `Added ${r.claims} claim${r.claims === 1 ? "" : "s"}${r.topics.length ? ` about ${r.topics.slice(0, 4).join(", ")}` : ""}.` : "Read it, but found no gameplay or strategy claims."} {r.summary}{r.shared ? " It's shared with everyone." : " Only you can see it."}</p>}
+  </section>;
+}
+
+/** The "Send to Knowledge Bank" bookmarklet, to drag to the bookmarks bar. */
+function BrowserButton() {
+  const link = useRef<HTMLAnchorElement>(null);
+  // React won't render javascript: links, so the bookmarklet is set on the element directly.
+  useEffect(() => { link.current?.setAttribute("href", bookmarkletSource(window.location.origin)); }, []);
+  return <section aria-labelledby="send-title" className="space-y-2 rounded-xl border border-border bg-card p-4">
+    <h2 id="send-title" className="flex items-center gap-2 font-display text-lg font-semibold"><Bookmark className="h-4 w-4 text-primary" />Send pages from your browser</h2>
+    <p className="text-sm text-muted-foreground">On a computer, drag this button to your bookmarks bar. When you're reading a Reddit thread (or any guide or forum post), click it: the post and its top comments open here, ready to add. Select some text first to send just that part.</p>
+    <a ref={link} href="#" onClick={(e) => e.preventDefault()} draggable
+      className="inline-flex cursor-grab items-center gap-2 rounded-md border border-primary bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary active:cursor-grabbing">
+      <Bookmark className="h-4 w-4" />Send to Knowledge Bank
+    </a>
+    <p className="text-xs text-muted-foreground">It only reads the page you click it on, and nothing is added until you press Add and read.</p>
   </section>;
 }
 
@@ -101,6 +129,7 @@ export function SourcesPanel() {
   const pages = Math.max(1, Math.ceil((list.data?.total ?? 0) / 30));
   return <div className="space-y-4">
     <AddSource />
+    <BrowserButton />
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display text-lg font-semibold">Sources{list.data ? <span className="font-normal text-muted-foreground"> ({list.data.total.toLocaleString()})</span> : null}</h2>
@@ -118,6 +147,6 @@ export function SourcesPanel() {
         <Button variant="outline" size="sm" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>Older</Button>
       </div>}
     </section>
-    <p className="text-xs text-muted-foreground">Collected posts and videos keep only their link, community, date and score after 30 days; the claims are GafferBot's own short summaries with links back. Reddit and YouTube are read through their official APIs.</p>
+    <p className="text-xs text-muted-foreground">Collected posts and videos keep only their link, community, date and score after 30 days; the claims are GafferBot's own short summaries with links back. Reddit and YouTube are read through their official APIs and Reddit's public feeds.</p>
   </div>;
 }
