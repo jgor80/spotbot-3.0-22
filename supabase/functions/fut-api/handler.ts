@@ -21,6 +21,7 @@ import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
 import { cardPriceHistory } from "../_shared/fut/price-history.ts";
 import { metaForCard, metaTop } from "../_shared/fut/meta-data.ts";
 import { compareAnyCards } from "../_shared/fut/card-compare.ts";
+import { upgradeOptions } from "../_shared/fut/upgrades-data.ts";
 import { addGame, champsOverview, createRun, deleteGame, deleteRun, updateRun } from "../_shared/fut/champs.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
@@ -446,6 +447,11 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           if (!pool.length) throw new FutError("You have no club cards yet. Sync your club or add cards on My cards first.");
           return { by, owned_cards: pool.length, results: bestSquads(squad, formation, pool, rules, by) };
         }) });
+      }
+      if (route === "/squads/upgrades" && m === "POST") {
+        // Upgrade path: the best single and two-card swaps within a coin budget (market + unused club cards).
+        const b = obj(await body(req));
+        return json({ data: await runWorkspace(async () => upgradeOptions(db, userId, squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad, b)) });
       }
       if (route === "/squads/roles" && m === "POST") {
         // Each squad card's FC 27 player roles (+ / ++) for the position it plays.
