@@ -108,7 +108,9 @@ no `squad_id` they use the squad the player edited last.
   and rare gold/silver/bronze card backgrounds), looked up from the Web App page and cached 6h, and each browser loads
   them straight from EA with a "© EA" credit. Nothing is downloaded, stored or re-served. EA doesn't publish promo,
   Icon or Hero backgrounds there, so those keep GafferBot's design. EA's terms only allow personal, non-commercial use,
-  so this stays a deliberate switch.
+  so this stays a deliberate switch. To learn EA's promo background names, the helper (0.8.0+) notes the addresses of
+  card art the Web App loads (never the images) and uploads them to `POST /helper/images`; they are kept, shared and
+  without who sent them, in `fut.ea_card_art` and listed on My Account ("Card art addresses seen").
 - **One switch.** `FUT_ENABLED=true` turns on the API and the MCP tools together; anything else hides both.
 
 ## Turning it on

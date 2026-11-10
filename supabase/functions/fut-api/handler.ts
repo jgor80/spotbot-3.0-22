@@ -23,6 +23,7 @@ import {
   addSource, ask, deleteKnowledgeSource, KB_CATEGORIES, knowledgeMap, knowledgeSources, knowledgeStatus, knowledgeTopic, MAX_ADD_TEXT, MAX_QUESTION,
   runKnowledgeIngest, type AskTurn,
 } from "../_shared/fut/knowledge.ts";
+import { importCardArt, listCardArt } from "../_shared/fut/card-art.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
 import { forgetMarketOwner, marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
@@ -229,7 +230,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (!path.startsWith("/v1")) return err(404, "This API is /fut-api/v1.");
   const route = path.slice(3) || "/";
   const m = req.method;
-  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices, your club, the pack store and your account.");
+  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices, your club, the pack store, your account and card art addresses.");
   const db = deps.db;
   // Any change (cards, prices, club import, helper upload) makes the caller's cached Market Lab snapshot stale
   // (Player searches are POSTs that change nothing, so they keep it.)
@@ -277,6 +278,9 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (route === "/packs" && m === "DELETE") return json({ data: await clearStore(db, userId, platformParam(url.searchParams.get("platform"))) });
 
     // My Account: coins, points, piles, SBCs and objectives the helper copied from the user's own Web App.
+    // Card art addresses the Web App loaded (helper 0.8.0+): addresses only, to learn EA's promo background names.
+    if (route === "/helper/images" && m === "POST") return json({ data: await importCardArt(db, await body(req, MAX_STORE_BODY)) });
+    if (route === "/card-art" && m === "GET") return json({ data: await listCardArt(db) });
     if (route === "/helper/account" && m === "POST") return json({ data: await importAccount(db, userId, await body(req, MAX_STORE_BODY)) });
     if (route === "/account" && m === "GET") return json({ data: await accountOverview(db, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/account" && m === "DELETE") return json({ data: await clearAccount(db, userId, platformParam(url.searchParams.get("platform"))) });

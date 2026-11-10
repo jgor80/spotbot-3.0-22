@@ -8017,6 +8017,38 @@ async function cardImages(env, fetcher, now2 = Date.now()) {
   };
 }
 
+// supabase/functions/_shared/fut/card-art.ts
+var MAX_ART_URLS = 400;
+var IMAGE = /\.(?:png|webp|jpe?g|svg|avif)$/i;
+function cleanArtUrl(raw) {
+  if (typeof raw !== "string" || raw.length > 400) return null;
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  const host = u.hostname;
+  const ea = host === "ea.com" || host.endsWith(".ea.com") || host.endsWith(".easports.com") || host.endsWith(".eamobile.com") || host.endsWith(".akamaized.net");
+  if (u.protocol !== "https:" || !ea || u.username || u.password || u.port || !IMAGE.test(u.pathname)) return null;
+  return `${u.origin}${u.pathname}`;
+}
+async function importCardArt(db2, body2) {
+  const b = body2 && typeof body2 === "object" ? body2 : null;
+  if (!b || b.format !== "xilab-image-addresses" || !Array.isArray(b.images)) throw new FutError("Send the helper's card art file (format xilab-image-addresses).");
+  const raw = b.images.slice(0, MAX_ART_URLS).map((x) => x && typeof x === "object" ? x.url : x);
+  const urls = [...new Set(raw.map(cleanArtUrl).filter((u) => !!u))];
+  if (!urls.length) return { received: b.images.length, kept: 0, new_addresses: 0 };
+  const { data, error } = await db2.rpc("record_card_art", { p_urls: urls });
+  if (error) throw new Error(error.message);
+  return { received: b.images.length, kept: urls.length, new_addresses: Number(data ?? 0) };
+}
+async function listCardArt(db2, limit = 300) {
+  const { data, error } = await db2.from("ea_card_art").select("url, first_seen_at, last_seen_at, sightings").order("last_seen_at", { ascending: false }).limit(limit);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
 // supabase/functions/_shared/fut/community.ts
 var fail6 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
@@ -8156,7 +8188,7 @@ var REUSE_GRACE_MS = 30 * 1e3;
 
 // supabase/functions/_shared/fut/helper-keys.ts
 var HELPER_KEY_PREFIX = "xlh_";
-var HELPER_ROUTES = /* @__PURE__ */ new Set(["/helper/prices", "/helper/club", "/helper/packs", "/helper/account"]);
+var HELPER_ROUTES = /* @__PURE__ */ new Set(["/helper/prices", "/helper/club", "/helper/packs", "/helper/account", "/helper/images"]);
 var fail7 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
@@ -10056,7 +10088,7 @@ async function handle(req, deps) {
   if (!path.startsWith("/v1")) return err(404, "This API is /fut-api/v1.");
   const route = path.slice(3) || "/";
   const m = req.method;
-  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices, your club, the pack store and your account.");
+  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices, your club, the pack store, your account and card art addresses.");
   const db2 = deps.db;
   if (m !== "GET" && !route.startsWith("/players/")) forgetMarketOwner(db2, userId);
   try {
@@ -10100,6 +10132,8 @@ async function handle(req, deps) {
     if (route === "/helper/packs" && m === "POST") return json({ data: await importStore(db2, userId, await body(req, MAX_STORE_BODY)) });
     if (route === "/packs" && m === "GET") return json({ data: await packAdvice(db2, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/packs" && m === "DELETE") return json({ data: await clearStore(db2, userId, platformParam(url.searchParams.get("platform"))) });
+    if (route === "/helper/images" && m === "POST") return json({ data: await importCardArt(db2, await body(req, MAX_STORE_BODY)) });
+    if (route === "/card-art" && m === "GET") return json({ data: await listCardArt(db2) });
     if (route === "/helper/account" && m === "POST") return json({ data: await importAccount(db2, userId, await body(req, MAX_STORE_BODY)) });
     if (route === "/account" && m === "GET") return json({ data: await accountOverview(db2, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/account" && m === "DELETE") return json({ data: await clearAccount(db2, userId, platformParam(url.searchParams.get("platform"))) });
