@@ -44,6 +44,7 @@ export interface FutSquad {
 export interface RuleInfo { rule_version?: string; rule_status?: string; evidence?: string }
 /** EA player faces and base card backgrounds: only when the server's FUT_EA_IMAGES switch is on. They load straight from EA. */
 export interface CardImages { faces: boolean; portrait_base: string | null; background_base?: string | null; credit: string | null }
+export interface CardArtSeen { url: string; first_seen_at: string; last_seen_at: string; sightings: number }
 export interface FutHealth extends RuleInfo { ok?: boolean; api?: string; card_images?: CardImages }
 export type LinkType = "club" | "league" | "nation";
 export interface LinkBreakdown { key: string | null; count: number; points: number; next_threshold: number | null; needed_for_next: number | null }
@@ -255,6 +256,8 @@ export const futApi = {
     parse: (text: string) => futRequest<{ requirements: SbcRequirement[]; unread: string[]; lines: string[] }>("/sbc/parse", "POST", { text }),
     solve: (input: SbcSolveInput) => futRequest<SbcSolution>("/sbc/solve", "POST", input),
   },
+  /** Card art addresses the helper saw the Web App load (shared EA file addresses, newest first). */
+  cardArt: () => futRequest<CardArtSeen[]>("/card-art"),
   account: {
     get: (platform: MarketPlatform) => futRequest<AccountOverview>(`/account?${new URLSearchParams({ platform })}`),
     clear: (platform: MarketPlatform) => futRequest<{ cleared: boolean }>(`/account?${new URLSearchParams({ platform })}`, "DELETE"),
