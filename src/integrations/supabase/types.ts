@@ -295,6 +295,196 @@ export type Database = {
         }
         Relationships: []
       }
+      club_rivalries: {
+        Row: {
+          guild_id: string
+          club_key: string
+          opponent: string
+          level: string
+          games: number
+          wins: number
+          draws: number
+          losses: number
+          goals_for: number
+          goals_against: number
+          form: string | null
+          streak: Json | null
+          biggest_win: Json | null
+          last_result: Json | null
+          updated_at: string
+        }
+        Insert: {
+          guild_id: string
+          club_key: string
+          opponent: string
+          level: string
+          games: number
+          wins: number
+          draws: number
+          losses: number
+          goals_for: number
+          goals_against: number
+          form?: string | null
+          streak?: Json | null
+          biggest_win?: Json | null
+          last_result?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          guild_id?: string
+          club_key?: string
+          opponent?: string
+          level?: string
+          games?: number
+          wins?: number
+          draws?: number
+          losses?: number
+          goals_for?: number
+          goals_against?: number
+          form?: string | null
+          streak?: Json | null
+          biggest_win?: Json | null
+          last_result?: Json | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      matchday_picks: {
+        Row: {
+          round_id: string
+          discord_user_id: string
+          verdict: string | null
+          scorer: string | null
+          captain: string | null
+          picked_at: string | null
+          points: number
+          breakdown: Json
+        }
+        Insert: {
+          round_id: string
+          discord_user_id: string
+          verdict?: string | null
+          scorer?: string | null
+          captain?: string | null
+          picked_at?: string | null
+          points?: number
+          breakdown?: Json
+        }
+        Update: {
+          round_id?: string
+          discord_user_id?: string
+          verdict?: string | null
+          scorer?: string | null
+          captain?: string | null
+          picked_at?: string | null
+          points?: number
+          breakdown?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matchday_picks_round_id_fkey"
+            columns: ["round_id"]
+            isOneToOne: false
+            referencedRelation: "matchday_rounds"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      matchday_potn_votes: {
+        Row: {
+          round_id: string
+          discord_user_id: string
+          choice: string
+          voted_at: string
+        }
+        Insert: {
+          round_id: string
+          discord_user_id: string
+          choice: string
+          voted_at?: string
+        }
+        Update: {
+          round_id?: string
+          discord_user_id?: string
+          choice?: string
+          voted_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "matchday_potn_votes_round_id_fkey"
+            columns: ["round_id"]
+            isOneToOne: false
+            referencedRelation: "matchday_rounds"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      matchday_rounds: {
+        Row: {
+          id: string
+          guild_id: string
+          club_key: string
+          season_key: string
+          season_label: string | null
+          status: string
+          opened_at: string
+          locks_at: string | null
+          closed_at: string | null
+          candidates: Json
+          outcome: Json | null
+          potn_options: Json | null
+          potn_closes_at: string | null
+          potn_winner: string | null
+          potn_counts: Json | null
+          channel_id: string | null
+          message_id: string | null
+          potn_message_id: string | null
+          created_by_discord_id: string | null
+        }
+        Insert: {
+          id?: string
+          guild_id: string
+          club_key: string
+          season_key: string
+          season_label?: string | null
+          status?: string
+          opened_at?: string
+          locks_at?: string | null
+          closed_at?: string | null
+          candidates?: Json
+          outcome?: Json | null
+          potn_options?: Json | null
+          potn_closes_at?: string | null
+          potn_winner?: string | null
+          potn_counts?: Json | null
+          channel_id?: string | null
+          message_id?: string | null
+          potn_message_id?: string | null
+          created_by_discord_id?: string | null
+        }
+        Update: {
+          id?: string
+          guild_id?: string
+          club_key?: string
+          season_key?: string
+          season_label?: string | null
+          status?: string
+          opened_at?: string
+          locks_at?: string | null
+          closed_at?: string | null
+          candidates?: Json
+          outcome?: Json | null
+          potn_options?: Json | null
+          potn_closes_at?: string | null
+          potn_winner?: string | null
+          potn_counts?: Json | null
+          channel_id?: string | null
+          message_id?: string | null
+          potn_message_id?: string | null
+          created_by_discord_id?: string | null
+        }
+        Relationships: []
+      }
       club_press: {
         Row: {
           body: Json

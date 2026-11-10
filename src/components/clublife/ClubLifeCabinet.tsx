@@ -130,3 +130,115 @@ export function BadgesTab({ guildId }: { guildId: string }) {
     </div>
   );
 }
+
+// Matchday Picks (public/spotbot/matchday-picks.cjs): the season table, the Oracle and recent nights
+const VERDICTS: Record<string, string> = {
+  win: "📈 more wins than losses",
+  even: "⚖️ wins and losses level",
+  loss: "📉 more losses than wins",
+};
+type Round = { id: string; season_key: string; season_label: string | null; status: string; opened_at: string; outcome: { games: number; wins: number; draws: number; losses: number; verdict: string; topScorers: string[]; topGoals: number; players: Record<string, { name: string }> } | null; potn_options: { key: string; name: string; line: string }[] | null; potn_winner: string | null };
+type PickRow = { round_id: string; discord_user_id: string; points: number };
+
+export function PicksTab({ guildId }: { guildId: string }) {
+  const q = useQuery({
+    queryKey: ["matchday-picks", guildId],
+    queryFn: async () => {
+      const { data: rounds } = await supabase.from("matchday_rounds").select("id,season_key,season_label,status,opened_at,outcome,potn_options,potn_winner").eq("guild_id", guildId).in("status", ["voting", "closed"]).order("opened_at", { ascending: false }).limit(200);
+      const list = (rounds ?? []) as unknown as Round[];
+      const season = list[0]?.season_key;
+      const ids = list.filter((r) => r.season_key === season).map((r) => r.id);
+      const { data: picks } = ids.length ? await supabase.from("matchday_picks").select("round_id,discord_user_id,points").in("round_id", ids) : { data: [] };
+      const rows = (picks ?? []) as PickRow[];
+      const users = [...new Set(rows.map((p) => p.discord_user_id))];
+      const { data: profiles } = users.length ? await supabase.from("profiles").select("discord_user_id,ea_username,discord_username").in("discord_user_id", users) : { data: [] };
+      const names = new Map((profiles ?? []).map((p) => [p.discord_user_id, p.discord_username || p.ea_username || "Member"]));
+      const by = new Map<string, { id: string; points: number; nights: number; best: number }>();
+      for (const p of rows) {
+        const r = by.get(p.discord_user_id) ?? { id: p.discord_user_id, points: 0, nights: 0, best: 0 };
+        r.points += p.points;
+        r.nights++;
+        r.best = Math.max(r.best, p.points);
+        by.set(p.discord_user_id, r);
+      }
+      const table = [...by.values()].sort((a, b) => b.points - a.points || b.best - a.best || a.nights - b.nights).map((r) => ({ ...r, name: names.get(r.id) ?? "Member" }));
+      return { table, rounds: list.slice(0, 8), seasonLabel: list[0]?.season_label || season };
+    },
+  });
+  if (q.isLoading) return <p className="text-muted-foreground">Reading the tea leaves…</p>;
+  const { table, rounds, seasonLabel } = q.data ?? { table: [], rounds: [], seasonLabel: "" };
+  if (!rounds.length) return <Empty>No Matchday Picks scored yet. Picks open in Discord when the first player joins the club's voice channel, or a leader opens them from /manager → Club Life.</Empty>;
+  return (
+    <div className="space-y-6">
+      <section>
+        <h2 className="mb-3 font-display text-xl font-semibold">Season {seasonLabel} table</h2>
+        <Card className="divide-y divide-border">
+          {table.slice(0, 20).map((r, i) => (
+            <div key={r.id} className="flex items-center justify-between gap-3 p-3 text-sm">
+              <span>{i === 0 ? "👁️" : `${i + 1}.`} <strong>{r.name}</strong>{i === 0 && <span className="ml-1 text-xs text-primary">The Oracle</span>}</span>
+              <span className="text-muted-foreground"><strong className="text-foreground">{r.points}</strong> pts · {r.nights} night{r.nights === 1 ? "" : "s"} · best {r.best}</span>
+            </div>
+          ))}
+          {!table.length && <p className="p-3 text-sm text-muted-foreground">Nobody has scored yet this season.</p>}
+        </Card>
+      </section>
+      <section>
+        <h2 className="mb-3 font-display text-xl font-semibold">Recent nights</h2>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {rounds.map((r) => {
+            const o = r.outcome;
+            const fan = r.potn_options?.find((p) => p.key === r.potn_winner);
+            return (
+              <Card key={r.id} className="space-y-1 p-4 text-sm">
+                <p className="text-muted-foreground">{new Date(r.opened_at).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}</p>
+                {o && <p className="font-semibold">{o.wins}W {o.draws}D {o.losses}L · {VERDICTS[o.verdict] ?? o.verdict}</p>}
+                {o?.topScorers?.length ? <p>⚽ Top scorer: {o.topScorers.map((k) => o.players[k]?.name ?? k).join(", ")} ({o.topGoals})</p> : null}
+                <p>⭐ Fans' Player of the Night: {fan ? fan.name : r.status === "voting" ? "voting open in Discord" : "no votes"}</p>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// Rivalries (public/spotbot/rivalries.cjs): every club played 3+ times
+type Rival = { club_key: string; opponent: string; level: string; games: number; wins: number; draws: number; losses: number; goals_for: number; goals_against: number; form: string | null; biggest_win: { score: string } | null; last_result: { result: string; score: string; at: string } | null };
+
+export function RivalsTab({ guildId }: { guildId: string }) {
+  const q = useQuery({
+    queryKey: ["rivals", guildId],
+    queryFn: async () => {
+      const { data } = await supabase.from("club_rivalries").select("club_key,opponent,level,games,wins,draws,losses,goals_for,goals_against,form,biggest_win,last_result").eq("guild_id", guildId).order("games", { ascending: false }).limit(60);
+      return (data ?? []) as unknown as Rival[];
+    },
+  });
+  if (q.isLoading) return <p className="text-muted-foreground">Checking the grudges…</p>;
+  const rivals = q.data ?? [];
+  if (!rivals.length) return <Empty>No rivals yet. Any club you play 3 or more times becomes one.</Empty>;
+  const nemesis = [...rivals].filter((r) => r.losses > r.wins).sort((a, b) => b.losses - b.wins - (a.losses - a.wins))[0];
+  const favourite = [...rivals].filter((r) => r.wins > r.losses).sort((a, b) => b.wins - b.losses - (a.wins - a.losses))[0];
+  return (
+    <div className="space-y-6">
+      {(nemesis || favourite) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {nemesis && <Card className="p-4"><p className="text-sm text-muted-foreground">😈 Nemesis</p><p className="font-semibold">{nemesis.opponent}</p><p className="text-xs text-muted-foreground">{nemesis.wins}W {nemesis.draws}D {nemesis.losses}L</p></Card>}
+          {favourite && <Card className="p-4"><p className="text-sm text-muted-foreground">😁 Favourite opponent</p><p className="font-semibold">{favourite.opponent}</p><p className="text-xs text-muted-foreground">{favourite.wins}W {favourite.draws}D {favourite.losses}L</p></Card>}
+        </div>
+      )}
+      <Card className="divide-y divide-border">
+        {rivals.map((r) => (
+          <div key={r.club_key + r.opponent} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+            <span>{r.level === "derby" ? "🔥" : "⚔️"} <strong>{r.opponent}</strong> <span className="text-muted-foreground">· {r.games} meetings</span></span>
+            <span className="text-muted-foreground">
+              <strong className="text-foreground">{r.wins}W {r.draws}D {r.losses}L</strong> · {r.goals_for}-{r.goals_against}
+              {r.form ? ` · form ${r.form}` : ""}{r.biggest_win ? ` · best ${r.biggest_win.score}` : ""}
+            </span>
+          </div>
+        ))}
+      </Card>
+      <p className="text-xs text-muted-foreground">10 or more meetings makes it a derby 🔥. Updated after every synced game.</p>
+    </div>
+  );
+}

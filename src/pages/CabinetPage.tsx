@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ProPhotoUploads } from "@/components/ProPhotoUploads";
-import { AwardsTab, BadgesTab, BeltsTab } from "@/components/clublife/ClubLifeCabinet";
+import { AwardsTab, BadgesTab, BeltsTab, PicksTab, RivalsTab } from "@/components/clublife/ClubLifeCabinet";
 
 type BinderCard = { id: string; style: string; name: string; created_at: string; front_url: string | null; back_url: string | null };
 type SeasonRow = { discord_user_id: string; season_code: string; matches: number; goals: number; assists: number; clean_sheets: number; tackles: number; interceptions: number; motm: number };
@@ -101,7 +101,7 @@ export default function CabinetPage() {
       <div className="space-y-6">
         <div>
           <h1 className="font-display text-3xl font-bold">Trophy Room</h1>
-          <p className="text-muted-foreground">Your card binder, your pro photos, the club's trophy cabinet, belts, Awards Night winners and badge wall.</p>
+          <p className="text-muted-foreground">Your card binder, your pro photos, the club's trophy cabinet, belts, Awards Night winners, badge wall, Matchday Picks table and rivals.</p>
         </div>
         <Tabs defaultValue="binder">
           <TabsList className="flex h-auto flex-wrap">
@@ -110,6 +110,8 @@ export default function CabinetPage() {
             <TabsTrigger value="belts">Belts</TabsTrigger>
             <TabsTrigger value="awards">Awards</TabsTrigger>
             <TabsTrigger value="badges">Badges</TabsTrigger>
+            <TabsTrigger value="picks">Picks</TabsTrigger>
+            <TabsTrigger value="rivals">Rivals</TabsTrigger>
             <TabsTrigger value="photos">My Pro Photos</TabsTrigger>
           </TabsList>
 
@@ -132,6 +134,8 @@ export default function CabinetPage() {
               <TabsContent value="belts" className="mt-6"><BeltsTab guildId={selectedGuildId} /></TabsContent>
               <TabsContent value="awards" className="mt-6"><AwardsTab guildId={selectedGuildId} /></TabsContent>
               <TabsContent value="badges" className="mt-6"><BadgesTab guildId={selectedGuildId} /></TabsContent>
+              <TabsContent value="picks" className="mt-6"><PicksTab guildId={selectedGuildId} /></TabsContent>
+              <TabsContent value="rivals" className="mt-6"><RivalsTab guildId={selectedGuildId} /></TabsContent>
             </>
           )}
 

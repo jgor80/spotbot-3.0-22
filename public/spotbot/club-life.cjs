@@ -1,6 +1,7 @@
 // Club Life: the Discord side of badges, Club Wrapped, Awards Night, the belts, coach goals, the division
 // poster and the Network Wire, plus what the Chronicle prints about them.
-//   /manager → Club Life   Post Fun Zone, Start Awards Night, Post Club Wrapped, Badge Wall, Belts, Settings
+//   /manager → Club Life   Post Fun Zone, Start Awards Night, Post Club Wrapped, Badge Wall, Belts,
+//                          Open Picks, Picks Table, Rivals, Settings (Matchday Picks: matchday-picks.cjs; rivals: rivalries.cjs)
 //   /me → My Career        a player's badges, milestones in reach, this week's goal, card frame and Wrapped
 // Scheduled (server timezone): Wrapped and Awards Night on the 1st for last month, and again for the
 // season when EA's next season starts; ballots close after 72 hours; division changes get a poster.
@@ -29,17 +30,22 @@ const LIFE_FEATURES = {
   awards: { label: 'Awards Night', emoji: '🏆', help: 'Monthly and season awards: nominations from the stats, a 72-hour squad vote, then a ceremony.' },
   goals: { label: 'Coach goals', emoji: '🎯', help: 'One development goal per regular each week, in the Monday digest.' },
   wire: { label: 'Network Wire', emoji: '📡', help: 'Weekly Network news in your network channel (Network servers only).' },
+  picks: { label: 'Matchday Picks', emoji: '🔮', help: 'Picks open when the first player joins voice, score when the session ends, then a Player of the Night vote.' },
+  rivals: { label: 'Rivals', emoji: '⚔️', help: 'Clubs played 3+ times become rivals; recaps against them get a head-to-head line.' },
 };
 
 const CLUBLIFE_COMMANDS = [
   {
     name: 'clublife',
-    description: 'Club Life: badges, Club Wrapped, Awards Night, belts and the Fun Zone.',
+    description: 'Club Life: badges, Club Wrapped, Awards Night, belts, Matchday Picks, rivals and the Fun Zone.',
     options: [
       { type: 1, name: 'awards', description: 'Start Awards Night now: nominations from the last 30 days and a 72-hour squad vote.' },
       { type: 1, name: 'wrapped', description: 'Post Club Wrapped for last month now (it also posts by itself on the 1st).' },
       { type: 1, name: 'badges', description: "The club's badge wall: who has which badge and how rare it is." },
       { type: 1, name: 'belts', description: 'Who holds each weekly belt, how long for, and the longest reigns.' },
+      { type: 1, name: 'picks', description: 'Open Matchday Picks for tonight now (they also open when someone joins voice).' },
+      { type: 1, name: 'table', description: "The season's Matchday Picks table: who's the Oracle." },
+      { type: 1, name: 'rivals', description: 'Every club played 3+ times: head-to-head records, nemesis and favourite opponent.' },
       { type: 1, name: 'settings', description: 'Switch badges, Wrapped, Awards Night, coach goals and the Network Wire on or off.' },
     ],
   },
@@ -51,7 +57,7 @@ function slimRow(r) {
 }
 
 function createClubLife(deps) {
-  const { supabase, autopilot, events, getGuildState, canManageClub, loadMatches, career, devGoals, statRoles, broadcast, network, dashboardUrl } = deps;
+  const { supabase, autopilot, events, getGuildState, canManageClub, loadMatches, career, devGoals, statRoles, broadcast, network, dashboardUrl, picks, rivalries } = deps;
   const client = () => events.getClient();
   const site = (dashboardUrl || 'https://gafferbot.app').replace(/\/$/, '');
   let lastDivisionCheck = 0;
@@ -109,10 +115,15 @@ function createClubLife(deps) {
       supabase.from('trophy_reigns').select('trophy, player_name, started_at').eq('guild_id', guildId).eq('club_key', club.key).gte('started_at', from).limit(20),
       supabase.from('club_award_ballots').select('period_label, categories, results, closed_at').eq('guild_id', guildId).eq('club_key', club.key).eq('status', 'closed').gte('closed_at', from).limit(3),
     ]);
+    const { data: picked } = await supabase.from('matchday_rounds').select('potn_winner, potn_options').eq('guild_id', guildId).eq('club_key', club.key).not('potn_winner', 'is', null).gte('closed_at', from).limit(3);
     const { TROPHIES } = require('./stat-roles.cjs');
     const around = [];
     for (const b of (recentBadges || []).filter((x) => x.earned_at >= from).slice(0, 4)) around.push(`**${b.player_name}** unlocked the ${BADGES[b.badge]?.name || b.badge} badge${b.tier !== 'common' ? ` (${b.tier})` : ''}.`);
     if ((reigns || []).length < 6) for (const r of reigns || []) around.push(`**${r.player_name}** took the ${TROPHIES[r.trophy]?.name || r.trophy} belt.`);
+    for (const r of picked || []) {
+      const w = (r.potn_options || []).find((o) => o.key === r.potn_winner);
+      if (w) around.push(`The fans voted **${w.name}** their Player of the Night.`);
+    }
     for (const b of ballots || []) {
       for (const c of b.categories || []) {
         const win = b.results?.[c.key]?.winner;
@@ -340,6 +351,7 @@ function createClubLife(deps) {
       const state = await getGuildState(guild.id);
       for (const club of activeClubs(state).filter((c) => c.ea_club_id)) {
         if (divisionDue) await divisionCheck(guild.id, club).catch((err) => console.warn(`[clublife] division ${club.key} failed: ${err.message}`));
+        if (divisionDue && rivalries) await rivalries.tick(guild.id, club).catch((err) => console.warn(`[clublife] rivals ${club.key} failed: ${err.message}`));
         if (local.day === 1 && local.hour >= SCHEDULE_HOUR) {
           const prevMonth = local.month === 1 ? 12 : local.month - 1;
           const period = monthPeriod(local.month === 1 ? local.year - 1 : local.year, prevMonth, T.zonedToUtc, tz);
@@ -376,10 +388,10 @@ function createClubLife(deps) {
       .setTitle(`🎉 ${club.name} · Club Life settings`)
       .setColor(0x5865f2)
       .setDescription(Object.entries(LIFE_FEATURES).map(([k, f]) => `${autopilot.isOn(club, k) ? '✅' : '⛔'} ${f.emoji} **${f.label}**: ${f.help}`).join('\n'));
-    const row = new ActionRowBuilder().addComponents(
-      Object.entries(LIFE_FEATURES).map(([k, f]) => new ButtonBuilder().setCustomId(`cl_t:${k}:${club.key}`).setLabel(f.label).setEmoji(f.emoji).setStyle(autopilot.isOn(club, k) ? ButtonStyle.Success : ButtonStyle.Secondary))
-    );
-    return { embeds: [embed], components: [row] };
+    const buttons = Object.entries(LIFE_FEATURES).map(([k, f]) => new ButtonBuilder().setCustomId(`cl_t:${k}:${club.key}`).setLabel(f.label).setEmoji(f.emoji).setStyle(autopilot.isOn(club, k) ? ButtonStyle.Success : ButtonStyle.Secondary));
+    const rows = [];
+    for (let i = 0; i < buttons.length; i += 5) rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+    return { embeds: [embed], components: rows };
   }
 
   async function badgeWall(guildId, club) {
@@ -476,6 +488,18 @@ function createClubLife(deps) {
       await interaction.deferReply({ flags: 64 });
       return interaction.editReply(await beltsView(interaction.guildId, club));
     }
+    if (sub === 'table' && picks) {
+      await interaction.deferReply({ flags: 64 });
+      return interaction.editReply(await picks.tableView(interaction.guildId, club, interaction.user.id));
+    }
+    if (sub === 'rivals' && rivalries) {
+      await interaction.deferReply({ flags: 64 });
+      return interaction.editReply(await rivalries.view(interaction.guildId, club, await accentOf(interaction.guildId, club)));
+    }
+    if (sub === 'picks' && picks) {
+      await interaction.deferReply({ flags: 64 });
+      return interaction.editReply(await picks.openNow(interaction, club));
+    }
     if (!(await leaderOnly(interaction, club))) return null;
     if (sub === 'settings') return interaction.reply({ ...settingsPanel(club), flags: 64 });
     await interaction.deferReply({ flags: 64 });
@@ -561,6 +585,10 @@ function createClubLife(deps) {
       return true;
     }
     const id = interaction.customId || '';
+    if ((interaction.isButton?.() || interaction.isStringSelectMenu?.()) && /^mp_/.test(id) && picks) {
+      await picks.handleComponent(interaction);
+      return true;
+    }
     if ((interaction.isButton?.() || interaction.isStringSelectMenu?.()) && /^(cl_|aw_)/.test(id)) {
       await handleComponent(interaction);
       return true;
