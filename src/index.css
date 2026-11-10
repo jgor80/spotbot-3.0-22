@@ -161,3 +161,23 @@
     box-shadow: 0 0 20px hsl(var(--primary) / 0.3);
   }
 }
+
+/* Knowledge bank map (FUT): agreement colours, validated for colour-blind separation in both modes */
+.kb-viz {
+  --kb-agreed: #2a78d6;
+  --kb-leaning: #1baf7a;
+  --kb-split: #eb6834;
+  --kb-early: #a3a29c;
+  --kb-for: #2a78d6;
+  --kb-against: #eb6834;
+  --kb-mixed: #a3a29c;
+}
+.dark .kb-viz {
+  --kb-agreed: #3987e5;
+  --kb-leaning: #199e70;
+  --kb-split: #d95926;
+  --kb-early: #6b6a64;
+  --kb-for: #3987e5;
+  --kb-against: #d95926;
+  --kb-mixed: #6b6a64;
+}

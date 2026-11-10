@@ -57,13 +57,19 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | `POST /helper/account` | Helper key only: the user's account as the helper copied it from Web App answers (format `xilab-account-capture`): balance, club record, transfer list, watchlist, unassigned, SBCs, objectives, season. Each section replaces the stored one only when it was seen later; coins/points add a history point when they change (or every 6 hours) |
 | `GET /account?platform=` | My Account: balance and its history, transfer list / watchlist / unassigned with FUT.GG names and prices, SBCs, objectives, season numbers, tips and the field names seen |
 | `DELETE /account?platform=` | Clear the stored account and balance history for one platform |
+| `GET /knowledge/map?days=&category=` | Knowledge Bank map: every topic the community talked about in the period (shared sources plus the caller's own), with for/against/mixed counts, net sentiment (-1..1, weighted by upvotes/views), agreement (agreed, leaning, split, early) and trend (-1..1, newer half of the period against the older half) |
+| `GET /knowledge/topics/:key?days=` | One topic: totals, claims per week and its statements with their source links |
+| `GET /knowledge/sources?mine=&limit=&offset=`, `POST /knowledge/sources`, `DELETE /knowledge/sources/:id` | Sources (newest first). POST `{ url?, text?, title?, share? }` adds a Reddit/YouTube link (fetched through their APIs when configured) or pasted text and reads it straight away (`FUT_KB_ADDS_PER_HOUR`, default 20). Notes are always private; a linked source is shared only when asked. Users delete only their own |
+| `POST /knowledge/ask` | `{ question, history? }`: an answer from the bank's claims with numbered sources (Claude, `FUT_KB_ASK_PER_HOUR` default 60), or the best matching claims grouped by topic without a key |
+| `GET /knowledge/status` | Bank totals, the last collection run, and which feeds have keys |
 
 ## MCP tools
 
 `get_my_fut_squad`, `get_my_fut_inventory`, `get_fut_card`, `compare_fut_cards`, `calculate_fut_chemistry`,
 `diagnose_fut_chemistry`, `preview_fut_swap`, `optimize_fut_squad`, `compare_fut_squads`, and for Market Lab
 `get_fut_market_overview`, `get_fut_card_market_intelligence`, `find_fut_market_opportunities`,
-`compare_fut_card_relative_value`, `analyze_fut_trade_thesis`, `get_fut_market_data_sources`. All read-only; with
+`compare_fut_card_relative_value`, `analyze_fut_trade_thesis`, `get_fut_market_data_sources`, and for the Knowledge Bank
+`search_fut_knowledge` and `get_fut_knowledge_map` (the AI app answers from the claims itself, so they never call Claude). All read-only; with
 no `squad_id` they use the squad the player edited last.
 
 ## Rules
@@ -128,3 +134,33 @@ deno test --allow-env --allow-read supabase/functions/fut-api supabase/functions
 
 Each copied file says which 11-lab commit it came from. The copy takes `src/chemistry`, `src/workspace`,
 `src/market`, `src/intelligence` and `src/shared`; nothing that needs Node or the SQLite card data.
+
+## Knowledge Bank (`/fut/knowledge`)
+
+What the community says about FUT gameplay and strategy, as a map, an Ask chat and the sources (Jeff, 2026-11-10).
+Code in `_shared/fut/knowledge.ts`, tables and queries in `20261110160000_fut_knowledge_bank.sql` (`fut.kb_*`).
+
+- **Collecting.** The bot's scheduler runs the fut-api job `knowledge-ingest` at :41 every 3 hours (`fut-knowledge` in
+  `scheduler.cjs`; `FUT_KNOWLEDGE=off` pauses it). Reddit: the day's top gameplay posts (keyword and flair filter, no
+  NSFW, pack pulls or memes, at least `FUT_KB_REDDIT_MIN_SCORE` upvotes, default 20) from `FUT_KB_SUBREDDITS` (default
+  `EASportsFC,fut`) with their top comments, through Reddit's Data API with an app-only token (`REDDIT_CLIENT_ID`,
+  `REDDIT_CLIENT_SECRET`, optional `REDDIT_USER_AGENT`; Reddit has to approve the app). Without those keys Reddit is
+  read from its public RSS feeds instead (`/r/<sub>/top/.rss?t=day`, then each post's `/comments/<id>/.rss` for its top
+  comments; `FUT_KB_REDDIT_PER_SUB`, default 6 in this mode). Feeds carry no scores, so the post's rank in the day's
+  top list is told to the reader and score stays 0; pasted Reddit links are fetched the same way. `FUT_KB_REDDIT_RSS=off`
+  turns this off. Checked from the Hetzner server 2026-11-10 (HTTP 200). YouTube: the last 3 days'
+  most-watched videos for each of `FUT_KB_YOUTUBE_QUERIES` (`|`-separated) with their top comments, through the YouTube
+  Data API (`YOUTUBE_API_KEY`), only at `FUT_KB_YOUTUBE_HOURS` (default 1,7,13,19 UTC) to stay inside the free quota.
+  Video transcripts aren't available through the API; users can paste them. Nothing is scraped from web pages.
+- **Send to Knowledge Bank.** The Sources tab has a bookmarklet (`sendToBank.ts`). Clicked on a page the user is
+  reading, it opens `/fut/knowledge?tab=sources#kb=<json>` with the link, title and text (selected text, else the
+  Reddit post and top comments on new or old Reddit, else the page's main text; YouTube sends only the link) filled in.
+  The text rides in the #fragment, so it never reaches a server, and nothing is added until the user presses Add.
+- **Reading.** Claude (`FUT_KB_MODEL`, default claude-opus-5-5 at low effort) reads up to `FUT_KB_READ_PER_RUN`
+  (default 25) waiting sources per run, most popular first, into at most 12 claims each: topic (reusing known topic
+  names), category, a paraphrased statement, stance (for / against / mixed) and strength. A source gets three tries.
+- **Keeping.** Collected sources keep only their link, kind, community, date and score 30 days after collection
+  (`kb_cleanup`); the claims stay. A user's sources are private unless shared and go with their account.
+- **Weighting.** A claim counts `strength × (1 + min(2, log10(score) / 2))`, so a 10k-upvote post counts about three
+  times a fresh one.
+

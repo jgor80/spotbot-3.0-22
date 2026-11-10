@@ -77,3 +77,24 @@ test('futgg-attributes asks fut-api for card stats every 15 minutes, off the hou
     for (const [k, v] of [['FUT_ENABLED', before.f], ['FUTGG_ATTRIBUTES', before.a]]) if (v === undefined) delete process.env[k]; else process.env[k] = v;
   }
 });
+
+test('fut-knowledge asks fut-api to collect and read community sources every 3 hours, and can be paused', async () => {
+  const kb = JOBS.find((j) => j.name === 'fut-knowledge');
+  assert.ok(kb && kb.task);
+  assert.ok(due(kb, new Date('2026-11-08T01:41:00Z')) && due(kb, new Date('2026-11-08T22:41:30Z')));
+  assert.ok(!due(kb, new Date('2026-11-08T02:41:00Z')) && !due(kb, new Date('2026-11-08T01:40:00Z')));
+  const before = { f: process.env.FUT_ENABLED, k: process.env.FUT_KNOWLEDGE };
+  try {
+    process.env.FUT_ENABLED = 'true';
+    const calls = [];
+    const callFunction = async (fn, body) => { calls.push([fn, body]); return { data: { data: { read: 1 } }, error: null }; };
+    await kb.task({ callFunction });
+    assert.deepStrictEqual(calls, [['fut-api', { job: 'knowledge-ingest' }]]);
+    await assert.rejects(kb.task({ callFunction: async () => ({ data: null, error: 'boom' }) }), /fut-knowledge: boom/);
+    process.env.FUT_KNOWLEDGE = 'off';
+    await kb.task({ callFunction });
+    assert.strictEqual(calls.length, 1, 'paused');
+  } finally {
+    for (const [k, v] of [['FUT_ENABLED', before.f], ['FUT_KNOWLEDGE', before.k]]) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
+});
