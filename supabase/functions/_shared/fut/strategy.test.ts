@@ -122,7 +122,7 @@ Deno.test("strategy_price_series: tracked cards plus asked-for ids, last 7 days 
   const db = new PGlite();
   try {
     await db.exec(SETUP);
-    await db.exec(await Deno.readTextFile(new URL("../../../migrations/20261110150000_fut_daily_strategy.sql", import.meta.url)));
+    await db.exec(await Deno.readTextFile(new URL("../../../migrations/20261110190000_fut_daily_strategy.sql", import.meta.url)));
     await db.exec(`INSERT INTO auth.users VALUES ('00000000-0000-0000-0000-000000000001');
       INSERT INTO fut.player_cards(owner_user_id, source_id, source_card_key, player_name, overall, positions, version, market_tracked) VALUES
       (NULL, 'futgg_catalogue', '1', 'Tracked', 84, '{ST}', 'Rare', true), (NULL, 'futgg_catalogue', '2', 'Mine', 75, '{CB}', 'Rare', false),
