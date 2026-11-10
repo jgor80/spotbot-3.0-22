@@ -40,6 +40,15 @@ async function futggAttributes({ callFunction }) {
   const result = data?.data ?? data;
   if (result?.queued) console.log('⏰ futgg-attributes:', JSON.stringify(result));
 }
+// Knowledge bank (fut-api job): Reddit and YouTube sources collected and read by Claude every 3 hours.
+// FUT_KNOWLEDGE=off pauses it; feeds without their keys are skipped inside the job.
+const knowledgeOn = () => process.env.FUT_ENABLED === 'true' && process.env.FUT_KNOWLEDGE !== 'off';
+async function futKnowledge({ callFunction }) {
+  if (!knowledgeOn() || !callFunction) return;
+  const { data, error } = await callFunction('fut-api', { job: 'knowledge-ingest' }, 280000);
+  if (error) throw new Error(`fut-knowledge: ${error?.message || error}`);
+  console.log('⏰ fut-knowledge:', JSON.stringify(data?.data ?? data));
+}
 async function futggStale({ supabase }, now = Date.now()) {
   if (!futggOn()) return false;
   const { data, error } = await supabase.schema('fut').from('market_provider_runs').select('finished_at')
@@ -65,6 +74,8 @@ const JOBS = [
   { name: 'futgg-prices', hours: [6, 18], minute: 0, task: futggPrices, onStart: futggStale },
   // Card stats from FUT.GG's card pages, off the hour so they never overlap the price refresh
   { name: 'futgg-attributes', minutes: [7, 22, 37, 52], task: futggAttributes },
+  // FUT knowledge bank: community posts and videos, read into claims (YouTube only on hours 1, 7, 13, 19 for its quota)
+  { name: 'fut-knowledge', hours: [1, 4, 7, 10, 13, 16, 19, 22], minute: 41, task: futKnowledge },
   { name: 'season-card-archive-nightly', hour: 6, minute: 30, rpc: ['refresh_player_season_archive'] },
   { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences', 'cleanup_mcp_oauth', 'cleanup_logs'] },
 ];

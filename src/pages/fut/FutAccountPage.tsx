@@ -163,6 +163,22 @@ function Overview({ d }: { d: AccountOverview }) {
   </>;
 }
 
+/** Card art addresses the helper (0.8.0+) saw the Web App load: used to work out EA's promo background names. */
+function CardArtSeen({ enabled }: { enabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  const art = useQuery({ queryKey: [...futKeys.account, "card-art"], queryFn: futApi.cardArt, enabled: enabled && open, staleTime: 5 * 60_000 });
+  return <details className="text-sm" onToggle={e => setOpen((e.target as HTMLDetailsElement).open)}>
+    <summary className="cursor-pointer text-muted-foreground">Card art addresses seen{art.data ? ` (${art.data.length})` : ""}</summary>
+    <div className="mt-2 space-y-2">
+      <p className="text-xs text-muted-foreground">Addresses of card backgrounds the EA Web App loaded while you browsed (helper 0.8.0 or newer). Open a few TOTW, Icon and Hero cards in your club so their backgrounds show up here. Only the addresses are kept, never the images.</p>
+      <ErrorNotice error={art.error} />
+      {art.isPending && open ? <MarketLoading /> : art.data && (art.data.length
+        ? <ul className="max-h-72 space-y-1 overflow-y-auto font-mono text-xs">{art.data.map(a => <li key={a.url} className="break-all"><span className="text-muted-foreground">{a.sightings}× </span>{a.url.replace(/^https:\/\/www\.ea\.com\/ea-sports-fc\/ultimate-team\/web-app\//, "…/")}</li>)}</ul>
+        : <p className="text-xs text-muted-foreground">None yet.</p>)}
+    </div>
+  </details>;
+}
+
 export default function FutAccountPage() {
   const context = useMarketPlatform(), qc = useQueryClient();
   const query = useQuery({ queryKey: [...futKeys.account, context.platform], queryFn: () => futApi.account.get(context.platform), enabled: context.enabled, staleTime: 60_000, refetchInterval: 5 * 60_000 });
@@ -176,6 +192,7 @@ export default function FutAccountPage() {
       <Section title="What the helper has seen">
         <DataTable headers={["Part", "Last seen"]} rows={(Object.keys(SECTION_LABEL) as AccountSection[]).map(k => [SECTION_LABEL[k], d.seen[k] ? dateText(d.seen[k]) : "Not yet"])} />
         {d.shape && <details className="text-sm"><summary className="cursor-pointer text-muted-foreground">Field names EA sent</summary><div className="mt-2 space-y-1">{Object.entries(d.shape).map(([k, v]) => <p key={k} className="break-words font-mono text-xs text-muted-foreground"><span className="text-foreground">{k}:</span> {v.join(", ") || "–"}</p>)}</div></details>}
+        <CardArtSeen enabled={context.enabled} />
         <Button variant="outline" size="sm" disabled={clear.isPending} onClick={() => { if (window.confirm("Delete your stored account data and coin history for this platform? The helper uploads it again next time you sign in to the Web App.")) clear.mutate(); }}><Trash2 className="mr-2 h-4 w-4" />Clear account data</Button>
       </Section>
     </>)}

@@ -8017,6 +8017,554 @@ async function cardImages(env, fetcher, now2 = Date.now()) {
   };
 }
 
+// supabase/functions/_shared/fut/knowledge.ts
+var KB_CATEGORIES = ["formations", "tactics", "players", "playstyles", "attacking", "defending", "skills", "settings", "modes", "market", "other"];
+var DEFAULT_MODEL3 = "claude-opus-5-5";
+var DEFAULT_SUBREDDITS = ["EASportsFC", "fut"];
+var DEFAULT_YOUTUBE_QUERIES = ["FC 27 meta formation", "FC 27 best custom tactics", "FC 27 meta players Ultimate Team", "FC 27 gameplay tips attacking defending"];
+var MAX_BODY = 12e3;
+var MAX_ADD_TEXT = 12e3;
+var MAX_QUESTION = 500;
+var UA = "web:gafferbot-knowledge:1.0";
+async function rpcData(db2, name2, args) {
+  const { data, error } = await db2.rpc(name2, args);
+  if (error) throw new FutError(`The knowledge bank is unavailable: ${error.message ?? "error"}`, 500);
+  return data;
+}
+var squash = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
+var keep = (s, max) => typeof s === "string" ? s.replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim().slice(0, max) : "";
+function topicKey(topic) {
+  return topic.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\+/g, " plus ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80).replace(/-+$/, "");
+}
+var GAMEPLAY = /\b(meta|formations?|tactics?|instructions?|playstyles?\+?|accele ?rate|explosive|lengthy|controlled|finesse|trivela|power shots?|skill moves?|dribbl\w*|defend\w*|jockey\w*|tackl\w*|through balls?|lobs?|cross\w*|headers?|settings|camera|controller|best (players?|cards?|cbs?|strikers?|wingers?|cdms?|cams?|lbs?|rbs?|gks?|sts?|team|squad|formation)|op|overpowered|nerf\w*|buff\w*|patch|title update|rivals|champs|champions|weekend league|squad battles|sbcs?|evo(lution)?s?|chem(istry)?|roles?\+\+?|\d-\d-\d(-\d)?|tips?|guide|how (do|to) (i |you )?(score|defend|win|beat|stop))\b/i;
+var OFF_TOPIC_FLAIR = /(pack|pull|meme|humou?r|funny|shitpost|achievement|showcase|picture|image|video clip|rant|news|leak)/i;
+var ON_TOPIC_FLAIR = /(discussion|tactic|gameplay|guide|tip|question|meta|squad|help|advice)/i;
+function isGameplayPost(p) {
+  if (p.over_18 || p.stickied) return false;
+  const flair = p.link_flair_text ?? "";
+  if (flair && OFF_TOPIC_FLAIR.test(flair) && !ON_TOPIC_FLAIR.test(flair)) return false;
+  return GAMEPLAY.test(`${p.title ?? ""} ${(p.selftext ?? "").slice(0, 2e3)}`) || ON_TOPIC_FLAIR.test(flair);
+}
+function threadBody(head, text4, comments) {
+  let out = `${head.join("\n")}
+
+${text4 ? `${keep(text4, 5e3)}
+
+` : ""}`;
+  if (comments.length) out += "Top comments:\n";
+  for (const c of comments) {
+    const line = `- ${c.score == null ? "" : `(${c.score} ${c.score === 1 ? "point" : "points"}) `}${squash(c.body, 700)}
+`;
+    if (out.length + line.length > MAX_BODY) break;
+    out += line;
+  }
+  return out.trim();
+}
+function redditMode(env) {
+  if (env("REDDIT_CLIENT_ID") && env("REDDIT_CLIENT_SECRET")) return "api";
+  return env("FUT_KB_REDDIT_RSS") === "off" ? "off" : "rss";
+}
+function redditFeedOn(env) {
+  return redditMode(env) !== "off";
+}
+function youtubeFeedOn(env) {
+  return !!env("YOUTUBE_API_KEY");
+}
+async function redditToken(env, fetchFn) {
+  const res = await fetchFn("https://www.reddit.com/api/v1/access_token", {
+    method: "POST",
+    headers: {
+      authorization: `Basic ${btoa(`${env("REDDIT_CLIENT_ID")}:${env("REDDIT_CLIENT_SECRET")}`)}`,
+      "content-type": "application/x-www-form-urlencoded",
+      "user-agent": env("REDDIT_USER_AGENT") || UA
+    },
+    body: "grant_type=client_credentials"
+  });
+  const out = await res.json().catch(() => null);
+  if (!res.ok || !out?.access_token) throw new Error(`Reddit sign-in failed (HTTP ${res.status})`);
+  return out.access_token;
+}
+async function redditJson(url, token, env, fetchFn) {
+  const res = await fetchFn(url, { headers: { authorization: `Bearer ${token}`, "user-agent": env("REDDIT_USER_AGENT") || UA } });
+  if (!res.ok) throw new Error(`Reddit answered HTTP ${res.status}`);
+  return res.json();
+}
+function redditComments(listing) {
+  const children = (Array.isArray(listing) ? listing[1]?.data?.children : null) ?? [];
+  return children.flatMap((c) => {
+    const d = c;
+    if (d.kind !== "t1" || !d.data?.body || d.data.stickied || d.data.author === "AutoModerator" || d.data.body === "[deleted]" || d.data.body === "[removed]") return [];
+    return [{ body: d.data.body, score: Math.max(0, Number(d.data.score) || 0) }];
+  }).filter((c) => c.score >= 2).sort((a, b) => b.score - a.score).slice(0, 12);
+}
+function redditSource(p, comments) {
+  const community = p.subreddit_name_prefixed || `r/${p.subreddit ?? ""}`;
+  return {
+    kind: "reddit",
+    external_id: p.id,
+    url: `https://www.reddit.com${p.permalink}`,
+    title: squash(p.title, 300),
+    author: p.author ? squash(p.author, 100) : null,
+    community,
+    published_at: new Date(p.created_utc * 1e3).toISOString(),
+    score: Math.max(0, p.score | 0),
+    comments: Math.max(0, (p.num_comments ?? 0) | 0),
+    body: threadBody([`Reddit post in ${community} (${p.score} upvotes${p.link_flair_text ? `, flair "${squash(p.link_flair_text, 40)}"` : ""})`, `Title: ${squash(p.title, 300)}`], p.selftext ?? "", comments),
+    excerpt: squash(p.selftext || p.title, 280)
+  };
+}
+function redditSubs(env) {
+  const subs = (env("FUT_KB_SUBREDDITS") ?? "").split(",").map((s) => s.trim().replace(/^r\//i, "")).filter((s) => /^[A-Za-z0-9_]{2,30}$/.test(s));
+  return subs.length ? subs : DEFAULT_SUBREDDITS;
+}
+async function collectReddit(env, fetchFn) {
+  if (redditMode(env) === "rss") return collectRedditRss(env, fetchFn);
+  const token = await redditToken(env, fetchFn);
+  const minScore = Number(env("FUT_KB_REDDIT_MIN_SCORE")) || 20;
+  const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 8;
+  const out = [];
+  for (const sub of redditSubs(env)) {
+    const listing = await redditJson(`https://oauth.reddit.com/r/${sub}/top?t=day&limit=50&raw_json=1`, token, env, fetchFn);
+    const posts = (listing?.data?.children ?? []).map((c) => c.data).filter((p) => p?.id && p.score >= minScore && isGameplayPost(p)).slice(0, perSub);
+    for (const p of posts) {
+      const comments = redditComments(await redditJson(`https://oauth.reddit.com/r/${sub}/comments/${p.id}?sort=top&limit=15&depth=1&raw_json=1`, token, env, fetchFn).catch(() => null));
+      out.push(redditSource(p, comments));
+    }
+  }
+  return out;
+}
+var XML_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+function decodeEntities(s) {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+    if (e[0] === "#") {
+      const n = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1));
+      return n > 0 && n < 1114112 ? String.fromCodePoint(n) : "";
+    }
+    return XML_ENTITIES[e.toLowerCase()] ?? m;
+  });
+}
+function rssHtmlText(html) {
+  const h = decodeEntities(html).replace(/<!--\s*SC_ON\s*-->[\s\S]*$/i, "").replace(/<!--[\s\S]*?-->/g, "").replace(/<(br|\/p|\/li|\/h\d|\/blockquote|\/pre)\b[^>]*>/gi, "\n").replace(/<li\b[^>]*>/gi, "- ").replace(/<[^>]+>/g, "");
+  return keep(decodeEntities(h).replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n"), MAX_BODY);
+}
+function parseRedditRss(xml) {
+  const tag = (e, t) => e.match(new RegExp(`<${t}\\b[^>]*>([\\s\\S]*?)</${t}>`))?.[1] ?? "";
+  return [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].flatMap(([, e]) => {
+    const id3 = tag(e, "id").trim();
+    if (!/^t[13]_[a-z0-9]{2,16}$/.test(id3)) return [];
+    const author = decodeEntities(tag(tag(e, "author"), "name")).trim().replace(/^\/u\//, "");
+    return [{
+      id: id3,
+      title: squash(decodeEntities(tag(e, "title")), 300),
+      author: author || null,
+      link: decodeEntities(e.match(/<link\b[^>]*href="([^"]+)"/)?.[1] ?? ""),
+      published: tag(e, "published").trim() || tag(e, "updated").trim() || null,
+      text: rssHtmlText(tag(e, "content"))
+    }];
+  });
+}
+async function redditRss(url, env, fetchFn) {
+  const res = await fetchFn(url, { headers: { "user-agent": env("REDDIT_USER_AGENT") || UA, accept: "application/atom+xml" } });
+  if (!res.ok) throw new Error(`Reddit's RSS feed answered HTTP ${res.status}`);
+  return parseRedditRss(await res.text());
+}
+var redditPermalink = (link) => {
+  try {
+    const u = new URL(link);
+    return /(^|\.)reddit\.com$/.test(u.hostname) && u.pathname.startsWith("/r/") ? u.pathname : null;
+  } catch {
+    return null;
+  }
+};
+async function redditRssThread(sub, id3, env, fetchFn, rank = 0) {
+  const entries = await redditRss(`https://www.reddit.com/r/${sub}/comments/${id3}/.rss?sort=top&limit=15`, env, fetchFn);
+  const post = entries.find((e) => e.id === `t3_${id3}`);
+  if (!post) return null;
+  const comments = entries.filter((e) => e.id.startsWith("t1_") && e.text.length > 15 && e.author !== "AutoModerator").slice(0, 12).map((e) => ({ body: e.text, score: null }));
+  return rssSource(sub, post, comments, rank);
+}
+function rssSource(sub, post, comments, rank) {
+  const community = `r/${sub}`;
+  const permalink = redditPermalink(post.link) ?? `/r/${sub}/comments/${post.id.slice(3)}/`;
+  return {
+    kind: "reddit",
+    external_id: post.id.slice(3),
+    url: `https://www.reddit.com${permalink}`,
+    title: post.title,
+    author: post.author ? squash(post.author, 100) : null,
+    community,
+    published_at: post.published ?? (/* @__PURE__ */ new Date()).toISOString(),
+    score: 0,
+    comments: comments.length,
+    body: threadBody([`Reddit post in ${community}${rank ? ` (number ${rank} in today's top posts)` : ""}`, `Title: ${post.title}`], post.text, comments),
+    excerpt: squash(post.text || post.title, 280)
+  };
+}
+async function collectRedditRss(env, fetchFn) {
+  const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 6;
+  const out = [];
+  for (const sub of redditSubs(env)) {
+    const top = (await redditRss(`https://www.reddit.com/r/${sub}/top/.rss?t=day&limit=40`, env, fetchFn)).filter((e) => e.id.startsWith("t3_"));
+    const posts = top.map((e, i) => ({ e, rank: i + 1 })).filter(({ e }) => isGameplayPost({ title: e.title, selftext: e.text })).slice(0, perSub);
+    for (const { e, rank } of posts) {
+      const full = await redditRssThread(sub, e.id.slice(3), env, fetchFn, rank).catch(() => null);
+      out.push(full ?? rssSource(sub, e, [], rank));
+    }
+  }
+  return out;
+}
+var YT = "https://www.googleapis.com/youtube/v3";
+async function ytJson(path, params, env, fetchFn) {
+  const q = new URLSearchParams({ ...params, key: env("YOUTUBE_API_KEY") });
+  const res = await fetchFn(`${YT}/${path}?${q}`);
+  if (!res.ok) throw new Error(`YouTube answered HTTP ${res.status}`);
+  return await res.json();
+}
+async function youtubeSources(ids, env, fetchFn, minViews) {
+  if (!ids.length) return [];
+  const videos = (await ytJson("videos", { part: "snippet,statistics", id: ids.join(","), maxResults: "50" }, env, fetchFn)).items ?? [];
+  const out = [];
+  for (const v of videos) {
+    const views = Number(v.statistics?.viewCount) || 0;
+    if (!v.id || views < minViews) continue;
+    let comments = [];
+    if (Number(v.statistics?.commentCount) > 0) {
+      const threads = await ytJson("commentThreads", { part: "snippet", videoId: v.id, order: "relevance", maxResults: "20", textFormat: "plainText" }, env, fetchFn).catch(() => ({ items: [] }));
+      comments = (threads.items ?? []).map((t) => ({ body: t.snippet?.topLevelComment?.snippet?.textDisplay ?? "", score: Number(t.snippet?.topLevelComment?.snippet?.likeCount) || 0 })).filter((c) => c.body.length > 15).sort((a, b) => b.score - a.score).slice(0, 15);
+    }
+    const s = v.snippet ?? {};
+    out.push({
+      kind: "youtube",
+      external_id: v.id,
+      url: `https://www.youtube.com/watch?v=${v.id}`,
+      title: squash(s.title, 300),
+      author: s.channelTitle ? squash(s.channelTitle, 100) : null,
+      community: squash(s.channelTitle || "YouTube", 100),
+      published_at: s.publishedAt ?? (/* @__PURE__ */ new Date()).toISOString(),
+      score: views,
+      comments: Number(v.statistics?.commentCount) || 0,
+      body: threadBody([`YouTube video by ${squash(s.channelTitle, 100)} (${views.toLocaleString("en")} views)`, `Title: ${squash(s.title, 300)}`, "Description (the video itself isn't included):"], s.description ?? "", comments),
+      excerpt: squash(s.description || s.title, 280)
+    });
+  }
+  return out;
+}
+async function collectYouTube(env, fetchFn, now2 = Date.now()) {
+  const queries = (env("FUT_KB_YOUTUBE_QUERIES") ?? "").split("|").map((q) => q.trim()).filter(Boolean);
+  const after = new Date(now2 - 3 * 864e5).toISOString();
+  const ids = /* @__PURE__ */ new Set();
+  for (const q of queries.length ? queries.slice(0, 8) : DEFAULT_YOUTUBE_QUERIES) {
+    const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "6", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
+    for (const item of found.items ?? []) if (item.id?.videoId) ids.add(item.id.videoId);
+  }
+  return youtubeSources([...ids].slice(0, 50), env, fetchFn, Number(env("FUT_KB_YOUTUBE_MIN_VIEWS")) || 5e3);
+}
+function parseSourceLink(raw) {
+  let u;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  const host = u.hostname.replace(/^(www|old|new|m)\./, "");
+  if (host === "reddit.com") {
+    const m = u.pathname.match(/^\/r\/([A-Za-z0-9_]{2,30})\/comments\/([a-z0-9]{2,12})(\/|$)/i);
+    return m ? { kind: "reddit", id: m[2].toLowerCase(), sub: m[1] } : null;
+  }
+  if (host === "youtu.be") {
+    const id3 = u.pathname.slice(1, 12);
+    return /^[A-Za-z0-9_-]{11}$/.test(id3) ? { kind: "youtube", id: id3 } : null;
+  }
+  if (host === "youtube.com" || host === "music.youtube.com") {
+    const id3 = u.searchParams.get("v") ?? u.pathname.match(/^\/(?:shorts|live|embed)\/([A-Za-z0-9_-]{11})/)?.[1] ?? "";
+    return /^[A-Za-z0-9_-]{11}$/.test(id3) ? { kind: "youtube", id: id3 } : null;
+  }
+  return null;
+}
+async function fetchLinked(link, env, fetchFn) {
+  if (link.kind === "youtube") {
+    if (!youtubeFeedOn(env)) return null;
+    return (await youtubeSources([link.id], env, fetchFn, 0))[0] ?? null;
+  }
+  if (redditMode(env) === "off") return null;
+  if (redditMode(env) === "rss") return link.sub ? redditRssThread(link.sub, link.id, env, fetchFn) : null;
+  const token = await redditToken(env, fetchFn);
+  const thread = await redditJson(`https://oauth.reddit.com/r/${link.sub}/comments/${link.id}?sort=top&limit=15&depth=1&raw_json=1`, token, env, fetchFn);
+  const post = Array.isArray(thread) ? thread[0]?.data?.children?.[0]?.data : null;
+  if (!post?.id || post.over_18) return null;
+  return redditSource(post, redditComments(thread));
+}
+var READ_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["relevant", "summary", "claims"],
+  properties: {
+    relevant: { type: "boolean" },
+    summary: { type: "string" },
+    claims: { type: "array", items: { type: "object", additionalProperties: false, required: ["topic", "category", "statement", "stance", "strength"], properties: {
+      topic: { type: "string" },
+      category: { type: "string", enum: [...KB_CATEGORIES] },
+      statement: { type: "string" },
+      stance: { type: "string", enum: ["for", "against", "mixed"] },
+      strength: { type: "integer", enum: [1, 2, 3] }
+    } } }
+  }
+};
+function readerPrompt(known) {
+  return [
+    "You read EA SPORTS FC 27 Ultimate Team community posts, video descriptions and their comments, and write down the gameplay and strategy claims people make, for a knowledge bank that maps what the community thinks. Return JSON only.",
+    "",
+    "relevant: false when the source has no gameplay or strategy content (pack pulls, memes, complaints with no claim, news with no opinion); then claims is empty.",
+    "summary: one plain sentence on what the source is about (under 25 words).",
+    "claims: up to 12, the most useful first. Each is one opinion or tip someone in the source states:",
+    '- topic: the specific thing being judged, as a short name people would search for: a formation ("4-2-3-1 (2)", "4-4-2"), a tactic or setting ("Balanced defensive approach", "Competitive controller settings"), a player card ("Kylian Mbapp\xE9"), a PlayStyle or AcceleRATE type ("Finesse Shot+", "Explosive AcceleRATE"), a technique ("Trivela shots", "Manual jockeying", "Driven lob through balls"), a game mode ("Rivals", "Champions") or a market idea ("Investing in TOTW cards"). Not a sentence, not "FC 27", not "gameplay" on its own.',
+    "- Reuse a name from the known topics below whenever it is the same thing, spelled exactly as listed.",
+    "- category: formations, tactics (custom tactics, player instructions), players (cards), playstyles (PlayStyles, Roles, AcceleRATE), attacking, defending, skills (skill moves, dribbling), settings (controller, camera, game settings), modes (Rivals, Champions, Squad Battles, SBCs, Evolutions), market (trading, coins, prices), other.",
+    "- statement: the claim in your own plain words, under 30 words, specific (numbers, instructions, positions, why). Never copy long passages and never include usernames.",
+    "- stance relative to the topic: for = it is good, strong, effective, meta, worth it, recommended; against = bad, weak, overrated, nerfed, not worth it; mixed = conditional, it depends, or neutral how-to information.",
+    "- strength: 3 = the main point of the post or video, or echoed by many highly upvoted comments; 2 = clearly argued or well upvoted; 1 = a passing remark.",
+    "- When commenters disagree with the post, record both sides as separate claims. Skip jokes, sarcasm you can't read and claims about other games.",
+    "",
+    known.length ? `Known topics:
+${known.map((k) => `${k.topic} (${k.category})`).join("\n")}` : "Known topics: none yet."
+  ].join("\n");
+}
+function cleanReading(raw) {
+  const o = raw && typeof raw === "object" ? raw : {};
+  const claims = [];
+  for (const c of Array.isArray(o.claims) ? o.claims.slice(0, 15) : []) {
+    const x = c && typeof c === "object" ? c : {};
+    const topic = squash(x.topic, 80), statement = squash(x.statement, 300), key = topicKey(topic);
+    const category = KB_CATEGORIES.includes(x.category) ? x.category : "other";
+    const stance = x.stance === "for" ? 1 : x.stance === "against" ? -1 : 0;
+    const strength = [1, 2, 3].includes(Number(x.strength)) ? Number(x.strength) : 1;
+    if (!key || statement.length < 3) continue;
+    claims.push({ topic, topic_key: key, category, statement, stance, strength });
+  }
+  return { relevant: o.relevant !== false && claims.length > 0, summary: squash(o.summary, 300), claims };
+}
+async function readSource(text4, known, env, fetchFn) {
+  const res = await callClaude(env, fetchFn, {
+    model: env("FUT_KB_MODEL") || DEFAULT_MODEL3,
+    max_tokens: 6e3,
+    output_config: { effort: "low", format: { type: "json_schema", schema: READ_SCHEMA } },
+    system: readerPrompt(known),
+    messages: [{ role: "user", content: [{ type: "text", text: `<source>
+${text4.slice(0, MAX_BODY + 2e3)}
+</source>` }] }]
+  });
+  const out = await res.json().catch(() => null);
+  if (!res.ok) throw new FutError(res.status === 429 || res.status >= 500 ? "The reader is busy. Try again in a minute." : `The reader couldn't read that source (${out?.error?.message ?? res.status}).`, 502);
+  if (out?.stop_reason === "refusal") return { relevant: false, summary: "The reader declined this source.", claims: [] };
+  const body2 = (out?.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
+  try {
+    return cleanReading(JSON.parse(body2));
+  } catch {
+    throw new FutError("The reader returned something unreadable.", 502);
+  }
+}
+async function saveReading(db2, id3, reading) {
+  return await rpcData(db2, "kb_save_reading", {
+    p_source: id3,
+    p_status: reading.relevant ? "read" : "skipped",
+    p_note: reading.summary || null,
+    p_claims: reading.claims.map(({ topic, topic_key, category, statement, stance, strength }) => ({ topic, topic_key, category, statement, stance, strength }))
+  }) ?? 0;
+}
+async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new Date()) {
+  const feeds = {};
+  const collect = async (name2, on, run) => {
+    if (!on) {
+      feeds[name2] = { status: "off" };
+      return;
+    }
+    try {
+      const found = await run();
+      const stored = found.length ? await rpcData(db2, "kb_collect", { p_sources: found }) : 0;
+      feeds[name2] = { status: "ok", collected: stored };
+    } catch (e) {
+      console.error(`[fut-api] knowledge ${name2}:`, e);
+      feeds[name2] = { status: "failed", error: squash(e.message, 200) };
+    }
+  };
+  await collect("reddit", redditFeedOn(env), () => collectReddit(env, fetchFn));
+  const youtubeHours = (env("FUT_KB_YOUTUBE_HOURS") ?? "1,7,13,19").split(",").map(Number);
+  if (youtubeFeedOn(env) && !youtubeHours.includes(now2.getUTCHours())) feeds.youtube = { status: "later" };
+  else await collect("youtube", youtubeFeedOn(env), () => collectYouTube(env, fetchFn, now2.getTime()));
+  const result = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0 };
+  const hasKey = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
+  if (hasKey) {
+    const pending = await rpcData(db2, "kb_pending", { p_limit: Number(env("FUT_KB_READ_PER_RUN")) || 25 });
+    const known = pending.length ? await rpcData(db2, "kb_known_topics", { p_limit: 150 }) : [];
+    for (const s of pending) {
+      try {
+        const reading = await readSource(s.body, known, env, fetchFn);
+        const n = await saveReading(db2, s.id, reading);
+        if (n > 0) {
+          result.read++;
+          result.claims += n;
+        } else result.skipped++;
+        for (const c of reading.claims) if (!known.some((k) => k.topic === c.topic)) known.push({ topic: c.topic, category: c.category });
+      } catch (e) {
+        result.failed++;
+        await rpcData(db2, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash(e.message, 200), p_claims: null });
+        if (e instanceof FutError && e.status === 502 && /busy/.test(e.message)) break;
+      }
+    }
+  }
+  result.cleaned = await rpcData(db2, "kb_cleanup", {}) ?? 0;
+  const status = await rpcData(db2, "kb_status", {});
+  result.waiting = status?.waiting ?? 0;
+  return result;
+}
+async function addSource(db2, userId, input, env, fetchFn) {
+  const url = typeof input.url === "string" ? input.url.trim() : "";
+  const text4 = typeof input.text === "string" ? keep(input.text, MAX_ADD_TEXT) : "";
+  if (url && (!/^https:\/\/\S+$/.test(url) || url.length > 600)) throw new FutError("Links must start with https:// (up to 600 characters).");
+  if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) throw new FutError("Reading sources needs ANTHROPIC_API_KEY on the server.", 503);
+  const link = url ? parseSourceLink(url) : null;
+  let fetched = null;
+  if (link && !text4) {
+    fetched = await fetchLinked(link, env, fetchFn).catch((e) => {
+      console.error("[fut-api] knowledge link:", e);
+      return null;
+    });
+    if (!fetched) throw new FutError(`${link.kind === "reddit" ? "Reddit" : "YouTube"} links can't be fetched here yet. Paste the post or the video's transcript into the text box too.`, 422);
+  }
+  if (!fetched && text4.length < 40) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
+  const title = squash(input.title, 300) || fetched?.title || squash(text4.split("\n")[0], 120) || "Pasted source";
+  const share = input.share === true && (!!url || !!fetched);
+  const source = fetched ? { ...fetched, shared: true } : {
+    kind: url ? "web" : "note",
+    external_id: null,
+    url: url || null,
+    title,
+    author: null,
+    community: url ? new URL(url).hostname.replace(/^www\./, "") : null,
+    published_at: (/* @__PURE__ */ new Date()).toISOString(),
+    score: 0,
+    comments: 0,
+    body: text4,
+    excerpt: squash(text4, 280),
+    shared: share
+  };
+  const id3 = await rpcData(db2, "kb_add", { p_user: userId, p_source: source });
+  if (!id3) throw new FutError("That source couldn't be saved.", 500);
+  const known = await rpcData(db2, "kb_known_topics", { p_limit: 150 });
+  const body2 = fetched ? fetched.body : `${url ? `Page: ${url}
+` : "The user's own notes or a pasted source.\n"}Title: ${title}
+
+${text4}`;
+  const reading = await readSource(body2, known, env, fetchFn);
+  const claims = await saveReading(db2, id3, reading);
+  return { id: id3, claims, relevant: reading.relevant, summary: reading.summary, shared: fetched ? true : share, topics: [...new Set(reading.claims.map((c) => c.topic))] };
+}
+var ASK_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["answer", "used", "topics"],
+  properties: {
+    answer: { type: "string" },
+    used: { type: "array", items: { type: "integer" } },
+    topics: { type: "array", items: { type: "string" } }
+  }
+};
+async function ask(db2, userId, question, history, env, fetchFn, beforeAi) {
+  const q = squash(question, MAX_QUESTION);
+  if (!q) throw new FutError("Ask a question about FUT gameplay or strategy.");
+  const context = [...history.filter((t) => t.role === "user").slice(-2).map((t) => t.text), q].join(" ");
+  const found = await rpcData(db2, "kb_search", { p_user: userId, p_q: context, p_limit: 40, p_days: 120 });
+  const claims = found.length ? found : await rpcData(db2, "kb_search", { p_user: userId, p_q: q, p_limit: 40, p_days: 365 });
+  const sources = /* @__PURE__ */ new Map();
+  for (const c of claims) if (!sources.has(c.source.id)) sources.set(c.source.id, { n: sources.size + 1, ...c.source });
+  const cite = (c) => sources.get(c.source.id).n;
+  const fallback = () => {
+    const byTopic = /* @__PURE__ */ new Map();
+    for (const c of claims.slice(0, 12)) byTopic.set(c.topic, [...byTopic.get(c.topic) ?? [], c]);
+    const answer2 = claims.length ? [...byTopic].map(([t, cs]) => `**${t}**: ${cs.slice(0, 3).map((c) => `${c.statement} [${cite(c)}]`).join(" ")}`).join("\n\n") : "Nothing in the knowledge bank matches that yet.";
+    return { answer: answer2, via: "search", sources: [...sources.values()].filter((s) => claims.slice(0, 12).some((c) => c.source.id === s.id)), topics: [...byTopic.keys()], claims: claims.length };
+  };
+  if (!claims.length || !(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) return fallback();
+  beforeAi?.();
+  const notes = claims.map((c) => `[${cite(c)}] ${c.topic} (${c.category}; ${c.stance === 1 ? "for" : c.stance === -1 ? "against" : "mixed"}; ${c.said_at.slice(0, 10)}${c.source.score ? `; ${c.source.kind === "youtube" ? "views" : "upvotes"} ${c.source.score}` : ""}): ${c.statement}`).join("\n");
+  const res = await callClaude(env, fetchFn, {
+    model: env("FUT_KB_MODEL") || DEFAULT_MODEL3,
+    max_tokens: 4e3,
+    output_config: { effort: "low", format: { type: "json_schema", schema: ASK_SCHEMA } },
+    system: [
+      "You answer EA SPORTS FC 27 Ultimate Team gameplay and strategy questions using only the community claims you are given (from Reddit, YouTube and users' own notes). Return JSON only.",
+      "answer: a short, direct answer in plain language (under 180 words, Markdown allowed: short paragraphs or a few bullets). Say what most people recommend, where they disagree, and anything that changed recently. Put the claim's number in square brackets after each point, like [2]. If the claims don't answer the question, say so plainly and mention what the bank does cover. Never invent stats, tactics or players that aren't in the claims, and don't present opinions as facts.",
+      "used: the numbers you cited. topics: the topic names your answer is about, spelled as given."
+    ].join("\n"),
+    messages: [
+      ...history.slice(-4).map((t) => ({ role: t.role, content: t.text.slice(0, 1500) })),
+      { role: "user", content: `Claims:
+${notes}
+
+Question: ${q}` }
+    ]
+  });
+  const out = await res.json().catch(() => null);
+  if (!res.ok || out?.stop_reason === "refusal") return fallback();
+  let parsed;
+  try {
+    parsed = JSON.parse((out?.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join(""));
+  } catch {
+    return fallback();
+  }
+  const used = new Set(Array.isArray(parsed.used) ? parsed.used.map(Number) : []);
+  const answer = typeof parsed.answer === "string" ? parsed.answer.trim().slice(0, 3e3) : "";
+  if (!answer) return fallback();
+  for (const m of answer.matchAll(/\[(\d{1,3})\]/g)) used.add(Number(m[1]));
+  const topics = Array.isArray(parsed.topics) ? parsed.topics.filter((t) => typeof t === "string").slice(0, 8) : [];
+  return { answer, via: "ai", sources: [...sources.values()].filter((s) => used.has(s.n)), topics, claims: claims.length };
+}
+var knowledgeMap = (db2, userId, days, category) => rpcData(db2, "kb_map", { p_user: userId, p_days: days, p_category: category });
+var knowledgeTopic = (db2, userId, key, days) => rpcData(db2, "kb_topic", { p_user: userId, p_key: key, p_days: days });
+var knowledgeSources = (db2, userId, mine, limit, offset) => rpcData(db2, "kb_source_list", { p_user: userId, p_mine: mine, p_limit: limit, p_offset: offset });
+var deleteKnowledgeSource = (db2, userId, id3) => rpcData(db2, "kb_delete", { p_user: userId, p_id: id3 });
+async function knowledgeStatus(db2, env) {
+  const status = await rpcData(db2, "kb_status", {});
+  return {
+    ...status,
+    feeds: { reddit: redditFeedOn(env), reddit_mode: redditMode(env), youtube: youtubeFeedOn(env), reader: !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) },
+    paused: env("FUT_KNOWLEDGE") === "off",
+    categories: KB_CATEGORIES
+  };
+}
+
+// supabase/functions/_shared/fut/card-art.ts
+var MAX_ART_URLS = 400;
+var IMAGE = /\.(?:png|webp|jpe?g|svg|avif)$/i;
+function cleanArtUrl(raw) {
+  if (typeof raw !== "string" || raw.length > 400) return null;
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  const host = u.hostname;
+  const ea = host === "ea.com" || host.endsWith(".ea.com") || host.endsWith(".easports.com") || host.endsWith(".eamobile.com") || host.endsWith(".akamaized.net");
+  if (u.protocol !== "https:" || !ea || u.username || u.password || u.port || !IMAGE.test(u.pathname)) return null;
+  return `${u.origin}${u.pathname}`;
+}
+async function importCardArt(db2, body2) {
+  const b = body2 && typeof body2 === "object" ? body2 : null;
+  if (!b || b.format !== "xilab-image-addresses" || !Array.isArray(b.images)) throw new FutError("Send the helper's card art file (format xilab-image-addresses).");
+  const raw = b.images.slice(0, MAX_ART_URLS).map((x) => x && typeof x === "object" ? x.url : x);
+  const urls = [...new Set(raw.map(cleanArtUrl).filter((u) => !!u))];
+  if (!urls.length) return { received: b.images.length, kept: 0, new_addresses: 0 };
+  const { data, error } = await db2.rpc("record_card_art", { p_urls: urls });
+  if (error) throw new Error(error.message);
+  return { received: b.images.length, kept: urls.length, new_addresses: Number(data ?? 0) };
+}
+async function listCardArt(db2, limit = 300) {
+  const { data, error } = await db2.from("ea_card_art").select("url, first_seen_at, last_seen_at, sightings").order("last_seen_at", { ascending: false }).limit(limit);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
 // supabase/functions/_shared/fut/community.ts
 var fail6 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
@@ -8156,7 +8704,7 @@ var REUSE_GRACE_MS = 30 * 1e3;
 
 // supabase/functions/_shared/fut/helper-keys.ts
 var HELPER_KEY_PREFIX = "xlh_";
-var HELPER_ROUTES = /* @__PURE__ */ new Set(["/helper/prices", "/helper/club", "/helper/packs", "/helper/account"]);
+var HELPER_ROUTES = /* @__PURE__ */ new Set(["/helper/prices", "/helper/club", "/helper/packs", "/helper/account", "/helper/images"]);
 var fail7 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
@@ -9926,7 +10474,7 @@ var corsHeaders = {
 };
 var json = (body2, status = 200) => new Response(JSON.stringify(body2), { status, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" } });
 var err = (status, message) => json({ error: message }, status);
-var MAX_BODY = 64 * 1024;
+var MAX_BODY2 = 64 * 1024;
 var MAX_IMPORT_BODY = 1024 * 1024;
 var MAX_STORE_BODY = 2 * 1024 * 1024;
 var MAX_SQUAD_IMPORT_BODY = 6 * 1024 * 1024;
@@ -9934,6 +10482,10 @@ var AI_IMPORTS_PER_HOUR = 30;
 var aiImports = /* @__PURE__ */ new Map();
 var AI_FINDS_PER_HOUR = 60;
 var aiFinds = /* @__PURE__ */ new Map();
+var AI_ASKS_PER_HOUR = 60;
+var aiAsks = /* @__PURE__ */ new Map();
+var KB_ADDS_PER_HOUR = 20;
+var kbAdds = /* @__PURE__ */ new Map();
 function aiImportAllowed(userId, perHour, uses = aiImports) {
   const now2 = Date.now();
   const recent = (uses.get(userId) ?? []).filter((t) => now2 - t < 36e5);
@@ -9959,7 +10511,7 @@ function importImage(v) {
   return { media_type: o.media_type, data: o.data };
 }
 var MAX_CLUB_BODY = 4 * 1024 * 1024;
-async function body(req, max = MAX_BODY) {
+async function body(req, max = MAX_BODY2) {
   const raw = await req.text();
   if (raw.length > max) throw new FutError("Request body is too large.");
   if (!raw.trim()) return {};
@@ -10023,8 +10575,33 @@ async function handle(req, deps) {
   if (req.method === "POST" && /\/fut-api\/?$/.test(new URL(req.url).pathname)) {
     if (!await deps.isBot?.(req)) return err(401, "Only the bot's scheduler can run jobs.");
     const job = (await req.json().catch(() => null))?.job;
-    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest") return err(400, "Unknown job.");
     try {
+      if (job === "knowledge-ingest") {
+        const env = deps.env ?? ((k) => Deno.env.get(k));
+        if (env("FUT_KNOWLEDGE") === "off") return json({ data: { paused: true } });
+        const fetchFn = deps.fetch ?? fetch;
+        const started = (/* @__PURE__ */ new Date()).toISOString();
+        let result = null, failure = null;
+        try {
+          result = await runKnowledgeIngest(deps.db, env, fetchFn);
+        } catch (e) {
+          failure = e.message?.slice(0, 500) ?? "failed";
+          throw e;
+        } finally {
+          const r2 = result;
+          await deps.db.from("kb_runs").insert({
+            started_at: started,
+            finished_at: (/* @__PURE__ */ new Date()).toISOString(),
+            feeds: r2?.feeds ?? {},
+            read: r2?.read ?? 0,
+            skipped: r2?.skipped ?? 0,
+            failed: r2?.failed ?? 0,
+            error: failure
+          });
+        }
+        return json({ data: result });
+      }
       if (job === "futgg-attributes") return json({ data: await syncFutggAttributes(deps.db, deps.fetch) });
       if (job === "futgg-catalogue") {
         const result = await syncFutggCatalogue(deps.db, deps.fetch);
@@ -10056,9 +10633,9 @@ async function handle(req, deps) {
   if (!path.startsWith("/v1")) return err(404, "This API is /fut-api/v1.");
   const route = path.slice(3) || "/";
   const m = req.method;
-  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices, your club, the pack store and your account.");
+  if (viaHelper && !(HELPER_ROUTES.has(route) && m === "POST")) return err(403, "A helper key can only upload prices, your club, the pack store, your account and card art addresses.");
   const db2 = deps.db;
-  if (m !== "GET" && !route.startsWith("/players/")) forgetMarketOwner(db2, userId);
+  if (m !== "GET" && !route.startsWith("/players/") && !route.startsWith("/knowledge/")) forgetMarketOwner(db2, userId);
   try {
     if (route === "/health" && m === "GET") {
       const images = await cardImages(deps.env ?? ((k) => Deno.env.get(k)), deps.fetch ?? ((u) => fetch(u, { signal: AbortSignal.timeout(1e4) })));
@@ -10100,6 +10677,8 @@ async function handle(req, deps) {
     if (route === "/helper/packs" && m === "POST") return json({ data: await importStore(db2, userId, await body(req, MAX_STORE_BODY)) });
     if (route === "/packs" && m === "GET") return json({ data: await packAdvice(db2, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/packs" && m === "DELETE") return json({ data: await clearStore(db2, userId, platformParam(url.searchParams.get("platform"))) });
+    if (route === "/helper/images" && m === "POST") return json({ data: await importCardArt(db2, await body(req, MAX_STORE_BODY)) });
+    if (route === "/card-art" && m === "GET") return json({ data: await listCardArt(db2) });
     if (route === "/helper/account" && m === "POST") return json({ data: await importAccount(db2, userId, await body(req, MAX_STORE_BODY)) });
     if (route === "/account" && m === "GET") return json({ data: await accountOverview(db2, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/account" && m === "DELETE") return json({ data: await clearAccount(db2, userId, platformParam(url.searchParams.get("platform"))) });
@@ -10251,6 +10830,50 @@ async function handle(req, deps) {
           if (!aiImportAllowed(userId, perHour, aiFinds)) throw new FutError("That's a lot of player searches this hour. Try again later, or use the filters.", 429);
         }
       }) });
+    }
+    if (route.startsWith("/knowledge/")) {
+      const env = deps.env ?? ((k) => Deno.env.get(k));
+      const fetchFn = deps.fetch ?? fetch;
+      const p = url.searchParams;
+      const days = intParam(p.get("days"), "days", 1, 365);
+      if (route === "/knowledge/status" && m === "GET") return json({ data: await knowledgeStatus(db2, env) });
+      if (route === "/knowledge/map" && m === "GET") {
+        const category = p.get("category") || null;
+        if (category && !KB_CATEGORIES.includes(category)) throw new FutError(`category must be one of ${KB_CATEGORIES.join(", ")}.`);
+        return json({ data: await knowledgeMap(db2, userId, days ?? 30, category) });
+      }
+      const tp = route.match(/^\/knowledge\/topics\/([a-z0-9-]{1,80})$/);
+      if (tp && m === "GET") {
+        const topic = await knowledgeTopic(db2, userId, tp[1], days ?? 90);
+        return topic ? json({ data: topic }) : err(404, "Nobody has talked about that topic in this period.");
+      }
+      if (route === "/knowledge/sources" && m === "GET") {
+        return json({ data: await knowledgeSources(db2, userId, p.get("mine") === "true", intParam(p.get("limit"), "limit", 1, 100) ?? 30, intParam(p.get("offset"), "offset", 0, 1e5) ?? 0) });
+      }
+      if (route === "/knowledge/sources" && m === "POST") {
+        const b = obj2(await body(req, MAX_ADD_TEXT * 4 + 8192));
+        for (const k of ["url", "text", "title"]) if (b[k] !== void 0 && b[k] !== null && typeof b[k] !== "string") throw new FutError(`${k} must be text.`);
+        if (typeof b.text === "string" && b.text.length > MAX_ADD_TEXT) throw new FutError(`Paste up to ${MAX_ADD_TEXT.toLocaleString("en")} characters.`);
+        if (!b.url?.trim() && !b.text?.trim()) throw new FutError("Add a link or paste some text.");
+        if (!aiImportAllowed(userId, Number(env("FUT_KB_ADDS_PER_HOUR")) || KB_ADDS_PER_HOUR, kbAdds)) throw new FutError("That's a lot of sources this hour. Try again later.", 429);
+        return json({ data: await addSource(db2, userId, { url: b.url, text: b.text, title: b.title, share: b.share === true }, env, fetchFn) }, 201);
+      }
+      const sd = route.match(/^\/knowledge\/sources\/([0-9a-f-]{36})$/);
+      if (sd && m === "DELETE") return await deleteKnowledgeSource(db2, userId, sd[1]) ? json({ data: { deleted: sd[1] } }) : err(404, "You can only delete sources you added.");
+      if (route === "/knowledge/ask" && m === "POST") {
+        const b = obj2(await body(req));
+        if (typeof b.question !== "string" || !b.question.trim()) throw new FutError("Ask a question about FUT gameplay or strategy.");
+        if (b.question.length > MAX_QUESTION) throw new FutError(`Keep it under ${MAX_QUESTION} characters.`);
+        const history = (Array.isArray(b.history) ? b.history.slice(-6) : []).flatMap((t) => {
+          const o = t && typeof t === "object" ? t : {};
+          return (o.role === "user" || o.role === "assistant") && typeof o.text === "string" && o.text.trim() ? [{ role: o.role, text: o.text.slice(0, 1500) }] : [];
+        });
+        const perHour = Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
+        return json({ data: await ask(db2, userId, b.question, history, env, fetchFn, () => {
+          if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
+        }) });
+      }
+      return err(404, "No such knowledge bank route.");
     }
     if (route.startsWith("/market")) {
       const mk = await marketFor(db2);

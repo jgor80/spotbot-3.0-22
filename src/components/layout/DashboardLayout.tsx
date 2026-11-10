@@ -31,6 +31,7 @@ import {
   Package,
   Wallet,
   Shield,
+  BookOpenText,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -92,6 +93,7 @@ const futMore: NavItem[] = [
   { path: "/fut/strategy", label: "Daily Strategy", icon: Target },
   { path: "/fut/account", label: "My Account", icon: Wallet },
   { path: "/fut/packs", label: "Packs", icon: Package },
+  { path: "/fut/knowledge", label: "Knowledge Bank", icon: BookOpenText },
 ];
 
 const SECTION_HOME: Record<AppSection, string> = { club: "/", fut: "/fut/market/cards" };

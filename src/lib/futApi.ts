@@ -44,6 +44,7 @@ export interface FutSquad {
 export interface RuleInfo { rule_version?: string; rule_status?: string; evidence?: string }
 /** EA player faces and base card backgrounds: only when the server's FUT_EA_IMAGES switch is on. They load straight from EA. */
 export interface CardImages { faces: boolean; portrait_base: string | null; background_base?: string | null; credit: string | null }
+export interface CardArtSeen { url: string; first_seen_at: string; last_seen_at: string; sightings: number }
 export interface FutHealth extends RuleInfo { ok?: boolean; api?: string; card_images?: CardImages }
 export type LinkType = "club" | "league" | "nation";
 export interface LinkBreakdown { key: string | null; count: number; points: number; next_threshold: number | null; needed_for_next: number | null }
@@ -103,7 +104,7 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
   if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
   return (data ?? null) as T;
 }
-export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, packs: ["fut", "packs"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
+export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
 export type MarketPlatform = "console" | "pc";
 
@@ -217,6 +218,21 @@ export interface FinderTurn { role: "user" | "assistant"; text: string }
 export interface FinderResult { reply: string; query: PlayerQuery; summary: string[]; via: "ai" | "words"; relaxed: string | null; result: PlayerSearch }
 const marketPath = (path: string, platform: MarketPlatform, filters: Record<string, string> = {}) => `/market${path}?${new URLSearchParams({ ...filters, platform })}`;
 
+// Knowledge bank: what the FUT community says about gameplay and strategy
+export const KB_CATEGORIES = ["formations", "tactics", "players", "playstyles", "attacking", "defending", "skills", "settings", "modes", "market", "other"] as const;
+export type KbCategory = typeof KB_CATEGORIES[number];
+export type KbAgreement = "agreed" | "leaning" | "split" | "early";
+export interface KbTopic { key: string; topic: string; category: KbCategory; claims: number; sources: number; for: number; against: number; mixed: number; buzz: number; net: number | null; agreement: KbAgreement; trend: number | null; last_said: string; has_mine: boolean }
+export interface KbMap { days: number; category: string | null; claims: number; sources: number; topics: KbTopic[] }
+export interface KbSourceRef { id: string; kind: "reddit" | "youtube" | "web" | "note"; url: string | null; title: string | null; community: string | null; score: number; published_at: string; mine: boolean }
+export interface KbStatement { id: number; statement: string; stance: -1 | 0 | 1; strength: number; said_at: string; weight: number; source: KbSourceRef }
+export interface KbTopicDetail extends Omit<KbTopic, "buzz" | "trend" | "last_said" | "has_mine"> { days: number; weeks: { week: string; for: number; against: number; mixed: number }[]; statements: KbStatement[] }
+export interface KbSource extends KbSourceRef { author: string | null; excerpt: string | null; collected_at: string; comments: number; status: "pending" | "read" | "skipped" | "failed"; note: string | null; shared: boolean; claims: number }
+export interface KbRun { started_at: string; finished_at: string | null; feeds: Record<string, { status: string; collected?: number; error?: string }>; read: number; skipped: number; failed: number; error: string | null }
+export interface KbStatus { sources: number; claims: number; topics: number; waiting: number; last_run: KbRun | null; last_success: string | null; feeds: { reddit: boolean; reddit_mode?: "api" | "rss" | "off"; youtube: boolean; reader: boolean }; paused: boolean }
+export interface KbAddResult { id: string; claims: number; relevant: boolean; summary: string; shared: boolean; topics: string[] }
+export interface KbAnswer { answer: string; via: "ai" | "search"; sources: (KbSourceRef & { n: number })[]; topics: string[]; claims: number }
+
 export const futApi = {
   market: {
     overview: (platform: MarketPlatform) => futRequest<MarketOverview>(marketPath("/overview", platform)),
@@ -245,10 +261,21 @@ export const futApi = {
     relink: (platform: MarketPlatform) => futRequest<{ linked: number; still_held: number }>(marketPath("/held/relink", platform), "POST", {}),
     sources: (platform: MarketPlatform) => futRequest<MarketSource[]>(marketPath("/sources", platform)),
   },
+  knowledge: {
+    status: () => futRequest<KbStatus>("/knowledge/status"),
+    map: (days: number, category: KbCategory | null) => futRequest<KbMap>(`/knowledge/map?${new URLSearchParams({ days: String(days), ...(category ? { category } : {}) })}`),
+    topic: (key: string, days: number) => futRequest<KbTopicDetail>(`/knowledge/topics/${encodeURIComponent(key)}?${new URLSearchParams({ days: String(days) })}`),
+    sources: (mine: boolean, page = 0, limit = 30) => futRequest<{ total: number; sources: KbSource[] }>(`/knowledge/sources?${new URLSearchParams({ mine: String(mine), limit: String(limit), offset: String(page * limit) })}`),
+    add: (input: { url?: string; text?: string; title?: string; share: boolean }) => futRequest<KbAddResult>("/knowledge/sources", "POST", input),
+    remove: (id: string) => futRequest<{ deleted: string }>(`/knowledge/sources/${encodeURIComponent(id)}`, "DELETE"),
+    ask: (question: string, history: FinderTurn[]) => futRequest<KbAnswer>("/knowledge/ask", "POST", { question, history }),
+  },
   players: {
     search: (query: PlayerQuery, platform: MarketPlatform, page = 0, limit = 50) => futRequest<PlayerSearch>("/players/search", "POST", { query, platform, limit, offset: page * limit }),
     find: (message: string, previous: PlayerQuery | null, history: FinderTurn[], platform: MarketPlatform) => futRequest<FinderResult>("/players/find", "POST", { message, previous, history, platform }),
   },
+  /** Card art addresses the helper saw the Web App load (shared EA file addresses, newest first). */
+  cardArt: () => futRequest<CardArtSeen[]>("/card-art"),
   account: {
     get: (platform: MarketPlatform) => futRequest<AccountOverview>(`/account?${new URLSearchParams({ platform })}`),
     clear: (platform: MarketPlatform) => futRequest<{ cleared: boolean }>(`/account?${new URLSearchParams({ platform })}`, "DELETE"),

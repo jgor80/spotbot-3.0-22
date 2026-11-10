@@ -8,6 +8,7 @@ import {
   compareCards, futDb, FutError, getCard, latestSquadId, logRun, runWorkspace, searchMyCards, toWorkspaceCard, workspaceFor, type FutDb,
 } from "../_shared/fut/service.ts";
 import { marketCardId, marketFor, platformParam } from "../_shared/fut/market.ts";
+import { KB_CATEGORIES, knowledgeMap, knowledgeTopic } from "../_shared/fut/knowledge.ts";
 import { scanRequestSchema, thesisInputSchema } from "../_shared/fut/xilab/market/index.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
@@ -346,6 +347,62 @@ FUT_TOOLS.push(
     run: (_args, ctx) => run(async () => {
       const { db } = await account(ctx);
       return { sources: (await marketFor(db)).getDataSourceStatus() };
+    }),
+  },
+);
+
+// Knowledge bank: what the FUT community says about gameplay and strategy (Reddit, YouTube, the player's own notes).
+// The AI app answers from the claims itself, so these never call Claude on the server.
+const KB_NOTE = "These are community opinions read from Reddit posts, YouTube videos and the player's own notes, not facts: say how many sources back a view, where people disagree, and link the sources.";
+FUT_TOOLS.push(
+  {
+    name: "search_fut_knowledge",
+    title: "Search the FUT knowledge bank",
+    description: "EA FC Ultimate Team gameplay and strategy: claims the community makes about formations, custom tactics, players, PlayStyles, attacking, defending, skill moves, settings and modes, each with its stance (for, against, mixed) and source link. Use it to answer questions like \"is 4-2-3-1 still meta?\" or \"best tactics for 4-4-2\". " + KB_NOTE,
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "What to look for, e.g. \"4-4-2 custom tactics\" or \"Explosive AcceleRATE\"." },
+        days: { type: "integer", description: "Only claims from the last N days (default 120)." },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const q = (str(args.query) ?? "").slice(0, 300);
+      if (!q) throw new FutError("query is required.");
+      const { data, error } = await db.rpc("kb_search", { p_user: userId, p_q: q, p_limit: 40, p_days: Math.min(Math.max(int(args.days) ?? 120, 1), 365) });
+      if (error) throw new Error(error.message);
+      return { claims: data, note: KB_NOTE };
+    }),
+  },
+  {
+    name: "get_fut_knowledge_map",
+    title: "Map of what the FUT community is saying",
+    description: "EA FC Ultimate Team: every topic the community talked about recently, with how many claims, net sentiment (-1 against to 1 for), agreement (agreed, leaning, split, early) and trend (-1 cooling to 1 rising). Give a topic key to get its weekly trend and the statements on each side with their sources. " + KB_NOTE,
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", description: "Look back this many days (default 30)." },
+        category: { type: "string", enum: [...KB_CATEGORIES], description: "Only one kind of topic." },
+        topic_key: { type: "string", description: "A topic's key from the map, for its detail." },
+      },
+      additionalProperties: false,
+    },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const days = Math.min(Math.max(int(args.days) ?? 30, 1), 365);
+      const key = str(args.topic_key);
+      if (key) {
+        if (!/^[a-z0-9-]{1,80}$/.test(key)) throw new FutError("topic_key must be a key from the map.");
+        const topic = await knowledgeTopic(db, userId, key, Math.max(days, 7));
+        if (!topic) throw new FutError("Nobody has talked about that topic in this period.");
+        return { topic, note: KB_NOTE };
+      }
+      const category = str(args.category);
+      if (category && !(KB_CATEGORIES as readonly string[]).includes(category)) throw new FutError(`category must be one of ${KB_CATEGORIES.join(", ")}.`);
+      return { map: await knowledgeMap(db, userId, days, category ?? null), note: KB_NOTE };
     }),
   },
 );
