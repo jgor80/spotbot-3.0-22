@@ -9,6 +9,7 @@
 // UNVERIFIED on FC 27: the answer addresses are verified, their field names are not. Each upload keeps the field
 // names it saw (`shape`) and the page shows them so the first real capture can confirm them.
 import { FutDbError, FutError, type FutDb } from "./service.ts";
+import { recordTrades } from "./trades.ts";
 
 type Row = Record<string, unknown>;
 const fail = (error: { message?: string } | null) => {
@@ -221,7 +222,14 @@ export async function importAccount(db: FutDb, userId: string, raw: unknown, now
   }
   fail((await db.from("account_state").upsert(row, { onConflict: "user_id,platform" })).error);
   if (updated.includes("balance")) await recordBalance(db, userId, u.platform, u.sections.balance!.data as Balance, u.sections.balance!.seen_at, now);
-  return { updated, platform: u.platform, verified: false as const };
+  // Trade log: won Transfer Targets are buys, sold transfer-list items are sales (only from piles that just updated).
+  let trades = 0;
+  if (updated.includes("tradepile") || updated.includes("watchlist")) {
+    const tp = updated.includes("tradepile") ? u.sections.tradepile! : null, wl = updated.includes("watchlist") ? u.sections.watchlist! : null;
+    const seen = [tp?.seen_at, wl?.seen_at].filter((x): x is string => !!x).sort().pop()!;
+    trades = await recordTrades(db, userId, u.platform, seen, (tp?.data as TradeItem[] | undefined) ?? null, (wl?.data as TradeItem[] | undefined) ?? null);
+  }
+  return { updated, trades, platform: u.platform, verified: false as const };
 }
 
 async function recordBalance(db: FutDb, userId: string, platform: string, b: Balance, at: string, now: number) {

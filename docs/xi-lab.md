@@ -67,6 +67,8 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | `GET /knowledge/status` | Bank totals, the last collection run, and which feeds have keys |
 | `GET /evolutions?platform=` | Evolutions finder: live evolutions the helper saw (ended ones dropped), each with its rules and level upgrades in plain lines, the user's club cards that can enter (eligible, or "maybe" when a rule needs data the card lacks), each card after every level, the overall gain in the latest saved squad, and the best evolution per card |
 | `POST /evolutions/check` | `{ name, requirements, upgrades }`: one pasted evolution (text, "Level N" lines split levels) matched the same way |
+| `GET /trades?platform=` | Trade log: buys (won Transfer Targets) and sales (sold transfer-list items) the helper saw, matched by EA item id: after-tax profit totals, week/month, win rate, tax paid, best/worst, cumulative profit by day, flips, cards still held (valued at FUT.GG after tax), sales with no buy price |
+| `POST /trades/buy-price` | `{ platform, item_id, price }`: the user's own buy price for a sale the helper saw without a buy (`price: null` clears it) |
 | `GET/POST /alerts/settings` | Price alerts: `{ dm, move_pct }` (DMs on/off; also alert on moves of at least move_pct% between refreshes) |
 | `POST /` `{ job: "price-alerts" }` | Bot only, after each FUT.GG refresh: watchlist targets reached and big moves since the last refresh (`fut.price_alert_candidates`), each target firing once until the price moves back 2% past it; returns one DM text per website account. The bot maps accounts to verified Discord links and DMs them (`PRICE_ALERTS=off` pauses) |
 
@@ -119,6 +121,11 @@ no `squad_id` they use the squad the player edited last.
   FC 27 names are UNVERIFIED, mapped where known (`fromEa`) and listed as unread otherwise. Club cards borrow face stats
   and PlayStyles from the catalogue copy of the same EA item. New overall = card overall plus the +OVR upgrades (an
   estimate, not EA's rating formula). Never starts or pays for an evolution.
+- **Trade log (since 2026-11-10).** `_shared/fut/trades.ts`. Each account upload with a newer transfer list or
+  Transfer Targets updates `fut.trade_log` (one row per EA item id): a `won` target's final bid is the buy, a `sold`
+  item's final bid is the sale, a `listed` item keeps its asking price. The first sighting wins, except a buy price the
+  user types. Buys straight from a search to the club, or made before the helper, aren't seen. Profit is after EA's 5%
+  tax. Nothing here buys, sells or lists.
 - **Card pictures (since 2026-11-09).** Cards are drawn by GafferBot itself (`src/components/fut/FutCardArt.tsx`):
   rating, position, name and face stats, coloured by card type. FUT.GG's card renders are never used (its terms ban
   reusing its content). EA images are off unless `FUT_EA_IMAGES=on` (`FUT_EA_FACES=on` also works; Jeff's call,

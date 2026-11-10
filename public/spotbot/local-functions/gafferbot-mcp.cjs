@@ -11513,6 +11513,78 @@ async function checkPastedEvolution(db, userId, b) {
   return { club_cards: cards.length, squad: squad.name, evolution: present(evo, cards, squad.slots), verified: false };
 }
 
+// supabase/functions/_shared/fut/trades.ts
+var EA_TAX3 = 0.05;
+var afterTax = (v) => Math.floor(v * (1 - EA_TAX3));
+var MAX_TRADES = 5e3;
+function tradeSummary(rows, names, now2 = Date.now()) {
+  const nameOf = (r2) => names.get(r2.ea_item_id)?.name ?? `Item ${r2.ea_item_id}`;
+  const flips = rows.filter((r2) => r2.bought_for !== null && r2.sold_for !== null && r2.sold_at).map((r2) => {
+    const at = afterTax(r2.sold_for), profit = at - r2.bought_for;
+    return {
+      item_id: r2.item_id,
+      ea_item_id: r2.ea_item_id,
+      name: nameOf(r2),
+      rating: r2.rating,
+      bought_for: r2.bought_for,
+      sold_for: r2.sold_for,
+      after_tax: at,
+      profit,
+      bought_at: r2.bought_at,
+      sold_at: r2.sold_at,
+      held_hours: r2.bought_at ? Math.max(0, Math.round((Date.parse(r2.sold_at) - Date.parse(r2.bought_at)) / 36e5)) : null,
+      roi: r2.bought_for > 0 ? Math.round(profit / r2.bought_for * 1e3) / 10 : 0
+    };
+  }).sort((a, b) => b.sold_at.localeCompare(a.sold_at));
+  const since = (days) => flips.filter((f2) => now2 - Date.parse(f2.sold_at) <= days * 864e5);
+  const sum = (l) => l.reduce((n, f2) => n + f2.profit, 0);
+  const byDay = /* @__PURE__ */ new Map();
+  for (const f2 of [...flips].reverse()) byDay.set(f2.sold_at.slice(0, 10), (byDay.get(f2.sold_at.slice(0, 10)) ?? 0) + f2.profit);
+  let running = 0;
+  const history = [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, p]) => ({ t: `${day}T12:00:00Z`, value: running += p }));
+  const open = rows.filter((r2) => r2.bought_for !== null && r2.sold_for === null).map((r2) => {
+    const price = names.get(r2.ea_item_id)?.price ?? null;
+    return { item_id: r2.item_id, ea_item_id: r2.ea_item_id, name: nameOf(r2), rating: r2.rating, bought_for: r2.bought_for, bought_at: r2.bought_at, listed_for: r2.listed_for, price, unrealised: price === null ? null : afterTax(price) - r2.bought_for };
+  }).sort((a, b) => (a.bought_at ?? "").localeCompare(b.bought_at ?? ""));
+  const unknownBuy = rows.filter((r2) => r2.bought_for === null && r2.sold_for !== null).map((r2) => ({ item_id: r2.item_id, ea_item_id: r2.ea_item_id, name: nameOf(r2), rating: r2.rating, sold_for: r2.sold_for, after_tax: afterTax(r2.sold_for), sold_at: r2.sold_at }));
+  const wins = flips.filter((f2) => f2.profit > 0).length;
+  return {
+    totals: {
+      flips: flips.length,
+      profit: sum(flips),
+      week: sum(since(7)),
+      month: sum(since(30)),
+      win_rate: flips.length ? Math.round(wins / flips.length * 100) : null,
+      tax_paid: flips.reduce((n, f2) => n + (f2.sold_for - f2.after_tax), 0),
+      open: open.length,
+      open_cost: open.reduce((n, o) => n + o.bought_for, 0),
+      unrealised: open.some((o) => o.unrealised !== null) ? open.reduce((n, o) => n + (o.unrealised ?? 0), 0) : null,
+      sales_without_buy: unknownBuy.length,
+      sales_without_buy_after_tax: unknownBuy.reduce((n, s) => n + s.after_tax, 0)
+    },
+    best: [...flips].sort((a, b) => b.profit - a.profit).slice(0, 5),
+    worst: [...flips].sort((a, b) => a.profit - b.profit).filter((f2) => f2.profit < 0).slice(0, 5),
+    history,
+    flips: flips.slice(0, 200),
+    open,
+    sales_without_buy: unknownBuy.slice(0, 100)
+  };
+}
+async function tradeOverview(db, userId, platform, now2 = Date.now()) {
+  const { data, error } = await db.from("trade_log").select("*").eq("user_id", userId).eq("platform", platform).order("item_id", { ascending: false }).limit(MAX_TRADES);
+  fail(error);
+  const rows = data ?? [];
+  const ids = [...new Set(rows.map((r2) => Number(r2.ea_item_id)))].slice(0, 2e3);
+  let names = /* @__PURE__ */ new Map(), prices_at = null;
+  if (ids.length) {
+    const { data: p, error: e } = await db.rpc("account_item_prices", { p_platform: platform, p_ids: ids });
+    if (e) throw new FutError(`Card prices are unavailable: ${e.message}`, 500);
+    prices_at = p?.published_at ?? null;
+    names = new Map((p?.items ?? []).map((i) => [Number(i.ea_item_id), { name: i.player_name ?? null, price: i.price ?? null }]));
+  }
+  return { platform, prices_at, ...tradeSummary(rows, names, now2), note: "Recorded from what the XI Lab helper saw on your transfer list and Transfer Targets: wins are buys, sold items are sales, matched by EA's item id. Buys made before the helper or straight to your club from a search won't show; add their price by hand.", verified: false };
+}
+
 // supabase/functions/gafferbot-mcp/fut.ts
 var SIGN_IN = "XI Lab uses your GafferBot website account. Sign in once at https://gafferbot.app/fut with Discord, then ask again.";
 async function account(ctx) {
@@ -11905,6 +11977,17 @@ FUT_TOOLS.push(
       const b = args;
       if (str5(b.requirements) || str5(b.upgrades)) return await runWorkspace(() => checkPastedEvolution(db, userId, b));
       return await runWorkspace(() => evolutionsOverview(db, userId, platformParam(b.platform)));
+    })
+  },
+  {
+    name: "get_my_fut_trades",
+    title: "My trading profit (XI Lab trade log)",
+    description: "EA FC Ultimate Team: the player's buys and sales as the XI Lab helper saw them on their transfer list and Transfer Targets (won items are buys, sold items are sales, matched by EA's item id): after-tax profit in total, this week and this month, win rate, tax paid, best and worst flips, recent flips, cards still held valued at FUT.GG's price after tax, and sales with no buy price on record. Buys straight from a search to the club aren't seen. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const t = await tradeOverview(db, userId, platformParam(args.platform));
+      return { ...t, flips: t.flips.slice(0, 30), open: t.open.slice(0, 30), sales_without_buy: t.sales_without_buy.slice(0, 20) };
     })
   }
 );

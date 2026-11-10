@@ -6373,12 +6373,141 @@ async function pullSummary(db2, platform, pulls, packs) {
   };
 }
 
+// supabase/functions/_shared/fut/trades.ts
+var EA_TAX2 = 0.05;
+var afterTax = (v) => Math.floor(v * (1 - EA_TAX2));
+var MAX_TRADES = 5e3;
+function tradeUpdates(have, u) {
+  const out = /* @__PURE__ */ new Map();
+  const get = (i) => out.get(i.item_id) ?? { ...have.get(i.item_id) ?? {
+    user_id: u.user_id,
+    platform: u.platform,
+    item_id: i.item_id,
+    ea_item_id: i.ea_item_id,
+    rating: i.rating,
+    bought_for: null,
+    bought_at: null,
+    bought_source: null,
+    listed_for: null,
+    listed_at: null,
+    sold_for: null,
+    sold_at: null
+  } };
+  for (const i of u.watchlist ?? []) {
+    if (i.state !== "won" || !i.current_bid) continue;
+    const t = get(i);
+    if (t.bought_for !== null) continue;
+    out.set(i.item_id, { ...t, bought_for: i.current_bid, bought_at: u.seen_at, bought_source: "watchlist" });
+  }
+  for (const i of u.tradepile ?? []) {
+    const t = get(i);
+    if (i.state === "sold" && t.sold_for === null) {
+      const price = i.current_bid ?? i.buy_now;
+      if (price) out.set(i.item_id, { ...t, sold_for: price, sold_at: u.seen_at });
+    } else if (i.state === "listed" && i.buy_now && t.sold_for === null && t.listed_for !== i.buy_now) {
+      out.set(i.item_id, { ...t, listed_for: i.buy_now, listed_at: u.seen_at });
+    }
+  }
+  return [...out.values()];
+}
+async function recordTrades(db2, userId, platform, seen_at, tradepile, watchlist) {
+  const ids = [...new Set([...tradepile ?? [], ...watchlist ?? []].map((i) => i.item_id))];
+  if (!ids.length) return 0;
+  const have = /* @__PURE__ */ new Map();
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await db2.from("trade_log").select("*").eq("user_id", userId).eq("platform", platform).in("item_id", ids.slice(i, i + 200));
+    fail(error);
+    for (const r2 of data ?? []) have.set(Number(r2.item_id), r2);
+  }
+  const rows = tradeUpdates(have, { user_id: userId, platform, seen_at, tradepile, watchlist });
+  for (let i = 0; i < rows.length; i += 200) fail((await db2.from("trade_log").upsert(rows.slice(i, i + 200), { onConflict: "user_id,platform,item_id" })).error);
+  return rows.length;
+}
+function tradeSummary(rows, names, now2 = Date.now()) {
+  const nameOf = (r2) => names.get(r2.ea_item_id)?.name ?? `Item ${r2.ea_item_id}`;
+  const flips = rows.filter((r2) => r2.bought_for !== null && r2.sold_for !== null && r2.sold_at).map((r2) => {
+    const at = afterTax(r2.sold_for), profit = at - r2.bought_for;
+    return {
+      item_id: r2.item_id,
+      ea_item_id: r2.ea_item_id,
+      name: nameOf(r2),
+      rating: r2.rating,
+      bought_for: r2.bought_for,
+      sold_for: r2.sold_for,
+      after_tax: at,
+      profit,
+      bought_at: r2.bought_at,
+      sold_at: r2.sold_at,
+      held_hours: r2.bought_at ? Math.max(0, Math.round((Date.parse(r2.sold_at) - Date.parse(r2.bought_at)) / 36e5)) : null,
+      roi: r2.bought_for > 0 ? Math.round(profit / r2.bought_for * 1e3) / 10 : 0
+    };
+  }).sort((a, b) => b.sold_at.localeCompare(a.sold_at));
+  const since = (days) => flips.filter((f2) => now2 - Date.parse(f2.sold_at) <= days * 864e5);
+  const sum = (l) => l.reduce((n, f2) => n + f2.profit, 0);
+  const byDay = /* @__PURE__ */ new Map();
+  for (const f2 of [...flips].reverse()) byDay.set(f2.sold_at.slice(0, 10), (byDay.get(f2.sold_at.slice(0, 10)) ?? 0) + f2.profit);
+  let running = 0;
+  const history = [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, p]) => ({ t: `${day}T12:00:00Z`, value: running += p }));
+  const open = rows.filter((r2) => r2.bought_for !== null && r2.sold_for === null).map((r2) => {
+    const price = names.get(r2.ea_item_id)?.price ?? null;
+    return { item_id: r2.item_id, ea_item_id: r2.ea_item_id, name: nameOf(r2), rating: r2.rating, bought_for: r2.bought_for, bought_at: r2.bought_at, listed_for: r2.listed_for, price, unrealised: price === null ? null : afterTax(price) - r2.bought_for };
+  }).sort((a, b) => (a.bought_at ?? "").localeCompare(b.bought_at ?? ""));
+  const unknownBuy = rows.filter((r2) => r2.bought_for === null && r2.sold_for !== null).map((r2) => ({ item_id: r2.item_id, ea_item_id: r2.ea_item_id, name: nameOf(r2), rating: r2.rating, sold_for: r2.sold_for, after_tax: afterTax(r2.sold_for), sold_at: r2.sold_at }));
+  const wins = flips.filter((f2) => f2.profit > 0).length;
+  return {
+    totals: {
+      flips: flips.length,
+      profit: sum(flips),
+      week: sum(since(7)),
+      month: sum(since(30)),
+      win_rate: flips.length ? Math.round(wins / flips.length * 100) : null,
+      tax_paid: flips.reduce((n, f2) => n + (f2.sold_for - f2.after_tax), 0),
+      open: open.length,
+      open_cost: open.reduce((n, o) => n + o.bought_for, 0),
+      unrealised: open.some((o) => o.unrealised !== null) ? open.reduce((n, o) => n + (o.unrealised ?? 0), 0) : null,
+      sales_without_buy: unknownBuy.length,
+      sales_without_buy_after_tax: unknownBuy.reduce((n, s) => n + s.after_tax, 0)
+    },
+    best: [...flips].sort((a, b) => b.profit - a.profit).slice(0, 5),
+    worst: [...flips].sort((a, b) => a.profit - b.profit).filter((f2) => f2.profit < 0).slice(0, 5),
+    history,
+    flips: flips.slice(0, 200),
+    open,
+    sales_without_buy: unknownBuy.slice(0, 100)
+  };
+}
+async function tradeOverview(db2, userId, platform, now2 = Date.now()) {
+  const { data, error } = await db2.from("trade_log").select("*").eq("user_id", userId).eq("platform", platform).order("item_id", { ascending: false }).limit(MAX_TRADES);
+  fail(error);
+  const rows = data ?? [];
+  const ids = [...new Set(rows.map((r2) => Number(r2.ea_item_id)))].slice(0, 2e3);
+  let names = /* @__PURE__ */ new Map(), prices_at = null;
+  if (ids.length) {
+    const { data: p, error: e } = await db2.rpc("account_item_prices", { p_platform: platform, p_ids: ids });
+    if (e) throw new FutError(`Card prices are unavailable: ${e.message}`, 500);
+    prices_at = p?.published_at ?? null;
+    names = new Map((p?.items ?? []).map((i) => [Number(i.ea_item_id), { name: i.player_name ?? null, price: i.price ?? null }]));
+  }
+  return { platform, prices_at, ...tradeSummary(rows, names, now2), note: "Recorded from what the XI Lab helper saw on your transfer list and Transfer Targets: wins are buys, sold items are sales, matched by EA's item id. Buys made before the helper or straight to your club from a search won't show; add their price by hand.", verified: false };
+}
+async function setBuyPrice(db2, userId, platform, itemId, price) {
+  const id3 = typeof itemId === "number" ? itemId : Number(itemId);
+  if (!Number.isSafeInteger(id3) || id3 <= 0) throw new FutError("item_id must be EA's item id.");
+  const p = price === null ? null : Number(price);
+  if (p !== null && (!Number.isInteger(p) || p < 0 || p > 15e6)) throw new FutError("price must be whole coins from 0 to 15,000,000, or null.");
+  const { data, error } = await db2.from("trade_log").select("item_id").eq("user_id", userId).eq("platform", platform).eq("item_id", id3).maybeSingle();
+  fail(error);
+  if (!data) throw new FutError("No trade with that item id.", 404);
+  fail((await db2.from("trade_log").update({ bought_for: p, bought_source: p === null ? null : "manual", bought_at: null }).eq("user_id", userId).eq("platform", platform).eq("item_id", id3)).error);
+  return { item_id: id3, bought_for: p };
+}
+
 // supabase/functions/_shared/fut/account.ts
 var fail5 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var SECTIONS = ["balance", "profile", "tradepile", "watchlist", "unassigned", "sbcs", "sbc_challenges", "evolutions", "objectives", "season"];
-var EA_TAX2 = 0.05;
+var EA_TAX3 = 0.05;
 var MAX_TRADE = 300;
 var MAX_UNASSIGNED = 500;
 var MAX_SBCS = 600;
@@ -6587,7 +6716,13 @@ async function importAccount(db2, userId, raw, now2 = Date.now()) {
   }
   fail5((await db2.from("account_state").upsert(row, { onConflict: "user_id,platform" })).error);
   if (updated.includes("balance")) await recordBalance(db2, userId, u.platform, u.sections.balance.data, u.sections.balance.seen_at, now2);
-  return { updated, platform: u.platform, verified: false };
+  let trades = 0;
+  if (updated.includes("tradepile") || updated.includes("watchlist")) {
+    const tp = updated.includes("tradepile") ? u.sections.tradepile : null, wl = updated.includes("watchlist") ? u.sections.watchlist : null;
+    const seen = [tp?.seen_at, wl?.seen_at].filter((x) => !!x).sort().pop();
+    trades = await recordTrades(db2, userId, u.platform, seen, tp?.data ?? null, wl?.data ?? null);
+  }
+  return { updated, trades, platform: u.platform, verified: false };
 }
 async function recordBalance(db2, userId, platform, b, at, now2) {
   const { data, error } = await db2.from("account_balance_history").select("at, coins, points, draft_tokens").eq("user_id", userId).eq("platform", platform).order("at", { ascending: false }).limit(1);
@@ -6602,7 +6737,7 @@ async function clearAccount(db2, userId, platform) {
   for (const t of ["account_state", "account_balance_history"]) fail5((await db2.from(t).delete().eq("user_id", userId).eq("platform", platform)).error);
   return { cleared: true };
 }
-var afterTax = (v) => Math.floor(v * (1 - EA_TAX2));
+var afterTax2 = (v) => Math.floor(v * (1 - EA_TAX3));
 function named(items, cards) {
   return items.map((i) => {
     const c3 = cards.get(i.ea_item_id);
@@ -6622,9 +6757,9 @@ function tradepileSummary(items, max) {
     expired: expired.length,
     unlisted: unlisted.length,
     sold_for: soldFor,
-    sold_after_tax: afterTax(soldFor),
+    sold_after_tax: afterTax2(soldFor),
     listed_buy_now: listed.reduce((n, i) => n + (i.buy_now ?? 0), 0),
-    listed_after_tax: afterTax(listed.reduce((n, i) => n + (i.buy_now ?? 0), 0)),
+    listed_after_tax: afterTax2(listed.reduce((n, i) => n + (i.buy_now ?? 0), 0)),
     idle_market_value: marketValue([...expired, ...unlisted]),
     overpriced: listed.filter((i) => i.price && i.buy_now && i.buy_now > i.price * 1.25).length
   };
@@ -7268,7 +7403,7 @@ async function dailyStrategy(db2, userId, platform, opts = {}) {
 }
 
 // supabase/functions/_shared/fut/sbc.ts
-var EA_TAX3 = 0.05;
+var EA_TAX4 = 0.05;
 var quality = (r2) => r2 >= 75 ? "gold" : r2 >= 65 ? "silver" : "bronze";
 var QUALITY_RANK = { bronze: 0, silver: 1, gold: 2 };
 function rarityOf(c3) {
@@ -7620,7 +7755,7 @@ function useCost(c3) {
   const p = c3.price ?? guess;
   if (c3.source === "buy") return p;
   if (c3.source === "spare") return Math.round(p * 0.05) + 1;
-  return c3.untradeable ? Math.round(p * 0.25) + 5 : Math.floor(p * (1 - EA_TAX3)) + 10;
+  return c3.untradeable ? Math.round(p * 0.25) + 5 : Math.floor(p * (1 - EA_TAX4)) + 10;
 }
 function rng(seed) {
   let s = seed >>> 0 || 1;
@@ -7757,7 +7892,7 @@ function solveSbc(formation, reqs, poolIn, rules, opts = {}) {
   const { checks, team_rating, chemistry } = checkSquad(formation, winner.slots, reqs, rules);
   const cards = winner.slots.map((s) => s.card).filter((c3) => !!c3);
   const buy_cost = cards.filter((c3) => c3.source === "buy").reduce((a, c3) => a + (c3.price ?? 0), 0);
-  const tradeable_value = cards.filter((c3) => c3.source === "owned" && !c3.untradeable).reduce((a, c3) => a + Math.floor((c3.price ?? 0) * (1 - EA_TAX3)), 0);
+  const tradeable_value = cards.filter((c3) => c3.source === "owned" && !c3.untradeable).reduce((a, c3) => a + Math.floor((c3.price ?? 0) * (1 - EA_TAX4)), 0);
   const feasible = checks.every((c3) => c3.ok);
   const notes = [];
   if (!feasible) notes.push(opts.buy === false ? "Your club can't complete this on its own. Allow buying cards to see what's missing." : "No squad found that meets every requirement from your club and the cheapest market cards. Check the requirements, or try again after the next price refresh.");
@@ -12371,6 +12506,11 @@ async function handle(req, deps) {
     if (route === "/helper/account" && m === "POST") return json({ data: await importAccount(db2, userId, await body(req, MAX_STORE_BODY)) });
     if (route === "/account" && m === "GET") return json({ data: await accountOverview(db2, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/account" && m === "DELETE") return json({ data: await clearAccount(db2, userId, platformParam(url.searchParams.get("platform"))) });
+    if (route === "/trades" && m === "GET") return json({ data: await tradeOverview(db2, userId, platformParam(url.searchParams.get("platform"))) });
+    if (route === "/trades/buy-price" && m === "POST") {
+      const b = obj2(await body(req));
+      return json({ data: await setBuyPrice(db2, userId, platformParam(typeof b.platform === "string" ? b.platform : null), b.item_id, b.price) });
+    }
     if (route === "/alerts/settings" && m === "GET") return json({ data: await getAlertSettings(db2, userId) });
     if (route === "/alerts/settings" && m === "POST") return json({ data: await setAlertSettings(db2, userId, obj2(await body(req))) });
     if (route === "/evolutions" && m === "GET") return json({ data: await runWorkspace(() => evolutionsOverview(db2, userId, platformParam(url.searchParams.get("platform")))) });

@@ -16,6 +16,7 @@ import { dailyStrategy, riskParam } from "../_shared/fut/strategy.ts";
 import { parseSolveBody, sbcOverview, solveForUser } from "../_shared/fut/sbc-data.ts";
 import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evolutions-data.ts";
 import { getAlertSettings, runPriceAlerts, setAlertSettings } from "../_shared/fut/alerts.ts";
+import { setBuyPrice, tradeOverview } from "../_shared/fut/trades.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { bestSquads, squadRoles, suggestForSlot } from "../_shared/fut/squad-suggest.ts";
@@ -293,6 +294,12 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (route === "/account" && m === "DELETE") return json({ data: await clearAccount(db, userId, platformParam(url.searchParams.get("platform"))) });
 
     // SBC Solver: the SBCs the helper saw, requirement text → requirements, and the cheapest squad from your club.
+    // Trade log: buys and sales the helper saw on the user's piles, after-tax profit per flip, and what's still held.
+    if (route === "/trades" && m === "GET") return json({ data: await tradeOverview(db, userId, platformParam(url.searchParams.get("platform"))) });
+    if (route === "/trades/buy-price" && m === "POST") {
+      const b = obj(await body(req));
+      return json({ data: await setBuyPrice(db, userId, platformParam(typeof b.platform === "string" ? b.platform : null), b.item_id, b.price) });
+    }
     // Price alerts: Discord DMs for watchlist targets and big moves (the bot sends them after each price refresh).
     if (route === "/alerts/settings" && m === "GET") return json({ data: await getAlertSettings(db, userId) });
     if (route === "/alerts/settings" && m === "POST") return json({ data: await setAlertSettings(db, userId, obj(await body(req))) });
