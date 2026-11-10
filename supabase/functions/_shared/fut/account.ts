@@ -15,7 +15,7 @@ const fail = (error: { message?: string } | null) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 
-export const SECTIONS = ["balance", "profile", "tradepile", "watchlist", "unassigned", "sbcs", "objectives", "season"] as const;
+export const SECTIONS = ["balance", "profile", "tradepile", "watchlist", "unassigned", "sbcs", "sbc_challenges", "objectives", "season"] as const;
 export type SectionName = typeof SECTIONS[number];
 export const EA_TAX = 0.05;
 const MAX_TRADE = 300, MAX_UNASSIGNED = 500, MAX_SBCS = 600, MAX_OBJECTIVES = 600;
@@ -52,6 +52,11 @@ export interface SbcSet {
   set_id: number; name: string; category: string | null; description: string | null; challenges: number | null; completed: number | null;
   times_completed: number | null; repeat_limit: number | null; repeatable: boolean; end_at: string | null;
   awards: { type: string; value: number | null; count: number | null; untradeable: boolean }[];
+}
+export interface SbcChallenge {
+  set_id: number; challenge_id: number; name: string; description: string | null; formation: string | null; status: string | null; operation: string | null;
+  requirements: { type: string; scope: string | null; values: number[]; count: number | null; slot: number | null }[];
+  awards: SbcSet["awards"]; end_at: string | null;
 }
 export interface Objective { id: number | null; name: string; group: string | null; progress: number | null; target: number | null; done: boolean; end_at: string | null; xp: number | null }
 
@@ -112,6 +117,25 @@ function parseSbcs(v: unknown): SbcSet[] | null {
   }).filter((s): s is SbcSet => !!s);
 }
 
+function parseSbcChallenges(v: unknown): SbcChallenge[] | null {
+  if (!Array.isArray(v)) return null;
+  return v.slice(0, 300).filter(isObj).map((c) => {
+    const set_id = id(c.set_id), challenge_id = id(c.challenge_id), name = text(c.name, 120);
+    if (!set_id || !challenge_id || !name) return null;
+    const small = (x: unknown, lo: number, hi: number) => (typeof x === "number" && Number.isInteger(x) && x >= lo && x <= hi ? x : null);
+    return {
+      set_id, challenge_id, name, description: text(c.description, 300), formation: text(c.formation, 20), status: text(c.status, 30), operation: text(c.operation, 10),
+      requirements: (Array.isArray(c.requirements) ? c.requirements : []).filter(isObj).slice(0, 20).map((r) => ({
+        type: (text(r.type, 60) ?? "").toUpperCase(), scope: text(r.scope, 20)?.toUpperCase() ?? null,
+        values: (Array.isArray(r.values) ? r.values : []).map((x) => small(x, -(2 ** 31), 2 ** 31)).filter((x): x is number => x !== null).slice(0, 40),
+        count: small(r.count, -1, 30), slot: small(r.slot, -1, 30),
+      })).filter((r) => /^[A-Z0-9_]{1,60}$/.test(r.type)),
+      awards: (Array.isArray(c.awards) ? c.awards : []).filter(isObj).slice(0, 10).map((a) => ({ type: text(a.type, 30) ?? "item", value: num(a.value), count: num(a.count, 1000), untradeable: bool(a.untradeable) })),
+      end_at: when(c.end_at),
+    };
+  }).filter((c): c is SbcChallenge => !!c);
+}
+
 function parseObjectives(v: unknown): Objective[] | null {
   if (!Array.isArray(v)) return null;
   return v.slice(0, MAX_OBJECTIVES).filter(isObj).map((o) => {
@@ -130,7 +154,7 @@ function parseSeason(v: unknown): Record<string, number> | null {
 
 const PARSERS: Record<SectionName, (v: unknown) => unknown> = {
   balance: parseBalance, profile: parseProfile, tradepile: parseTrades, watchlist: parseTrades, unassigned: parseUnassigned,
-  sbcs: parseSbcs, objectives: parseObjectives, season: parseSeason,
+  sbcs: parseSbcs, sbc_challenges: parseSbcChallenges, objectives: parseObjectives, season: parseSeason,
 };
 
 export interface AccountUpload {
