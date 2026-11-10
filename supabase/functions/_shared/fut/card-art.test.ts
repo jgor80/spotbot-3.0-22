@@ -24,7 +24,7 @@ Deno.test("card art SQL: new addresses counted, sightings added, service role on
   const db = new PGlite();
   try {
     await db.exec(`CREATE ROLE service_role BYPASSRLS; CREATE ROLE anon; CREATE ROLE authenticated; CREATE SCHEMA fut; GRANT USAGE ON SCHEMA fut TO service_role, authenticated;`);
-    await db.exec(await Deno.readTextFile(new URL("../../../migrations/20261110150000_fut_card_art_addresses.sql", import.meta.url)));
+    await db.exec(await Deno.readTextFile(new URL("../../../migrations/20261110170000_fut_card_art_addresses.sql", import.meta.url)));
     await db.exec("SET ROLE service_role");
     const one = await db.query<{ n: number }>(`SELECT fut.record_card_art(ARRAY['${C}/a.png', '${C}/b.png', '${C}/a.png']) AS n`);
     assert(one.rows[0]!.n === 2, `first ${one.rows[0]!.n}`);
