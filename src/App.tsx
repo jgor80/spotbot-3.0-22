@@ -51,6 +51,7 @@ const MarketSourcesPage = lazy(() => import("./pages/fut/market/MarketSourcesPag
 const PackAdvisorPage = lazy(() => import("./pages/fut/PackAdvisorPage"));
 const PlayerRatingsPage = lazy(() => import("./pages/fut/PlayerRatingsPage"));
 const FutAccountPage = lazy(() => import("./pages/fut/FutAccountPage"));
+const FutStrategyPage = lazy(() => import("./pages/fut/FutStrategyPage"));
 const SbcSolverPage = lazy(() => import("./pages/fut/SbcSolverPage"));
 const KnowledgePage = lazy(() => import("./pages/fut/KnowledgePage"));
 
@@ -125,6 +126,7 @@ const App = () => (
                   <Route path="/fut/packs" element={<ProtectedRoute><PackAdvisorPage /></ProtectedRoute>} />
                   <Route path="/fut/players" element={<ProtectedRoute><PlayerRatingsPage /></ProtectedRoute>} />
                   <Route path="/fut/account" element={<ProtectedRoute><FutAccountPage /></ProtectedRoute>} />
+                  <Route path="/fut/strategy" element={<ProtectedRoute><FutStrategyPage /></ProtectedRoute>} />
                   <Route path="/fut/sbc" element={<ProtectedRoute><SbcSolverPage /></ProtectedRoute>} />
                   <Route path="/fut/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
