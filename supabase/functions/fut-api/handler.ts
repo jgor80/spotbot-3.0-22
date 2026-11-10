@@ -12,6 +12,7 @@ import { collectFc27Market, fc27MarketStatus, pullFc27Market } from "../_shared/
 import { futggStatus } from "../_shared/fut/futgg-status.ts";
 import { clearStore, importStore, packAdvice } from "../_shared/fut/packs.ts";
 import { accountOverview, clearAccount, importAccount } from "../_shared/fut/account.ts";
+import { dailyStrategy, riskParam } from "../_shared/fut/strategy.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { bestSquads, squadRoles, suggestForSlot } from "../_shared/fut/squad-suggest.ts";
 import { syncFutggCatalogue } from "../_shared/fut/futgg-catalogue.ts";
@@ -272,6 +273,9 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       if (error) throw new FutError(`Club value is unavailable: ${error.message}`, 500);
       return json({ data });
     }
+
+    // Daily strategy: today's buys, sells, transfer list fixes and budget split from prices, coins and club. Advice only.
+    if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2_000_000_000) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
 
     if (route === "/managers" && m === "GET") return json({ data: await listManagers(db, userId) });
     if (route === "/managers" && m === "POST") return json({ data: await addManager(db, userId, parseManagerInput(await body(req))) }, 201);

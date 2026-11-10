@@ -103,9 +103,25 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
   if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
   return (data ?? null) as T;
 }
-export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, packs: ["fut", "packs"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
+export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, packs: ["fut", "packs"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
 export type MarketPlatform = "console" | "pc";
+
+// Daily strategy (GET /strategy): advice only, GafferBot never trades.
+export type StrategyRisk = "careful" | "normal" | "bold";
+export interface StrategyBuy { ea_item_id: number; name: string; version: string | null; rating: number; position: string | null; kind: string; price: number; buy_at: number; sell_at: number; profit: number; roi: number; quantity: number | null; spend: number | null; total_profit: number | null; median: number; low: number; high: number; change_24h: number | null; points: number; confidence: "low" | "medium" | "high"; hold: string; why: string[]; risks: string[] }
+export interface StrategySell { card_id: string; ea_item_id: number; name: string; version: string | null; rating: number | null; position: string | null; quantity: number; list_at: number; quick_at: number; after_tax: number; median: number | null; high: number | null; change_24h: number | null; reason: string; why: string; in_squad: boolean }
+export interface StrategyPileFix { ea_item_id: number; name: string; rating: number | null; state: string; buy_now: number | null; price: number | null; action: "clear" | "relist" | "lower"; list_at: number | null; why: string }
+export interface StrategyRecordItem { plan_date: string; name: string; buy_at: number; sell_at: number; best: number | null; now: number | null; outcome: "hit" | "open_up" | "open_down" | "too_soon" | "unknown"; now_pct: number | null }
+export interface DailyStrategy {
+  platform: MarketPlatform; as_of: string; uk_date: string; prices_at: string | null; headline: string; stance: "buy" | "sell" | "flip";
+  mood: { label: string; median_24h: number | null; median_72h: number | null; cards: number };
+  timing: { uk_time: string; weekday: string; buy_bias: number; sell_bias: number; extra_reserve: number; now: string; next: string | null; events: { name: string; date: string; days: number; advice: string }[]; daily: string };
+  budget: { coins: number | null; coins_source: "helper" | "entered" | null; coins_at: string | null; reserve_pct: number; reserve: number | null; spend: number | null; per_pick: number | null; buy_spend: number; expected_profit: number; free_slots: number; risk: StrategyRisk };
+  steps: string[]; buys: StrategyBuy[]; watch: StrategyBuy[]; sells: StrategySell[]; transfer_list: StrategyPileFix[];
+  record: { days: number; picks: number; hit: number; open_up: number; open_down: number; avg_now_pct: number | null; items: StrategyRecordItem[] };
+  notes: string[]; verified: false;
+}
 export type MarketEvidence = Evidence | "verified";
 export type MarketStatus = "favorable_setup" | "research_further" | "watch" | "overheated" | "elevated_risk" | "insufficient_evidence";
 export interface MarketProvenance { rules_version: string; engine_version: string; as_of: string; demo: boolean; sources: unknown; evidence: MarketEvidence }
@@ -241,6 +257,7 @@ export const futApi = {
     advice: (platform: MarketPlatform) => futRequest<PackAdvice>(`/packs?${new URLSearchParams({ platform })}`),
     clear: (platform: MarketPlatform) => futRequest<{ cleared: boolean }>(`/packs?${new URLSearchParams({ platform })}`, "DELETE"),
   },
+  strategy: (platform: MarketPlatform, opts: { budget?: number | null; risk?: StrategyRisk } = {}) => futRequest<DailyStrategy>(`/strategy?${new URLSearchParams({ platform, ...(opts.budget != null ? { budget: String(opts.budget) } : {}), ...(opts.risk ? { risk: opts.risk } : {}) })}`),
   health: () => futRequest<FutHealth>("/health"),
   clubValue: (platform: MarketPlatform) => futRequest<ClubValue>(`/club/value?${new URLSearchParams({ platform })}`),
   cards: (filters: Record<string, string> = {}) => {
