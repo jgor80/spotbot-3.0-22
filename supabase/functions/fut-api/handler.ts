@@ -19,6 +19,10 @@ import { syncFutggAttributes } from "../_shared/fut/futgg-attributes.ts";
 import { findPlayers, MAX_FINDER_TEXT, searchPlayers, type FinderTurn } from "../_shared/fut/player-finder.ts";
 import { cleanPlayerQuery } from "../_shared/fut/stats.ts";
 import { cardImages } from "../_shared/fut/card-images.ts";
+import {
+  addSource, ask, deleteKnowledgeSource, KB_CATEGORIES, knowledgeMap, knowledgeSources, knowledgeStatus, knowledgeTopic, MAX_ADD_TEXT, MAX_QUESTION,
+  runKnowledgeIngest, type AskTurn,
+} from "../_shared/fut/knowledge.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
 import { forgetMarketOwner, marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
@@ -61,6 +65,11 @@ const aiImports = new Map<string, number[]>();
 /** Player finder messages that need Claude, per user per hour. */
 const AI_FINDS_PER_HOUR = 60;
 const aiFinds = new Map<string, number[]>();
+/** Knowledge bank: questions answered by Claude, and sources users add (each one is read by Claude), per user per hour. */
+const AI_ASKS_PER_HOUR = 60;
+const aiAsks = new Map<string, number[]>();
+const KB_ADDS_PER_HOUR = 20;
+const kbAdds = new Map<string, number[]>();
 function aiImportAllowed(userId: string, perHour: number, uses = aiImports): boolean {
   const now = Date.now();
   const recent = (uses.get(userId) ?? []).filter((t) => now - t < 3_600_000);
@@ -167,8 +176,24 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (req.method === "POST" && /\/fut-api\/?$/.test(new URL(req.url).pathname)) {
     if (!(await deps.isBot?.(req))) return err(401, "Only the bot's scheduler can run jobs.");
     const job = (await req.json().catch(() => null) as { job?: unknown } | null)?.job;
-    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest") return err(400, "Unknown job.");
     try {
+      // Knowledge bank: collect Reddit/YouTube sources and read what's waiting (see knowledge.ts)
+      if (job === "knowledge-ingest") {
+        const env = deps.env ?? ((k: string) => Deno.env.get(k));
+        if (env("FUT_KNOWLEDGE") === "off") return json({ data: { paused: true } });
+        const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
+        const started = new Date().toISOString();
+        let result: Record<string, unknown> | null = null, failure: string | null = null;
+        try { result = await runKnowledgeIngest(deps.db, env, fetchFn) as unknown as Record<string, unknown>; }
+        catch (e) { failure = (e as Error).message?.slice(0, 500) ?? "failed"; throw e; }
+        finally {
+          const r = result as { feeds?: unknown; read?: number; skipped?: number; failed?: number } | null;
+          await deps.db.from("kb_runs").insert({ started_at: started, finished_at: new Date().toISOString(), feeds: r?.feeds ?? {}, read: r?.read ?? 0,
+            skipped: r?.skipped ?? 0, failed: r?.failed ?? 0, error: failure });
+        }
+        return json({ data: result });
+      }
       // Full card stats for Player Ratings, a few hundred cards per run (see futgg-attributes.ts)
       if (job === "futgg-attributes") return json({ data: await syncFutggAttributes(deps.db, deps.fetch) });
       if (job === "futgg-catalogue") {
@@ -208,7 +233,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   const db = deps.db;
   // Any change (cards, prices, club import, helper upload) makes the caller's cached Market Lab snapshot stale
   // (Player searches are POSTs that change nothing, so they keep it.)
-  if (m !== "GET" && !route.startsWith("/players/")) forgetMarketOwner(db, userId);
+  if (m !== "GET" && !route.startsWith("/players/") && !route.startsWith("/knowledge/")) forgetMarketOwner(db, userId);
 
   try {
     if (route === "/health" && m === "GET") {
@@ -416,6 +441,53 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       }, env, fetchFn, {
         beforeAi: () => { if (!aiImportAllowed(userId, perHour, aiFinds)) throw new FutError("That's a lot of player searches this hour. Try again later, or use the filters.", 429); },
       }) });
+    }
+
+    // ---- Knowledge bank: what the FUT community says about gameplay and strategy (knowledge.ts). Shared sources plus the
+    // caller's own; the map, one topic, the source list, adding and deleting their own sources, and the Ask chat.
+    if (route.startsWith("/knowledge/")) {
+      const env = deps.env ?? ((k: string) => Deno.env.get(k));
+      const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
+      const p = url.searchParams;
+      const days = intParam(p.get("days"), "days", 1, 365);
+      if (route === "/knowledge/status" && m === "GET") return json({ data: await knowledgeStatus(db, env) });
+      if (route === "/knowledge/map" && m === "GET") {
+        const category = p.get("category") || null;
+        if (category && !(KB_CATEGORIES as readonly string[]).includes(category)) throw new FutError(`category must be one of ${KB_CATEGORIES.join(", ")}.`);
+        return json({ data: await knowledgeMap(db, userId, days ?? 30, category) });
+      }
+      const tp = route.match(/^\/knowledge\/topics\/([a-z0-9-]{1,80})$/);
+      if (tp && m === "GET") {
+        const topic = await knowledgeTopic(db, userId, tp[1]!, days ?? 90);
+        return topic ? json({ data: topic }) : err(404, "Nobody has talked about that topic in this period.");
+      }
+      if (route === "/knowledge/sources" && m === "GET") {
+        return json({ data: await knowledgeSources(db, userId, p.get("mine") === "true", intParam(p.get("limit"), "limit", 1, 100) ?? 30, intParam(p.get("offset"), "offset", 0, 100_000) ?? 0) });
+      }
+      if (route === "/knowledge/sources" && m === "POST") {
+        const b = obj(await body(req, MAX_ADD_TEXT * 4 + 8192));
+        for (const k of ["url", "text", "title"]) if (b[k] !== undefined && b[k] !== null && typeof b[k] !== "string") throw new FutError(`${k} must be text.`);
+        if (typeof b.text === "string" && b.text.length > MAX_ADD_TEXT) throw new FutError(`Paste up to ${MAX_ADD_TEXT.toLocaleString("en")} characters.`);
+        if (!(b.url as string | undefined)?.trim() && !(b.text as string | undefined)?.trim()) throw new FutError("Add a link or paste some text.");
+        if (!aiImportAllowed(userId, Number(env("FUT_KB_ADDS_PER_HOUR")) || KB_ADDS_PER_HOUR, kbAdds)) throw new FutError("That's a lot of sources this hour. Try again later.", 429);
+        return json({ data: await addSource(db, userId, { url: b.url as string, text: b.text as string, title: b.title as string, share: b.share === true }, env, fetchFn) }, 201);
+      }
+      const sd = route.match(/^\/knowledge\/sources\/([0-9a-f-]{36})$/);
+      if (sd && m === "DELETE") return (await deleteKnowledgeSource(db, userId, sd[1]!)) ? json({ data: { deleted: sd[1] } }) : err(404, "You can only delete sources you added.");
+      if (route === "/knowledge/ask" && m === "POST") {
+        const b = obj(await body(req));
+        if (typeof b.question !== "string" || !b.question.trim()) throw new FutError("Ask a question about FUT gameplay or strategy.");
+        if (b.question.length > MAX_QUESTION) throw new FutError(`Keep it under ${MAX_QUESTION} characters.`);
+        const history: AskTurn[] = (Array.isArray(b.history) ? b.history.slice(-6) : []).flatMap((t: unknown) => {
+          const o = t && typeof t === "object" ? t as Record<string, unknown> : {};
+          return (o.role === "user" || o.role === "assistant") && typeof o.text === "string" && o.text.trim() ? [{ role: o.role, text: o.text.slice(0, 1500) } as AskTurn] : [];
+        });
+        const perHour = Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
+        return json({ data: await ask(db, userId, b.question, history, env, fetchFn, () => {
+          if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
+        }) });
+      }
+      return err(404, "No such knowledge bank route.");
     }
 
     // ---- Market Lab (research and decision support; never buys, sells or bids). Prices are the caller's own imports.
