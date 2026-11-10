@@ -104,13 +104,15 @@ export interface RoleScore {
 }
 
 /** One card in one role: weighted attributes under each chem style (best kept), plus PlayStyle and body bonuses. */
-export function scoreRole(card: MetaCard, position: string, role: Role, estimated = false): RoleScore {
+/** `style`: score with this chem style only (null or undefined: try them all and keep the best). */
+export function scoreRole(card: MetaCard, position: string, role: Role, estimated = false, style?: string | null): RoleScore {
   const value = (k: string, boost: W = {}) => clamp((card.stats[k] ?? (estimated ? card.stats[FROM_FACE[k] ?? ""] : undefined) ?? 50) + (boost[k] ?? 0), 1, 99);
   const total = Object.values(role.weights).reduce((a, b) => a + b, 0);
   const weighted = (boost: W = {}) => Object.entries(role.weights).reduce((a, [k, w]) => a + value(k, boost) * w, 0) / total;
   const styles = position === "GK" ? GK_CHEM_STYLES : CHEM_STYLES;
   let base = weighted(), chem: string | null = null;
-  for (const [name, boost] of Object.entries(styles)) { const s = weighted(boost); if (s > base + 0.05) { base = s; chem = name; } }
+  if (style && styles[style]) { base = weighted(styles[style]); chem = style; }
+  else for (const [name, boost] of Object.entries(styles)) { const s = weighted(boost); if (s > base + 0.05) { base = s; chem = name; } }
   const ps = role.playstyles.filter((p) => card.playstyles_plus.includes(p)).length * 2.5 + role.playstyles.filter((p) => card.playstyles.includes(p) && !card.playstyles_plus.includes(p)).length * 1.2;
   const h = card.height_cm;
   const height = h === null ? 0 : role.tall ? clamp((h - role.tall) * 0.35, -4, 4) : role.agile ? clamp((181 - h) * 0.12, -2, 1.5) : 0;
@@ -134,9 +136,9 @@ export function scoreRole(card: MetaCard, position: string, role: Role, estimate
 }
 
 /** Every role at each of the card's positions, best first, with a one-line verdict. */
-export function metaRate(card: MetaCard, positions = card.positions) {
+export function metaRate(card: MetaCard, positions = card.positions, style?: string | null) {
   const estimated = !Object.keys(card.stats).some((k) => k in FROM_FACE || k.startsWith("gk_"));
-  const roles = [...new Set(positions.map((p) => p.toUpperCase()))].flatMap((p) => rolesFor(p).map((r) => scoreRole(card, p, r, estimated))).sort((a, b) => b.score - a.score);
+  const roles = [...new Set(positions.map((p) => p.toUpperCase()))].flatMap((p) => rolesFor(p).map((r) => scoreRole(card, p, r, estimated, style))).sort((a, b) => b.score - a.score);
   const best = roles[0] ?? null;
   const gap = best ? best.score - card.rating : 0;
   const verdict = !best ? "No roles for these positions."

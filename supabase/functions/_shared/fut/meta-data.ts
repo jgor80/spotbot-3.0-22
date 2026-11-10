@@ -17,7 +17,8 @@ export const fromSearch = (c: Row): MetaCard => ({
   weak_foot: (c.weak_foot as number | null) ?? null, skill_moves: (c.skill_moves as number | null) ?? null,
 });
 
-export async function metaForCard(db: FutDb, userId: string, cardId: string) {
+/** One card (the user's own or a catalogue card) with full stats borrowed from the catalogue copy of the same EA item. */
+export async function loadMetaCard(db: FutDb, userId: string, cardId: string) {
   const card = await getCard(db, userId, cardId);
   if (!card) throw new FutError("Card not found.", 404);
   let source = card.id, alt: string[] = [], height: number | null = null, accel: string | null = null, stats: Record<string, number> = { ...card.stats } as Record<string, number>;
@@ -39,6 +40,11 @@ export async function metaForCard(db: FutDb, userId: string, cardId: string) {
   const styles = (s.data ?? []) as Row[];
   if (!ps.length && !psp.length && styles.length) { ps = styles.filter((x) => !x.is_plus).map((x) => x.name as string); psp = styles.filter((x) => x.is_plus).map((x) => x.name as string); }
   const meta: MetaCard = { name: card.player_name, rating: card.overall, positions: [...new Set([...card.positions, ...alt])], stats, playstyles: ps, playstyles_plus: psp, height_cm: height, accelerate_type: accel, weak_foot: card.weak_foot, skill_moves: card.skill_moves };
+  return { card, meta };
+}
+
+export async function metaForCard(db: FutDb, userId: string, cardId: string) {
+  const { card, meta } = await loadMetaCard(db, userId, cardId);
   return { card_id: card.id, name: card.player_name, rating: card.overall, positions: meta.positions, ...metaRate(meta), note: NOTE, verified: false as const };
 }
 

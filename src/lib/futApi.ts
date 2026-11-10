@@ -223,6 +223,11 @@ export interface EvoCard { id: string; name: string; version: string | null; ove
 export interface EvoMatch { card: EvoCard; after: EvoCard; checks: { label: string; ok: boolean | null }[]; eligible: boolean | null; squad: { slot: string | null; gain: number } }
 export interface EvolutionView { id: string; name: string; description: string | null; end_at: string | null; coins: number | null; points: number | null; unread: string[]; source: "helper" | "pasted"; rule_lines: string[]; level_lines: string[][]; eligible: number; maybe: number; matches: EvoMatch[] }
 export interface MetaRoleScore { position: string; role: string; score: number; tier: string; chem_style: string | null; base: number; bonuses: { playstyles: number; height: number; accelerate: number; weak_foot: number; skill_moves: number }; strengths: string[]; weaknesses: string[]; playstyles: string[] }
+export interface CardCompare {
+  platform: MarketPlatform; summary: string; note: string; verified: false; shared_positions: string[]; shared_playstyles: string[]; chem_styles: { outfield: string[]; gk: string[] };
+  cards: { id: string; name: string; rating: number; version: string | null; positions: string[]; ea_item_id: number | null; owned: boolean; chem_style: string | null; price: number | null; playstyles: string[]; only_this: string[]; meta: MetaRoleScore | null; wins: number; price_per_rating: number | null; price_per_meta: number | null }[];
+  rows: { key: string; label: string; group: string; values: (number | null)[]; leaders: number[] }[];
+}
 export interface MetaCardRating { card_id: string; name: string; rating: number; positions: string[]; best: MetaRoleScore | null; roles: MetaRoleScore[]; verdict: string; estimated: boolean; note: string; verified: false }
 export interface MetaTop { platform: MarketPlatform; position: string; role: string | null; roles: string[]; max_price: number | null; published_at: string | null; with_stats: number; note: string; verified: false; cards: { card_id: string; ea_item_id: number | null; name: string; rating: number; version: string | null; position: string; owned: boolean; price: number | null; meta: MetaRoleScore }[] }
 export interface PriceHistoryData { card_id: string; ea_item_id?: number; name?: string; platform: MarketPlatform; days: number; note: string; points: { t: string; price: number; kind: "full" | "hourly" }[]; market_drops: { t: string; median_move: number; cards: number }[]; stats: { latest: number | null; latest_at?: string; low: number | null; high: number | null; change_24h: number | null; change_7d: number | null; change_range: number | null; hourly_points: number } }
@@ -314,6 +319,7 @@ export const futApi = {
     settings: () => futRequest<{ dm: boolean; move_pct: number | null; needs_discord: string }>("/alerts/settings"),
     save: (input: { dm: boolean; move_pct: number | null }) => futRequest<{ dm: boolean; move_pct: number | null; needs_discord: string }>("/alerts/settings", "POST", input),
   },
+  compareAny: (card_ids: string[], platform: MarketPlatform, chem_styles: Record<string, string>) => futRequest<CardCompare>("/compare/cards", "POST", { card_ids, platform, chem_styles }),
   meta: {
     card: (cardId: string) => futRequest<MetaCardRating>(`/meta/card?${new URLSearchParams({ card_id: cardId })}`),
     top: (q: { position: string; role?: string; max_price?: number | null; owned_only?: boolean; platform: MarketPlatform }) => futRequest<MetaTop>(`/meta/top?${new URLSearchParams({ position: q.position, platform: q.platform, ...(q.role ? { role: q.role } : {}), ...(q.max_price ? { max_price: String(q.max_price) } : {}), ...(q.owned_only ? { owned_only: "1" } : {}) })}`),

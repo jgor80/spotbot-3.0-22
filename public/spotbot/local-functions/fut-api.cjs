@@ -9629,13 +9629,16 @@ LABEL2.fk_accuracy = "free kicks";
 var clamp2 = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 var r1 = (v) => Math.round(v * 10) / 10;
 var tier = (s) => s >= 90 ? "Elite" : s >= 85 ? "Very good" : s >= 80 ? "Good" : s >= 74 ? "Decent" : "Weak";
-function scoreRole(card, position, role, estimated = false) {
+function scoreRole(card, position, role, estimated = false, style) {
   const value = (k, boost = {}) => clamp2((card.stats[k] ?? (estimated ? card.stats[FROM_FACE[k] ?? ""] : void 0) ?? 50) + (boost[k] ?? 0), 1, 99);
   const total = Object.values(role.weights).reduce((a2, b) => a2 + b, 0);
   const weighted = (boost = {}) => Object.entries(role.weights).reduce((a2, [k, w]) => a2 + value(k, boost) * w, 0) / total;
   const styles = position === "GK" ? GK_CHEM_STYLES : CHEM_STYLES;
   let base = weighted(), chem = null;
-  for (const [name2, boost] of Object.entries(styles)) {
+  if (style && styles[style]) {
+    base = weighted(styles[style]);
+    chem = style;
+  } else for (const [name2, boost] of Object.entries(styles)) {
     const s = weighted(boost);
     if (s > base + 0.05) {
       base = s;
@@ -9670,9 +9673,9 @@ function scoreRole(card, position, role, estimated = false) {
     playstyles: role.playstyles.filter((p) => card.playstyles.includes(p) || card.playstyles_plus.includes(p)).map((p) => card.playstyles_plus.includes(p) ? `${p}+` : p)
   };
 }
-function metaRate(card, positions = card.positions) {
+function metaRate(card, positions = card.positions, style) {
   const estimated = !Object.keys(card.stats).some((k) => k in FROM_FACE || k.startsWith("gk_"));
-  const roles = [...new Set(positions.map((p) => p.toUpperCase()))].flatMap((p) => rolesFor(p).map((r2) => scoreRole(card, p, r2, estimated))).sort((a, b) => b.score - a.score);
+  const roles = [...new Set(positions.map((p) => p.toUpperCase()))].flatMap((p) => rolesFor(p).map((r2) => scoreRole(card, p, r2, estimated, style))).sort((a, b) => b.score - a.score);
   const best = roles[0] ?? null;
   const gap = best ? best.score - card.rating : 0;
   const verdict = !best ? "No roles for these positions." : `${tier(best.score)} as a ${best.position} ${best.role} (${best.score}${best.chem_style ? ` with ${best.chem_style}` : ""}). ` + (gap >= 3 ? `Plays better than its ${card.rating} rating.` : gap <= -4 ? `Plays worse than its ${card.rating} rating suggests.` : `About what its ${card.rating} rating suggests.`) + (best.strengths.length ? ` Strengths: ${best.strengths.join(", ")}.` : "") + (best.weaknesses.length ? ` Watch: ${best.weaknesses.join(", ")}.` : "");
@@ -9697,7 +9700,7 @@ var fromSearch = (c4) => ({
   weak_foot: c4.weak_foot ?? null,
   skill_moves: c4.skill_moves ?? null
 });
-async function metaForCard(db2, userId, cardId) {
+async function loadMetaCard(db2, userId, cardId) {
   const card = await getCard(db2, userId, cardId);
   if (!card) throw new FutError("Card not found.", 404);
   let source = card.id, alt = [], height = null, accel = null, stats = { ...card.stats };
@@ -9723,6 +9726,10 @@ async function metaForCard(db2, userId, cardId) {
     psp = styles.filter((x) => x.is_plus).map((x) => x.name);
   }
   const meta = { name: card.player_name, rating: card.overall, positions: [.../* @__PURE__ */ new Set([...card.positions, ...alt])], stats, playstyles: ps, playstyles_plus: psp, height_cm: height, accelerate_type: accel, weak_foot: card.weak_foot, skill_moves: card.skill_moves };
+  return { card, meta };
+}
+async function metaForCard(db2, userId, cardId) {
+  const { card, meta } = await loadMetaCard(db2, userId, cardId);
   return { card_id: card.id, name: card.player_name, rating: card.overall, positions: meta.positions, ...metaRate(meta), note: NOTE, verified: false };
 }
 var NOTE = "GafferBot's own estimate from in-game attributes, PlayStyles, height, AcceleRATE, weak foot and skill moves under the best chem style. Chem style boosts follow recent games and aren't confirmed for FC 27.";
@@ -9743,6 +9750,74 @@ async function metaTop(db2, userId, b) {
     return { card_id: String(c4.id), ea_item_id: c4.ea_item_id ?? null, name: m.name, rating: m.rating, version: c4.version ?? null, position: String(c4.position), owned: c4.owned === true, price: c4.price ?? null, meta: pick };
   }).filter((c4) => c4.meta).sort((a, b2) => b2.meta.score - a.meta.score || (a.price ?? Infinity) - (b2.price ?? Infinity));
   return { platform, position, role: role?.role ?? null, roles: roles.map((r2) => r2.role), max_price: maxPrice, published_at: res.published_at, cards: cards.slice(0, 30), with_stats: res.with_stats, note: NOTE, verified: false };
+}
+
+// supabase/functions/_shared/fut/card-compare.ts
+var SHOWN = ALL_STATS.filter((s) => !["overall", "total_stats", "total_igs"].includes(s.key)).map((s) => ({ key: s.key, label: s.label, group: s.group }));
+function compareTable(cards) {
+  const positions = cards.map((c4) => c4.meta.positions).reduce((a, b) => a.filter((p) => b.includes(p)));
+  const boosted = cards.map((c4) => {
+    const styles = c4.meta.positions[0] === "GK" ? GK_CHEM_STYLES : CHEM_STYLES;
+    const boost = c4.chem_style ? styles[c4.chem_style] ?? {} : {};
+    const stats = { ...c4.meta.stats };
+    for (const [k, v] of Object.entries(boost)) if (typeof stats[k] === "number") stats[k] = Math.min(99, stats[k] + v);
+    return { ...c4.meta, stats };
+  });
+  const rows = SHOWN.map((s) => {
+    const values = boosted.map((m) => s.key === "weak_foot" ? m.weak_foot : s.key === "skill_moves" ? m.skill_moves : s.key === "height_cm" ? m.height_cm : m.stats[s.key] ?? null);
+    const known = values.filter((v) => typeof v === "number");
+    const best = known.length >= 2 ? Math.max(...known) : null;
+    return { ...s, values, leaders: best === null || known.every((v) => v === best) ? [] : values.map((v, i) => v === best ? i : -1).filter((i) => i >= 0) };
+  }).filter((r2) => r2.values.some((v) => v !== null));
+  const all = (c4) => [...c4.playstyles_plus.map((p) => `${p}+`), ...c4.playstyles.filter((p) => !c4.playstyles_plus.includes(p))];
+  const sets = cards.map((c4) => /* @__PURE__ */ new Set([...c4.meta.playstyles, ...c4.meta.playstyles_plus]));
+  const shared = [...sets[0]].filter((p) => sets.every((s) => s.has(p))).sort();
+  const results = cards.map((c4, i) => {
+    const best = metaRate(c4.meta, positions.length ? positions : c4.meta.positions, c4.chem_style).best;
+    return {
+      id: c4.id,
+      name: c4.meta.name,
+      rating: c4.meta.rating,
+      version: c4.version,
+      positions: c4.meta.positions,
+      ea_item_id: c4.ea_item_id,
+      owned: c4.owned,
+      chem_style: c4.chem_style,
+      price: c4.price,
+      playstyles: all(c4.meta),
+      only_this: [...sets[i]].filter((p) => !shared.includes(p)).sort(),
+      meta: best,
+      wins: rows.filter((row) => row.leaders.length === 1 && row.leaders[0] === i).length,
+      price_per_rating: c4.price && c4.meta.rating ? Math.round(c4.price / c4.meta.rating) : null,
+      price_per_meta: c4.price && best ? Math.round(c4.price / best.score) : null
+    };
+  });
+  const scored = results.filter((r2) => r2.meta);
+  const top = scored.length ? scored.reduce((a, b) => b.meta.score > a.meta.score ? b : a) : null;
+  const cheapest = results.filter((r2) => r2.price).sort((a, b) => a.price - b.price)[0] ?? null;
+  const summary = !top ? "Not enough stats to compare." : `${top.name} plays best${positions.length ? ` at ${top.meta.position}` : ""} (${top.meta.role}, ${top.meta.score})` + (cheapest && cheapest.id !== top.id && top.price && cheapest.price ? `; ${cheapest.name} is ${Math.round((1 - cheapest.price / top.price) * 100)}% cheaper at ${cheapest.meta?.score ?? "?"}.` : ".");
+  return { shared_positions: positions, shared_playstyles: shared, cards: results, rows, summary };
+}
+async function compareAnyCards(db2, userId, b) {
+  const ids = Array.isArray(b.card_ids) ? [...new Set(b.card_ids.map(String))] : [];
+  if (ids.length < 2 || ids.length > 4) throw new FutError("card_ids must list 2 to 4 different cards.");
+  const styles = b.chem_styles ?? {};
+  const platform = b.platform === "pc" ? "pc" : "console";
+  const loaded = await Promise.all(ids.map((id3) => loadMetaCard(db2, userId, id3)));
+  const eaIds = [...new Set(loaded.map((l) => l.card.ea_item_id).filter((x) => !!x))];
+  const prices = /* @__PURE__ */ new Map();
+  if (eaIds.length) {
+    const { data, error } = await db2.rpc("account_item_prices", { p_platform: platform, p_ids: eaIds });
+    if (error) throw new FutError(`Card prices are unavailable: ${error.message}`, 500);
+    for (const i of data?.items ?? []) if (typeof i.price === "number") prices.set(Number(i.ea_item_id), i.price);
+  }
+  const inputs = loaded.map(({ card, meta }) => {
+    const want = styles[card.id], gk = meta.positions[0] === "GK";
+    const list2 = gk ? GK_CHEM_STYLES : CHEM_STYLES;
+    if (want !== void 0 && want !== null && want !== "" && !(typeof want === "string" && want in list2)) throw new FutError(`Unknown chem style for ${card.player_name}. Use one of ${Object.keys(list2).join(", ")}.`);
+    return { id: card.id, meta, version: card.version, owned: card.owned, ea_item_id: card.ea_item_id, price: card.ea_item_id ? prices.get(card.ea_item_id) ?? null : card.price, chem_style: typeof want === "string" && want ? want : null };
+  });
+  return { platform, ...compareTable(inputs), chem_styles: { outfield: Object.keys(CHEM_STYLES), gk: Object.keys(GK_CHEM_STYLES) }, note: "Chem style boosts and metaratings are GafferBot's estimates (FC 27's chem style numbers aren't confirmed). Prices are FUT.GG's.", verified: false };
 }
 
 // supabase/functions/_shared/fut/squad-suggest.ts
@@ -12900,6 +12975,7 @@ async function handle(req, deps) {
       return json({ data });
     }
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db2, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2e9) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
+    if (route === "/compare/cards" && m === "POST") return json({ data: await compareAnyCards(db2, userId, obj2(await body(req))) });
     if (route === "/meta/card" && m === "GET") return json({ data: await metaForCard(db2, userId, url.searchParams.get("card_id") ?? "") });
     if (route === "/meta/top" && m === "GET") {
       const q = url.searchParams;
