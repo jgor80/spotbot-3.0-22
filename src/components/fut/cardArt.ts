@@ -92,3 +92,11 @@ export function cardName(name: string): string {
   const particle = parts[parts.length - 2]!;
   return /^(?:van|von|de|da|di|du|del|der|dos|le|la|ten|ter|el|al)$/i.test(particle) ? `${particle} ${last}` : last;
 }
+
+const TIER: Partial<Record<CardTheme["kind"], number>> = { bronze: 1, silver: 2, gold: 3 };
+/** EA's background for a base card (common or rare gold/silver/bronze). Promos, Icons and Heroes have none: null. */
+export function backgroundUrl(backgroundBase: string | null | undefined, theme: CardTheme): string | null {
+  const tier = TIER[theme.kind];
+  if (!backgroundBase || !tier) return null;
+  return `${backgroundBase}cards_bg_e_1_${theme.label.startsWith("Rare") ? 1 : 0}_${tier}.png`;
+}

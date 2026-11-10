@@ -42,8 +42,8 @@ export interface FutSquad {
   budget?: number | null; parent_id?: string | null; created_at?: string; updated_at?: string; slots: FutSlot[];
 }
 export interface RuleInfo { rule_version?: string; rule_status?: string; evidence?: string }
-/** EA player faces on cards: only when the server's FUT_EA_FACES switch is on. Faces load straight from EA. */
-export interface CardImages { faces: boolean; portrait_base: string | null; credit: string | null }
+/** EA player faces and base card backgrounds: only when the server's FUT_EA_IMAGES switch is on. They load straight from EA. */
+export interface CardImages { faces: boolean; portrait_base: string | null; background_base?: string | null; credit: string | null }
 export interface FutHealth extends RuleInfo { ok?: boolean; api?: string; card_images?: CardImages }
 export type LinkType = "club" | "league" | "nation";
 export interface LinkBreakdown { key: string | null; count: number; points: number; next_threshold: number | null; needed_for_next: number | null }
