@@ -12,6 +12,8 @@ import { collectFc27Market, fc27MarketStatus, pullFc27Market } from "../_shared/
 import { futggStatus } from "../_shared/fut/futgg-status.ts";
 import { clearStore, importStore, packAdvice } from "../_shared/fut/packs.ts";
 import { accountOverview, clearAccount, importAccount } from "../_shared/fut/account.ts";
+import { parseSolveBody, sbcOverview, solveForUser } from "../_shared/fut/sbc-data.ts";
+import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { bestSquads, squadRoles, suggestForSlot } from "../_shared/fut/squad-suggest.ts";
 import { syncFutggCatalogue } from "../_shared/fut/futgg-catalogue.ts";
@@ -255,6 +257,19 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (route === "/helper/account" && m === "POST") return json({ data: await importAccount(db, userId, await body(req, MAX_STORE_BODY)) });
     if (route === "/account" && m === "GET") return json({ data: await accountOverview(db, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/account" && m === "DELETE") return json({ data: await clearAccount(db, userId, platformParam(url.searchParams.get("platform"))) });
+
+    // SBC Solver: the SBCs the helper saw, requirement text → requirements, and the cheapest squad from your club.
+    if (route === "/sbc" && m === "GET") return json({ data: await sbcOverview(db, userId, platformParam(url.searchParams.get("platform"))) });
+    if (route === "/sbc/parse" && m === "POST") {
+      const b = obj(await body(req));
+      if (typeof b.text !== "string" || !b.text.trim()) throw new FutError("Paste the SBC's requirements as text.");
+      const r = parseRequirements(b.text.slice(0, 4000));
+      return json({ data: { ...r, lines: r.requirements.map(describeRequirement) } });
+    }
+    if (route === "/sbc/solve" && m === "POST") {
+      const b = obj(await body(req));
+      return json({ data: await runWorkspace(() => solveForUser(db, userId, platformParam(typeof b.platform === "string" ? b.platform : url.searchParams.get("platform")), parseSolveBody(b))) });
+    }
 
     if ((route === "/club/import" || route === "/helper/club") && m === "POST") {
       const result = await importClub(db, userId, await body(req, MAX_CLUB_BODY));
