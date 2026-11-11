@@ -7556,8 +7556,8 @@ function followedTrades(past, trades) {
     const from = Date.parse(p.prices_at), to = from + 3 * 864e5;
     for (const b of p.buys) {
       for (const t of trades) {
-        const at = t.bought_at ? Date.parse(String(t.bought_at)) : NaN;
-        if (used.has(t) || Number(t.ea_item_id) !== b.ea_item_id || !(at >= from && at <= to) || t.bought_for == null) continue;
+        const at2 = t.bought_at ? Date.parse(String(t.bought_at)) : NaN;
+        if (used.has(t) || Number(t.ea_item_id) !== b.ea_item_id || !(at2 >= from && at2 <= to) || t.bought_for == null) continue;
         used.add(t);
         const sold = t.sold_for == null ? null : Number(t.sold_for);
         out.push({ plan_date: p.plan_date, ea_item_id: b.ea_item_id, name: b.name, bought_for: Number(t.bought_for), sold_for: sold, profit: sold === null ? null : net(sold) - Number(t.bought_for), target: b.sell_at });
