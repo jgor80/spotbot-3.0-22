@@ -111,7 +111,7 @@ function Empty() {
     <Package className="mx-auto h-10 w-10 text-muted-foreground" />
     <h2 className="font-display text-xl">No packs yet</h2>
     <ol className="mx-auto max-w-lg list-decimal space-y-1 pl-5 text-left text-sm text-muted-foreground">
-      <li>Install the XI Lab helper (v0.11.1 or newer), reload it in chrome://extensions, then reload the Web App and connect the helper in Market Lab → Import prices.</li>
+      <li>Install the XI Lab helper (v0.12.0 or newer), reload it in chrome://extensions, then reload the Web App and connect the helper in Market Lab → Import prices.</li>
       <li>In the EA FC Web App, open <strong>Store → Packs</strong> and look through the tabs.</li>
       <li>Open a pack's odds (Pack Probability) so the helper can read them.</li>
       <li>Come back here: the helper uploads within a few minutes.</li>
