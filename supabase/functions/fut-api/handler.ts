@@ -19,6 +19,7 @@ import { getAlertSettings, runPriceAlerts, setAlertSettings } from "../_shared/f
 import { setBuyPrice, tradeOverview } from "../_shared/fut/trades.ts";
 import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
 import { cardPriceHistory } from "../_shared/fut/price-history.ts";
+import { metaForCard, metaTop } from "../_shared/fut/meta-data.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { bestSquads, squadRoles, suggestForSlot } from "../_shared/fut/squad-suggest.ts";
@@ -339,6 +340,12 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
     // Daily strategy: today's buys, sells, transfer list fixes and budget split from prices, coins and club. Advice only.
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2_000_000_000) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
+    // Metaratings: how good a card plays in each role (attributes, PlayStyles, body, chem style), and the best per position.
+    if (route === "/meta/card" && m === "GET") return json({ data: await metaForCard(db, userId, url.searchParams.get("card_id") ?? "") });
+    if (route === "/meta/top" && m === "GET") {
+      const q = url.searchParams;
+      return json({ data: await metaTop(db, userId, { position: q.get("position"), role: q.get("role"), max_price: q.get("max_price"), platform: q.get("platform"), owned_only: q.get("owned_only") === "1" }) });
+    }
     // Price history graph: one card's FUT.GG price (twice daily + hourly hot cards) with market-wide drops marked.
     if (route === "/prices/history" && m === "GET") {
       const days = Number(url.searchParams.get("days") ?? 30);

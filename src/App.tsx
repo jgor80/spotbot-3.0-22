@@ -57,6 +57,7 @@ const KnowledgePage = lazy(() => import("./pages/fut/KnowledgePage"));
 const EvolutionsPage = lazy(() => import("./pages/fut/EvolutionsPage"));
 const TradesPage = lazy(() => import("./pages/fut/TradesPage"));
 const SellOrKeepPage = lazy(() => import("./pages/fut/SellOrKeepPage"));
+const MetaRatingsPage = lazy(() => import("./pages/fut/MetaRatingsPage"));
 
 const queryClient = new QueryClient();
 // Market Lab data changes when FUT.GG refreshes (twice a day) or you import prices (which refetches it), so keep it
@@ -135,6 +136,7 @@ const App = () => (
                   <Route path="/fut/evolutions" element={<ProtectedRoute><EvolutionsPage /></ProtectedRoute>} />
                   <Route path="/fut/trades" element={<ProtectedRoute><TradesPage /></ProtectedRoute>} />
                   <Route path="/fut/sell" element={<ProtectedRoute><SellOrKeepPage /></ProtectedRoute>} />
+                  <Route path="/fut/meta" element={<ProtectedRoute><MetaRatingsPage /></ProtectedRoute>} />
                   <Route path="*" element={<NotFound />} />
                 </Routes>
               </Suspense>
