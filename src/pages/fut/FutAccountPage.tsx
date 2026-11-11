@@ -1,13 +1,17 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ListTodo, Trash2, Wallet } from "lucide-react";
-import { futApi, futKeys, type AccountItem, type AccountOverview, type AccountSection, type AccountTrade, type AccountTradeState } from "@/lib/futApi";
+import { CheckCircle2, ListTodo, Trash2, Users, Wallet } from "lucide-react";
+import { futApi, futKeys, type ClubShare, type AccountItem, type AccountOverview, type AccountSection, type AccountTrade, type AccountTradeState } from "@/lib/futApi";
 import { FutCardArt } from "@/components/fut/FutCardArt";
 import { ErrorNotice } from "@/components/fut/FutShared";
 import { HelperDownload } from "@/components/fut/HelperDownload";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useDiscordLink } from "@/hooks/useDiscordLink";
 import { DataTable, dateText, HistoryChart, MarketLoading, MarketShell, numberText, Section, useMarketPlatform } from "@/components/fut/market/MarketShared";
 
 const coins = (v: number | null | undefined) => (v == null ? "–" : `${numberText(v)}`);
@@ -180,6 +184,26 @@ function CardArtSeen({ enabled }: { enabled: boolean }) {
   </details>;
 }
 
+/** What the player shares with the Discord servers they're in. Off until they switch it on. */
+function ClubSharing({ enabled }: { enabled: boolean }) {
+  const qc = useQueryClient();
+  const { discordLink } = useDiscordLink();
+  const q = useQuery({ queryKey: futKeys.clubShare, queryFn: futApi.clubShare.get, enabled });
+  const set = useMutation({ mutationFn: (patch: Partial<ClubShare>) => futApi.clubShare.set(patch), onSuccess: d => qc.setQueryData(futKeys.clubShare, d) });
+  const d = q.data;
+  return <Section title="Share with my Discord club">
+    <p className="flex items-start gap-2 text-sm text-muted-foreground"><Users className="mt-0.5 h-4 w-4 shrink-0" />GafferBot can post your big pack pulls to your club's Discord channel and put you on the club's weekly FUT board (club value, trading profit, Champs record, best pull) and in "who has this card". Your coins and transfer list are never shared. Both are off until you switch them on, and your club's leaders can turn FUT off for the whole server.</p>
+    {!discordLink?.verified && <p className="text-sm">Link your Discord account on your <Link className="underline" to="/profile">profile</Link> first, so GafferBot knows which servers you're in.</p>}
+    <ErrorNotice error={q.error || set.error} />
+    {d && <div className="grid gap-4 sm:grid-cols-2">
+      <label className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"><span><span className="block text-sm font-medium">Post my big pulls</span><span className="text-xs text-muted-foreground">From packs the helper saw you open</span></span><Switch checked={d.share_pulls} disabled={set.isPending} onCheckedChange={v => set.mutate({ share_pulls: v })} aria-label="Post my big pulls" /></label>
+      <label className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"><span><span className="block text-sm font-medium">Show me on the FUT board</span><span className="text-xs text-muted-foreground">Also lets members see which cards you own</span></span><Switch checked={d.share_board} disabled={set.isPending} onCheckedChange={v => set.mutate({ share_board: v })} aria-label="Show me on the FUT board" /></label>
+      <div className="space-y-1.5"><Label>Only pulls rated</Label><Select value={String(d.min_pull_rating)} onValueChange={v => set.mutate({ min_pull_rating: Number(v) })}><SelectTrigger aria-label="Minimum pull rating"><SelectValue /></SelectTrigger><SelectContent>{[80, 83, 84, 85, 86, 87, 88, 89, 90, 92].map(r => <SelectItem key={r} value={String(r)}>{r}+</SelectItem>)}</SelectContent></Select></div>
+      <div className="space-y-1.5"><Label>Platform shared</Label><Select value={d.platform} onValueChange={v => set.mutate({ platform: v as "console" | "pc" })}><SelectTrigger aria-label="Platform shared"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="console">Console</SelectItem><SelectItem value="pc">PC</SelectItem></SelectContent></Select></div>
+    </div>}
+  </Section>;
+}
+
 export default function FutAccountPage() {
   const context = useMarketPlatform(), qc = useQueryClient();
   const query = useQuery({ queryKey: [...futKeys.account, context.platform], queryFn: () => futApi.account.get(context.platform), enabled: context.enabled, staleTime: 60_000, refetchInterval: 5 * 60_000 });
@@ -188,6 +212,7 @@ export default function FutAccountPage() {
   return <MarketShell title="My Account" showTabs={false} {...context}>
     <ErrorNotice error={query.error || clear.error} />
     <p className="text-sm text-muted-foreground">Your coins, FC Points, transfer list, watchlist, unassigned items, SBCs and objectives, as the EA Web App last showed them. The helper only copies what the Web App loads anyway; it never lists, bids, claims or submits anything.</p>
+    <ClubSharing enabled={context.enabled} />
     {query.isPending ? <MarketLoading /> : d && (!d.connected ? <Empty /> : <>
       <Overview d={d} />
       <Section title="What the helper has seen">

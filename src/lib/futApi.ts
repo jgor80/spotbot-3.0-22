@@ -81,6 +81,7 @@ export interface BestSquad { formation: string; squad: FutSquad; chemistry: numb
 export interface UpgradeSwap { slot: string; position: string; cost: number; out: { id: string | null; name: string | null; rating: number | null; meta: number | null; sells_for: number | null }; in: { id: string; name: string; rating: number | null; owned: boolean; meta: number | null; card: SlotCard } }
 export interface UpgradePlan { swaps: UpgradeSwap[]; cost: number; net_cost: number; rating_before: number; rating_after: number; chem_before: number; chem_after: number; meta_gain: number | null; gain: number; per_10k: number | null }
 export interface UpgradePath { platform: "console" | "pc"; candidates: number; before: { rating: number; chem: number }; budget: number; best: UpgradePlan | null; singles: UpgradePlan[]; pairs: UpgradePlan[]; free: UpgradePlan[]; note: string; verified: false }
+export interface ClubShare { platform: "console" | "pc"; share_pulls: boolean; share_board: boolean; min_pull_rating: number }
 export interface BestSquadResult { by: SuggestBy; owned_cards: number; results: BestSquad[] }
 export interface SlotSuggestion { card: SlotCard; team_chemistry: number; chemistry: number; change: number }
 export interface SlotSuggestions { slot: string; position: string; before: number; suggestions: SlotSuggestion[] }
@@ -107,7 +108,7 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
   if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
   return (data ?? null) as T;
 }
-export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, evolutions: ["fut", "evolutions"] as const, trades: ["fut", "trades"] as const, sellKeep: ["fut", "sell-keep"] as const, champs: ["fut", "champs"] as const, meta: ["fut", "meta"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
+export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, evolutions: ["fut", "evolutions"] as const, clubShare: ["fut", "club-share"] as const, trades: ["fut", "trades"] as const, sellKeep: ["fut", "sell-keep"] as const, champs: ["fut", "champs"] as const, meta: ["fut", "meta"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
 export type MarketPlatform = "console" | "pc";
 
@@ -363,6 +364,10 @@ export const futApi = {
   },
   /** Card art addresses the helper saw the Web App load (shared EA file addresses, newest first). */
   cardArt: () => futRequest<CardArtSeen[]>("/card-art"),
+  clubShare: {
+    get: () => futRequest<ClubShare>("/club-share"),
+    set: (patch: Partial<ClubShare>) => futRequest<ClubShare>("/club-share", "PUT", patch),
+  },
   account: {
     get: (platform: MarketPlatform) => futRequest<AccountOverview>(`/account?${new URLSearchParams({ platform })}`),
     clear: (platform: MarketPlatform) => futRequest<{ cleared: boolean }>(`/account?${new URLSearchParams({ platform })}`, "DELETE"),

@@ -79,6 +79,10 @@ send either a saved squad id or the whole squad object, so the page can ask ques
 | `POST /trades/buy-price` | `{ platform, item_id, price }`: the user's own buy price for a sale the helper saw without a buy (`price: null` clears it) |
 | `GET/POST /alerts/settings` | Price alerts: `{ dm, move_pct }` (DMs on/off; also alert on moves of at least move_pct% between refreshes) |
 | `POST /` `{ job: "price-alerts" }` | Bot only, after each FUT.GG refresh: watchlist targets reached and big moves since the last refresh (`fut.price_alert_candidates`), each target firing once until the price moves back 2% past it; returns one DM text per website account. The bot maps accounts to verified Discord links and DMs them (`PRICE_ALERTS=off` pauses) |
+| `GET /club-share`, `PUT /club-share` | What the user shares with their Discord servers (`fut.club_share`, off by default): `{ share_pulls, share_board, min_pull_rating (75-99, default 86), platform }`. Set on FUT → My Account |
+| `POST /` `{ job: "club-pulls" }` | Bot only, every 15 minutes: new pack pulls rated at least `min_pull_rating` from users with `share_pulls`, opened in the last 12 hours, at most 3 per user per run (best first; the rest are marked and skipped). Each pull is marked in `fut.club_pull_posts` so it goes out once. Returns `{ deliveries: [{ user_id, item_id, rating, name, price, untradeable, text }], skipped }` |
+| `POST /` `{ job: "club-board", user_ids }` | Bot only: for the given website users who have `share_board` on, the last 7 days: club value after tax (`club_trade_value`), trading profit and flips (`trade_log`), Champs/Rivals record (logged games) and best pull |
+| `POST /` `{ job: "club-whohas", user_ids, query }` | Bot only: which of the given users with `share_board` own a synced club card whose name contains `query` (2-60 characters), up to 5 cards each |
 
 ## MCP tools
 

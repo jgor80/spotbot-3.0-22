@@ -22,6 +22,7 @@ import { cardPriceHistory } from "../_shared/fut/price-history.ts";
 import { metaForCard, metaTop } from "../_shared/fut/meta-data.ts";
 import { compareAnyCards } from "../_shared/fut/card-compare.ts";
 import { upgradeOptions } from "../_shared/fut/upgrades-data.ts";
+import { clubBoard, getShare, runClubPulls, setShare, whoHas } from "../_shared/fut/club-share.ts";
 import { addGame, champsOverview, createRun, deleteGame, deleteRun, updateRun } from "../_shared/fut/champs.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
@@ -188,8 +189,9 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   // Only the bare function address takes jobs, and only from the bot; nothing else is reachable this way.
   if (req.method === "POST" && /\/fut-api\/?$/.test(new URL(req.url).pathname)) {
     if (!(await deps.isBot?.(req))) return err(401, "Only the bot's scheduler can run jobs.");
-    const job = (await req.json().catch(() => null) as { job?: unknown } | null)?.job;
-    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts" && job !== "strategy-learn") return err(400, "Unknown job.");
+    const jobBody = (await req.json().catch(() => null) ?? {}) as Record<string, unknown>;
+    const job = jobBody.job;
+    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts" && job !== "strategy-learn" && job !== "club-pulls" && job !== "club-board" && job !== "club-whohas") return err(400, "Unknown job.");
     try {
       // Knowledge bank: collect Reddit/YouTube sources and read what's waiting (see knowledge.ts)
       if (job === "knowledge-ingest") {
@@ -213,6 +215,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       if (job === "price-alerts") return json({ data: await runPriceAlerts(deps.db) });
       // Daily Strategy learning: settle earlier picks, log this refresh's, relearn (see strategy-model.ts)
       if (job === "strategy-learn") return json({ data: await runStrategyLearning(deps.db) });
+      // Club FUT layer: big pulls to post, the club's FUT board and "who has this card" for a server's members.
+      if (job === "club-pulls") return json({ data: await runClubPulls(deps.db) });
+      if (job === "club-board") return json({ data: await clubBoard(deps.db, jobBody.user_ids) });
+      if (job === "club-whohas") return json({ data: await whoHas(deps.db, jobBody.user_ids, jobBody.query) });
       if (job === "futgg-catalogue") {
         // Market-wide card list after the twice-daily FUT.GG prices, then baskets so the indexes include it.
         const result = await syncFutggCatalogue(deps.db, deps.fetch);
@@ -347,6 +353,9 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
     // Daily strategy: today's buys, sells, transfer list fixes and budget split from prices, coins and club. Advice only.
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2_000_000_000) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
+    // What the user shares with their Discord club (pulls feed, FUT board, who has this card). Off by default.
+    if (route === "/club-share" && m === "GET") return json({ data: await getShare(db, userId) });
+    if (route === "/club-share" && m === "PUT") return json({ data: await setShare(db, userId, obj(await body(req))) });
     // Champs / Rivals tracker: runs and games the user logs themselves.
     if (route === "/champs" && m === "GET") return json({ data: await champsOverview(db, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/champs/runs" && m === "POST") return json({ data: await createRun(db, userId, obj(await body(req))) }, 201);

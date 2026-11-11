@@ -32,6 +32,7 @@ const LIFE_FEATURES = {
   wire: { label: 'Network Wire', emoji: '📡', help: 'Weekly Network news in your network channel (Network servers only).' },
   picks: { label: 'Matchday Picks', emoji: '🔮', help: 'Picks open when the first player joins voice, score when the session ends, then a Player of the Night vote.' },
   rivals: { label: 'Rivals', emoji: '⚔️', help: 'Clubs played 3+ times become rivals; recaps against them get a head-to-head line.' },
+  fut: { label: 'FUT', emoji: '🃏', help: "Big pack pulls and a Sunday FUT board from players who opt in on the website (FUT → My Account); nobody's FUT is shared otherwise." },
 };
 
 const CLUBLIFE_COMMANDS = [
@@ -46,7 +47,9 @@ const CLUBLIFE_COMMANDS = [
       { type: 1, name: 'picks', description: 'Open Matchday Picks for tonight now (they also open when someone joins voice).' },
       { type: 1, name: 'table', description: "The season's Matchday Picks table: who's the Oracle." },
       { type: 1, name: 'rivals', description: 'Every club played 3+ times: head-to-head records, nemesis and favourite opponent.' },
-      { type: 1, name: 'settings', description: 'Switch badges, Wrapped, Awards Night, coach goals and the Network Wire on or off.' },
+      { type: 1, name: 'futboard', description: "The club's FUT board this week: club value, trading, Champs and pulls of players who share." },
+      { type: 1, name: 'whohas', description: 'Which club members own a FUT card (players who share their club only).', options: [{ type: 3, name: 'card', description: "Player name, e.g. Mbappé", required: true, max_length: 60 }] },
+      { type: 1, name: 'settings', description: 'Switch badges, Wrapped, Awards Night, coach goals, the Network Wire and FUT on or off.' },
     ],
   },
   { name: 'career', description: 'Your career at the club: badges, milestones in reach, this week\'s goal, card frame and Wrapped.', options: [{ type: 1, name: 'view', description: 'Open your career card.' }] },
@@ -57,7 +60,7 @@ function slimRow(r) {
 }
 
 function createClubLife(deps) {
-  const { supabase, autopilot, events, getGuildState, canManageClub, loadMatches, career, devGoals, statRoles, broadcast, network, dashboardUrl, picks, rivalries } = deps;
+  const { supabase, autopilot, events, getGuildState, canManageClub, loadMatches, career, devGoals, statRoles, broadcast, network, dashboardUrl, picks, rivalries, futClub } = deps;
   const client = () => events.getClient();
   const site = (dashboardUrl || 'https://gafferbot.app').replace(/\/$/, '');
   let lastDivisionCheck = 0;
@@ -499,6 +502,13 @@ function createClubLife(deps) {
     if (sub === 'picks' && picks) {
       await interaction.deferReply({ flags: 64 });
       return interaction.editReply(await picks.openNow(interaction, club));
+    }
+    if ((sub === 'futboard' || sub === 'whohas') && futClub) {
+      if (!futClub.enabled()) return interaction.reply({ content: 'FUT features are off on this GafferBot.', flags: 64 });
+      if (!autopilot.isOn(club, 'fut')) return interaction.reply({ content: 'FUT is switched off for this club (Club Life settings).', flags: 64 });
+      await interaction.deferReply({ flags: 64 });
+      if (sub === 'whohas') return interaction.editReply(await futClub.whoHasReply(interaction.guild, interaction.options.getString('card', true)).catch((err) => ({ content: `❌ ${err.message.replace(/^club-whohas: /, '')}` })));
+      return interaction.editReply({ embeds: [await futClub.boardEmbed(interaction.guild, club)], allowedMentions: { parse: [] } }).catch((err) => interaction.editReply({ content: `❌ ${err.message}` }));
     }
     if (!(await leaderOnly(interaction, club))) return null;
     if (sub === 'settings') return interaction.reply({ ...settingsPanel(club), flags: 64 });

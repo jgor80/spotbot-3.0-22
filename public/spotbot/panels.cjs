@@ -235,7 +235,7 @@ const AREAS = [
     key: 'clublife',
     label: 'Club Life',
     emoji: '🎉',
-    blurb: 'Badges, Club Wrapped, Awards Night, belts, Matchday Picks, rivals and the Fun Zone: the fun side of the club.',
+    blurb: 'Badges, Club Wrapped, Awards Night, belts, Matchday Picks, rivals, the FUT board and the Fun Zone: the fun side of the club.',
     actions: [
       { id: 'cl_awards', label: 'Start Awards Night', emoji: '🏆', cmd: 'clublife', sub: 'awards', style: 'primary' },
       { id: 'cl_wrapped', label: 'Post Club Wrapped', emoji: '🎁', cmd: 'clublife', sub: 'wrapped' },
@@ -245,6 +245,8 @@ const AREAS = [
       { id: 'cl_picks', label: 'Open Matchday Picks', emoji: '🔮', cmd: 'clublife', sub: 'picks' },
       { id: 'cl_table', label: 'Picks Table', emoji: '👁️', cmd: 'clublife', sub: 'table' },
       { id: 'cl_rivals', label: 'Rivals', emoji: '⚔️', cmd: 'clublife', sub: 'rivals' },
+      { id: 'cl_futboard', label: 'FUT Board', emoji: '🃏', cmd: 'clublife', sub: 'futboard' },
+      { id: 'cl_whohas', label: 'Who Has This Card', emoji: '🔎', cmd: 'clublife', sub: 'whohas', fields: ['card'], required: ['card'] },
       { id: 'cl_settings', label: 'Club Life Settings', emoji: '⚙️', cmd: 'clublife', sub: 'settings' },
     ],
   },
