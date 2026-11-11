@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock, Package, Trash2 } from "lucide-react";
 import { futApi, futKeys, type PackAdviceItem, type PackStoreSeen, type PackVerdict } from "@/lib/futApi";
@@ -17,6 +17,15 @@ const VERDICT: Record<PackVerdict, { label: string; className: string }> = {
   no_odds: { label: "Needs odds", className: "text-muted-foreground" },
   no_prices: { label: "No prices yet", className: "text-muted-foreground" },
 };
+
+/** "Fri 14 Nov, 18:00 (in 2 d 5 h)" for when a pack leaves the store. */
+function endsText(endAt: string, now = Date.now()) {
+  const ms = Date.parse(endAt) - now;
+  const when = new Date(endAt).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+  const h = Math.floor(ms / 3_600_000), d = Math.floor(h / 24);
+  const left = ms < 3_600_000 ? `${Math.max(1, Math.round(ms / 60_000))} min` : d >= 1 ? `${d} d ${h % 24} h` : `${h} h`;
+  return `${when} (in ${left})`;
+}
 
 const coins = (v: number | null | undefined) => (v == null ? "–" : `${numberText(v)} coins`);
 const pct = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v * 100)}%`);
@@ -57,6 +66,9 @@ function PackCard({ pack }: { pack: PackAdviceItem }) {
         <p className="text-sm text-muted-foreground">
           {[pack.coins ? coins(pack.coins) : null, pack.points ? `${numberText(pack.points)} FC Points` : null].filter(Boolean).join(" or ") || "No price shown"}
           {pack.item_count ? ` · ${pack.item_count} items${pack.rare ? `, ${pack.rare} rare` : ""}` : ""}
+        </p>
+        <p className={`text-xs ${pack.end_at && Date.parse(pack.end_at) - Date.now() < 24 * 3_600_000 ? "font-medium text-warning" : "text-muted-foreground"}`}>
+          <Clock className="mr-1 inline h-3 w-3 align-[-2px]" />{pack.end_at ? `Leaves the store ${endsText(pack.end_at)}` : "No end date from EA"}
         </p>
         {!pack.named && <p className="text-xs text-muted-foreground">EA's name not read yet (store pack {pack.pack_id})</p>}
       </div>
@@ -99,7 +111,7 @@ function Empty() {
     <Package className="mx-auto h-10 w-10 text-muted-foreground" />
     <h2 className="font-display text-xl">No packs yet</h2>
     <ol className="mx-auto max-w-lg list-decimal space-y-1 pl-5 text-left text-sm text-muted-foreground">
-      <li>Install the XI Lab helper (v0.11.0 or newer), reload it in chrome://extensions, then reload the Web App and connect the helper in Market Lab → Import prices.</li>
+      <li>Install the XI Lab helper (v0.11.1 or newer), reload it in chrome://extensions, then reload the Web App and connect the helper in Market Lab → Import prices.</li>
       <li>In the EA FC Web App, open <strong>Store → Packs</strong> and look through the tabs.</li>
       <li>Open a pack's odds (Pack Probability) so the helper can read them.</li>
       <li>Come back here: the helper uploads within a few minutes.</li>
@@ -110,20 +122,24 @@ function Empty() {
 
 export default function PackAdvisorPage() {
   const context = useMarketPlatform(), qc = useQueryClient();
-  const query = useQuery({ queryKey: [...futKeys.packs, context.platform], queryFn: () => futApi.packs.advice(context.platform), enabled: context.enabled, staleTime: 2 * 60_000 });
+  const query = useQuery({ queryKey: [...futKeys.packs, context.platform], queryFn: () => futApi.packs.advice(context.platform), enabled: context.enabled, staleTime: 2 * 60_000, refetchInterval: 3 * 60_000 });
   const clear = useMutation({ mutationFn: () => futApi.packs.clear(context.platform), onSuccess: () => qc.invalidateQueries({ queryKey: futKeys.packs }) });
   const d = query.data;
   const opens = d?.pulls.opens ?? [];
   const seen = d?.shape?.seen ?? [];
+  // Packs that expire while the page is open drop off at the next minute tick (the server hides them on every load).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(t); }, []);
+  const live = (d?.packs ?? []).filter(p => !p.end_at || Date.parse(p.end_at) > now);
   return <MarketShell title="Pack Advisor" showTabs={false} {...context}>
     <ErrorNotice error={query.error || clear.error} />
     <p className="text-sm text-muted-foreground">Which store packs are worth your coins, and when to open them. The helper copies the packs, prices and EA's pack odds from the Store screen when you open it; card values come from FUT.GG's latest prices. It never buys or opens anything.</p>
-    {query.isPending ? <MarketLoading /> : d && (d.packs.length === 0 && opens.length === 0 ? <>{seen.length > 0 && <SeenStore seen={seen} missed />}<Empty /></> : <>
+    {query.isPending ? <MarketLoading /> : d && (live.length === 0 && opens.length === 0 ? <>{seen.length > 0 && <SeenStore seen={seen} missed />}<Empty /></> : <>
       <p className="text-xs text-muted-foreground">Store seen {d.captured_at ? dateText(d.captured_at) : "–"} · Prices from FUT.GG {d.prices_at ? dateText(d.prices_at) : "not loaded yet"} · Estimates, not checked against FC 27 yet</p>
       <Section title="Live in the store">
-        {d.packs.length ? <div className="grid items-start gap-4 lg:grid-cols-2">{d.packs.map(p => <PackCard key={p.pack_id} pack={p} />)}</div>
+        {live.length ? <div className="grid items-start gap-4 lg:grid-cols-2">{live.map(p => <PackCard key={p.pack_id} pack={p} />)}</div>
           : <p className="text-sm text-muted-foreground">No packs live in the store for this platform. Open Store → Packs in the Web App.</p>}
-        {(d.hidden ?? 0) > 0 && <p className="text-xs text-muted-foreground">{d.hidden} older {d.hidden === 1 ? "pack is" : "packs are"} hidden: ended, not started yet, or missing from the latest store list.</p>}
+        {(d.hidden ?? 0) > 0 && <p className="text-xs text-muted-foreground">{d.hidden} older {d.hidden === 1 ? "pack is" : "packs are"} hidden: expired, not started yet, or missing from the latest store list.</p>}
       </Section>
       <Section title="Your pack openings">
         <div className="overflow-x-auto"><DataTable headers={["Pack", "Opened", "Items", "Sell value after tax", "Untradeable value", "Profit"]} rows={opens.map(o => [o.pack_name, dateText(o.opened_at), o.items, coins(o.after_tax), coins(o.untradeable_value), o.profit == null ? "–" : <Delta value={o.profit} unit=" coins" />])} empty="Open a pack in the Web App and the helper records what it gave you." /></div>
