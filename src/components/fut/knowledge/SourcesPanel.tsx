@@ -31,7 +31,7 @@ export function FeedStatus({ status }: { status: KbStatus }) {
         ? "Top gameplay posts and comments from r/EASportsFC and r/fut through Reddit's public feeds, every 3 hours. Upvotes aren't included."
         : "Top gameplay posts and comments from r/EASportsFC and r/fut, every 3 hours."} />
       <Feed on={status.feeds.youtube} name="YouTube" detail={status.feeds.youtube ? "Most-watched FC 27 meta videos and their top comments, 4 times a day." : "Needs a YouTube Data API key (YOUTUBE_API_KEY on the server)."} />
-      <Feed on={status.feeds.reader} name="Reader" detail={status.feeds.reader ? "Claude reads each source into short claims." : "Needs ANTHROPIC_API_KEY on the server."} />
+      <Feed on={status.feeds.reader} name="Reader" detail={status.feeds.reader ? "Claude reads each source into short claims." : "Needs a Claude API key: add yours on your profile."} />
     </div>
     <p className="text-sm text-muted-foreground">
       {status.paused ? "Collecting is paused (FUT_KNOWLEDGE=off). " : ""}

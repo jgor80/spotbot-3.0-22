@@ -427,7 +427,7 @@ export async function addSource(db: Rpc, userId: string, input: AddInput, env: E
   const url = typeof input.url === "string" ? input.url.trim() : "";
   const text = typeof input.text === "string" ? keep(input.text, MAX_ADD_TEXT) : "";
   if (url && (!/^https:\/\/\S+$/.test(url) || url.length > 600)) throw new FutError("Links must start with https:// (up to 600 characters).");
-  if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) throw new FutError("Reading sources needs ANTHROPIC_API_KEY on the server.", 503);
+  if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) throw new FutError("Reading sources needs a Claude API key: add yours on your profile.", 503);
   const link = url ? parseSourceLink(url) : null;
   let fetched: CollectedSource | null = null;
   if (link && !text) {
