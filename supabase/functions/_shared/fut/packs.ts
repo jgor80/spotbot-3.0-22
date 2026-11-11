@@ -525,7 +525,7 @@ async function pullSummary(db: FutDb, platform: "console" | "pc", pulls: PackPul
     opens: [...opens.values()].sort((a, b) => b.opened_at.localeCompare(a.opened_at)).slice(0, 50).map((o) => {
       const pack = o.pack_id ? packs.get(o.pack_id) : undefined;
       const cost = pack?.coins ? Number(pack.coins) : null;
-      return { ...o, pack_name: pack ? packName(pack) : o.pack_id ? `Pack ${o.pack_id}` : "Unknown pack", pack_coins: cost,
+      return { ...o, pack_name: pack ? packName(pack as unknown as PackOffer) : o.pack_id ? `Pack ${o.pack_id}` : "Unknown pack", pack_coins: cost,
         after_tax: Math.round(o.tradeable_value * (1 - EA_TAX)), profit: cost ? Math.round(o.tradeable_value * (1 - EA_TAX)) - cost : null };
     }),
   };
