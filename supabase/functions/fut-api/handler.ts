@@ -12,7 +12,7 @@ import { collectFc27Market, fc27MarketStatus, pullFc27Market } from "../_shared/
 import { futggStatus } from "../_shared/fut/futgg-status.ts";
 import { clearStore, importStore, packAdvice } from "../_shared/fut/packs.ts";
 import { accountOverview, clearAccount, importAccount } from "../_shared/fut/account.ts";
-import { dailyStrategy, riskParam } from "../_shared/fut/strategy.ts";
+import { dailyStrategy, riskParam, runStrategyLearning } from "../_shared/fut/strategy.ts";
 import { parseSolveBody, sbcOverview, solveForUser } from "../_shared/fut/sbc-data.ts";
 import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evolutions-data.ts";
 import { getAlertSettings, runPriceAlerts, setAlertSettings } from "../_shared/fut/alerts.ts";
@@ -188,7 +188,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (req.method === "POST" && /\/fut-api\/?$/.test(new URL(req.url).pathname)) {
     if (!(await deps.isBot?.(req))) return err(401, "Only the bot's scheduler can run jobs.");
     const job = (await req.json().catch(() => null) as { job?: unknown } | null)?.job;
-    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts" && job !== "strategy-learn") return err(400, "Unknown job.");
     try {
       // Knowledge bank: collect Reddit/YouTube sources and read what's waiting (see knowledge.ts)
       if (job === "knowledge-ingest") {
@@ -210,6 +210,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       if (job === "futgg-attributes") return json({ data: await syncFutggAttributes(deps.db, deps.fetch) });
       // Watchlist targets and big moves after a price refresh; the bot DMs each player the text it gets back.
       if (job === "price-alerts") return json({ data: await runPriceAlerts(deps.db) });
+      // Daily Strategy learning: settle earlier picks, log this refresh's, relearn (see strategy-model.ts)
+      if (job === "strategy-learn") return json({ data: await runStrategyLearning(deps.db) });
       if (job === "futgg-catalogue") {
         // Market-wide card list after the twice-daily FUT.GG prices, then baskets so the indexes include it.
         const result = await syncFutggCatalogue(deps.db, deps.fetch);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { CalendarClock, ListChecks, ShieldAlert, TrendingDown, TrendingUp, Repeat } from "lucide-react";
+import { CalendarClock, Lightbulb, ListChecks, ShieldAlert, TrendingDown, TrendingUp, Repeat } from "lucide-react";
 import { futApi, futKeys, type DailyStrategy, type StrategyBuy, type StrategyRisk, type StrategySell } from "@/lib/futApi";
 import { FutCardArt } from "@/components/fut/FutCardArt";
 import { ErrorNotice } from "@/components/fut/FutShared";
@@ -131,6 +131,20 @@ function Plan({ d }: { d: DailyStrategy }) {
       <div className="overflow-x-auto"><DataTable headers={["Card", "Buy up to", "List at", "Profit after tax", "Confidence"]} rows={d.watch.map(b => [
         <Card c={b} />, coins(b.buy_at), coins(b.sell_at), <span className="tabular-nums text-success">+{coins(b.profit)} ({b.roi}%)</span>, b.confidence,
       ])} /></div>
+    </Section>}
+
+    {d.learning && <Section title="What it has learned">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Buy picks checked" value={numberText(d.learning.buy_picks)} sub={d.learning.ready ? "Last 30 days, whole market" : "Learning starts at 30"} />
+        <Stat label="Reached their target" value={d.learning.buy_hit_rate != null ? `${Math.round(d.learning.buy_hit_rate * 100)}%` : "–"} sub={d.learning.hours_to_hit != null ? `Usually within ${d.learning.hours_to_hit} hours` : "Within 4 days"} />
+        <Stat label="Sell calls right" value={d.learning.sell_right_rate != null ? `${Math.round(d.learning.sell_right_rate * 100)}%` : "–"} sub={`${numberText(d.learning.sell_calls)} calls checked`} />
+        <Stat label="Your trades on its picks" value={d.learning.followed.sold ? `${d.learning.followed.profit >= 0 ? "+" : ""}${numberText(d.learning.followed.profit)}` : String(d.learning.followed.trades)} sub={d.learning.followed.sold ? `${d.learning.followed.sold} sold, after tax` : "From your trade log"} />
+      </div>
+      <ul className="space-y-2 text-sm">{d.learning.lessons.map((l, i) => <li key={i} className="flex gap-2"><Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{l}</span></li>)}</ul>
+      {d.learning.followed.items.length > 0 && <div className="overflow-x-auto"><DataTable headers={["Picked", "Card", "You paid", "Sold for", "Profit after tax"]} rows={d.learning.followed.items.map(t => [
+        t.plan_date, t.name, coins(t.bought_for), coins(t.sold_for), t.profit == null ? "Not sold yet" : <span className={t.profit >= 0 ? "text-success" : "text-destructive"}>{t.profit >= 0 ? "+" : ""}{numberText(t.profit)}</span>,
+      ])} /></div>}
+      <p className="text-xs text-muted-foreground">After every price refresh GafferBot logs the day's picks for every card and checks earlier ones against the prices since. Picks are re-ranked by how similar picks did, and sell targets come down when prices usually stop short of them.{d.learning.updated_at ? ` Last learned ${dateText(d.learning.updated_at)}.` : ""}</p>
     </Section>}
 
     <Section title="How earlier picks did">
