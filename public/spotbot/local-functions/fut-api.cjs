@@ -7015,6 +7015,67 @@ function isValidPrice(price, rules = DEFAULT_MARKET_RULES) {
   return Number.isInteger(price) && price >= rules.min_price && price % stepAt(price, rules) === 0;
 }
 
+// supabase/functions/_shared/fut/futgg-live.ts
+var ROOT = "https://r2.fut.gg/27";
+var FILES = { console: "player-prices-ps5-dyn", pc: "player-prices-pc-dyn" };
+var MANIFEST_TTL = 5 * 6e4;
+var MAX_PRICE2 = 15e6;
+var defaultFetch = (u) => fetch(u, { headers: { Accept: "application/json", "User-Agent": "XI-Lab-Market-Collector/1.0" }, signal: AbortSignal.timeout(15e3) });
+var cache = { prices: {} };
+async function getJson2(fetcher, url) {
+  const res = await fetcher(url);
+  if (!res.ok) throw new Error(`FUT.GG ${res.status}`);
+  const body2 = await res.json();
+  if (!body2 || typeof body2 !== "object" || Array.isArray(body2)) throw new Error("FUT.GG sent an unexpected file");
+  return body2;
+}
+function fileUrl(manifest, name2) {
+  const hash = manifest[name2], version = manifest._version;
+  if (!Number.isSafeInteger(version) || typeof hash !== "string" || !/^[a-f0-9]+$/.test(hash)) throw new Error(`FUT.GG manifest has no ${name2}`);
+  return { url: `${ROOT}/${name2}.v${version}.${hash}.json`, hash };
+}
+function decodeIndex(index) {
+  const d = index.d;
+  if (index.v !== 2 || !Number.isSafeInteger(index.id0) || !Array.isArray(d)) throw new Error("Unexpected FUT.GG index format");
+  const ids = [Number(index.id0)];
+  for (const delta of d) {
+    if (!Number.isSafeInteger(delta) || Number(delta) <= 0) throw new Error("Invalid FUT.GG card id");
+    ids.push(ids[ids.length - 1] + Number(delta));
+  }
+  return ids;
+}
+function decodePrices(ids, blob) {
+  const p = blob.p, s = blob.s;
+  if (blob.v !== 2 || !Array.isArray(p) || !Array.isArray(s) || p.length !== ids.length || s.length !== ids.length) throw new Error("FUT.GG price file doesn't match its index");
+  const out = /* @__PURE__ */ new Map();
+  for (let i = 0; i < ids.length; i++) {
+    const price = p[i], status = s[i];
+    if (status === 0 && Number.isSafeInteger(price) && price >= 1 && price <= MAX_PRICE2) out.set(ids[i], price);
+  }
+  return out;
+}
+async function liveFutggPrices(platform, fetcher = defaultFetch, now2 = Date.now()) {
+  try {
+    if (!cache.manifest || now2 - cache.manifest.at > MANIFEST_TTL) cache.manifest = { at: now2, value: await getJson2(fetcher, `${ROOT}/manifest.json`) };
+    const manifest = cache.manifest.value, name2 = FILES[platform];
+    const file = fileUrl(manifest, name2), idx = fileUrl(manifest, "player-prices-index");
+    const key2 = `${idx.hash}:${file.hash}`;
+    const hit = cache.prices[platform];
+    if (hit?.hash === key2) return hit.value;
+    if (cache.index?.hash !== idx.hash) cache.index = { hash: idx.hash, ids: decodeIndex(await getJson2(fetcher, idx.url)) };
+    const prices = decodePrices(cache.index.ids, await getJson2(fetcher, file.url));
+    const stamp = Number(manifest._published_at?.[name2]);
+    if (!Number.isFinite(stamp) || stamp <= 0) throw new Error("FUT.GG manifest has no publish time");
+    const value = { platform, at: new Date(stamp * 1e3).toISOString(), prices };
+    cache.prices[platform] = { hash: key2, value };
+    return value;
+  } catch (e) {
+    console.warn("live FUT.GG prices unavailable:", e instanceof Error ? e.message : String(e));
+    cache.manifest = void 0;
+    return null;
+  }
+}
+
 // supabase/functions/_shared/fut/strategy-model.ts
 var HORIZON_H = 96;
 var WINDOW_DAYS = 30;
@@ -7174,6 +7235,21 @@ function cardStats(card, window_h) {
     new_card: window_h >= 48 && card.ages[0] < window_h - 18
   };
 }
+function withLive(series, live) {
+  if (!live || !series.latest) return { series, fresh: null, live_at: null };
+  const h = Math.round((Date.parse(live.at) - Date.parse(series.latest)) / 36e5 * 10) / 10;
+  if (!(h >= 0.25)) {
+    return { series, fresh: new Set(series.cards.filter((c4) => live.prices.has(c4.ea_item_id)).map((c4) => c4.ea_item_id)), live_at: series.latest };
+  }
+  const fresh = /* @__PURE__ */ new Set();
+  const cards = series.cards.map((card) => {
+    const price = live.prices.get(card.ea_item_id), ages = card.ages.map((a) => a + h);
+    if (price === void 0) return { ...card, ages };
+    fresh.add(card.ea_item_id);
+    return { ...card, prices: [...card.prices, price], ages: [...ages, 0] };
+  });
+  return { series: { ...series, latest: live.at, window_h: series.window_h + h, cards }, fresh, live_at: live.at };
+}
 function cardKind(c4) {
   if (c4.is_icon) return "icon";
   if (c4.is_hero) return "hero";
@@ -7284,14 +7360,18 @@ function scoreBuys(cards, timing, o) {
   for (const { card, stats: s } of cards) {
     if (!card.tracked || s.points < 6 || s.latest_age_h > 13 || s.latest < 1e3 || s.latest > o.max_price) continue;
     if (s.new_card) continue;
+    if (o.fresh && !o.fresh.has(card.ea_item_id)) continue;
     const discount = (s.median - s.latest) / s.median;
     if (discount < 0.05) continue;
+    if (discount > 0.45) continue;
+    if (s.prev !== null && s.latest > s.prev * 1.25) continue;
     if (s.falling >= 3 && s.latest <= s.min) continue;
     const buy_at = down(s.latest);
     const target_raw = down(Math.min(s.median, s.max * 0.98));
     const sell_at = reach < 1 && target_raw > buy_at ? Math.max(buy_at, down(buy_at + (target_raw - buy_at) * reach)) : target_raw;
     const profit = net(sell_at) - buy_at, roi = profit / buy_at;
     if (profit < MIN_PROFIT || roi < o.min_roi) continue;
+    const max_buy = Math.max(buy_at, down(Math.min(net(sell_at) / (1 + o.min_roi), net(sell_at) - MIN_PROFIT)));
     const kind = cardKind(card), range = (s.max - s.min) / s.median;
     let conf = clamp(s.points / 12, 0.4, 1) * (s.rising >= 1 || s.falling === 0 ? 1 : 0.75) * (range > 0.6 ? 0.6 : 1);
     if (s.change_72h !== null && s.change_72h < -20) conf *= 0.7;
@@ -7345,7 +7425,8 @@ function scoreBuys(cards, timing, o) {
       score: score3,
       target_raw,
       features,
-      p_hit: learned.p_hit
+      p_hit: learned.p_hit,
+      max_buy
     });
   }
   return out.sort((a, b) => b.score - a.score);
@@ -7445,7 +7526,9 @@ function scorePast(past, series, latest) {
     items
   };
 }
-function buildStrategy(input) {
+function buildStrategy(raw) {
+  const lived = withLive(raw.series, raw.live);
+  const input = { ...raw, series: lived.series };
   const timing = marketTiming(input.now);
   const risk = RISK[input.risk ?? "normal"];
   const byEa = new Map(input.series.cards.map((card) => [card.ea_item_id, card]));
@@ -7482,7 +7565,8 @@ function buildStrategy(input) {
     max_price: per_pick !== null && per_pick >= 1e3 ? per_pick : 15e6,
     min_roi: risk.min_roi,
     owned,
-    model: input.model
+    model: input.model,
+    fresh: lived.fresh
   });
   const buys = [], seenPlayer = /* @__PURE__ */ new Set();
   let left = spend ?? 0, slots = free_slots;
@@ -7503,6 +7587,7 @@ function buildStrategy(input) {
     seenPlayer.add(player);
     buys.push(p);
   }
+  const ranges = priceRanges(stats, byEa, timing, { min_roi: risk.min_roi, owned, model: input.model, fresh: lived.fresh, per_pick, cap_slots: free_slots, taken: buys });
   const watch = candidates.filter((p) => !buys.includes(p) && !seenPlayer.has(`${p.name}|${p.rating}`)).slice(0, 8);
   const sells = input.club ? scoreSells(input.club, stats, timing, input.squad_card_ids, input.model).slice(0, stance === "sell" ? 10 : 6) : [];
   const names2 = new Map([...byEa].map(([k, v]) => [k, v.name]));
@@ -7512,6 +7597,7 @@ function buildStrategy(input) {
   const buySpend = buys.reduce((n, b) => n + (b.spend ?? 0), 0), buyProfit = buys.reduce((n, b) => n + (b.total_profit ?? 0), 0);
   const sellValue = sells.reduce((n, s) => n + s.after_tax, 0);
   const sold = pile.filter((p) => p.action === "clear"), relist = pile.filter((p) => p.action !== "clear");
+  const soldCoins = (input.tradepile ?? []).filter((i) => i.state === "sold").reduce((n, i) => n + netAfterTax(i.current_bid ?? i.buy_now ?? 0, RULES), 0);
   const steps = [];
   if (sold.length) steps.push(`Clear ${sold.length} sold item${sold.length === 1 ? "" : "s"} on your transfer list to collect the coins.`);
   if (relist.length) steps.push(`Relist ${relist.length} item${relist.length === 1 ? "" : "s"} at today's price (see Transfer list).`);
@@ -7536,7 +7622,10 @@ function buildStrategy(input) {
     stance,
     mood: { label: mood, median_24h: m24, median_72h: m72, cards: moves.length },
     timing,
+    prices: priceFreshness(raw.series.latest, lived.live_at, raw.live === void 0 ? null : !!raw.live, input.now),
     budget: { coins: coins5, coins_source: input.coins_source, coins_at: input.coins_at, reserve_pct: Math.round(reserve_pct * 100), reserve, spend, per_pick, buy_spend: buySpend, expected_profit: buyProfit, free_slots, risk: input.risk ?? "normal" },
+    move: bestMove({ buys, sells, pile, stance, timing, coins: coins5, sold_coins: soldCoins, prices_at: input.series.latest, now: input.now, stale: !lived.live_at && !!input.series.latest && input.now - Date.parse(input.series.latest) > 3 * 36e5 }),
+    ranges,
     steps,
     buys,
     watch,
@@ -7546,6 +7635,115 @@ function buildStrategy(input) {
     learning: learningSummary(input.model, input.followed ?? []),
     notes,
     verified: false
+  };
+}
+var PRICE_RANGES = [
+  { key: "low", label: "Low price", sub: "1k to 10k", min: 1e3, max: 1e4 },
+  { key: "medium", label: "Medium price", sub: "10k to 100k", min: 1e4, max: 1e5 },
+  { key: "high", label: "High price", sub: "100k and up", min: 1e5, max: 15000001 }
+];
+function priceRanges(stats, byEa, timing, o) {
+  const all = scoreBuys([...stats].flatMap(([ea, st]) => {
+    const card = byEa.get(ea);
+    return card ? [{ card, stats: st }] : [];
+  }), timing, { max_price: 15e6, min_roi: o.min_roi, owned: o.owned, model: o.model, fresh: o.fresh });
+  const taken = new Map(o.taken.map((b) => [b.ea_item_id, b]));
+  return PRICE_RANGES.map((r2) => {
+    const seen = /* @__PURE__ */ new Set();
+    const inRange2 = all.filter((b) => b.buy_at >= r2.min && b.buy_at < r2.max).filter((b) => {
+      const k = `${b.name}|${b.rating}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    const sized = inRange2.slice(0, 4).map((b) => {
+      const t = taken.get(b.ea_item_id);
+      if (t) return t;
+      if (o.per_pick === null) return b;
+      const maxQty = b.price >= 5e4 ? 2 : b.price >= 1e4 ? 5 : 10, qty = Math.min(Math.floor(o.per_pick / b.buy_at), maxQty, Math.max(o.cap_slots, 1));
+      return qty >= 1 ? { ...b, quantity: qty, spend: qty * b.buy_at, total_profit: qty * b.profit } : b;
+    });
+    const pick = sized[0] ?? null;
+    return { key: r2.key, label: r2.label, sub: r2.sub, pick, affordable: pick && o.per_pick !== null ? pick.buy_at <= o.per_pick : null, others: sized.slice(1) };
+  });
+}
+function priceFreshness(refresh_at, live_at, live_ok, now2) {
+  const at2 = live_at ?? refresh_at;
+  const age_h = at2 ? Math.max(0, Math.round((now2 - Date.parse(at2)) / 36e5 * 10) / 10) : null;
+  return {
+    at: at2,
+    refresh_at,
+    source: live_at ? "live" : "refresh",
+    age_h,
+    note: live_at ? `Buy Now prices are FUT.GG's newest estimates, updated about once an hour. Check the price in the game before you buy, and skip a card if it's over its "don't pay more than" price.` : `${live_ok === false ? "FUT.GG's hourly prices couldn't be loaded, so these" : "These"} prices are from the last full refresh${age_h !== null ? `, ${age_h < 1 ? "under an hour" : `${Math.round(age_h)} hour${Math.round(age_h) === 1 ? "" : "s"}`} ago` : ""}. Prices may have moved: check each one in the game first.`
+  };
+}
+function nextRefresh(now2) {
+  const d = new Date(now2), day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const slots = [day + 6 * 36e5, day + 18 * 36e5, day + 30 * 36e5];
+  return new Date(slots.find((t) => t > now2 + 20 * 6e4) ?? slots[2]).toISOString();
+}
+var CONF_CHANCE = { high: 0.6, medium: 0.45, low: 0.3 };
+var buyValue = (b) => (b.total_profit ?? b.profit) * (b.p_hit ?? CONF_CHANCE[b.confidence]);
+function bestMove(o) {
+  const base = { prices_at: o.prices_at, next_update: nextRefresh(o.now) };
+  const soldN = o.pile.filter((p) => p.action === "clear").length;
+  const first = soldN ? `First clear ${soldN} sold item${soldN === 1 ? "" : "s"} on your transfer list${o.sold_coins ? ` to collect ${c(o.sold_coins)} coins` : ""}.` : null;
+  const buy = [...o.buys].sort((a, b) => buyValue(b) - buyValue(a))[0];
+  const sell = o.sells[0];
+  const sellFirst = !!sell && (o.stance === "sell" || !buy || sell.reason === "falling" && (sell.right_rate ?? 0.5) >= 0.5);
+  if (sell && sellFirst) {
+    const right = sell.right_rate !== null ? ` Calls like this were right ${Math.round(sell.right_rate * 100)}% of the time.` : "";
+    return {
+      ...base,
+      kind: "sell",
+      first,
+      ea_item_id: sell.ea_item_id,
+      name: sell.name,
+      coins: sell.after_tax,
+      chance: sell.right_rate,
+      title: `Sell ${sell.quantity > 1 ? `${sell.quantity}x ` : ""}${sell.name}${sell.rating ? ` (${sell.rating})` : ""} at ${c(sell.list_at)}`,
+      detail: `${sell.why} That's about ${c(sell.after_tax)} coins after tax. If it hasn't sold in an hour, drop to ${c(sell.quick_at)}.${right}`
+    };
+  }
+  if (buy) {
+    const qty = buy.quantity ?? 1, chance = buy.p_hit ?? CONF_CHANCE[buy.confidence], profit = buy.total_profit ?? buy.profit;
+    const when3 = o.timing.buy_bias < 0 ? "Prices often dip later today, so wait for the dip if you can. " : "";
+    const odds = buy.p_hit !== null ? `Similar picks reached their sell price ${Math.round(buy.p_hit * 100)}% of the time` : `Confidence is ${buy.confidence}`;
+    return {
+      ...base,
+      kind: "buy",
+      first,
+      ea_item_id: buy.ea_item_id,
+      name: buy.name,
+      coins: buy.p_hit !== null ? Math.round(profit * chance) : profit,
+      chance: buy.p_hit,
+      title: `Buy ${qty > 1 ? `${qty}x ` : ""}${buy.name} (${buy.rating}) at ${c(buy.buy_at)}, list at ${c(buy.sell_at)}`,
+      detail: `${when3}It's ${Math.round((buy.median - buy.price) / buy.median * 100)}% under its usual price. If ${qty > 1 ? "they all sell" : "it sells"}, that's ${c(profit)} profit after tax, usually within ${buy.hold}. ${odds}. Don't pay more than ${c(buy.max_buy)}: above that it isn't worth it after tax.${o.stale ? " These prices are old, so check the Buy Now price in the game first." : ""}${buy.quantity === null ? " Your coins aren't known, so buy as many as you can afford." : ""}`
+    };
+  }
+  const relist = o.pile.filter((p) => p.action !== "clear");
+  if (relist.length) return {
+    ...base,
+    kind: "relist",
+    first,
+    ea_item_id: relist[0].ea_item_id,
+    name: relist[0].name,
+    coins: null,
+    chance: null,
+    title: `Relist ${relist.length} stuck item${relist.length === 1 ? "" : "s"} at today's price`,
+    detail: `Start with ${relist[0].name}: ${relist[0].why} Coins sitting in unsold cards can't make more coins.`
+  };
+  return {
+    ...base,
+    kind: "wait",
+    first,
+    ea_item_id: null,
+    name: null,
+    coins: null,
+    chance: null,
+    title: o.coins !== null && o.coins < 2e3 ? "Sell a few cards you don't use to get coins to trade with" : "Hold your coins until the next price update",
+    detail: o.coins !== null && o.coins < 2e3 ? "You have under 2,000 coins, which is too little to flip safely. Spare players and duplicates are the quickest coins." : "No card is cheap enough right now to flip for a safe profit after tax. Holding coins costs nothing; a bad buy does."
   };
 }
 function learningSummary(model, followed) {
@@ -7567,6 +7765,7 @@ var riskParam = (v) => v === "careful" || v === "bold" ? v : "normal";
 var arr2 = (v) => Array.isArray(v) ? v : null;
 async function dailyStrategy(db2, userId, platform, opts = {}) {
   const now2 = opts.now ?? Date.now();
+  const livePromise = opts.live !== void 0 ? Promise.resolve(opts.live) : liveFutggPrices(platform);
   const [stateRes, clubRes, pastRes, squadRes, modelRes, tradesRes] = await Promise.all([
     db2.from("account_state").select("balance,tradepile,profile,balance_at").eq("user_id", userId).eq("platform", platform).maybeSingle(),
     db2.rpc("club_trade_value", { p_user: userId, p_platform: platform }),
@@ -7635,7 +7834,8 @@ async function dailyStrategy(db2, userId, platform, opts = {}) {
     past,
     risk: opts.risk,
     model,
-    followed: followedTrades(past, tradesRes.data ?? [])
+    followed: followedTrades(past, tradesRes.data ?? []),
+    live: await livePromise
   });
   if (series.latest && plan.buys.length) {
     const keep2 = { buys: plan.buys.map((b) => ({ ea_item_id: b.ea_item_id, name: b.name, buy_at: b.buy_at, sell_at: b.sell_at, quantity: b.quantity })), sells: plan.sells.map((s) => ({ ea_item_id: s.ea_item_id, name: s.name, list_at: s.list_at })), stance: plan.stance, mood: plan.mood };
@@ -11323,7 +11523,7 @@ var EA_POSITIONS = {
   26: "ST",
   27: "LW"
 };
-async function getJson2(fetcher, url) {
+async function getJson3(fetcher, url) {
   const res = await fetcher(url);
   if (!res.ok) throw new FutError(`${new URL(url).host} returned HTTP ${res.status} for the card list`, 502);
   const text5 = await res.text();
@@ -11343,7 +11543,7 @@ var arr3 = (v, n, what) => {
   if (!Array.isArray(v) || v.length !== n) throw new FutError(`Unexpected ${what} format`, 502);
   return v;
 };
-function fileUrl(manifest, name2) {
+function fileUrl2(manifest, name2) {
   const hash = manifest[name2], version = manifest._version;
   if (!Number.isSafeInteger(version) || typeof hash !== "string" || !/^[a-f0-9]+$/.test(hash)) throw new FutError(`FUT.GG manifest has no ${name2}`, 502);
   return `${FUTGG}/${name2}.v${version}.${hash}.json`;
@@ -11411,14 +11611,14 @@ function eaPlayersUrl(html) {
   return `${eaContentBase(html)}items/web/players.json`;
 }
 async function syncFutggCatalogue(db2, fetcher = (u) => fetch(u, { headers: { Accept: "application/json, text/html", "User-Agent": "XI-Lab-Market-Collector/1.0" }, signal: AbortSignal.timeout(3e4) })) {
-  const manifest = obj(await getJson2(fetcher, `${FUTGG}/manifest.json`), "FUT.GG manifest");
+  const manifest = obj(await getJson3(fetcher, `${FUTGG}/manifest.json`), "FUT.GG manifest");
   const [index, pool, core, html] = await Promise.all([
-    getJson2(fetcher, fileUrl(manifest, "player-prices-index")),
-    getJson2(fetcher, fileUrl(manifest, "streamlined-pool")),
-    getJson2(fetcher, fileUrl(manifest, "fc-core-data")),
+    getJson3(fetcher, fileUrl2(manifest, "player-prices-index")),
+    getJson3(fetcher, fileUrl2(manifest, "streamlined-pool")),
+    getJson3(fetcher, fileUrl2(manifest, "fc-core-data")),
     getText(fetcher, EA_WEB_APP)
   ]);
-  const players = obj(await getJson2(fetcher, eaPlayersUrl(html)), "EA player file");
+  const players = obj(await getJson3(fetcher, eaPlayersUrl(html)), "EA player file");
   const stamp = obj(manifest._published_at ?? {}, "FUT.GG manifest")["streamlined-pool"];
   const publishedAt = Number.isSafeInteger(stamp) ? new Date(Number(stamp) * 1e3).toISOString() : null;
   const cards = buildCatalogue({ index: obj(index, "FUT.GG index"), pool: obj(pool, "card pool"), core: obj(core, "FUT.GG core data"), players, publishedAt });
@@ -11500,19 +11700,19 @@ function buildNames(playstyles, core) {
   }
   return out;
 }
-async function getJson3(fetcher, url) {
+async function getJson4(fetcher, url) {
   const res = await fetcher(url);
   if (!res.ok) throw new FutError(`${new URL(url).host} returned HTTP ${res.status}`, 502);
   return await res.json();
 }
 async function loadNames(fetcher) {
-  const manifest = await getJson3(fetcher, `${FUTGG_R2}/manifest.json`);
+  const manifest = await getJson4(fetcher, `${FUTGG_R2}/manifest.json`);
   const file = (name2) => {
     const hash = manifest[name2], version = manifest._version;
     if (!Number.isSafeInteger(version) || typeof hash !== "string" || !/^[a-f0-9]+$/.test(hash)) throw new FutError(`FUT.GG manifest has no ${name2}`, 502);
     return `${FUTGG_R2}/${name2}.v${version}.${hash}.json`;
   };
-  const [playstyles, core] = await Promise.all([getJson3(fetcher, file("play-styles")), getJson3(fetcher, file("fc-core-data"))]);
+  const [playstyles, core] = await Promise.all([getJson4(fetcher, file("play-styles")), getJson4(fetcher, file("fc-core-data"))]);
   return buildNames(playstyles, core);
 }
 async function syncFutggAttributes(db2, fetcher = defaultFetcher, opts = {}) {
@@ -12138,7 +12338,7 @@ var fail9 = (error) => {
 };
 var COMMUNITY_SOURCE_ID = "community_pool";
 var MIN_PRICE = 150;
-var MAX_PRICE2 = 15e6;
+var MAX_PRICE3 = 15e6;
 var KEEP_DAYS = 30;
 var MAX_AGE_DAYS = 14;
 var OUTLIER_FACTOR = 3;
@@ -12174,7 +12374,7 @@ function captureContributions(text5, now2 = Date.now()) {
     const f2 = line.split(",");
     const ea = Number(f2[iEa]), price = Number(f2[iPr]), at2 = Date.parse(f2[iAt] ?? "");
     const platform = iPl >= 0 ? (f2[iPl] ?? "").trim() : "console";
-    if (!Number.isInteger(ea) || ea <= 0 || !Number.isInteger(price) || price < MIN_PRICE || price > MAX_PRICE2) continue;
+    if (!Number.isInteger(ea) || ea <= 0 || !Number.isInteger(price) || price < MIN_PRICE || price > MAX_PRICE3) continue;
     if (platform !== "console" && platform !== "pc") continue;
     if (Number.isNaN(at2) || at2 > now2 + 10 * 6e4 || at2 < now2 - MAX_AGE_DAYS * 864e5) continue;
     const observed_at = new Date(at2).toISOString(), hour = hourOf(observed_at);
@@ -13227,9 +13427,9 @@ function createMarketService(deps) {
     return s && s.status === "enabled" && s.permissions.derived_analytics;
   });
   async function snapshot(owner, platform, as_of) {
-    const cache = deps.snapshots;
-    if (as_of !== void 0 || !cache) return buildSnapshot(owner, platform, as_of ?? now2());
-    return cache.remember(owner, `${platform}|${await cache.version()}`, () => buildSnapshot(owner, platform, now2()));
+    const cache2 = deps.snapshots;
+    if (as_of !== void 0 || !cache2) return buildSnapshot(owner, platform, as_of ?? now2());
+    return cache2.remember(owner, `${platform}|${await cache2.version()}`, () => buildSnapshot(owner, platform, now2()));
   }
   async function buildSnapshot(owner, platform, as_of) {
     const cards = await deps.cards.list(owner);
@@ -13992,12 +14192,12 @@ async function marketRules(db2) {
 }
 async function marketFor(db2, now2) {
   const load = () => Promise.all([marketRules(db2), marketSources(db2), activeRules(db2)]);
-  const cache = cacheOn(db2) && !now2;
-  const [rules, sources, chemistry] = cache ? await remember(db2, "config", MARKET_CACHE_TTL.config, load) : await load();
+  const cache2 = cacheOn(db2) && !now2;
+  const [rules, sources, chemistry] = cache2 ? await remember(db2, "config", MARKET_CACHE_TTL.config, load) : await load();
   const catalogue = trackedCatalogue(db2);
   const futgg = sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled");
   return createMarketService({
-    prices: new PgPriceStore(db2, futgg, catalogue, cache ? sharedFutggQuotes(db2, catalogue) : void 0),
+    prices: new PgPriceStore(db2, futgg, catalogue, cache2 ? sharedFutggQuotes(db2, catalogue) : void 0),
     memberships: new PgMembershipStore(db2),
     watchlists: new PgWatchlistStore(db2),
     cards: new PgMarketCardSource(db2, catalogue),
@@ -14006,7 +14206,7 @@ async function marketFor(db2, now2) {
     rules,
     chemistry,
     ...now2 ? { now: now2 } : {},
-    ...cache ? { snapshots: snapshotCache(db2) } : {}
+    ...cache2 ? { snapshots: snapshotCache(db2) } : {}
   });
 }
 function marketCardId(v) {
