@@ -152,7 +152,7 @@ function Overview({ d }: { d: AccountOverview }) {
     <Section title="Objectives">
       <Seen at={d.seen.objectives} />
       {d.objectives && <>
-        <p className="text-sm text-muted-foreground">{d.objectives.done} of {d.objectives.total} done{d.objectives.xp_left ? ` · ${numberText(d.objectives.xp_left)} XP still to earn` : ""}</p>
+        <p className="text-sm text-muted-foreground">{d.objectives.done} of {d.objectives.total} done{d.objectives.xp_left ? ` · ${numberText(d.objectives.xp_left)} XP still to earn` : ""} · <Link className="text-primary underline" to="/fut/objectives">Plan one XI for them</Link></p>
         <div className="overflow-x-auto"><DataTable headers={["Objective", "Group", "Progress", "XP", "Ends"]} rows={objectives.map(o => [
           <span className={o.done ? "text-muted-foreground line-through" : "font-medium"}>{o.name}</span>, o.group ?? "–",
           o.target ? `${Math.min(o.progress ?? 0, o.target)}/${o.target}` : "–", o.xp ? numberText(o.xp) : "–", endsText(o.end_at),

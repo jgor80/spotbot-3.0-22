@@ -1693,7 +1693,7 @@ function computeFormTrends(matches, recent = 10, minEarlier = 5) {
     const e = deriveStats(l.earlier, l.e);
     const decisionChange = diff(r2.decisionScore, e.decisionScore);
     const positioningChange = diff(r2.positionalDiscipline, e.positionalDiscipline);
-    const score = (decisionChange ?? 0) + (positioningChange ?? 0) / 2;
+    const score2 = (decisionChange ?? 0) + (positioningChange ?? 0) / 2;
     out.push({
       key,
       name: l.name,
@@ -1705,7 +1705,7 @@ function computeFormTrends(matches, recent = 10, minEarlier = 5) {
       tackleSuccessChange: diff(r2.tackleSuccess, e.tackleSuccess),
       recent: r2,
       earlier: e,
-      trend: score >= 5 ? "Improving" : score <= -5 ? "Dipping" : "Steady"
+      trend: score2 >= 5 ? "Improving" : score2 <= -5 ? "Dipping" : "Steady"
     });
   }
   const weight = (t) => (t.decisionChange ?? 0) + (t.positioningChange ?? 0) / 2;
@@ -7989,31 +7989,31 @@ function createWorkspaceService(deps) {
     if (!s) throw new NotFoundError(`No squad ${id}`);
     return s;
   };
-  const resolve = async (owner, ref) => typeof ref === "string" ? load(owner, ref) : parse(ref);
+  const resolve2 = async (owner, ref) => typeof ref === "string" ? load(owner, ref) : parse(ref);
   return {
     /** calculate_fut_chemistry */
     async calculateChemistry(owner, squad) {
-      return evaluateSquad(await resolve(owner, squad), rules);
+      return evaluateSquad(await resolve2(owner, squad), rules);
     },
     /** Chemistry Surgeon for one slot, or the whole squad when slot is omitted. */
     async diagnose(owner, squad, slot) {
-      const s = await resolve(owner, squad);
+      const s = await resolve2(owner, squad);
       return slot ? diagnoseSlot(s, slot, rules) : diagnoseSquad(s, rules);
     },
     /** What happens to all 11 if this card goes in this slot. */
     async previewAssign(owner, squad, slot, card) {
-      return previewAssign(await resolve(owner, squad), slot, card, rules);
+      return previewAssign(await resolve2(owner, squad), slot, card, rules);
     },
     /** optimize_fut_squad: candidate pool = the owner's club cards plus priced market cards from the card source. */
     async optimize(owner, squad, request) {
       const req = optimizeRequestSchema.parse(request);
-      const s = await resolve(owner, squad);
+      const s = await resolve2(owner, squad);
       const budget = req.options?.budget ?? s.budget;
       const pool = { cards: await cards.search(owner, { max_price: budget, limit: 5e3 }), managers: await cards.managers(owner) };
       return optimizeSquad(s, req.goal, pool, rules, req.options);
     },
     async compare(owner, a, b, base) {
-      return compareSquads(await resolve(owner, a), await resolve(owner, b), rules, base === void 0 ? void 0 : await resolve(owner, base));
+      return compareSquads(await resolve2(owner, a), await resolve2(owner, b), rules, base === void 0 ? void 0 : await resolve2(owner, base));
     },
     async listSquads(owner) {
       return store.list(owner);
@@ -9427,11 +9427,11 @@ function createMarketService(deps) {
   async function relink(owner, cards) {
     const held = await deps.holds.list(owner);
     if (!held.length) return { linked: 0, still_held: 0, rows: [] };
-    const resolve = eaResolver(cards);
+    const resolve2 = eaResolver(cards);
     const linked = [];
     const rows = [];
     for (const h of held) {
-      const card_id = resolve(h.ea_item_id, h.asset_id, h.rating);
+      const card_id = resolve2(h.ea_item_id, h.asset_id, h.rating);
       if (!card_id) continue;
       linked.push(h);
       rows.push({ ...h.observation, card_id, quality: [...h.observation.quality ?? [], `Captured before this card was in your database; linked by EA item id on ${now2().slice(0, 10)}.`] });
@@ -12093,7 +12093,7 @@ function scoreRole(card, position, role, estimated = false, style) {
   const accel = !a ? 0 : role.explosive ? /EXPLOSIVE/.test(a) && !/CONTROLLED/.test(a) ? 2 : /LENGTHY/.test(a) ? -1.5 : 0 : role.strong ? /LENGTHY/.test(a) ? 1 : 0 : 0;
   const wf = card.weak_foot === null || !role.wf ? 0 : (card.weak_foot - 3) * role.wf;
   const sm = card.skill_moves === null || !role.sm ? 0 : (card.skill_moves - 3) * role.sm;
-  const score = Math.round(clamp(base + Math.min(6, ps) + height + accel + wf + sm, 1, 99));
+  const score2 = Math.round(clamp(base + Math.min(6, ps) + height + accel + wf + sm, 1, 99));
   const ranked = Object.entries(role.weights).map(([k, w]) => ({ k, w, v: value(k) })).sort((x, y) => y.w - x.w || y.v - x.v);
   const strengths = ranked.filter((x) => x.v >= 85).sort((x, y) => y.v - x.v).slice(0, 3).map((x) => `${x.v} ${LABEL2[x.k] ?? x.k}`);
   const weaknesses = ranked.filter((x) => x.v < 72 && x.w >= 2).sort((x, y) => x.v - y.v).slice(0, 2).map((x) => `${x.v} ${LABEL2[x.k] ?? x.k}`);
@@ -12104,8 +12104,8 @@ function scoreRole(card, position, role, estimated = false, style) {
   return {
     position,
     role: role.role,
-    score,
-    tier: tier(score),
+    score: score2,
+    tier: tier(score2),
     chem_style: chem,
     base: r1(base),
     bonuses: { playstyles: r1(Math.min(6, ps)), height: r1(height), accelerate: r1(accel), weak_foot: r1(wf), skill_moves: r1(sm) },
@@ -12405,8 +12405,312 @@ async function fodderIndex(db, platform, days, now2 = Date.now()) {
   return { platform, days, ...fodderSummary(points, now2) };
 }
 
+// supabase/functions/_shared/fut/squad-suggest.ts
+var norm7 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+var plays2 = (card, position) => card.positions.some((p) => p.toUpperCase() === position.toUpperCase());
+function evaluate(formation, slots, manager, rules) {
+  const filled = slots.filter((s) => s.card);
+  const chem = computeSquadChemistry({
+    formation,
+    ...manager ? { manager: { nation: manager.nation ?? void 0, league: manager.league ?? void 0 } } : {},
+    slots: filled.map((s) => ({ slot: s.slot, position: s.position, card: s.card }))
+  }, rules);
+  const rating = filled.reduce((a, s) => a + (s.card.rating ?? 0), 0);
+  return { chem, total: chem.total, rating, filled: filled.length };
+}
+function score(e, by) {
+  return e.filled * 1e7 + (by === "ovr" ? e.rating * 100 + e.total : e.total * 1e4 + e.rating);
+}
+function pickPool(pool, taken) {
+  return pool.filter((c2) => !taken.has(norm7(c2.name)));
+}
+function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
+  const layout = FORMATIONS[formation];
+  if (!layout) throw new Error(`Unknown formation "${formation}"`);
+  const locked = base.slots.filter((s) => s.locked && s.card);
+  const slots = layout.map((l) => ({ slot: l.slot, position: l.position, card: null, locked: false }));
+  for (const l of locked) {
+    const at2 = slots.find((s) => !s.locked && s.slot === l.slot) ?? slots.find((s) => !s.locked && plays2(l.card, s.position)) ?? slots.find((s) => !s.locked);
+    if (at2) {
+      at2.card = l.card;
+      at2.locked = true;
+    }
+  }
+  const taken = new Set(slots.filter((s) => s.card).map((s) => norm7(s.card.name)));
+  const cards = pickPool(pool, taken);
+  const byPos = /* @__PURE__ */ new Map();
+  for (const s of slots) {
+    if (byPos.has(s.position)) continue;
+    byPos.set(s.position, cards.filter((c2) => plays2(c2, s.position)).sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)));
+  }
+  const open = slots.filter((s) => !s.locked);
+  const order = [...open].sort((a, b) => byPos.get(a.position).length - byPos.get(b.position).length);
+  const greedy = (prefer) => {
+    const out = slots.map((s) => ({ ...s }));
+    const used = new Set(taken);
+    for (const o of order) {
+      const list = byPos.get(o.position);
+      const pick = prefer && list.find((c2) => !used.has(norm7(c2.name)) && prefer(c2)) || list.find((c2) => !used.has(norm7(c2.name)));
+      if (pick) {
+        out.find((s) => s.slot === o.slot).card = pick;
+        used.add(norm7(pick.name));
+      }
+    }
+    return out;
+  };
+  const improve = (start, limit2) => {
+    let cur = start;
+    let best = score(evaluate(formation, cur, base.manager, rules), by);
+    for (let round3 = 0; round3 < 6; round3++) {
+      let changed = false;
+      for (const o of open) {
+        const i = cur.findIndex((s) => s.slot === o.slot);
+        const used = new Set(cur.filter((s, j) => j !== i && s.card).map((s) => norm7(s.card.name)));
+        for (const c2 of byPos.get(o.position).slice(0, limit2)) {
+          if (used.has(norm7(c2.name)) || c2.id === cur[i].card?.id) continue;
+          const next = cur.map((s, j) => j === i ? { ...s, card: c2 } : s);
+          const v = score(evaluate(formation, next, base.manager, rules), by);
+          if (v > best) {
+            best = v;
+            cur = next;
+            changed = true;
+          }
+        }
+      }
+      for (let a = 0; a < cur.length; a++) for (let b = a + 1; b < cur.length; b++) {
+        const A = cur[a], B = cur[b];
+        if (A.locked || B.locked || !A.card || !B.card || !plays2(A.card, B.position) || !plays2(B.card, A.position)) continue;
+        const next = cur.map((s, j) => j === a ? { ...s, card: B.card } : j === b ? { ...s, card: A.card } : s);
+        const v = score(evaluate(formation, next, base.manager, rules), by);
+        if (v > best) {
+          best = v;
+          cur = next;
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    return { slots: cur, value: best };
+  };
+  const starts = [greedy()];
+  if (by === "chem") {
+    const groups = [];
+    for (const t of ["league", "nation", "club"]) {
+      const counts = /* @__PURE__ */ new Map();
+      for (const c2 of cards) {
+        const k = c2[t];
+        if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
+      }
+      for (const [k, n] of counts) if (n >= 3) groups.push({ key: `${t}:${k}`, n, test: (c2) => c2[t] === k });
+    }
+    groups.sort((a, b) => b.n - a.n);
+    for (const g of groups.slice(0, opts.seeds ?? 8)) starts.push(greedy(g.test));
+  }
+  const limit = by === "chem" ? 40 : 25;
+  let winner = improve(starts[0], limit);
+  for (const s of starts.slice(1)) {
+    const r2 = improve(s, limit);
+    if (r2.value > winner.value) winner = r2;
+  }
+  const e = evaluate(formation, winner.slots, base.manager, rules);
+  const squad = { ...base, formation, slots: winner.slots, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+  return {
+    formation,
+    squad,
+    chemistry: e.total,
+    rating: e.filled ? Math.round(e.rating / e.filled) : 0,
+    filled: e.filled,
+    empty: winner.slots.filter((s) => !s.card).map((s) => s.slot)
+  };
+}
+
+// supabase/functions/_shared/fut/objectives.ts
+var norm8 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+var WORDS = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11 };
+var DEMONYMS = {
+  english: "England",
+  french: "France",
+  german: "Germany",
+  spanish: "Spain",
+  italian: "Italy",
+  brazilian: "Brazil",
+  argentine: "Argentina",
+  argentinian: "Argentina",
+  portuguese: "Portugal",
+  dutch: "Netherlands",
+  belgian: "Belgium",
+  croatian: "Croatia",
+  scottish: "Scotland",
+  welsh: "Wales",
+  irish: "Republic of Ireland",
+  american: "United States",
+  mexican: "Mexico",
+  japanese: "Japan",
+  korean: "Korea Republic",
+  nigerian: "Nigeria",
+  senegalese: "Senegal",
+  moroccan: "Morocco",
+  egyptian: "Egypt",
+  ghanaian: "Ghana",
+  ivorian: "C\xF4te d'Ivoire",
+  cameroonian: "Cameroon",
+  algerian: "Algeria",
+  uruguayan: "Uruguay",
+  colombian: "Colombia",
+  chilean: "Chile",
+  ecuadorian: "Ecuador",
+  turkish: "T\xFCrkiye",
+  polish: "Poland",
+  swedish: "Sweden",
+  norwegian: "Norway",
+  danish: "Denmark",
+  swiss: "Switzerland",
+  austrian: "Austria",
+  czech: "Czechia",
+  serbian: "Serbia",
+  ukrainian: "Ukraine",
+  canadian: "Canada",
+  australian: "Australia",
+  greek: "Greece",
+  hungarian: "Hungary"
+};
+var MODES = [[/squad battles?/i, "Squad Battles"], [/rivals?/i, "Rivals"], [/champions|champs/i, "Champions"], [/friendl(y|ies)|live events?/i, "Friendlies"], [/draft/i, "Draft"]];
+function resolve(phrase, meta) {
+  const p = norm8(phrase).replace(/\b(the|players?|from|cards?)\b/g, " ").replace(/\s+/g, " ").trim();
+  if (!p) return null;
+  if (/^icons?$/.test(p)) return { kind: "icon", value: "Icon" };
+  if (/^heroes?$/.test(p)) return { kind: "hero", value: "Hero" };
+  const demonym = DEMONYMS[p];
+  if (demonym) return { kind: "nation", value: demonym };
+  const find = (list) => list.find((x) => norm8(x) === p) ?? list.find((x) => p.length >= 3 && (norm8(x).includes(p) || p.includes(norm8(x))));
+  for (const [kind, list] of [["league", meta.leagues], ["nation", meta.nations], ["club", meta.clubs], ["version", meta.versions]]) {
+    const hit = find(list);
+    if (hit) return { kind, value: hit };
+  }
+  return null;
+}
+function parseRequirement(name2, meta) {
+  const text2 = name2.replace(/\s+/g, " ").trim();
+  const starting = /starting (xi|11|lineup|line-up|eleven)|in your lineup|in your xi/i.test(text2);
+  const count = (s) => s === void 0 ? 1 : /^\d+$/.test(s) ? Number(s) : WORDS[s.toLowerCase()] ?? 1;
+  const patterns = [
+    /(?:with|using|have|has|field|include)\s+(?:at least\s+|a minimum of\s+|min\.?\s+)?(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven)?\s*players?\s+from\s+(?:the\s+)?(.+?)(?=\s+(?:in|on|across|during|while|to)\b|[,.;]|$)/i,
+    /(?:with|using|have|has|field|include)\s+(?:at least\s+|a minimum of\s+|min\.?\s+)?(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven)?\s*(.+?)\s+players?\b/i,
+    /(?:with|using|have|has|field|include)\s+(?:at least\s+)?(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven)?\s*(icons?|heroes?)\b/i
+  ];
+  for (const re of patterns) {
+    const m = text2.match(re);
+    if (!m) continue;
+    const n = count(m[1]);
+    const r2 = resolve(m[2], meta);
+    if (r2 && n >= 1 && n <= 11) return { req: { count: n, ...r2, starting }, reason: null };
+    if (!r2) return { req: null, reason: `GafferBot couldn't match "${m[2].trim()}" to a league, nation, club or card type in your club.` };
+  }
+  return { req: null, reason: /players?/i.test(text2) ? "No player requirement GafferBot can read in this objective." : null };
+}
+var modeOf = (o) => MODES.find(([re]) => re.test(`${o.name} ${o.group ?? ""}`))?.[1] ?? null;
+var meets = (c2, r2) => r2.kind === "icon" ? c2.card.is_icon === true : r2.kind === "hero" ? c2.card.is_hero === true : norm8(String((r2.kind === "version" ? c2.version : c2.card[r2.kind]) ?? "")) === norm8(r2.value);
+var plays3 = (c2, position) => c2.positions.some((p) => p.toUpperCase() === position.toUpperCase());
+function planObjectives(objectives, pool, formation, rules, base) {
+  const meta = {
+    leagues: [...new Set(pool.map((c2) => c2.card.league).filter((x) => !!x))],
+    nations: [...new Set(pool.map((c2) => c2.card.nation).filter((x) => !!x))],
+    clubs: [...new Set(pool.map((c2) => c2.card.club).filter((x) => !!x))],
+    versions: [...new Set(pool.map((c2) => c2.version).filter((x) => !!x))]
+  };
+  const open = objectives.filter((o) => !o.done);
+  const parsed = open.map((o) => ({ o, ...parseRequirement(o.name, meta) })).sort((a, b) => (a.o.end_at ?? "~").localeCompare(b.o.end_at ?? "~") || (b.o.xp ?? 0) - (a.o.xp ?? 0));
+  const byId = new Map(pool.map((c2) => [c2.card.id, c2]));
+  const start = bestSquadFor(base, formation, pool.map((c2) => c2.card), rules, "ovr");
+  const slots = start.squad.slots.map((s) => ({ ...s }));
+  const protectedIds = /* @__PURE__ */ new Set();
+  const results = /* @__PURE__ */ new Map();
+  const inXi = () => new Set(slots.filter((s) => s.card).map((s) => s.card.id));
+  const names = () => new Set(slots.filter((s) => s.card).map((s) => norm8(s.card.name)));
+  for (const p of parsed) {
+    const base0 = { name: p.o.name, group: p.o.group ?? null, mode: modeOf(p.o), end_at: p.o.end_at ?? null, xp: p.o.xp ?? null, requirement: p.req };
+    if (!p.req) {
+      results.set(p.o, { ...base0, status: p.reason ? "unreadable" : "no_requirement", players: [], note: p.reason ?? "Nothing about which players to use: any XI works." });
+      continue;
+    }
+    const req = p.req;
+    const matching = () => slots.filter((s) => s.card && byId.get(s.card.id) && meets(byId.get(s.card.id), req));
+    const snapshot = slots.map((s) => ({ ...s }));
+    const added = [];
+    while (matching().length < req.count) {
+      const taken = inXi(), takenNames = names();
+      let best = null;
+      for (const c2 of pool) {
+        if (!meets(c2, req) || taken.has(c2.card.id) || takenNames.has(norm8(c2.card.name))) continue;
+        slots.forEach((s, i) => {
+          if (s.locked || !plays3(c2.card, s.position)) return;
+          if (s.card && (protectedIds.has(s.card.id) || meets(byId.get(s.card.id) ?? { card: s.card, version: null }, req))) return;
+          const loss = (s.card?.rating ?? 0) - (c2.card.rating ?? 0);
+          if (!best || loss < best.loss) best = { i, c: c2, loss };
+        });
+      }
+      if (!best) break;
+      const b = best;
+      slots[b.i] = { ...slots[b.i], card: b.c.card };
+      added.push(b.c.card.name);
+    }
+    const have = matching();
+    if (have.length >= req.count) {
+      for (const s of have.slice(0, req.count)) protectedIds.add(s.card.id);
+      results.set(p.o, { ...base0, status: "covered", players: have.slice(0, req.count).map((s) => s.card.name), note: added.length ? `Swapped in ${added.join(", ")}.` : "Your best XI already has them." });
+    } else {
+      slots.splice(0, slots.length, ...snapshot);
+      const total = pool.filter((c2) => meets(c2, req)).length;
+      results.set(p.o, { ...base0, status: "short", players: [], note: total < req.count ? `You have ${total} ${req.value} card${total === 1 ? "" : "s"}; it needs ${req.count}.` : `Your ${req.value} cards don't fit this formation's positions alongside the other objectives.` });
+    }
+  }
+  const e = evaluate(formation, slots, base.manager, rules);
+  const ratings = slots.filter((s) => s.card).map((s) => s.card.rating ?? 0);
+  const planned = parsed.map((p) => results.get(p.o));
+  const covered = planned.filter((x) => x.status === "covered");
+  const modes = [...new Set(covered.map((x) => x.mode ?? "any mode"))];
+  return {
+    formation,
+    squad: { ...base, formation, slots },
+    rating: teamRating(ratings),
+    chemistry: e.total,
+    covered: covered.length,
+    open: open.length,
+    done: objectives.length - open.length,
+    headline: covered.length ? `This XI covers ${covered.length} objective${covered.length === 1 ? "" : "s"} at once${modes.length ? ` (${modes.join(", ")})` : ""}.` : open.length ? "None of your open objectives has a player requirement GafferBot can cover from your club." : "No open objectives.",
+    objectives: planned
+  };
+}
+async function objectivesPlan(db, userId, platform, b) {
+  let objectives = [], seenAt = null, source = "helper";
+  if (typeof b.text === "string" && b.text.trim()) {
+    if (b.text.length > 2e4) throw new FutError("Paste at most 20,000 characters.");
+    source = "text";
+    objectives = b.text.split(/\r?\n/).map((l) => l.replace(/^[\s*•\-\d.)]+/, "").trim()).filter((l) => l.length >= 6).slice(0, 200).map((name2) => ({ name: name2 }));
+    if (!objectives.length) throw new FutError("Paste one objective per line.");
+  } else {
+    const { data, error } = await db.from("account_state").select("objectives, objectives_at").eq("user_id", userId).eq("platform", platform).maybeSingle();
+    fail(error);
+    objectives = Array.isArray(data?.objectives) ? data.objectives.filter((o) => o && typeof o.name === "string") : [];
+    seenAt = data?.objectives_at ?? null;
+  }
+  let formation = typeof b.formation === "string" ? b.formation : null;
+  if (formation && !FORMATIONS[formation]) throw new FutError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
+  if (!formation) {
+    const id = await latestSquadId(db, userId);
+    formation = id ? (await (await workspaceFor(db)).getSquad(userId, id)).formation : "4-3-3";
+  }
+  const [rules, mine] = await Promise.all([activeRules(db), searchMyCards(db, userId, { all: true, owned_only: true })]);
+  const base = { id: "objectives", owner_id: userId, name: "Objectives XI", formation, manager: null, slots: [], budget: 0 };
+  const note = "Requirements read from the objective's wording (EA's FC 27 wording is unverified); objectives about goals, wins or modes only need you to play. Your best-overall XI is the starting point. Nothing is played or claimed.";
+  if (!objectives.length) return { platform, source, seen_at: seenAt, club_cards: mine.length, formation, squad: null, rating: null, chemistry: null, covered: 0, open: 0, done: 0, headline: source === "helper" ? "No objectives from the helper yet. Open Objectives in the EA Web App with the helper on, or paste them." : "No objectives.", objectives: [], note, verified: false };
+  if (!mine.length) throw new FutError("You have no club cards yet. Sync your club first.");
+  const plan = planObjectives(objectives, mine.map((c2) => ({ card: toWorkspaceCard(c2), version: c2.version })), formation, rules, base);
+  return { platform, source, seen_at: seenAt, club_cards: mine.length, ...plan, note, verified: false };
+}
+
 // supabase/functions/_shared/fut/champs.ts
-var MODES = ["champs", "rivals", "squad_battles", "other"];
+var MODES2 = ["champs", "rivals", "squad_battles", "other"];
 var MODE_LABEL = { champs: "Champions", rivals: "Rivals", squad_battles: "Squad Battles", other: "Games" };
 var result = (g) => g.goals_for > g.goals_against ? "W" : g.goals_for < g.goals_against ? "L" : g.penalties === "won" ? "W" : g.penalties === "lost" ? "L" : "D";
 var pct5 = (n, d) => d ? Math.round(n / d * 100) : null;
@@ -12497,7 +12801,7 @@ async function champsOverview(db, userId, platform) {
     const s = summarize3(of(r2.id), r2);
     return { ...r2, summary: s, recap: recapText(r2, s), games: of(r2.id).map((g) => ({ ...g, result: result(g) })) };
   });
-  const byMode = MODES.map((m) => ({ mode: m, label: MODE_LABEL[m], ...summarize3(games.filter((g) => list.find((r2) => r2.id === g.run_id)?.mode === m)) })).filter((m) => m.games > 0);
+  const byMode = MODES2.map((m) => ({ mode: m, label: MODE_LABEL[m], ...summarize3(games.filter((g) => list.find((r2) => r2.id === g.run_id)?.mode === m)) })).filter((m) => m.games > 0);
   return { platform, runs: out, by_mode: byMode, formations: [...FORMATION_NAMES2], note: "Games you logged yourself. Nothing is read from EA." };
 }
 
@@ -12975,6 +13279,18 @@ FUT_TOOLS.push(
       const a = args;
       const r2 = await fodderIndex(db, platformParam(a.platform), typeof a.days === "number" ? a.days : 30);
       return { ...r2, index_history: r2.index_history.slice(-60), ratings: r2.ratings.map(({ history: _h, ...x }) => x) };
+    })
+  },
+  {
+    name: "fut_plan_objectives",
+    title: "Plan one XI for my FUT objectives",
+    description: "EA FC Ultimate Team: reads the player requirements in the player's open objectives (captured by the XI Lab helper, or pasted as text, one per line), such as 'with 3 Premier League players in your starting XI' or 'using a Brazilian player', and builds one XI from their club cards that covers as many at once as possible (best-overall XI first, cheapest swaps in overall). Per objective: covered (with which players), can't cover (and why), any XI, or not read; plus the game mode it's for. Formation: the latest saved squad's unless given. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM, formation: { type: "string", description: "e.g. 4-3-3; default the latest saved squad's" }, text: { type: "string", maxLength: 2e4, description: "Optional: objectives pasted one per line, instead of the helper's capture." } }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args;
+      const r2 = await runWorkspace(() => objectivesPlan(db, userId, platformParam(a.platform), a));
+      return { ...r2, squad: r2.squad ? { formation: r2.squad.formation, slots: r2.squad.slots.map((s) => ({ slot: s.slot, position: s.position, card: s.card ? { id: s.card.id, name: s.card.name, rating: s.card.rating ?? null } : null })) } : null };
     })
   }
 );

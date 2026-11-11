@@ -24,6 +24,7 @@ import { compareAnyCards } from "../_shared/fut/card-compare.ts";
 import { upgradeOptions } from "../_shared/fut/upgrades-data.ts";
 import { calendarFor } from "../_shared/fut/calendar.ts";
 import { fodderIndex } from "../_shared/fut/fodder.ts";
+import { objectivesPlan } from "../_shared/fut/objectives.ts";
 import { clubBoard, getShare, runClubPulls, setShare, whoHas } from "../_shared/fut/club-share.ts";
 import { addGame, champsOverview, createRun, deleteGame, deleteRun, updateRun } from "../_shared/fut/champs.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
@@ -358,6 +359,11 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     // What the user shares with their Discord club (pulls feed, FUT board, who has this card). Off by default.
     if (route === "/club-share" && m === "GET") return json({ data: await getShare(db, userId) });
     if (route === "/club-share" && m === "PUT") return json({ data: await setShare(db, userId, obj(await body(req))) });
+    // Objectives planner: one XI from the club that covers as many objective player requirements as possible.
+    if (route === "/objectives/plan" && m === "POST") {
+      const b = obj(await body(req));
+      return json({ data: await runWorkspace(() => objectivesPlan(db, userId, platformParam(b.platform), b)) });
+    }
     // Champs / Rivals tracker: runs and games the user logs themselves.
     if (route === "/champs" && m === "GET") return json({ data: await champsOverview(db, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/champs/runs" && m === "POST") return json({ data: await createRun(db, userId, obj(await body(req))) }, 201);

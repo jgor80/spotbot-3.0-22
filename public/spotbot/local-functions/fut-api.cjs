@@ -4961,31 +4961,31 @@ function createWorkspaceService(deps) {
     if (!s) throw new NotFoundError(`No squad ${id3}`);
     return s;
   };
-  const resolve = async (owner, ref) => typeof ref === "string" ? load(owner, ref) : parse2(ref);
+  const resolve2 = async (owner, ref) => typeof ref === "string" ? load(owner, ref) : parse2(ref);
   return {
     /** calculate_fut_chemistry */
     async calculateChemistry(owner, squad) {
-      return evaluateSquad(await resolve(owner, squad), rules);
+      return evaluateSquad(await resolve2(owner, squad), rules);
     },
     /** Chemistry Surgeon for one slot, or the whole squad when slot is omitted. */
     async diagnose(owner, squad, slot) {
-      const s = await resolve(owner, squad);
+      const s = await resolve2(owner, squad);
       return slot ? diagnoseSlot(s, slot, rules) : diagnoseSquad(s, rules);
     },
     /** What happens to all 11 if this card goes in this slot. */
     async previewAssign(owner, squad, slot, card) {
-      return previewAssign(await resolve(owner, squad), slot, card, rules);
+      return previewAssign(await resolve2(owner, squad), slot, card, rules);
     },
     /** optimize_fut_squad: candidate pool = the owner's club cards plus priced market cards from the card source. */
     async optimize(owner, squad, request) {
       const req = optimizeRequestSchema.parse(request);
-      const s = await resolve(owner, squad);
+      const s = await resolve2(owner, squad);
       const budget = req.options?.budget ?? s.budget;
       const pool = { cards: await cards.search(owner, { max_price: budget, limit: 5e3 }), managers: await cards.managers(owner) };
       return optimizeSquad(s, req.goal, pool, rules, req.options);
     },
     async compare(owner, a, b, base) {
-      return compareSquads(await resolve(owner, a), await resolve(owner, b), rules, base === void 0 ? void 0 : await resolve(owner, base));
+      return compareSquads(await resolve2(owner, a), await resolve2(owner, b), rules, base === void 0 ? void 0 : await resolve2(owner, base));
     },
     async listSquads(owner) {
       return store.list(owner);
@@ -9526,8 +9526,8 @@ function placeMatches(start, parsed, matches) {
     if (s) put(row, s);
   }
   for (const row of live.filter((r2) => !r2.slot)) {
-    const plays4 = (x) => row.card.positions.includes(x.position) && free(x, false);
-    const s = slots.find((x) => plays4(x) && !x.card) ?? (full ? slots.find(plays4) : void 0);
+    const plays5 = (x) => row.card.positions.includes(x.position) && free(x, false);
+    const s = slots.find((x) => plays5(x) && !x.card) ?? (full ? slots.find(plays5) : void 0);
     if (s) put(row, s);
   }
   for (const row of live.filter((r2) => !r2.slot)) {
@@ -10639,8 +10639,193 @@ async function fodderIndex(db2, platform, days, now2 = Date.now()) {
   return { platform, days, ...fodderSummary(points, now2) };
 }
 
+// supabase/functions/_shared/fut/objectives.ts
+var norm9 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+var WORDS = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11 };
+var DEMONYMS = {
+  english: "England",
+  french: "France",
+  german: "Germany",
+  spanish: "Spain",
+  italian: "Italy",
+  brazilian: "Brazil",
+  argentine: "Argentina",
+  argentinian: "Argentina",
+  portuguese: "Portugal",
+  dutch: "Netherlands",
+  belgian: "Belgium",
+  croatian: "Croatia",
+  scottish: "Scotland",
+  welsh: "Wales",
+  irish: "Republic of Ireland",
+  american: "United States",
+  mexican: "Mexico",
+  japanese: "Japan",
+  korean: "Korea Republic",
+  nigerian: "Nigeria",
+  senegalese: "Senegal",
+  moroccan: "Morocco",
+  egyptian: "Egypt",
+  ghanaian: "Ghana",
+  ivorian: "C\xF4te d'Ivoire",
+  cameroonian: "Cameroon",
+  algerian: "Algeria",
+  uruguayan: "Uruguay",
+  colombian: "Colombia",
+  chilean: "Chile",
+  ecuadorian: "Ecuador",
+  turkish: "T\xFCrkiye",
+  polish: "Poland",
+  swedish: "Sweden",
+  norwegian: "Norway",
+  danish: "Denmark",
+  swiss: "Switzerland",
+  austrian: "Austria",
+  czech: "Czechia",
+  serbian: "Serbia",
+  ukrainian: "Ukraine",
+  canadian: "Canada",
+  australian: "Australia",
+  greek: "Greece",
+  hungarian: "Hungary"
+};
+var MODES = [[/squad battles?/i, "Squad Battles"], [/rivals?/i, "Rivals"], [/champions|champs/i, "Champions"], [/friendl(y|ies)|live events?/i, "Friendlies"], [/draft/i, "Draft"]];
+function resolve(phrase, meta) {
+  const p = norm9(phrase).replace(/\b(the|players?|from|cards?)\b/g, " ").replace(/\s+/g, " ").trim();
+  if (!p) return null;
+  if (/^icons?$/.test(p)) return { kind: "icon", value: "Icon" };
+  if (/^heroes?$/.test(p)) return { kind: "hero", value: "Hero" };
+  const demonym = DEMONYMS[p];
+  if (demonym) return { kind: "nation", value: demonym };
+  const find = (list2) => list2.find((x) => norm9(x) === p) ?? list2.find((x) => p.length >= 3 && (norm9(x).includes(p) || p.includes(norm9(x))));
+  for (const [kind, list2] of [["league", meta.leagues], ["nation", meta.nations], ["club", meta.clubs], ["version", meta.versions]]) {
+    const hit = find(list2);
+    if (hit) return { kind, value: hit };
+  }
+  return null;
+}
+function parseRequirement(name2, meta) {
+  const text5 = name2.replace(/\s+/g, " ").trim();
+  const starting = /starting (xi|11|lineup|line-up|eleven)|in your lineup|in your xi/i.test(text5);
+  const count2 = (s) => s === void 0 ? 1 : /^\d+$/.test(s) ? Number(s) : WORDS[s.toLowerCase()] ?? 1;
+  const patterns = [
+    /(?:with|using|have|has|field|include)\s+(?:at least\s+|a minimum of\s+|min\.?\s+)?(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven)?\s*players?\s+from\s+(?:the\s+)?(.+?)(?=\s+(?:in|on|across|during|while|to)\b|[,.;]|$)/i,
+    /(?:with|using|have|has|field|include)\s+(?:at least\s+|a minimum of\s+|min\.?\s+)?(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven)?\s*(.+?)\s+players?\b/i,
+    /(?:with|using|have|has|field|include)\s+(?:at least\s+)?(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven)?\s*(icons?|heroes?)\b/i
+  ];
+  for (const re of patterns) {
+    const m = text5.match(re);
+    if (!m) continue;
+    const n = count2(m[1]);
+    const r2 = resolve(m[2], meta);
+    if (r2 && n >= 1 && n <= 11) return { req: { count: n, ...r2, starting }, reason: null };
+    if (!r2) return { req: null, reason: `GafferBot couldn't match "${m[2].trim()}" to a league, nation, club or card type in your club.` };
+  }
+  return { req: null, reason: /players?/i.test(text5) ? "No player requirement GafferBot can read in this objective." : null };
+}
+var modeOf = (o) => MODES.find(([re]) => re.test(`${o.name} ${o.group ?? ""}`))?.[1] ?? null;
+var meets = (c4, r2) => r2.kind === "icon" ? c4.card.is_icon === true : r2.kind === "hero" ? c4.card.is_hero === true : norm9(String((r2.kind === "version" ? c4.version : c4.card[r2.kind]) ?? "")) === norm9(r2.value);
+var plays4 = (c4, position) => c4.positions.some((p) => p.toUpperCase() === position.toUpperCase());
+function planObjectives(objectives, pool, formation, rules, base) {
+  const meta = {
+    leagues: [...new Set(pool.map((c4) => c4.card.league).filter((x) => !!x))],
+    nations: [...new Set(pool.map((c4) => c4.card.nation).filter((x) => !!x))],
+    clubs: [...new Set(pool.map((c4) => c4.card.club).filter((x) => !!x))],
+    versions: [...new Set(pool.map((c4) => c4.version).filter((x) => !!x))]
+  };
+  const open = objectives.filter((o) => !o.done);
+  const parsed = open.map((o) => ({ o, ...parseRequirement(o.name, meta) })).sort((a, b) => (a.o.end_at ?? "~").localeCompare(b.o.end_at ?? "~") || (b.o.xp ?? 0) - (a.o.xp ?? 0));
+  const byId = new Map(pool.map((c4) => [c4.card.id, c4]));
+  const start = bestSquadFor(base, formation, pool.map((c4) => c4.card), rules, "ovr");
+  const slots = start.squad.slots.map((s) => ({ ...s }));
+  const protectedIds = /* @__PURE__ */ new Set();
+  const results = /* @__PURE__ */ new Map();
+  const inXi = () => new Set(slots.filter((s) => s.card).map((s) => s.card.id));
+  const names2 = () => new Set(slots.filter((s) => s.card).map((s) => norm9(s.card.name)));
+  for (const p of parsed) {
+    const base0 = { name: p.o.name, group: p.o.group ?? null, mode: modeOf(p.o), end_at: p.o.end_at ?? null, xp: p.o.xp ?? null, requirement: p.req };
+    if (!p.req) {
+      results.set(p.o, { ...base0, status: p.reason ? "unreadable" : "no_requirement", players: [], note: p.reason ?? "Nothing about which players to use: any XI works." });
+      continue;
+    }
+    const req = p.req;
+    const matching = () => slots.filter((s) => s.card && byId.get(s.card.id) && meets(byId.get(s.card.id), req));
+    const snapshot = slots.map((s) => ({ ...s }));
+    const added = [];
+    while (matching().length < req.count) {
+      const taken = inXi(), takenNames = names2();
+      let best = null;
+      for (const c4 of pool) {
+        if (!meets(c4, req) || taken.has(c4.card.id) || takenNames.has(norm9(c4.card.name))) continue;
+        slots.forEach((s, i) => {
+          if (s.locked || !plays4(c4.card, s.position)) return;
+          if (s.card && (protectedIds.has(s.card.id) || meets(byId.get(s.card.id) ?? { card: s.card, version: null }, req))) return;
+          const loss = (s.card?.rating ?? 0) - (c4.card.rating ?? 0);
+          if (!best || loss < best.loss) best = { i, c: c4, loss };
+        });
+      }
+      if (!best) break;
+      const b = best;
+      slots[b.i] = { ...slots[b.i], card: b.c.card };
+      added.push(b.c.card.name);
+    }
+    const have = matching();
+    if (have.length >= req.count) {
+      for (const s of have.slice(0, req.count)) protectedIds.add(s.card.id);
+      results.set(p.o, { ...base0, status: "covered", players: have.slice(0, req.count).map((s) => s.card.name), note: added.length ? `Swapped in ${added.join(", ")}.` : "Your best XI already has them." });
+    } else {
+      slots.splice(0, slots.length, ...snapshot);
+      const total = pool.filter((c4) => meets(c4, req)).length;
+      results.set(p.o, { ...base0, status: "short", players: [], note: total < req.count ? `You have ${total} ${req.value} card${total === 1 ? "" : "s"}; it needs ${req.count}.` : `Your ${req.value} cards don't fit this formation's positions alongside the other objectives.` });
+    }
+  }
+  const e = evaluate(formation, slots, base.manager, rules);
+  const ratings = slots.filter((s) => s.card).map((s) => s.card.rating ?? 0);
+  const planned = parsed.map((p) => results.get(p.o));
+  const covered = planned.filter((x) => x.status === "covered");
+  const modes = [...new Set(covered.map((x) => x.mode ?? "any mode"))];
+  return {
+    formation,
+    squad: { ...base, formation, slots },
+    rating: teamRating(ratings),
+    chemistry: e.total,
+    covered: covered.length,
+    open: open.length,
+    done: objectives.length - open.length,
+    headline: covered.length ? `This XI covers ${covered.length} objective${covered.length === 1 ? "" : "s"} at once${modes.length ? ` (${modes.join(", ")})` : ""}.` : open.length ? "None of your open objectives has a player requirement GafferBot can cover from your club." : "No open objectives.",
+    objectives: planned
+  };
+}
+async function objectivesPlan(db2, userId, platform, b) {
+  let objectives = [], seenAt = null, source = "helper";
+  if (typeof b.text === "string" && b.text.trim()) {
+    if (b.text.length > 2e4) throw new FutError("Paste at most 20,000 characters.");
+    source = "text";
+    objectives = b.text.split(/\r?\n/).map((l) => l.replace(/^[\s*•\-\d.)]+/, "").trim()).filter((l) => l.length >= 6).slice(0, 200).map((name2) => ({ name: name2 }));
+    if (!objectives.length) throw new FutError("Paste one objective per line.");
+  } else {
+    const { data, error } = await db2.from("account_state").select("objectives, objectives_at").eq("user_id", userId).eq("platform", platform).maybeSingle();
+    fail(error);
+    objectives = Array.isArray(data?.objectives) ? data.objectives.filter((o) => o && typeof o.name === "string") : [];
+    seenAt = data?.objectives_at ?? null;
+  }
+  let formation = typeof b.formation === "string" ? b.formation : null;
+  if (formation && !FORMATIONS[formation]) throw new FutError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
+  if (!formation) {
+    const id3 = await latestSquadId(db2, userId);
+    formation = id3 ? (await (await workspaceFor(db2)).getSquad(userId, id3)).formation : "4-3-3";
+  }
+  const [rules, mine] = await Promise.all([activeRules(db2), searchMyCards(db2, userId, { all: true, owned_only: true })]);
+  const base = { id: "objectives", owner_id: userId, name: "Objectives XI", formation, manager: null, slots: [], budget: 0 };
+  const note = "Requirements read from the objective's wording (EA's FC 27 wording is unverified); objectives about goals, wins or modes only need you to play. Your best-overall XI is the starting point. Nothing is played or claimed.";
+  if (!objectives.length) return { platform, source, seen_at: seenAt, club_cards: mine.length, formation, squad: null, rating: null, chemistry: null, covered: 0, open: 0, done: 0, headline: source === "helper" ? "No objectives from the helper yet. Open Objectives in the EA Web App with the helper on, or paste them." : "No objectives.", objectives: [], note, verified: false };
+  if (!mine.length) throw new FutError("You have no club cards yet. Sync your club first.");
+  const plan = planObjectives(objectives, mine.map((c4) => ({ card: toWorkspaceCard(c4), version: c4.version })), formation, rules, base);
+  return { platform, source, seen_at: seenAt, club_cards: mine.length, ...plan, note, verified: false };
+}
+
 // supabase/functions/_shared/fut/champs.ts
-var MODES = ["champs", "rivals", "squad_battles", "other"];
+var MODES2 = ["champs", "rivals", "squad_battles", "other"];
 var MODE_LABEL = { champs: "Champions", rivals: "Rivals", squad_battles: "Squad Battles", other: "Games" };
 var MAX_GAMES_PER_RUN = 100;
 var result = (g) => g.goals_for > g.goals_against ? "W" : g.goals_for < g.goals_against ? "L" : g.penalties === "won" ? "W" : g.penalties === "lost" ? "L" : "D";
@@ -10731,7 +10916,7 @@ async function ownRun(db2, userId, id3) {
   return data;
 }
 async function createRun(db2, userId, b) {
-  const mode = MODES.includes(b.mode) ? b.mode : "champs";
+  const mode = MODES2.includes(b.mode) ? b.mode : "champs";
   const platform = b.platform === "pc" ? "pc" : "console";
   const row = {
     id: crypto.randomUUID(),
@@ -10818,7 +11003,7 @@ async function champsOverview(db2, userId, platform) {
     const s = summarize(of(r2.id), r2);
     return { ...r2, summary: s, recap: recapText(r2, s), games: of(r2.id).map((g) => ({ ...g, result: result(g) })) };
   });
-  const byMode = MODES.map((m) => ({ mode: m, label: MODE_LABEL[m], ...summarize(games.filter((g) => list2.find((r2) => r2.id === g.run_id)?.mode === m)) })).filter((m) => m.games > 0);
+  const byMode = MODES2.map((m) => ({ mode: m, label: MODE_LABEL[m], ...summarize(games.filter((g) => list2.find((r2) => r2.id === g.run_id)?.mode === m)) })).filter((m) => m.games > 0);
   return { platform, runs: out, by_mode: byMode, formations: [...FORMATION_NAMES2], note: "Games you logged yourself. Nothing is read from EA." };
 }
 
@@ -12999,11 +13184,11 @@ function createMarketService(deps) {
   async function relink(owner, cards) {
     const held = await deps.holds.list(owner);
     if (!held.length) return { linked: 0, still_held: 0, rows: [] };
-    const resolve = eaResolver(cards);
+    const resolve2 = eaResolver(cards);
     const linked = [];
     const rows = [];
     for (const h of held) {
-      const card_id = resolve(h.ea_item_id, h.asset_id, h.rating);
+      const card_id = resolve2(h.ea_item_id, h.asset_id, h.rating);
       if (!card_id) continue;
       linked.push(h);
       rows.push({ ...h.observation, card_id, quality: [...h.observation.quality ?? [], `Captured before this card was in your database; linked by EA item id on ${now2().slice(0, 10)}.`] });
@@ -13967,6 +14152,10 @@ async function handle(req, deps) {
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db2, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2e9) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
     if (route === "/club-share" && m === "GET") return json({ data: await getShare(db2, userId) });
     if (route === "/club-share" && m === "PUT") return json({ data: await setShare(db2, userId, obj2(await body(req))) });
+    if (route === "/objectives/plan" && m === "POST") {
+      const b = obj2(await body(req));
+      return json({ data: await runWorkspace(() => objectivesPlan(db2, userId, platformParam(b.platform), b)) });
+    }
     if (route === "/champs" && m === "GET") return json({ data: await champsOverview(db2, userId, platformParam(url.searchParams.get("platform"))) });
     if (route === "/champs/runs" && m === "POST") return json({ data: await createRun(db2, userId, obj2(await body(req))) }, 201);
     const champRun = route.match(/^\/champs\/runs\/([^/]+)(\/games)?$/);

@@ -247,6 +247,8 @@ export interface CardCompare {
 }
 export interface MetaCardRating { card_id: string; name: string; rating: number; positions: string[]; best: MetaRoleScore | null; roles: MetaRoleScore[]; verdict: string; estimated: boolean; note: string; verified: false }
 export interface MetaTop { platform: MarketPlatform; position: string; role: string | null; roles: string[]; max_price: number | null; published_at: string | null; with_stats: number; note: string; verified: false; cards: { card_id: string; ea_item_id: number | null; name: string; rating: number; version: string | null; position: string; owned: boolean; price: number | null; meta: MetaRoleScore }[] }
+export interface ObjectivePlanItem { name: string; group: string | null; mode: string | null; end_at: string | null; xp: number | null; requirement: { count: number; kind: string; value: string; starting: boolean } | null; status: "covered" | "short" | "no_requirement" | "unreadable"; players: string[]; note: string }
+export interface ObjectivePlan { platform: MarketPlatform; source: "helper" | "text"; seen_at: string | null; club_cards: number; formation: string; squad: FutSquad | null; rating: number | null; chemistry: number | null; covered: number; open: number; done: number; headline: string; objectives: ObjectivePlanItem[]; note: string; verified: false }
 export interface FodderRating { rating: number; floor: number; cards: number; at: string; change_24h: number | null; change_7d: number | null; vs_week: number | null; low_30d: number; high_30d: number; signal: "spike" | "cheap" | "normal" | "new"; line: string; history: { t: string; value: number }[] }
 export interface FodderIndexData { platform: MarketPlatform; days: number; headline: string; index: number | null; index_change_7d: number | null; index_history: { t: string; value: number }[]; ratings: FodderRating[]; note: string; verified: false }
 export type CalendarVerdict = "sell_before" | "buy_before" | "no_pattern" | "not_enough_data";
@@ -358,6 +360,7 @@ export const futApi = {
     card: (cardId: string) => futRequest<MetaCardRating>(`/meta/card?${new URLSearchParams({ card_id: cardId })}`),
     top: (q: { position: string; role?: string; max_price?: number | null; owned_only?: boolean; platform: MarketPlatform }) => futRequest<MetaTop>(`/meta/top?${new URLSearchParams({ position: q.position, platform: q.platform, ...(q.role ? { role: q.role } : {}), ...(q.max_price ? { max_price: String(q.max_price) } : {}), ...(q.owned_only ? { owned_only: "1" } : {}) })}`),
   },
+  objectivesPlan: (input: { platform: MarketPlatform; formation?: string; text?: string }) => futRequest<ObjectivePlan>("/objectives/plan", "POST", input),
   fodderIndex: (platform: MarketPlatform, days: number) => futRequest<FodderIndexData>(`/market/fodder?${new URLSearchParams({ platform, days: String(days) })}`),
   marketCalendar: (platform: MarketPlatform, cardId?: string) => futRequest<MarketCalendar>(`/market/calendar?${new URLSearchParams({ platform, ...(cardId ? { card_id: cardId } : {}) })}`),
   priceHistory: (cardId: string, platform: MarketPlatform, days: number) => futRequest<PriceHistoryData>(`/prices/history?${new URLSearchParams({ card_id: cardId, platform, days: String(days) })}`),
