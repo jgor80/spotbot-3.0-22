@@ -20,6 +20,7 @@ import { setBuyPrice, tradeOverview } from "../_shared/fut/trades.ts";
 import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
 import { cardPriceHistory } from "../_shared/fut/price-history.ts";
 import { metaForCard, metaTop } from "../_shared/fut/meta-data.ts";
+import { compareAnyCards } from "../_shared/fut/card-compare.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { bestSquads, squadRoles, suggestForSlot } from "../_shared/fut/squad-suggest.ts";
@@ -340,6 +341,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
     // Daily strategy: today's buys, sells, transfer list fixes and budget split from prices, coins and club. Advice only.
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2_000_000_000) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
+    // Card compare: 2-4 of any cards with full stats, chem styles applied, PlayStyles diff, metaratings and value.
+    if (route === "/compare/cards" && m === "POST") return json({ data: await compareAnyCards(db, userId, obj(await body(req))) });
     // Metaratings: how good a card plays in each role (attributes, PlayStyles, body, chem style), and the best per position.
     if (route === "/meta/card" && m === "GET") return json({ data: await metaForCard(db, userId, url.searchParams.get("card_id") ?? "") });
     if (route === "/meta/top" && m === "GET") {

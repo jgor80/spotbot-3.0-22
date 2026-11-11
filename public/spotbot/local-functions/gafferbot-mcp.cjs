@@ -12021,13 +12021,16 @@ LABEL2.fk_accuracy = "free kicks";
 var clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 var r1 = (v) => Math.round(v * 10) / 10;
 var tier = (s) => s >= 90 ? "Elite" : s >= 85 ? "Very good" : s >= 80 ? "Good" : s >= 74 ? "Decent" : "Weak";
-function scoreRole(card, position, role, estimated = false) {
+function scoreRole(card, position, role, estimated = false, style) {
   const value = (k, boost = {}) => clamp((card.stats[k] ?? (estimated ? card.stats[FROM_FACE[k] ?? ""] : void 0) ?? 50) + (boost[k] ?? 0), 1, 99);
   const total = Object.values(role.weights).reduce((a2, b) => a2 + b, 0);
   const weighted = (boost = {}) => Object.entries(role.weights).reduce((a2, [k, w]) => a2 + value(k, boost) * w, 0) / total;
   const styles = position === "GK" ? GK_CHEM_STYLES : CHEM_STYLES;
   let base = weighted(), chem = null;
-  for (const [name2, boost] of Object.entries(styles)) {
+  if (style && styles[style]) {
+    base = weighted(styles[style]);
+    chem = style;
+  } else for (const [name2, boost] of Object.entries(styles)) {
     const s = weighted(boost);
     if (s > base + 0.05) {
       base = s;
@@ -12062,9 +12065,9 @@ function scoreRole(card, position, role, estimated = false) {
     playstyles: role.playstyles.filter((p) => card.playstyles.includes(p) || card.playstyles_plus.includes(p)).map((p) => card.playstyles_plus.includes(p) ? `${p}+` : p)
   };
 }
-function metaRate(card, positions = card.positions) {
+function metaRate(card, positions = card.positions, style) {
   const estimated = !Object.keys(card.stats).some((k) => k in FROM_FACE || k.startsWith("gk_"));
-  const roles = [...new Set(positions.map((p) => p.toUpperCase()))].flatMap((p) => rolesFor(p).map((r2) => scoreRole(card, p, r2, estimated))).sort((a, b) => b.score - a.score);
+  const roles = [...new Set(positions.map((p) => p.toUpperCase()))].flatMap((p) => rolesFor(p).map((r2) => scoreRole(card, p, r2, estimated, style))).sort((a, b) => b.score - a.score);
   const best = roles[0] ?? null;
   const gap = best ? best.score - card.rating : 0;
   const verdict = !best ? "No roles for these positions." : `${tier(best.score)} as a ${best.position} ${best.role} (${best.score}${best.chem_style ? ` with ${best.chem_style}` : ""}). ` + (gap >= 3 ? `Plays better than its ${card.rating} rating.` : gap <= -4 ? `Plays worse than its ${card.rating} rating suggests.` : `About what its ${card.rating} rating suggests.`) + (best.strengths.length ? ` Strengths: ${best.strengths.join(", ")}.` : "") + (best.weaknesses.length ? ` Watch: ${best.weaknesses.join(", ")}.` : "");
@@ -12089,7 +12092,7 @@ var fromSearch = (c2) => ({
   weak_foot: c2.weak_foot ?? null,
   skill_moves: c2.skill_moves ?? null
 });
-async function metaForCard(db, userId, cardId) {
+async function loadMetaCard(db, userId, cardId) {
   const card = await getCard(db, userId, cardId);
   if (!card) throw new FutError("Card not found.", 404);
   let source = card.id, alt = [], height = null, accel = null, stats = { ...card.stats };
@@ -12115,6 +12118,10 @@ async function metaForCard(db, userId, cardId) {
     psp = styles.filter((x) => x.is_plus).map((x) => x.name);
   }
   const meta = { name: card.player_name, rating: card.overall, positions: [.../* @__PURE__ */ new Set([...card.positions, ...alt])], stats, playstyles: ps, playstyles_plus: psp, height_cm: height, accelerate_type: accel, weak_foot: card.weak_foot, skill_moves: card.skill_moves };
+  return { card, meta };
+}
+async function metaForCard(db, userId, cardId) {
+  const { card, meta } = await loadMetaCard(db, userId, cardId);
   return { card_id: card.id, name: card.player_name, rating: card.overall, positions: meta.positions, ...metaRate(meta), note: NOTE, verified: false };
 }
 var NOTE = "GafferBot's own estimate from in-game attributes, PlayStyles, height, AcceleRATE, weak foot and skill moves under the best chem style. Chem style boosts follow recent games and aren't confirmed for FC 27.";

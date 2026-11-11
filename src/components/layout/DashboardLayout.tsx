@@ -37,6 +37,7 @@ import {
   Coins,
   Scale,
   Gauge,
+  Columns3,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -104,6 +105,7 @@ const futMore: NavItem[] = [
   { path: "/fut/trades", label: "Trade Log", icon: Coins },
   { path: "/fut/sell", label: "Sell or Keep", icon: Scale },
   { path: "/fut/meta", label: "Meta Ratings", icon: Gauge },
+  { path: "/fut/compare", label: "Compare Cards", icon: Columns3 },
 ];
 
 const SECTION_HOME: Record<AppSection, string> = { club: "/", fut: "/fut/market/cards" };
