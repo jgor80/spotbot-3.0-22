@@ -116,6 +116,12 @@ Deno.test("only packs live in the store now", () => {
   assert(!liveInStore({ ...p, coins: null }, newest, now), "can't be bought");
   assert(!liveInStore({ ...p, unopened: true }, newest, now), "owned, not in the store");
   assert(!liveInStore({ ...p, seen_at: new Date(newest - STORE_GONE_MS - 1).toISOString() }, newest, now), "gone from the latest store list");
+  // Helper 0.12.1: once any pack was matched to a Store tile, packs the screen never showed are hidden.
+  const shown = { ...p, shown_at: seen };
+  assert(liveInStore(shown, newest, now, newest), "shown on the Store screen");
+  assert(!liveInStore(p, newest, now, newest), "in the store data but never on the screen");
+  assert(!liveInStore({ ...p, shown_at: new Date(newest - STORE_GONE_MS - 1).toISOString() }, newest, now, newest), "shown long before the newest tile read");
+  assert(liveInStore(p, newest, now, 0), "no tile reads yet: store data alone");
 });
 
 Deno.test("routes: the helper key uploads the store, the user gets advice, nobody else sees it", async () => {
@@ -160,6 +166,16 @@ Deno.test("routes: the helper key uploads the store, the user gets advice, nobod
   const afterMiss = (await call("GET", "/v1/packs")).data.data;
   assert(afterMiss.packs.length === 1 && afterMiss.shape.seen.length === 1 && afterMiss.shape.seen[0].path === "/store/vN/list", JSON.stringify(afterMiss.shape));
   assert(JSON.stringify(afterMiss.shape.seen[0].keys) === '["groups"]' && afterMiss.shape.pack_keys.includes("packOdds"), "long names dropped, earlier field names kept");
+  // Helper 0.12.1: packs shown on the Store screen win over packs only in the store data.
+  const at = new Date().toISOString();
+  await call("POST", "/v1/helper/packs", { ...file, captured_at: at, packs: [{ ...pack, shown_at: at }, { ...pack, pack_id: 104, name: "Hidden Data Pack" }], pulls: [] }, { authorization: `Bearer ${key}` });
+  const onScreen = (await call("GET", "/v1/packs")).data.data;
+  assert(onScreen.packs.length === 1 && onScreen.packs[0].pack_id === 101 && onScreen.hidden === 1, JSON.stringify(onScreen.packs.map((p: { pack_id: number }) => p.pack_id)));
+  // "Clear stored packs" in the helper: an empty list with reset wipes the stored packs, pulls stay.
+  const reset = await call("POST", "/v1/helper/packs", { ...file, packs: [], pulls: [], reset: true }, { authorization: `Bearer ${key}` });
+  assert(reset.status === 200 && reset.data.data.reset === true, JSON.stringify(reset.data));
+  const afterReset = (await call("GET", "/v1/packs")).data.data;
+  assert(afterReset.packs.length === 0 && afterReset.hidden === 0 && db.tables.pack_pulls!.length === 1, "packs reset, pulls kept");
   assert((await call("DELETE", "/v1/packs?platform=console")).data.data.cleared === true, "clear");
   assert((await call("GET", "/v1/packs")).data.data.packs.length === 0 && db.tables.pack_pulls!.length === 0, "cleared");
 });

@@ -111,7 +111,7 @@ function Empty() {
     <Package className="mx-auto h-10 w-10 text-muted-foreground" />
     <h2 className="font-display text-xl">No packs yet</h2>
     <ol className="mx-auto max-w-lg list-decimal space-y-1 pl-5 text-left text-sm text-muted-foreground">
-      <li>Install the XI Lab helper (v0.12.0 or newer), reload it in chrome://extensions, then reload the Web App and connect the helper in Market Lab → Import prices.</li>
+      <li>Install the XI Lab helper (v0.12.1 or newer), reload it in chrome://extensions, then reload the Web App and connect the helper in Market Lab → Import prices.</li>
       <li>In the EA FC Web App, open <strong>Store → Packs</strong> and look through the tabs.</li>
       <li>Open a pack's odds (Pack Probability) so the helper can read them.</li>
       <li>Come back here: the helper uploads within a few minutes.</li>
@@ -139,7 +139,8 @@ export default function PackAdvisorPage() {
       <Section title="Live in the store">
         {live.length ? <div className="grid items-start gap-4 lg:grid-cols-2">{live.map(p => <PackCard key={p.pack_id} pack={p} />)}</div>
           : <p className="text-sm text-muted-foreground">No packs live in the store for this platform. Open Store → Packs in the Web App.</p>}
-        {(d.hidden ?? 0) > 0 && <p className="text-xs text-muted-foreground">{d.hidden} older {d.hidden === 1 ? "pack is" : "packs are"} hidden: expired, not started yet, or missing from the latest store list.</p>}
+        {(d.hidden ?? 0) > 0 && <p className="text-xs text-muted-foreground">{d.hidden} {d.hidden === 1 ? "pack is" : "packs are"} hidden: expired, not started yet, not on the Store screen, or missing from the latest store list.</p>}
+        <p className="text-xs text-muted-foreground">Still seeing packs the Store doesn't offer? Press <strong>Clear stored packs</strong> in the helper popup (v0.12.1+), then open Store → Packs again.</p>
       </Section>
       <Section title="Your pack openings">
         <div className="overflow-x-auto"><DataTable headers={["Pack", "Opened", "Items", "Sell value after tax", "Untradeable value", "Profit"]} rows={opens.map(o => [o.pack_name, dateText(o.opened_at), o.items, coins(o.after_tax), coins(o.untradeable_value), o.profit == null ? "–" : <Delta value={o.profit} unit=" coins" />])} empty="Open a pack in the Web App and the helper records what it gave you." /></div>

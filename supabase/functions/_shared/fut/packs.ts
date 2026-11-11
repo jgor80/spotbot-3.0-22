@@ -48,6 +48,8 @@ export interface PackOffer {
   image_url?: string | null;
   /** When the helper last saw it in the store (helper 0.11.0+; older helpers: the upload time). */
   seen_at?: string | null;
+  /** When the helper last matched it to a tile on the Store screen (helper 0.12.1+). */
+  shown_at?: string | null;
   description: string | null;
   state: string | null;
   pack_type: string | null;
@@ -114,7 +116,7 @@ function parsePack(v: unknown): PackOffer | null {
   if (!pack_id) return null;
   return {
     pack_id, name: text(v.name), name_key: text(v.name_key), description: text(v.description, 400), state: text(v.state, 40),
-    asset_id: id(v.asset_id), image_url: cleanArtUrl(v.image_url), seen_at: when(v.seen_at),
+    asset_id: id(v.asset_id), image_url: cleanArtUrl(v.image_url), seen_at: when(v.seen_at), shown_at: when(v.shown_at),
     pack_type: text(v.pack_type, 40), coins: coins(v.coins), points: coins(v.points), untradeable: v.untradeable === true,
     is_player_pick: v.is_player_pick === true, item_count: count(v.item_count, 100), gold: count(v.gold, 100), silver: count(v.silver, 100),
     bronze: count(v.bronze, 100), rare: count(v.rare, 100), content_type: text(v.content_type, 40), start_at: when(v.start_at), end_at: when(v.end_at),
@@ -130,7 +132,7 @@ function parsePull(v: unknown): PackPull | null {
   return { item_id, ea_item_id, item_type: text(v.item_type, 40), rating: rating(v.rating), rare_flag: count(v.rare_flag, 1e6), untradeable: v.untradeable === true, pack_id: id(v.pack_id), opened_at };
 }
 
-export interface StoreUpload { platform: "console" | "pc"; captured_at: string; packs: PackOffer[]; pulls: PackPull[]; shape: Row; skipped: number }
+export interface StoreUpload { platform: "console" | "pc"; captured_at: string; packs: PackOffer[]; pulls: PackPull[]; shape: Row; skipped: number; reset: boolean }
 
 export function parseStoreUpload(raw: unknown): StoreUpload {
   if (!isObj(raw) || raw.format !== "xilab-store-capture") throw new FutError("This isn't a pack store file from the XI Lab helper (format xilab-store-capture).");
@@ -151,6 +153,8 @@ export function parseStoreUpload(raw: unknown): StoreUpload {
   return {
     platform: raw.platform === "pc" ? "pc" : "console", captured_at: when(raw.captured_at) ?? new Date().toISOString(),
     packs, pulls, shape, skipped: packsIn.length - packs.length + pullsIn.length - pulls.length,
+    // Helper 0.12.1+: "Clear stored packs" in the popup. Wipes this platform's packs even when the new list is empty.
+    reset: raw.reset === true,
   };
 }
 
@@ -158,9 +162,14 @@ export function parseStoreUpload(raw: unknown): StoreUpload {
 export async function importStore(db: FutDb, userId: string, raw: unknown) {
   const u = parseStoreUpload(raw);
   const now = new Date().toISOString();
-  if (u.packs.length) {
+  if (u.reset && !u.packs.length) {
     fail((await db.from("pack_offers").delete().eq("user_id", userId).eq("platform", u.platform)).error);
-    const rows = u.packs.map((p) => ({ user_id: userId, platform: u.platform, ...p, seen_at: p.seen_at && p.seen_at <= u.captured_at ? p.seen_at : u.captured_at, updated_at: now }));
+    const shape = Array.isArray(u.shape.seen) ? { ...u.shape, seen_at: u.captured_at } : u.shape;
+    fail((await db.from("pack_store_captures").upsert({ user_id: userId, platform: u.platform, captured_at: u.captured_at, pack_count: 0, shape }, { onConflict: "user_id,platform" })).error);
+  } else if (u.packs.length) {
+    fail((await db.from("pack_offers").delete().eq("user_id", userId).eq("platform", u.platform)).error);
+    const cap = (t: string | null | undefined) => (t && t <= u.captured_at ? t : null);
+    const rows = u.packs.map((p) => ({ user_id: userId, platform: u.platform, ...p, seen_at: cap(p.seen_at) ?? u.captured_at, shown_at: cap(p.shown_at), updated_at: now }));
     for (let i = 0; i < rows.length; i += 200) fail((await db.from("pack_offers").insert(rows.slice(i, i + 200))).error);
     fail((await db.from("pack_store_captures").upsert({ user_id: userId, platform: u.platform, captured_at: u.captured_at, pack_count: u.packs.length, shape: u.shape }, { onConflict: "user_id,platform" })).error);
   } else if (Array.isArray(u.shape.seen)) {
@@ -175,7 +184,7 @@ export async function importStore(db: FutDb, userId: string, raw: unknown) {
     const rows = u.pulls.map((p) => ({ user_id: userId, platform: u.platform, ...p }));
     for (let i = 0; i < rows.length; i += 200) fail((await db.from("pack_pulls").upsert(rows.slice(i, i + 200), { onConflict: "user_id,item_id" })).error);
   }
-  return { packs: u.packs.length, pulls: u.pulls.length, skipped: u.skipped, platform: u.platform, verified: false as const };
+  return { packs: u.packs.length, pulls: u.pulls.length, skipped: u.skipped, platform: u.platform, reset: u.reset, verified: false as const };
 }
 
 /** Remove this user's stored packs and pulls on one platform. */
@@ -392,13 +401,21 @@ export const forgetValueBands = () => bandCache.clear();
 export const STORE_GONE_MS = 2 * 3_600_000;
 const NOT_LIVE_STATE = /expired|unavailable|inactive|disabled|ended|sold.?out|locked|hidden|retired/i;
 
-/** Live in the store now: not owned-only, started and not ended, buyable, and in the newest store list the helper saw. */
-export function liveInStore(p: Pick<PackOffer, "unopened" | "start_at" | "end_at" | "state" | "coins" | "points" | "seen_at">, newestSeen: number, now: number): boolean {
+/**
+ * Live in the store now: not owned-only, started and not ended, buyable, and in the newest store list the helper saw.
+ * The FC 27 store data lists more packs than the Store screen shows (Jeff, 2026-11-11), so once the helper has matched
+ * any pack to a Store tile (newestShown > 0), only packs shown on the screen around the same time count.
+ */
+export function liveInStore(p: Pick<PackOffer, "unopened" | "start_at" | "end_at" | "state" | "coins" | "points" | "seen_at" | "shown_at">, newestSeen: number, now: number, newestShown = 0): boolean {
   if (p.unopened) return false;
   if (p.end_at && Date.parse(p.end_at) <= now) return false;
   if (p.start_at && Date.parse(p.start_at) > now) return false;
   if (p.state && NOT_LIVE_STATE.test(p.state)) return false;
   if (!p.coins && !p.points) return false;
+  if (newestShown) {
+    const shown = Date.parse(String(p.shown_at ?? "")) || 0;
+    if (shown < newestShown - STORE_GONE_MS) return false;
+  }
   const seen = Date.parse(String(p.seen_at ?? "")) || 0;
   return !newestSeen || seen >= newestSeen - STORE_GONE_MS;
 }
@@ -457,7 +474,8 @@ export async function packAdvice(db: FutDb, userId: string, platform: "console" 
   const packs = (packsRes.data ?? []) as (PackOffer & Row)[];
   // Only packs live in the store now (Jeff, 2026-11-11): not ended, started, buyable, and in the latest store list.
   const newestSeen = packs.reduce((m, p) => Math.max(m, Date.parse(String(p.seen_at ?? "")) || 0), 0);
-  const live = packs.filter((p) => liveInStore(p, newestSeen, now));
+  const newestShown = packs.reduce((m, p) => Math.max(m, Date.parse(String(p.shown_at ?? "")) || 0), 0);
+  const live = packs.filter((p) => liveInStore(p, newestSeen, now, newestShown));
   const hidden = packs.length - live.length;
   const pictures = live.length ? await packPictures(db) : [];
   const snaps = packs.length || (pullsRes.data ?? []).length ? await valueBands(db, platform, now) : [];
