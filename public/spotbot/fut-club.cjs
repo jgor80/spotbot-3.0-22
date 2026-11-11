@@ -6,10 +6,12 @@
 //   FUT board      /manager → Club Life → FUT Board, and by itself on Sunday evening (server timezone): club value,
 //                  trading profit, Champs/Rivals record and best pull this week for members who share.
 //   Who has it?    /manager → Club Life → Who Has This Card: which sharing members own a card with that name.
+//   Draft night    /manager → Club Life → FUT Draft Night (leaders): posts a draft code; everyone drafts the same
+//                  options on the website, and Results shows the server's best scores on that code.
 // fut-api does the reading (jobs club-pulls, club-board, club-whohas); this file maps website accounts to the
 // server's members through verified Discord links. Read-only: nothing touches anyone's EA account.
 
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { activeClubs } = require('./manager-hub.cjs');
 const T = require('./event-time.cjs');
 const { clubTimezone } = require('./career.cjs');
@@ -143,6 +145,38 @@ function createFutClub({ supabase, callFunction, autopilot, events, getGuildStat
     return { embeds: [new EmbedBuilder().setColor(0xd4af37).setTitle(`🔎 Who has "${String(query).slice(0, 60)}"`).setDescription(lines.join('\n').slice(0, 4000))], allowedMentions: { parse: [] } };
   }
 
+  const newCode = () => Array.from({ length: 6 }, () => 'abcdefghijkmnpqrstuvwxyz23456789'[Math.floor(Math.random() * 32)]).join('');
+
+  /** A draft night post: the code, the link, and a Results button. */
+  function draftNightPost(club, code = newCode()) {
+    const url = `${site}/fut/draft?seed=${code}`;
+    const embed = new EmbedBuilder().setColor(0xd4af37).setTitle(`🎲 ${club?.name || 'Club'} FUT Draft Night`)
+      .setDescription(`Everyone gets the same 5 options per slot. Pick your XI, then press **Results** to see who built the best team.\nCode: **${code}**`)
+      .setFooter({ text: 'Score = team rating + team chemistry. Real FC 27 cards from FUT.GG; nothing touches your EA club.' });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setURL(url).setLabel('Draft now').setStyle(ButtonStyle.Link),
+      new ButtonBuilder().setCustomId(`fd_res:${code}`).setLabel('Results').setEmoji('🏆').setStyle(ButtonStyle.Secondary),
+    );
+    return { embeds: [embed], components: [row], code };
+  }
+
+  async function draftResults(guild, code) {
+    const users = await memberUsers(guild);
+    const { rows = [] } = users.size ? await job({ job: 'draft-board', seed: code, user_ids: [...users.keys()] }) : { rows: [] };
+    const embed = new EmbedBuilder().setColor(0xd4af37).setTitle(`🎲 Draft ${code} · results`);
+    if (!rows.length) return { embeds: [embed.setDescription(`Nobody here has finished draft **${code}** yet. Results count players who linked Discord on the website.`)] };
+    const medal = ['🥇', '🥈', '🥉'];
+    return { embeds: [embed.setDescription(rows.slice(0, 20).map((r, i) => `${medal[i] || `${i + 1}.`} <@${users.get(r.user_id)}> · **${r.score}** (${r.rating} rated, ${r.chemistry} chem, ${r.formation})`).join('\n'))], allowedMentions: { parse: [] } };
+  }
+
+  async function handleComponent(interaction) {
+    const [action, code] = (interaction.customId || '').split(':');
+    if (action !== 'fd_res' || !/^[a-z0-9]{6,16}$/.test(code || '')) return false;
+    await interaction.deferReply({ flags: 64 });
+    await interaction.editReply(await draftResults(interaction.guild, code).catch((err) => ({ content: `❌ ${err.message}` })));
+    return true;
+  }
+
   async function weeklyBoards(now) {
     for (const guild of client()?.guilds.cache.values() || []) {
       const club = await futClub(guild.id);
@@ -172,7 +206,7 @@ function createFutClub({ supabase, callFunction, autopilot, events, getGuildStat
 
   events.onTick((now) => tick(now).catch((err) => console.warn(`[futclub] tick failed: ${err.message}`)));
 
-  return { postPulls, boardEmbed, whoHasReply, memberUsers, futClub, tick, enabled: futOn };
+  return { postPulls, boardEmbed, whoHasReply, memberUsers, futClub, tick, draftNightPost, draftResults, handleComponent, enabled: futOn };
 }
 
 module.exports = { createFutClub, boardLines, boardHighlights };

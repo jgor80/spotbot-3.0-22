@@ -25,6 +25,7 @@ import { upgradeOptions } from "../_shared/fut/upgrades-data.ts";
 import { calendarFor } from "../_shared/fut/calendar.ts";
 import { fodderIndex } from "../_shared/fut/fodder.ts";
 import { objectivesPlan } from "../_shared/fut/objectives.ts";
+import { draftBoard, draftOptions, finishDraft, openSimPack } from "../_shared/fut/draft.ts";
 import { clubBoard, getShare, runClubPulls, setShare, whoHas } from "../_shared/fut/club-share.ts";
 import { addGame, champsOverview, createRun, deleteGame, deleteRun, updateRun } from "../_shared/fut/champs.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
@@ -194,7 +195,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (!(await deps.isBot?.(req))) return err(401, "Only the bot's scheduler can run jobs.");
     const jobBody = (await req.json().catch(() => null) ?? {}) as Record<string, unknown>;
     const job = jobBody.job;
-    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts" && job !== "strategy-learn" && job !== "club-pulls" && job !== "club-board" && job !== "club-whohas") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts" && job !== "strategy-learn" && job !== "club-pulls" && job !== "club-board" && job !== "club-whohas" && job !== "draft-board") return err(400, "Unknown job.");
     try {
       // Knowledge bank: collect Reddit/YouTube sources and read what's waiting (see knowledge.ts)
       if (job === "knowledge-ingest") {
@@ -222,6 +223,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       if (job === "club-pulls") return json({ data: await runClubPulls(deps.db) });
       if (job === "club-board") return json({ data: await clubBoard(deps.db, jobBody.user_ids) });
       if (job === "club-whohas") return json({ data: await whoHas(deps.db, jobBody.user_ids, jobBody.query) });
+      if (job === "draft-board") return json({ data: await draftBoard(deps.db, jobBody.seed, jobBody.user_ids) });
       if (job === "futgg-catalogue") {
         // Market-wide card list after the twice-daily FUT.GG prices, then baskets so the indexes include it.
         const result = await syncFutggCatalogue(deps.db, deps.fetch);
@@ -359,6 +361,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     // What the user shares with their Discord club (pulls feed, FUT board, who has this card). Off by default.
     if (route === "/club-share" && m === "GET") return json({ data: await getShare(db, userId) });
     if (route === "/club-share" && m === "PUT") return json({ data: await setShare(db, userId, obj(await body(req))) });
+    // Draft simulator (same code, same options: Discord draft nights) and a for-fun pack opener with made-up odds.
+    if (route === "/draft" && m === "GET") return json({ data: await draftOptions(db, url.searchParams.get("formation") ?? undefined, url.searchParams.get("seed") ?? undefined) });
+    if (route === "/draft/finish" && m === "POST") return json({ data: await finishDraft(db, userId, obj(await body(req))) });
+    if (route === "/packs/simulate" && m === "POST") return json({ data: await openSimPack(db, obj(await body(req))) });
     // Objectives planner: one XI from the club that covers as many objective player requirements as possible.
     if (route === "/objectives/plan" && m === "POST") {
       const b = obj(await body(req));

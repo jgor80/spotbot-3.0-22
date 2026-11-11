@@ -39,3 +39,19 @@ test('pull feed: posts in servers where the player is a member, with the club fe
   assert.match(sent[0].embeds[0].data.description, /^<@d1> pulled \*\*Star\*\* \*\*91\*\*$/);
   assert.deepStrictEqual(sent[0].allowedMentions, { parse: [] });
 });
+
+test('draft night: post has the code, a website link and a Results button; results list members by score', async () => {
+  process.env.FUT_ENABLED = 'true';
+  const guild = { id: 'g1', members: { fetch: async () => new Map([['d1', {}], ['d2', {}]]), cache: new Map() } };
+  const fc = createFutClub({
+    supabase: { from: () => ({ select: () => ({ eq: () => ({ limit: async () => ({ data: [{ auth_user_id: 'u1', discord_user_id: 'd1' }, { auth_user_id: 'u2', discord_user_id: 'd2' }], error: null }) }) }) }) },
+    callFunction: async (_fn, body) => ({ data: { data: body.job === 'draft-board' ? { rows: [{ user_id: 'u2', score: 120, rating: 87, chemistry: 33, formation: '4-3-3' }, { user_id: 'u1', score: 110, rating: 84, chemistry: 26, formation: '4-4-2' }] } : {} } }),
+    autopilot: { isOn: () => true }, events: { getClient: () => null, onTick: () => {}, serverPrefs: async () => ({}) }, getGuildState: async () => ({ clubs: [] }), dashboardUrl: 'https://example.test',
+  });
+  const post = fc.draftNightPost({ name: 'Club' }, 'abc234');
+  const buttons = post.components[0].toJSON().components;
+  assert.strictEqual(buttons[0].url, 'https://example.test/fut/draft?seed=abc234');
+  assert.strictEqual(buttons[1].custom_id, 'fd_res:abc234');
+  const res = await fc.draftResults(guild, 'abc234');
+  assert.match(res.embeds[0].data.description, /^🥇 <@d2> · \*\*120\*\*.*\n🥈 <@d1> · \*\*110\*\*/);
+});

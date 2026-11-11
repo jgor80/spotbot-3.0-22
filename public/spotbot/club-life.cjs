@@ -49,6 +49,7 @@ const CLUBLIFE_COMMANDS = [
       { type: 1, name: 'rivals', description: 'Every club played 3+ times: head-to-head records, nemesis and favourite opponent.' },
       { type: 1, name: 'futboard', description: "The club's FUT board this week: club value, trading, Champs and pulls of players who share." },
       { type: 1, name: 'whohas', description: 'Which club members own a FUT card (players who share their club only).', options: [{ type: 3, name: 'card', description: "Player name, e.g. Mbappé", required: true, max_length: 60 }] },
+      { type: 1, name: 'draft', description: 'Start a FUT Draft Night: everyone drafts the same options on the website, then compare scores.' },
       { type: 1, name: 'settings', description: 'Switch badges, Wrapped, Awards Night, coach goals, the Network Wire and FUT on or off.' },
     ],
   },
@@ -511,6 +512,12 @@ function createClubLife(deps) {
       return interaction.editReply({ embeds: [await futClub.boardEmbed(interaction.guild, club)], allowedMentions: { parse: [] } }).catch((err) => interaction.editReply({ content: `❌ ${err.message}` }));
     }
     if (!(await leaderOnly(interaction, club))) return null;
+    if (sub === 'draft' && futClub) {
+      if (!futClub.enabled() || !autopilot.isOn(club, 'fut')) return interaction.reply({ content: 'FUT is switched off here (Club Life settings).', flags: 64 });
+      const { code, ...post } = futClub.draftNightPost(club);
+      await interaction.reply({ content: `🎲 Draft Night is posted (code ${code}).`, flags: 64 });
+      return interaction.channel?.send(post).catch((err) => interaction.followUp({ content: `❌ ${err.message}`, flags: 64 }));
+    }
     if (sub === 'settings') return interaction.reply({ ...settingsPanel(club), flags: 64 });
     await interaction.deferReply({ flags: 64 });
     if (sub === 'awards') {
@@ -595,6 +602,10 @@ function createClubLife(deps) {
       return true;
     }
     const id = interaction.customId || '';
+    if (interaction.isButton?.() && /^fd_/.test(id) && futClub) {
+      await futClub.handleComponent(interaction);
+      return true;
+    }
     if ((interaction.isButton?.() || interaction.isStringSelectMenu?.()) && /^mp_/.test(id) && picks) {
       await picks.handleComponent(interaction);
       return true;
