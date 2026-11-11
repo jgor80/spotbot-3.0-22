@@ -10,6 +10,7 @@
 // estimate: EA publishes "chance of at least one" per category, not the full distribution, so the maths assumes
 // the best card in the pack sits in the highest line it hit and the rest are fodder for the pack's quality.
 import { FutDbError, FutError, type FutDb } from "./service.ts";
+import { cleanArtUrl } from "./card-art.ts";
 
 type Row = Record<string, unknown>;
 const fail = (error: { message?: string } | null) => {
@@ -42,6 +43,11 @@ export interface PackOffer {
   pack_id: number;
   name: string | null;
   name_key: string | null;
+  /** EA's art id for the pack picture and a picture address from the store item (helper 0.11.0+). */
+  asset_id?: number | null;
+  image_url?: string | null;
+  /** When the helper last saw it in the store (helper 0.11.0+; older helpers: the upload time). */
+  seen_at?: string | null;
   description: string | null;
   state: string | null;
   pack_type: string | null;
@@ -108,6 +114,7 @@ function parsePack(v: unknown): PackOffer | null {
   if (!pack_id) return null;
   return {
     pack_id, name: text(v.name), name_key: text(v.name_key), description: text(v.description, 400), state: text(v.state, 40),
+    asset_id: id(v.asset_id), image_url: cleanArtUrl(v.image_url), seen_at: when(v.seen_at),
     pack_type: text(v.pack_type, 40), coins: coins(v.coins), points: coins(v.points), untradeable: v.untradeable === true,
     is_player_pick: v.is_player_pick === true, item_count: count(v.item_count, 100), gold: count(v.gold, 100), silver: count(v.silver, 100),
     bronze: count(v.bronze, 100), rare: count(v.rare, 100), content_type: text(v.content_type, 40), start_at: when(v.start_at), end_at: when(v.end_at),
@@ -153,7 +160,7 @@ export async function importStore(db: FutDb, userId: string, raw: unknown) {
   const now = new Date().toISOString();
   if (u.packs.length) {
     fail((await db.from("pack_offers").delete().eq("user_id", userId).eq("platform", u.platform)).error);
-    const rows = u.packs.map((p) => ({ user_id: userId, platform: u.platform, ...p, seen_at: u.captured_at, updated_at: now }));
+    const rows = u.packs.map((p) => ({ user_id: userId, platform: u.platform, ...p, seen_at: p.seen_at && p.seen_at <= u.captured_at ? p.seen_at : u.captured_at, updated_at: now }));
     for (let i = 0; i < rows.length; i += 200) fail((await db.from("pack_offers").insert(rows.slice(i, i + 200))).error);
     fail((await db.from("pack_store_captures").upsert({ user_id: userId, platform: u.platform, captured_at: u.captured_at, pack_count: u.packs.length, shape: u.shape }, { onConflict: "user_id,platform" })).error);
   } else if (Array.isArray(u.shape.seen)) {
@@ -381,6 +388,63 @@ export async function valueBands(db: FutDb, platform: "console" | "pc", now = Da
 }
 export const forgetValueBands = () => bandCache.clear();
 
+/** A pack missing from the latest store list by more than this is no longer live. */
+export const STORE_GONE_MS = 2 * 3_600_000;
+const NOT_LIVE_STATE = /expired|unavailable|inactive|disabled|ended|sold.?out|locked|hidden|retired/i;
+
+/** Live in the store now: not owned-only, started and not ended, buyable, and in the newest store list the helper saw. */
+export function liveInStore(p: Pick<PackOffer, "unopened" | "start_at" | "end_at" | "state" | "coins" | "points" | "seen_at">, newestSeen: number, now: number): boolean {
+  if (p.unopened) return false;
+  if (p.end_at && Date.parse(p.end_at) <= now) return false;
+  if (p.start_at && Date.parse(p.start_at) > now) return false;
+  if (p.state && NOT_LIVE_STATE.test(p.state)) return false;
+  if (!p.coins && !p.points) return false;
+  const seen = Date.parse(String(p.seen_at ?? "")) || 0;
+  return !newestSeen || seen >= newestSeen - STORE_GONE_MS;
+}
+
+/** Gold, silver, bronze or mixed, from what the pack holds (for the pack tile and the fallback name). */
+export function packQuality(p: Pick<PackOffer, "gold" | "silver" | "bronze" | "pack_type">): "gold" | "silver" | "bronze" | "mixed" {
+  const g = p.gold ?? 0, si = p.silver ?? 0, b = p.bronze ?? 0;
+  if (g && !si && !b) return "gold";
+  if (si && !g && !b) return "silver";
+  if (b && !g && !si) return "bronze";
+  const t = (p.pack_type ?? "").toLowerCase();
+  return t.includes("gold") ? "gold" : t.includes("silver") ? "silver" : t.includes("bronze") ? "bronze" : "mixed";
+}
+
+/**
+ * The name to show: EA's own when the helper read it, else words from EA's text key ("FUT_STORE_PACK_GOLD_RARE_NAME"
+ * reads "Gold Rare"), else what the pack holds ("Gold pack, 12 items, 3 rare"). Never just the id number.
+ */
+export function packName(p: Pick<PackOffer, "pack_id" | "name" | "name_key" | "gold" | "silver" | "bronze" | "pack_type" | "item_count" | "rare" | "untradeable" | "is_player_pick">): string {
+  if (p.name) return p.name;
+  const words = (p.name_key ?? "").replace(/^(?:FUT_)?(?:STORE_)?(?:PACK_)?/i, "").replace(/_(?:NAME|TITLE)$/i, "")
+    .split(/[_.\s-]+/).filter((w) => w && !/^\d+$/.test(w) && !/^(?:fut|store|pack|name|loc)$/i.test(w));
+  if (words.length) return words.map((w) => w[0]!.toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+  const q = packQuality(p);
+  const kind = p.is_player_pick ? "Player pick" : `${q === "mixed" ? "Mixed" : q[0]!.toUpperCase() + q.slice(1)} pack`;
+  const bits = [p.item_count ? `${p.item_count} items` : null, p.rare ? `${p.rare} rare` : null, p.untradeable ? "untradeable" : null].filter(Boolean);
+  return bits.length ? `${kind}, ${bits.join(", ")}` : `${kind} ${p.pack_id}`;
+}
+
+/** EA pack pictures the Web App loaded (shared card art addresses with "pack" in the path), newest first. */
+async function packPictures(db: FutDb): Promise<string[]> {
+  const { data, error } = await db.from("ea_card_art").select("url").ilike("url", "%pack%").order("last_seen_at", { ascending: false }).limit(500);
+  if (error) return []; // pictures are a nicety: never fail the advice for them
+  return ((data ?? []) as { url: string }[]).map((r) => r.url);
+}
+
+/** The picture whose file name carries the pack's art id (or else its pack id) as a whole number. */
+export function pictureFor(p: Pick<PackOffer, "pack_id" | "asset_id">, urls: string[]): string | null {
+  for (const want of [p.asset_id, p.pack_id]) {
+    if (!want) continue;
+    const hit = urls.find((u) => (u.split("/").pop() ?? "").match(/\d+/g)?.includes(String(want)));
+    if (hit) return hit;
+  }
+  return null;
+}
+
 const VERDICT_ORDER: Verdict[] = ["buy", "only_for_fodder", "points_only", "skip", "no_prices", "no_odds"];
 
 export async function packAdvice(db: FutDb, userId: string, platform: "console" | "pc", now = Date.now()) {
@@ -391,10 +455,15 @@ export async function packAdvice(db: FutDb, userId: string, platform: "console" 
   ]);
   fail(packsRes.error); fail(capRes.error); fail(pullsRes.error);
   const packs = (packsRes.data ?? []) as (PackOffer & Row)[];
+  // Only packs live in the store now (Jeff, 2026-11-11): not ended, started, buyable, and in the latest store list.
+  const newestSeen = packs.reduce((m, p) => Math.max(m, Date.parse(String(p.seen_at ?? "")) || 0), 0);
+  const live = packs.filter((p) => liveInStore(p, newestSeen, now));
+  const hidden = packs.length - live.length;
+  const pictures = live.length ? await packPictures(db) : [];
   const snaps = packs.length || (pullsRes.data ?? []).length ? await valueBands(db, platform, now) : [];
   const latest = snaps.at(-1);
 
-  const advice = packs.map((p) => {
+  const advice = live.map((p) => {
     const odds = Array.isArray(p.odds) ? (p.odds as PackOdd[]) : [];
     const pack = { ...p, odds };
     const value = latest ? packValue(pack, latest.bands) : { ev_low: null, ev_high: null, lines: [], fodder_each: null, fodder_items: 0, notes: ["No FUT.GG prices yet."] };
@@ -402,7 +471,8 @@ export async function packAdvice(db: FutDb, userId: string, platform: "console" 
     const ev_series = snaps.map((s) => ({ at: s.published_at, ev: packValue(pack, s.bands).ev_high })).filter((x): x is { at: string; ev: number } => x.ev !== null);
     const timing = timingFor({ now, ev_series, end_at: p.end_at, start_at: p.start_at, purchase_limit: p.purchase_limit, purchase_count: p.purchase_count, has_special: odds.some((o) => o.special), verdict: v.verdict });
     return {
-      pack_id: p.pack_id, name: p.name ?? (p.name_key ? String(p.name_key) : `Pack ${p.pack_id}`), description: p.description, coins: p.coins, points: p.points,
+      pack_id: p.pack_id, name: packName(p), named: !!p.name, description: p.description, coins: p.coins, points: p.points,
+      image_url: p.image_url ?? pictureFor(p, pictures), quality: packQuality(p),
       untradeable: p.untradeable, is_player_pick: p.is_player_pick, item_count: p.item_count, rare: p.rare, end_at: p.end_at, start_at: p.start_at, unopened: p.unopened,
       ev_low: value.ev_low, ev_high: value.ev_high, ev_after_tax: value.ev_high === null ? null : Math.round(value.ev_high * (p.untradeable ? 1 : 1 - EA_TAX)),
       value_per_100_points: p.points && value.ev_high !== null ? Math.round((value.ev_high * (p.untradeable ? 1 : 1 - EA_TAX)) / (p.points / 100)) : null,
@@ -412,7 +482,7 @@ export async function packAdvice(db: FutDb, userId: string, platform: "console" 
   }).sort((a, b) => VERDICT_ORDER.indexOf(a.verdict) - VERDICT_ORDER.indexOf(b.verdict) || (b.ratio ?? -1) - (a.ratio ?? -1) || (b.value_per_100_points ?? -1) - (a.value_per_100_points ?? -1));
 
   return {
-    platform, captured_at: capRes.data?.captured_at ?? null, shape: capRes.data?.shape ?? null,
+    platform, captured_at: capRes.data?.captured_at ?? null, shape: capRes.data?.shape ?? null, hidden,
     prices_at: latest?.published_at ?? null, packs: advice,
     pulls: await pullSummary(db, platform, (pullsRes.data ?? []) as PackPull[], new Map(packs.map((p) => [Number(p.pack_id), p]))),
     model: [
@@ -455,7 +525,7 @@ async function pullSummary(db: FutDb, platform: "console" | "pc", pulls: PackPul
     opens: [...opens.values()].sort((a, b) => b.opened_at.localeCompare(a.opened_at)).slice(0, 50).map((o) => {
       const pack = o.pack_id ? packs.get(o.pack_id) : undefined;
       const cost = pack?.coins ? Number(pack.coins) : null;
-      return { ...o, pack_name: pack?.name ?? (o.pack_id ? `Pack ${o.pack_id}` : "Unknown pack"), pack_coins: cost,
+      return { ...o, pack_name: pack ? packName(pack as unknown as PackOffer) : o.pack_id ? `Pack ${o.pack_id}` : "Unknown pack", pack_coins: cost,
         after_tax: Math.round(o.tradeable_value * (1 - EA_TAX)), profit: cost ? Math.round(o.tradeable_value * (1 - EA_TAX)) - cost : null };
     }),
   };

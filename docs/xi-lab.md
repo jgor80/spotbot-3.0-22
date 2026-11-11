@@ -117,7 +117,7 @@ no `squad_id` they use the squad the player edited last.
   and matched to cards by EA item id (`player_cards.source_card_key` when it's EA's numeric id). Captures for items
   the user has no card for yet are held privately in `fut.market_capture_holds` and linked later. Shared baskets are built
   from catalogue cards only, so a user's private cards never enter an index. Nothing on the server buys, sells, bids or uses an EA login, and the extension never searches, clicks or bids.
-- **Pack Advisor (since 2026-11-09, Jeff's call).** The helper (v0.5.0+; v0.7.0 reads any store, pack or odds answer and logs the addresses it saw) copies the pack store the Web App loads
+- **Pack Advisor (since 2026-11-09, Jeff's call).** The helper (v0.5.0+; v0.7.0 reads any store, pack or odds answer and logs the addresses it saw; v0.11.0 reads pack names and pack picture addresses, and Pack Advisor shows only packs live in the store) copies the pack store the Web App loads
   when the user opens the Store (prices, contents and EA's published pack odds) and the items packs gave when the user
   opened them. Values come from `fut.pack_value_bands` (FUT.GG prices grouped by rating and kind, last 8 days).
   The model is an estimate and the store's field names are unverified on FC 27 (`fut.pack_store_captures.shape` keeps

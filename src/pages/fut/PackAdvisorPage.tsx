@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock, Package, Trash2 } from "lucide-react";
 import { futApi, futKeys, type PackAdviceItem, type PackStoreSeen, type PackVerdict } from "@/lib/futApi";
 import { ErrorNotice } from "@/components/fut/FutShared";
 import { HelperDownload } from "@/components/fut/HelperDownload";
+import { useCardImages } from "@/components/fut/FutCardArt";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, dateText, Delta, HistoryChart, MarketLoading, MarketShell, Notes, numberText, Section, useMarketPlatform } from "@/components/fut/market/MarketShared";
@@ -19,21 +21,44 @@ const VERDICT: Record<PackVerdict, { label: string; className: string }> = {
 const coins = (v: number | null | undefined) => (v == null ? "–" : `${numberText(v)} coins`);
 const pct = (v: number | null | undefined) => (v == null ? "–" : `${Math.round(v * 100)}%`);
 
+const TILE: Record<PackAdviceItem["quality"], string> = {
+  gold: "from-amber-300 via-yellow-500 to-amber-700 text-amber-950",
+  silver: "from-slate-200 via-slate-400 to-slate-600 text-slate-900",
+  bronze: "from-orange-300 via-amber-700 to-orange-900 text-orange-50",
+  mixed: "from-indigo-400 via-violet-600 to-fuchsia-800 text-white",
+};
+
+/** EA's pack picture when the server allows EA images and the helper saw one; else GafferBot's own pack tile. */
+function PackPicture({ pack }: { pack: PackAdviceItem }) {
+  const images = useCardImages();
+  const [broken, setBroken] = useState(false);
+  if (images && pack.image_url && !broken)
+    return <img src={pack.image_url} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} className="h-24 w-[4.5rem] shrink-0 object-contain" />;
+  return <div aria-hidden="true" className={`flex h-24 w-[4.5rem] shrink-0 flex-col items-center justify-center rounded-md bg-gradient-to-b shadow-inner ${TILE[pack.quality]}`}>
+    <Package className="h-7 w-7 opacity-80" />
+    {pack.item_count ? <span className="mt-1 text-xs font-bold tabular-nums">{pack.item_count} items</span> : null}
+    {pack.rare ? <span className="text-[10px] font-semibold uppercase opacity-80">{pack.rare} rare</span> : null}
+  </div>;
+}
+
 function PackCard({ pack }: { pack: PackAdviceItem }) {
   const v = VERDICT[pack.verdict];
   return <article className="min-w-0 space-y-4 rounded-lg border border-border bg-card p-4">
-    <header className="flex flex-wrap items-start justify-between gap-2">
-      <div className="min-w-0">
-        <h3 className="break-words font-display text-lg font-semibold">{pack.name}</h3>
+    <header className="flex items-start gap-3">
+      <PackPicture pack={pack} />
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap gap-1">
+          <Badge variant="outline" className={v.className}>{v.label}</Badge>
+          {pack.untradeable && <Badge variant="outline">Untradeable</Badge>}
+          {pack.unopened && <Badge variant="outline">In My Packs</Badge>}
+        </div>
+        <h3 className="break-words font-display text-lg font-semibold leading-tight">{pack.name}</h3>
+        {pack.description && <p className="text-sm text-muted-foreground">{pack.description}</p>}
         <p className="text-sm text-muted-foreground">
           {[pack.coins ? coins(pack.coins) : null, pack.points ? `${numberText(pack.points)} FC Points` : null].filter(Boolean).join(" or ") || "No price shown"}
           {pack.item_count ? ` · ${pack.item_count} items${pack.rare ? `, ${pack.rare} rare` : ""}` : ""}
         </p>
-      </div>
-      <div className="flex flex-wrap gap-1">
-        <Badge variant="outline" className={v.className}>{v.label}</Badge>
-        {pack.untradeable && <Badge variant="outline">Untradeable</Badge>}
-        {pack.unopened && <Badge variant="outline">In My Packs</Badge>}
+        {!pack.named && <p className="text-xs text-muted-foreground">EA's name not read yet (store pack {pack.pack_id})</p>}
       </div>
     </header>
     <p className="text-sm">{pack.why}</p>
@@ -74,7 +99,7 @@ function Empty() {
     <Package className="mx-auto h-10 w-10 text-muted-foreground" />
     <h2 className="font-display text-xl">No packs yet</h2>
     <ol className="mx-auto max-w-lg list-decimal space-y-1 pl-5 text-left text-sm text-muted-foreground">
-      <li>Install the XI Lab helper (v0.7.0 or newer), reload it in chrome://extensions, then reload the Web App and connect the helper in Market Lab → Import prices.</li>
+      <li>Install the XI Lab helper (v0.11.0 or newer), reload it in chrome://extensions, then reload the Web App and connect the helper in Market Lab → Import prices.</li>
       <li>In the EA FC Web App, open <strong>Store → Packs</strong> and look through the tabs.</li>
       <li>Open a pack's odds (Pack Probability) so the helper can read them.</li>
       <li>Come back here: the helper uploads within a few minutes.</li>
@@ -95,9 +120,10 @@ export default function PackAdvisorPage() {
     <p className="text-sm text-muted-foreground">Which store packs are worth your coins, and when to open them. The helper copies the packs, prices and EA's pack odds from the Store screen when you open it; card values come from FUT.GG's latest prices. It never buys or opens anything.</p>
     {query.isPending ? <MarketLoading /> : d && (d.packs.length === 0 && opens.length === 0 ? <>{seen.length > 0 && <SeenStore seen={seen} missed />}<Empty /></> : <>
       <p className="text-xs text-muted-foreground">Store seen {d.captured_at ? dateText(d.captured_at) : "–"} · Prices from FUT.GG {d.prices_at ? dateText(d.prices_at) : "not loaded yet"} · Estimates, not checked against FC 27 yet</p>
-      <Section title="Packs in the store">
+      <Section title="Live in the store">
         {d.packs.length ? <div className="grid items-start gap-4 lg:grid-cols-2">{d.packs.map(p => <PackCard key={p.pack_id} pack={p} />)}</div>
-          : <p className="text-sm text-muted-foreground">No store packs stored for this platform. Open Store → Packs in the Web App.</p>}
+          : <p className="text-sm text-muted-foreground">No packs live in the store for this platform. Open Store → Packs in the Web App.</p>}
+        {(d.hidden ?? 0) > 0 && <p className="text-xs text-muted-foreground">{d.hidden} older {d.hidden === 1 ? "pack is" : "packs are"} hidden: ended, not started yet, or missing from the latest store list.</p>}
       </Section>
       <Section title="Your pack openings">
         <div className="overflow-x-auto"><DataTable headers={["Pack", "Opened", "Items", "Sell value after tax", "Untradeable value", "Profit"]} rows={opens.map(o => [o.pack_name, dateText(o.opened_at), o.items, coins(o.after_tax), coins(o.untradeable_value), o.profit == null ? "–" : <Delta value={o.profit} unit=" coins" />])} empty="Open a pack in the Web App and the helper records what it gave you." /></div>

@@ -2,7 +2,7 @@
 // Fictional packs, odds and prices only.
 import { handle, type Deps } from "./handler.ts";
 import { futMemoryDb } from "../_shared/fut/test-db.ts";
-import { bandValue, forgetValueBands, nextPromoSlot, packValue, parseStoreUpload, timingFor, verdictFor, type Band, type PackOdd } from "../_shared/fut/packs.ts";
+import { bandValue, forgetValueBands, liveInStore, nextPromoSlot, packName, packValue, parseStoreUpload, pictureFor, STORE_GONE_MS, timingFor, verdictFor, type Band, type PackOdd } from "../_shared/fut/packs.ts";
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -94,6 +94,30 @@ Deno.test("store upload parsing keeps known fields and refuses other files", () 
   assert(JSON.stringify(u.shape.pack_keys) === '["coins"]', JSON.stringify(u.shape));
 });
 
+Deno.test("pack names never fall back to the bare id; pictures match on the art id", () => {
+  const base = { ...pack, name: null, name_key: null };
+  assert(packName(pack) === "Rare Gold Pack", "EA's name wins");
+  assert(packName({ ...base, name_key: "FUT_STORE_PACK_GOLD_RARE_NAME" }) === "Gold Rare", packName({ ...base, name_key: "FUT_STORE_PACK_GOLD_RARE_NAME" }));
+  assert(packName(base) === "Gold pack, 12 items, 3 rare", packName(base));
+  assert(packName({ ...base, item_count: null, rare: null, gold: null, pack_type: null }) === "Mixed pack 101", "last resort still says what it is");
+  const urls = ["https://www.ea.com/x/packs/pack_3021.png", "https://www.ea.com/x/packs/pack_101_big.png"];
+  assert(pictureFor({ pack_id: 101, asset_id: 3021 }, urls) === urls[0], "art id first");
+  assert(pictureFor({ pack_id: 101, asset_id: null }, urls) === urls[1], "then pack id");
+  assert(pictureFor({ pack_id: 30, asset_id: null }, urls) === null, "whole numbers only: 30 isn't 3021");
+});
+
+Deno.test("only packs live in the store now", () => {
+  const now = Date.UTC(2026, 10, 11, 12), seen = new Date(now - 60_000).toISOString(), newest = now - 60_000;
+  const p = { unopened: false, start_at: null, end_at: null, state: "available", coins: 7500, points: null, seen_at: seen };
+  assert(liveInStore(p, newest, now), "live");
+  assert(!liveInStore({ ...p, end_at: new Date(now - 1).toISOString() }, newest, now), "ended");
+  assert(!liveInStore({ ...p, start_at: new Date(now + 3_600_000).toISOString() }, newest, now), "not started");
+  assert(!liveInStore({ ...p, state: "EXPIRED" }, newest, now), "expired state");
+  assert(!liveInStore({ ...p, coins: null }, newest, now), "can't be bought");
+  assert(!liveInStore({ ...p, unopened: true }, newest, now), "owned, not in the store");
+  assert(!liveInStore({ ...p, seen_at: new Date(newest - STORE_GONE_MS - 1).toISOString() }, newest, now), "gone from the latest store list");
+});
+
 Deno.test("routes: the helper key uploads the store, the user gets advice, nobody else sees it", async () => {
   forgetValueBands();
   const db = futMemoryDb({}) as ReturnType<typeof futMemoryDb> & { rpc: (fn: string, args: Record<string, unknown>) => Promise<unknown> };
@@ -108,18 +132,20 @@ Deno.test("routes: the helper key uploads the store, the user gets advice, nobod
     const res = await handle(new Request(`http://local/functions/v1/fut-api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }), deps);
     return { status: res.status, data: await res.json() };
   };
+  db.tables.ea_card_art = [{ url: "https://www.ea.com/x/packs/pack_101.png", last_seen_at: published }, { url: "https://www.ea.com/x/items/cards_bg_101.png", last_seen_at: published }];
   const key = (await call("POST", "/v1/helper/connect")).data.data.key as string;
-  const file = { format: "xilab-store-capture", version: 1, verified: false, platform: "console", captured_at: new Date().toISOString(), packs: [pack, { ...pack, pack_id: 102, coins: 100_000, name: "Dear Pack" }],
+  const file = { format: "xilab-store-capture", version: 1, verified: false, platform: "console", captured_at: new Date().toISOString(), packs: [pack, { ...pack, pack_id: 102, coins: 100_000, name: "Dear Pack" }, { ...pack, pack_id: 103, name: "Gone Pack", seen_at: new Date(Date.now() - 3 * H).toISOString() }],
     pulls: [{ item_id: 9, ea_item_id: 501, item_type: "player", rating: 86, rare_flag: 1, untradeable: false, pack_id: 101, opened_at: new Date(Date.now() - H).toISOString() }],
     shape: { pack_keys: ["coins", "packOdds"], odds_keys: ["oddsFormatted"], category_keys: [] } };
   const up = await call("POST", "/v1/helper/packs", file, { authorization: `Bearer ${key}` });
-  assert(up.status === 200 && up.data.data.packs === 2 && up.data.data.pulls === 1, JSON.stringify(up.data));
+  assert(up.status === 200 && up.data.data.packs === 3 && up.data.data.pulls === 1, JSON.stringify(up.data));
   assert((await call("GET", "/v1/packs", undefined, { authorization: `Bearer ${key}` })).status === 403, "the key can't read advice");
 
   const advice = (await call("GET", "/v1/packs?platform=console")).data.data;
   assert(advice.packs.length === 2 && advice.packs[0].pack_id === 101 && advice.packs[1].verdict === "skip", JSON.stringify(advice.packs.map((p: { pack_id: number; verdict: string }) => [p.pack_id, p.verdict])));
   assert(advice.packs[0].ev_after_tax > 0 && advice.packs[0].lines.length === 3 && advice.prices_at === published, "valued on the latest refresh");
   assert(advice.shape.pack_keys.includes("packOdds"), "field names kept for the shape check");
+  assert(advice.packs[0].image_url === "https://www.ea.com/x/packs/pack_101.png" && advice.packs[0].named === true && advice.hidden === 1, JSON.stringify(advice.packs[0].image_url));
   const open = advice.pulls.opens[0];
   assert(open.pack_name === "Rare Gold Pack" && open.tradeable_value === 30_000 && open.profit === Math.round(30_000 * 0.95) - 7500, JSON.stringify(open));
 
