@@ -13,6 +13,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { toast } from "@/lib/notify";
+import { HelperConnection } from "@/components/fut/HelperConnection";
+import { Chrome } from "lucide-react";
+import { useFutAvailable } from "@/components/fut/FutShared";
 
 export default function ProfilePage() {
   const { selectedGuildId, isLoading: guildLoading } = useGuild();
@@ -61,6 +64,7 @@ export default function ProfilePage() {
     });
   };
 
+  const futAvailable = useFutAvailable();
   const isLoading = guildLoading || profileLoading || authLoading || linkLoading;
 
   return (
@@ -70,6 +74,22 @@ export default function ProfilePage() {
           <h1 className="font-display text-3xl font-bold">Player Profile</h1>
           <p className="text-muted-foreground">View and manage your player statistics</p>
         </div>
+
+        {/* The XI Lab browser helper's connection lives on the profile (Jeff, 2026-11-11), with its key shown here. */}
+        {user && futAvailable && (
+          <Card id="helper">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Chrome className="h-5 w-5" />
+                Browser helper
+              </CardTitle>
+              <CardDescription>Connect the XI Lab helper extension to your GafferBot account</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <HelperConnection />
+            </CardContent>
+          </Card>
+        )}
 
         {!selectedGuildId && !guildLoading ? (
           <Card>

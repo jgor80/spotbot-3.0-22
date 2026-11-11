@@ -11012,6 +11012,36 @@ var REUSE_GRACE_MS = 30 * 1e3;
 // supabase/functions/_shared/fut/helper-keys.ts
 var HELPER_KEY_PREFIX = "xlh_";
 var HELPER_ROUTES = /* @__PURE__ */ new Set(["/helper/prices", "/helper/club", "/helper/packs", "/helper/account", "/helper/images"]);
+var b64 = (bytes) => btoa(String.fromCharCode(...bytes));
+var unb64 = (text4) => Uint8Array.from(atob(text4), (c4) => c4.charCodeAt(0));
+async function sealKey(env) {
+  const secret = env("HELPER_KEY_SECRET") || env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!secret) return null;
+  const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`gafferbot-helper-key:${secret}`));
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+async function encryptHelperKey(env, userId, key2) {
+  const k = await sealKey(env);
+  if (!k) return null;
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: new TextEncoder().encode(userId) }, k, new TextEncoder().encode(key2)));
+  const out = new Uint8Array(iv.length + ct.length);
+  out.set(iv);
+  out.set(ct, iv.length);
+  return `v1:${b64(out)}`;
+}
+async function decryptHelperKey(env, userId, sealed) {
+  if (!sealed?.startsWith("v1:")) return null;
+  const k = await sealKey(env);
+  if (!k) return null;
+  try {
+    const raw = unb64(sealed.slice(3));
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12), additionalData: new TextEncoder().encode(userId) }, k, raw.slice(12));
+    return new TextDecoder().decode(plain);
+  } catch {
+    return null;
+  }
+}
 var fail8 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
@@ -11033,11 +11063,18 @@ async function revokeHelperKeys(db2, userId) {
   fail8((await db2.from("helper_keys").update({ revoked_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("user_id", userId).is("revoked_at", null)).error);
   return helperStatus(db2, userId);
 }
-async function createHelperKey(db2, userId) {
+async function createHelperKey(db2, userId, env = () => void 0) {
   await revokeHelperKeys(db2, userId);
   const key2 = HELPER_KEY_PREFIX + randomString(24);
-  fail8((await db2.from("helper_keys").insert({ user_id: userId, key_hash: await hashToken(key2), key_hint: key2.slice(-4) })).error);
+  const key_encrypted = await encryptHelperKey(env, userId, key2);
+  fail8((await db2.from("helper_keys").insert({ user_id: userId, key_hash: await hashToken(key2), key_hint: key2.slice(-4), key_encrypted })).error);
   return { key: key2, ...await helperStatus(db2, userId) };
+}
+async function revealHelperKey(db2, userId, env) {
+  const { data, error } = await db2.from("helper_keys").select("key_encrypted").eq("user_id", userId).is("revoked_at", null).maybeSingle();
+  fail8(error);
+  if (!data) return { connected: false, key: null };
+  return { connected: true, key: await decryptHelperKey(env, userId, data.key_encrypted) };
 }
 
 // supabase/functions/_shared/fut/xilab/market/types.ts
@@ -12929,7 +12966,8 @@ async function handle(req, deps) {
     }
     if (route === "/helper" && m === "GET") return json({ data: await helperStatus(db2, userId) });
     if (route === "/helper" && m === "DELETE") return json({ data: await revokeHelperKeys(db2, userId) });
-    if (route === "/helper/connect" && m === "POST") return json({ data: await createHelperKey(db2, userId) }, 201);
+    if (route === "/helper/connect" && m === "POST") return json({ data: await createHelperKey(db2, userId, deps.env ?? ((k) => Deno.env.get(k))) }, 201);
+    if (route === "/helper/key" && m === "GET") return json({ data: await revealHelperKey(db2, userId, deps.env ?? ((k) => Deno.env.get(k))) });
     if (route === "/helper/prices" && m === "POST") return json({ data: await importPrices(db2, userId, await body(req, MAX_IMPORT_BODY)) });
     if (route === "/helper/packs" && m === "POST") return json({ data: await importStore(db2, userId, await body(req, MAX_STORE_BODY)) });
     if (route === "/packs" && m === "GET") return json({ data: await packAdvice(db2, userId, platformParam(url.searchParams.get("platform"))) });

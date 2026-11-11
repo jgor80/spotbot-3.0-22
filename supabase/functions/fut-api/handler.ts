@@ -35,7 +35,7 @@ import {
 } from "../_shared/fut/knowledge.ts";
 import { importCardArt, listCardArt } from "../_shared/fut/card-art.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
-import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
+import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revealHelperKey, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
 import { forgetMarketOwner, marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
 import { scanRequestSchema, thesisInputSchema, watchItemInputSchema } from "../_shared/fut/xilab/market/index.ts";
 import { assignCard, cardSchema, createSquad, FORMATIONS, setFormation, squadSchema, type Squad, type WorkspaceCard } from "../_shared/fut/xilab/workspace/index.ts";
@@ -281,7 +281,9 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     // XI Lab browser helper: connect (signed in, shows the key once), status, turn off, and its two upload routes.
     if (route === "/helper" && m === "GET") return json({ data: await helperStatus(db, userId) });
     if (route === "/helper" && m === "DELETE") return json({ data: await revokeHelperKeys(db, userId) });
-    if (route === "/helper/connect" && m === "POST") return json({ data: await createHelperKey(db, userId) }, 201);
+    if (route === "/helper/connect" && m === "POST") return json({ data: await createHelperKey(db, userId, deps.env ?? ((k: string) => Deno.env.get(k))) }, 201);
+    // The full key again, for its owner's profile (never for a helper key: /helper/key isn't in HELPER_ROUTES).
+    if (route === "/helper/key" && m === "GET") return json({ data: await revealHelperKey(db, userId, deps.env ?? ((k: string) => Deno.env.get(k))) });
     if (route === "/helper/prices" && m === "POST") return json({ data: await importPrices(db, userId, await body(req, MAX_IMPORT_BODY)) });
 
     // Pack Advisor: the pack store and pack pulls the helper copied from the user's own Web App, scored on FUT.GG prices.
