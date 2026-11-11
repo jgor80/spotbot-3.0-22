@@ -110,7 +110,7 @@ export type MarketPlatform = "console" | "pc";
 
 // Daily strategy (GET /strategy): advice only, GafferBot never trades.
 export type StrategyRisk = "careful" | "normal" | "bold";
-export interface StrategyBuy { ea_item_id: number; name: string; version: string | null; rating: number; position: string | null; kind: string; price: number; buy_at: number; sell_at: number; profit: number; roi: number; quantity: number | null; spend: number | null; total_profit: number | null; median: number; low: number; high: number; change_24h: number | null; points: number; confidence: "low" | "medium" | "high"; hold: string; why: string[]; risks: string[] }
+export interface StrategyBuy { ea_item_id: number; name: string; version: string | null; rating: number; position: string | null; kind: string; price: number; buy_at: number; sell_at: number; profit: number; roi: number; quantity: number | null; spend: number | null; total_profit: number | null; median: number; low: number; high: number; change_24h: number | null; points: number; confidence: "low" | "medium" | "high"; hold: string; why: string[]; risks: string[]; target_raw?: number; p_hit?: number | null }
 export interface StrategySell { card_id: string; ea_item_id: number; name: string; version: string | null; rating: number | null; position: string | null; quantity: number; list_at: number; quick_at: number; after_tax: number; median: number | null; high: number | null; change_24h: number | null; reason: string; why: string; in_squad: boolean }
 export interface StrategyPileFix { ea_item_id: number; name: string; rating: number | null; state: string; buy_now: number | null; price: number | null; action: "clear" | "relist" | "lower"; list_at: number | null; why: string }
 export interface StrategyRecordItem { plan_date: string; name: string; buy_at: number; sell_at: number; best: number | null; now: number | null; outcome: "hit" | "open_up" | "open_down" | "too_soon" | "unknown"; now_pct: number | null }
@@ -121,6 +121,11 @@ export interface DailyStrategy {
   budget: { coins: number | null; coins_source: "helper" | "entered" | null; coins_at: string | null; reserve_pct: number; reserve: number | null; spend: number | null; per_pick: number | null; buy_spend: number; expected_profit: number; free_slots: number; risk: StrategyRisk };
   steps: string[]; buys: StrategyBuy[]; watch: StrategyBuy[]; sells: StrategySell[]; transfer_list: StrategyPileFix[];
   record: { days: number; picks: number; hit: number; open_up: number; open_down: number; avg_now_pct: number | null; items: StrategyRecordItem[] };
+  learning?: {
+    ready: boolean; updated_at: string | null; buy_picks: number; buy_hit_rate: number | null; hours_to_hit: number | null; target_reach: number;
+    sell_calls: number; sell_right_rate: number | null; lessons: string[];
+    followed: { trades: number; sold: number; profit: number; items: { plan_date: string; ea_item_id: number; name: string; bought_for: number; sold_for: number | null; profit: number | null; target: number }[] };
+  };
   notes: string[]; verified: false;
 }
 export type MarketEvidence = Evidence | "verified";

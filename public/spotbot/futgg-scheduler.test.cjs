@@ -50,8 +50,17 @@ test('after prices, the job asks fut-api to refresh the market-wide card list', 
   try {
     const calls = [];
     await job.task({ supabase: { schema: () => ({}) }, syncFutggPrices, callFunction: async (name, body) => { calls.push([name, body]); return { data: { data: { cards: 1 } }, error: null }; } });
-    assert.deepStrictEqual(calls, [['fut-api', { job: 'futgg-catalogue' }]]);
+    assert.deepStrictEqual(calls, [['fut-api', { job: 'futgg-catalogue' }], ['fut-api', { job: 'strategy-learn' }]]);
     await assert.rejects(job.task({ supabase: { schema: () => ({}) }, syncFutggPrices, callFunction: async () => ({ data: null, error: 'boom' }) }), /futgg-catalogue: boom/);
+    // Strategy learning failing never fails the price job, and STRATEGY_LEARN=off skips it
+    let n = 0;
+    await job.task({ supabase: { schema: () => ({}) }, syncFutggPrices, callFunction: async (_name, body) => { n++; return body.job === 'strategy-learn' ? { data: null, error: 'down' } : { data: { data: {} }, error: null }; } });
+    assert.strictEqual(n, 2);
+    process.env.STRATEGY_LEARN = 'off';
+    calls.length = 0;
+    await job.task({ supabase: { schema: () => ({}) }, syncFutggPrices, callFunction: async (name, body) => { calls.push([name, body]); return { data: { data: {} }, error: null }; } });
+    assert.deepStrictEqual(calls, [['fut-api', { job: 'futgg-catalogue' }]]);
+    delete process.env.STRATEGY_LEARN;
   } finally {
     if (before === undefined) delete process.env.FUT_ENABLED; else process.env.FUT_ENABLED = before;
   }
