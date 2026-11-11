@@ -5991,6 +5991,38 @@ async function futggStatus(db2, now2 = Date.now()) {
   };
 }
 
+// supabase/functions/_shared/fut/card-art.ts
+var MAX_ART_URLS = 400;
+var IMAGE = /\.(?:png|webp|jpe?g|svg|avif)$/i;
+function cleanArtUrl(raw) {
+  if (typeof raw !== "string" || raw.length > 400) return null;
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return null;
+  }
+  const host = u.hostname;
+  const ea = host === "ea.com" || host.endsWith(".ea.com") || host.endsWith(".easports.com") || host.endsWith(".eamobile.com") || host.endsWith(".akamaized.net");
+  if (u.protocol !== "https:" || !ea || u.username || u.password || u.port || !IMAGE.test(u.pathname)) return null;
+  return `${u.origin}${u.pathname}`;
+}
+async function importCardArt(db2, body2) {
+  const b = body2 && typeof body2 === "object" ? body2 : null;
+  if (!b || b.format !== "xilab-image-addresses" || !Array.isArray(b.images)) throw new FutError("Send the helper's card art file (format xilab-image-addresses).");
+  const raw = b.images.slice(0, MAX_ART_URLS).map((x) => x && typeof x === "object" ? x.url : x);
+  const urls = [...new Set(raw.map(cleanArtUrl).filter((u) => !!u))];
+  if (!urls.length) return { received: b.images.length, kept: 0, new_addresses: 0 };
+  const { data, error } = await db2.rpc("record_card_art", { p_urls: urls });
+  if (error) throw new Error(error.message);
+  return { received: b.images.length, kept: urls.length, new_addresses: Number(data ?? 0) };
+}
+async function listCardArt(db2, limit = 300) {
+  const { data, error } = await db2.from("ea_card_art").select("url, first_seen_at, last_seen_at, sightings").order("last_seen_at", { ascending: false }).limit(limit);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
 // supabase/functions/_shared/fut/packs.ts
 var fail4 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
@@ -6040,6 +6072,9 @@ function parsePack(v) {
     name_key: text2(v.name_key),
     description: text2(v.description, 400),
     state: text2(v.state, 40),
+    asset_id: id(v.asset_id),
+    image_url: cleanArtUrl(v.image_url),
+    seen_at: when(v.seen_at),
     pack_type: text2(v.pack_type, 40),
     coins: coins(v.coins),
     points: coins(v.points),
@@ -6098,7 +6133,7 @@ async function importStore(db2, userId, raw) {
   const now2 = (/* @__PURE__ */ new Date()).toISOString();
   if (u.packs.length) {
     fail4((await db2.from("pack_offers").delete().eq("user_id", userId).eq("platform", u.platform)).error);
-    const rows = u.packs.map((p) => ({ user_id: userId, platform: u.platform, ...p, seen_at: u.captured_at, updated_at: now2 }));
+    const rows = u.packs.map((p) => ({ user_id: userId, platform: u.platform, ...p, seen_at: p.seen_at && p.seen_at <= u.captured_at ? p.seen_at : u.captured_at, updated_at: now2 }));
     for (let i = 0; i < rows.length; i += 200) fail4((await db2.from("pack_offers").insert(rows.slice(i, i + 200))).error);
     fail4((await db2.from("pack_store_captures").upsert({ user_id: userId, platform: u.platform, captured_at: u.captured_at, pack_count: u.packs.length, shape: u.shape }, { onConflict: "user_id,platform" })).error);
   } else if (Array.isArray(u.shape.seen)) {
@@ -6268,6 +6303,47 @@ async function valueBands(db2, platform, now2 = Date.now()) {
   bandCache.set(platform, { at: now2, data: snaps });
   return snaps;
 }
+var STORE_GONE_MS = 2 * 36e5;
+var NOT_LIVE_STATE = /expired|unavailable|inactive|disabled|ended|sold.?out|locked|hidden|retired/i;
+function liveInStore(p, newestSeen, now2) {
+  if (p.unopened) return false;
+  if (p.end_at && Date.parse(p.end_at) <= now2) return false;
+  if (p.start_at && Date.parse(p.start_at) > now2) return false;
+  if (p.state && NOT_LIVE_STATE.test(p.state)) return false;
+  if (!p.coins && !p.points) return false;
+  const seen = Date.parse(String(p.seen_at ?? "")) || 0;
+  return !newestSeen || seen >= newestSeen - STORE_GONE_MS;
+}
+function packQuality(p) {
+  const g = p.gold ?? 0, si = p.silver ?? 0, b = p.bronze ?? 0;
+  if (g && !si && !b) return "gold";
+  if (si && !g && !b) return "silver";
+  if (b && !g && !si) return "bronze";
+  const t = (p.pack_type ?? "").toLowerCase();
+  return t.includes("gold") ? "gold" : t.includes("silver") ? "silver" : t.includes("bronze") ? "bronze" : "mixed";
+}
+function packName(p) {
+  if (p.name) return p.name;
+  const words = (p.name_key ?? "").replace(/^(?:FUT_)?(?:STORE_)?(?:PACK_)?/i, "").replace(/_(?:NAME|TITLE)$/i, "").split(/[_.\s-]+/).filter((w) => w && !/^\d+$/.test(w) && !/^(?:fut|store|pack|name|loc)$/i.test(w));
+  if (words.length) return words.map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+  const q = packQuality(p);
+  const kind = p.is_player_pick ? "Player pick" : `${q === "mixed" ? "Mixed" : q[0].toUpperCase() + q.slice(1)} pack`;
+  const bits = [p.item_count ? `${p.item_count} items` : null, p.rare ? `${p.rare} rare` : null, p.untradeable ? "untradeable" : null].filter(Boolean);
+  return bits.length ? `${kind}, ${bits.join(", ")}` : `${kind} ${p.pack_id}`;
+}
+async function packPictures(db2) {
+  const { data, error } = await db2.from("ea_card_art").select("url").ilike("url", "%pack%").order("last_seen_at", { ascending: false }).limit(500);
+  if (error) return [];
+  return (data ?? []).map((r2) => r2.url);
+}
+function pictureFor(p, urls) {
+  for (const want of [p.asset_id, p.pack_id]) {
+    if (!want) continue;
+    const hit = urls.find((u) => (u.split("/").pop() ?? "").match(/\d+/g)?.includes(String(want)));
+    if (hit) return hit;
+  }
+  return null;
+}
 var VERDICT_ORDER = ["buy", "only_for_fodder", "points_only", "skip", "no_prices", "no_odds"];
 async function packAdvice(db2, userId, platform, now2 = Date.now()) {
   const [packsRes, capRes, pullsRes] = await Promise.all([
@@ -6279,9 +6355,13 @@ async function packAdvice(db2, userId, platform, now2 = Date.now()) {
   fail4(capRes.error);
   fail4(pullsRes.error);
   const packs = packsRes.data ?? [];
+  const newestSeen = packs.reduce((m, p) => Math.max(m, Date.parse(String(p.seen_at ?? "")) || 0), 0);
+  const live = packs.filter((p) => liveInStore(p, newestSeen, now2));
+  const hidden = packs.length - live.length;
+  const pictures = live.length ? await packPictures(db2) : [];
   const snaps = packs.length || (pullsRes.data ?? []).length ? await valueBands(db2, platform, now2) : [];
   const latest = snaps.at(-1);
-  const advice = packs.map((p) => {
+  const advice = live.map((p) => {
     const odds = Array.isArray(p.odds) ? p.odds : [];
     const pack = { ...p, odds };
     const value = latest ? packValue(pack, latest.bands) : { ev_low: null, ev_high: null, lines: [], fodder_each: null, fodder_items: 0, notes: ["No FUT.GG prices yet."] };
@@ -6290,10 +6370,13 @@ async function packAdvice(db2, userId, platform, now2 = Date.now()) {
     const timing = timingFor({ now: now2, ev_series, end_at: p.end_at, start_at: p.start_at, purchase_limit: p.purchase_limit, purchase_count: p.purchase_count, has_special: odds.some((o) => o.special), verdict: v.verdict });
     return {
       pack_id: p.pack_id,
-      name: p.name ?? (p.name_key ? String(p.name_key) : `Pack ${p.pack_id}`),
+      name: packName(p),
+      named: !!p.name,
       description: p.description,
       coins: p.coins,
       points: p.points,
+      image_url: p.image_url ?? pictureFor(p, pictures),
+      quality: packQuality(p),
       untradeable: p.untradeable,
       is_player_pick: p.is_player_pick,
       item_count: p.item_count,
@@ -6319,6 +6402,7 @@ async function packAdvice(db2, userId, platform, now2 = Date.now()) {
     platform,
     captured_at: capRes.data?.captured_at ?? null,
     shape: capRes.data?.shape ?? null,
+    hidden,
     prices_at: latest?.published_at ?? null,
     packs: advice,
     pulls: await pullSummary(db2, platform, pullsRes.data ?? [], new Map(packs.map((p) => [Number(p.pack_id), p]))),
@@ -6364,7 +6448,7 @@ async function pullSummary(db2, platform, pulls, packs) {
       const cost = pack?.coins ? Number(pack.coins) : null;
       return {
         ...o,
-        pack_name: pack?.name ?? (o.pack_id ? `Pack ${o.pack_id}` : "Unknown pack"),
+        pack_name: pack ? packName(pack) : o.pack_id ? `Pack ${o.pack_id}` : "Unknown pack",
         pack_coins: cost,
         after_tax: Math.round(o.tradeable_value * (1 - EA_TAX)),
         profit: cost ? Math.round(o.tradeable_value * (1 - EA_TAX)) - cost : null
@@ -11645,38 +11729,6 @@ async function knowledgeStatus(db2, env) {
     paused: env("FUT_KNOWLEDGE") === "off",
     categories: KB_CATEGORIES
   };
-}
-
-// supabase/functions/_shared/fut/card-art.ts
-var MAX_ART_URLS = 400;
-var IMAGE = /\.(?:png|webp|jpe?g|svg|avif)$/i;
-function cleanArtUrl(raw) {
-  if (typeof raw !== "string" || raw.length > 400) return null;
-  let u;
-  try {
-    u = new URL(raw);
-  } catch {
-    return null;
-  }
-  const host = u.hostname;
-  const ea = host === "ea.com" || host.endsWith(".ea.com") || host.endsWith(".easports.com") || host.endsWith(".eamobile.com") || host.endsWith(".akamaized.net");
-  if (u.protocol !== "https:" || !ea || u.username || u.password || u.port || !IMAGE.test(u.pathname)) return null;
-  return `${u.origin}${u.pathname}`;
-}
-async function importCardArt(db2, body2) {
-  const b = body2 && typeof body2 === "object" ? body2 : null;
-  if (!b || b.format !== "xilab-image-addresses" || !Array.isArray(b.images)) throw new FutError("Send the helper's card art file (format xilab-image-addresses).");
-  const raw = b.images.slice(0, MAX_ART_URLS).map((x) => x && typeof x === "object" ? x.url : x);
-  const urls = [...new Set(raw.map(cleanArtUrl).filter((u) => !!u))];
-  if (!urls.length) return { received: b.images.length, kept: 0, new_addresses: 0 };
-  const { data, error } = await db2.rpc("record_card_art", { p_urls: urls });
-  if (error) throw new Error(error.message);
-  return { received: b.images.length, kept: urls.length, new_addresses: Number(data ?? 0) };
-}
-async function listCardArt(db2, limit = 300) {
-  const { data, error } = await db2.from("ea_card_art").select("url, first_seen_at, last_seen_at, sightings").order("last_seen_at", { ascending: false }).limit(limit);
-  if (error) throw new Error(error.message);
-  return data ?? [];
 }
 
 // supabase/functions/_shared/fut/community.ts

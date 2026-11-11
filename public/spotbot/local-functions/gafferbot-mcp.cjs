@@ -10339,6 +10339,47 @@ async function valueBands(db, platform, now2 = Date.now()) {
   bandCache.set(platform, { at: now2, data: snaps });
   return snaps;
 }
+var STORE_GONE_MS = 2 * 36e5;
+var NOT_LIVE_STATE = /expired|unavailable|inactive|disabled|ended|sold.?out|locked|hidden|retired/i;
+function liveInStore(p, newestSeen, now2) {
+  if (p.unopened) return false;
+  if (p.end_at && Date.parse(p.end_at) <= now2) return false;
+  if (p.start_at && Date.parse(p.start_at) > now2) return false;
+  if (p.state && NOT_LIVE_STATE.test(p.state)) return false;
+  if (!p.coins && !p.points) return false;
+  const seen = Date.parse(String(p.seen_at ?? "")) || 0;
+  return !newestSeen || seen >= newestSeen - STORE_GONE_MS;
+}
+function packQuality(p) {
+  const g = p.gold ?? 0, si = p.silver ?? 0, b = p.bronze ?? 0;
+  if (g && !si && !b) return "gold";
+  if (si && !g && !b) return "silver";
+  if (b && !g && !si) return "bronze";
+  const t = (p.pack_type ?? "").toLowerCase();
+  return t.includes("gold") ? "gold" : t.includes("silver") ? "silver" : t.includes("bronze") ? "bronze" : "mixed";
+}
+function packName(p) {
+  if (p.name) return p.name;
+  const words = (p.name_key ?? "").replace(/^(?:FUT_)?(?:STORE_)?(?:PACK_)?/i, "").replace(/_(?:NAME|TITLE)$/i, "").split(/[_.\s-]+/).filter((w) => w && !/^\d+$/.test(w) && !/^(?:fut|store|pack|name|loc)$/i.test(w));
+  if (words.length) return words.map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+  const q = packQuality(p);
+  const kind = p.is_player_pick ? "Player pick" : `${q === "mixed" ? "Mixed" : q[0].toUpperCase() + q.slice(1)} pack`;
+  const bits = [p.item_count ? `${p.item_count} items` : null, p.rare ? `${p.rare} rare` : null, p.untradeable ? "untradeable" : null].filter(Boolean);
+  return bits.length ? `${kind}, ${bits.join(", ")}` : `${kind} ${p.pack_id}`;
+}
+async function packPictures(db) {
+  const { data, error } = await db.from("ea_card_art").select("url").ilike("url", "%pack%").order("last_seen_at", { ascending: false }).limit(500);
+  if (error) return [];
+  return (data ?? []).map((r2) => r2.url);
+}
+function pictureFor(p, urls) {
+  for (const want of [p.asset_id, p.pack_id]) {
+    if (!want) continue;
+    const hit = urls.find((u) => (u.split("/").pop() ?? "").match(/\d+/g)?.includes(String(want)));
+    if (hit) return hit;
+  }
+  return null;
+}
 var VERDICT_ORDER = ["buy", "only_for_fodder", "points_only", "skip", "no_prices", "no_odds"];
 async function packAdvice(db, userId, platform, now2 = Date.now()) {
   const [packsRes, capRes, pullsRes] = await Promise.all([
@@ -10350,9 +10391,13 @@ async function packAdvice(db, userId, platform, now2 = Date.now()) {
   fail3(capRes.error);
   fail3(pullsRes.error);
   const packs = packsRes.data ?? [];
+  const newestSeen = packs.reduce((m, p) => Math.max(m, Date.parse(String(p.seen_at ?? "")) || 0), 0);
+  const live = packs.filter((p) => liveInStore(p, newestSeen, now2));
+  const hidden = packs.length - live.length;
+  const pictures = live.length ? await packPictures(db) : [];
   const snaps = packs.length || (pullsRes.data ?? []).length ? await valueBands(db, platform, now2) : [];
   const latest = snaps.at(-1);
-  const advice = packs.map((p) => {
+  const advice = live.map((p) => {
     const odds = Array.isArray(p.odds) ? p.odds : [];
     const pack = { ...p, odds };
     const value = latest ? packValue(pack, latest.bands) : { ev_low: null, ev_high: null, lines: [], fodder_each: null, fodder_items: 0, notes: ["No FUT.GG prices yet."] };
@@ -10361,10 +10406,13 @@ async function packAdvice(db, userId, platform, now2 = Date.now()) {
     const timing = timingFor({ now: now2, ev_series, end_at: p.end_at, start_at: p.start_at, purchase_limit: p.purchase_limit, purchase_count: p.purchase_count, has_special: odds.some((o) => o.special), verdict: v.verdict });
     return {
       pack_id: p.pack_id,
-      name: p.name ?? (p.name_key ? String(p.name_key) : `Pack ${p.pack_id}`),
+      name: packName(p),
+      named: !!p.name,
       description: p.description,
       coins: p.coins,
       points: p.points,
+      image_url: p.image_url ?? pictureFor(p, pictures),
+      quality: packQuality(p),
       untradeable: p.untradeable,
       is_player_pick: p.is_player_pick,
       item_count: p.item_count,
@@ -10390,6 +10438,7 @@ async function packAdvice(db, userId, platform, now2 = Date.now()) {
     platform,
     captured_at: capRes.data?.captured_at ?? null,
     shape: capRes.data?.shape ?? null,
+    hidden,
     prices_at: latest?.published_at ?? null,
     packs: advice,
     pulls: await pullSummary(db, platform, pullsRes.data ?? [], new Map(packs.map((p) => [Number(p.pack_id), p]))),
@@ -10435,7 +10484,7 @@ async function pullSummary(db, platform, pulls, packs) {
       const cost = pack?.coins ? Number(pack.coins) : null;
       return {
         ...o,
-        pack_name: pack?.name ?? (o.pack_id ? `Pack ${o.pack_id}` : "Unknown pack"),
+        pack_name: pack ? packName(pack) : o.pack_id ? `Pack ${o.pack_id}` : "Unknown pack",
         pack_coins: cost,
         after_tax: Math.round(o.tradeable_value * (1 - EA_TAX)),
         profit: cost ? Math.round(o.tradeable_value * (1 - EA_TAX)) - cost : null
