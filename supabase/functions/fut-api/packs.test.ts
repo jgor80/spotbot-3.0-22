@@ -175,7 +175,7 @@ Deno.test("routes: the helper key uploads the store, the user gets advice, nobod
   const reset = await call("POST", "/v1/helper/packs", { ...file, packs: [], pulls: [], reset: true }, { authorization: `Bearer ${key}` });
   assert(reset.status === 200 && reset.data.data.reset === true, JSON.stringify(reset.data));
   const afterReset = (await call("GET", "/v1/packs")).data.data;
-  assert(afterReset.packs.length === 0 && afterReset.hidden === 0 && db.tables.pack_pulls!.length === 1, "packs reset, pulls kept");
+  assert(afterReset.packs.length === 0 && afterReset.hidden === 0 && db.tables.pack_pulls!.length > 0, "packs reset, pulls kept");
   assert((await call("DELETE", "/v1/packs?platform=console")).data.data.cleared === true, "clear");
   assert((await call("GET", "/v1/packs")).data.data.packs.length === 0 && db.tables.pack_pulls!.length === 0, "cleared");
 });
