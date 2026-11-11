@@ -180,7 +180,8 @@ export interface MarketSource { id: string; name: string; kind: string; status: 
 export type PackVerdict = "buy" | "only_for_fodder" | "skip" | "points_only" | "no_odds" | "no_prices";
 export interface PackOddsLine { label: string; odds_text: string; probability: number | null; covers: string | null; value_low: number | null; value_high: number | null; used: boolean; note?: string }
 export interface PackAdviceItem {
-  pack_id: number; name: string; description: string | null; coins: number | null; points: number | null; untradeable: boolean; is_player_pick: boolean;
+  pack_id: number; name: string; named: boolean; image_url: string | null; quality: "gold" | "silver" | "bronze" | "mixed";
+  description: string | null; coins: number | null; points: number | null; untradeable: boolean; is_player_pick: boolean;
   item_count: number | null; rare: number | null; end_at: string | null; start_at: string | null; unopened: boolean;
   ev_low: number | null; ev_high: number | null; ev_after_tax: number | null; value_per_100_points: number | null;
   verdict: PackVerdict; ratio: number | null; why: string; lines: PackOddsLine[]; notes: string[]; fodder_each: number | null; fodder_items: number;
@@ -191,6 +192,8 @@ export interface PackOpening { pack_id: number | null; pack_name: string; pack_c
 export interface PackStoreSeen { path: string; keys: string[]; packs: number; odds: number; at: string | null }
 export interface PackAdvice {
   platform: MarketPlatform; captured_at: string | null; prices_at: string | null; shape: { pack_keys?: string[]; odds_keys?: string[]; category_keys?: string[]; seen?: PackStoreSeen[]; seen_at?: string } | null;
+  /** Stored packs left out because they aren't live in the store now (ended, not started, gone from the latest list). */
+  hidden?: number;
   packs: PackAdviceItem[]; pulls: { items: number; opens: PackOpening[] }; model: string[]; verified: false;
 }
 export type AccountTradeState = "listed" | "sold" | "expired" | "unlisted" | "winning" | "outbid" | "won" | "lost" | "watching";
