@@ -14,6 +14,7 @@
 // runStrategyLearning (bot job after each refresh) logs and settles market-wide picks and relearns strategy-model.ts.
 import { DEFAULT_MARKET_RULES, netAfterTax, roundToStep, stepAt } from "./xilab/market/rules.ts";
 import { FutDbError, FutError, type FutDb } from "./service.ts";
+import { liveFutggPrices, type LivePrices } from "./futgg-live.ts";
 import { bounceBand, buyOutlook, discountBand, learnModel, priceBand, resolvePick, sellOutlook, trendBand, WINDOW_DAYS,
   type BuyFeatures, type LoggedPick, type SellFeatures, type StrategyModel } from "./strategy-model.ts";
 
@@ -77,6 +78,28 @@ export function cardStats(card: SeriesCard, window_h: number): CardStats | null 
     median: median(card.prices), min: Math.min(...card.prices), max: Math.max(...card.prices), points: n, falling, rising,
     new_card: window_h >= 48 && card.ages[0]! < window_h - 18,
   };
+}
+
+/**
+ * Adds FUT.GG's newest prices (futgg-live.ts) to the stored series as the latest point, so the plan uses this hour's
+ * Buy Now estimates instead of the last 06:00/18:00 refresh. Ages shift by the time since that refresh. Cards FUT.GG
+ * has no current price for keep their old points, and `fresh` lists the cards that got a live price.
+ */
+export function withLive<S extends { latest: string | null; window_h: number; cards: SeriesCard[] }>(series: S, live: LivePrices | null | undefined): { series: S; fresh: Set<number> | null; live_at: string | null } {
+  if (!live || !series.latest) return { series, fresh: null, live_at: null };
+  const h = Math.round(((Date.parse(live.at) - Date.parse(series.latest)) / 3_600_000) * 10) / 10;
+  if (!(h >= 0.25)) {
+    // The stored refresh is as new as the live file: every stored latest price is current.
+    return { series, fresh: new Set(series.cards.filter((c) => live.prices.has(c.ea_item_id)).map((c) => c.ea_item_id)), live_at: series.latest };
+  }
+  const fresh = new Set<number>();
+  const cards = series.cards.map((card) => {
+    const price = live.prices.get(card.ea_item_id), ages = card.ages.map((a) => a + h);
+    if (price === undefined) return { ...card, ages };
+    fresh.add(card.ea_item_id);
+    return { ...card, prices: [...card.prices, price], ages: [...ages, 0] };
+  });
+  return { series: { ...series, latest: live.at, window_h: series.window_h + h, cards }, fresh, live_at: live.at };
 }
 
 export type CardKind = "icon" | "hero" | "promo" | "fodder" | "gold" | "silver_bronze";
@@ -180,6 +203,8 @@ export interface StrategyInput {
   model?: StrategyModel | null;
   /** Trades from the user's trade log that followed an earlier pick. */
   followed?: FollowedTrade[];
+  /** FUT.GG's newest hourly prices; null when they couldn't be fetched (the plan then flags its prices as old). */
+  live?: LivePrices | null;
 }
 export interface FollowedTrade { plan_date: string; ea_item_id: number; name: string; bought_for: number; sold_for: number | null; profit: number | null; target: number }
 
@@ -191,6 +216,8 @@ export interface BuyPick {
   confidence: "low" | "medium" | "high"; hold: string; why: string[]; risks: string[]; score: number;
   /** The plain-rules target before learning lowered it, the pick's features, and the learned chance it sells. */
   target_raw: number; features: BuyFeatures; p_hit: number | null;
+  /** The most you can pay and still make the profit floor after tax: if the Buy Now price in the game is higher, skip it. */
+  max_buy: number;
 }
 export interface SellPick {
   card_id: string; ea_item_id: number; name: string; version: string | null; rating: number | null; position: string | null;
@@ -205,14 +232,19 @@ const RISK = { careful: { reserve: 0.35, picks: 4, cap: 0.2, min_roi: 0.05 }, no
 const MIN_PROFIT = 150;
 
 /** Candidates for flipping: liquid cards trading clearly below their 7-day middle that have stopped falling. */
-export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timing: Timing, o: { max_price: number; min_roi: number; owned: Set<number>; model?: StrategyModel | null }): BuyPick[] {
+export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timing: Timing, o: { max_price: number; min_roi: number; owned: Set<number>; model?: StrategyModel | null; fresh?: Set<number> | null }): BuyPick[] {
   const reach = o.model?.ready ? o.model.buys.reach : 1;
   const out: BuyPick[] = [];
   for (const { card, stats: s } of cards) {
     if (!card.tracked || s.points < 6 || s.latest_age_h > 13 || s.latest < 1000 || s.latest > o.max_price) continue;
     if (s.new_card) continue; // fresh promo cards usually keep falling for days
+    if (o.fresh && !o.fresh.has(card.ea_item_id)) continue; // no current Buy Now price from FUT.GG: don't guess
     const discount = (s.median - s.latest) / s.median;
     if (discount < 0.05) continue;
+    // Far under its week on a liquid card is usually a bad price point or a crash, not a bargain.
+    if (discount > 0.45) continue;
+    // A price that just jumped well above the last refresh (an SBC spike) isn't a dip.
+    if (s.prev !== null && s.latest > s.prev * 1.25) continue;
     if (s.falling >= 3 && s.latest <= s.min) continue; // still making new lows: a falling knife
     const buy_at = down(s.latest);
     const target_raw = down(Math.min(s.median, s.max * 0.98));
@@ -220,6 +252,7 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
     const sell_at = reach < 1 && target_raw > buy_at ? Math.max(buy_at, down(buy_at + (target_raw - buy_at) * reach)) : target_raw;
     const profit = net(sell_at) - buy_at, roi = profit / buy_at;
     if (profit < MIN_PROFIT || roi < o.min_roi) continue;
+    const max_buy = Math.max(buy_at, down(Math.min(net(sell_at) / (1 + o.min_roi), net(sell_at) - MIN_PROFIT)));
     const kind = cardKind(card), range = (s.max - s.min) / s.median;
     let conf = clamp(s.points / 12, 0.4, 1) * (s.rising >= 1 || s.falling === 0 ? 1 : 0.75) * (range > 0.6 ? 0.6 : 1);
     if (s.change_72h !== null && s.change_72h < -20) conf *= 0.7;
@@ -248,7 +281,7 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
       price: s.latest, buy_at, sell_at, profit, roi: pct(roi), quantity: null, spend: null, total_profit: null,
       median: Math.round(s.median), low: s.min, high: s.max, change_24h: s.change_24h, points: s.points,
       confidence: conf >= 0.85 ? "high" : conf >= 0.6 ? "medium" : "low", hold: o.model?.ready && o.model.buys.median_hours_to_hit != null ? `about ${o.model.buys.median_hours_to_hit} hours` : kind === "fodder" ? "Same day to 2 days" : "1 to 4 days", why, risks, score,
-      target_raw, features, p_hit: learned.p_hit,
+      target_raw, features, p_hit: learned.p_hit, max_buy,
     });
   }
   return out.sort((a, b) => b.score - a.score);
@@ -321,7 +354,9 @@ export function scorePast(past: PastPlan[], series: Map<number, SeriesCard>, lat
   };
 }
 
-export function buildStrategy(input: StrategyInput) {
+export function buildStrategy(raw: StrategyInput) {
+  const lived = withLive(raw.series, raw.live);
+  const input = { ...raw, series: lived.series };
   const timing = marketTiming(input.now);
   const risk = RISK[input.risk ?? "normal"];
   const byEa = new Map(input.series.cards.map((card) => [card.ea_item_id, card]));
@@ -348,7 +383,7 @@ export function buildStrategy(input: StrategyInput) {
 
   const owned = new Set((input.club ?? []).flatMap((x) => (x.ea_item_id ? [x.ea_item_id] : [])));
   const candidates = scoreBuys([...stats].flatMap(([ea, s]) => { const card = byEa.get(ea); return card ? [{ card, stats: s }] : []; }), timing, {
-    max_price: per_pick !== null && per_pick >= 1000 ? per_pick : 15_000_000, min_roi: risk.min_roi, owned, model: input.model,
+    max_price: per_pick !== null && per_pick >= 1000 ? per_pick : 15_000_000, min_roi: risk.min_roi, owned, model: input.model, fresh: lived.fresh,
   });
   const buys: BuyPick[] = [], seenPlayer = new Set<string>();
   let left = spend ?? 0, slots = free_slots;
@@ -366,6 +401,7 @@ export function buildStrategy(input: StrategyInput) {
     seenPlayer.add(player);
     buys.push(p);
   }
+  const ranges = priceRanges(stats, byEa, timing, { min_roi: risk.min_roi, owned, model: input.model, fresh: lived.fresh, per_pick, cap_slots: free_slots, taken: buys });
   const watch = candidates.filter((p) => !buys.includes(p) && !seenPlayer.has(`${p.name}|${p.rating}`)).slice(0, 8);
 
   const sells = input.club ? scoreSells(input.club, stats, timing, input.squad_card_ids, input.model).slice(0, stance === "sell" ? 10 : 6) : [];
@@ -377,6 +413,7 @@ export function buildStrategy(input: StrategyInput) {
   const buySpend = buys.reduce((n, b) => n + (b.spend ?? 0), 0), buyProfit = buys.reduce((n, b) => n + (b.total_profit ?? 0), 0);
   const sellValue = sells.reduce((n, s) => n + s.after_tax, 0);
   const sold = pile.filter((p) => p.action === "clear"), relist = pile.filter((p) => p.action !== "clear");
+  const soldCoins = (input.tradepile ?? []).filter((i) => i.state === "sold").reduce((n, i) => n + netAfterTax(i.current_bid ?? i.buy_now ?? 0, RULES), 0);
 
   // Today's steps, in the order to do them.
   const steps: string[] = [];
@@ -403,11 +440,119 @@ export function buildStrategy(input: StrategyInput) {
     headline: `${stanceText} ${moodText}`,
     stance, mood: { label: mood, median_24h: m24, median_72h: m72, cards: moves.length },
     timing,
+    prices: priceFreshness(raw.series.latest, lived.live_at, raw.live === undefined ? null : !!raw.live, input.now),
     budget: { coins, coins_source: input.coins_source, coins_at: input.coins_at, reserve_pct: Math.round(reserve_pct * 100), reserve, spend, per_pick, buy_spend: buySpend, expected_profit: buyProfit, free_slots, risk: input.risk ?? "normal" },
-    steps, buys, watch, sells, transfer_list: pile, record, learning: learningSummary(input.model, input.followed ?? []), notes, verified: false as const,
+    move: bestMove({ buys, sells, pile, stance, timing, coins, sold_coins: soldCoins, prices_at: input.series.latest, now: input.now, stale: !lived.live_at && !!input.series.latest && input.now - Date.parse(input.series.latest) > 3 * 3_600_000 }),
+    ranges, steps, buys, watch, sells, transfer_list: pile, record, learning: learningSummary(input.model, input.followed ?? []), notes, verified: false as const,
   };
 }
 export type Strategy = ReturnType<typeof buildStrategy>;
+
+// ------------------------------------------------------------------ best pick per price range
+
+export const PRICE_RANGES = [
+  { key: "low", label: "Low price", sub: "1k to 10k", min: 1_000, max: 10_000 },
+  { key: "medium", label: "Medium price", sub: "10k to 100k", min: 10_000, max: 100_000 },
+  { key: "high", label: "High price", sub: "100k and up", min: 100_000, max: 15_000_001 },
+] as const;
+export interface RangePick { key: (typeof PRICE_RANGES)[number]["key"]; label: string; sub: string; pick: BuyPick | null; affordable: boolean | null; others: BuyPick[] }
+
+/**
+ * The best flip in each price range across the whole market (Jeff, 2026-11-11: "show me low priced recs, medium
+ * price rec, and high price recs"), whatever the budget, ranked like the plan's picks. Sized to the coins when known;
+ * `affordable` is false when one copy is more than the plan would put into a single card.
+ */
+export function priceRanges(stats: Map<number, CardStats>, byEa: Map<number, SeriesCard>, timing: Timing, o: { min_roi: number; owned: Set<number>; model?: StrategyModel | null; fresh: Set<number> | null; per_pick: number | null; cap_slots: number; taken: BuyPick[] }): RangePick[] {
+  const all = scoreBuys([...stats].flatMap(([ea, st]) => { const card = byEa.get(ea); return card ? [{ card, stats: st }] : []; }), timing, { max_price: 15_000_000, min_roi: o.min_roi, owned: o.owned, model: o.model, fresh: o.fresh });
+  const taken = new Map(o.taken.map((b) => [b.ea_item_id, b]));
+  return PRICE_RANGES.map((r) => {
+    const seen = new Set<string>();
+    const inRange = all.filter((b) => b.buy_at >= r.min && b.buy_at < r.max).filter((b) => { const k = `${b.name}|${b.rating}`; if (seen.has(k)) return false; seen.add(k); return true; });
+    const sized = inRange.slice(0, 4).map((b) => {
+      const t = taken.get(b.ea_item_id);
+      if (t) return t;
+      if (o.per_pick === null) return b;
+      const maxQty = b.price >= 50_000 ? 2 : b.price >= 10_000 ? 5 : 10, qty = Math.min(Math.floor(o.per_pick / b.buy_at), maxQty, Math.max(o.cap_slots, 1));
+      return qty >= 1 ? { ...b, quantity: qty, spend: qty * b.buy_at, total_profit: qty * b.profit } : b;
+    });
+    const pick = sized[0] ?? null;
+    return { key: r.key, label: r.label, sub: r.sub, pick, affordable: pick && o.per_pick !== null ? pick.buy_at <= o.per_pick : null, others: sized.slice(1) };
+  });
+}
+
+/** How fresh the plan's prices are: FUT.GG's hourly prices when they loaded, else the last full refresh. */
+export function priceFreshness(refresh_at: string | null, live_at: string | null, live_ok: boolean | null, now: number) {
+  const at = live_at ?? refresh_at;
+  const age_h = at ? Math.max(0, Math.round(((now - Date.parse(at)) / 3_600_000) * 10) / 10) : null;
+  return {
+    at, refresh_at, source: live_at ? ("live" as const) : ("refresh" as const), age_h,
+    note: live_at
+      ? "Buy Now prices are FUT.GG's newest estimates, updated about once an hour. Check the price in the game before you buy, and skip a card if it's over its \"don't pay more than\" price."
+      : `${live_ok === false ? "FUT.GG's hourly prices couldn't be loaded, so these" : "These"} prices are from the last full refresh${age_h !== null ? `, ${age_h < 1 ? "under an hour" : `${Math.round(age_h)} hour${Math.round(age_h) === 1 ? "" : "s"}`} ago` : ""}. Prices may have moved: check each one in the game first.`,
+  };
+}
+
+// ------------------------------------------------------------------ the one move to make coins now
+
+/** FUT.GG prices refresh at 06:00 and 18:00 UTC; the next refresh after `now`. */
+export function nextRefresh(now: number) {
+  const d = new Date(now), day = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const slots = [day + 6 * 3_600_000, day + 18 * 3_600_000, day + 30 * 3_600_000];
+  return new Date(slots.find((t) => t > now + 20 * 60_000) ?? slots[2]!).toISOString();
+}
+
+const CONF_CHANCE = { high: 0.6, medium: 0.45, low: 0.3 } as const;
+/** A buy pick's expected profit: its profit if it sells, times the chance it sells (learned, or from its confidence). */
+export const buyValue = (b: BuyPick) => (b.total_profit ?? b.profit) * (b.p_hit ?? CONF_CHANCE[b.confidence]);
+
+export interface CoinMove {
+  kind: "buy" | "sell" | "relist" | "wait";
+  title: string; detail: string;
+  /** Coins the move should bring in: a buy's profit after tax (times its learned chance, once there is one), a sell's coins after tax. */
+  coins: number | null; chance: number | null;
+  ea_item_id: number | null; name: string | null;
+  /** Do this first: collect coins from sold items. */
+  first: string | null;
+  prices_at: string | null; next_update: string;
+}
+
+/**
+ * The single best way to make coins right now, from the same picks as the plan (Jeff, 2026-11-11: "make one how to
+ * make coins now recommendation every update"). It is recomputed whenever the plan is, so it changes with every
+ * FUT.GG refresh, the user's coins and club, and what the model has learned.
+ *   - On a selling day, or when a card the user owns is falling and that kind of call is usually right, sell it.
+ *   - Otherwise buy the pick with the best expected profit (profit if it sells times its chance of selling).
+ *   - With nothing worth buying or selling, relist what's stuck, or wait for the next refresh.
+ */
+export function bestMove(o: { buys: BuyPick[]; sells: SellPick[]; pile: PileFix[]; stance: "buy" | "sell" | "flip"; timing: Timing; coins: number | null; sold_coins: number; prices_at: string | null; now: number; stale?: boolean }): CoinMove {
+  const base = { prices_at: o.prices_at, next_update: nextRefresh(o.now) };
+  const soldN = o.pile.filter((p) => p.action === "clear").length;
+  const first = soldN ? `First clear ${soldN} sold item${soldN === 1 ? "" : "s"} on your transfer list${o.sold_coins ? ` to collect ${c(o.sold_coins)} coins` : ""}.` : null;
+  const buy = [...o.buys].sort((a, b) => buyValue(b) - buyValue(a))[0];
+  const sell = o.sells[0];
+  const sellFirst = !!sell && (o.stance === "sell" || !buy || (sell.reason === "falling" && (sell.right_rate ?? 0.5) >= 0.5));
+  if (sell && sellFirst) {
+    const right = sell.right_rate !== null ? ` Calls like this were right ${Math.round(sell.right_rate * 100)}% of the time.` : "";
+    return { ...base, kind: "sell", first, ea_item_id: sell.ea_item_id, name: sell.name, coins: sell.after_tax, chance: sell.right_rate,
+      title: `Sell ${sell.quantity > 1 ? `${sell.quantity}x ` : ""}${sell.name}${sell.rating ? ` (${sell.rating})` : ""} at ${c(sell.list_at)}`,
+      detail: `${sell.why} That's about ${c(sell.after_tax)} coins after tax. If it hasn't sold in an hour, drop to ${c(sell.quick_at)}.${right}` };
+  }
+  if (buy) {
+    const qty = buy.quantity ?? 1, chance = buy.p_hit ?? CONF_CHANCE[buy.confidence], profit = buy.total_profit ?? buy.profit;
+    const when = o.timing.buy_bias < 0 ? "Prices often dip later today, so wait for the dip if you can. " : "";
+    const odds = buy.p_hit !== null ? `Similar picks reached their sell price ${Math.round(buy.p_hit * 100)}% of the time` : `Confidence is ${buy.confidence}`;
+    // Only a learned chance is shown; until the model is ready the coins are the profit if it sells.
+    return { ...base, kind: "buy", first, ea_item_id: buy.ea_item_id, name: buy.name, coins: buy.p_hit !== null ? Math.round(profit * chance) : profit, chance: buy.p_hit,
+      title: `Buy ${qty > 1 ? `${qty}x ` : ""}${buy.name} (${buy.rating}) at ${c(buy.buy_at)}, list at ${c(buy.sell_at)}`,
+      detail: `${when}It's ${Math.round(((buy.median - buy.price) / buy.median) * 100)}% under its usual price. If ${qty > 1 ? "they all sell" : "it sells"}, that's ${c(profit)} profit after tax, usually within ${buy.hold}. ${odds}. Don't pay more than ${c(buy.max_buy)}: above that it isn't worth it after tax.${o.stale ? " These prices are old, so check the Buy Now price in the game first." : ""}${buy.quantity === null ? " Your coins aren't known, so buy as many as you can afford." : ""}` };
+  }
+  const relist = o.pile.filter((p) => p.action !== "clear");
+  if (relist.length) return { ...base, kind: "relist", first, ea_item_id: relist[0]!.ea_item_id, name: relist[0]!.name, coins: null, chance: null,
+    title: `Relist ${relist.length} stuck item${relist.length === 1 ? "" : "s"} at today's price`, detail: `Start with ${relist[0]!.name}: ${relist[0]!.why} Coins sitting in unsold cards can't make more coins.` };
+  return { ...base, kind: "wait", first, ea_item_id: null, name: null, coins: null, chance: null,
+    title: o.coins !== null && o.coins < 2000 ? "Sell a few cards you don't use to get coins to trade with" : "Hold your coins until the next price update",
+    detail: o.coins !== null && o.coins < 2000 ? "You have under 2,000 coins, which is too little to flip safely. Spare players and duplicates are the quickest coins." : "No card is cheap enough right now to flip for a safe profit after tax. Holding coins costs nothing; a bad buy does." };
+}
 
 /** What the page shows about learning: the model's state and lessons, and the user's own trades on earlier picks. */
 export function learningSummary(model: StrategyModel | null | undefined, followed: FollowedTrade[]) {
@@ -426,8 +571,9 @@ export function learningSummary(model: StrategyModel | null | undefined, followe
 export const riskParam = (v: string | null): "careful" | "normal" | "bold" => (v === "careful" || v === "bold" ? v : "normal");
 const arr = <T>(v: unknown): T[] | null => (Array.isArray(v) ? (v as T[]) : null);
 
-export async function dailyStrategy(db: FutDb, userId: string, platform: "console" | "pc", opts: { budget?: number | null; risk?: "careful" | "normal" | "bold"; now?: number } = {}) {
+export async function dailyStrategy(db: FutDb, userId: string, platform: "console" | "pc", opts: { budget?: number | null; risk?: "careful" | "normal" | "bold"; now?: number; live?: LivePrices | null } = {}) {
   const now = opts.now ?? Date.now();
+  const livePromise = opts.live !== undefined ? Promise.resolve(opts.live) : liveFutggPrices(platform);
   const [stateRes, clubRes, pastRes, squadRes, modelRes, tradesRes] = await Promise.all([
     db.from("account_state").select("balance,tradepile,profile,balance_at").eq("user_id", userId).eq("platform", platform).maybeSingle(),
     db.rpc("club_trade_value", { p_user: userId, p_platform: platform }),
@@ -478,7 +624,7 @@ export async function dailyStrategy(db: FutDb, userId: string, platform: "consol
   const plan = buildStrategy({
     now, coins, coins_source: opts.budget != null ? "entered" : helperCoins !== null ? "helper" : null, coins_at: helperCoins !== null && opts.budget == null ? ((state?.balance_at as string | null) ?? null) : null,
     series, club: clubRows.length ? club : null, tradepile, tradepile_max: profile?.tradepile_max ?? null, squad_card_ids: squad, past, risk: opts.risk,
-    model, followed: followedTrades(past, (tradesRes.data ?? []) as Row[]),
+    model, followed: followedTrades(past, (tradesRes.data ?? []) as Row[]), live: await livePromise,
   });
 
   // Keep one plan per UK day (the last one built that day), so later days can score its picks.

@@ -1,7 +1,8 @@
 // Daily FUT strategy: the pure engine (timing, buys, sells, transfer list, budget, track record) and the SQL that
 // feeds it, on real PostgreSQL (PGlite).
 import { PGlite } from "npm:@electric-sql/pglite@0.5.15";
-import { blackFriday, buildStrategy, cardKind, cardStats, marketTiming, pileFixes, scorePast, scoreSells, ukClock, type SeriesCard, type StrategyInput } from "./strategy.ts";
+import { decodeIndex, decodePrices, liveFutggPrices, resetLiveCache } from "./futgg-live.ts";
+import { bestMove, blackFriday, buildStrategy, nextRefresh, withLive, cardKind, cardStats, marketTiming, pileFixes, scorePast, scoreSells, ukClock, type SeriesCard, type StrategyInput } from "./strategy.ts";
 function assert(value: unknown, message = "Assertion failed"): asserts value { if (!value) throw new Error(message); }
 
 // Tuesday 10 November 2026, 09:00 UTC (09:00 UK)
@@ -98,6 +99,78 @@ Deno.test("transfer list: clear sold, relist expired at today's price, flag over
   ], stats, new Map([[1, "Sold Guy"]]));
   assert(fixes.map((f) => f.action).join() === "clear,relist,lower", fixes.map((f) => f.action).join());
   assert(fixes[1]!.list_at === 10_000);
+});
+
+Deno.test("make coins now: one move, buy the best expected profit, sell on a selling day, clear sold items first, wait when nothing fits", () => {
+  const dip = card(1, [20_000, 20_500, 21_000, 20_000, 20_500, 21_000, 20_000, 20_500, 20_000, 19_000, 18_000, 17_000, 16_500, 17_000]);
+  const sold = { ea_item_id: 1, state: "sold", buy_now: 10_000, current_bid: 10_000, untradeable: false, rating: 84 };
+  const plan = buildStrategy(input([dip], { tradepile: [sold] }));
+  const m = plan.move;
+  assert(m.kind === "buy" && m.ea_item_id === 1 && m.title.includes("at 17,000, list at 20,000"), JSON.stringify(m));
+  assert(m.first === "First clear 1 sold item on your transfer list to collect 9,500 coins.", String(m.first));
+  assert(m.coins === 2_000 && m.chance === null && m.next_update === "2026-11-10T18:00:00.000Z", JSON.stringify(m));
+  // Saturday with a club card near its high: sell it
+  const hot = card(2, [...Array(12).fill(10_000), 11_000, 12_000]);
+  const sat = buildStrategy(input([dip, hot], { now: Date.parse("2026-11-14T12:00:00Z"), series: { latest: "2026-11-14T06:00:00Z", window_h: 156, cards: [...flat, dip, hot] },
+    club: [{ card_id: "a", ea_item_id: 2, name: "Hot", version: "Rare", rating: 84, position: "ST", tradeable_quantity: 1, price: 12_000 }] }));
+  assert(sat.stance === "sell" && sat.move.kind === "sell" && sat.move.title.startsWith("Sell Hot (84) at"), JSON.stringify(sat.move));
+  // A steady market with nothing cheap: hold coins
+  const flatPlan = buildStrategy(input([]));
+  assert(flatPlan.move.kind === "wait" && flatPlan.move.title.startsWith("Hold"), JSON.stringify(flatPlan.move));
+  assert(bestMove({ buys: [], sells: [], pile: [], stance: "flip", timing: plan.timing, coins: 900, sold_coins: 0, prices_at: null, now: TUE }).title.startsWith("Sell a few cards"));
+  assert(nextRefresh(Date.parse("2026-11-10T19:00:00Z")) === "2026-11-11T06:00:00.000Z" && nextRefresh(Date.parse("2026-11-10T05:50:00Z")) === "2026-11-10T18:00:00.000Z");
+});
+
+Deno.test("live prices: FUT.GG's hourly Buy Now replaces a stale refresh, picks without a live price are dropped (the McTominay case)", () => {
+  // At the 18:00 refresh he was 2,300 against a 2,800 week; an hour later SBC demand had him at 7,000.
+  const mctominay = card(1, [2_800, 2_900, 2_800, 2_700, 2_800, 2_900, 2_800, 2_750, 2_800, 2_600, 2_400, 2_300, 2_250, 2_300], { name: "McTominay", rating: 86, version: "Common" });
+  const other = card(2, [20_000, 20_500, 21_000, 20_000, 20_500, 21_000, 20_000, 20_500, 20_000, 19_000, 18_000, 17_000, 16_500, 17_000]);
+  const stale = buildStrategy(input([mctominay, other]));
+  assert(stale.buys.some((b) => b.name === "McTominay"), "the old refresh alone picks him");
+  assert(stale.prices.source === "refresh" && stale.prices.age_h === 3, JSON.stringify(stale.prices));
+  const live = { platform: "console" as const, at: "2026-11-10T08:30:00Z", prices: new Map([[1, 7_000], [2, 17_000]]) };
+  const plan = buildStrategy(input([mctominay, other], { live }));
+  assert(!plan.buys.some((b) => b.name === "McTominay"), "not a dip at 7,000");
+  assert(plan.buys[0]!.ea_item_id === 2 && plan.buys[0]!.buy_at === 17_000 && plan.prices.source === "live" && plan.prices_at === live.at, JSON.stringify(plan.prices));
+  // No live price for a card (FUT.GG has none right now): it isn't recommended
+  const gone = buildStrategy(input([other], { live: { ...live, prices: new Map() } }));
+  assert(gone.buys.length === 0, "no current Buy Now, no pick");
+  // Ages shift by the time since the refresh, and the live price becomes the latest point
+  const w = withLive({ latest: "2026-11-10T06:00:00Z", window_h: 156, cards: [other] }, live);
+  assert(w.series.cards[0]!.prices.at(-1) === 17_000 && w.series.cards[0]!.ages.at(-2) === 2.5 && w.series.window_h === 158.5, JSON.stringify(w.series.cards[0]!.ages.slice(-2)));
+  // The most to pay: the profit floor after tax still holds at max_buy
+  const b = plan.buys[0]!;
+  assert(b.max_buy >= b.buy_at && 20_000 * 0.95 - b.max_buy >= 150 && plan.move.detail.includes(`Don't pay more than ${b.max_buy.toLocaleString("en-US")}`), `${b.max_buy} ${plan.move.detail}`);
+});
+
+Deno.test("price ranges: the best flip under 10k, 10k to 100k and 100k+, flagged when over the per-card budget", () => {
+  const shape = (base: number) => [1, 1.02, 1.05, 1, 1.02, 1.05, 1, 1.02, 1, 0.95, 0.9, 0.85, 0.82, 0.85].map((f) => Math.round(base * f / 50) * 50);
+  const cheap = card(1, shape(4_000), { name: "Cheap" }), mid = card(2, shape(40_000), { name: "Mid" }), dear = card(3, shape(400_000), { name: "Dear" });
+  const plan = buildStrategy(input([cheap, mid, dear]));
+  const r = Object.fromEntries(plan.ranges.map((x) => [x.key, x]));
+  assert(r.low!.pick?.name === "Cheap" && r.medium!.pick?.name === "Mid" && r.high!.pick?.name === "Dear", JSON.stringify(plan.ranges.map((x) => x.pick?.name)));
+  assert(r.low!.affordable === true && r.high!.affordable === false && r.high!.pick!.quantity === null, "100k coins can't put 340k into one card");
+  assert(r.low!.pick!.quantity! >= 1, "sized to the budget");
+});
+
+Deno.test("live prices: decoding FUT.GG's index and price file, status 0 only, cached until the files change", async () => {
+  const ids = decodeIndex({ v: 2, id0: 100, d: [5, 10] });
+  assert(ids.join() === "100,105,115");
+  const prices = decodePrices(ids, { v: 2, p: [5_700, 9_000, null], s: [0, 3, 0] });
+  assert(prices.get(100) === 5_700 && !prices.has(105) && !prices.has(115) && prices.size === 1);
+  resetLiveCache();
+  const urls: string[] = [];
+  const files: Record<string, unknown> = {
+    "manifest.json": { _version: 3, "player-prices-index": "aa", "player-prices-ps5-dyn": "bb", "player-prices-pc-dyn": "cc", _published_at: { "player-prices-ps5-dyn": 1_794_371_775 } },
+    "player-prices-index.v3.aa.json": { v: 2, id0: 100, d: [5, 10] }, "player-prices-ps5-dyn.v3.bb.json": { v: 2, p: [5_700, 9_000, 1_200], s: [0, 0, 0] },
+  };
+  const fetcher = (u: string) => { urls.push(u); const f = files[u.split("/").pop()!]; return Promise.resolve(new Response(JSON.stringify(f ?? {}), { status: f ? 200 : 404 })); };
+  const live = await liveFutggPrices("console", fetcher, 1_000_000);
+  assert(live?.prices.get(115) === 1_200 && live.at === "2026-11-11T04:36:15.000Z", JSON.stringify(live?.at));
+  await liveFutggPrices("console", fetcher, 1_060_000);
+  assert(urls.length === 3, `cached: ${urls.length} requests`);
+  assert(await liveFutggPrices("pc", fetcher, 1_100_000) === null, "a missing file means no live prices, not an error");
+  resetLiveCache();
 });
 
 Deno.test("track record: a pick that reached its sell price is a hit", () => {
