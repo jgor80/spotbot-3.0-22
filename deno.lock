@@ -1,11 +1,22 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@deno/installer-shell-setup@*": "0.3.4"
+    "jsr:@deno/installer-shell-setup@*": "0.3.4",
+    "jsr:@std/assert@1": "1.0.19",
+    "jsr:@std/internal@^1.0.12": "1.0.14"
   },
   "jsr": {
     "@deno/installer-shell-setup@0.3.4": {
       "integrity": "48665d1a737d487cce6874bc97bba70a5aeffa7053aca3f60df93c6fab8963b4"
+    },
+    "@std/assert@1.0.19": {
+      "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/internal@1.0.14": {
+      "integrity": "291516b3d4c35024d6ffbc0a9df5bf4c64116e05b50012cf846710152d2ffdf7"
     }
   },
   "redirects": {
@@ -34,10 +45,12 @@
     "https://esm.sh/@supabase/supabase-js@2.119.0/denonext/dist/tracingRegistry.mjs": "7d6d9375806d7d3e084de6be03e96e4c161b95892fb94739c0f6da7457cdd1d2",
     "https://esm.sh/@supabase/supabase-js@2.119.0/denonext/supabase-js.mjs": "4c025ab1a9493e3126cda8954e881c330445964fa17e7f12d54b3219853d4fc1",
     "https://esm.sh/iceberg-js@0.8.1/denonext/iceberg-js.mjs": "d839d81a2e3966500ca2cdd0c1cb458e9608bacfc91f7bb67a69b2e878dcdb4f",
-    "https://esm.sh/iceberg-js@0.8.1?target=denonext": "58c849d7fe2bf4eca4a84eb501e83c161a7d8c34ca1bec15a962b3bec3062633",
-    "https://esm.sh/tslib@2.8.1/denonext/tslib.mjs": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9"
+    "https://esm.sh/iceberg-js@0.8.1?target=denonext": "58c849d7fe2bf4eca4a84eb501e83c161a7d8c34ca1bec15a962b3bec3062633"
   },
   "workspace": {
+    "dependencies": [
+      "npm:tslib@2.8.1"
+    ],
     "packageJson": {
       "dependencies": [
         "npm:@dnd-kit/core@^6.3.1",
