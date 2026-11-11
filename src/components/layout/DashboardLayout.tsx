@@ -106,6 +106,7 @@ const futMore: NavItem[] = [
   { path: "/fut/sell", label: "Sell or Keep", icon: Scale },
   { path: "/fut/meta", label: "Meta Ratings", icon: Gauge },
   { path: "/fut/compare", label: "Compare Cards", icon: Columns3 },
+  { path: "/fut/champs", label: "Champs Tracker", icon: Trophy },
 ];
 
 const SECTION_HOME: Record<AppSection, string> = { club: "/", fut: "/fut/market/cards" };

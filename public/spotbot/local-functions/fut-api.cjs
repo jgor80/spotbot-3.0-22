@@ -604,7 +604,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
   const protectedSlots = squad.slots.filter((s) => s.locked || target && s.slot === target.slot).map((s) => s.slot);
   const swappable = squad.slots.filter((s) => !protectedSlots.includes(s.slot));
   const constraints = { budget, max_swaps: maxSwaps, allow_manager_change: allowMgr, allow_net_loss: allowLoss, protected_slots: protectedSlots };
-  const result = (status, extra = {}) => ({
+  const result2 = (status, extra = {}) => ({
     ...prov,
     status,
     goal: { ...goal, description },
@@ -617,7 +617,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
     stats: { candidates: 0, managers: 0, squads_checked: 0 },
     ...extra
   });
-  if (met(base)) return result("already_met");
+  if (met(base)) return result2("already_met");
   const tp = target ? base.chemistry.players.find((p) => p.slot === target.slot) : null;
   const wantKeys = /* @__PURE__ */ new Map();
   if (target?.card) for (const t of LINK_TYPES) {
@@ -725,7 +725,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
     reason: r2.reason
   }));
   if (picked.length) {
-    return result("solutions", { solutions: picked.map((st, i) => toSolution(st, i)), rejected: rejectedOut, stats });
+    return result2("solutions", { solutions: picked.map((st, i) => toSolution(st, i)), rejected: rejectedOut, stats });
   }
   const blockers = [];
   if (moves.length === 0) blockers.push(`No card or manager in the search pool shares a club, league or nation that would help, within ${budget.toLocaleString("en-US")} coins. Add cards to the pool or raise the budget.`);
@@ -750,7 +750,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
     if (!allowLoss && rejected.length) blockers.push(`Net loss: ${rejectedOut[0].swaps.join(" + ")} reaches the goal but drops team chemistry ${rejectedOut[0].total_before} -> ${rejectedOut[0].total_after}.`);
     if (!blockers.length) blockers.push("Not reachable even with each constraint relaxed on its own: the search pool lacks the right cards. Add club or market cards that share this player's nation, league or club.");
   }
-  return result("infeasible", { rejected: rejectedOut, blockers, stats });
+  return result2("infeasible", { rejected: rejectedOut, blockers, stats });
   function toSolution(st, i) {
     const swaps = [];
     let mgr = null;
@@ -852,9 +852,9 @@ async function saveSquadAs(store, squad, name2) {
 }
 var norm4 = (s) => s?.trim().toLowerCase() ?? "";
 function filterCards(cards, q) {
-  const text4 = norm4(q.text);
+  const text5 = norm4(q.text);
   return cards.filter(
-    (c4) => (!text4 || [c4.name, c4.club, c4.league, c4.nation].some((v) => norm4(v).includes(text4))) && (!q.position || c4.positions.some((p) => p.toUpperCase() === q.position.toUpperCase())) && (!q.league || norm4(c4.league) === norm4(q.league)) && (!q.nation || norm4(c4.nation) === norm4(q.nation)) && (!q.club || norm4(c4.club) === norm4(q.club)) && (!q.owned_only || c4.owned) && (q.max_price === void 0 || c4.owned || typeof c4.price === "number" && c4.price <= q.max_price)
+    (c4) => (!text5 || [c4.name, c4.club, c4.league, c4.nation].some((v) => norm4(v).includes(text5))) && (!q.position || c4.positions.some((p) => p.toUpperCase() === q.position.toUpperCase())) && (!q.league || norm4(c4.league) === norm4(q.league)) && (!q.nation || norm4(c4.nation) === norm4(q.nation)) && (!q.club || norm4(c4.club) === norm4(q.club)) && (!q.owned_only || c4.owned) && (q.max_price === void 0 || c4.owned || typeof c4.price === "number" && c4.price <= q.max_price)
   ).slice(0, q.limit ?? 200);
 }
 
@@ -1471,9 +1471,9 @@ var ParseInputLazyPath = class {
     return this._cachedPath;
   }
 };
-var handleResult = (ctx, result) => {
-  if (isValid(result)) {
-    return { success: true, data: result.value };
+var handleResult = (ctx, result2) => {
+  if (isValid(result2)) {
+    return { success: true, data: result2.value };
   } else {
     if (!ctx.common.issues.length) {
       throw new Error("Validation failed but no issues detected.");
@@ -1544,21 +1544,21 @@ var ZodType = class {
     };
   }
   _parseSync(input) {
-    const result = this._parse(input);
-    if (isAsync(result)) {
+    const result2 = this._parse(input);
+    if (isAsync(result2)) {
       throw new Error("Synchronous parse encountered promise.");
     }
-    return result;
+    return result2;
   }
   _parseAsync(input) {
-    const result = this._parse(input);
-    return Promise.resolve(result);
+    const result2 = this._parse(input);
+    return Promise.resolve(result2);
   }
   parse(data, params) {
-    const result = this.safeParse(data, params);
-    if (result.success)
-      return result.data;
-    throw result.error;
+    const result2 = this.safeParse(data, params);
+    if (result2.success)
+      return result2.data;
+    throw result2.error;
   }
   safeParse(data, params) {
     const ctx = {
@@ -1573,8 +1573,8 @@ var ZodType = class {
       data,
       parsedType: getParsedType(data)
     };
-    const result = this._parseSync({ data, path: ctx.path, parent: ctx });
-    return handleResult(ctx, result);
+    const result2 = this._parseSync({ data, path: ctx.path, parent: ctx });
+    return handleResult(ctx, result2);
   }
   "~validate"(data) {
     const ctx = {
@@ -1590,9 +1590,9 @@ var ZodType = class {
     };
     if (!this["~standard"].async) {
       try {
-        const result = this._parseSync({ data, path: [], parent: ctx });
-        return isValid(result) ? {
-          value: result.value
+        const result2 = this._parseSync({ data, path: [], parent: ctx });
+        return isValid(result2) ? {
+          value: result2.value
         } : {
           issues: ctx.common.issues
         };
@@ -1606,17 +1606,17 @@ var ZodType = class {
         };
       }
     }
-    return this._parseAsync({ data, path: [], parent: ctx }).then((result) => isValid(result) ? {
-      value: result.value
+    return this._parseAsync({ data, path: [], parent: ctx }).then((result2) => isValid(result2) ? {
+      value: result2.value
     } : {
       issues: ctx.common.issues
     });
   }
   async parseAsync(data, params) {
-    const result = await this.safeParseAsync(data, params);
-    if (result.success)
-      return result.data;
-    throw result.error;
+    const result2 = await this.safeParseAsync(data, params);
+    if (result2.success)
+      return result2.data;
+    throw result2.error;
   }
   async safeParseAsync(data, params) {
     const ctx = {
@@ -1632,8 +1632,8 @@ var ZodType = class {
       parsedType: getParsedType(data)
     };
     const maybeAsyncResult = this._parse({ data, path: ctx.path, parent: ctx });
-    const result = await (isAsync(maybeAsyncResult) ? maybeAsyncResult : Promise.resolve(maybeAsyncResult));
-    return handleResult(ctx, result);
+    const result2 = await (isAsync(maybeAsyncResult) ? maybeAsyncResult : Promise.resolve(maybeAsyncResult));
+    return handleResult(ctx, result2);
   }
   refine(check, message) {
     const getIssueProperties = (val) => {
@@ -1646,13 +1646,13 @@ var ZodType = class {
       }
     };
     return this._refinement((val, ctx) => {
-      const result = check(val);
+      const result2 = check(val);
       const setError = () => ctx.addIssue({
         code: ZodIssueCode.custom,
         ...getIssueProperties(val)
       });
-      if (typeof Promise !== "undefined" && result instanceof Promise) {
-        return result.then((data) => {
+      if (typeof Promise !== "undefined" && result2 instanceof Promise) {
+        return result2.then((data) => {
           if (!data) {
             setError();
             return false;
@@ -1661,7 +1661,7 @@ var ZodType = class {
           }
         });
       }
-      if (!result) {
+      if (!result2) {
         setError();
         return false;
       } else {
@@ -3156,14 +3156,14 @@ var ZodArray = class _ZodArray extends ZodType {
     if (ctx.common.async) {
       return Promise.all([...ctx.data].map((item, i) => {
         return def.type._parseAsync(new ParseInputLazyPath(ctx, item, ctx.path, i));
-      })).then((result2) => {
-        return ParseStatus.mergeArray(status, result2);
+      })).then((result3) => {
+        return ParseStatus.mergeArray(status, result3);
       });
     }
-    const result = [...ctx.data].map((item, i) => {
+    const result2 = [...ctx.data].map((item, i) => {
       return def.type._parseSync(new ParseInputLazyPath(ctx, item, ctx.path, i));
     });
-    return ParseStatus.mergeArray(status, result);
+    return ParseStatus.mergeArray(status, result2);
   }
   get element() {
     return this._def.type;
@@ -3569,18 +3569,18 @@ var ZodUnion = class extends ZodType {
     const { ctx } = this._processInputParams(input);
     const options = this._def.options;
     function handleResults(results) {
-      for (const result of results) {
-        if (result.result.status === "valid") {
-          return result.result;
+      for (const result2 of results) {
+        if (result2.result.status === "valid") {
+          return result2.result;
         }
       }
-      for (const result of results) {
-        if (result.result.status === "dirty") {
-          ctx.common.issues.push(...result.ctx.common.issues);
-          return result.result;
+      for (const result2 of results) {
+        if (result2.result.status === "dirty") {
+          ctx.common.issues.push(...result2.ctx.common.issues);
+          return result2.result;
         }
       }
-      const unionErrors = results.map((result) => new ZodError(result.ctx.common.issues));
+      const unionErrors = results.map((result2) => new ZodError(result2.ctx.common.issues));
       addIssueToContext(ctx, {
         code: ZodIssueCode.invalid_union,
         unionErrors
@@ -3618,15 +3618,15 @@ var ZodUnion = class extends ZodType {
           },
           parent: null
         };
-        const result = option._parseSync({
+        const result2 = option._parseSync({
           data: ctx.data,
           path: ctx.path,
           parent: childCtx
         });
-        if (result.status === "valid") {
-          return result;
-        } else if (result.status === "dirty" && !dirty) {
-          dirty = { result, ctx: childCtx };
+        if (result2.status === "valid") {
+          return result2;
+        } else if (result2.status === "dirty" && !dirty) {
+          dirty = { result: result2, ctx: childCtx };
         }
         if (childCtx.common.issues.length) {
           issues.push(childCtx.common.issues);
@@ -4171,9 +4171,9 @@ var ZodFunction = class _ZodFunction extends ZodType {
           error.addIssue(makeArgsIssue(args, e));
           throw error;
         });
-        const result = await Reflect.apply(fn, this, parsedArgs);
-        const parsedReturns = await me._def.returns._def.type.parseAsync(result, params).catch((e) => {
-          error.addIssue(makeReturnsIssue(result, e));
+        const result2 = await Reflect.apply(fn, this, parsedArgs);
+        const parsedReturns = await me._def.returns._def.type.parseAsync(result2, params).catch((e) => {
+          error.addIssue(makeReturnsIssue(result2, e));
           throw error;
         });
         return parsedReturns;
@@ -4185,10 +4185,10 @@ var ZodFunction = class _ZodFunction extends ZodType {
         if (!parsedArgs.success) {
           throw new ZodError([makeArgsIssue(args, parsedArgs.error)]);
         }
-        const result = Reflect.apply(fn, this, parsedArgs.data);
-        const parsedReturns = me._def.returns.safeParse(result, params);
+        const result2 = Reflect.apply(fn, this, parsedArgs.data);
+        const parsedReturns = me._def.returns.safeParse(result2, params);
         if (!parsedReturns.success) {
-          throw new ZodError([makeReturnsIssue(result, parsedReturns.error)]);
+          throw new ZodError([makeReturnsIssue(result2, parsedReturns.error)]);
         }
         return parsedReturns.data;
       });
@@ -4440,43 +4440,43 @@ var ZodEffects = class extends ZodType {
         return Promise.resolve(processed).then(async (processed2) => {
           if (status.value === "aborted")
             return INVALID;
-          const result = await this._def.schema._parseAsync({
+          const result2 = await this._def.schema._parseAsync({
             data: processed2,
             path: ctx.path,
             parent: ctx
           });
-          if (result.status === "aborted")
+          if (result2.status === "aborted")
             return INVALID;
-          if (result.status === "dirty")
-            return DIRTY(result.value);
+          if (result2.status === "dirty")
+            return DIRTY(result2.value);
           if (status.value === "dirty")
-            return DIRTY(result.value);
-          return result;
+            return DIRTY(result2.value);
+          return result2;
         });
       } else {
         if (status.value === "aborted")
           return INVALID;
-        const result = this._def.schema._parseSync({
+        const result2 = this._def.schema._parseSync({
           data: processed,
           path: ctx.path,
           parent: ctx
         });
-        if (result.status === "aborted")
+        if (result2.status === "aborted")
           return INVALID;
-        if (result.status === "dirty")
-          return DIRTY(result.value);
+        if (result2.status === "dirty")
+          return DIRTY(result2.value);
         if (status.value === "dirty")
-          return DIRTY(result.value);
-        return result;
+          return DIRTY(result2.value);
+        return result2;
       }
     }
     if (effect.type === "refinement") {
       const executeRefinement = (acc) => {
-        const result = effect.refinement(acc, checkCtx);
+        const result2 = effect.refinement(acc, checkCtx);
         if (ctx.common.async) {
-          return Promise.resolve(result);
+          return Promise.resolve(result2);
         }
-        if (result instanceof Promise) {
+        if (result2 instanceof Promise) {
           throw new Error("Async refinement encountered during synchronous parse operation. Use .parseAsync instead.");
         }
         return acc;
@@ -4514,18 +4514,18 @@ var ZodEffects = class extends ZodType {
         });
         if (!isValid(base))
           return INVALID;
-        const result = effect.transform(base.value, checkCtx);
-        if (result instanceof Promise) {
+        const result2 = effect.transform(base.value, checkCtx);
+        if (result2 instanceof Promise) {
           throw new Error(`Asynchronous transform encountered during synchronous parse operation. Use .parseAsync instead.`);
         }
-        return { status: status.value, value: result };
+        return { status: status.value, value: result2 };
       } else {
         return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((base) => {
           if (!isValid(base))
             return INVALID;
-          return Promise.resolve(effect.transform(base.value, checkCtx)).then((result) => ({
+          return Promise.resolve(effect.transform(base.value, checkCtx)).then((result2) => ({
             status: status.value,
-            value: result
+            value: result2
           }));
         });
       }
@@ -4622,18 +4622,18 @@ var ZodCatch = class extends ZodType {
         issues: []
       }
     };
-    const result = this._def.innerType._parse({
+    const result2 = this._def.innerType._parse({
       data: newCtx.data,
       path: newCtx.path,
       parent: {
         ...newCtx
       }
     });
-    if (isAsync(result)) {
-      return result.then((result2) => {
+    if (isAsync(result2)) {
+      return result2.then((result3) => {
         return {
           status: "valid",
-          value: result2.status === "valid" ? result2.value : this._def.catchValue({
+          value: result3.status === "valid" ? result3.value : this._def.catchValue({
             get error() {
               return new ZodError(newCtx.common.issues);
             },
@@ -4644,7 +4644,7 @@ var ZodCatch = class extends ZodType {
     } else {
       return {
         status: "valid",
-        value: result.status === "valid" ? result.value : this._def.catchValue({
+        value: result2.status === "valid" ? result2.value : this._def.catchValue({
           get error() {
             return new ZodError(newCtx.common.issues);
           },
@@ -4758,14 +4758,14 @@ var ZodPipeline = class _ZodPipeline extends ZodType {
 };
 var ZodReadonly = class extends ZodType {
   _parse(input) {
-    const result = this._def.innerType._parse(input);
+    const result2 = this._def.innerType._parse(input);
     const freeze = (data) => {
       if (isValid(data)) {
         data.value = Object.freeze(data.value);
       }
       return data;
     };
-    return isAsync(result) ? result.then((data) => freeze(data)) : freeze(result);
+    return isAsync(result2) ? result2.then((data) => freeze(data)) : freeze(result2);
   }
   unwrap() {
     return this._def.innerType;
@@ -5757,8 +5757,8 @@ var fail3 = (error) => {
 };
 var EA_REFERENCE_LABEL = "EA reference price (meaning unconfirmed)";
 var MAX_PRICE = 15e6;
-function referenceRows(text4) {
-  const lines = text4.trim().split(/\r?\n/);
+function referenceRows(text5) {
+  const lines = text5.trim().split(/\r?\n/);
   const head = (lines.shift() ?? "").split(",").map((h) => h.trim());
   const at = (n) => head.indexOf(n);
   const [iEa, iPl, iAt, iAvg, iSales] = ["ea_item_id", "platform", "observed_at", "market_average", "last_sales"].map(at);
@@ -5777,9 +5777,9 @@ function referenceRows(text4) {
   }
   return [...out.values()];
 }
-async function storeEaReference(db2, userId, text4) {
-  if (!/^\s*ea_item_id,/.test(text4)) return 0;
-  const rows = referenceRows(text4).map((r2) => ({ ...r2, owner_user_id: userId }));
+async function storeEaReference(db2, userId, text5) {
+  if (!/^\s*ea_item_id,/.test(text5)) return 0;
+  const rows = referenceRows(text5).map((r2) => ({ ...r2, owner_user_id: userId }));
   for (let i = 0; i < rows.length; i += 500) {
     fail3((await db2.from("market_ea_reference").upsert(rows.slice(i, i + 500), { onConflict: "owner_user_id,ea_item_id,platform,observed_at" })).error);
   }
@@ -6205,8 +6205,8 @@ function verdictFor(p, v) {
   if (!p.coins) return { verdict: "points_only", ratio: null, why: p.points ? "FC Points only. Compare value per 100 points with other points packs." : "No coin price in the store." };
   const net2 = p.untradeable ? 1 : 1 - EA_TAX;
   const typical = v.ev_low * net2 / p.coins, withLuck = v.ev_high * net2 / p.coins;
-  const pct4 = (x) => `${Math.round(x * 100)}%`;
-  const both = `about ${pct4(typical)} of the price in a typical pack, ${pct4(withLuck)} on average with the big pulls`;
+  const pct5 = (x) => `${Math.round(x * 100)}%`;
+  const both = `about ${pct5(typical)} of the price in a typical pack, ${pct5(withLuck)} on average with the big pulls`;
   if (p.untradeable) {
     return typical >= 0.75 ? { verdict: "only_for_fodder", ratio: typical, why: `Untradeable, so you can't sell what you pull. If you'd otherwise buy these cards for SBCs, they're worth ${both}.` } : { verdict: "skip", ratio: typical, why: `Untradeable, and even as SBC fodder the cards are worth ${both}.` };
   }
@@ -6607,7 +6607,7 @@ function parseSbcChallenges(v) {
   return v.slice(0, 300).filter(isObj2).map((c4) => {
     const set_id = id2(c4.set_id), challenge_id = id2(c4.challenge_id), name2 = text3(c4.name, 120);
     if (!set_id || !challenge_id || !name2) return null;
-    const small2 = (x, lo, hi) => typeof x === "number" && Number.isInteger(x) && x >= lo && x <= hi ? x : null;
+    const small3 = (x, lo, hi) => typeof x === "number" && Number.isInteger(x) && x >= lo && x <= hi ? x : null;
     return {
       set_id,
       challenge_id,
@@ -6619,9 +6619,9 @@ function parseSbcChallenges(v) {
       requirements: (Array.isArray(c4.requirements) ? c4.requirements : []).filter(isObj2).slice(0, 20).map((r2) => ({
         type: (text3(r2.type, 60) ?? "").toUpperCase(),
         scope: text3(r2.scope, 20)?.toUpperCase() ?? null,
-        values: (Array.isArray(r2.values) ? r2.values : []).map((x) => small2(x, -(2 ** 31), 2 ** 31)).filter((x) => x !== null).slice(0, 40),
-        count: small2(r2.count, -1, 30),
-        slot: small2(r2.slot, -1, 30)
+        values: (Array.isArray(r2.values) ? r2.values : []).map((x) => small3(x, -(2 ** 31), 2 ** 31)).filter((x) => x !== null).slice(0, 40),
+        count: small3(r2.count, -1, 30),
+        slot: small3(r2.slot, -1, 30)
       })).filter((r2) => /^[A-Z0-9_]{1,60}$/.test(r2.type)),
       awards: (Array.isArray(c4.awards) ? c4.awards : []).filter(isObj2).slice(0, 10).map((a) => ({ type: text3(a.type, 30) ?? "item", value: num(a.value), count: num(a.count, 1e3), untradeable: bool(a.untradeable) })),
       end_at: when2(c4.end_at)
@@ -7456,9 +7456,9 @@ function parseRequirementLine(raw) {
   }
   return null;
 }
-function parseRequirements(text4) {
+function parseRequirements(text5) {
   const requirements = [], unread = [];
-  for (const l of text4.split(/\r?\n|;/).map((s) => s.trim()).filter(Boolean).slice(0, 40)) {
+  for (const l of text5.split(/\r?\n|;/).map((s) => s.trim()).filter(Boolean).slice(0, 40)) {
     const r2 = parseRequirementLine(l);
     if (r2) requirements.push(r2);
     else unread.push(l.slice(0, 160));
@@ -8497,10 +8497,10 @@ function decideAlerts(cands, states, now2 = Date.now()) {
     target("sell", x.target_sell);
     if (x.move_pct && x.previous_price && x.previous_price > 0) {
       const s = have.get(key({ ...base, kind: "move" })) ?? { ...base, kind: "move", armed: true, last_fired_at: null, last_price: null };
-      const pct4 = (x.price - x.previous_price) / x.previous_price * 100;
+      const pct5 = (x.price - x.previous_price) / x.previous_price * 100;
       const recent = s.last_fired_at && now2 - Date.parse(s.last_fired_at) < MOVE_EVERY_MS;
-      if (Math.abs(pct4) >= x.move_pct && !recent) {
-        fired.push({ ...base, kind: "move", price: x.price, line: `${pct4 > 0 ? "\u{1F4C8}" : "\u{1F4C9}"} **${label}** ${pct4 > 0 ? "rose" : "fell"} ${Math.abs(Math.round(pct4))}% since the last refresh: ${c2(x.previous_price)} \u2192 ${c2(x.price)} coins on ${plat(x.platform)}.` });
+      if (Math.abs(pct5) >= x.move_pct && !recent) {
+        fired.push({ ...base, kind: "move", price: x.price, line: `${pct5 > 0 ? "\u{1F4C8}" : "\u{1F4C9}"} **${label}** ${pct5 > 0 ? "rose" : "fell"} ${Math.abs(Math.round(pct5))}% since the last refresh: ${c2(x.previous_price)} \u2192 ${c2(x.price)} coins on ${plat(x.platform)}.` });
         next.push({ ...s, last_fired_at: new Date(now2).toISOString(), last_price: x.price });
       } else next.push({ ...s, last_price: x.price });
     }
@@ -8652,15 +8652,15 @@ function historyStats(points, now2 = Date.now()) {
   if (!points.length) return { latest: null, low: null, high: null, change_24h: null, change_7d: null, change_range: null, hourly_points: 0 };
   const latest = points[points.length - 1];
   const at = (ms3) => [...points].reverse().find((p) => Date.parse(p.t) <= now2 - ms3) ?? null;
-  const pct4 = (then) => then && then.price > 0 ? Math.round((latest.price - then.price) / then.price * 1e3) / 10 : null;
+  const pct5 = (then) => then && then.price > 0 ? Math.round((latest.price - then.price) / then.price * 1e3) / 10 : null;
   return {
     latest: latest.price,
     latest_at: latest.t,
     low: Math.min(...points.map((p) => p.price)),
     high: Math.max(...points.map((p) => p.price)),
-    change_24h: pct4(at(24 * 36e5)),
-    change_7d: pct4(at(7 * 864e5)),
-    change_range: pct4(points[0]),
+    change_24h: pct5(at(24 * 36e5)),
+    change_7d: pct5(at(7 * 864e5)),
+    change_range: pct5(points[0]),
     hourly_points: points.filter((p) => p.kind === "hourly").length
   };
 }
@@ -8942,8 +8942,8 @@ function nameAndRating(rest) {
   }
   return { name: s.replace(/\s+/g, " "), rating: rating4 && rating4 >= 40 && rating4 <= 99 ? rating4 : null, version };
 }
-function parseSquadList(text4) {
-  const lines = text4.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+function parseSquadList(text5) {
+  const lines = text5.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return null;
   let formation = null;
   const first = lines[0].match(/^(?:formation\s*[:\-]?\s*)?(\d(?:-\d){2,4})\s*(?:\(\s*(\d)\s*\))?\s*$/i);
@@ -9041,10 +9041,10 @@ async function readWithClaude(squad, input, env, fetchFn = fetch) {
     throw new FutError(res.status === 429 || res.status >= 500 ? "The squad reader is busy. Try again in a minute." : "The squad reader couldn't read that. Try typing the squad as a list.", 502);
   }
   if (out?.stop_reason === "refusal") throw new FutError("The squad reader declined that request. Try typing the squad as a list.", 422);
-  const text4 = (out?.content ?? []).filter((c4) => c4.type === "text").map((c4) => c4.text ?? "").join("");
+  const text5 = (out?.content ?? []).filter((c4) => c4.type === "text").map((c4) => c4.text ?? "").join("");
   let parsed;
   try {
-    parsed = JSON.parse(text4);
+    parsed = JSON.parse(text5);
   } catch {
     throw new FutError("The squad reader returned something unreadable. Try again.", 502);
   }
@@ -9224,13 +9224,13 @@ function placeMatches(start, parsed, matches) {
   return { squad: { ...squad, slots, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, rows, formation_changed, cleared, via: parsed.via, note: parsed.note ?? null };
 }
 async function importSquad(db2, userId, squad, input, env, fetchFn = fetch, hooks = {}) {
-  const text4 = input.text?.trim() ?? "";
-  if (text4.length > MAX_IMPORT_TEXT) throw new FutError(`Keep it under ${MAX_IMPORT_TEXT} characters.`);
-  if (!text4 && !input.image) throw new FutError("Type your squad or upload a screenshot or list.");
-  let parsed = input.image ? null : parseSquadList(text4);
+  const text5 = input.text?.trim() ?? "";
+  if (text5.length > MAX_IMPORT_TEXT) throw new FutError(`Keep it under ${MAX_IMPORT_TEXT} characters.`);
+  if (!text5 && !input.image) throw new FutError("Type your squad or upload a screenshot or list.");
+  let parsed = input.image ? null : parseSquadList(text5);
   if (!parsed) {
     hooks.beforeAi?.();
-    parsed = await readWithClaude(squad, { text: text4, image: input.image }, env, fetchFn);
+    parsed = await readWithClaude(squad, { text: text5, image: input.image }, env, fetchFn);
   }
   if (!parsed.entries.length && !parsed.formation && !parsed.clear_slots?.length) {
     throw new FutError(parsed.note || 'No players found in that. Try a list like "ST Mbappe 91", one player per line.', 422);
@@ -9481,10 +9481,10 @@ ${m.content}`;
     throw new FutError(res.status === 429 || res.status >= 500 ? "The player finder is busy. Try again in a minute." : "The player finder couldn't read that. Try saying it another way.", 502);
   }
   if (out?.stop_reason === "refusal") throw new FutError("The player finder declined that request.", 422);
-  const text4 = (out?.content ?? []).filter((c4) => c4.type === "text").map((c4) => c4.text ?? "").join("");
+  const text5 = (out?.content ?? []).filter((c4) => c4.type === "text").map((c4) => c4.text ?? "").join("");
   let parsed;
   try {
-    parsed = JSON.parse(text4);
+    parsed = JSON.parse(text5);
   } catch {
     throw new FutError("The player finder returned something unreadable. Try again.", 502);
   }
@@ -9508,19 +9508,19 @@ async function findPlayers(db2, userId, input, env, fetchFn = fetch, hooks = {})
     via = "words";
     reply = `Looking for ${describeQuery(query).join(", ") || "the best cards"}.`;
   }
-  let result = await searchPlayers(db2, userId, query, { platform: input.platform, limit: 50 });
+  let result2 = await searchPlayers(db2, userId, query, { platform: input.platform, limit: 50 });
   let relaxed = null;
-  if (result.total === 0 && (query.minimums?.length || query.maximums?.length || query.playstyles?.length || query.accelerate_types?.length)) {
+  if (result2.total === 0 && (query.minimums?.length || query.maximums?.length || query.playstyles?.length || query.accelerate_types?.length)) {
     const extra = (query.minimums ?? []).map((b) => ({ stat: b.stat, weight: 3 }));
     const looser = cleanPlayerQuery({ ...query, minimums: [], maximums: [], playstyles: [], playstyles_plus: [], accelerate_types: [], weights: [...query.weights ?? [], ...extra], sort: "fit" });
     const second = await searchPlayers(db2, userId, looser, { platform: input.platform, limit: 50 });
     if (second.total > 0) {
-      result = second;
+      result2 = second;
       query = looser;
       relaxed = "Nothing matched every must-have, so these are the closest fits without the hard limits.";
     }
   }
-  return { reply, query, summary: describeQuery(query), via, relaxed, result };
+  return { reply, query, summary: describeQuery(query), via, relaxed, result: result2 };
 }
 
 // supabase/functions/_shared/fut/meta.ts
@@ -9820,6 +9820,189 @@ async function compareAnyCards(db2, userId, b) {
   return { platform, ...compareTable(inputs), chem_styles: { outfield: Object.keys(CHEM_STYLES), gk: Object.keys(GK_CHEM_STYLES) }, note: "Chem style boosts and metaratings are GafferBot's estimates (FC 27's chem style numbers aren't confirmed). Prices are FUT.GG's.", verified: false };
 }
 
+// supabase/functions/_shared/fut/champs.ts
+var MODES = ["champs", "rivals", "squad_battles", "other"];
+var MODE_LABEL = { champs: "Champions", rivals: "Rivals", squad_battles: "Squad Battles", other: "Games" };
+var MAX_GAMES_PER_RUN = 100;
+var result = (g) => g.goals_for > g.goals_against ? "W" : g.goals_for < g.goals_against ? "L" : g.penalties === "won" ? "W" : g.penalties === "lost" ? "L" : "D";
+var pct3 = (n, d) => d ? Math.round(n / d * 100) : null;
+function summarize(games, run) {
+  const list2 = [...games].sort((a, b) => a.played_at.localeCompare(b.played_at));
+  const res = list2.map(result);
+  const w = res.filter((r2) => r2 === "W").length, d = res.filter((r2) => r2 === "D").length, l = res.filter((r2) => r2 === "L").length;
+  const gf = list2.reduce((n, g) => n + g.goals_for, 0), ga = list2.reduce((n, g) => n + g.goals_against, 0);
+  let best = 0, cur = 0;
+  for (const r2 of res) {
+    cur = r2 === "W" ? cur + 1 : 0;
+    best = Math.max(best, cur);
+  }
+  let now2 = 0;
+  for (let i = res.length - 1; i >= 0 && res[i] === res[res.length - 1]; i--) now2++;
+  const byFormation = /* @__PURE__ */ new Map();
+  list2.forEach((g, i) => {
+    const k = g.opponent_formation ?? "Not noted";
+    const s = byFormation.get(k) ?? { games: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 };
+    s.games++;
+    s[res[i] === "W" ? "w" : res[i] === "D" ? "d" : "l"]++;
+    s.gf += g.goals_for;
+    s.ga += g.goals_against;
+    byFormation.set(k, s);
+  });
+  const third = Math.ceil(list2.length / 3);
+  const stages = list2.length >= 6 ? [0, 1, 2].map((i) => {
+    const part = res.slice(i * third, (i + 1) * third);
+    return { stage: ["Start", "Middle", "End"][i], games: part.length, win_rate: pct3(part.filter((r2) => r2 === "W").length, part.length) };
+  }) : [];
+  const left = run?.games_allowed ? Math.max(0, run.games_allowed - list2.length) : null;
+  const need = run?.target_wins ? Math.max(0, run.target_wins - w) : null;
+  const target = run?.target_wins ? {
+    target: run.target_wins,
+    need,
+    left,
+    status: need === 0 ? "reached" : left === null ? "open" : need > left ? "out of reach" : "on",
+    line: need === 0 ? `Target of ${run.target_wins} wins reached.` : left === null ? `${need} more win${need === 1 ? "" : "s"} for ${run.target_wins}.` : need > left ? `${run.target_wins} wins is out of reach: ${need} needed, ${left} game${left === 1 ? "" : "s"} left.` : `${need} win${need === 1 ? "" : "s"} needed from ${left} game${left === 1 ? "" : "s"} left (${pct3(need, left)}%).`
+  } : null;
+  return {
+    games: list2.length,
+    w,
+    d,
+    l,
+    win_rate: pct3(w, list2.length),
+    goals_for: gf,
+    goals_against: ga,
+    goal_diff: gf - ga,
+    avg_for: list2.length ? Math.round(gf / list2.length * 10) / 10 : null,
+    avg_against: list2.length ? Math.round(ga / list2.length * 10) / 10 : null,
+    clean_sheets: list2.filter((g) => g.goals_against === 0).length,
+    extra_time: list2.filter((g) => g.extra_time || g.penalties).length,
+    opponent_quits: list2.filter((g) => g.opponent_quit).length,
+    form: res.slice(-5).join(""),
+    best_win_streak: best,
+    current_streak: res.length ? `${res[res.length - 1]}${now2}` : null,
+    by_formation: [...byFormation.entries()].map(([formation, s]) => ({ formation, ...s, win_rate: pct3(s.w, s.games) })).sort((a, b) => b.games - a.games || a.formation.localeCompare(b.formation)),
+    stages,
+    target
+  };
+}
+function recapText(run, s) {
+  const lines = [`**${run.name}** \xB7 ${MODE_LABEL[run.mode]}`, `${s.w}W ${s.d}D ${s.l}L from ${s.games}${run.games_allowed ? ` of ${run.games_allowed}` : ""} games${s.win_rate !== null ? ` (${s.win_rate}%)` : ""} \xB7 goals ${s.goals_for}-${s.goals_against}`];
+  if (s.form) lines.push(`Form: ${s.form.split("").join(" ")} \xB7 best run ${s.best_win_streak} wins`);
+  const tough = s.by_formation.filter((f2) => f2.formation !== "Not noted" && f2.games >= 2).sort((a, b) => (a.win_rate ?? 0) - (b.win_rate ?? 0))[0];
+  if (tough && (tough.win_rate ?? 100) < (s.win_rate ?? 0)) lines.push(`Toughest: ${tough.formation} (${tough.w}W from ${tough.games})`);
+  if (s.stages.length === 3 && s.stages[2].win_rate !== null && s.stages[0].win_rate !== null && s.stages[0].win_rate - s.stages[2].win_rate >= 20) lines.push(`Faded late: ${s.stages[0].win_rate}% early, ${s.stages[2].win_rate}% at the end.`);
+  if (s.target) lines.push(s.target.line);
+  return lines.join("\n");
+}
+var FORMATION_NAMES2 = new Set(Object.keys(FORMATIONS));
+var text4 = (v, max) => typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+var small = (v, lo, hi, name2) => {
+  if (v === null || v === void 0 || v === "") return null;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < lo || n > hi) throw new FutError(`${name2} must be a whole number from ${lo} to ${hi}.`);
+  return n;
+};
+var fail7 = (e) => {
+  if (e) throw new FutError(`Champs tracker: ${e.message ?? "database error"}`, 500);
+};
+async function ownRun(db2, userId, id3) {
+  if (!/^[0-9a-f-]{36}$/i.test(id3)) throw new FutError("Run not found.", 404);
+  const { data, error } = await db2.from("ut_runs").select("*").eq("id", id3).eq("user_id", userId).maybeSingle();
+  fail7(error);
+  if (!data) throw new FutError("Run not found.", 404);
+  return data;
+}
+async function createRun(db2, userId, b) {
+  const mode = MODES.includes(b.mode) ? b.mode : "champs";
+  const platform = b.platform === "pc" ? "pc" : "console";
+  const row = {
+    id: crypto.randomUUID(),
+    started_at: (/* @__PURE__ */ new Date()).toISOString(),
+    finished_at: null,
+    user_id: userId,
+    platform,
+    mode,
+    name: text4(b.name, 80) ?? `${MODE_LABEL[mode]} ${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}`,
+    games_allowed: small(b.games_allowed, 1, 100, "games_allowed"),
+    target_wins: small(b.target_wins, 1, 100, "target_wins")
+  };
+  const { data, error } = await db2.from("ut_runs").insert(row).select("*").single();
+  fail7(error);
+  return data;
+}
+async function updateRun(db2, userId, id3, b) {
+  await ownRun(db2, userId, id3);
+  const patch = {};
+  if ("name" in b) patch.name = text4(b.name, 80) ?? "Run";
+  if ("games_allowed" in b) patch.games_allowed = small(b.games_allowed, 1, 100, "games_allowed");
+  if ("target_wins" in b) patch.target_wins = small(b.target_wins, 1, 100, "target_wins");
+  if ("finished" in b) patch.finished_at = b.finished === true ? (/* @__PURE__ */ new Date()).toISOString() : null;
+  fail7((await db2.from("ut_runs").update(patch).eq("id", id3).eq("user_id", userId)).error);
+  return ownRun(db2, userId, id3);
+}
+async function deleteRun(db2, userId, id3) {
+  await ownRun(db2, userId, id3);
+  fail7((await db2.from("ut_games").delete().eq("run_id", id3).eq("user_id", userId)).error);
+  fail7((await db2.from("ut_runs").delete().eq("id", id3).eq("user_id", userId)).error);
+  return { deleted: id3 };
+}
+async function addGame(db2, userId, runId, b) {
+  const run = await ownRun(db2, userId, runId);
+  const { data: have, error } = await db2.from("ut_games").select("id").eq("run_id", runId);
+  fail7(error);
+  if ((have ?? []).length >= (run.games_allowed ?? MAX_GAMES_PER_RUN)) throw new FutError(run.games_allowed ? `This run allows ${run.games_allowed} games and has them all.` : `A run holds at most ${MAX_GAMES_PER_RUN} games.`);
+  const gf = small(b.goals_for, 0, 30, "goals_for"), ga = small(b.goals_against, 0, 30, "goals_against");
+  if (gf === null || ga === null) throw new FutError("Give the score: goals_for and goals_against.");
+  const pens = b.penalties === "won" || b.penalties === "lost" ? b.penalties : null;
+  if (pens && gf !== ga) throw new FutError("Penalties only decide a drawn game.");
+  const formation = text4(b.opponent_formation, 20);
+  if (formation && !FORMATION_NAMES2.has(formation)) throw new FutError(`Unknown formation ${formation}. Use one like 4-2-3-1 or 4-3-3 (2).`);
+  const row = {
+    id: crypto.randomUUID(),
+    played_at: (/* @__PURE__ */ new Date()).toISOString(),
+    run_id: runId,
+    user_id: userId,
+    goals_for: gf,
+    goals_against: ga,
+    penalties: pens,
+    extra_time: b.extra_time === true || !!pens,
+    opponent_quit: b.opponent_quit === true,
+    opponent_formation: formation,
+    squad_name: text4(b.squad_name, 80),
+    notes: text4(b.notes, 300),
+    ...typeof b.played_at === "string" && Number.isFinite(Date.parse(b.played_at)) ? { played_at: new Date(b.played_at).toISOString() } : {}
+  };
+  const { data, error: e } = await db2.from("ut_games").insert(row).select("*").single();
+  fail7(e);
+  return data;
+}
+async function deleteGame(db2, userId, id3) {
+  if (!/^[0-9a-f-]{36}$/i.test(id3)) throw new FutError("Game not found.", 404);
+  const { data, error } = await db2.from("ut_games").select("id").eq("id", id3).eq("user_id", userId).maybeSingle();
+  fail7(error);
+  if (!data) throw new FutError("Game not found.", 404);
+  fail7((await db2.from("ut_games").delete().eq("id", id3).eq("user_id", userId)).error);
+  return { deleted: id3 };
+}
+async function champsOverview(db2, userId, platform) {
+  const { data: runs, error } = await db2.from("ut_runs").select("*").eq("user_id", userId).eq("platform", platform).order("started_at", { ascending: false }).limit(60);
+  fail7(error);
+  const list2 = runs ?? [];
+  const games = [];
+  const ids = list2.map((r2) => r2.id);
+  for (let i = 0; i < ids.length; i += 50) {
+    const { data, error: e } = await db2.from("ut_games").select("*").in("run_id", ids.slice(i, i + 50)).order("played_at", { ascending: true });
+    fail7(e);
+    games.push(...data ?? []);
+  }
+  const of = (id3) => games.filter((g) => g.run_id === id3);
+  const out = list2.map((r2) => {
+    const s = summarize(of(r2.id), r2);
+    return { ...r2, summary: s, recap: recapText(r2, s), games: of(r2.id).map((g) => ({ ...g, result: result(g) })) };
+  });
+  const byMode = MODES.map((m) => ({ mode: m, label: MODE_LABEL[m], ...summarize(games.filter((g) => list2.find((r2) => r2.id === g.run_id)?.mode === m)) })).filter((m) => m.games > 0);
+  return { platform, runs: out, by_mode: byMode, formations: [...FORMATION_NAMES2], note: "Games you logged yourself. Nothing is read from EA." };
+}
+
 // supabase/functions/_shared/fut/squad-suggest.ts
 var norm7 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 var plays2 = (card, position) => card.positions.some((p) => p.toUpperCase() === position.toUpperCase());
@@ -10034,9 +10217,9 @@ var EA_POSITIONS = {
 async function getJson2(fetcher, url) {
   const res = await fetcher(url);
   if (!res.ok) throw new FutError(`${new URL(url).host} returned HTTP ${res.status} for the card list`, 502);
-  const text4 = await res.text();
-  if (text4.length > MAX_BYTES) throw new FutError("Card list file is too large", 502);
-  return JSON.parse(text4);
+  const text5 = await res.text();
+  if (text5.length > MAX_BYTES) throw new FutError("Card list file is too large", 502);
+  return JSON.parse(text5);
 }
 async function getText(fetcher, url) {
   const res = await fetcher(url);
@@ -10149,7 +10332,7 @@ var stat = (v) => {
   const n = Number(v);
   return Number.isInteger(n) && n >= 1 && n <= 99 ? n : null;
 };
-var small = (v, min, max) => {
+var small2 = (v, min, max) => {
   const n = Number(v);
   return Number.isInteger(n) && n >= min && n <= max ? n : null;
 };
@@ -10179,14 +10362,14 @@ function parseCardDefinition(raw, names) {
     found: true,
     ...face,
     detail,
-    skill_moves: small(d.skillMoves, 1, 5),
-    weak_foot: small(d.weakFoot, 1, 5),
+    skill_moves: small2(d.skillMoves, 1, 5),
+    weak_foot: small2(d.weakFoot, 1, 5),
     // FUT.GG card definitions: 1 = right foot, 2 = left foot
     foot: d.foot === 1 ? "right" : d.foot === 2 ? "left" : null,
-    height_cm: small(d.height, 140, 220),
+    height_cm: small2(d.height, 140, 220),
     accelerate_type: accel,
     alt_positions: [...new Set(ids(d.alternativePositionIds).map((p) => EA_POSITIONS[p]).filter((p) => !!p && p !== primary))].slice(0, 4),
-    total_igs: small(d.totalIgs, 1, 4e3),
+    total_igs: small2(d.totalIgs, 1, 4e3),
     is_dynamic: d.hasDynamic === true,
     playstyles: styleNames(d.playstyles).filter((n) => !plus.includes(n)),
     playstyles_plus: plus,
@@ -10230,8 +10413,8 @@ async function syncFutggAttributes(db2, fetcher = defaultFetcher, opts = {}) {
   if (error) throw new FutError(`Stats queue failed: ${error.message}`, 500);
   const queue = (queueData?.ids ?? []).map(Number).filter(Number.isSafeInteger);
   const remainingBefore = Number(queueData?.waiting ?? queue.length);
-  const result = { queued: queue.length, fetched: 0, saved: 0, missing: 0, failed: 0, stopped: null, remaining: remainingBefore };
-  if (!queue.length) return result;
+  const result2 = { queued: queue.length, fetched: 0, saved: 0, missing: 0, failed: 0, stopped: null, remaining: remainingBefore };
+  if (!queue.length) return result2;
   const names = await loadNames(fetcher);
   let pending = [];
   const flush = async () => {
@@ -10240,13 +10423,13 @@ async function syncFutggAttributes(db2, fetcher = defaultFetcher, opts = {}) {
     pending = [];
     const { data, error: error2 } = await db2.rpc("upsert_futgg_attributes", { p_cards: batch });
     if (error2) throw new FutError(`Stats save failed: ${error2.message}`, 500);
-    result.saved += Number(data ?? 0);
+    result2.saved += Number(data ?? 0);
   };
   let next = 0, failedInARow = 0;
   const worker = async () => {
-    while (!result.stopped && next < queue.length) {
+    while (!result2.stopped && next < queue.length) {
       if (now2() - started > budget) {
-        result.stopped ??= "time";
+        result2.stopped ??= "time";
         break;
       }
       const id3 = queue[next++];
@@ -10254,31 +10437,31 @@ async function syncFutggAttributes(db2, fetcher = defaultFetcher, opts = {}) {
       try {
         res = await fetcher(CARD_URL(id3));
       } catch {
-        result.failed++;
-        if (++failedInARow >= 10) result.stopped ??= "network";
+        result2.failed++;
+        if (++failedInARow >= 10) result2.stopped ??= "network";
         continue;
       }
       if (res.status === 403 || res.status === 429) {
-        result.stopped ??= `FUT.GG answered HTTP ${res.status}`;
+        result2.stopped ??= `FUT.GG answered HTTP ${res.status}`;
         await res.body?.cancel();
         break;
       }
       if (res.status === 404) {
         await res.body?.cancel();
         pending.push({ ea_item_id: id3, found: false });
-        result.missing++;
+        result2.missing++;
         failedInARow = 0;
       } else if (!res.ok) {
         await res.body?.cancel();
-        result.failed++;
-        if (++failedInARow >= 10) result.stopped ??= `FUT.GG answered HTTP ${res.status}`;
+        result2.failed++;
+        if (++failedInARow >= 10) result2.stopped ??= `FUT.GG answered HTTP ${res.status}`;
       } else {
         const parsed = parseCardDefinition(await res.json().catch(() => null), names);
         if (parsed && parsed.ea_item_id === id3) {
           pending.push(parsed);
-          result.fetched++;
+          result2.fetched++;
           failedInARow = 0;
-        } else result.failed++;
+        } else result2.failed++;
       }
       if (pending.length >= 50) await flush();
       if (pause) await new Promise((r2) => setTimeout(r2, pause));
@@ -10286,8 +10469,8 @@ async function syncFutggAttributes(db2, fetcher = defaultFetcher, opts = {}) {
   };
   await Promise.all(Array.from({ length: conc }, worker));
   await flush();
-  result.remaining = Math.max(0, remainingBefore - result.fetched - result.missing);
-  return result;
+  result2.remaining = Math.max(0, remainingBefore - result2.fetched - result2.missing);
+  return result2;
 }
 var defaultFetcher = (u) => fetch(u, {
   headers: { Accept: "application/json", "User-Agent": "Mozilla/5.0 (compatible; XI-Lab-Card-Stats/1.0)" },
@@ -10352,10 +10535,10 @@ function isGameplayPost(p) {
   if (flair && OFF_TOPIC_FLAIR.test(flair) && !ON_TOPIC_FLAIR.test(flair)) return false;
   return GAMEPLAY.test(`${p.title ?? ""} ${(p.selftext ?? "").slice(0, 2e3)}`) || ON_TOPIC_FLAIR.test(flair);
 }
-function threadBody(head, text4, comments) {
+function threadBody(head, text5, comments) {
   let out = `${head.join("\n")}
 
-${text4 ? `${keep(text4, 5e3)}
+${text5 ? `${keep(text5, 5e3)}
 
 ` : ""}`;
   if (comments.length) out += "Top comments:\n";
@@ -10650,14 +10833,14 @@ function cleanReading(raw) {
   }
   return { relevant: o.relevant !== false && claims.length > 0, summary: squash(o.summary, 300), claims };
 }
-async function readSource(text4, known, env, fetchFn) {
+async function readSource(text5, known, env, fetchFn) {
   const res = await callClaude(env, fetchFn, {
     model: env("FUT_KB_MODEL") || DEFAULT_MODEL3,
     max_tokens: 6e3,
     output_config: { effort: "low", format: { type: "json_schema", schema: READ_SCHEMA } },
     system: readerPrompt(known),
     messages: [{ role: "user", content: [{ type: "text", text: `<source>
-${text4.slice(0, MAX_BODY + 2e3)}
+${text5.slice(0, MAX_BODY + 2e3)}
 </source>` }] }]
   });
   const out = await res.json().catch(() => null);
@@ -10698,7 +10881,7 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
   const youtubeHours = (env("FUT_KB_YOUTUBE_HOURS") ?? "1,7,13,19").split(",").map(Number);
   if (youtubeFeedOn(env) && !youtubeHours.includes(now2.getUTCHours())) feeds.youtube = { status: "later" };
   else await collect("youtube", youtubeFeedOn(env), () => collectYouTube(env, fetchFn, now2.getTime()));
-  const result = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0 };
+  const result2 = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0 };
   const hasKey = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
   if (hasKey) {
     const pending = await rpcData(db2, "kb_pending", { p_limit: Number(env("FUT_KB_READ_PER_RUN")) || 25 });
@@ -10708,38 +10891,38 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
         const reading = await readSource(s.body, known, env, fetchFn);
         const n = await saveReading(db2, s.id, reading);
         if (n > 0) {
-          result.read++;
-          result.claims += n;
-        } else result.skipped++;
+          result2.read++;
+          result2.claims += n;
+        } else result2.skipped++;
         for (const c4 of reading.claims) if (!known.some((k) => k.topic === c4.topic)) known.push({ topic: c4.topic, category: c4.category });
       } catch (e) {
-        result.failed++;
+        result2.failed++;
         await rpcData(db2, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash(e.message, 200), p_claims: null });
         if (e instanceof FutError && e.status === 502 && /busy/.test(e.message)) break;
       }
     }
   }
-  result.cleaned = await rpcData(db2, "kb_cleanup", {}) ?? 0;
+  result2.cleaned = await rpcData(db2, "kb_cleanup", {}) ?? 0;
   const status = await rpcData(db2, "kb_status", {});
-  result.waiting = status?.waiting ?? 0;
-  return result;
+  result2.waiting = status?.waiting ?? 0;
+  return result2;
 }
 async function addSource(db2, userId, input, env, fetchFn) {
   const url = typeof input.url === "string" ? input.url.trim() : "";
-  const text4 = typeof input.text === "string" ? keep(input.text, MAX_ADD_TEXT) : "";
+  const text5 = typeof input.text === "string" ? keep(input.text, MAX_ADD_TEXT) : "";
   if (url && (!/^https:\/\/\S+$/.test(url) || url.length > 600)) throw new FutError("Links must start with https:// (up to 600 characters).");
   if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) throw new FutError("Reading sources needs ANTHROPIC_API_KEY on the server.", 503);
   const link = url ? parseSourceLink(url) : null;
   let fetched = null;
-  if (link && !text4) {
+  if (link && !text5) {
     fetched = await fetchLinked(link, env, fetchFn).catch((e) => {
       console.error("[fut-api] knowledge link:", e);
       return null;
     });
     if (!fetched) throw new FutError(`${link.kind === "reddit" ? "Reddit" : "YouTube"} links can't be fetched here yet. Paste the post or the video's transcript into the text box too.`, 422);
   }
-  if (!fetched && text4.length < 40) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
-  const title = squash(input.title, 300) || fetched?.title || squash(text4.split("\n")[0], 120) || "Pasted source";
+  if (!fetched && text5.length < 40) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
+  const title = squash(input.title, 300) || fetched?.title || squash(text5.split("\n")[0], 120) || "Pasted source";
   const share = input.share === true && (!!url || !!fetched);
   const source = fetched ? { ...fetched, shared: true } : {
     kind: url ? "web" : "note",
@@ -10751,8 +10934,8 @@ async function addSource(db2, userId, input, env, fetchFn) {
     published_at: (/* @__PURE__ */ new Date()).toISOString(),
     score: 0,
     comments: 0,
-    body: text4,
-    excerpt: squash(text4, 280),
+    body: text5,
+    excerpt: squash(text5, 280),
     shared: share
   };
   const id3 = await rpcData(db2, "kb_add", { p_user: userId, p_source: source });
@@ -10761,7 +10944,7 @@ async function addSource(db2, userId, input, env, fetchFn) {
   const body2 = fetched ? fetched.body : `${url ? `Page: ${url}
 ` : "The user's own notes or a pasted source.\n"}Title: ${title}
 
-${text4}`;
+${text5}`;
   const reading = await readSource(body2, known, env, fetchFn);
   const claims = await saveReading(db2, id3, reading);
   return { id: id3, claims, relevant: reading.relevant, summary: reading.summary, shared: fetched ? true : share, topics: [...new Set(reading.claims.map((c4) => c4.topic))] };
@@ -10873,7 +11056,7 @@ async function listCardArt(db2, limit = 300) {
 }
 
 // supabase/functions/_shared/fut/community.ts
-var fail7 = (error) => {
+var fail8 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var COMMUNITY_SOURCE_ID = "community_pool";
@@ -10887,24 +11070,24 @@ var H = 36e5;
 var hourOf = (iso3) => new Date(Math.floor(Date.parse(iso3) / H) * H).toISOString();
 async function getSharing(db2, userId) {
   const { data, error } = await db2.from("market_sharing").select("*").eq("user_id", userId).maybeSingle();
-  fail7(error);
+  fail8(error);
   const r2 = data;
   const { count: count2, error: e2 } = await db2.from("market_community_observations").select("id", { count: "exact", head: true }).eq("contributor_user_id", userId);
-  fail7(e2);
+  fail8(e2);
   return { sharing: !!r2?.sharing, since: r2?.sharing && r2.updated_at ? String(r2.updated_at) : null, your_contributions: count2 ?? 0 };
 }
 async function setSharing(db2, userId, on) {
-  fail7((await db2.from("market_sharing").upsert({ user_id: userId, sharing: on, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "user_id" })).error);
+  fail8((await db2.from("market_sharing").upsert({ user_id: userId, sharing: on, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "user_id" })).error);
   let deleted = 0;
   if (!on) {
     const { count: count2 } = await db2.from("market_community_observations").select("id", { count: "exact", head: true }).eq("contributor_user_id", userId);
-    fail7((await db2.from("market_community_observations").delete().eq("contributor_user_id", userId)).error);
+    fail8((await db2.from("market_community_observations").delete().eq("contributor_user_id", userId)).error);
     deleted = count2 ?? 0;
   }
   return { ...await getSharing(db2, userId), deleted };
 }
-function captureContributions(text4, now2 = Date.now()) {
-  const lines = text4.trim().split(/\r?\n/);
+function captureContributions(text5, now2 = Date.now()) {
+  const lines = text5.trim().split(/\r?\n/);
   const head = (lines.shift() ?? "").split(",").map((s) => s.trim());
   const col = (n) => head.indexOf(n);
   const [iEa, iPl, iPr, iAt, iLs] = ["ea_item_id", "platform", "price", "observed_at", "listings"].map(col);
@@ -10925,16 +11108,16 @@ function captureContributions(text4, now2 = Date.now()) {
   }
   return [...best.values()];
 }
-async function contributeCaptures(db2, userId, text4) {
-  if (!/^\s*ea_item_id,/.test(text4)) return { shared: 0, sharing: false };
+async function contributeCaptures(db2, userId, text5) {
+  if (!/^\s*ea_item_id,/.test(text5)) return { shared: 0, sharing: false };
   const { sharing } = await getSharing(db2, userId);
   if (!sharing) return { shared: 0, sharing: false };
-  const rows = captureContributions(text4);
+  const rows = captureContributions(text5);
   const ids = [...new Set(rows.map((r2) => r2.ea_item_id))];
   const have = /* @__PURE__ */ new Map();
   for (let i = 0; i < ids.length; i += 100) {
     const { data, error } = await db2.from("market_community_observations").select("ea_item_id, platform, hour, price").eq("contributor_user_id", userId).in("ea_item_id", ids.slice(i, i + 100));
-    fail7(error);
+    fail8(error);
     for (const r2 of data ?? []) have.set(`${r2.ea_item_id}|${r2.platform}|${new Date(String(r2.hour)).toISOString()}`, Number(r2.price));
   }
   const fresh = rows.filter((r2) => {
@@ -10942,9 +11125,9 @@ async function contributeCaptures(db2, userId, text4) {
     return old === void 0 || r2.price < old;
   }).map((r2) => ({ ...r2, contributor_user_id: userId }));
   for (let i = 0; i < fresh.length; i += 500) {
-    fail7((await db2.from("market_community_observations").upsert(fresh.slice(i, i + 500), { onConflict: "contributor_user_id,ea_item_id,platform,hour" })).error);
+    fail8((await db2.from("market_community_observations").upsert(fresh.slice(i, i + 500), { onConflict: "contributor_user_id,ea_item_id,platform,hour" })).error);
   }
-  fail7((await db2.from("market_community_observations").delete().lte("hour", new Date(Date.now() - KEEP_DAYS * 864e5).toISOString())).error);
+  fail8((await db2.from("market_community_observations").delete().lte("hour", new Date(Date.now() - KEEP_DAYS * 864e5).toISOString())).error);
   return { shared: fresh.length, sharing: true };
 }
 var median2 = (xs) => {
@@ -10976,7 +11159,7 @@ async function pullCommunity(db2, userId, market) {
   const rows = [];
   for (let i = 0; i < ids.length; i += 100) {
     const { data, error } = await db2.from("market_community_observations").select("contributor_user_id, ea_item_id, platform, hour, price").in("ea_item_id", ids.slice(i, i + 100)).gte("hour", since);
-    fail7(error);
+    fail8(error);
     rows.push(...data ?? []);
   }
   const pooled = poolHours(rows.map((r2) => ({ contributor_user_id: String(r2.contributor_user_id), ea_item_id: Number(r2.ea_item_id), platform: String(r2.platform), hour: String(r2.hour), price: Number(r2.price) })), userId);
@@ -11012,31 +11195,31 @@ var REUSE_GRACE_MS = 30 * 1e3;
 // supabase/functions/_shared/fut/helper-keys.ts
 var HELPER_KEY_PREFIX = "xlh_";
 var HELPER_ROUTES = /* @__PURE__ */ new Set(["/helper/prices", "/helper/club", "/helper/packs", "/helper/account", "/helper/images"]);
-var fail8 = (error) => {
+var fail9 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var looksLikeHelperKey = (s) => s.startsWith(HELPER_KEY_PREFIX) && s.length >= 30 && s.length <= 80;
 async function helperKeyUser(db2, key2) {
   if (!looksLikeHelperKey(key2)) return null;
   const { data, error } = await db2.from("helper_keys").select("id, user_id").eq("key_hash", await hashToken(key2)).is("revoked_at", null).maybeSingle();
-  fail8(error);
+  fail9(error);
   if (!data) return null;
-  fail8((await db2.from("helper_keys").update({ last_used_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", data.id)).error);
+  fail9((await db2.from("helper_keys").update({ last_used_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", data.id)).error);
   return String(data.user_id);
 }
 async function helperStatus(db2, userId) {
   const { data, error } = await db2.from("helper_keys").select("key_hint, created_at, last_used_at").eq("user_id", userId).is("revoked_at", null).maybeSingle();
-  fail8(error);
+  fail9(error);
   return data ? { connected: true, key_hint: String(data.key_hint), created_at: String(data.created_at), last_used_at: data.last_used_at ? String(data.last_used_at) : null } : { connected: false, key_hint: null, created_at: null, last_used_at: null };
 }
 async function revokeHelperKeys(db2, userId) {
-  fail8((await db2.from("helper_keys").update({ revoked_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("user_id", userId).is("revoked_at", null)).error);
+  fail9((await db2.from("helper_keys").update({ revoked_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("user_id", userId).is("revoked_at", null)).error);
   return helperStatus(db2, userId);
 }
 async function createHelperKey(db2, userId) {
   await revokeHelperKeys(db2, userId);
   const key2 = HELPER_KEY_PREFIX + randomString(24);
-  fail8((await db2.from("helper_keys").insert({ user_id: userId, key_hash: await hashToken(key2), key_hint: key2.slice(-4) })).error);
+  fail9((await db2.from("helper_keys").insert({ user_id: userId, key_hash: await hashToken(key2), key_hint: key2.slice(-4) })).error);
   return { key: key2, ...await helperStatus(db2, userId) };
 }
 
@@ -11094,9 +11277,9 @@ function change(series, window2) {
   const start = priceAt(series, target);
   if (!start || start === last) return null;
   if (target - start.t > Math.max(HOUR, h * HOUR / 2)) return null;
-  return pct3(start.price, last.price);
+  return pct4(start.price, last.price);
 }
-var pct3 = (a, b) => a > 0 ? (b - a) / a * 100 : 0;
+var pct4 = (a, b) => a > 0 ? (b - a) / a * 100 : 0;
 var round = (n, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 function window(series, hours) {
   const last = series.at(-1);
@@ -11151,7 +11334,7 @@ function maxDrawdown(series, hours) {
   let dd = 0;
   for (const p of w) {
     peak = Math.max(peak, p.price);
-    dd = Math.min(dd, pct3(peak, p.price));
+    dd = Math.min(dd, pct4(peak, p.price));
   }
   return dd;
 }
@@ -11434,7 +11617,7 @@ function meanReversion(s, peerPrices, rules = DEFAULT_MARKET_RULES) {
     if (!unusually_low) pattern = "not_low";
     else {
       const before = w.filter((p) => last && p.t <= last.t - 24 * 36e5).map((p) => p.price);
-      const earlyMove = before.length >= 2 ? pct3(before[0], before.at(-1)) : null;
+      const earlyMove = before.length >= 2 ? pct4(before[0], before.at(-1)) : null;
       const c24 = change(s, "24h");
       const c72 = change(s, "72h");
       if (earlyMove !== null && Math.abs(earlyMove) < 5 && c24 !== null && c24 <= -5) pattern = "recent_dislocation";
@@ -11660,12 +11843,12 @@ function assertUsable(source, use) {
 }
 
 // supabase/functions/_shared/fut/xilab/shared/csv.ts
-function parseCsv(text4) {
+function parseCsv(text5) {
   const rows = [];
   let row = [];
   let field = "";
   let quoted = false;
-  const s = text4.replace(/^﻿/, "");
+  const s = text5.replace(/^﻿/, "");
   for (let i = 0; i < s.length; i++) {
     const c4 = s[i];
     if (quoted) {
@@ -11706,8 +11889,8 @@ function captureDetailsFromRow(r2) {
 
 // supabase/functions/_shared/fut/xilab/market/import.ts
 var PLATFORM_ALIASES = { console: "console", ps: "console", playstation: "console", xbox: "console", ps5: "console", xsx: "console", pc: "pc" };
-function parsePriceImport(text4, opts) {
-  const t = text4.trim();
+function parsePriceImport(text5, opts) {
+  const t = text5.trim();
   let raw;
   if (t.startsWith("[") || t.startsWith("{")) {
     const j = JSON.parse(t);
@@ -11825,12 +12008,12 @@ function compareInSquad(squad, card, rules, market) {
     options,
     skipped_locked,
     no_eligible_slot: eligible.length === 0,
-    summary: summarize(card, options, skipped_locked.length, owned, cost, market.assessment),
+    summary: summarize2(card, options, skipped_locked.length, owned, cost, market.assessment),
     rule_version: rules.id,
     evidence: { chemistry: rule_status, fit: "estimate", market: "estimate" }
   };
 }
-function summarize(card, options, locked, owned, cost, a) {
+function summarize2(card, options, locked, owned, cost, a) {
   if (!options.length) return locked ? `${card.name} only fits slots you've locked.` : `${card.name} can't play any position in this formation.`;
   const best = options[0];
   const fit = best.fit_delta ?? 0;
@@ -12238,13 +12421,13 @@ function createMarketService(deps) {
       await deps.watchlists.remove(owner, card_id, platform);
     },
     /** Import a CSV/JSON price history the user owns. Rows stay private to them. */
-    async importPriceHistory(owner, text4, opts = {}) {
-      const captured = /^\s*ea_item_id,/.test(text4);
+    async importPriceHistory(owner, text5, opts = {}) {
+      const captured = /^\s*ea_item_id,/.test(text5);
       const source = sourceById.get(opts.source_id ?? (captured ? "web_app_capture" : "user_import"));
       assertUsable(source, "storage");
       const cards = await deps.cards.list(owner);
       const resolveEaItem = eaResolver(cards);
-      const res = parsePriceImport(text4, { source, received_at: opts.received_at ?? now2(), knownCardIds: new Set(cards.map((c4) => c4.id)), rules, resolveEaItem });
+      const res = parsePriceImport(text5, { source, received_at: opts.received_at ?? now2(), knownCardIds: new Set(cards.map((c4) => c4.id)), rules, resolveEaItem });
       const rejected = [...res.rejected];
       let held = 0;
       if (res.unmatched.length && deps.holds) held = (await deps.holds.hold(owner, res.unmatched)).held;
@@ -12312,7 +12495,7 @@ function createMarketService(deps) {
 }
 
 // supabase/functions/_shared/fut/market.ts
-var fail9 = (error) => {
+var fail10 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var iso2 = (v) => v === null || v === void 0 ? null : new Date(String(v)).toISOString();
@@ -12368,7 +12551,7 @@ async function allPages(make) {
   const out = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await make().range(from, from + PAGE - 1);
-    fail9(error);
+    fail10(error);
     out.push(...data ?? []);
     if (!data || data.length < PAGE) return out;
     if (out.length >= 2e5) throw new FutError("Too much price history to analyse at once.", 413);
@@ -12524,7 +12707,7 @@ var PgPriceStore = class {
     const have = new Set(existing.map((r2) => `${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
     const fresh = rows.filter((r2) => !have.has(`${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
     const { count: count2, error } = await this.db.from("market_price_observations").select("id", { count: "exact", head: true }).eq("owner_user_id", owner);
-    fail9(error);
+    fail10(error);
     if ((count2 ?? 0) + fresh.length > MAX_PRICE_ROWS_PER_USER) throw new FutError(`You can keep up to ${MAX_PRICE_ROWS_PER_USER.toLocaleString("en-US")} price rows.`);
     for (let i = 0; i < fresh.length; i += 500) {
       const chunk = fresh.slice(i, i + 500).map((r2) => ({
@@ -12541,7 +12724,7 @@ var PgPriceStore = class {
         evidence: r2.evidence,
         quality: r2.quality ?? null
       }));
-      fail9((await this.db.from("market_price_observations").insert(chunk)).error);
+      fail10((await this.db.from("market_price_observations").insert(chunk)).error);
     }
     if (fresh.length) forgetMarketOwner(this.db, owner);
     return { inserted: fresh.length, skipped: rows.length - fresh.length };
@@ -12562,11 +12745,11 @@ var PgMembershipStore = class {
     const def = DEFAULT_BASKETS.find((b) => b.id === basket_id);
     if (def) {
       const { data, error } = await this.db.from("market_baskets").select("id").eq("id", basket_id).maybeSingle();
-      fail9(error);
-      if (!data) fail9((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
+      fail10(error);
+      if (!data) fail10((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
     }
-    fail9((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
-    if (rows.length) fail9((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
+    fail10((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
+    if (rows.length) fail10((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
   }
 };
 var PgWatchlistStore = class {
@@ -12575,7 +12758,7 @@ var PgWatchlistStore = class {
   }
   async list(owner) {
     const { data, error } = await this.db.from("market_watchlist").select("*").eq("user_id", owner).order("added_at", { ascending: true }).limit(200);
-    fail9(error);
+    fail10(error);
     return (data ?? []).map((r2) => ({
       card_id: String(r2.card_id),
       platform: r2.platform,
@@ -12589,14 +12772,14 @@ var PgWatchlistStore = class {
   }
   async upsert(owner, w) {
     const { count: count2, error } = await this.db.from("market_watchlist").select("card_id", { count: "exact", head: true }).eq("user_id", owner);
-    fail9(error);
-    fail9((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
+    fail10(error);
+    fail10((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
     if ((count2 ?? 0) >= 200) throw new FutError("Your watchlist can hold up to 200 cards.");
-    fail9((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
+    fail10((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
     return w;
   }
   async remove(owner, card_id, platform) {
-    fail9((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
+    fail10((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
   }
 };
 var PgCaptureHoldStore = class {
@@ -12608,7 +12791,7 @@ var PgCaptureHoldStore = class {
     const fresh = [...new Map(rows.filter((r2) => !have.has(holdKey(r2))).map((r2) => [holdKey(r2), r2])).values()];
     if (have.size + fresh.length > MAX_HELD_CAPTURES_PER_USER) throw new FutError(`You can keep up to ${MAX_HELD_CAPTURES_PER_USER.toLocaleString("en-US")} captured prices for cards you haven't added yet. Add those cards or link them first.`);
     for (let i = 0; i < fresh.length; i += 500)
-      fail9((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
+      fail10((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
         user_id: owner,
         ea_item_id: r2.ea_item_id,
         asset_id: r2.asset_id,
@@ -12624,7 +12807,7 @@ var PgCaptureHoldStore = class {
     const out = [];
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await this.db.from("market_capture_holds").select("*").eq("user_id", owner).order("observed_at", { ascending: true }).range(from, from + PAGE - 1);
-      fail9(error);
+      fail10(error);
       const rows = data ?? [];
       for (const r2 of rows)
         out.push({
@@ -12639,7 +12822,7 @@ var PgCaptureHoldStore = class {
   }
   async release(owner, rows) {
     for (const r2 of rows)
-      fail9((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
+      fail10((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
   }
 };
 var holdKey = (h) => `${h.ea_item_id}|${h.observation.platform}|${new Date(h.observation.observed_at).toISOString()}`;
@@ -12675,7 +12858,7 @@ var PgMarketCardSource = class {
 };
 async function marketSources(db2) {
   const { data, error } = await db2.from("market_price_sources").select("*").order("id", { ascending: true });
-  fail9(error);
+  fail10(error);
   return (data ?? []).map((r2) => ({
     id: String(r2.id),
     name: String(r2.name),
@@ -12689,7 +12872,7 @@ async function marketSources(db2) {
 }
 async function marketRules(db2) {
   const { data, error } = await db2.from("market_rule_versions").select("*").eq("is_active", true).maybeSingle();
-  fail9(error);
+  fail10(error);
   if (!data) throw new FutError("Market rules aren't set up yet.", 503);
   return { id: String(data.id), status: data.status, notes: String(data.notes), ...data.body };
 }
@@ -12838,14 +13021,14 @@ async function handle(req, deps) {
         if (env("FUT_KNOWLEDGE") === "off") return json({ data: { paused: true } });
         const fetchFn = deps.fetch ?? fetch;
         const started = (/* @__PURE__ */ new Date()).toISOString();
-        let result = null, failure = null;
+        let result2 = null, failure = null;
         try {
-          result = await runKnowledgeIngest(deps.db, env, fetchFn);
+          result2 = await runKnowledgeIngest(deps.db, env, fetchFn);
         } catch (e) {
           failure = e.message?.slice(0, 500) ?? "failed";
           throw e;
         } finally {
-          const r2 = result;
+          const r2 = result2;
           await deps.db.from("kb_runs").insert({
             started_at: started,
             finished_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -12856,14 +13039,14 @@ async function handle(req, deps) {
             error: failure
           });
         }
-        return json({ data: result });
+        return json({ data: result2 });
       }
       if (job === "futgg-attributes") return json({ data: await syncFutggAttributes(deps.db, deps.fetch) });
       if (job === "price-alerts") return json({ data: await runPriceAlerts(deps.db) });
       if (job === "futgg-catalogue") {
-        const result = await syncFutggCatalogue(deps.db, deps.fetch);
+        const result2 = await syncFutggCatalogue(deps.db, deps.fetch);
         await (await marketFor(deps.db)).rebalanceBaskets();
-        return json({ data: result });
+        return json({ data: result2 });
       }
       return json({ data: await collectFc27Market(deps.db, await marketFor(deps.db), deps.fetch) });
     } catch (e) {
@@ -12960,14 +13143,14 @@ async function handle(req, deps) {
       return json({ data: await runWorkspace(() => solveForUser(db2, userId, platformParam(typeof b.platform === "string" ? b.platform : url.searchParams.get("platform")), parseSolveBody(b))) });
     }
     if ((route === "/club/import" || route === "/helper/club") && m === "POST") {
-      const result = await importClub(db2, userId, await body(req, MAX_CLUB_BODY));
+      const result2 = await importClub(db2, userId, await body(req, MAX_CLUB_BODY));
       let prices_linked = 0;
       try {
         prices_linked = (await (await marketFor(db2)).relinkHeldCaptures(userId)).linked;
       } catch (e) {
         console.warn("[fut-api] relink after club sync:", e);
       }
-      return json({ data: { ...result, prices_linked } });
+      return json({ data: { ...result2, prices_linked } });
     }
     if (route === "/club/value" && m === "GET") {
       const { data, error } = await db2.rpc("club_trade_value", { p_user: userId, p_platform: platformParam(url.searchParams.get("platform")) });
@@ -12975,6 +13158,17 @@ async function handle(req, deps) {
       return json({ data });
     }
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db2, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2e9) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
+    if (route === "/champs" && m === "GET") return json({ data: await champsOverview(db2, userId, platformParam(url.searchParams.get("platform"))) });
+    if (route === "/champs/runs" && m === "POST") return json({ data: await createRun(db2, userId, obj2(await body(req))) }, 201);
+    const champRun = route.match(/^\/champs\/runs\/([^/]+)(\/games)?$/);
+    if (champRun) {
+      if (champRun[2] && m === "POST") return json({ data: await addGame(db2, userId, champRun[1], obj2(await body(req))) }, 201);
+      if (!champRun[2] && m === "POST") return json({ data: await updateRun(db2, userId, champRun[1], obj2(await body(req))) });
+      if (!champRun[2] && m === "DELETE") return json({ data: await deleteRun(db2, userId, champRun[1]) });
+      return err(405, "Use POST or DELETE.");
+    }
+    const champGame = route.match(/^\/champs\/games\/([^/]+)$/);
+    if (champGame && m === "DELETE") return json({ data: await deleteGame(db2, userId, champGame[1]) });
     if (route === "/compare/cards" && m === "POST") return json({ data: await compareAnyCards(db2, userId, obj2(await body(req))) });
     if (route === "/meta/card" && m === "GET") return json({ data: await metaForCard(db2, userId, url.searchParams.get("card_id") ?? "") });
     if (route === "/meta/top" && m === "GET") {
@@ -13061,20 +13255,20 @@ async function handle(req, deps) {
       }
       if (route === "/squads/import" && m === "POST") {
         const b = obj2(await body(req, MAX_SQUAD_IMPORT_BODY));
-        const text4 = typeof b.text === "string" ? b.text : null;
+        const text5 = typeof b.text === "string" ? b.text : null;
         const image = importImage(b.image);
         const env = deps.env ?? ((k) => Deno.env.get(k));
         const perHour = Number(env("FUT_IMPORT_AI_PER_HOUR")) || AI_IMPORTS_PER_HOUR;
         const fetchFn = deps.fetch ?? fetch;
-        const result = await runWorkspace(async () => {
+        const result2 = await runWorkspace(async () => {
           const squad = squadSchema.parse({ ...obj2(b.squad), owner_id: userId });
-          return importSquad(db2, userId, squad, { text: text4, image }, env, fetchFn, {
+          return importSquad(db2, userId, squad, { text: text5, image }, env, fetchFn, {
             beforeAi: () => {
               if (!aiImportAllowed(userId, perHour)) throw new FutError("That's a lot of squad reads this hour. Try again later, or type the squad as a list.", 429);
             }
           });
         });
-        return json({ data: result });
+        return json({ data: result2 });
       }
       if (route === "/squads/preview" && m === "POST") {
         const b = obj2(await body(req));
@@ -13082,9 +13276,9 @@ async function handle(req, deps) {
       }
       if (route === "/squads/optimize" && m === "POST") {
         const b = obj2(await body(req));
-        const result = await runWorkspace(() => ws.optimize(userId, squadRef(b.squad), { goal: obj2(b.goal), options: b.options }));
-        await logRun(db2, userId, { squad: typeof b.squad === "string" ? b.squad : null, kind: "optimize", input: { goal: b.goal, options: b.options }, result, via: "web" });
-        return json({ data: result });
+        const result2 = await runWorkspace(() => ws.optimize(userId, squadRef(b.squad), { goal: obj2(b.goal), options: b.options }));
+        await logRun(db2, userId, { squad: typeof b.squad === "string" ? b.squad : null, kind: "optimize", input: { goal: b.goal, options: b.options }, result: result2, via: "web" });
+        return json({ data: result2 });
       }
       if (route === "/squads/compare" && m === "POST") {
         const b = obj2(await body(req));
@@ -13231,12 +13425,12 @@ async function handle(req, deps) {
       if (route === "/market/feeds/fc27-market" && m === "GET") return json({ data: await fc27MarketStatus(db2) });
       if (route === "/market/feeds/futgg" && m === "GET") return json({ data: await futggStatus(db2) });
       if (route === "/market/cards" && m === "GET") {
-        const p2 = url.searchParams, text4 = (k) => (p2.get(k) ?? "").trim() || null;
-        const position = text4("position"), type = text4("type"), sort = text4("sort") ?? "price_desc";
+        const p2 = url.searchParams, text5 = (k) => (p2.get(k) ?? "").trim() || null;
+        const position = text5("position"), type = text5("type"), sort = text5("sort") ?? "price_desc";
         if (position && !/^(GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST)$/.test(position)) throw new FutError("position must be a position code like ST or CB.");
         if (type && !["icon", "hero", "promo", "base"].includes(type)) throw new FutError("type must be icon, hero, promo or base.");
         if (!["price_desc", "price_asc", "rating_desc", "change_desc", "change_asc", "name"].includes(sort)) throw new FutError("Unknown sort.");
-        const q = text4("q");
+        const q = text5("q");
         if (q && q.length > 60) throw new FutError("Search is too long.");
         const { data, error } = await db2.rpc("futgg_market_cards", {
           p_platform: platformParam(p2.get("platform")),
