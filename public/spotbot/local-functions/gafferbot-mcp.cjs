@@ -10341,12 +10341,16 @@ async function valueBands(db, platform, now2 = Date.now()) {
 }
 var STORE_GONE_MS = 2 * 36e5;
 var NOT_LIVE_STATE = /expired|unavailable|inactive|disabled|ended|sold.?out|locked|hidden|retired/i;
-function liveInStore(p, newestSeen, now2) {
+function liveInStore(p, newestSeen, now2, newestShown = 0) {
   if (p.unopened) return false;
   if (p.end_at && Date.parse(p.end_at) <= now2) return false;
   if (p.start_at && Date.parse(p.start_at) > now2) return false;
   if (p.state && NOT_LIVE_STATE.test(p.state)) return false;
   if (!p.coins && !p.points) return false;
+  if (newestShown) {
+    const shown = Date.parse(String(p.shown_at ?? "")) || 0;
+    if (shown < newestShown - STORE_GONE_MS) return false;
+  }
   const seen = Date.parse(String(p.seen_at ?? "")) || 0;
   return !newestSeen || seen >= newestSeen - STORE_GONE_MS;
 }
@@ -10392,7 +10396,8 @@ async function packAdvice(db, userId, platform, now2 = Date.now()) {
   fail3(pullsRes.error);
   const packs = packsRes.data ?? [];
   const newestSeen = packs.reduce((m, p) => Math.max(m, Date.parse(String(p.seen_at ?? "")) || 0), 0);
-  const live = packs.filter((p) => liveInStore(p, newestSeen, now2));
+  const newestShown = packs.reduce((m, p) => Math.max(m, Date.parse(String(p.shown_at ?? "")) || 0), 0);
+  const live = packs.filter((p) => liveInStore(p, newestSeen, now2, newestShown));
   const hidden = packs.length - live.length;
   const pictures = live.length ? await packPictures(db) : [];
   const snaps = packs.length || (pullsRes.data ?? []).length ? await valueBands(db, platform, now2) : [];

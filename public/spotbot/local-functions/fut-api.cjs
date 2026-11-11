@@ -6075,6 +6075,7 @@ function parsePack(v) {
     asset_id: id(v.asset_id),
     image_url: cleanArtUrl(v.image_url),
     seen_at: when(v.seen_at),
+    shown_at: when(v.shown_at),
     pack_type: text2(v.pack_type, 40),
     coins: coins(v.coins),
     points: coins(v.points),
@@ -6125,15 +6126,22 @@ function parseStoreUpload(raw) {
     packs,
     pulls,
     shape,
-    skipped: packsIn.length - packs.length + pullsIn.length - pulls.length
+    skipped: packsIn.length - packs.length + pullsIn.length - pulls.length,
+    // Helper 0.12.1+: "Clear stored packs" in the popup. Wipes this platform's packs even when the new list is empty.
+    reset: raw.reset === true
   };
 }
 async function importStore(db2, userId, raw) {
   const u = parseStoreUpload(raw);
   const now2 = (/* @__PURE__ */ new Date()).toISOString();
-  if (u.packs.length) {
+  if (u.reset && !u.packs.length) {
     fail4((await db2.from("pack_offers").delete().eq("user_id", userId).eq("platform", u.platform)).error);
-    const rows = u.packs.map((p) => ({ user_id: userId, platform: u.platform, ...p, seen_at: p.seen_at && p.seen_at <= u.captured_at ? p.seen_at : u.captured_at, updated_at: now2 }));
+    const shape = Array.isArray(u.shape.seen) ? { ...u.shape, seen_at: u.captured_at } : u.shape;
+    fail4((await db2.from("pack_store_captures").upsert({ user_id: userId, platform: u.platform, captured_at: u.captured_at, pack_count: 0, shape }, { onConflict: "user_id,platform" })).error);
+  } else if (u.packs.length) {
+    fail4((await db2.from("pack_offers").delete().eq("user_id", userId).eq("platform", u.platform)).error);
+    const cap = (t) => t && t <= u.captured_at ? t : null;
+    const rows = u.packs.map((p) => ({ user_id: userId, platform: u.platform, ...p, seen_at: cap(p.seen_at) ?? u.captured_at, shown_at: cap(p.shown_at), updated_at: now2 }));
     for (let i = 0; i < rows.length; i += 200) fail4((await db2.from("pack_offers").insert(rows.slice(i, i + 200))).error);
     fail4((await db2.from("pack_store_captures").upsert({ user_id: userId, platform: u.platform, captured_at: u.captured_at, pack_count: u.packs.length, shape: u.shape }, { onConflict: "user_id,platform" })).error);
   } else if (Array.isArray(u.shape.seen)) {
@@ -6147,7 +6155,7 @@ async function importStore(db2, userId, raw) {
     const rows = u.pulls.map((p) => ({ user_id: userId, platform: u.platform, ...p }));
     for (let i = 0; i < rows.length; i += 200) fail4((await db2.from("pack_pulls").upsert(rows.slice(i, i + 200), { onConflict: "user_id,item_id" })).error);
   }
-  return { packs: u.packs.length, pulls: u.pulls.length, skipped: u.skipped, platform: u.platform, verified: false };
+  return { packs: u.packs.length, pulls: u.pulls.length, skipped: u.skipped, platform: u.platform, reset: u.reset, verified: false };
 }
 async function clearStore(db2, userId, platform) {
   for (const t of ["pack_offers", "pack_pulls", "pack_store_captures"]) fail4((await db2.from(t).delete().eq("user_id", userId).eq("platform", platform)).error);
@@ -6305,12 +6313,16 @@ async function valueBands(db2, platform, now2 = Date.now()) {
 }
 var STORE_GONE_MS = 2 * 36e5;
 var NOT_LIVE_STATE = /expired|unavailable|inactive|disabled|ended|sold.?out|locked|hidden|retired/i;
-function liveInStore(p, newestSeen, now2) {
+function liveInStore(p, newestSeen, now2, newestShown = 0) {
   if (p.unopened) return false;
   if (p.end_at && Date.parse(p.end_at) <= now2) return false;
   if (p.start_at && Date.parse(p.start_at) > now2) return false;
   if (p.state && NOT_LIVE_STATE.test(p.state)) return false;
   if (!p.coins && !p.points) return false;
+  if (newestShown) {
+    const shown = Date.parse(String(p.shown_at ?? "")) || 0;
+    if (shown < newestShown - STORE_GONE_MS) return false;
+  }
   const seen = Date.parse(String(p.seen_at ?? "")) || 0;
   return !newestSeen || seen >= newestSeen - STORE_GONE_MS;
 }
@@ -6356,7 +6368,8 @@ async function packAdvice(db2, userId, platform, now2 = Date.now()) {
   fail4(pullsRes.error);
   const packs = packsRes.data ?? [];
   const newestSeen = packs.reduce((m, p) => Math.max(m, Date.parse(String(p.seen_at ?? "")) || 0), 0);
-  const live = packs.filter((p) => liveInStore(p, newestSeen, now2));
+  const newestShown = packs.reduce((m, p) => Math.max(m, Date.parse(String(p.shown_at ?? "")) || 0), 0);
+  const live = packs.filter((p) => liveInStore(p, newestSeen, now2, newestShown));
   const hidden = packs.length - live.length;
   const pictures = live.length ? await packPictures(db2) : [];
   const snaps = packs.length || (pullsRes.data ?? []).length ? await valueBands(db2, platform, now2) : [];
