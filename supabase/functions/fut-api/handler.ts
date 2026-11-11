@@ -22,6 +22,7 @@ import { cardPriceHistory } from "../_shared/fut/price-history.ts";
 import { metaForCard, metaTop } from "../_shared/fut/meta-data.ts";
 import { compareAnyCards } from "../_shared/fut/card-compare.ts";
 import { upgradeOptions } from "../_shared/fut/upgrades-data.ts";
+import { calendarFor } from "../_shared/fut/calendar.ts";
 import { clubBoard, getShare, runClubPulls, setShare, whoHas } from "../_shared/fut/club-share.ts";
 import { addGame, champsOverview, createRun, deleteGame, deleteRun, updateRun } from "../_shared/fut/champs.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
@@ -376,6 +377,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       const q = url.searchParams;
       return json({ data: await metaTop(db, userId, { position: q.get("position"), role: q.get("role"), max_price: q.get("max_price"), platform: q.get("platform"), owned_only: q.get("owned_only") === "1" }) });
     }
+    // Promo / crash calendar: the weekly FUT rhythm back-tested on our own snapshots (optionally for one card too).
+    if (route === "/market/calendar" && m === "GET") return json({ data: await calendarFor(db, userId, platformParam(url.searchParams.get("platform")), url.searchParams.get("card_id") || null) });
     // Price history graph: one card's FUT.GG price (twice daily + hourly hot cards) with market-wide drops marked.
     if (route === "/prices/history" && m === "GET") {
       const days = Number(url.searchParams.get("days") ?? 30);

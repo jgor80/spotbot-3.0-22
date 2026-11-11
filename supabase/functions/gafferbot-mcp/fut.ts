@@ -15,6 +15,7 @@ import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evoluti
 import { tradeOverview } from "../_shared/fut/trades.ts";
 import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
 import { metaForCard, metaTop } from "../_shared/fut/meta-data.ts";
+import { calendarFor } from "../_shared/fut/calendar.ts";
 import { champsOverview } from "../_shared/fut/champs.ts";
 
 // The slice of the MCP context these tools need (kept local so this file has no remote imports).
@@ -485,6 +486,17 @@ FUT_TOOLS.push(
       const { db, userId } = await account(ctx);
       const o = await champsOverview(db, userId, platformParam((args as Record<string, unknown>).platform));
       return { ...o, formations: undefined, runs: o.runs.slice(0, 8).map((r) => ({ ...r, games: r.games.slice(-30) })) };
+    }),
+  },
+  {
+    name: "fut_market_calendar",
+    title: "FUT market calendar: when prices usually rise and crash",
+    description: "EA FC Ultimate Team: the next 7 days of FUT's usual weekly rhythm in UK time (Team of the Week, Rivals and Champs rewards, Friday promos, Champs weekend, Monday) with a back-test from GafferBot's own FUT.GG snapshots: how tracked cards in each rating band moved after each of the last weeks' events, and whether that's a pattern (sell before, buy before) or not enough data yet; plus recent market-wide crashes. With card_id: the same back-test on that card's own price. The schedule is the usual one, not confirmed for FC 27. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM, card_id: { type: "string", description: "Optional: one card (from search or the club) to back-test on its own price." } }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const a = args as Record<string, unknown>;
+      return await calendarFor(db, userId, platformParam(a.platform), typeof a.card_id === "string" && a.card_id ? a.card_id : null);
     }),
   },
 );
