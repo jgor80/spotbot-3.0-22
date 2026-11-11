@@ -36,6 +36,18 @@ shows dataset coverage, publication/check times, the twice-daily schedule, missi
 `GET /fut-api/v1/market/feeds/futgg` exposes that status to signed-in users. The former hourly limited-feed job
 is removed from the bot scheduler; its manual import/status endpoints remain available.
 
+## Hourly prices for charts (off by default)
+
+With `FUTGG_HOURLY=on` the bot also checks FUT.GG at 20 minutes past every hour (`futgg-hourly`,
+`syncFutggHot` in `worker/futgg-sync.ts`). It fetches only the manifest (one GET) and compares each platform's
+publication time with the newest one already stored (`fut.futgg_latest_published`, full or hourly). Only when FUT.GG
+has published newer files does it fetch the index and those files (at most four GETs an hour, the same files FUT.GG's
+own site loads, no retries). `fut.ingest_futgg_hot` keeps just the hot cards: market-tracked catalogue cards, cards on
+anyone's watchlist and cards in anyone's synced club, in `fut.futgg_hot_prices` for 14 days. The twice-daily full
+refresh, its 90-day retention and Market Lab's analysis are unchanged; the hourly rows feed only the price charts
+(`fut.card_price_history`, `GET /prices/history`). Before turning it on, check FUT.GG's current terms and how often
+the files actually change (`fut.futgg_hot_runs` shows each stored publication).
+
 ## Deployment
 
 Merging to main is enough: the Hetzner auto-deploy applies migrations and restarts the bot, and the first

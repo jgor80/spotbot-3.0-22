@@ -20,6 +20,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // worker/futgg-sync.ts
 var futgg_sync_exports = {};
 __export(futgg_sync_exports, {
+  syncFutggHot: () => syncFutggHot,
   syncFutggPrices: () => syncFutggPrices,
   validateBlob: () => validateBlob
 });
@@ -115,8 +116,33 @@ async function syncFutggPrices(db, request = fetch, now = Date.now()) {
     throw error;
   }
 }
+async function syncFutggHot(db, request = fetch, now = Date.now()) {
+  const manifest = await readJson(`${ROOT}/manifest.json`, request);
+  const published = object(manifest._published_at);
+  const fresh = [];
+  for (const [platform, name] of Object.entries(FILES)) {
+    const stamp = published[name];
+    if (!Number.isSafeInteger(stamp) || Number(stamp) <= 0 || Number(stamp) * 1e3 > now + 6e5) throw new Error("Invalid FUT.GG publication time");
+    const publishedAt = new Date(Number(stamp) * 1e3).toISOString();
+    const { data, error } = await db.rpc("futgg_latest_published", { p_platform: platform });
+    if (error) throw new Error(`FUT.GG latest publication time unavailable: ${error.message}`);
+    if (!data || Date.parse(String(data)) < Date.parse(publishedAt)) fresh.push({ platform, name, publishedAt });
+  }
+  if (!fresh.length) return { unchanged: true, requests: 1 };
+  const index = await readJson(url(manifest, "player-prices-index"), request);
+  const result = { requests: 2 + fresh.length };
+  for (const f of fresh) {
+    const blob = await readJson(url(manifest, f.name), request);
+    validateBlob(index, blob);
+    const { data, error } = await db.rpc("ingest_futgg_hot", { p_platform: f.platform, p_game_year: 27, p_published_at: f.publishedAt, p_index: index, p_prices: blob });
+    if (error) throw new Error(`FUT.GG ${f.platform} hourly ingestion failed: ${error.message}`);
+    result[f.platform] = data;
+  }
+  return result;
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  syncFutggHot,
   syncFutggPrices,
   validateBlob
 });

@@ -93,3 +93,33 @@ export async function syncFutggPrices(db: BulkDb, request: Fetch = fetch, now = 
     throw error;
   }
 }
+
+/**
+ * Hourly check (FUTGG_HOURLY=on): one GET for the manifest; only when FUT.GG published newer price files than the
+ * newest we hold (full or hourly) does it fetch the index and the two price files, and then only the hot cards are
+ * stored (fut.ingest_futgg_hot). Never retries; the twice-daily full refresh is unchanged.
+ */
+export async function syncFutggHot(db: BulkDb, request: Fetch = fetch, now = Date.now()) {
+  const manifest = await readJson(`${ROOT}/manifest.json`, request);
+  const published = object(manifest._published_at);
+  const fresh: { platform: string; name: string; publishedAt: string }[] = [];
+  for (const [platform, name] of Object.entries(FILES)) {
+    const stamp = published[name];
+    if (!Number.isSafeInteger(stamp) || Number(stamp) <= 0 || Number(stamp) * 1000 > now + 600_000) throw new Error("Invalid FUT.GG publication time");
+    const publishedAt = new Date(Number(stamp) * 1000).toISOString();
+    const { data, error } = await db.rpc("futgg_latest_published", { p_platform: platform });
+    if (error) throw new Error(`FUT.GG latest publication time unavailable: ${error.message}`);
+    if (!data || Date.parse(String(data)) < Date.parse(publishedAt)) fresh.push({ platform, name, publishedAt });
+  }
+  if (!fresh.length) return { unchanged: true, requests: 1 };
+  const index = await readJson(url(manifest, "player-prices-index"), request);
+  const result: Record<string, unknown> = { requests: 2 + fresh.length };
+  for (const f of fresh) {
+    const blob = await readJson(url(manifest, f.name), request);
+    validateBlob(index, blob);
+    const { data, error } = await db.rpc("ingest_futgg_hot", { p_platform: f.platform, p_game_year: 27, p_published_at: f.publishedAt, p_index: index, p_prices: blob });
+    if (error) throw new Error(`FUT.GG ${f.platform} hourly ingestion failed: ${error.message}`);
+    result[f.platform] = data;
+  }
+  return result;
+}

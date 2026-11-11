@@ -18,6 +18,7 @@ import { checkPastedEvolution, evolutionsOverview } from "../_shared/fut/evoluti
 import { getAlertSettings, runPriceAlerts, setAlertSettings } from "../_shared/fut/alerts.ts";
 import { setBuyPrice, tradeOverview } from "../_shared/fut/trades.ts";
 import { sellOrKeep } from "../_shared/fut/sell-keep.ts";
+import { cardPriceHistory } from "../_shared/fut/price-history.ts";
 import { describe as describeRequirement, parseRequirements } from "../_shared/fut/sbc.ts";
 import { importSquad, type ImportImage } from "../_shared/fut/squad-import.ts";
 import { bestSquads, squadRoles, suggestForSlot } from "../_shared/fut/squad-suggest.ts";
@@ -338,6 +339,12 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
 
     // Daily strategy: today's buys, sells, transfer list fixes and budget split from prices, coins and club. Advice only.
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2_000_000_000) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
+    // Price history graph: one card's FUT.GG price (twice daily + hourly hot cards) with market-wide drops marked.
+    if (route === "/prices/history" && m === "GET") {
+      const days = Number(url.searchParams.get("days") ?? 30);
+      if (!Number.isInteger(days) || days < 1 || days > 90) throw new FutError("days must be a whole number from 1 to 90.");
+      return json({ data: await cardPriceHistory(db, userId, platformParam(url.searchParams.get("platform")), url.searchParams.get("card_id") ?? "", days) });
+    }
     // Sell or keep: a verdict for every tradeable club card (saved squads, live evolutions, SBC fodder, FUT.GG trend).
     if (route === "/club/sell-or-keep" && m === "GET") {
       const platform = platformParam(url.searchParams.get("platform"));
