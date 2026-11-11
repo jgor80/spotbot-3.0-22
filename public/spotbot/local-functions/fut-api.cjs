@@ -6918,6 +6918,114 @@ function isValidPrice(price, rules = DEFAULT_MARKET_RULES) {
   return Number.isInteger(price) && price >= rules.min_price && price % stepAt(price, rules) === 0;
 }
 
+// supabase/functions/_shared/fut/strategy-model.ts
+var HORIZON_H = 96;
+var WINDOW_DAYS = 30;
+var MIN_RESULTS = 30;
+var SMOOTH = 10;
+var FEATURE_LABEL = { kind: "Card type", band: "Price", discount: "Discount", bounce: "Bounce", trend: "3-day trend", weekday: "Day picked" };
+var priceBand = (p) => p < 5e3 ? "under 5k" : p < 2e4 ? "5k to 20k" : p < 1e5 ? "20k to 100k" : "100k+";
+var discountBand = (d) => d < 0.08 ? "5 to 8% under" : d < 0.12 ? "8 to 12% under" : "12%+ under";
+var bounceBand = (rising, falling) => rising >= 1 ? "bounced" : falling === 0 ? "flat" : "still dipping";
+var trendBand = (change72) => change72 === null ? "unknown" : change72 < -20 ? "crashing" : change72 < -8 ? "falling" : "steady";
+function resolvePick(p, trail, latest, now2) {
+  const pickAge = (Date.parse(latest) - Date.parse(p.picked_at)) / 36e5;
+  const done = (o) => ({ ...p, resolved_at: new Date(now2).toISOString(), ...o });
+  const after = (trail?.prices ?? []).flatMap((price, i) => {
+    const since = pickAge - trail.ages[i];
+    return since > 0.5 && since <= HORIZON_H + 0.5 ? [{ price, since }] : [];
+  });
+  if (!after.length) return pickAge > 7 * 24 ? done({ outcome: "expired" }) : null;
+  const best = Math.max(...after.map((a) => a.price)), low = Math.min(...after.map((a) => a.price)), final = after.at(-1).price;
+  const closed = pickAge >= HORIZON_H;
+  if (p.side === "buy") {
+    const hit = after.find((a) => a.price >= p.target);
+    if (hit) return done({ outcome: "hit", hours_to_hit: Math.round(hit.since), best_price: best, final_price: final });
+    return closed ? done({ outcome: "miss", best_price: best, final_price: final }) : null;
+  }
+  if (low <= p.price * 0.92) return done({ outcome: "good", best_price: best, final_price: final });
+  return closed ? done({ outcome: final < p.price ? "good" : "bad", best_price: best, final_price: final }) : null;
+}
+var quantile = (xs, q) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b), i = (s.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
+  return s[lo] + (s[hi] - s[lo]) * (i - lo);
+};
+var clampN = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+var pc = (v) => Math.round(v * 100);
+function buckets(rows, key2, win, overall) {
+  const out = {};
+  for (const r2 of rows) {
+    const k = key2(r2);
+    if (!k) continue;
+    const b = out[k] ??= { n: 0, wins: 0, rate: 0, factor: 1 };
+    b.n++;
+    if (win(r2)) b.wins++;
+  }
+  for (const b of Object.values(out)) {
+    const smoothed = (b.wins + SMOOTH * overall) / (b.n + SMOOTH);
+    b.rate = Math.round(b.wins / b.n * 1e3) / 1e3;
+    b.factor = overall > 0 ? Math.round(clampN(smoothed / overall, 0.5, 1.6) * 1e3) / 1e3 : 1;
+  }
+  return out;
+}
+function learnModel(platform, rows, now2) {
+  const buys = rows.filter((r2) => r2.side === "buy" && (r2.outcome === "hit" || r2.outcome === "miss"));
+  const sells = rows.filter((r2) => r2.side === "sell" && (r2.outcome === "good" || r2.outcome === "bad"));
+  const hits2 = buys.filter((r2) => r2.outcome === "hit");
+  const rate = buys.length ? hits2.length / buys.length : null;
+  const ready = buys.length >= MIN_RESULTS;
+  const factors = {};
+  if (rate !== null) for (const f2 of Object.keys(FEATURE_LABEL)) {
+    factors[f2] = buckets(buys, (r2) => r2.features[f2], (r2) => r2.outcome === "hit", rate);
+  }
+  const reaches = buys.flatMap((r2) => r2.best_price != null && r2.target > r2.price ? [(r2.best_price - r2.price) / (r2.target - r2.price)] : []);
+  const q = quantile(reaches, 0.4);
+  const reach = ready && q !== null ? Math.round(clampN(q, 0.5, 1) * 100) / 100 : 1;
+  const rate_at_reach = reaches.length ? Math.round(reaches.filter((x) => x >= reach).length / reaches.length * 1e3) / 1e3 : null;
+  const hours = quantile(hits2.flatMap((r2) => r2.hours_to_hit != null ? [r2.hours_to_hit] : []), 0.5);
+  const sellRate = sells.length ? sells.filter((r2) => r2.outcome === "good").length / sells.length : null;
+  const by_reason = sellRate === null ? {} : buckets(sells, (r2) => r2.features.reason, (r2) => r2.outcome === "good", sellRate);
+  const lessons = [];
+  if (!ready) lessons.push(`Still watching: ${buys.length} of the first ${MIN_RESULTS} buy picks have settled. Picks are ranked by the plain rules until then.`);
+  else {
+    lessons.push(`${pc(rate)}% of buy picks reached their target within 4 days (${buys.length} picks in the last ${WINDOW_DAYS} days).`);
+    if (hours !== null) lessons.push(`Picks that sold usually got there in about ${Math.round(hours)} hours.`);
+    if (reach < 1) lessons.push(`Prices usually stopped short of the old targets, so targets are now set ${pc(reach)}% of the way to the 7-day middle price; ${pc(rate_at_reach ?? 0)}% of past picks reached that.`);
+    const notable = Object.entries(factors).flatMap(([f2, bs]) => Object.entries(bs).filter(([, b]) => b.n >= 10 && Math.abs(b.factor - 1) >= 0.15).map(([k, b]) => ({ f: f2, k, b }))).sort((a, b) => Math.abs(b.b.factor - 1) - Math.abs(a.b.factor - 1)).slice(0, 4);
+    for (const { f: f2, k, b } of notable) lessons.push(`${FEATURE_LABEL[f2]} "${k}": ${pc(b.rate)}% hit (${b.n} picks), so these are ranked ${b.factor > 1 ? "higher" : "lower"}.`);
+  }
+  if (sells.length >= 15) lessons.push(`Sell calls were right ${pc(sellRate)}% of the time (${sells.length} calls).`);
+  return {
+    version: 1,
+    platform,
+    updated_at: new Date(now2).toISOString(),
+    window_days: WINDOW_DAYS,
+    ready,
+    buys: { n: buys.length, hits: hits2.length, rate: rate === null ? null : Math.round(rate * 1e3) / 1e3, median_hours_to_hit: hours === null ? null : Math.round(hours), reach, rate_at_reach, factors },
+    sells: { n: sells.length, good: sells.length ? sells.filter((r2) => r2.outcome === "good").length : 0, rate: sellRate === null ? null : Math.round(sellRate * 1e3) / 1e3, by_reason },
+    lessons
+  };
+}
+function buyOutlook(model, f2) {
+  if (!model?.ready || model.buys.rate === null) return { factor: 1, p_hit: null, similar: 0 };
+  let factor = 1, similar = Infinity;
+  for (const k of Object.keys(FEATURE_LABEL)) {
+    const b = model.buys.factors[k]?.[f2[k]];
+    if (b) {
+      factor *= b.factor;
+      similar = Math.min(similar, b.n);
+    }
+  }
+  factor = clampN(Math.pow(factor, 0.7), 0.35, 2);
+  return { factor, p_hit: Math.round(clampN(model.buys.rate * factor, 0.02, 0.9) * 100) / 100, similar: similar === Infinity ? 0 : similar };
+}
+function sellOutlook(model, reason) {
+  const b = model?.sells.by_reason[reason];
+  if (!b || b.n < 15) return { factor: 1, rate: null, n: b?.n ?? 0 };
+  return { factor: b.factor, rate: b.rate, n: b.n };
+}
+
 // supabase/functions/_shared/fut/strategy.ts
 var fail6 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
@@ -7074,6 +7182,7 @@ function marketTiming(now2) {
 var RISK = { careful: { reserve: 0.35, picks: 4, cap: 0.2, min_roi: 0.05 }, normal: { reserve: 0.2, picks: 6, cap: 0.3, min_roi: 0.03 }, bold: { reserve: 0.1, picks: 8, cap: 0.4, min_roi: 0.02 } };
 var MIN_PROFIT = 150;
 function scoreBuys(cards, timing, o) {
+  const reach = o.model?.ready ? o.model.buys.reach : 1;
   const out = [];
   for (const { card, stats: s } of cards) {
     if (!card.tracked || s.points < 6 || s.latest_age_h > 13 || s.latest < 1e3 || s.latest > o.max_price) continue;
@@ -7082,7 +7191,8 @@ function scoreBuys(cards, timing, o) {
     if (discount < 0.05) continue;
     if (s.falling >= 3 && s.latest <= s.min) continue;
     const buy_at = down(s.latest);
-    const sell_at = down(Math.min(s.median, s.max * 0.98));
+    const target_raw = down(Math.min(s.median, s.max * 0.98));
+    const sell_at = reach < 1 && target_raw > buy_at ? Math.max(buy_at, down(buy_at + (target_raw - buy_at) * reach)) : target_raw;
     const profit = net(sell_at) - buy_at, roi = profit / buy_at;
     if (profit < MIN_PROFIT || roi < o.min_roi) continue;
     const kind = cardKind(card), range = (s.max - s.min) / s.median;
@@ -7103,7 +7213,14 @@ function scoreBuys(cards, timing, o) {
     if (range > 0.6) risks.push("Very jumpy price this week.");
     if (s.change_72h !== null && s.change_72h < -20) risks.push(`Down ${Math.abs(s.change_72h)}% in 3 days: could be a new promo pulling it down.`);
     if (kind === "promo") risks.push("Promo card: supply can jump if it comes back in packs or an SBC.");
-    const score3 = roi * conf * (1 + 0.3 * timing.buy_bias) + bonus * roi;
+    const features = { kind, band: priceBand(s.latest), discount: discountBand(discount), bounce: bounceBand(s.rising, s.falling), trend: trendBand(s.change_72h), weekday: timing.weekday };
+    const learned = buyOutlook(o.model, features);
+    if (learned.p_hit !== null) {
+      why.push(`Past picks like this reached their target ${Math.round(learned.p_hit * 100)}% of the time${learned.similar ? ` (from ${learned.similar}+ similar picks)` : ""}.`);
+      if (learned.factor < 0.8) risks.push("Picks like this have done worse than average, so it's ranked lower.");
+    }
+    const score3 = (roi * conf * (1 + 0.3 * timing.buy_bias) + bonus * roi) * learned.factor;
+    if (learned.p_hit !== null) conf = learned.p_hit >= 0.6 ? 1 : learned.p_hit >= 0.4 ? 0.7 : 0.4;
     out.push({
       ea_item_id: card.ea_item_id,
       name: card.name,
@@ -7125,15 +7242,18 @@ function scoreBuys(cards, timing, o) {
       change_24h: s.change_24h,
       points: s.points,
       confidence: conf >= 0.85 ? "high" : conf >= 0.6 ? "medium" : "low",
-      hold: kind === "fodder" ? "Same day to 2 days" : "1 to 4 days",
+      hold: o.model?.ready && o.model.buys.median_hours_to_hit != null ? `about ${o.model.buys.median_hours_to_hit} hours` : kind === "fodder" ? "Same day to 2 days" : "1 to 4 days",
       why,
       risks,
-      score: score3
+      score: score3,
+      target_raw,
+      features,
+      p_hit: learned.p_hit
     });
   }
   return out.sort((a, b) => b.score - a.score);
 }
-function scoreSells(club, stats, timing, squad) {
+function scoreSells(club, stats, timing, squad, model) {
   const out = [];
   const event = timing.events.find((e) => e.days > 0 && e.days <= 10);
   for (const card of club) {
@@ -7168,7 +7288,9 @@ function scoreSells(club, stats, timing, squad) {
     const list_at = near(price), quick_at = Math.max(RULES.min_price, list_at - stepAt(list_at, RULES));
     const in_squad = squad.has(card.card_id);
     if (in_squad) why += " It's in your active squad, so only sell if you have a replacement.";
-    score3 = score3 * (1 + 0.3 * timing.sell_bias) * (in_squad ? 0.3 : 1) * Math.log10(price);
+    const learned = sellOutlook(model, reason);
+    if (learned.rate !== null) why += ` Calls like this were right ${Math.round(learned.rate * 100)}% of the time (${learned.n} calls).`;
+    score3 = score3 * (1 + 0.3 * timing.sell_bias) * (in_squad ? 0.3 : 1) * Math.log10(price) * learned.factor;
     out.push({
       card_id: card.card_id,
       ea_item_id: card.ea_item_id,
@@ -7186,7 +7308,8 @@ function scoreSells(club, stats, timing, squad) {
       reason,
       why,
       in_squad,
-      score: score3
+      score: score3,
+      right_rate: learned.rate
     });
   }
   return out.sort((a, b) => b.score - a.score);
@@ -7261,7 +7384,8 @@ function buildStrategy(input) {
   }), timing, {
     max_price: per_pick !== null && per_pick >= 1e3 ? per_pick : 15e6,
     min_roi: risk.min_roi,
-    owned
+    owned,
+    model: input.model
   });
   const buys = [], seenPlayer = /* @__PURE__ */ new Set();
   let left = spend ?? 0, slots = free_slots;
@@ -7283,7 +7407,7 @@ function buildStrategy(input) {
     buys.push(p);
   }
   const watch = candidates.filter((p) => !buys.includes(p) && !seenPlayer.has(`${p.name}|${p.rating}`)).slice(0, 8);
-  const sells = input.club ? scoreSells(input.club, stats, timing, input.squad_card_ids).slice(0, stance === "sell" ? 10 : 6) : [];
+  const sells = input.club ? scoreSells(input.club, stats, timing, input.squad_card_ids, input.model).slice(0, stance === "sell" ? 10 : 6) : [];
   const names = new Map([...byEa].map(([k, v]) => [k, v.name]));
   for (const x of input.club ?? []) if (x.ea_item_id) names.set(x.ea_item_id, x.name);
   const pile = input.tradepile ? pileFixes(input.tradepile, stats, names) : [];
@@ -7322,23 +7446,44 @@ function buildStrategy(input) {
     sells,
     transfer_list: pile,
     record,
+    learning: learningSummary(input.model, input.followed ?? []),
     notes,
     verified: false
+  };
+}
+function learningSummary(model, followed) {
+  const done = followed.filter((t) => t.profit !== null);
+  return {
+    ready: !!model?.ready,
+    updated_at: model?.updated_at ?? null,
+    buy_picks: model?.buys.n ?? 0,
+    buy_hit_rate: model?.buys.rate ?? null,
+    hours_to_hit: model?.buys.median_hours_to_hit ?? null,
+    target_reach: model?.buys.reach ?? 1,
+    sell_calls: model?.sells.n ?? 0,
+    sell_right_rate: model?.sells.rate ?? null,
+    lessons: model?.lessons ?? ["Learning starts with the next price refresh: every refresh logs the day's picks and checks earlier ones against the prices since."],
+    followed: { trades: followed.length, sold: done.length, profit: done.reduce((n, t) => n + (t.profit ?? 0), 0), items: followed.slice(0, 20) }
   };
 }
 var riskParam = (v) => v === "careful" || v === "bold" ? v : "normal";
 var arr2 = (v) => Array.isArray(v) ? v : null;
 async function dailyStrategy(db2, userId, platform, opts = {}) {
   const now2 = opts.now ?? Date.now();
-  const [stateRes, clubRes, pastRes, squadRes] = await Promise.all([
+  const [stateRes, clubRes, pastRes, squadRes, modelRes, tradesRes] = await Promise.all([
     db2.from("account_state").select("balance,tradepile,profile,balance_at").eq("user_id", userId).eq("platform", platform).maybeSingle(),
     db2.rpc("club_trade_value", { p_user: userId, p_platform: platform }),
     db2.from("strategy_plans").select("plan_date,prices_at,plan").eq("user_id", userId).eq("platform", platform).order("plan_date", { ascending: false }).limit(8),
-    db2.from("squads").select("id").eq("user_id", userId).eq("is_active", true).limit(1)
+    db2.from("squads").select("id").eq("user_id", userId).eq("is_active", true).limit(1),
+    db2.from("strategy_model").select("model").eq("platform", platform).maybeSingle(),
+    db2.from("trade_log").select("ea_item_id,bought_for,bought_at,sold_for").eq("user_id", userId).eq("platform", platform).gte("bought_at", new Date(now2 - 9 * 864e5).toISOString()).limit(500)
   ]);
   fail6(stateRes.error);
   fail6(pastRes.error);
   fail6(squadRes.error);
+  fail6(modelRes.error);
+  fail6(tradesRes.error);
+  const model = modelRes.data?.model ?? null;
   if (clubRes.error) throw new FutError(`Your club is unavailable: ${clubRes.error.message}`, 500);
   const state = stateRes.data ?? null;
   const balance = state?.balance ?? null;
@@ -7391,7 +7536,9 @@ async function dailyStrategy(db2, userId, platform, opts = {}) {
     tradepile_max: profile?.tradepile_max ?? null,
     squad_card_ids: squad,
     past,
-    risk: opts.risk
+    risk: opts.risk,
+    model,
+    followed: followedTrades(past, tradesRes.data ?? [])
   });
   if (series.latest && plan.buys.length) {
     const keep2 = { buys: plan.buys.map((b) => ({ ea_item_id: b.ea_item_id, name: b.name, buy_at: b.buy_at, sell_at: b.sell_at, quantity: b.quantity })), sells: plan.sells.map((s) => ({ ea_item_id: s.ea_item_id, name: s.name, list_at: s.list_at })), stance: plan.stance, mood: plan.mood };
@@ -7400,6 +7547,98 @@ async function dailyStrategy(db2, userId, platform, opts = {}) {
     fail6((await db2.from("strategy_plans").delete().eq("user_id", userId).eq("platform", platform).lt("plan_date", cutoff)).error);
   }
   return { platform, ...plan };
+}
+function followedTrades(past, trades) {
+  const out = [];
+  const used = /* @__PURE__ */ new Set();
+  for (const p of past) {
+    if (!p.prices_at) continue;
+    const from = Date.parse(p.prices_at), to = from + 3 * 864e5;
+    for (const b of p.buys) {
+      for (const t of trades) {
+        const at = t.bought_at ? Date.parse(String(t.bought_at)) : NaN;
+        if (used.has(t) || Number(t.ea_item_id) !== b.ea_item_id || !(at >= from && at <= to) || t.bought_for == null) continue;
+        used.add(t);
+        const sold = t.sold_for == null ? null : Number(t.sold_for);
+        out.push({ plan_date: p.plan_date, ea_item_id: b.ea_item_id, name: b.name, bought_for: Number(t.bought_for), sold_for: sold, profit: sold === null ? null : net(sold) - Number(t.bought_for), target: b.sell_at });
+      }
+    }
+  }
+  return out;
+}
+var LOG_BUYS = 80;
+var LOG_SELLS = 40;
+function marketSells(cards, stats, timing) {
+  const club = cards.filter((c4) => c4.tracked).map((c4) => ({ card_id: String(c4.ea_item_id), ea_item_id: c4.ea_item_id, name: c4.name, version: c4.version, rating: c4.rating, position: c4.position, tradeable_quantity: 1, price: null }));
+  return scoreSells(club, stats, timing, /* @__PURE__ */ new Set()).filter((s) => s.reason === "near_high" || s.reason === "falling");
+}
+async function runStrategyLearning(db2, now2 = Date.now()) {
+  const out = {};
+  for (const platform of ["console", "pc"]) {
+    const { data: open, error: openErr } = await db2.from("strategy_pick_log").select("*").eq("platform", platform).is("outcome", null).order("picked_at", { ascending: true }).limit(5e3);
+    fail6(openErr);
+    const openRows = open ?? [];
+    const { data: sd, error } = await db2.rpc("strategy_price_series", { p_platform: platform, p_ids: [...new Set(openRows.map((r2) => Number(r2.ea_item_id)))].slice(0, 5e3), p_days: 8 });
+    if (error) throw new FutError(`Prices are unavailable: ${error.message}`, 500);
+    const d = sd ?? {}, latest = d.latest ?? null;
+    if (!latest) {
+      out[platform] = { skipped: "no prices" };
+      continue;
+    }
+    const cards = arr2(d.cards) ?? [], snaps = arr2(d.snapshots) ?? [];
+    const byEa = new Map(cards.map((c4) => [c4.ea_item_id, c4]));
+    const settled = openRows.flatMap((r2) => {
+      const x = resolvePick({ ...r2, ea_item_id: Number(r2.ea_item_id) }, byEa.get(Number(r2.ea_item_id)), latest, now2);
+      return x ? [x] : [];
+    });
+    for (let i = 0; i < settled.length; i += 500) fail6((await db2.from("strategy_pick_log").upsert(settled.slice(i, i + 500), { onConflict: "platform,side,ea_item_id,picked_at" })).error);
+    const { count: count2, error: cErr } = await db2.from("strategy_pick_log").select("ea_item_id", { count: "exact", head: true }).eq("platform", platform).eq("picked_at", latest);
+    fail6(cErr);
+    let logged = 0;
+    if (!count2) {
+      const window_h = snaps.length ? Math.min(Math.max(...snaps), 7 * 24) : 0;
+      const stats = /* @__PURE__ */ new Map();
+      for (const c4 of cards) {
+        const keep2 = c4.ages.map((a, i) => a <= 7 * 24 ? i : -1).filter((i) => i >= 0);
+        const s = cardStats({ ...c4, prices: keep2.map((i) => c4.prices[i]), ages: keep2.map((i) => c4.ages[i]) }, window_h);
+        if (s) stats.set(c4.ea_item_id, s);
+      }
+      const timing = marketTiming(Date.parse(latest));
+      const buys = scoreBuys([...stats].flatMap(([ea, s]) => {
+        const card = byEa.get(ea);
+        return card ? [{ card, stats: s }] : [];
+      }), timing, { max_price: 15e6, min_roi: 0.03, owned: /* @__PURE__ */ new Set() }).slice(0, LOG_BUYS);
+      const sells = marketSells(cards, stats, timing).slice(0, LOG_SELLS);
+      const rows = [
+        ...buys.map((b, i) => ({ platform, side: "buy", ea_item_id: b.ea_item_id, picked_at: latest, rank: i + 1, price: b.buy_at, target: b.target_raw, features: b.features })),
+        ...sells.map((x, i) => ({
+          platform,
+          side: "sell",
+          ea_item_id: x.ea_item_id,
+          picked_at: latest,
+          rank: i + 1,
+          price: x.list_at,
+          target: x.median ?? x.list_at,
+          features: { reason: x.reason, kind: cardKind({ version: x.version, rating: x.rating ?? 0, is_icon: !!byEa.get(x.ea_item_id)?.is_icon, is_hero: !!byEa.get(x.ea_item_id)?.is_hero }), band: priceBand(x.list_at) }
+        }))
+      ];
+      for (let i = 0; i < rows.length; i += 500) fail6((await db2.from("strategy_pick_log").upsert(rows.slice(i, i + 500), { onConflict: "platform,side,ea_item_id,picked_at" })).error);
+      logged = rows.length;
+    }
+    const since = new Date(now2 - WINDOW_DAYS * 864e5).toISOString();
+    const results = [];
+    for (let from = 0; ; from += 1e3) {
+      const { data, error: rErr } = await db2.from("strategy_pick_log").select("side,ea_item_id,picked_at,price,target,features,outcome,hours_to_hit,best_price,final_price").eq("platform", platform).gte("picked_at", since).in("outcome", ["hit", "miss", "good", "bad"]).order("picked_at", { ascending: true }).range(from, from + 999);
+      fail6(rErr);
+      results.push(...data ?? []);
+      if (!data || data.length < 1e3 || results.length >= 5e4) break;
+    }
+    const model = learnModel(platform, results, now2);
+    fail6((await db2.from("strategy_model").upsert({ platform, model, updated_at: model.updated_at }, { onConflict: "platform" })).error);
+    fail6((await db2.from("strategy_pick_log").delete().eq("platform", platform).lt("picked_at", new Date(now2 - 90 * 864e5).toISOString())).error);
+    out[platform] = { settled: settled.length, logged, results: results.length, ready: model.ready, hit_rate: model.buys.rate };
+  }
+  return out;
 }
 
 // supabase/functions/_shared/fut/sbc.ts
@@ -11315,7 +11554,7 @@ function median3(xs) {
   const m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
-function quantile(xs, q) {
+function quantile2(xs, q) {
   if (!xs.length) return null;
   const s = [...xs].sort((a, b) => a - b);
   const i = (s.length - 1) * q;
@@ -11435,7 +11674,7 @@ function summarizeIndex(def, ix, currentPrices, rules = DEFAULT_MARKET_RULES) {
   const enough = s.length >= rules.min_points && (last?.constituents ?? 0) > 0;
   const c24 = changes["24h"];
   const trend = !enough || c24 === null ? "insufficient_data" : c24 > rules.thresholds.regime_trend_24h ? "rising" : c24 < -rules.thresholds.regime_trend_24h ? "falling" : "sideways";
-  const q = (x) => Math.round(quantile(currentPrices, x));
+  const q = (x) => Math.round(quantile2(currentPrices, x));
   return {
     basket_id: def.id,
     label: def.label,
@@ -12145,8 +12384,8 @@ function createMarketService(deps) {
         const s = snap.series.get(o.id);
         return s && freshness(s, snap.as_of, rules).status === "fresh" ? [s] : [];
       });
-      const pc = peerChanges(peers);
-      out.push({ benchmark: b, changes: Object.fromEntries(WINDOWS.map((w) => [w, pc[w].value])), peers: pc["24h"].n });
+      const pc2 = peerChanges(peers);
+      out.push({ benchmark: b, changes: Object.fromEntries(WINDOWS.map((w) => [w, pc2[w].value])), peers: pc2["24h"].n });
     }
     const m = snap.indexes.find((i) => i.basket_id === "market");
     const ms_ = snap.indexSeries.get("market") ?? [];
@@ -13014,7 +13253,7 @@ async function handle(req, deps) {
   if (req.method === "POST" && /\/fut-api\/?$/.test(new URL(req.url).pathname)) {
     if (!await deps.isBot?.(req)) return err(401, "Only the bot's scheduler can run jobs.");
     const job = (await req.json().catch(() => null))?.job;
-    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts" && job !== "strategy-learn") return err(400, "Unknown job.");
     try {
       if (job === "knowledge-ingest") {
         const env = deps.env ?? ((k) => Deno.env.get(k));
@@ -13043,6 +13282,7 @@ async function handle(req, deps) {
       }
       if (job === "futgg-attributes") return json({ data: await syncFutggAttributes(deps.db, deps.fetch) });
       if (job === "price-alerts") return json({ data: await runPriceAlerts(deps.db) });
+      if (job === "strategy-learn") return json({ data: await runStrategyLearning(deps.db) });
       if (job === "futgg-catalogue") {
         const result2 = await syncFutggCatalogue(deps.db, deps.fetch);
         await (await marketFor(deps.db)).rebalanceBaskets();
