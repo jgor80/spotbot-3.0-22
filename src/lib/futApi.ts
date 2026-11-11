@@ -114,15 +114,27 @@ export type MarketPlatform = "console" | "pc";
 
 // Daily strategy (GET /strategy): advice only, GafferBot never trades.
 export type StrategyRisk = "careful" | "normal" | "bold";
-export interface StrategyBuy { ea_item_id: number; name: string; version: string | null; rating: number; position: string | null; kind: string; price: number; buy_at: number; sell_at: number; profit: number; roi: number; quantity: number | null; spend: number | null; total_profit: number | null; median: number; low: number; high: number; change_24h: number | null; points: number; confidence: "low" | "medium" | "high"; hold: string; why: string[]; risks: string[]; target_raw?: number; p_hit?: number | null }
+export interface StrategyBuy { ea_item_id: number; name: string; version: string | null; rating: number; position: string | null; kind: string; price: number; buy_at: number; sell_at: number; profit: number; roi: number; quantity: number | null; spend: number | null; total_profit: number | null; median: number; low: number; high: number; change_24h: number | null; points: number; confidence: "low" | "medium" | "high"; hold: string; why: string[]; risks: string[]; target_raw?: number; p_hit?: number | null; max_buy?: number }
 export interface StrategySell { card_id: string; ea_item_id: number; name: string; version: string | null; rating: number | null; position: string | null; quantity: number; list_at: number; quick_at: number; after_tax: number; median: number | null; high: number | null; change_24h: number | null; reason: string; why: string; in_squad: boolean }
 export interface StrategyPileFix { ea_item_id: number; name: string; rating: number | null; state: string; buy_now: number | null; price: number | null; action: "clear" | "relist" | "lower"; list_at: number | null; why: string }
 export interface StrategyRecordItem { plan_date: string; name: string; buy_at: number; sell_at: number; best: number | null; now: number | null; outcome: "hit" | "open_up" | "open_down" | "too_soon" | "unknown"; now_pct: number | null }
+export interface StrategyMove {
+  kind: "buy" | "sell" | "relist" | "wait"; title: string; detail: string; coins: number | null; chance: number | null;
+  ea_item_id: number | null; name: string | null; first: string | null; prices_at: string | null; next_update: string;
+}
+export interface StrategyRange { key: "low" | "medium" | "high"; label: string; sub: string; pick: StrategyBuy | null; affordable: boolean | null; others: StrategyBuy[] }
+export interface StrategyPrices { at: string | null; refresh_at: string | null; source: "live" | "refresh"; age_h: number | null; note: string }
 export interface DailyStrategy {
   platform: MarketPlatform; as_of: string; uk_date: string; prices_at: string | null; headline: string; stance: "buy" | "sell" | "flip";
   mood: { label: string; median_24h: number | null; median_72h: number | null; cards: number };
   timing: { uk_time: string; weekday: string; buy_bias: number; sell_bias: number; extra_reserve: number; now: string; next: string | null; events: { name: string; date: string; days: number; advice: string }[]; daily: string };
   budget: { coins: number | null; coins_source: "helper" | "entered" | null; coins_at: string | null; reserve_pct: number; reserve: number | null; spend: number | null; per_pick: number | null; buy_spend: number; expected_profit: number; free_slots: number; risk: StrategyRisk };
+  /** The one best move to make coins right now, recomputed with every price update. */
+  move?: StrategyMove;
+  /** Best flip per price range (low, medium, high). */
+  ranges?: StrategyRange[];
+  /** Where the prices came from and how old they are. */
+  prices?: StrategyPrices;
   steps: string[]; buys: StrategyBuy[]; watch: StrategyBuy[]; sells: StrategySell[]; transfer_list: StrategyPileFix[];
   record: { days: number; picks: number; hit: number; open_up: number; open_down: number; avg_now_pct: number | null; items: StrategyRecordItem[] };
   learning?: {

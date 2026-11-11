@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { CalendarClock, Lightbulb, ListChecks, ShieldAlert, TrendingDown, TrendingUp, Repeat } from "lucide-react";
-import { futApi, futKeys, type DailyStrategy, type StrategyBuy, type StrategyRisk, type StrategySell } from "@/lib/futApi";
+import { CalendarClock, Coins, Lightbulb, ListChecks, ShieldAlert, TrendingDown, TrendingUp, Repeat } from "lucide-react";
+import { futApi, futKeys, type DailyStrategy, type StrategyBuy, type StrategyMove, type StrategyRange, type StrategyRisk, type StrategySell } from "@/lib/futApi";
 import { FutCardArt } from "@/components/fut/FutCardArt";
 import { ErrorNotice } from "@/components/fut/FutShared";
 import { Badge } from "@/components/ui/badge";
@@ -46,7 +46,7 @@ function BuyRow({ b, sized }: { b: StrategyBuy; sized: boolean }) {
       <div className="flex flex-wrap gap-1.5"><Badge variant="outline" className={CONFIDENCE[b.confidence]}>{b.confidence} confidence</Badge>{b.kind === "fodder" && <Badge variant="outline">SBC fodder</Badge>}</div>
     </div>
     <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-      <div><dt className="text-xs text-muted-foreground">Buy up to</dt><dd className="font-semibold tabular-nums">{coins(b.buy_at)}</dd></div>
+      <div><dt className="text-xs text-muted-foreground">Buy Now price</dt><dd className="font-semibold tabular-nums">{coins(b.buy_at)}</dd>{b.max_buy != null && <dd className="text-xs text-muted-foreground">Don't pay over {coins(b.max_buy)}</dd>}</div>
       <div><dt className="text-xs text-muted-foreground">List at</dt><dd className="font-semibold tabular-nums">{coins(b.sell_at)}</dd></div>
       <div><dt className="text-xs text-muted-foreground">Profit each, after tax</dt><dd className="font-semibold tabular-nums text-success">+{coins(b.profit)} <span className="text-xs font-normal">({b.roi}%)</span></dd></div>
       <div><dt className="text-xs text-muted-foreground">{sized ? "Buy" : "Hold for"}</dt><dd className="font-semibold tabular-nums">{sized && b.quantity ? `${b.quantity} × = ${coins(b.spend)}` : b.hold}</dd></div>
@@ -81,12 +81,70 @@ const OUTCOME: Record<string, { label: string; className: string }> = {
   unknown: { label: "No price", className: "text-muted-foreground" },
 };
 
+const MOVE: Record<StrategyMove["kind"], { label: string; className: string; Icon: typeof Coins }> = {
+  buy: { label: "Buy to flip", className: "text-success", Icon: TrendingUp },
+  sell: { label: "Sell now", className: "text-warning", Icon: TrendingDown },
+  relist: { label: "Relist", className: "text-primary", Icon: Repeat },
+  wait: { label: "Hold", className: "text-muted-foreground", Icon: ShieldAlert },
+};
+
+/** The single "how to make coins right now" recommendation, at the top of the page. */
+function MakeCoinsNow({ m }: { m: StrategyMove }) {
+  const k = MOVE[m.kind];
+  const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return <div className="space-y-3 rounded-lg border-2 border-primary/50 bg-primary/5 p-5">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary"><Coins className="h-4 w-4" />Make coins now</p>
+      <span className="text-xs text-muted-foreground">Recomputed from FUT.GG's hourly prices{m.prices_at ? ` · prices at ${time(m.prices_at)}` : ""}</span>
+    </div>
+    {m.first && <p className="flex gap-2 text-sm"><ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-primary" /><span>{m.first}</span></p>}
+    <div className="flex gap-3">
+      <k.Icon className={`mt-1 h-6 w-6 shrink-0 ${k.className}`} />
+      <div className="min-w-0 space-y-1">
+        <p className="font-display text-xl font-bold leading-snug sm:text-2xl">{m.title}</p>
+        <p className="text-sm text-muted-foreground">{m.detail}</p>
+      </div>
+    </div>
+    {(m.coins != null || m.chance != null) && <div className="flex flex-wrap gap-2">
+      <Badge variant="outline" className={k.className}>{k.label}</Badge>
+      {m.coins != null && <Badge variant="outline">{m.kind === "buy" ? (m.chance != null ? `Expected +${numberText(m.coins)} coins` : `+${numberText(m.coins)} coins if it sells`) : `About ${numberText(m.coins)} coins after tax`}</Badge>}
+      {m.chance != null && <Badge variant="outline">{Math.round(m.chance * 100)}% chance{m.kind === "sell" ? " it's right" : " it sells"}</Badge>}
+    </div>}
+  </div>;
+}
+
+/** The best flip in each price range, side by side. */
+function PriceRanges({ ranges }: { ranges: StrategyRange[] }) {
+  return <div className="grid gap-3 md:grid-cols-3">{ranges.map(r => <div key={r.key} className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-4">
+    <div className="flex items-baseline justify-between gap-2"><p className="font-display font-semibold">{r.label}</p><p className="text-xs text-muted-foreground">{r.sub}</p></div>
+    {r.pick ? <>
+      <Card c={r.pick} />
+      <dl className="grid grid-cols-2 gap-2 text-sm">
+        <div><dt className="text-xs text-muted-foreground">Buy Now price</dt><dd className="font-semibold tabular-nums">{coins(r.pick.buy_at)}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">List at</dt><dd className="font-semibold tabular-nums">{coins(r.pick.sell_at)}</dd></div>
+        <div><dt className="text-xs text-muted-foreground">Profit each, after tax</dt><dd className="font-semibold tabular-nums text-success">+{coins(r.pick.profit)} <span className="text-xs font-normal">({r.pick.roi}%)</span></dd></div>
+        <div><dt className="text-xs text-muted-foreground">Don't pay over</dt><dd className="font-semibold tabular-nums">{coins(r.pick.max_buy)}</dd></div>
+      </dl>
+      <div className="flex flex-wrap gap-1.5">
+        {r.pick.p_hit != null ? <Badge variant="outline">{Math.round(r.pick.p_hit * 100)}% chance it sells</Badge> : <Badge variant="outline" className={CONFIDENCE[r.pick.confidence]}>{r.pick.confidence} confidence</Badge>}
+        {r.pick.quantity ? <Badge variant="outline">Buy {r.pick.quantity} for {coins(r.pick.spend)}</Badge> : null}
+        {r.affordable === false && <Badge variant="outline" className="border-warning/40 text-warning">Over your per-card budget</Badge>}
+      </div>
+      <p className="text-xs text-muted-foreground">{r.pick.why[0]}</p>
+      {r.others.length > 0 && <div className="border-t border-border pt-2 text-xs text-muted-foreground"><p className="mb-1 font-medium text-foreground">Next best</p>
+        <ul className="space-y-1">{r.others.map(o => <li key={o.ea_item_id} className="flex justify-between gap-2"><span className="truncate">{o.name} {o.rating}</span><span className="shrink-0 tabular-nums">{coins(o.buy_at)} → {coins(o.sell_at)}</span></li>)}</ul></div>}
+    </> : <p className="text-sm text-muted-foreground">Nothing in this range is cheap enough to flip at a profit after tax right now.</p>}
+  </div>)}</div>;
+}
+
 function Plan({ d }: { d: DailyStrategy }) {
   const sized = d.budget.coins != null;
   const r = d.record;
   return <>
+    {d.move && <MakeCoinsNow m={d.move} />}
+    {d.prices && <p className={`flex gap-2 text-xs ${d.prices.source === "live" ? "text-muted-foreground" : "text-warning"}`}><ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{d.prices.note}</span></p>}
     <div className="space-y-3 rounded-lg border border-border bg-card p-5">
-      <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className={STANCE[d.stance].className}>{STANCE[d.stance].label}</Badge><span className="text-xs text-muted-foreground">{d.timing.weekday} {d.timing.uk_time} UK · prices from FUT.GG {d.prices_at ? dateText(d.prices_at) : "not loaded yet"}</span></div>
+      <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className={STANCE[d.stance].className}>{STANCE[d.stance].label}</Badge><span className="text-xs text-muted-foreground">{d.timing.weekday} {d.timing.uk_time} UK · {d.prices?.source === "live" ? "live" : ""} prices from FUT.GG {d.prices_at ? dateText(d.prices_at) : "not loaded yet"}</span></div>
       <p className="font-display text-lg font-semibold leading-snug sm:text-xl">{d.headline}</p>
       <p className="text-sm text-muted-foreground">{d.timing.now}</p>
     </div>
@@ -110,6 +168,10 @@ function Plan({ d }: { d: DailyStrategy }) {
       </ul>
     </Section>
 
+    {d.ranges && <Section title="Best flip by price">
+      <PriceRanges ranges={d.ranges} />
+    </Section>}
+
     <Section title={`Buy and flip (${d.buys.length})`}>
       {d.buys.length ? <ul className="space-y-3">{d.buys.map(b => <BuyRow key={b.ea_item_id} b={b} sized={sized} />)}</ul> :
         <p className="text-sm text-muted-foreground">No card is far enough under its usual price to flip at a profit after tax today. Keeping coins is a fine plan.</p>}
@@ -128,8 +190,8 @@ function Plan({ d }: { d: DailyStrategy }) {
 
     {d.watch.length > 0 && <Section title="Also worth a look">
       <p className="text-sm text-muted-foreground">More cards under their usual price that didn't make today's buys (budget, slots, or one per player).</p>
-      <div className="overflow-x-auto"><DataTable headers={["Card", "Buy up to", "List at", "Profit after tax", "Confidence"]} rows={d.watch.map(b => [
-        <Card c={b} />, coins(b.buy_at), coins(b.sell_at), <span className="tabular-nums text-success">+{coins(b.profit)} ({b.roi}%)</span>, b.confidence,
+      <div className="overflow-x-auto"><DataTable headers={["Card", "Buy Now price", "Don't pay over", "List at", "Profit after tax", "Confidence"]} rows={d.watch.map(b => [
+        <Card c={b} />, coins(b.buy_at), coins(b.max_buy), coins(b.sell_at), <span className="tabular-nums text-success">+{coins(b.profit)} ({b.roi}%)</span>, b.confidence,
       ])} /></div>
     </Section>}
 
@@ -171,7 +233,7 @@ export default function FutStrategyPage() {
   const query = useQuery({
     queryKey: [...futKeys.strategy, context.platform, budget, risk],
     queryFn: () => futApi.strategy(context.platform, { budget, risk }),
-    enabled: context.enabled, staleTime: 5 * 60_000, refetchInterval: 30 * 60_000, placeholderData: keepPreviousData,
+    enabled: context.enabled, staleTime: 5 * 60_000, refetchInterval: 15 * 60_000, placeholderData: keepPreviousData,
   });
   const apply = () => {
     const n = Number(budgetText.replace(/[,\s]/g, ""));
