@@ -30,6 +30,21 @@ async function futggPrices({ supabase, callFunction, sendDM, syncFutggPrices = r
   if (error) throw new Error(`futgg-catalogue: ${error?.message || error}`);
   console.log('⏰ futgg-catalogue:', JSON.stringify(data?.data ?? data));
   await priceAlerts({ supabase, callFunction, sendDM });
+  await strategyLearn({ callFunction });
+}
+// Daily Strategy learning after each refresh (fut-api job): settle earlier picks against the new prices, log this
+// refresh's picks and relearn. STRATEGY_LEARN=off pauses just this. A failure here never fails the price job.
+async function strategyLearn({ callFunction }) {
+  if (!futggOn() || process.env.STRATEGY_LEARN === 'off' || !callFunction) return null;
+  try {
+    const { data, error } = await callFunction('fut-api', { job: 'strategy-learn' }, 280000);
+    if (error) throw new Error(error?.message || String(error));
+    console.log('⏰ strategy-learn:', JSON.stringify(data?.data ?? data));
+    return data?.data ?? data;
+  } catch (e) {
+    console.warn('⏰ strategy-learn failed:', e.message);
+    return null;
+  }
 }
 // Market Lab price alerts after each refresh: fut-api says what fired per website account; the bot DMs the
 // Discord account linked to it. PRICE_ALERTS=off pauses just this.
@@ -180,4 +195,4 @@ function startScheduler({ supabase, callFunction, activeClubs, sendDM }) {
   console.log(`⏰ Scheduler running ${JOBS.length} jobs on this server`);
 }
 
-module.exports = { startScheduler, JOBS, due, eaSyncBody, futggStale, futggAttributes, futggHourly, priceAlerts, EA_SLICES, STUCK_MS };
+module.exports = { startScheduler, JOBS, due, eaSyncBody, futggStale, futggAttributes, futggHourly, priceAlerts, strategyLearn, EA_SLICES, STUCK_MS };

@@ -142,7 +142,7 @@ async function handleMessage(msg, tools, ctx, visible = everyTool) {
   }
   const isNotification = msg.id === void 0 || msg.id === null;
   if (isNotification) return null;
-  const ok = (result) => ({ jsonrpc: "2.0", id: msg.id, result });
+  const ok = (result2) => ({ jsonrpc: "2.0", id: msg.id, result: result2 });
   const params = msg.params || {};
   switch (msg.method) {
     case "initialize": {
@@ -1637,9 +1637,9 @@ function fc27Percentile(role, metric, value) {
   const q = FC27_BENCHMARKS.roles[role]?.[metric];
   const m = BENCH_METRICS.find((b) => b.key === metric);
   if (!q || value === null || !m) return null;
-  let pct4;
-  if (value <= q[0]) pct4 = 0;
-  else if (value >= q[q.length - 1]) pct4 = 100;
+  let pct5;
+  if (value <= q[0]) pct5 = 0;
+  else if (value >= q[q.length - 1]) pct5 = 100;
   else {
     let i = 0;
     while (i < q.length - 1 && q[i + 1] < value) i++;
@@ -1647,9 +1647,9 @@ function fc27Percentile(role, metric, value) {
     while (j < q.length - 1 && q[j + 1] === value) j++;
     const lo = q[i], hi = q[j];
     const frac = hi > lo ? (value - lo) / (hi - lo) : 0.5;
-    pct4 = (i + frac * (j - i)) * (100 / (q.length - 1));
+    pct5 = (i + frac * (j - i)) * (100 / (q.length - 1));
   }
-  return m.lowerIsBetter ? 100 - pct4 : pct4;
+  return m.lowerIsBetter ? 100 - pct5 : pct5;
 }
 function benchmarkPlayer(p) {
   const role = benchRole(p);
@@ -1906,8 +1906,8 @@ function toInsightMatches(rows, lineups = []) {
   const sortedLineups = lineups.map((l) => ({ formation: l.formation, at: new Date(l.created_at).getTime() })).sort((a, b) => a.at - b.at);
   const matches = [];
   for (const row of rows) {
-    const result = normalizeResult(row);
-    if (!result) continue;
+    const result2 = normalizeResult(row);
+    if (!result2) continue;
     const playedAt = matchTime(row);
     const t = playedAt.getTime();
     let formation = null;
@@ -1918,7 +1918,7 @@ function toInsightMatches(rows, lineups = []) {
     const players = Array.isArray(row.player_stats) ? row.player_stats : [];
     matches.push({
       id: row.id,
-      result,
+      result: result2,
       scoreFor: num2(row.score_for) ?? 0,
       scoreAgainst: num2(row.score_against) ?? 0,
       matchType: row.match_type,
@@ -3632,7 +3632,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
   const protectedSlots = squad.slots.filter((s) => s.locked || target && s.slot === target.slot).map((s) => s.slot);
   const swappable = squad.slots.filter((s) => !protectedSlots.includes(s.slot));
   const constraints = { budget, max_swaps: maxSwaps, allow_manager_change: allowMgr, allow_net_loss: allowLoss, protected_slots: protectedSlots };
-  const result = (status, extra = {}) => ({
+  const result2 = (status, extra = {}) => ({
     ...prov,
     status,
     goal: { ...goal, description },
@@ -3645,7 +3645,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
     stats: { candidates: 0, managers: 0, squads_checked: 0 },
     ...extra
   });
-  if (met(base)) return result("already_met");
+  if (met(base)) return result2("already_met");
   const tp = target ? base.chemistry.players.find((p) => p.slot === target.slot) : null;
   const wantKeys = /* @__PURE__ */ new Map();
   if (target?.card) for (const t of LINK_TYPES) {
@@ -3753,7 +3753,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
     reason: r2.reason
   }));
   if (picked.length) {
-    return result("solutions", { solutions: picked.map((st, i) => toSolution(st, i)), rejected: rejectedOut, stats });
+    return result2("solutions", { solutions: picked.map((st, i) => toSolution(st, i)), rejected: rejectedOut, stats });
   }
   const blockers = [];
   if (moves.length === 0) blockers.push(`No card or manager in the search pool shares a club, league or nation that would help, within ${budget.toLocaleString("en-US")} coins. Add cards to the pool or raise the budget.`);
@@ -3778,7 +3778,7 @@ function optimizeSquad(squad, goal, pool, rules, options = {}) {
     if (!allowLoss && rejected.length) blockers.push(`Net loss: ${rejectedOut[0].swaps.join(" + ")} reaches the goal but drops team chemistry ${rejectedOut[0].total_before} -> ${rejectedOut[0].total_after}.`);
     if (!blockers.length) blockers.push("Not reachable even with each constraint relaxed on its own: the search pool lacks the right cards. Add club or market cards that share this player's nation, league or club.");
   }
-  return result("infeasible", { rejected: rejectedOut, blockers, stats });
+  return result2("infeasible", { rejected: rejectedOut, blockers, stats });
   function toSolution(st, i) {
     const swaps = [];
     let mgr = null;
@@ -4499,9 +4499,9 @@ var ParseInputLazyPath = class {
     return this._cachedPath;
   }
 };
-var handleResult = (ctx, result) => {
-  if (isValid(result)) {
-    return { success: true, data: result.value };
+var handleResult = (ctx, result2) => {
+  if (isValid(result2)) {
+    return { success: true, data: result2.value };
   } else {
     if (!ctx.common.issues.length) {
       throw new Error("Validation failed but no issues detected.");
@@ -4572,21 +4572,21 @@ var ZodType = class {
     };
   }
   _parseSync(input) {
-    const result = this._parse(input);
-    if (isAsync(result)) {
+    const result2 = this._parse(input);
+    if (isAsync(result2)) {
       throw new Error("Synchronous parse encountered promise.");
     }
-    return result;
+    return result2;
   }
   _parseAsync(input) {
-    const result = this._parse(input);
-    return Promise.resolve(result);
+    const result2 = this._parse(input);
+    return Promise.resolve(result2);
   }
   parse(data, params) {
-    const result = this.safeParse(data, params);
-    if (result.success)
-      return result.data;
-    throw result.error;
+    const result2 = this.safeParse(data, params);
+    if (result2.success)
+      return result2.data;
+    throw result2.error;
   }
   safeParse(data, params) {
     const ctx = {
@@ -4601,8 +4601,8 @@ var ZodType = class {
       data,
       parsedType: getParsedType(data)
     };
-    const result = this._parseSync({ data, path: ctx.path, parent: ctx });
-    return handleResult(ctx, result);
+    const result2 = this._parseSync({ data, path: ctx.path, parent: ctx });
+    return handleResult(ctx, result2);
   }
   "~validate"(data) {
     const ctx = {
@@ -4618,9 +4618,9 @@ var ZodType = class {
     };
     if (!this["~standard"].async) {
       try {
-        const result = this._parseSync({ data, path: [], parent: ctx });
-        return isValid(result) ? {
-          value: result.value
+        const result2 = this._parseSync({ data, path: [], parent: ctx });
+        return isValid(result2) ? {
+          value: result2.value
         } : {
           issues: ctx.common.issues
         };
@@ -4634,17 +4634,17 @@ var ZodType = class {
         };
       }
     }
-    return this._parseAsync({ data, path: [], parent: ctx }).then((result) => isValid(result) ? {
-      value: result.value
+    return this._parseAsync({ data, path: [], parent: ctx }).then((result2) => isValid(result2) ? {
+      value: result2.value
     } : {
       issues: ctx.common.issues
     });
   }
   async parseAsync(data, params) {
-    const result = await this.safeParseAsync(data, params);
-    if (result.success)
-      return result.data;
-    throw result.error;
+    const result2 = await this.safeParseAsync(data, params);
+    if (result2.success)
+      return result2.data;
+    throw result2.error;
   }
   async safeParseAsync(data, params) {
     const ctx = {
@@ -4660,8 +4660,8 @@ var ZodType = class {
       parsedType: getParsedType(data)
     };
     const maybeAsyncResult = this._parse({ data, path: ctx.path, parent: ctx });
-    const result = await (isAsync(maybeAsyncResult) ? maybeAsyncResult : Promise.resolve(maybeAsyncResult));
-    return handleResult(ctx, result);
+    const result2 = await (isAsync(maybeAsyncResult) ? maybeAsyncResult : Promise.resolve(maybeAsyncResult));
+    return handleResult(ctx, result2);
   }
   refine(check, message) {
     const getIssueProperties = (val) => {
@@ -4674,13 +4674,13 @@ var ZodType = class {
       }
     };
     return this._refinement((val, ctx) => {
-      const result = check(val);
+      const result2 = check(val);
       const setError = () => ctx.addIssue({
         code: ZodIssueCode.custom,
         ...getIssueProperties(val)
       });
-      if (typeof Promise !== "undefined" && result instanceof Promise) {
-        return result.then((data) => {
+      if (typeof Promise !== "undefined" && result2 instanceof Promise) {
+        return result2.then((data) => {
           if (!data) {
             setError();
             return false;
@@ -4689,7 +4689,7 @@ var ZodType = class {
           }
         });
       }
-      if (!result) {
+      if (!result2) {
         setError();
         return false;
       } else {
@@ -6184,14 +6184,14 @@ var ZodArray = class _ZodArray extends ZodType {
     if (ctx.common.async) {
       return Promise.all([...ctx.data].map((item, i) => {
         return def.type._parseAsync(new ParseInputLazyPath(ctx, item, ctx.path, i));
-      })).then((result2) => {
-        return ParseStatus.mergeArray(status, result2);
+      })).then((result3) => {
+        return ParseStatus.mergeArray(status, result3);
       });
     }
-    const result = [...ctx.data].map((item, i) => {
+    const result2 = [...ctx.data].map((item, i) => {
       return def.type._parseSync(new ParseInputLazyPath(ctx, item, ctx.path, i));
     });
-    return ParseStatus.mergeArray(status, result);
+    return ParseStatus.mergeArray(status, result2);
   }
   get element() {
     return this._def.type;
@@ -6597,18 +6597,18 @@ var ZodUnion = class extends ZodType {
     const { ctx } = this._processInputParams(input);
     const options = this._def.options;
     function handleResults(results) {
-      for (const result of results) {
-        if (result.result.status === "valid") {
-          return result.result;
+      for (const result2 of results) {
+        if (result2.result.status === "valid") {
+          return result2.result;
         }
       }
-      for (const result of results) {
-        if (result.result.status === "dirty") {
-          ctx.common.issues.push(...result.ctx.common.issues);
-          return result.result;
+      for (const result2 of results) {
+        if (result2.result.status === "dirty") {
+          ctx.common.issues.push(...result2.ctx.common.issues);
+          return result2.result;
         }
       }
-      const unionErrors = results.map((result) => new ZodError(result.ctx.common.issues));
+      const unionErrors = results.map((result2) => new ZodError(result2.ctx.common.issues));
       addIssueToContext(ctx, {
         code: ZodIssueCode.invalid_union,
         unionErrors
@@ -6646,15 +6646,15 @@ var ZodUnion = class extends ZodType {
           },
           parent: null
         };
-        const result = option._parseSync({
+        const result2 = option._parseSync({
           data: ctx.data,
           path: ctx.path,
           parent: childCtx
         });
-        if (result.status === "valid") {
-          return result;
-        } else if (result.status === "dirty" && !dirty) {
-          dirty = { result, ctx: childCtx };
+        if (result2.status === "valid") {
+          return result2;
+        } else if (result2.status === "dirty" && !dirty) {
+          dirty = { result: result2, ctx: childCtx };
         }
         if (childCtx.common.issues.length) {
           issues.push(childCtx.common.issues);
@@ -7199,9 +7199,9 @@ var ZodFunction = class _ZodFunction extends ZodType {
           error.addIssue(makeArgsIssue(args, e));
           throw error;
         });
-        const result = await Reflect.apply(fn, this, parsedArgs);
-        const parsedReturns = await me._def.returns._def.type.parseAsync(result, params).catch((e) => {
-          error.addIssue(makeReturnsIssue(result, e));
+        const result2 = await Reflect.apply(fn, this, parsedArgs);
+        const parsedReturns = await me._def.returns._def.type.parseAsync(result2, params).catch((e) => {
+          error.addIssue(makeReturnsIssue(result2, e));
           throw error;
         });
         return parsedReturns;
@@ -7213,10 +7213,10 @@ var ZodFunction = class _ZodFunction extends ZodType {
         if (!parsedArgs.success) {
           throw new ZodError([makeArgsIssue(args, parsedArgs.error)]);
         }
-        const result = Reflect.apply(fn, this, parsedArgs.data);
-        const parsedReturns = me._def.returns.safeParse(result, params);
+        const result2 = Reflect.apply(fn, this, parsedArgs.data);
+        const parsedReturns = me._def.returns.safeParse(result2, params);
         if (!parsedReturns.success) {
-          throw new ZodError([makeReturnsIssue(result, parsedReturns.error)]);
+          throw new ZodError([makeReturnsIssue(result2, parsedReturns.error)]);
         }
         return parsedReturns.data;
       });
@@ -7468,43 +7468,43 @@ var ZodEffects = class extends ZodType {
         return Promise.resolve(processed).then(async (processed2) => {
           if (status.value === "aborted")
             return INVALID;
-          const result = await this._def.schema._parseAsync({
+          const result2 = await this._def.schema._parseAsync({
             data: processed2,
             path: ctx.path,
             parent: ctx
           });
-          if (result.status === "aborted")
+          if (result2.status === "aborted")
             return INVALID;
-          if (result.status === "dirty")
-            return DIRTY(result.value);
+          if (result2.status === "dirty")
+            return DIRTY(result2.value);
           if (status.value === "dirty")
-            return DIRTY(result.value);
-          return result;
+            return DIRTY(result2.value);
+          return result2;
         });
       } else {
         if (status.value === "aborted")
           return INVALID;
-        const result = this._def.schema._parseSync({
+        const result2 = this._def.schema._parseSync({
           data: processed,
           path: ctx.path,
           parent: ctx
         });
-        if (result.status === "aborted")
+        if (result2.status === "aborted")
           return INVALID;
-        if (result.status === "dirty")
-          return DIRTY(result.value);
+        if (result2.status === "dirty")
+          return DIRTY(result2.value);
         if (status.value === "dirty")
-          return DIRTY(result.value);
-        return result;
+          return DIRTY(result2.value);
+        return result2;
       }
     }
     if (effect.type === "refinement") {
       const executeRefinement = (acc) => {
-        const result = effect.refinement(acc, checkCtx);
+        const result2 = effect.refinement(acc, checkCtx);
         if (ctx.common.async) {
-          return Promise.resolve(result);
+          return Promise.resolve(result2);
         }
-        if (result instanceof Promise) {
+        if (result2 instanceof Promise) {
           throw new Error("Async refinement encountered during synchronous parse operation. Use .parseAsync instead.");
         }
         return acc;
@@ -7542,18 +7542,18 @@ var ZodEffects = class extends ZodType {
         });
         if (!isValid(base))
           return INVALID;
-        const result = effect.transform(base.value, checkCtx);
-        if (result instanceof Promise) {
+        const result2 = effect.transform(base.value, checkCtx);
+        if (result2 instanceof Promise) {
           throw new Error(`Asynchronous transform encountered during synchronous parse operation. Use .parseAsync instead.`);
         }
-        return { status: status.value, value: result };
+        return { status: status.value, value: result2 };
       } else {
         return this._def.schema._parseAsync({ data: ctx.data, path: ctx.path, parent: ctx }).then((base) => {
           if (!isValid(base))
             return INVALID;
-          return Promise.resolve(effect.transform(base.value, checkCtx)).then((result) => ({
+          return Promise.resolve(effect.transform(base.value, checkCtx)).then((result2) => ({
             status: status.value,
-            value: result
+            value: result2
           }));
         });
       }
@@ -7650,18 +7650,18 @@ var ZodCatch = class extends ZodType {
         issues: []
       }
     };
-    const result = this._def.innerType._parse({
+    const result2 = this._def.innerType._parse({
       data: newCtx.data,
       path: newCtx.path,
       parent: {
         ...newCtx
       }
     });
-    if (isAsync(result)) {
-      return result.then((result2) => {
+    if (isAsync(result2)) {
+      return result2.then((result3) => {
         return {
           status: "valid",
-          value: result2.status === "valid" ? result2.value : this._def.catchValue({
+          value: result3.status === "valid" ? result3.value : this._def.catchValue({
             get error() {
               return new ZodError(newCtx.common.issues);
             },
@@ -7672,7 +7672,7 @@ var ZodCatch = class extends ZodType {
     } else {
       return {
         status: "valid",
-        value: result.status === "valid" ? result.value : this._def.catchValue({
+        value: result2.status === "valid" ? result2.value : this._def.catchValue({
           get error() {
             return new ZodError(newCtx.common.issues);
           },
@@ -7786,14 +7786,14 @@ var ZodPipeline = class _ZodPipeline extends ZodType {
 };
 var ZodReadonly = class extends ZodType {
   _parse(input) {
-    const result = this._def.innerType._parse(input);
+    const result2 = this._def.innerType._parse(input);
     const freeze = (data) => {
       if (isValid(data)) {
         data.value = Object.freeze(data.value);
       }
       return data;
     };
-    return isAsync(result) ? result.then((data) => freeze(data)) : freeze(result);
+    return isAsync(result2) ? result2.then((data) => freeze(data)) : freeze(result2);
   }
   unwrap() {
     return this._def.innerType;
@@ -10276,8 +10276,8 @@ function verdictFor(p, v) {
   if (!p.coins) return { verdict: "points_only", ratio: null, why: p.points ? "FC Points only. Compare value per 100 points with other points packs." : "No coin price in the store." };
   const net = p.untradeable ? 1 : 1 - EA_TAX;
   const typical = v.ev_low * net / p.coins, withLuck = v.ev_high * net / p.coins;
-  const pct4 = (x) => `${Math.round(x * 100)}%`;
-  const both = `about ${pct4(typical)} of the price in a typical pack, ${pct4(withLuck)} on average with the big pulls`;
+  const pct5 = (x) => `${Math.round(x * 100)}%`;
+  const both = `about ${pct5(typical)} of the price in a typical pack, ${pct5(withLuck)} on average with the big pulls`;
   if (p.untradeable) {
     return typical >= 0.75 ? { verdict: "only_for_fodder", ratio: typical, why: `Untradeable, so you can't sell what you pull. If you'd otherwise buy these cards for SBCs, they're worth ${both}.` } : { verdict: "skip", ratio: typical, why: `Untradeable, and even as SBC fodder the cards are worth ${both}.` };
   }
@@ -12144,6 +12144,102 @@ async function metaTop(db, userId, b) {
   return { platform, position, role: role?.role ?? null, roles: roles.map((r2) => r2.role), max_price: maxPrice, published_at: res.published_at, cards: cards.slice(0, 30), with_stats: res.with_stats, note: NOTE, verified: false };
 }
 
+// supabase/functions/_shared/fut/champs.ts
+var MODES = ["champs", "rivals", "squad_battles", "other"];
+var MODE_LABEL = { champs: "Champions", rivals: "Rivals", squad_battles: "Squad Battles", other: "Games" };
+var result = (g) => g.goals_for > g.goals_against ? "W" : g.goals_for < g.goals_against ? "L" : g.penalties === "won" ? "W" : g.penalties === "lost" ? "L" : "D";
+var pct4 = (n, d) => d ? Math.round(n / d * 100) : null;
+function summarize3(games, run2) {
+  const list = [...games].sort((a, b) => a.played_at.localeCompare(b.played_at));
+  const res = list.map(result);
+  const w = res.filter((r2) => r2 === "W").length, d = res.filter((r2) => r2 === "D").length, l = res.filter((r2) => r2 === "L").length;
+  const gf = list.reduce((n, g) => n + g.goals_for, 0), ga = list.reduce((n, g) => n + g.goals_against, 0);
+  let best = 0, cur = 0;
+  for (const r2 of res) {
+    cur = r2 === "W" ? cur + 1 : 0;
+    best = Math.max(best, cur);
+  }
+  let now2 = 0;
+  for (let i = res.length - 1; i >= 0 && res[i] === res[res.length - 1]; i--) now2++;
+  const byFormation = /* @__PURE__ */ new Map();
+  list.forEach((g, i) => {
+    const k = g.opponent_formation ?? "Not noted";
+    const s = byFormation.get(k) ?? { games: 0, w: 0, d: 0, l: 0, gf: 0, ga: 0 };
+    s.games++;
+    s[res[i] === "W" ? "w" : res[i] === "D" ? "d" : "l"]++;
+    s.gf += g.goals_for;
+    s.ga += g.goals_against;
+    byFormation.set(k, s);
+  });
+  const third = Math.ceil(list.length / 3);
+  const stages = list.length >= 6 ? [0, 1, 2].map((i) => {
+    const part = res.slice(i * third, (i + 1) * third);
+    return { stage: ["Start", "Middle", "End"][i], games: part.length, win_rate: pct4(part.filter((r2) => r2 === "W").length, part.length) };
+  }) : [];
+  const left = run2?.games_allowed ? Math.max(0, run2.games_allowed - list.length) : null;
+  const need = run2?.target_wins ? Math.max(0, run2.target_wins - w) : null;
+  const target = run2?.target_wins ? {
+    target: run2.target_wins,
+    need,
+    left,
+    status: need === 0 ? "reached" : left === null ? "open" : need > left ? "out of reach" : "on",
+    line: need === 0 ? `Target of ${run2.target_wins} wins reached.` : left === null ? `${need} more win${need === 1 ? "" : "s"} for ${run2.target_wins}.` : need > left ? `${run2.target_wins} wins is out of reach: ${need} needed, ${left} game${left === 1 ? "" : "s"} left.` : `${need} win${need === 1 ? "" : "s"} needed from ${left} game${left === 1 ? "" : "s"} left (${pct4(need, left)}%).`
+  } : null;
+  return {
+    games: list.length,
+    w,
+    d,
+    l,
+    win_rate: pct4(w, list.length),
+    goals_for: gf,
+    goals_against: ga,
+    goal_diff: gf - ga,
+    avg_for: list.length ? Math.round(gf / list.length * 10) / 10 : null,
+    avg_against: list.length ? Math.round(ga / list.length * 10) / 10 : null,
+    clean_sheets: list.filter((g) => g.goals_against === 0).length,
+    extra_time: list.filter((g) => g.extra_time || g.penalties).length,
+    opponent_quits: list.filter((g) => g.opponent_quit).length,
+    form: res.slice(-5).join(""),
+    best_win_streak: best,
+    current_streak: res.length ? `${res[res.length - 1]}${now2}` : null,
+    by_formation: [...byFormation.entries()].map(([formation, s]) => ({ formation, ...s, win_rate: pct4(s.w, s.games) })).sort((a, b) => b.games - a.games || a.formation.localeCompare(b.formation)),
+    stages,
+    target
+  };
+}
+function recapText(run2, s) {
+  const lines = [`**${run2.name}** \xB7 ${MODE_LABEL[run2.mode]}`, `${s.w}W ${s.d}D ${s.l}L from ${s.games}${run2.games_allowed ? ` of ${run2.games_allowed}` : ""} games${s.win_rate !== null ? ` (${s.win_rate}%)` : ""} \xB7 goals ${s.goals_for}-${s.goals_against}`];
+  if (s.form) lines.push(`Form: ${s.form.split("").join(" ")} \xB7 best run ${s.best_win_streak} wins`);
+  const tough = s.by_formation.filter((f2) => f2.formation !== "Not noted" && f2.games >= 2).sort((a, b) => (a.win_rate ?? 0) - (b.win_rate ?? 0))[0];
+  if (tough && (tough.win_rate ?? 100) < (s.win_rate ?? 0)) lines.push(`Toughest: ${tough.formation} (${tough.w}W from ${tough.games})`);
+  if (s.stages.length === 3 && s.stages[2].win_rate !== null && s.stages[0].win_rate !== null && s.stages[0].win_rate - s.stages[2].win_rate >= 20) lines.push(`Faded late: ${s.stages[0].win_rate}% early, ${s.stages[2].win_rate}% at the end.`);
+  if (s.target) lines.push(s.target.line);
+  return lines.join("\n");
+}
+var FORMATION_NAMES2 = new Set(Object.keys(FORMATIONS));
+var fail4 = (e) => {
+  if (e) throw new FutError(`Champs tracker: ${e.message ?? "database error"}`, 500);
+};
+async function champsOverview(db, userId, platform) {
+  const { data: runs, error } = await db.from("ut_runs").select("*").eq("user_id", userId).eq("platform", platform).order("started_at", { ascending: false }).limit(60);
+  fail4(error);
+  const list = runs ?? [];
+  const games = [];
+  const ids = list.map((r2) => r2.id);
+  for (let i = 0; i < ids.length; i += 50) {
+    const { data, error: e } = await db.from("ut_games").select("*").in("run_id", ids.slice(i, i + 50)).order("played_at", { ascending: true });
+    fail4(e);
+    games.push(...data ?? []);
+  }
+  const of = (id) => games.filter((g) => g.run_id === id);
+  const out = list.map((r2) => {
+    const s = summarize3(of(r2.id), r2);
+    return { ...r2, summary: s, recap: recapText(r2, s), games: of(r2.id).map((g) => ({ ...g, result: result(g) })) };
+  });
+  const byMode = MODES.map((m) => ({ mode: m, label: MODE_LABEL[m], ...summarize3(games.filter((g) => list.find((r2) => r2.id === g.run_id)?.mode === m)) })).filter((m) => m.games > 0);
+  return { platform, runs: out, by_mode: byMode, formations: [...FORMATION_NAMES2], note: "Games you logged yourself. Nothing is read from EA." };
+}
+
 // supabase/functions/gafferbot-mcp/fut.ts
 var SIGN_IN = "XI Lab uses your GafferBot website account. Sign in once at https://gafferbot.app/fut with Discord, then ask again.";
 async function account(ctx) {
@@ -12329,9 +12425,9 @@ var FUT_TOOLS = [
         allow_manager_change: typeof args.allow_manager_change === "boolean" ? args.allow_manager_change : void 0,
         allow_net_loss: typeof args.allow_net_loss === "boolean" ? args.allow_net_loss : void 0
       };
-      const result = await (await workspaceFor(db)).optimize(userId, id, { goal, options });
-      await logRun(db, userId, { squad: id, kind: "optimize", input: { goal, options }, result, via: "mcp" });
-      return result;
+      const result2 = await (await workspaceFor(db)).optimize(userId, id, { goal, options });
+      await logRun(db, userId, { squad: id, kind: "optimize", input: { goal, options }, result: result2, via: "mcp" });
+      return result2;
     })
   },
   {
@@ -12585,6 +12681,17 @@ FUT_TOOLS.push(
       const r2 = await metaTop(db, userId, b);
       return { ...r2, cards: r2.cards.slice(0, 15) };
     })
+  },
+  {
+    name: "get_my_fut_champs",
+    title: "My Champs and Rivals record (XI Lab tracker)",
+    description: "EA FC Ultimate Team: the Champions, Rivals and Squad Battles games the player logged on the website, grouped into runs (a Champs weekend, a Rivals week): record, goals, form, streaks, results against each opponent formation, how the run went early vs late, what they still need for their win target, and a Discord-ready recap per run. Logged by the player, not read from EA. " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db, userId } = await account(ctx);
+      const o = await champsOverview(db, userId, platformParam(args.platform));
+      return { ...o, formations: void 0, runs: o.runs.slice(0, 8).map((r2) => ({ ...r2, games: r2.games.slice(-30) })) };
+    })
   }
 );
 var KB_NOTE = "These are community opinions read from Reddit posts, YouTube videos and the player's own notes, not facts: say how many sources back a view, where people disagree, and link the sources.";
@@ -12650,10 +12757,10 @@ var adminCache = /* @__PURE__ */ new Map();
 async function clubAdmin(admin, discordUserId) {
   const hit = adminCache.get(discordUserId);
   if (hit && Date.now() - hit.at < ADMIN_CACHE_MS) return hit.admin;
-  const result = isBotOwner(discordUserId) || await isClubAdmin(admin, discordUserId, async (ids) => (await Promise.all(ids.slice(0, 100).map((g) => isDiscordClubLeader(g, discordUserId)))).some(Boolean));
+  const result2 = isBotOwner(discordUserId) || await isClubAdmin(admin, discordUserId, async (ids) => (await Promise.all(ids.slice(0, 100).map((g) => isDiscordClubLeader(g, discordUserId)))).some(Boolean));
   if (adminCache.size > 5e3) adminCache.clear();
-  adminCache.set(discordUserId, { admin: result, at: Date.now() });
-  return result;
+  adminCache.set(discordUserId, { admin: result2, at: Date.now() });
+  return result2;
 }
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",

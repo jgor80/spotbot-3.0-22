@@ -104,13 +104,13 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
   if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
   return (data ?? null) as T;
 }
-export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, evolutions: ["fut", "evolutions"] as const, trades: ["fut", "trades"] as const, sellKeep: ["fut", "sell-keep"] as const, meta: ["fut", "meta"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
+export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, evolutions: ["fut", "evolutions"] as const, trades: ["fut", "trades"] as const, sellKeep: ["fut", "sell-keep"] as const, champs: ["fut", "champs"] as const, meta: ["fut", "meta"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
 export type MarketPlatform = "console" | "pc";
 
 // Daily strategy (GET /strategy): advice only, GafferBot never trades.
 export type StrategyRisk = "careful" | "normal" | "bold";
-export interface StrategyBuy { ea_item_id: number; name: string; version: string | null; rating: number; position: string | null; kind: string; price: number; buy_at: number; sell_at: number; profit: number; roi: number; quantity: number | null; spend: number | null; total_profit: number | null; median: number; low: number; high: number; change_24h: number | null; points: number; confidence: "low" | "medium" | "high"; hold: string; why: string[]; risks: string[] }
+export interface StrategyBuy { ea_item_id: number; name: string; version: string | null; rating: number; position: string | null; kind: string; price: number; buy_at: number; sell_at: number; profit: number; roi: number; quantity: number | null; spend: number | null; total_profit: number | null; median: number; low: number; high: number; change_24h: number | null; points: number; confidence: "low" | "medium" | "high"; hold: string; why: string[]; risks: string[]; target_raw?: number; p_hit?: number | null }
 export interface StrategySell { card_id: string; ea_item_id: number; name: string; version: string | null; rating: number | null; position: string | null; quantity: number; list_at: number; quick_at: number; after_tax: number; median: number | null; high: number | null; change_24h: number | null; reason: string; why: string; in_squad: boolean }
 export interface StrategyPileFix { ea_item_id: number; name: string; rating: number | null; state: string; buy_now: number | null; price: number | null; action: "clear" | "relist" | "lower"; list_at: number | null; why: string }
 export interface StrategyRecordItem { plan_date: string; name: string; buy_at: number; sell_at: number; best: number | null; now: number | null; outcome: "hit" | "open_up" | "open_down" | "too_soon" | "unknown"; now_pct: number | null }
@@ -121,6 +121,11 @@ export interface DailyStrategy {
   budget: { coins: number | null; coins_source: "helper" | "entered" | null; coins_at: string | null; reserve_pct: number; reserve: number | null; spend: number | null; per_pick: number | null; buy_spend: number; expected_profit: number; free_slots: number; risk: StrategyRisk };
   steps: string[]; buys: StrategyBuy[]; watch: StrategyBuy[]; sells: StrategySell[]; transfer_list: StrategyPileFix[];
   record: { days: number; picks: number; hit: number; open_up: number; open_down: number; avg_now_pct: number | null; items: StrategyRecordItem[] };
+  learning?: {
+    ready: boolean; updated_at: string | null; buy_picks: number; buy_hit_rate: number | null; hours_to_hit: number | null; target_reach: number;
+    sell_calls: number; sell_right_rate: number | null; lessons: string[];
+    followed: { trades: number; sold: number; profit: number; items: { plan_date: string; ea_item_id: number; name: string; bought_for: number; sold_for: number | null; profit: number | null; target: number }[] };
+  };
   notes: string[]; verified: false;
 }
 export type MarketEvidence = Evidence | "verified";
@@ -223,6 +228,11 @@ export interface EvoCard { id: string; name: string; version: string | null; ove
 export interface EvoMatch { card: EvoCard; after: EvoCard; checks: { label: string; ok: boolean | null }[]; eligible: boolean | null; squad: { slot: string | null; gain: number } }
 export interface EvolutionView { id: string; name: string; description: string | null; end_at: string | null; coins: number | null; points: number | null; unread: string[]; source: "helper" | "pasted"; rule_lines: string[]; level_lines: string[][]; eligible: number; maybe: number; matches: EvoMatch[] }
 export interface MetaRoleScore { position: string; role: string; score: number; tier: string; chem_style: string | null; base: number; bonuses: { playstyles: number; height: number; accelerate: number; weak_foot: number; skill_moves: number }; strengths: string[]; weaknesses: string[]; playstyles: string[] }
+export type ChampsMode = "champs" | "rivals" | "squad_battles" | "other";
+export interface ChampsSummary { games: number; w: number; d: number; l: number; win_rate: number | null; goals_for: number; goals_against: number; goal_diff: number; avg_for: number | null; avg_against: number | null; clean_sheets: number; extra_time: number; opponent_quits: number; form: string; best_win_streak: number; current_streak: string | null; by_formation: { formation: string; games: number; w: number; d: number; l: number; gf: number; ga: number; win_rate: number | null }[]; stages: { stage: string; games: number; win_rate: number | null }[]; target: { target: number; need: number | null; left: number | null; status: string; line: string } | null }
+export interface ChampsGame { id: string; run_id: string; played_at: string; goals_for: number; goals_against: number; penalties: "won" | "lost" | null; extra_time: boolean; opponent_quit: boolean; opponent_formation: string | null; squad_name: string | null; notes: string | null; result: "W" | "D" | "L" }
+export interface ChampsRun { id: string; platform: MarketPlatform; mode: ChampsMode; name: string; games_allowed: number | null; target_wins: number | null; started_at: string; finished_at: string | null; summary: ChampsSummary; recap: string; games: ChampsGame[] }
+export interface ChampsOverview { platform: MarketPlatform; runs: ChampsRun[]; by_mode: (ChampsSummary & { mode: ChampsMode; label: string })[]; formations: string[]; note: string }
 export interface CardCompare {
   platform: MarketPlatform; summary: string; note: string; verified: false; shared_positions: string[]; shared_playstyles: string[]; chem_styles: { outfield: string[]; gk: string[] };
   cards: { id: string; name: string; rating: number; version: string | null; positions: string[]; ea_item_id: number | null; owned: boolean; chem_style: string | null; price: number | null; playstyles: string[]; only_this: string[]; meta: MetaRoleScore | null; wins: number; price_per_rating: number | null; price_per_meta: number | null }[];
@@ -319,6 +329,14 @@ export const futApi = {
   alerts: {
     settings: () => futRequest<{ dm: boolean; move_pct: number | null; needs_discord: string }>("/alerts/settings"),
     save: (input: { dm: boolean; move_pct: number | null }) => futRequest<{ dm: boolean; move_pct: number | null; needs_discord: string }>("/alerts/settings", "POST", input),
+  },
+  champs: {
+    overview: (platform: MarketPlatform) => futRequest<ChampsOverview>(`/champs?${new URLSearchParams({ platform })}`),
+    createRun: (input: { platform: MarketPlatform; mode: ChampsMode; name?: string; games_allowed?: number | null; target_wins?: number | null }) => futRequest<ChampsRun>("/champs/runs", "POST", input),
+    updateRun: (id: string, input: { name?: string; games_allowed?: number | null; target_wins?: number | null; finished?: boolean }) => futRequest<ChampsRun>(`/champs/runs/${encodeURIComponent(id)}`, "POST", input),
+    deleteRun: (id: string) => futRequest<{ deleted: string }>(`/champs/runs/${encodeURIComponent(id)}`, "DELETE"),
+    addGame: (runId: string, input: { goals_for: number; goals_against: number; penalties?: "won" | "lost" | null; opponent_quit?: boolean; opponent_formation?: string | null; notes?: string }) => futRequest<ChampsGame>(`/champs/runs/${encodeURIComponent(runId)}/games`, "POST", input),
+    deleteGame: (id: string) => futRequest<{ deleted: string }>(`/champs/games/${encodeURIComponent(id)}`, "DELETE"),
   },
   compareAny: (card_ids: string[], platform: MarketPlatform, chem_styles: Record<string, string>) => futRequest<CardCompare>("/compare/cards", "POST", { card_ids, platform, chem_styles }),
   meta: {
