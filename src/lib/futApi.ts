@@ -303,6 +303,7 @@ export const futApi = {
     pullFc27Market: () => futRequest<Fc27MarketPull>("/market/import/fc27-market", "POST", {}),
     sharing: () => futRequest<MarketSharing>("/market/sharing"),
     helper: () => futRequest<HelperStatus>("/helper"),
+    helperKey: () => futRequest<{ connected: boolean; key: string | null }>("/helper/key"),
     connectHelper: () => futRequest<HelperStatus>("/helper/connect", "POST", {}),
     disconnectHelper: () => futRequest<HelperStatus>("/helper", "DELETE"),
     setSharing: (sharing: boolean) => futRequest<MarketSharing>("/market/sharing", "POST", { sharing }),

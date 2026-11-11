@@ -321,6 +321,25 @@ Deno.test("helper key: shown once, can only upload prices and club, and stops wo
   assert((await viaKey(second.key, "POST", "/v1/helper/prices", { text })).status === 401, "turned-off key refused");
 });
 
+Deno.test("helper key: its owner can see it again on their profile, a helper key can't, and it's stored encrypted", async () => {
+  const db = futMemoryDb(seededRules());
+  const env = (k: string) => (k === "FUT_ENABLED" ? "true" : k === "SUPABASE_SERVICE_ROLE_KEY" ? "test-secret" : undefined);
+  const call = async (method: string, path: string, user: string | null = ME, bearer?: string) => {
+    const res = await handle(new Request(`http://local/functions/v1/fut-api${path}`, { method, headers: { ...(user ? { "x-test-user": user } : {}), ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) } }), { db, userFor: (req) => Promise.resolve(req.headers.get("x-test-user")), env });
+    return { status: res.status, data: await res.json() };
+  };
+  assert((await call("GET", "/v1/helper/key")).data.data.connected === false, "nothing to show yet");
+  const made = (await call("POST", "/v1/helper/connect")).data.data;
+  const row = (db.tables.helper_keys as { key_encrypted: string }[])[0];
+  assert(row.key_encrypted.startsWith("v1:") && !JSON.stringify(db.tables.helper_keys).includes(made.key), "encrypted, never plain");
+  const seen = (await call("GET", "/v1/helper/key")).data.data;
+  assert(seen.connected && seen.key === made.key, JSON.stringify(seen));
+  assert((await call("GET", "/v1/helper/key", null, made.key)).status === 403, "a helper key can't read itself");
+  // Someone else's row can't be read as yours: the ciphertext is tied to its owner.
+  (db.tables.helper_keys as { user_id: string }[])[0].user_id = OTHER;
+  assert((await call("GET", "/v1/helper/key", OTHER)).data.data.key === null, "tied to the owner");
+});
+
 Deno.test("fc27-market job: bot only, keeps every card with the feed time, feeds users' synced cards, skips a repeat", async () => {
   const db = futMemoryDb({ ...seededRules(), ...seededMarket() });
   const perm = { commercial_use: false, storage: true, retention_days: null, display: true, derived_analytics: true, model_training: false, redistribution: false, attribution: "fc27-market" };
