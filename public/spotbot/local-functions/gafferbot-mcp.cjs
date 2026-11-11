@@ -1637,9 +1637,9 @@ function fc27Percentile(role, metric, value) {
   const q = FC27_BENCHMARKS.roles[role]?.[metric];
   const m = BENCH_METRICS.find((b) => b.key === metric);
   if (!q || value === null || !m) return null;
-  let pct5;
-  if (value <= q[0]) pct5 = 0;
-  else if (value >= q[q.length - 1]) pct5 = 100;
+  let pct6;
+  if (value <= q[0]) pct6 = 0;
+  else if (value >= q[q.length - 1]) pct6 = 100;
   else {
     let i = 0;
     while (i < q.length - 1 && q[i + 1] < value) i++;
@@ -1647,9 +1647,9 @@ function fc27Percentile(role, metric, value) {
     while (j < q.length - 1 && q[j + 1] === value) j++;
     const lo = q[i], hi = q[j];
     const frac = hi > lo ? (value - lo) / (hi - lo) : 0.5;
-    pct5 = (i + frac * (j - i)) * (100 / (q.length - 1));
+    pct6 = (i + frac * (j - i)) * (100 / (q.length - 1));
   }
-  return m.lowerIsBetter ? 100 - pct5 : pct5;
+  return m.lowerIsBetter ? 100 - pct6 : pct6;
 }
 function benchmarkPlayer(p) {
   const role = benchRole(p);
@@ -2386,12 +2386,12 @@ function previewKey(discordUserId, tool, guildId, args) {
 function rememberPreview(discordUserId, tool, guildId, args, now2 = Date.now()) {
   previews.set(previewKey(discordUserId, tool, guildId, args), now2);
   if (previews.size > 5e3) {
-    for (const [k, at] of previews) if (now2 - at > PREVIEW_TTL_MS) previews.delete(k);
+    for (const [k, at2] of previews) if (now2 - at2 > PREVIEW_TTL_MS) previews.delete(k);
   }
 }
 function previewed(discordUserId, tool, guildId, args, now2 = Date.now()) {
-  const at = previews.get(previewKey(discordUserId, tool, guildId, args));
-  return at !== void 0 && now2 - at <= PREVIEW_TTL_MS;
+  const at2 = previews.get(previewKey(discordUserId, tool, guildId, args));
+  return at2 !== void 0 && now2 - at2 <= PREVIEW_TTL_MS;
 }
 
 // supabase/functions/gafferbot-mcp/manage.ts
@@ -8611,17 +8611,17 @@ function matchesRule(card, rule) {
   }
   return true;
 }
-function rebalance(def, cards, current, at) {
+function rebalance(def, cards, current, at2) {
   const want = new Set(cards.filter((c2) => matchesRule(c2, def.rule)).map((c2) => c2.id));
   const out = [];
   const open = /* @__PURE__ */ new Set();
   for (const m of current) {
     if (m.basket_id !== def.id) continue;
-    if (m.effective_to === null && !want.has(m.card_id)) out.push({ ...m, effective_to: at });
+    if (m.effective_to === null && !want.has(m.card_id)) out.push({ ...m, effective_to: at2 });
     else out.push(m);
     if (m.effective_to === null && want.has(m.card_id)) open.add(m.card_id);
   }
-  for (const id of want) if (!open.has(id)) out.push({ basket_id: def.id, card_id: id, effective_from: at, effective_to: null });
+  for (const id of want) if (!open.has(id)) out.push({ basket_id: def.id, card_id: id, effective_from: at2, effective_to: null });
   return out;
 }
 function membersAt(members, basket_id, t) {
@@ -9401,12 +9401,12 @@ function createMarketService(deps) {
     if (!c2) throw new MarketNotFoundError(`No card ${id}`);
     return c2;
   };
-  async function initBaskets(at, opts = {}) {
+  async function initBaskets(at2, opts = {}) {
     const cards = await deps.cards.catalogue();
     for (const b of baskets) {
       const cur = await deps.memberships.list(b.id);
       if (opts.backfilled && cur.length) continue;
-      const next = rebalance(b, cards, cur, at).map((m) => opts.backfilled && !cur.length ? { ...m, backfilled: true } : m);
+      const next = rebalance(b, cards, cur, at2).map((m) => opts.backfilled && !cur.length ? { ...m, backfilled: true } : m);
       await deps.memberships.replace(b.id, next);
     }
   }
@@ -9717,8 +9717,8 @@ function createMarketService(deps) {
       return { items, total_observations: held.length, evidence: "game_data", note: "Prices you captured for items XI Lab can't match to a card yet. They're kept privately and linked automatically once the card is added." };
     },
     /** Re-apply basket rules at `at` (a scheduled job in production). Closes and opens memberships; never rewrites history. */
-    async rebalanceBaskets(at = now2()) {
-      await initBaskets(at);
+    async rebalanceBaskets(at2 = now2()) {
+      await initBaskets(at2);
     }
   };
 }
@@ -10276,8 +10276,8 @@ function verdictFor(p, v) {
   if (!p.coins) return { verdict: "points_only", ratio: null, why: p.points ? "FC Points only. Compare value per 100 points with other points packs." : "No coin price in the store." };
   const net = p.untradeable ? 1 : 1 - EA_TAX;
   const typical = v.ev_low * net / p.coins, withLuck = v.ev_high * net / p.coins;
-  const pct5 = (x) => `${Math.round(x * 100)}%`;
-  const both = `about ${pct5(typical)} of the price in a typical pack, ${pct5(withLuck)} on average with the big pulls`;
+  const pct6 = (x) => `${Math.round(x * 100)}%`;
+  const both = `about ${pct6(typical)} of the price in a typical pack, ${pct6(withLuck)} on average with the big pulls`;
   if (p.untradeable) {
     return typical >= 0.75 ? { verdict: "only_for_fodder", ratio: typical, why: `Untradeable, so you can't sell what you pull. If you'd otherwise buy these cards for SBCs, they're worth ${both}.` } : { verdict: "skip", ratio: typical, why: `Untradeable, and even as SBC fodder the cards are worth ${both}.` };
   }
@@ -11569,7 +11569,7 @@ var MAX_TRADES = 5e3;
 function tradeSummary(rows, names, now2 = Date.now()) {
   const nameOf = (r2) => names.get(r2.ea_item_id)?.name ?? `Item ${r2.ea_item_id}`;
   const flips = rows.filter((r2) => r2.bought_for !== null && r2.sold_for !== null && r2.sold_at).map((r2) => {
-    const at = afterTax(r2.sold_for), profit = at - r2.bought_for;
+    const at2 = afterTax(r2.sold_for), profit = at2 - r2.bought_for;
     return {
       item_id: r2.item_id,
       ea_item_id: r2.ea_item_id,
@@ -11577,7 +11577,7 @@ function tradeSummary(rows, names, now2 = Date.now()) {
       rating: r2.rating,
       bought_for: r2.bought_for,
       sold_for: r2.sold_for,
-      after_tax: at,
+      after_tax: at2,
       profit,
       bought_at: r2.bought_at,
       sold_at: r2.sold_at,
@@ -12197,16 +12197,16 @@ async function metaTop(db, userId, b) {
 function historyStats(points, now2 = Date.now()) {
   if (!points.length) return { latest: null, low: null, high: null, change_24h: null, change_7d: null, change_range: null, hourly_points: 0 };
   const latest = points[points.length - 1];
-  const at = (ms3) => [...points].reverse().find((p) => Date.parse(p.t) <= now2 - ms3) ?? null;
-  const pct5 = (then) => then && then.price > 0 ? Math.round((latest.price - then.price) / then.price * 1e3) / 10 : null;
+  const at2 = (ms3) => [...points].reverse().find((p) => Date.parse(p.t) <= now2 - ms3) ?? null;
+  const pct6 = (then) => then && then.price > 0 ? Math.round((latest.price - then.price) / then.price * 1e3) / 10 : null;
   return {
     latest: latest.price,
     latest_at: latest.t,
     low: Math.min(...points.map((p) => p.price)),
     high: Math.max(...points.map((p) => p.price)),
-    change_24h: pct5(at(24 * 36e5)),
-    change_7d: pct5(at(7 * 864e5)),
-    change_range: pct5(points[0]),
+    change_24h: pct6(at2(24 * 36e5)),
+    change_7d: pct6(at2(7 * 864e5)),
+    change_range: pct6(points[0]),
     hourly_points: points.filter((p) => p.kind === "hourly").length
   };
 }
@@ -12317,11 +12317,99 @@ async function calendarFor(db, userId, platform, cardId, now2 = Date.now()) {
   return { ...out, card: { card_id: cardId, name: h.name ?? null, points: points.length, events: cardRhythm(points, now2) } };
 }
 
+// supabase/functions/_shared/fut/fodder.ts
+var RATINGS = [81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91];
+var SPIKE = 0.15;
+var CHEAP = -0.1;
+var median3 = (xs) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+var pct4 = (a, b) => a === null || b === null || !b ? null : Math.round((a / b - 1) * 1e3) / 10;
+var H = 36e5;
+function at(points, ms3) {
+  let hit = null;
+  for (const p of points) {
+    if (Date.parse(p.t) <= ms3) hit = p;
+    else break;
+  }
+  return hit;
+}
+function fodderRatings(points, now2 = Date.now()) {
+  const by = /* @__PURE__ */ new Map();
+  for (const p of [...points].sort((a, b) => a.t.localeCompare(b.t))) by.set(p.rating, [...by.get(p.rating) ?? [], p]);
+  const out = [];
+  for (const r2 of RATINGS) {
+    const list = by.get(r2);
+    if (!list?.length) continue;
+    const last = list.at(-1), lastMs = Date.parse(last.t);
+    const week = list.filter((p) => lastMs - Date.parse(p.t) <= 7 * 24 * H && p !== last).map((p) => p.floor);
+    const weekMed = week.length >= 4 ? median3(week) : null;
+    const month = list.filter((p) => now2 - Date.parse(p.t) <= 30 * 24 * H).map((p) => p.floor);
+    const vs = weekMed === null ? null : last.floor / weekMed - 1;
+    const signal = vs === null ? "new" : vs >= SPIKE ? "spike" : vs <= CHEAP ? "cheap" : "normal";
+    const k = (n) => n >= 1e3 ? `${Math.round(n / 100) / 10}k` : String(n);
+    const line = signal === "spike" ? `${r2}s are ${Math.round(vs * 100)}% above their week (${k(last.floor)} vs ${k(weekMed)}): likely SBC demand. Sell spare ${r2}s, don't buy them for SBCs now.` : signal === "cheap" ? `${r2}s are ${Math.round(-vs * 100)}% below their week (${k(last.floor)} vs ${k(weekMed)}): a good time to stock up for SBCs.` : signal === "new" ? `${r2}s: ${k(last.floor)}. Not enough refreshes yet to compare with the week.` : `${r2}s: ${k(last.floor)}, close to their week (${vs >= 0 ? "+" : ""}${Math.round(vs * 100)}%).`;
+    out.push({
+      rating: r2,
+      floor: last.floor,
+      cards: last.n,
+      at: last.t,
+      change_24h: pct4(last.floor, at(list, lastMs - 23 * H)?.floor ?? null),
+      change_7d: pct4(last.floor, at(list, lastMs - 7 * 24 * H + H)?.floor ?? null),
+      vs_week: vs === null ? null : Math.round(vs * 1e3) / 10,
+      low_30d: Math.min(...month, last.floor),
+      high_30d: Math.max(...month, last.floor),
+      signal,
+      line,
+      history: list.map((p) => ({ t: p.t, value: p.floor }))
+    });
+  }
+  return out;
+}
+function fodderIndexSeries(points, ratings = RATINGS) {
+  const times = [...new Set(points.map((p) => p.t))].sort();
+  const base = /* @__PURE__ */ new Map();
+  const series = [];
+  for (const t of times) {
+    const here = points.filter((p) => p.t === t && ratings.includes(p.rating));
+    for (const p of here) if (!base.has(p.rating)) base.set(p.rating, p.floor);
+    const rel = here.map((p) => p.floor / base.get(p.rating));
+    if (rel.length) series.push({ t, value: Math.round(rel.reduce((a, b) => a + b, 0) / rel.length * 1e3) / 10 });
+  }
+  return series;
+}
+function fodderSummary(points, now2 = Date.now()) {
+  const ratings = fodderRatings(points, now2);
+  const index = fodderIndexSeries(points);
+  const last = index.at(-1) ?? null, lastMs = last ? Date.parse(last.t) : 0;
+  const weekAgo = [...index].reverse().find((p) => Date.parse(p.t) <= lastMs - 7 * 24 * H + H) ?? null;
+  const spikes = ratings.filter((r2) => r2.signal === "spike"), cheap = ratings.filter((r2) => r2.signal === "cheap");
+  const headline = !ratings.length ? "No FUT.GG prices for 81-91 rated cards yet." : spikes.length ? `Fodder is spiking at ${spikes.map((r2) => r2.rating).join(", ")}: likely a demanding SBC. Sell spares now and wait to buy.` : cheap.length ? `Fodder is cheap at ${cheap.map((r2) => r2.rating).join(", ")}: a good time to stock up for upcoming SBCs.` : "Fodder prices are normal for the week.";
+  return {
+    headline,
+    index: last?.value ?? null,
+    index_change_7d: last && weekAgo ? Math.round((last.value - weekAgo.value) * 10) / 10 : null,
+    index_history: index,
+    ratings,
+    note: "Floor = the average of the 5 cheapest cards of that rating on FUT.GG at each twice-daily refresh. Index = all 81-91 floors relative to the start of the period, averaged (100 = no change). Spikes are 15%+ above the rating's 7-day median, cheap is 10%+ below. Advice only.",
+    verified: false
+  };
+}
+async function fodderIndex(db, platform, days, now2 = Date.now()) {
+  if (!Number.isInteger(days) || days < 1 || days > 90) throw new FutError("days must be a whole number from 1 to 90.");
+  const { data, error } = await db.rpc("fodder_index", { p_platform: platform, p_days: days });
+  if (error) throw new FutError(`Fodder index is unavailable: ${error.message}`, 500);
+  const points = (data?.points ?? []).map((p) => ({ t: String(p.t), rating: Number(p.rating), floor: Number(p.floor), n: Number(p.n) }));
+  return { platform, days, ...fodderSummary(points, now2) };
+}
+
 // supabase/functions/_shared/fut/champs.ts
 var MODES = ["champs", "rivals", "squad_battles", "other"];
 var MODE_LABEL = { champs: "Champions", rivals: "Rivals", squad_battles: "Squad Battles", other: "Games" };
 var result = (g) => g.goals_for > g.goals_against ? "W" : g.goals_for < g.goals_against ? "L" : g.penalties === "won" ? "W" : g.penalties === "lost" ? "L" : "D";
-var pct4 = (n, d) => d ? Math.round(n / d * 100) : null;
+var pct5 = (n, d) => d ? Math.round(n / d * 100) : null;
 function summarize3(games, run2) {
   const list = [...games].sort((a, b) => a.played_at.localeCompare(b.played_at));
   const res = list.map(result);
@@ -12347,7 +12435,7 @@ function summarize3(games, run2) {
   const third = Math.ceil(list.length / 3);
   const stages = list.length >= 6 ? [0, 1, 2].map((i) => {
     const part = res.slice(i * third, (i + 1) * third);
-    return { stage: ["Start", "Middle", "End"][i], games: part.length, win_rate: pct4(part.filter((r2) => r2 === "W").length, part.length) };
+    return { stage: ["Start", "Middle", "End"][i], games: part.length, win_rate: pct5(part.filter((r2) => r2 === "W").length, part.length) };
   }) : [];
   const left = run2?.games_allowed ? Math.max(0, run2.games_allowed - list.length) : null;
   const need = run2?.target_wins ? Math.max(0, run2.target_wins - w) : null;
@@ -12356,14 +12444,14 @@ function summarize3(games, run2) {
     need,
     left,
     status: need === 0 ? "reached" : left === null ? "open" : need > left ? "out of reach" : "on",
-    line: need === 0 ? `Target of ${run2.target_wins} wins reached.` : left === null ? `${need} more win${need === 1 ? "" : "s"} for ${run2.target_wins}.` : need > left ? `${run2.target_wins} wins is out of reach: ${need} needed, ${left} game${left === 1 ? "" : "s"} left.` : `${need} win${need === 1 ? "" : "s"} needed from ${left} game${left === 1 ? "" : "s"} left (${pct4(need, left)}%).`
+    line: need === 0 ? `Target of ${run2.target_wins} wins reached.` : left === null ? `${need} more win${need === 1 ? "" : "s"} for ${run2.target_wins}.` : need > left ? `${run2.target_wins} wins is out of reach: ${need} needed, ${left} game${left === 1 ? "" : "s"} left.` : `${need} win${need === 1 ? "" : "s"} needed from ${left} game${left === 1 ? "" : "s"} left (${pct5(need, left)}%).`
   } : null;
   return {
     games: list.length,
     w,
     d,
     l,
-    win_rate: pct4(w, list.length),
+    win_rate: pct5(w, list.length),
     goals_for: gf,
     goals_against: ga,
     goal_diff: gf - ga,
@@ -12375,7 +12463,7 @@ function summarize3(games, run2) {
     form: res.slice(-5).join(""),
     best_win_streak: best,
     current_streak: res.length ? `${res[res.length - 1]}${now2}` : null,
-    by_formation: [...byFormation.entries()].map(([formation, s]) => ({ formation, ...s, win_rate: pct4(s.w, s.games) })).sort((a, b) => b.games - a.games || a.formation.localeCompare(b.formation)),
+    by_formation: [...byFormation.entries()].map(([formation, s]) => ({ formation, ...s, win_rate: pct5(s.w, s.games) })).sort((a, b) => b.games - a.games || a.formation.localeCompare(b.formation)),
     stages,
     target
   };
@@ -12875,6 +12963,18 @@ FUT_TOOLS.push(
       const { db, userId } = await account(ctx);
       const a = args;
       return await calendarFor(db, userId, platformParam(a.platform), typeof a.card_id === "string" && a.card_id ? a.card_id : null);
+    })
+  },
+  {
+    name: "fut_fodder_index",
+    title: "FUT fodder index: what SBC fodder costs now",
+    description: "EA FC Ultimate Team: the price of SBC fodder, the cheapest cards of each rating from 81 to 91 (average of the 5 cheapest on FUT.GG), at every twice-daily refresh over the last days (1-90, default 30), with an equal-weighted index (100 = start of the period), each rating's change over 24 hours and 7 days, and a signal: spike (15%+ above its 7-day median, likely SBC demand: sell spares, don't buy) or cheap (10%+ below: stock up). " + READ_ONLY,
+    inputSchema: { type: "object", properties: { platform: PLATFORM, days: { type: "integer", minimum: 1, maximum: 90 } }, additionalProperties: false },
+    run: (args, ctx) => run(async () => {
+      const { db } = await account(ctx);
+      const a = args;
+      const r2 = await fodderIndex(db, platformParam(a.platform), typeof a.days === "number" ? a.days : 30);
+      return { ...r2, index_history: r2.index_history.slice(-60), ratings: r2.ratings.map(({ history: _h, ...x }) => x) };
     })
   }
 );

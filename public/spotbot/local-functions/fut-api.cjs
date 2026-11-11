@@ -5760,8 +5760,8 @@ var MAX_PRICE = 15e6;
 function referenceRows(text5) {
   const lines = text5.trim().split(/\r?\n/);
   const head = (lines.shift() ?? "").split(",").map((h) => h.trim());
-  const at = (n) => head.indexOf(n);
-  const [iEa, iPl, iAt, iAvg, iSales] = ["ea_item_id", "platform", "observed_at", "market_average", "last_sales"].map(at);
+  const at2 = (n) => head.indexOf(n);
+  const [iEa, iPl, iAt, iAvg, iSales] = ["ea_item_id", "platform", "observed_at", "market_average", "last_sales"].map(at2);
   if (iEa !== 0 || iAvg < 0 || iAt < 0) return [];
   const out = /* @__PURE__ */ new Map();
   for (const line of lines) {
@@ -6240,8 +6240,8 @@ function verdictFor(p, v) {
   if (!p.coins) return { verdict: "points_only", ratio: null, why: p.points ? "FC Points only. Compare value per 100 points with other points packs." : "No coin price in the store." };
   const net2 = p.untradeable ? 1 : 1 - EA_TAX;
   const typical = v.ev_low * net2 / p.coins, withLuck = v.ev_high * net2 / p.coins;
-  const pct5 = (x) => `${Math.round(x * 100)}%`;
-  const both = `about ${pct5(typical)} of the price in a typical pack, ${pct5(withLuck)} on average with the big pulls`;
+  const pct6 = (x) => `${Math.round(x * 100)}%`;
+  const both = `about ${pct6(typical)} of the price in a typical pack, ${pct6(withLuck)} on average with the big pulls`;
   if (p.untradeable) {
     return typical >= 0.75 ? { verdict: "only_for_fodder", ratio: typical, why: `Untradeable, so you can't sell what you pull. If you'd otherwise buy these cards for SBCs, they're worth ${both}.` } : { verdict: "skip", ratio: typical, why: `Untradeable, and even as SBC fodder the cards are worth ${both}.` };
   }
@@ -6510,7 +6510,7 @@ async function recordTrades(db2, userId, platform, seen_at, tradepile, watchlist
 function tradeSummary(rows, names2, now2 = Date.now()) {
   const nameOf = (r2) => names2.get(r2.ea_item_id)?.name ?? `Item ${r2.ea_item_id}`;
   const flips = rows.filter((r2) => r2.bought_for !== null && r2.sold_for !== null && r2.sold_at).map((r2) => {
-    const at = afterTax(r2.sold_for), profit = at - r2.bought_for;
+    const at2 = afterTax(r2.sold_for), profit = at2 - r2.bought_for;
     return {
       item_id: r2.item_id,
       ea_item_id: r2.ea_item_id,
@@ -6518,7 +6518,7 @@ function tradeSummary(rows, names2, now2 = Date.now()) {
       rating: r2.rating,
       bought_for: r2.bought_for,
       sold_for: r2.sold_for,
-      after_tax: at,
+      after_tax: at2,
       profit,
       bought_at: r2.bought_at,
       sold_at: r2.sold_at,
@@ -6808,13 +6808,13 @@ async function importAccount(db2, userId, raw, now2 = Date.now()) {
   }
   return { updated, trades, platform: u.platform, verified: false };
 }
-async function recordBalance(db2, userId, platform, b, at, now2) {
+async function recordBalance(db2, userId, platform, b, at2, now2) {
   const { data, error } = await db2.from("account_balance_history").select("at, coins, points, draft_tokens").eq("user_id", userId).eq("platform", platform).order("at", { ascending: false }).limit(1);
   fail5(error);
   const last = (data ?? [])[0];
   const same3 = last && last.coins === b.coins && last.points === b.points && last.draft_tokens === b.draft_tokens;
-  if (last && (Date.parse(at) <= Date.parse(String(last.at)) || same3 && Date.parse(at) - Date.parse(String(last.at)) < HISTORY_EVERY_MS)) return;
-  fail5((await db2.from("account_balance_history").upsert({ user_id: userId, platform, at, coins: b.coins, points: b.points, draft_tokens: b.draft_tokens }, { onConflict: "user_id,platform,at" })).error);
+  if (last && (Date.parse(at2) <= Date.parse(String(last.at)) || same3 && Date.parse(at2) - Date.parse(String(last.at)) < HISTORY_EVERY_MS)) return;
+  fail5((await db2.from("account_balance_history").upsert({ user_id: userId, platform, at: at2, coins: b.coins, points: b.points, draft_tokens: b.draft_tokens }, { onConflict: "user_id,platform,at" })).error);
   fail5((await db2.from("account_balance_history").delete().eq("user_id", userId).eq("platform", platform).lt("at", new Date(now2 - HISTORY_DAYS * 864e5).toISOString())).error);
 }
 async function clearAccount(db2, userId, platform) {
@@ -6912,7 +6912,7 @@ async function accountOverview(db2, userId, platform, now2 = Date.now()) {
   const tradeN = trade ? named(trade, cards) : null, watchN = watch ? named(watch, cards) : null, unN = un ? named(un, cards) : null;
   const tradeSum = tradeN ? tradepileSummary(tradeN, profile?.tradepile_max ?? null) : null, watchSum = watchN ? watchlistSummary(watchN) : null;
   const sbcs = arr(s?.sbcs), objectives = arr(s?.objectives);
-  const at = (k) => s?.[`${k}_at`] ?? null;
+  const at2 = (k) => s?.[`${k}_at`] ?? null;
   const ORDER2 = { sold: 0, expired: 1, listed: 2, unlisted: 3, won: 0, winning: 1, outbid: 2, watching: 3, lost: 4 };
   const sortTrades = (l) => [...l].sort((a, b) => (ORDER2[a.state] ?? 9) - (ORDER2[b.state] ?? 9) || (a.expires_at ?? "~").localeCompare(b.expires_at ?? "~") || (b.price ?? 0) - (a.price ?? 0));
   const sbcOpen = (x) => !(x.times_completed && !x.repeatable) && !(x.repeat_limit && (x.times_completed ?? 0) >= x.repeat_limit);
@@ -6921,7 +6921,7 @@ async function accountOverview(db2, userId, platform, now2 = Date.now()) {
     connected: !!s,
     updated_at: s?.updated_at ?? null,
     prices_at,
-    seen: Object.fromEntries(SECTIONS.map((k) => [k, at(k)])),
+    seen: Object.fromEntries(SECTIONS.map((k) => [k, at2(k)])),
     balance: s?.balance ?? null,
     profile,
     history: (histRes.data ?? []).reverse().map((h) => ({ t: String(h.at), coins: h.coins, points: h.points, draft_tokens: h.draft_tokens })),
@@ -7640,8 +7640,8 @@ function followedTrades(past, trades) {
     const from = Date.parse(p.prices_at), to = from + 3 * 864e5;
     for (const b of p.buys) {
       for (const t of trades) {
-        const at = t.bought_at ? Date.parse(String(t.bought_at)) : NaN;
-        if (used.has(t) || Number(t.ea_item_id) !== b.ea_item_id || !(at >= from && at <= to) || t.bought_for == null) continue;
+        const at2 = t.bought_at ? Date.parse(String(t.bought_at)) : NaN;
+        if (used.has(t) || Number(t.ea_item_id) !== b.ea_item_id || !(at2 >= from && at2 <= to) || t.bought_for == null) continue;
         used.add(t);
         const sold = t.sold_for == null ? null : Number(t.sold_for);
         out.push({ plan_date: p.plan_date, ea_item_id: b.ea_item_id, name: b.name, bought_for: Number(t.bought_for), sold_for: sold, profit: sold === null ? null : net(sold) - Number(t.bought_for), target: b.sell_at });
@@ -8820,10 +8820,10 @@ function decideAlerts(cands, states, now2 = Date.now()) {
     target("sell", x.target_sell);
     if (x.move_pct && x.previous_price && x.previous_price > 0) {
       const s = have.get(key({ ...base, kind: "move" })) ?? { ...base, kind: "move", armed: true, last_fired_at: null, last_price: null };
-      const pct5 = (x.price - x.previous_price) / x.previous_price * 100;
+      const pct6 = (x.price - x.previous_price) / x.previous_price * 100;
       const recent = s.last_fired_at && now2 - Date.parse(s.last_fired_at) < MOVE_EVERY_MS;
-      if (Math.abs(pct5) >= x.move_pct && !recent) {
-        fired.push({ ...base, kind: "move", price: x.price, line: `${pct5 > 0 ? "\u{1F4C8}" : "\u{1F4C9}"} **${label}** ${pct5 > 0 ? "rose" : "fell"} ${Math.abs(Math.round(pct5))}% since the last refresh: ${c2(x.previous_price)} \u2192 ${c2(x.price)} coins on ${plat(x.platform)}.` });
+      if (Math.abs(pct6) >= x.move_pct && !recent) {
+        fired.push({ ...base, kind: "move", price: x.price, line: `${pct6 > 0 ? "\u{1F4C8}" : "\u{1F4C9}"} **${label}** ${pct6 > 0 ? "rose" : "fell"} ${Math.abs(Math.round(pct6))}% since the last refresh: ${c2(x.previous_price)} \u2192 ${c2(x.price)} coins on ${plat(x.platform)}.` });
         next.push({ ...s, last_fired_at: new Date(now2).toISOString(), last_price: x.price });
       } else next.push({ ...s, last_price: x.price });
     }
@@ -8974,16 +8974,16 @@ async function sellOrKeep(db2, userId, platform, bestEvo) {
 function historyStats(points, now2 = Date.now()) {
   if (!points.length) return { latest: null, low: null, high: null, change_24h: null, change_7d: null, change_range: null, hourly_points: 0 };
   const latest = points[points.length - 1];
-  const at = (ms3) => [...points].reverse().find((p) => Date.parse(p.t) <= now2 - ms3) ?? null;
-  const pct5 = (then) => then && then.price > 0 ? Math.round((latest.price - then.price) / then.price * 1e3) / 10 : null;
+  const at2 = (ms3) => [...points].reverse().find((p) => Date.parse(p.t) <= now2 - ms3) ?? null;
+  const pct6 = (then) => then && then.price > 0 ? Math.round((latest.price - then.price) / then.price * 1e3) / 10 : null;
   return {
     latest: latest.price,
     latest_at: latest.t,
     low: Math.min(...points.map((p) => p.price)),
     high: Math.max(...points.map((p) => p.price)),
-    change_24h: pct5(at(24 * 36e5)),
-    change_7d: pct5(at(7 * 864e5)),
-    change_range: pct5(points[0]),
+    change_24h: pct6(at2(24 * 36e5)),
+    change_7d: pct6(at2(7 * 864e5)),
+    change_range: pct6(points[0]),
     hourly_points: points.filter((p) => p.kind === "hourly").length
   };
 }
@@ -10168,10 +10168,10 @@ function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
   const locked = base.slots.filter((s) => s.locked && s.card);
   const slots = layout.map((l) => ({ slot: l.slot, position: l.position, card: null, locked: false }));
   for (const l of locked) {
-    const at = slots.find((s) => !s.locked && s.slot === l.slot) ?? slots.find((s) => !s.locked && plays2(l.card, s.position)) ?? slots.find((s) => !s.locked);
-    if (at) {
-      at.card = l.card;
-      at.locked = true;
+    const at2 = slots.find((s) => !s.locked && s.slot === l.slot) ?? slots.find((s) => !s.locked && plays2(l.card, s.position)) ?? slots.find((s) => !s.locked);
+    if (at2) {
+      at2.card = l.card;
+      at2.locked = true;
     }
   }
   const taken = new Set(slots.filter((s) => s.card).map((s) => norm7(s.card.name)));
@@ -10551,12 +10551,100 @@ async function calendarFor(db2, userId, platform, cardId, now2 = Date.now()) {
   return { ...out, card: { card_id: cardId, name: h.name ?? null, points: points.length, events: cardRhythm(points, now2) } };
 }
 
+// supabase/functions/_shared/fut/fodder.ts
+var RATINGS = [81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91];
+var SPIKE = 0.15;
+var CHEAP = -0.1;
+var median3 = (xs) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+var pct3 = (a, b) => a === null || b === null || !b ? null : Math.round((a / b - 1) * 1e3) / 10;
+var H = 36e5;
+function at(points, ms3) {
+  let hit = null;
+  for (const p of points) {
+    if (Date.parse(p.t) <= ms3) hit = p;
+    else break;
+  }
+  return hit;
+}
+function fodderRatings(points, now2 = Date.now()) {
+  const by = /* @__PURE__ */ new Map();
+  for (const p of [...points].sort((a, b) => a.t.localeCompare(b.t))) by.set(p.rating, [...by.get(p.rating) ?? [], p]);
+  const out = [];
+  for (const r2 of RATINGS) {
+    const list2 = by.get(r2);
+    if (!list2?.length) continue;
+    const last = list2.at(-1), lastMs = Date.parse(last.t);
+    const week = list2.filter((p) => lastMs - Date.parse(p.t) <= 7 * 24 * H && p !== last).map((p) => p.floor);
+    const weekMed = week.length >= 4 ? median3(week) : null;
+    const month = list2.filter((p) => now2 - Date.parse(p.t) <= 30 * 24 * H).map((p) => p.floor);
+    const vs = weekMed === null ? null : last.floor / weekMed - 1;
+    const signal = vs === null ? "new" : vs >= SPIKE ? "spike" : vs <= CHEAP ? "cheap" : "normal";
+    const k = (n) => n >= 1e3 ? `${Math.round(n / 100) / 10}k` : String(n);
+    const line = signal === "spike" ? `${r2}s are ${Math.round(vs * 100)}% above their week (${k(last.floor)} vs ${k(weekMed)}): likely SBC demand. Sell spare ${r2}s, don't buy them for SBCs now.` : signal === "cheap" ? `${r2}s are ${Math.round(-vs * 100)}% below their week (${k(last.floor)} vs ${k(weekMed)}): a good time to stock up for SBCs.` : signal === "new" ? `${r2}s: ${k(last.floor)}. Not enough refreshes yet to compare with the week.` : `${r2}s: ${k(last.floor)}, close to their week (${vs >= 0 ? "+" : ""}${Math.round(vs * 100)}%).`;
+    out.push({
+      rating: r2,
+      floor: last.floor,
+      cards: last.n,
+      at: last.t,
+      change_24h: pct3(last.floor, at(list2, lastMs - 23 * H)?.floor ?? null),
+      change_7d: pct3(last.floor, at(list2, lastMs - 7 * 24 * H + H)?.floor ?? null),
+      vs_week: vs === null ? null : Math.round(vs * 1e3) / 10,
+      low_30d: Math.min(...month, last.floor),
+      high_30d: Math.max(...month, last.floor),
+      signal,
+      line,
+      history: list2.map((p) => ({ t: p.t, value: p.floor }))
+    });
+  }
+  return out;
+}
+function fodderIndexSeries(points, ratings = RATINGS) {
+  const times = [...new Set(points.map((p) => p.t))].sort();
+  const base = /* @__PURE__ */ new Map();
+  const series = [];
+  for (const t of times) {
+    const here = points.filter((p) => p.t === t && ratings.includes(p.rating));
+    for (const p of here) if (!base.has(p.rating)) base.set(p.rating, p.floor);
+    const rel = here.map((p) => p.floor / base.get(p.rating));
+    if (rel.length) series.push({ t, value: Math.round(rel.reduce((a, b) => a + b, 0) / rel.length * 1e3) / 10 });
+  }
+  return series;
+}
+function fodderSummary(points, now2 = Date.now()) {
+  const ratings = fodderRatings(points, now2);
+  const index = fodderIndexSeries(points);
+  const last = index.at(-1) ?? null, lastMs = last ? Date.parse(last.t) : 0;
+  const weekAgo = [...index].reverse().find((p) => Date.parse(p.t) <= lastMs - 7 * 24 * H + H) ?? null;
+  const spikes = ratings.filter((r2) => r2.signal === "spike"), cheap = ratings.filter((r2) => r2.signal === "cheap");
+  const headline = !ratings.length ? "No FUT.GG prices for 81-91 rated cards yet." : spikes.length ? `Fodder is spiking at ${spikes.map((r2) => r2.rating).join(", ")}: likely a demanding SBC. Sell spares now and wait to buy.` : cheap.length ? `Fodder is cheap at ${cheap.map((r2) => r2.rating).join(", ")}: a good time to stock up for upcoming SBCs.` : "Fodder prices are normal for the week.";
+  return {
+    headline,
+    index: last?.value ?? null,
+    index_change_7d: last && weekAgo ? Math.round((last.value - weekAgo.value) * 10) / 10 : null,
+    index_history: index,
+    ratings,
+    note: "Floor = the average of the 5 cheapest cards of that rating on FUT.GG at each twice-daily refresh. Index = all 81-91 floors relative to the start of the period, averaged (100 = no change). Spikes are 15%+ above the rating's 7-day median, cheap is 10%+ below. Advice only.",
+    verified: false
+  };
+}
+async function fodderIndex(db2, platform, days, now2 = Date.now()) {
+  if (!Number.isInteger(days) || days < 1 || days > 90) throw new FutError("days must be a whole number from 1 to 90.");
+  const { data, error } = await db2.rpc("fodder_index", { p_platform: platform, p_days: days });
+  if (error) throw new FutError(`Fodder index is unavailable: ${error.message}`, 500);
+  const points = (data?.points ?? []).map((p) => ({ t: String(p.t), rating: Number(p.rating), floor: Number(p.floor), n: Number(p.n) }));
+  return { platform, days, ...fodderSummary(points, now2) };
+}
+
 // supabase/functions/_shared/fut/champs.ts
 var MODES = ["champs", "rivals", "squad_battles", "other"];
 var MODE_LABEL = { champs: "Champions", rivals: "Rivals", squad_battles: "Squad Battles", other: "Games" };
 var MAX_GAMES_PER_RUN = 100;
 var result = (g) => g.goals_for > g.goals_against ? "W" : g.goals_for < g.goals_against ? "L" : g.penalties === "won" ? "W" : g.penalties === "lost" ? "L" : "D";
-var pct3 = (n, d) => d ? Math.round(n / d * 100) : null;
+var pct4 = (n, d) => d ? Math.round(n / d * 100) : null;
 function summarize(games, run) {
   const list2 = [...games].sort((a, b) => a.played_at.localeCompare(b.played_at));
   const res = list2.map(result);
@@ -10582,7 +10670,7 @@ function summarize(games, run) {
   const third = Math.ceil(list2.length / 3);
   const stages = list2.length >= 6 ? [0, 1, 2].map((i) => {
     const part = res.slice(i * third, (i + 1) * third);
-    return { stage: ["Start", "Middle", "End"][i], games: part.length, win_rate: pct3(part.filter((r2) => r2 === "W").length, part.length) };
+    return { stage: ["Start", "Middle", "End"][i], games: part.length, win_rate: pct4(part.filter((r2) => r2 === "W").length, part.length) };
   }) : [];
   const left = run?.games_allowed ? Math.max(0, run.games_allowed - list2.length) : null;
   const need = run?.target_wins ? Math.max(0, run.target_wins - w) : null;
@@ -10591,14 +10679,14 @@ function summarize(games, run) {
     need,
     left,
     status: need === 0 ? "reached" : left === null ? "open" : need > left ? "out of reach" : "on",
-    line: need === 0 ? `Target of ${run.target_wins} wins reached.` : left === null ? `${need} more win${need === 1 ? "" : "s"} for ${run.target_wins}.` : need > left ? `${run.target_wins} wins is out of reach: ${need} needed, ${left} game${left === 1 ? "" : "s"} left.` : `${need} win${need === 1 ? "" : "s"} needed from ${left} game${left === 1 ? "" : "s"} left (${pct3(need, left)}%).`
+    line: need === 0 ? `Target of ${run.target_wins} wins reached.` : left === null ? `${need} more win${need === 1 ? "" : "s"} for ${run.target_wins}.` : need > left ? `${run.target_wins} wins is out of reach: ${need} needed, ${left} game${left === 1 ? "" : "s"} left.` : `${need} win${need === 1 ? "" : "s"} needed from ${left} game${left === 1 ? "" : "s"} left (${pct4(need, left)}%).`
   } : null;
   return {
     games: list2.length,
     w,
     d,
     l,
-    win_rate: pct3(w, list2.length),
+    win_rate: pct4(w, list2.length),
     goals_for: gf,
     goals_against: ga,
     goal_diff: gf - ga,
@@ -10610,7 +10698,7 @@ function summarize(games, run) {
     form: res.slice(-5).join(""),
     best_win_streak: best,
     current_streak: res.length ? `${res[res.length - 1]}${now2}` : null,
-    by_formation: [...byFormation.entries()].map(([formation, s]) => ({ formation, ...s, win_rate: pct3(s.w, s.games) })).sort((a, b) => b.games - a.games || a.formation.localeCompare(b.formation)),
+    by_formation: [...byFormation.entries()].map(([formation, s]) => ({ formation, ...s, win_rate: pct4(s.w, s.games) })).sort((a, b) => b.games - a.games || a.formation.localeCompare(b.formation)),
     stages,
     target
   };
@@ -11742,8 +11830,8 @@ var KEEP_DAYS = 30;
 var MAX_AGE_DAYS = 14;
 var OUTLIER_FACTOR = 3;
 var MAX_PULL_CARDS = 300;
-var H = 36e5;
-var hourOf = (iso3) => new Date(Math.floor(Date.parse(iso3) / H) * H).toISOString();
+var H2 = 36e5;
+var hourOf = (iso3) => new Date(Math.floor(Date.parse(iso3) / H2) * H2).toISOString();
 async function getSharing(db2, userId) {
   const { data, error } = await db2.from("market_sharing").select("*").eq("user_id", userId).maybeSingle();
   fail9(error);
@@ -11771,12 +11859,12 @@ function captureContributions(text5, now2 = Date.now()) {
   const best = /* @__PURE__ */ new Map();
   for (const line of lines) {
     const f2 = line.split(",");
-    const ea = Number(f2[iEa]), price = Number(f2[iPr]), at = Date.parse(f2[iAt] ?? "");
+    const ea = Number(f2[iEa]), price = Number(f2[iPr]), at2 = Date.parse(f2[iAt] ?? "");
     const platform = iPl >= 0 ? (f2[iPl] ?? "").trim() : "console";
     if (!Number.isInteger(ea) || ea <= 0 || !Number.isInteger(price) || price < MIN_PRICE || price > MAX_PRICE2) continue;
     if (platform !== "console" && platform !== "pc") continue;
-    if (Number.isNaN(at) || at > now2 + 10 * 6e4 || at < now2 - MAX_AGE_DAYS * 864e5) continue;
-    const observed_at = new Date(at).toISOString(), hour = hourOf(observed_at);
+    if (Number.isNaN(at2) || at2 > now2 + 10 * 6e4 || at2 < now2 - MAX_AGE_DAYS * 864e5) continue;
+    const observed_at = new Date(at2).toISOString(), hour = hourOf(observed_at);
     const listings = iLs >= 0 && f2[iLs] ? Number(f2[iLs]) : null;
     const k = `${ea}|${platform}|${hour}`;
     const prev = best.get(k);
@@ -11806,7 +11894,7 @@ async function contributeCaptures(db2, userId, text5) {
   fail9((await db2.from("market_community_observations").delete().lte("hour", new Date(Date.now() - KEEP_DAYS * 864e5).toISOString())).error);
   return { shared: fresh.length, sharing: true };
 }
-var median3 = (xs) => {
+var median4 = (xs) => {
   const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
 };
@@ -11819,10 +11907,10 @@ function poolHours(rows, caller) {
   const out = [];
   for (const g of groups.values()) {
     if (!g.some((r2) => r2.contributor_user_id !== caller)) continue;
-    const m = median3(g.map((r2) => r2.price));
+    const m = median4(g.map((r2) => r2.price));
     const kept = g.filter((r2) => r2.price <= m * OUTLIER_FACTOR && r2.price * OUTLIER_FACTOR >= m);
     if (!kept.length) continue;
-    out.push({ ea_item_id: g[0].ea_item_id, platform: g[0].platform, hour: new Date(g[0].hour).toISOString(), price: median3(kept.map((r2) => r2.price)), contributors: new Set(kept.map((r2) => r2.contributor_user_id)).size });
+    out.push({ ea_item_id: g[0].ea_item_id, platform: g[0].platform, hour: new Date(g[0].hour).toISOString(), price: median4(kept.map((r2) => r2.price)), contributors: new Set(kept.map((r2) => r2.contributor_user_id)).size });
   }
   return out;
 }
@@ -11990,9 +12078,9 @@ function change(series, window2) {
   const start = priceAt(series, target);
   if (!start || start === last) return null;
   if (target - start.t > Math.max(HOUR, h * HOUR / 2)) return null;
-  return pct4(start.price, last.price);
+  return pct5(start.price, last.price);
 }
-var pct4 = (a, b) => a > 0 ? (b - a) / a * 100 : 0;
+var pct5 = (a, b) => a > 0 ? (b - a) / a * 100 : 0;
 var round = (n, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
 function window(series, hours) {
   const last = series.at(-1);
@@ -12022,7 +12110,7 @@ function stdev(xs) {
   const m = mean(xs);
   return Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / (xs.length - 1));
 }
-function median4(xs) {
+function median5(xs) {
   if (!xs.length) return null;
   const s = [...xs].sort((a, b) => a - b);
   const m = s.length >> 1;
@@ -12047,7 +12135,7 @@ function maxDrawdown(series, hours) {
   let dd = 0;
   for (const p of w) {
     peak = Math.max(peak, p.price);
-    dd = Math.min(dd, pct4(peak, p.price));
+    dd = Math.min(dd, pct5(peak, p.price));
   }
   return dd;
 }
@@ -12095,17 +12183,17 @@ function matchesRule(card, rule) {
   }
   return true;
 }
-function rebalance(def, cards, current, at) {
+function rebalance(def, cards, current, at2) {
   const want = new Set(cards.filter((c4) => matchesRule(c4, def.rule)).map((c4) => c4.id));
   const out = [];
   const open = /* @__PURE__ */ new Set();
   for (const m of current) {
     if (m.basket_id !== def.id) continue;
-    if (m.effective_to === null && !want.has(m.card_id)) out.push({ ...m, effective_to: at });
+    if (m.effective_to === null && !want.has(m.card_id)) out.push({ ...m, effective_to: at2 });
     else out.push(m);
     if (m.effective_to === null && want.has(m.card_id)) open.add(m.card_id);
   }
-  for (const id3 of want) if (!open.has(id3)) out.push({ basket_id: def.id, card_id: id3, effective_from: at, effective_to: null });
+  for (const id3 of want) if (!open.has(id3)) out.push({ basket_id: def.id, card_id: id3, effective_from: at2, effective_to: null });
   return out;
 }
 function membersAt(members, basket_id, t) {
@@ -12247,7 +12335,7 @@ function peerChanges(peerSeries) {
   const out = {};
   for (const w of WINDOWS) {
     const xs = peerSeries.map((s) => change(s, w)).filter((x) => x !== null);
-    out[w] = { value: xs.length >= 3 ? median4(xs) : null, n: xs.length };
+    out[w] = { value: xs.length >= 3 ? median5(xs) : null, n: xs.length };
   }
   return out;
 }
@@ -12322,7 +12410,7 @@ function meanReversion(s, peerPrices, rules = DEFAULT_MARKET_RULES) {
   const lo = prices.length ? Math.min(...prices) : null;
   const hi = prices.length ? Math.max(...prices) : null;
   const rp = last && lo !== null && hi !== null && hi > lo ? round((last.price - lo) / (hi - lo)) : null;
-  const pm = median4(peerPrices);
+  const pm = median5(peerPrices);
   const ratio = last && pm ? round(last.price / pm) : null;
   const unusually_low = z !== null && z <= rules.thresholds.mean_reversion_z;
   let pattern = null;
@@ -12330,7 +12418,7 @@ function meanReversion(s, peerPrices, rules = DEFAULT_MARKET_RULES) {
     if (!unusually_low) pattern = "not_low";
     else {
       const before = w.filter((p) => last && p.t <= last.t - 24 * 36e5).map((p) => p.price);
-      const earlyMove = before.length >= 2 ? pct4(before[0], before.at(-1)) : null;
+      const earlyMove = before.length >= 2 ? pct5(before[0], before.at(-1)) : null;
       const c24 = change(s, "24h");
       const c72 = change(s, "72h");
       if (earlyMove !== null && Math.abs(earlyMove) < 5 && c24 !== null && c24 <= -5) pattern = "recent_dislocation";
@@ -12885,12 +12973,12 @@ function createMarketService(deps) {
     if (!c4) throw new MarketNotFoundError(`No card ${id3}`);
     return c4;
   };
-  async function initBaskets(at, opts = {}) {
+  async function initBaskets(at2, opts = {}) {
     const cards = await deps.cards.catalogue();
     for (const b of baskets) {
       const cur = await deps.memberships.list(b.id);
       if (opts.backfilled && cur.length) continue;
-      const next = rebalance(b, cards, cur, at).map((m) => opts.backfilled && !cur.length ? { ...m, backfilled: true } : m);
+      const next = rebalance(b, cards, cur, at2).map((m) => opts.backfilled && !cur.length ? { ...m, backfilled: true } : m);
       await deps.memberships.replace(b.id, next);
     }
   }
@@ -13201,8 +13289,8 @@ function createMarketService(deps) {
       return { items, total_observations: held.length, evidence: "game_data", note: "Prices you captured for items XI Lab can't match to a card yet. They're kept privately and linked automatically once the card is added." };
     },
     /** Re-apply basket rules at `at` (a scheduled job in production). Closes and opens memberships; never rewrites history. */
-    async rebalanceBaskets(at = now2()) {
-      await initBaskets(at);
+    async rebalanceBaskets(at2 = now2()) {
+      await initBaskets(at2);
     }
   };
 }
@@ -13786,8 +13874,8 @@ async function handle(req, deps) {
   const limited = deps.throttle?.(userId);
   if (limited) return limited;
   const url = new URL(req.url);
-  const at = url.pathname.indexOf("/fut-api");
-  const path = (at >= 0 ? url.pathname.slice(at + "/fut-api".length) : url.pathname).replace(/\/+$/, "");
+  const at2 = url.pathname.indexOf("/fut-api");
+  const path = (at2 >= 0 ? url.pathname.slice(at2 + "/fut-api".length) : url.pathname).replace(/\/+$/, "");
   if (!path.startsWith("/v1")) return err(404, "This API is /fut-api/v1.");
   const route = path.slice(3) || "/";
   const m = req.method;
@@ -13896,6 +13984,7 @@ async function handle(req, deps) {
       const q = url.searchParams;
       return json({ data: await metaTop(db2, userId, { position: q.get("position"), role: q.get("role"), max_price: q.get("max_price"), platform: q.get("platform"), owned_only: q.get("owned_only") === "1" }) });
     }
+    if (route === "/market/fodder" && m === "GET") return json({ data: await fodderIndex(db2, platformParam(url.searchParams.get("platform")), Number(url.searchParams.get("days") ?? 30)) });
     if (route === "/market/calendar" && m === "GET") return json({ data: await calendarFor(db2, userId, platformParam(url.searchParams.get("platform")), url.searchParams.get("card_id") || null) });
     if (route === "/prices/history" && m === "GET") {
       const days = Number(url.searchParams.get("days") ?? 30);

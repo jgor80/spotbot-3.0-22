@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
-  Trophy, CalendarClock,
+  Trophy, CalendarClock, LineChart,
   User,
   Gamepad2,
   Swords,
@@ -108,6 +108,7 @@ const futMore: NavItem[] = [
   { path: "/fut/compare", label: "Compare Cards", icon: Columns3 },
   { path: "/fut/champs", label: "Champs Tracker", icon: Trophy },
   { path: "/fut/calendar", label: "Market Calendar", icon: CalendarClock },
+  { path: "/fut/fodder", label: "Fodder Index", icon: LineChart },
 ];
 
 const SECTION_HOME: Record<AppSection, string> = { club: "/", fut: "/fut/market/cards" };
