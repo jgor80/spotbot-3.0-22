@@ -11,7 +11,7 @@ const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCa
 const plays = (card: WorkspaceCard, position: string) => card.positions.some((p) => p.toUpperCase() === position.toUpperCase());
 
 /** Chemistry total and rating sum of the filled slots. */
-function evaluate(formation: string, slots: WorkspaceSlot[], manager: Squad["manager"], rules: ChemistryRules) {
+export function evaluate(formation: string, slots: WorkspaceSlot[], manager: Squad["manager"], rules: ChemistryRules) {
   const filled = slots.filter((s) => s.card);
   const chem = computeSquadChemistry({
     formation,

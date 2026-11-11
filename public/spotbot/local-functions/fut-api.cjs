@@ -9442,8 +9442,8 @@ function placeMatches(start, parsed, matches) {
     if (s) put(row, s);
   }
   for (const row of live.filter((r2) => !r2.slot)) {
-    const plays3 = (x) => row.card.positions.includes(x.position) && free(x, false);
-    const s = slots.find((x) => plays3(x) && !x.card) ?? (full ? slots.find(plays3) : void 0);
+    const plays4 = (x) => row.card.positions.includes(x.position) && free(x, false);
+    const s = slots.find((x) => plays4(x) && !x.card) ?? (full ? slots.find(plays4) : void 0);
     if (s) put(row, s);
   }
   for (const row of live.filter((r2) => !r2.slot)) {
@@ -10059,6 +10059,328 @@ async function compareAnyCards(db2, userId, b) {
   return { platform, ...compareTable(inputs), chem_styles: { outfield: Object.keys(CHEM_STYLES), gk: Object.keys(GK_CHEM_STYLES) }, note: "Chem style boosts and metaratings are GafferBot's estimates (FC 27's chem style numbers aren't confirmed). Prices are FUT.GG's.", verified: false };
 }
 
+// supabase/functions/_shared/fut/squad-suggest.ts
+var norm7 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+var plays2 = (card, position) => card.positions.some((p) => p.toUpperCase() === position.toUpperCase());
+function evaluate(formation, slots, manager, rules) {
+  const filled = slots.filter((s) => s.card);
+  const chem = computeSquadChemistry({
+    formation,
+    ...manager ? { manager: { nation: manager.nation ?? void 0, league: manager.league ?? void 0 } } : {},
+    slots: filled.map((s) => ({ slot: s.slot, position: s.position, card: s.card }))
+  }, rules);
+  const rating4 = filled.reduce((a, s) => a + (s.card.rating ?? 0), 0);
+  return { chem, total: chem.total, rating: rating4, filled: filled.length };
+}
+function score2(e, by) {
+  return e.filled * 1e7 + (by === "ovr" ? e.rating * 100 + e.total : e.total * 1e4 + e.rating);
+}
+function pickPool(pool, taken) {
+  return pool.filter((c4) => !taken.has(norm7(c4.name)));
+}
+function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
+  const layout = FORMATIONS[formation];
+  if (!layout) throw new Error(`Unknown formation "${formation}"`);
+  const locked = base.slots.filter((s) => s.locked && s.card);
+  const slots = layout.map((l) => ({ slot: l.slot, position: l.position, card: null, locked: false }));
+  for (const l of locked) {
+    const at = slots.find((s) => !s.locked && s.slot === l.slot) ?? slots.find((s) => !s.locked && plays2(l.card, s.position)) ?? slots.find((s) => !s.locked);
+    if (at) {
+      at.card = l.card;
+      at.locked = true;
+    }
+  }
+  const taken = new Set(slots.filter((s) => s.card).map((s) => norm7(s.card.name)));
+  const cards = pickPool(pool, taken);
+  const byPos = /* @__PURE__ */ new Map();
+  for (const s of slots) {
+    if (byPos.has(s.position)) continue;
+    byPos.set(s.position, cards.filter((c4) => plays2(c4, s.position)).sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)));
+  }
+  const open = slots.filter((s) => !s.locked);
+  const order = [...open].sort((a, b) => byPos.get(a.position).length - byPos.get(b.position).length);
+  const greedy = (prefer) => {
+    const out = slots.map((s) => ({ ...s }));
+    const used = new Set(taken);
+    for (const o of order) {
+      const list2 = byPos.get(o.position);
+      const pick = prefer && list2.find((c4) => !used.has(norm7(c4.name)) && prefer(c4)) || list2.find((c4) => !used.has(norm7(c4.name)));
+      if (pick) {
+        out.find((s) => s.slot === o.slot).card = pick;
+        used.add(norm7(pick.name));
+      }
+    }
+    return out;
+  };
+  const improve = (start, limit2) => {
+    let cur = start;
+    let best = score2(evaluate(formation, cur, base.manager, rules), by);
+    for (let round3 = 0; round3 < 6; round3++) {
+      let changed = false;
+      for (const o of open) {
+        const i = cur.findIndex((s) => s.slot === o.slot);
+        const used = new Set(cur.filter((s, j) => j !== i && s.card).map((s) => norm7(s.card.name)));
+        for (const c4 of byPos.get(o.position).slice(0, limit2)) {
+          if (used.has(norm7(c4.name)) || c4.id === cur[i].card?.id) continue;
+          const next = cur.map((s, j) => j === i ? { ...s, card: c4 } : s);
+          const v = score2(evaluate(formation, next, base.manager, rules), by);
+          if (v > best) {
+            best = v;
+            cur = next;
+            changed = true;
+          }
+        }
+      }
+      for (let a = 0; a < cur.length; a++) for (let b = a + 1; b < cur.length; b++) {
+        const A = cur[a], B = cur[b];
+        if (A.locked || B.locked || !A.card || !B.card || !plays2(A.card, B.position) || !plays2(B.card, A.position)) continue;
+        const next = cur.map((s, j) => j === a ? { ...s, card: B.card } : j === b ? { ...s, card: A.card } : s);
+        const v = score2(evaluate(formation, next, base.manager, rules), by);
+        if (v > best) {
+          best = v;
+          cur = next;
+          changed = true;
+        }
+      }
+      if (!changed) break;
+    }
+    return { slots: cur, value: best };
+  };
+  const starts = [greedy()];
+  if (by === "chem") {
+    const groups = [];
+    for (const t of ["league", "nation", "club"]) {
+      const counts = /* @__PURE__ */ new Map();
+      for (const c4 of cards) {
+        const k = c4[t];
+        if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
+      }
+      for (const [k, n] of counts) if (n >= 3) groups.push({ key: `${t}:${k}`, n, test: (c4) => c4[t] === k });
+    }
+    groups.sort((a, b) => b.n - a.n);
+    for (const g of groups.slice(0, opts.seeds ?? 8)) starts.push(greedy(g.test));
+  }
+  const limit = by === "chem" ? 40 : 25;
+  let winner = improve(starts[0], limit);
+  for (const s of starts.slice(1)) {
+    const r2 = improve(s, limit);
+    if (r2.value > winner.value) winner = r2;
+  }
+  const e = evaluate(formation, winner.slots, base.manager, rules);
+  const squad = { ...base, formation, slots: winner.slots, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+  return {
+    formation,
+    squad,
+    chemistry: e.total,
+    rating: e.filled ? Math.round(e.rating / e.filled) : 0,
+    filled: e.filled,
+    empty: winner.slots.filter((s) => !s.card).map((s) => s.slot)
+  };
+}
+function bestSquads(base, formation, pool, rules, by) {
+  if (formation !== "all") return [bestSquadFor(base, formation, pool, rules, by)];
+  const all = Object.keys(FORMATIONS).map((f2) => bestSquadFor(base, f2, pool, rules, by, { seeds: 4 }));
+  const key2 = (b) => b.filled * 1e7 + (by === "ovr" ? b.rating * 1e3 + b.chemistry : b.chemistry * 1e4 + b.rating);
+  return all.sort((a, b) => key2(b) - key2(a));
+}
+function suggestForSlot(squad, slot, pool, rules, by, limit = 12) {
+  const i = squad.slots.findIndex((s) => s.slot === slot);
+  if (i < 0) throw new Error(`No slot "${slot}" in ${squad.formation}`);
+  const target = squad.slots[i];
+  const before = evaluate(squad.formation, squad.slots, squad.manager, rules).total;
+  const taken = new Set(squad.slots.filter((s, j) => j !== i && s.card).map((s) => norm7(s.card.name)));
+  const out = [];
+  for (const c4 of pickPool(pool, taken)) {
+    if (!plays2(c4, target.position) || c4.id === target.card?.id) continue;
+    const next = squad.slots.map((s, j) => j === i ? { ...s, card: c4 } : s);
+    const e = evaluate(squad.formation, next, squad.manager, rules);
+    out.push({ card: c4, team_chemistry: e.total, chemistry: e.chem.players.find((p) => p.slot === slot)?.chemistry ?? 0, change: e.total - before });
+  }
+  out.sort((a, b) => by === "ovr" ? (b.card.rating ?? 0) - (a.card.rating ?? 0) || b.team_chemistry - a.team_chemistry : b.team_chemistry - a.team_chemistry || (b.card.rating ?? 0) - (a.card.rating ?? 0));
+  return { slot, position: target.position, before, suggestions: out.slice(0, limit) };
+}
+async function squadRoles(db2, userId, squad) {
+  const ids = [...new Set(squad.slots.flatMap((s) => s.card && /^[0-9a-f-]{36}$/i.test(s.card.id) ? [s.card.id] : []))];
+  const out = {};
+  for (const s of squad.slots) out[s.slot] = { position: s.position, roles: [] };
+  if (!ids.length) return out;
+  const { data: rows, error } = await db2.from("player_cards").select("id, owner_user_id, source_id, source_card_key").in("id", ids);
+  fail(error);
+  const visible = (rows ?? []).filter((r2) => r2.owner_user_id === null || r2.owner_user_id === userId);
+  const keys = [...new Set(visible.filter((r2) => r2.source_id !== "futgg_catalogue" && /^\d{1,10}$/.test(String(r2.source_card_key ?? ""))).map((r2) => String(r2.source_card_key)))];
+  const catalogue = /* @__PURE__ */ new Map();
+  if (keys.length) {
+    const { data, error: e } = await db2.from("player_cards").select("id, source_card_key").eq("source_id", "futgg_catalogue").is("owner_user_id", null).in("source_card_key", keys);
+    fail(e);
+    for (const r2 of data ?? []) catalogue.set(String(r2.source_card_key), r2.id);
+  }
+  const roleCard = /* @__PURE__ */ new Map();
+  for (const r2 of visible) roleCard.set(r2.id, r2.source_id === "futgg_catalogue" ? r2.id : catalogue.get(String(r2.source_card_key)) ?? r2.id);
+  const lookup = [...new Set(roleCard.values())];
+  const { data: roles, error: re } = await db2.from("card_roles").select("card_id, position_code, role, level").in("card_id", lookup);
+  fail(re);
+  const byCard = /* @__PURE__ */ new Map();
+  for (const r2 of roles ?? []) {
+    const list2 = byCard.get(r2.card_id) ?? [];
+    list2.push({ position: r2.position_code, role: r2.role, level: r2.level });
+    byCard.set(r2.card_id, list2);
+  }
+  for (const s of squad.slots) {
+    if (!s.card) continue;
+    const all = byCard.get(roleCard.get(s.card.id) ?? "") ?? [];
+    out[s.slot] = {
+      position: s.position,
+      roles: all.filter((r2) => r2.position === s.position).sort((a, b) => a.level === b.level ? a.role.localeCompare(b.role) : a.level === "plusplus" ? -1 : 1)
+    };
+  }
+  return out;
+}
+
+// supabase/functions/_shared/fut/upgrades.ts
+var EA_TAX6 = 0.05;
+var norm8 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+var plays3 = (c4, position) => c4.positions.some((p) => p.toUpperCase() === position.toUpperCase());
+var gainOf = (dRating, dChem, dMeta, dOverall = 0) => Math.round((dRating * 8 + dChem * 1.5 + (dMeta ?? 0) * 0.6 + dOverall * 0.25) * 10) / 10;
+function planUpgrades(x, limits = { singles: 15, pairs: 10, pairPool: 30 }) {
+  const { squad, rules, budget } = x;
+  const ratings = (slots) => slots.filter((s) => s.card).map((s) => s.card.rating ?? 0);
+  const base = evaluate(squad.formation, squad.slots, squad.manager, rules);
+  const before = { rating: teamRating(ratings(squad.slots)), chem: base.total };
+  const apply = (swaps) => {
+    const slots = squad.slots.map((s, i) => {
+      const w = swaps.find((x2) => x2.i === i);
+      return w ? { ...s, card: w.c.card } : s;
+    });
+    const names = slots.filter((s) => s.card).map((s) => norm8(s.card.name));
+    if (new Set(names).size !== names.length) return null;
+    const e = evaluate(squad.formation, slots, squad.manager, rules);
+    const after = { rating: teamRating(ratings(slots)), chem: e.total };
+    const out = swaps.map(({ i, c: c4 }) => {
+      const s = squad.slots[i];
+      return {
+        slot: s.slot,
+        position: s.position,
+        cost: c4.cost,
+        out: { id: s.card?.id ?? null, name: s.card?.name ?? null, rating: s.card?.rating ?? null, meta: x.currentMeta[s.slot] ?? null, sells_for: s.card ? x.sellValue[s.card.id] ?? null : null },
+        in: { id: c4.card.id, name: c4.card.name, rating: c4.card.rating ?? null, owned: c4.card.owned === true, meta: c4.meta[s.position] ?? null, card: c4.card }
+      };
+    });
+    const metaKnown = out.every((w) => w.in.meta !== null && (w.out.meta !== null || w.out.id === null));
+    const metaGain = metaKnown ? out.reduce((n, w) => n + (w.in.meta - (w.out.meta ?? 0)), 0) : null;
+    const cost = out.reduce((n, w) => n + w.cost, 0);
+    const dOverall = out.reduce((n, w) => n + (w.in.rating ?? 0) - (w.out.rating ?? 0), 0);
+    const gain = gainOf(after.rating - before.rating, after.chem - before.chem, metaGain, dOverall);
+    return {
+      swaps: out,
+      cost,
+      net_cost: Math.max(0, cost - out.reduce((n, w) => n + (w.out.sells_for ?? 0), 0)),
+      rating_before: before.rating,
+      rating_after: after.rating,
+      chem_before: before.chem,
+      chem_after: after.chem,
+      meta_gain: metaGain,
+      gain,
+      per_10k: cost > 0 ? Math.round(gain / cost * 1e4 * 10) / 10 : null
+    };
+  };
+  const singles = [];
+  squad.slots.forEach((s, i) => {
+    if (s.locked) return;
+    for (const c4 of x.candidates) {
+      if (c4.cost > budget || c4.card.id === s.card?.id || !plays3(c4.card, s.position)) continue;
+      const p = apply([{ i, c: c4 }]);
+      if (p && p.gain > 0) singles.push({ ...p, key: { i, c: c4 } });
+    }
+  });
+  const rank = (a, b) => b.gain - a.gain || a.cost - b.cost;
+  singles.sort(rank);
+  const pool = singles.slice(0, limits.pairPool), pairs = [];
+  for (let a = 0; a < pool.length; a++) for (let b = a + 1; b < pool.length; b++) {
+    const p1 = pool[a].key, p2 = pool[b].key;
+    if (p1.i === p2.i || norm8(p1.c.card.name) === norm8(p2.c.card.name) || p1.c.cost + p2.c.cost > budget) continue;
+    const p = apply([p1, p2]);
+    if (p && p.gain > Math.max(pool[a].gain, pool[b].gain)) pairs.push(p);
+  }
+  pairs.sort(rank);
+  const strip = ({ key: _k, ...p }) => p;
+  const seen = /* @__PURE__ */ new Map(), shown = [];
+  for (const p of singles) {
+    const k = p.swaps[0].slot;
+    const n = seen.get(k) ?? 0;
+    if (n < 2) {
+      shown.push(strip(p));
+      seen.set(k, n + 1);
+    }
+    if (shown.length >= limits.singles) break;
+  }
+  const best = [...pairs.slice(0, 1), ...shown.slice(0, 1)].sort(rank)[0] ?? null;
+  const free = singles.filter((p) => p.cost === 0).slice(0, 5).map(strip);
+  return { before, budget, best, singles: shown, pairs: pairs.slice(0, limits.pairs), free };
+}
+
+// supabase/functions/_shared/fut/upgrades-data.ts
+var MAX_BUDGET = 15e6;
+var PER_POSITION = 40;
+async function upgradeOptions(db2, userId, squad, b) {
+  const budget = Number(b.budget);
+  if (!Number.isInteger(budget) || budget < 0 || budget > MAX_BUDGET) throw new FutError(`budget must be whole coins from 0 to ${MAX_BUDGET.toLocaleString("en-US")}.`);
+  const platform = b.platform === "pc" ? "pc" : "console";
+  if (!squad.slots.some((s) => s.card)) throw new FutError("Put some cards in the squad first.");
+  const positions = [...new Set(squad.slots.filter((s) => !s.locked).map((s) => s.position.toUpperCase()))];
+  const [rules, mine] = await Promise.all([activeRules(db2), searchMyCards(db2, userId, { all: true, owned_only: true })]);
+  const inSquad = new Set(squad.slots.filter((s) => s.card).map((s) => s.card.id));
+  const candidates = /* @__PURE__ */ new Map();
+  for (const pos of positions) {
+    const weakest = Math.min(...squad.slots.filter((s) => s.position.toUpperCase() === pos).map((s) => s.card?.rating ?? 0));
+    const query = cleanPlayerQuery({ positions: [pos], priced_only: true, max_price: Math.max(budget, 1), min_rating: weakest > 0 ? weakest : null, sort: "overall" });
+    const res = await searchPlayers(db2, userId, query, { platform, limit: PER_POSITION });
+    for (const c4 of res.cards) {
+      if (candidates.has(String(c4.id)) || typeof c4.price !== "number") continue;
+      const m = fromSearch(c4);
+      const meta = Object.fromEntries(m.positions.map((p) => [p.toUpperCase(), metaRate(m, [p]).best?.score ?? 0]).filter(([, v]) => v));
+      const card = { id: String(c4.id), name: m.name, club: c4.club ?? null, league: c4.league ?? null, nation: c4.nation ?? null, positions: m.positions, is_icon: c4.is_icon === true, is_hero: c4.is_hero === true, rating: m.rating, price: c4.price, owned: c4.owned === true, stats: {}, source: "database" };
+      candidates.set(card.id, { card, cost: c4.owned === true ? 0 : c4.price, meta });
+    }
+  }
+  for (const c4 of mine) {
+    if (inSquad.has(c4.id) || !c4.positions.some((p) => positions.includes(p.toUpperCase()))) continue;
+    const m = { name: c4.player_name, rating: c4.overall, positions: c4.positions, stats: { ...c4.stats }, playstyles: c4.playstyles, playstyles_plus: c4.playstyles_plus, height_cm: null, accelerate_type: null, weak_foot: c4.weak_foot, skill_moves: c4.skill_moves };
+    candidates.set(c4.id, { card: toWorkspaceCard(c4), cost: 0, meta: Object.fromEntries(c4.positions.map((p) => [p.toUpperCase(), metaRate(m, [p]).best?.score ?? 0])) });
+  }
+  const currentMeta = {}, sellValue = {};
+  const owned = new Map(mine.map((c4) => [c4.id, c4]));
+  const eaIds = [];
+  await Promise.all(squad.slots.map(async (s) => {
+    if (!s.card) return;
+    try {
+      const { meta } = await loadMetaCard(db2, userId, s.card.id);
+      currentMeta[s.slot] = metaRate(meta, [s.position]).best?.score ?? null;
+    } catch {
+      currentMeta[s.slot] = null;
+    }
+    const o = owned.get(s.card.id);
+    if (o && o.tradeable !== false && o.ea_item_id) eaIds.push(o.ea_item_id);
+  }));
+  if (eaIds.length) {
+    const { data, error } = await db2.rpc("account_item_prices", { p_platform: platform, p_ids: [...new Set(eaIds)] });
+    if (!error) {
+      const price = new Map((data?.items ?? []).map((i) => [Number(i.ea_item_id), i.price]));
+      for (const s of squad.slots) {
+        const o = s.card ? owned.get(s.card.id) : void 0;
+        const p = o?.ea_item_id ? price.get(o.ea_item_id) : null;
+        if (o && o.tradeable !== false && typeof p === "number") sellValue[o.id] = Math.floor(p * (1 - EA_TAX6));
+      }
+    }
+  }
+  return {
+    platform,
+    candidates: candidates.size,
+    ...planUpgrades({ squad, rules, budget, candidates: [...candidates.values()], currentMeta, sellValue }),
+    note: "Market cards at FUT.GG's latest prices; your unused club cards cost nothing. Team rating uses the community formula, metaratings are GafferBot's estimates. Nothing is bought.",
+    verified: false
+  };
+}
+
 // supabase/functions/_shared/fut/champs.ts
 var MODES = ["champs", "rivals", "squad_battles", "other"];
 var MODE_LABEL = { champs: "Champions", rivals: "Rivals", squad_battles: "Squad Battles", other: "Games" };
@@ -10240,183 +10562,6 @@ async function champsOverview(db2, userId, platform) {
   });
   const byMode = MODES.map((m) => ({ mode: m, label: MODE_LABEL[m], ...summarize(games.filter((g) => list2.find((r2) => r2.id === g.run_id)?.mode === m)) })).filter((m) => m.games > 0);
   return { platform, runs: out, by_mode: byMode, formations: [...FORMATION_NAMES2], note: "Games you logged yourself. Nothing is read from EA." };
-}
-
-// supabase/functions/_shared/fut/squad-suggest.ts
-var norm7 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-var plays2 = (card, position) => card.positions.some((p) => p.toUpperCase() === position.toUpperCase());
-function evaluate(formation, slots, manager, rules) {
-  const filled = slots.filter((s) => s.card);
-  const chem = computeSquadChemistry({
-    formation,
-    ...manager ? { manager: { nation: manager.nation ?? void 0, league: manager.league ?? void 0 } } : {},
-    slots: filled.map((s) => ({ slot: s.slot, position: s.position, card: s.card }))
-  }, rules);
-  const rating4 = filled.reduce((a, s) => a + (s.card.rating ?? 0), 0);
-  return { chem, total: chem.total, rating: rating4, filled: filled.length };
-}
-function score2(e, by) {
-  return e.filled * 1e7 + (by === "ovr" ? e.rating * 100 + e.total : e.total * 1e4 + e.rating);
-}
-function pickPool(pool, taken) {
-  return pool.filter((c4) => !taken.has(norm7(c4.name)));
-}
-function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
-  const layout = FORMATIONS[formation];
-  if (!layout) throw new Error(`Unknown formation "${formation}"`);
-  const locked = base.slots.filter((s) => s.locked && s.card);
-  const slots = layout.map((l) => ({ slot: l.slot, position: l.position, card: null, locked: false }));
-  for (const l of locked) {
-    const at = slots.find((s) => !s.locked && s.slot === l.slot) ?? slots.find((s) => !s.locked && plays2(l.card, s.position)) ?? slots.find((s) => !s.locked);
-    if (at) {
-      at.card = l.card;
-      at.locked = true;
-    }
-  }
-  const taken = new Set(slots.filter((s) => s.card).map((s) => norm7(s.card.name)));
-  const cards = pickPool(pool, taken);
-  const byPos = /* @__PURE__ */ new Map();
-  for (const s of slots) {
-    if (byPos.has(s.position)) continue;
-    byPos.set(s.position, cards.filter((c4) => plays2(c4, s.position)).sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)));
-  }
-  const open = slots.filter((s) => !s.locked);
-  const order = [...open].sort((a, b) => byPos.get(a.position).length - byPos.get(b.position).length);
-  const greedy = (prefer) => {
-    const out = slots.map((s) => ({ ...s }));
-    const used = new Set(taken);
-    for (const o of order) {
-      const list2 = byPos.get(o.position);
-      const pick = prefer && list2.find((c4) => !used.has(norm7(c4.name)) && prefer(c4)) || list2.find((c4) => !used.has(norm7(c4.name)));
-      if (pick) {
-        out.find((s) => s.slot === o.slot).card = pick;
-        used.add(norm7(pick.name));
-      }
-    }
-    return out;
-  };
-  const improve = (start, limit2) => {
-    let cur = start;
-    let best = score2(evaluate(formation, cur, base.manager, rules), by);
-    for (let round3 = 0; round3 < 6; round3++) {
-      let changed = false;
-      for (const o of open) {
-        const i = cur.findIndex((s) => s.slot === o.slot);
-        const used = new Set(cur.filter((s, j) => j !== i && s.card).map((s) => norm7(s.card.name)));
-        for (const c4 of byPos.get(o.position).slice(0, limit2)) {
-          if (used.has(norm7(c4.name)) || c4.id === cur[i].card?.id) continue;
-          const next = cur.map((s, j) => j === i ? { ...s, card: c4 } : s);
-          const v = score2(evaluate(formation, next, base.manager, rules), by);
-          if (v > best) {
-            best = v;
-            cur = next;
-            changed = true;
-          }
-        }
-      }
-      for (let a = 0; a < cur.length; a++) for (let b = a + 1; b < cur.length; b++) {
-        const A = cur[a], B = cur[b];
-        if (A.locked || B.locked || !A.card || !B.card || !plays2(A.card, B.position) || !plays2(B.card, A.position)) continue;
-        const next = cur.map((s, j) => j === a ? { ...s, card: B.card } : j === b ? { ...s, card: A.card } : s);
-        const v = score2(evaluate(formation, next, base.manager, rules), by);
-        if (v > best) {
-          best = v;
-          cur = next;
-          changed = true;
-        }
-      }
-      if (!changed) break;
-    }
-    return { slots: cur, value: best };
-  };
-  const starts = [greedy()];
-  if (by === "chem") {
-    const groups = [];
-    for (const t of ["league", "nation", "club"]) {
-      const counts = /* @__PURE__ */ new Map();
-      for (const c4 of cards) {
-        const k = c4[t];
-        if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
-      }
-      for (const [k, n] of counts) if (n >= 3) groups.push({ key: `${t}:${k}`, n, test: (c4) => c4[t] === k });
-    }
-    groups.sort((a, b) => b.n - a.n);
-    for (const g of groups.slice(0, opts.seeds ?? 8)) starts.push(greedy(g.test));
-  }
-  const limit = by === "chem" ? 40 : 25;
-  let winner = improve(starts[0], limit);
-  for (const s of starts.slice(1)) {
-    const r2 = improve(s, limit);
-    if (r2.value > winner.value) winner = r2;
-  }
-  const e = evaluate(formation, winner.slots, base.manager, rules);
-  const squad = { ...base, formation, slots: winner.slots, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
-  return {
-    formation,
-    squad,
-    chemistry: e.total,
-    rating: e.filled ? Math.round(e.rating / e.filled) : 0,
-    filled: e.filled,
-    empty: winner.slots.filter((s) => !s.card).map((s) => s.slot)
-  };
-}
-function bestSquads(base, formation, pool, rules, by) {
-  if (formation !== "all") return [bestSquadFor(base, formation, pool, rules, by)];
-  const all = Object.keys(FORMATIONS).map((f2) => bestSquadFor(base, f2, pool, rules, by, { seeds: 4 }));
-  const key2 = (b) => b.filled * 1e7 + (by === "ovr" ? b.rating * 1e3 + b.chemistry : b.chemistry * 1e4 + b.rating);
-  return all.sort((a, b) => key2(b) - key2(a));
-}
-function suggestForSlot(squad, slot, pool, rules, by, limit = 12) {
-  const i = squad.slots.findIndex((s) => s.slot === slot);
-  if (i < 0) throw new Error(`No slot "${slot}" in ${squad.formation}`);
-  const target = squad.slots[i];
-  const before = evaluate(squad.formation, squad.slots, squad.manager, rules).total;
-  const taken = new Set(squad.slots.filter((s, j) => j !== i && s.card).map((s) => norm7(s.card.name)));
-  const out = [];
-  for (const c4 of pickPool(pool, taken)) {
-    if (!plays2(c4, target.position) || c4.id === target.card?.id) continue;
-    const next = squad.slots.map((s, j) => j === i ? { ...s, card: c4 } : s);
-    const e = evaluate(squad.formation, next, squad.manager, rules);
-    out.push({ card: c4, team_chemistry: e.total, chemistry: e.chem.players.find((p) => p.slot === slot)?.chemistry ?? 0, change: e.total - before });
-  }
-  out.sort((a, b) => by === "ovr" ? (b.card.rating ?? 0) - (a.card.rating ?? 0) || b.team_chemistry - a.team_chemistry : b.team_chemistry - a.team_chemistry || (b.card.rating ?? 0) - (a.card.rating ?? 0));
-  return { slot, position: target.position, before, suggestions: out.slice(0, limit) };
-}
-async function squadRoles(db2, userId, squad) {
-  const ids = [...new Set(squad.slots.flatMap((s) => s.card && /^[0-9a-f-]{36}$/i.test(s.card.id) ? [s.card.id] : []))];
-  const out = {};
-  for (const s of squad.slots) out[s.slot] = { position: s.position, roles: [] };
-  if (!ids.length) return out;
-  const { data: rows, error } = await db2.from("player_cards").select("id, owner_user_id, source_id, source_card_key").in("id", ids);
-  fail(error);
-  const visible = (rows ?? []).filter((r2) => r2.owner_user_id === null || r2.owner_user_id === userId);
-  const keys = [...new Set(visible.filter((r2) => r2.source_id !== "futgg_catalogue" && /^\d{1,10}$/.test(String(r2.source_card_key ?? ""))).map((r2) => String(r2.source_card_key)))];
-  const catalogue = /* @__PURE__ */ new Map();
-  if (keys.length) {
-    const { data, error: e } = await db2.from("player_cards").select("id, source_card_key").eq("source_id", "futgg_catalogue").is("owner_user_id", null).in("source_card_key", keys);
-    fail(e);
-    for (const r2 of data ?? []) catalogue.set(String(r2.source_card_key), r2.id);
-  }
-  const roleCard = /* @__PURE__ */ new Map();
-  for (const r2 of visible) roleCard.set(r2.id, r2.source_id === "futgg_catalogue" ? r2.id : catalogue.get(String(r2.source_card_key)) ?? r2.id);
-  const lookup = [...new Set(roleCard.values())];
-  const { data: roles, error: re } = await db2.from("card_roles").select("card_id, position_code, role, level").in("card_id", lookup);
-  fail(re);
-  const byCard = /* @__PURE__ */ new Map();
-  for (const r2 of roles ?? []) {
-    const list2 = byCard.get(r2.card_id) ?? [];
-    list2.push({ position: r2.position_code, role: r2.role, level: r2.level });
-    byCard.set(r2.card_id, list2);
-  }
-  for (const s of squad.slots) {
-    if (!s.card) continue;
-    const all = byCard.get(roleCard.get(s.card.id) ?? "") ?? [];
-    out[s.slot] = {
-      position: s.position,
-      roles: all.filter((r2) => r2.position === s.position).sort((a, b) => a.level === b.level ? a.role.localeCompare(b.role) : a.level === "plusplus" ? -1 : 1)
-    };
-  }
-  return out;
 }
 
 // supabase/functions/_shared/fut/futgg-catalogue.ts
@@ -13526,6 +13671,10 @@ async function handle(req, deps) {
           if (!pool.length) throw new FutError("You have no club cards yet. Sync your club or add cards on My cards first.");
           return { by, owned_cards: pool.length, results: bestSquads(squad, formation, pool, rules, by) };
         }) });
+      }
+      if (route === "/squads/upgrades" && m === "POST") {
+        const b = obj2(await body(req));
+        return json({ data: await runWorkspace(async () => upgradeOptions(db2, userId, squadSchema.parse({ ...obj2(b.squad), owner_id: userId }), b)) });
       }
       if (route === "/squads/roles" && m === "POST") {
         const b = obj2(await body(req));

@@ -78,6 +78,9 @@ export interface SquadImportRow { input: SquadImportEntry; slot: string | null; 
 export interface SquadImportResult { squad: FutSquad; rows: SquadImportRow[]; formation_changed: string | null; cleared: string[]; via: "list" | "ai"; note: string | null }
 export type SuggestBy = "ovr" | "chem";
 export interface BestSquad { formation: string; squad: FutSquad; chemistry: number; rating: number; filled: number; empty: string[] }
+export interface UpgradeSwap { slot: string; position: string; cost: number; out: { id: string | null; name: string | null; rating: number | null; meta: number | null; sells_for: number | null }; in: { id: string; name: string; rating: number | null; owned: boolean; meta: number | null; card: SlotCard } }
+export interface UpgradePlan { swaps: UpgradeSwap[]; cost: number; net_cost: number; rating_before: number; rating_after: number; chem_before: number; chem_after: number; meta_gain: number | null; gain: number; per_10k: number | null }
+export interface UpgradePath { platform: "console" | "pc"; candidates: number; before: { rating: number; chem: number }; budget: number; best: UpgradePlan | null; singles: UpgradePlan[]; pairs: UpgradePlan[]; free: UpgradePlan[]; note: string; verified: false }
 export interface BestSquadResult { by: SuggestBy; owned_cards: number; results: BestSquad[] }
 export interface SlotSuggestion { card: SlotCard; team_chemistry: number; chemistry: number; change: number }
 export interface SlotSuggestions { slot: string; position: string; before: number; suggestions: SlotSuggestion[] }
@@ -405,6 +408,7 @@ export const futApi = {
   chemistry: (squad: FutSquad | string) => futRequest<Chemistry>("/squads/chemistry", "POST", { squad: typeof squad === "string" ? squad : withBudget(squad) }),
   diagnose: (squad: FutSquad, slot?: string) => futRequest<RuleInfo & Record<string, unknown>>("/squads/diagnose", "POST", { squad: withBudget(squad), ...(slot ? { slot } : {}) }),
   bestSquad: (squad: FutSquad, by: SuggestBy, formation: string) => futRequest<BestSquadResult>("/squads/best", "POST", { squad: withBudget(squad), by, formation }),
+  upgrades: (squad: FutSquad, budget: number, platform: "console" | "pc") => futRequest<UpgradePath>("/squads/upgrades", "POST", { squad: withBudget(squad), budget, platform }),
   suggestSlot: (squad: FutSquad, slot: string, by: SuggestBy) => futRequest<SlotSuggestions>("/squads/suggest", "POST", { squad: withBudget(squad), slot, by }),
   squadRoles: (squad: FutSquad) => futRequest<SquadRoles>("/squads/roles", "POST", { squad: withBudget(squad) }),
   importSquad: (squad: FutSquad, input: { text?: string; image?: SquadImportImage }) => futRequest<SquadImportResult>("/squads/import", "POST", { squad: withBudget(squad), ...input }),
