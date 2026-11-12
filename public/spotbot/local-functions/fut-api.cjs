@@ -266,7 +266,7 @@ function diffSquadChemistry(before, after) {
 var FACE_STATS = ["pac", "sho", "pas", "dri", "def", "phy"];
 
 // supabase/functions/_shared/fut/xilab/workspace/formations.ts
-var f = (rows) => rows.flatMap((r2, row) => r2.map(([slot, position]) => ({ slot, position, row })));
+var f = (rows) => rows.flatMap((r2, row2) => r2.map(([slot, position]) => ({ slot, position, row: row2 })));
 var GK = [["GK", "GK"]];
 var BACK3 = [["LCB", "CB"], ["CB", "CB"], ["RCB", "CB"]];
 var BACK4 = [["LB", "LB"], ["LCB", "CB"], ["RCB", "CB"], ["RB", "RB"]];
@@ -5433,7 +5433,7 @@ var PgSquadStore = class {
     fail(error);
     if (existing && existing.user_id !== owner) throw new NotFoundError(`No squad ${squad.id}`);
     const parent = squad.parent_id && squad.parent_id !== squad.id && await this.get(owner, squad.parent_id) ? squad.parent_id : null;
-    const row = {
+    const row2 = {
       name: squad.name,
       formation: squad.formation,
       platform: squad.platform ?? null,
@@ -5443,14 +5443,14 @@ var PgSquadStore = class {
       updated_at: squad.updated_at
     };
     if (existing) {
-      fail((await this.db.from("squads").update(row).eq("id", squad.id).eq("user_id", owner)).error);
+      fail((await this.db.from("squads").update(row2).eq("id", squad.id).eq("user_id", owner)).error);
       fail((await this.db.from("squad_slots").delete().eq("squad_id", squad.id)).error);
     } else {
       const { count: count2, error: e } = await this.db.from("squads").select("id", { count: "exact", head: true }).eq("user_id", owner);
       fail(e);
       if ((count2 ?? 0) >= MAX_SQUADS_PER_USER) throw new FutError(`You can keep up to ${MAX_SQUADS_PER_USER} squads. Delete one first.`);
       await ensureAccount(this.db, owner);
-      fail((await this.db.from("squads").insert({ ...row, id: squad.id, user_id: owner, created_at: squad.created_at })).error);
+      fail((await this.db.from("squads").insert({ ...row2, id: squad.id, user_id: owner, created_at: squad.created_at })).error);
     }
     const slots = [];
     for (const [i, s] of squad.slots.entries()) {
@@ -5963,15 +5963,15 @@ async function futggStatus(db2, now2 = Date.now()) {
   if (enabled) for (const platform of ["console", "pc"]) {
     const { data, error: readError } = await db2.from("futgg_snapshots").select("*").eq("game_year", 27).eq("platform", platform).order("published_at", { ascending: false }).limit(1);
     if (readError) throw new FutDbError(readError.message);
-    const row = data?.[0];
-    const ageHours = row ? Math.max(0, (now2 - Date.parse(row.published_at)) / 36e5) : null;
+    const row2 = data?.[0];
+    const ageHours = row2 ? Math.max(0, (now2 - Date.parse(row2.published_at)) / 36e5) : null;
     platforms.push({
       platform,
-      published_at: row?.published_at ?? null,
-      received_at: row?.received_at ?? null,
-      checked_at: row?.checked_at ?? null,
-      card_count: row?.card_count ?? 0,
-      market_price_count: row?.priced_count ?? 0,
+      published_at: row2?.published_at ?? null,
+      received_at: row2?.received_at ?? null,
+      checked_at: row2?.checked_at ?? null,
+      card_count: row2?.card_count ?? 0,
+      market_price_count: row2?.priced_count ?? 0,
       age_hours: ageHours === null ? null : Math.round(ageHours * 100) / 100,
       overdue: ageHours === null || ageHours > 12
     });
@@ -6797,21 +6797,21 @@ async function importAccount(db2, userId, raw, now2 = Date.now()) {
   const u = parseAccountUpload(raw, now2);
   const { data: have, error } = await db2.from("account_state").select("*").eq("user_id", userId).eq("platform", u.platform).maybeSingle();
   fail5(error);
-  const row = { user_id: userId, platform: u.platform, updated_at: new Date(now2).toISOString(), shape: { ...have?.shape ?? {}, ...u.shape } };
+  const row2 = { user_id: userId, platform: u.platform, updated_at: new Date(now2).toISOString(), shape: { ...have?.shape ?? {}, ...u.shape } };
   const updated = [];
   for (const name2 of SECTIONS) {
     const s = u.sections[name2];
     const prevAt = have?.[`${name2}_at`];
     if (s && (!prevAt || Date.parse(s.seen_at) >= Date.parse(prevAt))) {
-      row[name2] = s.data;
-      row[`${name2}_at`] = s.seen_at;
+      row2[name2] = s.data;
+      row2[`${name2}_at`] = s.seen_at;
       updated.push(name2);
     } else if (have) {
-      row[name2] = have[name2] ?? null;
-      row[`${name2}_at`] = prevAt ?? null;
+      row2[name2] = have[name2] ?? null;
+      row2[`${name2}_at`] = prevAt ?? null;
     }
   }
-  fail5((await db2.from("account_state").upsert(row, { onConflict: "user_id,platform" })).error);
+  fail5((await db2.from("account_state").upsert(row2, { onConflict: "user_id,platform" })).error);
   if (updated.includes("balance")) await recordBalance(db2, userId, u.platform, u.sections.balance.data, u.sections.balance.seen_at, now2);
   let trades = 0;
   if (updated.includes("tradepile") || updated.includes("watchlist")) {
@@ -9550,7 +9550,7 @@ ${slots}`,
 }
 async function callClaude(env, fetchFn, body2) {
   const key2 = env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY");
-  if (!key2) throw new FutError('Reading free text and screenshots needs ANTHROPIC_API_KEY on the server. Typed lists like "ST Mbappe 91" still work.', 503);
+  if (!key2) throw new FutError('Reading free text and screenshots needs a Claude API key: add yours on your profile. Typed lists like "ST Mbappe 91" still work.', 503);
   const send = (b, beta) => fetchFn(ANTHROPIC_URL, {
     method: "POST",
     headers: { "x-api-key": key2, "anthropic-version": "2023-06-01", "content-type": "application/json", ...beta ? { "anthropic-beta": "server-side-fallback-2026-07-01" } : {} },
@@ -9710,52 +9710,52 @@ function placeMatches(start, parsed, matches) {
     return { input: entry, slot: null, card: best?.card ?? null, version: best?.version ?? null, confidence: confidence(options), options };
   });
   const free = (s, explicit) => !taken.has(s.slot) && (explicit || !s.locked);
-  const put = (row, s) => {
-    row.slot = s.slot;
+  const put = (row2, s) => {
+    row2.slot = s.slot;
     taken.add(s.slot);
   };
   const usedNames = /* @__PURE__ */ new Set();
-  for (const row of rows) {
-    if (!row.card) {
-      row.reason = "No card with that name in your club or the market card list.";
+  for (const row2 of rows) {
+    if (!row2.card) {
+      row2.reason = "No card with that name in your club or the market card list.";
       continue;
     }
-    const n = normalize(row.card.name);
+    const n = normalize(row2.card.name);
     if (usedNames.has(n)) {
-      row.reason = "This player is already in the import.";
-      row.card = null;
-      row.confidence = "missing";
+      row2.reason = "This player is already in the import.";
+      row2.card = null;
+      row2.confidence = "missing";
       continue;
     }
     usedNames.add(n);
   }
   const live = rows.filter((r2) => r2.card);
-  for (const row of live) {
-    const s = row.input.slot ? slots.find((x) => x.slot === row.input.slot && free(x, true)) : void 0;
-    if (s) put(row, s);
+  for (const row2 of live) {
+    const s = row2.input.slot ? slots.find((x) => x.slot === row2.input.slot && free(x, true)) : void 0;
+    if (s) put(row2, s);
   }
-  for (const row of live.filter((r2) => !r2.slot && r2.input.position)) {
-    const s = slots.find((x) => x.position === row.input.position && free(x, false) && (full || !x.card)) ?? slots.find((x) => x.position === row.input.position && free(x, false));
-    if (s) put(row, s);
+  for (const row2 of live.filter((r2) => !r2.slot && r2.input.position)) {
+    const s = slots.find((x) => x.position === row2.input.position && free(x, false) && (full || !x.card)) ?? slots.find((x) => x.position === row2.input.position && free(x, false));
+    if (s) put(row2, s);
   }
-  for (const row of live.filter((r2) => !r2.slot)) {
-    const plays5 = (x) => row.card.positions.includes(x.position) && free(x, false);
+  for (const row2 of live.filter((r2) => !r2.slot)) {
+    const plays5 = (x) => row2.card.positions.includes(x.position) && free(x, false);
     const s = slots.find((x) => plays5(x) && !x.card) ?? (full ? slots.find(plays5) : void 0);
-    if (s) put(row, s);
+    if (s) put(row2, s);
   }
-  for (const row of live.filter((r2) => !r2.slot)) {
+  for (const row2 of live.filter((r2) => !r2.slot)) {
     const s = slots.find((x) => free(x, false) && (full || !x.card));
-    if (s) put(row, s);
-    else row.reason = 'No free slot for this player. Name the slot (e.g. "RW Saka") to replace someone.';
+    if (s) put(row2, s);
+    else row2.reason = 'No free slot for this player. Name the slot (e.g. "RW Saka") to replace someone.';
   }
-  for (const row of live) {
-    if (!row.slot) continue;
-    const target = slots.find((x) => x.slot === row.slot);
-    for (const other of slots) if (other !== target && !taken.has(other.slot) && other.card && normalize(other.card.name) === normalize(row.card.name)) {
+  for (const row2 of live) {
+    if (!row2.slot) continue;
+    const target = slots.find((x) => x.slot === row2.slot);
+    for (const other of slots) if (other !== target && !taken.has(other.slot) && other.card && normalize(other.card.name) === normalize(row2.card.name)) {
       other.card = null;
       other.locked = false;
     }
-    target.card = row.card;
+    target.card = row2.card;
   }
   return { squad: { ...squad, slots, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, rows, formation_changed, cleared, via: parsed.via, note: parsed.note ?? null };
 }
@@ -10323,7 +10323,7 @@ function compareTable(cards) {
       playstyles: all(c4.meta),
       only_this: [...sets[i]].filter((p) => !shared.includes(p)).sort(),
       meta: best,
-      wins: rows.filter((row) => row.leaders.length === 1 && row.leaders[0] === i).length,
+      wins: rows.filter((row2) => row2.leaders.length === 1 && row2.leaders[0] === i).length,
       price_per_rating: c4.price && c4.meta.rating ? Math.round(c4.price / c4.meta.rating) : null,
       price_per_meta: c4.price && best ? Math.round(c4.price / best.score) : null
     };
@@ -11246,7 +11246,7 @@ async function ownRun(db2, userId, id3) {
 async function createRun(db2, userId, b) {
   const mode = MODES2.includes(b.mode) ? b.mode : "champs";
   const platform = b.platform === "pc" ? "pc" : "console";
-  const row = {
+  const row2 = {
     id: crypto.randomUUID(),
     started_at: (/* @__PURE__ */ new Date()).toISOString(),
     finished_at: null,
@@ -11257,7 +11257,7 @@ async function createRun(db2, userId, b) {
     games_allowed: small(b.games_allowed, 1, 100, "games_allowed"),
     target_wins: small(b.target_wins, 1, 100, "target_wins")
   };
-  const { data, error } = await db2.from("ut_runs").insert(row).select("*").single();
+  const { data, error } = await db2.from("ut_runs").insert(row2).select("*").single();
   fail7(error);
   return data;
 }
@@ -11288,7 +11288,7 @@ async function addGame(db2, userId, runId, b) {
   if (pens && gf !== ga) throw new FutError("Penalties only decide a drawn game.");
   const formation = text4(b.opponent_formation, 20);
   if (formation && !FORMATION_NAMES2.has(formation)) throw new FutError(`Unknown formation ${formation}. Use one like 4-2-3-1 or 4-3-3 (2).`);
-  const row = {
+  const row2 = {
     id: crypto.randomUUID(),
     played_at: (/* @__PURE__ */ new Date()).toISOString(),
     run_id: runId,
@@ -11303,7 +11303,7 @@ async function addGame(db2, userId, runId, b) {
     notes: text4(b.notes, 300),
     ...typeof b.played_at === "string" && Number.isFinite(Date.parse(b.played_at)) ? { played_at: new Date(b.played_at).toISOString() } : {}
   };
-  const { data, error: e } = await db2.from("ut_games").insert(row).select("*").single();
+  const { data, error: e } = await db2.from("ut_games").insert(row2).select("*").single();
   fail7(e);
   return data;
 }
@@ -12220,7 +12220,7 @@ async function addSource(db2, userId, input, env, fetchFn) {
   const url = typeof input.url === "string" ? input.url.trim() : "";
   const text5 = typeof input.text === "string" ? keep(input.text, MAX_ADD_TEXT) : "";
   if (url && (!/^https:\/\/\S+$/.test(url) || url.length > 600)) throw new FutError("Links must start with https:// (up to 600 characters).");
-  if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) throw new FutError("Reading sources needs ANTHROPIC_API_KEY on the server.", 503);
+  if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) throw new FutError("Reading sources needs a Claude API key: add yours on your profile.", 503);
   const link = url ? parseSourceLink(url) : null;
   let fetched = null;
   if (link && !text5) {
@@ -12455,6 +12455,100 @@ async function pullCommunity(db2, userId, market) {
   };
 }
 
+// supabase/functions/_shared/fut/ai-keys.ts
+var b64 = (bytes) => btoa(String.fromCharCode(...bytes));
+var unb64 = (text5) => Uint8Array.from(atob(text5), (c4) => c4.charCodeAt(0));
+var KEY_SHAPE = /^sk-ant-[A-Za-z0-9_-]{20,250}$/;
+var MODELS_URL = "https://api.anthropic.com/v1/models?limit=1";
+async function sealKey(env) {
+  const secret = env("AI_KEY_SECRET") || env("HELPER_KEY_SECRET") || env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!secret) return null;
+  const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`gafferbot-ai-key:${secret}`));
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+async function encrypt(env, userId, key2) {
+  const k = await sealKey(env);
+  if (!k) throw new FutError("The server can't store keys safely yet (no secret set). Ask the GafferBot admin.", 503);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: new TextEncoder().encode(userId) }, k, new TextEncoder().encode(key2)));
+  const out = new Uint8Array(iv.length + ct.length);
+  out.set(iv);
+  out.set(ct, iv.length);
+  return `v1:${b64(out)}`;
+}
+async function decrypt(env, userId, sealed) {
+  if (!sealed?.startsWith("v1:")) return null;
+  const k = await sealKey(env);
+  if (!k) return null;
+  try {
+    const raw = unb64(sealed.slice(3));
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12), additionalData: new TextEncoder().encode(userId) }, k, raw.slice(12));
+    return new TextDecoder().decode(plain);
+  } catch {
+    return null;
+  }
+}
+var fail10 = (error) => {
+  if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
+};
+async function row(db2, userId) {
+  const { data, error } = await db2.from("user_ai_keys").select("key_encrypted, key_hint, updated_at").eq("user_id", userId).maybeSingle();
+  fail10(error);
+  return data;
+}
+async function userAiKey(db2, userId, env) {
+  const r2 = await row(db2, userId);
+  return r2 ? await decrypt(env, userId, r2.key_encrypted) : null;
+}
+async function aiKeyStatus(db2, userId, env) {
+  const r2 = await row(db2, userId);
+  const key2 = r2 ? await decrypt(env, userId, r2.key_encrypted) : null;
+  const server = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
+  return {
+    saved: !!key2,
+    key_hint: r2?.key_hint ?? null,
+    updated_at: r2?.updated_at ?? null,
+    using: key2 ? "yours" : server ? "server" : "none",
+    unreadable: !!r2 && !key2
+  };
+}
+async function revealAiKey(db2, userId, env) {
+  return { key: await userAiKey(db2, userId, env) };
+}
+async function saveAiKey(db2, userId, input, env, fetchFn = fetch) {
+  const key2 = typeof input === "string" ? input.trim() : "";
+  if (!key2) throw new FutError("Paste your Claude API key.");
+  if (!KEY_SHAPE.test(key2)) throw new FutError("That doesn't look like a Claude API key. It starts with sk-ant- and comes from console.anthropic.com \u2192 API keys.");
+  let res;
+  try {
+    res = await fetchFn(MODELS_URL, { headers: { "x-api-key": key2, "anthropic-version": "2023-06-01" }, signal: AbortSignal.timeout(1e4) });
+  } catch {
+    throw new FutError("Couldn't reach Anthropic to check the key. Try again in a minute.", 502);
+  }
+  await res.body?.cancel().catch(() => {
+  });
+  if (res.status === 401 || res.status === 403) throw new FutError("Anthropic turned that key down. Check it's copied in full and still active.", 422);
+  if (!res.ok && res.status !== 429 && res.status < 500) throw new FutError(`Anthropic couldn't check that key (error ${res.status}).`, 422);
+  const key_encrypted = await encrypt(env, userId, key2);
+  const now2 = (/* @__PURE__ */ new Date()).toISOString();
+  fail10((await db2.from("user_ai_keys").upsert({ user_id: userId, key_encrypted, key_hint: key2.slice(-4), updated_at: now2 }, { onConflict: "user_id" })).error);
+  return aiKeyStatus(db2, userId, env);
+}
+async function removeAiKey(db2, userId, env) {
+  fail10((await db2.from("user_ai_keys").delete().eq("user_id", userId)).error);
+  return aiKeyStatus(db2, userId, env);
+}
+async function envForUser(db2, userId, env) {
+  let key2 = null;
+  try {
+    key2 = await userAiKey(db2, userId, env);
+  } catch (e) {
+    console.error("[fut-api] user AI key:", e);
+  }
+  if (!key2) return { env, own: false };
+  return { env: (k) => k === "ANTHROPIC_API_KEY" || k === "CLAUDE_API_KEY" ? key2 : env(k), own: true };
+}
+
 // supabase/functions/_shared/mcp-tokens.ts
 var ACCESS_TTL_S = 60 * 60;
 var REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1e3;
@@ -12472,67 +12566,67 @@ var REUSE_GRACE_MS = 30 * 1e3;
 // supabase/functions/_shared/fut/helper-keys.ts
 var HELPER_KEY_PREFIX = "xlh_";
 var HELPER_ROUTES = /* @__PURE__ */ new Set(["/helper/prices", "/helper/club", "/helper/packs", "/helper/account", "/helper/images"]);
-var b64 = (bytes) => btoa(String.fromCharCode(...bytes));
-var unb64 = (text5) => Uint8Array.from(atob(text5), (c4) => c4.charCodeAt(0));
-async function sealKey(env) {
+var b642 = (bytes) => btoa(String.fromCharCode(...bytes));
+var unb642 = (text5) => Uint8Array.from(atob(text5), (c4) => c4.charCodeAt(0));
+async function sealKey2(env) {
   const secret = env("HELPER_KEY_SECRET") || env("SUPABASE_SERVICE_ROLE_KEY");
   if (!secret) return null;
   const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`gafferbot-helper-key:${secret}`));
   return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 async function encryptHelperKey(env, userId, key2) {
-  const k = await sealKey(env);
+  const k = await sealKey2(env);
   if (!k) return null;
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: new TextEncoder().encode(userId) }, k, new TextEncoder().encode(key2)));
   const out = new Uint8Array(iv.length + ct.length);
   out.set(iv);
   out.set(ct, iv.length);
-  return `v1:${b64(out)}`;
+  return `v1:${b642(out)}`;
 }
 async function decryptHelperKey(env, userId, sealed) {
   if (!sealed?.startsWith("v1:")) return null;
-  const k = await sealKey(env);
+  const k = await sealKey2(env);
   if (!k) return null;
   try {
-    const raw = unb64(sealed.slice(3));
+    const raw = unb642(sealed.slice(3));
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12), additionalData: new TextEncoder().encode(userId) }, k, raw.slice(12));
     return new TextDecoder().decode(plain);
   } catch {
     return null;
   }
 }
-var fail10 = (error) => {
+var fail11 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var looksLikeHelperKey = (s) => s.startsWith(HELPER_KEY_PREFIX) && s.length >= 30 && s.length <= 80;
 async function helperKeyUser(db2, key2) {
   if (!looksLikeHelperKey(key2)) return null;
   const { data, error } = await db2.from("helper_keys").select("id, user_id").eq("key_hash", await hashToken(key2)).is("revoked_at", null).maybeSingle();
-  fail10(error);
+  fail11(error);
   if (!data) return null;
-  fail10((await db2.from("helper_keys").update({ last_used_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", data.id)).error);
+  fail11((await db2.from("helper_keys").update({ last_used_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", data.id)).error);
   return String(data.user_id);
 }
 async function helperStatus(db2, userId) {
   const { data, error } = await db2.from("helper_keys").select("key_hint, created_at, last_used_at").eq("user_id", userId).is("revoked_at", null).maybeSingle();
-  fail10(error);
+  fail11(error);
   return data ? { connected: true, key_hint: String(data.key_hint), created_at: String(data.created_at), last_used_at: data.last_used_at ? String(data.last_used_at) : null } : { connected: false, key_hint: null, created_at: null, last_used_at: null };
 }
 async function revokeHelperKeys(db2, userId) {
-  fail10((await db2.from("helper_keys").update({ revoked_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("user_id", userId).is("revoked_at", null)).error);
+  fail11((await db2.from("helper_keys").update({ revoked_at: (/* @__PURE__ */ new Date()).toISOString() }).eq("user_id", userId).is("revoked_at", null)).error);
   return helperStatus(db2, userId);
 }
 async function createHelperKey(db2, userId, env = () => void 0) {
   await revokeHelperKeys(db2, userId);
   const key2 = HELPER_KEY_PREFIX + randomString(24);
   const key_encrypted = await encryptHelperKey(env, userId, key2);
-  fail10((await db2.from("helper_keys").insert({ user_id: userId, key_hash: await hashToken(key2), key_hint: key2.slice(-4), key_encrypted })).error);
+  fail11((await db2.from("helper_keys").insert({ user_id: userId, key_hash: await hashToken(key2), key_hint: key2.slice(-4), key_encrypted })).error);
   return { key: key2, ...await helperStatus(db2, userId) };
 }
 async function revealHelperKey(db2, userId, env) {
   const { data, error } = await db2.from("helper_keys").select("key_encrypted").eq("user_id", userId).is("revoked_at", null).maybeSingle();
-  fail10(error);
+  fail11(error);
   if (!data) return { connected: false, key: null };
   return { connected: true, key: await decryptHelperKey(env, userId, data.key_encrypted) };
 }
@@ -13150,7 +13244,7 @@ function assertUsable(source, use) {
 // supabase/functions/_shared/fut/xilab/shared/csv.ts
 function parseCsv(text5) {
   const rows = [];
-  let row = [];
+  let row2 = [];
   let field = "";
   let quoted = false;
   const s = text5.replace(/^﻿/, "");
@@ -13165,18 +13259,18 @@ function parseCsv(text5) {
       } else field += c4;
     } else if (c4 === '"') quoted = true;
     else if (c4 === ",") {
-      row.push(field);
+      row2.push(field);
       field = "";
     } else if (c4 === "\n" || c4 === "\r") {
       if (c4 === "\r" && s[i + 1] === "\n") i++;
-      row.push(field);
+      row2.push(field);
       field = "";
-      if (row.some((f2) => f2 !== "")) rows.push(row);
-      row = [];
+      if (row2.some((f2) => f2 !== "")) rows.push(row2);
+      row2 = [];
     } else field += c4;
   }
-  row.push(field);
-  if (row.some((f2) => f2 !== "")) rows.push(row);
+  row2.push(field);
+  if (row2.some((f2) => f2 !== "")) rows.push(row2);
   const [header, ...body2] = rows;
   if (!header) return [];
   const keys = header.map((h) => h.trim());
@@ -13741,7 +13835,7 @@ function createMarketService(deps) {
       const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
       const card = getCard2(snap, card_id);
       const others = opts.others?.length ? opts.others.map((id3) => getCard2(snap, id3)) : comparableCards(card, snap.cards);
-      const row = (c4) => {
+      const row2 = (c4) => {
         const s = snap.series.get(c4.id) ?? [];
         const f2 = freshness(s, snap.as_of, rules);
         const u = cardUtility(c4);
@@ -13749,7 +13843,7 @@ function createMarketService(deps) {
         const fit = u.gameplay.best?.score ?? null;
         return { card_id: c4.id, name: c4.name, rating: c4.rating, best_fit: u.gameplay.best, versatility: u.gameplay.versatility, latest_price: price, freshness: f2.status, coins_per_fit_point: price !== null && fit ? Math.round(price / fit) : null };
       };
-      return { subject: row(card), others: others.map(row), note: "Fit is a face-stat estimate. Coins per fit point compares price to that estimate only; PlayStyles, roles and chemistry aren't in it yet.", provenance: provenance(snap) };
+      return { subject: row2(card), others: others.map(row2), note: "Fit is a face-stat estimate. Coins per fit point compares price to that estimate only; PlayStyles, roles and chemistry aren't in it yet.", provenance: provenance(snap) };
     },
     /** analyze_trade_thesis */
     async analyzeTradeThesis(owner, input, opts = {}) {
@@ -13888,7 +13982,7 @@ function createMarketService(deps) {
 }
 
 // supabase/functions/_shared/fut/market.ts
-var fail11 = (error) => {
+var fail12 = (error) => {
   if (error) throw new FutDbError(`fut db: ${error.message ?? "error"}`);
 };
 var iso2 = (v) => v === null || v === void 0 ? null : new Date(String(v)).toISOString();
@@ -13944,7 +14038,7 @@ async function allPages(make) {
   const out = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await make().range(from, from + PAGE - 1);
-    fail11(error);
+    fail12(error);
     out.push(...data ?? []);
     if (!data || data.length < PAGE) return out;
     if (out.length >= 2e5) throw new FutError("Too much price history to analyse at once.", 413);
@@ -14064,10 +14158,10 @@ var PgPriceStore = class {
     }
     const wanted = q.card_ids?.length ? new Set(q.card_ids) : null;
     const catalogueIds = /* @__PURE__ */ new Map();
-    for (const row of await this.catalogue()) {
-      const key2 = eaKey(row.source_card_key);
-      if (key2 === null || byEa.has(key2) || wanted && !wanted.has(String(row.id))) continue;
-      catalogueIds.set(key2, String(row.id));
+    for (const row2 of await this.catalogue()) {
+      const key2 = eaKey(row2.source_card_key);
+      if (key2 === null || byEa.has(key2) || wanted && !wanted.has(String(row2.id))) continue;
+      catalogueIds.set(key2, String(row2.id));
     }
     const out = [];
     const push = (quote, cardId) => out.push({
@@ -14104,7 +14198,7 @@ var PgPriceStore = class {
     const have = new Set(existing.map((r2) => `${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
     const fresh = rows.filter((r2) => !have.has(`${r2.source_id}|${r2.card_id}|${r2.platform}|${iso2(r2.observed_at)}`));
     const { count: count2, error } = await this.db.from("market_price_observations").select("id", { count: "exact", head: true }).eq("owner_user_id", owner);
-    fail11(error);
+    fail12(error);
     if ((count2 ?? 0) + fresh.length > MAX_PRICE_ROWS_PER_USER) throw new FutError(`You can keep up to ${MAX_PRICE_ROWS_PER_USER.toLocaleString("en-US")} price rows.`);
     for (let i = 0; i < fresh.length; i += 500) {
       const chunk = fresh.slice(i, i + 500).map((r2) => ({
@@ -14121,7 +14215,7 @@ var PgPriceStore = class {
         evidence: r2.evidence,
         quality: r2.quality ?? null
       }));
-      fail11((await this.db.from("market_price_observations").insert(chunk)).error);
+      fail12((await this.db.from("market_price_observations").insert(chunk)).error);
     }
     if (fresh.length) forgetMarketOwner(this.db, owner);
     return { inserted: fresh.length, skipped: rows.length - fresh.length };
@@ -14142,11 +14236,11 @@ var PgMembershipStore = class {
     const def = DEFAULT_BASKETS.find((b) => b.id === basket_id);
     if (def) {
       const { data, error } = await this.db.from("market_baskets").select("id").eq("id", basket_id).maybeSingle();
-      fail11(error);
-      if (!data) fail11((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
+      fail12(error);
+      if (!data) fail12((await this.db.from("market_baskets").insert({ id: def.id, label: def.label, grp: def.group, description: def.description, rule: def.rule })).error);
     }
-    fail11((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
-    if (rows.length) fail11((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
+    fail12((await this.db.from("market_basket_members").delete().eq("basket_id", basket_id)).error);
+    if (rows.length) fail12((await this.db.from("market_basket_members").insert(rows.map((m) => ({ ...m, backfilled: !!m.backfilled })))).error);
   }
 };
 var PgWatchlistStore = class {
@@ -14155,7 +14249,7 @@ var PgWatchlistStore = class {
   }
   async list(owner) {
     const { data, error } = await this.db.from("market_watchlist").select("*").eq("user_id", owner).order("added_at", { ascending: true }).limit(200);
-    fail11(error);
+    fail12(error);
     return (data ?? []).map((r2) => ({
       card_id: String(r2.card_id),
       platform: r2.platform,
@@ -14169,14 +14263,14 @@ var PgWatchlistStore = class {
   }
   async upsert(owner, w) {
     const { count: count2, error } = await this.db.from("market_watchlist").select("card_id", { count: "exact", head: true }).eq("user_id", owner);
-    fail11(error);
-    fail11((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
+    fail12(error);
+    fail12((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", w.card_id).eq("platform", w.platform)).error);
     if ((count2 ?? 0) >= 200) throw new FutError("Your watchlist can hold up to 200 cards.");
-    fail11((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
+    fail12((await this.db.from("market_watchlist").insert({ ...w, user_id: owner })).error);
     return w;
   }
   async remove(owner, card_id, platform) {
-    fail11((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
+    fail12((await this.db.from("market_watchlist").delete().eq("user_id", owner).eq("card_id", card_id).eq("platform", platform)).error);
   }
 };
 var PgCaptureHoldStore = class {
@@ -14188,7 +14282,7 @@ var PgCaptureHoldStore = class {
     const fresh = [...new Map(rows.filter((r2) => !have.has(holdKey(r2))).map((r2) => [holdKey(r2), r2])).values()];
     if (have.size + fresh.length > MAX_HELD_CAPTURES_PER_USER) throw new FutError(`You can keep up to ${MAX_HELD_CAPTURES_PER_USER.toLocaleString("en-US")} captured prices for cards you haven't added yet. Add those cards or link them first.`);
     for (let i = 0; i < fresh.length; i += 500)
-      fail11((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
+      fail12((await this.db.from("market_capture_holds").insert(fresh.slice(i, i + 500).map((r2) => ({
         user_id: owner,
         ea_item_id: r2.ea_item_id,
         asset_id: r2.asset_id,
@@ -14204,7 +14298,7 @@ var PgCaptureHoldStore = class {
     const out = [];
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await this.db.from("market_capture_holds").select("*").eq("user_id", owner).order("observed_at", { ascending: true }).range(from, from + PAGE - 1);
-      fail11(error);
+      fail12(error);
       const rows = data ?? [];
       for (const r2 of rows)
         out.push({
@@ -14219,7 +14313,7 @@ var PgCaptureHoldStore = class {
   }
   async release(owner, rows) {
     for (const r2 of rows)
-      fail11((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
+      fail12((await this.db.from("market_capture_holds").delete().eq("user_id", owner).eq("ea_item_id", r2.ea_item_id).eq("platform", r2.observation.platform).eq("observed_at", r2.observation.observed_at)).error);
   }
 };
 var holdKey = (h) => `${h.ea_item_id}|${h.observation.platform}|${new Date(h.observation.observed_at).toISOString()}`;
@@ -14255,7 +14349,7 @@ var PgMarketCardSource = class {
 };
 async function marketSources(db2) {
   const { data, error } = await db2.from("market_price_sources").select("*").order("id", { ascending: true });
-  fail11(error);
+  fail12(error);
   return (data ?? []).map((r2) => ({
     id: String(r2.id),
     name: String(r2.name),
@@ -14269,7 +14363,7 @@ async function marketSources(db2) {
 }
 async function marketRules(db2) {
   const { data, error } = await db2.from("market_rule_versions").select("*").eq("is_active", true).maybeSingle();
-  fail11(error);
+  fail12(error);
   if (!data) throw new FutError("Market rules aren't set up yet.", 503);
   return { id: String(data.id), status: data.status, notes: String(data.notes), ...data.body };
 }
@@ -14517,6 +14611,17 @@ async function handle(req, deps) {
     if (route === "/helper" && m === "DELETE") return json({ data: await revokeHelperKeys(db2, userId) });
     if (route === "/helper/connect" && m === "POST") return json({ data: await createHelperKey(db2, userId, deps.env ?? ((k) => Deno.env.get(k))) }, 201);
     if (route === "/helper/key" && m === "GET") return json({ data: await revealHelperKey(db2, userId, deps.env ?? ((k) => Deno.env.get(k))) });
+    if (route.startsWith("/ai-key")) {
+      const env = deps.env ?? ((k) => Deno.env.get(k));
+      if (route === "/ai-key" && m === "GET") return json({ data: await aiKeyStatus(db2, userId, env) });
+      if (route === "/ai-key/reveal" && m === "GET") return json({ data: await revealAiKey(db2, userId, env) });
+      if (route === "/ai-key" && m === "PUT") {
+        const fetchFn = deps.fetch ?? fetch;
+        return json({ data: await saveAiKey(db2, userId, obj2(await body(req)).key, env, fetchFn) });
+      }
+      if (route === "/ai-key" && m === "DELETE") return json({ data: await removeAiKey(db2, userId, env) });
+      return err(404, "No such route.");
+    }
     if (route === "/helper/prices" && m === "POST") return json({ data: await importPrices(db2, userId, await body(req, MAX_IMPORT_BODY)) });
     if (route === "/helper/packs" && m === "POST") return json({ data: await importStore(db2, userId, await body(req, MAX_STORE_BODY)) });
     if (route === "/packs" && m === "GET") return json({ data: await packAdvice(db2, userId, platformParam(url.searchParams.get("platform"))) });
@@ -14676,8 +14781,8 @@ async function handle(req, deps) {
         const b = obj2(await body(req, MAX_SQUAD_IMPORT_BODY));
         const text5 = typeof b.text === "string" ? b.text : null;
         const image = importImage(b.image);
-        const env = deps.env ?? ((k) => Deno.env.get(k));
-        const perHour = Number(env("FUT_IMPORT_AI_PER_HOUR")) || AI_IMPORTS_PER_HOUR;
+        const { env, own } = await envForUser(db2, userId, deps.env ?? ((k) => Deno.env.get(k)));
+        const perHour = own ? Infinity : Number(env("FUT_IMPORT_AI_PER_HOUR")) || AI_IMPORTS_PER_HOUR;
         const fetchFn = deps.fetch ?? fetch;
         const result2 = await runWorkspace(async () => {
           const squad = squadSchema.parse({ ...obj2(b.squad), owner_id: userId });
@@ -14723,8 +14828,8 @@ async function handle(req, deps) {
       const b = obj2(await body(req));
       if (typeof b.message !== "string" || !b.message.trim()) throw new FutError("Tell me what kind of player you're looking for.");
       if (b.message.length > MAX_FINDER_TEXT) throw new FutError(`Keep it under ${MAX_FINDER_TEXT} characters.`);
-      const env = deps.env ?? ((k) => Deno.env.get(k));
-      const perHour = Number(env("FUT_FINDER_AI_PER_HOUR")) || AI_FINDS_PER_HOUR;
+      const { env, own } = await envForUser(db2, userId, deps.env ?? ((k) => Deno.env.get(k)));
+      const perHour = own ? Infinity : Number(env("FUT_FINDER_AI_PER_HOUR")) || AI_FINDS_PER_HOUR;
       const fetchFn = deps.fetch ?? fetch;
       return json({ data: await findPlayers(db2, userId, {
         message: b.message,
@@ -14738,7 +14843,9 @@ async function handle(req, deps) {
       }) });
     }
     if (route.startsWith("/knowledge/")) {
-      const env = deps.env ?? ((k) => Deno.env.get(k));
+      const baseEnv = deps.env ?? ((k) => Deno.env.get(k));
+      const usesAi = route === "/knowledge/status" || route === "/knowledge/ask" || route === "/knowledge/sources" && m === "POST";
+      const { env, own } = usesAi ? await envForUser(db2, userId, baseEnv) : { env: baseEnv, own: false };
       const fetchFn = deps.fetch ?? fetch;
       const p = url.searchParams;
       const days = intParam(p.get("days"), "days", 1, 365);
@@ -14761,7 +14868,7 @@ async function handle(req, deps) {
         for (const k of ["url", "text", "title"]) if (b[k] !== void 0 && b[k] !== null && typeof b[k] !== "string") throw new FutError(`${k} must be text.`);
         if (typeof b.text === "string" && b.text.length > MAX_ADD_TEXT) throw new FutError(`Paste up to ${MAX_ADD_TEXT.toLocaleString("en")} characters.`);
         if (!b.url?.trim() && !b.text?.trim()) throw new FutError("Add a link or paste some text.");
-        if (!aiImportAllowed(userId, Number(env("FUT_KB_ADDS_PER_HOUR")) || KB_ADDS_PER_HOUR, kbAdds)) throw new FutError("That's a lot of sources this hour. Try again later.", 429);
+        if (!aiImportAllowed(userId, own ? Infinity : Number(env("FUT_KB_ADDS_PER_HOUR")) || KB_ADDS_PER_HOUR, kbAdds)) throw new FutError("That's a lot of sources this hour. Try again later.", 429);
         return json({ data: await addSource(db2, userId, { url: b.url, text: b.text, title: b.title, share: b.share === true }, env, fetchFn) }, 201);
       }
       const sd = route.match(/^\/knowledge\/sources\/([0-9a-f-]{36})$/);
@@ -14774,7 +14881,7 @@ async function handle(req, deps) {
           const o = t && typeof t === "object" ? t : {};
           return (o.role === "user" || o.role === "assistant") && typeof o.text === "string" && o.text.trim() ? [{ role: o.role, text: o.text.slice(0, 1500) }] : [];
         });
-        const perHour = Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
+        const perHour = own ? Infinity : Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
         return json({ data: await ask(db2, userId, b.question, history, env, fetchFn, () => {
           if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
         }) });
