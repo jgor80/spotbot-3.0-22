@@ -329,7 +329,7 @@ export interface TeamPlan {
   confidence: "high" | "medium" | "low";
   prices_at: string | null;
   team: { squad: { id: string; name: string; formation: string } | null; squads: { id: string; name: string; formation: string }[]; club_size: number; coins: number | null };
-  formation: { recommended: FormationPick | null; ranked: FormationPick[]; yours: FormationPick | null; positions: string[]; /** Always set: the formation the plan is built on. */ name: string; basis: "community" | "least_criticised" | "your_squad" | "default" };
+  formation: { recommended: FormationPick | null; ranked: FormationPick[]; yours: FormationPick | null; positions: string[]; /** Always set: the formation the plan is built on. */ name: string; basis: "community" | "least_criticised" | "your_squad" | "default" | "playstyle" };
   tactics: { recommended: Pick[]; avoid: Pick[] };
   playstyles: { recommended: Pick[]; avoid: Pick[] };
   positions: PositionGroup[];
@@ -429,8 +429,16 @@ function defaultStatPicker(db: Rpc, userId: string, platform: "console" | "pc"):
 }
 const CACHE_MS = 6 * 3_600_000;
 
+export interface TeamPlanOptions {
+  days: number; platform: "console" | "pc"; refresh?: boolean;
+  /** How the user says they like to play; shapes the settings, instructions and notes. */
+  playstyle?: string | null;
+  /** Squad Builder's ideal squad picks the formation itself (community + playstyle + the club), given the community ranking. */
+  pickFormation?: (ranked: FormationPick[]) => Promise<{ formation: string; why: string } | null>;
+}
+
 /** The knowledge bank's view as a game plan for this team. */
-export async function teamPlan(db: Rpc, userId: string, opts: { days: number; platform: "console" | "pc"; refresh?: boolean }, team: TeamContext, env: Env, fetchFn: Fetch, beforeAi?: () => void, statPicker?: StatPicker): Promise<TeamPlan> {
+export async function teamPlan(db: Rpc, userId: string, opts: TeamPlanOptions, team: TeamContext, env: Env, fetchFn: Fetch, beforeAi?: () => void, statPicker?: StatPicker): Promise<TeamPlan> {
   const read = (days: number) => rpcData<Consensus>(db, "kb_consensus", { p_user: userId, p_days: days, p_per: 60, p_statements: 4 });
   let consensus = await read(opts.days), widenedFrom: number | null = null;
   // Never wait for more data: a thin period reads everything the bank has instead
@@ -441,9 +449,9 @@ export async function teamPlan(db: Rpc, userId: string, opts: { days: number; pl
   const topics = consensus?.topics ?? [];
   const pickStats: StatPicker = statPicker ?? defaultStatPicker(db, userId, opts.platform);
   const useAi = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
-  const cacheKey = JSON.stringify([userId, opts.days, opts.platform, team.squad?.id ?? null, team.squad?.formation ?? null, team.club.length, consensus?.claims ?? 0, useAi]);
+  const cacheKey = JSON.stringify([userId, opts.days, opts.platform, team.squad?.id ?? null, team.squad?.formation ?? null, team.club.length, consensus?.claims ?? 0, useAi, opts.playstyle ?? null, !!opts.pickFormation]);
   const hit = cache.get(cacheKey);
-  if (hit && !opts.refresh && Date.now() - hit.at < CACHE_MS) return hit.plan;
+  if (hit && !opts.refresh && !opts.pickFormation && Date.now() - hit.at < CACHE_MS) return hit.plan;
 
   // Citations: every claim shown or sent to Claude gets a number per source
   const citations: TeamPlan["citations"] = [];
@@ -462,8 +470,9 @@ export async function teamPlan(db: Rpc, userId: string, opts: { days: number; pl
   // A formation is always given: the one people back, else the least criticised, else the user's own, else the usual meta shape
   const backed = ranked.find((f) => (f.net ?? 0) > 0) ?? null;
   const recommended = backed ?? ranked[0] ?? null;
-  const basis: TeamPlan["formation"]["basis"] = backed ? "community" : recommended ? "least_criticised" : team.squad && FORMATIONS[team.squad.formation] ? "your_squad" : "default";
-  const planFormation = recommended?.formation ?? (basis === "your_squad" ? team.squad!.formation : DEFAULT_FORMATION);
+  const chosen = opts.pickFormation ? await opts.pickFormation(ranked) : null;
+  const basis: TeamPlan["formation"]["basis"] = chosen && FORMATIONS[chosen.formation] ? "playstyle" : backed ? "community" : recommended ? "least_criticised" : team.squad && FORMATIONS[team.squad.formation] ? "your_squad" : "default";
+  const planFormation = basis === "playstyle" ? chosen!.formation : recommended?.formation ?? (basis === "your_squad" ? team.squad!.formation : DEFAULT_FORMATION);
   const confidence: TeamPlan["confidence"] = !backed ? "low" : backed.claims >= 8 && (backed.agreement === "agreed" || backed.agreement === "leaning") ? "high" : backed.claims >= 3 ? "medium" : "low";
   const yours = team.squad ? ranked.find((f) => f.formation === team.squad!.formation) ?? null : null;
   const tactics = sides(topics, "tactics", cite);
@@ -540,7 +549,8 @@ export async function teamPlan(db: Rpc, userId: string, opts: { days: number; pl
       `[${citeSource(s.source)}] ${t.topic} (${t.category}; ${s.stance === 1 ? "for" : s.stance === -1 ? "against" : "mixed"}): ${s.statement}`)).join("\n");
     const raw = await claudeJson<Record<string, unknown>>(env, fetchFn, [
       "You turn what the EA SPORTS FC 27 Ultimate Team community says (claims from Reddit, YouTube and the player's own notes, numbered by source) into a game plan for one player's team. Return JSON only.",
-      `The formation is decided already: ${planFormation} (${basis === "community" ? "the one the community backs most" : basis === "least_criticised" ? "nobody is clearly for any formation, this is the least criticised" : basis === "your_squad" ? "the bank has no formation talk, so the player's own" : "the bank has no formation talk, so the usual meta shape"}). Formation ranking (score = buzz x sentiment): ${ranked.slice(0, 6).map((f) => `${f.formation} ${f.score}`).join(", ") || "none"}.`,
+      `The formation is decided already: ${planFormation} (${basis === "playstyle" ? `picked for how the player likes to play, the community view and their club: ${chosen!.why}` : basis === "community" ? "the one the community backs most" : basis === "least_criticised" ? "nobody is clearly for any formation, this is the least criticised" : basis === "your_squad" ? "the bank has no formation talk, so the player's own" : "the bank has no formation talk, so the usual meta shape"}). Formation ranking (score = buzz x sentiment): ${ranked.slice(0, 6).map((f) => `${f.formation} ${f.score}`).join(", ") || "none"}.`,
+      ...(opts.playstyle ? [`The player describes how they like to play: "${squash(opts.playstyle, 600)}". Fit the settings, instructions and notes to that style, lean on the community view where the two agree, and say plainly where their style departs from the consensus.`] : []),
       "Use ALL the data you are given every time: the claims, the team's cards, the price moves and the stat picks. Never say there is not enough data and never tell the player to wait for more. Where the claims are thin or silent, reason it through from what you do have (the formation's shape, the team's players and their PlayStyles, the stat picks, how prices are moving) and set inferred: true on that row, with the reasoning in why. Rows taken from claims have inferred: false and cite them.",
       "summary: 2 or 3 plain sentences: the community's current view and what it means for this team.",
       "formation_why: one or two sentences on why people rate that formation, from the claims (empty if none).",

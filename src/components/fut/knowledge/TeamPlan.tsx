@@ -14,7 +14,7 @@ import { AGREEMENT, sentimentText, sourceLabel } from "./knowledgePresentation";
 const PERIODS = [30, 90, 365] as const;
 const SHOW = 6;
 
-function Cites({ ns, plan }: { ns: (number | null)[]; plan: KbTeamPlan }) {
+export function Cites({ ns, plan }: { ns: (number | null)[]; plan: KbTeamPlan }) {
   const list = ns.flatMap((n) => { const c = plan.citations.find((x) => x.n === n); return c ? [c] : []; });
   if (!list.length) return null;
   return <span className="ml-1 inline-flex gap-1 text-xs">{list.map((c) => c.url
@@ -33,14 +33,14 @@ function PickRow({ p, plan, onPick, bad }: { p: KbPick; plan: KbTeamPlan; onPick
 }
 
 const SIGNAL: Record<KbPriceOutlook["signal"], string> = { falling: "text-destructive", near_high: "text-destructive", near_low: "text-success", rising: "text-primary", steady: "text-muted-foreground" };
-function Outlook({ o }: { o?: KbPriceOutlook | null }) {
+export function Outlook({ o }: { o?: KbPriceOutlook | null }) {
   if (!o) return null;
   const Icon = o.signal === "falling" ? TrendingDown : o.signal === "rising" || o.signal === "near_high" ? TrendingUp : o.signal === "near_low" ? TrendingDown : Minus;
   return <p className={cn("flex items-start gap-1.5 text-xs", SIGNAL[o.signal])}><Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden /><span>{o.call}</span></p>;
 }
-const Inferred = () => <span className="ml-1.5 rounded border border-border px-1 py-px text-[10px] font-normal uppercase tracking-wide text-muted-foreground" title="Worked out from your team, the formation, card stats and prices, not something people said">inferred</span>;
+export const Inferred = () => <span className="ml-1.5 rounded border border-border px-1 py-px text-[10px] font-normal uppercase tracking-wide text-muted-foreground" title="Worked out from your team, the formation, card stats and prices, not something people said">inferred</span>;
 
-function StatRow({ c }: { c: KbStatPick }) {
+export function StatRow({ c }: { c: KbStatPick }) {
   return <li className="flex items-start justify-between gap-3 rounded-lg border border-dashed border-border p-3 text-sm">
     <div className="min-w-0 space-y-1">
       <p className="font-medium">{c.name} <span className="text-xs font-normal text-muted-foreground">{c.rating} {c.version ?? ""} · {c.role} {c.score}</span></p>
