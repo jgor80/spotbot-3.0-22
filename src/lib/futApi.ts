@@ -329,25 +329,36 @@ export interface KbApplyResult {
 }
 export interface KbPick { key: string; topic: string; net: number | null; buzz: number; agreement: KbAgreement; claims: number; for: number; against: number; said: string | null; cite: number | null }
 export interface KbFormationPick extends KbPick { formation: string; score: number }
-export interface KbCatalogueCard { id: string; player_name: string; version: string | null; overall: number; position: string; alt_positions: string[]; price: number | null; owned: boolean; matched: "name" | "last"; ea_item_id: number | null }
+export interface KbCatalogueCard { id: string; player_name: string; version: string | null; overall: number; position: string; alt_positions: string[]; price: number | null; owned: boolean; matched: "name" | "last"; ea_item_id: number | null; outlook?: KbPriceOutlook | null; affordable?: boolean | null }
+export interface KbPriceOutlook { change_3d: number | null; change_7d: number | null; low14: number | null; high14: number | null; signal: "falling" | "near_low" | "near_high" | "rising" | "steady"; call: string }
+export interface KbStatPick { card_id: string; ea_item_id: number | null; name: string; rating: number; version: string | null; price: number | null; owned: boolean; score: number; role: string; why: string; outlook?: KbPriceOutlook | null }
 export interface KbPlayerPick extends KbPick {
   verdict: "rated" | "overrated" | "mixed"; position: string | null; card: KbCatalogueCard | null; versions: KbCatalogueCard[]; owned: boolean;
   owned_card: { name: string; rating: number; version: string | null } | null;
 }
-export interface KbPositionGroup { position: string; in_formation: number; community: KbPlayerPick[]; yours: { name: string; rating: number; version: string | null; in_squad: boolean }[] }
+export interface KbPositionGroup { position: string; in_formation: number; community: KbPlayerPick[]; by_stats: KbStatPick[]; yours: { name: string; rating: number; version: string | null; in_squad: boolean }[] }
 export interface KbTeamPlan {
-  days: number; claims: number; sources: number; generated_at: string; via: "ai" | "data";
+  days: number; claims: number; sources: number; generated_at: string; via: "ai" | "data"; widened_from: number | null; confidence: "high" | "medium" | "low"; prices_at: string | null;
   team: { squad: { id: string; name: string; formation: string } | null; squads: { id: string; name: string; formation: string }[]; club_size: number; coins: number | null };
-  formation: { recommended: KbFormationPick | null; ranked: KbFormationPick[]; yours: KbFormationPick | null; positions: string[] };
+  formation: { recommended: KbFormationPick | null; ranked: KbFormationPick[]; yours: KbFormationPick | null; positions: string[]; name: string; basis: "community" | "least_criticised" | "your_squad" | "default" | "playstyle" };
   tactics: { recommended: KbPick[]; avoid: KbPick[] };
   playstyles: { recommended: KbPick[]; avoid: KbPick[] };
   positions: KbPositionGroup[];
   summary: string | null; formation_why: string | null;
-  settings: { setting: string; value: string; why: string; cites: number[] }[];
-  instructions: { position: string; instruction: string; why: string; cites: number[] }[];
+  settings: { setting: string; value: string; why: string; cites: number[]; inferred: boolean }[];
+  instructions: { position: string; instruction: string; why: string; cites: number[]; inferred: boolean }[];
   for_your_team: string[];
   citations: { n: number; kind: KbSourceRef["kind"]; url: string | null; title: string | null; community: string | null }[];
 }
+// Squad Builder's ideal squad: formation, XI, tactics and buy targets from the user's playstyle + the community view
+export interface IdealPlaystyle { text: string; shape: string[]; players: string[]; summary: string; via: "ai" | "words" }
+export interface IdealFormationOption {
+  formation: string; score: number; why: string;
+  community: { score: number; net: number | null; claims: number; topic_key: string | null } | null;
+  style: { fit: number; matched: string[]; missed: string[] } | null;
+  club: { rating: number; chemistry: number; filled: number; empty: string[] } | null;
+}
+export interface IdealSquad { playstyle: IdealPlaystyle; formation: string; options: IdealFormationOption[]; squad: FutSquad; chemistry: number; rating: number; empty: string[]; notes: Record<string, string>; plan: KbTeamPlan }
 export interface KbAnswer { answer: string; via: "ai" | "search"; sources: (KbSourceRef & { n: number })[]; topics: string[]; claims: number }
 
 export const futApi = {
@@ -487,6 +498,7 @@ export const futApi = {
   chemistry: (squad: FutSquad | string) => futRequest<Chemistry>("/squads/chemistry", "POST", { squad: typeof squad === "string" ? squad : withBudget(squad) }),
   diagnose: (squad: FutSquad, slot?: string) => futRequest<RuleInfo & Record<string, unknown>>("/squads/diagnose", "POST", { squad: withBudget(squad), ...(slot ? { slot } : {}) }),
   bestSquad: (squad: FutSquad, by: SuggestBy, formation: string) => futRequest<BestSquadResult>("/squads/best", "POST", { squad: withBudget(squad), by, formation }),
+  idealSquad: (squad: FutSquad, playstyle: string, formation?: string | null) => futRequest<IdealSquad>("/squads/ideal", "POST", { squad: withBudget(squad), playstyle, ...(formation ? { formation } : {}) }),
   upgrades: (squad: FutSquad, budget: number, platform: "console" | "pc") => futRequest<UpgradePath>("/squads/upgrades", "POST", { squad: withBudget(squad), budget, platform }),
   suggestSlot: (squad: FutSquad, slot: string, by: SuggestBy) => futRequest<SlotSuggestions>("/squads/suggest", "POST", { squad: withBudget(squad), slot, by }),
   squadRoles: (squad: FutSquad) => futRequest<SquadRoles>("/squads/roles", "POST", { squad: withBudget(squad) }),

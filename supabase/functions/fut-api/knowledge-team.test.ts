@@ -2,7 +2,7 @@
 // players by position with price and owned), on real PostgreSQL (PGlite) with Claude faked.
 import { handle, type Deps } from "./handler.ts";
 import {
-  applyToTeam, EMPTY_TEAM, fold, formationName, mentions, playerLookup, playstylesIn, quickApply, teamPlan, type TeamContext,
+  applyToTeam, EMPTY_TEAM, fold, formationName, mentions, playerLookup, playstylesIn, priceOutlook, quickApply, teamPlan, type StatPicker, type TeamContext,
 } from "../_shared/fut/knowledge-team.ts";
 import { knowledgeDb, ME, OTHER, rpcOver } from "../_shared/fut/knowledge-test-db.ts";
 
@@ -48,6 +48,14 @@ Deno.test("knowledge team helpers: formations, names, PlayStyles, quick check", 
   assert(other[0]!.text === "This is about 4-2-3-1 (2); you play 4-4-2.", other[0]!.text);
   assert(quickApply([{ topic: "4-4-2 (2)", category: "formations", statement: "x", stance: 1 }], team)[0]!.text.includes("variant"));
   assert(quickApply([{ topic: "4-4-2", category: "formations", statement: "x", stance: 1 }], EMPTY_TEAM)[0]!.text.includes("Save a squad"));
+
+  // Price moves read for a buyer and for an owner
+  const row = (price: number, d3: number | null, low14: number, high14: number) => ({ ea_item_id: 1, price, d1: null, d3, d7: null, low14, high14 });
+  assert(priceOutlook(row(90_000, 100_000, 80_000, 120_000), false)?.signal === "falling" && priceOutlook(row(90_000, 100_000, 80_000, 120_000), false)!.call.includes("wait"));
+  assert(priceOutlook(row(82_000, 100_000, 80_000, 120_000), false)?.signal === "falling", "still dropping at its low isn't a buy yet");
+  assert(priceOutlook(row(82_000, 83_000, 80_000, 120_000), false)?.signal === "near_low" && priceOutlook(row(82_000, 83_000, 80_000, 120_000), false)!.call.includes("good time to buy"), "levelled off at the low is");
+  assert(priceOutlook(row(119_000, 100_000, 80_000, 120_000), true)?.call.includes("good time to sell") && priceOutlook(row(105_000, 100_000, 100_000, 106_000), false)?.signal === "rising");
+  assert(priceOutlook(row(100_000, 100_000, 99_000, 101_000), false)?.signal === "steady" && priceOutlook(undefined, false) === null);
 });
 
 const post = (id: string, score: number) => ({
@@ -103,12 +111,23 @@ Deno.test("knowledge team: game plan and applying topics and sources, with and w
         (NULL, 'futgg_catalogue', 'Thiago Silva', 'Rare', 84, '{CB}', '3002'),
         ('${ME}', 'club', 'Kylian Mbappé', 'Rare', 91, '{ST}', '1001');
       INSERT INTO fut.futgg_prices SELECT x.id, 27, 'console', (SELECT published_at FROM fut.futgg_snapshots), x.price
-        FROM (VALUES (1001, 1500000), (1002, 2400000), (2001, 600000)) x(id, price);
+        FROM (VALUES (1001, 1500000), (1002, 2400000), (2001, 600000), (4001, 12000)) x(id, price);
+      INSERT INTO fut.futgg_snapshots VALUES (27, 'console', now() - interval '4 days');
+      INSERT INTO fut.futgg_prices SELECT x.id, 27, 'console', (SELECT min(published_at) FROM fut.futgg_snapshots), x.price
+        FROM (VALUES (1001, 1300000), (2001, 700000), (4001, 15000)) x(id, price);
       SET ROLE service_role;`);
 
     // Without Claude: the numbers alone
     const noKey = () => undefined;
-    const plan = await teamPlan({ rpc }, ME, { days: 30, platform: "console" }, team, noKey, fetch as never);
+    const asked: [string, number | null][] = [];
+    const stats: StatPicker = (position, maxPrice) => {
+      asked.push([position, maxPrice]);
+      return Promise.resolve(position === "ST"
+        ? [{ card_id: "x1", ea_item_id: 1001, name: "Kylian Mbappé", rating: 91, version: "Rare", price: 1_500_000, owned: true, score: 95, role: "Advanced Forward", why: "97 Acceleration" },
+           { card_id: "x2", ea_item_id: 4001, name: "Budget Striker", rating: 84, version: "Rare", price: 12_000, owned: false, score: 88, role: "Poacher", why: "90 Finishing" }]
+        : position === "CAM" ? [{ card_id: "x3", ea_item_id: 4002, name: "Stat Ten", rating: 86, version: "Rare", price: 40_000, owned: false, score: 90, role: "Playmaker", why: "92 Vision" }] : []);
+    };
+    const plan = await teamPlan({ rpc }, ME, { days: 30, platform: "console" }, team, noKey, fetch as never, undefined, stats);
     assert(plan.via === "data" && plan.claims === 12, JSON.stringify({ via: plan.via, claims: plan.claims }));
     assert(plan.formation.recommended?.formation === "4-2-3-1 (2)" && plan.formation.recommended.claims === 2, `the two wide 4-2-3-1 topics add up: ${JSON.stringify(plan.formation.ranked)}`);
     assert(plan.formation.yours?.formation === "4-4-2" && plan.formation.ranked.at(-1)!.formation === "5-2-1-2", JSON.stringify(plan.formation.ranked.map((f) => [f.formation, f.score])));
@@ -127,26 +146,48 @@ Deno.test("knowledge team: game plan and applying topics and sources, with and w
     const t1 = plan.citations.find((c) => c.url!.includes("/t1/"))!.n;
     assert(plan.citations.length === 2 && plan.formation.recommended.cite === t1, `only cited sources are listed: ${JSON.stringify(plan.citations)}`);
     assert(plan.team.squad?.formation === "4-4-2" && plan.team.coins === 150_000 && plan.team.club_size === 4);
+    // Everything else it knows is used too: a longer look back when the period is thin, stat picks for every position, price moves
+    assert(plan.widened_from === null && plan.formation.name === "4-2-3-1 (2)" && plan.formation.basis === "community" && plan.confidence === "low", JSON.stringify([plan.widened_from, plan.days, plan.formation.basis, plan.confidence]));
+    assert(asked.length === 9 && asked.every(([, max]) => max === 150_000), "stat picks for all nine positions, within the coins");
+    assert(st.by_stats.length === 1 && st.by_stats[0]!.name === "Budget Striker" && st.by_stats[0]!.outlook?.signal === "falling", `players already talked about aren't repeated; prices read: ${JSON.stringify(st.by_stats)}`);
+    assert(plan.positions.find((g) => g.position === "CAM")!.by_stats[0]!.name === "Stat Ten", "a position nobody talks about still gets players");
+    assert(mbappes[0]!.card!.outlook?.signal === "near_high" && mbappes[0]!.card!.outlook.call.includes("good time to sell") && mbappes[0]!.card!.affordable === null, JSON.stringify(mbappes[0]!.card));
+    assert(cdm.community[0]!.card!.outlook?.signal === "falling" && plan.prices_at !== null, JSON.stringify(cdm.community[0]!.card));
 
     // With Claude: settings, instructions and notes for the team; the formation still comes from the numbers
     const f = claudeFake((system) => system.includes("game plan") ? {
       summary: "People back the wide 4-2-3-1 with a balanced block.", formation_why: "Two CDMs hold [1].",
-      settings: [{ setting: "Defensive approach", value: "Balanced, depth 55", why: "Stops counters", cites: [2, 99] }, { setting: "", value: "x", why: "", cites: [] }],
-      instructions: [{ position: "cdm", instruction: "Stay back while attacking", why: "Shield the back four", cites: [1] }],
+      settings: [{ setting: "Defensive approach", value: "Balanced, depth 55", why: "Stops counters", cites: [2, 99], inferred: false }, { setting: "", value: "x", why: "", cites: [], inferred: false },
+        { setting: "Width", value: "45", why: "Narrow suits two CDMs", cites: [], inferred: false }],
+      instructions: [{ position: "cdm", instruction: "Stay back while attacking", why: "Shield the back four", cites: [1], inferred: false }],
       for_your_team: ["Move Vinícius to LM in the wide 4-2-3-1."],
       player_positions: [{ topic: "Silva", position: "CM" }],
     } : {});
-    const ai = await teamPlan({ rpc }, ME, { days: 30, platform: "console", refresh: true }, team, (k) => k === "ANTHROPIC_API_KEY" ? "k" : undefined, f.fetcher);
+    const ai = await teamPlan({ rpc }, ME, { days: 30, platform: "console", refresh: true }, team, (k) => k === "ANTHROPIC_API_KEY" ? "k" : undefined, f.fetcher, undefined, stats);
     assert(ai.via === "ai" && ai.summary?.includes("wide 4-2-3-1") && ai.formation.recommended?.formation === "4-2-3-1 (2)");
-    assert(ai.settings.length === 1 && JSON.stringify(ai.settings[0]!.cites) === "[2]", `bad rows and unknown citations dropped: ${JSON.stringify(ai.settings)}`);
+    assert(ai.settings.length === 2 && JSON.stringify(ai.settings[0]!.cites) === "[2]" && !ai.settings[0]!.inferred && ai.settings[1]!.inferred, `bad rows and unknown citations dropped, an uncited row is marked inferred: ${JSON.stringify(ai.settings)}`);
+    assert(f.calls[0]!.user.includes("Budget Striker 84 (Poacher 88, 12,000, falling)") && f.calls[0]!.user.includes("Falling (") && f.calls[0]!.system.includes("Never say there is not enough data"), f.calls[0]!.user.slice(-900));
     assert(ai.instructions[0]!.position === "CDM" && ai.for_your_team.length === 1);
     assert(ai.positions.find((g) => g.position === "CM")?.community[0]?.topic === "Silva", "Claude places a player the card list couldn't");
     assert(f.calls[0]!.user.includes("Vinícius Júnior") && f.calls[0]!.user.includes(`[${t1}] 4-2-3-1 (2)`) && f.calls[0]!.system.includes("decided already: 4-2-3-1 (2)"), f.calls[0]!.user.slice(0, 500));
-    const cached = await teamPlan({ rpc }, ME, { days: 30, platform: "console" }, team, (k) => k === "ANTHROPIC_API_KEY" ? "k" : undefined, f.fetcher);
+    const cached = await teamPlan({ rpc }, ME, { days: 30, platform: "console" }, team, (k) => k === "ANTHROPIC_API_KEY" ? "k" : undefined, f.fetcher, undefined, stats);
     assert(cached === ai && f.calls.length === 1, "the plan is kept for a while unless refreshed");
     let limited = "";
-    await teamPlan({ rpc }, ME, { days: 30, platform: "console", refresh: true }, team, (k) => k === "ANTHROPIC_API_KEY" ? "k" : undefined, f.fetcher, () => { throw new Error("too many"); }).catch((e) => { limited = (e as Error).message; });
+    await teamPlan({ rpc }, ME, { days: 30, platform: "console", refresh: true }, team, (k) => k === "ANTHROPIC_API_KEY" ? "k" : undefined, f.fetcher, () => { throw new Error("too many"); }, stats).catch((e) => { limited = (e as Error).message; });
     assert(limited === "too many", "the hourly cap is checked before Claude");
+
+    // A thin period reads further back instead of waiting, and a formation is always named
+    await pg.exec(`RESET ROLE; UPDATE fut.kb_claims SET said_at = now() - interval '60 days'; SET ROLE service_role;`);
+    const old = await teamPlan({ rpc }, ME, { days: 30, platform: "console", refresh: true }, team, noKey, fetch as never, undefined, stats);
+    assert(old.widened_from === 30 && old.days === 365 && old.formation.name === "4-2-3-1 (2)", JSON.stringify([old.widened_from, old.days, old.formation.name]));
+    const empty = await teamPlan({ rpc }, OTHER, { days: 7, platform: "console" }, { ...team, squad: null }, noKey, fetch as never, undefined, stats);
+    assert(empty.claims === 12 && empty.widened_from === 7, "the shared bank, read further back");
+    await pg.exec(`RESET ROLE; UPDATE fut.kb_claims SET category = 'other' WHERE category = 'formations'; SET ROLE service_role;`);
+    const noTalk = await teamPlan({ rpc }, ME, { days: 365, platform: "console", refresh: true }, team, noKey, fetch as never, undefined, stats);
+    assert(noTalk.formation.recommended === null && noTalk.formation.name === "4-4-2" && noTalk.formation.basis === "your_squad" && noTalk.positions.some((g) => g.position === "ST" && g.in_formation === 2), "no formation talk: built on your own shape");
+    const bare = await teamPlan({ rpc }, OTHER, { days: 365, platform: "console" }, EMPTY_TEAM, noKey, fetch as never, undefined, stats);
+    assert(bare.formation.name === "4-2-3-1" && bare.formation.basis === "default" && bare.confidence === "low");
+    await pg.exec(`RESET ROLE; UPDATE fut.kb_claims SET category = 'formations', said_at = now() - interval '1 day' WHERE topic_key ~ '^[345]-'; UPDATE fut.kb_claims SET said_at = now() - interval '1 day'; SET ROLE service_role;`);
 
     // Applying a topic and a source
     const topic = await applyToTeam({ rpc }, ME, { topic: "4-4-2" }, team, noKey, fetch as never);

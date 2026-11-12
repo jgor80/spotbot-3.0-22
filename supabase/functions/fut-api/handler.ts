@@ -41,6 +41,7 @@ import {
   runKnowledgeIngest, type AskTurn,
 } from "../_shared/fut/knowledge.ts";
 import { applyToTeam, loadTeam, teamPlan } from "../_shared/fut/knowledge-team.ts";
+import { idealSquad, MAX_PLAYSTYLE } from "../_shared/fut/ideal-squad.ts";
 import { importCardArt, listCardArt } from "../_shared/fut/card-art.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { aiKeyStatus, envForUser, removeAiKey, revealAiKey, saveAiKey } from "../_shared/fut/ai-keys.ts";
@@ -491,6 +492,30 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           if (typeof formation !== "string" || (formation !== "all" && !FORMATIONS[formation])) throw new FutError(`formation must be "all" or one of: ${Object.keys(FORMATIONS).join(", ")}.`);
           if (!pool.length) throw new FutError("You have no club cards yet. Sync your club or add cards on My cards first.");
           return { by, owned_cards: pool.length, results: bestSquads(squad, formation, pool, rules, by) };
+        }) });
+      }
+      if (route === "/squads/ideal" && m === "POST") {
+        // Ideal squad: the formation, XI, tactics and buy targets for how the user says they like to play, weighed with
+        // what the Knowledge Bank community backs and what their club can field (ideal-squad.ts). Not saved.
+        const b = obj(await body(req));
+        if (b.playstyle !== undefined && typeof b.playstyle !== "string") throw new FutError("playstyle must be text.");
+        const playstyle = (b.playstyle as string | undefined) ?? "";
+        if (playstyle.length > MAX_PLAYSTYLE) throw new FutError(`Keep your playstyle under ${MAX_PLAYSTYLE} characters.`);
+        if (b.formation !== undefined && b.formation !== null && (typeof b.formation !== "string" || !FORMATIONS[b.formation])) throw new FutError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
+        const days = b.days === undefined ? 90 : Number(b.days);
+        if (!Number.isInteger(days) || days < 1 || days > 365) throw new FutError("days must be a whole number from 1 to 365.");
+        const platform = platformParam(typeof b.platform === "string" ? b.platform : null);
+        const { env, own } = await envForUser(db, userId, deps.env ?? ((k: string) => Deno.env.get(k)));
+        const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
+        const perHour = own ? Infinity : Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
+        return json({ data: await runWorkspace(async () => {
+          const squad = squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad;
+          const [rules, mine, team] = await Promise.all([activeRules(db), searchMyCards(db, userId, { all: true, owned_only: true }), loadTeam(db, userId, squad.id ?? null, platform)]);
+          // The squad on screen (saved or not) is the one the plan talks about
+          team.squad = { id: squad.id, name: squad.name, formation: squad.formation, xi: squad.slots.map((x) => ({ slot: x.slot, position: x.position, name: x.card?.name ?? null, rating: x.card?.rating ?? null })) };
+          return idealSquad(db, userId, squad, mine.map(toWorkspaceCard), rules, { playstyle, formation: (b.formation as string | null | undefined) ?? null, days, platform }, team, env, fetchFn, () => {
+            if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
+          });
         }) });
       }
       if (route === "/squads/upgrades" && m === "POST") {

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Check, ExternalLink, RefreshCw, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react";
-import { futApi, futKeys, type KbPick, type KbPlayerPick, type KbPositionGroup, type KbTeamPlan } from "@/lib/futApi";
+import { Check, ExternalLink, Minus, RefreshCw, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, TrendingDown, TrendingUp } from "lucide-react";
+import { futApi, futKeys, type KbPick, type KbPlayerPick, type KbPositionGroup, type KbPriceOutlook, type KbStatPick, type KbTeamPlan } from "@/lib/futApi";
 import { coins } from "@/lib/futStats";
 import { Busy, ErrorNotice, useFutAvailable } from "@/components/fut/FutShared";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,7 @@ import { AGREEMENT, sentimentText, sourceLabel } from "./knowledgePresentation";
 const PERIODS = [30, 90, 365] as const;
 const SHOW = 6;
 
-function Cites({ ns, plan }: { ns: (number | null)[]; plan: KbTeamPlan }) {
+export function Cites({ ns, plan }: { ns: (number | null)[]; plan: KbTeamPlan }) {
   const list = ns.flatMap((n) => { const c = plan.citations.find((x) => x.n === n); return c ? [c] : []; });
   if (!list.length) return null;
   return <span className="ml-1 inline-flex gap-1 text-xs">{list.map((c) => c.url
@@ -32,6 +32,26 @@ function PickRow({ p, plan, onPick, bad }: { p: KbPick; plan: KbTeamPlan; onPick
   </li>;
 }
 
+const SIGNAL: Record<KbPriceOutlook["signal"], string> = { falling: "text-destructive", near_high: "text-destructive", near_low: "text-success", rising: "text-primary", steady: "text-muted-foreground" };
+export function Outlook({ o }: { o?: KbPriceOutlook | null }) {
+  if (!o) return null;
+  const Icon = o.signal === "falling" ? TrendingDown : o.signal === "rising" || o.signal === "near_high" ? TrendingUp : o.signal === "near_low" ? TrendingDown : Minus;
+  return <p className={cn("flex items-start gap-1.5 text-xs", SIGNAL[o.signal])}><Icon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden /><span>{o.call}</span></p>;
+}
+export const Inferred = () => <span className="ml-1.5 rounded border border-border px-1 py-px text-[10px] font-normal uppercase tracking-wide text-muted-foreground" title="Worked out from your team, the formation, card stats and prices, not something people said">inferred</span>;
+
+export function StatRow({ c }: { c: KbStatPick }) {
+  return <li className="flex items-start justify-between gap-3 rounded-lg border border-dashed border-border p-3 text-sm">
+    <div className="min-w-0 space-y-1">
+      <p className="font-medium">{c.name} <span className="text-xs font-normal text-muted-foreground">{c.rating} {c.version ?? ""} · {c.role} {c.score}</span></p>
+      {c.why && <p className="text-xs text-muted-foreground">{c.why}</p>}
+      {c.owned && <Badge className="gap-1 font-normal"><Check className="h-3 w-3" />You own this card</Badge>}
+      <Outlook o={c.outlook} />
+    </div>
+    <div className="shrink-0 text-right">{c.price != null ? <><p className="font-semibold tabular-nums">{coins(c.price)}</p><p className="text-xs text-muted-foreground">coins</p></> : <p className="text-xs text-muted-foreground">No price</p>}</div>
+  </li>;
+}
+
 function PlayerRow({ p, plan, onPick }: { p: KbPlayerPick; plan: KbTeamPlan; onPick: (key: string) => void }) {
   const c = p.card;
   return <li className="flex items-start justify-between gap-3 rounded-lg border border-border p-3 text-sm">
@@ -45,7 +65,10 @@ function PlayerRow({ p, plan, onPick }: { p: KbPlayerPick; plan: KbTeamPlan; onP
           {p.verdict === "rated" ? "Rated" : p.verdict === "overrated" ? "Called overrated" : "Mixed views"} · {p.claims}
         </Badge>
         {p.owned && <Badge className="gap-1 font-normal"><Check className="h-3 w-3" />You own {p.card?.owned ? "this card" : p.owned_card ? `${p.owned_card.rating} ${p.owned_card.version ?? ""}`.trim() : "one"}</Badge>}
+        {c?.affordable === true && <Badge variant="outline" className="border-success/50 font-normal text-success">You can afford it</Badge>}
+        {c?.affordable === false && <Badge variant="outline" className="font-normal text-muted-foreground">Over your coins</Badge>}
       </div>
+      <Outlook o={c?.outlook} />
       {p.said && <p className="text-muted-foreground">{p.said}<Cites ns={[p.cite]} plan={plan} /></p>}
       {p.versions.length > 0 && <p className="text-xs text-muted-foreground">Other versions: {p.versions.map((v) => `${v.overall} ${v.version ?? ""}${v.price != null ? ` (${coins(v.price)})` : ""}${v.owned ? " owned" : ""}`.trim()).join(", ")}</p>}
     </div>
@@ -65,8 +88,12 @@ function PositionCard({ g, plan, onPick }: { g: KbPositionGroup; plan: KbTeamPla
       <span className="text-xs font-normal text-muted-foreground">{g.in_formation ? `${g.in_formation} in the formation` : "not in the formation"}</span>
     </h3>
     {g.community.length ? <ul className="space-y-2">{list.map((p) => <PlayerRow key={p.key} p={p} plan={plan} onPick={onPick} />)}</ul>
-      : <p className="text-sm text-muted-foreground">Nobody in the bank is talking about a {g.position} yet.</p>}
+      : null}
     {g.community.length > SHOW && <Button variant="ghost" size="sm" onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show all ${g.community.length}`}</Button>}
+    {g.by_stats.length > 0 && <>
+      <h4 className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{g.community.length ? "Also strong here by in-game stats" : "Nobody's talking about this position, so here are the best by in-game stats"}</h4>
+      <ul className="space-y-2">{g.by_stats.map((c) => <StatRow key={c.card_id} c={c} />)}</ul>
+    </>}
     {g.yours.length > 0 && <p className="border-t border-border pt-2 text-xs text-muted-foreground">
       Your best here: {g.yours.map((y) => `${y.name} ${y.rating}${y.in_squad ? " (in squad)" : ""}`).join(", ")}
     </p>}
@@ -102,13 +129,13 @@ export function TeamPlan({ onPick }: { onPick: (key: string) => void }) {
       <Button variant="outline" size="sm" className="gap-1.5" disabled={refreshing || q.isFetching} onClick={refresh}><RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />Refresh</Button>
     </div>
     <ErrorNotice error={q.error} />
-    {q.isPending ? <Busy /> : plan && (plan.claims === 0
-      ? <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No formation, tactics or player talk in the bank for this period yet. Try a longer period or add sources.</p>
-      : <div className={cn("space-y-4", q.isPlaceholderData && "opacity-60")}>
+    {q.isPending ? <Busy /> : plan && (
+      <div className={cn("space-y-4", q.isPlaceholderData && "opacity-60")}>
         <p className="text-sm text-muted-foreground">
           Built from {plan.claims.toLocaleString()} claims in {plan.sources.toLocaleString()} sources about formations, tactics, PlayStyles and players
           {plan.team.squad ? `, compared with "${plan.team.squad.name}" (${plan.team.squad.formation})` : ""}{plan.team.club_size ? ` and your ${plan.team.club_size.toLocaleString()} club cards` : ""}.
           {plan.team.coins != null ? ` You have ${coins(plan.team.coins)} coins.` : ""}
+          {plan.widened_from ? ` The last ${plan.widened_from} days were thin, so this reads everything from the last year.` : ""}
         </p>
 
         {(plan.summary || plan.for_your_team.length > 0) && <section className="space-y-2 rounded-xl border border-primary/40 bg-primary/5 p-4">
@@ -121,9 +148,14 @@ export function TeamPlan({ onPick }: { onPick: (key: string) => void }) {
           <h2 className="font-display text-lg font-semibold">Formation</h2>
           {rec ? <div className="space-y-1">
             <button type="button" className="font-display text-3xl font-bold hover:underline" onClick={() => onPick(rec.key)}>{rec.formation}</button>
-            <p className="text-sm text-muted-foreground">{sentimentText(rec.net)} · {rec.claims} claims · {AGREEMENT[rec.agreement].label.toLowerCase()}</p>
+            <p className="text-sm text-muted-foreground">{sentimentText(rec.net)} · {rec.claims} claims · {AGREEMENT[rec.agreement].label.toLowerCase()} · {plan.confidence} confidence</p>
+            {plan.formation.basis === "least_criticised" && <p className="text-sm text-muted-foreground">Nobody is clearly for any formation right now; this is the one people criticise least.</p>}
             {(plan.formation_why || rec.said) && <p className="text-sm">{plan.formation_why ?? rec.said}<Cites ns={[rec.cite]} plan={plan} /></p>}
-          </div> : <p className="text-sm text-muted-foreground">No formation has more people for it than against it yet.</p>}
+          </div> : <div className="space-y-1">
+            <p className="font-display text-3xl font-bold">{plan.formation.name}<Inferred /></p>
+            <p className="text-sm text-muted-foreground">{plan.formation.basis === "your_squad" ? "The bank has no formation talk yet, so the plan is built on the formation you already play." : "The bank has no formation talk yet, so the plan is built on the usual meta shape."}</p>
+            {plan.formation_why && <p className="text-sm">{plan.formation_why}</p>}
+          </div>}
           {plan.team.squad && rec && <p className={cn("rounded-lg p-2 text-sm", plan.team.squad.formation === rec.formation ? "bg-success/10" : "bg-muted")}>
             {plan.team.squad.formation === rec.formation ? `You already play ${rec.formation}.`
               : `You play ${plan.team.squad.formation}${plan.formation.yours ? ` (${sentimentText(plan.formation.yours.net).toLowerCase()}, ${plan.formation.yours.claims} claims)` : ", which the bank hasn't talked about lately"}.`}
@@ -140,7 +172,7 @@ export function TeamPlan({ onPick }: { onPick: (key: string) => void }) {
             <h2 className="font-display text-lg font-semibold">Custom tactics</h2>
             {plan.settings.length > 0 && <table className="w-full text-sm">
               <tbody>{plan.settings.map((s, i) => <tr key={i} className="border-b border-border last:border-0 align-top">
-                <th scope="row" className="py-1.5 pr-3 text-left font-medium">{s.setting}</th>
+                <th scope="row" className="py-1.5 pr-3 text-left font-medium">{s.setting}{s.inferred && <Inferred />}</th>
                 <td className="py-1.5"><span className="font-semibold">{s.value}</span>{s.why && <span className="block text-xs text-muted-foreground">{s.why}<Cites ns={s.cites} plan={plan} /></span>}</td>
               </tr>)}</tbody>
             </table>}
@@ -154,7 +186,7 @@ export function TeamPlan({ onPick }: { onPick: (key: string) => void }) {
           <section className="space-y-2 rounded-xl border border-border bg-card p-4">
             <h2 className="font-display text-lg font-semibold">Player instructions</h2>
             {plan.instructions.length ? <ul className="space-y-2 text-sm">{plan.instructions.map((s, i) => <li key={i} className="rounded-lg border border-border p-3">
-              <p><span className="mr-2 rounded bg-muted px-1.5 py-0.5 text-xs font-semibold">{s.position}</span><span className="font-medium">{s.instruction}</span></p>
+              <p><span className="mr-2 rounded bg-muted px-1.5 py-0.5 text-xs font-semibold">{s.position}</span><span className="font-medium">{s.instruction}</span>{s.inferred && <Inferred />}</p>
               {s.why && <p className="mt-1 text-xs text-muted-foreground">{s.why}<Cites ns={s.cites} plan={plan} /></p>}
             </li>)}</ul> : <p className="text-sm text-muted-foreground">{plan.via === "ai" ? "No player instructions in the bank yet." : "Add a Claude key on your profile to turn the claims into settings and player instructions."}</p>}
             {plan.playstyles.recommended.length > 0 && <>
@@ -166,7 +198,7 @@ export function TeamPlan({ onPick }: { onPick: (key: string) => void }) {
 
         <section className="space-y-3">
           <h2 className="font-display text-lg font-semibold">Players by position <span className="font-normal text-muted-foreground">({plan.positions.reduce((n, g) => n + g.community.length, 0)} talked about)</span></h2>
-          <p className="text-sm text-muted-foreground">Who the community talks about at each position{rec ? ` of ${rec.formation}` : ""}, with today's price on the card list and the cards you own. Rated players first.</p>
+          <p className="text-sm text-muted-foreground">Who the community talks about at each position of {plan.formation.name}, with today's price, how it has moved over two weeks and whether to buy now or wait. Every position is filled in from in-game stats{plan.team.coins ? " within your coins" : ""}, so nothing is left blank.</p>
           <div className="grid gap-4 md:grid-cols-2">{plan.positions.map((g) => <PositionCard key={g.position} g={g} plan={plan} onPick={onPick} />)}</div>
         </section>
 
