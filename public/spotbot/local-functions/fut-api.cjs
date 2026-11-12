@@ -11916,8 +11916,8 @@ function redditSubs(env) {
   const subs = (env("FUT_KB_SUBREDDITS") ?? "").split(",").map((s) => s.trim().replace(/^r\//i, "")).filter((s) => /^[A-Za-z0-9_]{2,30}$/.test(s));
   return subs.length ? subs : DEFAULT_SUBREDDITS;
 }
-async function collectReddit(env, fetchFn) {
-  if (redditMode(env) === "rss") return collectRedditRss(env, fetchFn);
+async function collectReddit(env, fetchFn, known) {
+  if (redditMode(env) === "rss") return collectRedditRss(env, fetchFn, known);
   const token = await redditToken(env, fetchFn);
   const minScore = Number(env("FUT_KB_REDDIT_MIN_SCORE")) || 20;
   const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 8;
@@ -11962,8 +11962,19 @@ function parseRedditRss(xml) {
     }];
   });
 }
+var RedditRateLimited = class extends Error {
+  constructor(retryAfter) {
+    super(`Reddit is rate-limiting the server's feed requests (HTTP 429)${retryAfter ? `; it asked to wait ${retryAfter} s` : ""}`);
+    this.retryAfter = retryAfter;
+  }
+};
+var RSS_UA = "web:app.gafferbot.knowledge:1.1 (by gafferbot.app)";
 async function redditRss(url, env, fetchFn) {
-  const res = await fetchFn(url, { headers: { "user-agent": env("REDDIT_USER_AGENT") || UA, accept: "application/atom+xml" } });
+  const res = await fetchFn(url, { headers: { "user-agent": env("REDDIT_USER_AGENT") || RSS_UA, accept: "application/atom+xml" } });
+  if (res.status === 429) {
+    await res.body?.cancel();
+    throw new RedditRateLimited(Number(res.headers.get("retry-after")) || null);
+  }
   if (!res.ok) throw new Error(`Reddit's RSS feed answered HTTP ${res.status}`);
   return parseRedditRss(await res.text());
 }
@@ -11976,7 +11987,9 @@ var redditPermalink = (link) => {
   }
 };
 async function redditRssThread(sub, id3, env, fetchFn, rank = 0) {
-  const entries = await redditRss(`https://www.reddit.com/r/${sub}/comments/${id3}/.rss?sort=top&limit=15`, env, fetchFn);
+  return threadFromRss(sub, id3, await redditRss(`https://www.reddit.com/r/${sub}/comments/${id3}/.rss?sort=top&limit=15`, env, fetchFn), rank);
+}
+function threadFromRss(sub, id3, entries, rank) {
   const post = entries.find((e) => e.id === `t3_${id3}`);
   if (!post) return null;
   const comments = entries.filter((e) => e.id.startsWith("t1_") && e.text.length > 15 && e.author !== "AutoModerator").slice(0, 12).map((e) => ({ body: e.text, score: null }));
@@ -11999,16 +12012,38 @@ function rssSource(sub, post, comments, rank) {
     excerpt: squash(post.text || post.title, 280)
   };
 }
-async function collectRedditRss(env, fetchFn) {
+async function collectRedditRss(env, fetchFn, known = () => Promise.resolve(/* @__PURE__ */ new Set())) {
   const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 6;
+  const gap = Number(env("FUT_KB_REDDIT_GAP_MS") ?? 5e3);
+  let threadsLeft = Number(env("FUT_KB_REDDIT_THREADS_PER_RUN") ?? 6);
+  let calls = 0, limited = null;
+  const rss = async (url) => {
+    if (calls++ && gap > 0) await new Promise((r2) => setTimeout(r2, gap));
+    return redditRss(url, env, fetchFn);
+  };
   const out = [];
-  for (const sub of redditSubs(env)) {
-    const top = (await redditRss(`https://www.reddit.com/r/${sub}/top/.rss?t=day&limit=40`, env, fetchFn)).filter((e) => e.id.startsWith("t3_"));
-    const posts = top.map((e, i) => ({ e, rank: i + 1 })).filter(({ e }) => isGameplayPost({ title: e.title, selftext: e.text })).slice(0, perSub);
-    for (const { e, rank } of posts) {
-      const full = await redditRssThread(sub, e.id.slice(3), env, fetchFn, rank).catch(() => null);
-      out.push(full ?? rssSource(sub, e, [], rank));
+  try {
+    for (const sub of redditSubs(env)) {
+      const top = (await rss(`https://www.reddit.com/r/${sub}/top/.rss?t=day&limit=40`)).filter((e) => e.id.startsWith("t3_"));
+      const posts = top.map((e, i) => ({ e, rank: i + 1 })).filter(({ e }) => isGameplayPost({ title: e.title, selftext: e.text })).slice(0, perSub);
+      const seen = posts.length ? await known(posts.map(({ e }) => e.id.slice(3))) : /* @__PURE__ */ new Set();
+      for (const { e, rank } of posts) {
+        if (seen.has(e.id.slice(3))) continue;
+        let full = null;
+        if (threadsLeft > 0) {
+          threadsLeft--;
+          full = await rss(`https://www.reddit.com/r/${sub}/comments/${e.id.slice(3)}/.rss?sort=top&limit=15`).then((entries) => threadFromRss(sub, e.id.slice(3), entries, rank)).catch((err2) => {
+            if (err2 instanceof RedditRateLimited) limited = err2;
+            return null;
+          });
+        }
+        out.push(full ?? rssSource(sub, e, [], rank));
+        if (limited) throw limited;
+      }
     }
+  } catch (err2) {
+    if (!(err2 instanceof RedditRateLimited) || !out.length) throw err2;
+    console.warn("[fut-api] knowledge reddit:", err2.message);
   }
   return out;
 }
@@ -12093,6 +12128,11 @@ async function fetchLinked(link, env, fetchFn) {
   if (!post?.id || post.over_18) return null;
   return redditSource(post, redditComments(thread));
 }
+var ReaderUnavailable = class extends FutError {
+  constructor(why) {
+    super(`The reader can't use the Claude API right now: ${why}`, 503);
+  }
+};
 var READ_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -12153,7 +12193,11 @@ ${text5.slice(0, MAX_BODY + 2e3)}
 </source>` }] }]
   });
   const out = await res.json().catch(() => null);
-  if (!res.ok) throw new FutError(res.status === 429 || res.status >= 500 ? "The reader is busy. Try again in a minute." : `The reader couldn't read that source (${out?.error?.message ?? res.status}).`, 502);
+  if (!res.ok) {
+    const why = out?.error?.message ?? `HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403 || res.status === 400 && /credit balance|billing/i.test(why)) throw new ReaderUnavailable(why);
+    throw new FutError(res.status === 429 || res.status >= 500 ? "The reader is busy. Try again in a minute." : `The reader couldn't read that source (${why}).`, 502);
+  }
   if (out?.stop_reason === "refusal") return { relevant: false, summary: "The reader declined this source.", claims: [] };
   const body2 = (out?.content ?? []).filter((c4) => c4.type === "text").map((c4) => c4.text ?? "").join("");
   try {
@@ -12183,10 +12227,11 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
       feeds[name2] = { status: "ok", collected: stored };
     } catch (e) {
       console.error(`[fut-api] knowledge ${name2}:`, e);
-      feeds[name2] = { status: "failed", error: squash(e.message, 200) };
+      feeds[name2] = { status: e instanceof RedditRateLimited ? "limited" : "failed", error: squash(e.message, 200) };
     }
   };
-  await collect("reddit", redditFeedOn(env), () => collectReddit(env, fetchFn));
+  const knownReddit = async (ids) => new Set(await rpcData(db2, "kb_known", { p_kind: "reddit", p_ids: ids }) ?? []);
+  await collect("reddit", redditFeedOn(env), () => collectReddit(env, fetchFn, knownReddit));
   const youtubeHours = (env("FUT_KB_YOUTUBE_HOURS") ?? "1,7,13,19").split(",").map(Number);
   if (youtubeFeedOn(env) && !youtubeHours.includes(now2.getUTCHours())) feeds.youtube = { status: "later" };
   else await collect("youtube", youtubeFeedOn(env), () => collectYouTube(env, fetchFn, now2.getTime()));
@@ -12205,6 +12250,10 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
         } else result2.skipped++;
         for (const c4 of reading.claims) if (!known.some((k) => k.topic === c4.topic)) known.push({ topic: c4.topic, category: c4.category });
       } catch (e) {
+        if (e instanceof ReaderUnavailable) {
+          feeds.reader = { status: "failed", error: squash(e.message, 200) };
+          break;
+        }
         result2.failed++;
         await rpcData(db2, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash(e.message, 200), p_claims: null });
         if (e instanceof FutError && e.status === 502 && /busy/.test(e.message)) break;
