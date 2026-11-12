@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { CalendarClock, Coins, Lightbulb, ListChecks, ShieldAlert, TrendingDown, TrendingUp, Repeat } from "lucide-react";
-import { futApi, futKeys, type DailyStrategy, type StrategyBuy, type StrategyMove, type StrategyRange, type StrategyRisk, type StrategySell } from "@/lib/futApi";
+import { futApi, futKeys, type DailyStrategy, type StrategyBuy, type StrategyForecast, type StrategyMove, type StrategyRange, type StrategyRisk, type StrategySell } from "@/lib/futApi";
 import { FutCardArt } from "@/components/fut/FutCardArt";
 import { ErrorNotice } from "@/components/fut/FutShared";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,16 @@ function Card({ c }: { c: { name: string; rating: number | null; position: strin
   </div>;
 }
 
+/** "Tomorrow: about 10,400 (9,900 to 11,000), up 72% of the time" from how cards in the same spot moved. */
+function ForecastLine({ f, price }: { f: StrategyForecast; price: number }) {
+  const move = f.mid / price - 1;
+  return <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+    <CalendarClock className="h-3.5 w-3.5 text-primary" />
+    <span>Likely in 24 hours: <strong className={`tabular-nums ${move > 0.005 ? "text-success" : move < -0.005 ? "text-destructive" : "text-foreground"}`}>{coins(f.mid)}</strong> (usually {coins(f.low)} to {coins(f.high)}), higher {Math.round(f.up * 100)}% of the time</span>
+    <span>· from {numberText(f.n)} similar price moves</span>
+  </p>;
+}
+
 function BuyRow({ b, sized }: { b: StrategyBuy; sized: boolean }) {
   return <li className="space-y-3 rounded-lg border border-border bg-card p-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -53,6 +63,7 @@ function BuyRow({ b, sized }: { b: StrategyBuy; sized: boolean }) {
     </dl>
     <ul className="space-y-1 text-sm">{b.why.map((w, i) => <li key={i} className="flex gap-2"><TrendingUp className="mt-0.5 h-4 w-4 shrink-0 text-success" /><span>{w}</span></li>)}
       {b.risks.map((w, i) => <li key={`r${i}`} className="flex gap-2 text-muted-foreground"><ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" /><span>{w}</span></li>)}</ul>
+    {b.forecast && <ForecastLine f={b.forecast} price={b.buy_at} />}
     <p className="text-xs text-muted-foreground">Hold {b.hold.toLowerCase()} · 24h <Delta value={b.change_24h} /> · week {coins(b.low)} to {coins(b.high)}</p>
   </li>;
 }
@@ -70,6 +81,7 @@ function SellRow({ s }: { s: StrategySell }) {
       <div><dt className="text-xs text-muted-foreground">You get, after tax</dt><dd className="font-semibold tabular-nums text-success">{coins(s.after_tax)}</dd></div>
     </dl>
     <p className="flex gap-2 text-sm"><TrendingDown className="mt-0.5 h-4 w-4 shrink-0 text-warning" /><span>{s.why}</span></p>
+    {s.forecast && <ForecastLine f={s.forecast} price={s.list_at} />}
   </li>;
 }
 
@@ -199,7 +211,7 @@ function Plan({ d }: { d: DailyStrategy }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {!d.learning.ready && d.learning.price_moves ? <>
           <Stat label="Price moves studied" value={numberText(d.learning.price_moves)} sub="Every card after every refresh" />
-          <Stat label="Bounced dips up a day later" value={d.learning.moves_up24 != null ? `${Math.round(d.learning.moves_up24 * 100)}%` : "–"} sub="12%+ under their usual price" />
+          <Stat label="Up or down called right" value={d.learning.moves_hit != null ? `${Math.round(d.learning.moves_hit * 100)}%` : "–"} sub={d.learning.moves_trust != null ? `Tested on the newest prices · trusted ${Math.round(d.learning.moves_trust * 100)}%` : "Tested on prices it hadn't seen"} />
         </> : <>
           <Stat label="Buy picks checked" value={numberText(d.learning.buy_picks)} sub={d.learning.ready ? "Last 30 days, whole market" : "Learning starts at 30"} />
           <Stat label="Reached their target" value={d.learning.buy_hit_rate != null ? `${Math.round(d.learning.buy_hit_rate * 100)}%` : "–"} sub={d.learning.hours_to_hit != null ? `Usually within ${d.learning.hours_to_hit} hours` : "Within 4 days"} />

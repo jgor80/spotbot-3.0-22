@@ -15,7 +15,7 @@
 import { DEFAULT_MARKET_RULES, netAfterTax, roundToStep, stepAt } from "./xilab/market/rules.ts";
 import { FutDbError, FutError, type FutDb } from "./service.ts";
 import { liveFutggPrices, type LivePrices } from "./futgg-live.ts";
-import { bounceBand, buyOutlook, discountBand, learnModel, learnMoves, moveBucket, priceBand, resolvePick, sellOutlook, trendBand, WINDOW_DAYS,
+import { bounceBand, buyOutlook, discountBand, forecast24, learnModel, learnMoves, moveBucket, priceBand, resolvePick, sellOutlook, trendBand, WINDOW_DAYS,
   type BuyFeatures, type LoggedPick, type SellFeatures, type StrategyModel } from "./strategy-model.ts";
 
 type Row = Record<string, unknown>;
@@ -218,13 +218,17 @@ export interface BuyPick {
   target_raw: number; features: BuyFeatures; p_hit: number | null;
   /** The most you can pay and still make the profit floor after tax: if the Buy Now price in the game is higher, skip it. */
   max_buy: number;
+  /** Where the price is likely to be a day from now, from how cards in the same spot moved (null until learned). */
+  forecast: Forecast | null;
 }
+export interface Forecast { low: number; mid: number; high: number; up: number; n: number }
 export interface SellPick {
   card_id: string; ea_item_id: number; name: string; version: string | null; rating: number | null; position: string | null;
   quantity: number; list_at: number; quick_at: number; after_tax: number; median: number | null; high: number | null; change_24h: number | null;
   reason: "near_high" | "falling" | "weekend_demand" | "before_event"; why: string; in_squad: boolean; score: number;
   /** How often this kind of sell call was right before, once the model has enough results. */
   right_rate: number | null;
+  forecast: Forecast | null;
 }
 export interface PileFix { ea_item_id: number; name: string; rating: number | null; state: string; buy_now: number | null; price: number | null; action: "clear" | "relist" | "lower"; list_at: number | null; why: string }
 
@@ -252,7 +256,7 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
     let sell_at = reach < 1 && target_raw > buy_at ? Math.max(buy_at, down(buy_at + (target_raw - buy_at) * reach)) : target_raw;
     // Before enough picks have settled: aim for the rise that half the cards in the same spot reached within 2 days.
     if (!o.model?.ready && o.model?.moves) {
-      const mb = moveBucket(o.model.moves, { discount, rising: s.rising, falling: s.falling, kind: cardKind(card) });
+      const mb = moveBucket(o.model.moves, { discount, rising: s.rising, falling: s.falling, kind: cardKind(card), price: s.latest });
       const likely = mb ? down(buy_at * (1 + mb.b.peak[5]!)) : sell_at;
       if (likely < sell_at && likely > buy_at) sell_at = likely;
     }
@@ -275,7 +279,8 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
     if (s.change_72h !== null && s.change_72h < -20) risks.push(`Down ${Math.abs(s.change_72h)}% in 3 days: could be a new promo pulling it down.`);
     if (kind === "promo") risks.push("Promo card: supply can jump if it comes back in packs or an SBC.");
     const features: BuyFeatures = { kind, band: priceBand(s.latest), discount: discountBand(discount), bounce: bounceBand(s.rising, s.falling), trend: trendBand(s.change_72h), weekday: timing.weekday };
-    const learned = buyOutlook(o.model, features, { discount, rising: s.rising, falling: s.falling, kind, rise: sell_at / buy_at - 1 });
+    const learned = buyOutlook(o.model, features, { discount, rising: s.rising, falling: s.falling, kind, price: s.latest, rise: sell_at / buy_at - 1 });
+    const forecast = forecast24(o.model?.moves, { discount, rising: s.rising, falling: s.falling, kind, price: s.latest });
     if (learned.p_hit !== null && learned.from_moves) {
       why.push(`Cards in the same spot reached a price this high within 2 days ${Math.round(learned.p_hit * 100)}% of the time (${learned.similar.toLocaleString("en-US")} past price moves).`);
       if (learned.factor < 0.8) risks.push("Cards in this spot have usually not climbed this far, so it's ranked lower.");
@@ -290,7 +295,7 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
       price: s.latest, buy_at, sell_at, profit, roi: pct(roi), quantity: null, spend: null, total_profit: null,
       median: Math.round(s.median), low: s.min, high: s.max, change_24h: s.change_24h, points: s.points,
       confidence: conf >= 0.85 ? "high" : conf >= 0.6 ? "medium" : "low", hold: o.model?.ready && o.model.buys.median_hours_to_hit != null ? `about ${o.model.buys.median_hours_to_hit} hours` : kind === "fodder" ? "Same day to 2 days" : "1 to 4 days", why, risks, score,
-      target_raw, features, p_hit: learned.p_hit, max_buy,
+      target_raw, features, p_hit: learned.p_hit, max_buy, forecast,
     });
   }
   return out.sort((a, b) => b.score - a.score);
@@ -317,13 +322,15 @@ export function scoreSells(club: ClubCard[], stats: Map<number, CardStats>, timi
     const in_squad = squad.has(card.card_id);
     if (in_squad) why += " It's in your active squad, so only sell if you have a replacement.";
     const usedCalls = (model?.sells.by_reason[reason]?.n ?? 0) >= 15;
-    const learned = sellOutlook(model, reason, s ? { discount: (s.median - price) / s.median, rising: s.rising, falling: s.falling, kind: cardKind({ version: card.version, rating: card.rating ?? 0, is_icon: false, is_hero: false }) } : undefined);
+    const spot = s ? { discount: (s.median - price) / s.median, rising: s.rising, falling: s.falling, kind: cardKind({ version: card.version, rating: card.rating ?? 0, is_icon: false, is_hero: false }), price } : undefined;
+    const learned = sellOutlook(model, reason, spot);
+    const forecast = spot ? forecast24(model?.moves, spot) : null;
     if (learned.rate !== null) why += usedCalls ? ` Calls like this were right ${Math.round(learned.rate * 100)}% of the time (${learned.n} calls).` : ` Cards in the same spot were lower a day later ${Math.round(learned.rate * 100)}% of the time (${learned.n.toLocaleString("en-US")} past price moves).`;
     score = score * (1 + 0.3 * timing.sell_bias) * (in_squad ? 0.3 : 1) * Math.log10(price) * learned.factor;
     out.push({
       card_id: card.card_id, ea_item_id: card.ea_item_id, name: card.name, version: card.version, rating: card.rating, position: card.position,
       quantity: card.tradeable_quantity, list_at, quick_at, after_tax: net(list_at) * card.tradeable_quantity,
-      median: s ? Math.round(s.median) : null, high: s?.max ?? null, change_24h: s?.change_24h ?? null, reason, why, in_squad, score, right_rate: learned.rate,
+      median: s ? Math.round(s.median) : null, high: s?.max ?? null, change_24h: s?.change_24h ?? null, reason, why, in_squad, score, right_rate: learned.rate, forecast,
     });
   }
   return out.sort((a, b) => b.score - a.score);
@@ -572,6 +579,7 @@ export function learningSummary(model: StrategyModel | null | undefined, followe
     buy_picks: model?.buys.n ?? 0, buy_hit_rate: model?.buys.rate ?? null, hours_to_hit: model?.buys.median_hours_to_hit ?? null, target_reach: model?.buys.reach ?? 1,
     sell_calls: model?.sells.n ?? 0, sell_right_rate: model?.sells.rate ?? null,
     price_moves: model?.moves?.n ?? 0, moves_up24: model?.moves?.by["12%+ under|bounced"]?.up24 ?? null,
+    moves_hit: model?.moves?.check?.hit ?? null, moves_trust: model?.moves?.trust ?? null,
     lessons: model?.lessons ?? ["Learning starts with the next price refresh: every refresh logs the day's picks and checks earlier ones against the prices since."],
     followed: { trades: followed.length, sold: done.length, profit: done.reduce((n, t) => n + (t.profit ?? 0), 0), items: followed.slice(0, 20) },
   };
