@@ -41,7 +41,7 @@ import {
   runKnowledgeIngest, type AskTurn,
 } from "../_shared/fut/knowledge.ts";
 import { applyToTeam, loadTeam, teamPlan } from "../_shared/fut/knowledge-team.ts";
-import { idealSquad, MAX_PLAYSTYLE } from "../_shared/fut/ideal-squad.ts";
+import { idealSquad, MAX_PLAYSTYLE, PLAYER_TRAITS, SHAPE_TRAITS, topMetas } from "../_shared/fut/ideal-squad.ts";
 import { importCardArt, listCardArt } from "../_shared/fut/card-art.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { aiKeyStatus, envForUser, removeAiKey, revealAiKey, saveAiKey } from "../_shared/fut/ai-keys.ts";
@@ -494,6 +494,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           return { by, owned_cards: pool.length, results: bestSquads(squad, formation, pool, rules, by) };
         }) });
       }
+      if (route === "/squads/metas" && m === "GET") {
+        // The three formations the Knowledge Bank community backs most right now (the meta pills in Squad Builder).
+        return json({ data: await topMetas(db, userId, intParam(url.searchParams.get("days"), "days", 1, 365) ?? 90) });
+      }
       if (route === "/squads/ideal" && m === "POST") {
         // Ideal squad: the formation, XI, tactics and buy targets for how the user says they like to play, weighed with
         // what the Knowledge Bank community backs and what their club can field (ideal-squad.ts). Not saved.
@@ -504,6 +508,15 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         if (b.formation !== undefined && b.formation !== null && (typeof b.formation !== "string" || !FORMATIONS[b.formation])) throw new FutError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
         const days = b.days === undefined ? 90 : Number(b.days);
         if (!Number.isInteger(days) || days < 1 || days > 365) throw new FutError("days must be a whole number from 1 to 365.");
+        // Pills: styles of play, and how many strikers and defenders
+        const known = [...Object.keys(SHAPE_TRAITS), ...Object.keys(PLAYER_TRAITS)];
+        if (b.traits !== undefined && (!Array.isArray(b.traits) || b.traits.length > 20 || b.traits.some((t) => typeof t !== "string" || !known.includes(t)))) throw new FutError(`traits must be a list from: ${known.join(", ")}.`);
+        const count = (v: unknown, name: string, allowed: number[]) => {
+          if (v === undefined || v === null) return null;
+          if (!allowed.includes(v as number)) throw new FutError(`${name} must be ${allowed.join(", ").replace(/, (\d)$/, " or $1")}.`);
+          return v as number;
+        };
+        const strikers = count(b.strikers, "strikers", [1, 2, 3]) as 1 | 2 | 3 | null, defenders = count(b.defenders, "defenders", [3, 4, 5]) as 3 | 4 | 5 | null;
         const platform = platformParam(typeof b.platform === "string" ? b.platform : null);
         const { env, own } = await envForUser(db, userId, deps.env ?? ((k: string) => Deno.env.get(k)));
         const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
@@ -513,7 +526,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           const [rules, mine, team] = await Promise.all([activeRules(db), searchMyCards(db, userId, { all: true, owned_only: true }), loadTeam(db, userId, squad.id ?? null, platform)]);
           // The squad on screen (saved or not) is the one the plan talks about
           team.squad = { id: squad.id, name: squad.name, formation: squad.formation, xi: squad.slots.map((x) => ({ slot: x.slot, position: x.position, name: x.card?.name ?? null, rating: x.card?.rating ?? null })) };
-          return idealSquad(db, userId, squad, mine.map(toWorkspaceCard), rules, { playstyle, formation: (b.formation as string | null | undefined) ?? null, days, platform }, team, env, fetchFn, () => {
+          return idealSquad(db, userId, squad, mine.map(toWorkspaceCard), rules, { playstyle, formation: (b.formation as string | null | undefined) ?? null, days, platform, traits: (b.traits as string[] | undefined) ?? [], strikers, defenders }, team, env, fetchFn, () => {
             if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
           });
         }) });

@@ -1,7 +1,7 @@
 // Squad Builder's ideal squad: the playstyle read into traits, formations scored on community + style + club, and the
 // whole thing (formation, XI, tactics, buy targets) on real PostgreSQL (PGlite) with Claude faked.
 import { handle, type Deps } from "./handler.ts";
-import { idealSquad, liftPool, MAX_PLAYSTYLE, readPlaystyleWords, scoreFormations, styleFit } from "../_shared/fut/ideal-squad.ts";
+import { idealSquad, liftPool, MAX_PLAYSTYLE, meets, readPlaystyleWords, scoreFormations, styleFit, topMetas, withPills } from "../_shared/fut/ideal-squad.ts";
 import { fold, type FormationPick, type StatPicker, type TeamContext } from "../_shared/fut/knowledge-team.ts";
 import { knowledgeDb, ME, rpcOver } from "../_shared/fut/knowledge-test-db.ts";
 import { activeRules } from "../_shared/fut/service.ts";
@@ -61,6 +61,17 @@ Deno.test("ideal squad: reading a playstyle and scoring formations", async () =>
   assert(quiet[0]!.style!.fit === 1 && quiet[0]!.community === null && !quiet[0]!.why.includes("bank"), JSON.stringify(quiet[0]));
   const noClub = scoreFormations(base, [], rules, ranked, style, null).options;
   assert(noClub[0]!.club === null && noClub.length > 3, "works with no club cards");
+
+  // Pills: a picked number of strikers or defenders is a rule, styles add to what the words said
+  assert(meets("4-4-2", { strikers: 2, defenders: 4 }) && !meets("4-4-2", { strikers: 1 }) && meets("4-3-3", { strikers: 3 }) && !meets("4-3-3", { strikers: 1 }) && meets("4-2-3-1", { strikers: 1 }));
+  assert(meets("5-2-3", { strikers: 3, defenders: 5 }) && meets("3-4-2-1", { strikers: 1, defenders: 3 }) && !meets("5-3-2", { defenders: 4 }) && meets("4-2-4", { strikers: 2 }) && meets("4-4-2", {}));
+  for (const st of [1, 2, 3] as const) for (const d of [3, 4, 5] as const) assert(scoreFormations(base, club(), rules, ranked, none, null, { strikers: st, defenders: d }).options.every((o) => meets(o.formation, { strikers: st, defenders: d })), `every pick has ${st} up top and ${d} at the back`);
+  const ruled = scoreFormations(base, club(), rules, ranked, none, null, { strikers: 2, defenders: 5 }).options;
+  assert(ruled.length >= 2 && ruled[0]!.why.startsWith("It has two strikers and five at the back") && ruled.some((o) => o.formation === "5-2-1-2"), JSON.stringify(ruled.map((o) => [o.formation, o.score, o.why])));
+  assert(scoreFormations(base, club(), rules, ranked, none, null, { defenders: 4 }).options[0]!.formation === "4-2-3-1 (2)", "the community favourite still leads when it fits the rule");
+  const pills = withPills(readPlaystyleWords("I like wingers"), ["possession", "pace", "wingers", "made_up"], { strikers: 3, defenders: 4 });
+  assert(JSON.stringify(pills.shape) === '["wingers","possession"]' && JSON.stringify(pills.players) === '["pace"]' && pills.summary === "You like wingers. You picked a front three, four at the back, possession, pace.", JSON.stringify(pills));
+  assert(withPills(none, [], {}).summary === "" && withPills(none, ["counter"], {}).summary === "You picked counter attacks.");
 
   // A pace style lifts the quick striker over an equally rated slow one; a community-rated name gets a lift too
   const lifted = liftPool(club(), style, new Map([["mid b", 2]]));
@@ -135,6 +146,19 @@ Deno.test("ideal squad: formation, XI, tactics and buy targets from the playstyl
     const bare = await idealSquad({ rpc }, ME, base, [], rules, { ...input, playstyle: "wingers and a number 10" }, { ...team, club: [] }, noKey, fetch as never, undefined, stats);
     assert(bare.empty.length === 11 && bare.rating === 0 && bare.options[0]!.style!.fit === 1 && bare.plan.positions.length > 0, JSON.stringify([bare.formation, bare.empty.length]));
 
+    // Pills alone, no words: one striker and five at the back is a rule, pace picks the quick striker
+    const pilled = await idealSquad({ rpc }, ME, base, pool, rules, { ...input, playstyle: "", traits: ["pace", "counter"], strikers: 1, defenders: 5 }, team, noKey, fetch as never, undefined, stats);
+    assert(pilled.formation === "5-4-1" && pilled.options.every((o) => meets(o.formation, { strikers: 1, defenders: 5 })) && pilled.playstyle.summary === "You picked one striker, five at the back, counter attacks, pace.", `${pilled.formation} ${pilled.playstyle.summary}`);
+    assert(pilled.squad.slots.find((s) => s.position === "ST")!.card!.name !== "Slow Striker" && pilled.plan.formation.basis === "playstyle");
+    // A meta pill is a formation: it wins over the count pills
+    const metaPick = await idealSquad({ rpc }, ME, base, pool, rules, { ...input, playstyle: "", formation: "4-2-3-1 (2)", strikers: 2 }, team, noKey, fetch as never, undefined, stats);
+    assert(metaPick.formation === "4-2-3-1 (2)");
+
+    // The meta pills: what the bank backs most, topped up with the usual shapes (never one people warn against)
+    const metas = await topMetas({ rpc }, ME, 90);
+    assert(JSON.stringify(metas.metas.map((x) => [x.formation, x.basis])) === '[["4-2-3-1 (2)","community"],["4-4-2","community"],["4-2-3-1","usual"]]' && metas.metas[0]!.claims === 2 && metas.metas[0]!.said !== null, JSON.stringify(metas.metas));
+    assert(metas.tactics[0]?.topic === "Balanced defensive approach" && metas.claims === 6, JSON.stringify([metas.tactics, metas.claims]));
+
     // With Claude: it reads the style, and the plan is told the style and why the formation was picked
     const calls: { system: string; user: string }[] = [];
     const fetcher = (url: string, init?: RequestInit) => {
@@ -170,5 +194,6 @@ Deno.test("ideal squad route: checks its input", async () => {
   const squad = createSquad({ formation: "4-3-3", owner_id: ME });
   const long = await call({ squad, playstyle: "x".repeat(MAX_PLAYSTYLE + 1) });
   assert(long.status === 400 && long.data.error?.includes("under 600"), JSON.stringify(long));
+  assert((await call({ squad, traits: ["nope"] })).status === 400 && (await call({ squad, strikers: 4 })).status === 400 && (await call({ squad, defenders: 2 })).data.error === "defenders must be 3, 4 or 5.");
   assert((await call({ squad, playstyle: 5 })).status === 400 && (await call({ squad, playstyle: "wingers", formation: "9-9-9" })).status === 400 && (await call({ squad, playstyle: "wingers", days: 900 })).status === 400);
 });

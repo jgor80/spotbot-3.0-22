@@ -437,15 +437,27 @@ export interface TeamPlanOptions {
   pickFormation?: (ranked: FormationPick[]) => Promise<{ formation: string; why: string } | null>;
 }
 
+async function readConsensus(db: Rpc, userId: string, days: number): Promise<{ consensus: Consensus | null; widenedFrom: number | null }> {
+  const read = (d: number) => rpcData<Consensus>(db, "kb_consensus", { p_user: userId, p_days: d, p_per: 60, p_statements: 4 });
+  let consensus = await read(days), widenedFrom: number | null = null;
+  // Never wait for more data: a thin period reads everything the bank has instead
+  if ((consensus?.claims ?? 0) < THIN_CLAIMS && days < 365) {
+    const all = await read(365);
+    if ((all?.claims ?? 0) > (consensus?.claims ?? 0)) { consensus = all; widenedFrom = days; }
+  }
+  return { consensus, widenedFrom };
+}
+
+/** The formations the community talks about, most backed first (the same ranking the team plan uses). */
+export async function communityFormations(db: Rpc, userId: string, days: number): Promise<{ ranked: FormationPick[]; tactics: Pick[]; claims: number; days: number }> {
+  const { consensus, widenedFrom } = await readConsensus(db, userId, days);
+  const topics = consensus?.topics ?? [];
+  return { ranked: rankFormations(topics, () => null), tactics: sides(topics, "tactics", () => null, 3).recommended, claims: consensus?.claims ?? 0, days: widenedFrom ? 365 : days };
+}
+
 /** The knowledge bank's view as a game plan for this team. */
 export async function teamPlan(db: Rpc, userId: string, opts: TeamPlanOptions, team: TeamContext, env: Env, fetchFn: Fetch, beforeAi?: () => void, statPicker?: StatPicker): Promise<TeamPlan> {
-  const read = (days: number) => rpcData<Consensus>(db, "kb_consensus", { p_user: userId, p_days: days, p_per: 60, p_statements: 4 });
-  let consensus = await read(opts.days), widenedFrom: number | null = null;
-  // Never wait for more data: a thin period reads everything the bank has instead
-  if ((consensus?.claims ?? 0) < THIN_CLAIMS && opts.days < 365) {
-    const all = await read(365);
-    if ((all?.claims ?? 0) > (consensus?.claims ?? 0)) { consensus = all; widenedFrom = opts.days; }
-  }
+  const { consensus, widenedFrom } = await readConsensus(db, userId, opts.days);
   const topics = consensus?.topics ?? [];
   const pickStats: StatPicker = statPicker ?? defaultStatPicker(db, userId, opts.platform);
   const useAi = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
