@@ -25,6 +25,7 @@ function Feed({ on, name, detail }: { on: boolean; name: string; detail: string 
 export function FeedStatus({ status }: { status: KbStatus }) {
   const run = status.last_run;
   const failures = run ? Object.entries(run.feeds).filter(([, f]) => f.status === "failed") : [];
+  const limited = run ? Object.entries(run.feeds).filter(([, f]) => f.status === "limited").map(([name]) => name) : [];
   return <section className="space-y-3">
     <div className="grid gap-2 sm:grid-cols-3">
       <Feed on={status.feeds.reddit} name="Reddit" detail={!status.feeds.reddit ? "Turned off (FUT_KB_REDDIT_RSS=off)." : status.feeds.reddit_mode === "rss"
@@ -37,6 +38,7 @@ export function FeedStatus({ status }: { status: KbStatus }) {
       {status.paused ? "Collecting is paused (FUT_KNOWLEDGE=off). " : ""}
       Last collected {ago(run?.finished_at)}{run ? `: ${run.read} source${run.read === 1 ? "" : "s"} read` : ""}{status.waiting ? `, ${status.waiting} waiting to be read` : ""}.
       {failures.map(([name, f]) => ` ${name} failed: ${f.error ?? "unknown error"}.`).join("")}
+      {limited.map((name) => ` ${name === "reddit" ? "Reddit" : name} asked GafferBot to slow down, so it will try again next run.`).join("")}
     </p>
   </section>;
 }

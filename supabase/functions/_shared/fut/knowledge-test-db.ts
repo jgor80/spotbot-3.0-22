@@ -10,7 +10,9 @@ export const OTHER = "00000000-0000-0000-0000-000000000002";
 export async function knowledgeDb() {
   const db = new PGlite();
   await db.exec(KB_SETUP);
-  await db.exec(await Deno.readTextFile(new URL("../../../migrations/20261110160000_fut_knowledge_bank.sql", import.meta.url)));
+  for (const m of ["20261110160000_fut_knowledge_bank.sql", "20261112010000_fut_kb_retry.sql"]) {
+    await db.exec(await Deno.readTextFile(new URL(`../../../migrations/${m}`, import.meta.url)));
+  }
   await db.exec("SET ROLE service_role");
   return db;
 }

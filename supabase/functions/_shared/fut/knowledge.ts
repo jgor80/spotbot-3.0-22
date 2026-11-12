@@ -126,8 +126,8 @@ function redditSubs(env: Env): string[] {
 }
 
 /** The day's top gameplay posts from each subreddit, with their top comments. */
-export async function collectReddit(env: Env, fetchFn: Fetch): Promise<CollectedSource[]> {
-  if (redditMode(env) === "rss") return collectRedditRss(env, fetchFn);
+export async function collectReddit(env: Env, fetchFn: Fetch, known?: (ids: string[]) => Promise<Set<string>>): Promise<CollectedSource[]> {
+  if (redditMode(env) === "rss") return collectRedditRss(env, fetchFn, known);
   const token = await redditToken(env, fetchFn);
   const minScore = Number(env("FUT_KB_REDDIT_MIN_SCORE")) || 20;
   const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 8;
@@ -172,8 +172,16 @@ export function parseRedditRss(xml: string): RssEntry[] {
   });
 }
 
+/** Reddit asked us to slow down (HTTP 429): the run stops asking Reddit and keeps what it already has. */
+export class RedditRateLimited extends Error {
+  constructor(public retryAfter: number | null) { super(`Reddit is rate-limiting the server's feed requests (HTTP 429)${retryAfter ? `; it asked to wait ${retryAfter} s` : ""}`); }
+}
+// Reddit asks for "<platform>:<app id>:<version> (by …)"; generic agents get rate-limited first.
+const RSS_UA = "web:app.gafferbot.knowledge:1.1 (by gafferbot.app)";
+
 async function redditRss(url: string, env: Env, fetchFn: Fetch): Promise<RssEntry[]> {
-  const res = await fetchFn(url, { headers: { "user-agent": env("REDDIT_USER_AGENT") || UA, accept: "application/atom+xml" } });
+  const res = await fetchFn(url, { headers: { "user-agent": env("REDDIT_USER_AGENT") || RSS_UA, accept: "application/atom+xml" } });
+  if (res.status === 429) { await res.body?.cancel(); throw new RedditRateLimited(Number(res.headers.get("retry-after")) || null); }
   if (!res.ok) throw new Error(`Reddit's RSS feed answered HTTP ${res.status}`);
   return parseRedditRss(await res.text());
 }
@@ -182,7 +190,9 @@ const redditPermalink = (link: string) => { try { const u = new URL(link); retur
 
 /** One post with its top comments, from the post's RSS feed. */
 async function redditRssThread(sub: string, id: string, env: Env, fetchFn: Fetch, rank = 0): Promise<CollectedSource | null> {
-  const entries = await redditRss(`https://www.reddit.com/r/${sub}/comments/${id}/.rss?sort=top&limit=15`, env, fetchFn);
+  return threadFromRss(sub, id, await redditRss(`https://www.reddit.com/r/${sub}/comments/${id}/.rss?sort=top&limit=15`, env, fetchFn), rank);
+}
+function threadFromRss(sub: string, id: string, entries: RssEntry[], rank: number): CollectedSource | null {
   const post = entries.find((e) => e.id === `t3_${id}`);
   if (!post) return null;
   const comments = entries.filter((e) => e.id.startsWith("t1_") && e.text.length > 15 && e.author !== "AutoModerator").slice(0, 12).map((e) => ({ body: e.text, score: null }));
@@ -200,17 +210,41 @@ function rssSource(sub: string, post: RssEntry, comments: { body: string; score:
   };
 }
 
-/** The day's top gameplay posts from each subreddit's RSS feed, with each post's top comments. */
-export async function collectRedditRss(env: Env, fetchFn: Fetch): Promise<CollectedSource[]> {
+/** The day's top gameplay posts from each subreddit's RSS feed, with the top comments of posts the bank hasn't seen yet.
+ * Reddit rate-limits these feeds, so requests are spaced out (FUT_KB_REDDIT_GAP_MS, default 5 s), only a few comment
+ * feeds are read per run (FUT_KB_REDDIT_THREADS_PER_RUN, default 6), and a 429 stops the run's Reddit requests. */
+export async function collectRedditRss(env: Env, fetchFn: Fetch, known: (ids: string[]) => Promise<Set<string>> = () => Promise.resolve(new Set())): Promise<CollectedSource[]> {
   const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 6;
+  const gap = Number(env("FUT_KB_REDDIT_GAP_MS") ?? 5000);
+  let threadsLeft = Number(env("FUT_KB_REDDIT_THREADS_PER_RUN") ?? 6);
+  let calls = 0, limited: RedditRateLimited | null = null;
+  const rss = async (url: string) => {
+    if (calls++ && gap > 0) await new Promise((r) => setTimeout(r, gap));
+    return redditRss(url, env, fetchFn);
+  };
   const out: CollectedSource[] = [];
-  for (const sub of redditSubs(env)) {
-    const top = (await redditRss(`https://www.reddit.com/r/${sub}/top/.rss?t=day&limit=40`, env, fetchFn)).filter((e) => e.id.startsWith("t3_"));
-    const posts = top.map((e, i) => ({ e, rank: i + 1 })).filter(({ e }) => isGameplayPost({ title: e.title, selftext: e.text })).slice(0, perSub);
-    for (const { e, rank } of posts) {
-      const full = await redditRssThread(sub, e.id.slice(3), env, fetchFn, rank).catch(() => null);
-      out.push(full ?? rssSource(sub, e, [], rank));
+  try {
+    for (const sub of redditSubs(env)) {
+      const top = (await rss(`https://www.reddit.com/r/${sub}/top/.rss?t=day&limit=40`)).filter((e) => e.id.startsWith("t3_"));
+      const posts = top.map((e, i) => ({ e, rank: i + 1 })).filter(({ e }) => isGameplayPost({ title: e.title, selftext: e.text })).slice(0, perSub);
+      const seen = posts.length ? await known(posts.map(({ e }) => e.id.slice(3))) : new Set<string>();
+      for (const { e, rank } of posts) {
+        if (seen.has(e.id.slice(3))) continue; // already in the bank; collecting again changes nothing
+        let full: CollectedSource | null = null;
+        if (threadsLeft > 0) {
+          threadsLeft--;
+          full = await rss(`https://www.reddit.com/r/${sub}/comments/${e.id.slice(3)}/.rss?sort=top&limit=15`)
+            .then((entries) => threadFromRss(sub, e.id.slice(3), entries, rank))
+            .catch((err) => { if (err instanceof RedditRateLimited) limited = err; return null; });
+        }
+        out.push(full ?? rssSource(sub, e, [], rank));
+        if (limited) throw limited; // keep this post (without comments), ask Reddit nothing more this run
+      }
     }
+  } catch (err) {
+    // Rate-limited part way through: keep what was collected; with nothing collected, report it
+    if (!(err instanceof RedditRateLimited) || !out.length) throw err;
+    console.warn("[fut-api] knowledge reddit:", (err as Error).message);
   }
   return out;
 }
@@ -296,6 +330,11 @@ async function fetchLinked(link: NonNullable<ReturnType<typeof parseSourceLink>>
 
 // ---------------------------------------------------------------- reading with Claude
 
+/** The Claude account can't be used (out of credit, bad key): nothing can be read until that's fixed, so no source is blamed. */
+export class ReaderUnavailable extends FutError {
+  constructor(why: string) { super(`The reader can't use the Claude API right now: ${why}`, 503); }
+}
+
 export interface Claim { topic: string; topic_key: string; category: KbCategory; statement: string; stance: -1 | 0 | 1; strength: 1 | 2 | 3 }
 export interface Reading { relevant: boolean; summary: string; claims: Claim[] }
 
@@ -357,7 +396,11 @@ export async function readSource(text: string, known: { topic: string; category:
     messages: [{ role: "user", content: [{ type: "text", text: `<source>\n${text.slice(0, MAX_BODY + 2000)}\n</source>` }] }],
   });
   const out = await res.json().catch(() => null) as { content?: { type: string; text?: string }[]; stop_reason?: string; error?: { message?: string } } | null;
-  if (!res.ok) throw new FutError(res.status === 429 || res.status >= 500 ? "The reader is busy. Try again in a minute." : `The reader couldn't read that source (${out?.error?.message ?? res.status}).`, 502);
+  if (!res.ok) {
+    const why = out?.error?.message ?? `HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403 || (res.status === 400 && /credit balance|billing/i.test(why))) throw new ReaderUnavailable(why);
+    throw new FutError(res.status === 429 || res.status >= 500 ? "The reader is busy. Try again in a minute." : `The reader couldn't read that source (${why}).`, 502);
+  }
   if (out?.stop_reason === "refusal") return { relevant: false, summary: "The reader declined this source.", claims: [] };
   const body = (out?.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("");
   try { return cleanReading(JSON.parse(body)); } catch { throw new FutError("The reader returned something unreadable.", 502); }
@@ -372,7 +415,7 @@ async function saveReading(db: Rpc, id: string, reading: Reading): Promise<numbe
 
 // ---------------------------------------------------------------- the scheduled job
 
-export interface IngestResult { feeds: Record<string, { status: "ok" | "off" | "failed" | "later"; collected?: number; error?: string }>; read: number; skipped: number; failed: number; claims: number; waiting: number; cleaned: number }
+export interface IngestResult { feeds: Record<string, { status: "ok" | "off" | "failed" | "later" | "limited"; collected?: number; error?: string }>; read: number; skipped: number; failed: number; claims: number; waiting: number; cleaned: number }
 
 /** Collect from each configured feed, then read what's waiting (most popular first). YouTube runs on its own hours to stay inside the API quota. */
 export async function runKnowledgeIngest(db: Rpc, env: Env, fetchFn: Fetch, now = new Date()): Promise<IngestResult> {
@@ -385,10 +428,11 @@ export async function runKnowledgeIngest(db: Rpc, env: Env, fetchFn: Fetch, now 
       feeds[name] = { status: "ok", collected: stored };
     } catch (e) {
       console.error(`[fut-api] knowledge ${name}:`, e);
-      feeds[name] = { status: "failed", error: squash((e as Error).message, 200) };
+      feeds[name] = { status: e instanceof RedditRateLimited ? "limited" : "failed", error: squash((e as Error).message, 200) };
     }
   };
-  await collect("reddit", redditFeedOn(env), () => collectReddit(env, fetchFn));
+  const knownReddit = async (ids: string[]) => new Set(await rpcData<string[]>(db, "kb_known", { p_kind: "reddit", p_ids: ids }) ?? []);
+  await collect("reddit", redditFeedOn(env), () => collectReddit(env, fetchFn, knownReddit));
   const youtubeHours = (env("FUT_KB_YOUTUBE_HOURS") ?? "1,7,13,19").split(",").map(Number);
   if (youtubeFeedOn(env) && !youtubeHours.includes(now.getUTCHours())) feeds.youtube = { status: "later" };
   else await collect("youtube", youtubeFeedOn(env), () => collectYouTube(env, fetchFn, now.getTime()));
@@ -406,6 +450,7 @@ export async function runKnowledgeIngest(db: Rpc, env: Env, fetchFn: Fetch, now 
         // New topics are offered to the next source in the same run
         for (const c of reading.claims) if (!known.some((k) => k.topic === c.topic)) known.push({ topic: c.topic, category: c.category });
       } catch (e) {
+        if (e instanceof ReaderUnavailable) { feeds.reader = { status: "failed", error: squash(e.message, 200) }; break; }
         result.failed++;
         await rpcData(db, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash((e as Error).message, 200), p_claims: null });
         if (e instanceof FutError && e.status === 502 && /busy/.test(e.message)) break;

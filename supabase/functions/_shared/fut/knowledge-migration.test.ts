@@ -16,6 +16,9 @@ Deno.test("knowledge bank: collect, read, map, topic, search, privacy, cleanup",
     assert(n.error === null && n.data === 3, `three stored, the short one dropped: ${JSON.stringify(n)}`);
     const again = await rpc("kb_collect", { p_sources: [{ ...post("a1", 3000, 2) }] });
     assert(again.data === 0, "already stored");
+    const inBank = (await rpc("kb_known", { p_kind: "reddit", p_ids: ["a1", "a3", "zz"] })).data as string[];
+    const noYoutube = (await rpc("kb_known", { p_kind: "youtube", p_ids: ["a1"] })).data as string[];
+    assert(JSON.stringify([...inBank].sort()) === '["a1","a3"]' && noYoutube.length === 0, JSON.stringify(inBank));
     const pending = (await rpc("kb_pending", { p_limit: 10 })).data as { id: string; score: number }[];
     assert(pending.length === 3 && pending[0]!.score === 3000, `most popular first with its newer score: ${JSON.stringify(pending.map((p) => p.score))}`);
     const [a1, a2, a3] = pending;
