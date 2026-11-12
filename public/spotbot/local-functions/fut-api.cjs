@@ -4788,8 +4788,8 @@ function custom(check, _params = {}, fatal) {
     return ZodAny.create().superRefine((data, ctx) => {
       const r2 = check(data);
       if (r2 instanceof Promise) {
-        return r2.then((r3) => {
-          if (!r3) {
+        return r2.then((r4) => {
+          if (!r4) {
             const params = cleanParams(_params, data);
             const _fatal = params.fatal ?? fatal ?? true;
             ctx.addIssue({ code: "custom", ...params, fatal: _fatal });
@@ -7104,6 +7104,149 @@ function resolvePick(p, trail, latest, now2) {
   if (low <= p.price * 0.92) return done({ outcome: "good", best_price: best, final_price: final });
   return closed ? done({ outcome: final < p.price ? "good" : "bad", best_price: best, final_price: final }) : null;
 }
+var MOVE_AHEAD_H = 48;
+var MOVE_MIN = 30;
+var MOVE_KEEP = 8;
+var SHRINK = 40;
+var moveBand = (d) => d >= 0.12 ? "12%+ under" : d >= 0.08 ? "8 to 12% under" : d >= 0.05 ? "5 to 8% under" : d > -0.05 ? "near usual" : d > -0.15 ? "5 to 15% over" : "15%+ over";
+var moveKeys = (f2) => {
+  const d = moveBand(f2.discount), b = bounceBand(f2.rising, f2.falling), k = `${d}|${b}|${f2.kind}`;
+  return f2.price ? [d, `${d}|${b}`, k, `${k}|${priceBand(f2.price)}`] : [d, `${d}|${b}`, k];
+};
+var r3 = (v) => Math.round(v * 1e3) / 1e3;
+function fitMoves(ex) {
+  const bucket = (xs) => {
+    const peaks = xs.map((x) => x.peak).sort((a, b) => a - b), rets = xs.map((x) => x.ret24).sort((a, b) => a - b);
+    return {
+      n: xs.length,
+      up24: r3(xs.filter((x) => x.ret24 > 5e-3).length / xs.length),
+      down24: r3(xs.filter((x) => x.ret24 < -5e-3).length / xs.length),
+      ret24: r3(xs.reduce((t, x) => t + x.ret24, 0) / xs.length),
+      r24: Array.from({ length: 11 }, (_, k) => r3(quantile(rets, k / 10))),
+      peak: Array.from({ length: 11 }, (_, k) => r3(quantile(peaks, k / 10)))
+    };
+  };
+  const groups = /* @__PURE__ */ new Map();
+  for (const x of ex) for (const k of x.keys) {
+    const g = groups.get(k);
+    if (g) g.push(x);
+    else groups.set(k, [x]);
+  }
+  const by = {};
+  for (const [k, xs] of groups) if (xs.length >= MOVE_KEEP) by[k] = bucket(xs);
+  return { overall: bucket(ex), by };
+}
+function blendSpot(m, f2) {
+  let cur = m.overall, key2 = "all", n = m.overall.n;
+  for (const k of moveKeys(f2)) {
+    const b = m.by[k];
+    if (!b) break;
+    const w = b.n / (b.n + SHRINK), mix = (x, y) => r3(w * x + (1 - w) * y);
+    cur = {
+      n: b.n,
+      up24: mix(b.up24, cur.up24),
+      down24: mix(b.down24, cur.down24),
+      ret24: mix(b.ret24, cur.ret24),
+      r24: b.r24.map((v, i) => mix(v, cur.r24[i])),
+      peak: b.peak.map((v, i) => mix(v, cur.peak[i]))
+    };
+    key2 = k;
+    n = b.n;
+  }
+  return { b: cur, key: key2, n };
+}
+function learnMoves(cards) {
+  const ex = [];
+  let history = 0, used = 0;
+  for (const c4 of cards) {
+    const n = c4.prices.length;
+    if (n < 4 || c4.ages.length !== n) continue;
+    history = Math.max(history, c4.ages[0]);
+    let any = false;
+    for (let i = 2; i < n - 1; i++) {
+      const p = c4.prices[i], at2 = c4.ages[i];
+      if (p < 1e3) continue;
+      const before = [];
+      for (let k = 0; k <= i; k++) if (c4.ages[k] - at2 <= 168) before.push(c4.prices[k]);
+      if (before.length < 3 || c4.ages[0] - at2 < 20) continue;
+      let peak = -Infinity, ret24 = null, gap24 = Infinity, span = 0;
+      for (let j = i + 1; j < n; j++) {
+        const ahead = at2 - c4.ages[j];
+        if (ahead <= 0 || ahead > MOVE_AHEAD_H + 0.5) continue;
+        peak = Math.max(peak, c4.prices[j]);
+        span = Math.max(span, ahead);
+        if (Math.abs(ahead - 24) <= 6 && Math.abs(ahead - 24) < gap24) {
+          gap24 = Math.abs(ahead - 24);
+          ret24 = c4.prices[j] / p - 1;
+        }
+      }
+      if (ret24 === null || span < 20) continue;
+      let rising = 0, falling = 0;
+      for (let k = i; k > 0 && c4.prices[k] > c4.prices[k - 1]; k--) rising++;
+      for (let k = i; k > 0 && c4.prices[k] < c4.prices[k - 1]; k--) falling++;
+      const s = [...before].sort((a, b) => a - b), m = s.length >> 1, med = s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+      ex.push({ keys: moveKeys({ discount: (med - p) / med, rising, falling, kind: c4.kind, price: p }), at: at2, ret24, peak: peak / p - 1 });
+      any = true;
+    }
+    if (any) used++;
+  }
+  if (ex.length < MOVE_MIN) return null;
+  let check = null;
+  const ages = [...new Set(ex.map((x) => x.at))].sort((a, b) => a - b);
+  const cut = ages[Math.max(0, Math.floor(ages.length * 0.25) - 1)];
+  if (cut !== void 0 && ages.length >= 2) {
+    const test = ex.filter((x) => x.at <= cut), train = ex.filter((x) => x.at > cut);
+    if (test.length >= MOVE_MIN && train.length >= MOVE_MIN) {
+      const fit2 = fitMoves(train), base = fit2.overall.up24;
+      let brier = 0, baseBrier = 0, hit = 0;
+      for (const x of test) {
+        const [d, db2, dbk, dbkp] = x.keys;
+        const spot = blendFromKeys(fit2, [d, db2, dbk, dbkp].filter(Boolean));
+        const up = x.ret24 > 5e-3 ? 1 : 0, p = spot.up24;
+        brier += (p - up) ** 2;
+        baseBrier += (base - up) ** 2;
+        if (p >= 0.5 === (up === 1)) hit++;
+      }
+      brier /= test.length;
+      baseBrier /= test.length;
+      check = { n: test.length, brier: r3(brier), base_brier: r3(baseBrier), skill: r3(baseBrier > 0 ? 1 - brier / baseBrier : 0), hit: r3(hit / test.length) };
+    }
+  }
+  const fit = fitMoves(ex);
+  const trust = check ? r3(clampN(check.skill / 0.05, 0, 1)) : 0.5;
+  return { n: ex.length, cards: used, history_h: history, ...fit, check, trust };
+}
+function blendFromKeys(m, keys) {
+  let cur = m.overall;
+  for (const k of keys) {
+    const b = m.by[k];
+    if (!b) break;
+    const w = b.n / (b.n + SHRINK);
+    cur = { ...cur, n: b.n, up24: w * b.up24 + (1 - w) * cur.up24, down24: w * b.down24 + (1 - w) * cur.down24 };
+  }
+  return cur;
+}
+function reachChance(b, rise) {
+  const q = b.peak;
+  if (rise <= q[0]) return 1;
+  if (rise > q[10]) return 0;
+  for (let k = 1; k <= 10; k++) if (rise <= q[k]) {
+    const lo = q[k - 1], hi = q[k];
+    return 1 - (k - 1 + (hi > lo ? (rise - lo) / (hi - lo) : 1)) / 10;
+  }
+  return 0;
+}
+function moveBucket(m, f2) {
+  if (!m) return null;
+  const r2 = blendSpot(m, f2);
+  return r2.key === "all" ? null : r2;
+}
+function forecast24(m, f2) {
+  const hit = moveBucket(m, f2);
+  if (!hit || !hit.b.r24) return null;
+  const at2 = (r2) => Math.round(f2.price * (1 + r2));
+  return { low: at2(hit.b.r24[1]), mid: at2(hit.b.r24[5]), high: at2(hit.b.r24[9]), up: hit.b.up24, n: hit.n };
+}
 var quantile = (xs, q) => {
   if (!xs.length) return null;
   const s = [...xs].sort((a, b) => a - b), i = (s.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
@@ -7127,7 +7270,7 @@ function buckets(rows, key2, win, overall) {
   }
   return out;
 }
-function learnModel(platform, rows, now2) {
+function learnModel(platform, rows, now2, moves = null) {
   const buys = rows.filter((r2) => r2.side === "buy" && (r2.outcome === "hit" || r2.outcome === "miss"));
   const sells = rows.filter((r2) => r2.side === "sell" && (r2.outcome === "good" || r2.outcome === "bad"));
   const hits2 = buys.filter((r2) => r2.outcome === "hit");
@@ -7145,7 +7288,8 @@ function learnModel(platform, rows, now2) {
   const sellRate = sells.length ? sells.filter((r2) => r2.outcome === "good").length / sells.length : null;
   const by_reason = sellRate === null ? {} : buckets(sells, (r2) => r2.features.reason, (r2) => r2.outcome === "good", sellRate);
   const lessons = [];
-  if (!ready) lessons.push(`Still watching: ${buys.length} of the first ${MIN_RESULTS} buy picks have settled. Picks are ranked by the plain rules until then.`);
+  if (!ready && moves) lessons.push(...moveLessons(moves), `${buys.length} of the first ${MIN_RESULTS} real picks have settled; until then picks are rated from these price moves.`);
+  else if (!ready) lessons.push(`Still watching: ${buys.length} of the first ${MIN_RESULTS} buy picks have settled. Picks are ranked by the plain rules until then.`);
   else {
     lessons.push(`${pc(rate)}% of buy picks reached their target within 4 days (${buys.length} picks in the last ${WINDOW_DAYS} days).`);
     if (hours !== null) lessons.push(`Picks that sold usually got there in about ${Math.round(hours)} hours.`);
@@ -7162,10 +7306,32 @@ function learnModel(platform, rows, now2) {
     ready,
     buys: { n: buys.length, hits: hits2.length, rate: rate === null ? null : Math.round(rate * 1e3) / 1e3, median_hours_to_hit: hours === null ? null : Math.round(hours), reach, rate_at_reach, factors },
     sells: { n: sells.length, good: sells.length ? sells.filter((r2) => r2.outcome === "good").length : 0, rate: sellRate === null ? null : Math.round(sellRate * 1e3) / 1e3, by_reason },
-    lessons
+    lessons,
+    moves
   };
 }
-function buyOutlook(model, f2) {
+function moveLessons(m) {
+  const days = Math.max(1, Math.round(m.history_h / 24));
+  const out = [];
+  out.push(`Learned from ${m.n.toLocaleString("en-US")} price moves across ${m.cards.toLocaleString("en-US")} cards over the last ${days} day${days === 1 ? "" : "s"}: what each card did in the 2 days after every refresh.`);
+  if (m.check) out.push(m.check.skill > 0 ? `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen: it called up or down right ${pc(m.check.hit)}% of the time, ${pc(m.check.skill)}% better than guessing from the market average, so it's trusted ${pc(m.trust ?? 0)}%.` : `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen, it wasn't better than guessing from the market average yet, so picks lean on the plain rules.`);
+  const say = (key2, text5) => {
+    const b = m.by[key2];
+    if (b) out.push(text5(b));
+  };
+  say("12%+ under|bounced", (b) => `Cards 12%+ under their usual price that had started to bounce were up a day later ${pc(b.up24)}% of the time; half of them rose ${pc(b.peak[5])}% or more within 2 days (${b.n} examples).`);
+  say("12%+ under|still dipping", (b) => `Cards 12%+ under their usual price that were still falling kept falling a day later ${pc(b.down24)}% of the time (${b.n} examples), so the plan waits for a bounce.`);
+  say("15%+ over", (b) => `Cards 15%+ over their usual price were lower a day later ${pc(b.down24)}% of the time (${b.n} examples): that's when to sell.`);
+  say("near usual", (b) => `Cards near their usual price moved ${b.ret24 >= 0 ? "+" : ""}${pc(b.ret24)}% in a day on average, so there's little to gain flipping them.`);
+  return out;
+}
+function buyOutlook(model, f2, spot) {
+  if ((!model?.ready || model.buys.rate === null) && model?.moves && spot) {
+    const hit = moveBucket(model.moves, spot);
+    if (!hit) return { factor: 1, p_hit: null, similar: 0 };
+    const t = model.moves.trust ?? 0.5, base = reachChance(model.moves.overall, spot.rise), p = t * reachChance(hit.b, spot.rise) + (1 - t) * base;
+    return { factor: clampN(base > 0.02 ? p / base : p > 0.1 ? 1.6 : 1, 0.5, 1.6), p_hit: Math.round(clampN(p, 0.02, 0.9) * 100) / 100, similar: hit.n, from_moves: true };
+  }
   if (!model?.ready || model.buys.rate === null) return { factor: 1, p_hit: null, similar: 0 };
   let factor = 1, similar = Infinity;
   for (const k of Object.keys(FEATURE_LABEL)) {
@@ -7178,8 +7344,15 @@ function buyOutlook(model, f2) {
   factor = clampN(Math.pow(factor, 0.7), 0.35, 2);
   return { factor, p_hit: Math.round(clampN(model.buys.rate * factor, 0.02, 0.9) * 100) / 100, similar: similar === Infinity ? 0 : similar };
 }
-function sellOutlook(model, reason) {
+function sellOutlook(model, reason, spot) {
   const b = model?.sells.by_reason[reason];
+  if ((!b || b.n < 15) && model?.moves && spot) {
+    const hit = moveBucket(model.moves, spot), base = model.moves.overall.down24, t = model.moves.trust ?? 0.5;
+    if (hit) {
+      const rate = r3(t * hit.b.down24 + (1 - t) * base);
+      return { factor: clampN(base > 0.05 ? rate / base : 1, 0.5, 1.6), rate, n: hit.n };
+    }
+  }
   if (!b || b.n < 15) return { factor: 1, rate: null, n: b?.n ?? 0 };
   return { factor: b.factor, rate: b.rate, n: b.n };
 }
@@ -7368,7 +7541,12 @@ function scoreBuys(cards, timing, o) {
     if (s.falling >= 3 && s.latest <= s.min) continue;
     const buy_at = down(s.latest);
     const target_raw = down(Math.min(s.median, s.max * 0.98));
-    const sell_at = reach < 1 && target_raw > buy_at ? Math.max(buy_at, down(buy_at + (target_raw - buy_at) * reach)) : target_raw;
+    let sell_at = reach < 1 && target_raw > buy_at ? Math.max(buy_at, down(buy_at + (target_raw - buy_at) * reach)) : target_raw;
+    if (!o.model?.ready && o.model?.moves) {
+      const mb = moveBucket(o.model.moves, { discount, rising: s.rising, falling: s.falling, kind: cardKind(card), price: s.latest });
+      const likely = mb ? down(buy_at * (1 + mb.b.peak[5])) : sell_at;
+      if (likely < sell_at && likely > buy_at) sell_at = likely;
+    }
     const profit = net(sell_at) - buy_at, roi = profit / buy_at;
     if (profit < MIN_PROFIT || roi < o.min_roi) continue;
     const max_buy = Math.max(buy_at, down(Math.min(net(sell_at) / (1 + o.min_roi), net(sell_at) - MIN_PROFIT)));
@@ -7391,8 +7569,12 @@ function scoreBuys(cards, timing, o) {
     if (s.change_72h !== null && s.change_72h < -20) risks.push(`Down ${Math.abs(s.change_72h)}% in 3 days: could be a new promo pulling it down.`);
     if (kind === "promo") risks.push("Promo card: supply can jump if it comes back in packs or an SBC.");
     const features = { kind, band: priceBand(s.latest), discount: discountBand(discount), bounce: bounceBand(s.rising, s.falling), trend: trendBand(s.change_72h), weekday: timing.weekday };
-    const learned = buyOutlook(o.model, features);
-    if (learned.p_hit !== null) {
+    const learned = buyOutlook(o.model, features, { discount, rising: s.rising, falling: s.falling, kind, price: s.latest, rise: sell_at / buy_at - 1 });
+    const forecast = forecast24(o.model?.moves, { discount, rising: s.rising, falling: s.falling, kind, price: s.latest });
+    if (learned.p_hit !== null && learned.from_moves) {
+      why.push(`Cards in the same spot reached a price this high within 2 days ${Math.round(learned.p_hit * 100)}% of the time (${learned.similar.toLocaleString("en-US")} past price moves).`);
+      if (learned.factor < 0.8) risks.push("Cards in this spot have usually not climbed this far, so it's ranked lower.");
+    } else if (learned.p_hit !== null) {
       why.push(`Past picks like this reached their target ${Math.round(learned.p_hit * 100)}% of the time${learned.similar ? ` (from ${learned.similar}+ similar picks)` : ""}.`);
       if (learned.factor < 0.8) risks.push("Picks like this have done worse than average, so it's ranked lower.");
     }
@@ -7426,7 +7608,8 @@ function scoreBuys(cards, timing, o) {
       target_raw,
       features,
       p_hit: learned.p_hit,
-      max_buy
+      max_buy,
+      forecast
     });
   }
   return out.sort((a, b) => b.score - a.score);
@@ -7466,8 +7649,11 @@ function scoreSells(club, stats, timing, squad, model) {
     const list_at = near(price), quick_at = Math.max(RULES.min_price, list_at - stepAt(list_at, RULES));
     const in_squad = squad.has(card.card_id);
     if (in_squad) why += " It's in your active squad, so only sell if you have a replacement.";
-    const learned = sellOutlook(model, reason);
-    if (learned.rate !== null) why += ` Calls like this were right ${Math.round(learned.rate * 100)}% of the time (${learned.n} calls).`;
+    const usedCalls = (model?.sells.by_reason[reason]?.n ?? 0) >= 15;
+    const spot = s ? { discount: (s.median - price) / s.median, rising: s.rising, falling: s.falling, kind: cardKind({ version: card.version, rating: card.rating ?? 0, is_icon: false, is_hero: false }), price } : void 0;
+    const learned = sellOutlook(model, reason, spot);
+    const forecast = spot ? forecast24(model?.moves, spot) : null;
+    if (learned.rate !== null) why += usedCalls ? ` Calls like this were right ${Math.round(learned.rate * 100)}% of the time (${learned.n} calls).` : ` Cards in the same spot were lower a day later ${Math.round(learned.rate * 100)}% of the time (${learned.n.toLocaleString("en-US")} past price moves).`;
     score3 = score3 * (1 + 0.3 * timing.sell_bias) * (in_squad ? 0.3 : 1) * Math.log10(price) * learned.factor;
     out.push({
       card_id: card.card_id,
@@ -7487,7 +7673,8 @@ function scoreSells(club, stats, timing, squad, model) {
       why,
       in_squad,
       score: score3,
-      right_rate: learned.rate
+      right_rate: learned.rate,
+      forecast
     });
   }
   return out.sort((a, b) => b.score - a.score);
@@ -7709,7 +7896,7 @@ function bestMove(o) {
   if (buy) {
     const qty = buy.quantity ?? 1, chance = buy.p_hit ?? CONF_CHANCE[buy.confidence], profit = buy.total_profit ?? buy.profit;
     const when3 = o.timing.buy_bias < 0 ? "Prices often dip later today, so wait for the dip if you can. " : "";
-    const odds = buy.p_hit !== null ? `Similar picks reached their sell price ${Math.round(buy.p_hit * 100)}% of the time` : `Confidence is ${buy.confidence}`;
+    const odds = buy.p_hit !== null ? `Cards like this reached that price ${Math.round(buy.p_hit * 100)}% of the time` : `Confidence is ${buy.confidence}`;
     return {
       ...base,
       kind: "buy",
@@ -7757,6 +7944,10 @@ function learningSummary(model, followed) {
     target_reach: model?.buys.reach ?? 1,
     sell_calls: model?.sells.n ?? 0,
     sell_right_rate: model?.sells.rate ?? null,
+    price_moves: model?.moves?.n ?? 0,
+    moves_up24: model?.moves?.by["12%+ under|bounced"]?.up24 ?? null,
+    moves_hit: model?.moves?.check?.hit ?? null,
+    moves_trust: model?.moves?.trust ?? null,
     lessons: model?.lessons ?? ["Learning starts with the next price refresh: every refresh logs the day's picks and checks earlier ones against the prices since."],
     followed: { trades: followed.length, sold: done.length, profit: done.reduce((n, t) => n + (t.profit ?? 0), 0), items: followed.slice(0, 20) }
   };
@@ -7779,7 +7970,7 @@ async function dailyStrategy(db2, userId, platform, opts = {}) {
   fail6(squadRes.error);
   fail6(modelRes.error);
   fail6(tradesRes.error);
-  const model = modelRes.data?.model ?? null;
+  let model = modelRes.data?.model ?? null;
   if (clubRes.error) throw new FutError(`Your club is unavailable: ${clubRes.error.message}`, 500);
   const state = stateRes.data ?? null;
   const balance = state?.balance ?? null;
@@ -7821,6 +8012,10 @@ async function dailyStrategy(db2, userId, platform, opts = {}) {
   const sd = seriesData ?? {};
   const snaps = arr2(sd.snapshots) ?? [];
   const series = { latest: sd.latest ?? null, window_h: snaps.length ? Math.max(...snaps) : 0, cards: arr2(sd.cards) ?? [] };
+  if (!model?.ready && !model?.moves) {
+    const moves = learnMoves(series.cards.filter((c4) => c4.tracked).map((c4) => ({ prices: c4.prices, ages: c4.ages, kind: cardKind(c4) })));
+    if (moves) model = model ? { ...model, moves, lessons: learnModel(platform, [], now2, moves).lessons } : learnModel(platform, [], now2, moves);
+  }
   const plan = buildStrategy({
     now: now2,
     coins: coins5,
@@ -7875,7 +8070,7 @@ async function runStrategyLearning(db2, now2 = Date.now()) {
     const { data: open, error: openErr } = await db2.from("strategy_pick_log").select("*").eq("platform", platform).is("outcome", null).order("picked_at", { ascending: true }).limit(5e3);
     fail6(openErr);
     const openRows = open ?? [];
-    const { data: sd, error } = await db2.rpc("strategy_price_series", { p_platform: platform, p_ids: [...new Set(openRows.map((r2) => Number(r2.ea_item_id)))].slice(0, 5e3), p_days: 8 });
+    const { data: sd, error } = await db2.rpc("strategy_price_series", { p_platform: platform, p_ids: [...new Set(openRows.map((r2) => Number(r2.ea_item_id)))].slice(0, 5e3), p_days: 30 });
     if (error) throw new FutError(`Prices are unavailable: ${error.message}`, 500);
     const d = sd ?? {}, latest = d.latest ?? null;
     if (!latest) {
@@ -7930,10 +8125,11 @@ async function runStrategyLearning(db2, now2 = Date.now()) {
       results.push(...data ?? []);
       if (!data || data.length < 1e3 || results.length >= 5e4) break;
     }
-    const model = learnModel(platform, results, now2);
+    const moves = learnMoves(cards.filter((c4) => c4.tracked).map((c4) => ({ prices: c4.prices, ages: c4.ages, kind: cardKind(c4) })));
+    const model = learnModel(platform, results, now2, moves);
     fail6((await db2.from("strategy_model").upsert({ platform, model, updated_at: model.updated_at }, { onConflict: "platform" })).error);
     fail6((await db2.from("strategy_pick_log").delete().eq("platform", platform).lt("picked_at", new Date(now2 - 90 * 864e5).toISOString())).error);
-    out[platform] = { settled: settled.length, logged, results: results.length, ready: model.ready, hit_rate: model.buys.rate };
+    out[platform] = { settled: settled.length, logged, results: results.length, ready: model.ready, hit_rate: model.buys.rate, moves: moves?.n ?? 0 };
   }
   return out;
 }
