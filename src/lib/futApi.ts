@@ -139,7 +139,7 @@ export interface DailyStrategy {
   record: { days: number; picks: number; hit: number; open_up: number; open_down: number; avg_now_pct: number | null; items: StrategyRecordItem[] };
   learning?: {
     ready: boolean; updated_at: string | null; buy_picks: number; buy_hit_rate: number | null; hours_to_hit: number | null; target_reach: number;
-    sell_calls: number; sell_right_rate: number | null; lessons: string[];
+    price_moves?: number; moves_up24?: number | null; sell_calls: number; sell_right_rate: number | null; lessons: string[];
     followed: { trades: number; sold: number; profit: number; items: { plan_date: string; ea_item_id: number; name: string; bought_for: number; sold_for: number | null; profit: number | null; target: number }[] };
   };
   notes: string[]; verified: false;

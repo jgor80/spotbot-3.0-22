@@ -197,8 +197,13 @@ function Plan({ d }: { d: DailyStrategy }) {
 
     {d.learning && <Section title="What it has learned">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Buy picks checked" value={numberText(d.learning.buy_picks)} sub={d.learning.ready ? "Last 30 days, whole market" : "Learning starts at 30"} />
-        <Stat label="Reached their target" value={d.learning.buy_hit_rate != null ? `${Math.round(d.learning.buy_hit_rate * 100)}%` : "–"} sub={d.learning.hours_to_hit != null ? `Usually within ${d.learning.hours_to_hit} hours` : "Within 4 days"} />
+        {!d.learning.ready && d.learning.price_moves ? <>
+          <Stat label="Price moves studied" value={numberText(d.learning.price_moves)} sub="Every card after every refresh" />
+          <Stat label="Bounced dips up a day later" value={d.learning.moves_up24 != null ? `${Math.round(d.learning.moves_up24 * 100)}%` : "–"} sub="12%+ under their usual price" />
+        </> : <>
+          <Stat label="Buy picks checked" value={numberText(d.learning.buy_picks)} sub={d.learning.ready ? "Last 30 days, whole market" : "Learning starts at 30"} />
+          <Stat label="Reached their target" value={d.learning.buy_hit_rate != null ? `${Math.round(d.learning.buy_hit_rate * 100)}%` : "–"} sub={d.learning.hours_to_hit != null ? `Usually within ${d.learning.hours_to_hit} hours` : "Within 4 days"} />
+        </>}
         <Stat label="Sell calls right" value={d.learning.sell_right_rate != null ? `${Math.round(d.learning.sell_right_rate * 100)}%` : "–"} sub={`${numberText(d.learning.sell_calls)} calls checked`} />
         <Stat label="Your trades on its picks" value={d.learning.followed.sold ? `${d.learning.followed.profit >= 0 ? "+" : ""}${numberText(d.learning.followed.profit)}` : String(d.learning.followed.trades)} sub={d.learning.followed.sold ? `${d.learning.followed.sold} sold, after tax` : "From your trade log"} />
       </div>
@@ -206,7 +211,7 @@ function Plan({ d }: { d: DailyStrategy }) {
       {d.learning.followed.items.length > 0 && <div className="overflow-x-auto"><DataTable headers={["Picked", "Card", "You paid", "Sold for", "Profit after tax"]} rows={d.learning.followed.items.map(t => [
         t.plan_date, t.name, coins(t.bought_for), coins(t.sold_for), t.profit == null ? "Not sold yet" : <span className={t.profit >= 0 ? "text-success" : "text-destructive"}>{t.profit >= 0 ? "+" : ""}{numberText(t.profit)}</span>,
       ])} /></div>}
-      <p className="text-xs text-muted-foreground">After every price refresh GafferBot logs the day's picks for every card and checks earlier ones against the prices since. Picks are re-ranked by how similar picks did, and sell targets come down when prices usually stop short of them.{d.learning.updated_at ? ` Last learned ${dateText(d.learning.updated_at)}.` : ""}</p>
+      <p className="text-xs text-muted-foreground">It learns from every price it holds: what each card did in the 2 days after every refresh, so it can rate today's picks straight away. After every refresh it also logs the day's picks and checks earlier ones against the prices since; once 30 have settled, those real results take over. Picks are re-ranked by how similar picks did, and sell targets come down when prices usually stop short of them.{d.learning.updated_at ? ` Last learned ${dateText(d.learning.updated_at)}.` : ""}</p>
     </Section>}
 
     <Section title="How earlier picks did">
