@@ -11820,7 +11820,16 @@ async function cardImages(env, fetcher, now2 = Date.now()) {
 var KB_CATEGORIES = ["formations", "tactics", "players", "playstyles", "attacking", "defending", "skills", "settings", "modes", "market", "other"];
 var DEFAULT_MODEL3 = "claude-opus-5-5";
 var DEFAULT_SUBREDDITS = ["EASportsFC", "fut"];
-var DEFAULT_YOUTUBE_QUERIES = ["FC 27 meta formation", "FC 27 best custom tactics", "FC 27 meta players Ultimate Team", "FC 27 gameplay tips attacking defending"];
+var DEFAULT_YOUTUBE_QUERIES = [
+  "FC 27 meta formation",
+  "FC 27 best custom tactics",
+  "FC 27 meta players Ultimate Team",
+  "FC 27 gameplay tips attacking defending",
+  "FC 27 best player instructions",
+  "FC 27 best strikers wingers Ultimate Team",
+  "FC 27 best midfielders CDM CAM Ultimate Team",
+  "FC 27 best defenders fullbacks goalkeepers Ultimate Team"
+];
 var MAX_BODY = 12e3;
 var MAX_ADD_TEXT = 12e3;
 var MAX_QUESTION = 500;
@@ -11835,7 +11844,7 @@ var keep = (s, max) => typeof s === "string" ? s.replace(/\r/g, "").replace(/\n{
 function topicKey(topic) {
   return topic.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\+/g, " plus ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80).replace(/-+$/, "");
 }
-var GAMEPLAY = /\b(meta|formations?|tactics?|instructions?|playstyles?\+?|accele ?rate|explosive|lengthy|controlled|finesse|trivela|power shots?|skill moves?|dribbl\w*|defend\w*|jockey\w*|tackl\w*|through balls?|lobs?|cross\w*|headers?|settings|camera|controller|best (players?|cards?|cbs?|strikers?|wingers?|cdms?|cams?|lbs?|rbs?|gks?|sts?|team|squad|formation)|op|overpowered|nerf\w*|buff\w*|patch|title update|rivals|champs|champions|weekend league|squad battles|sbcs?|evo(lution)?s?|chem(istry)?|roles?\+\+?|\d-\d-\d(-\d)?|tips?|guide|how (do|to) (i |you )?(score|defend|win|beat|stop))\b/i;
+var GAMEPLAY = /\b(meta|formations?|tactics?|instructions?|playstyles?\+?|accele ?rate|explosive|lengthy|controlled|finesse|trivela|power shots?|skill moves?|dribbl\w*|defend\w*|jockey\w*|tackl\w*|through balls?|lobs?|cross\w*|headers?|settings|camera|controller|best (players?|cards?|cbs?|strikers?|wingers?|cdms?|cams?|lbs?|rbs?|gks?|sts?|team|squad|formation)|op|overpowered|nerf\w*|buff\w*|patch|title update|rivals|champs|champions|weekend league|squad battles|sbcs?|evo(lution)?s?|chem(istry)?|roles?\+\+?|\d-\d-\d(-\d)?|tips?|guide|how (do|to) (i |you )?(score|defend|win|beat|stop)|(card|player) reviews?|in-?game review|worth (it|the coins)|underrated|overrated|cracked|goated|best (budget|cheap)\w*)\b/i;
 var OFF_TOPIC_FLAIR = /(pack|pull|meme|humou?r|funny|shitpost|achievement|showcase|picture|image|video clip|rant|news|leak)/i;
 var ON_TOPIC_FLAIR = /(discussion|tactic|gameplay|guide|tip|question|meta|squad|help|advice)/i;
 function isGameplayPost(p) {
@@ -12013,9 +12022,9 @@ function rssSource(sub, post, comments, rank) {
   };
 }
 async function collectRedditRss(env, fetchFn, known = () => Promise.resolve(/* @__PURE__ */ new Set())) {
-  const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 6;
+  const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 10;
   const gap = Number(env("FUT_KB_REDDIT_GAP_MS") ?? 5e3);
-  let threadsLeft = Number(env("FUT_KB_REDDIT_THREADS_PER_RUN") ?? 6);
+  let threadsLeft = Number(env("FUT_KB_REDDIT_THREADS_PER_RUN") ?? 8);
   let calls = 0, limited = null;
   const rss = async (url) => {
     if (calls++ && gap > 0) await new Promise((r2) => setTimeout(r2, gap));
@@ -12088,10 +12097,10 @@ async function collectYouTube(env, fetchFn, now2 = Date.now()) {
   const after = new Date(now2 - 3 * 864e5).toISOString();
   const ids = /* @__PURE__ */ new Set();
   for (const q of queries.length ? queries.slice(0, 8) : DEFAULT_YOUTUBE_QUERIES) {
-    const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "6", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
+    const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "8", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
     for (const item of found.items ?? []) if (item.id?.videoId) ids.add(item.id.videoId);
   }
-  return youtubeSources([...ids].slice(0, 50), env, fetchFn, Number(env("FUT_KB_YOUTUBE_MIN_VIEWS")) || 5e3);
+  return youtubeSources([...ids].slice(0, 50), env, fetchFn, Number(env("FUT_KB_YOUTUBE_MIN_VIEWS")) || 2e3);
 }
 function parseSourceLink(raw) {
   let u;
@@ -12238,7 +12247,7 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
   const result2 = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0 };
   const hasKey = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
   if (hasKey) {
-    const pending = await rpcData(db2, "kb_pending", { p_limit: Number(env("FUT_KB_READ_PER_RUN")) || 25 });
+    const pending = await rpcData(db2, "kb_pending", { p_limit: Number(env("FUT_KB_READ_PER_RUN")) || 40 });
     const known = pending.length ? await rpcData(db2, "kb_known_topics", { p_limit: 150 }) : [];
     for (const s of pending) {
       try {
@@ -12379,6 +12388,448 @@ async function knowledgeStatus(db2, env) {
     paused: env("FUT_KNOWLEDGE") === "off",
     categories: KB_CATEGORIES
   };
+}
+
+// supabase/functions/_shared/fut/knowledge-team.ts
+var DEFAULT_MODEL4 = "claude-opus-5-5";
+var POSITION_ORDER = ["GK", "LB", "CB", "RB", "CDM", "CM", "LM", "RM", "CAM", "LW", "RW", "ST"];
+var posRank = (p) => {
+  const i = POSITION_ORDER.indexOf(p);
+  return i < 0 ? 99 : i;
+};
+async function rpcData2(db2, name2, args) {
+  const { data, error } = await db2.rpc(name2, args);
+  if (error) throw new FutError(`The knowledge bank is unavailable: ${error.message ?? "error"}`, 500);
+  return data;
+}
+var squash2 = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
+function fold(s) {
+  return s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/ø/g, "o").replace(/ł/g, "l").replace(/đ/g, "d").replace(/ı/g, "i").replace(/ß/g, "ss");
+}
+async function loadTeam(db2, userId, squadId, platform = "console") {
+  const team = { squad: null, squads: [], club: [], coins: null };
+  try {
+    const squads = await new PgSquadStore(db2).list(userId);
+    team.squads = squads.map((s2) => ({ id: s2.id, name: s2.name, formation: s2.formation }));
+    const s = (squadId ? squads.find((x) => x.id === squadId) : null) ?? squads[0];
+    if (s) team.squad = { id: s.id, name: s.name, formation: s.formation, xi: s.slots.map((x) => ({ slot: x.slot, position: x.position, name: x.card?.name ?? null, rating: x.card?.rating ?? null })) };
+  } catch (e) {
+    console.error("[fut-api] knowledge team squads:", e);
+  }
+  try {
+    const cards = await searchMyCards(db2, userId, { all: true, owned_only: true });
+    team.club = cards.map((c4) => ({ name: c4.player_name, rating: c4.overall, positions: c4.positions, version: c4.version, playstyles: c4.playstyles, playstyles_plus: c4.playstyles_plus }));
+  } catch (e) {
+    console.error("[fut-api] knowledge team cards:", e);
+  }
+  try {
+    const { data } = await db2.from("account_state").select("balance").eq("user_id", userId).eq("platform", platform).maybeSingle();
+    const coins5 = Number(data?.balance?.coins);
+    team.coins = Number.isFinite(coins5) ? coins5 : null;
+  } catch (e) {
+    console.error("[fut-api] knowledge team coins:", e);
+  }
+  return team;
+}
+function describeTeam(team) {
+  const lines = [];
+  if (team.squad) {
+    const xi = team.squad.xi.map((x) => `${x.slot} ${x.name ? `${x.name}${x.rating ? ` ${x.rating}` : ""}` : "(empty)"}`).join(", ");
+    lines.push(`Squad "${team.squad.name}" in ${team.squad.formation}: ${xi}`);
+  } else lines.push("No saved squad.");
+  if (team.club.length) {
+    const inXi = new Set((team.squad?.xi ?? []).map((x) => x.name && fold(x.name)).filter(Boolean));
+    const bench = team.club.filter((c4) => !inXi.has(fold(c4.name))).slice(0, 40);
+    const card = (c4) => `${c4.name} (${c4.positions.join("/")} ${c4.rating}${c4.version ? ` ${c4.version}` : ""}${c4.playstyles_plus.length ? `; PS+ ${c4.playstyles_plus.join(", ")}` : ""})`;
+    const xiCards = team.club.filter((c4) => inXi.has(fold(c4.name)));
+    if (xiCards.length) lines.push(`Squad players' cards: ${xiCards.map(card).join("; ")}`);
+    lines.push(`Other club cards (best ${bench.length} of ${team.club.length}): ${bench.map(card).join("; ") || "none"}`);
+  } else lines.push("No club cards synced.");
+  if (team.coins != null) lines.push(`Coins: ${team.coins.toLocaleString("en")}`);
+  return lines.join("\n");
+}
+function formationName2(text5) {
+  const m = text5.match(/(?<![\d-])([3-5])-?([1-5])-?([1-5])(?:-?([1-5]))?(?:-?([1-5]))?(?![\d-])\s*(?:\((\d)\))?\s*([a-z ]{0,20})/i);
+  if (!m) return null;
+  const parts = m.slice(1, 6).filter(Boolean);
+  if (parts.reduce((a, b) => a + Number(b), 0) !== 10) return null;
+  const base = parts.join("-");
+  const variant = m[6] ?? null;
+  const word = (m[7] ?? "").toLowerCase();
+  if (variant && FORMATIONS[`${base} (${variant})`]) return `${base} (${variant})`;
+  const WORDS2 = {
+    "4-2-3-1": [[/\bwide\b/, " (2)"], [/\bnarrow\b/, ""]],
+    "4-1-2-1-2": [[/\bnarrow\b/, " (2)"], [/\bwide\b/, ""]],
+    "4-4-2": [[/\bholding\b/, " (2)"], [/\bflat\b/, ""]],
+    "4-5-1": [[/\bflat\b/, " (2)"], [/\battack/, ""]],
+    "4-3-3": [[/\bholding\b/, " (2)"], [/\bdefen[cs]/, " (3)"], [/\battack/, " (4)"]]
+  };
+  for (const [re, suffix] of WORDS2[base] ?? []) if (re.test(word) && FORMATIONS[`${base}${suffix}`]) return `${base}${suffix}`;
+  return FORMATIONS[base] ? base : null;
+}
+var sameFormation = (a, b) => a === b;
+var baseOf = (f2) => f2.replace(/\s*\(\d\)$/, "");
+function wordIn(haystack, needle) {
+  if (needle.length < 3) return false;
+  const i = haystack.indexOf(needle);
+  if (i < 0) return false;
+  const ok = (ch) => !ch || !/[a-z0-9]/.test(ch);
+  for (let at2 = i; at2 >= 0; at2 = haystack.indexOf(needle, at2 + 1)) if (ok(haystack[at2 - 1]) && ok(haystack[at2 + needle.length])) return true;
+  return false;
+}
+function mentions(text5, name2) {
+  const t = fold(text5), n = fold(name2).trim();
+  if (wordIn(t, n)) return true;
+  const last = n.split(/\s+/).at(-1) ?? "";
+  return last.length >= 4 && last !== n ? wordIn(t, last) : n.length >= 4 && !n.includes(" ") && wordIn(t, n);
+}
+function playstylesIn(text5) {
+  const out = [];
+  const t = text5.toLowerCase();
+  for (const p of PLAYSTYLES) {
+    const n = p.toLowerCase();
+    const i = t.indexOf(n);
+    if (i < 0 || !wordIn(t, n)) continue;
+    out.push({ name: p, plus: t.slice(i + n.length, i + n.length + 1) === "+" || /\bplus\b/.test(t.slice(i + n.length, i + n.length + 6)) });
+  }
+  return out;
+}
+function quickApply(claims, team) {
+  const out = [];
+  const text5 = claims.map((c4) => `${c4.topic}. ${c4.statement}`).join("\n");
+  const formations = [...new Set(claims.flatMap((c4) => [formationName2(c4.topic), ...[...`${c4.statement}`.matchAll(/[3-5]-?[1-5]-?[1-5](?:-?[1-5]){0,2}(?:\s*\(\d\))?(?:\s+[a-z]+)?/gi)].map((m) => formationName2(m[0]))]).filter((f2) => !!f2))];
+  for (let i = formations.length - 1; i >= 0; i--) if (formations.some((f2) => f2 !== formations[i] && baseOf(f2) === formations[i])) formations.splice(i, 1);
+  if (formations.length) {
+    const mine = team.squad?.formation;
+    if (!mine) out.push({ kind: "formation", text: `This is about ${formations.join(", ")}. Save a squad in Squad Builder to compare it with yours.`, players: [] });
+    else if (formations.some((f2) => sameFormation(f2, mine))) out.push({ kind: "formation", text: `You play ${mine}, so this is about your formation.`, players: [] });
+    else if (formations.some((f2) => baseOf(f2) === baseOf(mine))) out.push({ kind: "formation", text: `This is about ${formations.join(", ")}; you play ${mine}, a variant of the same shape.`, players: [] });
+    else out.push({ kind: "formation", text: `This is about ${formations.join(", ")}; you play ${mine}.`, players: [] });
+  }
+  const xi = new Set((team.squad?.xi ?? []).map((x) => x.name ? fold(x.name) : "").filter(Boolean));
+  const seen = /* @__PURE__ */ new Set();
+  for (const c4 of team.club) {
+    const key2 = fold(c4.name);
+    if (seen.has(key2) || !mentions(text5, c4.name)) continue;
+    seen.add(key2);
+    out.push({ kind: "player", text: `You own ${c4.name} (${c4.rating}${c4.version ? ` ${c4.version}` : ""})${xi.has(key2) ? ", in your squad" : ""}.`, players: [c4.name] });
+    if (seen.size >= 8) break;
+  }
+  for (const ps of playstylesIn(text5).slice(0, 4)) {
+    const has = team.club.filter((c4) => (ps.plus ? c4.playstyles_plus : [...c4.playstyles, ...c4.playstyles_plus]).some((s) => s.toLowerCase() === ps.name.toLowerCase()));
+    const inXi = has.filter((c4) => xi.has(fold(c4.name)));
+    const label = `${ps.name}${ps.plus ? "+" : ""}`;
+    out.push({
+      kind: "playstyle",
+      text: has.length ? `${has.length} of your players ${has.length === 1 ? "has" : "have"} ${label}${inXi.length ? `, ${inXi.length} in your squad` : ""}.` : team.club.length ? `None of your club cards has ${label}.` : `This is about ${label}. Sync your club to see who has it.`,
+      players: (inXi.length ? inXi : has).slice(0, 6).map((c4) => c4.name)
+    });
+  }
+  return out;
+}
+var APPLY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["fit", "headline", "points", "actions"],
+  properties: {
+    fit: { type: "string", enum: ["high", "some", "low"] },
+    headline: { type: "string" },
+    points: { type: "array", items: { type: "string" } },
+    actions: { type: "array", items: { type: "string" } }
+  }
+};
+async function claudeJson(env, fetchFn, system, user, schema, maxTokens) {
+  const res = await callClaude(env, fetchFn, {
+    model: env("FUT_KB_MODEL") || DEFAULT_MODEL4,
+    max_tokens: maxTokens,
+    output_config: { effort: "low", format: { type: "json_schema", schema } },
+    system,
+    messages: [{ role: "user", content: user }]
+  });
+  const out = await res.json().catch(() => null);
+  if (!res.ok) {
+    console.error("[fut-api] knowledge team Claude:", res.status, out?.error?.message);
+    return null;
+  }
+  if (out?.stop_reason === "refusal") return null;
+  try {
+    return JSON.parse((out?.content ?? []).filter((c4) => c4.type === "text").map((c4) => c4.text ?? "").join(""));
+  } catch {
+    return null;
+  }
+}
+function cleanAdvice(raw) {
+  const o = raw && typeof raw === "object" ? raw : null;
+  if (!o) return null;
+  const list2 = (v, n) => Array.isArray(v) ? v.map((x) => squash2(x, 300)).filter(Boolean).slice(0, n) : [];
+  const headline = squash2(o.headline, 300);
+  if (!headline) return null;
+  return { fit: o.fit === "high" || o.fit === "low" ? o.fit : "some", headline, points: list2(o.points, 5), actions: list2(o.actions, 4) };
+}
+async function applyToTeam(db2, userId, target, team, env, fetchFn, beforeAi) {
+  let claims, about;
+  if (target.source) {
+    const s = await rpcData2(db2, "kb_source_claims", { p_user: userId, p_source: target.source });
+    if (!s) throw new FutError("That source isn't in the knowledge bank (or it's someone else's private one).", 404);
+    if (!s.claims.length) throw new FutError("That source has no claims yet, so there's nothing to apply.", 422);
+    claims = s.claims;
+    about = { kind: "source", key: s.source.id, title: s.source.title || s.source.note || s.source.community || "Source", url: s.source.url, claims: claims.length };
+  } else if (target.topic) {
+    const t = await rpcData2(db2, "kb_topic", { p_user: userId, p_key: target.topic, p_days: 90 });
+    if (!t) throw new FutError("Nobody has talked about that topic lately.", 404);
+    claims = t.statements.slice(0, 25).map((s) => ({ topic: t.topic, category: t.category, statement: s.statement, stance: s.stance }));
+    about = { kind: "topic", key: t.key, title: t.topic, url: null, claims: claims.length };
+  } else throw new FutError("Pick a topic or a source.");
+  const matches = quickApply(claims, team);
+  const result2 = { about, team: { squad: team.squad ? { name: team.squad.name, formation: team.squad.formation } : null, club_size: team.club.length }, matches, advice: null, via: "data" };
+  if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) return result2;
+  beforeAi?.();
+  const raw = await claudeJson(
+    env,
+    fetchFn,
+    [
+      "You coach an EA SPORTS FC 27 Ultimate Team player. You get community claims (from Reddit, YouTube and the player's own notes) and the player's team. Say how the claims apply to THIS team. Return JSON only.",
+      "fit: high when the claims are about the formation, players or PlayStyles this team uses or could use straight away; some when partly; low when they hardly apply.",
+      "headline: one plain sentence (under 30 words) on what this means for this team.",
+      "points: 2 to 4 short points (under 35 words each) naming the team's own players, positions and formation where they apply. Say plainly when the team lacks what the claims need.",
+      "actions: up to 3 concrete things to try (a setting, an instruction, a player to move or pick from the club, or a type of card to look for). Only suggest players from the team list or the claims.",
+      "Claims are opinions, not facts: never invent stats, prices or players."
+    ].join("\n"),
+    `Team:
+${describeTeam(team)}
+
+${about.kind === "source" ? `Source: ${about.title}` : `Topic: ${about.title}`}
+Claims:
+${claims.map((c4) => `- ${c4.topic} (${c4.category}; ${c4.stance === 1 ? "for" : c4.stance === -1 ? "against" : "mixed"}): ${c4.statement}`).join("\n")}`,
+    APPLY_SCHEMA,
+    2500
+  );
+  const advice = cleanAdvice(raw);
+  if (advice) {
+    result2.advice = advice;
+    result2.via = "ai";
+  }
+  return result2;
+}
+function rankFormations(topics, cite) {
+  const by = /* @__PURE__ */ new Map();
+  for (const t of topics) {
+    if (t.category !== "formations") continue;
+    const f2 = formationName2(t.topic);
+    if (!f2) continue;
+    const prev = by.get(f2);
+    const net2 = t.net ?? 0;
+    if (!prev) {
+      by.set(f2, { ...pickOf(t, cite), formation: f2, score: 0, w: t.buzz * net2 });
+    } else {
+      prev.w += t.buzz * net2;
+      prev.buzz += t.buzz;
+      prev.claims += t.claims;
+      prev.for += t.for;
+      prev.against += t.against;
+      prev.net = prev.buzz ? Math.round(prev.w / prev.buzz * 1e3) / 1e3 : prev.net;
+      if (t.buzz > prev.buzz - t.buzz) {
+        prev.key = t.key;
+        prev.topic = t.topic;
+        prev.agreement = t.agreement;
+        prev.said = t.statements[0]?.statement ?? prev.said;
+        prev.cite = cite(t) ?? prev.cite;
+      }
+    }
+  }
+  return [...by.values()].map(({ w, ...p }) => ({ ...p, buzz: Math.round(p.buzz * 100) / 100, score: Math.round(w * 100) / 100 })).sort((a, b) => b.score - a.score || b.buzz - a.buzz);
+}
+function pickOf(t, cite) {
+  const lead = t.statements.find((s) => Math.sign(s.stance) === Math.sign(t.net ?? 0)) ?? t.statements[0];
+  return { key: t.key, topic: t.topic, net: t.net, buzz: t.buzz, agreement: t.agreement, claims: t.claims, for: t.for, against: t.against, said: lead?.statement ?? null, cite: cite(t) };
+}
+function sides(topics, category, cite, n = 8) {
+  const list2 = topics.filter((t) => t.category === category);
+  const score3 = (t) => t.buzz * Math.abs(t.net ?? 0);
+  return {
+    recommended: list2.filter((t) => (t.net ?? 0) > 0.15).sort((a, b) => score3(b) - score3(a)).slice(0, n).map((t) => pickOf(t, cite)),
+    avoid: list2.filter((t) => (t.net ?? 0) < -0.15).sort((a, b) => score3(b) - score3(a)).slice(0, Math.ceil(n / 2)).map((t) => pickOf(t, cite))
+  };
+}
+function playerLookup(topic) {
+  const cleaned = fold(topic).replace(/\([^)]*\)/g, " ").replace(/\b(totw|tots|toty|fut|base|gold|rare|icon|hero|heroes|evo(lution)?s?|sbc|objective|promo|card|version|special|future stars|fantasy|road to the knockouts|rttk|ucl|uel|uecl|team of the (week|season|year)|winter wildcards|thunderstruck|centurions|trailblazers|flashback|showdown|ones to watch|otw|[0-9]{2}\s*(ovr|rated)?)\b/g, " ").replace(/[^a-z' -]/g, " ").replace(/\s+/g, " ").trim();
+  if (cleaned.length < 3) return null;
+  const words = cleaned.split(" ").filter((w) => w.length > 1);
+  const last = words.at(-1) ?? "";
+  return { name: cleaned, last: words.length > 1 && /^[a-z]{4,}$/.test(last) ? last : "" };
+}
+function formationPositions(formation) {
+  const out = /* @__PURE__ */ new Map();
+  for (const s of FORMATIONS[formation] ?? []) out.set(s.position, (out.get(s.position) ?? 0) + 1);
+  return new Map([...out].sort((a, b) => POSITION_ORDER.indexOf(a[0]) - POSITION_ORDER.indexOf(b[0])));
+}
+var PLAN_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "formation_why", "settings", "instructions", "for_your_team", "player_positions"],
+  properties: {
+    summary: { type: "string" },
+    formation_why: { type: "string" },
+    settings: { type: "array", items: { type: "object", additionalProperties: false, required: ["setting", "value", "why", "cites"], properties: {
+      setting: { type: "string" },
+      value: { type: "string" },
+      why: { type: "string" },
+      cites: { type: "array", items: { type: "integer" } }
+    } } },
+    instructions: { type: "array", items: { type: "object", additionalProperties: false, required: ["position", "instruction", "why", "cites"], properties: {
+      position: { type: "string" },
+      instruction: { type: "string" },
+      why: { type: "string" },
+      cites: { type: "array", items: { type: "integer" } }
+    } } },
+    for_your_team: { type: "array", items: { type: "string" } },
+    player_positions: { type: "array", items: { type: "object", additionalProperties: false, required: ["topic", "position"], properties: {
+      topic: { type: "string" },
+      position: { type: "string", enum: POSITION_ORDER }
+    } } }
+  }
+};
+var cache2 = /* @__PURE__ */ new Map();
+var CACHE_MS = 6 * 36e5;
+async function teamPlan(db2, userId, opts, team, env, fetchFn, beforeAi) {
+  const consensus = await rpcData2(db2, "kb_consensus", { p_user: userId, p_days: opts.days, p_per: 60, p_statements: 4 });
+  const topics = consensus?.topics ?? [];
+  const useAi = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) && topics.length > 0;
+  const cacheKey = JSON.stringify([userId, opts.days, opts.platform, team.squad?.id ?? null, team.squad?.formation ?? null, team.club.length, consensus?.claims ?? 0, useAi]);
+  const hit = cache2.get(cacheKey);
+  if (hit && !opts.refresh && Date.now() - hit.at < CACHE_MS) return hit.plan;
+  const citations = [];
+  const bySource = /* @__PURE__ */ new Map();
+  const citeSource = (s) => {
+    let n = bySource.get(s.id);
+    if (!n) {
+      n = citations.length + 1;
+      bySource.set(s.id, n);
+      citations.push({ n, kind: s.kind, url: s.url, title: s.title, community: s.community });
+    }
+    return n;
+  };
+  const cite = (t) => {
+    const lead = t.statements.find((s) => Math.sign(s.stance) === Math.sign(t.net ?? 0)) ?? t.statements[0];
+    return lead ? citeSource(lead.source) : null;
+  };
+  const ranked = rankFormations(topics, cite);
+  const recommended = ranked.find((f2) => (f2.net ?? 0) > 0) ?? null;
+  const yours = team.squad ? ranked.find((f2) => f2.formation === team.squad.formation) ?? null : null;
+  const tactics = sides(topics, "tactics", cite);
+  const playstyles = sides(topics, "playstyles", cite, 6);
+  const playerTopics = topics.filter((t) => t.category === "players").slice(0, 60);
+  const lookups = playerTopics.map((t) => ({ t, q: playerLookup(t.topic) })).filter((x) => !!x.q);
+  const cards = lookups.length ? await rpcData2(db2, "kb_player_cards", { p_user: userId, p_names: lookups.map(({ t, q }) => ({ key: t.key, name: q.name, last: q.last })), p_platform: opts.platform }) ?? {} : {};
+  const players = lookups.map(({ t }) => {
+    let list2 = cards[t.key] ?? [];
+    if (new Set(list2.map((c4) => fold(c4.player_name))).size > 1) {
+      const q = playerLookup(t.topic).name;
+      list2 = list2.filter((c4) => fold(c4.player_name) === q);
+    }
+    const ownedClub = team.club.find((c4) => mentions(t.topic, c4.name) || list2[0] && fold(c4.name) === fold(list2[0].player_name));
+    const card = list2.find((c4) => c4.owned) ?? list2[0] ?? null;
+    const net2 = t.net ?? 0;
+    return {
+      ...pickOf(t, cite),
+      verdict: net2 > 0.15 ? "rated" : net2 < -0.15 ? "overrated" : "mixed",
+      position: card?.position ?? ownedClub?.positions[0] ?? null,
+      card,
+      versions: list2.filter((c4) => c4 !== card),
+      owned: !!card?.owned || !!ownedClub,
+      owned_card: ownedClub ? { name: ownedClub.name, rating: ownedClub.rating, version: ownedClub.version } : null
+    };
+  });
+  const plan = {
+    days: consensus?.days ?? opts.days,
+    claims: consensus?.claims ?? 0,
+    sources: consensus?.sources ?? 0,
+    generated_at: (/* @__PURE__ */ new Date()).toISOString(),
+    via: "data",
+    team: { squad: team.squad ? { id: team.squad.id, name: team.squad.name, formation: team.squad.formation } : null, squads: team.squads, club_size: team.club.length, coins: team.coins },
+    formation: { recommended, ranked: ranked.slice(0, 8), yours, positions: [] },
+    tactics,
+    playstyles,
+    positions: [],
+    summary: null,
+    formation_why: null,
+    settings: [],
+    instructions: [],
+    for_your_team: [],
+    citations
+  };
+  if (useAi) {
+    beforeAi?.();
+    const notes = topics.flatMap((t) => t.statements.slice(0, t.category === "players" ? 2 : 4).map((s) => `[${citeSource(s.source)}] ${t.topic} (${t.category}; ${s.stance === 1 ? "for" : s.stance === -1 ? "against" : "mixed"}): ${s.statement}`)).join("\n");
+    const raw = await claudeJson(
+      env,
+      fetchFn,
+      [
+        "You turn what the EA SPORTS FC 27 Ultimate Team community says (claims from Reddit, YouTube and the player's own notes, numbered by source) into a game plan for one player's team. Return JSON only.",
+        `The formation is decided already: ${recommended ? recommended.formation : "none has enough support yet"}. Formation ranking (score = buzz x sentiment): ${ranked.slice(0, 6).map((f2) => `${f2.formation} ${f2.score}`).join(", ") || "none"}.`,
+        "summary: 2 or 3 plain sentences: the community's current view and what it means for this team.",
+        "formation_why: one or two sentences on why people rate that formation, from the claims (empty if none).",
+        "settings: up to 8 custom tactics settings people recommend for it or in general (e.g. Defensive approach: Balanced; Line height: 60; Build-up style: Counter; Width; Players in box; Corners and free kicks), each with a short why and the claim numbers. Only settings the claims support; values as people state them.",
+        "instructions: up to 8 player instructions by position (e.g. CDM: Stay back while attacking; ST: Get in behind), from the claims, with why and claim numbers.",
+        "for_your_team: up to 4 short points comparing the plan with this team: their formation, which of their own players fit the recommended roles, gaps to fill. Name their players.",
+        "player_positions: for each player topic listed below that you can place, the FC 27 position people use them in (GK, LB, CB, RB, CDM, CM, LM, RM, CAM, LW, RW, ST).",
+        "Claims are opinions: never invent settings, numbers or players that aren't in the claims or the team."
+      ].join("\n"),
+      `Team:
+${describeTeam(team)}
+
+Player topics: ${playerTopics.map((t) => t.topic).join("; ") || "none"}
+
+Claims:
+${notes}`,
+      PLAN_SCHEMA,
+      6e3
+    );
+    if (raw) {
+      const valid = (cites) => Array.isArray(cites) ? [...new Set(cites.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= citations.length))].slice(0, 6) : [];
+      const rows = (v) => Array.isArray(v) ? v.filter((x) => x && typeof x === "object") : [];
+      plan.summary = squash2(raw.summary, 800) || null;
+      plan.formation_why = squash2(raw.formation_why, 500) || null;
+      plan.settings = rows(raw.settings).map((r2) => ({ setting: squash2(r2.setting, 60), value: squash2(r2.value, 80), why: squash2(r2.why, 240), cites: valid(r2.cites) })).filter((r2) => r2.setting && r2.value).slice(0, 8);
+      plan.instructions = rows(raw.instructions).map((r2) => ({ position: squash2(r2.position, 12).toUpperCase(), instruction: squash2(r2.instruction, 80), why: squash2(r2.why, 240), cites: valid(r2.cites) })).filter((r2) => r2.position && r2.instruction).slice(0, 8);
+      plan.for_your_team = Array.isArray(raw.for_your_team) ? raw.for_your_team.map((x) => squash2(x, 300)).filter(Boolean).slice(0, 4) : [];
+      const placed = new Map(rows(raw.player_positions).map((r2) => [fold(squash2(r2.topic, 80)), squash2(r2.position, 4).toUpperCase()]));
+      for (const p of players) if (!p.position) {
+        const pos = placed.get(fold(p.topic));
+        if (pos && POSITION_ORDER.includes(pos)) p.position = pos;
+      }
+      plan.via = "ai";
+    }
+  }
+  const shape = formationPositions(recommended?.formation ?? team.squad?.formation ?? "");
+  plan.formation.positions = [...shape.keys()];
+  const xi = new Set((team.squad?.xi ?? []).map((x) => x.name ? fold(x.name) : "").filter(Boolean));
+  const groups = /* @__PURE__ */ new Map();
+  const group = (pos) => {
+    let g = groups.get(pos);
+    if (!g) {
+      g = { position: pos, in_formation: shape.get(pos) ?? 0, community: [], yours: [] };
+      groups.set(pos, g);
+    }
+    return g;
+  };
+  for (const pos of shape.keys()) group(pos);
+  for (const p of players) group(p.position ?? "Other").community.push(p);
+  for (const g of groups.values()) {
+    g.community.sort((a, b) => (a.verdict === "overrated" ? 1 : 0) - (b.verdict === "overrated" ? 1 : 0) || b.buzz * (b.net ?? 0) - a.buzz * (a.net ?? 0));
+    if (g.position === "Other") continue;
+    g.yours = team.club.filter((c4) => c4.positions.includes(g.position)).slice(0, 3).map((c4) => ({ name: c4.name, rating: c4.rating, version: c4.version, in_squad: xi.has(fold(c4.name)) }));
+  }
+  plan.positions = [...groups.values()].filter((g) => g.in_formation || g.community.length).sort((a, b) => (b.in_formation ? 1 : 0) - (a.in_formation ? 1 : 0) || posRank(a.position) - posRank(b.position));
+  const used = /* @__PURE__ */ new Set([
+    ...[recommended, ...plan.formation.ranked, ...tactics.recommended, ...tactics.avoid, ...playstyles.recommended, ...playstyles.avoid, ...players].map((p) => p?.cite ?? 0),
+    ...plan.settings.flatMap((s) => s.cites),
+    ...plan.instructions.flatMap((s) => s.cites)
+  ]);
+  plan.citations = citations.filter((c4) => used.has(c4.n));
+  cache2.set(cacheKey, { at: Date.now(), plan });
+  if (cache2.size > 500) cache2.clear();
+  return plan;
 }
 
 // supabase/functions/_shared/fut/community.ts
@@ -13588,9 +14039,9 @@ function createMarketService(deps) {
     return s && s.status === "enabled" && s.permissions.derived_analytics;
   });
   async function snapshot(owner, platform, as_of) {
-    const cache2 = deps.snapshots;
-    if (as_of !== void 0 || !cache2) return buildSnapshot(owner, platform, as_of ?? now2());
-    return cache2.remember(owner, `${platform}|${await cache2.version()}`, () => buildSnapshot(owner, platform, now2()));
+    const cache3 = deps.snapshots;
+    if (as_of !== void 0 || !cache3) return buildSnapshot(owner, platform, as_of ?? now2());
+    return cache3.remember(owner, `${platform}|${await cache3.version()}`, () => buildSnapshot(owner, platform, now2()));
   }
   async function buildSnapshot(owner, platform, as_of) {
     const cards = await deps.cards.list(owner);
@@ -14418,12 +14869,12 @@ async function marketRules(db2) {
 }
 async function marketFor(db2, now2) {
   const load = () => Promise.all([marketRules(db2), marketSources(db2), activeRules(db2)]);
-  const cache2 = cacheOn(db2) && !now2;
-  const [rules, sources, chemistry] = cache2 ? await remember(db2, "config", MARKET_CACHE_TTL.config, load) : await load();
+  const cache3 = cacheOn(db2) && !now2;
+  const [rules, sources, chemistry] = cache3 ? await remember(db2, "config", MARKET_CACHE_TTL.config, load) : await load();
   const catalogue = trackedCatalogue(db2);
   const futgg = sources.some((s) => s.id === "futgg_bulk" && s.status === "enabled");
   return createMarketService({
-    prices: new PgPriceStore(db2, futgg, catalogue, cache2 ? sharedFutggQuotes(db2, catalogue) : void 0),
+    prices: new PgPriceStore(db2, futgg, catalogue, cache3 ? sharedFutggQuotes(db2, catalogue) : void 0),
     memberships: new PgMembershipStore(db2),
     watchlists: new PgWatchlistStore(db2),
     cards: new PgMarketCardSource(db2, catalogue),
@@ -14432,7 +14883,7 @@ async function marketFor(db2, now2) {
     rules,
     chemistry,
     ...now2 ? { now: now2 } : {},
-    ...cache2 ? { snapshots: snapshotCache(db2) } : {}
+    ...cache3 ? { snapshots: snapshotCache(db2) } : {}
   });
 }
 function marketCardId(v) {
@@ -14893,7 +15344,7 @@ async function handle(req, deps) {
     }
     if (route.startsWith("/knowledge/")) {
       const baseEnv = deps.env ?? ((k) => Deno.env.get(k));
-      const usesAi = route === "/knowledge/status" || route === "/knowledge/ask" || route === "/knowledge/sources" && m === "POST";
+      const usesAi = route === "/knowledge/status" || route === "/knowledge/ask" || route === "/knowledge/sources" && m === "POST" || route === "/knowledge/apply" || route === "/knowledge/team-plan";
       const { env, own } = usesAi ? await envForUser(db2, userId, baseEnv) : { env: baseEnv, own: false };
       const fetchFn = deps.fetch ?? fetch;
       const p = url.searchParams;
@@ -14932,6 +15383,26 @@ async function handle(req, deps) {
         });
         const perHour = own ? Infinity : Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
         return json({ data: await ask(db2, userId, b.question, history, env, fetchFn, () => {
+          if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
+        }) });
+      }
+      if (route === "/knowledge/apply" && m === "POST") {
+        const b = obj2(await body(req));
+        const topic = typeof b.topic === "string" && /^[a-z0-9][a-z0-9-]{0,79}$/.test(b.topic) ? b.topic : null;
+        const source = typeof b.source === "string" && /^[0-9a-f-]{36}$/.test(b.source) ? b.source : null;
+        if (!topic && !source) throw new FutError("Send a topic key or a source id.");
+        const squadId = typeof b.squad === "string" && b.squad.trim() ? b.squad.trim().slice(0, 64) : null;
+        const team = await loadTeam(db2, userId, squadId, platformParam(typeof b.platform === "string" ? b.platform : null));
+        const perHour = own ? Infinity : Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
+        return json({ data: await applyToTeam(db2, userId, { topic, source }, team, env, fetchFn, () => {
+          if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
+        }) });
+      }
+      if (route === "/knowledge/team-plan" && m === "GET") {
+        const platform = platformParam(p.get("platform"));
+        const team = await loadTeam(db2, userId, p.get("squad") || null, platform);
+        const perHour = own ? Infinity : Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
+        return json({ data: await teamPlan(db2, userId, { days: days ?? 30, platform, refresh: p.get("refresh") === "true" }, team, env, fetchFn, () => {
           if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
         }) });
       }
