@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@ceb2c77 src/market/signals.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@1d72f2b src/market/signals.ts by scripts/sync-xilab.mjs. Do not edit.
 // Relative strength, momentum and mean reversion. Deterministic, explainable, and always supporting evidence:
 // nothing here is a forecast. Each function returns the numbers it used so the UI can show its working.
 import { bestFit } from "./baskets.ts";
@@ -35,6 +35,26 @@ export function isPeer(b: Exclude<Benchmark, "market">, card: MarketCard, other:
       const a = bestFit(card);
       const o = bestFit(other);
       return a !== null && o !== null && Math.abs(a - o) <= 3 && LINE[other.positions[0] ?? ""] === LINE[card.positions[0] ?? ""];
+    }
+  }
+}
+
+/**
+ * The value isPeer compares for a benchmark, so cards can be grouped once instead of compared pair by pair.
+ * category and position: peers have the same key. rating: the rating (peers are within 1). utility:
+ * "line|best fit" (peers share the line and are within 3 fit points). null = the card has no peers for it.
+ */
+export function peerGroupKey(b: Exclude<Benchmark, "market">, card: MarketCard): string | null {
+  switch (b) {
+    case "category":
+      return String(card.category);
+    case "rating":
+      return String(card.rating);
+    case "position":
+      return String(card.positions[0]);
+    case "utility": {
+      const fit = bestFit(card);
+      return fit === null ? null : `${LINE[card.positions[0] ?? ""]}|${fit}`;
     }
   }
 }

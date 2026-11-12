@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@ceb2c77 src/market/baskets.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@1d72f2b src/market/baskets.ts by scripts/sync-xilab.mjs. Do not edit.
 // Market baskets and benchmark indexes.
 // Rules are data (shown to the user), membership is point-in-time (a card added today never changes yesterday's
 // index), and the index is a chained, equal-weighted geometric mean of price relatives, so a newly popular card
@@ -141,17 +141,20 @@ export function computeIndex(
   const end = ms(to);
   const points: IndexPoint[] = [];
   let value = 100;
+  // This basket's memberships with their dates read once, not once per member per hour
+  const mine = members.filter((m) => m.basket_id === basket_id).map((m) => ({ id: m.card_id, from: ms(m.effective_from), to: m.effective_to === null ? Infinity : ms(m.effective_to) }));
+  const at = (t: number) => mine.filter((m) => m.from <= t && t < m.to).map((m) => m.id);
   const fresh = (s: Point[] | undefined, t: number) => {
     const p = s && priceAt(s, t);
     return p && t - p.t <= stale ? p : null;
   };
   for (let t = start; t <= end; t += size) {
     if (!points.length) {
-      points.push({ t: iso(t), value, constituents: membersAt(members, basket_id, t).filter((id) => fresh(seriesByCard.get(id), t)).length });
+      points.push({ t: iso(t), value, constituents: at(t).filter((id) => fresh(seriesByCard.get(id), t)).length });
       continue;
     }
     const logs: number[] = [];
-    for (const id of membersAt(members, basket_id, t)) {
+    for (const id of at(t)) {
       const s = seriesByCard.get(id);
       const a = fresh(s, t - size);
       const b = fresh(s, t);

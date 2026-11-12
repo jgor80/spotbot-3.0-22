@@ -124,16 +124,21 @@ const catalogueCard = (r: Row): Card => ({
   price: (r.price as number) ?? null, ea_item_id: eaKey(r.source_card_key), updated_at: String(r.updated_at),
 });
 
-/** FUT.GG quotes for these EA items, oldest first, in batches of 100 ids. */
+/** FUT.GG quotes for these EA items, oldest first per batch of 100 ids, a few batches at a time. */
+const QUOTE_BATCHES_AT_ONCE = 4;
 async function fetchFutggQuotes(db: FutDb, ids: number[], q: { platform?: Platform; since?: string; as_of: string }): Promise<Row[]> {
+  const batch = (i: number) => allPages(() => {
+    // Only the columns the analysis reads: this is tens of thousands of rows on a cold start
+    let x = db.from("futgg_prices").select("ea_item_id,platform,price,published_at,received_at").eq("game_year", 27).in("ea_item_id", ids.slice(i, i + 100)).gte("price", 1);
+    if (q.platform) x = x.eq("platform", q.platform);
+    if (q.since) x = x.gte("published_at", q.since);
+    return x.lte("received_at", q.as_of).lte("published_at", q.as_of).order("published_at", { ascending: true }).order("ea_item_id", { ascending: true }).order("platform", { ascending: true });
+  });
   const out: Row[] = [];
-  for (let i = 0; i < ids.length; i += 100) {
-    out.push(...await allPages(() => {
-      let x = db.from("futgg_prices").select("*").eq("game_year", 27).in("ea_item_id", ids.slice(i, i + 100)).gte("price", 1);
-      if (q.platform) x = x.eq("platform", q.platform);
-      if (q.since) x = x.gte("published_at", q.since);
-      return x.lte("received_at", q.as_of).lte("published_at", q.as_of).order("published_at", { ascending: true }).order("ea_item_id", { ascending: true }).order("platform", { ascending: true });
-    }));
+  const step = 100 * QUOTE_BATCHES_AT_ONCE;
+  for (let i = 0; i < ids.length; i += step) {
+    const starts = Array.from({ length: Math.min(QUOTE_BATCHES_AT_ONCE, Math.ceil((ids.length - i) / 100)) }, (_, k) => i + k * 100);
+    for (const rows of await Promise.all(starts.map(batch))) out.push(...rows);
     if (out.length >= 200_000) throw new FutError("Too much bulk price history to analyse at once.", 413);
   }
   return out;

@@ -1,4 +1,4 @@
-// GENERATED from jgor80/11-lab@ceb2c77 src/market/service.ts by scripts/sync-xilab.mjs. Do not edit.
+// GENERATED from jgor80/11-lab@1d72f2b src/market/service.ts by scripts/sync-xilab.mjs. Do not edit.
 // The Market Lab service surface. The web Market Lab, Gaffer Bot's fut-api routes and the FUT MCP tools all call
 // these, the same way the squad workspace works. Every result carries provenance (rules, sources, demo flag, as_of).
 import { cardUtility, comparableCards } from "../intelligence/card.ts";
@@ -8,8 +8,8 @@ import { DEFAULT_BASKETS, computeIndex, rebalance, summarizeIndex, type BasketDe
 import { parsePriceImport, type UnmatchedCapture } from "./import.ts";
 import { classifyRegime, type RegimeResult } from "./regime.ts";
 import { DEFAULT_MARKET_RULES, MARKET_ENGINE_VERSION, type MarketRules } from "./rules.ts";
-import { change, freshness, iso, ms, round, toSeries, window, type Point } from "./series.ts";
-import { assessSignals, isPeer, meanReversion, momentum, peerChanges, relativeStrength, type Benchmark, type SignalAssessment, type SignalStatus } from "./signals.ts";
+import { change, freshness, iso, ms, round, toSeriesByCard, window, type Point } from "./series.ts";
+import { assessSignals, meanReversion, momentum, peerGroupKey, relativeStrength, type Benchmark, type SignalAssessment, type SignalStatus } from "./signals.ts";
 import { DEFAULT_PRICE_SOURCES, assertUsable } from "./sources.ts";
 import { compareInSquad } from "./squad-link.ts";
 import type { CaptureHoldStore, MarketCardSource, MembershipStore, PriceStore, WatchItem, WatchlistStore } from "./store.ts";
@@ -46,6 +46,43 @@ export interface SnapshotCache {
 export class MarketNotFoundError extends Error {}
 
 const scanned = new WeakMap<object, unknown>();
+
+type PeerBenchmark = Exclude<Benchmark, "market">;
+const PEER_BENCHMARKS: readonly PeerBenchmark[] = ["category", "rating", "position", "utility"];
+interface Peers {
+  /** Median change of the card's peers per window (null under 3 peers) and how many peers had a change. */
+  changes(b: PeerBenchmark, card: MarketCard): Record<Window, { value: number | null; n: number }>;
+  /** Fresh latest prices of other cards with the same rating and primary position. */
+  prices(card: MarketCard): number[];
+}
+const peerIndex = new WeakMap<object, Peers>();
+const splitUtility = (key: string): [string, number] => {
+  const i = key.lastIndexOf("|");
+  return [key.slice(0, i), Number(key.slice(i + 1))];
+};
+
+/** Size and median of a sorted list with one occurrence of `skip` left out (null or not in the list = nothing left out). */
+function withoutOne(sorted: number[], skip: number | null): { n: number; median: number | null } {
+  let at = -1;
+  if (skip !== null) {
+    let lo = 0;
+    let hi = sorted.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid]! < skip) lo = mid + 1;
+      else if (sorted[mid]! > skip) hi = mid - 1;
+      else {
+        at = mid;
+        break;
+      }
+    }
+  }
+  const n = sorted.length - (at < 0 ? 0 : 1);
+  if (!n) return { n, median: null };
+  const el = (k: number) => sorted[at >= 0 && k >= at ? k + 1 : k]!;
+  const m = n >> 1;
+  return { n, median: n % 2 ? el(m) : (el(m - 1) + el(m)) / 2 };
+}
 
 const LOOKBACK_H = 8 * 24;
 
@@ -93,8 +130,7 @@ export function createMarketService(deps: MarketDeps) {
     const cards = await deps.cards.list(owner);
     const byId = new Map(cards.map((c) => [c.id, c]));
     const rows = usable(await deps.prices.query(owner, { platform, as_of, since: iso(ms(as_of) - LOOKBACK_H * 3_600_000) }));
-    const series = new Map<string, Point[]>();
-    for (const id of new Set(rows.map((r) => r.card_id))) series.set(id, toSeries(rows, id, platform, as_of));
+    const series = toSeriesByCard(rows, platform, as_of);
     const members = await deps.memberships.list();
     const indexSeries = new Map<string, Point[]>();
     const indexes = baskets.map((b) => {
@@ -111,14 +147,87 @@ export function createMarketService(deps: MarketDeps) {
     return { as_of, platform, cards, byId, series, rows, members, indexes, indexSeries, regime: classifyRegime(indexes, rules) };
   }
 
+  /**
+   * Peer lookups for one snapshot, built once and reused for every card. Cards that share a peer rule (same
+   * category, same rating, same position...) share one sorted list of peer changes, and each card just leaves
+   * itself out, so scoring every card no longer compares it against every other card.
+   */
+  function peersOf(snap: Snapshot): Peers {
+    const hit = peerIndex.get(snap);
+    if (hit) return hit;
+    const own = new Map<string, Record<Window, number | null>>();
+    const latest = new Map<string, number>();
+    for (const c of snap.cards) {
+      const s = snap.series.get(c.id);
+      if (!s || freshness(s, snap.as_of, rules).status !== "fresh") continue;
+      own.set(c.id, Object.fromEntries(WINDOWS.map((w) => [w, change(s, w)])) as Record<Window, number | null>);
+      latest.set(c.id, s.at(-1)!.price);
+    }
+    const keys = new Map<string, Record<PeerBenchmark, string | null>>();
+    const keyOf = (c: MarketCard) => {
+      let k = keys.get(c.id);
+      if (!k) keys.set(c.id, (k = Object.fromEntries(PEER_BENCHMARKS.map((b) => [b, peerGroupKey(b, c)])) as Record<PeerBenchmark, string | null>));
+      return k;
+    };
+    const groups = new Map<string, Record<Window, number[]>>();
+    const group = (b: PeerBenchmark, key: string, sample: MarketCard) => {
+      const id = `${b}|${key}`;
+      let g = groups.get(id);
+      if (g) return g;
+      // "rating" and "utility" are ranges around the card, so membership is checked against a card with this key
+      const inGroup = (o: MarketCard) => {
+        const ok = keyOf(o)[b];
+        if (ok === null) return false;
+        if (b === "rating") return Math.abs(o.rating - sample.rating) <= 1;
+        if (b === "utility") {
+          const [line, fit] = splitUtility(key);
+          const [oLine, oFit] = splitUtility(ok);
+          return line === oLine && Math.abs(fit - oFit) <= 3;
+        }
+        return ok === key;
+      };
+      g = Object.fromEntries(WINDOWS.map((w) => [w, [] as number[]])) as Record<Window, number[]>;
+      for (const o of snap.cards) {
+        const ch = own.get(o.id);
+        if (!ch || !inGroup(o)) continue;
+        for (const w of WINDOWS) if (ch[w] !== null) g[w].push(ch[w]!);
+      }
+      for (const w of WINDOWS) g[w].sort((x, y) => x - y);
+      groups.set(id, g);
+      return g;
+    };
+    const sameSlot = new Map<string, { id: string; price: number }[]>();
+    for (const c of snap.cards) {
+      const price = latest.get(c.id);
+      if (price === undefined) continue;
+      const k = `${c.rating}|${c.positions[0]}`;
+      (sameSlot.get(k) ?? sameSlot.set(k, []).get(k)!).push({ id: c.id, price });
+    }
+    const peers: Peers = {
+      changes(b, card) {
+        const key = keyOf(card)[b];
+        const mine = own.get(card.id);
+        const out = {} as Record<Window, { value: number | null; n: number }>;
+        for (const w of WINDOWS) {
+          const xs = key === null ? [] : group(b, key, card)[w];
+          // The card is in its own group when it has a change of its own: leave that one value out
+          const self = key !== null && mine && mine[w] !== null ? mine[w] : null;
+          const rest = withoutOne(xs, self);
+          out[w] = { value: rest.n >= 3 ? rest.median : null, n: rest.n };
+        }
+        return out;
+      },
+      prices: (card) => (sameSlot.get(`${card.rating}|${card.positions[0]}`) ?? []).flatMap((p) => (p.id === card.id ? [] : [p.price])),
+    };
+    peerIndex.set(snap, peers);
+    return peers;
+  }
+
   function benchmarksFor(snap: Snapshot, card: MarketCard) {
     const out: { benchmark: Benchmark; changes: Record<Window, number | null>; peers: number }[] = [];
-    for (const b of ["category", "rating", "position", "utility"] as const) {
-      const peers = snap.cards.filter((o) => isPeer(b, card, o)).flatMap((o) => {
-        const s = snap.series.get(o.id);
-        return s && freshness(s, snap.as_of, rules).status === "fresh" ? [s] : [];
-      });
-      const pc = peerChanges(peers);
+    const peers = peersOf(snap);
+    for (const b of PEER_BENCHMARKS) {
+      const pc = peers.changes(b, card);
       out.push({ benchmark: b, changes: Object.fromEntries(WINDOWS.map((w) => [w, pc[w].value])) as Record<Window, number | null>, peers: pc["24h"].n });
     }
     const m = snap.indexes.find((i) => i.basket_id === "market");
@@ -132,12 +241,7 @@ export function createMarketService(deps: MarketDeps) {
     const fresh = freshness(s, snap.as_of, rules);
     const rs = relativeStrength(s, benchmarksFor(snap, card), rules);
     const mom = momentum(s);
-    const peerPrices = snap.cards
-      .filter((o) => o.id !== card.id && o.rating === card.rating && o.positions[0] === card.positions[0])
-      .flatMap((o) => {
-        const ps = snap.series.get(o.id);
-        return ps && freshness(ps, snap.as_of, rules).status === "fresh" ? [ps.at(-1)!.price] : [];
-      });
+    const peerPrices = peersOf(snap).prices(card);
     const mr = meanReversion(s, peerPrices, rules);
     const assessment = assessSignals({ fresh, points: window(s, LOOKBACK_H).length, rs, mom, mr, regime_primary: snap.regime.primary, rules });
     const latest = fresh.status === "fresh" ? s.at(-1)!.price : null;
