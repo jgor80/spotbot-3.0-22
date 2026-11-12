@@ -14,6 +14,7 @@ import { FutError, PgSquadStore, searchMyCards, type FutDb } from "./service.ts"
 import { callClaude } from "./squad-import.ts";
 import { FORMATIONS } from "./xilab/workspace/index.ts";
 import { PLAYSTYLES } from "./stats.ts";
+import { metaTop } from "./meta-data.ts";
 
 type Env = (k: string) => string | undefined;
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -261,6 +262,7 @@ export async function applyToTeam(db: Rpc, userId: string, target: { topic?: str
     "headline: one plain sentence (under 30 words) on what this means for this team.",
     "points: 2 to 4 short points (under 35 words each) naming the team's own players, positions and formation where they apply. Say plainly when the team lacks what the claims need.",
     "actions: up to 3 concrete things to try (a setting, an instruction, a player to move or pick from the club, or a type of card to look for). Only suggest players from the team list or the claims.",
+    "Use everything you are given and reason it through: never answer that there is too little data or that the player should wait for more. When the claims don't name this team's players, infer who fits from their positions, ratings and PlayStyles and say it is your inference.",
     "Claims are opinions, not facts: never invent stats, prices or players.",
   ].join("\n"), `Team:\n${describeTeam(team)}\n\n${about.kind === "source" ? `Source: ${about.title}` : `Topic: ${about.title}`}\nClaims:\n${claims.map((c) => `- ${c.topic} (${c.category}; ${c.stance === 1 ? "for" : c.stance === -1 ? "against" : "mixed"}): ${c.statement}`).join("\n")}`,
   APPLY_SCHEMA, 2500);
@@ -274,7 +276,34 @@ export async function applyToTeam(db: Rpc, userId: string, target: { topic?: str
 export interface ConsensusStatement { id: number; statement: string; stance: number; weight: number; said_at: string; source: { id: string; kind: string; url: string | null; title: string | null; community: string | null } }
 export interface ConsensusTopic { key: string; topic: string; category: string; claims: number; sources: number; for: number; against: number; mixed: number; buzz: number; net: number | null; agreement: string; statements: ConsensusStatement[] }
 interface Consensus { days: number; claims: number; sources: number; topics: ConsensusTopic[] }
-export interface CatalogueCard { id: string; player_name: string; version: string | null; overall: number; position: string; alt_positions: string[]; price: number | null; owned: boolean; matched: "name" | "last"; ea_item_id: number | null }
+/** How a card's price has moved over two weeks, and what that suggests for buying it. */
+export interface PriceOutlook { change_3d: number | null; change_7d: number | null; low14: number | null; high14: number | null; signal: "falling" | "near_low" | "near_high" | "rising" | "steady"; call: string }
+export interface CatalogueCard { id: string; player_name: string; version: string | null; overall: number; position: string; alt_positions: string[]; price: number | null; owned: boolean; matched: "name" | "last"; ea_item_id: number | null; outlook?: PriceOutlook | null; affordable?: boolean | null }
+/** A card picked from its in-game stats (Metaratings) for a position, when the plan fills in beyond what people said. */
+export interface StatPick { card_id: string; ea_item_id: number | null; name: string; rating: number; version: string | null; price: number | null; owned: boolean; score: number; role: string; why: string; outlook?: PriceOutlook | null }
+export type StatPicker = (position: string, maxPrice: number | null) => Promise<StatPick[]>;
+
+interface TrendRow { ea_item_id: number; price: number | null; d1: number | null; d3: number | null; d7: number | null; low14: number | null; high14: number | null }
+const pctMove = (now: number | null, then: number | null) => (now && then ? Math.round(((now - then) / then) * 1000) / 10 : null);
+
+/** Rising, falling, near its two-week low or high: the same reading Sell or Keep uses, turned round for a buyer. Pure. */
+export function priceOutlook(t: TrendRow | undefined, owned: boolean): PriceOutlook | null {
+  if (!t || !t.price) return null;
+  const c3 = pctMove(t.price, t.d3 ?? t.d1), c7 = pctMove(t.price, t.d7);
+  const spread = !!(t.high14 && t.low14 && t.high14 > t.low14 * 1.1);
+  const falling = (c3 !== null && c3 <= -4) || (c7 !== null && c7 <= -8);
+  const nearLow = spread && t.price <= t.low14! * 1.05, nearHigh = spread && t.price >= t.high14! * 0.95;
+  const rising = (c3 !== null && c3 >= 4) || (c7 !== null && c7 >= 8);
+  const move = c3 !== null ? `${c3 > 0 ? "+" : ""}${c3}% in 3 days` : c7 !== null ? `${c7 > 0 ? "+" : ""}${c7}% in 7 days` : "";
+  const range = t.low14 && t.high14 ? `${t.low14.toLocaleString("en")} to ${t.high14.toLocaleString("en")} in two weeks` : "";
+  const [signal, call]: [PriceOutlook["signal"], string] = falling
+    ? ["falling", owned ? `Falling (${move}): if you don't play him, sell before it drops further.` : `Falling (${move}): wait, it should get cheaper.`]
+    : nearLow ? ["near_low", owned ? `Near its two-week low (${range}): hold, a bad time to sell.` : `Near its two-week low (${range}): a good time to buy.`]
+    : nearHigh ? ["near_high", owned ? `Near its two-week high (${range}): a good time to sell if he isn't in your team.` : `Near its two-week high (${range}): expensive right now, wait for a dip.`]
+    : rising ? ["rising", owned ? `Rising (${move}): hold.` : `Rising (${move}): buy soon if you want him, or wait for the next dip.`]
+    : ["steady", owned ? "Price is steady." : "Price is steady: buy whenever it suits."];
+  return { change_3d: c3, change_7d: c7, low14: t.low14, high14: t.high14, signal, call };
+}
 
 export interface Pick { key: string; topic: string; net: number | null; buzz: number; agreement: string; claims: number; for: number; against: number; said: string | null; cite: number | null }
 export interface FormationPick extends Pick { formation: string; score: number }
@@ -289,13 +318,18 @@ export interface PlayerPick extends Pick {
   /** The club's own card when the market list doesn't have it. */
   owned_card: { name: string; rating: number; version: string | null } | null;
 }
-export interface PositionGroup { position: string; in_formation: number; community: PlayerPick[]; yours: { name: string; rating: number; version: string | null; in_squad: boolean }[] }
-export interface AiTactic { setting: string; value: string; why: string; cites: number[] }
-export interface AiInstruction { position: string; instruction: string; why: string; cites: number[] }
+export interface PositionGroup { position: string; in_formation: number; community: PlayerPick[]; by_stats: StatPick[]; yours: { name: string; rating: number; version: string | null; in_squad: boolean }[] }
+export interface AiTactic { setting: string; value: string; why: string; cites: number[]; inferred: boolean }
+export interface AiInstruction { position: string; instruction: string; why: string; cites: number[]; inferred: boolean }
 export interface TeamPlan {
   days: number; claims: number; sources: number; generated_at: string; via: "ai" | "data";
+  /** The period asked for was thin, so the plan reads further back. */
+  widened_from: number | null;
+  /** How much the bank backs the formation: it is always given, with this as the caveat. */
+  confidence: "high" | "medium" | "low";
+  prices_at: string | null;
   team: { squad: { id: string; name: string; formation: string } | null; squads: { id: string; name: string; formation: string }[]; club_size: number; coins: number | null };
-  formation: { recommended: FormationPick | null; ranked: FormationPick[]; yours: FormationPick | null; positions: string[] };
+  formation: { recommended: FormationPick | null; ranked: FormationPick[]; yours: FormationPick | null; positions: string[]; /** Always set: the formation the plan is built on. */ name: string; basis: "community" | "least_criticised" | "your_squad" | "default" };
   tactics: { recommended: Pick[]; avoid: Pick[] };
   playstyles: { recommended: Pick[]; avoid: Pick[] };
   positions: PositionGroup[];
@@ -369,10 +403,10 @@ const PLAN_SCHEMA = {
   properties: {
     summary: { type: "string" },
     formation_why: { type: "string" },
-    settings: { type: "array", items: { type: "object", additionalProperties: false, required: ["setting", "value", "why", "cites"], properties: {
-      setting: { type: "string" }, value: { type: "string" }, why: { type: "string" }, cites: { type: "array", items: { type: "integer" } } } } },
-    instructions: { type: "array", items: { type: "object", additionalProperties: false, required: ["position", "instruction", "why", "cites"], properties: {
-      position: { type: "string" }, instruction: { type: "string" }, why: { type: "string" }, cites: { type: "array", items: { type: "integer" } } } } },
+    settings: { type: "array", items: { type: "object", additionalProperties: false, required: ["setting", "value", "why", "cites", "inferred"], properties: {
+      setting: { type: "string" }, value: { type: "string" }, why: { type: "string" }, cites: { type: "array", items: { type: "integer" } }, inferred: { type: "boolean" } } } },
+    instructions: { type: "array", items: { type: "object", additionalProperties: false, required: ["position", "instruction", "why", "cites", "inferred"], properties: {
+      position: { type: "string" }, instruction: { type: "string" }, why: { type: "string" }, cites: { type: "array", items: { type: "integer" } }, inferred: { type: "boolean" } } } },
     for_your_team: { type: "array", items: { type: "string" } },
     player_positions: { type: "array", items: { type: "object", additionalProperties: false, required: ["topic", "position"], properties: {
       topic: { type: "string" }, position: { type: "string", enum: POSITION_ORDER } } } },
@@ -380,13 +414,33 @@ const PLAN_SCHEMA = {
 };
 
 const cache = new Map<string, { at: number; plan: TeamPlan }>();
+const THIN_CLAIMS = 40;
+const DEFAULT_FORMATION = "4-2-3-1";
+
+/** The best cards for a position from in-game stats (Metaratings), within a price. */
+function defaultStatPicker(db: Rpc, userId: string, platform: "console" | "pc"): StatPicker {
+  return async (position, maxPrice) => {
+    const top = await metaTop(db as unknown as FutDb, userId, { position, platform, max_price: maxPrice });
+    return top.cards.slice(0, 12).map((c) => ({
+      card_id: c.card_id, ea_item_id: c.ea_item_id, name: c.name, rating: c.rating, version: c.version, price: c.price, owned: c.owned,
+      score: c.meta!.score, role: c.meta!.role, why: [c.meta!.strengths.slice(0, 2).join(", "), c.meta!.playstyles.slice(0, 2).join(", ")].filter(Boolean).join("; "),
+    }));
+  };
+}
 const CACHE_MS = 6 * 3_600_000;
 
 /** The knowledge bank's view as a game plan for this team. */
-export async function teamPlan(db: Rpc, userId: string, opts: { days: number; platform: "console" | "pc"; refresh?: boolean }, team: TeamContext, env: Env, fetchFn: Fetch, beforeAi?: () => void): Promise<TeamPlan> {
-  const consensus = await rpcData<Consensus>(db, "kb_consensus", { p_user: userId, p_days: opts.days, p_per: 60, p_statements: 4 });
+export async function teamPlan(db: Rpc, userId: string, opts: { days: number; platform: "console" | "pc"; refresh?: boolean }, team: TeamContext, env: Env, fetchFn: Fetch, beforeAi?: () => void, statPicker?: StatPicker): Promise<TeamPlan> {
+  const read = (days: number) => rpcData<Consensus>(db, "kb_consensus", { p_user: userId, p_days: days, p_per: 60, p_statements: 4 });
+  let consensus = await read(opts.days), widenedFrom: number | null = null;
+  // Never wait for more data: a thin period reads everything the bank has instead
+  if ((consensus?.claims ?? 0) < THIN_CLAIMS && opts.days < 365) {
+    const all = await read(365);
+    if ((all?.claims ?? 0) > (consensus?.claims ?? 0)) { consensus = all; widenedFrom = opts.days; }
+  }
   const topics = consensus?.topics ?? [];
-  const useAi = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) && topics.length > 0;
+  const pickStats: StatPicker = statPicker ?? defaultStatPicker(db, userId, opts.platform);
+  const useAi = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
   const cacheKey = JSON.stringify([userId, opts.days, opts.platform, team.squad?.id ?? null, team.squad?.formation ?? null, team.club.length, consensus?.claims ?? 0, useAi]);
   const hit = cache.get(cacheKey);
   if (hit && !opts.refresh && Date.now() - hit.at < CACHE_MS) return hit.plan;
@@ -405,7 +459,12 @@ export async function teamPlan(db: Rpc, userId: string, opts: { days: number; pl
   };
 
   const ranked = rankFormations(topics, cite);
-  const recommended = ranked.find((f) => (f.net ?? 0) > 0) ?? null;
+  // A formation is always given: the one people back, else the least criticised, else the user's own, else the usual meta shape
+  const backed = ranked.find((f) => (f.net ?? 0) > 0) ?? null;
+  const recommended = backed ?? ranked[0] ?? null;
+  const basis: TeamPlan["formation"]["basis"] = backed ? "community" : recommended ? "least_criticised" : team.squad && FORMATIONS[team.squad.formation] ? "your_squad" : "default";
+  const planFormation = recommended?.formation ?? (basis === "your_squad" ? team.squad!.formation : DEFAULT_FORMATION);
+  const confidence: TeamPlan["confidence"] = !backed ? "low" : backed.claims >= 8 && (backed.agreement === "agreed" || backed.agreement === "leaning") ? "high" : backed.claims >= 3 ? "medium" : "low";
   const yours = team.squad ? ranked.find((f) => f.formation === team.squad!.formation) ?? null : null;
   const tactics = sides(topics, "tactics", cite);
   const playstyles = sides(topics, "playstyles", cite, 6);
@@ -434,10 +493,43 @@ export async function teamPlan(db: Rpc, userId: string, opts: { days: number; pl
     };
   });
 
+  // Stat picks for every position of the formation (and where they'd come from in the club), so no position is ever empty
+  const shape = formationPositions(planFormation);
+  const statPicks = new Map<string, StatPick[]>();
+  await Promise.all([...shape.keys()].map(async (pos) => {
+    try {
+      const talked = new Set(players.filter((p) => p.position === pos && p.card).map((p) => fold(p.card!.player_name)));
+      const all = (await pickStats(pos, team.coins && team.coins > 0 ? Math.floor(team.coins) : null)).filter((c) => !talked.has(fold(c.name)));
+      // One card per player; the ones you own first, then the best value (score per coin matters when coins are short)
+      const seen = new Set<string>();
+      const uniq = all.filter((c) => { const k = fold(c.name); if (seen.has(k)) return false; seen.add(k); return true; });
+      statPicks.set(pos, [...uniq.filter((c) => c.owned).slice(0, 2), ...uniq.filter((c) => !c.owned).slice(0, 4)].slice(0, 5));
+    } catch (e) { console.error(`[fut-api] knowledge team stat picks ${pos}:`, (e as Error).message); }
+  }));
+
+  // How each card's price is moving (two weeks of FUT.GG prices), for every card shown
+  let pricesAt: string | null = null;
+  const ids = [...new Set([...players.flatMap((p) => [p.card, ...p.versions]).map((c) => c?.ea_item_id), ...[...statPicks.values()].flat().map((c) => c.ea_item_id)].filter((x): x is number => !!x))].slice(0, 2000);
+  if (ids.length) {
+    try {
+      const d = await rpcData<{ published_at?: string | null; items?: TrendRow[] } | null>(db, "card_price_trend", { p_platform: opts.platform, p_ids: ids });
+      pricesAt = d?.published_at ?? null;
+      const trends = new Map((d?.items ?? []).map((r) => [Number(r.ea_item_id), r]));
+      const dress = (c: CatalogueCard | null) => {
+        if (!c) return;
+        c.outlook = c.ea_item_id ? priceOutlook(trends.get(c.ea_item_id), c.owned) : null;
+        c.affordable = c.owned || c.price == null || team.coins == null ? null : c.price <= team.coins;
+      };
+      for (const p of players) { dress(p.card); p.versions.forEach(dress); }
+      for (const c of [...statPicks.values()].flat()) c.outlook = c.ea_item_id ? priceOutlook(trends.get(c.ea_item_id), c.owned) : null;
+    } catch (e) { console.error("[fut-api] knowledge team price trends:", (e as Error).message); }
+  }
+
   const plan: TeamPlan = {
     days: consensus?.days ?? opts.days, claims: consensus?.claims ?? 0, sources: consensus?.sources ?? 0, generated_at: new Date().toISOString(), via: "data",
+    widened_from: widenedFrom, confidence, prices_at: pricesAt,
     team: { squad: team.squad ? { id: team.squad.id, name: team.squad.name, formation: team.squad.formation } : null, squads: team.squads, club_size: team.club.length, coins: team.coins },
-    formation: { recommended, ranked: ranked.slice(0, 8), yours, positions: [] },
+    formation: { recommended, ranked: ranked.slice(0, 8), yours, positions: [], name: planFormation, basis },
     tactics, playstyles, positions: [], summary: null, formation_why: null, settings: [], instructions: [], for_your_team: [], citations,
   };
 
@@ -448,24 +540,25 @@ export async function teamPlan(db: Rpc, userId: string, opts: { days: number; pl
       `[${citeSource(s.source)}] ${t.topic} (${t.category}; ${s.stance === 1 ? "for" : s.stance === -1 ? "against" : "mixed"}): ${s.statement}`)).join("\n");
     const raw = await claudeJson<Record<string, unknown>>(env, fetchFn, [
       "You turn what the EA SPORTS FC 27 Ultimate Team community says (claims from Reddit, YouTube and the player's own notes, numbered by source) into a game plan for one player's team. Return JSON only.",
-      `The formation is decided already: ${recommended ? recommended.formation : "none has enough support yet"}. Formation ranking (score = buzz x sentiment): ${ranked.slice(0, 6).map((f) => `${f.formation} ${f.score}`).join(", ") || "none"}.`,
+      `The formation is decided already: ${planFormation} (${basis === "community" ? "the one the community backs most" : basis === "least_criticised" ? "nobody is clearly for any formation, this is the least criticised" : basis === "your_squad" ? "the bank has no formation talk, so the player's own" : "the bank has no formation talk, so the usual meta shape"}). Formation ranking (score = buzz x sentiment): ${ranked.slice(0, 6).map((f) => `${f.formation} ${f.score}`).join(", ") || "none"}.`,
+      "Use ALL the data you are given every time: the claims, the team's cards, the price moves and the stat picks. Never say there is not enough data and never tell the player to wait for more. Where the claims are thin or silent, reason it through from what you do have (the formation's shape, the team's players and their PlayStyles, the stat picks, how prices are moving) and set inferred: true on that row, with the reasoning in why. Rows taken from claims have inferred: false and cite them.",
       "summary: 2 or 3 plain sentences: the community's current view and what it means for this team.",
       "formation_why: one or two sentences on why people rate that formation, from the claims (empty if none).",
-      "settings: up to 8 custom tactics settings people recommend for it or in general (e.g. Defensive approach: Balanced; Line height: 60; Build-up style: Counter; Width; Players in box; Corners and free kicks), each with a short why and the claim numbers. Only settings the claims support; values as people state them.",
-      "instructions: up to 8 player instructions by position (e.g. CDM: Stay back while attacking; ST: Get in behind), from the claims, with why and claim numbers.",
-      "for_your_team: up to 4 short points comparing the plan with this team: their formation, which of their own players fit the recommended roles, gaps to fill. Name their players.",
+      "settings: 5 to 8 custom tactics settings for this formation (e.g. Defensive approach: Balanced; Line height: 60; Build-up style: Counter; Width; Players in box; Corners and free kicks), each with a short why. Take the values people state where they state them; fill the rest by inference so the list is a complete set the player can enter.",
+      "instructions: one for every outfield position of the formation (e.g. CDM: Stay back while attacking; ST: Get in behind), from the claims where they exist and inferred from the shape and the team's players otherwise.",
+      "for_your_team: 3 to 5 short points for this team: which of their own players fit each role, the biggest gap, and who to buy or sell and when, using the price moves (buy what is near its low or steady, wait on what is falling, sell what they don't use near its high) and their coins. Name players and prices.",
       "player_positions: for each player topic listed below that you can place, the FC 27 position people use them in (GK, LB, CB, RB, CDM, CM, LM, RM, CAM, LW, RW, ST).",
-      "Claims are opinions: never invent settings, numbers or players that aren't in the claims or the team.",
+      "Claims are opinions, and inferences are yours: keep them apart with the inferred flag. Never invent prices, stats or players that aren't in the data below.",
     ].join("\n"),
-    `Team:\n${describeTeam(team)}\n\nPlayer topics: ${playerTopics.map((t) => t.topic).join("; ") || "none"}\n\nClaims:\n${notes}`, PLAN_SCHEMA, 6000);
+    `Team:\n${describeTeam(team)}\n\nPlayer topics: ${playerTopics.map((t) => t.topic).join("; ") || "none"}\n\nPlayers people talk about, with prices:\n${players.filter((p) => p.card).slice(0, 40).map((p) => `- ${p.card!.player_name} ${p.card!.overall} ${p.card!.version ?? ""} (${p.position ?? "?"}; ${p.verdict}; ${p.card!.price != null ? `${p.card!.price.toLocaleString("en")} coins` : "no price"}${p.owned ? "; owned" : ""})${p.card!.outlook ? ` ${p.card!.outlook.call}` : ""}`).join("\n") || "none"}\n\nBest cards by in-game stats for each position${team.coins ? ` within ${team.coins.toLocaleString("en")} coins` : ""}:\n${[...statPicks].map(([pos, list]) => `${pos}: ${list.map((c) => `${c.name} ${c.rating} (${c.role} ${c.score}${c.price != null ? `, ${c.price.toLocaleString("en")}` : ""}${c.owned ? ", owned" : ""}${c.outlook ? `, ${c.outlook.signal.replace("_", " ")}` : ""})`).join("; ")}`).join("\n") || "none"}\n\nClaims:\n${notes || "none in the bank yet"}`, PLAN_SCHEMA, 7000);
     if (raw) {
       const valid = (cites: unknown) => Array.isArray(cites) ? [...new Set(cites.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= citations.length))].slice(0, 6) : [];
       const rows = (v: unknown) => Array.isArray(v) ? v.filter((x) => x && typeof x === "object") as Record<string, unknown>[] : [];
       plan.summary = squash(raw.summary, 800) || null;
       plan.formation_why = squash(raw.formation_why, 500) || null;
-      plan.settings = rows(raw.settings).map((r) => ({ setting: squash(r.setting, 60), value: squash(r.value, 80), why: squash(r.why, 240), cites: valid(r.cites) })).filter((r) => r.setting && r.value).slice(0, 8);
-      plan.instructions = rows(raw.instructions).map((r) => ({ position: squash(r.position, 12).toUpperCase(), instruction: squash(r.instruction, 80), why: squash(r.why, 240), cites: valid(r.cites) })).filter((r) => r.position && r.instruction).slice(0, 8);
-      plan.for_your_team = Array.isArray(raw.for_your_team) ? raw.for_your_team.map((x) => squash(x, 300)).filter(Boolean).slice(0, 4) : [];
+      plan.settings = rows(raw.settings).map((r) => ({ setting: squash(r.setting, 60), value: squash(r.value, 80), why: squash(r.why, 240), cites: valid(r.cites), inferred: r.inferred === true || !valid(r.cites).length })).filter((r) => r.setting && r.value).slice(0, 8);
+      plan.instructions = rows(raw.instructions).map((r) => ({ position: squash(r.position, 12).toUpperCase(), instruction: squash(r.instruction, 80), why: squash(r.why, 240), cites: valid(r.cites), inferred: r.inferred === true || !valid(r.cites).length })).filter((r) => r.position && r.instruction).slice(0, 11);
+      plan.for_your_team = Array.isArray(raw.for_your_team) ? raw.for_your_team.map((x) => squash(x, 300)).filter(Boolean).slice(0, 5) : [];
       const placed = new Map(rows(raw.player_positions).map((r) => [fold(squash(r.topic, 80)), squash(r.position, 4).toUpperCase()]));
       for (const p of players) if (!p.position) { const pos = placed.get(fold(p.topic)); if (pos && POSITION_ORDER.includes(pos)) p.position = pos; }
       plan.via = "ai";
@@ -473,13 +566,12 @@ export async function teamPlan(db: Rpc, userId: string, opts: { days: number; pl
   }
 
   // Players by position: the recommended formation's positions first, then any other position people talk about
-  const shape = formationPositions(recommended?.formation ?? team.squad?.formation ?? "");
   plan.formation.positions = [...shape.keys()];
   const xi = new Set((team.squad?.xi ?? []).map((x) => x.name ? fold(x.name) : "").filter(Boolean));
   const groups = new Map<string, PositionGroup>();
   const group = (pos: string) => {
     let g = groups.get(pos);
-    if (!g) { g = { position: pos, in_formation: shape.get(pos) ?? 0, community: [], yours: [] }; groups.set(pos, g); }
+    if (!g) { g = { position: pos, in_formation: shape.get(pos) ?? 0, community: [], by_stats: statPicks.get(pos) ?? [], yours: [] }; groups.set(pos, g); }
     return g;
   };
   for (const pos of shape.keys()) group(pos);

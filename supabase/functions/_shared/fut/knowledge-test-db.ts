@@ -17,7 +17,7 @@ export const OTHER = "00000000-0000-0000-0000-000000000002";
 export async function knowledgeDb() {
   const db = new PGlite();
   await db.exec(KB_SETUP);
-  for (const m of ["20261110160000_fut_knowledge_bank.sql", "20261112010000_fut_kb_retry.sql", "20261112090000_fut_kb_team.sql"]) {
+  for (const m of ["20261110160000_fut_knowledge_bank.sql", "20261112010000_fut_kb_retry.sql", "20261112090000_fut_kb_team.sql", "20261110230000_fut_sell_or_keep.sql"]) {
     await db.exec(await Deno.readTextFile(new URL(`../../../migrations/${m}`, import.meta.url)));
   }
   await db.exec("SET ROLE service_role");
@@ -29,7 +29,7 @@ export function rpcOver(db: PGlite) {
   return {
     rpc: async (name: string, args: Record<string, unknown> = {}) => {
       const keys = Object.keys(args);
-      const params = keys.map((k) => { const v = args[k]; return v !== null && typeof v === "object" ? JSON.stringify(v) : v; });
+      const params = keys.map((k) => { const v = args[k]; return Array.isArray(v) && name === "card_price_trend" ? `{${v.join(",")}}` : v !== null && typeof v === "object" ? JSON.stringify(v) : v; });
       try {
         const r = await db.query<{ r: unknown }>(`SELECT fut.${name}(${keys.map((k, i) => `${k} => $${i + 1}`).join(", ")}) AS r`, params);
         return { data: r.rows[0]?.r ?? null, error: null };
