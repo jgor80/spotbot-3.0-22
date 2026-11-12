@@ -111,7 +111,7 @@ function validateInput(input, size) {
   }
   const names2 = /* @__PURE__ */ new Map();
   for (const s of input.slots) names2.set(norm(s.card.name) ?? "", (names2.get(norm(s.card.name) ?? "") ?? 0) + 1);
-  for (const [n, c4] of names2) if (n && c4 > 1) warnings.push(`"${n}" appears ${c4} times; the game allows one version of a player per squad`);
+  for (const [n2, c4] of names2) if (n2 && c4 > 1) warnings.push(`"${n2}" appears ${c4} times; the game allows one version of a player per squad`);
   if (input.slots.length < size) warnings.push(`Only ${input.slots.length} of ${size} slots filled`);
   return warnings;
 }
@@ -122,9 +122,9 @@ function computeSquadChemistry(input, rules) {
   const maxPerPlayer = mod(rules, "player.max_chemistry");
   const contributors = input.slots.filter(isInPosition);
   const counts = { club: /* @__PURE__ */ new Map(), league: /* @__PURE__ */ new Map(), nation: /* @__PURE__ */ new Map() };
-  const add = (t, key2, n) => {
-    if (key2 === null || n === 0) return;
-    counts[t].set(key2, (counts[t].get(key2) ?? 0) + n);
+  const add = (t, key2, n2) => {
+    if (key2 === null || n2 === 0) return;
+    counts[t].set(key2, (counts[t].get(key2) ?? 0) + n2);
   };
   for (const s of contributors) {
     const icon = !!s.card.is_icon;
@@ -5062,9 +5062,9 @@ function text(v, field, max, required = false) {
   return s || null;
 }
 function rating(v, field, min = 1, max = 99) {
-  const n = typeof v === "string" && v.trim() ? Number(v) : v;
-  if (typeof n !== "number" || !Number.isInteger(n) || n < min || n > max) throw new FutError(`${field} must be a whole number from ${min} to ${max}.`);
-  return n;
+  const n2 = typeof v === "string" && v.trim() ? Number(v) : v;
+  if (typeof n2 !== "number" || !Number.isInteger(n2) || n2 < min || n2 > max) throw new FutError(`${field} must be a whole number from ${min} to ${max}.`);
+  return n2;
 }
 function list(v, field, maxItems, maxLen = 40) {
   if (v === void 0 || v === null) return [];
@@ -5126,17 +5126,17 @@ async function hydrate(db2, userId, rows) {
   const attrs = { data: [] }, styles = { data: [] }, inv = { data: [] };
   for (let i = 0; i < ids.length; i += 100) {
     const part = ids.slice(i, i + 100);
-    const [a, s, n] = await Promise.all([
+    const [a, s, n2] = await Promise.all([
       db2.from("card_attributes").select("*").in("card_id", part),
       db2.from("card_playstyles").select("*").in("card_id", part),
       db2.from("club_inventory").select("*").eq("user_id", userId).in("card_id", part)
     ]);
     fail(a.error);
     fail(s.error);
-    fail(n.error);
+    fail(n2.error);
     attrs.data.push(...a.data ?? []);
     styles.data.push(...s.data ?? []);
-    inv.data.push(...n.data ?? []);
+    inv.data.push(...n2.data ?? []);
   }
   const attrBy = new Map(attrs.data.map((a) => [a.card_id, a]));
   const invBy = new Map(inv.data.map((i) => [i.card_id, i]));
@@ -5538,12 +5538,12 @@ var copyCounts = (p) => {
   const all = [...p.copies.values(), ...p.unkeyed];
   return { quantity: Math.min(Math.max(all.length, 1), 99), tradeable_quantity: Math.min(all.filter((u) => !u).length, 99) };
 };
-var clip = (s, n = 60) => s.length > n ? s.slice(0, n).trim() : s;
+var clip = (s, n2 = 60) => s.length > n2 ? s.slice(0, n2).trim() : s;
 function nameMap(v) {
   if (!v || typeof v !== "object" || Array.isArray(v)) return {};
   const out = {};
-  for (const [k, n] of Object.entries(v)) {
-    if (/^\d{1,10}$/.test(k) && typeof n === "string" && n.trim()) out[k] = clip(n.trim().replace(/\s+/g, " "));
+  for (const [k, n2] of Object.entries(v)) {
+    if (/^\d{1,10}$/.test(k) && typeof n2 === "string" && n2.trim()) out[k] = clip(n2.trim().replace(/\s+/g, " "));
   }
   return out;
 }
@@ -5565,10 +5565,10 @@ async function fillReferenceNames(db2, items, names2) {
   for (const raw of items) {
     if (!raw || typeof raw !== "object") continue;
     const it = raw;
-    const t = posInt(it.team_id), l = posInt(it.league_id), n = posInt(it.nation_id);
+    const t = posInt(it.team_id), l = posInt(it.league_id), n2 = posInt(it.nation_id);
     if (t && !names2.teams[t]) want.clubs.add(t);
     if (l && !names2.leagues[l]) want.leagues.add(l);
-    if (n && !names2.nations[n]) want.nations.add(n);
+    if (n2 && !names2.nations[n2]) want.nations.add(n2);
   }
   const into = { clubs: names2.teams, leagues: names2.leagues, nations: names2.nations };
   const clubLeague = /* @__PURE__ */ new Map();
@@ -5760,7 +5760,7 @@ var MAX_PRICE = 15e6;
 function referenceRows(text5) {
   const lines = text5.trim().split(/\r?\n/);
   const head = (lines.shift() ?? "").split(",").map((h) => h.trim());
-  const at2 = (n) => head.indexOf(n);
+  const at2 = (n2) => head.indexOf(n2);
   const [iEa, iPl, iAt, iAvg, iSales] = ["ea_item_id", "platform", "observed_at", "market_average", "last_sales"].map(at2);
   if (iEa !== 0 || iAvg < 0 || iAt < 0) return [];
   const out = /* @__PURE__ */ new Map();
@@ -5770,7 +5770,7 @@ function referenceRows(text5) {
     const platform = iPl >= 0 && f2[iPl] === "pc" ? "pc" : "console";
     const avgN = Number(f2[iAvg]);
     const avg = Number.isInteger(avgN) && avgN > 0 && avgN <= MAX_PRICE ? avgN : null;
-    const sales = iSales >= 0 ? (f2[iSales] ?? "").split(";").map(Number).filter((n) => Number.isInteger(n) && n > 0 && n <= MAX_PRICE).slice(0, 20) : [];
+    const sales = iSales >= 0 ? (f2[iSales] ?? "").split(";").map(Number).filter((n2) => Number.isInteger(n2) && n2 > 0 && n2 <= MAX_PRICE).slice(0, 20) : [];
     if (!Number.isInteger(ea) || ea <= 0 || Number.isNaN(t) || !avg && !sales.length) continue;
     const observed_at = new Date(t).toISOString();
     out.set(`${ea}|${platform}|${observed_at}`, { ea_item_id: ea, platform, observed_at, market_average: avg, last_sales: sales });
@@ -6162,14 +6162,14 @@ async function clearStore(db2, userId, platform) {
   return { cleared: true };
 }
 function bandValue(bands, lo, hi, kinds) {
-  let n = 0, low = 0, high = 0;
+  let n2 = 0, low = 0, high = 0;
   for (const [o, k, c4, , med, mean2] of bands) {
     if (o < lo || o > hi || !kinds.includes(k) || c4 <= 0) continue;
-    n += c4;
+    n2 += c4;
     low += med * c4;
     high += mean2 * c4;
   }
-  return n ? { low: low / n, high: high / n, cards: n } : null;
+  return n2 ? { low: low / n2, high: high / n2, cards: n2 } : null;
 }
 var QUALITY = { gold: [75, 99], silver: [65, 74], bronze: [45, 64] };
 function qualityOf(label) {
@@ -6540,7 +6540,7 @@ function tradeSummary(rows, names2, now2 = Date.now()) {
     };
   }).sort((a, b) => b.sold_at.localeCompare(a.sold_at));
   const since = (days) => flips.filter((f2) => now2 - Date.parse(f2.sold_at) <= days * 864e5);
-  const sum = (l) => l.reduce((n, f2) => n + f2.profit, 0);
+  const sum = (l) => l.reduce((n2, f2) => n2 + f2.profit, 0);
   const byDay = /* @__PURE__ */ new Map();
   for (const f2 of [...flips].reverse()) byDay.set(f2.sold_at.slice(0, 10), (byDay.get(f2.sold_at.slice(0, 10)) ?? 0) + f2.profit);
   let running = 0;
@@ -6558,12 +6558,12 @@ function tradeSummary(rows, names2, now2 = Date.now()) {
       week: sum(since(7)),
       month: sum(since(30)),
       win_rate: flips.length ? Math.round(wins / flips.length * 100) : null,
-      tax_paid: flips.reduce((n, f2) => n + (f2.sold_for - f2.after_tax), 0),
+      tax_paid: flips.reduce((n2, f2) => n2 + (f2.sold_for - f2.after_tax), 0),
       open: open.length,
-      open_cost: open.reduce((n, o) => n + o.bought_for, 0),
-      unrealised: open.some((o) => o.unrealised !== null) ? open.reduce((n, o) => n + (o.unrealised ?? 0), 0) : null,
+      open_cost: open.reduce((n2, o) => n2 + o.bought_for, 0),
+      unrealised: open.some((o) => o.unrealised !== null) ? open.reduce((n2, o) => n2 + (o.unrealised ?? 0), 0) : null,
       sales_without_buy: unknownBuy.length,
-      sales_without_buy_after_tax: unknownBuy.reduce((n, s) => n + s.after_tax, 0)
+      sales_without_buy_after_tax: unknownBuy.reduce((n2, s) => n2 + s.after_tax, 0)
     },
     best: [...flips].sort((a, b) => b.profit - a.profit).slice(0, 5),
     worst: [...flips].sort((a, b) => a.profit - b.profit).filter((f2) => f2.profit < 0).slice(0, 5),
@@ -6844,8 +6844,8 @@ function named(items, cards) {
 function tradepileSummary(items, max) {
   const by = (s) => items.filter((i) => i.state === s);
   const sold = by("sold"), listed = by("listed"), expired = by("expired"), unlisted = by("unlisted");
-  const soldFor = sold.reduce((n, i) => n + (i.current_bid ?? i.buy_now ?? 0), 0);
-  const marketValue = (list2) => list2.reduce((n, i) => n + (i.untradeable ? 0 : i.price ?? 0), 0);
+  const soldFor = sold.reduce((n2, i) => n2 + (i.current_bid ?? i.buy_now ?? 0), 0);
+  const marketValue = (list2) => list2.reduce((n2, i) => n2 + (i.untradeable ? 0 : i.price ?? 0), 0);
   return {
     total: items.length,
     max,
@@ -6855,8 +6855,8 @@ function tradepileSummary(items, max) {
     unlisted: unlisted.length,
     sold_for: soldFor,
     sold_after_tax: afterTax2(soldFor),
-    listed_buy_now: listed.reduce((n, i) => n + (i.buy_now ?? 0), 0),
-    listed_after_tax: afterTax2(listed.reduce((n, i) => n + (i.buy_now ?? 0), 0)),
+    listed_buy_now: listed.reduce((n2, i) => n2 + (i.buy_now ?? 0), 0),
+    listed_after_tax: afterTax2(listed.reduce((n2, i) => n2 + (i.buy_now ?? 0), 0)),
     idle_market_value: marketValue([...expired, ...unlisted]),
     overpriced: listed.filter((i) => i.price && i.buy_now && i.buy_now > i.price * 1.25).length
   };
@@ -6869,13 +6869,13 @@ function watchlistSummary(items) {
     outbid: by("outbid").length,
     won: by("won").length,
     lost: by("lost").length,
-    coins_in_bids: by("winning").reduce((n, i) => n + (i.current_bid ?? 0), 0)
+    coins_in_bids: by("winning").reduce((n2, i) => n2 + (i.current_bid ?? 0), 0)
   };
 }
 var hoursLeft = (iso3, now2) => iso3 ? (Date.parse(iso3) - now2) / 36e5 : null;
 function accountTips(o) {
   const tips = [];
-  const c4 = (n) => n.toLocaleString("en-US");
+  const c4 = (n2) => n2.toLocaleString("en-US");
   if (o.trade) {
     if (o.trade.sold) tips.push(`${o.trade.sold} sold on your transfer list for ${c4(o.trade.sold_for)} coins (${c4(o.trade.sold_after_tax)} after tax). Clear them to free the slots.`);
     if (o.trade.expired) tips.push(`${o.trade.expired} listing${o.trade.expired === 1 ? "" : "s"} expired${o.trade.idle_market_value ? `, worth about ${c4(o.trade.idle_market_value)} coins at FUT.GG prices` : ""}. Relist or send them to your club.`);
@@ -6943,7 +6943,7 @@ async function accountOverview(db2, userId, platform, now2 = Date.now()) {
     unassigned: unN ? {
       total: unN.length,
       duplicates: unN.filter((u) => u.duplicate).length,
-      tradeable_value: unN.reduce((n, u) => n + (u.untradeable ? 0 : u.price ?? 0), 0),
+      tradeable_value: unN.reduce((n2, u) => n2 + (u.untradeable ? 0 : u.price ?? 0), 0),
       items: [...unN].sort((a, b) => (b.price ?? 0) - (a.price ?? 0) || (b.rating ?? 0) - (a.rating ?? 0))
     } : null,
     sbcs: sbcs ? {
@@ -6954,7 +6954,7 @@ async function accountOverview(db2, userId, platform, now2 = Date.now()) {
     objectives: objectives ? {
       total: objectives.length,
       done: objectives.filter((o) => o.done).length,
-      xp_left: objectives.filter((o) => !o.done).reduce((n, o) => n + (o.xp ?? 0), 0),
+      xp_left: objectives.filter((o) => !o.done).reduce((n2, o) => n2 + (o.xp ?? 0), 0),
       items: [...objectives].sort((a, b) => Number(a.done) - Number(b.done) || (a.end_at ?? "~").localeCompare(b.end_at ?? "~"))
     } : null,
     season: s?.season ?? null,
@@ -7137,7 +7137,7 @@ function fitMoves(ex) {
   return { overall: bucket(ex), by };
 }
 function blendSpot(m, f2) {
-  let cur = m.overall, key2 = "all", n = m.overall.n;
+  let cur = m.overall, key2 = "all", n2 = m.overall.n;
   for (const k of moveKeys(f2)) {
     const b = m.by[k];
     if (!b) break;
@@ -7151,26 +7151,26 @@ function blendSpot(m, f2) {
       peak: b.peak.map((v, i) => mix(v, cur.peak[i]))
     };
     key2 = k;
-    n = b.n;
+    n2 = b.n;
   }
-  return { b: cur, key: key2, n };
+  return { b: cur, key: key2, n: n2 };
 }
 function learnMoves(cards) {
   const ex = [];
   let history = 0, used = 0;
   for (const c4 of cards) {
-    const n = c4.prices.length;
-    if (n < 4 || c4.ages.length !== n) continue;
+    const n2 = c4.prices.length;
+    if (n2 < 4 || c4.ages.length !== n2) continue;
     history = Math.max(history, c4.ages[0]);
     let any = false;
-    for (let i = 2; i < n - 1; i++) {
+    for (let i = 2; i < n2 - 1; i++) {
       const p = c4.prices[i], at2 = c4.ages[i];
       if (p < 1e3) continue;
       const before = [];
       for (let k = 0; k <= i; k++) if (c4.ages[k] - at2 <= 168) before.push(c4.prices[k]);
       if (before.length < 3 || c4.ages[0] - at2 < 20) continue;
       let peak = -Infinity, ret24 = null, gap24 = Infinity, span = 0;
-      for (let j = i + 1; j < n; j++) {
+      for (let j = i + 1; j < n2; j++) {
         const ahead = at2 - c4.ages[j];
         if (ahead <= 0 || ahead > MOVE_AHEAD_H + 0.5) continue;
         peak = Math.max(peak, c4.prices[j]);
@@ -7366,18 +7366,18 @@ var net = (price) => netAfterTax(price, RULES);
 var down = (price) => roundToStep(price, "down", RULES);
 var near = (price) => roundToStep(price, "nearest", RULES);
 var pct = (v) => Math.round(v * 1e3) / 10;
-var c = (n) => Math.round(n).toLocaleString("en-US");
+var c = (n2) => Math.round(n2).toLocaleString("en-US");
 var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 function median(xs) {
   const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 function changeOver(card, hours) {
-  const n = card.prices.length;
-  if (n < 2) return null;
-  const want = card.ages[n - 1] + hours;
+  const n2 = card.prices.length;
+  if (n2 < 2) return null;
+  const want = card.ages[n2 - 1] + hours;
   let best = -1, gap = Infinity;
-  for (let i = 0; i < n - 1; i++) {
+  for (let i = 0; i < n2 - 1; i++) {
     const g = Math.abs(card.ages[i] - want);
     if (g < gap) {
       gap = g;
@@ -7385,24 +7385,24 @@ function changeOver(card, hours) {
     }
   }
   if (best < 0 || gap > 6) return null;
-  return pct((card.prices[n - 1] - card.prices[best]) / card.prices[best]);
+  return pct((card.prices[n2 - 1] - card.prices[best]) / card.prices[best]);
 }
 function cardStats(card, window_h) {
-  const n = card.prices.length;
-  if (!n || card.prices.length !== card.ages.length) return null;
+  const n2 = card.prices.length;
+  if (!n2 || card.prices.length !== card.ages.length) return null;
   let falling = 0, rising = 0;
-  for (let i = n - 1; i > 0 && card.prices[i] < card.prices[i - 1]; i--) falling++;
-  for (let i = n - 1; i > 0 && card.prices[i] > card.prices[i - 1]; i--) rising++;
+  for (let i = n2 - 1; i > 0 && card.prices[i] < card.prices[i - 1]; i--) falling++;
+  for (let i = n2 - 1; i > 0 && card.prices[i] > card.prices[i - 1]; i--) rising++;
   return {
-    latest: card.prices[n - 1],
-    latest_age_h: card.ages[n - 1],
-    prev: n > 1 ? card.prices[n - 2] : null,
+    latest: card.prices[n2 - 1],
+    latest_age_h: card.ages[n2 - 1],
+    prev: n2 > 1 ? card.prices[n2 - 2] : null,
     change_24h: changeOver(card, 24),
     change_72h: changeOver(card, 72),
     median: median(card.prices),
     min: Math.min(...card.prices),
     max: Math.max(...card.prices),
-    points: n,
+    points: n2,
     falling,
     rising,
     new_card: window_h >= 48 && card.ages[0] < window_h - 18
@@ -7709,7 +7709,7 @@ function scorePast(past, series, latest) {
     hit: known.filter((i) => i.outcome === "hit").length,
     open_up: known.filter((i) => i.outcome === "open_up").length,
     open_down: known.filter((i) => i.outcome === "open_down").length,
-    avg_now_pct: known.length ? pct(known.reduce((n, i) => n + (i.now_pct ?? 0), 0) / known.length / 100) : null,
+    avg_now_pct: known.length ? pct(known.reduce((n2, i) => n2 + (i.now_pct ?? 0), 0) / known.length / 100) : null,
     items
   };
 }
@@ -7781,10 +7781,10 @@ function buildStrategy(raw) {
   for (const x of input.club ?? []) if (x.ea_item_id) names2.set(x.ea_item_id, x.name);
   const pile = input.tradepile ? pileFixes(input.tradepile, stats, names2) : [];
   const record = scorePast(input.past, byEa, input.series.latest);
-  const buySpend = buys.reduce((n, b) => n + (b.spend ?? 0), 0), buyProfit = buys.reduce((n, b) => n + (b.total_profit ?? 0), 0);
-  const sellValue = sells.reduce((n, s) => n + s.after_tax, 0);
+  const buySpend = buys.reduce((n2, b) => n2 + (b.spend ?? 0), 0), buyProfit = buys.reduce((n2, b) => n2 + (b.total_profit ?? 0), 0);
+  const sellValue = sells.reduce((n2, s) => n2 + s.after_tax, 0);
   const sold = pile.filter((p) => p.action === "clear"), relist = pile.filter((p) => p.action !== "clear");
-  const soldCoins = (input.tradepile ?? []).filter((i) => i.state === "sold").reduce((n, i) => n + netAfterTax(i.current_bid ?? i.buy_now ?? 0, RULES), 0);
+  const soldCoins = (input.tradepile ?? []).filter((i) => i.state === "sold").reduce((n2, i) => n2 + netAfterTax(i.current_bid ?? i.buy_now ?? 0, RULES), 0);
   const steps = [];
   if (sold.length) steps.push(`Clear ${sold.length} sold item${sold.length === 1 ? "" : "s"} on your transfer list to collect the coins.`);
   if (relist.length) steps.push(`Relist ${relist.length} item${relist.length === 1 ? "" : "s"} at today's price (see Transfer list).`);
@@ -7949,7 +7949,7 @@ function learningSummary(model, followed) {
     moves_hit: model?.moves?.check?.hit ?? null,
     moves_trust: model?.moves?.trust ?? null,
     lessons: model?.lessons ?? ["Learning starts with the next price refresh: every refresh logs the day's picks and checks earlier ones against the prices since."],
-    followed: { trades: followed.length, sold: done.length, profit: done.reduce((n, t) => n + (t.profit ?? 0), 0), items: followed.slice(0, 20) }
+    followed: { trades: followed.length, sold: done.length, profit: done.reduce((n2, t) => n2 + (t.profit ?? 0), 0), items: followed.slice(0, 20) }
   };
 }
 var riskParam = (v) => v === "careful" || v === "bold" ? v : "normal";
@@ -8006,7 +8006,7 @@ async function dailyStrategy(db2, userId, platform, opts = {}) {
     ...club.filter((x) => x.tradeable_quantity > 0 && x.ea_item_id).map((x) => x.ea_item_id),
     ...(tradepile ?? []).map((t) => t.ea_item_id),
     ...past.flatMap((p) => p.buys.map((b) => b.ea_item_id))
-  ].filter((n) => Number.isSafeInteger(n) && n > 0))].slice(0, 5e3);
+  ].filter((n2) => Number.isSafeInteger(n2) && n2 > 0))].slice(0, 5e3);
   const { data: seriesData, error: seriesErr } = await db2.rpc("strategy_price_series", { p_platform: platform, p_ids: ids, p_days: 7 });
   if (seriesErr) throw new FutError(`Prices are unavailable: ${seriesErr.message}`, 500);
   const sd = seriesData ?? {};
@@ -8149,9 +8149,9 @@ var norm5 = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().repl
 var plays = (c4, position) => c4.positions.some((p) => p.toUpperCase() === position.toUpperCase());
 function teamRating(ratings) {
   if (!ratings.length) return 0;
-  const n = 11, sum = ratings.reduce((a, b) => a + b, 0), avg = sum / n;
+  const n2 = 11, sum = ratings.reduce((a, b) => a + b, 0), avg = sum / n2;
   const excess = ratings.reduce((a, r2) => a + Math.max(0, r2 - avg), 0);
-  return Math.floor(Math.round((sum + excess) / n * 100) / 100);
+  return Math.floor(Math.round((sum + excess) / n2 * 100) / 100);
 }
 var OPS = [[/\b(min(imum)?\.?|at least|or more|\+)\b|\+/i, "min"], [/\b(max(imum)?\.?|at most|or fewer|or less)\b/i, "max"], [/\b(exactly|exact)\b/i, "exact"]];
 var opOf = (s, fallback = "min") => OPS.find(([re]) => re.test(s))?.[1] ?? fallback;
@@ -8161,30 +8161,30 @@ var RARITY_WORDS = [[/team of the week|\btotw\b|in-?form/i, "totw"], [/\bspecial
 function parseRequirementLine(raw) {
   const line = raw.replace(/[•·▪●*–-]\s+/g, " ").replace(/\s+/g, " ").trim();
   if (!line) return null;
-  const n = numbers(line);
+  const n2 = numbers(line);
   const op = opOf(line);
-  if (/players? in (the )?squad|squad size|^#? ?(of )?players\b.*\d+$|^(exactly|min(imum)?\.?|max(imum)?\.?)\s*\d+\s*players?$/i.test(line) && n.length && !groupOf(line) && !/rated|ovr|rating/i.test(line)) return { kind: "players", op: opOf(line, "exact"), value: n.at(-1) };
-  if (/\b(team|squad) rating\b/i.test(line) && n.length) return { kind: "team_rating", op, value: n.at(-1) };
-  if (/chem(istry)? (points )?per player|player chem/i.test(line) && n.length) return { kind: "player_chemistry", op, value: n.at(-1) };
-  if (/\b(team |total |squad )?chem(istry)?\b/i.test(line) && n.length) return { kind: "chemistry", op, value: n.at(-1) };
+  if (/players? in (the )?squad|squad size|^#? ?(of )?players\b.*\d+$|^(exactly|min(imum)?\.?|max(imum)?\.?)\s*\d+\s*players?$/i.test(line) && n2.length && !groupOf(line) && !/rated|ovr|rating/i.test(line)) return { kind: "players", op: opOf(line, "exact"), value: n2.at(-1) };
+  if (/\b(team|squad) rating\b/i.test(line) && n2.length) return { kind: "team_rating", op, value: n2.at(-1) };
+  if (/chem(istry)? (points )?per player|player chem/i.test(line) && n2.length) return { kind: "player_chemistry", op, value: n2.at(-1) };
+  if (/\b(team |total |squad )?chem(istry)?\b/i.test(line) && n2.length) return { kind: "chemistry", op, value: n2.at(-1) };
   const rar = RARITY_WORDS.find(([re]) => re.test(line))?.[1];
-  if (rar) return { kind: "rarity", op, value: rar, count: n.length ? n[0] : 1 };
+  if (rar) return { kind: "rarity", op, value: rar, count: n2.length ? n2[0] : 1 };
   const q = /\bgold\b/i.test(line) ? "gold" : /\bsilver\b/i.test(line) ? "silver" : /\bbronze\b/i.test(line) ? "bronze" : null;
   if (q) {
-    return n.length ? { kind: "quality", op, value: q, count: n[0] } : { kind: "quality", op, value: q };
+    return n2.length ? { kind: "quality", op, value: q, count: n2[0] } : { kind: "quality", op, value: q };
   }
-  if (/\b(ovr|overall|rated|rating)\b/i.test(line) && n.length) {
-    if (n.length >= 2) return { kind: "rating", op: /\+|or more|min/i.test(line) ? "min" : op, value: Math.max(n[0], n[1]), count: Math.min(n[0], n[1]) };
-    return { kind: "rating", op, value: n[0] };
+  if (/\b(ovr|overall|rated|rating)\b/i.test(line) && n2.length) {
+    if (n2.length >= 2) return { kind: "rating", op: /\+|or more|min/i.test(line) ? "min" : op, value: Math.max(n2[0], n2[1]), count: Math.min(n2[0], n2[1]) };
+    return { kind: "rating", op, value: n2[0] };
   }
   const g = groupOf(line);
   const named2 = /^[^:]+:\s*(?!(min|max|exactly)\b|\d)[a-z]/i.test(line) && !/\bsame\b/i.test(line);
-  if (g && /\bsame\b/i.test(line) && n.length) return { kind: "same", of: g, op, value: n.at(-1) };
-  if (g && n.length && !named2 && !/\bfrom\b/i.test(line)) return { kind: "distinct", of: g, op, value: n.at(-1) };
+  if (g && /\bsame\b/i.test(line) && n2.length) return { kind: "same", of: g, op, value: n2.at(-1) };
+  if (g && n2.length && !named2 && !/\bfrom\b/i.test(line)) return { kind: "distinct", of: g, op, value: n2.at(-1) };
   const from = /from:?\s*(.+)$/i.exec(line) ?? /^([^:]+):\s*(?:min|max|exactly)/i.exec(line) ?? /^(?:league|nation|club|country\/region):\s*([^,]+?)(?:,|\s+(?:min|max|exactly)|$)/i.exec(line);
   if (from) {
     const names2 = from[1].replace(/\b(min(imum)?\.?|max(imum)?\.?|exactly)\b.*$/i, "").split(/\s*(?:,|\bor\b|\/|\|)\s*/i).map((s) => s.replace(/\d+\s*players?/i, "").replace(/[:.]+$/, "").trim()).filter((s) => s && !/^\d+$/.test(s)).slice(0, 10);
-    if (names2.length) return { kind: "from", of: /^league/i.test(line) ? "league" : /^(nation|country)/i.test(line) ? "nation" : /^club/i.test(line) ? "club" : "any", names: names2, op, count: n.length ? n[0] : 1 };
+    if (names2.length) return { kind: "from", of: /^league/i.test(line) ? "league" : /^(nation|country)/i.test(line) ? "nation" : /^club/i.test(line) ? "club" : "any", names: names2, op, count: n2.length ? n2[0] : 1 };
   }
   return null;
 }
@@ -8428,9 +8428,9 @@ function checkSquad(formation, slots, reqs, rules) {
           actual = bad.length ? `${bad.length} off` : "all";
           gap = bad.reduce((a, x) => a + 1 + Math.abs(x - r2.value) / 10, 0);
         } else {
-          const n = ratings.filter((x) => r2.op === "max" ? x <= r2.value : r2.op === "exact" ? x === r2.value : x >= r2.value).length;
-          actual = n;
-          gap = Math.max(0, r2.count - n);
+          const n2 = ratings.filter((x) => r2.op === "max" ? x <= r2.value : r2.op === "exact" ? x === r2.value : x >= r2.value).length;
+          actual = n2;
+          gap = Math.max(0, r2.count - n2);
         }
         break;
       }
@@ -8442,16 +8442,16 @@ function checkSquad(formation, slots, reqs, rules) {
           actual = bad ? `${bad} off` : "all";
           gap = bad;
         } else {
-          const n = cards.filter((c4) => quality(c4.rating) === r2.value || r2.op === "min" && QUALITY_RANK[quality(c4.rating)] >= rank).length;
-          actual = n;
-          gap = r2.op === "max" ? Math.max(0, n - r2.count) : Math.max(0, r2.count - n);
+          const n2 = cards.filter((c4) => quality(c4.rating) === r2.value || r2.op === "min" && QUALITY_RANK[quality(c4.rating)] >= rank).length;
+          actual = n2;
+          gap = r2.op === "max" ? Math.max(0, n2 - r2.count) : Math.max(0, r2.count - n2);
         }
         break;
       }
       case "rarity": {
-        const n = cards.filter((c4) => rarityOf(c4).includes(r2.value)).length;
-        actual = n;
-        gap = cmp(r2.op, n, r2.count);
+        const n2 = cards.filter((c4) => rarityOf(c4).includes(r2.value)).length;
+        actual = n2;
+        gap = cmp(r2.op, n2, r2.count);
         break;
       }
       case "same": {
@@ -8461,16 +8461,16 @@ function checkSquad(formation, slots, reqs, rules) {
         break;
       }
       case "distinct": {
-        const n = groupCounts(r2.of).size;
-        actual = n;
-        gap = cmp(r2.op, n, r2.value);
+        const n2 = groupCounts(r2.of).size;
+        actual = n2;
+        gap = cmp(r2.op, n2, r2.value);
         break;
       }
       case "from": {
         const want = new Set(r2.names.map(norm5));
-        const n = cards.filter((c4) => (r2.of === "any" ? [c4.league, c4.nation, c4.club] : [c4[r2.of]]).some((x) => x && want.has(norm5(x)))).length;
-        actual = n;
-        gap = cmp(r2.op, n, r2.count);
+        const n2 = cards.filter((c4) => (r2.of === "any" ? [c4.league, c4.nation, c4.club] : [c4[r2.of]]).some((x) => x && want.has(norm5(x)))).length;
+        actual = n2;
+        gap = cmp(r2.op, n2, r2.count);
         break;
       }
     }
@@ -8510,9 +8510,9 @@ function shortlist(pool, reqs, perRating = 12, cap = 800) {
   for (const c4 of byCost) {
     if (keep2.has(c4.id)) continue;
     const key2 = `${c4.source === "buy" ? "b" : "o"}|${c4.rating}|${chem ? c4.positions[0] ?? "" : ""}`;
-    const n = perR.get(key2) ?? 0;
-    if (n < (chem ? 3 : perRating)) {
-      perR.set(key2, n + 1);
+    const n2 = perR.get(key2) ?? 0;
+    if (n2 < (chem ? 3 : perRating)) {
+      perR.set(key2, n2 + 1);
       add(c4);
     }
   }
@@ -8525,8 +8525,8 @@ function shortlist(pool, reqs, perRating = 12, cap = 800) {
     if (r2.kind === "rarity") test = (c4) => rarityOf(c4).includes(r2.value);
     if (r2.kind === "quality" && r2.count !== void 0) test = (c4) => quality(c4.rating) === r2.value;
     if (test) {
-      let n = 0;
-      for (const c4 of byCost) if (test(c4) && n++ < 40) add(c4);
+      let n2 = 0;
+      for (const c4 of byCost) if (test(c4) && n2++ < 40) add(c4);
     }
   }
   if (reqs.some((r2) => r2.kind === "chemistry" || r2.kind === "player_chemistry" || r2.kind === "same" && r2.op !== "max")) {
@@ -8534,8 +8534,8 @@ function shortlist(pool, reqs, perRating = 12, cap = 800) {
       const counts = /* @__PURE__ */ new Map();
       for (const c4 of byCost) if (c4[g]) counts.set(c4[g], (counts.get(c4[g]) ?? 0) + 1);
       for (const [k] of [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)) {
-        let n = 0;
-        for (const c4 of byCost) if (c4[g] === k && n++ < 25) add(c4);
+        let n2 = 0;
+        for (const c4 of byCost) if (c4[g] === k && n2++ < 25) add(c4);
       }
     }
   }
@@ -8650,7 +8650,7 @@ function solveSbc(formation, reqs, poolIn, rules, opts = {}) {
   };
 }
 function worthIt(totalCost, reward) {
-  const c4 = (n) => n.toLocaleString("en-US");
+  const c4 = (n2) => n2.toLocaleString("en-US");
   if (totalCost <= 0) return { verdict: "free", why: "Your spare and untradeable cards cover it, so it costs you no coins." };
   if (reward.value === null) return { verdict: "unknown", why: `It costs you about ${c4(totalCost)} coins. GafferBot doesn't know what the reward is worth yet; enter it to compare.` };
   const ratio = reward.value / totalCost;
@@ -8790,9 +8790,9 @@ async function rewardValue(db2, userId, platform, awards) {
   const labels = [];
   let packs = null;
   for (const a of awards) {
-    const n = a.count ?? 1;
+    const n2 = a.count ?? 1;
     if (/coin/i.test(a.type) && a.value) {
-      total += a.value * n;
+      total += a.value * n2;
       known = true;
       labels.push(`${a.value.toLocaleString("en-US")} coins`);
       continue;
@@ -8801,9 +8801,9 @@ async function rewardValue(db2, userId, platform, awards) {
       packs ??= (await packAdvice(db2, userId, platform)).packs;
       const p = packs.find((x) => x.pack_id === a.value);
       if (p && p.ev_low !== null) {
-        total += Math.round(p.ev_low) * n;
+        total += Math.round(p.ev_low) * n2;
         known = true;
-        labels.push(`${n > 1 ? `${n}\xD7 ` : ""}${p.name}`);
+        labels.push(`${n2 > 1 ? `${n2}\xD7 ` : ""}${p.name}`);
       } else labels.push(`pack ${a.value}`);
       continue;
     }
@@ -8812,7 +8812,7 @@ async function rewardValue(db2, userId, platform, awards) {
       if (!error) {
         const item = (data?.items ?? [])[0];
         if (item && typeof item.price === "number") {
-          total += item.price * n;
+          total += item.price * n2;
           known = true;
           labels.push(String(item.player_name ?? "the player"));
           continue;
@@ -8904,8 +8904,8 @@ function parseRuleLine(raw) {
   }
   label = label.trim();
   const f2 = statOf(label);
-  const n = /(\d+)/.exec(rest)?.[1];
-  if (f2 && n) return { field: f2, op: opOf2(rest), value: Number(n) };
+  const n2 = /(\d+)/.exec(rest)?.[1];
+  if (f2 && n2) return { field: f2, op: opOf2(rest), value: Number(n2) };
   const values = rest.split(/\s*(?:,|\bor\b|\/|\|)\s*/i).map((s) => s.trim()).filter(Boolean).slice(0, 15);
   const not = /\bnot\b|\bexcept\b|\bexclud/i.test(label + " " + rest);
   const clean2 = values.map((v) => v.replace(/^(not|except)\s+/i, ""));
@@ -8983,15 +8983,15 @@ function fromEa2(e, names2) {
     const idField = w === "LEAGUE_ID" || w === "LEAGUE" ? "league" : w === "NATION_ID" || w === "NATION" ? "nation" : w === "CLUB_ID" || w === "CLUB" || w === "TEAM_ID" ? "club" : null;
     if (idField && nums2.length) {
       const m = idField === "league" ? names2.leagues : idField === "nation" ? names2.nations : names2.clubs;
-      rules.push({ field: idField, op: "in", values: nums2.map((n) => m.get(n) ?? `EA ${n}`) });
+      rules.push({ field: idField, op: "in", values: nums2.map((n2) => m.get(n2) ?? `EA ${n2}`) });
       continue;
     }
     unread.push(show(r2));
   }
   const levels = e.levels.map((l) => l.upgrades.flatMap((u) => {
     const w = eaWord(u.type), f2 = statOf(w.replace(/_/g, " "));
-    const n = u.values.find((v) => typeof v === "number");
-    if (f2 && f2 !== "playstyles" && f2 !== "playstyles_plus" && n !== void 0 && n > 0 && n <= 30) return [{ field: f2, add: n }];
+    const n2 = u.values.find((v) => typeof v === "number");
+    if (f2 && f2 !== "playstyles" && f2 !== "playstyles_plus" && n2 !== void 0 && n2 > 0 && n2 <= 30) return [{ field: f2, add: n2 }];
     const s = u.values.find((v) => typeof v === "string");
     if (/^(PLAYSTYLE|TRAIT)S?$/.test(w) && s) return [{ field: "playstyle", name: s, plus: false }];
     if (/^(PLAYSTYLE|TRAIT)S?_?(PLUS|\+)$|^ICON_TRAIT$/.test(w) && s) return [{ field: "playstyle", name: s, plus: true }];
@@ -9206,7 +9206,7 @@ async function checkPastedEvolution(db2, userId, b) {
 // supabase/functions/_shared/fut/alerts.ts
 var REARM = 0.02;
 var MOVE_EVERY_MS = 20 * 36e5;
-var c2 = (n) => n.toLocaleString("en-US");
+var c2 = (n2) => n2.toLocaleString("en-US");
 var key = (s) => `${s.user_id}|${s.card_id}|${s.platform}|${s.kind}`;
 function decideAlerts(cands, states, now2 = Date.now()) {
   const have = new Map(states.map((s) => [key(s), s]));
@@ -9285,7 +9285,7 @@ async function setAlertSettings(db2, userId, b) {
 var EA_TAX5 = 0.05;
 var afterTax3 = (v) => Math.floor(v * (1 - EA_TAX5));
 var pct2 = (now2, then) => now2 && then ? Math.round((now2 - then) / then * 1e3) / 10 : null;
-var c3 = (n) => n.toLocaleString("en-US");
+var c3 = (n2) => n2.toLocaleString("en-US");
 function adviseCard(x) {
   const t = x.trend, price = t?.price ?? null;
   const ch3 = pct2(price, t?.d3 ?? t?.d1 ?? null), ch7 = pct2(price, t?.d7 ?? null);
@@ -9308,7 +9308,7 @@ var ORDER = { sell_now: 0, sell_high: 1, sell: 2, wait: 3, hold_fodder: 4, keep_
 function adviseClub(cards) {
   const advice = cards.map(adviseCard).sort((a, b) => ORDER[a.verdict] - ORDER[b.verdict] || (b.price ?? 0) - (a.price ?? 0));
   const of = (v) => advice.filter((a) => v.includes(a.verdict));
-  const coins5 = (l) => l.reduce((n, a) => n + (a.after_tax ?? 0), 0);
+  const coins5 = (l) => l.reduce((n2, a) => n2 + (a.after_tax ?? 0), 0);
   const sell = of(["sell_now", "sell_high", "sell"]);
   const counts = Object.fromEntries(Object.keys(ORDER).map((k) => [k, advice.filter((a) => a.verdict === k).length]));
   return {
@@ -9328,8 +9328,8 @@ async function squadUse(db2, userId) {
     for (const r2 of data ?? []) {
       if (!r2.card_id) continue;
       const list2 = use.get(r2.card_id) ?? [];
-      const n = names2.get(r2.squad_id);
-      if (n && !list2.includes(n)) use.set(r2.card_id, [...list2, n]);
+      const n2 = names2.get(r2.squad_id);
+      if (n2 && !list2.includes(n2)) use.set(r2.card_id, [...list2, n2]);
     }
   }
   return use;
@@ -9520,8 +9520,8 @@ var SORT_EXTRAS = ["fit", "price", "name"];
 var MAX_QUERY_PRICE = 15e6;
 var intIn = (v, min, max) => {
   if (v === null || v === void 0 || v === "") return null;
-  const n = typeof v === "string" ? Number(v.replace(/[,\s]/g, "")) : Number(v);
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : null;
+  const n2 = typeof v === "string" ? Number(v.replace(/[,\s]/g, "")) : Number(v);
+  return Number.isFinite(n2) ? Math.min(max, Math.max(min, Math.round(n2))) : null;
 };
 var textOr = (v, max) => typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
 var listOf = (v, ok, max) => {
@@ -9608,10 +9608,10 @@ function describeQuery(q) {
   if (q.weights?.length) out.push(`best for ${[...q.weights].sort((a, b) => b.weight - a.weight).map((w) => statLabel(w.stat).toLowerCase()).join(", ")}`);
   return out;
 }
-function coins2(n) {
-  if (n >= 1e6) return `${+(n / 1e6).toFixed(n % 1e6 ? 1 : 0)}M`;
-  if (n >= 1e3) return `${+(n / 1e3).toFixed(n % 1e3 ? 1 : 0)}k`;
-  return String(n);
+function coins2(n2) {
+  if (n2 >= 1e6) return `${+(n2 / 1e6).toFixed(n2 % 1e6 ? 1 : 0)}M`;
+  if (n2 >= 1e3) return `${+(n2 / 1e3).toFixed(n2 % 1e3 ? 1 : 0)}k`;
+  return String(n2);
 }
 
 // supabase/functions/_shared/fut/squad-import.ts
@@ -9815,9 +9815,9 @@ function nameScore(typed, cardName) {
 }
 var BASE = /* @__PURE__ */ new Set(["", "rare", "common", "gold", "silver", "bronze", "non rare"]);
 function score(e, cand) {
-  const n = nameScore(e.name, cand.card.name);
-  if (!n) return 0;
-  let s = n;
+  const n2 = nameScore(e.name, cand.card.name);
+  if (!n2) return 0;
+  let s = n2;
   if (e.rating) s += cand.card.rating === e.rating ? 25 : -4 * Math.abs((cand.card.rating ?? 0) - e.rating);
   const v = normalize(cand.version ?? "");
   if (e.version) {
@@ -9916,14 +9916,14 @@ function placeMatches(start, parsed, matches) {
       row2.reason = "No card with that name in your club or the market card list.";
       continue;
     }
-    const n = normalize(row2.card.name);
-    if (usedNames.has(n)) {
+    const n2 = normalize(row2.card.name);
+    if (usedNames.has(n2)) {
       row2.reason = "This player is already in the import.";
       row2.card = null;
       row2.confidence = "missing";
       continue;
     }
-    usedNames.add(n);
+    usedNames.add(n2);
   }
   const live = rows.filter((r2) => r2.card);
   for (const row2 of live) {
@@ -10016,10 +10016,10 @@ var WORD_WEIGHTS = [
   [/\b(sweeper keeper|rushes out|good with (his|her|their) feet)\b/, [{ stat: "gk_kicking", weight: 3 }, { stat: "gk_speed", weight: 3 }]]
 ];
 function money(raw, unit) {
-  const n = Number(raw.replace(/,/g, ""));
-  if (!Number.isFinite(n)) return null;
+  const n2 = Number(raw.replace(/,/g, ""));
+  if (!Number.isFinite(n2)) return null;
   const u = (unit ?? "").toLowerCase();
-  return Math.round(u.startsWith("m") ? n * 1e6 : u.startsWith("k") ? n * 1e3 : n);
+  return Math.round(u.startsWith("m") ? n2 * 1e6 : u.startsWith("k") ? n2 * 1e3 : n2);
 }
 function quickParse(message, previous = null) {
   const t = ` ${message.toLowerCase()} `;
@@ -10648,7 +10648,7 @@ function bestSquadFor(base, formation, pool, rules, by, opts = {}) {
         const k = c4[t];
         if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
       }
-      for (const [k, n] of counts) if (n >= 3) groups.push({ key: `${t}:${k}`, n, test: (c4) => c4[t] === k });
+      for (const [k, n2] of counts) if (n2 >= 3) groups.push({ key: `${t}:${k}`, n: n2, test: (c4) => c4[t] === k });
     }
     groups.sort((a, b) => b.n - a.n);
     for (const g of groups.slice(0, opts.seeds ?? 8)) starts.push(greedy(g.test));
@@ -10759,14 +10759,14 @@ function planUpgrades(x, limits = { singles: 15, pairs: 10, pairPool: 30 }) {
       };
     });
     const metaKnown = out.every((w) => w.in.meta !== null && (w.out.meta !== null || w.out.id === null));
-    const metaGain = metaKnown ? out.reduce((n, w) => n + (w.in.meta - (w.out.meta ?? 0)), 0) : null;
-    const cost = out.reduce((n, w) => n + w.cost, 0);
-    const dOverall = out.reduce((n, w) => n + (w.in.rating ?? 0) - (w.out.rating ?? 0), 0);
+    const metaGain = metaKnown ? out.reduce((n2, w) => n2 + (w.in.meta - (w.out.meta ?? 0)), 0) : null;
+    const cost = out.reduce((n2, w) => n2 + w.cost, 0);
+    const dOverall = out.reduce((n2, w) => n2 + (w.in.rating ?? 0) - (w.out.rating ?? 0), 0);
     const gain = gainOf(after.rating - before.rating, after.chem - before.chem, metaGain, dOverall);
     return {
       swaps: out,
       cost,
-      net_cost: Math.max(0, cost - out.reduce((n, w) => n + (w.out.sells_for ?? 0), 0)),
+      net_cost: Math.max(0, cost - out.reduce((n2, w) => n2 + (w.out.sells_for ?? 0), 0)),
       rating_before: before.rating,
       rating_after: after.rating,
       chem_before: before.chem,
@@ -10799,10 +10799,10 @@ function planUpgrades(x, limits = { singles: 15, pairs: 10, pairPool: 30 }) {
   const seen = /* @__PURE__ */ new Map(), shown = [];
   for (const p of singles) {
     const k = p.swaps[0].slot;
-    const n = seen.get(k) ?? 0;
-    if (n < 2) {
+    const n2 = seen.get(k) ?? 0;
+    if (n2 < 2) {
       shown.push(strip(p));
-      seen.set(k, n + 1);
+      seen.set(k, n2 + 1);
     }
     if (shown.length >= limits.singles) break;
   }
@@ -10903,7 +10903,7 @@ var median2 = (xs) => {
   const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-var r12 = (n) => Math.round(n * 10) / 10;
+var r12 = (n2) => Math.round(n2 * 10) / 10;
 function windowMove(steps, band, start, hours) {
   const inside = steps.filter((s) => s.band === band && Date.parse(s.t) > start && Date.parse(s.t) <= start + hours * 36e5);
   if (!inside.length) return null;
@@ -10916,7 +10916,7 @@ function eventStats(e, steps, band, now2, days = 90) {
   if (moves.length < MIN_WEEKS || med === null) {
     return { band, weeks: moves.length, median: med === null ? null : r12(med), falls, rises, verdict: "not_enough_data", line: `Only ${moves.length} week${moves.length === 1 ? "" : "s"} of prices so far; GafferBot needs ${MIN_WEEKS} before it says anything.` };
   }
-  const share = (n) => n / moves.length;
+  const share = (n2) => n2 / moves.length;
   const drop = med <= -2 && share(falls) >= 0.6, rise = med >= 2 && share(rises) >= 0.6;
   const verdict = drop ? "sell_before" : rise ? "buy_before" : "no_pattern";
   const span = e.window_hours === 24 ? "the next day" : `the next ${e.window_hours / 24} days`;
@@ -10992,7 +10992,7 @@ function fodderRatings(points, now2 = Date.now()) {
     const month = list2.filter((p) => now2 - Date.parse(p.t) <= 30 * 24 * H).map((p) => p.floor);
     const vs = weekMed === null ? null : last.floor / weekMed - 1;
     const signal = vs === null ? "new" : vs >= SPIKE ? "spike" : vs <= CHEAP ? "cheap" : "normal";
-    const k = (n) => n >= 1e3 ? `${Math.round(n / 100) / 10}k` : String(n);
+    const k = (n2) => n2 >= 1e3 ? `${Math.round(n2 / 100) / 10}k` : String(n2);
     const line = signal === "spike" ? `${r2}s are ${Math.round(vs * 100)}% above their week (${k(last.floor)} vs ${k(weekMed)}): likely SBC demand. Sell spare ${r2}s, don't buy them for SBCs now.` : signal === "cheap" ? `${r2}s are ${Math.round(-vs * 100)}% below their week (${k(last.floor)} vs ${k(weekMed)}): a good time to stock up for SBCs.` : signal === "new" ? `${r2}s: ${k(last.floor)}. Not enough refreshes yet to compare with the week.` : `${r2}s: ${k(last.floor)}, close to their week (${vs >= 0 ? "+" : ""}${Math.round(vs * 100)}%).`;
     out.push({
       rating: r2,
@@ -11125,9 +11125,9 @@ function parseRequirement(name2, meta) {
   for (const re of patterns) {
     const m = text5.match(re);
     if (!m) continue;
-    const n = count2(m[1]);
+    const n2 = count2(m[1]);
     const r2 = resolve(m[2], meta);
-    if (r2 && n >= 1 && n <= 11) return { req: { count: n, ...r2, starting }, reason: null };
+    if (r2 && n2 >= 1 && n2 <= 11) return { req: { count: n2, ...r2, starting }, reason: null };
     if (!r2) return { req: null, reason: `GafferBot couldn't match "${m[2].trim()}" to a league, nation, club or card type in your club.` };
   }
   return { req: null, reason: /players?/i.test(text5) ? "No player requirement GafferBot can read in this objective." : null };
@@ -11275,9 +11275,9 @@ function scorePicks(options, picks, formation, rules) {
     const id3 = picks[s.slot];
     const card = s.options.find((c4) => c4.id === id3);
     if (!card) throw new FutError(`Pick one of the ${OPTIONS} options for ${s.slot}.`);
-    const n = card.name.toLowerCase();
-    if (names2.has(n)) throw new FutError(`${card.name} is in the XI twice; pick someone else for ${s.slot}.`);
-    names2.add(n);
+    const n2 = card.name.toLowerCase();
+    if (names2.has(n2)) throw new FutError(`${card.name} is in the XI twice; pick someone else for ${s.slot}.`);
+    names2.add(n2);
     return { slot: s.slot, position: s.position, card: toWorkspace(card), locked: false };
   });
   const chem = evaluate(formation, slots, null, rules).total;
@@ -11328,7 +11328,7 @@ async function openSimPack(db2, b) {
       taken++;
     }
   }
-  const total = pack.parts.reduce((n, p) => n + p.count, 0);
+  const total = pack.parts.reduce((n2, p) => n2 + p.count, 0);
   const items = cards.slice(0, total).sort((a, b2) => b2.overall - a.overall);
   const ids = items.map((c4) => c4.ea_item_id).filter((x) => !!x);
   const price = /* @__PURE__ */ new Map();
@@ -11343,7 +11343,7 @@ async function openSimPack(db2, b) {
     platform,
     cards: out,
     best: out[0] ?? null,
-    value: out.reduce((n, c4) => n + (c4.price ?? 0), 0),
+    value: out.reduce((n2, c4) => n2 + (c4.price ?? 0), 0),
     note: "Simulated for fun with made-up odds (not EA's), from FUT.GG's card list and prices. Nothing is opened in your club."
   };
 }
@@ -11353,12 +11353,12 @@ var MODES2 = ["champs", "rivals", "squad_battles", "other"];
 var MODE_LABEL = { champs: "Champions", rivals: "Rivals", squad_battles: "Squad Battles", other: "Games" };
 var MAX_GAMES_PER_RUN = 100;
 var result = (g) => g.goals_for > g.goals_against ? "W" : g.goals_for < g.goals_against ? "L" : g.penalties === "won" ? "W" : g.penalties === "lost" ? "L" : "D";
-var pct4 = (n, d) => d ? Math.round(n / d * 100) : null;
+var pct4 = (n2, d) => d ? Math.round(n2 / d * 100) : null;
 function summarize(games, run) {
   const list2 = [...games].sort((a, b) => a.played_at.localeCompare(b.played_at));
   const res = list2.map(result);
   const w = res.filter((r2) => r2 === "W").length, d = res.filter((r2) => r2 === "D").length, l = res.filter((r2) => r2 === "L").length;
-  const gf = list2.reduce((n, g) => n + g.goals_for, 0), ga = list2.reduce((n, g) => n + g.goals_against, 0);
+  const gf = list2.reduce((n2, g) => n2 + g.goals_for, 0), ga = list2.reduce((n2, g) => n2 + g.goals_against, 0);
   let best = 0, cur = 0;
   for (const r2 of res) {
     cur = r2 === "W" ? cur + 1 : 0;
@@ -11425,9 +11425,9 @@ var FORMATION_NAMES2 = new Set(Object.keys(FORMATIONS));
 var text4 = (v, max) => typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
 var small = (v, lo, hi, name2) => {
   if (v === null || v === void 0 || v === "") return null;
-  const n = Number(v);
-  if (!Number.isInteger(n) || n < lo || n > hi) throw new FutError(`${name2} must be a whole number from ${lo} to ${hi}.`);
-  return n;
+  const n2 = Number(v);
+  if (!Number.isInteger(n2) || n2 < lo || n2 > hi) throw new FutError(`${name2} must be a whole number from ${lo} to ${hi}.`);
+  return n2;
 };
 var fail7 = (e) => {
   if (e) throw new FutError(`Champs tracker: ${e.message ?? "database error"}`, 500);
@@ -11558,9 +11558,9 @@ async function setShare(db2, userId, b) {
     next[k] = b[k];
   }
   if (b.min_pull_rating !== void 0) {
-    const n = Number(b.min_pull_rating);
-    if (!Number.isInteger(n) || n < 75 || n > 99) throw new FutError("min_pull_rating must be a whole rating from 75 to 99.");
-    next.min_pull_rating = n;
+    const n2 = Number(b.min_pull_rating);
+    if (!Number.isInteger(n2) || n2 < 75 || n2 > 99) throw new FutError("min_pull_rating must be a whole rating from 75 to 99.");
+    next.min_pull_rating = n2;
   }
   const { error } = await db2.from("club_share").upsert({ user_id: userId, ...next, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, { onConflict: "user_id" });
   fail8(error);
@@ -11574,7 +11574,7 @@ async function names(db2, platform, ids) {
   for (const i of data?.items ?? []) out.set(Number(i.ea_item_id), { name: i.player_name ?? null, price: i.price ?? null });
   return out;
 }
-var coins3 = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n);
+var coins3 = (n2) => n2 >= 1e6 ? `${(n2 / 1e6).toFixed(n2 >= 1e7 ? 0 : 1)}M` : n2 >= 1e3 ? `${Math.round(n2 / 1e3)}k` : String(n2);
 async function runClubPulls(db2, now2 = Date.now()) {
   const { data: shares, error } = await db2.from("club_share").select("*").eq("share_pulls", true).limit(MAX_USERS);
   fail8(error);
@@ -11597,9 +11597,9 @@ async function runClubPulls(db2, now2 = Date.now()) {
     fail8((await db2.from("club_pull_posts").upsert(marks, { onConflict: "user_id,item_id" })).error);
     const named2 = await names(db2, s.platform, send.map((p) => p.ea_item_id));
     for (const p of send) {
-      const n = named2.get(p.ea_item_id);
-      const price = p.untradeable ? null : n?.price ?? null;
-      const name2 = n?.name ?? null;
+      const n2 = named2.get(p.ea_item_id);
+      const price = p.untradeable ? null : n2?.price ?? null;
+      const name2 = n2?.name ?? null;
       deliveries.push({
         user_id: s.user_id,
         item_id: Number(p.item_id),
@@ -11735,8 +11735,8 @@ var obj = (v, what) => {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw new FutError(`Unexpected ${what} format`, 502);
   return v;
 };
-var arr3 = (v, n, what) => {
-  if (!Array.isArray(v) || v.length !== n) throw new FutError(`Unexpected ${what} format`, 502);
+var arr3 = (v, n2, what) => {
+  if (!Array.isArray(v) || v.length !== n2) throw new FutError(`Unexpected ${what} format`, 502);
   return v;
 };
 function fileUrl2(manifest, name2) {
@@ -11761,10 +11761,10 @@ function buildCatalogue(input) {
     if (!Number.isSafeInteger(delta) || Number(delta) <= 0) throw new FutError("Invalid FUT.GG card id", 502);
     ids.push(ids[ids.length - 1] + Number(delta));
   }
-  const n = ids.length;
-  if (pool.n !== n || pool.id0 !== ids[0] || pool.idn !== ids[n - 1]) throw new FutError("FUT.GG card pool doesn't match the price index", 502);
-  const o = arr3(pool.o, n, "card pool"), r2 = arr3(pool.r, n, "card pool"), pos = arr3(pool.pos, n, "card pool");
-  const nat = arr3(pool.nat, n, "card pool"), lg = arr3(pool.lg, n, "card pool"), cl = arr3(pool.cl, n, "card pool");
+  const n2 = ids.length;
+  if (pool.n !== n2 || pool.id0 !== ids[0] || pool.idn !== ids[n2 - 1]) throw new FutError("FUT.GG card pool doesn't match the price index", 502);
+  const o = arr3(pool.o, n2, "card pool"), r2 = arr3(pool.r, n2, "card pool"), pos = arr3(pool.pos, n2, "card pool");
+  const nat = arr3(pool.nat, n2, "card pool"), lg = arr3(pool.lg, n2, "card pool"), cl = arr3(pool.cl, n2, "card pool");
   const rarities = nameMap2(core.rarities), clubs = nameMap2(core.clubs), nations = nameMap2(core.nations), leagues = nameMap2(core.leagues);
   const names2 = /* @__PURE__ */ new Map();
   for (const list2 of [players.Players, players.LegendsPlayers]) {
@@ -11778,7 +11778,7 @@ function buildCatalogue(input) {
   }
   if (names2.size < 1e3) throw new FutError("EA's player name file looks incomplete", 502);
   const out = [];
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < n2; i++) {
     const id3 = ids[i], name2 = names2.get(basePlayerId(id3)), position = EA_POSITIONS[Number(pos[i])], overall = Number(o[i]);
     if (!name2 || !position || !Number.isInteger(overall) || overall < 1 || overall > 99) continue;
     const version = rarities.get(Number(r2[i])) ?? null, v = (version ?? "").toLowerCase();
@@ -11834,12 +11834,12 @@ async function syncFutggCatalogue(db2, fetcher = (u) => fetch(u, { headers: { Ac
 var FUTGG_R2 = "https://r2.fut.gg/27";
 var CARD_URL = (id3) => `https://www.fut.gg/api/fut/player-item-definitions/27/${id3}/`;
 var stat = (v) => {
-  const n = Number(v);
-  return Number.isInteger(n) && n >= 1 && n <= 99 ? n : null;
+  const n2 = Number(v);
+  return Number.isInteger(n2) && n2 >= 1 && n2 <= 99 ? n2 : null;
 };
 var small2 = (v, min, max) => {
-  const n = Number(v);
-  return Number.isInteger(n) && n >= min && n <= max ? n : null;
+  const n2 = Number(v);
+  return Number.isInteger(n2) && n2 >= min && n2 <= max ? n2 : null;
 };
 function parseCardDefinition(raw, names2) {
   const d = raw && typeof raw === "object" ? raw.data : null;
@@ -11851,7 +11851,7 @@ function parseCardDefinition(raw, names2) {
   }
   const face = Object.fromEntries(FACE_STATS2.map((s) => [s.key, stat(d[s.futgg])]));
   const ids = (v) => Array.isArray(v) ? v.filter((x) => Number.isSafeInteger(x)) : [];
-  const styleNames = (v) => [...new Set(ids(v).map((i) => names2.playstyles.get(i)).filter((n) => !!n))];
+  const styleNames = (v) => [...new Set(ids(v).map((i) => names2.playstyles.get(i)).filter((n2) => !!n2))];
   const plus = styleNames(d.playstylesPlus);
   const roles = [];
   for (const [list2, level] of [[d.rolesPlusPlus, "plusplus"], [d.rolesPlus, "plus"]]) {
@@ -11876,7 +11876,7 @@ function parseCardDefinition(raw, names2) {
     alt_positions: [...new Set(ids(d.alternativePositionIds).map((p) => EA_POSITIONS[p]).filter((p) => !!p && p !== primary))].slice(0, 4),
     total_igs: small2(d.totalIgs, 1, 4e3),
     is_dynamic: d.hasDynamic === true,
-    playstyles: styleNames(d.playstyles).filter((n) => !plus.includes(n)),
+    playstyles: styleNames(d.playstyles).filter((n2) => !plus.includes(n2)),
     playstyles_plus: plus,
     roles
   };
@@ -12141,8 +12141,8 @@ var XML_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " "
 function decodeEntities(s) {
   return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
     if (e[0] === "#") {
-      const n = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1));
-      return n > 0 && n < 1114112 ? String.fromCodePoint(n) : "";
+      const n2 = e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1));
+      return n2 > 0 && n2 < 1114112 ? String.fromCodePoint(n2) : "";
     }
     return XML_ENTITIES[e.toLowerCase()] ?? m;
   });
@@ -12448,10 +12448,10 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
     for (const s of pending) {
       try {
         const reading = await readSource(s.body, known, env, fetchFn);
-        const n = await saveReading(db2, s.id, reading);
-        if (n > 0) {
+        const n2 = await saveReading(db2, s.id, reading);
+        if (n2 > 0) {
           result2.read++;
-          result2.claims += n;
+          result2.claims += n2;
         } else result2.skipped++;
         for (const c4 of reading.claims) if (!known.some((k) => k.topic === c4.topic)) known.push({ topic: c4.topic, category: c4.category });
       } catch (e) {
@@ -12674,19 +12674,19 @@ function wordIn(haystack, needle) {
   return false;
 }
 function mentions(text5, name2) {
-  const t = fold(text5), n = fold(name2).trim();
-  if (wordIn(t, n)) return true;
-  const last = n.split(/\s+/).at(-1) ?? "";
-  return last.length >= 4 && last !== n ? wordIn(t, last) : n.length >= 4 && !n.includes(" ") && wordIn(t, n);
+  const t = fold(text5), n2 = fold(name2).trim();
+  if (wordIn(t, n2)) return true;
+  const last = n2.split(/\s+/).at(-1) ?? "";
+  return last.length >= 4 && last !== n2 ? wordIn(t, last) : n2.length >= 4 && !n2.includes(" ") && wordIn(t, n2);
 }
 function playstylesIn(text5) {
   const out = [];
   const t = text5.toLowerCase();
   for (const p of PLAYSTYLES) {
-    const n = p.toLowerCase();
-    const i = t.indexOf(n);
-    if (i < 0 || !wordIn(t, n)) continue;
-    out.push({ name: p, plus: t.slice(i + n.length, i + n.length + 1) === "+" || /\bplus\b/.test(t.slice(i + n.length, i + n.length + 6)) });
+    const n2 = p.toLowerCase();
+    const i = t.indexOf(n2);
+    if (i < 0 || !wordIn(t, n2)) continue;
+    out.push({ name: p, plus: t.slice(i + n2.length, i + n2.length + 1) === "+" || /\bplus\b/.test(t.slice(i + n2.length, i + n2.length + 6)) });
   }
   return out;
 }
@@ -12757,7 +12757,7 @@ async function claudeJson(env, fetchFn, system, user, schema, maxTokens) {
 function cleanAdvice(raw) {
   const o = raw && typeof raw === "object" ? raw : null;
   if (!o) return null;
-  const list2 = (v, n) => Array.isArray(v) ? v.map((x) => squash2(x, 300)).filter(Boolean).slice(0, n) : [];
+  const list2 = (v, n2) => Array.isArray(v) ? v.map((x) => squash2(x, 300)).filter(Boolean).slice(0, n2) : [];
   const headline = squash2(o.headline, 300);
   if (!headline) return null;
   return { fit: o.fit === "high" || o.fit === "low" ? o.fit : "some", headline, points: list2(o.points, 5), actions: list2(o.actions, 4) };
@@ -12789,6 +12789,7 @@ async function applyToTeam(db2, userId, target, team, env, fetchFn, beforeAi) {
       "headline: one plain sentence (under 30 words) on what this means for this team.",
       "points: 2 to 4 short points (under 35 words each) naming the team's own players, positions and formation where they apply. Say plainly when the team lacks what the claims need.",
       "actions: up to 3 concrete things to try (a setting, an instruction, a player to move or pick from the club, or a type of card to look for). Only suggest players from the team list or the claims.",
+      "Use everything you are given and reason it through: never answer that there is too little data or that the player should wait for more. When the claims don't name this team's players, infer who fits from their positions, ratings and PlayStyles and say it is your inference.",
       "Claims are opinions, not facts: never invent stats, prices or players."
     ].join("\n"),
     `Team:
@@ -12806,6 +12807,19 @@ ${claims.map((c4) => `- ${c4.topic} (${c4.category}; ${c4.stance === 1 ? "for" :
     result2.via = "ai";
   }
   return result2;
+}
+var pctMove = (now2, then) => now2 && then ? Math.round((now2 - then) / then * 1e3) / 10 : null;
+function priceOutlook(t, owned) {
+  if (!t || !t.price) return null;
+  const c32 = pctMove(t.price, t.d3 ?? t.d1), c7 = pctMove(t.price, t.d7);
+  const spread = !!(t.high14 && t.low14 && t.high14 > t.low14 * 1.1);
+  const falling = c32 !== null && c32 <= -4 || c7 !== null && c7 <= -8;
+  const nearLow = spread && t.price <= t.low14 * 1.05, nearHigh = spread && t.price >= t.high14 * 0.95;
+  const rising = c32 !== null && c32 >= 4 || c7 !== null && c7 >= 8;
+  const move = c32 !== null ? `${c32 > 0 ? "+" : ""}${c32}% in 3 days` : c7 !== null ? `${c7 > 0 ? "+" : ""}${c7}% in 7 days` : "";
+  const range = t.low14 && t.high14 ? `${t.low14.toLocaleString("en")} to ${t.high14.toLocaleString("en")} in two weeks` : "";
+  const [signal, call] = falling ? ["falling", owned ? `Falling (${move}): if you don't play him, sell before it drops further.` : `Falling (${move}): wait, it should get cheaper.`] : nearLow ? ["near_low", owned ? `Near its two-week low (${range}): hold, a bad time to sell.` : `Near its two-week low (${range}): a good time to buy.`] : nearHigh ? ["near_high", owned ? `Near its two-week high (${range}): a good time to sell if he isn't in your team.` : `Near its two-week high (${range}): expensive right now, wait for a dip.`] : rising ? ["rising", owned ? `Rising (${move}): hold.` : `Rising (${move}): buy soon if you want him, or wait for the next dip.`] : ["steady", owned ? "Price is steady." : "Price is steady: buy whenever it suits."];
+  return { change_3d: c32, change_7d: c7, low14: t.low14, high14: t.high14, signal, call };
 }
 function rankFormations(topics, cite) {
   const by = /* @__PURE__ */ new Map();
@@ -12839,12 +12853,12 @@ function pickOf(t, cite) {
   const lead = t.statements.find((s) => Math.sign(s.stance) === Math.sign(t.net ?? 0)) ?? t.statements[0];
   return { key: t.key, topic: t.topic, net: t.net, buzz: t.buzz, agreement: t.agreement, claims: t.claims, for: t.for, against: t.against, said: lead?.statement ?? null, cite: cite(t) };
 }
-function sides(topics, category, cite, n = 8) {
+function sides(topics, category, cite, n2 = 8) {
   const list2 = topics.filter((t) => t.category === category);
   const score3 = (t) => t.buzz * Math.abs(t.net ?? 0);
   return {
-    recommended: list2.filter((t) => (t.net ?? 0) > 0.15).sort((a, b) => score3(b) - score3(a)).slice(0, n).map((t) => pickOf(t, cite)),
-    avoid: list2.filter((t) => (t.net ?? 0) < -0.15).sort((a, b) => score3(b) - score3(a)).slice(0, Math.ceil(n / 2)).map((t) => pickOf(t, cite))
+    recommended: list2.filter((t) => (t.net ?? 0) > 0.15).sort((a, b) => score3(b) - score3(a)).slice(0, n2).map((t) => pickOf(t, cite)),
+    avoid: list2.filter((t) => (t.net ?? 0) < -0.15).sort((a, b) => score3(b) - score3(a)).slice(0, Math.ceil(n2 / 2)).map((t) => pickOf(t, cite))
   };
 }
 function playerLookup(topic) {
@@ -12866,17 +12880,19 @@ var PLAN_SCHEMA = {
   properties: {
     summary: { type: "string" },
     formation_why: { type: "string" },
-    settings: { type: "array", items: { type: "object", additionalProperties: false, required: ["setting", "value", "why", "cites"], properties: {
+    settings: { type: "array", items: { type: "object", additionalProperties: false, required: ["setting", "value", "why", "cites", "inferred"], properties: {
       setting: { type: "string" },
       value: { type: "string" },
       why: { type: "string" },
-      cites: { type: "array", items: { type: "integer" } }
+      cites: { type: "array", items: { type: "integer" } },
+      inferred: { type: "boolean" }
     } } },
-    instructions: { type: "array", items: { type: "object", additionalProperties: false, required: ["position", "instruction", "why", "cites"], properties: {
+    instructions: { type: "array", items: { type: "object", additionalProperties: false, required: ["position", "instruction", "why", "cites", "inferred"], properties: {
       position: { type: "string" },
       instruction: { type: "string" },
       why: { type: "string" },
-      cites: { type: "array", items: { type: "integer" } }
+      cites: { type: "array", items: { type: "integer" } },
+      inferred: { type: "boolean" }
     } } },
     for_your_team: { type: "array", items: { type: "string" } },
     player_positions: { type: "array", items: { type: "object", additionalProperties: false, required: ["topic", "position"], properties: {
@@ -12886,31 +12902,73 @@ var PLAN_SCHEMA = {
   }
 };
 var cache2 = /* @__PURE__ */ new Map();
+var THIN_CLAIMS = 40;
+var DEFAULT_FORMATION = "4-2-3-1";
+function defaultStatPicker(db2, userId, platform) {
+  return async (position, maxPrice) => {
+    const top = await metaTop(db2, userId, { position, platform, max_price: maxPrice });
+    return top.cards.slice(0, 12).map((c4) => ({
+      card_id: c4.card_id,
+      ea_item_id: c4.ea_item_id,
+      name: c4.name,
+      rating: c4.rating,
+      version: c4.version,
+      price: c4.price,
+      owned: c4.owned,
+      score: c4.meta.score,
+      role: c4.meta.role,
+      why: [c4.meta.strengths.slice(0, 2).join(", "), c4.meta.playstyles.slice(0, 2).join(", ")].filter(Boolean).join("; ")
+    }));
+  };
+}
 var CACHE_MS = 6 * 36e5;
-async function teamPlan(db2, userId, opts, team, env, fetchFn, beforeAi) {
-  const consensus = await rpcData2(db2, "kb_consensus", { p_user: userId, p_days: opts.days, p_per: 60, p_statements: 4 });
+async function readConsensus(db2, userId, days) {
+  const read = (d) => rpcData2(db2, "kb_consensus", { p_user: userId, p_days: d, p_per: 60, p_statements: 4 });
+  let consensus = await read(days), widenedFrom = null;
+  if ((consensus?.claims ?? 0) < THIN_CLAIMS && days < 365) {
+    const all = await read(365);
+    if ((all?.claims ?? 0) > (consensus?.claims ?? 0)) {
+      consensus = all;
+      widenedFrom = days;
+    }
+  }
+  return { consensus, widenedFrom };
+}
+async function communityFormations(db2, userId, days) {
+  const { consensus, widenedFrom } = await readConsensus(db2, userId, days);
   const topics = consensus?.topics ?? [];
-  const useAi = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) && topics.length > 0;
-  const cacheKey = JSON.stringify([userId, opts.days, opts.platform, team.squad?.id ?? null, team.squad?.formation ?? null, team.club.length, consensus?.claims ?? 0, useAi]);
+  return { ranked: rankFormations(topics, () => null), tactics: sides(topics, "tactics", () => null, 3).recommended, claims: consensus?.claims ?? 0, days: widenedFrom ? 365 : days };
+}
+async function teamPlan(db2, userId, opts, team, env, fetchFn, beforeAi, statPicker) {
+  const { consensus, widenedFrom } = await readConsensus(db2, userId, opts.days);
+  const topics = consensus?.topics ?? [];
+  const pickStats = statPicker ?? defaultStatPicker(db2, userId, opts.platform);
+  const useAi = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
+  const cacheKey = JSON.stringify([userId, opts.days, opts.platform, team.squad?.id ?? null, team.squad?.formation ?? null, team.club.length, consensus?.claims ?? 0, useAi, opts.playstyle ?? null, !!opts.pickFormation]);
   const hit = cache2.get(cacheKey);
-  if (hit && !opts.refresh && Date.now() - hit.at < CACHE_MS) return hit.plan;
+  if (hit && !opts.refresh && !opts.pickFormation && Date.now() - hit.at < CACHE_MS) return hit.plan;
   const citations = [];
   const bySource = /* @__PURE__ */ new Map();
   const citeSource = (s) => {
-    let n = bySource.get(s.id);
-    if (!n) {
-      n = citations.length + 1;
-      bySource.set(s.id, n);
-      citations.push({ n, kind: s.kind, url: s.url, title: s.title, community: s.community });
+    let n2 = bySource.get(s.id);
+    if (!n2) {
+      n2 = citations.length + 1;
+      bySource.set(s.id, n2);
+      citations.push({ n: n2, kind: s.kind, url: s.url, title: s.title, community: s.community });
     }
-    return n;
+    return n2;
   };
   const cite = (t) => {
     const lead = t.statements.find((s) => Math.sign(s.stance) === Math.sign(t.net ?? 0)) ?? t.statements[0];
     return lead ? citeSource(lead.source) : null;
   };
   const ranked = rankFormations(topics, cite);
-  const recommended = ranked.find((f2) => (f2.net ?? 0) > 0) ?? null;
+  const backed = ranked.find((f2) => (f2.net ?? 0) > 0) ?? null;
+  const recommended = backed ?? ranked[0] ?? null;
+  const chosen = opts.pickFormation ? await opts.pickFormation(ranked) : null;
+  const basis = chosen && FORMATIONS[chosen.formation] ? "playstyle" : backed ? "community" : recommended ? "least_criticised" : team.squad && FORMATIONS[team.squad.formation] ? "your_squad" : "default";
+  const planFormation = basis === "playstyle" ? chosen.formation : recommended?.formation ?? (basis === "your_squad" ? team.squad.formation : DEFAULT_FORMATION);
+  const confidence2 = !backed ? "low" : backed.claims >= 8 && (backed.agreement === "agreed" || backed.agreement === "leaning") ? "high" : backed.claims >= 3 ? "medium" : "low";
   const yours = team.squad ? ranked.find((f2) => f2.formation === team.squad.formation) ?? null : null;
   const tactics = sides(topics, "tactics", cite);
   const playstyles = sides(topics, "playstyles", cite, 6);
@@ -12936,14 +12994,56 @@ async function teamPlan(db2, userId, opts, team, env, fetchFn, beforeAi) {
       owned_card: ownedClub ? { name: ownedClub.name, rating: ownedClub.rating, version: ownedClub.version } : null
     };
   });
+  const shape = formationPositions(planFormation);
+  const statPicks = /* @__PURE__ */ new Map();
+  await Promise.all([...shape.keys()].map(async (pos) => {
+    try {
+      const talked = new Set(players.filter((p) => p.position === pos && p.card).map((p) => fold(p.card.player_name)));
+      const all = (await pickStats(pos, team.coins && team.coins > 0 ? Math.floor(team.coins) : null)).filter((c4) => !talked.has(fold(c4.name)));
+      const seen = /* @__PURE__ */ new Set();
+      const uniq = all.filter((c4) => {
+        const k = fold(c4.name);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      statPicks.set(pos, [...uniq.filter((c4) => c4.owned).slice(0, 2), ...uniq.filter((c4) => !c4.owned).slice(0, 4)].slice(0, 5));
+    } catch (e) {
+      console.error(`[fut-api] knowledge team stat picks ${pos}:`, e.message);
+    }
+  }));
+  let pricesAt = null;
+  const ids = [...new Set([...players.flatMap((p) => [p.card, ...p.versions]).map((c4) => c4?.ea_item_id), ...[...statPicks.values()].flat().map((c4) => c4.ea_item_id)].filter((x) => !!x))].slice(0, 2e3);
+  if (ids.length) {
+    try {
+      const d = await rpcData2(db2, "card_price_trend", { p_platform: opts.platform, p_ids: ids });
+      pricesAt = d?.published_at ?? null;
+      const trends = new Map((d?.items ?? []).map((r2) => [Number(r2.ea_item_id), r2]));
+      const dress = (c4) => {
+        if (!c4) return;
+        c4.outlook = c4.ea_item_id ? priceOutlook(trends.get(c4.ea_item_id), c4.owned) : null;
+        c4.affordable = c4.owned || c4.price == null || team.coins == null ? null : c4.price <= team.coins;
+      };
+      for (const p of players) {
+        dress(p.card);
+        p.versions.forEach(dress);
+      }
+      for (const c4 of [...statPicks.values()].flat()) c4.outlook = c4.ea_item_id ? priceOutlook(trends.get(c4.ea_item_id), c4.owned) : null;
+    } catch (e) {
+      console.error("[fut-api] knowledge team price trends:", e.message);
+    }
+  }
   const plan = {
     days: consensus?.days ?? opts.days,
     claims: consensus?.claims ?? 0,
     sources: consensus?.sources ?? 0,
     generated_at: (/* @__PURE__ */ new Date()).toISOString(),
     via: "data",
+    widened_from: widenedFrom,
+    confidence: confidence2,
+    prices_at: pricesAt,
     team: { squad: team.squad ? { id: team.squad.id, name: team.squad.name, formation: team.squad.formation } : null, squads: team.squads, club_size: team.club.length, coins: team.coins },
-    formation: { recommended, ranked: ranked.slice(0, 8), yours, positions: [] },
+    formation: { recommended, ranked: ranked.slice(0, 8), yours, positions: [], name: planFormation, basis },
     tactics,
     playstyles,
     positions: [],
@@ -12962,33 +13062,41 @@ async function teamPlan(db2, userId, opts, team, env, fetchFn, beforeAi) {
       fetchFn,
       [
         "You turn what the EA SPORTS FC 27 Ultimate Team community says (claims from Reddit, YouTube and the player's own notes, numbered by source) into a game plan for one player's team. Return JSON only.",
-        `The formation is decided already: ${recommended ? recommended.formation : "none has enough support yet"}. Formation ranking (score = buzz x sentiment): ${ranked.slice(0, 6).map((f2) => `${f2.formation} ${f2.score}`).join(", ") || "none"}.`,
+        `The formation is decided already: ${planFormation} (${basis === "playstyle" ? `picked for how the player likes to play, the community view and their club: ${chosen.why}` : basis === "community" ? "the one the community backs most" : basis === "least_criticised" ? "nobody is clearly for any formation, this is the least criticised" : basis === "your_squad" ? "the bank has no formation talk, so the player's own" : "the bank has no formation talk, so the usual meta shape"}). Formation ranking (score = buzz x sentiment): ${ranked.slice(0, 6).map((f2) => `${f2.formation} ${f2.score}`).join(", ") || "none"}.`,
+        ...opts.playstyle ? [`The player describes how they like to play: "${squash2(opts.playstyle, 600)}". Fit the settings, instructions and notes to that style, lean on the community view where the two agree, and say plainly where their style departs from the consensus.`] : [],
+        "Use ALL the data you are given every time: the claims, the team's cards, the price moves and the stat picks. Never say there is not enough data and never tell the player to wait for more. Where the claims are thin or silent, reason it through from what you do have (the formation's shape, the team's players and their PlayStyles, the stat picks, how prices are moving) and set inferred: true on that row, with the reasoning in why. Rows taken from claims have inferred: false and cite them.",
         "summary: 2 or 3 plain sentences: the community's current view and what it means for this team.",
         "formation_why: one or two sentences on why people rate that formation, from the claims (empty if none).",
-        "settings: up to 8 custom tactics settings people recommend for it or in general (e.g. Defensive approach: Balanced; Line height: 60; Build-up style: Counter; Width; Players in box; Corners and free kicks), each with a short why and the claim numbers. Only settings the claims support; values as people state them.",
-        "instructions: up to 8 player instructions by position (e.g. CDM: Stay back while attacking; ST: Get in behind), from the claims, with why and claim numbers.",
-        "for_your_team: up to 4 short points comparing the plan with this team: their formation, which of their own players fit the recommended roles, gaps to fill. Name their players.",
+        "settings: 5 to 8 custom tactics settings for this formation (e.g. Defensive approach: Balanced; Line height: 60; Build-up style: Counter; Width; Players in box; Corners and free kicks), each with a short why. Take the values people state where they state them; fill the rest by inference so the list is a complete set the player can enter.",
+        "instructions: one for every outfield position of the formation (e.g. CDM: Stay back while attacking; ST: Get in behind), from the claims where they exist and inferred from the shape and the team's players otherwise.",
+        "for_your_team: 3 to 5 short points for this team: which of their own players fit each role, the biggest gap, and who to buy or sell and when, using the price moves (buy what is near its low or steady, wait on what is falling, sell what they don't use near its high) and their coins. Name players and prices.",
         "player_positions: for each player topic listed below that you can place, the FC 27 position people use them in (GK, LB, CB, RB, CDM, CM, LM, RM, CAM, LW, RW, ST).",
-        "Claims are opinions: never invent settings, numbers or players that aren't in the claims or the team."
+        "Claims are opinions, and inferences are yours: keep them apart with the inferred flag. Never invent prices, stats or players that aren't in the data below."
       ].join("\n"),
       `Team:
 ${describeTeam(team)}
 
 Player topics: ${playerTopics.map((t) => t.topic).join("; ") || "none"}
 
+Players people talk about, with prices:
+${players.filter((p) => p.card).slice(0, 40).map((p) => `- ${p.card.player_name} ${p.card.overall} ${p.card.version ?? ""} (${p.position ?? "?"}; ${p.verdict}; ${p.card.price != null ? `${p.card.price.toLocaleString("en")} coins` : "no price"}${p.owned ? "; owned" : ""})${p.card.outlook ? ` ${p.card.outlook.call}` : ""}`).join("\n") || "none"}
+
+Best cards by in-game stats for each position${team.coins ? ` within ${team.coins.toLocaleString("en")} coins` : ""}:
+${[...statPicks].map(([pos, list2]) => `${pos}: ${list2.map((c4) => `${c4.name} ${c4.rating} (${c4.role} ${c4.score}${c4.price != null ? `, ${c4.price.toLocaleString("en")}` : ""}${c4.owned ? ", owned" : ""}${c4.outlook ? `, ${c4.outlook.signal.replace("_", " ")}` : ""})`).join("; ")}`).join("\n") || "none"}
+
 Claims:
-${notes}`,
+${notes || "none in the bank yet"}`,
       PLAN_SCHEMA,
-      6e3
+      7e3
     );
     if (raw) {
-      const valid = (cites) => Array.isArray(cites) ? [...new Set(cites.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= citations.length))].slice(0, 6) : [];
+      const valid = (cites) => Array.isArray(cites) ? [...new Set(cites.map(Number).filter((n2) => Number.isInteger(n2) && n2 >= 1 && n2 <= citations.length))].slice(0, 6) : [];
       const rows = (v) => Array.isArray(v) ? v.filter((x) => x && typeof x === "object") : [];
       plan.summary = squash2(raw.summary, 800) || null;
       plan.formation_why = squash2(raw.formation_why, 500) || null;
-      plan.settings = rows(raw.settings).map((r2) => ({ setting: squash2(r2.setting, 60), value: squash2(r2.value, 80), why: squash2(r2.why, 240), cites: valid(r2.cites) })).filter((r2) => r2.setting && r2.value).slice(0, 8);
-      plan.instructions = rows(raw.instructions).map((r2) => ({ position: squash2(r2.position, 12).toUpperCase(), instruction: squash2(r2.instruction, 80), why: squash2(r2.why, 240), cites: valid(r2.cites) })).filter((r2) => r2.position && r2.instruction).slice(0, 8);
-      plan.for_your_team = Array.isArray(raw.for_your_team) ? raw.for_your_team.map((x) => squash2(x, 300)).filter(Boolean).slice(0, 4) : [];
+      plan.settings = rows(raw.settings).map((r2) => ({ setting: squash2(r2.setting, 60), value: squash2(r2.value, 80), why: squash2(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.setting && r2.value).slice(0, 8);
+      plan.instructions = rows(raw.instructions).map((r2) => ({ position: squash2(r2.position, 12).toUpperCase(), instruction: squash2(r2.instruction, 80), why: squash2(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.position && r2.instruction).slice(0, 11);
+      plan.for_your_team = Array.isArray(raw.for_your_team) ? raw.for_your_team.map((x) => squash2(x, 300)).filter(Boolean).slice(0, 5) : [];
       const placed = new Map(rows(raw.player_positions).map((r2) => [fold(squash2(r2.topic, 80)), squash2(r2.position, 4).toUpperCase()]));
       for (const p of players) if (!p.position) {
         const pos = placed.get(fold(p.topic));
@@ -12997,14 +13105,13 @@ ${notes}`,
       plan.via = "ai";
     }
   }
-  const shape = formationPositions(recommended?.formation ?? team.squad?.formation ?? "");
   plan.formation.positions = [...shape.keys()];
   const xi = new Set((team.squad?.xi ?? []).map((x) => x.name ? fold(x.name) : "").filter(Boolean));
   const groups = /* @__PURE__ */ new Map();
   const group = (pos) => {
     let g = groups.get(pos);
     if (!g) {
-      g = { position: pos, in_formation: shape.get(pos) ?? 0, community: [], yours: [] };
+      g = { position: pos, in_formation: shape.get(pos) ?? 0, community: [], by_stats: statPicks.get(pos) ?? [], yours: [] };
       groups.set(pos, g);
     }
     return g;
@@ -13026,6 +13133,231 @@ ${notes}`,
   cache2.set(cacheKey, { at: Date.now(), plan });
   if (cache2.size > 500) cache2.clear();
   return plan;
+}
+
+// supabase/functions/_shared/fut/ideal-squad.ts
+var MAX_PLAYSTYLE = 600;
+var DEFAULT_MODEL5 = "claude-opus-5-5";
+var shapeOf = (formation) => {
+  const out = {};
+  for (const s of FORMATIONS[formation] ?? []) out[s.position] = (out[s.position] ?? 0) + 1;
+  return out;
+};
+var n = (s, ...ps) => ps.reduce((a, p) => a + (s[p] ?? 0), 0);
+var SHAPE_TRAITS = {
+  two_strikers: { label: "two strikers", words: /\b(two|2|pair of|both) (strikers?|sts?|up ?top|forwards?)\b|\bstrike partner|\bstriker partnership|\b2 up top/, fits: (s) => n(s, "ST") >= 2 },
+  lone_striker: { label: "one striker", words: /\b(lone|one|single|1) (striker|st|up ?top)\b|\btarget man\b/, fits: (s) => n(s, "ST") === 1 },
+  wingers: { label: "wingers", words: /\bwingers?\b|\bwing play\b|\bdown the wings?\b|\bcut(ting)? inside\b|\b(lw|rw)\b|\bwide forwards?\b/, fits: (s) => n(s, "LW", "RW") >= 2 },
+  wide_mids: { label: "wide midfielders", words: /\bwide mid(fielder)?s?\b|\b(lm|rm)\b|\bcross(es|ing)?\b|\bwidth\b|\bstretch\b|\bout wide\b/, fits: (s) => n(s, "LM", "RM", "LW", "RW") >= 2 },
+  narrow: { label: "narrow, through the middle", words: /\bnarrow\b|\bthrough the middle\b|\bcentral(ly)?\b|\bno wingers\b|\btiki[- ]?taka\b/, fits: (s) => n(s, "LM", "RM", "LW", "RW") === 0 },
+  cam: { label: "a number 10", words: /\bcams?\b|\bnumber 10\b|\bno\.? ?10\b|\bplaymaker\b|\bbehind the striker/, fits: (s) => n(s, "CAM") >= 1 },
+  two_cdms: { label: "two holding midfielders", words: /\b(two|2|double) (cdms?|holding|pivots?|defensive mid\w*)\b|\bdouble pivot\b/, fits: (s) => n(s, "CDM") >= 2 },
+  possession: { label: "possession", words: /\bpossession\b|\bkeep the ball\b|\bpatient\b|\bbuild[- ]?up\b|\bpass(ing)? (game|it around)\b|\bshort pass\w*\b|\bcontrol (the )?(game|midfield)\b/, fits: (s) => n(s, "CM", "CDM", "CAM") >= 3 && n(s, "CM", "CAM") >= 2 },
+  counter: { label: "counter attacks", words: /\bcounter\w*\b|\bon the break\b|\bfast break\b|\bdirect\b|\bthrough balls?\b|\bin behind\b|\bpace\b|\bfast\b|\bquick\b/, fits: (s) => n(s, "CDM") >= 1 && n(s, "LW", "RW", "LM", "RM") >= 2 },
+  attacking: { label: "all-out attack", words: /\battack(ing)?\b|\baggressive\b|\boverload\b|\bscore (a lot|lots|goals)\b|\bgoals\b|\bhigh press\b|\bpress(ing)? high\b/, fits: (s) => n(s, "ST", "LW", "RW", "CAM") >= 4 },
+  defensive: { label: "solid at the back", words: /\bdefen[cs]ive\b|\bsolid\b|\bcompact\b|\bpark the bus\b|\bsit (back|deep)\b|\bdon'?t concede\b|\bclean sheets?\b|\bprotect\b|\bsafe\b/, fits: (s) => n(s, "CDM") >= 2 || n(s, "CB") >= 3 },
+  back_five: { label: "three centre-backs", words: /\b(5|five|three|3) at the back\b|\bback (5|five|3|three)\b|\bwing[- ]?backs?\b|\b3 cbs?\b|\bthree (centre|center)[- ]?backs?\b/, fits: (s) => n(s, "CB") >= 3 },
+  midfield_three: { label: "three central midfielders", words: /\b(three|3)[- ](man )?midfield\b|\bmidfield (three|3)\b|\b(three|3) (cms?|central mid\w*)\b|\bbox[- ]to[- ]box\b/, fits: (s) => n(s, "CM") >= 3 || n(s, "CM") >= 2 && n(s, "CDM") >= 1 }
+};
+var SOFT = /* @__PURE__ */ new Set(["possession", "counter", "attacking", "defensive"]);
+var PLAYER_TRAITS = {
+  pace: { label: "pace", words: /\bpace\b|\bpacey\b|\bfast\b|\bquick\b|\bspeed\b|\brapid\b|\bin behind\b|\bcounter\w*\b/, stat: "pac" },
+  passing: { label: "passing", words: /\bpass(ing|es)?\b|\bpossession\b|\btiki[- ]?taka\b|\bbuild[- ]?up\b|\bthrough balls?\b|\bplaymak\w*\b/, stat: "pas" },
+  dribbling: { label: "dribbling", words: /\bdribbl\w*\b|\bskill(s| moves)?\b|\bskillers?\b|\b1v1\b|\btake (players|defenders|people) on\b|\bleft stick\b|\bagile\b/, stat: "dri" },
+  shooting: { label: "shooting", words: /\bshoot\w*\b|\bfinesse\b|\blong shots?\b|\bfinish\w*\b|\bclinical\b|\bpower shots?\b/, stat: "sho" },
+  defending: { label: "defending", words: /\bdefen[cs]ive\b|\btackl\w*\b|\bintercept\w*\b|\bsolid\b|\bcompact\b|\bclean sheets?\b/, stat: "def" },
+  physical: { label: "strength", words: /\bphysical\b|\bstrong\b|\bstrength\b|\bbully\b|\bheaders?\b|\baerial\b|\btarget man\b|\bcross(es|ing)?\b/, stat: "phy" }
+};
+var strikersOf = (s) => n(s, "ST") >= 2 ? 2 : n(s, "LW", "RW") >= 2 ? 3 : 1;
+var defendersOf = (s) => n(s, "CB", "LB", "RB");
+var meets2 = (formation, must) => {
+  const s = shapeOf(formation);
+  return (!must.strikers || strikersOf(s) === must.strikers) && (!must.defenders || defendersOf(s) === must.defenders);
+};
+var mustLabel = (must) => [
+  must.strikers === 1 ? "one striker" : must.strikers === 2 ? "two strikers" : must.strikers === 3 ? "a front three" : null,
+  must.defenders ? `${["three", "four", "five"][must.defenders - 3]} at the back` : null
+].filter((x) => !!x);
+function withPills(style, traits, must) {
+  const shape = [.../* @__PURE__ */ new Set([...style.shape, ...traits.filter((k) => k in SHAPE_TRAITS)])];
+  const players = [.../* @__PURE__ */ new Set([...style.players, ...traits.filter((k) => k in PLAYER_TRAITS)])];
+  const picked = [...mustLabel(must), ...traits.filter((k) => k in SHAPE_TRAITS && !style.shape.includes(k)).map((k) => SHAPE_TRAITS[k].label), ...traits.filter((k) => k in PLAYER_TRAITS && !style.players.includes(k)).map((k) => PLAYER_TRAITS[k].label)];
+  const summary = [style.summary, picked.length ? `You picked ${picked.join(", ")}.` : ""].filter(Boolean).join(" ");
+  return { ...style, shape, players, summary };
+}
+function readPlaystyleWords(text5) {
+  const t = ` ${text5.toLowerCase()} `;
+  const named2 = formationName2(text5);
+  const shape = Object.entries(SHAPE_TRAITS).filter(([, v]) => v.words.test(t)).map(([k]) => k);
+  const players = Object.entries(PLAYER_TRAITS).filter(([, v]) => v.words.test(t)).map(([k]) => k);
+  const labels = [...shape.map((k) => SHAPE_TRAITS[k].label), ...players.map((k) => PLAYER_TRAITS[k].label)];
+  return { text: text5, shape, players, via: "words", summary: labels.length ? `You like ${[...new Set(labels)].join(", ")}${named2 ? `, and you named ${named2}` : ""}.` : named2 ? `You named ${named2}.` : "" };
+}
+var STYLE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["shape", "players", "summary"],
+  properties: {
+    shape: { type: "array", items: { type: "string", enum: Object.keys(SHAPE_TRAITS) } },
+    players: { type: "array", items: { type: "string", enum: Object.keys(PLAYER_TRAITS) } },
+    summary: { type: "string" }
+  }
+};
+async function readPlaystyle(text5, env, fetchFn) {
+  const words = readPlaystyleWords(text5);
+  if (!text5.trim() || !(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) return words;
+  try {
+    const res = await callClaude(env, fetchFn, {
+      model: env("FUT_KB_MODEL") || DEFAULT_MODEL5,
+      max_tokens: 1200,
+      output_config: { effort: "low", format: { type: "json_schema", schema: STYLE_SCHEMA } },
+      system: [
+        "An EA SPORTS FC 27 Ultimate Team player describes how they like to play. Turn it into traits. Return JSON only.",
+        `shape: what their style asks of a formation. ${Object.entries(SHAPE_TRAITS).map(([k, v]) => `${k} = ${v.label}`).join("; ")}. Pick every one their words imply (a player who loves crossing wants wide players and usually two strikers; one who sits deep and breaks wants counter and often defensive), but none they contradict.`,
+        `players: what it asks of the players. ${Object.entries(PLAYER_TRAITS).map(([k, v]) => `${k} = ${v.label}`).join("; ")}.`,
+        'summary: one plain sentence, addressed to them as "you", saying how you read their style (under 30 words).'
+      ].join("\n"),
+      messages: [{ role: "user", content: text5.slice(0, MAX_PLAYSTYLE) }]
+    });
+    const out = await res.json().catch(() => null);
+    if (!res.ok || out?.stop_reason === "refusal") return words;
+    const o = JSON.parse((out?.content ?? []).filter((c4) => c4.type === "text").map((c4) => c4.text ?? "").join(""));
+    const list2 = (v, known) => Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === "string" && x in known))] : [];
+    const shape = list2(o.shape, SHAPE_TRAITS), players = list2(o.players, PLAYER_TRAITS);
+    if (!shape.length && !players.length) return words;
+    return { text: text5, shape, players, via: "ai", summary: typeof o.summary === "string" ? o.summary.replace(/\s+/g, " ").trim().slice(0, 300) : words.summary };
+  } catch (e) {
+    console.error("[fut-api] ideal squad playstyle:", e.message);
+    return words;
+  }
+}
+function styleFit(formation, style) {
+  if (!style.shape.length) return null;
+  const s = shapeOf(formation);
+  const matched = style.shape.filter((k) => SHAPE_TRAITS[k].fits(s)), missed = style.shape.filter((k) => !SHAPE_TRAITS[k].fits(s));
+  const w = (k) => SOFT.has(k) ? 1 : 2;
+  const sum = (ks) => ks.reduce((a, k) => a + w(k), 0);
+  return { fit: Math.round(sum(matched) / sum(style.shape) * 100) / 100, matched: matched.map((k) => SHAPE_TRAITS[k].label), missed: missed.map((k) => SHAPE_TRAITS[k].label) };
+}
+function liftPool(pool, style, rated) {
+  return pool.map((c4) => {
+    let lift = rated.get(fold(c4.name)) ?? 0;
+    for (const k of style.players) {
+      const v = c4.stats?.[PLAYER_TRAITS[k].stat];
+      if (typeof v === "number") lift += Math.max(-1.5, Math.min(1.5, (v - 80) / 6));
+    }
+    return lift ? { ...c4, rating: (c4.rating ?? 0) + Math.max(-3, Math.min(4, lift)) } : c4;
+  });
+}
+function scoreFormations(base, pool, rules, ranked, style, current, must = {}) {
+  const named2 = formationName2(style.text);
+  const fits = Object.keys(FORMATIONS).map((f2) => ({ f: f2, fit: styleFit(f2, style)?.fit ?? 0 })).sort((a, b) => b.fit - a.fit);
+  const open = [.../* @__PURE__ */ new Set([
+    ...ranked.map((r2) => r2.formation),
+    ...style.shape.length ? fits.filter((x) => x.fit >= (fits[0]?.fit ?? 0) - 0.01).slice(0, 6).map((x) => x.f) : [],
+    ...named2 ? [named2] : [],
+    ...current && FORMATIONS[current] ? [current] : [],
+    "4-2-3-1"
+  ])].filter((f2) => FORMATIONS[f2]);
+  const has = mustLabel(must);
+  const allowed = has.length ? fits.map((x) => x.f).filter((f2) => meets2(f2, must)) : [];
+  const candidates = (allowed.length ? allowed : open).slice(0, 14);
+  const maxScore = Math.max(0, ...ranked.map((r2) => r2.score));
+  const minScore = Math.min(0, ...ranked.map((r2) => r2.score));
+  const squads = /* @__PURE__ */ new Map();
+  const built = pool.length ? candidates.map((f2) => {
+    const b = bestSquadFor(base, f2, pool, rules, "ovr");
+    squads.set(f2, b);
+    return b;
+  }) : [];
+  const ratings = built.filter((b) => b.filled).map((b) => b.rating * b.filled / 11);
+  const hi = Math.max(...ratings, 0), lo = Math.min(...ratings, hi);
+  const mine = current && FORMATIONS[current] ? shapeOf(current) : null;
+  const near2 = (f2) => mine ? Object.entries(shapeOf(f2)).reduce((a, [p, c4]) => a + Math.min(c4, mine[p] ?? 0), 0) : 0;
+  const options = candidates.map((f2) => {
+    const r2 = ranked.find((x) => x.formation === f2) ?? null;
+    const community = r2 ? { score: r2.score, net: r2.net, claims: r2.claims, topic_key: r2.key } : null;
+    const c4 = !r2 ? 0 : r2.score >= 0 ? maxScore ? r2.score / maxScore : 0 : minScore ? -r2.score / minScore : 0;
+    const style_ = styleFit(f2, style);
+    const b = squads.get(f2) ?? null;
+    const club = b ? { rating: b.rating, chemistry: b.chemistry, filled: b.filled, empty: b.empty } : null;
+    const clubFit = b && b.filled ? hi > lo ? (b.rating * b.filled / 11 - lo) / (hi - lo) : 1 : 0;
+    const w = { community: ranked.length ? 30 : 0, style: style_ ? 50 : 0, club: club ? 20 : 0 };
+    const total = w.community + w.style + w.club || 1;
+    let score3 = (w.community * ((c4 + 1) / 2) + w.style * (style_?.fit ?? 0) + w.club * clubFit) / total * 100;
+    if (named2 === f2) score3 += 15;
+    const why = [
+      named2 === f2 ? "you named it" : null,
+      allowed.length ? `it has ${has.join(" and ")}` : null,
+      community ? community.score > 0 ? `the community backs it (${community.claims} claim${community.claims === 1 ? "" : "s"})` : community.score < 0 ? "the community is cool on it" : "the community is split on it" : ranked.length ? "nobody in the bank is talking about it" : null,
+      style_ ? style_.matched.length ? `it gives you ${style_.matched.join(", ")}${style_.missed.length ? ` but not ${style_.missed.join(", ")}` : ""}` : `it doesn't give you ${style_.missed.join(", ")}` : null,
+      club ? club.empty.length ? `your club leaves ${club.empty.length} slot${club.empty.length === 1 ? "" : "s"} empty in it` : `your club makes an ${club.rating}-rated XI in it` : null
+    ].filter(Boolean).join("; ");
+    return { formation: f2, score: Math.round(Math.min(100, score3)), community, style: style_, club, why: why ? why[0].toUpperCase() + why.slice(1) + "." : "" };
+  }).sort((a, b) => b.score - a.score || (b.community?.score ?? 0) - (a.community?.score ?? 0) || (b.club?.chemistry ?? 0) - (a.club?.chemistry ?? 0) || near2(b.formation) - near2(a.formation) || a.formation.localeCompare(b.formation));
+  return { options, squads };
+}
+async function idealSquad(db2, userId, base, pool, rules, input, team, env, fetchFn, beforeAi, statPicker) {
+  const text5 = input.playstyle.replace(/\s+/g, " ").trim().slice(0, MAX_PLAYSTYLE);
+  if (env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) beforeAi?.();
+  const must = { strikers: input.strikers ?? null, defenders: input.defenders ?? null };
+  const style = withPills(await readPlaystyle(text5, env, fetchFn), input.traits ?? [], must);
+  const brief = [style.summary.includes("You picked") ? style.summary.slice(style.summary.indexOf("You picked")) : "", text5].filter(Boolean).join(" ");
+  let options = [], squads = /* @__PURE__ */ new Map();
+  const plan = await teamPlan(db2, userId, {
+    days: input.days,
+    platform: input.platform,
+    refresh: true,
+    playstyle: brief || null,
+    pickFormation: (ranked) => {
+      ({ options, squads } = scoreFormations(base, pool, rules, ranked, style, team.squad?.formation ?? base.formation, must));
+      const pick = (input.formation && FORMATIONS[input.formation] ? options.find((o) => o.formation === input.formation) ?? { formation: input.formation, why: "You picked it." } : null) ?? options[0];
+      return Promise.resolve(pick ? { formation: pick.formation, why: pick.why } : null);
+    }
+  }, team, env, fetchFn, void 0, statPicker);
+  const formation = plan.formation.name;
+  const rated = /* @__PURE__ */ new Map();
+  for (const g of plan.positions) for (const p of g.community) {
+    const name2 = p.card?.player_name ?? p.owned_card?.name;
+    if (name2 && p.owned) rated.set(fold(name2), p.verdict === "rated" ? 2 : p.verdict === "overrated" ? -1.5 : 0);
+  }
+  const byId = new Map(pool.map((c4) => [c4.id, c4]));
+  const best = pool.length ? bestSquadFor(base, formation, liftPool(pool, style, rated), rules, "ovr") : squads.get(formation) ?? null;
+  const slots = (best?.squad.slots ?? (FORMATIONS[formation] ?? []).map((l) => ({ slot: l.slot, position: l.position, card: null, locked: false }))).map((s) => ({ ...s, card: s.card ? byId.get(s.card.id) ?? s.card : null }));
+  const filled = slots.filter((s) => s.card);
+  const notes = {};
+  for (const s of filled) {
+    const c4 = s.card, lift = rated.get(fold(c4.name)) ?? 0;
+    const suits = style.players.filter((k) => (c4.stats?.[PLAYER_TRAITS[k].stat] ?? 0) >= 85).map((k) => `${c4.stats[PLAYER_TRAITS[k].stat]} ${PLAYER_TRAITS[k].label}`);
+    const bits = [lift > 0 ? "the community rates him" : lift < 0 ? "people call him overrated, but he's your best here" : null, suits.length ? `suits your style (${suits.join(", ")})` : null].filter(Boolean);
+    if (bits.length) notes[s.slot] = bits.join("; ");
+  }
+  const shown = options.slice(0, 6);
+  const backed = options.filter((o) => (o.community?.score ?? 0) > 0).sort((x, y) => y.community.score - x.community.score)[0];
+  for (const must2 of [options.find((o) => o.formation === formation), backed]) {
+    if (must2 && !shown.includes(must2)) shown.splice(shown.findLastIndex((o) => o.formation !== formation && o !== backed), 1, must2);
+  }
+  return {
+    playstyle: style,
+    formation,
+    options: shown.sort((x, y) => options.indexOf(x) - options.indexOf(y)),
+    squad: { ...base, formation, slots, updated_at: (/* @__PURE__ */ new Date()).toISOString() },
+    chemistry: best?.chemistry ?? 0,
+    rating: filled.length ? Math.round(filled.reduce((a, s) => a + (s.card.rating ?? 0), 0) / filled.length) : 0,
+    empty: slots.filter((s) => !s.card).map((s) => s.slot),
+    notes,
+    plan
+  };
+}
+var USUAL = ["4-2-3-1", "4-4-2", "4-3-3 (2)"];
+async function topMetas(db2, userId, days) {
+  const c4 = await communityFormations(db2, userId, days);
+  const metas = c4.ranked.filter((f2) => f2.score > 0 && FORMATIONS[f2.formation]).slice(0, 3).map((f2) => ({ formation: f2.formation, basis: "community", claims: f2.claims, net: f2.net, said: f2.said, topic_key: f2.key }));
+  for (const f2 of USUAL) {
+    if (metas.length >= 3) break;
+    if (!metas.some((m) => m.formation === f2) && !c4.ranked.some((r2) => r2.formation === f2 && r2.score < 0)) metas.push({ formation: f2, basis: "usual", claims: 0, net: null, said: null, topic_key: null });
+  }
+  return { metas, tactics: c4.tactics.map((t) => ({ topic: t.topic, claims: t.claims, said: t.said })), claims: c4.claims, days: c4.days };
 }
 
 // supabase/functions/_shared/fut/community.ts
@@ -13062,7 +13394,7 @@ async function setSharing(db2, userId, on) {
 function captureContributions(text5, now2 = Date.now()) {
   const lines = text5.trim().split(/\r?\n/);
   const head = (lines.shift() ?? "").split(",").map((s) => s.trim());
-  const col = (n) => head.indexOf(n);
+  const col = (n2) => head.indexOf(n2);
   const [iEa, iPl, iPr, iAt, iLs] = ["ea_item_id", "platform", "price", "observed_at", "listings"].map(col);
   if (iEa !== 0 || iPr < 0 || iAt < 0) return [];
   const best = /* @__PURE__ */ new Map();
@@ -13386,7 +13718,7 @@ function change(series, window2) {
   return pct5(start.price, last.price);
 }
 var pct5 = (a, b) => a > 0 ? (b - a) / a * 100 : 0;
-var round = (n, d = 2) => Math.round(n * 10 ** d) / 10 ** d;
+var round = (n2, d = 2) => Math.round(n2 * 10 ** d) / 10 ** d;
 function window(series, hours) {
   const last = series.at(-1);
   if (!last) return [];
@@ -13554,7 +13886,7 @@ function summarizeIndex(def, ix, currentPrices, rules = DEFAULT_MARKET_RULES) {
     distribution: currentPrices.length ? { p10: q(0.1), p25: q(0.25), median: q(0.5), p75: q(0.75), p90: q(0.9) } : null
   };
 }
-var nullRound = (n, d = 2) => n === null ? null : round(n, d);
+var nullRound = (n2, d = 2) => n2 === null ? null : round(n2, d);
 
 // supabase/functions/_shared/fut/xilab/market/regime.ts
 function classifyRegime(indexes, rules = DEFAULT_MARKET_RULES) {
@@ -13594,16 +13926,16 @@ function classifyRegime(indexes, rules = DEFAULT_MARKET_RULES) {
   return { primary, flags, observations, not_evaluable, strategy_notes: strategyNotes(primary, flags), rules_version: rules.id };
 }
 function strategyNotes(primary, flags) {
-  const n = [];
+  const n2 = [];
   if (primary === "insufficient_data") return ["Not enough fresh market data: Market Lab won't rate any setup as favourable."];
-  if (primary === "broadly_falling") n.push("Falling market: mean-reversion buys carry extra risk; a card holding value while peers fall is worth a look, not a buy signal.");
-  if (primary === "broadly_rising") n.push("Rising market: judge momentum against the index, not in coins; most cards rising is not relative strength.");
-  if (primary === "sideways") n.push("Range-bound market: relative value and mean reversion are the most informative Stage A signals.");
-  if (flags.some((f2) => f2.regime === "sbc_driven_demand")) n.push("Fodder outperforming: fodder momentum may be SBC-driven and can reverse when the SBC expires.");
-  if (flags.some((f2) => f2.regime === "promo_volatility")) n.push("Promo volatility: wider downside scenarios are appropriate for promo cards.");
-  return n;
+  if (primary === "broadly_falling") n2.push("Falling market: mean-reversion buys carry extra risk; a card holding value while peers fall is worth a look, not a buy signal.");
+  if (primary === "broadly_rising") n2.push("Rising market: judge momentum against the index, not in coins; most cards rising is not relative strength.");
+  if (primary === "sideways") n2.push("Range-bound market: relative value and mean reversion are the most informative Stage A signals.");
+  if (flags.some((f2) => f2.regime === "sbc_driven_demand")) n2.push("Fodder outperforming: fodder momentum may be SBC-driven and can reverse when the SBC expires.");
+  if (flags.some((f2) => f2.regime === "promo_volatility")) n2.push("Promo volatility: wider downside scenarios are appropriate for promo cards.");
+  return n2;
 }
-var fmt = (n, unit = "%") => `${n >= 0 ? "+" : ""}${Math.round(n * 100) / 100}${unit}`;
+var fmt = (n2, unit = "%") => `${n2 >= 0 ? "+" : ""}${Math.round(n2 * 100) / 100}${unit}`;
 
 // supabase/functions/_shared/fut/xilab/market/signals.ts
 var BENCHMARK_LABEL = {
@@ -13787,7 +14119,7 @@ function assessSignals(input) {
   else reasons.push("Nothing unusual against its benchmarks.");
   return { status: "watch", categories, reasons, could_be_wrong, entry_risk: entry, evidence: "estimate" };
 }
-var r = (n) => n === null || n === void 0 ? null : round(n);
+var r = (n2) => n2 === null || n2 === void 0 ? null : round(n2);
 
 // supabase/functions/_shared/fut/xilab/market/thesis.ts
 function analyzeTrade(input, market = { latest_price: null, freshness: null }, rules = DEFAULT_MARKET_RULES) {
@@ -13861,8 +14193,8 @@ function breakEvenPrice(buy, rules = DEFAULT_MARKET_RULES) {
   while (netAfterTax(p, rules) < buy) p = roundToStep(p + 1, "up", rules);
   return p;
 }
-var round2 = (n) => Math.round(n * 100) / 100;
-var round4 = (n) => Math.round(n * 1e4) / 1e4;
+var round2 = (n2) => Math.round(n2 * 100) / 100;
+var round4 = (n2) => Math.round(n2 * 1e4) / 1e4;
 
 // supabase/functions/_shared/fut/xilab/market/sources.ts
 var NONE = {
@@ -13975,9 +14307,9 @@ function parseCsv(text5) {
 
 // supabase/functions/_shared/fut/xilab/market/capture.ts
 function captureDetailsFromRow(r2) {
-  const n = (v) => v === void 0 || v === null || v === "" || !Number.isInteger(Number(v)) || Number(v) < 0 ? void 0 : Number(v);
+  const n2 = (v) => v === void 0 || v === null || v === "" || !Number.isInteger(Number(v)) || Number(v) < 0 ? void 0 : Number(v);
   const pos = typeof r2.position === "string" && /^[A-Z]{2,3}$/.test(r2.position.trim()) ? r2.position.trim() : void 0;
-  const d = { rare_flag: n(r2.rare_flag), team_id: n(r2.team_id), league_id: n(r2.league_id), nation_id: n(r2.nation_id), position: pos };
+  const d = { rare_flag: n2(r2.rare_flag), team_id: n2(r2.team_id), league_id: n2(r2.league_id), nation_id: n2(r2.nation_id), position: pos };
   const kept = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== void 0));
   return Object.keys(kept).length ? kept : void 0;
 }
@@ -14211,11 +14543,11 @@ function withoutOne(sorted, skip) {
       }
     }
   }
-  const n = sorted.length - (at2 < 0 ? 0 : 1);
-  if (!n) return { n, median: null };
+  const n2 = sorted.length - (at2 < 0 ? 0 : 1);
+  if (!n2) return { n: n2, median: null };
   const el = (k) => sorted[at2 >= 0 && k >= at2 ? k + 1 : k];
-  const m = n >> 1;
-  return { n, median: n % 2 ? el(m) : (el(m - 1) + el(m)) / 2 };
+  const m = n2 >> 1;
+  return { n: n2, median: n2 % 2 ? el(m) : (el(m - 1) + el(m)) / 2 };
 }
 var LOOKBACK_H = 8 * 24;
 function createMarketService(deps) {
@@ -15149,9 +15481,9 @@ async function body(req, max = MAX_BODY2) {
 }
 function intParam(v, field, min, max) {
   if (v === null || v === "") return void 0;
-  const n = Number(v);
-  if (!Number.isInteger(n) || n < min || n > max) throw new FutError(`${field} must be a whole number from ${min} to ${max}.`);
-  return n;
+  const n2 = Number(v);
+  if (!Number.isInteger(n2) || n2 < min || n2 > max) throw new FutError(`${field} must be a whole number from ${min} to ${max}.`);
+  return n2;
 }
 function parse(schema, v) {
   const r2 = schema.safeParse(v);
@@ -15463,6 +15795,38 @@ async function handle(req, deps) {
           if (typeof formation !== "string" || formation !== "all" && !FORMATIONS[formation]) throw new FutError(`formation must be "all" or one of: ${Object.keys(FORMATIONS).join(", ")}.`);
           if (!pool.length) throw new FutError("You have no club cards yet. Sync your club or add cards on My cards first.");
           return { by, owned_cards: pool.length, results: bestSquads(squad, formation, pool, rules, by) };
+        }) });
+      }
+      if (route === "/squads/metas" && m === "GET") {
+        return json({ data: await topMetas(db2, userId, intParam(url.searchParams.get("days"), "days", 1, 365) ?? 90) });
+      }
+      if (route === "/squads/ideal" && m === "POST") {
+        const b = obj2(await body(req));
+        if (b.playstyle !== void 0 && typeof b.playstyle !== "string") throw new FutError("playstyle must be text.");
+        const playstyle = b.playstyle ?? "";
+        if (playstyle.length > MAX_PLAYSTYLE) throw new FutError(`Keep your playstyle under ${MAX_PLAYSTYLE} characters.`);
+        if (b.formation !== void 0 && b.formation !== null && (typeof b.formation !== "string" || !FORMATIONS[b.formation])) throw new FutError(`formation must be one of: ${Object.keys(FORMATIONS).join(", ")}.`);
+        const days = b.days === void 0 ? 90 : Number(b.days);
+        if (!Number.isInteger(days) || days < 1 || days > 365) throw new FutError("days must be a whole number from 1 to 365.");
+        const known = [...Object.keys(SHAPE_TRAITS), ...Object.keys(PLAYER_TRAITS)];
+        if (b.traits !== void 0 && (!Array.isArray(b.traits) || b.traits.length > 20 || b.traits.some((t) => typeof t !== "string" || !known.includes(t)))) throw new FutError(`traits must be a list from: ${known.join(", ")}.`);
+        const count2 = (v, name2, allowed) => {
+          if (v === void 0 || v === null) return null;
+          if (!allowed.includes(v)) throw new FutError(`${name2} must be ${allowed.join(", ").replace(/, (\d)$/, " or $1")}.`);
+          return v;
+        };
+        const strikers = count2(b.strikers, "strikers", [1, 2, 3]), defenders = count2(b.defenders, "defenders", [3, 4, 5]);
+        const platform = platformParam(typeof b.platform === "string" ? b.platform : null);
+        const { env, own } = await envForUser(db2, userId, deps.env ?? ((k) => Deno.env.get(k)));
+        const fetchFn = deps.fetch ?? fetch;
+        const perHour = own ? Infinity : Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
+        return json({ data: await runWorkspace(async () => {
+          const squad = squadSchema.parse({ ...obj2(b.squad), owner_id: userId });
+          const [rules, mine, team] = await Promise.all([activeRules(db2), searchMyCards(db2, userId, { all: true, owned_only: true }), loadTeam(db2, userId, squad.id ?? null, platform)]);
+          team.squad = { id: squad.id, name: squad.name, formation: squad.formation, xi: squad.slots.map((x) => ({ slot: x.slot, position: x.position, name: x.card?.name ?? null, rating: x.card?.rating ?? null })) };
+          return idealSquad(db2, userId, squad, mine.map(toWorkspaceCard), rules, { playstyle, formation: b.formation ?? null, days, platform, traits: b.traits ?? [], strikers, defenders }, team, env, fetchFn, () => {
+            if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
+          });
         }) });
       }
       if (route === "/squads/upgrades" && m === "POST") {
