@@ -1,7 +1,7 @@
 // Knowledge bank through the fut-api routes and the scheduler job, on real PostgreSQL (PGlite), with Reddit, YouTube and
 // Claude faked.
 import { handle, type Deps } from "./handler.ts";
-import { cleanReading, collectReddit, isGameplayPost, parseRedditRss, parseSourceLink, redditMode, rssHtmlText, topicKey } from "../_shared/fut/knowledge.ts";
+import { cleanReading, collectReddit, RedditRateLimited, isGameplayPost, parseRedditRss, parseSourceLink, redditMode, rssHtmlText, topicKey } from "../_shared/fut/knowledge.ts";
 import { knowledgeDb, ME, OTHER, rpcOver } from "../_shared/fut/knowledge-test-db.ts";
 
 function assert(ok: unknown, msg = "Assertion failed"): asserts ok { if (!ok) throw new Error(msg); }
@@ -40,7 +40,7 @@ const redditThread = [{ data: { children: [{ data: redditListing.data.children[0
 
 function fakes() {
   const calls: { url: string; body?: unknown }[] = [];
-  let reading: unknown = null, answer: unknown = null;
+  let reading: unknown = null, answer: unknown = null, noCredit = false;
   const fetcher = (url: string, init?: RequestInit) => {
     const body = init?.body && String(init.body).startsWith("{") ? JSON.parse(String(init.body)) : init?.body;
     calls.push({ url, body });
@@ -53,13 +53,14 @@ function fakes() {
     if (url.includes("youtube/v3/search")) return ok({ items: [{ id: { videoId: "vid00000001" } }] });
     if (url.includes("youtube/v3/videos")) return ok({ items: [{ id: "vid00000001", snippet: { title: "BEST META TACTICS FC 27", description: "4-4-2 custom tactics inside", channelTitle: "Some Creator", publishedAt: new Date().toISOString() }, statistics: { viewCount: "120000", commentCount: "3" } }] });
     if (url.includes("youtube/v3/commentThreads")) return ok({ items: [{ snippet: { topLevelComment: { snippet: { textDisplay: "4-4-2 with these tactics is broken, thanks!", likeCount: 40 } } } }] });
+    if (url.includes("api.anthropic.com") && noCredit) return Promise.resolve(new Response(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API." } }), { status: 400 }));
     if (url.includes("api.anthropic.com")) {
       const isAsk = String((body as { system?: string })?.system ?? "").includes("You answer");
       return ok({ stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(isAsk ? answer : reading) }] });
     }
     return Promise.resolve(new Response("nope", { status: 404 }));
   };
-  return { calls, fetcher, setReading: (v: unknown) => { reading = v; }, setAnswer: (v: unknown) => { answer = v; } };
+  return { calls, fetcher, setReading: (v: unknown) => { reading = v; }, setAnswer: (v: unknown) => { answer = v; }, setNoCredit: (v: boolean) => { noCredit = v; } };
 }
 
 const rssEntry = (id: string, title: string, html: string, author = "someone") =>
@@ -86,13 +87,35 @@ Deno.test("Reddit through its RSS feeds when there are no API keys", async () =>
     if (url.includes("/comments/rss1/.rss")) return Promise.resolve(new Response(rssThread));
     return Promise.resolve(new Response("blocked", { status: 403 }));
   };
-  const got = await collectReddit((k) => k === "FUT_KB_SUBREDDITS" ? "fut" : undefined, fetcher);
+  const fast = (more: Record<string, string> = {}) => (k: string) => ({ FUT_KB_SUBREDDITS: "fut", FUT_KB_REDDIT_GAP_MS: "0", ...more } as Record<string, string>)[k];
+  const got = await collectReddit(fast(), fetcher);
   assert(got.length === 1 && got[0]!.external_id === "rss1" && got[0]!.url === "https://www.reddit.com/r/fut/comments/rss1/x/" && got[0]!.score === 0, JSON.stringify(got));
   assert(got[0]!.body.includes("number 1 in today's top posts") && got[0]!.body.includes("- Agree, 4-4-2 is the meta") && !got[0]!.body.includes("AutoMod"), got[0]!.body);
   assert(urls.length === 2 && !urls.some((u) => u.includes("oauth")), "no sign-in, the kit post isn't fetched");
   let failed = "";
-  await collectReddit(() => undefined, fetcher).catch((e) => { failed = (e as Error).message; });
+  await collectReddit(fast({ FUT_KB_SUBREDDITS: "EASportsFC" }), fetcher).catch((e) => { failed = (e as Error).message; });
   assert(failed.includes("HTTP 403"), "a blocked feed fails the run's Reddit step so it shows on the page");
+
+  // Rate limits: posts already in the bank aren't fetched again, a 429 stops asking and keeps what's collected
+  urls.length = 0;
+  assert((await collectReddit(fast(), fetcher, () => Promise.resolve(new Set(["rss1"])))).length === 0 && urls.length === 1, "known post: only the listing is read");
+  let limitedAt = "";
+  const limitedFetch = (url: string) => {
+    urls.push(url);
+    if (url.includes("/r/fut/top/.rss")) return Promise.resolve(new Response(rssTop));
+    limitedAt = url;
+    return Promise.resolve(new Response("slow down", { status: 429, headers: { "retry-after": "60" } }));
+  };
+  urls.length = 0;
+  const partial = await collectReddit(fast({ FUT_KB_SUBREDDITS: "fut,EASportsFC" }), limitedFetch);
+  assert(partial.length === 1 && partial[0]!.external_id === "rss1" && urls.length === 2 && limitedAt.includes("/comments/rss1/"), `keeps the post, stops before r/EASportsFC: ${urls.join(" ")}`);
+  let rateMsg = "";
+  await collectReddit(fast({ FUT_KB_SUBREDDITS: "EASportsFC" }), limitedFetch).catch((e) => { rateMsg = e instanceof RedditRateLimited ? e.message : ""; });
+  assert(rateMsg.includes("HTTP 429") && rateMsg.includes("60 s"), rateMsg);
+  urls.length = 0;
+  const started = Date.now();
+  await collectReddit(fast({ FUT_KB_REDDIT_GAP_MS: "40" }), fetcher);
+  assert(urls.length === 2 && Date.now() - started >= 40, "requests are spaced out");
 });
 
 Deno.test("knowledge routes and the ingest job", async () => {
@@ -127,12 +150,19 @@ Deno.test("knowledge routes and the ingest job", async () => {
       { topic: "4-4-2", category: "formations", statement: "4-4-2 custom tactics are broken", stance: "for", strength: 2 },
     ] });
     const keys = { REDDIT_CLIENT_ID: "id", REDDIT_CLIENT_SECRET: "s", YOUTUBE_API_KEY: "y", ANTHROPIC_API_KEY: "k", FUT_KB_YOUTUBE_HOURS: Array.from({ length: 24 }, (_, i) => i).join(",") };
+    // Out of Claude credit: the run stops reading without blaming any source
+    f.setNoCredit(true);
+    const broke = await job(keys);
+    assert(broke.status === 200 && broke.data.data.feeds.reddit.collected === 1, `only the gameplay post with enough upvotes: ${JSON.stringify(broke.data)}`);
+    assert(broke.data.data.feeds.reader.status === "failed" && broke.data.data.feeds.reader.error.includes("credit balance") && broke.data.data.read === 0 && broke.data.data.failed === 0 && broke.data.data.waiting === 2, JSON.stringify(broke.data.data));
+    assert(f.calls.filter((c) => c.url.includes("anthropic")).length === 1, "stops after the first refusal");
+    f.setNoCredit(false);
     const ran = await job(keys);
     assert(ran.status === 200, JSON.stringify(ran.data));
     const r = ran.data.data;
-    assert(r.feeds.reddit.status === "ok" && r.feeds.reddit.collected === 1, `only the gameplay post with enough upvotes: ${JSON.stringify(r.feeds)}`);
-    assert(r.feeds.youtube.collected === 1 && r.read === 2 && r.claims === 6 && r.waiting === 0, JSON.stringify(r));
-    assert(runs.length === 2 && runs.at(-1)!.t === "kb_runs" && runs.at(-1)!.read === 2, "each run is logged");
+    assert(r.feeds.reddit.status === "ok" && r.feeds.reddit.collected === 0, JSON.stringify(r.feeds));
+    assert(r.feeds.youtube.collected === 0 && r.read === 2 && r.claims === 6 && r.waiting === 0, JSON.stringify(r));
+    assert(runs.length === 3 && runs.at(-1)!.t === "kb_runs" && runs.at(-1)!.read === 2, "each run is logged");
     const readerCall = f.calls.find((c) => c.url.includes("anthropic") && JSON.stringify(c.body).includes("Disagree, 4-2-3-1"));
     assert(readerCall && !JSON.stringify(readerCall.body).includes("AutoMod text"), "top comments go to the reader, AutoModerator doesn't");
     const second = (f.calls.filter((c) => c.url.includes("anthropic")).at(-1)!.body as { system: string }).system;
