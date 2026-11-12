@@ -40,6 +40,7 @@ import {
   addSource, ask, deleteKnowledgeSource, KB_CATEGORIES, knowledgeMap, knowledgeSources, knowledgeStatus, knowledgeTopic, MAX_ADD_TEXT, MAX_QUESTION,
   runKnowledgeIngest, type AskTurn,
 } from "../_shared/fut/knowledge.ts";
+import { applyToTeam, loadTeam, teamPlan } from "../_shared/fut/knowledge-team.ts";
 import { importCardArt, listCardArt } from "../_shared/fut/card-art.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
 import { aiKeyStatus, envForUser, removeAiKey, revealAiKey, saveAiKey } from "../_shared/fut/ai-keys.ts";
@@ -575,7 +576,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (route.startsWith("/knowledge/")) {
       const baseEnv = deps.env ?? ((k: string) => Deno.env.get(k));
       // Status, adding a source and Ask use the user's own Claude key when they saved one; the map and lists need none.
-      const usesAi = route === "/knowledge/status" || route === "/knowledge/ask" || (route === "/knowledge/sources" && m === "POST");
+      const usesAi = route === "/knowledge/status" || route === "/knowledge/ask" || (route === "/knowledge/sources" && m === "POST")
+        || route === "/knowledge/apply" || route === "/knowledge/team-plan";
       const { env, own } = usesAi ? await envForUser(db, userId, baseEnv) : { env: baseEnv, own: false };
       const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
       const p = url.searchParams;
@@ -614,6 +616,28 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         });
         const perHour = own ? Infinity : Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
         return json({ data: await ask(db, userId, b.question, history, env, fetchFn, () => {
+          if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
+        }) });
+      }
+      // For my team: one topic or source against the user's squad and club, and the bank's view as a game plan
+      // (formation, tactics, players by position with prices and owned) — knowledge-team.ts.
+      if (route === "/knowledge/apply" && m === "POST") {
+        const b = obj(await body(req));
+        const topic = typeof b.topic === "string" && /^[a-z0-9][a-z0-9-]{0,79}$/.test(b.topic) ? b.topic : null;
+        const source = typeof b.source === "string" && /^[0-9a-f-]{36}$/.test(b.source) ? b.source : null;
+        if (!topic && !source) throw new FutError("Send a topic key or a source id.");
+        const squadId = typeof b.squad === "string" && b.squad.trim() ? b.squad.trim().slice(0, 64) : null;
+        const team = await loadTeam(db, userId, squadId, platformParam(typeof b.platform === "string" ? b.platform : null));
+        const perHour = own ? Infinity : Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
+        return json({ data: await applyToTeam(db, userId, { topic, source }, team, env, fetchFn, () => {
+          if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
+        }) });
+      }
+      if (route === "/knowledge/team-plan" && m === "GET") {
+        const platform = platformParam(p.get("platform"));
+        const team = await loadTeam(db, userId, p.get("squad") || null, platform);
+        const perHour = own ? Infinity : Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
+        return json({ data: await teamPlan(db, userId, { days: days ?? 30, platform, refresh: p.get("refresh") === "true" }, team, env, fetchFn, () => {
           if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
         }) });
       }

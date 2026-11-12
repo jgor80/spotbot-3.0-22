@@ -319,6 +319,35 @@ export interface KbSource extends KbSourceRef { author: string | null; excerpt: 
 export interface KbRun { started_at: string; finished_at: string | null; feeds: Record<string, { status: string; collected?: number; error?: string }>; read: number; skipped: number; failed: number; error: string | null }
 export interface KbStatus { sources: number; claims: number; topics: number; waiting: number; last_run: KbRun | null; last_success: string | null; feeds: { reddit: boolean; reddit_mode?: "api" | "rss" | "off"; youtube: boolean; reader: boolean }; paused: boolean }
 export interface KbAddResult { id: string; claims: number; relevant: boolean; summary: string; shared: boolean; topics: string[] }
+// Knowledge Bank for my team: a topic or source applied to the user's squad, and the community game plan
+export interface KbQuickMatch { kind: "formation" | "player" | "playstyle"; text: string; players: string[] }
+export interface KbTeamAdvice { fit: "high" | "some" | "low"; headline: string; points: string[]; actions: string[] }
+export interface KbApplyResult {
+  about: { kind: "topic" | "source"; key: string; title: string; url: string | null; claims: number };
+  team: { squad: { name: string; formation: string } | null; club_size: number };
+  matches: KbQuickMatch[]; advice: KbTeamAdvice | null; via: "ai" | "data";
+}
+export interface KbPick { key: string; topic: string; net: number | null; buzz: number; agreement: KbAgreement; claims: number; for: number; against: number; said: string | null; cite: number | null }
+export interface KbFormationPick extends KbPick { formation: string; score: number }
+export interface KbCatalogueCard { id: string; player_name: string; version: string | null; overall: number; position: string; alt_positions: string[]; price: number | null; owned: boolean; matched: "name" | "last"; ea_item_id: number | null }
+export interface KbPlayerPick extends KbPick {
+  verdict: "rated" | "overrated" | "mixed"; position: string | null; card: KbCatalogueCard | null; versions: KbCatalogueCard[]; owned: boolean;
+  owned_card: { name: string; rating: number; version: string | null } | null;
+}
+export interface KbPositionGroup { position: string; in_formation: number; community: KbPlayerPick[]; yours: { name: string; rating: number; version: string | null; in_squad: boolean }[] }
+export interface KbTeamPlan {
+  days: number; claims: number; sources: number; generated_at: string; via: "ai" | "data";
+  team: { squad: { id: string; name: string; formation: string } | null; squads: { id: string; name: string; formation: string }[]; club_size: number; coins: number | null };
+  formation: { recommended: KbFormationPick | null; ranked: KbFormationPick[]; yours: KbFormationPick | null; positions: string[] };
+  tactics: { recommended: KbPick[]; avoid: KbPick[] };
+  playstyles: { recommended: KbPick[]; avoid: KbPick[] };
+  positions: KbPositionGroup[];
+  summary: string | null; formation_why: string | null;
+  settings: { setting: string; value: string; why: string; cites: number[] }[];
+  instructions: { position: string; instruction: string; why: string; cites: number[] }[];
+  for_your_team: string[];
+  citations: { n: number; kind: KbSourceRef["kind"]; url: string | null; title: string | null; community: string | null }[];
+}
 export interface KbAnswer { answer: string; via: "ai" | "search"; sources: (KbSourceRef & { n: number })[]; topics: string[]; claims: number }
 
 export const futApi = {
@@ -362,6 +391,8 @@ export const futApi = {
     add: (input: { url?: string; text?: string; title?: string; share: boolean }) => futRequest<KbAddResult>("/knowledge/sources", "POST", input),
     remove: (id: string) => futRequest<{ deleted: string }>(`/knowledge/sources/${encodeURIComponent(id)}`, "DELETE"),
     ask: (question: string, history: FinderTurn[]) => futRequest<KbAnswer>("/knowledge/ask", "POST", { question, history }),
+    apply: (target: { topic?: string; source?: string; squad?: string }) => futRequest<KbApplyResult>("/knowledge/apply", "POST", target),
+    teamPlan: (days: number, squad: string | null, refresh = false) => futRequest<KbTeamPlan>(`/knowledge/team-plan?${new URLSearchParams({ days: String(days), ...(squad ? { squad } : {}), ...(refresh ? { refresh: "true" } : {}) })}`),
   },
   players: {
     search: (query: PlayerQuery, platform: MarketPlatform, page = 0, limit = 50) => futRequest<PlayerSearch>("/players/search", "POST", { query, platform, limit, offset: page * limit }),

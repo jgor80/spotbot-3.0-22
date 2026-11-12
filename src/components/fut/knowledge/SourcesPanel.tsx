@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ago, sourceLabel } from "./knowledgePresentation";
 import { bookmarkletSource, readSentSource } from "./sendToBank";
+import { ApplyToTeam } from "./ApplyToTeam";
 
 const MAX_TEXT = 12_000;
 
@@ -106,7 +107,7 @@ const STATUS: Record<KbSource["status"], string> = { pending: "Waiting", read: "
 
 function SourceRow({ s, onDelete, deleting }: { s: KbSource; onDelete: (id: string) => void; deleting: boolean }) {
   return <li className="flex items-start justify-between gap-3 rounded-lg border border-border p-3 text-sm">
-    <div className="min-w-0 space-y-1">
+    <div className="min-w-0 flex-1 space-y-1">
       {s.url ? <a href={s.url} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex max-w-full items-center gap-1 font-medium hover:underline"><span className="truncate">{sourceLabel(s)}</span><ExternalLink className="h-3 w-3 shrink-0" /></a>
         : <p className="font-medium">{sourceLabel(s)}</p>}
       {s.note && <p className="text-muted-foreground">{s.note}</p>}
@@ -117,6 +118,7 @@ function SourceRow({ s, onDelete, deleting }: { s: KbSource; onDelete: (id: stri
         {s.status !== "read" && <span>· {STATUS[s.status]}</span>}
         {s.mine && <span className="inline-flex items-center gap-1">· {s.shared ? <><Users className="h-3 w-3" />shared by you</> : <><Lock className="h-3 w-3" />private</>}</span>}
       </p>
+      {s.claims > 0 && <ApplyToTeam source={s.id} compact />}
     </div>
     {s.mine && <Button type="button" variant="ghost" size="icon" aria-label="Delete this source" disabled={deleting} onClick={() => onDelete(s.id)}><Trash2 className="h-4 w-4" /></Button>}
   </li>;

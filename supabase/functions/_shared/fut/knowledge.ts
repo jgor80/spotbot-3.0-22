@@ -19,7 +19,10 @@ export const KB_CATEGORIES = ["formations", "tactics", "players", "playstyles", 
 export type KbCategory = typeof KB_CATEGORIES[number];
 const DEFAULT_MODEL = "claude-opus-5-5";
 const DEFAULT_SUBREDDITS = ["EASportsFC", "fut"];
-const DEFAULT_YOUTUBE_QUERIES = ["FC 27 meta formation", "FC 27 best custom tactics", "FC 27 meta players Ultimate Team", "FC 27 gameplay tips attacking defending"];
+// Wider since 2026-11-12 (Jeff: "make the community tactics and players search bigger"): position-by-position player
+// searches and player instructions too. 8 searches x 4 runs a day stays well inside the YouTube quota.
+const DEFAULT_YOUTUBE_QUERIES = ["FC 27 meta formation", "FC 27 best custom tactics", "FC 27 meta players Ultimate Team", "FC 27 gameplay tips attacking defending",
+  "FC 27 best player instructions", "FC 27 best strikers wingers Ultimate Team", "FC 27 best midfielders CDM CAM Ultimate Team", "FC 27 best defenders fullbacks goalkeepers Ultimate Team"];
 const MAX_BODY = 12_000;
 export const MAX_ADD_TEXT = 12_000;
 export const MAX_QUESTION = 500;
@@ -48,7 +51,7 @@ export interface CollectedSource {
 }
 
 /** Posts about gameplay, tactics and the meta; pack pulls, memes and showcases are left out. */
-const GAMEPLAY = /\b(meta|formations?|tactics?|instructions?|playstyles?\+?|accele ?rate|explosive|lengthy|controlled|finesse|trivela|power shots?|skill moves?|dribbl\w*|defend\w*|jockey\w*|tackl\w*|through balls?|lobs?|cross\w*|headers?|settings|camera|controller|best (players?|cards?|cbs?|strikers?|wingers?|cdms?|cams?|lbs?|rbs?|gks?|sts?|team|squad|formation)|op|overpowered|nerf\w*|buff\w*|patch|title update|rivals|champs|champions|weekend league|squad battles|sbcs?|evo(lution)?s?|chem(istry)?|roles?\+\+?|\d-\d-\d(-\d)?|tips?|guide|how (do|to) (i |you )?(score|defend|win|beat|stop))\b/i;
+const GAMEPLAY = /\b(meta|formations?|tactics?|instructions?|playstyles?\+?|accele ?rate|explosive|lengthy|controlled|finesse|trivela|power shots?|skill moves?|dribbl\w*|defend\w*|jockey\w*|tackl\w*|through balls?|lobs?|cross\w*|headers?|settings|camera|controller|best (players?|cards?|cbs?|strikers?|wingers?|cdms?|cams?|lbs?|rbs?|gks?|sts?|team|squad|formation)|op|overpowered|nerf\w*|buff\w*|patch|title update|rivals|champs|champions|weekend league|squad battles|sbcs?|evo(lution)?s?|chem(istry)?|roles?\+\+?|\d-\d-\d(-\d)?|tips?|guide|how (do|to) (i |you )?(score|defend|win|beat|stop)|(card|player) reviews?|in-?game review|worth (it|the coins)|underrated|overrated|cracked|goated|best (budget|cheap)\w*)\b/i;
 const OFF_TOPIC_FLAIR = /(pack|pull|meme|humou?r|funny|shitpost|achievement|showcase|picture|image|video clip|rant|news|leak)/i;
 const ON_TOPIC_FLAIR = /(discussion|tactic|gameplay|guide|tip|question|meta|squad|help|advice)/i;
 
@@ -212,11 +215,11 @@ function rssSource(sub: string, post: RssEntry, comments: { body: string; score:
 
 /** The day's top gameplay posts from each subreddit's RSS feed, with the top comments of posts the bank hasn't seen yet.
  * Reddit rate-limits these feeds, so requests are spaced out (FUT_KB_REDDIT_GAP_MS, default 5 s), only a few comment
- * feeds are read per run (FUT_KB_REDDIT_THREADS_PER_RUN, default 6), and a 429 stops the run's Reddit requests. */
+ * feeds are read per run (FUT_KB_REDDIT_THREADS_PER_RUN, default 8), and a 429 stops the run's Reddit requests. */
 export async function collectRedditRss(env: Env, fetchFn: Fetch, known: (ids: string[]) => Promise<Set<string>> = () => Promise.resolve(new Set())): Promise<CollectedSource[]> {
-  const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 6;
+  const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 10;
   const gap = Number(env("FUT_KB_REDDIT_GAP_MS") ?? 5000);
-  let threadsLeft = Number(env("FUT_KB_REDDIT_THREADS_PER_RUN") ?? 6);
+  let threadsLeft = Number(env("FUT_KB_REDDIT_THREADS_PER_RUN") ?? 8);
   let calls = 0, limited: RedditRateLimited | null = null;
   const rss = async (url: string) => {
     if (calls++ && gap > 0) await new Promise((r) => setTimeout(r, gap));
@@ -291,10 +294,10 @@ export async function collectYouTube(env: Env, fetchFn: Fetch, now = Date.now())
   const after = new Date(now - 3 * 86_400_000).toISOString();
   const ids = new Set<string>();
   for (const q of queries.length ? queries.slice(0, 8) : DEFAULT_YOUTUBE_QUERIES) {
-    const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "6", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
+    const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "8", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
     for (const item of (found.items ?? []) as { id?: { videoId?: string } }[]) if (item.id?.videoId) ids.add(item.id.videoId);
   }
-  return youtubeSources([...ids].slice(0, 50), env, fetchFn, Number(env("FUT_KB_YOUTUBE_MIN_VIEWS")) || 5000);
+  return youtubeSources([...ids].slice(0, 50), env, fetchFn, Number(env("FUT_KB_YOUTUBE_MIN_VIEWS")) || 2000);
 }
 
 /** A Reddit post or YouTube video link → its id, or null for any other link. */
@@ -440,7 +443,7 @@ export async function runKnowledgeIngest(db: Rpc, env: Env, fetchFn: Fetch, now 
   const result: IngestResult = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0 };
   const hasKey = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
   if (hasKey) {
-    const pending = await rpcData<{ id: string; body: string }[]>(db, "kb_pending", { p_limit: Number(env("FUT_KB_READ_PER_RUN")) || 25 });
+    const pending = await rpcData<{ id: string; body: string }[]>(db, "kb_pending", { p_limit: Number(env("FUT_KB_READ_PER_RUN")) || 40 });
     const known = pending.length ? await rpcData<{ topic: string; category: string }[]>(db, "kb_known_topics", { p_limit: 150 }) : [];
     for (const s of pending) {
       try {

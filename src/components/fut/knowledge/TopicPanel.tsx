@@ -5,6 +5,7 @@ import { futApi, futKeys, type KbStatement } from "@/lib/futApi";
 import { Busy, ErrorNotice } from "@/components/fut/FutShared";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ApplyToTeam } from "./ApplyToTeam";
 import { AGREEMENT, ago, CATEGORY_LABELS, sentimentText, sourceLabel, STANCE } from "./knowledgePresentation";
 
 function Statement({ s }: { s: KbStatement }) {
@@ -54,6 +55,7 @@ export function TopicPanel({ topicKey, days, onClose }: { topicKey: string | nul
           </div>
           <p className="mt-1 flex gap-4 text-xs text-muted-foreground"><span>{t.for} for</span><span>{t.against} against</span><span>{t.mixed} mixed or how-to</span></p>
         </div>
+        <ApplyToTeam key={t.key} topic={t.key} />
         {weeks.length > 1 && <section aria-label="Claims per week">
           <h3 className="mb-1 text-sm font-semibold">Week by week</h3>
           <div className="h-36">
