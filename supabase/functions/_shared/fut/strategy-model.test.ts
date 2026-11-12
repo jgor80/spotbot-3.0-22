@@ -1,7 +1,7 @@
 // Daily Strategy learning: settling picks, learning the model, applying it, the bot job end to end (memory db)
 // and the migration on real PostgreSQL (PGlite).
 import { PGlite } from "npm:@electric-sql/pglite@0.5.15";
-import { buyOutlook, learnModel, MIN_RESULTS, resolvePick, sellOutlook, type BuyFeatures, type LoggedPick } from "./strategy-model.ts";
+import { buyOutlook, forecast24, learnModel, learnMoves, MIN_RESULTS, moveBucket, reachChance, resolvePick, sellOutlook, type BuyFeatures, type LoggedPick } from "./strategy-model.ts";
 import { buildStrategy, followedTrades, marketTiming, cardStats, runStrategyLearning, scoreBuys, type SeriesCard } from "./strategy.ts";
 import { futMemoryDb } from "./test-db.ts";
 function assert(value: unknown, message = "Assertion failed"): asserts value { if (!value) throw new Error(message); }
@@ -109,6 +109,73 @@ Deno.test("the strategy-learn job logs picks once per refresh, settles them late
   assert(db.tables.strategy_pick_log!.find((r) => r.side === "sell" && r.ea_item_id === 1 && r.picked_at === LATEST)?.outcome === "bad");
   const model = db.tables.strategy_model!.find((r) => r.platform === "console")!.model as { buys: { n: number } };
   assert(model.buys.n === buys.length, JSON.stringify(model.buys));
+});
+
+// A small market with the three classic shapes: a dip that bounces and recovers, a dip that keeps falling, a spike that fades.
+const shapes = {
+  bounce: [10_000, 10_000, 10_000, 10_000, 8_500, 8_600, 9_500, 10_000, 10_000, 10_000],
+  knife: [10_000, 10_000, 10_000, 10_000, 9_000, 8_500, 8_000, 7_500, 7_000, 6_800],
+  spike: [10_000, 10_000, 10_000, 10_000, 12_000, 12_500, 11_000, 10_000, 10_000, 10_000],
+};
+const market = Object.entries(shapes).flatMap(([shape, ps]) => Array.from({ length: 40 }, (_, i) => {
+  const k = 1 + i / 100, prices = ps.map((p) => Math.round(p * k / 50) * 50);
+  return { ea_item_id: (shape === "bounce" ? 1_000 : shape === "knife" ? 2_000 : 3_000) + i, name: `${shape} ${i}`, version: "Rare", rating: 80, position: "ST", is_icon: false, is_hero: false, tracked: true, prices, ages: prices.map((_, j) => (prices.length - 1 - j) * 12) } as SeriesCard;
+}));
+
+Deno.test("price moves: learned from every stored refresh straight away, no settled picks needed", () => {
+  const m = learnMoves(market.map((c) => ({ prices: c.prices, ages: c.ages, kind: "gold" })))!;
+  assert(m && m.cards === 120 && m.history_h === 108, JSON.stringify({ n: m?.n, cards: m?.cards, h: m?.history_h }));
+  const bounced = moveBucket(m, { discount: 0.14, rising: 1, falling: 0, kind: "gold" })!;
+  const dipping = moveBucket(m, { discount: 0.14, rising: 0, falling: 2, kind: "gold" })!;
+  const over = moveBucket(m, { discount: -0.25, rising: 1, falling: 0, kind: "gold" })!;
+  // Blended toward the wider "12%+ under" spot by how many examples each has, so thin spots can't swing it
+  assert(bounced.key === "12%+ under|bounced|gold" && bounced.b.up24 > 0.8 && bounced.b.peak[5]! > 0.1, JSON.stringify(bounced));
+  // Some dips still falling at a refresh bounced next time, but most kept falling
+  assert(dipping.b.down24 >= 0.6 && dipping.b.up24 < bounced.b.up24 && dipping.b.peak[5]! < 0, JSON.stringify(dipping));
+  assert(over.b.down24 > 0.8, JSON.stringify(over));
+  // Checked on the newest refreshes it hadn't seen: here every shape had finished by then (flat prices), so what it
+  // learned from the dips didn't help, and it isn't trusted
+  assert(m.check && m.check.n >= 30 && m.check.skill <= 0 && m.trust === 0, JSON.stringify({ check: m.check, trust: m.trust }));
+  const untrusted = buyOutlook(learnModel("console", [], NOW, m), f(), { discount: 0.14, rising: 1, falling: 0, kind: "gold", rise: 0.1 });
+  assert(untrusted.factor === 1, "untrusted: falls back to the market-wide rate, so no re-ranking");
+  m.trust = 1; // the rest of this test checks what it learned
+  // A day-ahead forecast with a range
+  const fc = forecast24(m, { discount: 0.14, rising: 1, falling: 0, kind: "gold", price: 8_600 })!;
+  assert(fc.low <= fc.mid && fc.mid <= fc.high && fc.mid > 8_600, JSON.stringify(fc));
+  // Chance of reaching a rise falls as the rise grows
+  assert(reachChance(bounced.b, 0.05) === 1 && reachChance(bounced.b, 0.5) === 0 && reachChance(m.overall, 0.1) < 1);
+  // The model uses them before any pick has settled: a bounced dip is rated up, a falling one down, and sells use them too
+  const model = learnModel("console", [], NOW, m);
+  assert(!model.ready && model.lessons[0]!.startsWith(`Learned from ${m.n}`) && model.lessons.some((l) => l.includes("still falling kept falling")), JSON.stringify(model.lessons));
+  const up = buyOutlook(model, f(), { discount: 0.14, rising: 1, falling: 0, kind: "gold", rise: 0.1 });
+  const down = buyOutlook(model, f(), { discount: 0.14, rising: 0, falling: 2, kind: "gold", rise: 0.1 });
+  assert(up.from_moves && up.p_hit! > 0.6 && up.factor > 1 && down.p_hit! < 0.3 && down.factor < up.factor, JSON.stringify({ up, down }));
+  const sell = sellOutlook(model, "near_high", { discount: -0.25, rising: 1, falling: 0, kind: "gold" });
+  assert(sell.rate! > 0.6 && sell.n >= 30, JSON.stringify(sell));
+  // Too little history: nothing to learn yet
+  assert(learnMoves([{ prices: [1_000, 1_100, 1_200], ages: [24, 12, 0], kind: "gold" }]) === null);
+});
+
+Deno.test("price moves in the plan: a bounced dip's target comes down to what half of similar cards reached, and the reason says so", () => {
+  const m = { ...learnMoves(market.map((c) => ({ prices: c.prices, ages: c.ages, kind: "gold" })))!, trust: 1 };
+  const model = learnModel("console", [], NOW, m);
+  // Today: a card 14% under that just bounced, with a 7-day middle well above
+  const card: SeriesCard = { ea_item_id: 9, name: "Today", version: "Rare", rating: 80, position: "ST", is_icon: false, is_hero: false, tracked: true,
+    prices: [12_000, 12_000, 12_000, 12_000, 12_000, 12_000, 10_000, 10_100], ages: [84, 72, 60, 48, 36, 24, 12, 0] };
+  const timing = marketTiming(NOW), s = cardStats(card, 84)!;
+  const plain = scoreBuys([{ card, stats: s }], timing, { max_price: 1e9, min_roi: 0.03, owned: new Set() })[0]!;
+  const learned = scoreBuys([{ card, stats: s }], timing, { max_price: 1e9, min_roi: 0.03, owned: new Set(), model })[0]!;
+  assert(plain.sell_at === 11_750 && learned.sell_at < plain.sell_at && learned.sell_at > learned.buy_at, `${plain.sell_at} → ${learned.sell_at}`);
+  assert(learned.p_hit !== null && learned.why.some((w) => w.includes("past price moves")), JSON.stringify(learned.why));
+});
+
+Deno.test("price moves are trusted only when they beat guessing on refreshes they hadn't seen", () => {
+  // Zigzag cards: two refreshes low, two high, all through the week, so a day after a low comes a high. Steady cards never move.
+  const zig = Array.from({ length: 60 }, (_, i) => { const lo = 9_000 + i * 10, hi = 10_000 + i * 10; const prices = Array.from({ length: 16 }, (_, j) => (((j + i) >> 1) % 2 ? hi : lo)); return { prices, ages: prices.map((_, j) => (15 - j) * 12), kind: "gold" }; });
+  const flat = Array.from({ length: 60 }, (_, i) => { const prices = Array(16).fill(5_000 + i * 10); return { prices, ages: prices.map((_, j) => (15 - j) * 12), kind: "gold" }; });
+  const m = learnMoves([...zig, ...flat])!;
+  assert(m.check && m.check.skill > 0.05 && m.trust === 1 && m.check.hit > 0.9, JSON.stringify(m.check));
+  assert(learnModel("console", [], NOW, m).lessons.some((l) => l.startsWith("Tested on the newest")), "says how it tested");
 });
 
 Deno.test("strategy learning tables: service role only", async () => {
