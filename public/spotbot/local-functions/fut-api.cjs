@@ -12546,20 +12546,22 @@ var WINDOW_HOURS = { "1h": 1, "6h": 6, "24h": 24, "72h": 72, "7d": 168 };
 var HOUR = 36e5;
 var ms = (iso3) => Date.parse(iso3);
 var iso = (t) => new Date(t).toISOString();
-function knownAt(rows, asOf) {
+function toSeriesByCard(rows, platform, asOf) {
   const a = ms(asOf);
-  return rows.filter((r2) => ms(r2.received_at) <= a && ms(r2.observed_at) <= a);
-}
-function toSeries(rows, card_id, platform, asOf) {
-  const byT = /* @__PURE__ */ new Map();
-  for (const r2 of knownAt(rows, asOf)) {
-    if (r2.card_id !== card_id || r2.platform !== platform) continue;
+  const byCard = /* @__PURE__ */ new Map();
+  for (const r2 of rows) {
+    let byT = byCard.get(r2.card_id);
+    if (!byT) byCard.set(r2.card_id, byT = /* @__PURE__ */ new Map());
+    if (r2.platform !== platform) continue;
     const t = ms(r2.observed_at);
     const rec = ms(r2.received_at);
+    if (!(rec <= a && t <= a)) continue;
     const prev = byT.get(t);
     if (!prev || rec >= prev.r) byT.set(t, { p: r2.price, r: rec });
   }
-  return [...byT.entries()].sort((a, b) => a[0] - b[0]).map(([t, v]) => ({ t, price: v.p }));
+  const out = /* @__PURE__ */ new Map();
+  for (const [id3, byT] of byCard) out.set(id3, [...byT.entries()].sort((x, y) => x[0] - y[0]).map(([t, v]) => ({ t, price: v.p })));
+  return out;
 }
 function freshness(series, asOf, rules = DEFAULT_MARKET_RULES) {
   const last = series.at(-1);
@@ -12709,9 +12711,6 @@ function rebalance(def, cards, current, at2) {
   for (const id3 of want) if (!open.has(id3)) out.push({ basket_id: def.id, card_id: id3, effective_from: at2, effective_to: null });
   return out;
 }
-function membersAt(members, basket_id, t) {
-  return members.filter((m) => m.basket_id === basket_id && ms(m.effective_from) <= t && (m.effective_to === null || t < ms(m.effective_to))).map((m) => m.card_id);
-}
 function computeIndex(basket_id, platform, members, seriesByCard, from, to, opts = {}) {
   const rules = opts.rules ?? DEFAULT_MARKET_RULES;
   const size = (opts.bucket_hours ?? 1) * 36e5;
@@ -12720,17 +12719,19 @@ function computeIndex(basket_id, platform, members, seriesByCard, from, to, opts
   const end = ms(to);
   const points = [];
   let value = 100;
+  const mine = members.filter((m) => m.basket_id === basket_id).map((m) => ({ id: m.card_id, from: ms(m.effective_from), to: m.effective_to === null ? Infinity : ms(m.effective_to) }));
+  const at2 = (t) => mine.filter((m) => m.from <= t && t < m.to).map((m) => m.id);
   const fresh = (s, t) => {
     const p = s && priceAt(s, t);
     return p && t - p.t <= stale ? p : null;
   };
   for (let t = start; t <= end; t += size) {
     if (!points.length) {
-      points.push({ t: iso(t), value, constituents: membersAt(members, basket_id, t).filter((id3) => fresh(seriesByCard.get(id3), t)).length });
+      points.push({ t: iso(t), value, constituents: at2(t).filter((id3) => fresh(seriesByCard.get(id3), t)).length });
       continue;
     }
     const logs = [];
-    for (const id3 of membersAt(members, basket_id, t)) {
+    for (const id3 of at2(t)) {
       const s = seriesByCard.get(id3);
       const a = fresh(s, t - size);
       const b = fresh(s, t);
@@ -12823,19 +12824,17 @@ var BENCHMARK_LABEL = {
   market: "Whole-market index"
 };
 var LINE2 = { GK: "GK", CB: "DEF", LB: "DEF", RB: "DEF", CDM: "MID", CM: "MID", CAM: "MID", LM: "MID", RM: "MID", LW: "ATT", RW: "ATT", ST: "ATT" };
-function isPeer(b, card, other) {
-  if (other.id === card.id) return false;
+function peerGroupKey(b, card) {
   switch (b) {
     case "category":
-      return other.category === card.category;
+      return String(card.category);
     case "rating":
-      return Math.abs(other.rating - card.rating) <= 1;
+      return String(card.rating);
     case "position":
-      return other.positions[0] === card.positions[0];
+      return String(card.positions[0]);
     case "utility": {
-      const a = bestFit(card);
-      const o = bestFit(other);
-      return a !== null && o !== null && Math.abs(a - o) <= 3 && LINE2[other.positions[0] ?? ""] === LINE2[card.positions[0] ?? ""];
+      const fit = bestFit(card);
+      return fit === null ? null : `${LINE2[card.positions[0] ?? ""]}|${fit}`;
     }
   }
 }
@@ -12843,14 +12842,6 @@ function rsVerdict(card, bench, rules = DEFAULT_MARKET_RULES) {
   if (card === null || bench === null) return "insufficient_data";
   const d = card - bench;
   return d >= rules.thresholds.relative_strength_pp ? "outperforming" : d <= -rules.thresholds.relative_strength_pp ? "underperforming" : "in_line";
-}
-function peerChanges(peerSeries) {
-  const out = {};
-  for (const w of WINDOWS) {
-    const xs = peerSeries.map((s) => change(s, w)).filter((x) => x !== null);
-    out[w] = { value: xs.length >= 3 ? median5(xs) : null, n: xs.length };
-  }
-  return out;
 }
 function relativeStrength(cardSeries, benchmarks, rules = DEFAULT_MARKET_RULES) {
   return benchmarks.map((b) => ({
@@ -13409,6 +13400,33 @@ function comparableCards(card, pool, range = 2) {
 var MarketNotFoundError = class extends Error {
 };
 var scanned = /* @__PURE__ */ new WeakMap();
+var PEER_BENCHMARKS = ["category", "rating", "position", "utility"];
+var peerIndex = /* @__PURE__ */ new WeakMap();
+var splitUtility = (key2) => {
+  const i = key2.lastIndexOf("|");
+  return [key2.slice(0, i), Number(key2.slice(i + 1))];
+};
+function withoutOne(sorted, skip) {
+  let at2 = -1;
+  if (skip !== null) {
+    let lo = 0;
+    let hi = sorted.length - 1;
+    while (lo <= hi) {
+      const mid = lo + hi >> 1;
+      if (sorted[mid] < skip) lo = mid + 1;
+      else if (sorted[mid] > skip) hi = mid - 1;
+      else {
+        at2 = mid;
+        break;
+      }
+    }
+  }
+  const n = sorted.length - (at2 < 0 ? 0 : 1);
+  if (!n) return { n, median: null };
+  const el = (k) => sorted[at2 >= 0 && k >= at2 ? k + 1 : k];
+  const m = n >> 1;
+  return { n, median: n % 2 ? el(m) : (el(m - 1) + el(m)) / 2 };
+}
 var LOOKBACK_H = 8 * 24;
 function createMarketService(deps) {
   const rules = deps.rules ?? DEFAULT_MARKET_RULES;
@@ -13435,8 +13453,7 @@ function createMarketService(deps) {
     const cards = await deps.cards.list(owner);
     const byId = new Map(cards.map((c4) => [c4.id, c4]));
     const rows = usable(await deps.prices.query(owner, { platform, as_of, since: iso(ms(as_of) - LOOKBACK_H * 36e5) }));
-    const series = /* @__PURE__ */ new Map();
-    for (const id3 of new Set(rows.map((r2) => r2.card_id))) series.set(id3, toSeries(rows, id3, platform, as_of));
+    const series = toSeriesByCard(rows, platform, as_of);
     const members = await deps.memberships.list();
     const indexSeries = /* @__PURE__ */ new Map();
     const indexes = baskets.map((b) => {
@@ -13452,14 +13469,79 @@ function createMarketService(deps) {
     });
     return { as_of, platform, cards, byId, series, rows, members, indexes, indexSeries, regime: classifyRegime(indexes, rules) };
   }
+  function peersOf(snap) {
+    const hit = peerIndex.get(snap);
+    if (hit) return hit;
+    const own = /* @__PURE__ */ new Map();
+    const latest = /* @__PURE__ */ new Map();
+    for (const c4 of snap.cards) {
+      const s = snap.series.get(c4.id);
+      if (!s || freshness(s, snap.as_of, rules).status !== "fresh") continue;
+      own.set(c4.id, Object.fromEntries(WINDOWS.map((w) => [w, change(s, w)])));
+      latest.set(c4.id, s.at(-1).price);
+    }
+    const keys = /* @__PURE__ */ new Map();
+    const keyOf = (c4) => {
+      let k = keys.get(c4.id);
+      if (!k) keys.set(c4.id, k = Object.fromEntries(PEER_BENCHMARKS.map((b) => [b, peerGroupKey(b, c4)])));
+      return k;
+    };
+    const groups = /* @__PURE__ */ new Map();
+    const group = (b, key2, sample) => {
+      const id3 = `${b}|${key2}`;
+      let g = groups.get(id3);
+      if (g) return g;
+      const inGroup = (o) => {
+        const ok = keyOf(o)[b];
+        if (ok === null) return false;
+        if (b === "rating") return Math.abs(o.rating - sample.rating) <= 1;
+        if (b === "utility") {
+          const [line, fit] = splitUtility(key2);
+          const [oLine, oFit] = splitUtility(ok);
+          return line === oLine && Math.abs(fit - oFit) <= 3;
+        }
+        return ok === key2;
+      };
+      g = Object.fromEntries(WINDOWS.map((w) => [w, []]));
+      for (const o of snap.cards) {
+        const ch = own.get(o.id);
+        if (!ch || !inGroup(o)) continue;
+        for (const w of WINDOWS) if (ch[w] !== null) g[w].push(ch[w]);
+      }
+      for (const w of WINDOWS) g[w].sort((x, y) => x - y);
+      groups.set(id3, g);
+      return g;
+    };
+    const sameSlot = /* @__PURE__ */ new Map();
+    for (const c4 of snap.cards) {
+      const price = latest.get(c4.id);
+      if (price === void 0) continue;
+      const k = `${c4.rating}|${c4.positions[0]}`;
+      (sameSlot.get(k) ?? sameSlot.set(k, []).get(k)).push({ id: c4.id, price });
+    }
+    const peers = {
+      changes(b, card) {
+        const key2 = keyOf(card)[b];
+        const mine = own.get(card.id);
+        const out = {};
+        for (const w of WINDOWS) {
+          const xs = key2 === null ? [] : group(b, key2, card)[w];
+          const self = key2 !== null && mine && mine[w] !== null ? mine[w] : null;
+          const rest = withoutOne(xs, self);
+          out[w] = { value: rest.n >= 3 ? rest.median : null, n: rest.n };
+        }
+        return out;
+      },
+      prices: (card) => (sameSlot.get(`${card.rating}|${card.positions[0]}`) ?? []).flatMap((p) => p.id === card.id ? [] : [p.price])
+    };
+    peerIndex.set(snap, peers);
+    return peers;
+  }
   function benchmarksFor(snap, card) {
     const out = [];
-    for (const b of ["category", "rating", "position", "utility"]) {
-      const peers = snap.cards.filter((o) => isPeer(b, card, o)).flatMap((o) => {
-        const s = snap.series.get(o.id);
-        return s && freshness(s, snap.as_of, rules).status === "fresh" ? [s] : [];
-      });
-      const pc2 = peerChanges(peers);
+    const peers = peersOf(snap);
+    for (const b of PEER_BENCHMARKS) {
+      const pc2 = peers.changes(b, card);
       out.push({ benchmark: b, changes: Object.fromEntries(WINDOWS.map((w) => [w, pc2[w].value])), peers: pc2["24h"].n });
     }
     const m = snap.indexes.find((i) => i.basket_id === "market");
@@ -13472,10 +13554,7 @@ function createMarketService(deps) {
     const fresh = freshness(s, snap.as_of, rules);
     const rs = relativeStrength(s, benchmarksFor(snap, card), rules);
     const mom = momentum(s);
-    const peerPrices = snap.cards.filter((o) => o.id !== card.id && o.rating === card.rating && o.positions[0] === card.positions[0]).flatMap((o) => {
-      const ps = snap.series.get(o.id);
-      return ps && freshness(ps, snap.as_of, rules).status === "fresh" ? [ps.at(-1).price] : [];
-    });
+    const peerPrices = peersOf(snap).prices(card);
     const mr = meanReversion(s, peerPrices, rules);
     const assessment = assessSignals({ fresh, points: window(s, LOOKBACK_H).length, rs, mom, mr, regime_primary: snap.regime.primary, rules });
     const latest = fresh.status === "fresh" ? s.at(-1).price : null;
@@ -13919,15 +13998,19 @@ var catalogueCard2 = (r2) => ({
   ea_item_id: eaKey(r2.source_card_key),
   updated_at: String(r2.updated_at)
 });
+var QUOTE_BATCHES_AT_ONCE = 4;
 async function fetchFutggQuotes(db2, ids, q) {
+  const batch = (i) => allPages(() => {
+    let x = db2.from("futgg_prices").select("ea_item_id,platform,price,published_at,received_at").eq("game_year", 27).in("ea_item_id", ids.slice(i, i + 100)).gte("price", 1);
+    if (q.platform) x = x.eq("platform", q.platform);
+    if (q.since) x = x.gte("published_at", q.since);
+    return x.lte("received_at", q.as_of).lte("published_at", q.as_of).order("published_at", { ascending: true }).order("ea_item_id", { ascending: true }).order("platform", { ascending: true });
+  });
   const out = [];
-  for (let i = 0; i < ids.length; i += 100) {
-    out.push(...await allPages(() => {
-      let x = db2.from("futgg_prices").select("*").eq("game_year", 27).in("ea_item_id", ids.slice(i, i + 100)).gte("price", 1);
-      if (q.platform) x = x.eq("platform", q.platform);
-      if (q.since) x = x.gte("published_at", q.since);
-      return x.lte("received_at", q.as_of).lte("published_at", q.as_of).order("published_at", { ascending: true }).order("ea_item_id", { ascending: true }).order("platform", { ascending: true });
-    }));
+  const step = 100 * QUOTE_BATCHES_AT_ONCE;
+  for (let i = 0; i < ids.length; i += step) {
+    const starts = Array.from({ length: Math.min(QUOTE_BATCHES_AT_ONCE, Math.ceil((ids.length - i) / 100)) }, (_, k) => i + k * 100);
+    for (const rows of await Promise.all(starts.map(batch))) out.push(...rows);
     if (out.length >= 2e5) throw new FutError("Too much bulk price history to analyse at once.", 413);
   }
   return out;
