@@ -12,7 +12,7 @@ import type { ChemistryRules } from "./xilab/chemistry/index.ts";
 import { FORMATIONS, type Squad, type WorkspaceCard } from "./xilab/workspace/index.ts";
 import { bestSquadFor, type BestSquad } from "./squad-suggest.ts";
 import { callClaude } from "./squad-import.ts";
-import { fold, formationName, teamPlan, type FormationPick, type StatPicker, type TeamContext, type TeamPlan } from "./knowledge-team.ts";
+import { communityFormations, fold, formationName, teamPlan, type FormationPick, type StatPicker, type TeamContext, type TeamPlan } from "./knowledge-team.ts";
 
 type Env = (k: string) => string | undefined;
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -58,6 +58,28 @@ export const PLAYER_TRAITS: Record<string, { label: string; words: RegExp; stat:
   defending: { label: "defending", words: /\bdefen[cs]ive\b|\btackl\w*\b|\bintercept\w*\b|\bsolid\b|\bcompact\b|\bclean sheets?\b/, stat: "def" },
   physical: { label: "strength", words: /\bphysical\b|\bstrong\b|\bstrength\b|\bbully\b|\bheaders?\b|\baerial\b|\btarget man\b|\bcross(es|ing)?\b/, stat: "phy" },
 };
+
+/** Hard choices from the pills: how many strikers (3 = a front three: striker and two wingers) and how many defenders. */
+export interface Must { strikers?: 1 | 2 | 3 | null; defenders?: 3 | 4 | 5 | null }
+const strikersOf = (s: Shape) => n(s, "ST") >= 2 ? 2 : n(s, "LW", "RW") >= 2 ? 3 : 1;
+const defendersOf = (s: Shape) => n(s, "CB", "LB", "RB");
+export const meets = (formation: string, must: Must): boolean => {
+  const s = shapeOf(formation);
+  return (!must.strikers || strikersOf(s) === must.strikers) && (!must.defenders || defendersOf(s) === must.defenders);
+};
+const mustLabel = (must: Must): string[] => [
+  must.strikers === 1 ? "one striker" : must.strikers === 2 ? "two strikers" : must.strikers === 3 ? "a front three" : null,
+  must.defenders ? `${["three", "four", "five"][must.defenders - 3]} at the back` : null,
+].filter((x): x is string => !!x);
+
+/** The pills picked in Squad Builder added to what the words said. Pure. */
+export function withPills(style: Playstyle, traits: string[], must: Must): Playstyle {
+  const shape = [...new Set([...style.shape, ...traits.filter((k) => k in SHAPE_TRAITS)])];
+  const players = [...new Set([...style.players, ...traits.filter((k) => k in PLAYER_TRAITS)])];
+  const picked = [...mustLabel(must), ...traits.filter((k) => k in SHAPE_TRAITS && !style.shape.includes(k)).map((k) => SHAPE_TRAITS[k]!.label), ...traits.filter((k) => k in PLAYER_TRAITS && !style.players.includes(k)).map((k) => PLAYER_TRAITS[k]!.label)];
+  const summary = [style.summary, picked.length ? `You picked ${picked.join(", ")}.` : ""].filter(Boolean).join(" ");
+  return { ...style, shape, players, summary };
+}
 
 export interface Playstyle { text: string; shape: string[]; players: string[]; summary: string; via: "ai" | "words" }
 
@@ -145,14 +167,18 @@ export function liftPool(pool: WorkspaceCard[], style: Playstyle, rated: Map<str
 }
 
 /** Scores the candidate formations. Pure apart from building each XI. */
-export function scoreFormations(base: Squad, pool: WorkspaceCard[], rules: ChemistryRules, ranked: FormationPick[], style: Playstyle, current: string | null): { options: FormationOption[]; squads: Map<string, BestSquad> } {
+export function scoreFormations(base: Squad, pool: WorkspaceCard[], rules: ChemistryRules, ranked: FormationPick[], style: Playstyle, current: string | null, must: Must = {}): { options: FormationOption[]; squads: Map<string, BestSquad> } {
   const named = formationName(style.text);
   const fits = Object.keys(FORMATIONS).map((f) => ({ f, fit: styleFit(f, style)?.fit ?? 0 })).sort((a, b) => b.fit - a.fit);
   // Candidates: everything the community talks about, the best shapes for the style, the one they named and the one they play
-  const candidates = [...new Set([
+  const open = [...new Set([
     ...ranked.map((r) => r.formation), ...(style.shape.length ? fits.filter((x) => x.fit >= (fits[0]?.fit ?? 0) - 0.01).slice(0, 6).map((x) => x.f) : []),
     ...(named ? [named] : []), ...(current && FORMATIONS[current] ? [current] : []), "4-2-3-1",
-  ])].filter((f) => FORMATIONS[f]).slice(0, 14);
+  ])].filter((f) => FORMATIONS[f]);
+  // A picked number of strikers or defenders is a rule, not a leaning: only shapes that have it are candidates
+  const has = mustLabel(must);
+  const allowed = has.length ? fits.map((x) => x.f).filter((f) => meets(f, must)) : [];
+  const candidates = (allowed.length ? allowed : open).slice(0, 14);
   const maxScore = Math.max(0, ...ranked.map((r) => r.score));
   const minScore = Math.min(0, ...ranked.map((r) => r.score));
   const squads = new Map<string, BestSquad>();
@@ -177,6 +203,7 @@ export function scoreFormations(base: Squad, pool: WorkspaceCard[], rules: Chemi
     if (named === f) score += 15; // they asked for it by name
     const why = [
       named === f ? "you named it" : null,
+      allowed.length ? `it has ${has.join(" and ")}` : null,
       community ? (community.score > 0 ? `the community backs it (${community.claims} claim${community.claims === 1 ? "" : "s"})` : community.score < 0 ? "the community is cool on it" : "the community is split on it") : ranked.length ? "nobody in the bank is talking about it" : null,
       style_ ? (style_.matched.length ? `it gives you ${style_.matched.join(", ")}${style_.missed.length ? ` but not ${style_.missed.join(", ")}` : ""}` : `it doesn't give you ${style_.missed.join(", ")}`) : null,
       club ? (club.empty.length ? `your club leaves ${club.empty.length} slot${club.empty.length === 1 ? "" : "s"} empty in it` : `your club makes an ${club.rating}-rated XI in it`) : null,
@@ -204,17 +231,20 @@ export interface IdealSquad {
 
 export async function idealSquad(
   db: Rpc, userId: string, base: Squad, pool: WorkspaceCard[], rules: ChemistryRules,
-  input: { playstyle: string; formation?: string | null; days: number; platform: "console" | "pc" },
+  input: { playstyle: string; formation?: string | null; days: number; platform: "console" | "pc"; traits?: string[]; strikers?: Must["strikers"]; defenders?: Must["defenders"] },
   team: TeamContext, env: Env, fetchFn: Fetch, beforeAi?: () => void, statPicker?: StatPicker,
 ): Promise<IdealSquad> {
   const text = input.playstyle.replace(/\s+/g, " ").trim().slice(0, MAX_PLAYSTYLE);
   if (env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) beforeAi?.();
-  const style = await readPlaystyle(text, env, fetchFn);
+  const must: Must = { strikers: input.strikers ?? null, defenders: input.defenders ?? null };
+  const style = withPills(await readPlaystyle(text, env, fetchFn), input.traits ?? [], must);
+  // What the plan's writer is told: the pills in words, then the user's own words
+  const brief = [style.summary.includes("You picked") ? style.summary.slice(style.summary.indexOf("You picked")) : "", text].filter(Boolean).join(" ");
   let options: FormationOption[] = [], squads = new Map<string, BestSquad>();
   const plan = await teamPlan(db, userId, {
-    days: input.days, platform: input.platform, refresh: true, playstyle: text || null,
+    days: input.days, platform: input.platform, refresh: true, playstyle: brief || null,
     pickFormation: (ranked) => {
-      ({ options, squads } = scoreFormations(base, pool, rules, ranked, style, team.squad?.formation ?? base.formation));
+      ({ options, squads } = scoreFormations(base, pool, rules, ranked, style, team.squad?.formation ?? base.formation, must));
       const pick = (input.formation && FORMATIONS[input.formation] ? options.find((o) => o.formation === input.formation) ?? { formation: input.formation, why: "You picked it." } : null) ?? options[0];
       return Promise.resolve(pick ? { formation: pick.formation, why: pick.why } : null);
     },
@@ -251,4 +281,21 @@ export async function idealSquad(
     chemistry: best?.chemistry ?? 0, rating: filled.length ? Math.round(filled.reduce((a, s) => a + (s.card!.rating ?? 0), 0) / filled.length) : 0,
     empty: slots.filter((s) => !s.card).map((s) => s.slot), notes, plan,
   };
+}
+
+// ---------------------------------------------------------------- the top metas (pills in Squad Builder)
+
+export interface Meta { formation: string; basis: "community" | "usual"; claims: number; net: number | null; said: string | null; topic_key: string | null }
+const USUAL = ["4-2-3-1", "4-4-2", "4-3-3 (2)"];
+
+/** The three formations the Knowledge Bank community backs most; topped up with the usual meta shapes when the bank is quiet. */
+export async function topMetas(db: Rpc, userId: string, days: number): Promise<{ metas: Meta[]; tactics: { topic: string; claims: number; said: string | null }[]; claims: number; days: number }> {
+  const c = await communityFormations(db, userId, days);
+  const metas: Meta[] = c.ranked.filter((f) => f.score > 0 && FORMATIONS[f.formation]).slice(0, 3)
+    .map((f) => ({ formation: f.formation, basis: "community", claims: f.claims, net: f.net, said: f.said, topic_key: f.key }));
+  for (const f of USUAL) {
+    if (metas.length >= 3) break;
+    if (!metas.some((m) => m.formation === f) && !c.ranked.some((r) => r.formation === f && r.score < 0)) metas.push({ formation: f, basis: "usual", claims: 0, net: null, said: null, topic_key: null });
+  }
+  return { metas, tactics: c.tactics.map((t) => ({ topic: t.topic, claims: t.claims, said: t.said })), claims: c.claims, days: c.days };
 }

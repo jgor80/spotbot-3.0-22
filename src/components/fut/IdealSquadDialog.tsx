@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Compass, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { futApi, type FutSquad, type IdealFormationOption, type IdealSquad, type KbPositionGroup } from "@/lib/futApi";
+import { futApi, futKeys, type FutSquad, type IdealFormationOption, type IdealPicks, type IdealSquad, type KbPositionGroup } from "@/lib/futApi";
 import { coins } from "@/lib/futStats";
 import { cn } from "@/lib/utils";
 import { Busy, ErrorNotice } from "./FutShared";
@@ -15,14 +15,29 @@ import { Cites, Inferred, Outlook } from "./knowledge/TeamPlan";
 
 const STORE = "fut.playstyle";
 const MAX = 600;
-const EXAMPLES = [
-  "Two strikers, crosses from wide and quick counters",
-  "Patient possession, short passing, a number 10 behind one striker",
-  "Fast wingers cutting inside, high press, lots of goals",
-  "Sit deep with two holding midfielders and hit them on the break",
-];
+const PICKS = "fut.playstyle.picks";
+// Keys match SHAPE_TRAITS and PLAYER_TRAITS in supabase/functions/_shared/fut/ideal-squad.ts
+const STYLES: [string, string][] = [["possession", "Possession"], ["counter", "Counter attack"], ["attacking", "All-out attack"], ["defensive", "Solid defence"], ["wingers", "Wingers"], ["wide_mids", "Width and crosses"], ["narrow", "Through the middle"], ["cam", "Number 10"], ["two_cdms", "Two holding mids"], ["midfield_three", "Midfield three"]];
+const PLAYERS: [string, string][] = [["pace", "Pace"], ["passing", "Passing"], ["dribbling", "Dribbling"], ["shooting", "Shooting"], ["defending", "Defending"], ["physical", "Strength"]];
+const STRIKERS: [1 | 2 | 3, string][] = [[1, "One striker"], [2, "Two strikers"], [3, "Front three"]];
+const DEFENDERS: [3 | 4 | 5, string][] = [[3, "Three at the back"], [4, "Four at the back"], [5, "Five at the back"]];
+type Picks = Required<Pick<IdealPicks, "traits">> & Pick<IdealPicks, "strikers" | "defenders" | "formation">;
 const saved = () => { try { return localStorage.getItem(STORE) ?? ""; } catch { return ""; } };
-const remember = (text: string) => { try { localStorage.setItem(STORE, text); } catch { /* private window: nothing to keep */ } };
+const savedPicks = (): Picks => {
+  try {
+    const p = JSON.parse(localStorage.getItem(PICKS) ?? "{}") as Partial<Picks>;
+    return { traits: Array.isArray(p.traits) ? p.traits.filter((t): t is string => typeof t === "string") : [], strikers: STRIKERS.some(([n]) => n === p.strikers) ? p.strikers : null, defenders: DEFENDERS.some(([n]) => n === p.defenders) ? p.defenders : null, formation: null };
+  } catch { return { traits: [], strikers: null, defenders: null, formation: null }; }
+};
+const remember = (text: string, picks: Picks) => { try { localStorage.setItem(STORE, text); localStorage.setItem(PICKS, JSON.stringify({ ...picks, formation: null })); } catch { /* private window: nothing to keep */ } };
+
+function Pill({ on, onClick, children, title }: { on: boolean; onClick: () => void; children: React.ReactNode; title?: string }) {
+  return <button type="button" aria-pressed={on} title={title} onClick={onClick}
+    className={cn("rounded-full border px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", on ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background hover:bg-muted")}>{children}</button>;
+}
+function PillRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="space-y-1.5" role="group" aria-label={label}><p className="text-xs font-medium text-muted-foreground">{label}</p><div className="flex flex-wrap gap-1.5">{children}</div></div>;
+}
 
 function ScoreBar({ label, value, note }: { label: string; value: number | null; note: string }) {
   return <div className="min-w-0 flex-1">
@@ -51,7 +66,11 @@ function target(g: KbPositionGroup) {
 /** "Build my ideal squad": say how you like to play; get the formation, XI, tactics and buy targets for it. */
 export function IdealSquadDialog({ squad, onClose, onApply }: { squad: FutSquad; onClose: () => void; onApply: (result: IdealSquad) => void }) {
   const [text, setText] = useState(saved);
-  const run = useMutation({ mutationFn: (formation?: string) => { remember(text.trim()); return futApi.idealSquad(squad, text.trim(), formation); } });
+  const [picks, setPicks] = useState<Picks>(savedPicks);
+  const metas = useQuery({ queryKey: [...futKeys.knowledge, "squad-metas"], queryFn: futApi.squadMetas, staleTime: 10 * 60_000 });
+  const run = useMutation({ mutationFn: (formation?: string) => { remember(text.trim(), picks); return futApi.idealSquad(squad, text.trim(), { ...picks, formation: formation ?? picks.formation }); } });
+  const toggle = (k: string) => setPicks((p) => ({ ...p, traits: p.traits.includes(k) ? p.traits.filter((x) => x !== k) : [...p.traits, k] }));
+  const anything = !!(text.trim() || picks.traits.length || picks.strikers || picks.defenders || picks.formation);
   const r = run.data;
   const plan = r?.plan;
   const chosen = r?.options.find((o) => o.formation === r.formation);
@@ -60,15 +79,27 @@ export function IdealSquadDialog({ squad, onClose, onApply }: { squad: FutSquad;
   const targets = (plan?.positions ?? []).flatMap((g) => { const t = target(g); return t ? [{ g, t }] : []; });
 
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
-    <DialogHeader><DialogTitle>Build my ideal squad</DialogTitle><DialogDescription>Say how you like to play. You get the formation, players and tactics that fit it, weighed with what the community backs in the Knowledge Bank and what your club can field{locked ? `. Your ${locked} locked player${locked === 1 ? " stays" : "s stay"}` : ""}. Nothing is saved until you press Save.</DialogDescription></DialogHeader>
+    <DialogHeader><DialogTitle>Build my ideal squad</DialogTitle><DialogDescription>Pick how you like to play, or say it in your own words. You get the formation, players and tactics that fit it, weighed with what the community backs in the Knowledge Bank and what your club can field{locked ? `. Your ${locked} locked player${locked === 1 ? " stays" : "s stay"}` : ""}. Nothing is saved until you press Save.</DialogDescription></DialogHeader>
 
-    <div className="space-y-2">
-      <Label htmlFor="playstyle">How I like to play</Label>
-      <Textarea id="playstyle" value={text} maxLength={MAX} rows={3} placeholder="For example: I like two quick strikers, getting it wide and crossing, and I defend with two holding midfielders." onChange={(e) => setText(e.target.value)} />
-      <div className="flex flex-wrap gap-1.5">{EXAMPLES.map((x) => <Button key={x} type="button" variant="outline" size="sm" className="h-auto whitespace-normal rounded-full py-1 text-left text-xs font-normal" onClick={() => setText(x)}>{x}</Button>)}</div>
+    <div className="space-y-3">
+      <PillRow label={metas.data?.metas.some((x) => x.basis === "community") ? "Top metas in the Knowledge Bank right now" : "Top metas"}>
+        {metas.isPending ? <span className="text-xs text-muted-foreground">Loading the top metas…</span> : (metas.data?.metas ?? []).map((x) => <Pill key={x.formation} on={picks.formation === x.formation} title={x.said ?? undefined}
+          onClick={() => setPicks((p) => p.formation === x.formation ? { ...p, formation: null } : { ...p, formation: x.formation, strikers: null, defenders: null })}>
+          {x.formation} <span className="font-normal opacity-80">· {x.basis === "community" ? `${x.claims} claim${x.claims === 1 ? "" : "s"}` : "usual meta"}</span></Pill>)}
+        {metas.isError && <span className="text-xs text-muted-foreground">The top metas couldn't be loaded. Everything else still works.</span>}
+      </PillRow>
+      <PillRow label="Style of play">{STYLES.map(([k, label]) => <Pill key={k} on={picks.traits.includes(k)} onClick={() => toggle(k)}>{label}</Pill>)}</PillRow>
+      <PillRow label="What I want from my players">{PLAYERS.map(([k, label]) => <Pill key={k} on={picks.traits.includes(k)} onClick={() => toggle(k)}>{label}</Pill>)}</PillRow>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <PillRow label="Strikers">{STRIKERS.map(([n, label]) => <Pill key={n} on={picks.strikers === n} onClick={() => setPicks((p) => ({ ...p, strikers: p.strikers === n ? null : n, formation: null }))}>{label}</Pill>)}</PillRow>
+        <PillRow label="Defenders">{DEFENDERS.map(([n, label]) => <Pill key={n} on={picks.defenders === n} onClick={() => setPicks((p) => ({ ...p, defenders: p.defenders === n ? null : n, formation: null }))}>{label}</Pill>)}</PillRow>
+      </div>
+      {picks.formation && <p className="text-xs text-muted-foreground">Building on {picks.formation}. Picking a number of strikers or defenders instead lets the builder choose the formation.</p>}
+      <Label htmlFor="playstyle">In my own words (optional)</Label>
+      <Textarea id="playstyle" value={text} maxLength={MAX} rows={2} placeholder="For example: I like two quick strikers, getting it wide and crossing, and I defend with two holding midfielders." onChange={(e) => setText(e.target.value)} />
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => run.mutate(undefined)} disabled={run.isPending}><Compass className="mr-2 h-4 w-4" />{run.isPending ? "Building…" : r ? "Build again" : "Build"}</Button>
-        <p className="text-xs text-muted-foreground">{text.trim() ? "Remembered on this device for next time." : "Leave it empty to go on the community view and your club alone."}</p>
+        <p className="text-xs text-muted-foreground">{anything ? "Your picks are remembered on this device for next time." : "Pick nothing to go on the community view and your club alone."}</p>
       </div>
     </div>
     <ErrorNotice error={run.error} />

@@ -358,6 +358,10 @@ export interface IdealFormationOption {
   style: { fit: number; matched: string[]; missed: string[] } | null;
   club: { rating: number; chemistry: number; filled: number; empty: string[] } | null;
 }
+/** The pills in "Build my ideal squad": styles of play, how many strikers (3 = a front three) and defenders, or a formation. */
+export interface IdealPicks { formation?: string | null; traits?: string[]; strikers?: 1 | 2 | 3 | null; defenders?: 3 | 4 | 5 | null }
+export interface SquadMeta { formation: string; basis: "community" | "usual"; claims: number; net: number | null; said: string | null; topic_key: string | null }
+export interface SquadMetas { metas: SquadMeta[]; tactics: { topic: string; claims: number; said: string | null }[]; claims: number; days: number }
 export interface IdealSquad { playstyle: IdealPlaystyle; formation: string; options: IdealFormationOption[]; squad: FutSquad; chemistry: number; rating: number; empty: string[]; notes: Record<string, string>; plan: KbTeamPlan }
 export interface KbAnswer { answer: string; via: "ai" | "search"; sources: (KbSourceRef & { n: number })[]; topics: string[]; claims: number }
 
@@ -498,7 +502,8 @@ export const futApi = {
   chemistry: (squad: FutSquad | string) => futRequest<Chemistry>("/squads/chemistry", "POST", { squad: typeof squad === "string" ? squad : withBudget(squad) }),
   diagnose: (squad: FutSquad, slot?: string) => futRequest<RuleInfo & Record<string, unknown>>("/squads/diagnose", "POST", { squad: withBudget(squad), ...(slot ? { slot } : {}) }),
   bestSquad: (squad: FutSquad, by: SuggestBy, formation: string) => futRequest<BestSquadResult>("/squads/best", "POST", { squad: withBudget(squad), by, formation }),
-  idealSquad: (squad: FutSquad, playstyle: string, formation?: string | null) => futRequest<IdealSquad>("/squads/ideal", "POST", { squad: withBudget(squad), playstyle, ...(formation ? { formation } : {}) }),
+  idealSquad: (squad: FutSquad, playstyle: string, picks: IdealPicks = {}) => futRequest<IdealSquad>("/squads/ideal", "POST", { squad: withBudget(squad), playstyle, ...(picks.formation ? { formation: picks.formation } : {}), ...(picks.traits?.length ? { traits: picks.traits } : {}), ...(picks.strikers ? { strikers: picks.strikers } : {}), ...(picks.defenders ? { defenders: picks.defenders } : {}) }),
+  squadMetas: () => futRequest<SquadMetas>("/squads/metas"),
   upgrades: (squad: FutSquad, budget: number, platform: "console" | "pc") => futRequest<UpgradePath>("/squads/upgrades", "POST", { squad: withBudget(squad), budget, platform }),
   suggestSlot: (squad: FutSquad, slot: string, by: SuggestBy) => futRequest<SlotSuggestions>("/squads/suggest", "POST", { squad: withBudget(squad), slot, by }),
   squadRoles: (squad: FutSquad) => futRequest<SquadRoles>("/squads/roles", "POST", { squad: withBudget(squad) }),
