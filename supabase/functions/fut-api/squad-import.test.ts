@@ -128,7 +128,7 @@ Deno.test("without an API key, lists still work and free text explains what's mi
   const squad = (await call("POST", "/v1/squads/new", { formation: "4-3-3" })).data.data;
   assert((await call("POST", "/v1/squads/import", { squad, text: "ST Mbappe" })).status === 200, "list ok");
   const r = await call("POST", "/v1/squads/import", { squad, text: "my striker is Mbappe" });
-  assert(r.status === 503 && /ANTHROPIC_API_KEY/.test(r.data.error), `needs key ${JSON.stringify(r.data)}`);
+  assert(r.status === 503 && /Claude API key/.test(r.data.error), `needs key ${JSON.stringify(r.data)}`);
   assert((await call("POST", "/v1/squads/import", { squad, text: "" })).status === 400, "empty");
   const busy = setup({ env: { ANTHROPIC_API_KEY: "k" }, aiStatus: 529 });
   const sq2 = (await busy.call("POST", "/v1/squads/new", { formation: "4-3-3" })).data.data;

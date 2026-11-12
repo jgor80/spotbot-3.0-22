@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { toast } from "@/lib/notify";
 import { HelperConnection } from "@/components/fut/HelperConnection";
-import { Chrome } from "lucide-react";
+import { Chrome, Sparkles } from "lucide-react";
+import { ClaudeKeySetting } from "@/components/fut/ClaudeKeySetting";
 import { useFutAvailable } from "@/components/fut/FutShared";
 
 export default function ProfilePage() {
@@ -87,6 +88,22 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent>
               <HelperConnection />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Your own Claude API key (Jeff, 2026-11-11): XI Lab's AI features use it instead of the server's key. */}
+        {user && futAvailable && (
+          <Card id="claude-key">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5" />
+                Claude API key
+              </CardTitle>
+              <CardDescription>Use your own Anthropic key for GafferBot's AI features</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ClaudeKeySetting />
             </CardContent>
           </Card>
         )}

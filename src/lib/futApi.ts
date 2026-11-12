@@ -174,6 +174,9 @@ export interface MarketSquadComparison { summary: string; options: unknown[]; al
 export interface MarketWatchItem { card_id: string; name: string; platform: MarketPlatform; added_at: string; note: string | null; target_buy: number | null; target_sell: number | null; price_at_add: number | null; latest_price: number | null; freshness: MarketFreshnessStatus; status: MarketStatus; since_added_pct: number | null; at_target_buy: boolean; at_target_sell: boolean; reasons?: string[]; could_be_wrong?: string[] }
 export interface MarketWatchlist { items: MarketWatchItem[]; note: string }
 export interface MarketImportResult { accepted: number; inserted: number; skipped: number; duplicates: number; rejected: { line: number; reason: string }[]; held: number; linked_from_held: number; still_held: number; shared_with_community?: number }
+/** Your own Claude API key (profile). The key itself only comes from aiKey.reveal. */
+export interface AiKeyStatus { saved: boolean; key_hint: string | null; updated_at: string | null; using: "yours" | "server" | "none"; unreadable: boolean }
+
 export interface HelperStatus { connected: boolean; key_hint: string | null; created_at: string | null; last_used_at: string | null; key?: string }
 export interface Fc27FeedStatus { feed_updated: string | null; hours_old: number | null; cards: number; last_run: { at: string; status: string; message: string } | null; note: string }
 export interface MarketEaReference { label: string; evidence: MarketEvidence; market_average: number | null; observed_at: string | null; history: { observed_at: string; market_average: number }[]; recent_sales: { price: number; seen_at: string }[]; note: string }
@@ -336,6 +339,10 @@ export const futApi = {
     pullFc27Market: () => futRequest<Fc27MarketPull>("/market/import/fc27-market", "POST", {}),
     sharing: () => futRequest<MarketSharing>("/market/sharing"),
     helper: () => futRequest<HelperStatus>("/helper"),
+    aiKey: () => futRequest<AiKeyStatus>("/ai-key"),
+    aiKeyReveal: () => futRequest<{ key: string | null }>("/ai-key/reveal"),
+    saveAiKey: (key: string) => futRequest<AiKeyStatus>("/ai-key", "PUT", { key }),
+    removeAiKey: () => futRequest<AiKeyStatus>("/ai-key", "DELETE"),
     helperKey: () => futRequest<{ connected: boolean; key: string | null }>("/helper/key"),
     connectHelper: () => futRequest<HelperStatus>("/helper/connect", "POST", {}),
     disconnectHelper: () => futRequest<HelperStatus>("/helper", "DELETE"),

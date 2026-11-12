@@ -42,6 +42,7 @@ import {
 } from "../_shared/fut/knowledge.ts";
 import { importCardArt, listCardArt } from "../_shared/fut/card-art.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
+import { aiKeyStatus, envForUser, removeAiKey, revealAiKey, saveAiKey } from "../_shared/fut/ai-keys.ts";
 import { createHelperKey, HELPER_KEY_PREFIX, HELPER_ROUTES, helperKeyUser, helperStatus, revealHelperKey, revokeHelperKeys } from "../_shared/fut/helper-keys.ts";
 import { forgetMarketOwner, marketCardId, marketFor, MAX_IMPORT_ROWS, platformParam } from "../_shared/fut/market.ts";
 import { scanRequestSchema, thesisInputSchema, watchItemInputSchema } from "../_shared/fut/xilab/market/index.ts";
@@ -299,6 +300,18 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (route === "/helper/connect" && m === "POST") return json({ data: await createHelperKey(db, userId, deps.env ?? ((k: string) => Deno.env.get(k))) }, 201);
     // The full key again, for its owner's profile (never for a helper key: /helper/key isn't in HELPER_ROUTES).
     if (route === "/helper/key" && m === "GET") return json({ data: await revealHelperKey(db, userId, deps.env ?? ((k: string) => Deno.env.get(k))) });
+    // Your own Claude API key (profile): status, show it again, save (checked with Anthropic first), remove.
+    if (route.startsWith("/ai-key")) {
+      const env = deps.env ?? ((k: string) => Deno.env.get(k));
+      if (route === "/ai-key" && m === "GET") return json({ data: await aiKeyStatus(db, userId, env) });
+      if (route === "/ai-key/reveal" && m === "GET") return json({ data: await revealAiKey(db, userId, env) });
+      if (route === "/ai-key" && m === "PUT") {
+        const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
+        return json({ data: await saveAiKey(db, userId, obj(await body(req)).key, env, fetchFn) });
+      }
+      if (route === "/ai-key" && m === "DELETE") return json({ data: await removeAiKey(db, userId, env) });
+      return err(404, "No such route.");
+    }
     if (route === "/helper/prices" && m === "POST") return json({ data: await importPrices(db, userId, await body(req, MAX_IMPORT_BODY)) });
 
     // Pack Advisor: the pack store and pack pulls the helper copied from the user's own Web App, scored on FUT.GG prices.
@@ -495,8 +508,9 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         const b = obj(await body(req, MAX_SQUAD_IMPORT_BODY));
         const text = typeof b.text === "string" ? b.text : null;
         const image = importImage(b.image);
-        const env = deps.env ?? ((k: string) => Deno.env.get(k));
-        const perHour = Number(env("FUT_IMPORT_AI_PER_HOUR")) || AI_IMPORTS_PER_HOUR;
+        // The user's own Claude key when they saved one (no hourly cap then: it's their bill).
+        const { env, own } = await envForUser(db, userId, deps.env ?? ((k: string) => Deno.env.get(k)));
+        const perHour = own ? Infinity : Number(env("FUT_IMPORT_AI_PER_HOUR")) || AI_IMPORTS_PER_HOUR;
         const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
         const result = await runWorkspace(async () => {
           const squad = squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad;
@@ -543,8 +557,8 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       const b = obj(await body(req));
       if (typeof b.message !== "string" || !b.message.trim()) throw new FutError("Tell me what kind of player you're looking for.");
       if (b.message.length > MAX_FINDER_TEXT) throw new FutError(`Keep it under ${MAX_FINDER_TEXT} characters.`);
-      const env = deps.env ?? ((k: string) => Deno.env.get(k));
-      const perHour = Number(env("FUT_FINDER_AI_PER_HOUR")) || AI_FINDS_PER_HOUR;
+      const { env, own } = await envForUser(db, userId, deps.env ?? ((k: string) => Deno.env.get(k)));
+      const perHour = own ? Infinity : Number(env("FUT_FINDER_AI_PER_HOUR")) || AI_FINDS_PER_HOUR;
       const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
       return json({ data: await findPlayers(db, userId, {
         message: b.message,
@@ -559,7 +573,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     // ---- Knowledge bank: what the FUT community says about gameplay and strategy (knowledge.ts). Shared sources plus the
     // caller's own; the map, one topic, the source list, adding and deleting their own sources, and the Ask chat.
     if (route.startsWith("/knowledge/")) {
-      const env = deps.env ?? ((k: string) => Deno.env.get(k));
+      const baseEnv = deps.env ?? ((k: string) => Deno.env.get(k));
+      // Status, adding a source and Ask use the user's own Claude key when they saved one; the map and lists need none.
+      const usesAi = route === "/knowledge/status" || route === "/knowledge/ask" || (route === "/knowledge/sources" && m === "POST");
+      const { env, own } = usesAi ? await envForUser(db, userId, baseEnv) : { env: baseEnv, own: false };
       const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
       const p = url.searchParams;
       const days = intParam(p.get("days"), "days", 1, 365);
@@ -582,7 +599,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         for (const k of ["url", "text", "title"]) if (b[k] !== undefined && b[k] !== null && typeof b[k] !== "string") throw new FutError(`${k} must be text.`);
         if (typeof b.text === "string" && b.text.length > MAX_ADD_TEXT) throw new FutError(`Paste up to ${MAX_ADD_TEXT.toLocaleString("en")} characters.`);
         if (!(b.url as string | undefined)?.trim() && !(b.text as string | undefined)?.trim()) throw new FutError("Add a link or paste some text.");
-        if (!aiImportAllowed(userId, Number(env("FUT_KB_ADDS_PER_HOUR")) || KB_ADDS_PER_HOUR, kbAdds)) throw new FutError("That's a lot of sources this hour. Try again later.", 429);
+        if (!aiImportAllowed(userId, own ? Infinity : Number(env("FUT_KB_ADDS_PER_HOUR")) || KB_ADDS_PER_HOUR, kbAdds)) throw new FutError("That's a lot of sources this hour. Try again later.", 429);
         return json({ data: await addSource(db, userId, { url: b.url as string, text: b.text as string, title: b.title as string, share: b.share === true }, env, fetchFn) }, 201);
       }
       const sd = route.match(/^\/knowledge\/sources\/([0-9a-f-]{36})$/);
@@ -595,7 +612,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           const o = t && typeof t === "object" ? t as Record<string, unknown> : {};
           return (o.role === "user" || o.role === "assistant") && typeof o.text === "string" && o.text.trim() ? [{ role: o.role, text: o.text.slice(0, 1500) } as AskTurn] : [];
         });
-        const perHour = Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
+        const perHour = own ? Infinity : Number(env("FUT_KB_ASK_PER_HOUR")) || AI_ASKS_PER_HOUR;
         return json({ data: await ask(db, userId, b.question, history, env, fetchFn, () => {
           if (!aiImportAllowed(userId, perHour, aiAsks)) throw new FutError("That's a lot of questions this hour. Try again later.", 429);
         }) });
