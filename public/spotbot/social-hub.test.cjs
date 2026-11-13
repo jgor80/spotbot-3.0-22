@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { Collection } = require('discord.js');
-const { createSocialHub, pickLobby, liveQueue, isDefaultName } = require('./social-hub.cjs');
+const { createSocialHub, pickLobby, liveQueue, isDefaultName, cleanTeamName, freeTeamSlot, lobbySlots, MAX_CLUBS } = require('./social-hub.cjs');
 
 const lobby = (index, humans, openSlots, fits = false) => ({ index, humans, openSlots, fits, club: { key: `club${index + 1}` } });
 
@@ -105,4 +105,78 @@ test('Next game rotates the lobby you are in, once per game', async () => {
   assert.match(r.content, /Sitting this one out: <@b>/);
   assert.match((await hub.nextGame(ix('b', 'vc1'))).content, /rotated/);
   assert.deepEqual(rotations, ['club1']);
+});
+
+test('team names lose mentions and markdown and need 2 to 40 characters', () => {
+  assert.equal(cleanTeamName('  <@123> Sunday   *Legends*  '), '123 Sunday Legends');
+  assert.equal(cleanTeamName('@everyone'), 'everyone');
+  assert.equal(cleanTeamName('x'), null);
+  assert.equal(cleanTeamName('a'.repeat(60)).length, 40);
+});
+
+test('a new team takes a free slot that is not a lobby, else adds one up to the limit', () => {
+  const clubs = [{ key: 'club1', enabled: false }, { key: 'club2', enabled: false }, { key: 'club3', enabled: true }];
+  assert.equal(freeTeamSlot(clubs, ['club1']).club.key, 'club2');
+  const full = [{ key: 'club1', enabled: true }, { key: 'club2', enabled: false }];
+  const r = freeTeamSlot(full, ['club2']);
+  assert.equal(r.added, true);
+  assert.equal(r.club.key, 'club3');
+  const max = Array.from({ length: MAX_CLUBS }, (_, i) => ({ key: `club${i + 1}`, enabled: true }));
+  assert.equal(freeTeamSlot(max, []), null);
+});
+
+test('lobbies keep their slots and never take a team slot', () => {
+  const clubs = [
+    { key: 'club1', name: 'Lobby 1', enabled: true },
+    { key: 'club2', name: 'Night Owls', enabled: true, team_id: 't1' },
+    { key: 'club3', name: 'Club 3', enabled: false },
+    { key: 'club4', name: 'Club 4', enabled: false },
+  ];
+  const keys = lobbySlots(clubs, { lobbies: ['club1'], teams: ['club2'] }, 3).map((c) => c.key);
+  assert.deepEqual(keys, ['club1', 'club3', 'club4']);
+});
+
+test('Start a team makes the club, roles and channels and wires the club features', async () => {
+  const made = [];
+  const roles = [];
+  let saved = null;
+  let n = 0;
+  const added = [];
+  const guild = {
+    id: 'g1',
+    roles: { everyone: { id: 'everyone' }, create: async (o) => { const r = { id: `r${roles.length + 1}`, ...o }; roles.push(r); return r; } },
+    members: { me: { id: 'bot', permissions: { has: () => true } } },
+    channels: { create: async (o) => { const c = { id: `c${++n}`, ...o, send: async () => {} }; made.push(c); return c; } },
+  };
+  const state = { clubs: [{ key: 'club1', name: 'Lobby 1', enabled: true }, { key: 'club2', name: 'Club 2', enabled: false }], boardState: {}, clubVcLinks: { club1: 'vc1' } };
+  let hubSaved = null;
+  const hub = createSocialHub({
+    supabase: {
+      from: (t) => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { social_hub: { on: true, lobbies: ['club1'] } } }) }) }),
+        update: (v) => { hubSaved = v.social_hub; return { eq: async () => ({}) }; },
+        insert: () => ({ select: () => ({ single: async () => ({ data: { id: 'team-1' } }) }) }),
+      }),
+    },
+    getGuildState: async () => state,
+    saveGuildSettings: async (g, s) => { saved = s; },
+    casual: {},
+    createBoard: () => ({ slots: [] }),
+    client: () => null,
+  });
+  const member = { id: 'cap', roles: { add: async (r) => added.push(...r) } };
+  const r = await hub.createTeam(guild, member, 'Night Owls');
+  assert.ok(!r.error, r.error);
+  const club = saved.clubs.find((c) => c.key === 'club2');
+  assert.equal(club.name, 'Night Owls');
+  assert.equal(club.enabled, true);
+  assert.equal(club.team_id, 'team-1');
+  assert.ok(club.events_channel_id && club.stats_channel_id && club.manager_desk_channel_id);
+  assert.ok(saved.clubVcLinks.club2);
+  assert.deepEqual(roles.map((x) => x.name), ['Night Owls', 'Night Owls Captain']);
+  assert.equal(added.length, 2);
+  assert.deepEqual(hubSaved.teams, ['club2']);
+  const desk = made.find((c) => c.id === club.manager_desk_channel_id);
+  assert.ok(desk.permissionOverwrites.some((o) => o.id === 'everyone' && o.deny));
+  assert.match((await hub.createTeam(guild, { id: 'x', roles: { add: async () => {} } }, 'night owls')).error, /already a team/);
 });

@@ -83,6 +83,7 @@ const { createMatchdayPicks } = require('./matchday-picks.cjs');
 const { createRivalries } = require('./rivalries.cjs');
 const { createCasual, allCasual } = require('./casual.cjs');
 const { createSocialHub } = require('./social-hub.cjs');
+const { createHubXp } = require('./hub-xp.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -608,7 +609,11 @@ const socialHub = createSocialHub({
   supabase, getGuildState, saveGuildSettings, casual, getUserPrefs, getInferredMatch, client: () => client,
   createBoard: () => createEmptyBoardForFormation(DEFAULT_FORMATION),
   gameOn: (guildId, clubKey) => activeGameSessions.get(`${guildId}_${clubKey}`)?.status === 'in_progress',
+  xp: () => hubXp,
 });
+// Hub XP: levels, tier roles, weekly challenges and social badges for players across every lobby and team
+const hubXp = createHubXp({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, getGuildState, linkedIds: career.linkedIds, client: () => client });
+autopilot.onNewMatches(hubXp.onNewMatches);
 
 // MessageContent is required to see attachments on normal channel posts (#pro-photos detection).
 // It's a privileged intent: if it isn't enabled in the Developer Portal, login falls back without it.

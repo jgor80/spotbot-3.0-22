@@ -11,6 +11,11 @@
 //                waiting the bot calls a game by pinging Up for a Game.
 //   Next game    anyone in a lobby: the longest runs sit out and the waiting players come in, for lobbies
 //                with no EA club linked (linked ones also rotate when EA brings the game in).
+//   Hub XP       levels, tier roles, weekly challenges, social badges and leaderboards for players
+//                across every lobby and team (hub-xp.cjs); level-ups post in the read-only #hub-feed.
+//   Teams        anyone can start one team (Start a team): it takes a free club slot (up to 25), gets a
+//                team role and a captain role, its own category (team chat, matchday, results, voice and
+//                a captain-only manager desk) and every GafferBot club feature. Players join with a button.
 // Nothing here pings a player: the board and lobby messages show names without mentions, and the only
 // ping is the Up for a Game role on a game call. Settings live in guild_settings.social_hub.
 
@@ -21,8 +26,12 @@ const {
   ButtonStyle,
   ChannelType,
   PermissionsBitField,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require('discord.js');
 const { isServerAdmin } = require('./perm-check.cjs');
+const { FEATURES } = require('./channel-setup.cjs');
 
 const F = PermissionsBitField.Flags;
 const GREEN = 0x2ecc71;
@@ -36,6 +45,9 @@ const NEXT_COOLDOWN_MS = 5 * 60 * 1000;    // Next game once per lobby per 5 min
 const NO_PINGS = { parse: [] };
 const CATEGORY_NAME = '🎮 Drop-in Lobbies';
 const BOARD_NAME = 'whos-playing';
+const FEED_NAME = 'hub-feed';
+const MAX_CLUBS = 25;
+const TEAM_FEATURES = ['events', 'results', 'desk'];
 
 const HUB_COMMANDS = [
   {
@@ -79,8 +91,32 @@ const callAtOf = (club) => {
 
 const isDefaultName = (name) => /^Club \d+$/.test(String(name || ''));
 
+// A team name players typed: no mentions or markdown tricks, 2 to 40 characters
+function cleanTeamName(raw) {
+  const name = String(raw || '').replace(/[@#<>*_`~|\\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  return name.length >= 2 ? name : null;
+}
+
+// A club slot for a new team: a free (disabled) slot that isn't a lobby, else a new one up to MAX_CLUBS
+function freeTeamSlot(clubs, lobbyKeys = []) {
+  const free = clubs.find((c) => !c.enabled && !lobbyKeys.includes(c.key));
+  if (free) return { club: free, added: false };
+  if (clubs.length >= MAX_CLUBS) return null;
+  const n = Math.max(0, ...clubs.map((c) => Number(String(c.key).replace(/^club/, '')) || 0)) + 1;
+  return { club: { key: `club${n}`, name: `Club ${n}`, enabled: false }, added: true };
+}
+
+// Club slots the lobbies use: the ones they had, then free slots that aren't a team
+function lobbySlots(clubs, hub, n) {
+  const teams = new Set(hub.teams || []);
+  const had = (hub.lobbies || []).map((k) => clubs.find((c) => c.key === k)).filter(Boolean);
+  const rest = clubs.filter((c) => !teams.has(c.key) && !had.includes(c) && (!c.enabled || isDefaultName(c.name) || !c.team_id));
+  return [...had, ...rest].slice(0, n);
+}
+
 function createSocialHub(deps) {
   const { supabase, getGuildState, saveGuildSettings, casual, createBoard, getUserPrefs, getInferredMatch, gameOn } = deps;
+  const xp = () => deps.xp?.();
   const client = () => deps.client();
   const hubs = new Map();     // guildId -> settings
   const queues = new Map();   // guildId -> Map(userId -> joinedAt)
@@ -153,6 +189,8 @@ function createSocialHub(deps) {
           playing ? `**${playing} playing in ${active} lobb${active === 1 ? 'y' : 'ies'}** · ${open} open spot${open === 1 ? '' : 's'}` : '**Nobody on right now.** Press **Play now** and the next few players start a game.',
           queue.size ? `⏳ ${queue.size} waiting to play` : null,
           'Anyone can play: press **Play now** and I\'ll put you in the lobby that needs your position. You get a spot on the board as soon as you join a lobby.',
+          xp() ? await xp().boardLine(guild.id) : null,
+          teamsLine(guild, state, hub),
         ].filter(Boolean).join('\n')
       )
       .setFooter({ text: '🎮 in a game · 🟢 open · ⚪ empty · 🪑 next in · Turn on Game pings to hear when games start' })
@@ -168,7 +206,22 @@ function createSocialHub(deps) {
       new ButtonBuilder().setCustomId('posboard_setprefs').setLabel('My positions').setEmoji('🎯').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('sh_refresh').setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary)
     );
-    return { embeds: [embed], components: [row], allowedMentions: NO_PINGS };
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('sh_me').setLabel('My XP').setEmoji('⭐').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('sh_lb').setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('sh_team').setLabel('Start a team').setEmoji('🛡️').setStyle(ButtonStyle.Secondary)
+    );
+    return { embeds: [embed], components: [row, row2], allowedMentions: NO_PINGS };
+  }
+
+  function teamsLine(guild, state, hub) {
+    const teams = (hub.teams || []).map((k) => state.clubs.find((c) => c.key === k && c.enabled)).filter(Boolean);
+    if (!teams.length) return null;
+    const inVoice = (club) => {
+      const vc = guild.channels.cache.get(state.clubVcLinks?.[club.key]);
+      return vc?.members ? [...vc.members.values()].filter((m) => !m.user?.bot).length : 0;
+    };
+    return `🛡️ Teams: ${teams.map((t) => (inVoice(t) ? `**${t.name}** (${inVoice(t)} on)` : t.name)).join(' · ')}`.slice(0, 1000);
   }
 
   async function refreshBoard(guild) {
@@ -237,9 +290,25 @@ function createSocialHub(deps) {
       made.push(`<#${boardCh.id}>`);
     }
 
+    let feedCh = hub.feed_channel_id ? await guild.channels.fetch(hub.feed_channel_id).catch(() => null) : null;
+    if (!feedCh) {
+      feedCh = await guild.channels.create({
+        name: FEED_NAME,
+        type: ChannelType.GuildText,
+        parent: category.id,
+        topic: 'Level-ups, badges, weekly challenges and Player of the Week.',
+        permissionOverwrites: [
+          { id: guild.roles.everyone.id, allow: [F.ViewChannel, F.ReadMessageHistory, F.AddReactions], deny: [F.SendMessages] },
+          { id: me.id, allow: [F.ViewChannel, F.SendMessages, F.EmbedLinks, F.ReadMessageHistory] },
+        ],
+        reason: 'GafferBot Social Hub feed',
+      });
+      made.push(`<#${feedCh.id}>`);
+    }
+
     if (!state.clubVcLinks) state.clubVcLinks = {};
     const lobbies = [];
-    for (const club of state.clubs.slice(0, n)) {
+    for (const club of lobbySlots(state.clubs, hub, n)) {
       if (!club.enabled) {
         club.enabled = true;
         state.boardState[club.key] = createBoard();
@@ -266,6 +335,7 @@ function createSocialHub(deps) {
     hub.category_id = category.id;
     hub.lobbies = lobbies;
     hub.board_channel_id = boardCh.id;
+    hub.feed_channel_id = feedCh.id;
     await saveHub(guild.id, hub);
     // A fresh board message each setup, so it sits at the bottom of the channel
     await postBoard(boardCh);
@@ -306,6 +376,7 @@ function createSocialHub(deps) {
     if (queue.size >= need) {
       queues.set(guild.id, new Map());
       const r = await casual.postCall(guild, best.club, { auto: true }).catch((err) => ({ error: err.message }));
+      if (!r?.error) xp()?.onCall(guild.id, interaction.user.id).catch(() => {});
       touch(guild.id);
       if (r?.error) return { content: `⏳ ${queue.size} want to play. Join <#${best.vcId}> to start a game. (I couldn't post the call: ${r.error})` };
       return { content: `🎉 That's ${queue.size} wanting a game: I've called it. Join <#${best.vcId}> to kick off.` };
@@ -333,6 +404,10 @@ function createSocialHub(deps) {
     const last = lastNext.get(key) || 0;
     if (Date.now() - last < NEXT_COOLDOWN_MS) return { content: `⏱️ ${club.name} rotated <t:${Math.floor(last / 1000)}:R>. One rotation per game, please.` };
     lastNext.set(key, Date.now());
+    // Everyone on the board and in the lobby just played a game
+    const inVoice = new Set(guild.channels.cache.get(vcId)?.members?.map?.((m) => m.id) || []);
+    const played = (state.boardState?.[club.key]?.slots || []).filter((s) => !s.open && inVoice.has(s.takenBy)).map((s) => s.takenBy);
+    if (played.length) xp()?.onGame(guild.id, club, played).catch((err) => console.warn(`[hub] game XP failed: ${err.message}`));
     const r = await casual.rotate(guild, club, { gamesPlayed: 1 });
     touch(guild.id);
     if (!r || (!r.in.length && !r.out.length)) return { content: `🔁 Nobody is waiting in **${club.name}**, so everyone stays on. Good game!` };
@@ -340,6 +415,121 @@ function createSocialHub(deps) {
     // The lobby's voice chat hears it, without pinging anyone
     if (vc?.send) await vc.send({ content: rotationLine(club, r), allowedMentions: NO_PINGS }).catch(() => {});
     return { content: rotationLine(club, r) };
+  }
+
+  // ---------- Teams ----------
+
+  const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'team';
+
+  function teamModal() {
+    return new ModalBuilder()
+      .setCustomId('sh_team_m')
+      .setTitle('Start a team')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('name').setLabel('Team name').setStyle(TextInputStyle.Short).setMinLength(2).setMaxLength(40).setRequired(true).setPlaceholder('e.g. Sunday League Legends')
+        )
+      );
+  }
+
+  function teamCard(club, roleId) {
+    const embed = new EmbedBuilder()
+      .setTitle(`🛡️ ${club.name}`)
+      .setColor(GREEN)
+      .setDescription(
+        [
+          `Press **Join team** to get the <@&${roleId}> role: you see the team's events and get its game calls.`,
+          'This team has every GafferBot club feature: spots fill from the team voice channel, matchday events and sign-ups post in matchday, results and recaps in results, and the captain runs it all from the manager desk.',
+          'Link the EA club in **/manager → Admin → Link EA Club** (from the manager desk) for stats, recaps and badges.',
+        ].join('\n\n')
+      );
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`sh_join:${club.key}`).setLabel('Join team').setEmoji('✅').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`sh_leave:${club.key}`).setLabel('Leave team').setStyle(ButtonStyle.Secondary)
+    );
+    return { embeds: [embed], components: [row], allowedMentions: NO_PINGS };
+  }
+
+  async function createTeam(guild, member, rawName) {
+    const hub = { ...(await hubOf(guild.id)) };
+    if (!hub.on) return { error: 'This server has no Social Hub yet.' };
+    const me = guild.members.me;
+    const missing = ['ManageChannels', 'ManageRoles'].filter((p) => !me?.permissions?.has(F[p]));
+    if (missing.length) return { error: `I need **${missing.join('** and **')}** to make a team. Ask an admin to give my role those permissions.` };
+    const name = cleanTeamName(rawName);
+    if (!name) return { error: 'Pick a team name of 2 to 40 letters or numbers.' };
+    const state = await getGuildState(guild.id);
+    const teamKeys = hub.teams || [];
+    const teams = teamKeys.map((k) => state.clubs.find((c) => c.key === k && c.enabled)).filter(Boolean);
+    if (state.clubs.some((c) => c.enabled && c.name.toLowerCase() === name.toLowerCase())) return { error: `There's already a team or lobby called **${name}**.` };
+    if (teams.some((t) => t.captain_id === member.id)) return { error: 'You already captain a team here. One team each keeps it fair.' };
+    const slot = freeTeamSlot(state.clubs, hub.lobbies || []);
+    if (!slot) return { error: `The server is full (${MAX_CLUBS} clubs). Ask an admin to free one up.` };
+
+    const club = slot.club;
+    if (slot.added) state.clubs.push(club);
+    club.enabled = true;
+    club.name = name;
+    club.captain_id = member.id;
+    state.boardState[club.key] = createBoard();
+
+    const { data: team, error } = await supabase
+      .from('teams')
+      .insert({ guild_id: guild.id, name, team_type: 'comp', active: true, captain_discord_id: member.id, manager_discord_ids: [] })
+      .select('id')
+      .single();
+    if (error) return { error: `Couldn't save the team: ${error.message}` };
+    club.team_id = team.id;
+
+    const role = await guild.roles.create({ name, mentionable: false, reason: `GafferBot Social Hub team started by ${member.user?.tag || member.id}` });
+    const captainRole = await guild.roles.create({ name: `${name} Captain`, mentionable: false, reason: 'GafferBot Social Hub team captain' });
+    club.team_role_id = role.id;
+    club.captain_role_id = captainRole.id;
+    await member.roles?.add?.([role, captainRole]).catch(() => {});
+
+    const everyone = guild.roles.everyone.id;
+    const bot = { id: me.id, allow: [F.ViewChannel, F.SendMessages, F.EmbedLinks, F.ReadMessageHistory, F.Connect, F.MoveMembers] };
+    const captain = { id: captainRole.id, allow: [F.ViewChannel, F.SendMessages, F.ReadMessageHistory] };
+    const feed = [{ id: everyone, allow: [F.ViewChannel, F.ReadMessageHistory, F.AddReactions], deny: [F.SendMessages] }, captain, bot];
+    const category = await guild.channels.create({ name: `🛡️ ${name}`, type: ChannelType.GuildCategory, reason: 'GafferBot Social Hub team' });
+    const make = (n, type, permissionOverwrites, topic) => guild.channels.create({ name: n, type, parent: category.id, permissionOverwrites, topic, reason: 'GafferBot Social Hub team' });
+    const s = slug(name);
+    const chat = await make(`${s}-chat`, ChannelType.GuildText, [bot], `${name}: team chat. Anyone can drop in.`);
+    const channels = {
+      events: await make(`${s}-matchday`, ChannelType.GuildText, feed, `${name}: events, availability and team sheets`),
+      results: await make(`${s}-results`, ChannelType.GuildText, feed, `${name}: results, recaps and stats`),
+      desk: await make(`${s}-desk`, ChannelType.GuildText, [{ id: everyone, deny: [F.ViewChannel] }, captain, bot], `${name}: captain's manager desk`),
+    };
+    const vc = await make(name.slice(0, 100), ChannelType.GuildVoice, [bot]);
+    const ctx = { state };
+    for (const key of TEAM_FEATURES) FEATURES.find((f) => f.key === key)?.set(club, channels[key].id, ctx);
+    if (!state.clubVcLinks) state.clubVcLinks = {};
+    state.clubVcLinks[club.key] = vc.id;
+    club.team_category_id = category.id;
+    await saveGuildSettings(guild.id, state);
+
+    hub.teams = [...teamKeys.filter((k) => k !== club.key), club.key];
+    await saveHub(guild.id, hub);
+    await chat.send(teamCard(club, role.id)).catch(() => {});
+    await channels.desk
+      .send({ content: `🧑‍💼 <@${member.id}>, this is your captain's desk. Open **/manager** here to run **${name}**: events, lineups, recruitment, stats and more. Name co-captains in **Roster & Squad → Set Captain / Managers**.`, allowedMentions: NO_PINGS })
+      .catch(() => {});
+    touch(guild.id);
+    return { club, chat, desk: channels.desk, vc };
+  }
+
+  async function toggleTeam(interaction, clubKey, join) {
+    const state = await getGuildState(interaction.guildId);
+    const club = state.clubs.find((c) => c.key === clubKey && c.enabled);
+    const role = club?.team_role_id ? interaction.guild.roles.cache.get(club.team_role_id) || (await interaction.guild.roles.fetch(club.team_role_id).catch(() => null)) : null;
+    if (!role) return '❌ This team is gone.';
+    const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => interaction.member);
+    const has = member?.roles?.cache?.has(role.id);
+    if (join && has) return `You're already on **${club.name}**.`;
+    if (!join && !has) return `You're not on **${club.name}**.`;
+    const ok = await (join ? member.roles.add(role) : member.roles.remove(role)).then(() => true).catch(() => false);
+    if (!ok) return '❌ I couldn\'t change your roles. Ask an admin to move my role above the team roles.';
+    return join ? `✅ Welcome to **${club.name}**! You'll see its events and game calls.` : `👋 You've left **${club.name}**.`;
   }
 
   // ---------- Voice and members ----------
@@ -368,7 +558,9 @@ function createSocialHub(deps) {
         `👋 Welcome to **${member.guild.name}**! Anyone can play here, any time.\n` +
           `• Head to <#${hub.board_channel_id}> to see who's playing where, and press **Play now** to get in a game.\n` +
           '• Press **My positions** there so you get the spots you like.\n' +
-          '• Press **Game pings** to hear when a game is starting.'
+          '• Press **Game pings** to hear when a game is starting.\n' +
+          '• Every game, win and hour in the lobbies earns XP: level up, finish the weekly challenges and collect badges (**My XP** on the board).\n' +
+          '• Want your own side? Press **Start a team** for a team role, channels and a captain\'s desk.'
       )
       .catch(() => {});
   }
@@ -411,6 +603,15 @@ function createSocialHub(deps) {
       await handleCommand(interaction);
       return true;
     }
+    if (interaction.isModalSubmit?.() && interaction.customId === 'sh_team_m') {
+      await interaction.deferReply({ flags: 64 });
+      const r = await createTeam(interaction.guild, interaction.member, interaction.fields.getTextInputValue('name')).catch((err) => ({ error: err.message }));
+      if (r.error) return interaction.editReply({ content: `❌ ${r.error}` }).then(() => true);
+      await interaction.editReply({
+        content: `🛡️ **${r.club.name}** is set up and you're its captain. Team chat: <#${r.chat.id}> · your desk: <#${r.desk.id}> · voice: <#${r.vc.id}>. Players join with the button in team chat.`,
+      });
+      return true;
+    }
     if (!interaction.isButton?.()) return false;
     const id = interaction.customId;
     if (id === 'sh_play') {
@@ -426,10 +627,26 @@ function createSocialHub(deps) {
       await interaction.update(await board(interaction.guild));
       return true;
     }
+    if (id === 'sh_me' || id === 'sh_lb') {
+      if (!xp()) return interaction.reply({ content: 'Hub XP is not running.', flags: 64 }).then(() => true);
+      await interaction.deferReply({ flags: 64 });
+      const embed = id === 'sh_me' ? await xp().meCard(interaction.guildId, interaction.user.id) : await xp().leaderboardEmbed(interaction.guildId);
+      await interaction.editReply({ embeds: [embed], allowedMentions: NO_PINGS });
+      return true;
+    }
+    if (id === 'sh_team') {
+      await interaction.showModal(teamModal());
+      return true;
+    }
+    if (id.startsWith('sh_join:') || id.startsWith('sh_leave:')) {
+      const content = await toggleTeam(interaction, id.split(':')[1], id.startsWith('sh_join:'));
+      await interaction.reply({ content, flags: 64, allowedMentions: NO_PINGS });
+      return true;
+    }
     return false;
   }
 
-  return { handleInteraction, onVoiceStateUpdate, onMemberJoin, touch, setup, board, play, nextGame, hubOf };
+  return { handleInteraction, onVoiceStateUpdate, onMemberJoin, touch, setup, board, play, nextGame, hubOf, saveHub, createTeam, toggleTeam };
 }
 
-module.exports = { createSocialHub, HUB_COMMANDS, pickLobby, liveQueue, isDefaultName };
+module.exports = { createSocialHub, HUB_COMMANDS, pickLobby, liveQueue, isDefaultName, cleanTeamName, freeTeamSlot, lobbySlots, MAX_CLUBS };
