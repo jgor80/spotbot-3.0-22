@@ -35,6 +35,8 @@
   X-Robots-Tag: noindex
 /wrapped
   X-Robots-Tag: noindex
+/hub
+  X-Robots-Tag: noindex
 /settings
   X-Robots-Tag: noindex
 /drafts

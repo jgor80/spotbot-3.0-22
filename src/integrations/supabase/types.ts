@@ -349,6 +349,75 @@ export type Database = {
         }
         Relationships: []
       }
+      hub_players: {
+        Row: {
+          guild_id: string
+          discord_user_id: string
+          xp: number
+          level: number
+          games: number
+          wins: number
+          goals: number
+          assists: number
+          voice_minutes: number
+          calls: number
+          mates: Json
+          lobbies: Json
+          badges: Json
+          streak: number
+          best_streak: number
+          last_day: string | null
+          week_key: string | null
+          week_xp: number
+          week: Json
+          updated_at: string
+        }
+        Insert: {
+          guild_id: string
+          discord_user_id: string
+          xp?: number
+          level?: number
+          games?: number
+          wins?: number
+          goals?: number
+          assists?: number
+          voice_minutes?: number
+          calls?: number
+          mates?: Json
+          lobbies?: Json
+          badges?: Json
+          streak?: number
+          best_streak?: number
+          last_day?: string | null
+          week_key?: string | null
+          week_xp?: number
+          week?: Json
+          updated_at?: string
+        }
+        Update: {
+          guild_id?: string
+          discord_user_id?: string
+          xp?: number
+          level?: number
+          games?: number
+          wins?: number
+          goals?: number
+          assists?: number
+          voice_minutes?: number
+          calls?: number
+          mates?: Json
+          lobbies?: Json
+          badges?: Json
+          streak?: number
+          best_streak?: number
+          last_day?: string | null
+          week_key?: string | null
+          week_xp?: number
+          week?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       matchday_picks: {
         Row: {
           round_id: string

@@ -30,6 +30,7 @@ const RecentGamesPage = lazy(() => import("./pages/RecentGamesPage"));
 const CabinetPage = lazy(() => import("./pages/CabinetPage"));
 const NewspaperPage = lazy(() => import("./pages/NewspaperPage"));
 const WrappedPage = lazy(() => import("./pages/WrappedPage"));
+const HubPage = lazy(() => import("./pages/HubPage"));
 const BillingPage = lazy(() => import("./pages/BillingPage"));
 const InsightsPage = lazy(() => import("./pages/InsightsPage"));
 const SquadIQPanel = lazy(() => import("./pages/SquadIQPanel"));
@@ -121,6 +122,7 @@ const App = () => (
                   <Route path="/trophy-room" element={<ProtectedRoute><CabinetPage /></ProtectedRoute>} />
                   <Route path="/paper" element={<ProtectedRoute><NewspaperPage /></ProtectedRoute>} />
                   <Route path="/wrapped" element={<ProtectedRoute><WrappedPage /></ProtectedRoute>} />
+                  <Route path="/hub" element={<ProtectedRoute><HubPage /></ProtectedRoute>} />
                   <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
                   <Route path="/players" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
                   <Route path="/fut" element={<ProtectedRoute><FutHomePage /></ProtectedRoute>} />

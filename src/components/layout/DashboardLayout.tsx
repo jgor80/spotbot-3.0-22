@@ -38,6 +38,7 @@ import {
   Scale,
   Gauge,
   Columns3,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -75,6 +76,7 @@ const clubMore: NavItem[] = [
   { path: "/trophy-room", label: "Trophy Room", icon: Medal },
   { path: "/paper", label: "The Paper", icon: Newspaper },
   { path: "/wrapped", label: "Club Wrapped", icon: Gift },
+  { path: "/hub", label: "Hub XP", icon: Sparkles },
   { path: "/billing", label: "Plans & AI Images", icon: CreditCard },
   { path: "/ratings", label: "Ratings", icon: Star },
   { path: "/drafts", label: "Drafts", icon: Swords },
