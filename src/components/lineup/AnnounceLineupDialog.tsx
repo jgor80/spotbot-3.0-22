@@ -150,7 +150,7 @@ export function AnnounceLineupDialog({
           </div>
 
           <div className="flex items-center justify-between">
-            <Label htmlFor="mention-players">Ping the starting XI</Label>
+            <Label htmlFor="mention-players">Ping the squad role (signed players for league games)</Label>
             <Switch id="mention-players" checked={mentionPlayers} onCheckedChange={setMentionPlayers} />
           </div>
           <div className="flex items-center justify-between">

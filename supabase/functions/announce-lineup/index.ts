@@ -14,6 +14,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createAdminClient, identifyCaller, requireGuildAccess, throttleWebUser, type Caller } from "../_shared/auth.ts";
 import { clubAccent, clubCrest } from "../_shared/club-theme.ts";
+import { findSignedRole, lineupPingPlan, pingAllowed, pingHead, type PingPlan } from "../_shared/lineup-ping.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -282,7 +283,7 @@ async function announce(supabase: any, req: Request, body: any, caller: Caller) 
 
   let event: any = null;
   if (lineup.event_id) {
-    const { data } = await supabase.from("availability_events").select("title, scheduled_at").eq("id", lineup.event_id).maybeSingle();
+    const { data } = await supabase.from("availability_events").select("title, scheduled_at, event_type, ping_role_id, club_key").eq("id", lineup.event_id).maybeSingle();
     event = data;
   }
 
@@ -291,7 +292,20 @@ async function announce(supabase: any, req: Request, body: any, caller: Caller) 
   const { data: settings } = await supabase.from("guild_settings").select("branding, clubs").eq("guild_id", lineup.guild_id).maybeSingle();
   const branding = settings?.branding || {};
   const clubs: any[] = Array.isArray(settings?.clubs) ? settings.clubs : [];
-  const club = (lineup.team_id && clubs.find((c: any) => c?.team_id === lineup.team_id)) || (clubs.length === 1 ? clubs[0] : null);
+  const club = (lineup.team_id && clubs.find((c: any) => c?.team_id === lineup.team_id)) ||
+    (event?.club_key && clubs.find((c: any) => c?.key === event.club_key)) ||
+    (clubs.length === 1 ? clubs[0] : null);
+
+  // Who the post pings: the signed-players role for league games, else the event's role or
+  // @everyone. Never the players one by one: they're named, but their tags don't notify.
+  let ping: PingPlan = { kind: "none" };
+  if (mentionPlayers) {
+    const rolesRes = await discord(`/guilds/${lineup.guild_id}/roles`).catch(() => null);
+    const roles: any[] = rolesRes?.ok ? await rolesRes.json().catch(() => []) : [];
+    const signed = findSignedRole(roles, club);
+    ping = lineupPingPlan({ event, signedRoleId: signed?.id || null, roleIds: roles.map((r: any) => r.id) });
+  }
+  const head = pingHead(ping);
 
   const starters = (slots || []).filter((s: any) => !s.is_substitute);
   const subs = (slots || []).filter((s: any) => s.is_substitute);
@@ -379,7 +393,7 @@ async function announce(supabase: any, req: Request, body: any, caller: Caller) 
     // Keep the old pitch graphic if no new one was sent
     if (!imageBytes && previousMessage.embeds?.[0]?.image) embed.image = { url: "attachment://lineup.png" };
     const editRes = await send("PATCH", `/channels/${channel_id}/messages/${previousMessage.id}`, {
-      content: mentionPlayers && discordStarterIds.length ? `Starting XI: ${discordStarterIds.map((id: string) => `<@${id}>`).join(" ")}` : "",
+      content: mentionPlayers && discordStarterIds.length ? `${head ? `${head} ` : ""}Starting XI: ${discordStarterIds.map((id: string) => `<@${id}>`).join(" ")}` : "",
       embeds: [embed],
       allowed_mentions: { parse: [] },
     });
@@ -395,10 +409,10 @@ async function announce(supabase: any, req: Request, body: any, caller: Caller) 
   if (!message) {
     const postRes = await send("POST", `/channels/${channel_id}/messages`, {
       content: mentionPlayers && discordStarterIds.length
-        ? `You're in the starting XI: ${discordStarterIds.map((id: string) => `<@${id}>`).join(" ")}`
+        ? `${head ? `${head} ` : ""}Starting XI: ${discordStarterIds.map((id: string) => `<@${id}>`).join(" ")}`
         : undefined,
       embeds: [embed],
-      allowed_mentions: { parse: [], users: mentionPlayers ? discordStarterIds.slice(0, 100) : [] },
+      allowed_mentions: pingAllowed(ping),
     });
     if (!postRes.ok) {
       const text = await postRes.text();
@@ -419,14 +433,13 @@ async function announce(supabase: any, req: Request, body: any, caller: Caller) 
         ...changes.removed.map((c) => `❌ Out: ${who(c.id)} (${c.position})`),
         ...changes.moved.map((c) => `🔁 ${who(c.id)}: ${c.from} → ${c.position}`),
       ];
-      const pings = mentionPlayers ? [...notifyIds, ...changes.removed.map((c) => c.id)].filter((id) => DISCORD_ID_REGEX.test(id)) : [];
       const replyRes = await discord(`/channels/${channel_id}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: `🔄 **Lineup updated**\n${lines.join("\n")}`.slice(0, 2000),
+          content: `${head ? `${head} ` : ""}🔄 **Lineup updated**\n${lines.join("\n")}`.slice(0, 2000),
           message_reference: { message_id: message.id, fail_if_not_exists: false },
-          allowed_mentions: { parse: [], users: pings.slice(0, 100) },
+          allowed_mentions: { ...pingAllowed(ping), replied_user: false },
         }),
       });
       await replyRes.body?.cancel();

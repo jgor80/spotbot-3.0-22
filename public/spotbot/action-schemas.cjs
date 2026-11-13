@@ -189,10 +189,10 @@ const ACTION_SCHEMAS = [
   { name: 'syncclub', description: 'Manually sync recent matches from EA FC Pro Clubs.' },
   {
     name: 'teamsheet',
-    description: 'Post the latest saved lineup (team sheet) in this channel and ping the starting XI.',
+    description: 'Post the latest saved lineup (team sheet) in this channel and ping the squad role.',
     options: [
       { name: 'team', description: 'Team name (defaults to the most recent lineup).', type: 3, required: false },
-      { name: 'ping', description: 'Ping the starting XI (default: yes).', type: 5, required: false },
+      { name: 'ping', description: 'Ping the squad role (default: yes).', type: 5, required: false },
       { name: 'dm', description: 'Also DM each starter their position (default: no).', type: 5, required: false },
       { name: 'message', description: 'Note to include, e.g. kick-off time.', type: 3, required: false }
     ]

@@ -177,16 +177,16 @@ function createMatchNight(deps) {
     if (missingChannelPerms(channel, channel.guild.members.me).length) return null;
     const tonight = await expectedTonight(event);
     const lineup = tonight.lineup;
-    // League games: only signed players are tagged
+    // League games: only signed players are listed. Players are named, not pinged: the post
+    // pings the event's role (the signed-players role for league games) or @everyone.
     const ids = await events.onlySigned(event, tonight.ids);
     const board = await events.fetchBoardMessage(event);
     // Matchday Programme goes up once, just before check-in opens
     const prog = await programme.build(event, lineup).catch((err) => console.warn(`[matchnight] programme: ${err.message}`));
     if (prog) await (board ? board.reply({ embeds: [prog], allowedMentions: { parse: [] } }) : channel.send({ embeds: [prog], allowedMentions: { parse: [] } })).catch(() => {});
     const payload = {
-      content: ids.length ? `🟢 Check-in is open for **${event.title}**: ${ids.map((id) => `<@${id}>`).join(' ')}` : `🟢 Check-in is open for **${event.title}**.`,
       ...(await buildCheckin(event)),
-      allowedMentions: { users: ids.slice(0, 100) },
+      ...(await events.pingFor(event, ids.length ? `🟢 Check-in is open for **${event.title}**: ${ids.map((id) => `<@${id}>`).join(' ')}` : `🟢 Check-in is open for **${event.title}**.`)),
     };
     const message = board ? await board.reply(payload) : await channel.send(payload);
     const openedAt = new Date().toISOString();
@@ -298,7 +298,9 @@ function createMatchNight(deps) {
     const coverText = position
       ? coverLine('primary', `⭐ ${position} is their comp position`) + coverLine('secondary', `✅ Plays ${position} well`) + coverLine('emergency', '🆘 Can cover in an emergency')
       : '';
-    const rolePing = !pingIds.length && event.ping_role_id ? event.ping_role_id : null;
+    // Candidates are named in the post; the ping goes to the event's role (signed players for
+    // league games) or @everyone, never to players one by one
+    const ping = await events.pingFor(event, '');
     const kickoff = T.unix(event.scheduled_at);
     const embed = new EmbedBuilder()
       .setTitle(`🆘 Sub needed${position ? `: ${position}` : ''}`)
@@ -311,7 +313,7 @@ function createMatchNight(deps) {
           '\nFirst to tap **I can cover** gets the spot.'
       );
     const message = await channel.send({
-      content: pingIds.length ? pingIds.map((id) => `<@${id}>`).join(' ') : rolePing ? `<@&${rolePing}>` : undefined,
+      ...ping,
       embeds: [embed],
       components: [
         new ActionRowBuilder().addComponents(
@@ -319,7 +321,6 @@ function createMatchNight(deps) {
           new ButtonBuilder().setCustomId(`sub_cancel:${request.id}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
         ),
       ],
-      allowedMentions: { users: pingIds.slice(0, 100), roles: rolePing ? [rolePing] : [] },
     });
     await supabase.from('sub_requests').update({ message_id: message.id }).eq('id', request.id);
     return request;
@@ -384,7 +385,9 @@ function createMatchNight(deps) {
     const state = event?.club_key && getGuildState ? await getGuildState(event.guild_id) : null;
     const vcId = state?.clubVcLinks?.[event.club_key];
     const botId = events.getClient()?.user?.id;
-    const notify = [interaction.user.id, request.requested_by_discord_id].filter((id) => id && id !== botId);
+    // Only whoever asked for the sub is pinged (a leader alert); the sub tapped the button, so they
+    // see this anyway and are named without a ping
+    const notify = [request.requested_by_discord_id].filter((id) => id && id !== botId && id !== interaction.user.id);
     await interaction.followUp({
       content:
         `🙌 <@${interaction.user.id}> is covering${request.position ? ` ${request.position}` : ''}.` +

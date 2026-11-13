@@ -219,12 +219,14 @@ function createEventLineup(deps) {
     if (!lineup || !event || !client || !event.channel_id) return false;
     const channel = await client.channels.fetch(event.channel_id).catch(() => null);
     if (!channel?.send) return false;
-    const mentions = lineup.slots.map((s) => `<@${s.discord_user_id}>`).join(' ');
+    // Ping the event's role (signed players for league games) or @everyone, never each player;
+    // the lineup itself names them
+    const ping = await events.pingFor(event, `📣 The lineup for **${event.title}** is up.`);
     // The pitch image (player cards, bench) from lineup-board.cjs; the post goes out without it if it can't be drawn
     const png = deps.lineupImage ? await deps.lineupImage(lineup.id, { subtitle: event.title }) : null;
     const embed = lineupEmbed(event, lineup);
     if (png) embed.setImage('attachment://lineup.png');
-    const msg = await channel.send({ content: mentions.slice(0, 1900), embeds: [embed], components: [confirmRow(lineup.id)], files: png ? [new AttachmentBuilder(png, { name: 'lineup.png' })] : [], allowedMentions: { users: lineup.slots.map((s) => s.discord_user_id) } }).catch(() => null);
+    const msg = await channel.send({ ...ping, embeds: [embed], components: [confirmRow(lineup.id)], files: png ? [new AttachmentBuilder(png, { name: 'lineup.png' })] : [] }).catch(() => null);
     if (!msg) return false;
     await supabase.from('lineups').update({ message_id: msg.id, channel_id: channel.id }).eq('id', lineup.id);
     return true;

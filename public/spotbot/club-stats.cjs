@@ -95,7 +95,7 @@ const HELP_PAGES = [
     blurb: 'Lineups, check-ins and subs on the night.',
     lines: [
       ['/manager', 'The Manager Hub: Call Session, Team Sheet, Sync Matches, Club Stats and Insights buttons.'],
-      [at('ln_sheet'), 'Post the latest lineup and ping the starting XI.'],
+      [at('ln_sheet'), 'Post the latest lineup and ping the squad role.'],
       [at('mn_checkin'), 'Open check-in for the next event. Players check in with **/me → Check In**.'],
       [at('mn_sub'), 'Ask the server for a sub.'],
       [at('mn_reliability'), 'Show-up rates: who turns up when they say they will.'],

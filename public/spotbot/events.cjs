@@ -639,6 +639,12 @@ function createEvents(deps) {
     return B.choosePing({ notify, pingRoleId: event.ping_role_id, league: isLeague(event), signedRoleId: signed?.id || null });
   }
 
+  // A follow-up post about the event: pings the event's role (the signed-players role for league
+  // games) or @everyone, never individual players. Player tags in `text` show names only.
+  async function pingFor(event, text) {
+    return B.pingContent(await pingPlanFor(event), text);
+  }
+
   // The only place an event pings: once, when it is first posted. Board edits and reposts
   // suppress mentions.
   async function postEvent(fields, channel, { notify = null } = {}) {
@@ -996,14 +1002,15 @@ function createEvents(deps) {
       await new Promise((r) => setTimeout(r, 300));
     }
 
-    // In the channel, tag only the players whose DMs are closed; when there is nobody to DM,
-    // post one plain nudge with no tags. Nobody else is tagged.
+    // In the channel: when some DMs are closed, ping the event's role (signed players for league
+    // games) and list those players by name without tagging them; when there is nobody to DM,
+    // post one plain nudge with no ping. Players are never pinged one by one.
     const board = await fetchBoardMessage(event);
     if (board && (dmFailedIds.length || source === 'none')) {
-      const content = dmFailedIds.length
-        ? `⏰ ${dmFailedIds.map((id) => `<@${id}>`).join(' ')} I couldn't DM you: can you make **${event.title}**? Answer on the post above by <t:${due}:R>.`
-        : `⏰ Answers for **${event.title}** close <t:${due}:R>. Tap a button on the post above.`;
-      await board.reply({ content: truncate(content, 2000), allowedMentions: { parse: [], users: dmFailedIds.slice(0, 100) } }).catch(() => {});
+      const payload = dmFailedIds.length
+        ? await pingFor(event, `⏰ I couldn't DM ${dmFailedIds.map((id) => `<@${id}>`).join(' ')}: can you make **${event.title}**? Answer on the post above by <t:${due}:R>.`)
+        : B.pingContent({ kind: 'none' }, `⏰ Answers for **${event.title}** close <t:${due}:R>. Tap a button on the post above.`);
+      await board.reply({ ...payload, content: truncate(payload.content, 2000) }).catch(() => {});
     }
     const dmFailed = dmFailedIds.length;
     if (!manual) await supabase.from('availability_events').update({ deadline_reminder_sent: true }).eq('id', event.id);
@@ -1120,20 +1127,18 @@ function createEvents(deps) {
     if (error) return interaction.editReply({ content: `❌ Couldn't cancel **${event.title}**: ${error.message}. Nothing was changed.` });
     const updated = { ...event, cancelled: true, closed: true };
     const board = await fetchBoardMessage(updated);
-    let notified = 0;
+    let pinged = null;
     if (board) {
       await board.edit(await buildBoard(updated)).catch(() => {});
+      // Ping the event's role (signed players for league games) only when someone said they could
+      // play; players are never pinged one by one
       const responses = await loadResponses(event.id);
-      const players = responses.filter((r) => r.response !== 'no').map((r) => r.discord_user_id);
-      notified = players.length;
-      await board
-        .reply({
-          content: `❌ **${event.title}** (<t:${T.unix(event.scheduled_at)}:F>) is cancelled.${players.length ? ` ${players.map((id) => `<@${id}>`).join(' ')}` : ''}`,
-          allowedMentions: { users: players.slice(0, 100) },
-        })
-        .catch(() => {});
+      const anyPlaying = responses.some((r) => r.response !== 'no');
+      const plan = anyPlaying ? await pingPlanFor(event) : { kind: 'none' };
+      if (plan.kind !== 'none') pinged = B.pingLabel(plan);
+      await board.reply(B.pingContent(plan, `❌ **${event.title}** (<t:${T.unix(event.scheduled_at)}:F>) is cancelled.`)).catch(() => {});
     }
-    return interaction.editReply({ content: `✅ Cancelled **${event.title}**${notified ? ` and pinged the ${notified} who said they could play` : ''}.` });
+    return interaction.editReply({ content: `✅ Cancelled **${event.title}**${pinged ? ` and pinged ${pinged}` : ''}.` });
   }
 
   // ---------- Leader tools: edit, close/reopen, re-post, mark a player ----------
@@ -1223,9 +1228,8 @@ function createEvents(deps) {
       // A new kick-off time matters to everyone who said they'd play
       if (update.scheduled_at) {
         const players = (await loadResponses(event.id)).filter((r) => r.response !== 'no').map((r) => r.discord_user_id);
-        await board
-          .reply({ content: `🕒 **${updated.title}** ${changes[0]}.${players.length ? ` ${players.map((id) => `<@${id}>`).join(' ')}` : ''}`, allowedMentions: { users: players.slice(0, 100) } })
-          .catch(() => {});
+        const payload = players.length ? await pingFor(updated, `🕒 **${updated.title}** ${changes[0]}.`) : B.pingContent({ kind: 'none' }, `🕒 **${updated.title}** ${changes[0]}.`);
+        await board.reply(payload).catch(() => {});
       }
     }
     return interaction.editReply({ content: `✅ **${updated.title}**: ${changes.join(', ')}.${board ? '' : ' (The board message is gone; **/manager → Events → Repost Board** puts it back.)'}` });
@@ -1879,6 +1883,8 @@ function createEvents(deps) {
     loadResponses,
     expectedPlayers,
     signedRoleFor,
+    pingPlanFor,
+    pingFor,
     canAnswer,
     onlySigned,
     playerPositions,
