@@ -612,7 +612,9 @@ const BASE_INTENTS = [
   GatewayIntentBits.GuildMessages,
   GatewayIntentBits.DirectMessages
 ];
-const client = new Client({ intents: [...BASE_INTENTS, GatewayIntentBits.MessageContent] });
+// Player tags never ping on their own (see ping-policy.cjs)
+const { DEFAULT_ALLOWED_MENTIONS } = require('./ping-policy.cjs');
+const client = new Client({ intents: [...BASE_INTENTS, GatewayIntentBits.MessageContent], allowedMentions: { ...DEFAULT_ALLOWED_MENTIONS, parse: [...DEFAULT_ALLOWED_MENTIONS.parse] } });
 installClientGuards(client);
 
 // Keep the Manager Hub pinned as the last message in each club's manager desk channel.

@@ -167,6 +167,23 @@ function pingMessage(plan) {
   return { allowedMentions: { parse: [], users: [], roles: [], repliedUser: false } };
 }
 
+// A follow-up post about a game (reminder, cancel, new time, check-in, sub request, lineup):
+// it pings the same role (or @everyone) the event pings and never an individual player.
+// Player tags in `text` still show their names, they just don't notify anyone.
+function pingContent(plan, text = '') {
+  const head = plan?.kind === 'role' ? `<@&${plan.roleId}>` : plan?.kind === 'everyone' ? '@everyone' : '';
+  const content = [head, text].filter(Boolean).join(' ');
+  return {
+    content: content || undefined,
+    allowedMentions: {
+      parse: plan?.kind === 'everyone' ? ['everyone'] : [],
+      users: [],
+      roles: plan?.kind === 'role' ? [plan.roleId] : [],
+      repliedUser: false,
+    },
+  };
+}
+
 function pingLabel(plan) {
   if (plan?.kind === 'role') return plan.signed ? `the signed-players role <@&${plan.roleId}>` : `<@&${plan.roleId}>`;
   if (plan?.kind === 'everyone') return '@everyone';
@@ -187,4 +204,5 @@ module.exports = {
   signedOnlyMessage,
   pingMessage,
   pingLabel,
+  pingContent,
 };

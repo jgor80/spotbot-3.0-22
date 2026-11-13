@@ -459,7 +459,16 @@ function createCasual(deps) {
     const r = await rotate(guild, live, { gamesPlayed: recent.length });
     if (!r || (!r.in.length && !r.out.length)) return;
     const ch = await postChannelFor(guild, live);
-    if (ch) await ch.send({ content: rotationText(live, r), allowedMentions: { users: [...r.in.map((p) => p.id), ...r.out] } }).catch(() => {});
+    // Ping the club's casual role, never the players one by one (they're named in the post)
+    const roleId = live.casual?.role_id && guild.roles.cache.has(live.casual.role_id) ? live.casual.role_id : null;
+    if (ch) {
+      await ch
+        .send({
+          content: roleId ? `<@&${roleId}> ${rotationText(live, r)}` : rotationText(live, r),
+          allowedMentions: { parse: [], users: [], roles: roleId ? [roleId] : [] },
+        })
+        .catch(() => {});
+    }
     await refreshCard(guild, live);
   }
 

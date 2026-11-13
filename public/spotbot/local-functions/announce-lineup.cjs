@@ -133,6 +133,49 @@ function clubCrest(club, branding) {
   return https(club?.crest_url) || https(branding?.logo_url);
 }
 
+// supabase/functions/_shared/lineup-ping.ts
+var squash = (n) => String(n || "").toLowerCase().replace(/[^a-z]/g, "");
+function findSignedRole(roles, club) {
+  const list = Array.isArray(roles) ? roles : [];
+  if (club?.signed_role_id) {
+    const picked = list.find((r) => r.id === club.signed_role_id);
+    if (picked) return picked;
+  }
+  return list.find((r) => ["signedplayers", "signedplayer", "signed"].includes(squash(r.name))) || list.find((r) => /signed/.test(squash(r.name)) && !/unsigned/.test(squash(r.name))) || null;
+}
+var TYPE_RULES = [
+  [/\b(practice|training|session)\b/, "training"],
+  [/\b(byot|tournament|cup|playoff)\b/, "tournament"],
+  [/\bleague\b/, "league"]
+];
+function isLeagueEvent(event) {
+  if (!event) return false;
+  const title = String(event.title || "").toLowerCase();
+  for (const [re, kind] of TYPE_RULES) if (re.test(title)) return kind === "league";
+  if (/\b(scrim|friendly|try ?outs?)\b/.test(title)) return false;
+  return event.event_type === "league";
+}
+function lineupPingPlan({ event, signedRoleId, roleIds }) {
+  if (event && isLeagueEvent(event)) {
+    if (signedRoleId) return { kind: "role", roleId: signedRoleId };
+    return event.ping_role_id && roleIds.includes(event.ping_role_id) ? { kind: "role", roleId: event.ping_role_id } : { kind: "none" };
+  }
+  if (event) {
+    return event.ping_role_id && roleIds.includes(event.ping_role_id) ? { kind: "role", roleId: event.ping_role_id } : { kind: "everyone" };
+  }
+  return signedRoleId ? { kind: "role", roleId: signedRoleId } : { kind: "everyone" };
+}
+function pingHead(plan) {
+  return plan.kind === "role" ? `<@&${plan.roleId}>` : plan.kind === "everyone" ? "@everyone" : "";
+}
+function pingAllowed(plan) {
+  return {
+    parse: plan.kind === "everyone" ? ["everyone"] : [],
+    roles: plan.kind === "role" ? [plan.roleId] : [],
+    users: []
+  };
+}
+
 // supabase/functions/announce-lineup/index.ts
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -296,13 +339,21 @@ async function announce(supabase, req, body, caller) {
   const teamName = team?.name || null;
   let event = null;
   if (lineup.event_id) {
-    const { data } = await supabase.from("availability_events").select("title, scheduled_at").eq("id", lineup.event_id).maybeSingle();
+    const { data } = await supabase.from("availability_events").select("title, scheduled_at, event_type, ping_role_id, club_key").eq("id", lineup.event_id).maybeSingle();
     event = data;
   }
   const { data: settings } = await supabase.from("guild_settings").select("branding, clubs").eq("guild_id", lineup.guild_id).maybeSingle();
   const branding = settings?.branding || {};
   const clubs = Array.isArray(settings?.clubs) ? settings.clubs : [];
-  const club = lineup.team_id && clubs.find((c) => c?.team_id === lineup.team_id) || (clubs.length === 1 ? clubs[0] : null);
+  const club = lineup.team_id && clubs.find((c) => c?.team_id === lineup.team_id) || event?.club_key && clubs.find((c) => c?.key === event.club_key) || (clubs.length === 1 ? clubs[0] : null);
+  let ping = { kind: "none" };
+  if (mentionPlayers) {
+    const rolesRes = await discord(`/guilds/${lineup.guild_id}/roles`).catch(() => null);
+    const roles = rolesRes?.ok ? await rolesRes.json().catch(() => []) : [];
+    const signed = findSignedRole(roles, club);
+    ping = lineupPingPlan({ event, signedRoleId: signed?.id || null, roleIds: roles.map((r) => r.id) });
+  }
+  const head = pingHead(ping);
   const starters = (slots || []).filter((s) => !s.is_substitute);
   const subs = (slots || []).filter((s) => s.is_substitute);
   const fields = POSITION_LINES.map((line, idx) => {
@@ -375,7 +426,7 @@ async function announce(supabase, req, body, caller) {
   if (previousMessage) {
     if (!imageBytes && previousMessage.embeds?.[0]?.image) embed.image = { url: "attachment://lineup.png" };
     const editRes = await send("PATCH", `/channels/${channel_id}/messages/${previousMessage.id}`, {
-      content: mentionPlayers && discordStarterIds.length ? `Starting XI: ${discordStarterIds.map((id) => `<@${id}>`).join(" ")}` : "",
+      content: mentionPlayers && discordStarterIds.length ? `${head ? `${head} ` : ""}Starting XI: ${discordStarterIds.map((id) => `<@${id}>`).join(" ")}` : "",
       embeds: [embed],
       allowed_mentions: { parse: [] }
     });
@@ -389,9 +440,9 @@ async function announce(supabase, req, body, caller) {
   }
   if (!message) {
     const postRes = await send("POST", `/channels/${channel_id}/messages`, {
-      content: mentionPlayers && discordStarterIds.length ? `You're in the starting XI: ${discordStarterIds.map((id) => `<@${id}>`).join(" ")}` : void 0,
+      content: mentionPlayers && discordStarterIds.length ? `${head ? `${head} ` : ""}Starting XI: ${discordStarterIds.map((id) => `<@${id}>`).join(" ")}` : void 0,
       embeds: [embed],
-      allowed_mentions: { parse: [], users: mentionPlayers ? discordStarterIds.slice(0, 100) : [] }
+      allowed_mentions: pingAllowed(ping)
     });
     if (!postRes.ok) {
       const text = await postRes.text();
@@ -410,15 +461,14 @@ async function announce(supabase, req, body, caller) {
         ...changes.removed.map((c) => `\u274C Out: ${who(c.id)} (${c.position})`),
         ...changes.moved.map((c) => `\u{1F501} ${who(c.id)}: ${c.from} \u2192 ${c.position}`)
       ];
-      const pings = mentionPlayers ? [...notifyIds, ...changes.removed.map((c) => c.id)].filter((id) => DISCORD_ID_REGEX.test(id)) : [];
       const replyRes = await discord(`/channels/${channel_id}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: `\u{1F504} **Lineup updated**
+          content: `${head ? `${head} ` : ""}\u{1F504} **Lineup updated**
 ${lines.join("\n")}`.slice(0, 2e3),
           message_reference: { message_id: message.id, fail_if_not_exists: false },
-          allowed_mentions: { parse: [], users: pings.slice(0, 100) }
+          allowed_mentions: { ...pingAllowed(ping), replied_user: false }
         })
       });
       await replyRes.body?.cancel();
