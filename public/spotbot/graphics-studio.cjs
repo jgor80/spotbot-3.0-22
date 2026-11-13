@@ -11,6 +11,7 @@ const {
   EmbedBuilder, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle,
 } = require('discord.js');
+const { placeSticky } = require('./sticky-post.cjs');
 const axios = require('axios');
 const G = require('./graphics.cjs');
 const { seamlessLogo } = require('./logo-cleanup.cjs');
@@ -403,15 +404,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   }
 
   async function refreshPanel(channel, club) {
-    const old = panelIds.get(channel.id);
-    if (old) await channel.messages.delete(old).catch(() => {});
-    else {
-      const recent = await channel.messages.fetch({ limit: 30 }).catch(() => null);
-      for (const m of recent?.values() || []) {
-        if (m.author?.id === channel.client.user.id && m.embeds?.[0]?.title?.includes('Graphics Studio')) await m.delete().catch(() => {});
-      }
-    }
-    const sent = await channel.send(panelMessage(club)).catch(() => null);
+    const sent = await placeSticky(channel, panelMessage(club), {
+      knownId: panelIds.get(channel.id),
+      isOurs: (m) => m.embeds?.[0]?.title?.includes('Graphics Studio'),
+    }).catch(() => null);
     if (sent) panelIds.set(channel.id, sent.id);
   }
 
