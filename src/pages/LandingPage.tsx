@@ -38,8 +38,9 @@ const card = (name: string) => CARDS[`/src/assets/landing/cards/${name}.webp`];
 
 // View channels, send/embed/attach, read history, reactions, external emoji, mention roles,
 // manage messages (sticky panels), manage roles (positions, trophies), change nickname,
-// create invites (recruiting), public threads and sending in threads.
-const BOT_PERMISSIONS = "309573708865";
+// create invites (recruiting), public threads and sending in threads,
+// manage channels + connect + move members (Social Hub lobbies and Casual Play voice moves).
+const BOT_PERMISSIONS = "309591534673";
 
 const STYLE_LABELS: Record<string, string> = {
   chrome: "Liquid Chrome",
