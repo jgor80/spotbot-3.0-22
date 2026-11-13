@@ -19,7 +19,8 @@ notify() {
   echo "$1"
   [ -n "$ALERT_WEBHOOK_URL" ] || return 0
   local body
-  body=$(node -e 'console.log(JSON.stringify({content: process.argv[1].slice(0, 1900)}))' "$1")
+  # "silent" (2nd arg) skips the push notification: used for recoveries, so only failures ping.
+  body=$(node -e 'console.log(JSON.stringify({content: process.argv[1].slice(0, 1900), allowed_mentions: {parse: []}, ...(process.argv[2] === "silent" ? {flags: 4096} : {})}))' "$1" "${2:-}")
   curl -fsS -m 10 -H 'Content-Type: application/json' -d "$body" "$ALERT_WEBHOOK_URL" >/dev/null || true
 }
 
@@ -37,7 +38,7 @@ record() { # name ok|fail detail
   f="$STATE_DIR/$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '_')"
   prev=$(cat "$f" 2>/dev/null || echo 0)
   if [ "$result" = ok ]; then
-    [ "$prev" -ge 2 ] && notify ":green_circle: $name recovered on $(hostname)"
+    [ "$prev" -ge 2 ] && notify ":green_circle: $name recovered on $(hostname)" silent
     echo 0 > "$f"
   else
     echo $((prev + 1)) > "$f"

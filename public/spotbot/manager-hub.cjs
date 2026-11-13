@@ -8,6 +8,7 @@ const {
   ButtonStyle,
   StringSelectMenuBuilder,
 } = require('discord.js');
+const { placeSticky } = require('./sticky-post.cjs');
 const {
   toInsightMatches,
   computeOverview,
@@ -797,23 +798,16 @@ function createManagerHub(deps) {
   }
 
   async function repostSticky(channel, state, club) {
-    const oldId = stickyIds.get(channel.id);
-    if (oldId) await channel.messages.delete(oldId).catch(() => {});
-    else {
-      // After a restart, clear any earlier panel the bot left in recent history.
-      const recent = await channel.messages.fetch({ limit: 30 }).catch(() => null);
-      for (const m of recent?.values() || []) {
-        if (m.author.id === channel.client.user.id && m.embeds[0]?.footer?.text?.includes('Manager desk')) {
-          await m.delete().catch(() => {});
-        }
-      }
-    }
     const payload = await buildHub(channel.guildId, state, club);
     const embeds = (payload.embeds || []).map((e) => {
       const b = EmbedBuilder.from(e);
       return b.setFooter({ text: '📌 Manager desk · this panel always stays at the bottom' });
     });
-    const sent = await channel.send({ ...payload, embeds, content: payload.content || undefined });
+    // Quiet: edited in place after a restart when still at the bottom, otherwise a silent post.
+    const sent = await placeSticky(channel, { ...payload, embeds }, {
+      knownId: stickyIds.get(channel.id),
+      isOurs: (m) => m.embeds[0]?.footer?.text?.includes('Manager desk'),
+    });
     stickyIds.set(channel.id, sent.id);
   }
 

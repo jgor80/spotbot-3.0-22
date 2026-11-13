@@ -3,6 +3,7 @@
 // Also /help (short guide plus a stats glossary) and the EA-name lookup behind /linkea.
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
+const { placeSticky } = require('./sticky-post.cjs');
 const {
   toInsightMatches, competitionLabel, competitionEmoji, isSeparateCompetition, computeCompetitionRecords,
   computeAdvancedPlayers, computeSessionFatigue, computePressing, computePartnerships, generateAdvancedInsights, ROLE_LABELS,
@@ -625,15 +626,10 @@ function createClubStats(deps) {
       return;
     }
     warnedChannels.delete(channel.id);
-    const oldId = panelIds.get(channel.id);
-    if (oldId) await channel.messages.delete(oldId).catch(() => {});
-    else {
-      const recent = await channel.messages.fetch({ limit: 30 }).catch(() => null);
-      for (const m of recent?.values() || []) {
-        if (m.author.id === channel.client.user.id && m.embeds[0]?.footer?.text?.includes(PANEL_MARK)) await m.delete().catch(() => {});
-      }
-    }
-    const sent = await channel.send(panelPayload(club));
+    const sent = await placeSticky(channel, panelPayload(club), {
+      knownId: panelIds.get(channel.id),
+      isOurs: (m) => m.embeds[0]?.footer?.text?.includes(PANEL_MARK),
+    });
     panelIds.set(channel.id, sent.id);
   }
 

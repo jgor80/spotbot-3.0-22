@@ -31,11 +31,13 @@ fail() {
   exit 1
 }
 
+# notify MESSAGE [silent]: "silent" posts without a push notification (Discord flag 4096), so the
+# routine "deployed, bot restarted" note on every merge doesn't ping; failures still notify.
 notify() {
   echo "$1"
   [ -n "$DEPLOY_WEBHOOK_URL" ] || return 0
   local body
-  body=$(node -e 'console.log(JSON.stringify({content: process.argv[1].slice(0, 1900)}))' "$1")
+  body=$(node -e 'console.log(JSON.stringify({content: process.argv[1].slice(0, 1900), allowed_mentions: {parse: []}, ...(process.argv[2] === "silent" ? {flags: 4096} : {})}))' "$1" "${2:-}")
   curl -fsS -m 10 -H 'Content-Type: application/json' -d "$body" "$DEPLOY_WEBHOOK_URL" >/dev/null || true
 }
 
@@ -96,4 +98,4 @@ if changed '^supabase/functions/' && ! changed '^public/spotbot/local-functions/
 fi
 
 mkdir -p "$(dirname "$STATE_FILE")" && echo "$NEW" > "$STATE_FILE"
-notify "✅ $SUMMARY"
+notify "✅ $SUMMARY" silent
