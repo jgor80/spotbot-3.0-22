@@ -106,8 +106,10 @@ const AREAS = [
     key: 'casual',
     label: 'Casual Play',
     emoji: '🎮',
-    blurb: 'Smalls, friendlies and BYOTs: Who\'s On? calls, a spot board that fills from voice and rotates the bench, and Smalls stats.',
+    blurb: 'Drop-in games: the Social Hub (open lobbies with a live who\'s-playing-where board), Who\'s On? calls, a spot board that fills from voice, and Smalls.',
     actions: [
+      { id: 'cs_hubsetup', label: 'Set Up Social Hub', emoji: '🏟️', cmd: 'hub', sub: 'setup', perm: F.ManageGuild, ask: true, style: 'success' },
+      { id: 'cs_hubboard', label: 'Post Hub Board Here', emoji: '📌', cmd: 'hub', sub: 'board', perm: F.ManageGuild },
       { id: 'cs_call', label: "Who's On?", emoji: '🙋', cmd: 'casual', sub: 'call', style: 'success' },
       { id: 'cs_settings', label: 'Casual Settings', emoji: '🎮', cmd: 'casual', sub: 'settings', style: 'primary' },
       { id: 'cs_fill', label: 'Fill Spots From Voice', emoji: '📋', cmd: 'casual', sub: 'fill' },

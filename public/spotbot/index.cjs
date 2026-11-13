@@ -82,6 +82,7 @@ const { createFutClub } = require('./fut-club.cjs');
 const { createMatchdayPicks } = require('./matchday-picks.cjs');
 const { createRivalries } = require('./rivalries.cjs');
 const { createCasual, allCasual } = require('./casual.cjs');
+const { createSocialHub } = require('./social-hub.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -601,6 +602,12 @@ const clubLife = createClubLife({ futClub, supabase, autopilot, events: clubEven
 const casual = createCasual({
   getGuildState, saveGuildSettings, canManageClub: squads.canManageClub, autopilot, autoAssignPlayer, refreshClubPanels, handleSlotOpened,
   buildSpotEmbed: buildEmbedForClub, client: () => client,
+});
+// Social Hub: open drop-in lobbies on the spot board with a live who's-playing-where board
+const socialHub = createSocialHub({
+  supabase, getGuildState, saveGuildSettings, casual, getUserPrefs, getInferredMatch, client: () => client,
+  createBoard: () => createEmptyBoardForFormation(DEFAULT_FORMATION),
+  gameOn: (guildId, clubKey) => activeGameSessions.get(`${guildId}_${clubKey}`)?.status === 'in_progress',
 });
 
 // MessageContent is required to see attachments on normal channel posts (#pro-photos detection).
@@ -2453,6 +2460,8 @@ async function sendReadyCheck(interaction, state, clubKey) {
 async function refreshClubPanels(guildId, clubKey) {
   const state = guildStates.get(guildId);
   if (!state) return;
+  // The Social Hub board shows every lobby's spots too
+  socialHub.touch(guildId);
 
   if (state.adminPanelChannelId && state.adminPanelMessageId && state.currentClubKey === clubKey) {
     try {
@@ -3937,6 +3946,7 @@ client.once(Events.ClientReady, async (c) => {
 // New members are added to every open, upcoming event so they appear on the
 // board and get deadline reminders (they could already answer via the buttons).
 client.on(Events.GuildMemberAdd, async (member) => {
+  socialHub.onMemberJoin(member).catch((err) => console.warn('[hub] welcome failed:', err.message));
   try {
     if (member.user?.bot) return;
     const added = await clubEvents.addMemberToOpenEvents(member.guild.id, member.id);
@@ -4089,6 +4099,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
   eaActivity.onVoiceStateUpdate(oldState, newState);
   autopilot.onVoiceStateUpdate(oldState, newState).catch((err) => console.warn('[autopilot] voice update failed:', err.message));
   casual.onVoiceStateUpdate(oldState, newState);
+  socialHub.onVoiceStateUpdate(oldState, newState);
   try {
     const guildId = oldState.guild?.id || newState.guild?.id;
     if (!guildId) return;
@@ -4194,6 +4205,7 @@ async function routeInteraction(interaction) {
     if (await funZone.handleInteraction(interaction)) return;
     if (await clubLife.handleInteraction(interaction)) return;
     if (await casual.handleInteraction(interaction)) return;
+    if (await socialHub.handleInteraction(interaction)) return;
     if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;
