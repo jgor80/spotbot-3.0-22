@@ -26,6 +26,7 @@ const { ACTION_SCHEMA: MATCHTAGS_SCHEMA } = require('./match-tags.cjs');
 const { FUN_COMMAND } = require('./fun-zone.cjs');
 const { CLUBLIFE_COMMANDS } = require('./club-life.cjs');
 const { CASUAL_COMMANDS } = require('./casual.cjs');
+const { HUB_COMMANDS: SOCIAL_HUB_COMMANDS } = require('./social-hub.cjs');
 
 const ACTION_SCHEMAS = [
   // Spot Management Commands
@@ -344,7 +345,8 @@ const ACTION_SCHEMAS = [
   MATCHTAGS_SCHEMA,
   FUN_COMMAND,
   ...CLUBLIFE_COMMANDS,
-  ...CASUAL_COMMANDS
+  ...CASUAL_COMMANDS,
+  ...SOCIAL_HUB_COMMANDS
 ];
 
 module.exports = { ACTION_SCHEMAS };
