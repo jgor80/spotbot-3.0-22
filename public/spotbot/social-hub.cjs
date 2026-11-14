@@ -46,6 +46,7 @@ const NO_PINGS = { parse: [] };
 const CATEGORY_NAME = '🎮 Drop-in Lobbies';
 const BOARD_NAME = 'whos-playing';
 const FEED_NAME = 'hub-feed';
+const START_NAME = 'start-here';
 const MAX_CLUBS = 25;
 const TEAM_FEATURES = ['events', 'results', 'desk'];
 
@@ -117,6 +118,7 @@ function lobbySlots(clubs, hub, n) {
 function createSocialHub(deps) {
   const { supabase, getGuildState, saveGuildSettings, casual, createBoard, getUserPrefs, getInferredMatch, gameOn } = deps;
   const xp = () => deps.xp?.();
+  const onboarding = () => deps.onboarding?.();
   const client = () => deps.client();
   const hubs = new Map();     // guildId -> settings
   const queues = new Map();   // guildId -> Map(userId -> joinedAt)
@@ -209,7 +211,9 @@ function createSocialHub(deps) {
     const row2 = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('sh_me').setLabel('My XP').setEmoji('⭐').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('sh_lb').setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('sh_team').setLabel('Start a team').setEmoji('🛡️').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('sh_team').setLabel('Start a team').setEmoji('🛡️').setStyle(ButtonStyle.Secondary),
+      // Handled by hub-onboarding.cjs
+      new ButtonBuilder().setCustomId('ob_start').setLabel('Get set up').setEmoji('✅').setStyle(ButtonStyle.Secondary)
     );
     return { embeds: [embed], components: [row, row2], allowedMentions: NO_PINGS };
   }
@@ -305,6 +309,27 @@ function createSocialHub(deps) {
       });
       made.push(`<#${feedCh.id}>`);
     }
+
+    // #start-here: read-only, at the top, with the Get set up card (hub-onboarding.cjs)
+    let startCh = hub.start_channel_id ? await guild.channels.fetch(hub.start_channel_id).catch(() => null) : null;
+    if (!startCh && onboarding()) {
+      startCh = await guild.channels.create({
+        name: START_NAME,
+        type: ChannelType.GuildText,
+        parent: category.id,
+        position: 0,
+        topic: 'New here? Press Get set up: platform, region, gamertag, positions and Twitch. All optional.',
+        permissionOverwrites: [
+          { id: guild.roles.everyone.id, allow: [F.ViewChannel, F.ReadMessageHistory], deny: [F.SendMessages] },
+          { id: me.id, allow: [F.ViewChannel, F.SendMessages, F.EmbedLinks, F.ReadMessageHistory] },
+        ],
+        reason: 'GafferBot Social Hub onboarding',
+      });
+      made.push(`<#${startCh.id}>`);
+      const msg = await startCh.send(onboarding().welcomePost(guild)).catch(() => null);
+      hub.start_message_id = msg?.id || null;
+    }
+    if (startCh) hub.start_channel_id = startCh.id;
 
     if (!state.clubVcLinks) state.clubVcLinks = {};
     const lobbies = [];
