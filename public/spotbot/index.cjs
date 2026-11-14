@@ -88,6 +88,7 @@ const { createHubOnboarding } = require('./hub-onboarding.cjs');
 const { createHubChemistry } = require('./hub-chemistry.cjs');
 const { createHubCard } = require('./hub-card.cjs');
 const { createHubDraft } = require('./hub-draft.cjs');
+const { createKitCatalog } = require('./kit-catalog.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -498,7 +499,7 @@ const xboxLink = createXboxLink({ supabase });
 const twitchLinks = createTwitchLinks({ supabase, getClient: () => client });
 const proPhotos = createProPhotos({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, isManager });
 const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
-const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client, getPremium: () => premium });
+const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client, getPremium: () => premium, personalKit: (guildId, userId) => kitCatalog.personalKit(guildId, userId) });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, positionTiers });
 const network = createNetwork({ supabase, getGuildState, isManager });
 createReplacements({ supabase, getGuildState, network, recruitment, canManageClub: squads.canManageClub });
@@ -615,6 +616,7 @@ const socialHub = createSocialHub({
   gameOn: (guildId, clubKey) => activeGameSessions.get(`${guildId}_${clubKey}`)?.status === 'in_progress',
   xp: () => hubXp,
   onboarding: () => hubOnboarding,
+  studio: () => graphicsStudio,
 });
 // Hub XP: levels, tier roles, weekly challenges and social badges for players across every lobby and team
 const hubXp = createHubXp({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, getGuildState, linkedIds: career.linkedIds, client: () => client, chemistry: () => hubChemistry, onFirstGame: (guildId, ids) => hubCard.onFirstGame(guildId, ids) });
@@ -624,6 +626,8 @@ const hubChemistry = createHubChemistry({ supabase, hubOf: socialHub.hubOf, getU
 const hubCard = createHubCard({ supabase, hubOf: socialHub.hubOf, xp: () => hubXp, chemistry: () => hubChemistry, client: () => client });
 // Pickup draft nights: captains draft two teams from whoever is in the hub's voice channels
 const hubDraft = createHubDraft({ supabase, hubOf: socialHub.hubOf, getGuildState, getUserPrefs });
+// Personal kits for hub players' Studio cards: classics, Palermo, this server's and Network clubs' kits; top 50 cached
+const kitCatalog = createKitCatalog({ supabase, getGuildState, hubOf: socialHub.hubOf });
 autopilot.onNewMatches(hubXp.onNewMatches);
 // Hub onboarding: #start-here and the optional Get set up card (platform, region, gamertag, positions, Twitch)
 const hubOnboarding = createHubOnboarding({ supabase, hubOf: socialHub.hubOf, autoLink, getUserPrefs, xp: () => hubXp });
@@ -4231,6 +4235,7 @@ async function routeInteraction(interaction) {
     if (await hubChemistry.handleInteraction(interaction)) return;
     if (await hubCard.handleInteraction(interaction)) return;
     if (await hubDraft.handleInteraction(interaction)) return;
+    if (await kitCatalog.handleInteraction(interaction)) return;
     if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;

@@ -248,7 +248,7 @@ function shortPosition(pos) {
   return POS_SHORT[p] || (p.length > 4 ? p.replace(/[^A-Z]/g, '').slice(0, 3) : p);
 }
 
-function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs, getClient, getPremium = () => null }) {
+function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs, getClient, getPremium = () => null, personalKit = null }) {
   const deepStats = createDeepStats({ supabase });
   const panelIds = new Map(); // channelId -> panel message id
   const guildOf = (guildId) => getClient?.()?.guilds?.cache?.get(guildId) || null;
@@ -652,7 +652,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return def && ['rare', 'epic', 'legendary'].includes(data.tier) ? { name: def.name, glyph: def.glyph, tier: data.tier } : null;
   }
   async function renderCard({ guildId, club, style, d }) {
-    club = club && { ...club, kit: kitOf(club) }; // team colours fill the kit and lead the accent
+    // On a Social Hub server a player's own kit pick (kit-catalog.cjs) dresses their card
+    const mine = personalKit ? await personalKit(guildId, d.userId).catch(() => null) : null;
+    club = club && { ...club, kit: mine ? { ...kitOf(club), primary: mine.primary || kitOf(club).primary, secondary: mine.secondary || kitOf(club).secondary, description: mine.description || undefined } : kitOf(club) }; // team colours fill the kit and lead the accent
     // Cards are only drawn for someone still in the server.
     if (!(await stillInGuild(guildOf(guildId), [d.userId])).length) return { error: 'That player is no longer in this server, so no card was made.' };
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);

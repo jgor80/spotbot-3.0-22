@@ -47,6 +47,7 @@ const CATEGORY_NAME = '🎮 Drop-in Lobbies';
 const BOARD_NAME = 'whos-playing';
 const FEED_NAME = 'hub-feed';
 const START_NAME = 'start-here';
+const STUDIO_NAME = 'photo-studio';
 const MAX_CLUBS = 25;
 const TEAM_FEATURES = ['events', 'results', 'desk'];
 
@@ -119,6 +120,7 @@ function createSocialHub(deps) {
   const { supabase, getGuildState, saveGuildSettings, casual, createBoard, getUserPrefs, getInferredMatch, gameOn } = deps;
   const xp = () => deps.xp?.();
   const onboarding = () => deps.onboarding?.();
+  const studio = () => deps.studio?.();
   const client = () => deps.client();
   const hubs = new Map();     // guildId -> settings
   const queues = new Map();   // guildId -> Map(userId -> joinedAt)
@@ -220,7 +222,9 @@ function createSocialHub(deps) {
     // Handled by hub-draft.cjs
     const row3 = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('pd_new').setLabel('Pickup draft').setEmoji('📝').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('pd_bal').setLabel('Balanced teams').setEmoji('⚖️').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('pd_bal').setLabel('Balanced teams').setEmoji('⚖️').setStyle(ButtonStyle.Secondary),
+      // Handled by kit-catalog.cjs
+      new ButtonBuilder().setCustomId('kc_open').setLabel('My kit').setEmoji('👕').setStyle(ButtonStyle.Secondary)
     );
     return { embeds: [embed], components: [row, row2, row3], allowedMentions: NO_PINGS };
   }
@@ -355,7 +359,23 @@ function createSocialHub(deps) {
       state.clubVcLinks[club.key] = vc.id;
       lobbies.push(club.key);
     }
+    // #photo-studio: the Graphics Studio panel for everyone, wired to the first lobby; cards on a hub
+    // server use each player's own kit (kit-catalog.cjs)
+    const studioClub = state.clubs.find((c) => c.key === lobbies[0]);
+    if (studioClub && studio()) {
+      let studioCh = studioClub.graphics_channel_id ? await guild.channels.fetch(studioClub.graphics_channel_id).catch(() => null) : null;
+      if (!studioCh) {
+        studioCh = await guild.channels.create({ name: STUDIO_NAME, type: ChannelType.GuildText, parent: category.id, topic: 'Make your player card: upload photos, pick your kit (My kit on the board), press Player Card.', reason: 'GafferBot Social Hub Photo Studio' });
+        made.push(`<#${studioCh.id}>`);
+        FEATURES.find((f) => f.key === 'graphics')?.set(studioClub, studioCh.id, { state });
+      }
+      hub.studio_channel_id = studioCh.id;
+    }
     await saveGuildSettings(guild.id, state);
+    if (hub.studio_channel_id && studioClub) {
+      const ch = await guild.channels.fetch(hub.studio_channel_id).catch(() => null);
+      if (ch) await studio().refreshPanel(ch, studioClub).catch((err) => console.warn(`[hub] studio panel failed: ${err.message}`));
+    }
     // Casual mode on every lobby: spots fill from voice, the bench rotates, and the ping role exists
     let note = '';
     for (const key of lobbies) {
