@@ -349,6 +349,42 @@ export type Database = {
         }
         Relationships: []
       }
+      hub_pairs: {
+        Row: {
+          guild_id: string
+          user_a: string
+          user_b: string
+          games: number
+          rated_games: number
+          wins: number
+          minutes: number
+          score: number
+          last_at: string
+        }
+        Insert: {
+          guild_id: string
+          user_a: string
+          user_b: string
+          games?: number
+          rated_games?: number
+          wins?: number
+          minutes?: number
+          score?: number
+          last_at?: string
+        }
+        Update: {
+          guild_id?: string
+          user_a?: string
+          user_b?: string
+          games?: number
+          rated_games?: number
+          wins?: number
+          minutes?: number
+          score?: number
+          last_at?: string
+        }
+        Relationships: []
+      }
       hub_players: {
         Row: {
           guild_id: string

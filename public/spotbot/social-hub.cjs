@@ -213,7 +213,9 @@ function createSocialHub(deps) {
       new ButtonBuilder().setCustomId('sh_lb').setLabel('Leaderboard').setEmoji('🏆').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('sh_team').setLabel('Start a team').setEmoji('🛡️').setStyle(ButtonStyle.Secondary),
       // Handled by hub-onboarding.cjs
-      new ButtonBuilder().setCustomId('ob_start').setLabel('Get set up').setEmoji('✅').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('ob_start').setLabel('Get set up').setEmoji('✅').setStyle(ButtonStyle.Secondary),
+      // Handled by hub-chemistry.cjs
+      new ButtonBuilder().setCustomId('ch_me').setLabel('Chemistry').setEmoji('🧪').setStyle(ButtonStyle.Secondary)
     );
     return { embeds: [embed], components: [row, row2], allowedMentions: NO_PINGS };
   }
@@ -543,6 +545,19 @@ function createSocialHub(deps) {
     return { club, chat, desk: channels.desk, vc };
   }
 
+  // Join a team from a DM invite (hub-chemistry.cjs)
+  async function joinTeam(guild, userId, clubKey) {
+    const state = await getGuildState(guild.id);
+    const club = state.clubs.find((c) => c.key === clubKey && c.enabled);
+    const role = club?.team_role_id ? guild.roles.cache.get(club.team_role_id) || (await guild.roles.fetch(club.team_role_id).catch(() => null)) : null;
+    if (!role) return '❌ This team is gone.';
+    const member = await guild.members.fetch(userId).catch(() => null);
+    if (!member?.roles) return `❌ Join **${guild.name}** first, then press the button again.`;
+    if (member.roles.cache.has(role.id)) return `You're already on **${club.name}**.`;
+    const ok = await member.roles.add(role).then(() => true).catch(() => false);
+    return ok ? `✅ Welcome to **${club.name}**! Its channels are in **${guild.name}**.` : '❌ I couldn\'t give you the team role. Ask an admin to move my role above the team roles.';
+  }
+
   async function toggleTeam(interaction, clubKey, join) {
     const state = await getGuildState(interaction.guildId);
     const club = state.clubs.find((c) => c.key === clubKey && c.enabled);
@@ -671,7 +686,7 @@ function createSocialHub(deps) {
     return false;
   }
 
-  return { handleInteraction, onVoiceStateUpdate, onMemberJoin, touch, setup, board, play, nextGame, hubOf, saveHub, createTeam, toggleTeam };
+  return { handleInteraction, onVoiceStateUpdate, onMemberJoin, touch, setup, board, play, nextGame, hubOf, saveHub, createTeam, toggleTeam, joinTeam };
 }
 
 module.exports = { createSocialHub, HUB_COMMANDS, pickLobby, liveQueue, isDefaultName, cleanTeamName, freeTeamSlot, lobbySlots, MAX_CLUBS };

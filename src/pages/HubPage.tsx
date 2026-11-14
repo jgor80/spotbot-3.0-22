@@ -6,7 +6,7 @@ import { useDiscordLink } from "@/hooks/useDiscordLink";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { HUB_BADGES, HUB_CHALLENGES, HUB_TIERS, challengeProgress, challengesFor, levelFor, tierFor, weekKeyOf, xpForLevel } from "@/lib/hubXp";
+import { HUB_BADGES, HUB_CHALLENGES, HUB_TIERS, chemLabel, challengeProgress, challengesFor, levelFor, tierFor, weekKeyOf, xpForLevel } from "@/lib/hubXp";
 
 type HubRow = {
   discord_user_id: string;
@@ -24,6 +24,8 @@ type HubRow = {
   week_xp: number;
   week: Record<string, unknown> & { done?: string[] };
 };
+
+type PairRow = { user_a: string; user_b: string; games: number; rated_games: number; wins: number; minutes: number; score: number };
 
 const TIER_STYLE: Record<string, string> = {
   common: "border-border",
@@ -115,7 +117,7 @@ export default function HubPage() {
   const [period, setPeriod] = useState<"week" | "all">("week");
 
   const hub = useQuery({
-    queryKey: ["hub-players", selectedGuildId],
+    queryKey: ["hub-players", selectedGuildId, me],
     enabled: !!selectedGuildId,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -126,12 +128,18 @@ export default function HubPage() {
         .limit(500);
       if (error) throw error;
       const rows = (data ?? []) as unknown as HubRow[];
-      const ids = rows.map((r) => r.discord_user_id);
+      const [{ data: duos }, { data: mineA }, { data: mineB }] = await Promise.all([
+        supabase.from("hub_pairs").select("user_a,user_b,games,rated_games,wins,minutes,score").eq("guild_id", selectedGuildId!).gte("games", 3).order("score", { ascending: false }).limit(10),
+        me ? supabase.from("hub_pairs").select("user_a,user_b,games,rated_games,wins,minutes,score").eq("guild_id", selectedGuildId!).eq("user_a", me) : Promise.resolve({ data: [] }),
+        me ? supabase.from("hub_pairs").select("user_a,user_b,games,rated_games,wins,minutes,score").eq("guild_id", selectedGuildId!).eq("user_b", me) : Promise.resolve({ data: [] }),
+      ]);
+      const partners = [...((mineA ?? []) as PairRow[]), ...((mineB ?? []) as PairRow[])].sort((a, b) => b.score - a.score).slice(0, 8);
+      const ids = [...new Set([...rows.map((r) => r.discord_user_id), ...((duos ?? []) as PairRow[]).flatMap((d) => [d.user_a, d.user_b]), ...partners.flatMap((d) => [d.user_a, d.user_b])])];
       const { data: profiles } = ids.length
         ? await supabase.from("profiles").select("discord_user_id,ea_username,discord_username").in("discord_user_id", ids)
         : { data: [] };
       const names = new Map((profiles ?? []).map((p) => [p.discord_user_id, p.discord_username || p.ea_username || "Player"]));
-      return { rows, names };
+      return { rows, names, duos: (duos ?? []) as PairRow[], partners };
     },
   });
 
@@ -155,6 +163,47 @@ export default function HubPage() {
         </div>
         {hub.isLoading && <p className="text-muted-foreground">Loading the hub…</p>}
         {!hub.isLoading && <MyCard row={mine} name={me ? nameOf(me) : "You"} />}
+        {!hub.isLoading && (
+          <section className="space-y-3">
+            <div>
+              <h2 className="font-display text-xl font-semibold">Chemistry</h2>
+              <p className="text-sm text-muted-foreground">
+                Who works well together, from time in voice, games together and results. 🔥 great · ✅ good · 🤝 getting there. Build a squad from it with the Chemistry button on the hub board in Discord.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card className="p-4">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Your best partners</p>
+                {!hub.data?.partners.length && <p className="mt-2 text-sm text-muted-foreground">Play a few games in the lobbies and your partners show up here.</p>}
+                <ul className="mt-2 space-y-1 text-sm">
+                  {hub.data?.partners.map((p) => {
+                    const other = p.user_a === me ? p.user_b : p.user_a;
+                    return (
+                      <li key={other} className="flex justify-between gap-2">
+                        <span className="truncate">{chemLabel(p.score)} {nameOf(other)}</span>
+                        <span className="text-muted-foreground">
+                          <b className="text-foreground">{p.score}</b> · {p.games} games{p.rated_games ? ` · ${Math.round((100 * p.wins) / p.rated_games)}% won` : ""}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Card>
+              <Card className="p-4">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground">Best duos on the server</p>
+                {!hub.data?.duos.length && <p className="mt-2 text-sm text-muted-foreground">Not enough games yet.</p>}
+                <ul className="mt-2 space-y-1 text-sm">
+                  {hub.data?.duos.map((d) => (
+                    <li key={`${d.user_a}:${d.user_b}`} className="flex justify-between gap-2">
+                      <span className="truncate">{chemLabel(d.score)} {nameOf(d.user_a)} + {nameOf(d.user_b)}</span>
+                      <span className="text-muted-foreground"><b className="text-foreground">{d.score}</b> · {d.games} games</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </div>
+          </section>
+        )}
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-display text-xl font-semibold">Leaderboard</h2>

@@ -85,6 +85,7 @@ const { createCasual, allCasual } = require('./casual.cjs');
 const { createSocialHub } = require('./social-hub.cjs');
 const { createHubXp } = require('./hub-xp.cjs');
 const { createHubOnboarding } = require('./hub-onboarding.cjs');
+const { createHubChemistry } = require('./hub-chemistry.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -614,7 +615,9 @@ const socialHub = createSocialHub({
   onboarding: () => hubOnboarding,
 });
 // Hub XP: levels, tier roles, weekly challenges and social badges for players across every lobby and team
-const hubXp = createHubXp({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, getGuildState, linkedIds: career.linkedIds, client: () => client });
+const hubXp = createHubXp({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, getGuildState, linkedIds: career.linkedIds, client: () => client, chemistry: () => hubChemistry });
+// Hub chemistry: who works well together, suggested teammates and squads built from it
+const hubChemistry = createHubChemistry({ supabase, hubOf: socialHub.hubOf, getUserPrefs, client: () => client, socialHub: () => socialHub });
 autopilot.onNewMatches(hubXp.onNewMatches);
 // Hub onboarding: #start-here and the optional Get set up card (platform, region, gamertag, positions, Twitch)
 const hubOnboarding = createHubOnboarding({ supabase, hubOf: socialHub.hubOf, autoLink, getUserPrefs, xp: () => hubXp });
@@ -4218,6 +4221,7 @@ async function routeInteraction(interaction) {
     if (await casual.handleInteraction(interaction)) return;
     if (await socialHub.handleInteraction(interaction)) return;
     if (await hubOnboarding.handleInteraction(interaction)) return;
+    if (await hubChemistry.handleInteraction(interaction)) return;
     if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;
