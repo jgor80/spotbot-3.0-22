@@ -59,9 +59,16 @@ export const NOT_FOUND_META: PageMeta = {
   index: false,
 };
 
+// Public Social Hub pages (/play/<slug>): a server's shop window, so they can be found
+const PLAY: PageMeta = {
+  title: "Play EA FC Pro Clubs any time | GafferBot Social Hub",
+  description: "Drop-in EA FC Pro Clubs on Discord: live lobbies, smalls and friendlies, pickup drafts, a weekly tournament, levels and badges. Join and play now.",
+  index: true,
+};
+
 export function metaFor(pathname: string): PageMeta & { path: string } {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
-  const page = PUBLIC_PAGES[path] ?? (path === "/auth" ? AUTH : undefined);
+  const page = PUBLIC_PAGES[path] ?? (path === "/auth" ? AUTH : /^\/play\/[a-z0-9-]+$/.test(path) ? PLAY : undefined);
   return { ...(page ?? APP_META), path };
 }
 

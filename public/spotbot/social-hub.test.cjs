@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { Collection } = require('discord.js');
-const { createSocialHub, pickLobby, liveQueue, isDefaultName, cleanTeamName, freeTeamSlot, lobbySlots, MAX_CLUBS } = require('./social-hub.cjs');
+const { createSocialHub, pickLobby, liveQueue, isDefaultName, cleanTeamName, freeTeamSlot, lobbySlots, publicSlug, publicSnapshot, MAX_CLUBS } = require('./social-hub.cjs');
 
 const lobby = (index, humans, openSlots, fits = false) => ({ index, humans, openSlots, fits, club: { key: `club${index + 1}` } });
 
@@ -179,4 +179,25 @@ test('Start a team makes the club, roles and channels and wires the club feature
   const desk = made.find((c) => c.id === club.manager_desk_channel_id);
   assert.ok(desk.permissionOverwrites.some((o) => o.id === 'everyone' && o.deny));
   assert.match((await hub.createTeam(guild, { id: 'x', roles: { add: async () => {} } }, 'night owls')).error, /already a team/);
+});
+
+test('publicSlug makes a url-safe name and adds the server id tail when taken', () => {
+  assert.equal(publicSlug('The Spot!! FC', '1518804786105942188'), 'the-spot-fc');
+  assert.equal(publicSlug('The Spot', '1518804786105942188', true), 'the-spot-42188');
+  assert.equal(publicSlug('⚽⚽', '123'), 'hub');
+  assert.ok(publicSlug('x'.repeat(80), '1').length <= 40);
+});
+
+test('publicSnapshot shows counts and open positions, never who is playing', () => {
+  const lobbies = [
+    { club: { name: 'Lobby 1' }, humans: 3, live: true, openLabels: ['ST', 'CB'], members: ['secret'] },
+    { club: { name: 'Lobby 2' }, humans: 0, live: false, openLabels: ['GK'] },
+  ];
+  const snap = publicSnapshot(lobbies, [{ name: 'Ann', xp: 10 }]);
+  assert.equal(snap.playing, 3);
+  assert.deepEqual(snap.lobbies, [
+    { name: 'Lobby 1', humans: 3, live: true, open: ['ST', 'CB'] },
+    { name: 'Lobby 2', humans: 0, live: false, open: [] },
+  ]);
+  assert.ok(!JSON.stringify(snap).includes('secret'));
 });

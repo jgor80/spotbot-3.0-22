@@ -349,6 +349,33 @@ export type Database = {
         }
         Relationships: []
       }
+      hub_hall_of_fame: {
+        Row: {
+          guild_id: string
+          season_key: string
+          place: number
+          discord_user_id: string
+          xp: number
+          created_at: string
+        }
+        Insert: {
+          guild_id: string
+          season_key: string
+          place: number
+          discord_user_id: string
+          xp?: number
+          created_at?: string
+        }
+        Update: {
+          guild_id?: string
+          season_key?: string
+          place?: number
+          discord_user_id?: string
+          xp?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
       hub_pairs: {
         Row: {
           guild_id: string
@@ -385,6 +412,39 @@ export type Database = {
         }
         Relationships: []
       }
+      hub_public: {
+        Row: {
+          guild_id: string
+          slug: string
+          name: string
+          icon_url: string | null
+          invite_code: string | null
+          members: number | null
+          snapshot: Json
+          updated_at: string
+        }
+        Insert: {
+          guild_id: string
+          slug: string
+          name: string
+          icon_url?: string | null
+          invite_code?: string | null
+          members?: number | null
+          snapshot?: Json
+          updated_at?: string
+        }
+        Update: {
+          guild_id?: string
+          slug?: string
+          name?: string
+          icon_url?: string | null
+          invite_code?: string | null
+          members?: number | null
+          snapshot?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       hub_players: {
         Row: {
           guild_id: string
@@ -397,6 +457,11 @@ export type Database = {
           assists: number
           voice_minutes: number
           calls: number
+          referrals: number
+          rating: number
+          rated_games: number
+          season_key: string | null
+          season_xp: number
           mates: Json
           lobbies: Json
           badges: Json
@@ -419,6 +484,11 @@ export type Database = {
           assists?: number
           voice_minutes?: number
           calls?: number
+          referrals?: number
+          rating?: number
+          rated_games?: number
+          season_key?: string | null
+          season_xp?: number
           mates?: Json
           lobbies?: Json
           badges?: Json
@@ -441,6 +511,11 @@ export type Database = {
           assists?: number
           voice_minutes?: number
           calls?: number
+          referrals?: number
+          rating?: number
+          rated_games?: number
+          season_key?: string | null
+          season_xp?: number
           mates?: Json
           lobbies?: Json
           badges?: Json
