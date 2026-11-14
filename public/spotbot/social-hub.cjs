@@ -52,6 +52,7 @@ const FEED_NAME = 'hub-feed';
 const START_NAME = 'start-here';
 const STUDIO_NAME = 'photo-studio';
 const HIGHLIGHTS_NAME = 'highlights';
+const RULES_NAME = 'rules';
 const MAX_CLUBS = 25;
 const TEAM_FEATURES = ['events', 'results', 'desk'];
 // A team's history copied when it moves to its own server
@@ -143,6 +144,7 @@ function createSocialHub(deps) {
   const xp = () => deps.xp?.();
   const onboarding = () => deps.onboarding?.();
   const studio = () => deps.studio?.();
+  const rules = () => deps.rules?.();
   const client = () => deps.client();
   const hubs = new Map();     // guildId -> settings
   const queues = new Map();   // guildId -> Map(userId -> joinedAt)
@@ -409,6 +411,27 @@ function createSocialHub(deps) {
       });
       made.push(`<#${feedCh.id}>`);
     }
+
+    // #rules: read-only, at the very top, with the code of conduct and I agree (hub-rules.cjs)
+    let rulesCh = hub.rules_channel_id ? await guild.channels.fetch(hub.rules_channel_id).catch(() => null) : null;
+    if (!rulesCh && rules()) {
+      rulesCh = await guild.channels.create({
+        name: RULES_NAME,
+        type: ChannelType.GuildText,
+        parent: category.id,
+        position: 0,
+        topic: 'Rules and code of conduct. Press I agree once you have read them.',
+        permissionOverwrites: [
+          { id: guild.roles.everyone.id, allow: [F.ViewChannel, F.ReadMessageHistory], deny: [F.SendMessages] },
+          { id: me.id, allow: [F.ViewChannel, F.SendMessages, F.EmbedLinks, F.ReadMessageHistory] },
+        ],
+        reason: 'GafferBot Social Hub rules',
+      });
+      made.push(`<#${rulesCh.id}>`);
+      const msg = await rulesCh.send(rules().rulesPost(guild, hub)).catch(() => null);
+      hub.rules_message_id = msg?.id || null;
+    }
+    if (rulesCh) hub.rules_channel_id = rulesCh.id;
 
     // #start-here: read-only, at the top, with the Get set up card (hub-onboarding.cjs)
     let startCh = hub.start_channel_id ? await guild.channels.fetch(hub.start_channel_id).catch(() => null) : null;
