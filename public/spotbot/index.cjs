@@ -87,6 +87,7 @@ const { createHubXp } = require('./hub-xp.cjs');
 const { createHubOnboarding } = require('./hub-onboarding.cjs');
 const { createHubChemistry } = require('./hub-chemistry.cjs');
 const { createHubCard } = require('./hub-card.cjs');
+const { createHubDraft } = require('./hub-draft.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -621,6 +622,8 @@ const hubXp = createHubXp({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub
 const hubChemistry = createHubChemistry({ supabase, hubOf: socialHub.hubOf, getUserPrefs, client: () => client, socialHub: () => socialHub });
 // Shareable hub cards with each player's own invite link, and refer-a-friend rewards
 const hubCard = createHubCard({ supabase, hubOf: socialHub.hubOf, xp: () => hubXp, chemistry: () => hubChemistry, client: () => client });
+// Pickup draft nights: captains draft two teams from whoever is in the hub's voice channels
+const hubDraft = createHubDraft({ supabase, hubOf: socialHub.hubOf, getGuildState, getUserPrefs });
 autopilot.onNewMatches(hubXp.onNewMatches);
 // Hub onboarding: #start-here and the optional Get set up card (platform, region, gamertag, positions, Twitch)
 const hubOnboarding = createHubOnboarding({ supabase, hubOf: socialHub.hubOf, autoLink, getUserPrefs, xp: () => hubXp });
@@ -4227,6 +4230,7 @@ async function routeInteraction(interaction) {
     if (await hubOnboarding.handleInteraction(interaction)) return;
     if (await hubChemistry.handleInteraction(interaction)) return;
     if (await hubCard.handleInteraction(interaction)) return;
+    if (await hubDraft.handleInteraction(interaction)) return;
     if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;

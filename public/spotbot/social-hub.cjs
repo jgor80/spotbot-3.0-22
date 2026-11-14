@@ -217,7 +217,11 @@ function createSocialHub(deps) {
       // Handled by hub-chemistry.cjs
       new ButtonBuilder().setCustomId('ch_me').setLabel('Chemistry').setEmoji('🧪').setStyle(ButtonStyle.Secondary)
     );
-    return { embeds: [embed], components: [row, row2], allowedMentions: NO_PINGS };
+    // Handled by hub-draft.cjs
+    const row3 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('pd_new').setLabel('Pickup draft').setEmoji('📝').setStyle(ButtonStyle.Secondary)
+    );
+    return { embeds: [embed], components: [row, row2, row3], allowedMentions: NO_PINGS };
   }
 
   function teamsLine(guild, state, hub) {

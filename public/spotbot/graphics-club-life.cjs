@@ -3,6 +3,7 @@
 //   wrappedCard     one player's Club Wrapped for a month or season
 //   awardsPoster    the Awards Night ceremony: each category's winner with their portrait
 //   divisionPoster  promotion or relegation
+//   draftPoster     a Social Hub pickup draft: two teams with captains and positions
 //   hubCard         a player's Social Hub card (level, stats, best partners, badges, invite link) to share
 // Player pictures are only ever their own saved Studio card art or original uploads, passed in as data URLs.
 
@@ -233,4 +234,30 @@ function hubCard(d) {
   return G.render(svg);
 }
 
-module.exports = { badgeStrip, wrappedCard, awardsPoster, divisionPoster, hubCard, TIER_STYLE, medal };
+// d: { serverName, teams: [{ name, players: [{ name, position, captain }] }, ...2] }
+function draftPoster(d) {
+  const W = 1080;
+  const rows = Math.max(...d.teams.map((t) => t.players.length), 1);
+  const H = 300 + rows * 64 + 80;
+  const colours = ['#f97316', '#3b82f6'];
+  const col = (t, i) => {
+    const x = 60 + i * 500;
+    const c = colours[i];
+    return `<rect x="${x}" y="200" width="460" height="${rows * 64 + 70}" rx="20" fill="${c}" fill-opacity="0.12" stroke="${c}" stroke-opacity="0.5"/>
+      <text x="${x + 24}" y="246" font-family="${HEAD}" font-weight="700" font-size="${fit(`TEAM ${t.name}`, 410, 34, 0.5, 18)}" fill="${c}">${esc(clip(`TEAM ${String(t.name || '').toUpperCase()}`, 26))}</text>
+      ${t.players.map((p, j) => `<text x="${x + 24}" y="${300 + j * 64}" font-family="${BODY}" font-weight="${p.captain ? 700 : 400}" font-size="28" fill="#ffffff">${esc(clip(`${p.captain ? 'C · ' : ''}${p.name}`, 24))}</text>
+        <text x="${x + 436}" y="${300 + j * 64}" text-anchor="end" font-family="${HEAD}" font-weight="700" font-size="26" fill="${c}">${esc(p.position || '')}</text>`).join('')}`;
+  };
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <rect width="${W}" height="${H}" fill="#0b1220"/>
+    <rect width="${W / 2}" height="10" fill="${colours[0]}"/><rect x="${W / 2}" width="${W / 2}" height="10" fill="${colours[1]}"/>
+    <text x="60" y="88" font-family="${HEAD}" font-weight="700" font-size="30" letter-spacing="4" fill="#e2e8f0">PICKUP DRAFT</text>
+    <text x="${W - 60}" y="88" text-anchor="end" font-family="${HEAD}" font-size="28" letter-spacing="2" fill="#94a3b8">${esc(clip(String(d.serverName || '').toUpperCase(), 30))}</text>
+    <text x="${W / 2}" y="160" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="56" fill="#ffffff">${esc(clip(String(d.teams[0].name || '').toUpperCase(), 14))} VS ${esc(clip(String(d.teams[1].name || '').toUpperCase(), 14))}</text>
+    ${d.teams.map(col).join('')}
+    <text x="${W / 2}" y="${H - 24}" text-anchor="middle" font-family="${BODY}" font-size="15" fill="#64748b">GAFFERBOT SOCIAL HUB</text>
+  </svg>`;
+  return G.render(svg);
+}
+
+module.exports = { badgeStrip, wrappedCard, awardsPoster, divisionPoster, hubCard, draftPoster, TIER_STYLE, medal };
