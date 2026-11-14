@@ -5,23 +5,22 @@
 //    without running JavaScript. The app then draws the live page on top as before.
 //  - /sitemap.xml: the build's sitemap plus every public hub page.
 import { hubDescription, hubTitle, type HubPublic } from "../src/lib/hubMeta";
+import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from "../src/lib/publicBackend";
 
 const SITE = "https://gafferbot.app";
 
 interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
-  SUPABASE_URL: string;
-  SUPABASE_SERVICE_ROLE_KEY: string;
 }
 
 const esc = (s: unknown) =>
   String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-// hub_public is world-readable (RLS allows anon); the Worker only has the service key, and only reads.
-async function hubs(env: Env, query: string): Promise<HubPublic[]> {
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) return [];
-  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/hub_public?${query}`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` },
+// hub_public is world-readable (RLS allows anon), so this reads it with the same public backend and anon
+// key as the website: no secrets needed, and PR previews work the same as production.
+async function hubs(query: string): Promise<HubPublic[]> {
+  const res = await fetch(`${PUBLIC_SUPABASE_URL}/rest/v1/hub_public?${query}`, {
+    headers: { apikey: PUBLIC_SUPABASE_ANON_KEY, Authorization: `Bearer ${PUBLIC_SUPABASE_ANON_KEY}` },
   });
   if (!res.ok) throw new Error(`hub_public ${res.status}`);
   return (await res.json()) as HubPublic[];
@@ -84,7 +83,7 @@ export async function playPage(req: Request, env: Env, slug: string): Promise<Re
   if (!/^[a-z0-9-]{1,100}$/.test(slug)) return shell;
   let hub: HubPublic | undefined;
   try {
-    [hub] = await hubs(env, `select=slug,name,icon_url,invite_code,members,snapshot,updated_at&slug=eq.${slug}&limit=1`);
+    [hub] = await hubs(`select=slug,name,icon_url,invite_code,members,snapshot,updated_at&slug=eq.${slug}&limit=1`);
   } catch (e) {
     console.error("play page", e);
     return shell; // the app still loads the hub itself
@@ -119,7 +118,7 @@ export async function sitemap(req: Request, env: Env): Promise<Response> {
   const base = await env.ASSETS.fetch(new Request(new URL("/sitemap.xml", req.url)));
   let xml = await base.text();
   try {
-    const rows = await hubs(env, "select=slug,updated_at&order=updated_at.desc&limit=1000");
+    const rows = await hubs("select=slug,updated_at&order=updated_at.desc&limit=1000");
     const urls = rows
       .map((h) => `  <url><loc>${SITE}/play/${esc(h.slug)}</loc>${h.updated_at ? `<lastmod>${h.updated_at.slice(0, 10)}</lastmod>` : ""}</url>`)
       .join("\n");

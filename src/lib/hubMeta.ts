@@ -17,7 +17,7 @@ export interface HubPublic {
 }
 
 export function hubTitle(h: Pick<HubPublic, "name">) {
-  return `${h.name}: EA FC 27 Pro Clubs Pickup Games on Discord | GafferBot`;
+  return `${h.name} | Pro Clubs Discord Server`;
 }
 
 export function hubDescription(h: Pick<HubPublic, "name" | "members">) {

@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
+import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from "./src/lib/publicBackend";
 
 // The Supabase backend is baked in at build time. Build env vars (e.g. Cloudflare
 // build variables) win over the committed .env, which Lovable manages for its own
@@ -11,8 +12,8 @@ function supabaseEnv(mode: string) {
   // Default to the self-hosted Hetzner backend. The old managed backend
   // (disconnected) is ignored even if a stale .env still names it. The
   // publishable anon key is safe to embed — it ships in the client bundle.
-  const HETZNER_URL = "https://supabasekong-xue3q5tb1udz4bvq6oxbg1pv.65.108.243.142.sslip.io";
-  const HETZNER_KEY = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsImlhdCI6MTc5MTU5OTk0MCwiZXhwIjo0OTQ3MjczNTQwLCJyb2xlIjoiYW5vbiJ9.-X11YfReZMSSz405K0Q1GLsDKc-4gVXttKYlxR22U50";
+  const HETZNER_URL = PUBLIC_SUPABASE_URL;
+  const HETZNER_KEY = PUBLIC_SUPABASE_ANON_KEY;
   const stale = !env.VITE_SUPABASE_URL || env.VITE_SUPABASE_URL.includes("vynlrqlisrvuejwawaxh");
   const rawUrl = stale ? HETZNER_URL : env.VITE_SUPABASE_URL;
   // Remote backends must be HTTPS or browsers block every request on https pages.
