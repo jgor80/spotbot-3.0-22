@@ -83,3 +83,10 @@ export function challengeProgress(week: Record<string, unknown> | null | undefin
   const n = Array.isArray(v) ? v.length : Number(v) || 0;
   return Math.min(HUB_CHALLENGES[key].target, n);
 }
+
+// Chemistry badge for a 0-100 pair score (public/spotbot/hub-chemistry.cjs chemLabel)
+export function chemLabel(score: number) {
+  if (score >= 70) return "🔥";
+  if (score >= 55) return "✅";
+  return "🤝";
+}

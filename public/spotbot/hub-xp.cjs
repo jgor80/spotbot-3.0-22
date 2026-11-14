@@ -204,6 +204,7 @@ function bar(value, max, width = 12) {
 function createHubXp(deps) {
   const { supabase, hubOf, saveHub, getGuildState, linkedIds } = deps;
   const client = () => deps.client();
+  const chemistry = () => deps.chemistry?.();
   const locks = new Map();
 
   // One write at a time per server, so a tick and a match never overwrite each other
@@ -302,10 +303,12 @@ function createHubXp(deps) {
       if (!hub.on) continue;
       const state = await getGuildState(guild.id);
       const perUser = new Map();
+      const groups = [];
       for (const club of (state?.clubs || []).filter((x) => x.enabled)) {
         const vc = guild.channels.cache.get(state.clubVcLinks?.[club.key]);
         const ids = vc?.members ? [...vc.members.values()].filter((m) => !m.user?.bot && !m.voice?.selfDeaf).map((m) => m.id) : [];
         if (ids.length < 2) continue;
+        groups.push({ ids, minutes: 5 });
         const slots = state.boardState?.[club.key]?.slots || [];
         for (const id of ids) {
           const pos = slots.find((s) => s.takenBy === id)?.label;
@@ -313,6 +316,7 @@ function createHubXp(deps) {
         }
       }
       await record(guild.id, perUser).catch((err) => console.warn(`[hub-xp] voice tick failed for ${guild.id}: ${err.message}`));
+      await chemistry()?.record(guild.id, groups).catch((err) => console.warn(`[hub-xp] chemistry tick failed: ${err.message}`));
       await weeklyWinner(guild, hub).catch((err) => console.warn(`[hub-xp] weekly post failed: ${err.message}`));
     }
   }
@@ -324,8 +328,10 @@ function createHubXp(deps) {
     const names = recent.flatMap((m) => (m.players || []).map((p) => p.ea_username)).filter(Boolean);
     const ids = await linkedIds(names);
     const perUser = new Map();
+    const groups = [];
     for (const m of recent) {
       const inGame = (m.players || []).map((p) => ({ p, id: ids.get(String(p.ea_username || '').toLowerCase()) })).filter((x) => x.id);
+      groups.push({ ids: inGame.map((x) => x.id), games: 1, result: m.result });
       for (const { p, id } of inGame) {
         const a = perUser.get(id) || { games: 0, wins: 0, goals: 0, assists: 0, mates: [], positions: [], lobby: club.key };
         a.games += 1;
@@ -338,6 +344,7 @@ function createHubXp(deps) {
       }
     }
     await record(guildId, perUser);
+    await chemistry()?.record(guildId, groups);
   }
 
   // Next game in a lobby with no EA club: everyone who was on the board played one
@@ -345,6 +352,7 @@ function createHubXp(deps) {
     if (club.ea_club_id) return; // the EA sync counts it instead
     const perUser = new Map(ids.map((id) => [id, { games: 1, mates: ids.filter((x) => x !== id), lobby: club.key }]));
     await record(guildId, perUser);
+    await chemistry()?.record(guildId, [{ ids, games: 1 }]);
   }
 
   async function onCall(guildId, userId) {
