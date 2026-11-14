@@ -16,7 +16,7 @@ const NO_PINGS = { parse: [] };
 const TICK_MS = 5 * 60 * 1000;
 const MAX_MATES = 300;
 
-const XP = { voiceTick: 1, game: 20, win: 10, goal: 5, assist: 3, call: 15, challenge: 150, allChallenges: 200 };
+const XP = { voiceTick: 1, game: 20, win: 10, goal: 5, assist: 3, call: 15, challenge: 150, allChallenges: 200, referral: 100 };
 const BADGE_XP = { common: 50, rare: 100, epic: 250, legendary: 500 };
 
 const TIERS = [
@@ -41,6 +41,8 @@ const HUB_BADGES = {
   full_week: { name: 'Clean Sweep', tier: 'rare', help: 'Finished all three weekly challenges' },
   weekly_winner: { name: 'Player of the Week', tier: 'epic', help: 'Most XP in the hub in a week' },
   kitted_out: { name: 'Kitted Out', tier: 'common', help: 'Finished the welcome setup' },
+  recruiter: { name: 'Recruiter', tier: 'rare', help: 'Brought a friend who played a game' },
+  talent_scout: { name: 'Talent Scout', tier: 'epic', help: 'Brought 5 friends who played' },
 };
 
 const CHALLENGES = {
@@ -100,7 +102,7 @@ const sizeOf = (v) => (Array.isArray(v) ? v.length : Number(v) || 0);
 const progressOf = (week, key) => Math.min(CHALLENGES[key].target, sizeOf(week?.[key]));
 
 function blankRow(guildId, userId) {
-  return { guild_id: guildId, discord_user_id: userId, xp: 0, level: 1, games: 0, wins: 0, goals: 0, assists: 0, voice_minutes: 0, calls: 0, mates: [], lobbies: [], badges: [], streak: 0, best_streak: 0, last_day: null, week_key: null, week_xp: 0, week: {} };
+  return { guild_id: guildId, discord_user_id: userId, xp: 0, level: 1, games: 0, wins: 0, goals: 0, assists: 0, voice_minutes: 0, calls: 0, referrals: 0, mates: [], lobbies: [], badges: [], streak: 0, best_streak: 0, last_day: null, week_key: null, week_xp: 0, week: {} };
 }
 
 const addAll = (list, items, max = Infinity) => {
@@ -133,7 +135,8 @@ function applyActivity(row, activity, ctx = {}) {
   r.assists += a.assists || 0;
   r.voice_minutes += a.minutes || 0;
   r.calls += a.calls || 0;
-  gained += (a.voiceTicks || 0) * XP.voiceTick + games * XP.game + (a.wins || 0) * XP.win + (a.goals || 0) * XP.goal + (a.assists || 0) * XP.assist + (a.calls || 0) * XP.call;
+  r.referrals = (r.referrals || 0) + (a.referrals || 0);
+  gained += (a.voiceTicks || 0) * XP.voiceTick + games * XP.game + (a.wins || 0) * XP.win + (a.goals || 0) * XP.goal + (a.assists || 0) * XP.assist + (a.calls || 0) * XP.call + (a.referrals || 0) * XP.referral;
   r.mates = addAll(r.mates, a.mates, MAX_MATES);
   if (a.lobby) r.lobbies = addAll(r.lobbies, [a.lobby]);
 
@@ -185,6 +188,8 @@ function applyActivity(row, activity, ctx = {}) {
   earn('streak30', r.streak >= 30);
   earn('caller', r.calls >= 5);
   earn('full_week', done.size === 3);
+  earn('recruiter', r.referrals >= 1);
+  earn('talent_scout', r.referrals >= 5);
   for (const key of a.badges || []) earn(key, true);
   r.badges = [...have];
 
@@ -205,6 +210,7 @@ function createHubXp(deps) {
   const { supabase, hubOf, saveHub, getGuildState, linkedIds } = deps;
   const client = () => deps.client();
   const chemistry = () => deps.chemistry?.();
+  const onFirstGame = (...a) => deps.onFirstGame?.(...a);
   const locks = new Map();
 
   // One write at a time per server, so a tick and a match never overwrite each other
@@ -234,11 +240,15 @@ function createHubXp(deps) {
       for (const id of ids) {
         const res = applyActivity(rows.get(id) || blankRow(guildId, id), perUser.get(id), { now, lobbyKeys: hub.lobbies || [] });
         res.row.updated_at = now.toISOString();
-        results.push({ id, isNew: !rows.has(id), ...res });
+        const before = rows.get(id);
+        results.push({ id, isNew: !before, firstGame: !(before?.games > 0) && res.row.games > 0, ...res });
       }
       const { error } = await supabase.from('hub_players').upsert(results.map((r) => r.row), { onConflict: 'guild_id,discord_user_id' });
       if (error) throw new Error(error.message);
       await announce(guildId, hub, results).catch((err) => console.warn(`[hub-xp] announce failed: ${err.message}`));
+      // After the lock: a referral reward records XP for the inviter, which takes the lock again
+      const first = results.filter((r) => r.firstGame).map((r) => r.id);
+      if (first.length) setImmediate(() => Promise.resolve(onFirstGame(guildId, first)).catch((err) => console.warn(`[hub-xp] first game hook failed: ${err.message}`)));
       return results;
     });
   }

@@ -671,7 +671,12 @@ function createSocialHub(deps) {
       if (!xp()) return interaction.reply({ content: 'Hub XP is not running.', flags: 64 }).then(() => true);
       await interaction.deferReply({ flags: 64 });
       const embed = id === 'sh_me' ? await xp().meCard(interaction.guildId, interaction.user.id) : await xp().leaderboardEmbed(interaction.guildId);
-      await interaction.editReply({ embeds: [embed], allowedMentions: NO_PINGS });
+      // Handled by hub-card.cjs
+      const share = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('hc_card').setLabel('Share my hub card').setEmoji('🪪').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('hc_invite').setLabel('Invite a friend').setEmoji('🔗').setStyle(ButtonStyle.Secondary)
+      );
+      await interaction.editReply({ embeds: [embed], components: id === 'sh_me' ? [share] : [], allowedMentions: NO_PINGS });
       return true;
     }
     if (id === 'sh_team') {

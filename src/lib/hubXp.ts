@@ -26,6 +26,8 @@ export const HUB_BADGES: Record<string, HubBadge> = {
   full_week: { name: "Clean Sweep", tier: "rare", help: "Finished all three weekly challenges" },
   weekly_winner: { name: "Player of the Week", tier: "epic", help: "Most XP in the hub in a week" },
   kitted_out: { name: "Kitted Out", tier: "common", help: "Finished the welcome setup" },
+  recruiter: { name: "Recruiter", tier: "rare", help: "Brought a friend who played a game" },
+  talent_scout: { name: "Talent Scout", tier: "epic", help: "Brought 5 friends who played" },
 };
 
 export const HUB_CHALLENGES: Record<string, { target: number; text: string }> = {

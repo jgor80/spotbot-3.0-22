@@ -397,6 +397,7 @@ export type Database = {
           assists: number
           voice_minutes: number
           calls: number
+          referrals: number
           mates: Json
           lobbies: Json
           badges: Json
@@ -419,6 +420,7 @@ export type Database = {
           assists?: number
           voice_minutes?: number
           calls?: number
+          referrals?: number
           mates?: Json
           lobbies?: Json
           badges?: Json
@@ -441,6 +443,7 @@ export type Database = {
           assists?: number
           voice_minutes?: number
           calls?: number
+          referrals?: number
           mates?: Json
           lobbies?: Json
           badges?: Json
