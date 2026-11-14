@@ -11740,10 +11740,10 @@ function adviseCard(x) {
   const falling = ch3 !== null && ch3 <= -4 || ch7 !== null && ch7 <= -8;
   const nearHigh = t?.high14 && t.low14 && t.high14 > t.low14 * 1.1 && price >= t.high14 * 0.95;
   const rising = ch3 !== null && ch3 >= 4 && !nearHigh;
-  if (falling) return out("sell_now", `Not in a saved squad and falling (${ch3 !== null ? `${ch3}% in 3 days` : `${ch7}% in 7 days`}). Selling now gets ${c(afterTax2(price))} after tax.`);
-  if (nearHigh) return out("sell_high", `Not in a saved squad and near its two-week high (${c(t.low14)} to ${c(t.high14)}): a good moment to sell for ${c(afterTax2(price))} after tax.`);
-  if (rising) return out("wait", `Not in a saved squad but still rising (+${ch3}% in 3 days). Wait for it to level off, then sell.`);
-  return out("sell", `Not in a saved squad and the price is steady. Selling frees ${c(afterTax2(price))} after tax.`);
+  if (falling) return out("sell_now", `Not in any of your squads and falling (${ch3 !== null ? `${ch3}% in 3 days` : `${ch7}% in 7 days`}). Selling now gets ${c(afterTax2(price))} after tax.`);
+  if (nearHigh) return out("sell_high", `Not in any of your squads and near its two-week high (${c(t.low14)} to ${c(t.high14)}): a good moment to sell for ${c(afterTax2(price))} after tax.`);
+  if (rising) return out("wait", `Not in any of your squads but still rising (+${ch3}% in 3 days). Wait for it to level off, then sell.`);
+  return out("sell", `Not in any of your squads and the price is steady. Selling frees ${c(afterTax2(price))} after tax.`);
 }
 var ORDER = { sell_now: 0, sell_high: 1, sell: 2, wait: 3, hold_fodder: 4, keep_evo: 5, keep: 6, no_price: 7 };
 function adviseClub(cards) {
@@ -11775,10 +11775,12 @@ async function squadUse(db, userId) {
   }
   return use;
 }
-async function sellOrKeep(db, userId, platform, bestEvo) {
+async function sellOrKeep(db, userId, platform, bestEvo, playing) {
   const club = await searchMyCards(db, userId, { all: true, owned_only: true });
   const mine = club.filter((c2) => c2.tradeable !== false);
-  const [use, evo] = await Promise.all([squadUse(db, userId), bestEvo ? bestEvo().catch(() => /* @__PURE__ */ new Map()) : Promise.resolve(/* @__PURE__ */ new Map())]);
+  const [saved, evo, play] = await Promise.all([squadUse(db, userId), bestEvo ? bestEvo().catch(() => /* @__PURE__ */ new Map()) : Promise.resolve(/* @__PURE__ */ new Map()), playing ? playing().catch(() => /* @__PURE__ */ new Map()) : Promise.resolve(/* @__PURE__ */ new Map())]);
+  const use = new Map(saved);
+  for (const [id, label] of play) use.set(id, [label, ...(use.get(id) ?? []).filter((n) => n !== label)]);
   const ids = [...new Set(mine.map((c2) => c2.ea_item_id).filter((x) => !!x))].slice(0, 2e3);
   let trends = /* @__PURE__ */ new Map(), floors = {}, prices_at = null;
   if (ids.length) {
@@ -11815,7 +11817,7 @@ async function sellOrKeep(db, userId, platform, bestEvo) {
     prices_at,
     ...adviseClub(inputs),
     untradeable_skipped: club.length - mine.length,
-    note: "Verdicts use your saved squads, live evolutions the helper saw and FUT.GG's price trend over the last two weeks. Untradeable cards are left out. Nothing here lists or sells.",
+    note: "Verdicts use the squad you play, your saved squads, live evolutions the helper saw and FUT.GG's price trend over the last two weeks. Untradeable cards are left out. Nothing here lists or sells.",
     verified: false
   };
 }
