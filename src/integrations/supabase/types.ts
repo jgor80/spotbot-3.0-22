@@ -349,6 +349,33 @@ export type Database = {
         }
         Relationships: []
       }
+      hub_hall_of_fame: {
+        Row: {
+          guild_id: string
+          season_key: string
+          place: number
+          discord_user_id: string
+          xp: number
+          created_at: string
+        }
+        Insert: {
+          guild_id: string
+          season_key: string
+          place: number
+          discord_user_id: string
+          xp?: number
+          created_at?: string
+        }
+        Update: {
+          guild_id?: string
+          season_key?: string
+          place?: number
+          discord_user_id?: string
+          xp?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
       hub_pairs: {
         Row: {
           guild_id: string
@@ -400,6 +427,8 @@ export type Database = {
           referrals: number
           rating: number
           rated_games: number
+          season_key: string | null
+          season_xp: number
           mates: Json
           lobbies: Json
           badges: Json
@@ -425,6 +454,8 @@ export type Database = {
           referrals?: number
           rating?: number
           rated_games?: number
+          season_key?: string | null
+          season_xp?: number
           mates?: Json
           lobbies?: Json
           badges?: Json
@@ -450,6 +481,8 @@ export type Database = {
           referrals?: number
           rating?: number
           rated_games?: number
+          season_key?: string | null
+          season_xp?: number
           mates?: Json
           lobbies?: Json
           badges?: Json

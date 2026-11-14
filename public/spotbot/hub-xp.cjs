@@ -43,6 +43,8 @@ const HUB_BADGES = {
   kitted_out: { name: 'Kitted Out', tier: 'common', help: 'Finished the welcome setup' },
   recruiter: { name: 'Recruiter', tier: 'rare', help: 'Brought a friend who played a game' },
   talent_scout: { name: 'Talent Scout', tier: 'epic', help: 'Brought 5 friends who played' },
+  season_podium: { name: 'Season Podium', tier: 'epic', help: 'Finished top 3 in a hub season' },
+  season_champion: { name: 'Season Champion', tier: 'legendary', help: 'Won a hub season (most XP in a month)' },
 };
 
 const CHALLENGES = {
@@ -81,6 +83,9 @@ function weekKeyOf(date = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 const dayKeyOf = (date = new Date()) => date.toISOString().slice(0, 10);
+// Hub seasons run a calendar month (UTC), as YYYY-MM
+const seasonKeyOf = (date = new Date()) => date.toISOString().slice(0, 7);
+const seasonLabel = (key) => new Date(`${key}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 const prevDay = (day) => dayKeyOf(new Date(new Date(`${day}T00:00:00Z`).getTime() - 86400000));
 
 function hash(s) {
@@ -102,7 +107,7 @@ const sizeOf = (v) => (Array.isArray(v) ? v.length : Number(v) || 0);
 const progressOf = (week, key) => Math.min(CHALLENGES[key].target, sizeOf(week?.[key]));
 
 function blankRow(guildId, userId) {
-  return { guild_id: guildId, discord_user_id: userId, xp: 0, level: 1, games: 0, wins: 0, goals: 0, assists: 0, voice_minutes: 0, calls: 0, referrals: 0, mates: [], lobbies: [], badges: [], streak: 0, best_streak: 0, last_day: null, week_key: null, week_xp: 0, week: {} };
+  return { guild_id: guildId, discord_user_id: userId, xp: 0, level: 1, games: 0, wins: 0, goals: 0, assists: 0, voice_minutes: 0, calls: 0, referrals: 0, mates: [], lobbies: [], badges: [], streak: 0, best_streak: 0, last_day: null, week_key: null, week_xp: 0, week: {}, season_key: null, season_xp: 0 };
 }
 
 const addAll = (list, items, max = Infinity) => {
@@ -123,6 +128,11 @@ function applyActivity(row, activity, ctx = {}) {
     r.week_key = week;
     r.week_xp = 0;
     r.week = {};
+  }
+  const season = seasonKeyOf(now);
+  if (r.season_key !== season) {
+    r.season_key = season;
+    r.season_xp = 0;
   }
   const w = { ...(r.week || {}) };
   let gained = 0;
@@ -196,6 +206,7 @@ function applyActivity(row, activity, ctx = {}) {
   const before = r.level || levelFor(r.xp);
   r.xp += gained;
   r.week_xp = (r.week_xp || 0) + gained;
+  r.season_xp = (r.season_xp || 0) + gained;
   r.week = w;
   r.level = levelFor(r.xp);
   return { row: r, gained, newBadges, challengesDone, levelUp: r.level > before ? r.level : null, tierUp: tierFor(r.level).key !== tierFor(before).key ? tierFor(r.level) : null };
@@ -331,6 +342,7 @@ function createHubXp(deps) {
       await record(guild.id, perUser).catch((err) => console.warn(`[hub-xp] voice tick failed for ${guild.id}: ${err.message}`));
       await chemistry()?.record(guild.id, groups).catch((err) => console.warn(`[hub-xp] chemistry tick failed: ${err.message}`));
       await weeklyWinner(guild, hub).catch((err) => console.warn(`[hub-xp] weekly post failed: ${err.message}`));
+      await seasonWrap(guild, await hubOf(guild.id)).catch((err) => console.warn(`[hub-xp] season wrap failed: ${err.message}`));
     }
   }
 
@@ -390,6 +402,29 @@ function createHubXp(deps) {
     }
   }
 
+  // The 1st of the month: last month's top three go into the Hall of Fame with season badges
+  async function seasonWrap(guild, hub) {
+    const last = seasonKeyOf(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 0)));
+    if (hub.season_posted === last) return;
+    const { data } = await supabase.from('hub_players').select('discord_user_id, season_xp').eq('guild_id', guild.id).eq('season_key', last).gt('season_xp', 0).order('season_xp', { ascending: false }).limit(3);
+    await saveHub(guild.id, { ...(await hubOf(guild.id)), season_posted: last });
+    if (!data?.length) return;
+    const { error } = await supabase.from('hub_hall_of_fame').upsert(
+      data.map((r, i) => ({ guild_id: guild.id, season_key: last, place: i + 1, discord_user_id: r.discord_user_id, xp: r.season_xp })),
+      { onConflict: 'guild_id,season_key,place' }
+    );
+    if (error) console.warn(`[hub-xp] hall of fame save failed: ${error.message}`);
+    await record(guild.id, new Map(data.map((r, i) => [r.discord_user_id, { badges: i === 0 ? ['season_champion', 'season_podium'] : ['season_podium'] }])));
+    const ch = await feedChannel(guild, hub);
+    const medals = ['🥇', '🥈', '🥉'];
+    if (ch) {
+      await ch.send({
+        embeds: [new EmbedBuilder().setTitle(`👑 ${seasonLabel(last)} season: Hall of Fame`).setColor(GOLD).setDescription(data.map((r, i) => `${medals[i]} <@${r.discord_user_id}>: **${r.season_xp} XP**`).join('\n') + `\n\n<@${data[0].discord_user_id}> is the **Season Champion**. A new season starts now: everyone's season XP is back to 0 (levels stay).`)],
+        allowedMentions: NO_PINGS,
+      }).catch(() => {});
+    }
+  }
+
   // ---------- Views ----------
 
   async function meCard(guildId, userId) {
@@ -409,7 +444,7 @@ function createHubXp(deps) {
       .setColor(GOLD)
       .setDescription(`<@${userId}> · **${r.xp} XP**\n\`${bar(into, span)}\` ${into}/${span} to level ${level + 1}${next ? ` · ${next.emoji} ${next.name} at level ${next.level}` : ''}`)
       .addFields(
-        { name: `This week (${r.week_key === week ? r.week_xp : 0} XP)`, value: challenges.join('\n') + '\nAll three: +200 XP bonus' },
+        { name: `This week (${r.week_key === week ? r.week_xp : 0} XP) · ${seasonLabel(seasonKeyOf())} season ${r.season_key === seasonKeyOf() ? r.season_xp : 0} XP`, value: challenges.join('\n') + '\nAll three: +200 XP bonus' },
         { name: 'Hub career', value: `${r.rated_games ? `Pickup rating **${r.rating}** (${r.rated_games} rated games)\n` : ''}${r.games} games · ${r.wins} wins · ${r.goals}G ${r.assists}A\n${Math.round(r.voice_minutes / 60)}h in lobbies · played with ${r.mates.length} people · ${r.streak || 0}-day streak (best ${r.best_streak || 0})` },
         { name: `Badges (${r.badges.length}/${Object.keys(HUB_BADGES).length})`, value: r.badges.length ? r.badges.map((b) => `🏅 ${HUB_BADGES[b]?.name || b}`).join(' · ').slice(0, 1024) : 'None yet: play a few games!' }
       )
@@ -417,20 +452,29 @@ function createHubXp(deps) {
   }
 
   async function leaderboard(guildId, period = 'week', limit = 10) {
-    let q = supabase.from('hub_players').select('discord_user_id, xp, week_xp, level').eq('guild_id', guildId);
-    q = period === 'week' ? q.eq('week_key', weekKeyOf()).gt('week_xp', 0).order('week_xp', { ascending: false }) : q.gt('xp', 0).order('xp', { ascending: false });
+    let q = supabase.from('hub_players').select('discord_user_id, xp, week_xp, season_xp, level').eq('guild_id', guildId);
+    q =
+      period === 'week'
+        ? q.eq('week_key', weekKeyOf()).gt('week_xp', 0).order('week_xp', { ascending: false })
+        : period === 'season'
+          ? q.eq('season_key', seasonKeyOf()).gt('season_xp', 0).order('season_xp', { ascending: false })
+          : q.gt('xp', 0).order('xp', { ascending: false });
     const { data } = await q.limit(limit);
     return data || [];
   }
 
   async function leaderboardEmbed(guildId) {
-    const [week, all] = await Promise.all([leaderboard(guildId, 'week'), leaderboard(guildId, 'all')]);
+    const [week, season, all] = await Promise.all([leaderboard(guildId, 'week'), leaderboard(guildId, 'season'), leaderboard(guildId, 'all')]);
     const fmt = (rows, field) => rows.map((r, i) => `${i < 3 ? ['🥇', '🥈', '🥉'][i] : `${i + 1}.`} <@${r.discord_user_id}> · ${r[field]} XP · ${tierFor(levelFor(r.xp)).emoji} L${levelFor(r.xp)}`).join('\n') || 'Nobody yet';
     return new EmbedBuilder()
       .setTitle('🏆 Hub leaderboard')
       .setColor(GOLD)
-      .addFields({ name: 'This week', value: fmt(week, 'week_xp'), inline: true }, { name: 'All time', value: fmt(all, 'xp'), inline: true })
-      .setFooter({ text: 'Most XP this week becomes Player of the Week on Monday' });
+      .addFields(
+        { name: 'This week', value: fmt(week, 'week_xp'), inline: true },
+        { name: `${seasonLabel(seasonKeyOf())} season`, value: fmt(season, 'season_xp'), inline: true },
+        { name: 'All time', value: fmt(all, 'xp'), inline: true }
+      )
+      .setFooter({ text: 'Most XP this week is Player of the Week on Monday · the season\'s top 3 go into the Hall of Fame on the 1st' });
   }
 
   // A short line for the hub board
@@ -442,7 +486,7 @@ function createHubXp(deps) {
   const timer = setInterval(() => voiceTick().catch((err) => console.warn(`[hub-xp] tick failed: ${err.message}`)), TICK_MS);
   timer.unref?.();
 
-  return { record, voiceTick, onNewMatches, onGame, onCall, meCard, leaderboard, leaderboardEmbed, boardLine, syncTierRole, weeklyWinner };
+  return { record, voiceTick, onNewMatches, onGame, onCall, meCard, leaderboard, leaderboardEmbed, boardLine, syncTierRole, weeklyWinner, seasonWrap };
 }
 
-module.exports = { createHubXp, applyActivity, blankRow, levelFor, xpForLevel, tierFor, weekKeyOf, challengesFor, HUB_BADGES, CHALLENGES, TIERS, XP };
+module.exports = { createHubXp, applyActivity, blankRow, levelFor, xpForLevel, tierFor, weekKeyOf, seasonKeyOf, seasonLabel, challengesFor, HUB_BADGES, CHALLENGES, TIERS, XP };

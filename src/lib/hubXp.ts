@@ -28,6 +28,8 @@ export const HUB_BADGES: Record<string, HubBadge> = {
   kitted_out: { name: "Kitted Out", tier: "common", help: "Finished the welcome setup" },
   recruiter: { name: "Recruiter", tier: "rare", help: "Brought a friend who played a game" },
   talent_scout: { name: "Talent Scout", tier: "epic", help: "Brought 5 friends who played" },
+  season_podium: { name: "Season Podium", tier: "epic", help: "Finished top 3 in a hub season" },
+  season_champion: { name: "Season Champion", tier: "legendary", help: "Won a hub season (most XP in a month)" },
 };
 
 export const HUB_CHALLENGES: Record<string, { target: number; text: string }> = {
@@ -92,3 +94,7 @@ export function chemLabel(score: number) {
   if (score >= 55) return "✅";
   return "🤝";
 }
+
+// Hub seasons run a calendar month (UTC), as YYYY-MM
+export const seasonKeyOf = (date = new Date()) => date.toISOString().slice(0, 7);
+export const seasonLabel = (key: string) => new Date(`${key}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });

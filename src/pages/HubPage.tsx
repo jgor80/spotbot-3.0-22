@@ -6,7 +6,7 @@ import { useDiscordLink } from "@/hooks/useDiscordLink";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { HUB_BADGES, HUB_CHALLENGES, HUB_TIERS, chemLabel, challengeProgress, challengesFor, levelFor, tierFor, weekKeyOf, xpForLevel } from "@/lib/hubXp";
+import { HUB_BADGES, HUB_CHALLENGES, HUB_TIERS, chemLabel, challengeProgress, challengesFor, levelFor, seasonKeyOf, seasonLabel, tierFor, weekKeyOf, xpForLevel } from "@/lib/hubXp";
 
 type HubRow = {
   discord_user_id: string;
@@ -22,6 +22,10 @@ type HubRow = {
   best_streak: number;
   week_key: string | null;
   week_xp: number;
+  season_key: string | null;
+  season_xp: number;
+  rating: number;
+  rated_games: number;
   week: Record<string, unknown> & { done?: string[] };
 };
 
@@ -114,7 +118,7 @@ export default function HubPage() {
   const { selectedGuildId } = useGuild();
   const { discordLink } = useDiscordLink();
   const me = discordLink?.discord_user_id;
-  const [period, setPeriod] = useState<"week" | "all">("week");
+  const [period, setPeriod] = useState<"week" | "season" | "rating" | "all">("week");
 
   const hub = useQuery({
     queryKey: ["hub-players", selectedGuildId, me],
@@ -122,31 +126,40 @@ export default function HubPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("hub_players")
-        .select("discord_user_id,xp,games,wins,goals,assists,voice_minutes,mates,badges,streak,best_streak,week_key,week_xp,week")
+        .select("discord_user_id,xp,games,wins,goals,assists,voice_minutes,mates,badges,streak,best_streak,week_key,week_xp,week,season_key,season_xp,rating,rated_games")
         .eq("guild_id", selectedGuildId!)
         .order("xp", { ascending: false })
         .limit(500);
       if (error) throw error;
       const rows = (data ?? []) as unknown as HubRow[];
-      const [{ data: duos }, { data: mineA }, { data: mineB }] = await Promise.all([
+      const [{ data: duos }, { data: mineA }, { data: mineB }, { data: fame }] = await Promise.all([
         supabase.from("hub_pairs").select("user_a,user_b,games,rated_games,wins,minutes,score").eq("guild_id", selectedGuildId!).gte("games", 3).order("score", { ascending: false }).limit(10),
         me ? supabase.from("hub_pairs").select("user_a,user_b,games,rated_games,wins,minutes,score").eq("guild_id", selectedGuildId!).eq("user_a", me) : Promise.resolve({ data: [] }),
         me ? supabase.from("hub_pairs").select("user_a,user_b,games,rated_games,wins,minutes,score").eq("guild_id", selectedGuildId!).eq("user_b", me) : Promise.resolve({ data: [] }),
+        supabase.from("hub_hall_of_fame").select("season_key,place,discord_user_id,xp").eq("guild_id", selectedGuildId!).order("season_key", { ascending: false }).order("place").limit(36),
       ]);
       const partners = [...((mineA ?? []) as PairRow[]), ...((mineB ?? []) as PairRow[])].sort((a, b) => b.score - a.score).slice(0, 8);
-      const ids = [...new Set([...rows.map((r) => r.discord_user_id), ...((duos ?? []) as PairRow[]).flatMap((d) => [d.user_a, d.user_b]), ...partners.flatMap((d) => [d.user_a, d.user_b])])];
+      const ids = [...new Set([...rows.map((r) => r.discord_user_id), ...((duos ?? []) as PairRow[]).flatMap((d) => [d.user_a, d.user_b]), ...partners.flatMap((d) => [d.user_a, d.user_b]), ...(fame ?? []).map((f) => f.discord_user_id)])];
       const { data: profiles } = ids.length
         ? await supabase.from("profiles").select("discord_user_id,ea_username,discord_username").in("discord_user_id", ids)
         : { data: [] };
       const names = new Map((profiles ?? []).map((p) => [p.discord_user_id, p.discord_username || p.ea_username || "Player"]));
-      return { rows, names, duos: (duos ?? []) as PairRow[], partners };
+      return { rows, names, duos: (duos ?? []) as PairRow[], partners, fame: fame ?? [] };
     },
   });
 
   const week = weekKeyOf();
   const board = useMemo(() => {
     const rows = hub.data?.rows ?? [];
-    const list = period === "week" ? rows.filter((r) => r.week_key === week && r.week_xp > 0).sort((a, b) => b.week_xp - a.week_xp) : rows.filter((r) => r.xp > 0);
+    const season = seasonKeyOf();
+    const list =
+      period === "week"
+        ? rows.filter((r) => r.week_key === week && r.week_xp > 0).sort((a, b) => b.week_xp - a.week_xp)
+        : period === "season"
+          ? rows.filter((r) => r.season_key === season && r.season_xp > 0).sort((a, b) => b.season_xp - a.season_xp)
+          : period === "rating"
+            ? rows.filter((r) => r.rated_games > 0).sort((a, b) => b.rating - a.rating)
+            : rows.filter((r) => r.xp > 0);
     return list.slice(0, 50);
   }, [hub.data, period, week]);
   const mine = (hub.data?.rows ?? []).find((r) => me && r.discord_user_id === me) ?? null;
@@ -208,14 +221,14 @@ export default function HubPage() {
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-display text-xl font-semibold">Leaderboard</h2>
             <div className="flex gap-2">
-              {(["week", "all"] as const).map((p) => (
+              {(["week", "season", "rating", "all"] as const).map((p) => (
                 <button
                   key={p}
                   type="button"
                   onClick={() => setPeriod(p)}
                   className={cn("rounded-full border px-3 py-1 text-sm", period === p ? "border-primary bg-primary/15" : "border-border hover:bg-muted")}
                 >
-                  {p === "week" ? "This week" : "All time"}
+                  {p === "week" ? "This week" : p === "season" ? seasonLabel(seasonKeyOf()) : p === "rating" ? "Pickup rating" : "All time"}
                 </button>
               ))}
             </div>
@@ -235,13 +248,33 @@ export default function HubPage() {
                     <span className="w-8 text-center font-display font-bold">{i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1}</span>
                     <span className="min-w-0 flex-1 truncate">{nameOf(r.discord_user_id)}{r.discord_user_id === me ? " (you)" : ""}</span>
                     <span className="text-sm text-muted-foreground">{tier.emoji} L{level}</span>
-                    <span className="w-24 text-right font-semibold">{period === "week" ? r.week_xp : r.xp} XP</span>
+                    <span className="w-24 text-right font-semibold">{period === "week" ? `${r.week_xp} XP` : period === "season" ? `${r.season_xp} XP` : period === "rating" ? r.rating : `${r.xp} XP`}</span>
                   </div>
                 );
               })}
             </Card>
           )}
         </section>
+        {!!hub.data?.fame.length && (
+          <section className="space-y-3">
+            <h2 className="font-display text-xl font-semibold">Hall of Fame</h2>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {[...new Set(hub.data.fame.map((f) => f.season_key))].map((key) => (
+                <Card key={key} className="p-4">
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">{seasonLabel(key)}</p>
+                  <ul className="mt-2 space-y-1 text-sm">
+                    {hub.data!.fame.filter((f) => f.season_key === key).map((f) => (
+                      <li key={f.place} className="flex justify-between gap-2">
+                        <span className="truncate">{["🥇", "🥈", "🥉"][f.place - 1]} {nameOf(f.discord_user_id)}</span>
+                        <span className="text-muted-foreground">{f.xp} XP</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </DashboardLayout>
   );
