@@ -94,6 +94,7 @@ const { createHubTournament } = require('./hub-tournament.cjs');
 const { createHubRecruit } = require('./hub-recruit.cjs');
 const { createHubLeague } = require('./hub-league.cjs');
 const { createHubUmbrella } = require('./hub-umbrella.cjs');
+const { createHubRules } = require('./hub-rules.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -622,6 +623,7 @@ const socialHub = createSocialHub({
   xp: () => hubXp,
   onboarding: () => hubOnboarding,
   studio: () => graphicsStudio,
+  rules: () => hubRules,
 });
 // Hub XP: levels, tier roles, weekly challenges and social badges for players across every lobby and team
 const hubXp = createHubXp({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, getGuildState, linkedIds: career.linkedIds, client: () => client, chemistry: () => hubChemistry, onFirstGame: (guildId, ids) => hubCard.onFirstGame(guildId, ids) });
@@ -643,6 +645,8 @@ const hubRecruit = createHubRecruit({ supabase, hubOf: socialHub.hubOf, saveHub:
 const hubLeague = createHubLeague({ supabase, hubOf: socialHub.hubOf, getGuildState, client: () => client });
 // Under the hub's umbrella: outside leagues and BYOTs hub teams enter as the hub, and each team's next steps
 const hubUmbrella = createHubUmbrella({ supabase, hubOf: socialHub.hubOf, getGuildState, client: () => client, socialHub: () => socialHub });
+// Rules and code of conduct: #rules with I agree, editable by admins
+const hubRules = createHubRules({ hubOf: socialHub.hubOf, saveHub: socialHub.saveHub });
 autopilot.onNewMatches(hubXp.onNewMatches);
 // Hub onboarding: #start-here and the optional Get set up card (platform, region, gamertag, positions, Twitch)
 const hubOnboarding = createHubOnboarding({ supabase, hubOf: socialHub.hubOf, autoLink, getUserPrefs, xp: () => hubXp });
@@ -4256,6 +4260,7 @@ async function routeInteraction(interaction) {
     if (await hubRecruit.handleInteraction(interaction)) return;
     if (await hubLeague.handleInteraction(interaction)) return;
     if (await hubUmbrella.handleInteraction(interaction)) return;
+    if (await hubRules.handleInteraction(interaction)) return;
     if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;
