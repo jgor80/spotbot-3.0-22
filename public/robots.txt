@@ -1,5 +1,27 @@
-# GafferBot: the public pages are /, /terms and /privacy. Everything else is the signed-in app.
+# GafferBot: the public pages are /, /guides, /faq, the guide pages, /play/<hub>, /terms and /privacy.
+# Everything else is the signed-in app (those pages also send X-Robots-Tag: noindex, see _headers).
+# Search engines and AI assistants are welcome on the public pages; /llms.txt is a map for AI assistants.
 User-agent: *
+Allow: /
+Disallow: /auth
+Disallow: /link/
+Disallow: /overlay/
+Disallow: /api/
+Disallow: /oauth/
+Disallow: /mcp
+
+# Named so a blanket AI-crawler block elsewhere can't silently drop GafferBot from AI answers
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: Bingbot
 Allow: /
 Disallow: /auth
 Disallow: /link/

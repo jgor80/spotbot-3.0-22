@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   BarChart3,
@@ -23,9 +22,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { DiscordIcon } from "@/components/DiscordIcon";
-import { discordAuthApi } from "@/lib/discordAuthApi";
+import { AddToDiscord, DONATE_URL, PublicFooter, useInviteUrl } from "@/components/public/PublicChrome";
 import { cn } from "@/lib/utils";
 import { useDropPrerender } from "@/components/RouteMeta";
+import { HOME_FAQ as FAQ } from "@/content/guides";
+
+export { FAQ };
 
 // Player cards drawn by the bot's own card renderer (graphics-studio.cjs) from its bundled sample art,
 // for a made-up club, so the page shows real GafferBot output without anyone's real photos.
@@ -35,12 +37,6 @@ const card = (name: string) => CARDS[`/src/assets/landing/cards/${name}.webp`];
 // Public marketing page: what signed-out visitors and search engines see at "/" (also at /welcome).
 // scripts/prerender.mjs renders it to static HTML at build time, so keep it free of browser-only
 // code at render time (put that in effects).
-
-// View channels, send/embed/attach, read history, reactions, external emoji, mention roles,
-// manage messages (sticky panels), manage roles (positions, trophies), change nickname,
-// create invites (recruiting), public threads and sending in threads,
-// manage channels + connect + move members (Social Hub lobbies and Casual Play voice moves).
-const BOT_PERMISSIONS = "309591534673";
 
 const STYLE_LABELS: Record<string, string> = {
   chrome: "Liquid Chrome",
@@ -59,41 +55,6 @@ const GALLERY = Object.keys(CARDS).filter((k) => k.includes("/g-")).sort().map((
   src: CARDS[k],
   label: STYLE_LABELS[k.replace(/.*\/g-\d+-(\w+)\.webp$/, "$1")] ?? "",
 }));
-
-// GafferBot is free; this is where people can chip in to keep it running
-const DONATE_URL = "https://venmo.com/u/bleacherjeff";
-
-function useInviteUrl() {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    discordAuthApi<{ client_id: string | null }>().then(({ data }) => {
-      if (!live || !data?.client_id) return;
-      const params = new URLSearchParams({
-        client_id: data.client_id,
-        scope: "bot applications.commands",
-        permissions: BOT_PERMISSIONS,
-      });
-      setUrl(`https://discord.com/oauth2/authorize?${params}`);
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-  return url;
-}
-
-function AddToDiscord({ url, size = "lg", className }: { url: string | null; size?: "lg" | "default"; className?: string }) {
-  // Until the client id loads (or if it can't), send people to sign in, where Discord sign-in still works
-  return (
-    <Button asChild size={size} className={cn("font-semibold", size === "lg" && "h-12 px-6 text-base", className)}>
-      <a href={url ?? "/auth"}>
-        <DiscordIcon className="mr-2 h-5 w-5" />
-        Add to Discord
-      </a>
-    </Button>
-  );
-}
 
 const FEATURES = [
   {
@@ -157,28 +118,7 @@ const STEPS = [
   { title: "Play", body: "Post your next game. Availability, the lineup, reminders and the recap take care of themselves." },
 ];
 
-export const FAQ = [
-  {
-    q: "Do my players need an account?",
-    a: "No. Players use buttons in Discord. They can sign in here with Discord if they want their own profile and stats on the web, but it's optional.",
-  },
-  {
-    q: "Where do the stats come from?",
-    a: "EA's public Pro Clubs data for your club. Link your club once in /setup and new matches sync on their own. Some numbers, like hidden stats and chemistry, are GafferBot's estimates and are labelled that way.",
-  },
-  {
-    q: "Can I run more than one club in a server?",
-    a: "Yes. Each club keeps its own roster, events, stats and colours, and players are matched by the club name in their roles.",
-  },
-  {
-    q: "What does it cost?",
-    a: "GafferBot is free: every feature, every server. AI images cost us money to make, so each server gets 5 free AI images, then buys image packs (25 for $4.99 or 70 for $12.99) on the website or in Discord's store. Lineups, stats and the other graphics stay free.",
-  },
-  {
-    q: "Is this made by EA?",
-    a: "No. GafferBot is an independent project and isn't made, endorsed or sponsored by Electronic Arts or Discord.",
-  },
-];
+
 
 // ---------- Mockups (drawn in HTML so they stay sharp and follow the theme) ----------
 
@@ -366,11 +306,12 @@ export default function LandingPage() {
             <span className="font-display text-xl font-bold">GafferBot</span>
           </Link>
           <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-                        <a href="#features" className="hover:text-foreground">Features</a>
+            <a href="#features" className="hover:text-foreground">Features</a>
             <a href="#extras" className="hover:text-foreground">Extras</a>
             <a href="#how" className="hover:text-foreground">How it works</a>
             <a href="#pricing" className="hover:text-foreground">Pricing</a>
             <a href="#faq" className="hover:text-foreground">FAQ</a>
+            <Link to="/guides" className="hover:text-foreground">Guides</Link>
           </nav>
           <div className="flex items-center gap-2">
             <Button asChild variant="ghost" size="sm">
@@ -669,19 +610,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="border-t border-border/60">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p>
-            © {new Date().getFullYear()} GafferBot. Not affiliated with Electronic Arts or Discord.
-          </p>
-          <nav className="flex gap-4">
-            <Link to="/terms" className="hover:text-foreground">Terms of Service</Link>
-            <Link to="/privacy" className="hover:text-foreground">Privacy Policy</Link>
-            <a href={DONATE_URL} target="_blank" rel="noopener noreferrer" className="hover:text-foreground">Donate</a>
-            <Link to="/auth" className="hover:text-foreground">Sign in</Link>
-          </nav>
-        </div>
-      </footer>
+      <PublicFooter />
     </div>
   );
 }
