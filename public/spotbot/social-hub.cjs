@@ -54,6 +54,8 @@ const STUDIO_NAME = 'photo-studio';
 const HIGHLIGHTS_NAME = 'highlights';
 const MAX_CLUBS = 25;
 const TEAM_FEATURES = ['events', 'results', 'desk'];
+// A team's history copied when it moves to its own server
+const MOVE_TABLES = ['club_matches', 'club_stats', 'player_club_stats', 'club_division_history'];
 
 const HUB_COMMANDS = [
   {
@@ -266,7 +268,7 @@ function createSocialHub(deps) {
       const vc = guild.channels.cache.get(state.clubVcLinks?.[club.key]);
       return vc?.members ? [...vc.members.values()].filter((m) => !m.user?.bot).length : 0;
     };
-    return `🛡️ Teams: ${teams.map((t) => `${inVoice(t) ? `**${t.name}** (${inVoice(t)} on)` : t.name}${boardMark(hub, t.key)}`).join(' · ')}`.slice(0, 1000);
+    return `🛡️ Teams: ${teams.map((t) => `${inVoice(t) ? `**${t.name}** (${inVoice(t)} on)` : t.name}${boardMark(hub, t.key)}${hub.alumni?.[t.key] ? ' 🎓' : ''}`).join(' · ')}`.slice(0, 1000);
   }
 
   // ---------- Public page (gafferbot.app/play/<slug>) ----------
@@ -695,6 +697,60 @@ function createSocialHub(deps) {
     return ok ? `✅ Welcome to **${club.name}**! Its channels are in **${guild.name}**.` : '❌ I couldn\'t give you the team role. Ask an admin to move my role above the team roles.';
   }
 
+  // Copy a hub team to its own server, keeping its EA link, kit and history, and remember where it went.
+  // The hub copy stays (players can still play in the hub); nothing is deleted.
+  async function moveTeam(guild, member, clubKey, target) {
+    if (!target || target.id === guild.id) return { error: 'Pick your own server, not the hub.' };
+    const hub = { ...(await hubOf(guild.id)) };
+    const state = await getGuildState(guild.id);
+    const club = state.clubs.find((c) => c.key === clubKey && c.enabled);
+    if (!club || !(hub.teams || []).includes(clubKey)) return { error: 'This team is gone.' };
+    if (club.captain_id !== member.id && !(club.captain_role_id && member.roles?.cache?.has?.(club.captain_role_id))) return { error: `Only ${club.name}'s captains can move it.` };
+    const there = await target.members.fetch(member.id).catch(() => null);
+    if (!there || !isServerAdmin(there)) return { error: `You need **Manage Server** in **${target.name}** to bring the team there.` };
+    if (hub.alumni?.[clubKey]?.guild_id === target.id) return { error: `**${club.name}** is already in **${target.name}**.` };
+
+    const tstate = await getGuildState(target.id);
+    if (tstate.clubs.some((c) => c.enabled && c.name.toLowerCase() === club.name.toLowerCase())) return { error: `**${target.name}** already has a club called **${club.name}**.` };
+    const slot = freeTeamSlot(tstate.clubs, []);
+    if (!slot) return { error: `**${target.name}** is full (${MAX_CLUBS} clubs).` };
+    const copy = { ...club };
+    for (const k of Object.keys(copy)) if (/_channel_id$|_role_id$|_message_id$/.test(k)) delete copy[k];
+    delete copy.team_category_id;
+    delete copy.team_id;
+    const fresh = { ...copy, key: slot.club.key, enabled: true, captain_id: member.id, hub_origin: { guild_id: guild.id, name: guild.name, club_key: clubKey } };
+    if (slot.added) tstate.clubs.push(fresh);
+    else tstate.clubs[tstate.clubs.indexOf(slot.club)] = fresh;
+    tstate.boardState[fresh.key] = createBoard();
+    const { data: team } = await supabase
+      .from('teams')
+      .insert({ guild_id: target.id, name: fresh.name, team_type: 'comp', active: true, captain_discord_id: member.id, manager_discord_ids: [] })
+      .select('id')
+      .single();
+    if (team?.id) fresh.team_id = team.id;
+    await saveGuildSettings(target.id, tstate);
+
+    // History: copied, never moved, so a failure can't lose anything
+    const copied = {};
+    for (const table of MOVE_TABLES) {
+      let n = 0;
+      for (let from = 0; from < 20000; from += 500) {
+        const { data, error } = await supabase.from(table).select('*').eq('guild_id', guild.id).eq('club_key', clubKey).range(from, from + 499);
+        if (error || !data?.length) break;
+        const rows = data.map(({ id, ...r }) => ({ ...r, guild_id: target.id, club_key: fresh.key }));
+        const { error: insErr } = await supabase.from(table).insert(rows);
+        if (!insErr) n += rows.length;
+        if (data.length < 500) break;
+      }
+      copied[table] = n;
+    }
+
+    hub.alumni = { ...(hub.alumni || {}), [clubKey]: { guild_id: target.id, guild_name: target.name, club_key: fresh.key, at: new Date().toISOString() } };
+    await saveHub(guild.id, hub);
+    touch(guild.id);
+    return { club: fresh, copied };
+  }
+
   async function toggleTeam(interaction, clubKey, join) {
     const state = await getGuildState(interaction.guildId);
     const club = state.clubs.find((c) => c.key === clubKey && c.enabled);
@@ -842,7 +898,7 @@ function createSocialHub(deps) {
     return false;
   }
 
-  return { handleInteraction, onVoiceStateUpdate, onMemberJoin, touch, setup, board, play, nextGame, hubOf, saveHub, createTeam, toggleTeam, joinTeam, setPublic, publish };
+  return { handleInteraction, onVoiceStateUpdate, onMemberJoin, touch, setup, board, play, nextGame, hubOf, saveHub, createTeam, toggleTeam, joinTeam, moveTeam, setPublic, publish };
 }
 
 module.exports = { createSocialHub, HUB_COMMANDS, pickLobby, liveQueue, isDefaultName, cleanTeamName, freeTeamSlot, lobbySlots, publicSlug, publicSnapshot, MAX_CLUBS };

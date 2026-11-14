@@ -16,10 +16,11 @@ test('cleanText strips mentions and markdown', () => {
 
 test('nextSteps ticks what a team has done and says where to press for the rest', () => {
   const none = nextSteps({ eaLinked: false, onNetwork: false, inLeague: false, inCup: false, outside: [] });
-  assert.deepEqual(none.map((s) => s.done), [false, false, false, false]);
+  assert.deepEqual(none.map((s) => s.done), [false, false, false, false, false]);
+  assert.match(none[4].text, /own server/);
   assert.match(none[0].text, /Link EA Club/);
   assert.match(none[1].text, /Network Setup/);
-  const all = nextSteps({ eaLinked: true, onNetwork: true, inLeague: false, inCup: true, outside: ['VPG'] });
-  assert.deepEqual(all.map((s) => s.done), [true, true, true, true]);
+  const all = nextSteps({ eaLinked: true, onNetwork: true, inLeague: false, inCup: true, outside: ['VPG'], ownServer: 'Owls HQ' });
+  assert.deepEqual(all.map((s) => s.done), [true, true, true, true, true]);
   assert.match(all[3].text, /VPG/);
 });

@@ -642,7 +642,7 @@ const hubRecruit = createHubRecruit({ supabase, hubOf: socialHub.hubOf, saveHub:
 // Hub teams playing each other: friendlies, a weekly-round hub league and a knockout hub cup
 const hubLeague = createHubLeague({ supabase, hubOf: socialHub.hubOf, getGuildState, client: () => client });
 // Under the hub's umbrella: outside leagues and BYOTs hub teams enter as the hub, and each team's next steps
-const hubUmbrella = createHubUmbrella({ supabase, hubOf: socialHub.hubOf, getGuildState });
+const hubUmbrella = createHubUmbrella({ supabase, hubOf: socialHub.hubOf, getGuildState, client: () => client, socialHub: () => socialHub });
 autopilot.onNewMatches(hubXp.onNewMatches);
 // Hub onboarding: #start-here and the optional Get set up card (platform, region, gamertag, positions, Twitch)
 const hubOnboarding = createHubOnboarding({ supabase, hubOf: socialHub.hubOf, autoLink, getUserPrefs, xp: () => hubXp });
