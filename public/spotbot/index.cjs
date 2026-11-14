@@ -92,6 +92,7 @@ const { createKitCatalog } = require('./kit-catalog.cjs');
 const { createHubHighlights } = require('./hub-highlights.cjs');
 const { createHubTournament } = require('./hub-tournament.cjs');
 const { createHubRecruit } = require('./hub-recruit.cjs');
+const { createHubLeague } = require('./hub-league.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -637,6 +638,8 @@ const hubHighlights = createHubHighlights({ hubOf: socialHub.hubOf, saveHub: soc
 const hubTournament = createHubTournament({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, xp: () => hubXp, client: () => client });
 // Team recruiting and Find a team: captains post the lines they need, players see teams ranked by chemistry
 const hubRecruit = createHubRecruit({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, getGuildState, getUserPrefs, socialHub: () => socialHub, client: () => client });
+// Hub teams playing each other: friendlies, a weekly-round hub league and a knockout hub cup
+const hubLeague = createHubLeague({ supabase, hubOf: socialHub.hubOf, getGuildState, client: () => client });
 autopilot.onNewMatches(hubXp.onNewMatches);
 // Hub onboarding: #start-here and the optional Get set up card (platform, region, gamertag, positions, Twitch)
 const hubOnboarding = createHubOnboarding({ supabase, hubOf: socialHub.hubOf, autoLink, getUserPrefs, xp: () => hubXp });
@@ -4248,6 +4251,7 @@ async function routeInteraction(interaction) {
     if (await kitCatalog.handleInteraction(interaction)) return;
     if (await hubTournament.handleInteraction(interaction)) return;
     if (await hubRecruit.handleInteraction(interaction)) return;
+    if (await hubLeague.handleInteraction(interaction)) return;
     if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;

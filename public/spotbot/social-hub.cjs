@@ -250,7 +250,11 @@ function createSocialHub(deps) {
       // Handled by hub-recruit.cjs
       new ButtonBuilder().setCustomId('hr_find').setLabel('Find a team').setEmoji('🔎').setStyle(ButtonStyle.Success)
     );
-    return { embeds: [embed], components: [row, row2, row3], allowedMentions: NO_PINGS };
+    // Handled by hub-league.cjs: friendlies, the hub league and the hub cup between hub teams
+    const row4 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('hl_open').setLabel('Hub League').setEmoji('🏟️').setStyle(ButtonStyle.Primary)
+    );
+    return { embeds: [embed], components: [row, row2, row3, row4], allowedMentions: NO_PINGS };
   }
 
   function teamsLine(guild, state, hub) {
