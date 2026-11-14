@@ -42,6 +42,8 @@ const DEFAULT_CALL_AT = 3;
 const BOARD_SETTLE_MS = 5000;              // batch voice moves into one board edit
 const QUEUE_TTL_MS = 45 * 60 * 1000;       // a Play now with nobody on stays in the queue this long
 const NEXT_COOLDOWN_MS = 5 * 60 * 1000;    // Next game once per lobby per 5 minutes
+const PUBLIC_EVERY_MS = 60 * 1000;          // public page snapshot at most once a minute
+const SITE = process.env.PUBLIC_SITE_URL || 'https://gafferbot.app';
 const NO_PINGS = { parse: [] };
 const CATEGORY_NAME = '🎮 Drop-in Lobbies';
 const BOARD_NAME = 'whos-playing';
@@ -93,6 +95,22 @@ const callAtOf = (club) => {
 };
 
 const isDefaultName = (name) => /^Club \d+$/.test(String(name || ''));
+
+// The public page address for a server: its name in lowercase words, plus a short id when taken
+function publicSlug(name, guildId, taken = false) {
+  const base = String(name || 'hub').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'hub';
+  return taken ? `${base}-${String(guildId).slice(-5)}` : base;
+}
+
+// What the public page shows: lobby counts and open positions (never who is in them), and the
+// weekly leaderboard by display name
+function publicSnapshot(lobbies, leaders) {
+  return {
+    playing: lobbies.reduce((n, l) => n + l.humans, 0),
+    lobbies: lobbies.map((l) => ({ name: l.club.name, humans: l.humans, live: !!l.live, open: l.humans ? l.openLabels.slice(0, 11) : [] })),
+    leaders: leaders.slice(0, 10),
+  };
+}
 
 // A team name players typed: no mentions or markdown tricks, 2 to 40 characters
 function cleanTeamName(raw) {
@@ -242,7 +260,64 @@ function createSocialHub(deps) {
     return `🛡️ Teams: ${teams.map((t) => (inVoice(t) ? `**${t.name}** (${inVoice(t)} on)` : t.name)).join(' · ')}`.slice(0, 1000);
   }
 
+  // ---------- Public page (gafferbot.app/play/<slug>) ----------
+
+  const lastPublic = new Map();
+  async function publish(guild, force = false) {
+    const hub = await hubOf(guild.id);
+    if (!hub.on || !hub.public_page) return;
+    if (!force && Date.now() - (lastPublic.get(guild.id) || 0) < PUBLIC_EVERY_MS) return;
+    lastPublic.set(guild.id, Date.now());
+    const state = await getGuildState(guild.id);
+    const lobbies = await lobbiesOf(guild, state, hub);
+    const top = xp() ? await xp().leaderboard(guild.id, 'week', 10).catch(() => []) : [];
+    const leaders = [];
+    for (const r of top) {
+      const m = guild.members.cache.get(r.discord_user_id) || (await guild.members.fetch(r.discord_user_id).catch(() => null));
+      leaders.push({ name: m?.displayName || 'Player', xp: r.week_xp, level: r.level || null });
+    }
+    const { error } = await supabase.from('hub_public').upsert(
+      {
+        guild_id: guild.id,
+        slug: hub.public_slug,
+        name: guild.name,
+        icon_url: guild.iconURL?.({ extension: 'png', size: 128 }) || null,
+        invite_code: hub.public_invite || null,
+        members: guild.memberCount || null,
+        snapshot: publicSnapshot(lobbies, leaders),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'guild_id' }
+    );
+    if (error) console.warn(`[hub] public page update failed: ${error.message}`);
+  }
+
+  // Admins switch the public page on or off; on makes a slug and a server invite for its Join button
+  async function setPublic(guild, on) {
+    const hub = { ...(await hubOf(guild.id)) };
+    if (!on) {
+      hub.public_page = false;
+      await saveHub(guild.id, hub);
+      await supabase.from('hub_public').delete().eq('guild_id', guild.id);
+      return { off: true };
+    }
+    if (!hub.public_slug) {
+      const { data: taken } = await supabase.from('hub_public').select('guild_id').eq('slug', publicSlug(guild.name, guild.id)).neq('guild_id', guild.id).maybeSingle();
+      hub.public_slug = publicSlug(guild.name, guild.id, Boolean(taken));
+    }
+    if (!hub.public_invite) {
+      const ch = await guild.channels.fetch(hub.start_channel_id || hub.board_channel_id).catch(() => null);
+      const inv = ch?.createInvite ? await ch.createInvite({ maxAge: 0, maxUses: 0, unique: true, reason: 'GafferBot Social Hub public page' }).catch(() => null) : null;
+      hub.public_invite = inv?.code || null;
+    }
+    hub.public_page = true;
+    await saveHub(guild.id, hub);
+    await publish(guild, true);
+    return { url: `${SITE}/play/${hub.public_slug}`, invite: hub.public_invite };
+  }
+
   async function refreshBoard(guild) {
+    publish(guild).catch((err) => console.warn(`[hub] public page failed: ${err.message}`));
     const hub = await hubOf(guild.id);
     if (!hub.on || !hub.board_channel_id || !hub.board_message_id) return;
     const ch = await guild.channels.fetch(hub.board_channel_id).catch(() => null);
@@ -662,7 +737,12 @@ function createSocialHub(deps) {
           `✅ Social Hub is live with **${r.lobbies} lobbies**. The board is in <#${r.boardCh.id}>.` +
           (r.made.length ? `\nMade: ${r.made.join(', ')}.` : '') +
           '\nEvery lobby is in casual mode: spots fill from voice and the bench rotates. To get stats, recaps and Smalls tags, link each lobby to the EA club it plays in: join the lobby, select it on the Spots Panel, then **/manager → Admin → Link EA Club**.' +
-          (r.note ? `\n${r.note.trim()}` : ''),
+          (r.note ? `\n${r.note.trim()}` : '') +
+          '\n\n🌍 **Public page:** show your live lobbies, the weekly leaderboard and a Join button on gafferbot.app, so anyone can find the hub. It shows lobby counts and open positions, never who is in a lobby.',
+        components: [new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('sh_public:on').setLabel('Turn on the public page').setEmoji('🌍').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId('sh_public:off').setLabel('Keep it private').setStyle(ButtonStyle.Secondary)
+        )],
       });
     }
     if (sub === 'board') {
@@ -721,6 +801,15 @@ function createSocialHub(deps) {
       await interaction.editReply({ embeds: [embed], components: id === 'sh_me' ? [share] : [], allowedMentions: NO_PINGS });
       return true;
     }
+    if (id.startsWith('sh_public:')) {
+      if (!isServerAdmin(interaction.member)) return interaction.reply({ content: '❌ Only server admins can change the public page.', flags: 64 }).then(() => true);
+      await interaction.deferReply({ flags: 64 });
+      const r = await setPublic(interaction.guild, id.endsWith(':on')).catch((err) => ({ error: err.message }));
+      await interaction.editReply({
+        content: r.error ? `❌ ${r.error}` : r.off ? '🔒 The public page is off.' : `🌍 The public page is live: ${r.url}${r.invite ? '' : '\n⚠️ I couldn\'t make an invite for its Join button (I need **Create Invite**).'}`,
+      });
+      return true;
+    }
     if (id === 'sh_team') {
       await interaction.showModal(teamModal());
       return true;
@@ -733,7 +822,7 @@ function createSocialHub(deps) {
     return false;
   }
 
-  return { handleInteraction, onVoiceStateUpdate, onMemberJoin, touch, setup, board, play, nextGame, hubOf, saveHub, createTeam, toggleTeam, joinTeam };
+  return { handleInteraction, onVoiceStateUpdate, onMemberJoin, touch, setup, board, play, nextGame, hubOf, saveHub, createTeam, toggleTeam, joinTeam, setPublic, publish };
 }
 
-module.exports = { createSocialHub, HUB_COMMANDS, pickLobby, liveQueue, isDefaultName, cleanTeamName, freeTeamSlot, lobbySlots, MAX_CLUBS };
+module.exports = { createSocialHub, HUB_COMMANDS, pickLobby, liveQueue, isDefaultName, cleanTeamName, freeTeamSlot, lobbySlots, publicSlug, publicSnapshot, MAX_CLUBS };

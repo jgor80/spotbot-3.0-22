@@ -37,6 +37,7 @@ const SquadIQPanel = lazy(() => import("./pages/SquadIQPanel"));
 const ControlRoomPage = lazy(() => import("./pages/ControlRoomPage"));
 const StreamOverlay = lazy(() => import("./pages/StreamOverlay"));
 const TermsPage = lazy(() => import("./pages/TermsPage"));
+const PlayPage = lazy(() => import("./pages/PlayPage"));
 const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const FutHomePage = lazy(() => import("./pages/fut/FutHomePage"));
@@ -102,6 +103,7 @@ const App = () => (
                   {/* OBS browser source for /premium overlay: public, token in the URL */}
                   <Route path="/overlay/:token" element={<StreamOverlay />} />
                   <Route path="/terms" element={<TermsPage />} />
+                  <Route path="/play/:slug" element={<PlayPage />} />
                   <Route path="/privacy" element={<PrivacyPage />} />
                   <Route path="/welcome" element={<LandingPage />} />
                   <Route path="/" element={<HomeRoute />} />

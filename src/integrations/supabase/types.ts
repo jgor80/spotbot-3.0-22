@@ -412,6 +412,39 @@ export type Database = {
         }
         Relationships: []
       }
+      hub_public: {
+        Row: {
+          guild_id: string
+          slug: string
+          name: string
+          icon_url: string | null
+          invite_code: string | null
+          members: number | null
+          snapshot: Json
+          updated_at: string
+        }
+        Insert: {
+          guild_id: string
+          slug: string
+          name: string
+          icon_url?: string | null
+          invite_code?: string | null
+          members?: number | null
+          snapshot?: Json
+          updated_at?: string
+        }
+        Update: {
+          guild_id?: string
+          slug?: string
+          name?: string
+          icon_url?: string | null
+          invite_code?: string | null
+          members?: number | null
+          snapshot?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       hub_players: {
         Row: {
           guild_id: string
