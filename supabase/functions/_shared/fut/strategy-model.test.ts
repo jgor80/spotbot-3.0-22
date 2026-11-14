@@ -1,7 +1,7 @@
 // Daily Strategy learning: settling picks, learning the model, applying it, the bot job end to end (memory db)
 // and the migration on real PostgreSQL (PGlite).
 import { PGlite } from "npm:@electric-sql/pglite@0.5.15";
-import { buyOutlook, forecast24, learnModel, learnMoves, MIN_RESULTS, moveBucket, reachChance, resolvePick, sellOutlook, type BuyFeatures, type LoggedPick } from "./strategy-model.ts";
+import { buyOutlook, cleanSeries, forecast24, learnModel, learnMoves, MIN_RESULTS, moveBucket, reachChance, resolvePick, sellOutlook, type BuyFeatures, type LoggedPick } from "./strategy-model.ts";
 import { buildStrategy, followedTrades, marketTiming, cardStats, runStrategyLearning, scoreBuys, type SeriesCard } from "./strategy.ts";
 import { futMemoryDb } from "./test-db.ts";
 function assert(value: unknown, message = "Assertion failed"): asserts value { if (!value) throw new Error(message); }
@@ -176,6 +176,31 @@ Deno.test("price moves are trusted only when they beat guessing on refreshes the
   const m = learnMoves([...zig, ...flat])!;
   assert(m.check && m.check.skill > 0.05 && m.trust === 1 && m.check.hit > 0.9, JSON.stringify(m.check));
   assert(learnModel("console", [], NOW, m).lessons.some((l) => l.startsWith("Tested on the newest")), "says how it tested");
+});
+
+Deno.test("2026-11-14 review: refresh bursts collapse, one-off price glitches are smoothed", () => {
+  // A dozen refreshes within hours (bot restarts), then twice a day; one listing glitch at 9,000
+  const ages = [140, 139, 138, 137, 136, 135, 120, 108, 96, 84, 72, 60, 48, 36, 24, 12, 0];
+  const prices = [3_000, 3_100, 3_000, 2_900, 3_000, 3_050, 3_000, 3_000, 9_000, 3_000, 2_950, 3_000, 3_000, 1_200, 3_000, 2_900, 2_800];
+  const c = cleanSeries({ prices, ages });
+  assert(c.ages.join() === "135,120,108,96,84,72,60,48,36,24,12,0", c.ages.join());
+  assert(!c.prices.includes(9_000) && !c.prices.includes(1_200) && c.prices.at(-1) === 2_800, c.prices.join());
+});
+
+Deno.test("2026-11-14 review: picks count only once their full 4 days have passed (early hits made it look 100% right)", () => {
+  const young = Array.from({ length: 40 }, (_, i) => pick({ ea_item_id: i, picked_at: "2026-11-09T06:00:00Z", outcome: "hit" }));
+  const old = Array.from({ length: 40 }, (_, i) => pick({ ea_item_id: 100 + i, picked_at: "2026-11-01T06:00:00Z", outcome: i < 10 ? "hit" : "miss" }));
+  const m = learnModel("console", [...young, ...old], NOW);
+  assert(m.buys.n === 40 && m.buys.rate === 0.25, JSON.stringify(m.buys));
+});
+
+Deno.test("2026-11-14 review: no silver or bronze flips, targets capped at 30% above today", () => {
+  const timing = marketTiming(NOW);
+  const mk = (id: number, extra: Partial<SeriesCard>, prices: number[]): SeriesCard => ({ ea_item_id: id, name: `C${id}`, version: "Rare", rating: 80, position: "ST", is_icon: false, is_hero: false, tracked: true, prices, ages: prices.map((_, i) => (prices.length - 1 - i) * 12), ...extra });
+  const silver = mk(1, { rating: 70 }, [3_000, 3_000, 3_000, 3_000, 3_000, 3_000, 2_500, 2_500]);
+  const deep = mk(2, {}, [10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 6_000, 6_000]);
+  const out = scoreBuys([silver, deep].map((card) => ({ card, stats: cardStats(card, 84)! })), timing, { max_price: 1e9, min_roi: 0.03, owned: new Set() });
+  assert(out.length === 1 && out[0]!.ea_item_id === 2 && out[0]!.sell_at === 7_800, JSON.stringify(out.map((b) => [b.ea_item_id, b.sell_at])));
 });
 
 Deno.test("strategy learning tables: service role only", async () => {

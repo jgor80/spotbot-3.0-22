@@ -15,7 +15,7 @@
 import { DEFAULT_MARKET_RULES, netAfterTax, roundToStep, stepAt } from "./xilab/market/rules.ts";
 import { FutDbError, FutError, type FutDb } from "./service.ts";
 import { liveFutggPrices, type LivePrices } from "./futgg-live.ts";
-import { bounceBand, buyOutlook, discountBand, forecast24, learnModel, learnMoves, moveBucket, priceBand, resolvePick, sellOutlook, trendBand, WINDOW_DAYS,
+import { bounceBand, buyOutlook, cleanSeries, discountBand, forecast24, learnModel, learnMoves, moveBucket, priceBand, resolvePick, sellOutlook, trendBand, WINDOW_DAYS,
   type BuyFeatures, type LoggedPick, type SellFeatures, type StrategyModel } from "./strategy-model.ts";
 
 type Row = Record<string, unknown>;
@@ -241,6 +241,9 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
   const out: BuyPick[] = [];
   for (const { card, stats: s } of cards) {
     if (!card.tracked || s.points < 6 || s.latest_age_h > 13 || s.latest < 1000 || s.latest > o.max_price) continue;
+    // Silver and bronze cards trade too thinly: their "prices" are a listing or two, and the 2026-11-14 review found
+    // their dips and doublings were mostly that flicker, not money anyone could make.
+    if (cardKind(card) === "silver_bronze") continue;
     if (s.new_card) continue; // fresh promo cards usually keep falling for days
     if (o.fresh && !o.fresh.has(card.ea_item_id)) continue; // no current Buy Now price from FUT.GG: don't guess
     const discount = (s.median - s.latest) / s.median;
@@ -251,7 +254,8 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
     if (s.prev !== null && s.latest > s.prev * 1.25) continue;
     if (s.falling >= 3 && s.latest <= s.min) continue; // still making new lows: a falling knife
     const buy_at = down(s.latest);
-    const target_raw = down(Math.min(s.median, s.max * 0.98));
+    // Aim for the usual price, but never more than 30% above today's: dips that paid in our data climbed 10 to 30%.
+    const target_raw = down(Math.min(s.median, s.max * 0.98, s.latest * 1.3));
     // Learning: when picks usually peak short of the middle price, aim for the part of the gap they really reach.
     let sell_at = reach < 1 && target_raw > buy_at ? Math.max(buy_at, down(buy_at + (target_raw - buy_at) * reach)) : target_raw;
     // Before enough picks have settled: aim for the rise that half the cards in the same spot reached within 2 days.
@@ -264,7 +268,10 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
     if (profit < MIN_PROFIT || roi < o.min_roi) continue;
     const max_buy = Math.max(buy_at, down(Math.min(net(sell_at) / (1 + o.min_roi), net(sell_at) - MIN_PROFIT)));
     const kind = cardKind(card), range = (s.max - s.min) / s.median;
-    let conf = clamp(s.points / 12, 0.4, 1) * (s.rising >= 1 || s.falling === 0 ? 1 : 0.75) * (range > 0.6 ? 0.6 : 1);
+    if (range > 1) continue; // more than doubled and halved in a week: not a price you can trade on
+    // No bonus for a bounce: in our data, dips that had already bounced did worst over the next 2 days (the rebound
+    // had happened), while dips still falling or flat recovered more often.
+    let conf = clamp(s.points / 12, 0.4, 1) * (range > 0.6 ? 0.6 : 1);
     if (s.change_72h !== null && s.change_72h < -20) conf *= 0.7;
     const why = [`${pct(discount)}% under its 7-day middle price (${c(s.median)}).`];
     if (s.rising >= 1) why.push(`Bounced off its low: up ${s.rising === 1 ? "since the last refresh" : `${s.rising} refreshes in a row`}.`);
@@ -275,6 +282,7 @@ export function scoreBuys(cards: { card: SeriesCard; stats: CardStats }[], timin
     if (o.owned.has(card.ea_item_id)) why.push("You already own a copy.");
     const risks: string[] = [];
     if (s.falling >= 2) risks.push(`Fell ${s.falling} refreshes before the latest one.`);
+    if (s.rising >= 1) risks.push("It has already bounced: in our data, dips that had bounced gained less over the next 2 days than ones still at their low.");
     if (range > 0.6) risks.push("Very jumpy price this week.");
     if (s.change_72h !== null && s.change_72h < -20) risks.push(`Down ${Math.abs(s.change_72h)}% in 3 days: could be a new promo pulling it down.`);
     if (kind === "promo") risks.push("Promo card: supply can jump if it comes back in packs or an SBC.");
@@ -373,7 +381,7 @@ export function scorePast(past: PastPlan[], series: Map<number, SeriesCard>, lat
 
 export function buildStrategy(raw: StrategyInput) {
   const lived = withLive(raw.series, raw.live);
-  const input = { ...raw, series: lived.series };
+  const input = { ...raw, series: { ...lived.series, cards: lived.series.cards.map((c) => cleanSeries(c)) } };
   const timing = marketTiming(input.now);
   const risk = RISK[input.risk ?? "normal"];
   const byEa = new Map(input.series.cards.map((card) => [card.ea_item_id, card]));
@@ -641,7 +649,7 @@ export async function dailyStrategy(db: FutDb, userId: string, platform: "consol
   const series = { latest: (sd.latest as string | null) ?? null, window_h: snaps.length ? Math.max(...snaps) : 0, cards: arr<SeriesCard>(sd.cards) ?? [] };
   // Before the learning job has run, learn how prices moved from this week's prices right here.
   if (!model?.ready && !model?.moves) {
-    const moves = learnMoves(series.cards.filter((c) => c.tracked).map((c) => ({ prices: c.prices, ages: c.ages, kind: cardKind(c) })));
+    const moves = learnMoves(series.cards.filter((c) => c.tracked).map((c) => ({ ...cleanSeries(c), kind: cardKind(c) })));
     if (moves) model = model ? { ...model, moves, lessons: learnModel(platform, [], now, moves).lessons } : learnModel(platform, [], now, moves);
   }
 
@@ -699,18 +707,25 @@ function marketSells(cards: SeriesCard[], stats: Map<number, CardStats>, timing:
 export async function runStrategyLearning(db: FutDb, now = Date.now()) {
   const out: Record<string, unknown> = {};
   for (const platform of ["console", "pc"] as const) {
-    const { data: open, error: openErr } = await db.from("strategy_pick_log").select("*").eq("platform", platform).is("outcome", null).order("picked_at", { ascending: true }).limit(5000);
+    // Every pick from the last 10 days, settled or not: each run re-checks them against the cleaned prices, so a
+    // "hit" that was only a price glitch is taken back (2026-11-14 review).
+    const { data: open, error: openErr } = await db.from("strategy_pick_log").select("*").eq("platform", platform).gte("picked_at", new Date(now - 10 * 86_400_000).toISOString()).order("picked_at", { ascending: true }).limit(5000);
     fail(openErr);
     const openRows = (open ?? []) as LoggedPick[];
     const { data: sd, error } = await db.rpc("strategy_price_series", { p_platform: platform, p_ids: [...new Set(openRows.map((r) => Number(r.ea_item_id)))].slice(0, 5000), p_days: 30 });
     if (error) throw new FutError(`Prices are unavailable: ${error.message}`, 500);
     const d = (sd ?? {}) as Row, latest = (d.latest as string | null) ?? null;
     if (!latest) { out[platform] = { skipped: "no prices" }; continue; }
-    const cards = arr<SeriesCard>(d.cards) ?? [], snaps = arr<number>(d.snapshots) ?? [];
+    const cards = (arr<SeriesCard>(d.cards) ?? []).map((c) => cleanSeries(c)), snaps = arr<number>(d.snapshots) ?? [];
     const byEa = new Map(cards.map((c) => [c.ea_item_id, c]));
 
     // 1. Settle earlier picks
-    const settled = openRows.flatMap((r) => { const x = resolvePick({ ...r, ea_item_id: Number(r.ea_item_id) }, byEa.get(Number(r.ea_item_id)), latest, now); return x ? [x] : []; });
+    const settled = openRows.flatMap((r) => {
+      const base = { ...r, ea_item_id: Number(r.ea_item_id), outcome: null, resolved_at: null, hours_to_hit: null, best_price: null, final_price: null };
+      const x = resolvePick(base, byEa.get(Number(r.ea_item_id)), latest, now);
+      if (x) return x.outcome === r.outcome && x.best_price === r.best_price && x.final_price === r.final_price ? [] : [x];
+      return r.outcome ? [base] : []; // no longer settled once the glitch is gone: open again
+    });
     for (let i = 0; i < settled.length; i += 500) fail((await db.from("strategy_pick_log").upsert(settled.slice(i, i + 500), { onConflict: "platform,side,ea_item_id,picked_at" })).error);
 
     // 2. Log this refresh's candidates once (window limited to 7 days like the page)

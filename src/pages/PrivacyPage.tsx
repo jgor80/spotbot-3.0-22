@@ -36,6 +36,11 @@ export default function PrivacyPage() {
           <strong>Premium:</strong> which servers hold a GafferBot Premium subscription, as reported by Discord.
           Discord handles payment; we never receive card or billing details.
         </li>
+        <li>
+          <strong>Public hub pages:</strong> if a Social Hub server's admins turn on its public page, anyone can
+          see the server's name, icon, invite link, how many people are in each lobby, open positions and the
+          weekly leaderboard's display names. It never shows who is in a lobby.
+        </li>
       </ul>
 
       <h2>How we use it</h2>

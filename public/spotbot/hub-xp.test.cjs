@@ -134,3 +134,17 @@ test('record saves rows and posts unlocks in the feed without pings', async () =
   assert.match(sent.at(-1).content, /Drop-in Regular/);
   assert.deepEqual(sent.at(-1).allowedMentions, { parse: [] });
 });
+
+const { seasonKeyOf, seasonLabel } = require('./hub-xp.cjs');
+
+test('season XP resets each month while levels and total XP stay', () => {
+  let r = applyActivity(blankRow('g', 'a'), { games: 2 }, { now: new Date('2026-11-30T12:00:00Z') }).row;
+  assert.equal(r.season_key, '2026-11');
+  assert.equal(r.season_xp, 40);
+  r = applyActivity(r, { games: 1 }, { now: new Date('2026-12-01T09:00:00Z') }).row;
+  assert.equal(r.season_key, '2026-12');
+  assert.equal(r.season_xp, 20);
+  assert.equal(r.xp, 60);
+  assert.equal(seasonKeyOf(new Date('2027-01-31T23:00:00Z')), '2027-01');
+  assert.equal(seasonLabel('2026-11'), 'November 2026');
+});

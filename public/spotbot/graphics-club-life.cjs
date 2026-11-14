@@ -3,6 +3,8 @@
 //   wrappedCard     one player's Club Wrapped for a month or season
 //   awardsPoster    the Awards Night ceremony: each category's winner with their portrait
 //   divisionPoster  promotion or relegation
+//   draftPoster     a Social Hub pickup draft: two teams with captains and positions
+//   hubCard         a player's Social Hub card (level, stats, best partners, badges, invite link) to share
 // Player pictures are only ever their own saved Studio card art or original uploads, passed in as data URLs.
 
 const G = require('./graphics.cjs');
@@ -187,4 +189,75 @@ function divisionPoster(d) {
   return G.render(svg);
 }
 
-module.exports = { badgeStrip, wrappedCard, awardsPoster, divisionPoster, TIER_STYLE, medal };
+
+// d: { playerName, serverName, accent, photo, level, tierName, xp, into, span, tiles: [{ label, value, sub }] (6),
+//      partners: [{ name, score }], badges: [{ glyph, tier }], invite: 'discord.gg/abc' }
+function hubCard(d) {
+  const W = 1080, H = 1350;
+  const ac = G.hex(hexToNum(d.accent, 0x2ecc71));
+  const tiles = (d.tiles || []).slice(0, 6);
+  const tileW = 470, tileH = 150;
+  const tileSvg = tiles.map((t, i) => {
+    const x = 60 + (i % 2) * (tileW + 20);
+    const y = 470 + Math.floor(i / 2) * (tileH + 18);
+    return `<rect x="${x}" y="${y}" width="${tileW}" height="${tileH}" rx="18" fill="#ffffff" fill-opacity="0.06" stroke="#ffffff" stroke-opacity="0.12"/>
+      <text x="${x + 26}" y="${y + 40}" font-family="${BODY}" font-weight="700" font-size="17" letter-spacing="2" fill="${ac}">${esc(clip(t.label, 34).toUpperCase())}</text>
+      <text x="${x + 26}" y="${y + 100}" font-family="${HEAD}" font-weight="700" font-size="${fit(t.value, tileW - 52, 54, 0.5, 22)}" fill="#ffffff">${esc(clip(t.value, 26))}</text>
+      ${t.sub ? `<text x="${x + 26}" y="${y + 132}" font-family="${BODY}" font-size="${fit(t.sub, tileW - 52, 18, 0.56, 12)}" fill="#cbd5e1">${esc(clip(t.sub, 48))}</text>` : ''}`;
+  }).join('');
+  const pct = Math.max(0, Math.min(1, (d.into || 0) / Math.max(1, d.span || 1)));
+  const partners = (d.partners || []).slice(0, 3);
+  const partnerSvg = partners.map((p, i) => `<text x="60" y="${1035 + i * 40}" font-family="${BODY}" font-size="26" fill="#e2e8f0">${esc(clip(p.name, 28))}</text>
+      <text x="${W / 2 - 40}" y="${1035 + i * 40}" text-anchor="end" font-family="${HEAD}" font-weight="700" font-size="28" fill="${ac}">${esc(String(p.score))}</text>`).join('');
+  const badges = (d.badges || []).slice(0, 5);
+  const badgeSvg = badges.map((b, i) => medal(W / 2 + 60 + i * 92, 1075, 36, b.tier, b.glyph || '★')).join('');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <defs><linearGradient id="hbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1220"/><stop offset="0.6" stop-color="#111827"/><stop offset="1" stop-color="${ac}" stop-opacity="0.55"/></linearGradient></defs>
+    <rect width="${W}" height="${H}" fill="url(#hbg)"/>
+    <rect width="${W}" height="10" fill="${ac}"/>
+    <text x="60" y="88" font-family="${HEAD}" font-weight="700" font-size="30" letter-spacing="4" fill="${ac}">HUB CARD</text>
+    <text x="${W - 60}" y="88" text-anchor="end" font-family="${HEAD}" font-size="28" letter-spacing="2" fill="#cbd5e1">${esc(clip(String(d.serverName || '').toUpperCase(), 30))}</text>
+    ${portrait(W - 190, 250, 110, d.photo, d.playerName, ac)}
+    <text x="60" y="200" font-family="${HEAD}" font-weight="700" font-size="${fit(d.playerName, 680, 92, 0.5, 40)}" fill="#ffffff">${esc(clip(d.playerName, 22).toUpperCase())}</text>
+    <text x="60" y="270" font-family="${HEAD}" font-weight="700" font-size="54" fill="${ac}">LEVEL ${esc(String(d.level || 1))} ${esc(String(d.tierName || '').toUpperCase())}</text>
+    <rect x="60" y="310" width="700" height="22" rx="11" fill="#ffffff" fill-opacity="0.12"/>
+    <rect x="60" y="310" width="${Math.round(700 * pct)}" height="22" rx="11" fill="${ac}"/>
+    <text x="60" y="372" font-family="${BODY}" font-size="24" fill="#94a3b8">${esc(`${d.xp || 0} XP · ${d.into || 0}/${d.span || 0} to level ${(d.level || 1) + 1}`)}</text>
+    ${tileSvg}
+    <text x="60" y="990" font-family="${BODY}" font-weight="700" font-size="17" letter-spacing="2" fill="${ac}">BEST PARTNERS</text>
+    ${partnerSvg || `<text x="60" y="1035" font-family="${BODY}" font-size="24" fill="#94a3b8">Still meeting the squad</text>`}
+    ${badges.length ? `<text x="${W / 2 + 24}" y="990" font-family="${BODY}" font-weight="700" font-size="17" letter-spacing="2" fill="${ac}">BADGES</text>${badgeSvg}` : ''}
+    <rect x="60" y="1190" width="${W - 120}" height="96" rx="20" fill="${ac}"/>
+    <text x="${W / 2}" y="1252" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="${fit(`PLAY WITH US · ${d.invite || ''}`, W - 180, 40, 0.5, 20)}" fill="#0b1220">${esc(d.invite ? `PLAY WITH US · ${d.invite}` : 'PLAY WITH US ANY TIME')}</text>
+    <text x="${W / 2}" y="${H - 24}" text-anchor="middle" font-family="${BODY}" font-size="15" fill="#64748b">GAFFERBOT SOCIAL HUB · gafferbot.app/hub</text>
+  </svg>`;
+  return G.render(svg);
+}
+
+// d: { serverName, teams: [{ name, players: [{ name, position, captain }] }, ...2] }
+function draftPoster(d) {
+  const W = 1080;
+  const rows = Math.max(...d.teams.map((t) => t.players.length), 1);
+  const H = 300 + rows * 64 + 80;
+  const colours = ['#f97316', '#3b82f6'];
+  const col = (t, i) => {
+    const x = 60 + i * 500;
+    const c = colours[i];
+    return `<rect x="${x}" y="200" width="460" height="${rows * 64 + 70}" rx="20" fill="${c}" fill-opacity="0.12" stroke="${c}" stroke-opacity="0.5"/>
+      <text x="${x + 24}" y="246" font-family="${HEAD}" font-weight="700" font-size="${fit(`TEAM ${t.name}`, 410, 34, 0.5, 18)}" fill="${c}">${esc(clip(`TEAM ${String(t.name || '').toUpperCase()}`, 26))}</text>
+      ${t.players.map((p, j) => `<text x="${x + 24}" y="${300 + j * 64}" font-family="${BODY}" font-weight="${p.captain ? 700 : 400}" font-size="28" fill="#ffffff">${esc(clip(`${p.captain ? 'C · ' : ''}${p.name}`, 24))}</text>
+        <text x="${x + 436}" y="${300 + j * 64}" text-anchor="end" font-family="${HEAD}" font-weight="700" font-size="26" fill="${c}">${esc(p.position || '')}</text>`).join('')}`;
+  };
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    <rect width="${W}" height="${H}" fill="#0b1220"/>
+    <rect width="${W / 2}" height="10" fill="${colours[0]}"/><rect x="${W / 2}" width="${W / 2}" height="10" fill="${colours[1]}"/>
+    <text x="60" y="88" font-family="${HEAD}" font-weight="700" font-size="30" letter-spacing="4" fill="#e2e8f0">PICKUP DRAFT</text>
+    <text x="${W - 60}" y="88" text-anchor="end" font-family="${HEAD}" font-size="28" letter-spacing="2" fill="#94a3b8">${esc(clip(String(d.serverName || '').toUpperCase(), 30))}</text>
+    <text x="${W / 2}" y="160" text-anchor="middle" font-family="${HEAD}" font-weight="700" font-size="56" fill="#ffffff">${esc(clip(String(d.teams[0].name || '').toUpperCase(), 14))} VS ${esc(clip(String(d.teams[1].name || '').toUpperCase(), 14))}</text>
+    ${d.teams.map(col).join('')}
+    <text x="${W / 2}" y="${H - 24}" text-anchor="middle" font-family="${BODY}" font-size="15" fill="#64748b">GAFFERBOT SOCIAL HUB</text>
+  </svg>`;
+  return G.render(svg);
+}
+
+module.exports = { badgeStrip, wrappedCard, awardsPoster, divisionPoster, hubCard, draftPoster, TIER_STYLE, medal };
