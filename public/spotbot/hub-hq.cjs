@@ -20,7 +20,7 @@ const path = require('path');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder, ChannelType, PermissionsBitField } = require('discord.js');
 const G = require('./graphics.cjs');
 const { isBotOwner } = require('./perm-check.cjs');
-const { guides, GUIDE_TAGS, FREE_IMAGES, IMAGE_PACKS } = require('./hub-guides.cjs');
+const { guides, GUIDE_TAGS, FREE_IMAGES, FREE_MONTHLY, FREE_TEXT, IMAGE_PACKS } = require('./hub-guides.cjs');
 
 const F = PermissionsBitField.Flags;
 const NO_PINGS = { parse: [] };
@@ -162,7 +162,7 @@ function hqPosts({ inviteUrl, ch, hubName }) {
       key: 'pricing',
       channel: 'pricing',
       title: 'Pricing: free, plus AI image packs',
-      banner: { headline: 'Free for every club', line: `Every feature free. ${FREE_IMAGES} AI images free, then image packs.`, chips: ['Every feature', 'Lineups', 'EA stats', `${FREE_IMAGES} free AI images`, ...IMAGE_PACKS.map((p) => `${p.images} for $${p.price}`)] },
+      banner: { headline: 'Free for every club', line: `Every feature free. ${FREE_MONTHLY} AI images free every month.`, chips: ['Every feature', 'Lineups', 'EA stats', `${FREE_IMAGES} free to start`, `${FREE_MONTHLY} free a month`, ...IMAGE_PACKS.slice(0, 1).map((p) => `${p.images} for $${p.price}`)] },
       links: [['Add to Discord', inviteUrl], ['Buy image packs', `${SITE}/billing`], ['Donate', DONATE_URL]],
       description: [
         'GafferBot is **free**: every feature, every server, no card needed.',
@@ -172,7 +172,7 @@ function hqPosts({ inviteUrl, ch, hubName }) {
         '• Recruiting, free agents and the Network',
         '• Lineup graphics, player cards and the club newspaper',
         '',
-        `**AI images** cost us money to make, so each server gets **${FREE_IMAGES} free**. After that, buy an image pack:`,
+        `**AI images** cost us money to make, so each server gets **${FREE_TEXT}**. Need more? Buy an image pack:`,
         ...IMAGE_PACKS.map((p) => `• **${p.images} images: $${p.price}**`),
         `Packs are on the website (${SITE}/billing) and in Discord's store, at the same price.`,
         '',

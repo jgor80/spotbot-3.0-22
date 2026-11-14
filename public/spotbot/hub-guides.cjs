@@ -9,7 +9,9 @@ const SITE = process.env.PUBLIC_SITE_URL || 'https://gafferbot.app';
 const GUIDE_TAGS = ['Start here', 'Managers', 'Players', 'Stats', 'Lineups', 'Graphics', 'Website', 'FUT', 'Social Hub', 'Network', 'AI', 'Pricing', 'Help'];
 
 // Kept in step with supabase/functions/_shared/billing.ts (free welcome images and DEFAULT_PACKS)
-const FREE_IMAGES = 5;
+const FREE_IMAGES = 20; // welcome images, once per server
+const FREE_MONTHLY = 10; // free images every month
+const FREE_TEXT = `${FREE_IMAGES} free AI images to start, then ${FREE_MONTHLY} more free every month`;
 const IMAGE_PACKS = [{ images: 25, price: '4.99' }, { images: 70, price: '12.99' }];
 
 function guides({ ch = (k) => `#${k}` } = {}) {
@@ -162,7 +164,7 @@ function guides({ ch = (k) => `#${k}` } = {}) {
       key: 'graphics',
       title: '09 · Graphics Studio and AI images',
       tags: ['Graphics', 'Pricing'],
-      banner: { headline: 'Graphics in your colours', line: `Lineups, posters and cards. ${FREE_IMAGES} AI images free.`, chips: ['Player cards', 'Match posters', 'Lineups', 'Banners', 'Recruiting posters', 'AI images'] },
+      banner: { headline: 'Graphics in your colours', line: `Lineups, posters and cards. ${FREE_MONTHLY} AI images free a month.`, chips: ['Player cards', 'Match posters', 'Lineups', 'Banners', 'Recruiting posters', 'AI images'] },
       body: [
         '**The Graphics Studio** makes posts in your club\'s colours, crest and kit: **Player Card**, **Match Poster**, **Lineup**, **Banner**, **Recruiting Poster** and **Competition** graphics.',
         '',
@@ -170,7 +172,7 @@ function guides({ ch = (k) => `#${k}` } = {}) {
         '• **AI Images** turns a photo into match-day art. You see a private preview first and only post it if you like it (**Post it** or **Discard**).',
         '• **My Cards** keeps your cards; **Delete Card** removes one.',
         '',
-        `**What it costs:** lineups, recaps, stats graphics and the newspaper are free. **AI images** cost us money to make, so each server gets **${FREE_IMAGES} free**, then buys an image pack: ${IMAGE_PACKS.map((p) => `**${p.images} for $${p.price}**`).join(' or ')}. Packs are at ${SITE}/billing and in Discord's store, at the same price.`,
+        `**What it costs:** lineups, recaps, stats graphics and the newspaper are free. **AI images** cost us money to make, so each server gets **${FREE_TEXT}**. Need more? Buy an image pack: ${IMAGE_PACKS.map((p) => `**${p.images} for $${p.price}**`).join(' or ')}. Packs are at ${SITE}/billing and in Discord's store, at the same price.`,
         '',
         '**Premium extras (/manager → Premium):** Player Cards, Team of the Week, a Stream Overlay for OBS, Trophies and the Assistant Coach.',
       ].join('\n'),
@@ -287,11 +289,11 @@ function guides({ ch = (k) => `#${k}` } = {}) {
       key: 'pricing',
       title: '16 · Pricing and image packs',
       tags: ['Pricing'],
-      banner: { headline: 'Free, plus AI image packs', line: `Every feature free. ${FREE_IMAGES} AI images free per server.`, chips: ['Every feature', `${FREE_IMAGES} free AI images`, ...IMAGE_PACKS.map((p) => `${p.images} for $${p.price}`)] },
+      banner: { headline: 'Free, plus AI image packs', line: `Every feature free. ${FREE_MONTHLY} AI images free every month.`, chips: ['Every feature', `${FREE_IMAGES} free to start`, `${FREE_MONTHLY} free a month`, ...IMAGE_PACKS.map((p) => `${p.images} for $${p.price}`)] },
       body: [
         '**GafferBot is free:** every feature, every server, no card needed. Events, lineups, stats, recruiting, the Network, the Social Hub, the newspaper and normal graphics never cost anything.',
         '',
-        `**AI images** cost us money to make, so each server gets **${FREE_IMAGES} free**. After that, buy an image pack for the server:`,
+        `**AI images** cost us money to make, so each server gets **${FREE_TEXT}**. Need more? Buy an image pack for the server:`,
         ...IMAGE_PACKS.map((p) => `• **${p.images} images: $${p.price}**`),
         '',
         `Buy packs at **${SITE}/billing** or in Discord's store, at the same price. Anyone can top up a server they're in. You only pay for AI images you post: previews you discard are given back.`,
@@ -317,4 +319,4 @@ function guides({ ch = (k) => `#${k}` } = {}) {
   ];
 }
 
-module.exports = { guides, GUIDE_TAGS, FREE_IMAGES, IMAGE_PACKS };
+module.exports = { guides, GUIDE_TAGS, FREE_IMAGES, FREE_MONTHLY, FREE_TEXT, IMAGE_PACKS };
