@@ -32,6 +32,7 @@ const {
 } = require('discord.js');
 const { isServerAdmin } = require('./perm-check.cjs');
 const { FEATURES } = require('./channel-setup.cjs');
+const { boardMark } = require('./hub-recruit.cjs');
 
 const F = PermissionsBitField.Flags;
 const GREEN = 0x2ecc71;
@@ -245,7 +246,9 @@ function createSocialHub(deps) {
       // Handled by kit-catalog.cjs
       new ButtonBuilder().setCustomId('kc_open').setLabel('My kit').setEmoji('👕').setStyle(ButtonStyle.Secondary),
       // Handled by hub-tournament.cjs
-      new ButtonBuilder().setCustomId('ht_show').setLabel('Tournament').setEmoji('🏆').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('ht_show').setLabel('Tournament').setEmoji('🏆').setStyle(ButtonStyle.Secondary),
+      // Handled by hub-recruit.cjs
+      new ButtonBuilder().setCustomId('hr_find').setLabel('Find a team').setEmoji('🔎').setStyle(ButtonStyle.Success)
     );
     return { embeds: [embed], components: [row, row2, row3], allowedMentions: NO_PINGS };
   }
@@ -257,7 +260,7 @@ function createSocialHub(deps) {
       const vc = guild.channels.cache.get(state.clubVcLinks?.[club.key]);
       return vc?.members ? [...vc.members.values()].filter((m) => !m.user?.bot).length : 0;
     };
-    return `🛡️ Teams: ${teams.map((t) => (inVoice(t) ? `**${t.name}** (${inVoice(t)} on)` : t.name)).join(' · ')}`.slice(0, 1000);
+    return `🛡️ Teams: ${teams.map((t) => `${inVoice(t) ? `**${t.name}** (${inVoice(t)} on)` : t.name}${boardMark(hub, t.key)}`).join(' · ')}`.slice(0, 1000);
   }
 
   // ---------- Public page (gafferbot.app/play/<slug>) ----------
@@ -656,7 +659,12 @@ function createSocialHub(deps) {
     await saveHub(guild.id, hub);
     await chat.send(teamCard(club, role.id)).catch(() => {});
     await channels.desk
-      .send({ content: `🧑‍💼 <@${member.id}>, this is your captain's desk. Open **/manager** here to run **${name}**: events, lineups, recruitment, stats and more. Name co-captains in **Roster & Squad → Set Captain / Managers**.`, allowedMentions: NO_PINGS })
+      .send({
+        content: `🧑‍💼 <@${member.id}>, this is your captain's desk. Open **/manager** here to run **${name}**: events, lineups, stats and more. Name co-captains in **Roster & Squad → Set Captain / Managers**. Need players? **Recruit players** posts your ad in the hub feed and suggests people who play well with your squad.`,
+        // Handled by hub-recruit.cjs
+        components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`hr_rec:${club.key}`).setLabel('Recruit players').setEmoji('📣').setStyle(ButtonStyle.Primary))],
+        allowedMentions: NO_PINGS,
+      })
       .catch(() => {});
     touch(guild.id);
     return { club, chat, desk: channels.desk, vc };
