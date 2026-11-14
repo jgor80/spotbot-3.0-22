@@ -48,6 +48,7 @@ const BOARD_NAME = 'whos-playing';
 const FEED_NAME = 'hub-feed';
 const START_NAME = 'start-here';
 const STUDIO_NAME = 'photo-studio';
+const HIGHLIGHTS_NAME = 'highlights';
 const MAX_CLUBS = 25;
 const TEAM_FEATURES = ['events', 'results', 'desk'];
 
@@ -341,6 +342,20 @@ function createSocialHub(deps) {
       hub.start_message_id = msg?.id || null;
     }
     if (startCh) hub.start_channel_id = startCh.id;
+
+    // #highlights: anyone posts clips and votes with ⭐; the week's best wins (hub-highlights.cjs)
+    let clipsCh = hub.highlights_channel_id ? await guild.channels.fetch(hub.highlights_channel_id).catch(() => null) : null;
+    if (!clipsCh) {
+      clipsCh = await guild.channels.create({
+        name: HIGHLIGHTS_NAME,
+        type: ChannelType.GuildText,
+        parent: category.id,
+        topic: 'Post your clips (video or YouTube/Twitch/Medal/Xbox/PlayStation link) and vote with ⭐. Highlight of the Week every Monday.',
+        reason: 'GafferBot Social Hub highlights',
+      });
+      made.push(`<#${clipsCh.id}>`);
+    }
+    hub.highlights_channel_id = clipsCh.id;
 
     if (!state.clubVcLinks) state.clubVcLinks = {};
     const lobbies = [];

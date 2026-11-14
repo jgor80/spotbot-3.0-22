@@ -16,7 +16,7 @@ const NO_PINGS = { parse: [] };
 const TICK_MS = 5 * 60 * 1000;
 const MAX_MATES = 300;
 
-const XP = { voiceTick: 1, game: 20, win: 10, goal: 5, assist: 3, call: 15, challenge: 150, allChallenges: 200, referral: 100 };
+const XP = { voiceTick: 1, game: 20, win: 10, goal: 5, assist: 3, call: 15, challenge: 150, allChallenges: 200, referral: 100, highlight: 150 };
 const BADGE_XP = { common: 50, rare: 100, epic: 250, legendary: 500 };
 
 const TIERS = [
@@ -45,6 +45,7 @@ const HUB_BADGES = {
   talent_scout: { name: 'Talent Scout', tier: 'epic', help: 'Brought 5 friends who played' },
   season_podium: { name: 'Season Podium', tier: 'epic', help: 'Finished top 3 in a hub season' },
   season_champion: { name: 'Season Champion', tier: 'legendary', help: 'Won a hub season (most XP in a month)' },
+  highlight_reel: { name: 'Highlight Reel', tier: 'epic', help: 'Won Highlight of the Week' },
 };
 
 const CHALLENGES = {
@@ -146,7 +147,7 @@ function applyActivity(row, activity, ctx = {}) {
   r.voice_minutes += a.minutes || 0;
   r.calls += a.calls || 0;
   r.referrals = (r.referrals || 0) + (a.referrals || 0);
-  gained += (a.voiceTicks || 0) * XP.voiceTick + games * XP.game + (a.wins || 0) * XP.win + (a.goals || 0) * XP.goal + (a.assists || 0) * XP.assist + (a.calls || 0) * XP.call + (a.referrals || 0) * XP.referral;
+  gained += (a.voiceTicks || 0) * XP.voiceTick + games * XP.game + (a.wins || 0) * XP.win + (a.goals || 0) * XP.goal + (a.assists || 0) * XP.assist + (a.calls || 0) * XP.call + (a.referrals || 0) * XP.referral + (a.highlights || 0) * XP.highlight;
   r.mates = addAll(r.mates, a.mates, MAX_MATES);
   if (a.lobby) r.lobbies = addAll(r.lobbies, [a.lobby]);
 
@@ -200,6 +201,7 @@ function applyActivity(row, activity, ctx = {}) {
   earn('full_week', done.size === 3);
   earn('recruiter', r.referrals >= 1);
   earn('talent_scout', r.referrals >= 5);
+  earn('highlight_reel', (a.highlights || 0) > 0);
   for (const key of a.badges || []) earn(key, true);
   r.badges = [...have];
 

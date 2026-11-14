@@ -89,6 +89,7 @@ const { createHubChemistry } = require('./hub-chemistry.cjs');
 const { createHubCard } = require('./hub-card.cjs');
 const { createHubDraft } = require('./hub-draft.cjs');
 const { createKitCatalog } = require('./kit-catalog.cjs');
+const { createHubHighlights } = require('./hub-highlights.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -628,6 +629,8 @@ const hubCard = createHubCard({ supabase, hubOf: socialHub.hubOf, xp: () => hubX
 const hubDraft = createHubDraft({ supabase, hubOf: socialHub.hubOf, getGuildState, getUserPrefs });
 // Personal kits for hub players' Studio cards: classics, Palermo, this server's and Network clubs' kits; top 50 cached
 const kitCatalog = createKitCatalog({ supabase, getGuildState, hubOf: socialHub.hubOf });
+// Highlight of the Week: clips in #highlights, ⭐ votes, Monday winner
+const hubHighlights = createHubHighlights({ hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, xp: () => hubXp, client: () => client });
 autopilot.onNewMatches(hubXp.onNewMatches);
 // Hub onboarding: #start-here and the optional Get set up card (platform, region, gamertag, positions, Twitch)
 const hubOnboarding = createHubOnboarding({ supabase, hubOf: socialHub.hubOf, autoLink, getUserPrefs, xp: () => hubXp });
@@ -654,6 +657,7 @@ client.on('messageCreate', (message) => {
   graphicsStudio.onMessage(message).catch((err) => console.warn('[studio] failed:', err.message));
   clips.onMessage(message).catch((err) => console.warn('[clips] failed:', err.message));
   twitchLive.onMessage(message).catch((err) => console.warn('[twitch-live] failed:', err.message));
+  hubHighlights.onMessage(message).catch((err) => console.warn('[highlights] failed:', err.message));
 });
 // Someone adding permissions to a position role (or making one by hand) gets them cleared straight away,
 // not just at the next restart.

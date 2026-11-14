@@ -30,6 +30,7 @@ export const HUB_BADGES: Record<string, HubBadge> = {
   talent_scout: { name: "Talent Scout", tier: "epic", help: "Brought 5 friends who played" },
   season_podium: { name: "Season Podium", tier: "epic", help: "Finished top 3 in a hub season" },
   season_champion: { name: "Season Champion", tier: "legendary", help: "Won a hub season (most XP in a month)" },
+  highlight_reel: { name: "Highlight Reel", tier: "epic", help: "Won Highlight of the Week" },
 };
 
 export const HUB_CHALLENGES: Record<string, { target: number; text: string }> = {
