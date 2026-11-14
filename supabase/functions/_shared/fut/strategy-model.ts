@@ -28,6 +28,27 @@ export const discountBand = (d: number) => (d < 0.08 ? "5 to 8% under" : d < 0.1
 export const bounceBand = (rising: number, falling: number) => (rising >= 1 ? "bounced" : falling === 0 ? "flat" : "still dipping");
 export const trendBand = (change72: number | null) => (change72 === null ? "unknown" : change72 < -20 ? "crashing" : change72 < -8 ? "falling" : "steady");
 
+/**
+ * Cleans a FUT.GG price series before anything reads it (2026-11-14 data review):
+ *  - one point per refresh: points less than `gapH` hours apart collapse to the newer one (bot restarts and catch-ups
+ *    stored a dozen refreshes within hours on 8 November, which made those hours count as most of the "week");
+ *  - one-off glitches: a point more than 1.8x both neighbours, or under both by that much, becomes their middle value
+ *    (cheap cards' lowest Buy Now flickers when a single listing comes or goes; those spikes made fake 100% "wins").
+ */
+export function cleanSeries<T extends { prices: number[]; ages: number[] }>(c: T, gapH = 6): T {
+  const n = c.prices.length;
+  if (n < 2 || c.ages.length !== n) return c;
+  const keep: number[] = [n - 1];
+  for (let i = n - 2; i >= 0; i--) if (c.ages[i]! - c.ages[keep[keep.length - 1]!]! >= gapH - 1e-9) keep.push(i);
+  keep.reverse();
+  const raw = keep.map((i) => c.prices[i]!), prices = [...raw];
+  for (let i = 1; i < raw.length - 1; i++) {
+    const a = raw[i - 1]!, b = raw[i + 1]!, x = raw[i]!;
+    if (x > 1.8 * Math.max(a, b) || x * 1.8 < Math.min(a, b)) prices[i] = [a, x, b].sort((u, v) => u - v)[1]!;
+  }
+  return { ...c, prices, ages: keep.map((i) => c.ages[i]!) };
+}
+
 /** One logged pick as stored in fut.strategy_pick_log. */
 export interface LoggedPick {
   platform: "console" | "pc"; side: "buy" | "sell"; ea_item_id: number; picked_at: string; rank: number;
@@ -171,14 +192,13 @@ export function learnMoves(cards: { prices: number[]; ages: number[]; kind: stri
   if (cut !== undefined && ages.length >= 2) {
     const test = ex.filter((x) => x.at <= cut), train = ex.filter((x) => x.at > cut);
     if (test.length >= MOVE_MIN && train.length >= MOVE_MIN) {
-      const fit = fitMoves(train), base = fit.overall.up24;
+      // Scored on the call the plan acts on: will the card climb 6%+ within 2 days (enough to beat the 5% tax)?
+      const fit = fitMoves(train), base = reachChance(fit.overall, PAY_RISE);
       let brier = 0, baseBrier = 0, hit = 0;
       for (const x of test) {
-        const [d, db, dbk, dbkp] = x.keys;
-        const spot = blendFromKeys(fit, [d!, db!, dbk!, dbkp].filter(Boolean) as string[]);
-        const up = x.ret24 > 0.005 ? 1 : 0, p = spot.up24;
-        brier += (p - up) ** 2; baseBrier += (base - up) ** 2;
-        if ((p >= 0.5) === (up === 1)) hit++;
+        const p = reachChance(blendFromKeys(fit, x.keys), PAY_RISE), pays = x.peak >= PAY_RISE ? 1 : 0;
+        brier += (p - pays) ** 2; baseBrier += (base - pays) ** 2;
+        if ((p >= 0.5) === (pays === 1)) hit++;
       }
       brier /= test.length; baseBrier /= test.length;
       check = { n: test.length, brier: r3(brier), base_brier: r3(baseBrier), skill: r3(baseBrier > 0 ? 1 - brier / baseBrier : 0), hit: r3(hit / test.length) };
@@ -194,11 +214,14 @@ function blendFromKeys(m: { overall: MoveBucket; by: Record<string, MoveBucket> 
   for (const k of keys) {
     const b = m.by[k];
     if (!b) break;
-    const w = b.n / (b.n + SHRINK);
-    cur = { ...cur, n: b.n, up24: w * b.up24 + (1 - w) * cur.up24, down24: w * b.down24 + (1 - w) * cur.down24 };
+    const w = b.n / (b.n + SHRINK), mix = (x: number, y: number) => w * x + (1 - w) * y;
+    cur = { n: b.n, up24: mix(b.up24, cur.up24), down24: mix(b.down24, cur.down24), ret24: mix(b.ret24, cur.ret24),
+      r24: b.r24.map((v, i) => mix(v, cur.r24[i]!)), peak: b.peak.map((v, i) => mix(v, cur.peak[i]!)) };
   }
   return cur;
 }
+/** The rise a flip needs to beat EA's 5% tax with a little profit. */
+export const PAY_RISE = 0.06;
 
 /** The share of examples whose best price within 2 days was at least `rise` above the price then. */
 export function reachChance(b: MoveBucket, rise: number): number {
@@ -257,7 +280,10 @@ function buckets<T>(rows: T[], key: (r: T) => string | undefined, win: (r: T) =>
 }
 
 /** The model from resolved picks (any order); `rows` should already be limited to the learning window. */
-export function learnModel(platform: "console" | "pc", rows: LoggedPick[], now: number, moves: MoveModel | null = null): StrategyModel {
+export function learnModel(platform: "console" | "pc", all: LoggedPick[], now: number, moves: MoveModel | null = null): StrategyModel {
+  // Only picks whose full 4 days have passed: hits settle early but misses only at 4 days, so counting younger picks
+  // made every early read look like 100% hits (2026-11-14: 79 of 79 settled buys were "hits", all of them early).
+  const rows = all.filter((r) => Date.parse(r.picked_at) <= now - HORIZON_H * 3_600_000);
   const buys = rows.filter((r) => r.side === "buy" && (r.outcome === "hit" || r.outcome === "miss"));
   const sells = rows.filter((r) => r.side === "sell" && (r.outcome === "good" || r.outcome === "bad"));
   const hits = buys.filter((r) => r.outcome === "hit");
@@ -302,8 +328,8 @@ export function moveLessons(m: MoveModel): string[] {
   const out: string[] = [];
   out.push(`Learned from ${m.n.toLocaleString("en-US")} price moves across ${m.cards.toLocaleString("en-US")} cards over the last ${days} day${days === 1 ? "" : "s"}: what each card did in the 2 days after every refresh.`);
   if (m.check) out.push(m.check.skill > 0
-    ? `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen: it called up or down right ${pc(m.check.hit)}% of the time, ${pc(m.check.skill)}% better than guessing from the market average, so it's trusted ${pc(m.trust ?? 0)}%.`
-    : `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen, it wasn't better than guessing from the market average yet, so picks lean on the plain rules.`);
+    ? `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen: it called whether a card would climb 6%+ within 2 days (enough to beat the tax) right ${pc(m.check.hit)}% of the time, ${pc(m.check.skill)}% better than guessing from the market average, so it's trusted ${pc(m.trust ?? 0)}%.`
+    : `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen, it wasn't better than guessing from the market average at calling 6%+ climbs, so picks lean on the plain rules.`);
   const say = (key: string, text: (b: MoveBucket) => string) => { const b = m.by[key]; if (b) out.push(text(b)); };
   say("12%+ under|bounced", (b) => `Cards 12%+ under their usual price that had started to bounce were up a day later ${pc(b.up24)}% of the time; half of them rose ${pc(b.peak[5]!)}% or more within 2 days (${b.n} examples).`);
   say("12%+ under|still dipping", (b) => `Cards 12%+ under their usual price that were still falling kept falling a day later ${pc(b.down24)}% of the time (${b.n} examples), so the plan waits for a bounce.`);

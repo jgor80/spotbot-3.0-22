@@ -211,7 +211,7 @@ function Plan({ d }: { d: DailyStrategy }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {!d.learning.ready && d.learning.price_moves ? <>
           <Stat label="Price moves studied" value={numberText(d.learning.price_moves)} sub="Every card after every refresh" />
-          <Stat label="Up or down called right" value={d.learning.moves_hit != null ? `${Math.round(d.learning.moves_hit * 100)}%` : "–"} sub={d.learning.moves_trust != null ? `Tested on the newest prices · trusted ${Math.round(d.learning.moves_trust * 100)}%` : "Tested on prices it hadn't seen"} />
+          <Stat label="Called 6%+ climbs right" value={d.learning.moves_hit != null ? `${Math.round(d.learning.moves_hit * 100)}%` : "–"} sub={d.learning.moves_trust != null ? `Tested on the newest prices · trusted ${Math.round(d.learning.moves_trust * 100)}%` : "Tested on prices it hadn't seen"} />
         </> : <>
           <Stat label="Buy picks checked" value={numberText(d.learning.buy_picks)} sub={d.learning.ready ? "Last 30 days, whole market" : "Learning starts at 30"} />
           <Stat label="Reached their target" value={d.learning.buy_hit_rate != null ? `${Math.round(d.learning.buy_hit_rate * 100)}%` : "–"} sub={d.learning.hours_to_hit != null ? `Usually within ${d.learning.hours_to_hit} hours` : "Within 4 days"} />
