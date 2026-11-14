@@ -1,11 +1,10 @@
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useFutAvailable, FutShell, EvidenceBadge, ApiDetails, Busy, ErrorNotice } from "@/components/fut/FutShared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
@@ -29,12 +28,9 @@ export function useInView<T extends Element>(margin = "300px") {
  }, [seen, margin]);
  return [ref, seen] as const;
 }
-// Card Search (/fut/market/cards) has its own spot in the FUT nav, so it isn't one of Market Lab's tabs
-const tabs = [{ path: "/fut/market", label: "Overview" }, { path: "/fut/market/radar", label: "Opportunity radar" }, { path: "/fut/market/watchlist", label: "Watchlist" }, { path: "/fut/market/import", label: "Import prices" }, { path: "/fut/market/sources", label: "Data sources" }];
-export function MarketShell({ title, platform, setPlatform, children, showTabs = true }: { title: string; platform: MarketPlatform; setPlatform: (value: string) => void; children: ReactNode; showTabs?: boolean }) {
- const location = useLocation(), navigate = useNavigate(); const active = tabs.find(tab => tab.path === location.pathname)?.path ?? "/fut/market";
+// The tabs under the header come from FutShell (futSections.ts); `showTabs` is kept so older pages still compile.
+export function MarketShell({ title, platform, setPlatform, children, }: { title: string; platform: MarketPlatform; setPlatform: (value: string) => void; children: ReactNode; showTabs?: boolean }) {
  return <FutShell title={title} actions={<Select value={platform} onValueChange={setPlatform}><SelectTrigger className="w-36" aria-label="Platform"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="console">Console</SelectItem><SelectItem value="pc">PC</SelectItem></SelectContent></Select>}>
- {showTabs && <Tabs value={active} onValueChange={navigate}><div className="max-w-full overflow-x-auto"><TabsList className="h-auto w-max justify-start">{tabs.map(tab => <TabsTrigger className="whitespace-nowrap" key={tab.path} value={tab.path}>{tab.label}</TabsTrigger>)}</TabsList></div></Tabs>}
  {children}<footer className="border-t border-border pt-4 text-sm text-muted-foreground">Research and decision support, not a trading bot. Nothing here buys, sells or bids.</footer></FutShell>;
 }
 export function MarketLoading() { return <div role="status" aria-label="Loading Market Lab" className="space-y-4"><div className="grid gap-4 sm:grid-cols-3">{[0, 1, 2].map(i => <Skeleton key={i} className="h-28 w-full" />)}</div><Skeleton className="h-64 w-full" /></div>; }

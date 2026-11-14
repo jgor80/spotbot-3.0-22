@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
+import { futSectionFor } from "./futSections";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, ArrowLeft, FlaskConical, Loader2 } from "lucide-react";
 import { DashboardLayout, PageHeader } from "@/components/layout/DashboardLayout";
@@ -26,11 +27,24 @@ export function ErrorNotice({ error }: { error: unknown }) {
   return <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{error instanceof Error ? error.message : String(error)}</AlertDescription></Alert>;
 }
 export function Busy() { return <div role="status" aria-label="Loading" className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>; }
+/** The tabs of the FUT section this page belongs to, with the question the section answers (futSections.ts). */
+function FutSectionTabs() {
+  const { pathname } = useLocation();
+  const here = futSectionFor(pathname);
+  if (!here || here.section.tabs.length < 2) return null;
+  return <nav aria-label={`${here.section.label} pages`} className="space-y-2">
+    <p className="text-sm text-muted-foreground"><span className="font-medium text-foreground">{here.section.label}</span> · {here.section.question}</p>
+    <div className="max-w-full overflow-x-auto"><div className="inline-flex h-auto w-max items-center gap-1 rounded-md bg-muted p-1 text-muted-foreground">
+      {here.section.tabs.map(tab => <Link key={tab.path} to={tab.path} aria-current={tab.path === here.tab?.path ? "page" : undefined} className={`whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-colors ${tab.path === here.tab?.path ? "bg-background text-foreground shadow-sm" : "hover:text-foreground"}`}>{tab.label}</Link>)}
+    </div></div>
+  </nav>;
+}
 export function FutShell({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   const health = useQuery({ queryKey: futKeys.health, queryFn: futApi.health, retry: false, staleTime: 30 * 60_000 });
   const unavailable = health.error instanceof FutApiError && health.error.status === 404;
   return <DashboardLayout><div className="space-y-6">
     <PageHeader title={title} actions={!unavailable && !health.isPending && !health.isError ? actions : undefined} />
+    <FutSectionTabs />
     {health.isPending ? <Busy /> : unavailable ? <div className="space-y-3 py-12 text-center"><FlaskConical className="mx-auto h-10 w-10 text-muted-foreground" /><h2 className="font-display text-xl font-semibold">GafferBot FUT isn't available yet</h2><Button variant="outline" onClick={() => health.refetch()}>Try again</Button><Button asChild variant="ghost"><Link to="/"><ArrowLeft className="mr-2 h-4 w-4" />Back to the Club app</Link></Button></div> : health.isError ? <div className="space-y-3"><ErrorNotice error={health.error} /><Button variant="outline" onClick={() => health.refetch()}>Try again</Button></div> : <><Rules info={health.data} />{children}<CardImageCredit /></>}
   </div></DashboardLayout>;
 }
