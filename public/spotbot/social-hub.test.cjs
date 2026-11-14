@@ -201,3 +201,57 @@ test('publicSnapshot shows counts and open positions, never who is playing', () 
   ]);
   assert.ok(!JSON.stringify(snap).includes('secret'));
 });
+
+test('moveTeam copies a hub team and its history to the captain\'s own server and leaves the hub copy', async () => {
+  const states = {
+    hub: { clubs: [{ key: 'club1', name: 'Lobby 1', enabled: true }, { key: 'club2', name: 'Night Owls', enabled: true, captain_id: 'cap', ea_club_id: '123', team_role_id: 'r1', stats_channel_id: 'c9', team_id: 't1', kit: 'red' }], boardState: {} },
+    own: { clubs: [{ key: 'club1', name: 'Club 1', enabled: false }], boardState: {} },
+  };
+  const saved = {};
+  const inserted = {};
+  let hubSaved = null;
+  const query = (table) => {
+    const q = {
+      select: () => q,
+      eq: () => q,
+      range: async () => ({ data: table === 'club_matches' ? [{ id: 1, guild_id: 'hub', club_key: 'club2', match_id: 'm1' }, { id: 2, guild_id: 'hub', club_key: 'club2', match_id: 'm2' }] : [] }),
+      maybeSingle: async () => ({ data: { social_hub: { on: true, lobbies: ['club1'], teams: ['club2'] } } }),
+      update: (v) => { hubSaved = v.social_hub; return { eq: async () => ({}) }; },
+      insert: (rows) => {
+        inserted[table] = rows;
+        return Object.assign(Promise.resolve({ error: null }), { select: () => ({ single: async () => ({ data: { id: 'team-new' } }) }) });
+      },
+    };
+    return q;
+  };
+  const hub = createSocialHub({
+    supabase: { from: query },
+    getGuildState: async (id) => states[id],
+    saveGuildSettings: async (id, s) => { saved[id] = s; },
+    casual: {},
+    createBoard: () => ({ slots: [] }),
+    client: () => null,
+  });
+  const guild = { id: 'hub', name: 'The Spot' };
+  const admin = { id: 'cap', permissions: { has: () => true } };
+  const target = { id: 'own', name: 'Owls HQ', members: { fetch: async () => admin } };
+  const member = { id: 'cap', roles: { cache: new Collection() } };
+
+  assert.match((await hub.moveTeam(guild, { id: 'x', roles: { cache: new Collection() } }, 'club2', target)).error, /captains/);
+  assert.match((await hub.moveTeam(guild, member, 'club2', { ...target, members: { fetch: async () => ({ id: 'cap', permissions: { has: () => false } }) } })).error, /Manage Server/);
+  const r = await hub.moveTeam(guild, member, 'club2', target);
+  assert.ok(!r.error, r.error);
+  const club = saved.own.clubs.find((c) => c.key === 'club1');
+  assert.equal(club.name, 'Night Owls');
+  assert.equal(club.ea_club_id, '123');
+  assert.equal(club.kit, 'red');
+  assert.equal(club.team_id, 'team-new');
+  assert.equal(club.team_role_id, undefined);
+  assert.equal(club.stats_channel_id, undefined);
+  assert.deepEqual(club.hub_origin, { guild_id: 'hub', name: 'The Spot', club_key: 'club2' });
+  assert.deepEqual(inserted.club_matches.map((m) => [m.guild_id, m.club_key, m.match_id, m.id]), [['own', 'club1', 'm1', undefined], ['own', 'club1', 'm2', undefined]]);
+  assert.equal(r.copied.club_matches, 2);
+  assert.equal(hubSaved.alumni.club2.guild_id, 'own');
+  assert.deepEqual(hubSaved.teams, ['club2']);
+  assert.equal(states.hub.clubs[1].enabled, true);
+});
