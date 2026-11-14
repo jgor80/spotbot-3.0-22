@@ -7086,6 +7086,19 @@ var priceBand = (p) => p < 5e3 ? "under 5k" : p < 2e4 ? "5k to 20k" : p < 1e5 ? 
 var discountBand = (d) => d < 0.08 ? "5 to 8% under" : d < 0.12 ? "8 to 12% under" : "12%+ under";
 var bounceBand = (rising, falling) => rising >= 1 ? "bounced" : falling === 0 ? "flat" : "still dipping";
 var trendBand = (change72) => change72 === null ? "unknown" : change72 < -20 ? "crashing" : change72 < -8 ? "falling" : "steady";
+function cleanSeries(c4, gapH = 6) {
+  const n2 = c4.prices.length;
+  if (n2 < 2 || c4.ages.length !== n2) return c4;
+  const keep2 = [n2 - 1];
+  for (let i = n2 - 2; i >= 0; i--) if (c4.ages[i] - c4.ages[keep2[keep2.length - 1]] >= gapH - 1e-9) keep2.push(i);
+  keep2.reverse();
+  const raw = keep2.map((i) => c4.prices[i]), prices = [...raw];
+  for (let i = 1; i < raw.length - 1; i++) {
+    const a = raw[i - 1], b = raw[i + 1], x = raw[i];
+    if (x > 1.8 * Math.max(a, b) || x * 1.8 < Math.min(a, b)) prices[i] = [a, x, b].sort((u, v) => u - v)[1];
+  }
+  return { ...c4, prices, ages: keep2.map((i) => c4.ages[i]) };
+}
 function resolvePick(p, trail, latest, now2) {
   const pickAge = (Date.parse(latest) - Date.parse(p.picked_at)) / 36e5;
   const done = (o) => ({ ...p, resolved_at: new Date(now2).toISOString(), ...o });
@@ -7197,15 +7210,13 @@ function learnMoves(cards) {
   if (cut !== void 0 && ages.length >= 2) {
     const test = ex.filter((x) => x.at <= cut), train = ex.filter((x) => x.at > cut);
     if (test.length >= MOVE_MIN && train.length >= MOVE_MIN) {
-      const fit2 = fitMoves(train), base = fit2.overall.up24;
+      const fit2 = fitMoves(train), base = reachChance(fit2.overall, PAY_RISE);
       let brier = 0, baseBrier = 0, hit = 0;
       for (const x of test) {
-        const [d, db2, dbk, dbkp] = x.keys;
-        const spot = blendFromKeys(fit2, [d, db2, dbk, dbkp].filter(Boolean));
-        const up = x.ret24 > 5e-3 ? 1 : 0, p = spot.up24;
-        brier += (p - up) ** 2;
-        baseBrier += (base - up) ** 2;
-        if (p >= 0.5 === (up === 1)) hit++;
+        const p = reachChance(blendFromKeys(fit2, x.keys), PAY_RISE), pays = x.peak >= PAY_RISE ? 1 : 0;
+        brier += (p - pays) ** 2;
+        baseBrier += (base - pays) ** 2;
+        if (p >= 0.5 === (pays === 1)) hit++;
       }
       brier /= test.length;
       baseBrier /= test.length;
@@ -7221,11 +7232,19 @@ function blendFromKeys(m, keys) {
   for (const k of keys) {
     const b = m.by[k];
     if (!b) break;
-    const w = b.n / (b.n + SHRINK);
-    cur = { ...cur, n: b.n, up24: w * b.up24 + (1 - w) * cur.up24, down24: w * b.down24 + (1 - w) * cur.down24 };
+    const w = b.n / (b.n + SHRINK), mix = (x, y) => w * x + (1 - w) * y;
+    cur = {
+      n: b.n,
+      up24: mix(b.up24, cur.up24),
+      down24: mix(b.down24, cur.down24),
+      ret24: mix(b.ret24, cur.ret24),
+      r24: b.r24.map((v, i) => mix(v, cur.r24[i])),
+      peak: b.peak.map((v, i) => mix(v, cur.peak[i]))
+    };
   }
   return cur;
 }
+var PAY_RISE = 0.06;
 function reachChance(b, rise) {
   const q = b.peak;
   if (rise <= q[0]) return 1;
@@ -7270,7 +7289,8 @@ function buckets(rows, key2, win, overall) {
   }
   return out;
 }
-function learnModel(platform, rows, now2, moves = null) {
+function learnModel(platform, all, now2, moves = null) {
+  const rows = all.filter((r2) => Date.parse(r2.picked_at) <= now2 - HORIZON_H * 36e5);
   const buys = rows.filter((r2) => r2.side === "buy" && (r2.outcome === "hit" || r2.outcome === "miss"));
   const sells = rows.filter((r2) => r2.side === "sell" && (r2.outcome === "good" || r2.outcome === "bad"));
   const hits2 = buys.filter((r2) => r2.outcome === "hit");
@@ -7314,7 +7334,7 @@ function moveLessons(m) {
   const days = Math.max(1, Math.round(m.history_h / 24));
   const out = [];
   out.push(`Learned from ${m.n.toLocaleString("en-US")} price moves across ${m.cards.toLocaleString("en-US")} cards over the last ${days} day${days === 1 ? "" : "s"}: what each card did in the 2 days after every refresh.`);
-  if (m.check) out.push(m.check.skill > 0 ? `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen: it called up or down right ${pc(m.check.hit)}% of the time, ${pc(m.check.skill)}% better than guessing from the market average, so it's trusted ${pc(m.trust ?? 0)}%.` : `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen, it wasn't better than guessing from the market average yet, so picks lean on the plain rules.`);
+  if (m.check) out.push(m.check.skill > 0 ? `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen: it called whether a card would climb 6%+ within 2 days (enough to beat the tax) right ${pc(m.check.hit)}% of the time, ${pc(m.check.skill)}% better than guessing from the market average, so it's trusted ${pc(m.trust ?? 0)}%.` : `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen, it wasn't better than guessing from the market average at calling 6%+ climbs, so picks lean on the plain rules.`);
   const say = (key2, text5) => {
     const b = m.by[key2];
     if (b) out.push(text5(b));
@@ -7532,6 +7552,7 @@ function scoreBuys(cards, timing, o) {
   const out = [];
   for (const { card, stats: s } of cards) {
     if (!card.tracked || s.points < 6 || s.latest_age_h > 13 || s.latest < 1e3 || s.latest > o.max_price) continue;
+    if (cardKind(card) === "silver_bronze") continue;
     if (s.new_card) continue;
     if (o.fresh && !o.fresh.has(card.ea_item_id)) continue;
     const discount = (s.median - s.latest) / s.median;
@@ -7540,7 +7561,7 @@ function scoreBuys(cards, timing, o) {
     if (s.prev !== null && s.latest > s.prev * 1.25) continue;
     if (s.falling >= 3 && s.latest <= s.min) continue;
     const buy_at = down(s.latest);
-    const target_raw = down(Math.min(s.median, s.max * 0.98));
+    const target_raw = down(Math.min(s.median, s.max * 0.98, s.latest * 1.3));
     let sell_at = reach < 1 && target_raw > buy_at ? Math.max(buy_at, down(buy_at + (target_raw - buy_at) * reach)) : target_raw;
     if (!o.model?.ready && o.model?.moves) {
       const mb = moveBucket(o.model.moves, { discount, rising: s.rising, falling: s.falling, kind: cardKind(card), price: s.latest });
@@ -7551,7 +7572,8 @@ function scoreBuys(cards, timing, o) {
     if (profit < MIN_PROFIT || roi < o.min_roi) continue;
     const max_buy = Math.max(buy_at, down(Math.min(net(sell_at) / (1 + o.min_roi), net(sell_at) - MIN_PROFIT)));
     const kind = cardKind(card), range = (s.max - s.min) / s.median;
-    let conf = clamp(s.points / 12, 0.4, 1) * (s.rising >= 1 || s.falling === 0 ? 1 : 0.75) * (range > 0.6 ? 0.6 : 1);
+    if (range > 1) continue;
+    let conf = clamp(s.points / 12, 0.4, 1) * (range > 0.6 ? 0.6 : 1);
     if (s.change_72h !== null && s.change_72h < -20) conf *= 0.7;
     const why = [`${pct(discount)}% under its 7-day middle price (${c(s.median)}).`];
     if (s.rising >= 1) why.push(`Bounced off its low: up ${s.rising === 1 ? "since the last refresh" : `${s.rising} refreshes in a row`}.`);
@@ -7565,6 +7587,7 @@ function scoreBuys(cards, timing, o) {
     if (o.owned.has(card.ea_item_id)) why.push("You already own a copy.");
     const risks = [];
     if (s.falling >= 2) risks.push(`Fell ${s.falling} refreshes before the latest one.`);
+    if (s.rising >= 1) risks.push("It has already bounced: in our data, dips that had bounced gained less over the next 2 days than ones still at their low.");
     if (range > 0.6) risks.push("Very jumpy price this week.");
     if (s.change_72h !== null && s.change_72h < -20) risks.push(`Down ${Math.abs(s.change_72h)}% in 3 days: could be a new promo pulling it down.`);
     if (kind === "promo") risks.push("Promo card: supply can jump if it comes back in packs or an SBC.");
@@ -7715,7 +7738,7 @@ function scorePast(past, series, latest) {
 }
 function buildStrategy(raw) {
   const lived = withLive(raw.series, raw.live);
-  const input = { ...raw, series: lived.series };
+  const input = { ...raw, series: { ...lived.series, cards: lived.series.cards.map((c4) => cleanSeries(c4)) } };
   const timing = marketTiming(input.now);
   const risk = RISK[input.risk ?? "normal"];
   const byEa = new Map(input.series.cards.map((card) => [card.ea_item_id, card]));
@@ -8013,7 +8036,7 @@ async function dailyStrategy(db2, userId, platform, opts = {}) {
   const snaps = arr2(sd.snapshots) ?? [];
   const series = { latest: sd.latest ?? null, window_h: snaps.length ? Math.max(...snaps) : 0, cards: arr2(sd.cards) ?? [] };
   if (!model?.ready && !model?.moves) {
-    const moves = learnMoves(series.cards.filter((c4) => c4.tracked).map((c4) => ({ prices: c4.prices, ages: c4.ages, kind: cardKind(c4) })));
+    const moves = learnMoves(series.cards.filter((c4) => c4.tracked).map((c4) => ({ ...cleanSeries(c4), kind: cardKind(c4) })));
     if (moves) model = model ? { ...model, moves, lessons: learnModel(platform, [], now2, moves).lessons } : learnModel(platform, [], now2, moves);
   }
   const plan = buildStrategy({
@@ -8067,7 +8090,7 @@ function marketSells(cards, stats, timing) {
 async function runStrategyLearning(db2, now2 = Date.now()) {
   const out = {};
   for (const platform of ["console", "pc"]) {
-    const { data: open, error: openErr } = await db2.from("strategy_pick_log").select("*").eq("platform", platform).is("outcome", null).order("picked_at", { ascending: true }).limit(5e3);
+    const { data: open, error: openErr } = await db2.from("strategy_pick_log").select("*").eq("platform", platform).gte("picked_at", new Date(now2 - 10 * 864e5).toISOString()).order("picked_at", { ascending: true }).limit(5e3);
     fail6(openErr);
     const openRows = open ?? [];
     const { data: sd, error } = await db2.rpc("strategy_price_series", { p_platform: platform, p_ids: [...new Set(openRows.map((r2) => Number(r2.ea_item_id)))].slice(0, 5e3), p_days: 30 });
@@ -8077,11 +8100,13 @@ async function runStrategyLearning(db2, now2 = Date.now()) {
       out[platform] = { skipped: "no prices" };
       continue;
     }
-    const cards = arr2(d.cards) ?? [], snaps = arr2(d.snapshots) ?? [];
+    const cards = (arr2(d.cards) ?? []).map((c4) => cleanSeries(c4)), snaps = arr2(d.snapshots) ?? [];
     const byEa = new Map(cards.map((c4) => [c4.ea_item_id, c4]));
     const settled = openRows.flatMap((r2) => {
-      const x = resolvePick({ ...r2, ea_item_id: Number(r2.ea_item_id) }, byEa.get(Number(r2.ea_item_id)), latest, now2);
-      return x ? [x] : [];
+      const base = { ...r2, ea_item_id: Number(r2.ea_item_id), outcome: null, resolved_at: null, hours_to_hit: null, best_price: null, final_price: null };
+      const x = resolvePick(base, byEa.get(Number(r2.ea_item_id)), latest, now2);
+      if (x) return x.outcome === r2.outcome && x.best_price === r2.best_price && x.final_price === r2.final_price ? [] : [x];
+      return r2.outcome ? [base] : [];
     });
     for (let i = 0; i < settled.length; i += 500) fail6((await db2.from("strategy_pick_log").upsert(settled.slice(i, i + 500), { onConflict: "platform,side,ea_item_id,picked_at" })).error);
     const { count: count2, error: cErr } = await db2.from("strategy_pick_log").select("ea_item_id", { count: "exact", head: true }).eq("platform", platform).eq("picked_at", latest);
