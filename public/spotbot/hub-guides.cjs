@@ -18,6 +18,7 @@ function guides({ ch = (k) => `#${k}` } = {}) {
   return [
     {
       key: 'start',
+      add_link: true,
       title: '01 · Start here: what GafferBot does',
       tags: ['Start here'],
       banner: { headline: 'Start here', line: 'Four commands, buttons for everything else.', chips: ['/manager', '/me', '/setup', '/help'] },
@@ -37,6 +38,7 @@ function guides({ ch = (k) => `#${k}` } = {}) {
     },
     {
       key: 'setup',
+      add_link: true,
       title: '02 · Setting up your club (managers)',
       tags: ['Managers', 'Start here'],
       banner: { headline: 'Set up your club', line: 'About two minutes, start to finish.', chips: ['Add the bot', '/setup', 'Link EA Club', 'Colours & crest', 'Managers', 'Player Hub'] },

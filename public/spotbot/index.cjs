@@ -94,6 +94,7 @@ const { createHubTournament } = require('./hub-tournament.cjs');
 const { createHubRecruit } = require('./hub-recruit.cjs');
 const { createHubLeague } = require('./hub-league.cjs');
 const { createHubUmbrella } = require('./hub-umbrella.cjs');
+const addBot = require('./add-bot.cjs');
 const { createHubRules } = require('./hub-rules.cjs');
 const { createHubHq } = require('./hub-hq.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
@@ -683,6 +684,8 @@ client.on('messageCreate', (message) => {
 client.on('roleCreate', (role) => clearPositionRolePermissions(role).catch(() => {}));
 client.on('roleUpdate', (_old, role) => clearPositionRolePermissions(role).catch(() => {}));
 client.once('ready', () => twitchLive.start());
+// The add-to-server link everywhere uses the live app id; the bot's profile gets an Add App button if it has none
+client.once('ready', () => { addBot.setAppId(client.application?.id || client.user?.id); addBot.ensureInstallLink(client).then((set) => set && console.log('[add-bot] profile Add App button set')).catch(() => {}); });
 client.once('ready', () => {
   setTimeout(async () => {
     for (const guild of client.guilds.cache.values()) {

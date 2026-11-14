@@ -30,6 +30,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
+const { addBotButton } = require('./add-bot.cjs');
 const { isServerAdmin, isBotOwner } = require('./perm-check.cjs');
 const { FEATURES } = require('./channel-setup.cjs');
 const { boardMark } = require('./hub-recruit.cjs');
@@ -258,7 +259,8 @@ function createSocialHub(deps) {
     const row4 = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('hl_open').setLabel('Hub League').setEmoji('🏟️').setStyle(ButtonStyle.Primary),
       // Handled by hub-umbrella.cjs: outside leagues and BYOTs hub teams enter as the hub
-      new ButtonBuilder().setCustomId('hu_list').setLabel('Competitions').setEmoji('🌍').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('hu_list').setLabel('Competitions').setEmoji('🌍').setStyle(ButtonStyle.Secondary),
+      addBotButton('Add GafferBot')
     );
     return { embeds: [embed], components: [row, row2, row3, row4], allowedMentions: NO_PINGS };
   }
