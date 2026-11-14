@@ -5,7 +5,7 @@ import { packAdvice } from "./packs.ts";
 import type { SbcChallenge, SbcSet, UnassignedItem } from "./account.ts";
 import {
   cleanRequirements, describe, formationFromEa, fromEa, parseRequirements, solveMany, worthIt,
-  type EaNames, type Requirement, type SbcCard, type SolveOptions,
+  type EaNames, type Requirement, type SbcCard, type SolveOptions, type WorthVerdict,
 } from "./sbc.ts";
 import { FORMATIONS } from "./xilab/workspace/index.ts";
 
@@ -182,4 +182,39 @@ export async function solveForUser(db: FutDb, userId: string, platform: Platform
     platform, prices_at: pool.prices_at, owned_cards: pool.owned, spare_duplicates: pool.spares, dropped_requirements: req.dropped,
     ...solved, reward, worth: worthIt(solved.total_cost, reward), verified: false as const,
   };
+}
+
+/** One open SBC set judged for the coins plan: what it costs from this club and whether the reward beats that. */
+export interface SetVerdict {
+  set_id: number; name: string; end_at: string | null; challenges: number; feasible: boolean;
+  total_cost: number; buy_cost: number; reward_value: number | null; reward_label: string | null; verdict: WorthVerdict; why: string;
+}
+
+/**
+ * Solves the open sets whose challenges the helper has read (soonest to end first) and says which are worth doing.
+ * Each set is solved on its own from the same pool, never using `keep` (the squad the user plays). Stops after
+ * `maxSets` or `budgetMs`, so the coins plan stays quick; `unread` counts open sets the helper hasn't opened yet.
+ */
+export async function sbcVerdicts(db: FutDb, userId: string, platform: Platform, keep: string[] = [], o: { maxSets?: number; budgetMs?: number } = {}) {
+  const over = await sbcOverview(db, userId, platform);
+  const done = (st: string | null) => /complete/i.test(st ?? "") && !/in.?complete|not/i.test(st ?? "");
+  const ready = over.sets.map((set) => ({ set, todo: set.challenges_seen.filter((c) => !done(c.status)) }))
+    .filter((x) => x.todo.length > 0 && x.todo.length <= MAX_CHALLENGES && x.todo.every((c) => c.formation && c.requirements.length && !c.unread.length))
+    .sort((a, b) => String(a.set.end_at ?? "9").localeCompare(String(b.set.end_at ?? "9")));
+  const unread = over.sets.length - ready.length;
+  const picked = ready.slice(0, o.maxSets ?? 6);
+  if (!picked.length) return { open: over.sets.length, unread, sets: [] as SetVerdict[], seen_at: over.challenges_at ?? over.sets_at };
+  const all = picked.flatMap((x) => x.todo.flatMap((c) => c.requirements));
+  const needChem = all.some((r) => r.kind === "chemistry" || r.kind === "player_chemistry");
+  const [pool, rules] = await Promise.all([sbcPool(db, userId, platform, all), needChem ? activeRules(db) : Promise.resolve(null)]);
+  const sets: SetVerdict[] = [];
+  const started = Date.now();
+  for (const { set, todo } of picked) {
+    if (Date.now() - started > (o.budgetMs ?? 5000)) break;
+    const solved = solveMany(todo.map((c) => ({ name: c.name, formation: c.formation!, requirements: c.requirements })), pool.cards, rules, { exclude: keep });
+    const reward = await rewardValue(db, userId, platform, set.awards).catch(() => ({ value: null, label: null }));
+    const worth = solved.feasible ? worthIt(solved.total_cost, reward) : { verdict: "skip" as const, why: "Your club and the cheap market cards can't meet every requirement." };
+    sets.push({ set_id: set.set_id, name: set.name, end_at: set.end_at, challenges: todo.length, feasible: solved.feasible, total_cost: solved.total_cost, buy_cost: solved.buy_cost, reward_value: reward.value, reward_label: reward.label, verdict: worth.verdict, why: worth.why });
+  }
+  return { open: over.sets.length, unread: unread + (picked.length - sets.length) + (ready.length - picked.length), sets, seen_at: over.challenges_at ?? over.sets_at };
 }
