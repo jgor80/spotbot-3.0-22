@@ -30,7 +30,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const { isServerAdmin } = require('./perm-check.cjs');
+const { isServerAdmin, isBotOwner } = require('./perm-check.cjs');
 const { FEATURES } = require('./channel-setup.cjs');
 const { boardMark } = require('./hub-recruit.cjs');
 
@@ -840,7 +840,9 @@ function createSocialHub(deps) {
           '\n\n🌍 **Public page:** show your live lobbies, the weekly leaderboard and a Join button on gafferbot.app, so anyone can find the hub. It shows lobby counts and open positions, never who is in a lobby.',
         components: [new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId('sh_public:on').setLabel('Turn on the public page').setEmoji('🌍').setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId('sh_public:off').setLabel('Keep it private').setStyle(ButtonStyle.Secondary)
+          new ButtonBuilder().setCustomId('sh_public:off').setLabel('Keep it private').setStyle(ButtonStyle.Secondary),
+          // Handled by hub-hq.cjs: bot owners only
+          ...(isBotOwner(interaction.user.id) ? [new ButtonBuilder().setCustomId('hq_setup').setLabel('Make this the GafferBot HQ').setEmoji('🏢').setStyle(ButtonStyle.Primary)] : [])
         )],
       });
     }

@@ -95,6 +95,7 @@ const { createHubRecruit } = require('./hub-recruit.cjs');
 const { createHubLeague } = require('./hub-league.cjs');
 const { createHubUmbrella } = require('./hub-umbrella.cjs');
 const { createHubRules } = require('./hub-rules.cjs');
+const { createHubHq } = require('./hub-hq.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -647,6 +648,8 @@ const hubLeague = createHubLeague({ supabase, hubOf: socialHub.hubOf, getGuildSt
 const hubUmbrella = createHubUmbrella({ supabase, hubOf: socialHub.hubOf, getGuildState, client: () => client, socialHub: () => socialHub });
 // Rules and code of conduct: #rules with I agree, editable by admins
 const hubRules = createHubRules({ hubOf: socialHub.hubOf, saveHub: socialHub.saveHub });
+// GafferBot HQ: GafferBot's own home on Discord (welcome, how it works, add, pricing, support), bot owners only
+const hubHq = createHubHq({ hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, client: () => client });
 autopilot.onNewMatches(hubXp.onNewMatches);
 // Hub onboarding: #start-here and the optional Get set up card (platform, region, gamertag, positions, Twitch)
 const hubOnboarding = createHubOnboarding({ supabase, hubOf: socialHub.hubOf, autoLink, getUserPrefs, xp: () => hubXp });
@@ -4261,6 +4264,7 @@ async function routeInteraction(interaction) {
     if (await hubLeague.handleInteraction(interaction)) return;
     if (await hubUmbrella.handleInteraction(interaction)) return;
     if (await hubRules.handleInteraction(interaction)) return;
+    if (await hubHq.handleInteraction(interaction)) return;
     if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;
