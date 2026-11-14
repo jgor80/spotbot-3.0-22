@@ -65,3 +65,12 @@ Deno.test("coins plan: no club at all asks to sync first", () => {
   const p = buildCoachPlan(base({ squad: { source: "none", note: "Sync your club.", name: null, formation: null, rating: null, chemistry: null }, upgrades: null }));
   assert(p.headline.kind === "setup", p.headline.kind);
 });
+
+Deno.test("coins plan: SBC step names the sets worth doing, best first, and says how many are unread", () => {
+  const set = (name: string, verdict: "do_it" | "skip" | "free", total_cost: number, reward_value: number) => ({ set_id: 1, name, end_at: null, challenges: 1, feasible: true, total_cost, buy_cost: 0, reward_value, reward_label: null, verdict, why: `${name} why` });
+  const p = buildCoachPlan(base({ sbc: { open: 5, ending: [], seen_at: null, unread: 2, sets: [set("Bad", "skip", 50_000, 10_000), set("Good", "do_it", 20_000, 45_000), set("Freebie", "free", 0, 5_000)] } }));
+  const s = p.steps.find((x) => x.kind === "sbc")!;
+  assert(s.title === "Do 2 SBCs: Freebie, Good", s.title);
+  assert(s.coins === 30_000 && s.items!.map((i) => i.name).join() === "Freebie,Good,Bad", JSON.stringify([s.coins, s.items]));
+  assert(s.detail.includes("2 more haven't been read yet"), s.detail);
+});

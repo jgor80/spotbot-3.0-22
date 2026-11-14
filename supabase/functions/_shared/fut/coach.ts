@@ -10,6 +10,7 @@ import { upgradeOptions } from "./upgrades-data.ts";
 import type { Plan } from "./upgrades.ts";
 import { dailyStrategy, type CoinMove, type PileFix, type Timing } from "./strategy.ts";
 import { evaluate } from "./squad-suggest.ts";
+import { sbcVerdicts, type SetVerdict } from "./sbc-data.ts";
 
 type Row = Record<string, unknown>;
 type Platform = "console" | "pc";
@@ -43,7 +44,7 @@ export interface CoachInput {
   /** Daily Strategy's single best way to make coins right now, and its buy list (for the leftover). */
   move: CoinMove | null;
   flips: { name: string; rating: number; buy_at: number; sell_at: number; profit: number; ea_item_id: number }[];
-  sbc: { open: number; ending: { name: string; end_at: string }[]; seen_at: string | null };
+  sbc: { open: number; ending: { name: string; end_at: string }[]; seen_at: string | null; /** Open sets solved from this club (SBC Solver); `unread` are open sets the helper hasn't read yet. */ sets?: SetVerdict[]; unread?: number };
   prices_at: string | null;
 }
 
@@ -147,14 +148,29 @@ export function buildCoachPlan(x: CoachInput) {
   // 5. SBCs
   if (x.sbc.open) {
     const soon = x.sbc.ending[0];
+    const judged = x.sbc.sets ?? [];
+    const rank = { free: 0, do_it: 1, close: 2, unknown: 3, skip: 4 } as const;
+    const sorted = [...judged].sort((a, b) => rank[a.verdict] - rank[b.verdict] || (b.reward_value ?? 0) - b.total_cost - ((a.reward_value ?? 0) - a.total_cost));
+    const good = sorted.filter((v) => v.verdict === "free" || v.verdict === "do_it");
+    const unread = x.sbc.unread ?? Math.max(0, x.sbc.open - judged.length);
+    const label = { free: "Free", do_it: "Do it", close: "About even", unknown: "Reward unknown", skip: "Skip" } as const;
+    const gainOfSet = good.reduce((n, v) => n + Math.max(0, (v.reward_value ?? 0) - v.total_cost), 0);
     steps.push({
-      kind: "sbc", title: `${x.sbc.open} SBC${x.sbc.open === 1 ? "" : "s"} open: check which are worth doing with your club`, coins: null,
+      kind: "sbc",
+      title: good.length ? `Do ${good.length === 1 ? `the ${good[0]!.name} SBC` : `${good.length} SBCs: ${good.slice(0, 3).map((v) => v.name).join(", ")}${good.length > 3 ? ` and ${good.length - 3} more` : ""}`}`
+        : judged.length ? `No open SBC beats its cost right now (${judged.length} checked)`
+        : `${x.sbc.open} SBC${x.sbc.open === 1 ? "" : "s"} open: check which are worth doing with your club`,
+      coins: good.length && gainOfSet ? gainOfSet : null,
       detail: [
+        good.length ? `${good.length === 1 ? "Its reward is" : "Their rewards are"} worth more than the cards ${good.length === 1 ? "it takes" : "they take"} from your club and the market. Your starters are never used.` : "",
+        !good.length && judged.length ? "Each was filled from your club and the cheapest market cards, without touching your starters, and the reward didn't cover the cost." : "",
         fodder.length ? `You're holding ${fodder.length} card${fodder.length === 1 ? "" : "s"} as SBC fodder (cheaper to use than to sell).` : "",
         soon ? `${soon.name} ends ${soon.end_at.slice(0, 10)}.` : "",
-        "SBC Solver fills each one from your club and says whether the reward beats the cost.",
+        unread ? `${unread} more ${unread === 1 ? "hasn't" : "haven't"} been read yet: open ${unread === 1 ? "it" : "them"} in the EA Web App with the helper running and ${unread === 1 ? "it'll" : "they'll"} be judged here too.` : "",
+        judged.length ? "" : "SBC Solver fills each one from your club and says whether the reward beats the cost.",
       ].filter(Boolean).join(" "),
       link: { to: "/fut/sbc", label: "SBC Solver" },
+      items: sorted.slice(0, 6).map((v) => ({ name: v.name, rating: null, coins: v.feasible ? v.total_cost : null, note: `${label[v.verdict]}: ${v.why}` })),
     });
   }
 
@@ -224,9 +240,11 @@ export async function coachPlan(db: FutDb, userId: string, platform: Platform): 
   const soldItems = pileRaw.filter((i) => i.state === "sold");
   const sold = { count: soldItems.length, coins: soldItems.reduce((t, i) => t + afterTax(Number(i.current_bid ?? i.buy_now ?? 0) || 0), 0) };
 
-  const [keep, strat] = await Promise.all([
+  const starters = cur.squad ? cur.squad.slots.flatMap((s) => (s.card ? [s.card.id] : [])) : [];
+  const [keep, strat, sbcs] = await Promise.all([
     settle(sellOrKeep(db, userId, platform, undefined, () => playingNow(db, userId, cur)), "sell or keep"),
     settle(dailyStrategy(db, userId, platform), "daily strategy"),
+    settle(sbcVerdicts(db, userId, platform, starters), "sbcs"),
   ]);
   const advice = keep?.advice ?? [];
   const sellable = advice.filter((a) => a.verdict === "sell_now" || a.verdict === "sell_high" || a.verdict === "sell").reduce((t, a) => t + (a.after_tax ?? 0), 0);
@@ -256,7 +274,7 @@ export async function coachPlan(db: FutDb, userId: string, platform: Platform): 
     timing: strat?.timing ?? { now: "", next: null, buy_bias: 0, sell_bias: 0, events: [], weekday: "", uk_time: "" },
     move: strat?.move ?? null,
     flips: (strat?.buys ?? []).map((b) => ({ name: b.name, rating: b.rating, buy_at: b.buy_at, sell_at: b.sell_at, profit: b.profit, ea_item_id: b.ea_item_id })),
-    sbc: { open: open.length, ending, seen_at: (state?.sbcs_at as string | null) ?? null },
+    sbc: { open: open.length, ending, seen_at: (state?.sbcs_at as string | null) ?? null, sets: sbcs?.sets ?? [], unread: sbcs ? sbcs.unread : open.length },
     prices_at: strat?.prices_at ?? keep?.prices_at ?? null,
   });
   const notes = [

@@ -67,3 +67,18 @@ Deno.test("POST /sbc/solve uses the spare duplicate, buys the rest, and values t
   const none = await call("POST", "/v1/sbc/solve", { challenges: [{ text: "nothing useful" }] });
   assert(none.status === 400, "no requirements");
 });
+
+Deno.test("GET /coach judges the open SBCs the helper has read: skip when the reward is under the cost, do it when it's over", async () => {
+  const { db, call } = setup();
+  const step = async () => {
+    const r = await call("GET", "/v1/coach?platform=console");
+    assert(r.status === 200, JSON.stringify(r.data));
+    return r.data.data.steps.find((s: { kind: string }) => s.kind === "sbc");
+  };
+  const skip = await step();
+  assert(skip.title.startsWith("No open SBC beats its cost") && skip.items[0].name === "84+ Upgrade" && skip.items[0].note.startsWith("Skip:"), JSON.stringify(skip));
+  assert(skip.items[0].coins > 20_000, `cost ${skip.items[0].coins}`);
+  ((db.tables.account_state as Record<string, unknown>[])[0]!.sbcs as { awards: { value: number }[] }[])[0]!.awards[0]!.value = 500_000;
+  const go = await step();
+  assert(go.title === "Do the 84+ Upgrade SBC" && go.items[0].note.startsWith("Do it:") && go.coins > 0, JSON.stringify(go));
+});
