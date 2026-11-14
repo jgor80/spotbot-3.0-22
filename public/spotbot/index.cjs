@@ -93,6 +93,7 @@ const { createHubHighlights } = require('./hub-highlights.cjs');
 const { createHubTournament } = require('./hub-tournament.cjs');
 const { createHubRecruit } = require('./hub-recruit.cjs');
 const { createHubLeague } = require('./hub-league.cjs');
+const { createHubUmbrella } = require('./hub-umbrella.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -640,6 +641,8 @@ const hubTournament = createHubTournament({ supabase, hubOf: socialHub.hubOf, sa
 const hubRecruit = createHubRecruit({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, getGuildState, getUserPrefs, socialHub: () => socialHub, client: () => client });
 // Hub teams playing each other: friendlies, a weekly-round hub league and a knockout hub cup
 const hubLeague = createHubLeague({ supabase, hubOf: socialHub.hubOf, getGuildState, client: () => client });
+// Under the hub's umbrella: outside leagues and BYOTs hub teams enter as the hub, and each team's next steps
+const hubUmbrella = createHubUmbrella({ supabase, hubOf: socialHub.hubOf, getGuildState });
 autopilot.onNewMatches(hubXp.onNewMatches);
 // Hub onboarding: #start-here and the optional Get set up card (platform, region, gamertag, positions, Twitch)
 const hubOnboarding = createHubOnboarding({ supabase, hubOf: socialHub.hubOf, autoLink, getUserPrefs, xp: () => hubXp });
@@ -4252,6 +4255,7 @@ async function routeInteraction(interaction) {
     if (await hubTournament.handleInteraction(interaction)) return;
     if (await hubRecruit.handleInteraction(interaction)) return;
     if (await hubLeague.handleInteraction(interaction)) return;
+    if (await hubUmbrella.handleInteraction(interaction)) return;
     if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;

@@ -252,7 +252,9 @@ function createSocialHub(deps) {
     );
     // Handled by hub-league.cjs: friendlies, the hub league and the hub cup between hub teams
     const row4 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('hl_open').setLabel('Hub League').setEmoji('🏟️').setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId('hl_open').setLabel('Hub League').setEmoji('🏟️').setStyle(ButtonStyle.Primary),
+      // Handled by hub-umbrella.cjs: outside leagues and BYOTs hub teams enter as the hub
+      new ButtonBuilder().setCustomId('hu_list').setLabel('Competitions').setEmoji('🌍').setStyle(ButtonStyle.Secondary)
     );
     return { embeds: [embed], components: [row, row2, row3, row4], allowedMentions: NO_PINGS };
   }
@@ -666,7 +668,13 @@ function createSocialHub(deps) {
       .send({
         content: `🧑‍💼 <@${member.id}>, this is your captain's desk. Open **/manager** here to run **${name}**: events, lineups, stats and more. Name co-captains in **Roster & Squad → Set Captain / Managers**. Need players? **Recruit players** posts your ad in the hub feed and suggests people who play well with your squad.`,
         // Handled by hub-recruit.cjs
-        components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`hr_rec:${club.key}`).setLabel('Recruit players').setEmoji('📣').setStyle(ButtonStyle.Primary))],
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`hr_rec:${club.key}`).setLabel('Recruit players').setEmoji('📣').setStyle(ButtonStyle.Primary),
+            // Handled by hub-umbrella.cjs
+            new ButtonBuilder().setCustomId(`hu_team:${club.key}`).setLabel('Take the team further').setEmoji('🧭').setStyle(ButtonStyle.Secondary)
+          ),
+        ],
         allowedMentions: NO_PINGS,
       })
       .catch(() => {});
