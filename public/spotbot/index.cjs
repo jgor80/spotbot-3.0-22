@@ -507,7 +507,7 @@ const xboxLink = createXboxLink({ supabase });
 const twitchLinks = createTwitchLinks({ supabase, getClient: () => client });
 const proPhotos = createProPhotos({ supabaseUrl, secret: FUNCTION_SECRET, getGuildState, isManager });
 const aiAccess = createAiAccess({ callEdgeFunction, dashboardUrl: DASHBOARD_URL });
-const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client, getPremium: () => premium, personalKit: (guildId, userId) => kitCatalog.personalKit(guildId, userId) });
+const graphicsStudio = createGraphicsStudio({ supabase, supabaseUrl, secret: FUNCTION_SECRET, getGuildState, saveGuildSettings, isManager, serverPrefs: (g) => clubEvents.serverPrefs(g), getClient: () => client, getPremium: () => premium, personalKit: (guildId, userId) => kitCatalog.personalKit(guildId, userId), isHub: (guildId) => socialHub.hubOf(guildId).then((h) => Boolean(h?.on)) });
 const recruitment = createRecruitment({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, positionTiers });
 const network = createNetwork({ supabase, getGuildState, isManager });
 createReplacements({ supabase, getGuildState, network, recruitment, canManageClub: squads.canManageClub });
