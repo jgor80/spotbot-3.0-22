@@ -358,6 +358,13 @@ export interface IdealFormationOption {
   style: { fit: number; matched: string[]; missed: string[] } | null;
   club: { rating: number; chemistry: number; filled: number; empty: string[] } | null;
 }
+// Squad Builder: my current squad (from the helper's capture of the squad opened in the EA Web App) and the squad advisor
+export interface CurrentSquad { source: "game" | "saved" | "club" | "none"; squad: FutSquad | null; note: string; seen_at: string | null; formation_code: string | null; formation_sure: boolean; missing: number; bench: { id: string; name: string; rating: number; positions: string[] }[] }
+export interface AdvisorTarget { card_id: string; ea_item_id: number | null; name: string; rating: number; version: string | null; price: number | null; score: number; role: string; why: string; affordable: boolean | null }
+export interface AdvisorPick { id: string; name: string; rating: number; positions: string[]; chemistry: number; team_chemistry: number; change: number; rating_change: number | null; better: boolean }
+export interface AdvisorSlot { slot: string; position: string; current: { id: string; name: string; rating: number; chemistry: number; in_position: boolean } | null; picks: AdvisorPick[]; target: AdvisorTarget | null; dream: AdvisorTarget | null }
+export interface AdvisorFormation { formation: string; chemistry: number; rating: number; filled: number; empty: string[]; squad: FutSquad; changes: number; current: boolean }
+export interface SquadAdvice { by: SuggestBy; owned_cards: number; coins: number | null; now: { formation: string; chemistry: number; rating: number; filled: number }; slots: AdvisorSlot[]; rearrange: AdvisorFormation[]; club: AdvisorFormation[] }
 /** The pills in "Build my ideal squad": styles of play, how many strikers (3 = a front three) and defenders, or a formation. */
 export interface IdealPicks { formation?: string | null; traits?: string[]; strikers?: 1 | 2 | 3 | null; defenders?: 3 | 4 | 5 | null }
 export interface SquadMeta { formation: string; basis: "community" | "usual"; claims: number; net: number | null; said: string | null; topic_key: string | null }
@@ -504,6 +511,8 @@ export const futApi = {
   bestSquad: (squad: FutSquad, by: SuggestBy, formation: string) => futRequest<BestSquadResult>("/squads/best", "POST", { squad: withBudget(squad), by, formation }),
   idealSquad: (squad: FutSquad, playstyle: string, picks: IdealPicks = {}) => futRequest<IdealSquad>("/squads/ideal", "POST", { squad: withBudget(squad), playstyle, ...(picks.formation ? { formation: picks.formation } : {}), ...(picks.traits?.length ? { traits: picks.traits } : {}), ...(picks.strikers ? { strikers: picks.strikers } : {}), ...(picks.defenders ? { defenders: picks.defenders } : {}) }),
   squadMetas: () => futRequest<SquadMetas>("/squads/metas"),
+  currentSquad: () => futRequest<CurrentSquad>("/squads/current"),
+  squadAdvisor: (squad: FutSquad, by: SuggestBy) => futRequest<SquadAdvice>("/squads/advisor", "POST", { squad: withBudget(squad), by }),
   upgrades: (squad: FutSquad, budget: number, platform: "console" | "pc") => futRequest<UpgradePath>("/squads/upgrades", "POST", { squad: withBudget(squad), budget, platform }),
   suggestSlot: (squad: FutSquad, slot: string, by: SuggestBy) => futRequest<SlotSuggestions>("/squads/suggest", "POST", { squad: withBudget(squad), slot, by }),
   squadRoles: (squad: FutSquad) => futRequest<SquadRoles>("/squads/roles", "POST", { squad: withBudget(squad) }),

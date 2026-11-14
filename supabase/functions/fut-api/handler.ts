@@ -41,6 +41,7 @@ import {
   runKnowledgeIngest, type AskTurn,
 } from "../_shared/fut/knowledge.ts";
 import { applyToTeam, loadTeam, teamPlan } from "../_shared/fut/knowledge-team.ts";
+import { currentSquad, importGameSquads, squadAdvice } from "../_shared/fut/current-squad.ts";
 import { idealSquad, MAX_PLAYSTYLE, PLAYER_TRAITS, SHAPE_TRAITS, topMetas } from "../_shared/fut/ideal-squad.ts";
 import { importCardArt, listCardArt } from "../_shared/fut/card-art.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
@@ -355,13 +356,17 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     }
 
     if ((route === "/club/import" || route === "/helper/club") && m === "POST") {
-      const result = await importClub(db, userId, await body(req, MAX_CLUB_BODY));
+      const raw = await body(req, MAX_CLUB_BODY);
+      const result = await importClub(db, userId, raw);
       // Synced cards carry EA item ids, so prices captured before the sync can now find their card.
       let prices_linked = 0;
       try {
         prices_linked = (await (await marketFor(db)).relinkHeldCaptures(userId)).linked;
       } catch (e) { console.warn("[fut-api] relink after club sync:", e); }
-      return json({ data: { ...result, prices_linked } });
+      // The squads opened in the Web App ride in the same file (helper 0.13.0+): Squad Builder's "my current squad".
+      let squads_saved = 0;
+      try { squads_saved = await importGameSquads(db, userId, raw); } catch (e) { console.warn("[fut-api] game squads after club sync:", e); }
+      return json({ data: { ...result, prices_linked, squads_saved } });
     }
     // Club trade value: which synced cards are tradeable and what the tradeable copies sell for now (latest FUT.GG
     // price, or the user's own newer Web App capture), with totals before and after EA's 5% tax.
@@ -492,6 +497,23 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
           if (typeof formation !== "string" || (formation !== "all" && !FORMATIONS[formation])) throw new FutError(`formation must be "all" or one of: ${Object.keys(FORMATIONS).join(", ")}.`);
           if (!pool.length) throw new FutError("You have no club cards yet. Sync your club or add cards on My cards first.");
           return { by, owned_cards: pool.length, results: bestSquads(squad, formation, pool, rules, by) };
+        }) });
+      }
+      if (route === "/squads/current" && m === "GET") {
+        // My current squad: the one opened in the EA Web App (helper capture), else the newest saved, else the club's best eleven.
+        return json({ data: await runWorkspace(() => currentSquad(db, userId)) });
+      }
+      if (route === "/squads/advisor" && m === "POST") {
+        // Squad advisor: club picks for every place by skill (overall) or chemistry, market targets to aim for, the
+        // same players in other shapes and the club's best eleven per shape (current-squad.ts). Read-only.
+        const b = obj(await body(req));
+        const by = b.by === "chem" ? "chem" : b.by === "ovr" || b.by === undefined ? "ovr" : null;
+        if (!by) throw new FutError('by must be "ovr" or "chem".');
+        const platform = platformParam(typeof b.platform === "string" ? b.platform : null);
+        return json({ data: await runWorkspace(async () => {
+          const squad = squadSchema.parse({ ...obj(b.squad), owner_id: userId }) as Squad;
+          const [rules, mine] = await Promise.all([activeRules(db), searchMyCards(db, userId, { all: true, owned_only: true })]);
+          return squadAdvice(db, userId, squad, mine.map(toWorkspaceCard), rules, { by, platform });
         }) });
       }
       if (route === "/squads/metas" && m === "GET") {

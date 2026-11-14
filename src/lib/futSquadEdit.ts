@@ -1,3 +1,4 @@
+import type { CurrentSquad } from "./futApi";
 // Squad Builder edits that need no server call: the squad on screen is only saved when the user presses Save.
 // Same behaviour as swapSlots / assignCard(null) in XI Lab's workspace (supabase/functions/_shared/fut/xilab/workspace/squad.ts).
 import type { FutSquad } from "./futApi";
@@ -17,3 +18,10 @@ export function removeFromSlot(squad: FutSquad, slot: string): FutSquad {
 
 /** True when the player can play the slot's position. */
 export const playsSlot = (positions: string[] | undefined, position: string) => !!positions?.includes(position);
+
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+
+/** Where a "current squad" came from, in a line. */
+export function currentSquadLabel(c: CurrentSquad): string {
+  return c.source === "game" ? `From the EA Web App${c.seen_at ? `, ${when(c.seen_at)}` : ""}` : c.source === "saved" ? "Your newest saved squad" : c.source === "club" ? "Best eleven from your club" : "No squad yet";
+}
