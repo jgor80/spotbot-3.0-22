@@ -95,6 +95,7 @@ const { createHubRecruit } = require('./hub-recruit.cjs');
 const { createHubLeague } = require('./hub-league.cjs');
 const { createHubUmbrella } = require('./hub-umbrella.cjs');
 const addBot = require('./add-bot.cjs');
+const { createHubLobbyClub, inLobbyWindow } = require('./hub-lobby-club.cjs');
 const { createHubRules } = require('./hub-rules.cjs');
 const { createHubHq } = require('./hub-hq.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
@@ -627,6 +628,12 @@ const socialHub = createSocialHub({
   studio: () => graphicsStudio,
   rules: () => hubRules,
 });
+// Which in-game EA club each Social Hub lobby plays on, with stats from only the games played in the lobby
+const hubLobbyClub = createHubLobbyClub({
+  supabase, getGuildState, saveGuildSettings, hubOf: (g) => socialHub.hubOf(g), eaVersion: () => EA_FC_VERSION,
+  searchClubs: (name) => searchClubCandidates(name), startMonitoring: (g, k) => startEaMonitoring(g, k), refreshBoard: (guild) => socialHub.touch(guild.id),
+});
+client.once('ready', () => hubLobbyClub.start(client));
 // Hub XP: levels, tier roles, weekly challenges and social badges for players across every lobby and team
 const hubXp = createHubXp({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, getGuildState, linkedIds: career.linkedIds, client: () => client, chemistry: () => hubChemistry, onFirstGame: (guildId, ids) => hubCard.onFirstGame(guildId, ids) });
 // Hub chemistry: who works well together, suggested teammates and squads built from it
@@ -4257,6 +4264,7 @@ async function routeInteraction(interaction) {
     if (await clubLife.handleInteraction(interaction)) return;
     if (await casual.handleInteraction(interaction)) return;
     if (await socialHub.handleInteraction(interaction)) return;
+    if (await hubLobbyClub.handleInteraction(interaction)) return;
     if (await hubOnboarding.handleInteraction(interaction)) return;
     if (await hubChemistry.handleInteraction(interaction)) return;
     if (await hubCard.handleInteraction(interaction)) return;
@@ -16296,8 +16304,9 @@ async function checkForNewMatches(guildId, clubKey) {
     
     console.log(`[EA] Checking matches for ${club.name} (${club.ea_club_id})`);
     
-    // Sync club stats (skill rating, record, etc.) - runs locally to avoid EA blocking
-    await syncClubStatsLocal(guildId, clubKey, club.ea_club_id, club.ea_platform);
+    // Sync club stats (skill rating, record, etc.) - runs locally to avoid EA blocking. A Social Hub lobby
+    // borrowing a club (lobby_only) keeps only its own games, not the club's record.
+    if (!club.lobby_only) await syncClubStatsLocal(guildId, clubKey, club.ea_club_id, club.ea_platform);
     
     // Fetch recent matches from EA API
     const matches = await matchesStats({
@@ -16321,6 +16330,13 @@ async function checkForNewMatches(guildId, clubKey) {
     
     // Check if we've already processed this match
     if (club.last_match_id === matchId) {
+      return;
+    }
+
+    // A lobby borrowing a club counts only games played while people were in the lobby's voice
+    if (club.lobby_only && !inLobbyWindow(club.lobby_windows, latestMatch, club.ea_club_id)) {
+      club.last_match_id = matchId;
+      await saveGuildSettings(guildId, state);
       return;
     }
     

@@ -1,3 +1,4 @@
+import { inLobbyWindow } from "../_shared/lobby-window.ts"
 import { identifyCaller, requireGuildAccess } from '../_shared/auth.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { decodeRegionId, toFcPlatform, FC_PLATFORMS, normalizeClubName } from '../_shared/ea.ts'
@@ -2086,16 +2087,19 @@ Deno.serve(async (req) => {
             const competitionMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'playoffMatch', 'competition')
             const friendlyMatches = await fetchMatches(club.ea_club_id, club.ea_platform, 'friendlyMatch', 'friendly')
             allRecentMatches = [...divisionMatches, ...competitionMatches, ...friendlyMatches]
+            // A Social Hub lobby borrowing a club keeps only the games played in the lobby
+            if (club.lobby_only) allRecentMatches = allRecentMatches.filter((m) => inLobbyWindow(club.lobby_windows, m, club.ea_club_id))
           }
 
           // Sync club stats with form data from recent matches
-          const clubStatsResult = await syncClubStats(supabase, guildId, club.key, club.ea_club_id, club.ea_platform, allRecentMatches)
+          // A lobby's borrowed club: its EA record and members' careers aren't the lobby's, so skip them
+          const clubStatsResult = club.lobby_only ? null : await syncClubStats(supabase, guildId, club.key, club.ea_club_id, club.ea_platform, allRecentMatches)
           if (clubStatsResult) clubStatsSynced++
 
           // Sync member career stats (pulls from EA member list API)
-          const { updatedPlayerIds, unknownMemberKeys } = await syncMemberStats(
-            supabase, guildId, club.ea_club_id, club.ea_platform, club.name, aggregates, club.key
-          )
+          const { updatedPlayerIds, unknownMemberKeys } = club.lobby_only
+            ? { updatedPlayerIds: [] as string[], unknownMemberKeys: [] as string[] }
+            : await syncMemberStats(supabase, guildId, club.ea_club_id, club.ea_platform, club.name, aggregates, club.key)
           updatedPlayerIds.forEach(id => guildUpdatedPlayerIds.add(id))
           unknownMemberKeys?.forEach((key) => unmappedMemberKeys.add(key))
           
