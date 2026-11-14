@@ -108,9 +108,21 @@ export async function futRequest<T>(path: string, method: "GET" | "POST" | "PUT"
   if (data && typeof data === "object" && "data" in data) return (data as { data: T }).data;
   return (data ?? null) as T;
 }
-export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, evolutions: ["fut", "evolutions"] as const, calendar: ["fut", "calendar"] as const, fodder: ["fut", "fodder"] as const, clubShare: ["fut", "club-share"] as const, trades: ["fut", "trades"] as const, sellKeep: ["fut", "sell-keep"] as const, champs: ["fut", "champs"] as const, meta: ["fut", "meta"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
+export const futKeys = { formationSlots: ["fut", "formations", "slots"] as const, account: ["fut", "account"] as const, sbc: ["fut", "sbc"] as const, evolutions: ["fut", "evolutions"] as const, calendar: ["fut", "calendar"] as const, fodder: ["fut", "fodder"] as const, clubShare: ["fut", "club-share"] as const, trades: ["fut", "trades"] as const, sellKeep: ["fut", "sell-keep"] as const, champs: ["fut", "champs"] as const, meta: ["fut", "meta"] as const, packs: ["fut", "packs"] as const, knowledge: ["fut", "knowledge"] as const, strategy: ["fut", "strategy"] as const, coach: ["fut", "coach"] as const, market: ["fut", "market"] as const, all: ["fut"] as const, health: ["fut", "health"] as const, squads: ["fut", "squads"] as const, cards: ["fut", "cards"] as const, managers: ["fut", "managers"] as const };
 
 export type MarketPlatform = "console" | "pc";
+
+// Coins plan (GET /coach): what to do with your coins right now for the squad you play. Advice only.
+export type CoachStepKind = "collect" | "relist" | "sell" | "swap" | "upgrade" | "save" | "sbc" | "flip" | "hold" | "setup";
+export interface CoachStep { kind: CoachStepKind; title: string; detail: string; coins: number | null; link: { to: string; label: string } | null; items?: { name: string; rating: number | null; coins: number | null; note: string; card_id?: string | null }[] }
+export interface CoachUpgrade { swaps: { slot: string; position: string; cost: number; out: { name: string | null; rating: number | null; sells_for: number | null }; in: { id: string; name: string; rating: number | null; owned: boolean } }[]; cost: number; net_cost: number; rating_before: number; rating_after: number; chem_before: number; chem_after: number; gain: number }
+export interface CoachPlan {
+  platform: MarketPlatform; headline: { kind: CoachStepKind; title: string; detail: string }; steps: CoachStep[];
+  money: { coins: number | null; coins_at: string | null; sold: number; sell_now: number; sell_steady: number; available: number; upgrade_cost: number | null; left: number };
+  squad: { source: "game" | "saved" | "club" | "none"; note: string; name: string | null; formation: string | null; rating: number | null; chemistry: number | null };
+  timing: { now: string; next: string | null; buy_bias: number; sell_bias: number; weekday: string; uk_time: string; events: { name: string; date: string; days: number; advice: string }[] };
+  keep: { fodder: number; waiting: number }; others: CoachUpgrade[]; prices_at: string | null; notes: string[]; verified: false;
+}
 
 // Daily strategy (GET /strategy): advice only, GafferBot never trades.
 export type StrategyRisk = "careful" | "normal" | "bold";
@@ -472,6 +484,7 @@ export const futApi = {
     advice: (platform: MarketPlatform) => futRequest<PackAdvice>(`/packs?${new URLSearchParams({ platform })}`),
     clear: (platform: MarketPlatform) => futRequest<{ cleared: boolean }>(`/packs?${new URLSearchParams({ platform })}`, "DELETE"),
   },
+  coach: (platform: MarketPlatform) => futRequest<CoachPlan>(`/coach?${new URLSearchParams({ platform })}`),
   strategy: (platform: MarketPlatform, opts: { budget?: number | null; risk?: StrategyRisk } = {}) => futRequest<DailyStrategy>(`/strategy?${new URLSearchParams({ platform, ...(opts.budget != null ? { budget: String(opts.budget) } : {}), ...(opts.risk ? { risk: opts.risk } : {}) })}`),
   health: () => futRequest<FutHealth>("/health"),
   clubValue: (platform: MarketPlatform) => futRequest<ClubValue>(`/club/value?${new URLSearchParams({ platform })}`),

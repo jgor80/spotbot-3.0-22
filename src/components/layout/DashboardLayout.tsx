@@ -42,6 +42,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FUT_SECTIONS, futSectionFor } from "@/components/fut/futSections";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -88,34 +89,14 @@ const clubMore: NavItem[] = [
 ];
 
 // FUT app: Ultimate Team market and squad tools. Personal, not tied to a Discord club.
-const futPrimary: NavItem[] = [
-  { path: "/fut/market/cards", label: "Card Search", short: "Search", icon: Search },
-  { path: "/fut/players", label: "Player Ratings", short: "Ratings", icon: UserSearch },
-  { path: "/fut/market", label: "Market Lab", short: "Market", icon: ChartNoAxesCombined },
-  { path: "/fut", label: "Squad Builder", short: "Squads", icon: FlaskConical },
-  { path: "/fut/cards", label: "My Cards", short: "Cards", icon: Layers },
-];
-
+// One nav item per FUT section (futSections.ts); the pages inside a section are tabs under the page header.
+const FUT_ICONS: Record<string, NavItem["icon"]> = { coach: Target, squad: FlaskConical, players: UserSearch, market: ChartNoAxesCombined, club: Wallet, packs: Puzzle, knowledge: BookOpenText };
+const futNav: NavItem[] = FUT_SECTIONS.map(s => ({ path: s.tabs[0]!.path, label: s.label, short: s.short, icon: FUT_ICONS[s.key]! }));
 // Five in the bar keeps the phone nav readable; the rest sit under More
-const futMore: NavItem[] = [
-  { path: "/fut/strategy", label: "Daily Strategy", icon: Target },
-  { path: "/fut/account", label: "My Account", icon: Wallet },
-  { path: "/fut/packs", label: "Packs", icon: Package },
-  { path: "/fut/sbc", label: "SBC Solver", icon: Puzzle },
-  { path: "/fut/knowledge", label: "Knowledge Bank", icon: BookOpenText },
-  { path: "/fut/evolutions", label: "Evolutions", icon: TrendingUp },
-  { path: "/fut/trades", label: "Trade Log", icon: Coins },
-  { path: "/fut/sell", label: "Sell or Keep", icon: Scale },
-  { path: "/fut/meta", label: "Meta Ratings", icon: Gauge },
-  { path: "/fut/compare", label: "Compare Cards", icon: Columns3 },
-  { path: "/fut/champs", label: "Champs Tracker", icon: Trophy },
-  { path: "/fut/calendar", label: "Market Calendar", icon: CalendarClock },
-  { path: "/fut/fodder", label: "Fodder Index", icon: LineChart },
-  { path: "/fut/objectives", label: "Objectives Planner", icon: ListChecks },
-  { path: "/fut/draft", label: "Draft and Packs", icon: Dices },
-];
+const futPrimary: NavItem[] = futNav.slice(0, 5);
+const futMore: NavItem[] = futNav.slice(5);
 
-const SECTION_HOME: Record<AppSection, string> = { club: "/", fut: "/fut/market/cards" };
+const SECTION_HOME: Record<AppSection, string> = { club: "/", fut: "/fut" };
 const LAST_PATH_KEY = "gafferbot-last-path-";
 
 function sectionOf(path: string): AppSection {
@@ -128,6 +109,9 @@ const ALIASES: Record<string, string> = { "/lineup": "/teams", "/players": "/lea
 // The nav item with the longest path that contains the current page, so /fut/market/cards
 // lights up Card Search and not Market Lab or Squad Builder.
 function activeNavPath(current: string, items: NavItem[]) {
+  // FUT pages light up their section, wherever in it they are
+  const fut = futSectionFor(current);
+  if (fut) return fut.section.tabs[0]!.path;
   const resolved = ALIASES[current] ?? current;
   let best: string | null = null;
   for (const { path } of items) {

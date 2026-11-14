@@ -42,6 +42,7 @@ import {
 } from "../_shared/fut/knowledge.ts";
 import { applyToTeam, loadTeam, teamPlan } from "../_shared/fut/knowledge-team.ts";
 import { currentSquad, importGameSquads, squadAdvice } from "../_shared/fut/current-squad.ts";
+import { coachPlan, playingNow } from "../_shared/fut/coach.ts";
 import { idealSquad, MAX_PLAYSTYLE, PLAYER_TRAITS, SHAPE_TRAITS, topMetas } from "../_shared/fut/ideal-squad.ts";
 import { importCardArt, listCardArt } from "../_shared/fut/card-art.ts";
 import { contributeCaptures, getSharing, pullCommunity, setSharing } from "../_shared/fut/community.ts";
@@ -376,6 +377,9 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       return json({ data });
     }
 
+    // Coins plan: what to do with your coins right now for the squad you play (coach.ts joins account, sell or keep,
+    // upgrade path, SBCs and the daily strategy). Advice only.
+    if (route === "/coach" && m === "GET") return json({ data: await runWorkspace(() => coachPlan(db, userId, platformParam(url.searchParams.get("platform")))) });
     // Daily strategy: today's buys, sells, transfer list fixes and budget split from prices, coins and club. Advice only.
     if (route === "/strategy" && m === "GET") return json({ data: await dailyStrategy(db, userId, platformParam(url.searchParams.get("platform")), { budget: intParam(url.searchParams.get("budget"), "budget", 0, 2_000_000_000) ?? null, risk: riskParam(url.searchParams.get("risk")) }) });
     // What the user shares with their Discord club (pulls feed, FUT board, who has this card). Off by default.
@@ -423,7 +427,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     // Sell or keep: a verdict for every tradeable club card (saved squads, live evolutions, SBC fodder, FUT.GG trend).
     if (route === "/club/sell-or-keep" && m === "GET") {
       const platform = platformParam(url.searchParams.get("platform"));
-      return json({ data: await runWorkspace(() => sellOrKeep(db, userId, platform, async () => new Map((await evolutionsOverview(db, userId, platform)).best_upgrades.map((b) => [b.card_id, { name: b.evolution, gain: b.gain }])))) });
+      return json({ data: await runWorkspace(() => sellOrKeep(db, userId, platform, async () => new Map((await evolutionsOverview(db, userId, platform)).best_upgrades.map((b) => [b.card_id, { name: b.evolution, gain: b.gain }])), () => playingNow(db, userId))) });
     }
 
     if (route === "/managers" && m === "GET") return json({ data: await listManagers(db, userId) });

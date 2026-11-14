@@ -41,6 +41,7 @@ const PlayPage = lazy(() => import("./pages/PlayPage"));
 const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const FutHomePage = lazy(() => import("./pages/fut/FutHomePage"));
+const FutCoachPage = lazy(() => import("./pages/fut/FutCoachPage"));
 const FutSquadPage = lazy(() => import("./pages/fut/FutSquadPage"));
 const FutCardsPage = lazy(() => import("./pages/fut/FutCardsPage"));
 const MarketOverviewPage = lazy(() => import("./pages/fut/market/MarketOverviewPage"));
@@ -127,7 +128,8 @@ const App = () => (
                   <Route path="/hub" element={<ProtectedRoute><HubPage /></ProtectedRoute>} />
                   <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
                   <Route path="/players" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
-                  <Route path="/fut" element={<ProtectedRoute><FutHomePage /></ProtectedRoute>} />
+                  <Route path="/fut" element={<ProtectedRoute><FutCoachPage /></ProtectedRoute>} />
+                  <Route path="/fut/squads" element={<ProtectedRoute><FutHomePage /></ProtectedRoute>} />
                   <Route path="/fut/squads/:id" element={<ProtectedRoute><FutSquadPage /></ProtectedRoute>} />
                   <Route path="/fut/cards" element={<ProtectedRoute><FutCardsPage /></ProtectedRoute>} />
                   <Route path="/fut/market" element={<ProtectedRoute><MarketOverviewPage /></ProtectedRoute>} />
