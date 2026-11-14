@@ -225,7 +225,9 @@ function createSocialHub(deps) {
       new ButtonBuilder().setCustomId('pd_new').setLabel('Pickup draft').setEmoji('📝').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('pd_bal').setLabel('Balanced teams').setEmoji('⚖️').setStyle(ButtonStyle.Secondary),
       // Handled by kit-catalog.cjs
-      new ButtonBuilder().setCustomId('kc_open').setLabel('My kit').setEmoji('👕').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('kc_open').setLabel('My kit').setEmoji('👕').setStyle(ButtonStyle.Secondary),
+      // Handled by hub-tournament.cjs
+      new ButtonBuilder().setCustomId('ht_show').setLabel('Tournament').setEmoji('🏆').setStyle(ButtonStyle.Secondary)
     );
     return { embeds: [embed], components: [row, row2, row3], allowedMentions: NO_PINGS };
   }
