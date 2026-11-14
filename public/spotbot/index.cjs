@@ -84,6 +84,7 @@ const { createRivalries } = require('./rivalries.cjs');
 const { createCasual, allCasual } = require('./casual.cjs');
 const { createSocialHub } = require('./social-hub.cjs');
 const { createHubXp } = require('./hub-xp.cjs');
+const { createHubOnboarding } = require('./hub-onboarding.cjs');
 const { createNetworkWire } = require('./network-wire.cjs');
 const permCheck = require('./perm-check.cjs');
 const { reportError, interactionContext } = require('./error-reporter.cjs');
@@ -610,10 +611,13 @@ const socialHub = createSocialHub({
   createBoard: () => createEmptyBoardForFormation(DEFAULT_FORMATION),
   gameOn: (guildId, clubKey) => activeGameSessions.get(`${guildId}_${clubKey}`)?.status === 'in_progress',
   xp: () => hubXp,
+  onboarding: () => hubOnboarding,
 });
 // Hub XP: levels, tier roles, weekly challenges and social badges for players across every lobby and team
 const hubXp = createHubXp({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, getGuildState, linkedIds: career.linkedIds, client: () => client });
 autopilot.onNewMatches(hubXp.onNewMatches);
+// Hub onboarding: #start-here and the optional Get set up card (platform, region, gamertag, positions, Twitch)
+const hubOnboarding = createHubOnboarding({ supabase, hubOf: socialHub.hubOf, autoLink, getUserPrefs, xp: () => hubXp });
 
 // MessageContent is required to see attachments on normal channel posts (#pro-photos detection).
 // It's a privileged intent: if it isn't enabled in the Developer Portal, login falls back without it.
@@ -3953,7 +3957,7 @@ client.once(Events.ClientReady, async (c) => {
 // New members are added to every open, upcoming event so they appear on the
 // board and get deadline reminders (they could already answer via the buttons).
 client.on(Events.GuildMemberAdd, async (member) => {
-  socialHub.onMemberJoin(member).catch((err) => console.warn('[hub] welcome failed:', err.message));
+  hubOnboarding.onMemberJoin(member).catch((err) => console.warn('[hub] welcome failed:', err.message));
   try {
     if (member.user?.bot) return;
     const added = await clubEvents.addMemberToOpenEvents(member.guild.id, member.id);
@@ -4213,6 +4217,7 @@ async function routeInteraction(interaction) {
     if (await clubLife.handleInteraction(interaction)) return;
     if (await casual.handleInteraction(interaction)) return;
     if (await socialHub.handleInteraction(interaction)) return;
+    if (await hubOnboarding.handleInteraction(interaction)) return;
     if (await lineupBoard.handleInteraction(interaction)) return;
     if (await eventLineup.handleInteraction(interaction)) return;
     if (await clubEvents.handleInteraction(interaction)) return;

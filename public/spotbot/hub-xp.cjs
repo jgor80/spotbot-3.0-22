@@ -40,6 +40,7 @@ const HUB_BADGES = {
   caller: { name: 'Caller', tier: 'common', help: 'Started 5 games' },
   full_week: { name: 'Clean Sweep', tier: 'rare', help: 'Finished all three weekly challenges' },
   weekly_winner: { name: 'Player of the Week', tier: 'epic', help: 'Most XP in the hub in a week' },
+  kitted_out: { name: 'Kitted Out', tier: 'common', help: 'Finished the welcome setup' },
 };
 
 const CHALLENGES = {
