@@ -5,7 +5,10 @@
 //              GafferBot Network (servers that opted in to sharing public club info).
 //   Popular    the 50 most picked kits (kit_popularity) are cached in memory, refreshed every
 //              10 minutes, and shown first as two numbered swatch sheets drawn locally (no AI).
-//   Pick       My kit: two menus of popular kits, Search all kits (a name search over the whole
+//   Real teams the first menu lists real teams' kits as their managers saved them on the website (or in
+//              the Studio): this server's clubs first, then GafferBot Network clubs. A picked team kit is
+//              looked up again at render time, so a team that changes its kit dresses every card in the new one.
+//   Pick       My kit: real team kits, two menus of popular kits, Search all kits (a name search over the whole
 //              catalogue), or back to club colours. Saved on the player's profile (profiles.studio_kit),
 //              so it follows them to every hub server. Nothing here pings anyone.
 
@@ -49,7 +52,7 @@ const PALERMO = kitsFor({ name: 'Palermo' }).map((k) => ({ key: `palermo:${k.key
 function clubKit(guildId, club) {
   const k = kitOf(club);
   if (!k.primary && !k.secondary) return null;
-  return { key: `club:${guildId}:${club.key}`, label: `${club.name}`.slice(0, 60), primary: k.primary || null, secondary: k.secondary || null, description: k.description || null, source: 'club' };
+  return { key: `club:${guildId}:${club.key}`, label: `${club.name}`.slice(0, 60), primary: k.primary || null, secondary: k.secondary || null, description: k.description || null, source: 'club', team: String(club.name || '').slice(0, 60) };
 }
 
 // Search: every word must appear in the label or source
@@ -121,9 +124,24 @@ function createKitCatalog(deps) {
     const own = (state?.clubs || []).filter((c) => c.enabled && !/^(Club|Lobby) \d+$/.test(c.name || '')).map((c) => clubKit(guildId, c)).filter(Boolean);
     const network = await networkKits().catch(() => []);
     const seen = new Set();
-    const list = [...CLASSIC, ...PALERMO, ...own, ...network].filter((k) => !seen.has(k.key) && seen.add(k.key));
+    const list = [...own, ...network, ...CLASSIC, ...PALERMO].filter((k) => !seen.has(k.key) && seen.add(k.key));
     catalogues.set(guildId, { at: Date.now(), list });
     return list;
+  }
+
+  // Real teams' kits (this server's clubs, then Network clubs), as saved on the website
+  async function teamKits(guildId) {
+    return (await catalogue(guildId)).filter((k) => k.source === 'club');
+  }
+
+  // A saved team kit, read again from that team's settings so it is always the team's current kit
+  async function liveKit(kit) {
+    const m = /^club:([^:]+):(.+)$/.exec(kit?.key || '');
+    if (!m) return kit;
+    const state = await getGuildState(m[1]).catch(() => null);
+    const club = (state?.clubs || []).find((c) => c.key === m[2]);
+    const fresh = club && clubKit(m[1], club);
+    return fresh ? { ...fresh, key: kit.key } : kit;
   }
 
   // The 50 most picked kits, with the classics topping it up while picks are few
@@ -145,11 +163,11 @@ function createKitCatalog(deps) {
   async function personalKit(guildId, userId) {
     const hub = await hubOf(guildId).catch(() => ({}));
     if (!hub?.on) return null;
-    return myKit(userId);
+    return liveKit(await myKit(userId));
   }
 
   async function choose(userId, kit) {
-    const clean = kit ? { key: kit.key, label: kit.label, primary: kit.primary || null, secondary: kit.secondary || null, description: kit.description || null } : null;
+    const clean = kit ? { key: kit.key, label: kit.label, primary: kit.primary || null, secondary: kit.secondary || null, description: kit.description || null, ...(kit.team ? { team: kit.team } : {}) } : null;
     const { data: row } = await supabase.from('profiles').select('discord_user_id').eq('discord_user_id', userId).maybeSingle();
     const { error } = row
       ? await supabase.from('profiles').update({ studio_kit: clean }).eq('discord_user_id', userId)
@@ -169,13 +187,16 @@ function createKitCatalog(deps) {
     new StringSelectMenuBuilder()
       .setCustomId(id)
       .setPlaceholder(placeholder)
-      .addOptions(kits.map((k, i) => ({ label: `${offset + i + 1}. ${k.label}`.slice(0, 100), description: `${[colourName(k.primary), colourName(k.secondary)].filter(Boolean).join(' / ')} · ${k.source}`.slice(0, 100), value: k.key.slice(0, 100) })));
+      .addOptions(kits.map((k, i) => ({ label: `${offset + i + 1}. ${k.label}`.slice(0, 100), description: `${[colourName(k.primary), colourName(k.secondary)].filter(Boolean).join(' / ')} · ${k.source === 'club' ? 'team kit' : k.source}`.slice(0, 100), value: k.key.slice(0, 100) })));
 
-  async function picker(userId, note = null) {
-    const [kits, mine] = await Promise.all([popularKits(), myKit(userId)]);
+  async function picker(userId, note = null, guildId = null) {
+    const [kits, mine, teams] = await Promise.all([popularKits(), myKit(userId), guildId ? teamKits(guildId).catch(() => []) : []]);
+    const real = teams.slice(0, 25);
     const first = kits.slice(0, 25);
     const second = kits.slice(25, 50);
-    const files = [new AttachmentBuilder(swatchSheet(first, 'POPULAR KITS 1-25'), { name: 'kits-1.png' })];
+    const files = [];
+    if (real.length) files.push(new AttachmentBuilder(swatchSheet(real, 'REAL TEAM KITS'), { name: 'kits-teams.png' }));
+    files.push(new AttachmentBuilder(swatchSheet(first, 'POPULAR KITS 1-25'), { name: 'kits-1.png' }));
     if (second.length) files.push(new AttachmentBuilder(swatchSheet(second, 'POPULAR KITS 26-50'), { name: 'kits-2.png' }));
     const embed = new EmbedBuilder()
       .setTitle('👕 My kit')
@@ -184,11 +205,13 @@ function createKitCatalog(deps) {
         [
           note,
           `Your player cards on Social Hub servers are drawn in **${mine ? mine.label : 'the club colours'}**.`,
-          'Pick one of the 50 most popular kits, or **Search all kits**: GafferBot classics, Palermo, this server\'s clubs and every club in the GafferBot Network.',
+          real.length ? '**Real team kits** are the uniforms teams saved on the GafferBot website: this server\'s teams first, then clubs in the GafferBot Network. If a team changes its kit, your card follows.' : null,
+          'Or pick one of the 50 most popular kits, or **Search all kits**: real teams, GafferBot classics and Palermo.',
           'Then make your card in the **Photo Studio** (Player Card).',
         ].filter(Boolean).join('\n\n')
       );
-    const rows = [new ActionRowBuilder().addComponents(menu('kc_pick:0', first, 0, 'Popular kits 1-25'))];
+    const rows = real.length ? [new ActionRowBuilder().addComponents(menu('kc_pick:t', real, 0, 'Real team kits'))] : [];
+    rows.push(new ActionRowBuilder().addComponents(menu('kc_pick:0', first, 0, 'Popular kits 1-25')));
     if (second.length) rows.push(new ActionRowBuilder().addComponents(menu('kc_pick:1', second, 25, 'Popular kits 26-50')));
     rows.push(
       new ActionRowBuilder().addComponents(
@@ -218,7 +241,7 @@ function createKitCatalog(deps) {
     if (!id.startsWith('kc_') || !interaction.guildId) return false;
     if (id === 'kc_open' && interaction.isButton?.()) {
       await interaction.deferReply({ flags: 64 });
-      await interaction.editReply(await picker(interaction.user.id));
+      await interaction.editReply(await picker(interaction.user.id, null, interaction.guildId));
       return true;
     }
     if (id === 'kc_search' && interaction.isButton?.()) {
@@ -250,13 +273,13 @@ function createKitCatalog(deps) {
     if (id === 'kc_clear' && interaction.isButton?.()) {
       await interaction.deferUpdate();
       const err = await choose(interaction.user.id, null);
-      await interaction.editReply(await picker(interaction.user.id, err ? `❌ ${err}` : '✅ Back to the club colours.'));
+      await interaction.editReply(await picker(interaction.user.id, err ? `❌ ${err}` : '✅ Back to the club colours.', interaction.guildId));
       return true;
     }
     return false;
   }
 
-  return { handleInteraction, personalKit, myKit, catalogue, popularKits, choose, picker };
+  return { handleInteraction, personalKit, myKit, catalogue, teamKits, liveKit, popularKits, choose, picker };
 }
 
 module.exports = { createKitCatalog, CLASSIC, PALERMO, clubKit, search, swatchSheet };

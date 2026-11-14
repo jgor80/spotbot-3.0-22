@@ -666,7 +666,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (club && d.teamName) club = { ...club, name: d.teamName };
     // On a Social Hub server a player's own kit pick (kit-catalog.cjs) dresses their card
     const mine = personalKit ? await personalKit(guildId, d.userId).catch(() => null) : null;
-    club = club && { ...club, kit: mine ? { ...kitOf(club), primary: mine.primary || kitOf(club).primary, secondary: mine.secondary || kitOf(club).secondary, description: mine.description || undefined } : kitOf(club) }; // team colours fill the kit and lead the accent
+    club = club && { ...club, kit: mine ? { ...kitOf(club), primary: mine.primary || kitOf(club).primary, secondary: mine.secondary || kitOf(club).secondary, description: [mine.team && `${mine.team}'s kit`, mine.description].filter(Boolean).join(': ') || undefined } : kitOf(club) }; // team colours fill the kit and lead the accent
     // Cards are only drawn for someone still in the server.
     if (!(await stillInGuild(guildOf(guildId), [d.userId])).length) return { error: 'That player is no longer in this server, so no card was made.' };
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);
