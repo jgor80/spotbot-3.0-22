@@ -240,6 +240,9 @@ function createHubXp(deps) {
       for (const id of ids) {
         const res = applyActivity(rows.get(id) || blankRow(guildId, id), perUser.get(id), { now, lobbyKeys: hub.lobbies || [] });
         res.row.updated_at = now.toISOString();
+        // Pickup ratings belong to hub-draft.cjs; never write back a stale copy
+        delete res.row.rating;
+        delete res.row.rated_games;
         const before = rows.get(id);
         results.push({ id, isNew: !before, firstGame: !(before?.games > 0) && res.row.games > 0, ...res });
       }
@@ -407,7 +410,7 @@ function createHubXp(deps) {
       .setDescription(`<@${userId}> · **${r.xp} XP**\n\`${bar(into, span)}\` ${into}/${span} to level ${level + 1}${next ? ` · ${next.emoji} ${next.name} at level ${next.level}` : ''}`)
       .addFields(
         { name: `This week (${r.week_key === week ? r.week_xp : 0} XP)`, value: challenges.join('\n') + '\nAll three: +200 XP bonus' },
-        { name: 'Hub career', value: `${r.games} games · ${r.wins} wins · ${r.goals}G ${r.assists}A\n${Math.round(r.voice_minutes / 60)}h in lobbies · played with ${r.mates.length} people · ${r.streak || 0}-day streak (best ${r.best_streak || 0})` },
+        { name: 'Hub career', value: `${r.rated_games ? `Pickup rating **${r.rating}** (${r.rated_games} rated games)\n` : ''}${r.games} games · ${r.wins} wins · ${r.goals}G ${r.assists}A\n${Math.round(r.voice_minutes / 60)}h in lobbies · played with ${r.mates.length} people · ${r.streak || 0}-day streak (best ${r.best_streak || 0})` },
         { name: `Badges (${r.badges.length}/${Object.keys(HUB_BADGES).length})`, value: r.badges.length ? r.badges.map((b) => `🏅 ${HUB_BADGES[b]?.name || b}`).join(' · ').slice(0, 1024) : 'None yet: play a few games!' }
       )
       .setFooter({ text: 'XP: 1 per 5 min in voice with others · 20 per game · +10 win · +5 goal · +3 assist · +15 for starting a game' });

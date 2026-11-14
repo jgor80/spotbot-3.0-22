@@ -398,6 +398,8 @@ export type Database = {
           voice_minutes: number
           calls: number
           referrals: number
+          rating: number
+          rated_games: number
           mates: Json
           lobbies: Json
           badges: Json
@@ -421,6 +423,8 @@ export type Database = {
           voice_minutes?: number
           calls?: number
           referrals?: number
+          rating?: number
+          rated_games?: number
           mates?: Json
           lobbies?: Json
           badges?: Json
@@ -444,6 +448,8 @@ export type Database = {
           voice_minutes?: number
           calls?: number
           referrals?: number
+          rating?: number
+          rated_games?: number
           mates?: Json
           lobbies?: Json
           badges?: Json

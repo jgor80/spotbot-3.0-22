@@ -219,7 +219,8 @@ function createSocialHub(deps) {
     );
     // Handled by hub-draft.cjs
     const row3 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('pd_new').setLabel('Pickup draft').setEmoji('📝').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('pd_new').setLabel('Pickup draft').setEmoji('📝').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('pd_bal').setLabel('Balanced teams').setEmoji('⚖️').setStyle(ButtonStyle.Secondary)
     );
     return { embeds: [embed], components: [row, row2, row3], allowedMentions: NO_PINGS };
   }
