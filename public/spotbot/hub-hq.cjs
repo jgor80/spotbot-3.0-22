@@ -5,12 +5,14 @@
 //             reply. Safe to run again: ids live in guild_settings.social_hub.hq, so a second run edits
 //             the same channels and posts. It never deletes anything.
 //   Builds    the GafferBot Team role (hoisted, given to whoever ran it); a read-only 📣 GafferBot
-//             category (#welcome, #announcements, #how-it-works, #add-gafferbot, #pricing), a 💬
+//             category (#welcome, #guides, #announcements, #how-it-works, #add-gafferbot, #pricing), a 💬
 //             Clubs category (#show-off-your-club, #feature-requests), a 🛟 Support category (#support,
 //             a forum with tags when Community is on, and a staff-only #staff); Community turned on
 //             (rules = the hub's #rules, updates = #staff) so #announcements can be followed; branded
 //             banner graphics on every post (drawn locally, resvg); the GafferBot logo as the server
 //             icon when it has none; and a permanent invite from #welcome.
+//   Guides    #guides is a read-only forum (a text channel when Community is off) with one tagged post per
+//             part of the app (hub-guides.cjs), each with its own banner, edited in place on a rerun.
 // Nothing here pings anyone.
 
 const fs = require('fs');
@@ -18,6 +20,7 @@ const path = require('path');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder, ChannelType, PermissionsBitField } = require('discord.js');
 const G = require('./graphics.cjs');
 const { isBotOwner } = require('./perm-check.cjs');
+const { guides, GUIDE_TAGS, FREE_IMAGES, IMAGE_PACKS } = require('./hub-guides.cjs');
 
 const F = PermissionsBitField.Flags;
 const NO_PINGS = { parse: [] };
@@ -36,6 +39,7 @@ const CATEGORIES = [
     access: 'read_only',
     channels: [
       { key: 'welcome', name: 'welcome', topic: 'What GafferBot is and where to go next.' },
+      { key: 'guides', name: 'guides', topic: 'How every part of GafferBot works, for managers and players. Pick a tag to filter.', forum: true, tags: GUIDE_TAGS },
       { key: 'announcements', name: 'announcements', topic: 'New features, fixes and downtime. Press Follow to get these in your club\'s server.', announce: true },
       { key: 'how_it_works', name: 'how-it-works', topic: 'Everything GafferBot runs for a Pro Clubs side.' },
       { key: 'add', name: 'add-gafferbot', topic: 'Add GafferBot to your club\'s server in four steps.' },
@@ -110,6 +114,7 @@ function hqPosts({ inviteUrl, ch, hubName }) {
         'GafferBot runs **EA SPORTS FC Pro Clubs** sides from Discord and the web: events and availability, lineups, stats straight from EA, recruiting, the GafferBot Network and club graphics.',
         '',
         `**New here?** Read ${ch('how_it_works')}, then follow ${ch('add')} to set it up for your club.`,
+        `**How does it work?** ${ch('guides')} explains every part of the app, for managers and players.`,
         `**Want a game right now?** ${hubName} is also an open Social Hub: jump into a lobby, find a team or start one.`,
         `**Something broken?** Open a post in ${ch('support')}.`,
         `**Stay in the loop:** follow ${ch('announcements')} into your club's server.`,
@@ -146,28 +151,32 @@ function hqPosts({ inviteUrl, ch, hubName }) {
       links: [['Add GafferBot', inviteUrl]],
       description: [
         `**1. Add the bot to your club's server.** You need Manage Server there. [Add GafferBot](${inviteUrl})`,
-        '**2. Set it up.** Run **/setup** to pick your channels, then **/manager → Admin → Link EA Club** and choose your colours and crest.',
+        `**2. Set it up.** Run **/setup** for a checklist and any missing permissions, link your club with **/manager → Admin → Link EA Club**, then pick your colours, crest and kits on ${SITE}.`,
         '**3. Post your first game.** **/manager → Events**. Availability, the lineup, reminders and the recap take care of themselves.',
         `**4. Bring your players in.** Each player runs **/me** to set positions and link their gamertag, or signs in at ${SITE}.`,
         '',
-        `Stuck? Open a post in ${ch('support')} with the Setup tag.`,
+        `Every step in more detail: ${ch('guides')}. Stuck? Open a post in ${ch('support')} with the Setup tag.`,
       ].join('\n'),
     },
     {
       key: 'pricing',
       channel: 'pricing',
-      title: 'Pricing: free',
-      banner: { headline: 'Free for every club', line: 'Every feature, every server, no card needed.', chips: ['Every club', 'Lineups', 'EA stats', 'Recruiting', 'Graphics', 'Network'] },
-      links: [['Add to Discord', inviteUrl], ['Donate', DONATE_URL]],
+      title: 'Pricing: free, plus AI image packs',
+      banner: { headline: 'Free for every club', line: `Every feature free. ${FREE_IMAGES} AI images free, then image packs.`, chips: ['Every feature', 'Lineups', 'EA stats', `${FREE_IMAGES} free AI images`, ...IMAGE_PACKS.map((p) => `${p.images} for $${p.price}`)] },
+      links: [['Add to Discord', inviteUrl], ['Buy image packs', `${SITE}/billing`], ['Donate', DONATE_URL]],
       description: [
         'GafferBot is **free**: every feature, every server, no card needed.',
         '• Every club, player and event in your server',
         '• Lineups, availability and reminders',
         '• EA stat sync, insights and recaps',
         '• Recruiting, free agents and the Network',
-        '• Graphics, player cards and the club newspaper',
+        '• Lineup graphics, player cards and the club newspaper',
         '',
-        'It runs on donations. If it helps your club, you can chip in to keep it going.',
+        `**AI images** cost us money to make, so each server gets **${FREE_IMAGES} free**. After that, buy an image pack:`,
+        ...IMAGE_PACKS.map((p) => `• **${p.images} images: $${p.price}**`),
+        `Packs are on the website (${SITE}/billing) and in Discord's store, at the same price.`,
+        '',
+        'GafferBot also runs on donations. If it helps your club, you can chip in to keep it going.',
       ].join('\n'),
     },
     {
@@ -207,7 +216,24 @@ function hqPosts({ inviteUrl, ch, hubName }) {
         'Never post passwords, tokens or sign-in links. The GafferBot Team will never ask for them. When it\'s fixed we\'ll tag the post **Solved**.',
       ].join('\n'),
     },
+    // Forums list the newest post first, so the guides go up last to first and "Start here" is pinned
+    ...guides({ ch })
+      .reverse()
+      .map((g) => ({ key: `guide_${g.key}`, channel: 'guides', title: g.title, thread_title: g.title, banner: g.banner, description: g.body, tags: g.tags, pin: g.key === 'start' })),
   ];
+}
+
+// Forum tag ids for tag names
+function tagIds(channel, names = []) {
+  const tags = channel?.availableTags || [];
+  return names.map((n) => tags.find((t) => t.name === n)?.id).filter(Boolean).slice(0, 5);
+}
+
+// Which channel a saved post belongs to, from its key
+function postChannelKey(key) {
+  if (key === 'support_guide') return 'support';
+  if (key.startsWith('guide_')) return 'guides';
+  return key;
 }
 
 // ---------- Setup ----------
@@ -326,7 +352,11 @@ function createHubHq(deps) {
             reason: 'GafferBot HQ',
           });
           done.push(`Made <#${channel.id}>`);
-          delete hq.posts[c.key === 'support' ? 'support_guide' : c.key];
+          for (const k of Object.keys(hq.posts)) if (hq.posts[k]?.channel_id && hq.posts[k].channel_id !== channel.id && postChannelKey(k) === c.key) delete hq.posts[k];
+        } else if (channel.type === ChannelType.GuildForum && c.tags?.length) {
+          const have = channel.availableTags || [];
+          const add = c.tags.filter((n) => !have.some((t) => t.name === n)).map((name) => ({ name }));
+          if (add.length && have.length + add.length <= 20) await channel.setAvailableTags([...have, ...add]).catch(() => warnings.push(`Couldn't add tags to <#${channel.id}>`));
         }
         hq.channels[c.key] = channel.id;
       }
@@ -349,19 +379,24 @@ function createHubHq(deps) {
         const where = saved.thread_id ? await fetchCh(guild, saved.thread_id) : channel;
         const old = where?.messages ? await where.messages.fetch(saved.message_id).catch(() => null) : null;
         if (old) msg = await old.edit({ ...payload, attachments: [] }).catch(() => null);
+        if (msg && saved.thread_id && channel.type === ChannelType.GuildForum) {
+          const thread = await fetchCh(guild, saved.thread_id);
+          if (p.thread_title && thread?.name !== p.thread_title) await thread?.setName?.(p.thread_title.slice(0, 100)).catch(() => {});
+          if (p.tags) await thread?.setAppliedTags?.(tagIds(channel, p.tags)).catch(() => {});
+        }
       }
       if (!msg) {
         if (channel.type === ChannelType.GuildForum) {
-          const thread = await channel.threads.create({ name: p.thread_title || p.title, message: payload, reason: 'GafferBot HQ' }).catch(() => null);
+          const thread = await channel.threads.create({ name: (p.thread_title || p.title).slice(0, 100), message: payload, appliedTags: tagIds(channel, p.tags), reason: 'GafferBot HQ' }).catch(() => null);
           if (thread) {
-            await thread.pin?.().catch(() => {});
+            if (p.pin || !p.key.startsWith('guide_')) await thread.pin?.().catch(() => {});
             msg = await thread.fetchStarterMessage().catch(() => null);
             hq.posts[p.key] = { channel_id: channel.id, thread_id: thread.id, message_id: msg?.id || null };
           }
         } else {
           msg = await channel.send(payload).catch(() => null);
           if (msg) {
-            await msg.pin().catch(() => {});
+            if (!p.key.startsWith('guide_') || p.pin) await msg.pin().catch(() => {});
             hq.posts[p.key] = { channel_id: channel.id, message_id: msg.id };
           }
         }
@@ -412,4 +447,4 @@ function createHubHq(deps) {
   return { handleInteraction, setup, inviteUrl };
 }
 
-module.exports = { createHubHq, bannerSvg, banner, hqPosts, CATEGORIES, TEAM_ROLE };
+module.exports = { createHubHq, bannerSvg, banner, hqPosts, tagIds, postChannelKey, CATEGORIES, TEAM_ROLE };
