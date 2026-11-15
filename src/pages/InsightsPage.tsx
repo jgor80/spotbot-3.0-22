@@ -14,6 +14,7 @@ import { AdvancedStatsSection } from "@/components/insights/AdvancedStatsSection
 import { PerformanceSection } from "@/components/insights/PerformanceSection";
 import { PlayerScoresSection } from "@/components/insights/PlayerScoresSection";
 import { BanterSection } from "@/components/insights/BanterSection";
+import { ExportButton } from "@/components/insights/ExportButton";
 import {
   ClubMatchRow,
   LineupRow,
@@ -218,8 +219,12 @@ export default function InsightsPage() {
             </div>
 
             <Card>
-              <CardHeader className="pb-2">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
                 <CardTitle className="text-base">Form (latest first)</CardTitle>
+                <ExportButton
+                  matches={analysis.matches}
+                  clubName={clubKey === "all" ? selectedGuild?.name || "all-clubs" : selectedGuild?.clubs.find((c) => c.key === clubKey)?.name || "club"}
+                />
               </CardHeader>
               <CardContent className="flex gap-1.5">
                 {overview.form.map((r, i) => (

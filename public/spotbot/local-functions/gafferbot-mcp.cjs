@@ -4001,6 +4001,18 @@ function headToHead(matches, a, b) {
   return { players: [la, lb], rows };
 }
 
+// src/lib/xlsx.ts
+var enc = new TextEncoder();
+var CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c2 = n;
+    for (let k = 0; k < 8; k++) c2 = c2 & 1 ? 3988292384 ^ c2 >>> 1 : c2 >>> 1;
+    t[n] = c2 >>> 0;
+  }
+  return t;
+})();
+
 // src/lib/clubInsights.ts
 var MATCH_TAGS = [
   { value: "league", label: "League", emoji: "\u{1F3C6}" },
