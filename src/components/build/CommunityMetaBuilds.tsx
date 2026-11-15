@@ -53,9 +53,9 @@ function SourceLink({ s }: { s: MetaSource }) {
 }
 
 /** One position's community meta build, with where it came from. */
-export function MetaBuildCard({ meta, onLoad, compact = false }: { meta: MetaBuild; onLoad?: (b: Build) => void; compact?: boolean }) {
+export function MetaBuildCard({ meta, onLoad, compact = false, className }: { meta: MetaBuild; onLoad?: (b: Build) => void; compact?: boolean; className?: string }) {
   if (!meta.builds || !meta.build) {
-    return <Card className="space-y-1 p-4 text-sm">
+    return <Card className={cn("space-y-1 p-4 text-sm", className)}>
       <p className="font-medium">No community builds for {meta.label.toLowerCase()} yet.</p>
       <p className="text-muted-foreground">GafferBot reads Pro Clubs build posts and videos every few hours. Builds people share for this position will show here.</p>
     </Card>;
@@ -63,7 +63,7 @@ export function MetaBuildCard({ meta, onLoad, compact = false }: { meta: MetaBui
   const a = AGREEMENT[meta.agreement];
   const build = decodeBuild(meta.code ?? "") ?? meta.build;
   const body = [meta.heightCm && `${meta.heightCm} cm`, meta.weightKg && `${meta.weightKg} kg`, meta.skillMoves && `${meta.skillMoves}★ skill moves`, meta.weakFoot && `${meta.weakFoot}★ weak foot`].filter(Boolean);
-  return <Card className="space-y-4 p-4">
+  return <Card className={cn("space-y-4 p-4", className)}>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <p className="text-xs uppercase tracking-widest text-muted-foreground">Community meta {meta.label.toLowerCase()}</p>
@@ -134,11 +134,11 @@ export function CommunityMetaBuilds({ onLoad, compact = false, initial = "ST", d
 }
 
 /** Compact loader for the Build lab: pick a position, see the summary, load it into the planner. */
-export function CommunityMetaLoader({ onLoad }: { onLoad: (b: Build) => void }) {
+export function CommunityMetaLoader({ onLoad, className, innerClassName }: { onLoad: (b: Build) => void; className?: string; innerClassName?: string }) {
   const [position, setPosition] = useState<MetaPosition>("ST");
   const q = useMetaBuilds(180);
   const meta = q.data?.positions.find((p) => p.position === position);
-  return <Card className="space-y-3 p-4">
+  return <Card className={cn("space-y-3 p-4", className)}>
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
         <h2 className="font-semibold">Load community meta build</h2>
@@ -151,6 +151,6 @@ export function CommunityMetaLoader({ onLoad }: { onLoad: (b: Build) => void }) 
     </div>
     {q.isPending ? <p className="text-sm text-muted-foreground">Loading...</p>
       : q.error ? <p className="text-sm text-destructive">Couldn't load the community builds right now.</p>
-      : meta && <MetaBuildCard meta={meta} onLoad={onLoad} compact />}
+      : meta && <MetaBuildCard meta={meta} onLoad={onLoad} compact className={innerClassName} />}
   </Card>;
 }
