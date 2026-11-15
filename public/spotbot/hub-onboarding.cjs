@@ -13,6 +13,7 @@
 // Nothing here pings anyone.
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionsBitField } = require('discord.js');
+const { addBotButton } = require('./add-bot.cjs');
 
 const F = PermissionsBitField.Flags;
 const GREEN = 0x2ecc71;
@@ -99,7 +100,8 @@ function createHubOnboarding(deps) {
       );
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('ob_start').setLabel('Get set up').setEmoji('✅').setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setLabel('Your profile on the web').setStyle(ButtonStyle.Link).setURL(`${SITE}/profile`)
+      new ButtonBuilder().setLabel('Your profile on the web').setStyle(ButtonStyle.Link).setURL(`${SITE}/profile`),
+      addBotButton('Add GafferBot to your club')
     );
     return { embeds: [embed], components: [row], allowedMentions: NO_PINGS };
   }

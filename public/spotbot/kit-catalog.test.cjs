@@ -66,3 +66,17 @@ test('the picker shows two menus of popular kits without pings', async () => {
   assert.equal(view.components.length, 3);
   assert.deepEqual(view.allowedMentions, { parse: [] });
 });
+
+test('real team kits come first and a picked team kit follows the team\'s current kit', async () => {
+  const w = world();
+  const view = await w.kits.picker('u1', null, 'g');
+  assert.equal(view.files.length, 3);
+  assert.equal(view.components[0].toJSON().components[0].custom_id, 'kc_pick:t');
+  assert.equal((await w.kits.catalogue('g'))[0].label, 'Night Owls');
+  const owls = (await w.kits.teamKits('g'))[0];
+  assert.equal(owls.team, 'Night Owls');
+  // The saved copy is stale; the team's settings win
+  const live = await w.kits.liveKit({ ...owls, primary: '#000000' });
+  assert.equal(live.primary, '#123456');
+  assert.deepEqual(await w.kits.liveKit({ key: 'classic:ice', primary: '#e0f2fe' }), { key: 'classic:ice', primary: '#e0f2fe' });
+});

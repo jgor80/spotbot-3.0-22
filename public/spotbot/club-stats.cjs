@@ -4,6 +4,7 @@
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
 const { placeSticky } = require('./sticky-post.cjs');
+const { addBotButton } = require('./add-bot.cjs');
 const {
   toInsightMatches, competitionLabel, competitionEmoji, isSeparateCompetition, computeCompetitionRecords,
   computeAdvancedPlayers, computeSessionFatigue, computePressing, computePartnerships, generateAdvancedInsights, ROLE_LABELS,
@@ -714,7 +715,7 @@ function createClubStats(deps) {
         .addOptions(HELP_PAGES.map((p) => ({ label: p.label, value: p.key, emoji: p.emoji, description: p.blurb.slice(0, 100), default: p.key === page.key })))
     );
     const rows = [menu];
-    if (dashboardUrl) rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setLabel('Open the dashboard').setStyle(ButtonStyle.Link).setURL(dashboardUrl)));
+    rows.push(new ActionRowBuilder().addComponents(...(dashboardUrl ? [new ButtonBuilder().setLabel('Open the dashboard').setStyle(ButtonStyle.Link).setURL(dashboardUrl)] : []), addBotButton()));
     return { embeds: [embed], components: rows };
   }
 
