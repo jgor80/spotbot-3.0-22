@@ -30,6 +30,7 @@ __export(clubInsights_exports, {
   MATCH_TAGS: () => MATCH_TAGS,
   MIN_ROLE_GAMES: () => MIN_ROLE_GAMES,
   PASS_STYLE_CUTOFFS: () => PASS_STYLE_CUTOFFS,
+  POSITION_LINES: () => POSITION_LINES,
   ROLE_LABELS: () => ROLE_LABELS,
   ROLE_WEIGHTS: () => ROLE_WEIGHTS,
   SCORE_AREAS: () => SCORE_AREAS,
@@ -38,6 +39,7 @@ __export(clubInsights_exports, {
   SEPARATE_COMPETITIONS: () => SEPARATE_COMPETITIONS,
   SESSION_BREAK_MS: () => SESSION_BREAK_MS,
   SESSION_GAP_MS: () => SESSION_GAP_MS,
+  SIGHTING_DAYS: () => SIGHTING_DAYS,
   banterRankings: () => banterRankings,
   banterWindow: () => banterWindow,
   benchRole: () => benchRole,
@@ -45,6 +47,7 @@ __export(clubInsights_exports, {
   betterTogether: () => betterTogether,
   betterWithout: () => betterWithout,
   carryScores: () => carryScores,
+  clubTransferNews: () => clubTransferNews,
   clutchRatings: () => clutchRatings,
   competitionEmoji: () => competitionEmoji,
   competitionLabel: () => competitionLabel,
@@ -63,9 +66,12 @@ __export(clubInsights_exports, {
   decisionScore: () => decisionScore,
   defendingSummary: () => defendingSummary,
   deriveStats: () => deriveStats,
+  detectMoves: () => detectMoves,
   divisionLabel: () => divisionLabel,
+  eaKey: () => eaKey,
   expectedPoints: () => expectedPoints,
   fc27Percentile: () => fc27Percentile,
+  filterPlayers: () => filterPlayers,
   gdPerGame: () => gdPerGame,
   generateAdvancedInsights: () => generateAdvancedInsights,
   generateInsights: () => generateInsights,
@@ -79,6 +85,7 @@ __export(clubInsights_exports, {
   matchDeepHighlights: () => matchDeepHighlights,
   matchPerformance: () => matchPerformance,
   matchTag: () => matchTag,
+  moveLine: () => moveLine,
   outcomeOdds: () => outcomeOdds,
   parseDivision: () => parseDivision,
   passStyle: () => passStyle,
@@ -4055,6 +4062,52 @@ function headToHead(matches, a, b) {
   return { players: [la, lb], rows };
 }
 
+// src/lib/transfers.ts
+var SIGHTING_DAYS = 60;
+var eaKey = (name) => name.trim().toLowerCase();
+function detectMoves(clubId, clubName, names, prior, now = Date.now()) {
+  const cutoff = now - SIGHTING_DAYS * 864e5;
+  const byKey = /* @__PURE__ */ new Map();
+  for (const s of prior) {
+    if (new Date(s.last_seen).getTime() < cutoff) continue;
+    const list = byKey.get(s.ea_key) || [];
+    list.push(s);
+    byKey.set(s.ea_key, list);
+  }
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const name of names) {
+    const key = eaKey(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const sightings = byKey.get(key) || [];
+    if (!sightings.length || sightings.some((s) => s.ea_club_id === clubId)) continue;
+    const latest = sightings.reduce((a, b) => new Date(b.last_seen) > new Date(a.last_seen) ? b : a);
+    out.push({ ea_key: key, ea_username: name.trim(), from_club_id: latest.ea_club_id, from_club_name: latest.club_name, to_club_id: clubId, to_club_name: clubName });
+  }
+  return out;
+}
+function clubTransferNews(moves, clubId) {
+  const sorted = [...moves].sort((a, b) => b.detected_at.localeCompare(a.detected_at));
+  return {
+    joined: sorted.filter((m) => m.to_club_id === clubId),
+    left: sorted.filter((m) => m.from_club_id === clubId)
+  };
+}
+var moveLine = (m) => `${m.ea_username}: ${m.from_club_name || "another club"} \u2192 ${m.to_club_name || "another club"}`;
+var POSITION_LINES = {
+  GK: ["GK"],
+  DEF: ["CB", "LB", "RB", "LWB", "RWB"],
+  MID: ["CDM", "CM", "CAM", "LM", "RM"],
+  ATT: ["ST", "CF", "LW", "RW"]
+};
+function filterPlayers(players, { line, platform, verifiedOnly }) {
+  const wanted = line && POSITION_LINES[line] ? new Set(POSITION_LINES[line]) : null;
+  return players.filter(
+    (p) => (!wanted || p.positions.some((pos) => wanted.has(pos))) && (!platform || p.platform === platform) && (!verifiedOnly || p.verified)
+  );
+}
+
 // src/lib/clubInsights.ts
 var MATCH_TAGS = [
   { value: "league", label: "League", emoji: "\u{1F3C6}" },
@@ -4476,6 +4529,7 @@ function generateBaseInsights(matches) {
   MATCH_TAGS,
   MIN_ROLE_GAMES,
   PASS_STYLE_CUTOFFS,
+  POSITION_LINES,
   ROLE_LABELS,
   ROLE_WEIGHTS,
   SCORE_AREAS,
@@ -4484,6 +4538,7 @@ function generateBaseInsights(matches) {
   SEPARATE_COMPETITIONS,
   SESSION_BREAK_MS,
   SESSION_GAP_MS,
+  SIGHTING_DAYS,
   banterRankings,
   banterWindow,
   benchRole,
@@ -4491,6 +4546,7 @@ function generateBaseInsights(matches) {
   betterTogether,
   betterWithout,
   carryScores,
+  clubTransferNews,
   clutchRatings,
   competitionEmoji,
   competitionLabel,
@@ -4509,9 +4565,12 @@ function generateBaseInsights(matches) {
   decisionScore,
   defendingSummary,
   deriveStats,
+  detectMoves,
   divisionLabel,
+  eaKey,
   expectedPoints,
   fc27Percentile,
+  filterPlayers,
   gdPerGame,
   generateAdvancedInsights,
   generateInsights,
@@ -4525,6 +4584,7 @@ function generateBaseInsights(matches) {
   matchDeepHighlights,
   matchPerformance,
   matchTag,
+  moveLine,
   outcomeOdds,
   parseDivision,
   passStyle,

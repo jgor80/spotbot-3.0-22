@@ -4,6 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { decodeRegionId, toFcPlatform, FC_PLATFORMS, normalizeClubName } from '../_shared/ea.ts'
 import { eaEventStats } from '../_shared/ea-events.ts'
 import { linkedProfileForGamertag, placeholderIdFor, escapeLike } from '../_shared/ea-profiles.ts'
+import { recordMemberSightings } from '../_shared/transfers.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1103,6 +1104,14 @@ async function syncMemberStats(
       console.log(`[sync-ea-stats] No members found for ${clubName}`)
       return { synced: 0, updatedPlayerIds: [], unknownMemberKeys: [] as string[] }
     }
+
+    // Transfer news: EA's member list says who is in this club now (spots moves between clubs)
+    await recordMemberSightings(supabase, {
+      platform: toFcPlatform(platform),
+      clubId: String(clubId),
+      clubName,
+      names: members.map((m: any) => extractWithFallback(m, ['name', 'playerName', 'personaName'])).filter(Boolean).map(String),
+    })
 
     // NEW: Fetch career stats for preferred position and career totals
     const careerMembers = await fetchMemberCareerStats(clubId, platform)

@@ -10,6 +10,28 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const { missingChannelPerms } = require('./perm-check.cjs');
 const { resolveClub } = require('./manager-hub.cjs');
 const { clubAccent, crestUrl } = require('./club-colors.cjs');
+const { toFcPlatform } = require('./ea-fc27.cjs');
+
+const WANTED_DAYS = 14;
+
+// The public board row for a recruitment poster (gafferbot.app/transfers → Clubs recruiting)
+function wantedRow({ guildId, club, positions, notes, record, division, invite, crest, now = Date.now() }) {
+  return {
+    guild_id: guildId,
+    club_key: club.key,
+    club_name: club.name || 'Unnamed club',
+    ea_club_id: club.ea_club_id ? String(club.ea_club_id) : null,
+    ea_platform: club.ea_club_id ? toFcPlatform(club.ea_platform) : null,
+    crest_url: crest && /^https:\/\//.test(crest) ? crest : null,
+    positions: String(positions).slice(0, 100),
+    notes: notes ? String(notes).slice(0, 300) : null,
+    record: record || null,
+    division: division || null,
+    invite_url: invite || null,
+    updated_at: new Date(now).toISOString(),
+    expires_at: new Date(now + WANTED_DAYS * 86400000).toISOString(),
+  };
+}
 
 // What a squad needs in each area: `need` to field a side, `want` to cope with absences
 const GROUPS = [
@@ -218,6 +240,16 @@ function createRecruitCards(deps) {
     const posted = await channel.send({ embeds: [embed], components }).catch((err) => ({ error: err }));
     if (posted?.error) return interaction.editReply({ content: `❌ Couldn't post: ${posted.error.message}` });
 
+    // Public board: on unless the manager said no
+    const onBoard = interaction.options.getBoolean('public_board') !== false;
+    let boardNote = '';
+    if (onBoard) {
+      const { error: boardErr } = await supabase
+        .from('club_wanted')
+        .upsert(wantedRow({ guildId: interaction.guildId, club, positions, notes, record, division, invite, crest: logo }), { onConflict: 'guild_id,club_key' });
+      boardNote = boardErr ? "\n_Couldn't add it to the public board right now._" : `\n🌐 Also listed on <https://gafferbot.app/transfers> for ${WANTED_DAYS} days.`;
+    }
+
     const text = [
       `📣 **${club.name} are recruiting**`,
       `Looking for: ${positions}`,
@@ -231,7 +263,7 @@ function createRecruitCards(deps) {
       .join('\n');
     return interaction.editReply({
       content:
-        `✅ Poster posted in ${channel}.${invite ? '' : " I couldn't make an invite (I need **Create Invite**; set an invite channel in **/manager → Recruiting → Recruiting Setup**)."}` +
+        `✅ Poster posted in ${channel}.${invite ? '' : " I couldn't make an invite (I need **Create Invite**; set an invite channel in **/manager → Recruiting → Recruiting Setup**)."}${boardNote}` +
         `\nCopy this for league Discords or Reddit:\n\`\`\`\n${text.replace(/\*\*/g, '')}\n\`\`\``,
     });
   }
@@ -357,4 +389,4 @@ function createRecruitCards(deps) {
   return { commands: LFC_COMMANDS, handleInteraction, gapRadar, gapFields, resumeStats };
 }
 
-module.exports = { createRecruitCards, LFC_COMMANDS, GROUPS };
+module.exports = { createRecruitCards, LFC_COMMANDS, GROUPS, wantedRow };

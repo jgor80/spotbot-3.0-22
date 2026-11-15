@@ -41,6 +41,7 @@ const TermsPage = lazy(() => import("./pages/TermsPage"));
 const PlayPage = lazy(() => import("./pages/PlayPage"));
 const PublicGuideRoute = lazy(() => import("./pages/PublicGuideRoute"));
 const PublicClubPage = lazy(() => import("./pages/PublicClubPage"));
+const TransfersPage = lazy(() => import("./pages/TransfersPage"));
 const PublicClubsPage = lazy(() => import("./pages/PublicClubsPage").then((m) => ({ default: m.PublicClubsPage })));
 const ClubComparePage = lazy(() => import("./pages/PublicClubsPage").then((m) => ({ default: m.ClubComparePage })));
 const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
@@ -113,6 +114,7 @@ const App = () => (
                   <Route path="/clubs" element={<PublicClubsPage />} />
                   <Route path="/clubs/compare" element={<ClubComparePage />} />
                   <Route path="/club/:platform/:clubId" element={<PublicClubPage />} />
+                  <Route path="/transfers" element={<TransfersPage />} />
                   <Route path="/privacy" element={<PrivacyPage />} />
                   <Route path="/welcome" element={<LandingPage />} />
                   <Route path="/guides" element={<PublicGuideRoute />} />

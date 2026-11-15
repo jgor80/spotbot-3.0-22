@@ -20,7 +20,8 @@ export function PublicClubsPage() {
         </div>
         <Card className="p-5"><ClubSearch /></Card>
         <p className="text-sm text-muted-foreground">
-          Want to size up an opponent? <Link to="/clubs/compare" className="underline">Compare two clubs</Link>.
+          Want to size up an opponent? <Link to="/clubs/compare" className="underline">Compare two clubs</Link>. Looking for players or a club? Try the{" "}
+          <Link to="/transfers" className="underline">transfer board</Link>.
         </p>
       </div>
     </div>

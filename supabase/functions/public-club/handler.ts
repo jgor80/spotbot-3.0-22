@@ -4,6 +4,8 @@
 // Only EA's public Pro Clubs endpoints are read (the same data anyone can see in game), shaped by
 // src/lib/publicClub.ts. Answers are cached in memory for a few minutes so a busy page doesn't hammer
 // EA; the Worker rate-limits callers by IP before requests get here.
+import { createAdminClient } from "../_shared/auth.ts";
+import { recordMemberSightings } from "../_shared/transfers.ts";
 import { eaCrestUrl, eaMatchToRow, eaMembers, eaOverall, isPublicPlatform, PUBLIC_PLATFORMS, type MatchCategory, type PublicClubPayload, type PublicPlatform } from "../../../src/lib/publicClub.ts";
 
 const corsHeaders = {
@@ -34,6 +36,15 @@ function remember(key: string, value: unknown) {
   if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value!);
   cache.set(key, { at: Date.now(), value });
 }
+
+// The service-role client for member sightings; null when the backend isn't configured (e.g. tests)
+let db: ReturnType<typeof createAdminClient> | null | undefined;
+function sightingsDb() {
+  if (db === undefined) db = Deno.env.get("SUPABASE_URL") && Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ? createAdminClient() : null;
+  return db;
+}
+// For tests
+export const setSightingsDb = (client: unknown) => (db = client as ReturnType<typeof createAdminClient> | null);
 
 class EaUnavailable extends Error {}
 
@@ -128,6 +139,10 @@ async function clubPayload(clubId: string, platform: PublicPlatform): Promise<Pu
     fetchedAt: new Date().toISOString(),
   };
   remember(key, payload);
+  // Transfer news: every club anyone looks up adds to who-is-where (only on a fresh fetch, so at most every few minutes)
+  if (sightingsDb() && payload.members.length) {
+    await recordMemberSightings(sightingsDb(), { platform, clubId, clubName: payload.name, names: payload.members.map((m) => m.name) });
+  }
   return payload;
 }
 

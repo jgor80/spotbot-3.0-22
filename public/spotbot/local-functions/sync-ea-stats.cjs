@@ -282,6 +282,55 @@ async function linkedProfileForGamertag(db, gamertag) {
   return p && !isPlaceholderId(p.discord_user_id) ? p : null;
 }
 
+// src/lib/transfers.ts
+var SIGHTING_DAYS = 60;
+var eaKey = (name) => name.trim().toLowerCase();
+function detectMoves(clubId, clubName, names, prior, now = Date.now()) {
+  const cutoff = now - SIGHTING_DAYS * 864e5;
+  const byKey = /* @__PURE__ */ new Map();
+  for (const s of prior) {
+    if (new Date(s.last_seen).getTime() < cutoff) continue;
+    const list = byKey.get(s.ea_key) || [];
+    list.push(s);
+    byKey.set(s.ea_key, list);
+  }
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const name of names) {
+    const key = eaKey(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const sightings = byKey.get(key) || [];
+    if (!sightings.length || sightings.some((s) => s.ea_club_id === clubId)) continue;
+    const latest = sightings.reduce((a, b) => new Date(b.last_seen) > new Date(a.last_seen) ? b : a);
+    out.push({ ea_key: key, ea_username: name.trim(), from_club_id: latest.ea_club_id, from_club_name: latest.club_name, to_club_id: clubId, to_club_name: clubName });
+  }
+  return out;
+}
+
+// supabase/functions/_shared/transfers.ts
+async function recordMemberSightings(db, { platform, clubId, clubName, names }) {
+  try {
+    const clean = [...new Map(names.filter((n) => n && n.trim()).map((n) => [eaKey(n), n.trim()])).values()].slice(0, 60);
+    if (!clean.length || !clubId) return 0;
+    const keys = clean.map(eaKey);
+    const { data: prior, error } = await db.from("ea_club_members").select("ea_club_id, ea_key, club_name, last_seen").eq("platform", platform).in("ea_key", keys);
+    if (error) throw error;
+    const moves = detectMoves(clubId, clubName, clean, prior || []);
+    if (moves.length) {
+      const { error: moveErr } = await db.from("transfer_moves").upsert(moves.map((m) => ({ ...m, platform })), { onConflict: "platform,ea_key,from_club_id,to_club_id", ignoreDuplicates: true });
+      if (moveErr) console.error("[transfers] moves:", moveErr.message);
+    }
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const { error: upErr } = await db.from("ea_club_members").upsert(clean.map((n) => ({ platform, ea_club_id: clubId, ea_key: eaKey(n), ea_username: n, club_name: clubName, last_seen: now })), { onConflict: "platform,ea_club_id,ea_key" });
+    if (upErr) console.error("[transfers] sightings:", upErr.message);
+    return moves.length;
+  } catch (e) {
+    console.error("[transfers]", e instanceof Error ? e.message : e);
+    return 0;
+  }
+}
+
 // supabase/functions/sync-ea-stats/index.ts
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1095,6 +1144,12 @@ async function syncMemberStats(supabase, guildId, clubId, platform, clubName, ag
       console.log(`[sync-ea-stats] No members found for ${clubName}`);
       return { synced: 0, updatedPlayerIds: [], unknownMemberKeys: [] };
     }
+    await recordMemberSightings(supabase, {
+      platform: toFcPlatform(platform),
+      clubId: String(clubId),
+      clubName,
+      names: members.map((m) => extractWithFallback(m, ["name", "playerName", "personaName"])).filter(Boolean).map(String)
+    });
     const careerMembers = await fetchMemberCareerStats(clubId, platform);
     const careerLookup = /* @__PURE__ */ new Map();
     for (const m of careerMembers || []) {
