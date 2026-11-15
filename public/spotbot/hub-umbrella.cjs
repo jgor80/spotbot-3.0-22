@@ -16,6 +16,7 @@
 
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { isServerAdmin } = require('./perm-check.cjs');
+const { addBotButton } = require('./add-bot.cjs');
 
 const TEAL = 0x1abc9c;
 const NO_PINGS = { parse: [] };
@@ -223,12 +224,12 @@ function createHubUmbrella(deps) {
       'The team, its EA club link, kit and history (matches, club and player stats, division history) are copied to your server. Nothing is deleted here: the hub copy stays, marked 🎓, and you still represent the hub in its league, cup and competitions.',
       servers.length
         ? 'Pick your server. You need **Manage Server** there.'
-        : `I can't see a server where you have **Manage Server** and GafferBot is added. Add GafferBot to your server first (**Add to Discord** on ${SITE}), then press this again.`,
+        : `I can't see a server where you have **Manage Server** and GafferBot is added. Add GafferBot to your server first (**Add GafferBot to your server** below), then press this again.`,
     ];
     const rows = servers.length
       ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId(`hu_move_to:${key}`).setPlaceholder('Your server').addOptions(servers.map((g) => ({ label: g.name.slice(0, 100), value: g.id }))))]
       : [];
-    rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`hu_team:${key}`).setLabel('Back').setStyle(ButtonStyle.Secondary)));
+    rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`hu_team:${key}`).setLabel('Back').setStyle(ButtonStyle.Secondary), addBotButton()));
     return { content: lines.join('\n\n'), embeds: [], components: rows, allowedMentions: NO_PINGS };
   }
 

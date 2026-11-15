@@ -65,7 +65,9 @@ test('all styles load safely, portrait option opens a valid stat-free form and r
       const f = fixture();
       assert.equal(await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: [style] })), true);
       const buttons = f.requests.at(-1).components.at(-1).toJSON().components;
-      assert.equal(buttons.length, 3);
+      assert.equal(buttons.length, 4);
+      assert.ok(buttons.some((b) => b.label === 'Team name'), 'players can put their own team on the card');
+      assert.ok(!buttons.some((b) => b.label === 'Pick uniform'), 'uniform picker only on Social Hub servers');
       assert.ok(buttons.some((b) => b.label === 'Back of card: On'));
       const portrait = buttons.find((b) => b.label === 'Portrait Only');
       assert.ok(portrait);
@@ -667,4 +669,11 @@ test('previews hold the AI images: Redo and Discard give them back, Post charges
     assert.equal(decisions.at(-1).action, 'discard');
     assert.match(g.requests.at(-1).content, /Discarded — nothing was charged/);
   } finally { global.fetch = originalFetch; }
+});
+
+test('team names typed for a card are one clean line', () => {
+  const { cleanTeamName } = require('./graphics-studio.cjs');
+  assert.equal(cleanTeamName('  Sunday\nLegends  @everyone <@123> '), 'Sunday Legends');
+  assert.equal(cleanTeamName('x'.repeat(50)).length, 30);
+  assert.equal(cleanTeamName(''), '');
 });

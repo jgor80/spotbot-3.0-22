@@ -248,7 +248,12 @@ function shortPosition(pos) {
   return POS_SHORT[p] || (p.length > 4 ? p.replace(/[^A-Z]/g, '').slice(0, 3) : p);
 }
 
-function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs, getClient, getPremium = () => null, personalKit = null }) {
+// A typed team name for a player card: one line, no mentions, at most 30 characters
+function cleanTeamName(raw) {
+  return String(raw || '').replace(/[\r\n]+/g, ' ').replace(/@(everyone|here)/gi, '').replace(/<[@#&!]*\d+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 30);
+}
+
+function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs, getClient, getPremium = () => null, personalKit = null, isHub = null }) {
   const deepStats = createDeepStats({ supabase });
   const panelIds = new Map(); // channelId -> panel message id
   const guildOf = (guildId) => getClient?.()?.guilds?.cache?.get(guildId) || null;
@@ -428,7 +433,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     for (const [k, v] of DRAFTS) if (Date.now() - v.ts > 30 * 60e3) DRAFTS.delete(k);
     return token;
   }
-  function draftPrompt(token, kind, club) {
+  function draftPrompt(token, kind, club, hub = false) {
     const choices = kind === 'card'
       ? [['stats', 'With Stats'], ['portrait', 'Portrait Only']]
       : [['edit', 'Edit Before Rendering']];
@@ -443,9 +448,13 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const photoRow = photos.length ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
       .setCustomId(`gs_dphoto:${token}`).setPlaceholder(`Photo: ${photos.find((p) => p.id === draft.data.photoId)?.label || 'Automatic (best match)'}`)
       .addOptions([{ label: 'Automatic — best match for the pose', value: 'auto' }, ...photos.map((p) => ({ label: p.label, value: p.id, description: p.description || undefined, default: p.id === draft.data.photoId }))]))] : [];
-    return { content: kind === 'card' ? `🎴 Pick a kit and ${photos.length ? 'which of your uploaded photos to base it on' : 'style'} (optional), then with stats or just your pro?` : 'Your details are ready. Pick a kit if you like.', components: [...kitRow, ...photoRow, new ActionRowBuilder().addComponents(
+    const team = kind === 'card' && draft?.data?.teamName ? `\nTeam on the card: **${draft.data.teamName}**` : '';
+    return { content: kind === 'card' ? `🎴 Pick a kit and ${photos.length ? 'which of your uploaded photos to base it on' : 'style'} (optional), then with stats or just your pro?${hub ? ' **Pick uniform** dresses you in any kit; **Team name** puts your own team on the card.' : ' **Team name** puts your own team on the card.'}${team}` : 'Your details are ready. Pick a kit if you like.', components: [...kitRow, ...photoRow, new ActionRowBuilder().addComponents(
       ...choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary)),
       ...(kind === 'card' ? [new ButtonBuilder().setCustomId(`gs_dback:${token}`).setLabel(draft?.data?.noBack ? 'Back of card: Off' : 'Back of card: On').setEmoji('🔄').setStyle(draft?.data?.noBack ? ButtonStyle.Secondary : ButtonStyle.Success)] : []),
+      ...(kind === 'card' ? [new ButtonBuilder().setCustomId(`gs_dteam:${token}`).setLabel('Team name').setEmoji('🏷️').setStyle(ButtonStyle.Secondary)] : []),
+      // On a Social Hub server, the player's own kit (kit-catalog.cjs, saved on their profile)
+      ...(kind === 'card' && hub ? [new ButtonBuilder().setCustomId('kc_open').setLabel('Pick uniform').setEmoji('👕').setStyle(ButtonStyle.Secondary)] : []),
     )] };
   }
   const input = (id, label, value, { para = false, max = 100, req = false } = {}) => new ActionRowBuilder().addComponents(
@@ -503,7 +512,8 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   }
   // Draft prompt plus its preview; a failed preview never blocks the draft itself.
   async function draftMessage(token, kind, club, guildId) {
-    const base = draftPrompt(token, kind, club);
+    const hub = kind === 'card' && isHub ? await isHub(guildId).catch(() => false) : false;
+    const base = draftPrompt(token, kind, club, hub);
     const p = await draftPreview(token, kind, club, guildId).catch((err) => { console.warn('[studio] preview failed:', err.message); return null; });
     return p ? { ...base, embeds: [p.embed], files: [p.file], attachments: [] } : { ...base, embeds: [], files: [], attachments: [] };
   }
@@ -652,9 +662,11 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return def && ['rare', 'epic', 'legendary'].includes(data.tier) ? { name: def.name, glyph: def.glyph, tier: data.tier } : null;
   }
   async function renderCard({ guildId, club, style, d }) {
+    // A player's own team name (Team name on the draft) replaces the club's on the card, front and back
+    if (club && d.teamName) club = { ...club, name: d.teamName };
     // On a Social Hub server a player's own kit pick (kit-catalog.cjs) dresses their card
     const mine = personalKit ? await personalKit(guildId, d.userId).catch(() => null) : null;
-    club = club && { ...club, kit: mine ? { ...kitOf(club), primary: mine.primary || kitOf(club).primary, secondary: mine.secondary || kitOf(club).secondary, description: mine.description || undefined } : kitOf(club) }; // team colours fill the kit and lead the accent
+    club = club && { ...club, kit: mine ? { ...kitOf(club), primary: mine.primary || kitOf(club).primary, secondary: mine.secondary || kitOf(club).secondary, description: [mine.team && `${mine.team}'s kit`, mine.description].filter(Boolean).join(': ') || undefined } : kitOf(club) }; // team colours fill the kit and lead the accent
     // Cards are only drawn for someone still in the server.
     if (!(await stillInGuild(guildOf(guildId), [d.userId])).length) return { error: 'That player is no longer in this server, so no card was made.' };
     const variation = nextVariation(`${guildId}:${d.userId}:card:${style}`, style);
@@ -1077,6 +1089,27 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       await interaction.showModal(draft.kind === 'card' ? cardModal(a1, draft.data) : draft.kind === 'recruit' ? recruitModal(a1, d) : draft.kind === 'poster' ? posterModal(a1, d) : lineupModal(a1, d));
       return true;
     }
+    if (interaction.isButton() && action === 'gs_dteam') {
+      const draft = DRAFTS.get(a1);
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
+        await interaction.reply({ content: 'That form expired — start again from the panel.', flags: 64 });
+        return true;
+      }
+      await interaction.showModal(new ModalBuilder().setCustomId(`gs_dteam_m:${a1}`).setTitle('Your team on the card').addComponents(
+        input('team', 'Team name (empty = the club\'s name)', draft.data.teamName || '', { max: 30 })));
+      return true;
+    }
+    if (interaction.isModalSubmit() && action === 'gs_dteam_m') {
+      await interaction.deferUpdate();
+      const draft = DRAFTS.get(a1);
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
+        await interaction.editReply({ content: 'That form expired — start again from the panel.', components: [], embeds: [], attachments: [] }); return true;
+      }
+      draft.data.teamName = cleanTeamName(interaction.fields.getTextInputValue('team')) || undefined;
+      const state = await getGuildState(interaction.guildId).catch(() => null);
+      const club = activeClubs(state).find((c) => c.key === draft.clubKey) || activeClubs(state)[0];
+      await interaction.editReply(await draftMessage(a1, draft.kind, club, interaction.guildId)); return true;
+    }
     if (interaction.isButton() && ['gs_keep', 'gs_redo', 'gs_drop'].includes(action)) return onPreviewButton(interaction, action, a1);
     // Banner style opens a modal, which Discord forbids after a deferral; everything else is acknowledged immediately.
     const deferredSelect = (interaction.isStringSelectMenu() && !(action === 'gs_style' && a1 === 'banner'))
@@ -1354,4 +1387,4 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   return { onMessage, handleInteraction: safeHandleInteraction, init, panelFor, refreshPanel };
 }
 
-module.exports = { createGraphicsStudio, STYLES, playerCard, matchPoster, banner, lineupPoster, recruitmentPoster, palette };
+module.exports = { createGraphicsStudio, STYLES, playerCard, matchPoster, banner, lineupPoster, recruitmentPoster, palette, cleanTeamName };

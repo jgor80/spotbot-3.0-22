@@ -20,13 +20,13 @@ const path = require('path');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, AttachmentBuilder, ChannelType, PermissionsBitField } = require('discord.js');
 const G = require('./graphics.cjs');
 const { isBotOwner } = require('./perm-check.cjs');
-const { guides, GUIDE_TAGS, FREE_IMAGES, IMAGE_PACKS } = require('./hub-guides.cjs');
+const { addBotUrl } = require('./add-bot.cjs');
+const { guides, GUIDE_TAGS, FREE_IMAGES, FREE_MONTHLY, FREE_TEXT, IMAGE_PACKS } = require('./hub-guides.cjs');
 
 const F = PermissionsBitField.Flags;
 const NO_PINGS = { parse: [] };
 const SITE = process.env.PUBLIC_SITE_URL || 'https://gafferbot.app';
 const DONATE_URL = 'https://venmo.com/u/bleacherjeff';
-const BOT_PERMISSIONS = '309591534673';
 const GREEN = 0x22c35e;
 const DARK = 0x0f172a;
 const TEAM_ROLE = 'GafferBot Team';
@@ -109,7 +109,7 @@ function hqPosts({ inviteUrl, ch, hubName }) {
       channel: 'welcome',
       title: 'Welcome to GafferBot ⚡',
       banner: { headline: 'Run your Pro Clubs side from Discord', line: 'Lineups, availability, EA stats, recruiting and graphics. Free.', chips: ['Manager hub', 'Lineups', 'EA stats', 'Recruiting', 'Network', 'Social Hub'] },
-      links: [['Add to Discord', inviteUrl], ['gafferbot.app', SITE]],
+      links: [['Add GafferBot to your server', inviteUrl], ['gafferbot.app', SITE]],
       description: [
         'GafferBot runs **EA SPORTS FC Pro Clubs** sides from Discord and the web: events and availability, lineups, stats straight from EA, recruiting, the GafferBot Network and club graphics.',
         '',
@@ -125,6 +125,7 @@ function hqPosts({ inviteUrl, ch, hubName }) {
       channel: 'how_it_works',
       title: 'What GafferBot does for a club',
       banner: { headline: 'Everything your club needs', line: 'One /manager panel. No commands to memorise.', chips: ['Events', 'Team sheets', 'Stats & form', 'Free agents', 'Newspaper', 'Player cards'] },
+      links: [['Add GafferBot to your server', inviteUrl]],
       description: [
         '**A manager hub inside Discord.** One **/manager** panel runs the club: events, team sheets, roster, stats and recruiting are all buttons.',
         '',
@@ -148,7 +149,7 @@ function hqPosts({ inviteUrl, ch, hubName }) {
       channel: 'add',
       title: 'Add GafferBot to your club',
       banner: { headline: 'Set up in about two minutes', line: 'Add it, link your EA club, post your first game.', chips: ['1 · Add', '2 · Link EA club', '3 · Post a game', '4 · Invite players'] },
-      links: [['Add GafferBot', inviteUrl]],
+      links: [['Add GafferBot to your server', inviteUrl]],
       description: [
         `**1. Add the bot to your club's server.** You need Manage Server there. [Add GafferBot](${inviteUrl})`,
         `**2. Set it up.** Run **/setup** for a checklist and any missing permissions, link your club with **/manager → Admin → Link EA Club**, then pick your colours, crest and kits on ${SITE}.`,
@@ -162,8 +163,8 @@ function hqPosts({ inviteUrl, ch, hubName }) {
       key: 'pricing',
       channel: 'pricing',
       title: 'Pricing: free, plus AI image packs',
-      banner: { headline: 'Free for every club', line: `Every feature free. ${FREE_IMAGES} AI images free, then image packs.`, chips: ['Every feature', 'Lineups', 'EA stats', `${FREE_IMAGES} free AI images`, ...IMAGE_PACKS.map((p) => `${p.images} for $${p.price}`)] },
-      links: [['Add to Discord', inviteUrl], ['Buy image packs', `${SITE}/billing`], ['Donate', DONATE_URL]],
+      banner: { headline: 'Free for every club', line: `Every feature free. ${FREE_MONTHLY} AI images free every month.`, chips: ['Every feature', 'Lineups', 'EA stats', `${FREE_IMAGES} free to start`, `${FREE_MONTHLY} free a month`, ...IMAGE_PACKS.slice(0, 1).map((p) => `${p.images} for $${p.price}`)] },
+      links: [['Add GafferBot to your server', inviteUrl], ['Buy image packs', `${SITE}/billing`], ['Donate', DONATE_URL]],
       description: [
         'GafferBot is **free**: every feature, every server, no card needed.',
         '• Every club, player and event in your server',
@@ -172,7 +173,7 @@ function hqPosts({ inviteUrl, ch, hubName }) {
         '• Recruiting, free agents and the Network',
         '• Lineup graphics, player cards and the club newspaper',
         '',
-        `**AI images** cost us money to make, so each server gets **${FREE_IMAGES} free**. After that, buy an image pack:`,
+        `**AI images** cost us money to make, so each server gets **${FREE_TEXT}**. Need more? Buy an image pack:`,
         ...IMAGE_PACKS.map((p) => `• **${p.images} images: $${p.price}**`),
         `Packs are on the website (${SITE}/billing) and in Discord's store, at the same price.`,
         '',
@@ -184,6 +185,7 @@ function hqPosts({ inviteUrl, ch, hubName }) {
       channel: 'announcements',
       title: 'GafferBot HQ is open',
       banner: { headline: 'GafferBot HQ is open', line: 'News, help and a place to play, all in one server.' },
+      links: [['Add GafferBot to your server', inviteUrl]],
       description: [
         'This is where clubs find GafferBot, ask questions, get help and find a game.',
         `Start with ${ch('how_it_works')} and ${ch('add')}.`,
@@ -219,7 +221,7 @@ function hqPosts({ inviteUrl, ch, hubName }) {
     // Forums list the newest post first, so the guides go up last to first and "Start here" is pinned
     ...guides({ ch })
       .reverse()
-      .map((g) => ({ key: `guide_${g.key}`, channel: 'guides', title: g.title, thread_title: g.title, banner: g.banner, description: g.body, tags: g.tags, pin: g.key === 'start' })),
+      .map((g) => ({ key: `guide_${g.key}`, channel: 'guides', title: g.title, thread_title: g.title, banner: g.banner, description: g.body, tags: g.tags, pin: g.key === 'start', links: g.add_link ? [['Add GafferBot to your server', inviteUrl]] : undefined })),
   ];
 }
 
@@ -240,11 +242,9 @@ function postChannelKey(key) {
 
 function createHubHq(deps) {
   const { hubOf, saveHub } = deps;
-  const client = () => deps.client();
 
   function inviteUrl() {
-    const id = client()?.application?.id || client()?.user?.id || '';
-    return `https://discord.com/oauth2/authorize?client_id=${id}&permissions=${BOT_PERMISSIONS}&scope=bot%20applications.commands`;
+    return addBotUrl();
   }
 
   async function fetchCh(guild, id) {

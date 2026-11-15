@@ -4175,9 +4175,10 @@ function referenceLimit(raw) {
 
 // supabase/functions/_shared/billing.ts
 var DEFAULT_PLANS = {
-  free: { name: "Free", price: 0, monthly: 0, welcome: 5 },
+  // 20 to start, then 10 every month: enough for a poster or card most game nights
+  free: { name: "Free", price: 0, monthly: 10, welcome: 20 },
   // One-time $9.99: premium features for good plus 20 images; it pays for its own images up front
-  lifetime: { name: "Club Activation", price: 9.99, monthly: 0, once: true, credits: 20 },
+  lifetime: { name: "Club Activation", price: 9.99, monthly: 10, once: true, credits: 20 },
   starter: { name: "Starter", price: 4.99, monthly: 20 },
   club: { name: "Club", price: 9.99, monthly: 50 },
   pro: { name: "Pro", price: 19.99, monthly: 120 },

@@ -119,6 +119,28 @@ const STEPS = [
 ];
 
 
+export const FAQ = [
+  {
+    q: "Do my players need an account?",
+    a: "No. Players use buttons in Discord. They can sign in here with Discord if they want their own profile and stats on the web, but it's optional.",
+  },
+  {
+    q: "Where do the stats come from?",
+    a: "EA's public Pro Clubs data for your club. Link your club once in /setup and new matches sync on their own. Some numbers, like hidden stats and chemistry, are GafferBot's estimates and are labelled that way.",
+  },
+  {
+    q: "Can I run more than one club in a server?",
+    a: "Yes. Each club keeps its own roster, events, stats and colours, and players are matched by the club name in their roles.",
+  },
+  {
+    q: "What does it cost?",
+    a: "GafferBot is free: every feature, every server. AI images cost us money to make, so each server gets 20 free AI images to start and 10 more free every month. Need more? Buy an image pack (25 for $4.99 or 70 for $12.99) on the website or in Discord's store. Lineups, stats and the other graphics stay free.",
+  },
+  {
+    q: "Is this made by EA?",
+    a: "No. GafferBot is an independent project and isn't made, endorsed or sponsored by Electronic Arts or Discord.",
+  },
+];
 
 // ---------- Mockups (drawn in HTML so they stay sharp and follow the theme) ----------
 
@@ -541,7 +563,7 @@ export default function LandingPage() {
             <div className="mx-auto max-w-xl rounded-3xl border border-primary/40 bg-card p-8 text-center shadow-xl">
               <p className="text-sm font-semibold uppercase tracking-wider text-primary">Pricing</p>
               <p className="mt-3 font-display text-6xl font-bold">Free</p>
-              <p className="mt-2 text-muted-foreground">Every feature, every server, no card needed. AI images: 5 free per server, then image packs.</p>
+              <p className="mt-2 text-muted-foreground">Every feature, every server, no card needed. AI images: 20 free to start, then 10 free every month.</p>
               <ul className="mx-auto mt-6 grid max-w-sm gap-2 text-left text-sm">
                 {[
                   "Every club, player and event in your server",
@@ -560,7 +582,7 @@ export default function LandingPage() {
               <div className="mt-6 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
                 {/* Keep in step with supabase/functions/_shared/billing.ts (free welcome images and DEFAULT_PACKS) */}
                 <p className="mb-4 text-foreground">
-                  <span className="font-semibold">AI images:</span> 5 free per server, then image packs: 25 for $4.99 or 70 for $12.99, on the website or in Discord&apos;s store.
+                  <span className="font-semibold">AI images:</span> 20 free to start, then 10 free every month. Need more? Image packs: 25 for $4.99 or 70 for $12.99, on the website or in Discord&apos;s store.
                 </p>
                 <p>Enjoying GafferBot? It runs on donations.</p>
                 <Button asChild variant="outline" size="sm" className="mt-3">
