@@ -77,6 +77,7 @@ const { createXboxLink, lookupGamertag } = require('./xbox-link.cjs');
 const { createTwitchLinks } = require('./twitch-links.cjs');
 const { createPresenceLog } = require('./xbox-presence-log.cjs');
 const { createFunZone, FUN_COMMAND } = require('./fun-zone.cjs');
+const { createDressingRoom } = require('./dressing-room.cjs');
 const { createCareer } = require('./career.cjs');
 const { createDevGoals } = require('./dev-goals.cjs');
 const { createClubLife } = require('./club-life.cjs');
@@ -598,6 +599,7 @@ const streamKit = createStreamKit(premiumDeps);
 const statRoles = createStatRoles(premiumDeps);
 const coach = createCoach({ ...premiumDeps, openai });
 const funZone = createFunZone({ getGuildState, saveGuildSettings, loadMatches: managerHub.loadMatches });
+const dressingRoom = createDressingRoom({ getGuildState, loadMatches: managerHub.loadMatches });
 autopilot.onSessionEnd(funZone.onSessionEnd);
 // Clips & Highlights: Xbox clips recorded during club matches, plus match tags on shared clips
 const clips = require('./clips.cjs').createClips({
@@ -4267,6 +4269,7 @@ async function routeInteraction(interaction) {
     if (await aiAccess.handleInteraction(interaction)) return;
     if (await graphicsStudio.handleInteraction(interaction)) return;
     if (await funZone.handleInteraction(interaction)) return;
+    if (await dressingRoom.handleInteraction(interaction)) return;
     if (await clubLife.handleInteraction(interaction)) return;
     if (await casual.handleInteraction(interaction)) return;
     if (await socialHub.handleInteraction(interaction)) return;
