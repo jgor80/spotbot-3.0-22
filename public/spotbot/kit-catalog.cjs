@@ -52,7 +52,7 @@ const PALERMO = kitsFor({ name: 'Palermo' }).map((k) => ({ key: `palermo:${k.key
 function clubKit(guildId, club) {
   const k = kitOf(club);
   if (!k.primary && !k.secondary) return null;
-  return { key: `club:${guildId}:${club.key}`, label: `${club.name}`.slice(0, 60), primary: k.primary || null, secondary: k.secondary || null, description: k.description || null, source: 'club', team: String(club.name || '').slice(0, 60) };
+  return { key: `club:${guildId}:${club.key}`, label: `${club.name}`.slice(0, 60), primary: k.primary || null, secondary: k.secondary || null, description: k.description || null, source: 'club', team: String(club.name || '').slice(0, 60), ...(club.ea_club_id ? { eaClubId: String(club.ea_club_id) } : {}) };
 }
 
 // Search: every word must appear in the label or source
@@ -152,6 +152,23 @@ function createKitCatalog(deps) {
     const keys = new Set(picked.map((k) => k.key));
     popular = { at: Date.now(), list: [...picked, ...CLASSIC.filter((k) => !keys.has(k.key)), ...PALERMO.filter((k) => !keys.has(k.key))].slice(0, POPULAR) };
     return popular.list;
+  }
+
+  // A uniform already known for an EA club (Photo Studio club lookup, ea-team-kit.cjs): a team kit saved on
+  // this server or in the Network for that EA club id, then one with the same name, then a kit players
+  // picked for that team (learned). null when nothing is known.
+  async function savedKitFor(guildId, { clubId, name } = {}) {
+    const norm = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const target = norm(name);
+    const teams = await teamKits(guildId).catch(() => []);
+    const byId = clubId && teams.find((k) => k.eaClubId && k.eaClubId === String(clubId));
+    if (byId) return liveKit(byId);
+    const byName = target && teams.find((k) => norm(k.team || k.label) === target);
+    if (byName) return liveKit(byName);
+    if (!target) return null;
+    const { data } = await supabase.from('kit_popularity').select('kit_key, kit, picks').order('picks', { ascending: false }).limit(200);
+    const learned = (data || []).find((r) => r.kit && norm(r.kit.team) === target);
+    return learned ? { ...learned.kit, key: learned.kit_key, learned: true } : null;
   }
 
   async function myKit(userId) {
@@ -279,7 +296,7 @@ function createKitCatalog(deps) {
     return false;
   }
 
-  return { handleInteraction, personalKit, myKit, catalogue, teamKits, liveKit, popularKits, choose, picker };
+  return { handleInteraction, personalKit, savedKitFor, myKit, catalogue, teamKits, liveKit, popularKits, choose, picker };
 }
 
 module.exports = { createKitCatalog, CLASSIC, PALERMO, clubKit, search, swatchSheet };

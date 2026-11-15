@@ -80,3 +80,25 @@ test('real team kits come first and a picked team kit follows the team\'s curren
   assert.equal(live.primary, '#123456');
   assert.deepEqual(await w.kits.liveKit({ key: 'classic:ice', primary: '#e0f2fe' }), { key: 'classic:ice', primary: '#e0f2fe' });
 });
+
+test('an EA club finds its saved uniform by EA club id, then by name, then a kit players picked for that team', async () => {
+  const learned = [{ kit_key: 'classic:navy-gold', kit: { key: 'classic:navy-gold', label: 'Navy & Gold', primary: '#1e3a8a', secondary: '#facc15', team: 'Blue Barons' }, picks: 3 }];
+  const from = () => {
+    const api = { select: () => api, eq: () => api, is: () => api, in: () => api, order: () => api, limit: async () => ({ data: learned }) };
+    return api;
+  };
+  const kits = createKitCatalog({
+    supabase: { from },
+    getGuildState: async () => ({ clubs: [
+      { key: 'club1', name: 'Night Owls', enabled: true, ea_club_id: 4242, colors: { primary: '#123456', secondary: '#ffffff' } },
+      { key: 'club2', name: 'Red Kites', enabled: true, colors: { primary: '#dc2626' } },
+    ] }),
+    hubOf: async () => ({ on: true }),
+  });
+  assert.equal((await kits.savedKitFor('g', { clubId: '4242', name: 'Renamed On EA' })).primary, '#123456', 'EA club id wins over the name');
+  assert.equal((await kits.savedKitFor('g', { clubId: '1', name: 'red  kites' })).primary, '#dc2626');
+  const fromPicks = await kits.savedKitFor('g', { clubId: '2', name: 'Blue Barons' });
+  assert.equal(fromPicks.primary, '#1e3a8a');
+  assert.equal(fromPicks.learned, true);
+  assert.equal(await kits.savedKitFor('g', { clubId: '3', name: 'Nobody' }), null);
+});

@@ -19,7 +19,7 @@ Module._load = function (request, parent, ...args) {
 const { createGraphicsStudio, playerCard, STYLES, recruitmentPoster, palette, matchPoster, lineupPoster, banner } = require('./graphics-studio.cjs');
 Module._load = originalLoad;
 
-function fixture(overrides = {}, { members, premium } = {}) {
+function fixture(overrides = {}, { members, premium, eaTeamKit } = {}) {
   const calls = [], posts = [], requests = [];
   const club = { key: 'palermo', name: 'PCN Palermo', kit: { primary: 'pink', secondary: 'black' } };
   const db = { from(table) {
@@ -35,6 +35,7 @@ function fixture(overrides = {}, { members, premium } = {}) {
     getGuildState: async () => { assert.ok(calls.length, 'acknowledge before settings read'); return { clubs: [club] }; },
     isManager: async () => false, serverPrefs: async () => ({ branding: { logo_url: 'https://example.invalid/unrelated-badge.png' } }),
     ...(premium ? { getPremium: () => premium } : {}),
+    ...(eaTeamKit ? { eaTeamKit } : {}),
     ...(members ? { getClient: () => ({ guilds: { cache: new Map([[guild.id, { members: { fetch: async (id) => { if (!members.includes(id)) throw new Error('Unknown Member'); return { id }; } } }]]) } }) } : {}) });
   function interaction(customId, type, extra = {}) {
     return { customId, guildId: guild.id, guild, channel, user: { id: '501557839932948490', username: 'AirDangus23' },
@@ -697,4 +698,72 @@ test('art drawn on the member\'s own OpenAI key says so in the preview and holds
     assert.match(content, /Drawn on your own OpenAI key, so it doesn't use the server's AI images/);
     assert.doesNotMatch(content, /Nothing is charged until you post/);
   } finally { global.fetch = originalFetch; }
+});
+
+test('a typed EA club name brings its crest and kit to the card, with the player able to switch club or wear their own kit', async () => {
+  const crest = 'https://eafc24.content.easports.com/crests/l777.png';
+  const searched = [];
+  const eaTeamKit = {
+    search: async (q) => { searched.push(q); return [
+      { clubId: '555', platform: 'nx', name: 'Rivals FC Reserves', games: 900 },
+      { clubId: '777', platform: 'common-gen5', name: 'Rivals FC', games: 40 },
+    ]; },
+    resolve: async (guildId, c) => ({ clubId: c.clubId, platform: c.platform, name: c.name, crest: c.clubId === '777' ? crest : null, kit: c.clubId === '777' ? { primary: '#123456', secondary: '#fedcba', description: "Rivals FC's kit: navy shirt" } : null, kitFrom: c.clubId === '777' ? 'ea' : null }),
+  };
+  const f = fixture({}, { eaTeamKit });
+  let body;
+  const originalFetch = global.fetch;
+  global.fetch = async (url, options) => { if (String(url).endsWith('/club-art')) body = JSON.parse(options.body); return { ok: true, json: async () => ({ image_b64: testLogo.split(',')[1], used_pro_photo: true }) }; };
+  try {
+    await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: ['modern'] }));
+    const buttons = () => f.requests.at(-1).components.flatMap((r) => r.toJSON().components);
+    const teamBtn = buttons().find((b) => b.custom_id?.startsWith('gs_dteam:'));
+    const token = teamBtn.custom_id.split(':')[1];
+    await f.studio.handleInteraction(f.interaction(teamBtn.custom_id, 'button'));
+    assert.match(JSON.stringify(f.requests.at(-1)), /EA club name/);
+    await f.studio.handleInteraction(f.interaction(`gs_dteam_m:${token}`, 'modal', { fields: { getTextInputValue: () => 'rivals fc' } }));
+    assert.deepEqual(searched, ['rivals fc']);
+    const drafted = f.requests.at(-1);
+    assert.match(drafted.content, /Team on the card: \*\*Rivals FC\*\* · EA club on PS5 \/ Xbox \/ PC, crest from EA; kit from the club's kit colours on EA/);
+    assert.ok(fetchedLogos.includes(crest), 'the preview shows the EA crest');
+    const eaMenu = buttons().find((c) => c.custom_id?.startsWith('gs_dea:'));
+    assert.equal(eaMenu.options.find((o) => o.default)?.value, 'common-gen5|777', 'the exact name match is picked automatically');
+    assert.ok(!buttons().some((c) => c.custom_id?.startsWith('gs_dkit:')), 'the club kit menu steps aside while the EA kit is used');
+    assert.ok(buttons().some((c) => c.custom_id === `gs_dteamkit:${token}` && c.label === 'Kit: Rivals FC'));
+
+    // Draw it: the EA kit and crest reach the artwork and the card
+    const stats = buttons().find((b) => b.label === 'With Stats');
+    await f.studio.handleInteraction(f.interaction(stats.custom_id, 'button'));
+    const inputs = f.requests.at(-1).components.map((r) => r.components[0]);
+    await f.studio.handleInteraction(f.interaction(f.requests.at(-1).custom_id, 'modal', { fields: { getTextInputValue: (k) => inputs.find((i) => i.custom_id === k)?.value || '' } }));
+    assert.equal(body.club_name, 'Rivals FC');
+    assert.equal(body.kit.primary, '#123456');
+    assert.match(body.kit.description, /Rivals FC's kit/);
+  } finally { global.fetch = originalFetch; }
+
+  // Manual overrides: own kit, another EA club, or no EA club at all
+  const g = fixture({}, { eaTeamKit });
+  await g.studio.handleInteraction(g.interaction('gs_style:card:palermo', 'select', { values: ['modern'] }));
+  const all = () => g.requests.at(-1).components.flatMap((r) => r.toJSON().components);
+  const token = all().find((b) => b.custom_id?.startsWith('gs_dteam:')).custom_id.split(':')[1];
+  await g.studio.handleInteraction(g.interaction(`gs_dteam_m:${token}`, 'modal', { fields: { getTextInputValue: () => 'Rivals FC' } }));
+  await g.studio.handleInteraction(g.interaction(`gs_dteamkit:${token}`, 'button'));
+  assert.match(g.requests.at(-1).content, /you chose to wear your own kit instead/);
+  assert.ok(all().some((c) => c.custom_id?.startsWith('gs_dkit:')), 'the club kit menu is back');
+  await g.studio.handleInteraction(g.interaction(`gs_dea:${token}`, 'select', { values: ['nx|555'] }));
+  assert.match(g.requests.at(-1).content, /Rivals FC Reserves\*\* · EA club on Switch; no kit found/);
+  await g.studio.handleInteraction(g.interaction(`gs_dea:${token}`, 'select', { values: ['none'] }));
+  assert.match(g.requests.at(-1).content, /Not linked to an EA club/);
+  assert.ok(!all().some((c) => c.custom_id?.startsWith('gs_dea:')));
+});
+
+test('an EA lookup that fails or finds nothing keeps just the typed name', async () => {
+  for (const [search, note] of [[async () => [], /No EA club with that name/], [async () => { const e = new Error('EA answered 503'); e.eaUnavailable = true; throw e; }, /EA isn't answering right now/]]) {
+    const f = fixture({}, { eaTeamKit: { search, resolve: async () => null } });
+    await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: ['modern'] }));
+    const token = f.requests.at(-1).components.flatMap((r) => r.toJSON().components).find((b) => b.custom_id?.startsWith('gs_dteam:')).custom_id.split(':')[1];
+    await f.studio.handleInteraction(f.interaction(`gs_dteam_m:${token}`, 'modal', { fields: { getTextInputValue: () => 'Nowhere Town' } }));
+    assert.match(f.requests.at(-1).content, /Team on the card: \*\*Nowhere Town\*\*/);
+    assert.match(f.requests.at(-1).content, note);
+  }
 });

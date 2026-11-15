@@ -39,6 +39,7 @@ const { kitsFor, kitFor, withKit } = require('./club-kits.cjs');
 const { kitOf, teamColors, crestUrl } = require('./club-colors.cjs');
 const { logosFor, logoFor, assetUrl } = require('./club-logos.cjs');
 const { pickSheet, crestSheet, styleSheet, thumbSvg, kitColor } = require('./studio-preview.cjs');
+const { createEaTeamKit, autoPick, platformLabel, KIT_FROM_LABEL } = require('./ea-team-kit.cjs');
 const fs = require('fs');
 const path = require('path');
 const { recruitmentPoster } = require('./graphics-recruitment.cjs');
@@ -254,7 +255,9 @@ function cleanTeamName(raw) {
   return String(raw || '').replace(/[\r\n]+/g, ' ').replace(/@(everyone|here)/gi, '').replace(/<[@#&!]*\d+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 30);
 }
 
-function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs, getClient, getPremium = () => null, personalKit = null, isHub = null }) {
+function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, saveGuildSettings, isManager, serverPrefs, getClient, getPremium = () => null, personalKit = null, isHub = null, findSavedKit = null, eaTeamKit = null }) {
+  // Team name -> a real EA club: crest, name and kit for player cards (ea-team-kit.cjs)
+  const eaTeams = eaTeamKit || createEaTeamKit({ fetchImage: (u) => G.fetchImage(u), findSavedKit: findSavedKit || undefined });
   const deepStats = createDeepStats({ supabase });
   const panelIds = new Map(); // channelId -> panel message id
   const guildOf = (guildId) => getClient?.()?.guilds?.cache?.get(guildId) || null;
@@ -333,6 +336,15 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   // /setup (or the server's branding logo), then the club's real
   // EA badge (from its crestAssetId), then nothing (renderers fall back to initials).
   const CREST_CACHE = new Map(); // ea:<clubId> -> data url | null
+  // An EA club's crest picked through Team name; null when EA's image can't be loaded
+  async function eaCrestImage(url) {
+    if (!url) return null;
+    if (CREST_CACHE.has(url)) return CREST_CACHE.get(url);
+    const fetched = await G.fetchImage(url).catch(() => null);
+    const image = fetched && seamlessLogo(fetched);
+    if (image) CREST_CACHE.set(url, image);
+    return image || null;
+  }
   async function crestFor(guildId, club, style, logoKey) {
     const prefs = serverPrefs ? await serverPrefs(guildId).catch(() => ({})) : {};
     const selected = logoFor(club, style, logoKey, prefs?.branding);
@@ -437,6 +449,27 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     for (const [k, v] of DRAFTS) if (Date.now() - v.ts > 30 * 60e3) DRAFTS.delete(k);
     return token;
   }
+  // Team name typed on a card draft -> look it up on EA. An exact name match (or a single result) is used
+  // straight away; otherwise the player picks from the list. A failed lookup only leaves a note.
+  async function lookUpEaTeam(draft, guildId) {
+    draft.data.eaTeam = undefined;
+    draft.data.eaCandidates = undefined;
+    draft.data.eaNote = undefined;
+    draft.data.ownKit = false;
+    const typed = draft.data.teamName;
+    if (!typed || typed.length < 2) return;
+    let found = [];
+    try { found = await eaTeams.search(typed); } catch (e) {
+      draft.data.eaNote = e.eaUnavailable ? "EA isn't answering right now, so only the name is used. Try Team name again in a minute." : 'EA club lookup failed, so only the name is used.';
+      return;
+    }
+    if (!found.length) { draft.data.eaNote = 'No EA club with that name, so only the name is used.'; return; }
+    draft.data.eaCandidates = found;
+    const pick = autoPick(found, typed);
+    if (!pick) return;
+    draft.data.eaTeam = await eaTeams.resolve(guildId, pick).catch((e) => { console.warn('[studio] EA team resolve failed:', e.message); return null; }) || undefined;
+    if (draft.data.eaTeam) draft.data.teamName = cleanTeamName(draft.data.eaTeam.name) || typed;
+  }
   function draftPrompt(token, kind, club, hub = false) {
     const choices = kind === 'card'
       ? [['stats', 'With Stats'], ['portrait', 'Portrait Only']]
@@ -452,14 +485,29 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const photoRow = photos.length ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
       .setCustomId(`gs_dphoto:${token}`).setPlaceholder(`Photo: ${photos.find((p) => p.id === draft.data.photoId)?.label || 'Automatic (best match)'}`)
       .addOptions([{ label: 'Automatic — best match for the pose', value: 'auto' }, ...photos.map((p) => ({ label: p.label, value: p.id, description: p.description || undefined, default: p.id === draft.data.photoId }))]))] : [];
-    const team = kind === 'card' && draft?.data?.teamName ? `\nTeam on the card: **${draft.data.teamName}**` : '';
-    return { content: kind === 'card' ? `🎴 Pick a kit and ${photos.length ? 'which of your uploaded photos to base it on' : 'style'} (optional), then with stats or just your pro?${hub ? ' **Pick uniform** dresses you in any kit; **Team name** puts your own team on the card.' : ' **Team name** puts your own team on the card.'}${team}` : 'Your details are ready. Pick a kit if you like.', components: [...kitRow, ...photoRow, new ActionRowBuilder().addComponents(
+    const ea = kind === 'card' ? draft?.data?.eaTeam : null;
+    const eaList = kind === 'card' ? draft?.data?.eaCandidates || [] : [];
+    const team = kind === 'card' && draft?.data?.teamName
+      ? `\nTeam on the card: **${draft.data.teamName}**${ea
+        ? ` · EA club on ${platformLabel(ea.platform)}${ea.crest ? ', crest from EA' : ''}${ea.kit ? `; kit from ${KIT_FROM_LABEL[ea.kitFrom] || 'EA'}` : '; no kit found, so your usual kit'}${ea.kit && draft.data.ownKit ? ' (you chose to wear your own kit instead)' : ''}.`
+        : eaList.length ? ' · Pick your EA club below to use its crest and kit.' : draft.data.eaNote ? ` · ${draft.data.eaNote}` : ''}`
+      : '';
+    const eaRows = eaList.length ? [new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
+      .setCustomId(`gs_dea:${token}`).setPlaceholder(ea ? `EA club: ${ea.name} (${platformLabel(ea.platform)})`.slice(0, 150) : 'Pick your EA club')
+      .addOptions([
+        ...eaList.map((c) => ({ label: c.name.slice(0, 100), value: `${c.platform}|${c.clubId}`, description: `${platformLabel(c.platform)}${c.games ? ` · ${c.games} games` : ''} · ID ${c.clubId}`.slice(0, 100), default: Boolean(ea && ea.clubId === c.clubId && ea.platform === c.platform) })),
+        { label: 'None of these: just the name', value: 'none' },
+      ]))] : [];
+    const eaButtons = ea?.kit ? [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`gs_dteamkit:${token}`).setLabel(draft.data.ownKit ? 'Kit: my own' : `Kit: ${ea.name}`.slice(0, 80)).setEmoji('👕').setStyle(draft.data.ownKit ? ButtonStyle.Secondary : ButtonStyle.Success),
+    )] : [];
+    return { content: kind === 'card' ? `🎴 Pick a kit and ${photos.length ? 'which of your uploaded photos to base it on' : 'style'} (optional), then with stats or just your pro?${hub ? ' **Pick uniform** dresses you in any kit; **Team name** puts your own team on the card.' : ' **Team name** puts your own team on the card.'} Type your EA club's name and its crest and kit are used automatically.${team}` : 'Your details are ready. Pick a kit if you like.', components: [...(ea?.kit && !draft.data.ownKit ? [] : kitRow), ...photoRow, ...eaRows, new ActionRowBuilder().addComponents(
       ...choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary)),
       ...(kind === 'card' ? [new ButtonBuilder().setCustomId(`gs_dback:${token}`).setLabel(draft?.data?.noBack ? 'Back of card: Off' : 'Back of card: On').setEmoji('🔄').setStyle(draft?.data?.noBack ? ButtonStyle.Secondary : ButtonStyle.Success)] : []),
       ...(kind === 'card' ? [new ButtonBuilder().setCustomId(`gs_dteam:${token}`).setLabel('Team name').setEmoji('🏷️').setStyle(ButtonStyle.Secondary)] : []),
       // On a Social Hub server, the player's own kit (kit-catalog.cjs, saved on their profile)
       ...(kind === 'card' && hub ? [new ButtonBuilder().setCustomId('kc_open').setLabel('Pick uniform').setEmoji('👕').setStyle(ButtonStyle.Secondary)] : []),
-    )] };
+    ), ...eaButtons].slice(0, 5) };
   }
   const input = (id, label, value, { para = false, max = 100, req = false } = {}) => new ActionRowBuilder().addComponents(
     new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(para ? TextInputStyle.Paragraph : TextInputStyle.Short)
@@ -498,13 +546,17 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (!draft || !club) return null;
     const kits = kitsFor(club);
     const auto = kitFor(club, draft.style);
-    const kitTiles = kits.length
-      ? kits.map((k) => ({ ...k, picked: (draft.data?.kitKey || auto.key) === k.key, auto: !draft.data?.kitKey }))
-      : [{ ...kitOf(club), label: 'Club kit', picked: true }];
+    const ea = kind === 'card' ? draft.data?.eaTeam : null;
+    const kitTiles = ea?.kit && !draft.data.ownKit
+      ? [{ ...ea.kit, label: `${ea.name} kit`.slice(0, 30), picked: true }]
+      : kits.length
+        ? kits.map((k) => ({ ...k, picked: (draft.data?.kitKey || auto.key) === k.key, auto: !draft.data?.kitKey }))
+        : [{ ...kitOf(club), label: 'Club kit', picked: true }];
     const prefs = serverPrefs ? await serverPrefs(guildId).catch(() => ({})) : {};
     const logo = logoFor(club, draft.style, draft.data?.logoKey, prefs?.branding);
-    const crestImage = await crestFor(guildId, club, draft.style, draft.data?.logoKey).catch(() => null);
-    const crest = { image: crestImage && (await thumb(crestImage, 240, 240, 'meet')), label: logo?.label || (crestImage ? 'Club crest' : 'No crest saved') };
+    const eaCrest = ea?.crest ? await eaCrestImage(ea.crest) : null;
+    const crestImage = eaCrest || await crestFor(guildId, club, draft.style, draft.data?.logoKey).catch(() => null);
+    const crest = { image: crestImage && (await thumb(crestImage, 240, 240, 'meet')), label: eaCrest ? `${ea.name} (EA)`.slice(0, 30) : logo?.label || (crestImage ? 'Club crest' : 'No crest saved') };
     const all = kind === 'card' ? draft.data?.photos || [] : [];
     const MAX = 6;
     let shown = all.slice(0, MAX);
@@ -668,8 +720,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
   async function renderCard({ guildId, club, style, d }) {
     // A player's own team name (Team name on the draft) replaces the club's on the card, front and back
     if (club && d.teamName) club = { ...club, name: d.teamName };
+    // A matched EA club (Team name) brings its kit, unless the player chose to wear their own
+    const eaKit = d.eaTeam?.kit && !d.ownKit ? d.eaTeam.kit : null;
     // On a Social Hub server a player's own kit pick (kit-catalog.cjs) dresses their card
-    const mine = personalKit ? await personalKit(guildId, d.userId).catch(() => null) : null;
+    const mine = eaKit || (personalKit ? await personalKit(guildId, d.userId).catch(() => null) : null);
     club = club && { ...club, kit: mine ? { ...kitOf(club), primary: mine.primary || kitOf(club).primary, secondary: mine.secondary || kitOf(club).secondary, description: [mine.team && `${mine.team}'s kit`, mine.description].filter(Boolean).join(': ') || undefined } : kitOf(club) }; // team colours fill the kit and lead the accent
     // Cards are only drawn for someone still in the server.
     if (!(await stillInGuild(guildOf(guildId), [d.userId])).length) return { error: 'That player is no longer in this server, so no card was made.' };
@@ -682,7 +736,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     // A rare badge the player chose to wear (/me → My Career) frames the card
     const frame = await featuredFrame(guildId, d.userId);
     const png = playerCard({
-      art: a.image, style, kit: club.kit, clubName: club.name, crest: await crestFor(guildId, club, style), name: d.name, position: shortPosition(d.position) || null,
+      art: a.image, style, kit: club.kit, clubName: club.name, crest: (d.eaTeam?.crest && await eaCrestImage(d.eaTeam.crest)) || await crestFor(guildId, club, style), name: d.name, position: shortPosition(d.position) || null,
       overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number, frame,
     });
     const backName = `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_');
@@ -1101,7 +1155,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         return true;
       }
       await interaction.showModal(new ModalBuilder().setCustomId(`gs_dteam_m:${a1}`).setTitle('Your team on the card').addComponents(
-        input('team', 'Team name (empty = the club\'s name)', draft.data.teamName || '', { max: 30 })));
+        input('team', 'Team or EA club name (empty = this club)', draft.data.teamName || '', { max: 30 })));
       return true;
     }
     if (interaction.isModalSubmit() && action === 'gs_dteam_m') {
@@ -1111,6 +1165,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         await interaction.editReply({ content: 'That form expired — start again from the panel.', components: [], embeds: [], attachments: [] }); return true;
       }
       draft.data.teamName = cleanTeamName(interaction.fields.getTextInputValue('team')) || undefined;
+      await lookUpEaTeam(draft, interaction.guildId);
       const state = await getGuildState(interaction.guildId).catch(() => null);
       const club = activeClubs(state).find((c) => c.key === draft.clubKey) || activeClubs(state)[0];
       await interaction.editReply(await draftMessage(a1, draft.kind, club, interaction.guildId)); return true;
@@ -1118,7 +1173,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (interaction.isButton() && ['gs_keep', 'gs_redo', 'gs_drop'].includes(action)) return onPreviewButton(interaction, action, a1);
     // Banner style opens a modal, which Discord forbids after a deferral; everything else is acknowledged immediately.
     const deferredSelect = (interaction.isStringSelectMenu() && !(action === 'gs_style' && a1 === 'banner'))
-      || (interaction.isButton() && ['gs_dback', 'gs_cdel'].includes(action));
+      || (interaction.isButton() && ['gs_dback', 'gs_cdel', 'gs_dteamkit'].includes(action));
     const deferredReply = interaction.isModalSubmit() || interaction.isButton() && ['gs_card', 'gs_poster', 'gs_lineup', 'gs_recruit', 'gs_mycards', 'gs_banner', 'gs_images'].includes(action);
     if (deferredSelect) await interaction.deferUpdate();
     else if (deferredReply) await interaction.deferReply({ flags: 64 });
@@ -1146,6 +1201,31 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       }
       const v = interaction.values[0];
       draft.data.photoId = (draft.data.photos || []).some((p) => p.id === v) ? v : undefined;
+      await update(await draftMessage(a1, 'card', findClub(draft.clubKey), interaction.guildId)); return true;
+    }
+    if (interaction.isStringSelectMenu() && action === 'gs_dea') {
+      const draft = DRAFTS.get(a1);
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
+        await update({ content: 'That form expired — start again from the panel.', components: [], embeds: [], attachments: [] }); return true;
+      }
+      const [platform, clubId] = String(interaction.values[0] || '').split('|');
+      const pick = (draft.data.eaCandidates || []).find((c) => c.platform === platform && c.clubId === clubId);
+      if (pick) {
+        draft.data.eaTeam = await eaTeams.resolve(interaction.guildId, pick).catch(() => null) || undefined;
+        if (draft.data.eaTeam) draft.data.teamName = cleanTeamName(draft.data.eaTeam.name) || draft.data.teamName;
+      } else {
+        draft.data.eaTeam = undefined;
+        draft.data.eaCandidates = undefined;
+        draft.data.eaNote = 'Not linked to an EA club.';
+      }
+      await update(await draftMessage(a1, 'card', findClub(draft.clubKey), interaction.guildId)); return true;
+    }
+    if (interaction.isButton() && action === 'gs_dteamkit') {
+      const draft = DRAFTS.get(a1);
+      if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
+        await update({ content: 'That form expired — start again from the panel.', components: [], embeds: [], attachments: [] }); return true;
+      }
+      draft.data.ownKit = !draft.data.ownKit;
       await update(await draftMessage(a1, 'card', findClub(draft.clubKey), interaction.guildId)); return true;
     }
     if (interaction.isButton() && action === 'gs_images') {
