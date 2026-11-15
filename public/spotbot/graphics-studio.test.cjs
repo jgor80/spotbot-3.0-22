@@ -606,7 +606,8 @@ test('a server out of AI images gets the reason plus buy buttons, and nothing is
     const inputs = f.requests.at(-1).components.map((r) => r.components[0]);
     await f.studio.handleInteraction(f.interaction(f.requests.at(-1).custom_id, 'modal', { fields: { getTextInputValue: (k) => inputs.find((i) => i.custom_id === k)?.value || '' } }));
     const last = f.requests.at(-1);
-    assert.equal(last.content, '❌ This server is out of AI images.');
+    assert.match(last.content, /^❌ This server is out of AI images\.\n/);
+    assert.match(last.content, /own OpenAI key on .*\/profile#image-key/);
     assert.deepEqual(last.components[0].toJSON(), { guild: '1529555651762851930', user: '501557839932948490' });
     assert.equal(f.posts.length, 0);
   } finally { global.fetch = originalFetch; }
@@ -676,4 +677,24 @@ test('team names typed for a card are one clean line', () => {
   assert.equal(cleanTeamName('  Sunday\nLegends  @everyone <@123> '), 'Sunday Legends');
   assert.equal(cleanTeamName('x'.repeat(50)).length, 30);
   assert.equal(cleanTeamName(''), '');
+});
+
+test('art drawn on the member\'s own OpenAI key says so in the preview and holds no images', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async (url, options) => {
+    const b = JSON.parse(options.body);
+    if (b.action) return { ok: true, json: async () => ({ ok: true, charged: 0 }) };
+    return { ok: true, json: async () => ({ image_b64: testLogo.split(',')[1], used_pro_photo: true, reservation_id: null, own_key: 'yours', quality: { checked: true, pass: true, issues: [], attempts: 1 } }) };
+  };
+  try {
+    const f = fixture();
+    await f.studio.handleInteraction(f.interaction('gs_style:card:palermo', 'select', { values: ['modern'] }));
+    const stats = f.requests.at(-1).components.at(-1).toJSON().components.find((b) => b.label === 'With Stats');
+    await f.studio.handleInteraction(f.interaction(stats.custom_id, 'button'));
+    const inputs = f.requests.at(-1).components.map((r) => r.components[0]);
+    await f.studio.handleInteraction(f.interaction(f.requests.at(-1).custom_id, 'modal', { fields: { getTextInputValue: (k) => inputs.find((i) => i.custom_id === k)?.value || '' } }));
+    const content = f.requests.at(-1).content;
+    assert.match(content, /Drawn on your own OpenAI key, so it doesn't use the server's AI images/);
+    assert.doesNotMatch(content, /Nothing is charged until you post/);
+  } finally { global.fetch = originalFetch; }
 });

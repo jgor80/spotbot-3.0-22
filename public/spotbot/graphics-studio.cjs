@@ -47,6 +47,7 @@ const { AsyncLocalStorage } = require('node:async_hooks');
 const crypto = require('crypto');
 
 const NAME_RE = /graphic|media-?studio|studio/i;
+const SITE = (process.env.PUBLIC_SITE_URL || 'https://gafferbot.app').replace(/\/$/, '');
 const STYLES = {
   esports: { label: 'Ultra Esports', emoji: '⚡', desc: 'Neon, smoke, grunge — matchday hype' },
   modern: { label: 'Modern Broadcast', emoji: '📺', desc: 'Live TV lower-third, live bug, telemetry rail' },
@@ -272,6 +273,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       if (out.reservation_id) spend.reservations.push(out.reservation_id);
       if (out.generated_asset_id && body.discord_user_id) spend.assets.push({ id: out.generated_asset_id, userId: body.discord_user_id });
       if (out.quality) spend.quality.push(out.quality);
+      if (out.own_key) spend.ownKey = out.own_key;
     }
     return { image: `data:image/png;base64,${out.image_b64}`, usedPro: out.used_pro_photo, kitNumber: Number.isInteger(out.kit_number) ? out.kit_number : null };
   }
@@ -303,7 +305,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const premium = getPremium();
     if (!r.outOfImages || !premium) return `❌ ${r.error}`;
     const status = await premium.imageStatus(guildId);
-    return { content: `❌ ${r.error}`, components: premium.buyRows(guildId, userId, status.error ? null : status) };
+    // Or skip the allowance entirely: images on your own OpenAI key are on your OpenAI bill
+    const ownKey = `\n_Or add your own OpenAI key on ${SITE}/profile#image-key and keep making images on your own OpenAI account._`;
+    return { content: `❌ ${r.error}${ownKey}`, components: premium.buyRows(guildId, userId, status.error ? null : status) };
   }
 
   // Saved-card collection (player-cards function): save / list / get / delete, always scoped to the owner.
@@ -933,6 +937,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       p.r.note ? `_${p.r.note}_` : null,
       flagged ? `⚠️ Our quality check still spotted: ${flagged.issues.slice(0, 3).join('; ')}. Redo is free.` : null,
       p.spend.reservations.length ? '_Nothing is charged until you post it; Redo and Discard give the image back._' : null,
+      p.spend.ownKey ? `_Drawn on ${p.spend.ownKey === 'yours' ? 'your own' : "this server's own"} OpenAI key, so it doesn't use the server's AI images._` : null,
     ].filter(Boolean);
     return {
       content: lines.join('\n'),

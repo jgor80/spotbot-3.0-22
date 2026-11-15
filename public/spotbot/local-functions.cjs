@@ -18,6 +18,8 @@ const ENV_MAP = {
   BOT_PROXY_SECRET: () => INTERNAL_SECRET,
   LOVABLE_API_KEY: () => process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || 'self-hosted',
   DISCORD_BOT_TOKEN: () => process.env.DISCORD_BOT_TOKEN || process.env.BOT_TOKEN,
+  // Tells functions the AI router below is in front of them, so a player's own OpenAI key goes straight to OpenAI
+  GAFFERBOT_SELF_HOSTED: () => '1',
 };
 const denoEnv = { get: (k) => (ENV_MAP[k] ? ENV_MAP[k]() : process.env[k]) };
 
@@ -44,6 +46,9 @@ function load(name) {
 //    reference edits at AI_IMAGE_FIDELITY (default high). The model that ran comes back in x-ai-model.
 //  - vision with strict JSON (pro-photo checks): OpenAI Responses, AI_VISION_MODEL (default gpt-5-mini)
 //  - plain chat text (match analysis): Gemini Flash when GEMINI_API_KEY is set (cheapest), else Claude Haiku, else OpenAI
+// A function drawing on a player's or server's own OpenAI key (club-art) sends it in x-ai-own-key: that key replaces
+// OPENAI_API_KEY for the call, the call stays on OpenAI, and the header never leaves this process.
+const OWN_KEY_HEADER = 'x-ai-own-key';
 const GATEWAY = 'https://ai.gateway.lovable.dev';
 function need(name) { const v = process.env[name]; if (!v) throw new Error(`${name} is not set on the server`); return v; }
 function jsonBody(init) { try { return JSON.parse(init.body); } catch { return null; } }
@@ -66,10 +71,13 @@ async function routeAi(url, init = {}) {
   const pathPart = url.slice(GATEWAY.length);
   const headers = new Headers(init.headers || {});
   headers.delete('Lovable-API-Key'); headers.delete('X-Lovable-AIG-SDK');
+  const ownKey = headers.get(OWN_KEY_HEADER) || '';
+  headers.delete(OWN_KEY_HEADER);
+  const openAiKey = () => ownKey || need('OPENAI_API_KEY');
   let body = init.body;
 
   if (pathPart.startsWith('/v1/images/')) {
-    headers.set('Authorization', `Bearer ${need('OPENAI_API_KEY')}`);
+    headers.set('Authorization', `Bearer ${openAiKey()}`);
     let model = process.env.AI_IMAGE_MODEL || 'gpt-image-1.5';
     const fallbackModel = process.env.AI_IMAGE_FALLBACK_MODEL || 'gpt-image-1';
     const quality = process.env.AI_IMAGE_QUALITY || 'medium';
@@ -101,7 +109,7 @@ async function routeAi(url, init = {}) {
     }
     if (!res.ok) {
       const detail = await res.clone().text().catch(() => '');
-      console.warn(`[ai] OpenAI ${pathPart} ${res.status} (model ${model}): ${detail.slice(0, 300)}`);
+      console.warn(`[ai] OpenAI ${pathPart} ${res.status} (model ${model}${ownKey ? ', own key' : ''}): ${detail.slice(0, 300)}`);
     }
     const out = new Headers(res.headers);
     out.set('x-ai-model', model);
@@ -111,22 +119,22 @@ async function routeAi(url, init = {}) {
 
   if (pathPart.startsWith('/v1/chat/completions')) {
     const j = jsonBody(init) || {};
-    if (process.env.GEMINI_API_KEY) {
+    if (process.env.GEMINI_API_KEY && !ownKey) {
       j.model = process.env.AI_GEMINI_MODEL || 'gemini-2.5-flash';
       delete j.reasoning_effort;
       headers.set('Authorization', `Bearer ${process.env.GEMINI_API_KEY}`);
       return originalFetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', { ...init, headers, body: JSON.stringify(j) });
     }
-    if (process.env.CLAUDE_API_KEY && !j.stream && !j.tools) return claudeChat(j, init);
+    if (process.env.CLAUDE_API_KEY && !ownKey && !j.stream && !j.tools) return claudeChat(j, init);
     j.model = process.env.AI_TEXT_MODEL || 'gpt-5-mini';
-    headers.set('Authorization', `Bearer ${need('OPENAI_API_KEY')}`);
+    headers.set('Authorization', `Bearer ${openAiKey()}`);
     return originalFetch('https://api.openai.com' + pathPart, { ...init, headers, body: JSON.stringify(j) });
   }
 
   // Responses API (strict JSON vision): OpenAI only.
   const j = jsonBody(init);
   if (j) { j.model = process.env.AI_VISION_MODEL || 'gpt-5-mini'; body = JSON.stringify(j); }
-  headers.set('Authorization', `Bearer ${need('OPENAI_API_KEY')}`);
+  headers.set('Authorization', `Bearer ${openAiKey()}`);
   return originalFetch('https://api.openai.com' + pathPart, { ...init, headers, body });
 }
 
@@ -147,6 +155,12 @@ function wrapFetch(supabaseUrl) {
         headers.set('x-bot-secret', INTERNAL_SECRET);
         return h(new Request(req, { headers }));
       }
+    }
+    // An own key is only ever for the AI router: never let it ride along to anywhere else
+    if (init?.headers && new Headers(init.headers).has(OWN_KEY_HEADER)) {
+      const headers = new Headers(init.headers);
+      headers.delete(OWN_KEY_HEADER);
+      return originalFetch(input, { ...init, headers });
     }
     return originalFetch(input, init);
   };
