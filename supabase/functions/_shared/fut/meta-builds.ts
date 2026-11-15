@@ -8,7 +8,7 @@
 //      GafferBot share links) are decoded here, not guessed, and give exact points.
 // The community meta build per position is worked out in src/lib/metaBuilds.ts and shown on the Knowledge Bank's
 // Pro Clubs builds tab, the public Build lab (gafferbot.app/build, "Load community meta build") and the MCP tool.
-import { ARCHETYPES, ATTRIBUTES, PLAYSTYLES, decodeBuild, importProClubsBuilder, type Build } from "../../../../src/lib/proBuild.ts";
+import { ARCHETYPES, ATTRIBUTES, PLAYSTYLES, canonStyle, decodeBuild, importProClubsBuilder, type Build } from "../../../../src/lib/proBuild.ts";
 import { META_POSITION_KEYS, metaBuilds, type BuildRow } from "../../../../src/lib/metaBuilds.ts";
 import { FutError } from "./service.ts";
 import { callClaude } from "./squad-import.ts";
@@ -166,7 +166,7 @@ export function cleanBuildReading(raw: unknown, links: LinkedBuild[] = []): Buil
     if (statement.length < 3) continue;
     const linked = links[(intIn(x.link, 1, links.length) ?? 0) - 1]?.build ?? null;
     const archetype = linked?.archetype ?? (ARCH_KEYS.includes(String(x.archetype)) ? String(x.archetype) : null);
-    const styles = [...new Set((Array.isArray(x.playstyles) ? x.playstyles : []).map(String).filter((p) => STYLE_NAMES.includes(p)))].slice(0, 15);
+    const styles = [...new Set((Array.isArray(x.playstyles) ? x.playstyles : []).map((p) => canonStyle(String(p))).filter((p) => STYLE_NAMES.includes(p)))].slice(0, 15);
     const attrs = [...new Set((Array.isArray(x.key_attributes) ? x.key_attributes : []).map(String).filter((a) => ATTR_KEYS.includes(a)))].slice(0, 8);
     builds.push({
       position, archetype,

@@ -1,5 +1,10 @@
 import assertNode from "node:assert/strict";
-import { ARCHETYPES, ATTRIBUTES, buildPath, buildSummary, decodeBuild, emptyBuild, encodeBuild, importProClubsBuilder, normaliseBuild } from "../../../src/lib/proBuild.ts";
+import {
+  accelerateType, apAtLevel, apSpent, ARCHETYPES, attrCap, ATTRIBUTES, BODY, bodyEffects, buildPath, buildSummary, costBetween, costTier, decodeBuild, emptyBuild,
+  encodeBuild, importProClubsBuilder, levelNeeded, matchValue, MAX_PLAYSTYLES, menuValue, normaliseBuild, PLAYSTYLE_DEFS, playstyleSlots, playstyleStatus, pointCost,
+  raiseFor, SPECIALIZATIONS, specializationStatus, startValue, trainable,
+} from "../../../src/lib/proBuild.ts";
+import { ATTRIBUTE_KEYS } from "../../../src/lib/proClubsData.ts";
 
 const eq = (a: unknown, b: unknown, msg?: string) => assertNode.deepEqual(a, b, msg);
 const ok = (v: unknown, msg?: string) => assertNode.ok(v, msg);
@@ -33,7 +38,7 @@ Deno.test("unknown attributes from an import are reported, not guessed", () => {
 });
 
 Deno.test("share codes round-trip and stay short", () => {
-  const b = { ...importProClubsBuilder(pcbLink)!.build, playstyles: ["Jockey", "Intercept", "Relentless"], budget: 220 };
+  const b = { ...importProClubsBuilder(pcbLink)!.build, playstyles: ["Jockey", "Intercept", "Relentless"], specialization: "marauder.athlete" };
   const code = encodeBuild(b);
   ok(/^[A-Za-z0-9_-]+$/.test(code), "url-safe");
   ok(code.length < 260, `short enough for chat (${code.length})`);
@@ -44,27 +49,101 @@ Deno.test("share codes round-trip and stay short", () => {
   eq(decodeBuild(""), null);
 });
 
-Deno.test("builds are cleaned up: ranges, unknown PlayStyles and the PlayStyle cap", () => {
-  const b = normaliseBuild({ archetype: "nope", level: 999, heightCm: 10, skillMoves: 9, points: { finishing: -3, heading: 5, bogus: 7 }, playstyles: ["Rapid", "Rapid", "Made Up"], name: "a|b" });
-  eq(b.archetype, emptyBuild().archetype);
-  eq([b.level, b.heightCm, b.skillMoves], [100, 150, 5]);
-  eq(b.points, { headingAccuracy: 5 });
-  eq(b.playstyles, ["Rapid"]);
-  eq(b.name, "a b");
-  const many = normaliseBuild({ playstyles: ["Finesse Shot", "Chip Shot", "Power Shot", "Dead Ball", "Precision Header", "Acrobatic", "Low Driven Shot", "Power Header", "Game Changer", "Incisive Pass", "Pinged Pass"] });
-  eq(many.playstyles.length, 10);
+Deno.test("old gb1 share codes still open, with the old PlayStyle numbering", () => {
+  // gb1~arch~level~h~w~sm~wf~budget~attrs~styles~name ; old style 8 was "Game Changer", 16 "Rapid"
+  const old = btoa("gb1~finisher~30~180~78~4~4~300~0.10,4.12~8,16~Old link");
+  const b = decodeBuild(old)!;
+  eq([b.archetype, b.level, b.heightCm, b.weightKg, b.skillMoves, b.weakFoot], ["finisher", 30, 180, 78, 4, 4]);
+  eq(b.points, { [ATTRIBUTES[0].key]: 10, [ATTRIBUTES[4].key]: 12 });
+  eq(b.playstyles, ["Gamechanger", "Rapid"]);
+  eq([b.name, b.budget, b.specialization], ["Old link", null, null]);
 });
 
-Deno.test("summary: points left, overspend and odd choices", () => {
+Deno.test("builds are cleaned up: ranges, caps, signatures and the four PlayStyle slots", () => {
+  const b = normaliseBuild({ archetype: "nope", level: 999, heightCm: 10, skillMoves: 9, points: { finishing: -3, heading: 5, bogus: 7, sprintSpeed: 500 }, playstyles: ["Rapid", "Rapid", "Made Up", "Game Changer", "Low Driven Shot"], name: "a|b" });
+  eq(b.archetype, "finisher");
+  eq([b.level, b.heightCm, b.skillMoves], [55, BODY.finisher.h[0], 5]);
+  eq(b.points.headingAccuracy, 5);
+  eq(startValue("finisher", "sprintSpeed") + b.points.sprintSpeed, attrCap("finisher", "sprintSpeed"), "points stop at the cap");
+  eq(b.playstyles, ["Rapid", "Gamechanger"], "old names map over, signatures are automatic, unknown ones go");
+  eq(b.name, "a b");
+  const many = normaliseBuild({ playstyles: ["Finesse Shot", "Chip Shot", "Power Shot", "Dead Ball", "Precision Header", "Acrobatic"] });
+  eq(many.playstyles.length, MAX_PLAYSTYLES);
+  eq(MAX_PLAYSTYLES, 4);
+  eq(normaliseBuild({ archetype: "finisher", playstyles: ["Far Reach"] }).playstyles, [], "keeper styles only for keepers");
+  eq(normaliseBuild({ archetype: "boss", specialization: "finisher.finisher" }).specialization, null, "specialization must match the archetype");
+});
+
+Deno.test("summary: AP by level, overspend and the level a build needs", () => {
   const marauder = importProClubsBuilder(pcbLink)!.build;
-  const s = buildSummary({ ...marauder, budget: 220 });
-  eq([s.spent, s.remaining], [204, 16]);
-  eq(s.notes, []);
-  ok(buildSummary({ ...marauder, budget: 200 }).notes[0].includes("4 points over"));
-  const keeperPoints = buildSummary({ ...emptyBuild("finisher"), points: { gkDiving: 10, finishing: 2 } });
-  ok(keeperPoints.notes.some((n) => n.includes("Goalkeeping points do nothing")));
-  const offPlan = buildSummary({ ...emptyBuild("boss"), points: { finishing: 20 } });
-  ok(offPlan.notes.some((n) => n.includes("isn't what a Boss is built around")));
+  const s = buildSummary(marauder);
+  eq([s.available, s.spent], [apAtLevel(40), apSpent(marauder)]);
+  eq(s.remaining, s.available - s.spent);
+  ok(s.spent > s.available, "this imported build is more than level 40 gives");
+  ok(s.notes[0].includes(`needs level ${s.levelNeeded}`));
+  eq(buildSummary({ ...marauder, level: 55 }).notes, []);
+  const locked = buildSummary({ ...emptyBuild("boss"), level: 55, playstyles: ["Finesse Shot"] });
+  ok(locked.notes.some((n) => n.includes("Not unlocked yet: Finesse Shot")));
+  const tooMany = buildSummary({ ...emptyBuild("boss"), level: 5, playstyles: ["Bruiser", "Jockey"] });
+  ok(tooMany.notes.some((n) => n.includes("1 PlayStyle slot")));
+});
+
+Deno.test("AP comes from the level, capped at 55", () => {
+  eq([1, 10, 20, 40, 55].map(apAtLevel), [100, 224, 397, 962, 1419]);
+  eq(apAtLevel(99), 1419);
+  eq(levelNeeded(100), 1);
+  eq(levelNeeded(1419), 55);
+  eq(levelNeeded(1420), null);
+  for (let l = 2; l <= 55; l++) ok(apAtLevel(l) > apAtLevel(l - 1), `AP grows at level ${l}`);
+});
+
+Deno.test("prices follow the published worked examples", () => {
+  eq(costBetween("marauder", "crossing", 75, 90), 92);
+  eq(costBetween("boss", "crossing", 45, 90), 194);
+  eq(costBetween("target", "sprintSpeed", 65, 92), 274);
+  eq(costBetween("finisher", "finishing", 75, 99), 374);
+  // a point gets dearer the higher it goes, and dearer on a higher price tier
+  ok(pointCost("finisher", "finishing", 99) > pointCost("finisher", "finishing", 70));
+  for (const a of ARCHETYPES) for (const k of ATTRIBUTE_KEYS) if (trainable(a.key, k)) ok(costTier(a.key, k) >= 1 && costTier(a.key, k) <= 4, `${a.key}.${k} tier`);
+});
+
+// AP to reach each specialization from a fresh level-1 build, as published by the community (Nov 2026)
+const SPEC_COSTS: Record<string, number> = {"shotstopper.shotstopper":455,"shotstopper.octopus":503,"shotstopper.spider":559,"sweeperkeeper.sweeperkeeper":380,"sweeperkeeper.launcher":428,"sweeperkeeper.extra":559,"progressor.progressor":401,"progressor.pioneer":543,"progressor.janitor":575,"boss.boss":316,"boss.capitano":519,"boss.enforcer":548,"marauder.marauder":353,"marauder.athlete":462,"marauder.speedster":545,"disruptor.disruptor":454,"disruptor.destroyer":497,"disruptor.anchor":618,"recycler.recycler":412,"recycler.thief":438,"recycler.driver":470,"maestro.heartbeat":397,"maestro.crasher":485,"maestro.maestro":544,"creator.creator":372,"creator.architect":394,"creator.sniper":509,"spark.joker":326,"spark.spark":465,"spark.ace":495,"magician.invader":348,"magician.magician":386,"magician.hotshot":525,"finisher.finisher":308,"finisher.hunter":388,"finisher.presser":457,"target.target":392,"target.runner":485,"target.roamer":573};
+
+Deno.test("every specialization costs what the published table says from a fresh build", () => {
+  eq(SPECIALIZATIONS.length, 39);
+  for (const spec of SPECIALIZATIONS) {
+    const st = specializationStatus(emptyBuild(spec.archetype)).find((s) => s.spec.key === spec.key)!;
+    eq(st.apToReach, SPEC_COSTS[spec.key], spec.key);
+    const reached = specializationStatus(raiseFor(emptyBuild(spec.archetype), spec.req)).find((s) => s.spec.key === spec.key)!;
+    ok(reached.met, `${spec.key} met after raiseFor`);
+  }
+});
+
+Deno.test("PlayStyles: signatures are automatic, others unlock by attribute, keepers keep theirs", () => {
+  const boss = playstyleStatus({ ...emptyBuild("boss"), level: 55 });
+  const by = (n: string) => boss.find((s) => s.def.name === n)!;
+  eq(by("Bruiser").signature > 0 && by("Bruiser").unlocked, true);
+  eq(by("Bruiser").plus, true, "level 55 makes both signatures PlayStyle+");
+  const fresh = playstyleStatus(emptyBuild("boss"));
+  eq(fresh.find((s) => s.def.name === "Precision Header")!.apToUnlock, 30);
+  eq(fresh.find((s) => s.def.name === "Slide Tackle")!.apToUnlock, 15);
+  ok(by("Precision Header").apToUnlock! < 30, "the level 55 mastery point counts towards unlocks");
+  for (const n of ["Finesse Shot", "Gamechanger", "Incisive Pass", "Inventive"]) eq(by(n).apToUnlock, null, `${n} out of reach for a Boss`);
+  eq(playstyleStatus({ ...emptyBuild("boss"), level: 19 }).filter((s) => s.plus).length, 0);
+  eq(playstyleStatus({ ...emptyBuild("boss"), level: 20 }).filter((s) => s.plus).length, 1);
+  eq([1, 5, 15, 40, 55].map(playstyleSlots), [0, 1, 2, 3, 4]);
+  eq(PLAYSTYLE_DEFS.filter((p) => !p.keeperOnly).length + PLAYSTYLE_DEFS.filter((p) => p.keeperOnly).length, PLAYSTYLE_DEFS.length);
+});
+
+Deno.test("body: height and weight shift attributes in matches only", () => {
+  const t = { ...emptyBuild("target"), heightCm: 195, weightKg: 80 };
+  eq(bodyEffects(t), { jumping: 1, sprintSpeed: 5, strength: 1, acceleration: -1, agility: -1, balance: -5 });
+  eq(menuValue(t, "balance"), startValue("target", "balance"), "the menu doesn't show body effects");
+  eq(matchValue(t, "balance"), startValue("target", "balance") - 5);
+  eq(bodyEffects(emptyBuild("target")), {});
+  ok(accelerateType({ ...t, heightCm: 182 }).startsWith("Explosive"));
+  ok(accelerateType(t).startsWith("Lengthy"));
 });
 
 Deno.test("archetype and attribute lists line up with the share format", () => {

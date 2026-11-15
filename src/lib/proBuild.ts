@@ -1,9 +1,13 @@
-// Virtual Pro build planner: archetype, level, body, skill moves / weak foot, the attribute points you
-// add and your PlayStyles, saved in a short share code (gafferbot.app/build?b=...).
-// EA doesn't publish FC27's point costs, caps or PlayStyle thresholds, so nothing here pretends to know
-// them: you enter the points your in-game screen says you have, and the planner tracks what's left.
-// Archetype names, attributes and PlayStyles are EA's in-game names; edit the lists below when EA
-// changes them. Builds from the Pro Clubs Builder share links can be imported (their own format).
+// Virtual Pro build planner for EA FC 27 Clubs: archetype, level, body, the attribute points you add and your
+// PlayStyles, priced and unlocked the way the game does it (rules and data in proClubsData.ts), saved in a short
+// share code (gafferbot.app/build?b=...). Builds from Pro Clubs Builder share links can be imported.
+import {
+  ACCELERATE_HEIGHT_SPLIT, AP_BY_LEVEL, ARCHETYPE_RULES, ATTRIBUTE_KEYS, BODY, BODY_EFFECTS, CAPS, COST_BANDS, COST_TIERS,
+  LEVEL_CAP, MASTERIES, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, SIGNATURE_PLUS_LEVELS, SPECIALIZATIONS, START_VALUES,
+  type AttrKey, type PlayStyleDef, type Specialization, type StyleGroup,
+} from "./proClubsData.ts";
+
+export { AP_BY_LEVEL, ARCHETYPE_RULES, BODY, LEVEL_CAP, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, SPECIALIZATIONS, type AttrKey, type PlayStyleDef, type Specialization, type StyleGroup };
 
 export type Line = "GK" | "DEF" | "MID" | "FWD";
 
@@ -90,44 +94,57 @@ export const ATTRIBUTES: Attribute[] = [
 const ATTR_BY_ANY = new Map<string, Attribute>();
 for (const a of ATTRIBUTES) for (const k of [a.key, ...(a.aliases ?? [])]) ATTR_BY_ANY.set(k.toLowerCase(), a);
 
-export const PLAYSTYLES: { name: string; group: AttrGroup | "goalkeeping" }[] = [
-  ...["Finesse Shot", "Chip Shot", "Power Shot", "Dead Ball", "Precision Header", "Acrobatic", "Low Driven Shot", "Power Header", "Game Changer"].map((name) => ({ name, group: "shooting" as const })),
-  ...["Incisive Pass", "Pinged Pass", "Long Ball Pass", "Tiki Taka", "Whipped Pass", "Inventive"].map((name) => ({ name, group: "passing" as const })),
-  ...["Technical", "Rapid", "First Touch", "Trickster", "Press Proven", "Flair"].map((name) => ({ name, group: "dribbling" as const })),
-  ...["Jockey", "Block", "Intercept", "Anticipate", "Slide Tackle", "Aerial Fortress"].map((name) => ({ name, group: "defending" as const })),
-  ...["Quick Step", "Relentless", "Long Throw", "Bruiser", "Enforcer"].map((name) => ({ name, group: "physical" as const })),
-  ...["Far Throw", "Footwork", "Cross Claimer", "Rush Out", "Far Reach", "Deflector"].map((name) => ({ name, group: "goalkeeping" as const })),
-];
-export const MAX_PLAYSTYLES = 10;
+const KEY_INDEX = new Map<string, number>(ATTRIBUTE_KEYS.map((k, i) => [k, i]));
 
-export const LEVEL_MAX = 100;
-export const HEIGHT_RANGE: [number, number] = [150, 210];
-export const WEIGHT_RANGE: [number, number] = [45, 115];
-export const POINTS_MAX_PER_ATTR = 60;
+// ---------- PlayStyles ----------
+export const PLAYSTYLES: { name: string; group: StyleGroup }[] = PLAYSTYLE_DEFS.map(({ name, group }) => ({ name, group }));
+export const STYLE_GROUPS: { key: StyleGroup; label: string }[] = [
+  { key: "shooting", label: "Shooting" },
+  { key: "passing", label: "Passing" },
+  { key: "ballControl", label: "Ball control" },
+  { key: "defending", label: "Defending" },
+  { key: "physical", label: "Physical" },
+  { key: "goalkeeping", label: "Goalkeeping" },
+];
+// Regular PlayStyle slots at the level cap (Signatures come on top)
+export const MAX_PLAYSTYLES = PLAYSTYLE_SLOT_LEVELS.length;
+// Older names, and PlayStyles that aren't in FC 27
+const STYLE_ALIASES: Record<string, string> = { "Game Changer": "Gamechanger", "Game changer": "Gamechanger", "1v1 Close down": "1v1 Close Down" };
+export const canonStyle = (name: string) => STYLE_ALIASES[name] ?? name;
+
+export const LEVEL_MAX = LEVEL_CAP;
+export const HEIGHT_RANGE: [number, number] = [162, 200];
+export const WEIGHT_RANGE: [number, number] = [60, 100];
+export const POINTS_MAX_PER_ATTR = 59;
 
 export interface Build {
   name: string;
   archetype: string; // ARCHETYPES key
-  level: number;
+  level: number; // 1..55
   heightCm: number;
   weightKg: number;
   skillMoves: number; // 1-5
   weakFoot: number; // 1-5
-  points: Record<string, number>; // attribute key -> points added
-  playstyles: string[];
-  budget: number | null; // points available, typed in from the game screen
+  points: Record<string, number>; // attribute key -> points added above the archetype's starting value
+  playstyles: string[]; // regular PlayStyles picked for the slots (Signatures are automatic)
+  specialization: string | null; // SPECIALIZATIONS key
+  budget: number | null; // kept for old links; the game decides AP by level now
 }
+
+const archOf = (key: string) => ARCHETYPES.find((a) => a.key === key) ?? ARCHETYPES[ARCHETYPES.length - 2];
+export const isKeeper = (archetype: string) => archOf(archetype).line === "GK";
 
 export const emptyBuild = (archetype = "finisher"): Build => ({
   name: "",
   archetype,
   level: 1,
-  heightCm: 180,
-  weightKg: 75,
+  heightCm: BODY[archetype]?.startH ?? 180,
+  weightKg: BODY[archetype]?.startW ?? 75,
   skillMoves: 3,
   weakFoot: 3,
   points: {},
   playstyles: [],
+  specialization: null,
   budget: null,
 });
 
@@ -137,59 +154,237 @@ const int = (v: unknown, lo: number, hi: number, fallback: number) => {
   return Number.isFinite(n) ? clamp(n, lo, hi) : fallback;
 };
 
+// ---------- Attribute values and prices ----------
+export const startValue = (archetype: string, key: string) => START_VALUES[archetype]?.[KEY_INDEX.get(key) ?? -1] ?? 0;
+export const trainable = (archetype: string, key: string) => startValue(archetype, key) > 0;
+export const attrCap = (archetype: string, key: string) => (trainable(archetype, key) ? (CAPS[archetype]?.[key as AttrKey] ?? 99) : 0);
+export const capConfirmed = (archetype: string, key: string) => CAPS[archetype]?.[key as AttrKey] !== undefined;
+export const costTier = (archetype: string, key: string) => COST_TIERS[archetype]?.[KEY_INDEX.get(key) ?? -1] ?? 0;
+
+// AP for one point that takes the attribute up to `value`
+export function pointCost(archetype: string, key: string, value: number): number {
+  const tier = costTier(archetype, key);
+  if (!tier) return Infinity;
+  const band = COST_BANDS.find((b) => value <= b[0]) ?? COST_BANDS[COST_BANDS.length - 1];
+  return band[tier];
+}
+
+// AP to raise an attribute from one value to another
+export function costBetween(archetype: string, key: string, from: number, to: number): number {
+  let t = 0;
+  for (let v = from + 1; v <= to; v++) t += pointCost(archetype, key, v);
+  return t;
+}
+
+export const trainedValue = (b: Build, key: string) => (trainable(b.archetype, key) ? startValue(b.archetype, key) + (b.points[key] ?? 0) : 0);
+
+// Mastery from levelling this archetype (other archetypes' masteries aren't known here)
+export function masteryBonus(b: Build, key: string): number {
+  const pair = MASTERIES[b.archetype];
+  if (!pair) return 0;
+  const [first, second] = pair;
+  let n = 0;
+  if (key === first) n += (b.level >= 10 ? 1 : 0) + (b.level >= 55 ? 1 : 0);
+  if (key === second) n += (b.level >= 10 ? 1 : 0) + (b.level >= 30 ? 1 : 0);
+  return n;
+}
+
+// What the attributes screen shows: trained value plus mastery
+export const menuValue = (b: Build, key: string) => (trainable(b.archetype, key) ? Math.min(99, trainedValue(b, key) + masteryBonus(b, key)) : 0);
+
+const steps = (diff: number, per: number) => Math.sign(diff) * Math.ceil(Math.abs(diff) / per);
+// Height/weight shifts, applied in matches only
+export function bodyEffects(b: Build): Partial<Record<AttrKey, number>> {
+  const body = BODY[b.archetype];
+  const fx = isKeeper(b.archetype) ? BODY_EFFECTS.keeper : BODY_EFFECTS.outfield;
+  const out: Partial<Record<AttrKey, number>> = {};
+  const add = (keys: readonly AttrKey[], n: number) => keys.forEach((k) => (out[k] = (out[k] ?? 0) + n));
+  if (!body) return out;
+  const h = steps(b.heightCm - body.startH, 4);
+  const w = steps(b.weightKg - body.startW, 8);
+  add(fx.taller.up, h);
+  add(fx.taller.down, -h);
+  add(fx.heavier.up, w);
+  add(fx.heavier.down, -w);
+  for (const k of Object.keys(out) as AttrKey[]) if (!out[k] || !trainable(b.archetype, k)) delete out[k];
+  return out;
+}
+
+export const matchValue = (b: Build, key: string, fx = bodyEffects(b)) =>
+  trainable(b.archetype, key) ? clamp(menuValue(b, key) + (fx[key as AttrKey] ?? 0), 1, 99) : 0;
+
+export const accelerateType = (b: Build) => (b.heightCm <= ACCELERATE_HEIGHT_SPLIT ? "Explosive or Controlled" : "Lengthy or Controlled");
+
+// ---------- AP ----------
+export const apAtLevel = (level: number) => AP_BY_LEVEL[clamp(Math.round(level), 1, LEVEL_CAP)];
+export function apSpent(b: Build): number {
+  let t = 0;
+  for (const [k, p] of Object.entries(b.points)) if (p > 0) t += costBetween(b.archetype, k, startValue(b.archetype, k), startValue(b.archetype, k) + p);
+  return t;
+}
+// Lowest level whose AP covers what the build spends (null if more than the cap allows)
+export function levelNeeded(spent: number): number | null {
+  const lvl = AP_BY_LEVEL.findIndex((ap, i) => i >= 1 && ap >= spent);
+  return lvl === -1 ? null : lvl;
+}
+
+// ---------- Unlocks ----------
+export interface Missing { key: string; need: number; have: number }
+// Points to add so every requirement is met; null when one is above the archetype's cap
+function raisePlan(b: Build, req: [string, number][]): { missing: Missing[]; ap: number | null } {
+  const missing: Missing[] = [];
+  let ap = 0;
+  for (const [k, need] of req) {
+    const have = menuValue(b, k);
+    if (have >= need) continue;
+    missing.push({ key: k, need, have });
+    if (!trainable(b.archetype, k) || need - masteryBonus(b, k) > attrCap(b.archetype, k)) {
+      ap = NaN;
+      continue;
+    }
+    const from = trainedValue(b, k);
+    ap += costBetween(b.archetype, k, from, need - masteryBonus(b, k));
+  }
+  return { missing, ap: Number.isNaN(ap) ? null : ap };
+}
+
+// Raise attributes just enough to meet requirements (what the "unlock" buttons do)
+export function raiseFor(b: Build, req: [string, number][]): Build {
+  const points = { ...b.points };
+  for (const [k, need] of req) {
+    if (!trainable(b.archetype, k)) continue;
+    const target = Math.min(attrCap(b.archetype, k), need - masteryBonus(b, k));
+    points[k] = Math.max(points[k] ?? 0, target - startValue(b.archetype, k));
+  }
+  return normaliseBuild({ ...b, points });
+}
+
+export interface StyleStatus { def: PlayStyleDef; available: boolean; unlocked: boolean; missing: Missing[]; apToUnlock: number | null; signature: 0 | 1 | 2; plus: boolean }
+export function playstyleStatus(b: Build): StyleStatus[] {
+  const keeper = isKeeper(b.archetype);
+  const sigs = ARCHETYPE_RULES[b.archetype]?.signatures ?? ["", ""];
+  return PLAYSTYLE_DEFS.map((def) => {
+    const sig = sigs[0] === def.name ? 1 : sigs[1] === def.name ? 2 : 0;
+    const available = !def.keeperOnly || keeper;
+    const { missing, ap } = raisePlan(b, Object.entries(def.req) as [string, number][]);
+    return {
+      def,
+      available,
+      unlocked: available && (sig > 0 || missing.length === 0),
+      missing: sig ? [] : missing,
+      apToUnlock: sig ? 0 : available ? ap : null,
+      signature: sig as 0 | 1 | 2,
+      plus: sig > 0 && b.level >= SIGNATURE_PLUS_LEVELS[sig - 1],
+    };
+  });
+}
+
+export const playstyleSlots = (level: number) => PLAYSTYLE_SLOT_LEVELS.filter((l) => level >= l).length;
+export const nextSlotLevel = (level: number) => PLAYSTYLE_SLOT_LEVELS.find((l) => level < l) ?? null;
+
+export interface SpecStatus { spec: Specialization; met: boolean; missing: Missing[]; apToReach: number | null }
+export function specializationStatus(b: Build): SpecStatus[] {
+  return SPECIALIZATIONS.filter((s) => s.archetype === b.archetype).map((spec) => {
+    const { missing, ap } = raisePlan(b, spec.req);
+    return { spec, met: missing.length === 0, missing, apToReach: ap };
+  });
+}
+
+// ---------- Normalise ----------
 export function normaliseBuild(b: Partial<Build>): Build {
-  const base = emptyBuild();
+  const archetype = ARCHETYPES.some((a) => a.key === b.archetype) ? b.archetype! : "finisher";
+  const base = emptyBuild(archetype);
+  const body = BODY[archetype];
   const points: Record<string, number> = {};
   for (const [k, v] of Object.entries(b.points ?? {})) {
     const a = ATTR_BY_ANY.get(k.toLowerCase());
-    const n = int(v, 0, POINTS_MAX_PER_ATTR, 0);
-    if (a && n) points[a.key] = n;
+    if (!a || !trainable(archetype, a.key)) continue;
+    const n = int(v, 0, attrCap(archetype, a.key) - startValue(archetype, a.key), 0);
+    if (n) points[a.key] = n;
   }
-  const known = new Set(PLAYSTYLES.map((p) => p.name));
+  const known = new Set(PLAYSTYLE_DEFS.filter((p) => !p.keeperOnly || isKeeper(archetype)).map((p) => p.name));
+  const sigs = new Set(ARCHETYPE_RULES[archetype]?.signatures ?? []);
+  const spec = SPECIALIZATIONS.find((s) => s.key === b.specialization && s.archetype === archetype);
   return {
-    name: String(b.name ?? "").replace(/[|\n\r]/g, " ").trim().slice(0, 40),
-    archetype: ARCHETYPES.some((a) => a.key === b.archetype) ? b.archetype! : base.archetype,
-    level: int(b.level, 1, LEVEL_MAX, 1),
-    heightCm: int(b.heightCm, ...HEIGHT_RANGE, base.heightCm),
-    weightKg: int(b.weightKg, ...WEIGHT_RANGE, base.weightKg),
+    name: String(b.name ?? "").replace(/[|~\n\r]/g, " ").trim().slice(0, 40),
+    archetype,
+    level: int(b.level, 1, LEVEL_CAP, 1),
+    heightCm: int(b.heightCm, body.h[0], body.h[1], base.heightCm),
+    weightKg: int(b.weightKg, body.w[0], body.w[1], base.weightKg),
     skillMoves: int(b.skillMoves, 1, 5, 3),
     weakFoot: int(b.weakFoot, 1, 5, 3),
     points,
-    playstyles: [...new Set((b.playstyles ?? []).filter((p) => known.has(p)))].slice(0, MAX_PLAYSTYLES),
-    budget: b.budget === null || b.budget === undefined || b.budget === ("" as unknown) ? null : int(b.budget, 0, 5000, 0),
+    playstyles: [...new Set((b.playstyles ?? []).map(canonStyle).filter((p) => known.has(p) && !sigs.has(p)))].slice(0, MAX_PLAYSTYLES),
+    specialization: spec ? spec.key : null,
+    budget: null,
   };
 }
 
 export const pointsSpent = (b: Build) => Object.values(b.points).reduce((t, v) => t + v, 0);
 
+// Points added per attribute group
 export function groupTotals(b: Build): Record<AttrGroup, number> {
   const out = Object.fromEntries(ATTR_GROUPS.map((g) => [g.key, 0])) as Record<AttrGroup, number>;
   for (const a of ATTRIBUTES) out[a.group] += b.points[a.key] || 0;
   return out;
 }
 
-// Plain-English read of where the points went
-export function buildSummary(b: Build): { spent: number; remaining: number | null; focus: { group: AttrGroup; label: string; share: number }[]; notes: string[] } {
-  const spent = pointsSpent(b);
-  const totals = groupTotals(b);
-  const focus = ATTR_GROUPS.map((g) => ({ group: g.key, label: g.label, share: spent ? totals[g.key] / spent : 0 }))
+// In-match average per group (what the radar draws)
+export function groupAverages(b: Build): Record<AttrGroup, number> {
+  const fx = bodyEffects(b);
+  const out = {} as Record<AttrGroup, number>;
+  for (const g of ATTR_GROUPS) {
+    const vals = ATTRIBUTES.filter((a) => a.group === g.key && trainable(b.archetype, a.key)).map((a) => matchValue(b, a.key, fx));
+    out[g.key] = vals.length ? vals.reduce((t, v) => t + v, 0) / vals.length : 0;
+  }
+  return out;
+}
+
+export interface BuildSummary {
+  spent: number; // AP
+  available: number; // AP at this level
+  remaining: number;
+  levelNeeded: number | null;
+  slots: number;
+  focus: { group: AttrGroup; label: string; share: number }[]; // where the AP went
+  notes: string[];
+}
+export function buildSummary(b: Build): BuildSummary {
+  const spent = apSpent(b);
+  const available = apAtLevel(b.level);
+  const byGroup = Object.fromEntries(ATTR_GROUPS.map((g) => [g.key, 0])) as Record<AttrGroup, number>;
+  for (const a of ATTRIBUTES) {
+    const p = b.points[a.key];
+    if (p) byGroup[a.group] += costBetween(b.archetype, a.key, startValue(b.archetype, a.key), startValue(b.archetype, a.key) + p);
+  }
+  const focus = ATTR_GROUPS.map((g) => ({ group: g.key, label: g.label, share: spent ? byGroup[g.key] / spent : 0 }))
     .filter((f) => f.share > 0)
     .sort((x, y) => y.share - x.share);
-  const arch = ARCHETYPES.find((a) => a.key === b.archetype)!;
   const notes: string[] = [];
-  if (b.budget !== null && spent > b.budget) notes.push(`${spent - b.budget} points over the ${b.budget} you have.`);
-  if (spent && arch.line !== "GK" && totals.goalkeeping) notes.push("Goalkeeping points do nothing for an outfield player.");
-  if (spent && arch.line === "GK" && totals.goalkeeping / spent < 0.5) notes.push("Most keeper points usually go into goalkeeping.");
-  const top = focus[0];
-  if (top && !arch.focus.includes(top.group)) notes.push(`Most points are in ${top.label.toLowerCase()}, which isn't what a ${arch.name} is built around (${arch.focus.join(" and ")}).`);
-  if (b.playstyles.length > MAX_PLAYSTYLES) notes.push(`Only ${MAX_PLAYSTYLES} PlayStyles fit.`);
-  return { spent, remaining: b.budget === null ? null : b.budget - spent, focus, notes };
+  const need = levelNeeded(spent);
+  if (spent > available) notes.push(need ? `${spent - available} AP over what level ${b.level} gives you: this build needs level ${need}.` : `${spent - available} AP over: more than even level ${LEVEL_CAP} gives (${apAtLevel(LEVEL_CAP)} AP).`);
+  const slots = playstyleSlots(b.level);
+  if (b.playstyles.length > slots) notes.push(`Level ${b.level} has ${slots} PlayStyle slot${slots === 1 ? "" : "s"}; ${b.playstyles.length} are picked.`);
+  const status = new Map(playstyleStatus(b).map((s) => [s.def.name, s]));
+  const locked = b.playstyles.filter((p) => !status.get(p)?.unlocked);
+  if (locked.length) notes.push(`Not unlocked yet: ${locked.join(", ")}.`);
+  const spec = specializationStatus(b).find((s) => s.spec.key === b.specialization);
+  if (spec && !spec.met) notes.push(`${spec.spec.name} isn't reached yet.`);
+  return { spent, available, remaining: available - spent, levelNeeded: need, slots, focus, notes };
 }
 
 // ---------- Share codes ----------
-// gb1~archetype~level~height~weight~skill~weakfoot~budget~attrIndex.points,...~playstyle index list~name
-// (indexes into ATTRIBUTES and PLAYSTYLES: only ever append to those lists, never reorder)
-// base64url so it survives chat apps; ~ and . never appear in our keys or numbers.
+// gb2~archetype~level~height~weight~skill~weakfoot~attrIndex.points,...~playstyle index list~specialization~name
+// Indexes into ATTRIBUTES and PLAYSTYLE_DEFS: only ever append to those lists, never reorder.
+// gb1 (first version) is still read: its PlayStyle indexes use LEGACY_STYLES.
+const LEGACY_STYLES = [
+  "Finesse Shot", "Chip Shot", "Power Shot", "Dead Ball", "Precision Header", "Acrobatic", "Low Driven Shot", "Power Header", "Game Changer",
+  "Incisive Pass", "Pinged Pass", "Long Ball Pass", "Tiki Taka", "Whipped Pass", "Inventive",
+  "Technical", "Rapid", "First Touch", "Trickster", "Press Proven", "Flair",
+  "Jockey", "Block", "Intercept", "Anticipate", "Slide Tackle", "Aerial Fortress",
+  "Quick Step", "Relentless", "Long Throw", "Bruiser", "Enforcer",
+  "Far Throw", "Footwork", "Cross Claimer", "Rush Out", "Far Reach", "Deflector",
+];
 
 const b64urlEncode = (s: string) => {
   const bytes = new TextEncoder().encode(s);
@@ -206,21 +401,25 @@ const b64Decode = (s: string) => {
 export function encodeBuild(input: Build): string {
   const b = normaliseBuild(input);
   const attrs = ATTRIBUTES.map((a, i) => (b.points[a.key] ? `${i}.${b.points[a.key]}` : "")).filter(Boolean).join(",");
-  const styles = b.playstyles.map((p) => PLAYSTYLES.findIndex((s) => s.name === p)).filter((i) => i >= 0).join(",");
-  return b64urlEncode(["gb1", b.archetype, b.level, b.heightCm, b.weightKg, b.skillMoves, b.weakFoot, b.budget ?? "", attrs, styles, b.name].join("~"));
+  const styles = b.playstyles.map((p) => PLAYSTYLE_DEFS.findIndex((s) => s.name === p)).filter((i) => i >= 0).join(",");
+  const spec = b.specialization ? SPECIALIZATIONS.findIndex((s) => s.key === b.specialization) : -1;
+  return b64urlEncode(["gb2", b.archetype, b.level, b.heightCm, b.weightKg, b.skillMoves, b.weakFoot, attrs, styles, spec >= 0 ? spec : "", b.name].join("~"));
 }
 
 export function decodeBuild(code: string): Build | null {
   try {
     const parts = b64Decode(code).split("~");
-    if (parts[0] !== "gb1" || parts.length < 11) return null;
-    const [, archetype, level, h, w, sm, wf, budget, attrs, styles, ...name] = parts;
+    const v2 = parts[0] === "gb2";
+    if (!(v2 || parts[0] === "gb1") || parts.length < (v2 ? 11 : 11)) return null;
+    const [, archetype, level, h, w, sm, wf] = parts;
+    const [attrs, styles, specIdx, ...name] = v2 ? parts.slice(7) : [parts[8], parts[9], "", ...parts.slice(10)];
     const points: Record<string, number> = {};
     for (const pair of attrs ? attrs.split(",") : []) {
       const [k, v] = pair.split(".");
       const a = ATTRIBUTES[Number(k)];
       if (a) points[a.key] = Number(v);
     }
+    const list = v2 ? PLAYSTYLE_DEFS.map((p) => p.name) : LEGACY_STYLES;
     return normaliseBuild({
       archetype,
       level: Number(level),
@@ -228,9 +427,9 @@ export function decodeBuild(code: string): Build | null {
       weightKg: Number(w),
       skillMoves: Number(sm),
       weakFoot: Number(wf),
-      budget: budget === "" ? null : Number(budget),
       points,
-      playstyles: (styles ? styles.split(",") : []).map((i) => PLAYSTYLES[Number(i)]?.name).filter(Boolean) as string[],
+      playstyles: (styles ? styles.split(",") : []).map((i) => list[Number(i)]).filter(Boolean),
+      specialization: specIdx !== "" && specIdx !== undefined ? SPECIALIZATIONS[Number(specIdx)]?.key ?? null : null,
       name: name.join("~"),
     });
   } catch {

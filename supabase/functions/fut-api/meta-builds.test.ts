@@ -37,7 +37,7 @@ Deno.test("a reading keeps known positions, archetypes, PlayStyles and attribute
   ] }, links);
   eq(r.builds.length, 3);
   const [st, cb, cdm] = r.builds;
-  eq([st!.archetype, st!.height_cm, st!.weight_kg, st!.skill_moves, st!.weak_foot, st!.level], ["finisher", 188, 82, 4, 5, 60], "the link wins");
+  eq([st!.archetype, st!.height_cm, st!.weight_kg, st!.skill_moves, st!.weak_foot, st!.level], ["finisher", 188, 82, 4, 5, 55], "the link wins (level 60 from an old FC build is capped at 55)");
   eq(st!.playstyles, ["Finesse Shot"]);
   eq(st!.key_attrs, ["finishing"]);
   eq(st!.points?.finishing, 20);
@@ -76,7 +76,7 @@ Deno.test("the community meta build is the weighted consensus of what people rec
   eq(st.pointsFrom?.id, "b", "exact points from the shared build");
   eq(st.warnings.map((w) => w.statement), ["Spark strikers can't finish"]);
   const back = decodeBuild(st.code!)!;
-  eq([back.archetype, back.heightCm, back.level, back.points.finishing, back.name], ["finisher", 185, 60, 20, "Community meta ST"]);
+  eq([back.archetype, back.heightCm, back.level, back.points.finishing, back.name], ["finisher", 185, 55, 20, "Community meta ST"]);
   eq(back.playstyles, st.playstyles.map((p) => p.name));
   ok(describeMetaBuild(st).startsWith("Striker: Finisher (") && describeMetaBuild(st).includes("Finesse Shot"));
 
