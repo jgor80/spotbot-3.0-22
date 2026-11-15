@@ -558,7 +558,7 @@ const autopilot = createAutopilot({
   openai,
   dashboardUrl: DASHBOARD_URL
 });
-// Session report (grade, team scores out of 100, fix first) added to the session recap before other extras
+// Front office report (grade, team scores out of 1000, priority to address) added to the session recap before other extras
 createSessionReport({ autopilot, loadMatches: managerHub.loadMatches, events: clubEvents });
 // League / Tournament / BYOT tags on played games; new friendlies played during such an event are tagged
 // before their recap is built

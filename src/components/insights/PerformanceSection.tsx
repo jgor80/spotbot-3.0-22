@@ -92,8 +92,8 @@ export function PerformanceSection({ matches }: { matches: InsightMatch[] }) {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" /> Session report</CardTitle>
-          <CardDescription>One night of games graded against real FC27 clubs and against your own usual. Discord gets this automatically when your club voice channel empties.</CardDescription>
+          <CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5" /> Front office report</CardTitle>
+          <CardDescription>The management view of a night: graded against real FC27 clubs and against your own usual. The Chronicle tells the story; this is what the front office makes of it. Discord gets it when your club voice channel empties.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Select value={night} onValueChange={setNight}>
@@ -115,14 +115,14 @@ export function PerformanceSection({ matches }: { matches: InsightMatch[] }) {
                   sub={report.control === null ? undefined : `Control ${Math.round(report.control)}${report.usualControl !== null ? ` · ${signed(report.control - report.usualControl)} on usual` : ""}`}
                 />
                 <Tile label="Results" value={`${report.wins}W ${report.draws}D ${report.losses}L`} sub={`Goals ${report.goalsFor}-${report.goalsAgainst}`} />
-                <Tile label="Main strength" value={report.strength?.label || "—"} sub={report.strength?.delta != null ? `${signed(report.strength.delta)} on usual` : undefined} />
-                <Tile label="Fix first" value={report.fixFirst?.label || "—"} sub={report.fixFirst?.delta != null ? `${signed(report.fixFirst.delta)} on usual` : undefined} />
+                <Tile label="What's working" value={report.strength?.label || "—"} sub={report.strength?.delta != null ? `${signed(report.strength.delta)} on usual` : undefined} />
+                <Tile label="Priority to address" value={report.fixFirst?.label || "—"} sub={report.fixFirst?.delta != null ? `${signed(report.fixFirst.delta)} on usual` : undefined} />
               </div>
               <p className="text-sm">{report.pointsLine}</p>
               {report.fixFirst && <p className="text-sm text-muted-foreground">🔧 {AREA_FIX[report.fixFirst.key]}</p>}
               {report.playerOfSession && (
                 <p className="text-sm">
-                  ⭐ <span className="font-semibold">Player of the session: {report.playerOfSession.name}</span>
+                  ⭐ <span className="font-semibold">Standout performer: {report.playerOfSession.name}</span>
                   {report.playerOfSession.avgRating !== null && ` (${report.playerOfSession.avgRating.toFixed(1)})`} · {report.playerOfSession.line}
                 </p>
               )}

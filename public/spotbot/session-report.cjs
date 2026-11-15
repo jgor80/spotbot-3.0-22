@@ -1,4 +1,5 @@
-// Session report: after a night's games, a grade, five team scores out of 1000 against real FC27 clubs,
+// Front office report (the session report): the club's management view of a night, where the Chronicle
+// is the press view. After a night's games, a grade, five team scores out of 1000 against real FC27 clubs,
 // the main strength and what to fix first (both against the club's usual), points vs expected points,
 // a player of the session and one line per player. The maths is src/lib/matchPerformance.ts (bundled
 // in club-insights.cjs); this file only turns it into a Discord embed.
@@ -35,12 +36,12 @@ function sessionReportEmbed(report, club, prefs = {}) {
     `**${report.wins}W ${report.draws}D ${report.losses}L** · goals ${report.goalsFor}-${report.goalsAgainst}`,
     report.pointsLine,
   ];
-  if (report.strength) lines.push(`💪 **Main strength:** ${report.strength.label}${report.strength.delta !== null ? ` (${signed(report.strength.delta)} on your usual)` : ''}`);
-  if (report.fixFirst) lines.push(`🔧 **Fix first:** ${report.fixFirst.label}${report.fixFirst.delta !== null ? ` (${signed(report.fixFirst.delta)} on your usual)` : ''}. ${AREA_FIX[report.fixFirst.key]}`);
-  if (report.playerOfSession) lines.push(`⭐ **Player of the session: ${report.playerOfSession.name}** ${report.playerOfSession.avgRating !== null ? `(${report.playerOfSession.avgRating.toFixed(1)})` : ''}: ${report.playerOfSession.line}`);
+  if (report.strength) lines.push(`📈 **What's working:** ${report.strength.label}${report.strength.delta !== null ? ` (${signed(report.strength.delta)} on your usual)` : ''}`);
+  if (report.fixFirst) lines.push(`📌 **Priority to address:** ${report.fixFirst.label}${report.fixFirst.delta !== null ? ` (${signed(report.fixFirst.delta)} on your usual)` : ''}. ${AREA_FIX[report.fixFirst.key]}`);
+  if (report.playerOfSession) lines.push(`⭐ **Standout performer: ${report.playerOfSession.name}** ${report.playerOfSession.avgRating !== null ? `(${report.playerOfSession.avgRating.toFixed(1)})` : ''}: ${report.playerOfSession.line}`);
 
   const embed = new EmbedBuilder()
-    .setTitle(`📊 Session report · ${club.name}`)
+    .setTitle(`🗂️ Front office report · ${club.name}`)
     .setColor(color)
     .setDescription(truncate(lines.join('\n'), 4000));
 
@@ -51,12 +52,12 @@ function sessionReportEmbed(report, club, prefs = {}) {
     .slice()
     .sort((a, b) => a.playedAt - b.playedAt)
     .map((m) => `${m.result === 'win' ? '🟢' : m.result === 'draw' ? '⚪' : '🔴'} ${m.scoreFor}-${m.scoreAgainst} ${m.opponent} · modelled ${m.modelledFor.toFixed(1)}-${m.modelledAgainst.toFixed(1)} · **${m.verdict}**`);
-  if (games.length) embed.addFields({ name: 'Did you deserve it?', value: truncate(games.join('\n')) });
+  if (games.length) embed.addFields({ name: 'Results vs performance', value: truncate(games.join('\n')) });
 
   const players = report.players.slice(0, MAX_PLAYER_LINES).map((p) => `**${p.name}**${p.avgRating !== null ? ` ${p.avgRating.toFixed(1)}` : ''}: ${p.line}`);
-  if (players.length) embed.addFields({ name: 'Player by player', value: truncate(players.join('\n')) });
+  if (players.length) embed.addFields({ name: 'Squad notes', value: truncate(players.join('\n')) });
 
-  embed.setFooter({ text: 'Modelled goals use shots on target inside and outside the box, fitted on 14,240 FC27 games. They are not EA xG and say nothing about finishing.' });
+  embed.setFooter({ text: 'Front office analysis, not the press. Modelled goals use shots on target inside and outside the box, fitted on 14,240 FC27 games. They are not EA xG and say nothing about finishing.' });
   return embed;
 }
 
@@ -83,7 +84,7 @@ function createSessionReport({ autopilot, loadMatches, events }) {
   async function latestView(guildId, club) {
     const matches = loadMatches ? await loadMatches(guildId, club.key).catch(() => []) : [];
     const report = reportFor(matches);
-    if (!report) return { embeds: [new EmbedBuilder().setTitle(`📊 Session report · ${club.name}`).setColor(0x5865f2).setDescription('No synced matches yet. Play a session and it appears here.')] };
+    if (!report) return { embeds: [new EmbedBuilder().setTitle(`🗂️ Front office report · ${club.name}`).setColor(0x5865f2).setDescription('No synced matches yet. Play a session and it appears here.')] };
     const prefs = events ? await events.serverPrefs(guildId).catch(() => ({})) : {};
     return { embeds: [sessionReportEmbed(report, club, prefs)] };
   }

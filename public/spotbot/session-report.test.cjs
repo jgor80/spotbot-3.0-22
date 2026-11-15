@@ -104,10 +104,10 @@ test('session report grades the night against the usual', () => {
   assert.ok(report.players.every((p) => p.line && p.usualRating !== null));
 
   const embed = sessionReportEmbed(report, { name: 'Test FC' }).toJSON();
-  assert.match(embed.title, /Session report · Test FC/);
+  assert.match(embed.title, /Front office report · Test FC/);
   assert.match(embed.description, /Grade/);
   assert.ok(embed.fields.some((f) => f.name.startsWith('Team scores')));
-  assert.ok(embed.fields.some((f) => f.name === 'Did you deserve it?'));
+  assert.ok(embed.fields.some((f) => f.name === 'Results vs performance'));
   // Same thing through reportFor (latest night)
   assert.equal(reportFor(matches).games, 3);
 });

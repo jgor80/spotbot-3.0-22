@@ -382,7 +382,7 @@ function createClubStats(deps) {
   async function reportView(guildId, club) {
     const matches = await loadClubMatches(guildId, club.key, 120);
     const report = reportFor(matches);
-    if (!report) return { embeds: [new EmbedBuilder().setTitle(`📋 ${club.name}: session report`).setColor(0x5865f2).setDescription('No synced matches yet. Play a session and check back.')] };
+    if (!report) return { embeds: [new EmbedBuilder().setTitle(`🗂️ ${club.name}: front office report`).setColor(0x5865f2).setDescription('No synced matches yet. Play a session and check back.')] };
     const prefs = deps.serverPrefs ? await deps.serverPrefs(guildId).catch(() => ({})) : {};
     return { embeds: [sessionReportEmbed(report, club, prefs)] };
   }
@@ -602,13 +602,13 @@ function createClubStats(deps) {
     const embed = new EmbedBuilder()
       .setTitle(`📊 ${club.name} stats`)
       .setColor(0x22c55e)
-      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Deep Stats** decisions, positioning, pressing and partnerships from EA\'s hidden event data\n**Session Report** your last night graded, team scores out of 1000 and what to fix first\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers\n**Tournaments** tournament & BYOT games, kept apart from the rest')
+      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Deep Stats** decisions, positioning, pressing and partnerships from EA\'s hidden event data\n**Front Office** the management report on your last night: graded, team scores out of 1000 and what to fix first\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers\n**Tournaments** tournament & BYOT games, kept apart from the rest')
       .setFooter({ text: `${PANEL_MARK} · always stays at the bottom` });
     const b = (id, label, emoji, style = ButtonStyle.Secondary) => new ButtonBuilder().setCustomId(`statsp:${id}:${club.key}`).setLabel(label).setEmoji(emoji).setStyle(style);
     return {
       embeds: [embed],
       components: [
-        new ActionRowBuilder().addComponents(b('team', 'Team Stats', '📊', ButtonStyle.Primary), b('members', 'EA Member List', '👥', ButtonStyle.Primary), b('deep', 'Deep Stats', '🧠', ButtonStyle.Primary), b('report', 'Session Report', '📋', ButtonStyle.Primary)),
+        new ActionRowBuilder().addComponents(b('team', 'Team Stats', '📊', ButtonStyle.Primary), b('members', 'EA Member List', '👥', ButtonStyle.Primary), b('deep', 'Deep Stats', '🧠', ButtonStyle.Primary), b('report', 'Front Office', '🗂️', ButtonStyle.Primary)),
         new ActionRowBuilder().addComponents(b('top', 'Top Players', '🏆'), b('form', 'In Form', '🔥'), b('matches', 'Recent Matches', '📅'), b('tournaments', 'Tournaments', '🏟️'), new ButtonBuilder().setCustomId('help_glossary').setLabel('What the stats mean').setEmoji('❓').setStyle(ButtonStyle.Secondary)),
       ],
     };

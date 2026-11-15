@@ -497,8 +497,8 @@ export const TOOLS: Tool<Ctx>[] = [
   },
   {
     name: "get_session_report",
-    title: "Session report and performance",
-    description: "A night of games graded: team scores out of 1000 (attack, ball security, defending, control, rating edge) against 14,240 real FC27 club games, " +
+    title: "Front office report and performance",
+    description: "The front office report (management view, not the press): a night of games graded: team scores out of 1000 (attack, ball security, defending, control, rating edge) against 14,240 real FC27 club games, " +
       "modelled goals from shots on target inside/outside the box (not EA xG), expected points, a did-you-deserve-it verdict per game, main strength and " +
       "what to fix first against the club's usual, player of the session and a line per player. session 0 is the latest night, 1 the one before, and so on. " +
       "Also returns the club's overall scores over its last 100 games.",
