@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { AREAS } from "@/lib/clubInsights";
 import { compareParam, isPublicPlatform, publicClubView } from "@/lib/publicClub";
 import { PlayerScoresSection } from "@/components/insights/PlayerScoresSection";
+import { ExportButton } from "@/components/insights/ExportButton";
 import { ClubSearch, Crest, platformLabel, usePublicClub } from "@/components/publicClub/publicClubApi";
 
 const RESULT = { win: { letter: "W", cls: "bg-green-600" }, draw: { letter: "D", cls: "bg-amber-500" }, loss: { letter: "L", cls: "bg-red-600" } } as const;
@@ -67,9 +68,12 @@ export default function PublicClubPage() {
                   ))}
                 </div>
               </div>
-              <Button asChild variant="outline">
-                <Link to={`/clubs/compare?a=${compareParam(club.data.platform, club.data.clubId)}`}><ArrowLeftRight className="mr-1 h-4 w-4" /> Compare</Link>
-              </Button>
+              <div className="flex gap-2">
+                <ExportButton matches={view.matches} clubName={club.data.name} size="default" />
+                <Button asChild variant="outline">
+                  <Link to={`/clubs/compare?a=${compareParam(club.data.platform, club.data.clubId)}`}><ArrowLeftRight className="mr-1 h-4 w-4" /> Compare</Link>
+                </Button>
+              </div>
             </div>
 
             {o && (

@@ -642,3 +642,6 @@ export * from "./playerScores.ts";
 export * from "./banter.ts";
 // Transfer board filters and transfer news from EA member lists
 export * from "./transfers.ts";
+// Excel export (dependency-free .xlsx writer)
+export * from "./xlsx.ts";
+export * from "./clubExport.ts";

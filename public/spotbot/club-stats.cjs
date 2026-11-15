@@ -2,13 +2,13 @@
 // no extra EA calls: /clubstats members, top players per stat, in-form players and recent results.
 // Also /help (short guide plus a stats glossary) and the EA-name lookup behind /linkea.
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionFlagsBits, AttachmentBuilder } = require('discord.js');
 const { placeSticky } = require('./sticky-post.cjs');
 const { addBotButton } = require('./add-bot.cjs');
 const {
   toInsightMatches, competitionLabel, competitionEmoji, isSeparateCompetition, computeCompetitionRecords,
   computeAdvancedPlayers, computeSessionFatigue, computePressing, computePartnerships, generateAdvancedInsights, ROLE_LABELS,
-  computeFormTrends, computeOpponentProfiles,
+  computeFormTrends, computeOpponentProfiles, clubExportXlsx, exportFileName,
 } = require('./club-insights.cjs');
 const { benchmarkLines, signedPts } = require('./deep-stats.cjs');
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
@@ -250,6 +250,18 @@ function createClubStats(deps) {
 
   // kinds: 'regular' (default) leaves out tagged tournament / BYOT games, which have their own view;
   // 'separate' is only those; 'all' is everything
+  // Excel workbook of every synced game: matches, players, match-by-match log and nights
+  const EXPORT_LIMIT = 500;
+  async function exportView(guildId, club) {
+    const matches = await loadClubMatches(guildId, club.key, EXPORT_LIMIT, 'all');
+    if (!matches.length) return { content: 'No synced games to export yet.' };
+    const file = new AttachmentBuilder(Buffer.from(clubExportXlsx(matches)), { name: exportFileName(club.name || 'club') });
+    return {
+      content: `📥 **${club.name}**: ${matches.length} game${matches.length === 1 ? '' : 's'} in four sheets (Matches, Players, Player match log, Nights). Opens in Excel, Google Sheets or Numbers.`,
+      files: [file],
+    };
+  }
+
   async function loadClubMatches(guildId, clubKey, limit = MATCH_WINDOW, kinds = 'regular') {
     const { data } = await supabase
       .from('club_matches')
@@ -610,7 +622,7 @@ function createClubStats(deps) {
     const embed = new EmbedBuilder()
       .setTitle(`📊 ${club.name} stats`)
       .setColor(0x22c55e)
-      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Deep Stats** decisions, positioning, pressing and partnerships from EA\'s hidden event data\n**Front Office** the management report on your last night: graded, team scores out of 1000 and what to fix first\n**Player Scores** everyone rated out of 1000 against FC27 players of their role, power rankings, clutch, carry and defending\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers\n**Tournaments** tournament & BYOT games, kept apart from the rest\n\n🌐 Your club\'s public page on gafferbot.app: anyone can see it, no sign-in')
+      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Deep Stats** decisions, positioning, pressing and partnerships from EA\'s hidden event data\n**Front Office** the management report on your last night: graded, team scores out of 1000 and what to fix first\n**Player Scores** everyone rated out of 1000 against FC27 players of their role, power rankings, clutch, carry and defending\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers\n**Tournaments** tournament & BYOT games, kept apart from the rest\n**Excel Export** every synced game in a spreadsheet\n\n🌐 Your club\'s public page on gafferbot.app: anyone can see it, no sign-in')
       .setFooter({ text: `${PANEL_MARK} · always stays at the bottom` });
     const publicUrl = publicClubUrl(club);
     const b = (id, label, emoji, style = ButtonStyle.Secondary) => new ButtonBuilder().setCustomId(`statsp:${id}:${club.key}`).setLabel(label).setEmoji(emoji).setStyle(style);
@@ -622,9 +634,10 @@ function createClubStats(deps) {
         ...(publicUrl
           ? [new ActionRowBuilder().addComponents(
               new ButtonBuilder().setLabel('Public club page').setEmoji('🌐').setStyle(ButtonStyle.Link).setURL(publicUrl),
-              new ButtonBuilder().setLabel('Compare with another club').setEmoji('⚔️').setStyle(ButtonStyle.Link).setURL(`https://gafferbot.app/clubs/compare?a=${toFcPlatform(club.ea_platform)}:${club.ea_club_id}`)
+              new ButtonBuilder().setLabel('Compare with another club').setEmoji('⚔️').setStyle(ButtonStyle.Link).setURL(`https://gafferbot.app/clubs/compare?a=${toFcPlatform(club.ea_platform)}:${club.ea_club_id}`),
+              b('export', 'Excel Export', '📥')
             )]
-          : []),
+          : [new ActionRowBuilder().addComponents(b('export', 'Excel Export', '📥'))]),
       ],
     };
   }
@@ -717,6 +730,7 @@ function createClubStats(deps) {
         : action === 'deep' ? await deepView(interaction.guildId, club)
         : action === 'report' ? await reportView(interaction.guildId, club)
         : action === 'scores' ? { embeds: [playerScoresEmbed(club, await loadClubMatches(interaction.guildId, club.key, 120))] }
+        : action === 'export' ? await exportView(interaction.guildId, club)
         : action === 'tournaments' ? await tournamentsView(interaction.guildId, club)
         : await matchesView(interaction.guildId, club);
       return interaction.editReply(view);

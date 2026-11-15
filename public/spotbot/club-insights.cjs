@@ -40,6 +40,7 @@ __export(clubInsights_exports, {
   SESSION_BREAK_MS: () => SESSION_BREAK_MS,
   SESSION_GAP_MS: () => SESSION_GAP_MS,
   SIGHTING_DAYS: () => SIGHTING_DAYS,
+  XLSX_MIME: () => XLSX_MIME,
   banterRankings: () => banterRankings,
   banterWindow: () => banterWindow,
   benchRole: () => benchRole,
@@ -47,8 +48,11 @@ __export(clubInsights_exports, {
   betterTogether: () => betterTogether,
   betterWithout: () => betterWithout,
   carryScores: () => carryScores,
+  clubExportSheets: () => clubExportSheets,
+  clubExportXlsx: () => clubExportXlsx,
   clubTransferNews: () => clubTransferNews,
   clutchRatings: () => clutchRatings,
+  colName: () => colName,
   competitionEmoji: () => competitionEmoji,
   competitionLabel: () => competitionLabel,
   computeAdvancedPlayers: () => computeAdvancedPlayers,
@@ -63,6 +67,7 @@ __export(clubInsights_exports, {
   computePressing: () => computePressing,
   computeSessionFatigue: () => computeSessionFatigue,
   computeWinLossGaps: () => computeWinLossGaps,
+  crc32: () => crc32,
   decisionScore: () => decisionScore,
   defendingSummary: () => defendingSummary,
   deriveStats: () => deriveStats,
@@ -70,6 +75,7 @@ __export(clubInsights_exports, {
   divisionLabel: () => divisionLabel,
   eaKey: () => eaKey,
   expectedPoints: () => expectedPoints,
+  exportFileName: () => exportFileName,
   fc27Percentile: () => fc27Percentile,
   filterPlayers: () => filterPlayers,
   gdPerGame: () => gdPerGame,
@@ -103,6 +109,7 @@ __export(clubInsights_exports, {
   roleScore: () => roleScore,
   scorePlayer: () => scorePlayer,
   sessionReport: () => sessionReport,
+  sheetNames: () => sheetNames,
   sideTotals: () => sideTotals,
   signed: () => signed,
   summarisePerformance: () => summarisePerformance,
@@ -114,7 +121,9 @@ __export(clubInsights_exports, {
   toInsightMatches: () => toInsightMatches,
   verdictFor: () => verdictFor,
   whoGetsTheShirt: () => whoGetsTheShirt,
-  winPct: () => winPct
+  winPct: () => winPct,
+  workbook: () => workbook,
+  zip: () => zip
 });
 module.exports = __toCommonJS(clubInsights_exports);
 
@@ -4108,6 +4117,259 @@ function filterPlayers(players, { line, platform, verifiedOnly }) {
   );
 }
 
+// src/lib/xlsx.ts
+var enc = new TextEncoder();
+var CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 4294967295;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 255] ^ c >>> 8;
+  return (c ^ 4294967295) >>> 0;
+}
+function zip(files) {
+  const chunks = [];
+  const central = [];
+  let offset = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name);
+    const crc = crc32(f.data);
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 67324752, true);
+    local.setUint16(4, 20, true);
+    local.setUint16(6, 2048, true);
+    local.setUint16(8, 0, true);
+    local.setUint32(14, crc, true);
+    local.setUint32(18, f.data.length, true);
+    local.setUint32(22, f.data.length, true);
+    local.setUint16(26, name.length, true);
+    chunks.push(new Uint8Array(local.buffer), name, f.data);
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 33639248, true);
+    cd.setUint16(4, 20, true);
+    cd.setUint16(6, 20, true);
+    cd.setUint16(8, 2048, true);
+    cd.setUint32(16, crc, true);
+    cd.setUint32(20, f.data.length, true);
+    cd.setUint32(24, f.data.length, true);
+    cd.setUint16(28, name.length, true);
+    cd.setUint32(42, offset, true);
+    central.push(new Uint8Array(cd.buffer), name);
+    offset += 30 + name.length + f.data.length;
+  }
+  const cdSize = central.reduce((t, c) => t + c.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 101010256, true);
+  end.setUint16(8, files.length, true);
+  end.setUint16(10, files.length, true);
+  end.setUint32(12, cdSize, true);
+  end.setUint32(16, offset, true);
+  const all = [...chunks, ...central, new Uint8Array(end.buffer)];
+  const out = new Uint8Array(all.reduce((t, c) => t + c.length, 0));
+  let p = 0;
+  for (const c of all) {
+    out.set(c, p);
+    p += c.length;
+  }
+  return out;
+}
+var xml = (s) => s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+function colName(i) {
+  let s = "";
+  for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s;
+  return s;
+}
+function sheetNames(names) {
+  const used = /* @__PURE__ */ new Set();
+  return names.map((n, i) => {
+    let base = (n.replace(/[[\]:*?/\\]/g, " ").trim() || `Sheet${i + 1}`).slice(0, 31);
+    let k = 2;
+    while (used.has(base.toLowerCase())) base = `${base.slice(0, 28)} ${k++}`;
+    used.add(base.toLowerCase());
+    return base;
+  });
+}
+function cellXml(ref, v, style = 0) {
+  const s = style ? ` s="${style}"` : "";
+  if (v === null || v === void 0 || v === "") return "";
+  if (typeof v === "number") return Number.isFinite(v) ? `<c r="${ref}"${s}><v>${v}</v></c>` : "";
+  return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${xml(String(v)).slice(0, 32767)}</t></is></c>`;
+}
+function sheetXml(sheet) {
+  const cols = sheet.header.length;
+  const widths = sheet.header.map((h, c) => {
+    if (sheet.widths?.[c]) return sheet.widths[c];
+    const longest = Math.max(h.length, ...sheet.rows.slice(0, 200).map((r) => String(r[c] ?? "").length));
+    return Math.min(50, Math.max(8, longest + 2));
+  });
+  const rows = [sheet.header, ...sheet.rows].map((r, i) => {
+    const cells = Array.from({ length: cols }, (_, c) => cellXml(`${colName(c)}${i + 1}`, r[c], i === 0 ? 1 : 0)).join("");
+    return `<row r="${i + 1}">${cells}</row>`;
+  });
+  const last = `${colName(Math.max(0, cols - 1))}${sheet.rows.length + 1}`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("")}</cols><sheetData>${rows.join("")}</sheetData>` + (cols ? `<autoFilter ref="A1:${last}"/>` : "") + `</worksheet>`;
+}
+function workbook(sheets) {
+  const names = sheetNames(sheets.map((s) => s.name));
+  const files = [
+    {
+      name: "[Content_Types].xml",
+      text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` + sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("") + `</Types>`
+    },
+    {
+      name: "_rels/.rels",
+      text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`
+    },
+    {
+      name: "xl/workbook.xml",
+      text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>` + names.map((n, i) => `<sheet name="${xml(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("") + `</sheets>` + (sheets.length ? `<definedNames>${names.map((n, i) => `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xml(n.replace(/'/g, "''"))}'!$A$1:$${colName(Math.max(0, sheets[i].header.length - 1))}$${sheets[i].rows.length + 1}</definedName>`).join("")}</definedNames>` : "") + `</workbook>`
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` + sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("") + `<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`
+    },
+    {
+      name: "xl/styles.xml",
+      text: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`
+    },
+    ...sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, text: sheetXml(s) }))
+  ];
+  return zip(files.map((f) => ({ name: f.name, data: enc.encode(f.text) })));
+}
+var XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+// src/lib/clubExport.ts
+var r1 = (v) => v === null || v === void 0 || !Number.isFinite(v) ? null : Math.round(v * 10) / 10;
+var r2 = (v) => v === null || v === void 0 || !Number.isFinite(v) ? null : Math.round(v * 100) / 100;
+var r02 = (v) => v === null || v === void 0 || !Number.isFinite(v) ? null : Math.round(v);
+var day = (d) => d.toISOString().slice(0, 10);
+var time = (d) => d.toISOString().slice(11, 16);
+var RESULT = { win: "W", draw: "D", loss: "L" };
+function clubExportSheets(matches) {
+  const sorted = [...matches].sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime());
+  const matchSheet = {
+    name: "Matches",
+    header: ["Date", "Time (UTC)", "Competition", "Opponent", "Result", "For", "Against", "Modelled for", "Modelled against", "Expected points", "Verdict", ...AREAS.map((a) => `${a.label} (/1000)`), "Players"],
+    rows: sorted.map((m) => {
+      const p = matchPerformance(m);
+      return [
+        day(m.playedAt),
+        time(m.playedAt),
+        m.competition,
+        m.opponent,
+        RESULT[m.result],
+        m.scoreFor,
+        m.scoreAgainst,
+        r2(p?.modelledFor),
+        r2(p?.modelledAgainst),
+        r2(p?.expectedPoints),
+        p?.verdict ?? null,
+        ...AREAS.map((a) => r02(p?.areas[a.key])),
+        m.players.length
+      ];
+    })
+  };
+  const minGames = sorted.length >= 40 ? 5 : sorted.length >= 10 ? 3 : 1;
+  const scores = new Map(playerScores(sorted, minGames).map((s) => [s.key, s]));
+  const playerSheet = {
+    name: "Players",
+    header: ["Player", "Role", "Games", "W", "D", "L", "Goals", "Assists", "Second assists", "MOTM", "Avg rating", "Score (/1000)", "Attack", "Possession", "Ball-winning", "Tag", "Goals/game", "Chances created/game", "Pass %", "Tackles won/game", "Interceptions/game"],
+    rows: playerLines(sorted, 1).sort((a, b) => b.games - a.games).map((l) => {
+      const s = scores.get(l.key);
+      return [
+        l.name,
+        l.role,
+        l.games,
+        l.wins,
+        l.draws,
+        l.losses,
+        l.goals,
+        l.assists,
+        l.secondAssists,
+        l.motm,
+        r2(l.avgRating),
+        r02(s?.overall),
+        r02(s?.areas.attack),
+        r02(s?.areas.possession),
+        r02(s?.areas.ballWinning),
+        s?.tag ?? null,
+        r2(l.perGame.goalsPerGame),
+        r2(l.perGame.chancesCreatedPerGame),
+        r1(l.perGame.passCompletion),
+        r2(l.perGame.tacklesWonPerGame),
+        r2(l.perGame.interceptionsPerGame)
+      ];
+    })
+  };
+  const logSheet = {
+    name: "Player match log",
+    header: ["Date", "Opponent", "Result", "Player", "Position", "Rating", "Goals", "Assists", "MOTM", "Shots on target", "Shots off target", "Passes completed", "Passes failed", "Tackles won", "Tackles lost", "Interceptions", "Dribbles", "Possession won", "Possession lost", "Saves"],
+    rows: sorted.flatMap(
+      (m) => m.players.map((p) => {
+        const e = p.events ? statsFromCounts(p.events) : null;
+        const ev = (k) => e ? e[k] ?? 0 : null;
+        return [
+          day(m.playedAt),
+          m.opponent,
+          RESULT[m.result],
+          (p.ea_username || "").trim(),
+          p.position ?? null,
+          r1(Number(p.rating) || null),
+          Number(p.goals) || 0,
+          Number(p.assists) || 0,
+          p.motm ? 1 : 0,
+          ev("shotsOnTarget"),
+          ev("shotsOffTarget"),
+          ev("passesCompleted"),
+          ev("passesFailed"),
+          ev("tacklesWon"),
+          ev("tacklesLost"),
+          ev("interceptions"),
+          ev("dribbles"),
+          ev("possessionGains"),
+          ev("possessionsLost"),
+          p.saves ?? null
+        ];
+      })
+    )
+  };
+  const nightSheet = {
+    name: "Nights",
+    header: ["Date", "Games", "W", "D", "L", "Goals for", "Goals against", "Points", "Expected points", "Grade", ...AREAS.map((a) => `${a.label} (/1000)`)],
+    rows: groupSessions(sorted).map((night) => {
+      const s = summarisePerformance(night);
+      const first = [...night].sort((a, b) => a.playedAt.getTime() - b.playedAt.getTime())[0];
+      return [
+        day(first.playedAt),
+        night.length,
+        s.wins,
+        s.draws,
+        s.losses,
+        s.goalsFor,
+        s.goalsAgainst,
+        s.points,
+        r2(s.expectedPoints),
+        grade(s.control),
+        ...AREAS.map((a) => r02(s.areas[a.key]))
+      ];
+    })
+  };
+  return [matchSheet, playerSheet, logSheet, nightSheet];
+}
+function clubExportXlsx(matches) {
+  return workbook(clubExportSheets(matches));
+}
+function exportFileName(clubName, now = /* @__PURE__ */ new Date()) {
+  const slug = clubName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 40) || "club";
+  return `${slug}-gafferbot-${now.toISOString().slice(0, 10)}.xlsx`;
+}
+
 // src/lib/clubInsights.ts
 var MATCH_TAGS = [
   { value: "league", label: "League", emoji: "\u{1F3C6}" },
@@ -4539,6 +4801,7 @@ function generateBaseInsights(matches) {
   SESSION_BREAK_MS,
   SESSION_GAP_MS,
   SIGHTING_DAYS,
+  XLSX_MIME,
   banterRankings,
   banterWindow,
   benchRole,
@@ -4546,8 +4809,11 @@ function generateBaseInsights(matches) {
   betterTogether,
   betterWithout,
   carryScores,
+  clubExportSheets,
+  clubExportXlsx,
   clubTransferNews,
   clutchRatings,
+  colName,
   competitionEmoji,
   competitionLabel,
   computeAdvancedPlayers,
@@ -4562,6 +4828,7 @@ function generateBaseInsights(matches) {
   computePressing,
   computeSessionFatigue,
   computeWinLossGaps,
+  crc32,
   decisionScore,
   defendingSummary,
   deriveStats,
@@ -4569,6 +4836,7 @@ function generateBaseInsights(matches) {
   divisionLabel,
   eaKey,
   expectedPoints,
+  exportFileName,
   fc27Percentile,
   filterPlayers,
   gdPerGame,
@@ -4602,6 +4870,7 @@ function generateBaseInsights(matches) {
   roleScore,
   scorePlayer,
   sessionReport,
+  sheetNames,
   sideTotals,
   signed,
   summarisePerformance,
@@ -4613,5 +4882,7 @@ function generateBaseInsights(matches) {
   toInsightMatches,
   verdictFor,
   whoGetsTheShirt,
-  winPct
+  winPct,
+  workbook,
+  zip
 });

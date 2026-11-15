@@ -79,6 +79,18 @@ var BENCH_METRICS = [
 // src/lib/matchPerformance.ts
 var SESSION_BREAK_MS = 90 * 60 * 1e3;
 
+// src/lib/xlsx.ts
+var enc = new TextEncoder();
+var CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
 // src/lib/clubInsights.ts
 var MATCH_TAGS = [
   { value: "league", label: "League", emoji: "\u{1F3C6}" },
