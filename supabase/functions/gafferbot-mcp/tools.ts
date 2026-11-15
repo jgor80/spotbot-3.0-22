@@ -6,6 +6,7 @@ import {
   toInsightMatches, computeAdvancedPlayers, computeSessionFatigue, computePressing, computePartnerships, computeFormTrends,
   computeOpponentProfiles, generateAdvancedInsights, benchRole, benchmarkPlayer, percentileText, ROLE_LABELS,
   groupSessions, sessionReport, summarisePerformance, AREA_FIX,
+  playerScores, powerRankings, clutchRatings, carryScores, defendingSummary,
   type AdvancedPlayer, type InsightMatch,
 } from "../../../src/lib/clubInsights.ts";
 
@@ -557,6 +558,52 @@ export const TOOLS: Tool<Ctx>[] = [
           modelled_against: r1(overall.modelledAgainst),
           match_control: r1(overall.control),
           areas: Object.fromEntries(Object.entries(overall.areas).map(([k, v]) => [k, r1(v)])),
+        },
+      };
+    },
+  },
+  {
+    name: "get_player_scores",
+    title: "Player scores",
+    description: "Every player rated out of 1000 against FC27 players of the same role (community research data): overall plus attack, possession and " +
+      "ball-winning (keepers on saves, goals conceded and clean sheets), a tag (Finisher, Creator, Playmaker, Ball-winner, All-rounder, Keeper), " +
+      "power rankings (last 5 games vs the 5 before), carry scores (who carries the team), clutch ratings in one-goal games and defensive records and partnerships.",
+    inputSchema: {
+      type: "object",
+      properties: { guild_id: guildIdProp, club_key: clubKeyProp },
+      additionalProperties: false,
+    },
+    run: async (args, ctx) => {
+      const guildId = await resolveGuild(args, ctx);
+      let q = ctx.db.from("club_matches")
+        .select("id, result, score_for, score_against, match_type, created_at, opponent_club_name, player_stats, match_data")
+        .eq("guild_id", guildId).order("created_at", { ascending: false }).limit(120);
+      const clubKey = str(args.club_key);
+      if (clubKey) q = q.eq("club_key", clubKey);
+      const { data, error } = await q;
+      if (error) throw error;
+      const matches = toInsightMatches(data || []);
+      if (matches.length < 3) throw new ToolError("Needs at least 3 synced matches. Play a few games and check back.");
+      const minGames = matches.length >= 40 ? 5 : 3;
+      const r0 = (v: number | null) => (v === null ? null : Math.round(v));
+      const r1 = (v: number | null) => (v === null ? null : Math.round(v * 10) / 10);
+      const d = defendingSummary(matches, minGames);
+      return {
+        matches: matches.length,
+        min_games: minGames,
+        players: playerScores(matches, minGames).map((p) => ({
+          player: p.name, role: p.role, tag: p.tag, games: p.games, overall: r0(p.overall),
+          attack: r0(p.areas.attack), possession: r0(p.areas.possession), ball_winning: r0(p.areas.ballWinning),
+        })),
+        power_rankings: powerRankings(matches).map((r) => ({ rank: r.rank, player: r.name, move: r.move, avg_rating: r1(r.avgRating), goals: r.goals, assists: r.assists, win_streak: r.streak })),
+        carry: carryScores(matches, minGames).map((c) => ({ player: c.name, score: c.score, label: c.label, rating_edge: r1(c.ratingEdge), goal_involvement_share_pct: Math.round(c.involvementShare * 100), win_lift_pts: r1(c.winLift) })),
+        clutch: clutchRatings(matches, Math.max(3, minGames - 1)).map((c) => ({ player: c.name, close_games: c.closeGames, close_rating: r1(c.closeRating), other_rating: r1(c.otherRating), edge: r1(c.edge), label: c.label })),
+        defending: {
+          trend: d.trend,
+          recent: d.recent,
+          earlier: d.earlier,
+          players: d.players.map((p) => ({ player: p.name, role: p.role, games: p.games, clean_sheet_pct: r0(p.cleanSheetRate), conceded_per_game: r1(p.concededPerGame) })),
+          pairs: d.pairs.slice(0, 8).map((p) => ({ players: p.names, games: p.games, clean_sheet_pct: r0(p.cleanSheetRate), conceded_per_game: r1(p.concededPerGame) })),
         },
       };
     },
