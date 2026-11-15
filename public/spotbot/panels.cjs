@@ -61,7 +61,7 @@ const PLAYER_ACTIONS = [
   { id: 'myphotos', label: 'My Pro Photos', emoji: '🖼️', cmd: 'myphotos' },
   { id: 'linkxbox', label: 'Link Xbox', emoji: '🟩', cmd: 'linkxbox' },
   { id: 'fa', label: 'Free Agent', emoji: '🧲', cmd: 'fa', fields: ['status', 'position', 'secondary', 'platform', 'timezone'] },
-  { id: 'fadetails', label: 'Free Agent Details', emoji: '📝', cmd: 'fa', fields: ['status', 'gamertag', 'notes'] },
+  { id: 'fadetails', label: 'Free Agent Details', emoji: '📝', cmd: 'fa', fields: ['status', 'gamertag', 'notes', 'public_board'] },
   { id: 'lfccard', label: 'Resume Card', emoji: '📇', cmd: 'lfc', sub: 'card', ask: true },
   { id: 'lfcverify', label: 'Check a Resume', emoji: '🔎', cmd: 'lfc', sub: 'verify' },
   { id: 'apply', label: 'Apply to Trial', emoji: '✍️', cmd: 'apply' },

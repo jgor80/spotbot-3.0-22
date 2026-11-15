@@ -41,12 +41,23 @@ export function memoryDb(tables: Record<string, Row[]> = {}) {
           const done = { data: rows, error: null };
           return Object.assign(Promise.resolve(done), { select: () => ({ single: () => Promise.resolve({ data: rows[0], error: null }) }) });
         },
+        upsert: (row: Row | Row[], opts?: { onConflict?: string; ignoreDuplicates?: boolean }) => {
+          const cols = (opts?.onConflict || "id").split(",");
+          for (const r of Array.isArray(row) ? row : [row]) {
+            const hit = t(table).find((x) => cols.every((c) => x[c] === r[c]));
+            if (!hit) t(table).push({ ...r });
+            else if (!opts?.ignoreDuplicates) Object.assign(hit, r);
+          }
+          return Promise.resolve({ data: null, error: null });
+        },
         update: (p: Row) => { mode = "update"; patch = p; return q; },
         eq: (c: string, v: unknown) => { filters.push((r) => r[c] === v); return q; },
         in: (c: string, v: unknown[]) => { filters.push((r) => v.includes(r[c])); return q; },
         is: (c: string, v: unknown) => { filters.push((r) => (r[c] ?? null) === v); return q; },
         not: (c: string, _op: string, _v: unknown) => { filters.push((r) => (r[c] ?? null) !== null); return q; },
         gte: (c: string, v: string) => { filters.push((r) => String(r[c]) >= v); return q; },
+        gt: (c: string, v: string) => { filters.push((r) => String(r[c]) > v); return q; },
+        neq: (c: string, v: unknown) => { filters.push((r) => r[c] !== v); return q; },
         ilike: (c: string, v: string) => { const n = v.replace(/%/g, "").toLowerCase(); filters.push((r) => String(r[c]).toLowerCase().includes(n)); return q; },
         or: () => q,
         lt: () => q,

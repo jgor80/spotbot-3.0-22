@@ -640,3 +640,5 @@ export * from "./matchPerformance.ts";
 export * from "./playerScores.ts";
 // Dressing room banter: rankings, superlatives, receipts and head to head
 export * from "./banter.ts";
+// Transfer board filters and transfer news from EA member lists
+export * from "./transfers.ts";

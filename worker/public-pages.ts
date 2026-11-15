@@ -3,7 +3,7 @@
 //    tell crawlers this page is a copy of "/". Here we serve the same app shell with the hub's own title,
 //    description, canonical, structured data and a plain-HTML summary that crawlers and AI engines read
 //    without running JavaScript. The app then draws the live page on top as before.
-//  - /clubs, /clubs/compare and /club/<platform>/<clubId>: public club lookup pages. Same idea: the
+//  - /clubs, /clubs/compare, /transfers and /club/<platform>/<clubId>: public lookup pages. Same idea: the
 //    page's own title, description, canonical and robots, and for a club page its name and record.
 //  - /sitemap.xml: the build's sitemap plus every public hub page.
 import { hubDescription, hubTitle, type HubPublic } from "../src/lib/hubMeta";
@@ -162,7 +162,8 @@ ${squad ? `<h2>Squad</h2><ul>${squad}</ul>` : ""}
 }
 
 const CLUB_PATH = /^\/club\/(common-gen5|nx)\/(\d{1,15})\/?$/;
-export const isClubLookupPath = (path: string) => path === "/clubs" || path === "/clubs/" || path === "/clubs/compare" || path === "/clubs/compare/" || CLUB_PATH.test(path);
+const STATIC_PUBLIC = new Set(["/clubs", "/clubs/compare", "/transfers"]);
+export const isClubLookupPath = (path: string) => STATIC_PUBLIC.has(path.replace(/\/+$/, "")) || CLUB_PATH.test(path);
 
 // loadClub: fetches the public-club function (through the bot's functions server); null when it can't
 export async function clubLookupPage(req: Request, env: Env, loadClub: (platform: string, clubId: string) => Promise<PublicClubPayload | null>): Promise<Response> {

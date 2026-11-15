@@ -72,6 +72,7 @@ const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
 const { createSessionReport } = require('./session-report.cjs');
 const { createPlayerScores } = require('./player-scores.cjs');
+const { createTransferNews } = require('./transfer-news.cjs');
 const { createAutoLink } = require('./auto-link.cjs');
 const { createXboxLink, lookupGamertag } = require('./xbox-link.cjs');
 const { createTwitchLinks } = require('./twitch-links.cjs');
@@ -564,6 +565,7 @@ const autopilot = createAutopilot({
 createSessionReport({ autopilot, loadMatches: managerHub.loadMatches, events: clubEvents });
 // Power rankings in the Monday digest; the full player scores are on the Club Stats panel
 createPlayerScores({ autopilot, loadMatches: managerHub.loadMatches });
+createTransferNews({ autopilot, supabase });
 // League / Tournament / BYOT tags on played games; new friendlies played during such an event are tagged
 // before their recap is built
 const matchTags = createMatchTags({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, callEdgeFunction });

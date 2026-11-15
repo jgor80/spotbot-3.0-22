@@ -68,6 +68,12 @@ export const PUBLIC_PAGES: Record<string, PageMeta> = {
     sitemap: true,
     index: true,
   },
+  "/transfers": {
+    title: "Pro Clubs Transfer Board: Free Agents, Clubs Recruiting, Transfer News | GafferBot",
+    description: "EA FC 27 Pro Clubs free agents looking for a club, clubs recruiting, and transfer news straight from EA's club member lists. EA-verified gamertags. Free.",
+    sitemap: true,
+    index: true,
+  },
   "/clubs/compare": {
     title: "Compare Two Pro Clubs Clubs Side by Side | GafferBot",
     description: "Put two EA FC 27 Pro Clubs clubs side by side: all-time record, skill rating, recent form and team scores out of 1000. Free, no sign-in.",

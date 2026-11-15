@@ -94,6 +94,7 @@ const RECRUIT_COMMANDS = [
       { name: 'platform', description: 'Your platform.', type: 3, required: false, choices: platformChoices },
       { name: 'notes', description: 'e.g. "Comp experience, free Sun-Thu".', type: 3, required: false, max_length: 200 },
       { name: 'gamertag', description: 'Only if you have not linked your EA account with /me → Link EA.', type: 3, required: false, max_length: 32 },
+      { name: 'public_board', description: 'Also show on gafferbot.app/transfers (your Discord name never shows).', type: 5, required: false },
     ],
   },
   {
@@ -131,6 +132,7 @@ const RECRUIT_COMMANDS = [
           { name: 'positions', description: 'e.g. "CB, GK" (defaults to the gaps in your squad).', type: 3, required: false, max_length: 100 },
           { name: 'notes', description: 'e.g. "Comp club, VFL Div 2, 3 nights a week".', type: 3, required: false, max_length: 300 },
           { name: 'channel', description: 'Where to post it (defaults to here).', type: 7, required: false, channel_types: [ChannelType.GuildText] },
+          { name: 'public_board', description: 'Also list it on gafferbot.app/transfers for 14 days (default yes).', type: 5, required: false },
         ],
       },
       {
@@ -425,6 +427,7 @@ function createRecruitment(deps) {
       notes: interaction.options.getString('notes') ?? existing?.notes ?? null,
       home_guild_id: interaction.guildId || existing?.home_guild_id || null,
       no_contact: false,
+      public_board: interaction.options.getBoolean('public_board') ?? existing?.public_board ?? false,
       updated_at: new Date().toISOString(),
     };
     const { data: saved, error } = await supabase.from('free_agents').upsert(row, { onConflict: 'discord_user_id' }).select('*').single();
@@ -437,6 +440,9 @@ function createRecruitment(deps) {
         `${wasListed ? '✅ Listing updated.' : '✅ You\'re listed as a free agent.'} This is what managers see in **/manager → Recruiting → Search Free Agents**.\n` +
         "They can't see your Discord name. If one reaches out I'll DM you and you decide whether to share it and get an invite.\n" +
         `Your listing stays up for ${LISTING_DAYS} days; press **/me → Free Agent** again to refresh it, or pick "Remove my listing" there to take it down.` +
+        (saved.public_board
+          ? '\n🌐 You\'re also on the public board at <https://gafferbot.app/transfers> (gamertag, positions and stats only).'
+          : '\n_Want more clubs to see you? **/me → Free Agent Details → Public board: Yes** also lists you on <https://gafferbot.app/transfers>._') +
         (verified ? '' : '\n_Tip: link your EA account with **/me → Link EA** so your stats show and your gamertag gets a ✅._'),
       embeds: [listingEmbed(saved, stats)],
     });
