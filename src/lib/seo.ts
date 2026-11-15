@@ -3,9 +3,16 @@
 // so crawlers that don't run JavaScript see them too. Anything not listed here is an app page:
 // it gets the generic title and noindex.
 
+import { GUIDES, GUIDES_UPDATED, plain, type Guide } from "@/content/guides";
+
 export const SITE_URL = "https://gafferbot.app";
 export const SITE_NAME = "GafferBot";
 export const OG_IMAGE = `${SITE_URL}/og-image.png`;
+
+// GafferBot's profiles on other sites (top.gg, Discord App Directory, Reddit, YouTube, X ...). Add each
+// listing here once it is live: search engines and AI answer engines use these links to tie the
+// listings to this site as one product.
+export const SAME_AS: string[] = [];
 
 export interface PageMeta {
   title: string;
@@ -18,9 +25,9 @@ export interface PageMeta {
 }
 
 const HOME: PageMeta = {
-  title: "GafferBot: The Free Pro Clubs Discord Bot for EA SPORTS FC",
+  title: "GafferBot: Free Pro Clubs Discord Bot for EA SPORTS FC 27",
   description:
-    "Run your EA FC Pro Clubs club from Discord. GafferBot tracks availability, posts lineups, syncs EA stats and finds you players. Free for every server.",
+    "Run your EA FC 27 Pro Clubs club from Discord. GafferBot tracks availability, posts lineups, syncs EA stats and finds you players. Free for every server.",
   canonical: "/",
   sitemap: true,
   index: true,
@@ -28,6 +35,19 @@ const HOME: PageMeta = {
 
 export const PUBLIC_PAGES: Record<string, PageMeta> = {
   "/": HOME,
+  ...Object.fromEntries(GUIDES.map((g) => [`/${g.slug}`, { title: g.title, description: g.description, sitemap: true, index: true }])),
+  "/guides": {
+    title: "Pro Clubs Guides: Run Your FC 27 Club on Discord | GafferBot",
+    description: "Guides for EA FC 27 Pro Clubs on Discord: setting up a server, availability, lineups, stats tracking, recruiting free agents and finding pickup games.",
+    sitemap: true,
+    index: true,
+  },
+  "/faq": {
+    title: "GafferBot FAQ: Pro Clubs Discord Bot Questions Answered",
+    description: "Answers about GafferBot, the free EA FC 27 Pro Clubs Discord bot: features, price, EA stats, lineups, recruiting, platforms and pickup games.",
+    sitemap: true,
+    index: true,
+  },
   // Old address of the landing page; same content, so it points search engines at "/".
   "/welcome": { ...HOME, sitemap: false },
   "/terms": {
@@ -83,6 +103,7 @@ export function homeJsonLd(faq: { q: string; a: string }[]) {
       name: SITE_NAME,
       url: SITE_URL,
       logo: `${SITE_URL}/icon-512.png`,
+      ...(SAME_AS.length ? { sameAs: SAME_AS } : {}),
     },
     {
       "@type": "WebSite",
@@ -98,6 +119,14 @@ export function homeJsonLd(faq: { q: string; a: string }[]) {
       image: OG_IMAGE,
       description: HOME.description,
       applicationCategory: "GameApplication",
+      applicationSubCategory: "Discord bot",
+      featureList: [
+        "Availability and reminders for Pro Clubs games",
+        "Lineup builder with all 28 FC 27 formations",
+        "EA SPORTS FC 27 Pro Clubs stats sync, recaps and insights",
+        "Free agent pool and recruiting",
+        "Drop-in pickup games (Social Hub)",
+      ],
       operatingSystem: "Discord, Web",
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
       publisher: { "@id": `${SITE_URL}/#org` },
@@ -110,4 +139,70 @@ export function homeJsonLd(faq: { q: string; a: string }[]) {
     });
   }
   return { "@context": "https://schema.org", "@graph": graph };
+}
+
+const crumbs = (items: { name: string; path: string }[]) => ({
+  "@type": "BreadcrumbList",
+  itemListElement: items.map((c, i) => ({ "@type": "ListItem", position: i + 1, name: c.name, item: `${SITE_URL}${c.path}` })),
+});
+
+const faqPage = (faq: { q: string; a: string }[]) => ({
+  "@type": "FAQPage",
+  mainEntity: faq.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: plain(f.a) } })),
+});
+
+const ORG_REF = { "@id": `${SITE_URL}/#org` };
+
+// Structured data for a guide page: the article, its breadcrumb, its FAQ and (setup guide) its steps
+export function guideJsonLd(g: Guide) {
+  const url = `${SITE_URL}/${g.slug}`;
+  const graph: Record<string, unknown>[] = [
+    {
+      "@type": "Article",
+      "@id": `${url}#article`,
+      headline: g.h1,
+      description: g.description,
+      url,
+      image: OG_IMAGE,
+      datePublished: GUIDES_UPDATED,
+      dateModified: GUIDES_UPDATED,
+      author: { "@type": "Organization", name: "GafferBot Team", url: SITE_URL },
+      publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL, logo: `${SITE_URL}/icon-512.png` },
+      about: { "@type": "SoftwareApplication", name: SITE_NAME, url: SITE_URL, applicationCategory: "GameApplication" },
+      mainEntityOfPage: url,
+    },
+    crumbs([{ name: "Home", path: "/" }, { name: "Guides", path: "/guides" }, { name: g.label, path: `/${g.slug}` }]),
+    faqPage(g.faq),
+  ];
+  const steps = g.howTo ? g.sections.find((s) => s.steps)?.steps : undefined;
+  if (steps) {
+    graph.push({
+      "@type": "HowTo",
+      name: g.h1,
+      description: plain(g.answer),
+      totalTime: "PT5M",
+      step: steps.map((st, i) => ({ "@type": "HowToStep", position: i + 1, name: st.title, text: st.body })),
+    });
+  }
+  return { "@context": "https://schema.org", "@graph": graph };
+}
+
+export function guidesIndexJsonLd() {
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "CollectionPage",
+        name: "Pro Clubs guides",
+        url: `${SITE_URL}/guides`,
+        publisher: ORG_REF,
+        hasPart: GUIDES.map((g) => ({ "@type": "Article", headline: g.h1, url: `${SITE_URL}/${g.slug}` })),
+      },
+      crumbs([{ name: "Home", path: "/" }, { name: "Guides", path: "/guides" }]),
+    ],
+  };
+}
+
+export function faqJsonLd(faq: { q: string; a: string }[]) {
+  return { "@context": "https://schema.org", "@graph": [faqPage(faq), crumbs([{ name: "Home", path: "/" }, { name: "FAQ", path: "/faq" }])] };
 }

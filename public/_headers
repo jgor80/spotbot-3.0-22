@@ -18,7 +18,8 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
-# The signed-in app and one-off links stay out of search results (public pages: /, /welcome, /terms, /privacy)
+# The signed-in app and one-off links stay out of search results (public pages: /, /welcome, /terms, /privacy,
+# /guides, /faq, the guide pages in src/content/guides.ts and /play/<hub>)
 /auth
   X-Robots-Tag: noindex
 /link/*
@@ -70,3 +71,9 @@
   X-Robots-Tag: noindex
 /fut/*
   X-Robots-Tag: noindex
+
+# Plain-text maps of the site for AI assistants (written by scripts/prerender.mjs)
+/llms.txt
+  Content-Type: text/plain; charset=utf-8
+/llms-full.txt
+  Content-Type: text/plain; charset=utf-8

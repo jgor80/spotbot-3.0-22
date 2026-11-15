@@ -2,6 +2,7 @@
 // Discord OAuth runs here so sign-in does not depend on Lovable Cloud functions.
 import { createClient } from "@supabase/supabase-js";
 import { handleOAuth } from "./mcp-oauth";
+import { playPage, sitemap } from "./public-pages";
 
 interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
@@ -211,6 +212,10 @@ export default {
       return fetch(target, { method: req.method, headers, body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body });
     }
     if (url.pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
+    // Public pages built from live data (public-pages.ts)
+    const play = url.pathname.match(/^\/play\/([^/]+)\/?$/);
+    if (play && ["GET", "HEAD"].includes(req.method)) return playPage(req, env, play[1].toLowerCase());
+    if (url.pathname === "/sitemap.xml") return sitemap(req, env);
     return env.ASSETS.fetch(req);
   },
 };

@@ -4,6 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useEffect } from "react";
+import { applyMeta } from "@/components/RouteMeta";
+import { metaFor } from "@/lib/seo";
+import { hubDescription, hubTitle } from "@/lib/hubMeta";
 
 // Public Social Hub page (gafferbot.app/play/<slug>): a server opted in from Discord, and the bot keeps
 // the snapshot fresh (public/spotbot/social-hub.cjs publish). Lobby counts and open positions only.
@@ -25,6 +29,13 @@ export default function PlayPage() {
       return data;
     },
   });
+  // The hub's own title and description (the Worker writes the same ones into the HTML for crawlers)
+  const name = hub.data?.name;
+  const members = hub.data?.members;
+  useEffect(() => {
+    if (!slug || !name) return;
+    applyMeta({ ...metaFor(`/play/${slug}`), title: hubTitle({ name }), description: hubDescription({ name, members }) });
+  }, [slug, name, members]);
   const snap = (hub.data?.snapshot ?? {}) as Snapshot;
   const join = hub.data?.invite_code ? `https://discord.gg/${hub.data.invite_code}` : null;
 
