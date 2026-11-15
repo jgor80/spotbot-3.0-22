@@ -1,30 +1,49 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Minus, Plus, Link2, ImageDown, Import, RotateCcw, GitCompareArrows, X, Sparkles } from "lucide-react";
+import { Minus, Plus, Link2, ImageDown, Import, RotateCcw, GitCompareArrows, X, Sparkles, Lock, Check, Info, Target } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import {
   ARCHETYPES,
+  ARCHETYPE_RULES,
   ATTRIBUTES,
-  HEIGHT_RANGE,
-  LEVEL_MAX,
-  MAX_PLAYSTYLES,
-  PLAYSTYLES,
-  POINTS_MAX_PER_ATTR,
-  WEIGHT_RANGE,
+  BODY,
+  LEVEL_CAP,
+  STYLE_GROUPS,
+  accelerateType,
+  apAtLevel,
+  attrCap,
+  bodyEffects,
   buildPath,
   buildSummary,
+  capConfirmed,
+  costTier,
   decodeBuild,
   emptyBuild,
   encodeBuild,
-  groupTotals,
+  groupAverages,
   importProClubsBuilder,
+  isKeeper,
+  masteryBonus,
+  matchValue,
+  menuValue,
+  nextSlotLevel,
   normaliseBuild,
+  playstyleStatus,
+  pointCost,
+  raiseFor,
+  specializationStatus,
+  startValue,
+  trainable,
+  trainedValue,
+  type AttrGroup,
   type Build,
+  type StyleGroup,
 } from "@/lib/proBuild";
+import { MASTERIES, SIGNATURE_PERK_LEVELS, SIGNATURE_PLUS_LEVELS, TIER_LABELS, UNCONFIRMED_NOTES } from "@/lib/proClubsData";
 import { CommunityMetaLoader } from "@/components/build/CommunityMetaBuilds";
-import { BodyFigure, BuildCard, GROUP_COLORS, LINE_COLORS, Meter, PitchPicker, downloadCard, radarGroups, shapeValues } from "@/components/build/BuildVisuals";
+import { BodyFigure, BuildCard, GROUP_COLORS, LINE_COLORS, PitchPicker, StatMeter, downloadCard, radarGroups, shapeValues } from "@/components/build/BuildVisuals";
 
 // Accepts our links/codes and Pro Clubs Builder links
 function readAnyBuild(text: string): { build: Build; skipped: string[] } | null {
@@ -32,6 +51,30 @@ function readAnyBuild(text: string): { build: Build; skipped: string[] } | null 
   if (ours) return { build: ours, skipped: [] };
   return importProClubsBuilder(text);
 }
+
+const ATTR_LABEL = new Map(ATTRIBUTES.map((a) => [a.key, a.label]));
+const attrLabel = (k: string) => ATTR_LABEL.get(k) ?? k;
+const STYLE_COLOR: Record<StyleGroup, string> = {
+  shooting: GROUP_COLORS.shooting,
+  passing: GROUP_COLORS.passing,
+  ballControl: GROUP_COLORS.dribbling,
+  defending: GROUP_COLORS.defending,
+  physical: GROUP_COLORS.physical,
+  goalkeeping: GROUP_COLORS.goalkeeping,
+};
+const TIER_COLORS = ["", "#34d399", "#a3e635", "#fbbf24", "#fb7185"];
+
+// What happens at each level, for the level slider
+const MILESTONES: [number, string][] = [
+  [5, "PlayStyle slot 1"],
+  [10, "Signature Perk 1, Mastery +1 +1"],
+  [15, "PlayStyle slot 2"],
+  [SIGNATURE_PLUS_LEVELS[0], "Signature 1 becomes PlayStyle+"],
+  [30, "Mastery +1"],
+  [40, "PlayStyle slot 3"],
+  [SIGNATURE_PERK_LEVELS[1], "Signature Perk 2"],
+  [55, "PlayStyle slot 4, Signature 2 becomes PlayStyle+, Mastery +1"],
+];
 
 function Panel({ step, title, aside, children }: { step: string; title: string; aside?: ReactNode; children: ReactNode }) {
   return (
@@ -76,9 +119,21 @@ function Nudge({ onClick, disabled, label, children }: { onClick: () => void; di
   );
 }
 
-const ghostBtn = "inline-flex items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/40 hover:bg-white/10 disabled:opacity-40";
+// Price tier as 1-4 coins: how dear this attribute is for this archetype
+function TierPips({ tier }: { tier: number }) {
+  return (
+    <span className="flex shrink-0 gap-0.5" title={`${TIER_LABELS[tier]} for this archetype`} aria-label={`Price: ${TIER_LABELS[tier]}`}>
+      {[1, 2, 3, 4].map((n) => (
+        <span key={n} className="h-1.5 w-1.5 rounded-full" style={{ background: n <= tier ? TIER_COLORS[tier] : "rgba(255,255,255,.1)" }} />
+      ))}
+    </span>
+  );
+}
 
-// gafferbot.app/build: plan a Virtual Pro, no sign-in. The whole build lives in the ?b= share code.
+const ghostBtn = "inline-flex items-center justify-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-white transition hover:border-white/40 hover:bg-white/10 disabled:opacity-40";
+const label = "text-xs font-semibold uppercase tracking-widest text-slate-500";
+
+// gafferbot.app/build: plan a Virtual Pro on FC 27's real rules, no sign-in. The whole build lives in the ?b= share code.
 export default function BuildPlannerPage() {
   const [params, setParams] = useSearchParams();
   const { toast } = useToast();
@@ -96,19 +151,30 @@ export default function BuildPlannerPage() {
   }, [build, params, setParams]);
 
   const set = (patch: Partial<Build>) => setBuild((b) => normaliseBuild({ ...b, ...patch }));
-  const setPoints = (key: string, v: number) => setBuild((b) => normaliseBuild({ ...b, points: { ...b.points, [key]: v } }));
+  const setValue = (key: string, value: number) => setBuild((b) => normaliseBuild({ ...b, points: { ...b.points, [key]: value - startValue(b.archetype, key) } }));
   const summary = useMemo(() => buildSummary(build), [build]);
-  const totals = useMemo(() => groupTotals(build), [build]);
-  const rivalTotals = useMemo(() => (rival ? groupTotals(rival) : null), [rival]);
+  const averages = useMemo(() => groupAverages(build), [build]);
+  const rivalAverages = useMemo(() => (rival ? groupAverages(rival) : null), [rival]);
+  const fx = useMemo(() => bodyEffects(build), [build]);
+  const styles = useMemo(() => playstyleStatus(build), [build]);
+  const specs = useMemo(() => specializationStatus(build), [build]);
   const arch = ARCHETYPES.find((a) => a.key === build.archetype)!;
+  const rules = ARCHETYPE_RULES[build.archetype];
+  const body = BODY[build.archetype];
+  const keeper = isKeeper(build.archetype);
   const accent = LINE_COLORS[arch.line];
   const groups = radarGroups(build);
-  const scaleMax = Math.max(1, ...groups.map((g) => totals[g.key]), ...(rivalTotals ? groups.map((g) => rivalTotals[g.key]) : []));
-  const values = shapeValues(totals, groups, scaleMax);
-  const ghost = rivalTotals ? shapeValues(rivalTotals, groups, scaleMax) : null;
-  const pointGroups = groups.filter((g) => g.key !== "goalkeeping" || arch.line === "GK" || totals.goalkeeping > 0);
+  const values = shapeValues(averages, groups);
+  const ghost = rivalAverages ? shapeValues(rivalAverages, groups) : null;
+  const pointGroups = groups.filter((g) => ATTRIBUTES.some((a) => a.group === g.key && trainable(build.archetype, a.key)));
   const topGroups = summary.focus.slice(0, 2).map((f) => f.label);
-  const budgetPct = build.budget ? Math.min(100, (summary.spent / build.budget) * 100) : 0;
+  const over = summary.remaining < 0;
+  const spentPct = Math.min(100, (summary.spent / apAtLevel(LEVEL_CAP)) * 100);
+  const availPct = (summary.available / apAtLevel(LEVEL_CAP)) * 100;
+  const activeSpec = specs.find((s) => s.spec.key === build.specialization) ?? null;
+  const signatures = styles.filter((s) => s.signature).sort((a, b) => a.signature - b.signature);
+  const nextSlot = nextSlotLevel(build.level);
+  const mastery = MASTERIES[build.archetype];
 
   const share = async () => {
     const url = `${window.location.origin}${buildPath(build)}`;
@@ -133,7 +199,7 @@ export default function BuildPlannerPage() {
   const doImport = () => {
     const r = readAnyBuild(importText);
     if (!r) return setImportNote("That doesn't look like a build link or code.");
-    setBuild((b) => ({ ...r.build, playstyles: r.build.playstyles.length ? r.build.playstyles : b.playstyles, budget: r.build.budget ?? b.budget }));
+    setBuild((b) => normaliseBuild({ ...r.build, playstyles: r.build.playstyles.length ? r.build.playstyles : b.playstyles }));
     setImportNote(r.skipped.length ? `Loaded. Skipped attributes we don't know: ${r.skipped.join(", ")}.` : "Loaded.");
   };
 
@@ -146,9 +212,19 @@ export default function BuildPlannerPage() {
   const toggleStyle = (name: string) =>
     setBuild((b) => {
       const has = b.playstyles.includes(name);
-      if (!has && b.playstyles.length >= MAX_PLAYSTYLES) return b;
+      if (!has && b.playstyles.length >= summary.slots) return b;
       return normaliseBuild({ ...b, playstyles: has ? b.playstyles.filter((p) => p !== name) : [...b.playstyles, name] });
     });
+
+  // Raise just what a PlayStyle needs, and take it if a slot is free
+  const unlockStyle = (name: string, req: [string, number][]) =>
+    setBuild((b) => {
+      const raised = raiseFor(b, req);
+      const room = raised.playstyles.length < summary.slots && !raised.playstyles.includes(name);
+      return normaliseBuild({ ...raised, playstyles: room ? [...raised.playstyles, name] : raised.playstyles });
+    });
+
+  const goForSpec = (key: string, req: [string, number][]) => setBuild((b) => normaliseBuild({ ...raiseFor(b, req), specialization: key }));
 
   return (
     <div className="dark relative min-h-screen overflow-x-hidden bg-[#05080c] font-body text-slate-200">
@@ -176,15 +252,15 @@ export default function BuildPlannerPage() {
               </span>
             </h1>
             <p className="mt-3 max-w-xl text-slate-400">
-              Pick a spot on the pitch, shape the body, pour in your points and watch the build take form. Save it as a card for your club's Discord, or line it up
-              against a teammate's build.
+              FC 27's real rules: every archetype's starting attributes and AP prices, the AP each level gives, height and weight in matches, PlayStyle unlocks,
+              Signatures and Specializations. Save it as a card for your club's Discord, or line it up against a teammate's build.
             </p>
           </div>
           <div className="hidden gap-2 lg:flex">
             <button className={ghostBtn} onClick={saveCard}>
               <ImageDown className="h-4 w-4" /> Save card
             </button>
-            <button className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-bold text-[#05080c] shadow-[0_0_24px_-4px] transition hover:brightness-110" style={{ background: accent, boxShadow: `0 0 28px -6px ${accent}` }} onClick={share}>
+            <button className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-bold text-[#05080c] transition hover:brightness-110" style={{ background: accent, boxShadow: `0 0 28px -6px ${accent}` }} onClick={share}>
               <Link2 className="h-4 w-4" /> Copy share link
             </button>
           </div>
@@ -195,7 +271,17 @@ export default function BuildPlannerPage() {
           <aside className="lg:sticky lg:top-6 lg:self-start">
             <div className="mx-auto max-w-[380px] [perspective:1200px]">
               <div className="transition-transform duration-500 hover:[transform:rotateY(-6deg)_rotateX(4deg)]" style={{ filter: `drop-shadow(0 24px 48px ${accent}33)` }}>
-                <BuildCard ref={cardRef} build={build} values={values} ghost={ghost} spent={summary.spent} remaining={summary.remaining} topGroups={topGroups} />
+                <BuildCard
+                  ref={cardRef}
+                  build={build}
+                  values={values}
+                  ghost={ghost}
+                  spent={summary.spent}
+                  available={summary.available}
+                  topGroups={topGroups}
+                  signatures={signatures.map((s) => ({ name: s.def.name, plus: s.plus }))}
+                  specialization={activeSpec ? { name: activeSpec.spec.name, plus: activeSpec.spec.plus, met: activeSpec.met } : null}
+                />
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2 lg:hidden">
                 <button className={ghostBtn} onClick={saveCard}>
@@ -222,7 +308,7 @@ export default function BuildPlannerPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs tabular-nums">
                       {groups.map((g) => {
-                        const d = totals[g.key] - (rivalTotals?.[g.key] ?? 0);
+                        const d = Math.round(averages[g.key] - (rivalAverages?.[g.key] ?? 0));
                         return (
                           <div key={g.key} className="flex justify-between">
                             <span style={{ color: GROUP_COLORS[g.key] }}>{g.label}</span>
@@ -231,6 +317,7 @@ export default function BuildPlannerPage() {
                         );
                       })}
                     </div>
+                    <p className="text-[11px] text-slate-500">Average in-match rating per group, this build minus theirs.</p>
                   </div>
                 ) : (
                   <div className="flex gap-2">
@@ -249,14 +336,15 @@ export default function BuildPlannerPage() {
               className="rounded-3xl border-white/10 bg-white/[0.03] p-4 text-slate-200 shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset] backdrop-blur-xl sm:p-6"
               innerClassName="rounded-2xl border-white/10 bg-black/20"
               onLoad={(b) => {
-                setBuild((cur) => ({ ...b, budget: cur.budget }));
+                setBuild(normaliseBuild(b));
                 toast({ title: "Community build loaded", description: "Change anything you like, then copy the link." });
               }}
             />
+
             <Panel step="01" title="Pick your spot">
               <div className="grid gap-5 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
                 <div className="mx-auto w-full max-w-[260px]">
-                  <PitchPicker value={build.archetype} onChange={(k) => set({ archetype: k })} />
+                  <PitchPicker value={build.archetype} onChange={(k) => setBuild((b) => normaliseBuild({ ...emptyBuild(k), name: b.name, level: b.level, skillMoves: b.skillMoves, weakFoot: b.weakFoot }))} />
                 </div>
                 <div className="flex flex-col justify-center gap-3">
                   <div className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: accent }}>
@@ -264,15 +352,30 @@ export default function BuildPlannerPage() {
                   </div>
                   <div className="font-display text-4xl font-bold text-white">{arch.name}</div>
                   <p className="text-slate-400">{arch.blurb}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {arch.focus.map((f) => (
-                      <span key={f} className="rounded-full border px-3 py-1 text-xs font-semibold capitalize" style={{ borderColor: `${GROUP_COLORS[f]}66`, color: GROUP_COLORS[f], background: `${GROUP_COLORS[f]}14` }}>
-                        Built around {f}
-                      </span>
-                    ))}
+                  <div className="grid gap-2 text-sm sm:grid-cols-2">
+                    <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[0.05] p-3">
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-amber-300/80">Signature PlayStyles</div>
+                      {rules.signatures.map((s, i) => (
+                        <div key={s} className="text-amber-100">
+                          ◆ {s} <span className="whitespace-nowrap text-xs text-amber-300/60">(+ at {SIGNATURE_PLUS_LEVELS[i]})</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-slate-500">Level 45 Signature Perk</div>
+                      <div className="text-white">{rules.perk45.name}</div>
+                      <div className="text-xs text-slate-400">
+                        When you {rules.perk45.trigger}: boosts {rules.perk45.boosts}.
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-1.5 pt-2">
-                    <label htmlFor="bp-name" className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                  {mastery && (
+                    <p className="text-xs text-slate-500">
+                      Mastery for levelling a {arch.name}: +1 {attrLabel(mastery[0])} and +1 {attrLabel(mastery[1])} at level 10, +1 {attrLabel(mastery[1])} at 30, +1 {attrLabel(mastery[0])} at 55.
+                    </p>
+                  )}
+                  <div className="space-y-1.5 pt-1">
+                    <label htmlFor="bp-name" className={label}>
                       Build name
                     </label>
                     <Input id="bp-name" value={build.name} maxLength={40} placeholder="e.g. Box-to-box engine" onChange={(e) => set({ name: e.target.value })} className="border-white/10 bg-black/30" />
@@ -281,85 +384,125 @@ export default function BuildPlannerPage() {
               </div>
             </Panel>
 
-            <Panel step="02" title="Shape the body">
+            <Panel step="02" title="Level and body">
+              <div className="mb-6">
+                <div className="mb-2 flex items-baseline justify-between">
+                  <span className={label}>Level</span>
+                  <span className="font-display text-2xl font-bold tabular-nums text-white">
+                    {build.level}
+                    <span className="ml-2 text-sm font-normal text-slate-400">{summary.available} AP</span>
+                  </span>
+                </div>
+                <Slider aria-label="Level" value={[build.level]} min={1} max={LEVEL_CAP} step={1} onValueChange={([n]) => set({ level: n })} />
+                <div className="relative mt-2 h-4">
+                  {MILESTONES.map(([lvl, what]) => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      title={`Level ${lvl}: ${what}`}
+                      aria-label={`Go to level ${lvl}: ${what}`}
+                      onClick={() => set({ level: lvl })}
+                      className={`absolute -translate-x-1/2 text-[10px] font-bold tabular-nums transition ${build.level >= lvl ? "text-white" : "text-slate-600 hover:text-slate-300"}`}
+                      style={{ left: `${((lvl - 1) / (LEVEL_CAP - 1)) * 100}%` }}
+                    >
+                      {lvl}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-slate-400">
+                  {(() => {
+                    const next = MILESTONES.find(([l]) => l > build.level);
+                    return next ? `Next: level ${next[0]}, ${next[1]}.` : "Level cap reached: everything is unlocked.";
+                  })()}
+                </p>
+              </div>
               <div className="grid gap-6 sm:grid-cols-[110px_minmax(0,1fr)]">
-                <div className="mx-auto h-40 sm:h-auto">
+                <div className="mx-auto h-40 sm:h-56">
                   <BodyFigure heightCm={build.heightCm} weightKg={build.weightKg} color={accent} />
                 </div>
                 <div className="space-y-5">
                   {(
                     [
-                      ["Level", build.level, 1, LEVEL_MAX, "", (v: number) => set({ level: v })],
-                      ["Height", build.heightCm, HEIGHT_RANGE[0], HEIGHT_RANGE[1], " cm", (v: number) => set({ heightCm: v })],
-                      ["Weight", build.weightKg, WEIGHT_RANGE[0], WEIGHT_RANGE[1], " kg", (v: number) => set({ weightKg: v })],
+                      ["Height", build.heightCm, body.h, body.startH, " cm", (v: number) => set({ heightCm: v })],
+                      ["Weight", build.weightKg, body.w, body.startW, " kg", (v: number) => set({ weightKg: v })],
                     ] as const
-                  ).map(([label, v, min, max, unit, onSet]) => (
-                    <div key={label}>
+                  ).map(([name, v, range, start, unit, onSet]) => (
+                    <div key={name}>
                       <div className="mb-2 flex items-baseline justify-between">
-                        <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">{label}</span>
+                        <span className={label}>
+                          {name} <span className="normal-case tracking-normal text-slate-600">({range[0]}-{range[1]}, default {start})</span>
+                        </span>
                         <span className="font-display text-2xl font-bold tabular-nums text-white">
                           {v}
                           <span className="text-sm text-slate-500">{unit}</span>
                         </span>
                       </div>
-                      <Slider aria-label={label} value={[v]} min={min} max={max} step={1} onValueChange={([n]) => onSet(n)} />
+                      <Slider aria-label={name} value={[v]} min={range[0]} max={range[1]} step={1} onValueChange={([n]) => onSet(n)} />
                     </div>
                   ))}
+                  <div>
+                    <div className="mb-1.5 text-xs text-slate-400">In matches, your body changes:</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.keys(fx).length === 0 ? (
+                        <span className="text-xs text-slate-500">Nothing at the default height and weight.</span>
+                      ) : (
+                        Object.entries(fx).map(([k, d]) => (
+                          <span key={k} className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold tabular-nums ${d! > 0 ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border-rose-400/30 bg-rose-400/10 text-rose-300"}`}>
+                            {attrLabel(k)} {d! > 0 ? `+${d}` : d}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Every 4 cm or 8 kg from the default moves these by 1. AcceleRATE at {build.heightCm} cm: <span className="text-slate-300">{accelerateType(build)}</span>.
+                    </p>
+                  </div>
                   <div className="flex flex-wrap gap-x-8 gap-y-3 pt-1">
                     <div>
-                      <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-slate-500">Skill moves</div>
+                      <div className={`mb-1 ${label}`}>Skill moves</div>
                       <Stars label="Skill moves" value={build.skillMoves} onChange={(v) => set({ skillMoves: v })} />
                     </div>
                     <div>
-                      <div className="mb-1 text-xs font-semibold uppercase tracking-widest text-slate-500">Weak foot</div>
+                      <div className={`mb-1 ${label}`}>Weak foot</div>
                       <Stars label="Weak foot" value={build.weakFoot} onChange={(v) => set({ weakFoot: v })} />
                     </div>
                   </div>
+                  <p className="text-xs text-slate-500">Stars are for the card only: how FC 27 sets skill moves and weak foot isn't confirmed.</p>
                 </div>
               </div>
             </Panel>
 
             <Panel
               step="03"
-              title="Pour in points"
+              title="Spend your AP"
               aside={
                 <button className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white" onClick={() => set({ points: {} })}>
                   <RotateCcw className="h-3.5 w-3.5" /> Reset
                 </button>
               }
             >
-              <div className="mb-5 flex flex-wrap items-center gap-4 rounded-2xl border border-white/10 bg-black/30 p-4">
-                <div className="space-y-1">
-                  <label htmlFor="budget" className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-                    Points you have
-                  </label>
-                  <Input
-                    id="budget"
-                    className="h-9 w-28 border-white/10 bg-black/30"
-                    type="number"
-                    min={0}
-                    placeholder="from game"
-                    value={build.budget ?? ""}
-                    onChange={(e) => set({ budget: e.target.value === "" ? null : Number(e.target.value) })}
-                  />
+              <div className="mb-5 rounded-2xl border border-white/10 bg-black/30 p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="font-display text-3xl font-bold tabular-nums text-white">
+                    {summary.spent}
+                    <span className="ml-1 text-base font-normal text-slate-500">/ {summary.available} AP</span>
+                  </span>
+                  <span className={`font-display text-lg font-bold tabular-nums ${over ? "text-rose-400" : "text-slate-300"}`}>
+                    {over ? `${-summary.remaining} over` : `${summary.remaining} left`}
+                  </span>
                 </div>
-                <div className="min-w-[180px] flex-1">
-                  <div className="flex items-baseline justify-between">
-                    <span className="font-display text-3xl font-bold tabular-nums text-white">
-                      {summary.spent}
-                      <span className="ml-1 text-sm font-normal text-slate-500">spent</span>
-                    </span>
-                    {summary.remaining !== null && (
-                      <span className={`font-display text-lg font-bold tabular-nums ${summary.remaining < 0 ? "text-rose-400" : "text-slate-300"}`}>
-                        {summary.remaining < 0 ? `${-summary.remaining} over` : `${summary.remaining} left`}
-                      </span>
-                    )}
+                <div className="relative mt-2 h-2.5 overflow-hidden rounded-full bg-white/[0.06]">
+                  <div className="absolute inset-y-0 left-0 bg-white/[0.08]" style={{ width: `${availPct}%` }} />
+                  <div className="absolute inset-y-0 left-0 flex" style={{ width: `${spentPct}%` }}>
+                    {summary.focus.map((f) => (
+                      <div key={f.group} style={{ width: `${f.share * 100}%`, background: GROUP_COLORS[f.group] }} className="h-full transition-all" />
+                    ))}
                   </div>
-                  <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-white/[0.06]">
-                    {build.budget
-                      ? summary.focus.map((f) => <div key={f.group} style={{ width: `${f.share * budgetPct}%`, background: GROUP_COLORS[f.group] }} className="h-full transition-all" />)
-                      : summary.focus.map((f) => <div key={f.group} style={{ width: `${f.share * 100}%`, background: GROUP_COLORS[f.group] }} className="h-full transition-all" />)}
-                  </div>
+                  <div className="absolute inset-y-0 w-0.5 bg-white" style={{ left: `${availPct}%` }} />
+                </div>
+                <div className="mt-1.5 flex justify-between text-[11px] text-slate-500">
+                  <span>{summary.levelNeeded ? `This build needs level ${summary.levelNeeded}` : `More than level ${LEVEL_CAP} gives`}</span>
+                  <span>Level {LEVEL_CAP}: {apAtLevel(LEVEL_CAP)} AP</span>
                 </div>
               </div>
               {summary.notes.length > 0 && (
@@ -369,31 +512,61 @@ export default function BuildPlannerPage() {
                   ))}
                 </div>
               )}
+              <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                <span className="flex items-center gap-1.5">
+                  <TierPips tier={1} /> cheapest
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <TierPips tier={4} /> dearest for a {arch.name}
+                </span>
+                <span>Grey = starting value · ◆ = in matches · red tick = cap</span>
+              </div>
               <div className="grid gap-4">
                 {pointGroups.map((g) => {
-                  const c = GROUP_COLORS[g.key];
+                  const c = GROUP_COLORS[g.key as AttrGroup];
                   return (
-                    <div key={g.key} className="rounded-2xl border border-white/[0.07] bg-black/20 p-4" style={{ boxShadow: totals[g.key] ? `inset 3px 0 0 ${c}` : undefined }}>
+                    <div key={g.key} className="rounded-2xl border border-white/[0.07] bg-black/20 p-4" style={{ boxShadow: `inset 3px 0 0 ${c}` }}>
                       <div className="mb-3 flex items-baseline justify-between">
                         <h3 className="font-display text-lg font-bold uppercase tracking-wide" style={{ color: c }}>
                           {g.label}
                         </h3>
-                        <span className="font-display text-xl font-bold tabular-nums text-white">{totals[g.key]}</span>
+                        <span className="font-display text-xl font-bold tabular-nums text-white" title="Average in matches">
+                          {Math.round(averages[g.key])}
+                        </span>
                       </div>
-                      <div className="space-y-2.5">
-                        {ATTRIBUTES.filter((a) => a.group === g.key).map((a) => {
-                          const v = build.points[a.key] ?? 0;
+                      <div className="space-y-3">
+                        {ATTRIBUTES.filter((a) => a.group === g.key && trainable(build.archetype, a.key)).map((a) => {
+                          const start = startValue(build.archetype, a.key);
+                          const v = trainedValue(build, a.key);
+                          const cap = attrCap(build.archetype, a.key);
+                          const shown = menuValue(build, a.key);
+                          const match = matchValue(build, a.key, fx);
+                          const next = v < cap ? pointCost(build.archetype, a.key, v + 1) : null;
+                          const bonus = masteryBonus(build, a.key);
                           return (
-                            <div key={a.key} className="flex items-center gap-2 text-sm">
-                              <span className="w-24 shrink-0 truncate text-slate-300 sm:w-36">{a.label}</span>
-                              <Meter value={v} color={c} label={a.label} onChange={(n) => setPoints(a.key, n)} />
-                              <span className="w-6 text-right font-semibold tabular-nums text-white">{v}</span>
-                              <Nudge label={`Less ${a.label}`} disabled={v <= 0} onClick={() => setPoints(a.key, v - 1)}>
-                                <Minus className="h-3 w-3" />
-                              </Nudge>
-                              <Nudge label={`More ${a.label}`} disabled={v >= POINTS_MAX_PER_ATTR} onClick={() => setPoints(a.key, v + 1)}>
-                                <Plus className="h-3 w-3" />
-                              </Nudge>
+                            <div key={a.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 text-sm sm:grid-cols-[9.5rem_minmax(0,1fr)_auto]">
+                              <span className="flex min-w-0 items-center gap-2">
+                                <TierPips tier={costTier(build.archetype, a.key)} />
+                                <span className="leading-tight text-slate-300">{a.label}</span>
+                              </span>
+                              <div className="col-span-2 row-start-2 flex items-center gap-2 sm:col-span-1 sm:row-start-auto">
+                                <StatMeter start={start} value={v} cap={cap} capKnown={capConfirmed(build.archetype, a.key)} match={match} color={c} label={a.label} onChange={(n) => setValue(a.key, n)} />
+                              </div>
+                              <div className="col-start-2 row-start-1 flex items-center gap-1 sm:col-start-auto sm:row-start-auto">
+                                <span className="min-w-[2rem] whitespace-nowrap text-right tabular-nums sm:w-16" title={`Starts at ${start}${bonus ? `, +${bonus} mastery` : ""}, ${match} in matches`}>
+                                  <b className="text-white">{shown}</b>
+                                  {match !== shown && <span className={`ml-1 text-[11px] ${match > shown ? "text-emerald-400" : "text-rose-400"}`}>◆{match}</span>}
+                                </span>
+                                <span className="w-11 whitespace-nowrap text-right text-[11px] tabular-nums text-slate-500" title="AP for the next point">
+                                  {next === null ? (capConfirmed(build.archetype, a.key) ? "cap" : "max") : `${next} AP`}
+                                </span>
+                                <Nudge label={`Less ${a.label}`} disabled={v <= start} onClick={() => setValue(a.key, v - 1)}>
+                                  <Minus className="h-3 w-3" />
+                                </Nudge>
+                                <Nudge label={`More ${a.label}`} disabled={v >= cap} onClick={() => setValue(a.key, v + 1)}>
+                                  <Plus className="h-3 w-3" />
+                                </Nudge>
+                              </div>
                             </div>
                           );
                         })}
@@ -402,35 +575,132 @@ export default function BuildPlannerPage() {
                   );
                 })}
               </div>
-              <p className="mt-3 text-xs text-slate-500">Drag a bar or use the arrow keys (hold Shift for 5 at a time).</p>
+              <p className="mt-3 text-xs text-slate-500">
+                Drag a bar or use the arrow keys (Shift for 5). A point costs more AP the higher it goes, and each archetype prices each attribute differently.
+              </p>
             </Panel>
 
-            <Panel step="04" title="PlayStyles" aside={<span className="font-display text-lg font-bold tabular-nums text-slate-300">{build.playstyles.length}/{MAX_PLAYSTYLES}</span>}>
+            <Panel step="04" title="Specializations" aside={<span className="text-xs text-slate-500">one at a time</span>}>
+              <p className="mb-4 text-sm text-slate-400">
+                Get the first attribute to 92 and the other two to 90 to unlock a Specialization. It swaps one of your Signatures for its PlayStyle+.
+              </p>
+              <div className="grid gap-3 md:grid-cols-3">
+                {specs.map((s) => {
+                  const on = build.specialization === s.spec.key;
+                  return (
+                    <div key={s.spec.key} className="flex flex-col rounded-2xl border p-4 transition" style={on ? { borderColor: accent, background: `${accent}12`, boxShadow: `0 0 24px -10px ${accent}` } : { borderColor: "rgba(255,255,255,.08)", background: "rgba(0,0,0,.2)" }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-display text-lg font-bold text-white">{s.spec.name}</div>
+                        {s.met ? <Check className="h-5 w-5 text-emerald-400" aria-label="Reached" /> : <Lock className="h-4 w-4 text-slate-500" aria-label="Not reached" />}
+                      </div>
+                      <div className="mb-3 text-xs text-amber-200">◆ {s.spec.plus}+</div>
+                      <div className="mb-3 space-y-1.5">
+                        {s.spec.req.map(([k, need]) => {
+                          const have = menuValue(build, k);
+                          return (
+                            <div key={k} className="text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-slate-300">{attrLabel(k)}</span>
+                                <span className={`tabular-nums ${have >= need ? "text-emerald-400" : "text-slate-400"}`}>
+                                  {have}/{need}
+                                </span>
+                              </div>
+                              <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+                                <div className="h-full rounded-full" style={{ width: `${Math.min(100, (have / need) * 100)}%`, background: have >= need ? "#34d399" : accent }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {s.spec.unconfirmed && <p className="mb-2 text-[11px] text-slate-500">Not confirmed: {s.spec.unconfirmed.toLowerCase()}.</p>}
+                      <div className="mt-auto flex flex-wrap gap-2">
+                        {s.met ? (
+                          <button className={`${ghostBtn} px-3 py-1.5 text-xs`} onClick={() => set({ specialization: on ? null : s.spec.key })} aria-pressed={on}>
+                            {on ? "Active" : "Use this one"}
+                          </button>
+                        ) : s.apToReach === null ? (
+                          <span className="text-xs text-slate-500">Out of reach for a {arch.name}.</span>
+                        ) : (
+                          <button className={`${ghostBtn} px-3 py-1.5 text-xs`} onClick={() => goForSpec(s.spec.key, s.spec.req)}>
+                            <Target className="h-3.5 w-3.5" /> Go for it · {s.apToReach} AP
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Panel>
+
+            <Panel
+              step="05"
+              title="PlayStyles"
+              aside={
+                <span className="font-display text-lg font-bold tabular-nums text-slate-300" title="Slots open at levels 5, 15, 40 and 55">
+                  {build.playstyles.length}/{summary.slots}
+                </span>
+              }
+            >
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                {signatures.map((s) => (
+                  <span key={s.def.name} className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-sm font-semibold text-amber-100" title={s.plus ? "PlayStyle+" : `Becomes PlayStyle+ at level ${SIGNATURE_PLUS_LEVELS[s.signature - 1]}`}>
+                    ◆ {s.def.name}
+                    {s.plus ? "+" : <span className="ml-1 text-xs font-normal text-amber-300/60">+ at {SIGNATURE_PLUS_LEVELS[s.signature - 1]}</span>}
+                  </span>
+                ))}
+                {activeSpec?.met && (
+                  <span className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-1.5 text-sm font-semibold text-amber-100">◆ {activeSpec.spec.plus}+ <span className="text-xs font-normal text-amber-300/60">Specialization, swaps in for a Signature</span></span>
+                )}
+              </div>
+              <p className="mb-4 text-sm text-slate-400">
+                Signatures come free. You pick the rest: {summary.slots === 0 ? "your first slot opens at level 5" : `${summary.slots} slot${summary.slots === 1 ? "" : "s"} at level ${build.level}`}
+                {nextSlot && summary.slots > 0 ? `, the next at level ${nextSlot}` : ""}. Each needs its attributes high enough.
+              </p>
               <div className="space-y-4">
-                {groups.map((g) => {
-                  const styles = PLAYSTYLES.filter((p) => p.group === g.key);
-                  if (!styles.length) return null;
-                  const c = GROUP_COLORS[g.key];
+                {STYLE_GROUPS.filter((g) => g.key !== "goalkeeping" || keeper).map((g) => {
+                  const list = styles.filter((s) => s.def.group === g.key && s.available && !s.signature);
+                  if (!list.length) return null;
+                  const c = STYLE_COLOR[g.key];
                   return (
                     <div key={g.key}>
                       <div className="mb-2 text-xs font-semibold uppercase tracking-widest" style={{ color: c }}>
                         {g.label}
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {styles.map((p) => {
-                          const on = build.playstyles.includes(p.name);
-                          const full = !on && build.playstyles.length >= MAX_PLAYSTYLES;
+                        {list.map((s) => {
+                          const on = build.playstyles.includes(s.def.name);
+                          const full = !on && build.playstyles.length >= summary.slots;
+                          const need = Object.entries(s.def.req)
+                            .map(([k, n]) => `${attrLabel(k)} ${n}`)
+                            .join(", ");
+                          if (!s.unlocked)
+                            return (
+                              <button
+                                key={s.def.name}
+                                type="button"
+                                disabled={s.apToUnlock === null}
+                                onClick={() => unlockStyle(s.def.name, Object.entries(s.def.req) as [string, number][])}
+                                title={`Needs ${need}${s.def.unconfirmed ? " (FC 26 values, not confirmed)" : ""}`}
+                                className="group rounded-xl border border-dashed border-white/10 px-3 py-1.5 text-left text-sm text-slate-500 transition hover:border-white/30 hover:text-slate-200 disabled:opacity-40"
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <Lock className="h-3 w-3" /> {s.def.name}
+                                </span>
+                                <span className="block text-[11px] tabular-nums">{s.apToUnlock === null ? "out of reach" : `unlock · ${s.apToUnlock} AP`}</span>
+                              </button>
+                            );
                           return (
                             <button
-                              key={p.name}
+                              key={s.def.name}
                               type="button"
                               aria-pressed={on}
                               disabled={full}
-                              onClick={() => toggleStyle(p.name)}
+                              onClick={() => toggleStyle(s.def.name)}
+                              title={`Needs ${need}`}
                               className="rounded-xl border px-3 py-1.5 text-sm font-semibold transition hover:-translate-y-0.5 disabled:opacity-30 disabled:hover:translate-y-0"
                               style={on ? { borderColor: c, background: `${c}22`, color: "#fff", boxShadow: `0 0 16px -4px ${c}` } : { borderColor: "rgba(255,255,255,.1)", color: "#cbd5e1" }}
                             >
-                              {p.name}
+                              {s.def.name}
                             </button>
                           );
                         })}
@@ -441,7 +711,7 @@ export default function BuildPlannerPage() {
               </div>
             </Panel>
 
-            <Panel step="05" title="Bring a build in">
+            <Panel step="06" title="Bring a build in">
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
                   value={importText}
@@ -460,10 +730,23 @@ export default function BuildPlannerPage() {
               {importNote && <p className="mt-2 text-xs text-slate-400">{importNote}</p>}
             </Panel>
 
-            <p className="text-xs text-slate-500">
-              EA doesn't publish FC 27's point costs, caps or PlayStyle unlock rules, so the planner doesn't guess them: what you have to spend comes from your own
-              game screen.
-            </p>
+            <section className="rounded-3xl border border-white/10 bg-black/20 p-4 text-sm text-slate-400 sm:p-6">
+              <h2 className="mb-2 flex items-center gap-2 font-display text-lg font-bold uppercase tracking-wide text-white">
+                <Info className="h-4 w-4" /> Where these numbers come from
+              </h2>
+              <p>
+                EA doesn't publish AP prices, starting values or unlock thresholds. These are the FC 27 Season 2 numbers (level cap 55) measured by the Pro Clubs
+                community and cross-checked: the prices reproduce every published worked example and all 39 Specialization costs. When EA changes them, the planner
+                is updated in one place.
+              </p>
+              <p className="mt-2 text-slate-300">Not confirmed yet:</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                {UNCONFIRMED_NOTES.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+            </section>
+
             <p className="text-center text-xs text-slate-500">
               <Link to="/clubs" className="underline hover:text-white">
                 Look up a club
@@ -481,17 +764,17 @@ export default function BuildPlannerPage() {
         </div>
       </div>
 
-      {/* Phone: points and share always in reach */}
+      {/* Phone: AP and share always in reach */}
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-[#05080c]/85 px-4 py-3 backdrop-blur-xl lg:hidden">
         <div className="mx-auto flex max-w-6xl items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="truncate font-display text-sm font-bold uppercase tracking-wide" style={{ color: accent }}>
-              {arch.name}
+              {arch.name} · Lvl {build.level}
               {build.name ? <span className="text-slate-400"> · {build.name}</span> : null}
             </div>
             <div className="text-sm tabular-nums text-slate-300">
-              <b className="text-white">{summary.spent}</b> spent
-              {summary.remaining !== null && <span className={summary.remaining < 0 ? "text-rose-400" : ""}> · {summary.remaining < 0 ? `${-summary.remaining} over` : `${summary.remaining} left`}</span>}
+              <b className="text-white">{summary.spent}</b>/{summary.available} AP
+              <span className={over ? "text-rose-400" : ""}> · {over ? `${-summary.remaining} over` : `${summary.remaining} left`}</span>
             </div>
           </div>
           <button className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-[#05080c]" style={{ background: accent }} onClick={share}>

@@ -3,7 +3,7 @@
 // This file turns the builds people described into one "community meta build" per position, the same way everywhere:
 // the public meta-builds function, the MCP tool, the Knowledge Bank tab and the Build lab's "Load community meta build".
 // Nothing here is invented: every field comes from builds people described, and a position nobody covered stays empty.
-import { ARCHETYPES, ATTRIBUTES, MAX_PLAYSTYLES, PLAYSTYLES, encodeBuild, normaliseBuild, type Build, type Line } from "./proBuild.ts";
+import { ARCHETYPE_RULES, ARCHETYPES, ATTRIBUTES, MAX_PLAYSTYLES, PLAYSTYLES, canonStyle, encodeBuild, normaliseBuild, type Build, type Line } from "./proBuild.ts";
 
 export const META_POSITIONS = [
   { key: "ST", label: "Striker", line: "FWD", aliases: ["ST", "CF"] },
@@ -126,8 +126,10 @@ export function metaBuildFor(position: MetaPosition, rows: BuildRow[], now = Dat
   const heightCm = median((r) => r.height_cm), weightKg = median((r) => r.weight_kg);
   const skillMoves = median((r) => r.skill_moves), weakFoot = median((r) => r.weak_foot);
 
-  const known = new Set(PLAYSTYLES.map((p) => p.name));
-  const playstyles = shares(backed, (r) => r.playstyles.filter((p) => known.has(p)), total, 0.25, MAX_PLAYSTYLES);
+  // The archetype's two Signature PlayStyles come with it, so they don't take one of the four slots
+  const signatures = new Set(archetype ? ARCHETYPE_RULES[archetype.key]?.signatures ?? [] : []);
+  const known = new Set(PLAYSTYLES.map((p) => p.name).filter((p) => !signatures.has(p)));
+  const playstyles = shares(backed, (r) => r.playstyles.map(canonStyle).filter((p) => known.has(p)), total, 0.25, MAX_PLAYSTYLES);
   const attrKeys = new Set(ATTRIBUTES.map((a) => a.key));
   const attributes = shares(backed, (r) => r.key_attrs.filter((a) => attrKeys.has(a)), total, 0.25, 8, attrLabel);
 

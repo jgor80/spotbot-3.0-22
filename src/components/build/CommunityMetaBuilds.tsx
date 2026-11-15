@@ -117,11 +117,11 @@ export function MetaBuildCard({ meta, onLoad, compact = false, className }: { me
 export function CommunityMetaBuilds({ onLoad, compact = false, initial = "ST", days = 180 }: { onLoad?: (b: Build) => void; compact?: boolean; initial?: MetaPosition; days?: number }) {
   const [position, setPosition] = useState<MetaPosition>(initial);
   const q = useMetaBuilds(days);
-  const meta = q.data?.positions.find((p) => p.position === position);
+  const meta = q.data?.positions?.find((p) => p.position === position);
   return <div className="space-y-3">
     <div className="flex flex-wrap gap-1.5" role="group" aria-label="Position">
       {META_POSITIONS.map((p) => {
-        const n = q.data?.positions.find((m) => m.position === p.key)?.builds ?? 0;
+        const n = q.data?.positions?.find((m) => m.position === p.key)?.builds ?? 0;
         return <Button key={p.key} type="button" size="sm" variant={position === p.key ? "default" : "outline"} className="h-8 rounded-full" aria-pressed={position === p.key} onClick={() => setPosition(p.key)} title={`${p.label}: ${n} build${n === 1 ? "" : "s"}`}>
           {p.key}{q.data && <span className={cn("ml-1 text-xs", position === p.key ? "opacity-80" : "text-muted-foreground")}>{n}</span>}
         </Button>;
@@ -137,7 +137,7 @@ export function CommunityMetaBuilds({ onLoad, compact = false, initial = "ST", d
 export function CommunityMetaLoader({ onLoad, className, innerClassName }: { onLoad: (b: Build) => void; className?: string; innerClassName?: string }) {
   const [position, setPosition] = useState<MetaPosition>("ST");
   const q = useMetaBuilds(180);
-  const meta = q.data?.positions.find((p) => p.position === position);
+  const meta = q.data?.positions?.find((p) => p.position === position);
   return <Card className={cn("space-y-3 p-4", className)}>
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>

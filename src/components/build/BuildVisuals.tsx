@@ -1,8 +1,8 @@
 // Visual pieces for the Virtual Pro build planner: the pitch you pick an archetype on, the live shape
 // radar, the shareable build card (one SVG, shown on the page and saved as a PNG as-is), attribute
-// meters you can drag, and the body silhouette.
+// meters on the real 1-99 scale you can drag, and the body silhouette.
 import { forwardRef, useCallback, useRef } from "react";
-import { ARCHETYPES, ATTR_GROUPS, MAX_PLAYSTYLES, POINTS_MAX_PER_ATTR, type AttrGroup, type Build } from "@/lib/proBuild";
+import { ARCHETYPES, ATTR_GROUPS, type AttrGroup, type Build } from "@/lib/proBuild";
 
 export const GROUP_COLORS: Record<AttrGroup, string> = {
   pace: "#22d3ee",
@@ -162,24 +162,39 @@ export function RadarShape({
   );
 }
 
-// Shape values: each group's points against the build's own biggest group, so the outline shows where
-// the build leans whatever the total. With a comparison, both share one scale.
-export function shapeValues(totals: Record<AttrGroup, number>, groups: { key: AttrGroup }[], scaleMax: number) {
-  return groups.map((g) => (scaleMax ? totals[g.key] / scaleMax : 0));
+// Shape values: each group's in-match average on a 30-99 scale (almost nothing sits below 30), so the
+// outline is the player's real shape and two builds compare on the same scale.
+export const RADAR_FLOOR = 30;
+export function shapeValues(averages: Record<AttrGroup, number>, groups: { key: AttrGroup }[]) {
+  return groups.map((g) => Math.max(0, (averages[g.key] - RADAR_FLOOR) / (99 - RADAR_FLOOR)));
 }
 
 const stars = (n: number) => "★".repeat(n) + "☆".repeat(5 - n);
 
 export const BuildCard = forwardRef<
   SVGSVGElement,
-  { build: Build; values: number[]; ghost?: number[] | null; spent: number; remaining: number | null; topGroups: string[] }
->(function BuildCard({ build, values, ghost, spent, remaining, topGroups }, ref) {
+  {
+    build: Build;
+    values: number[];
+    ghost?: number[] | null;
+    spent: number;
+    available: number;
+    topGroups: string[];
+    signatures: { name: string; plus: boolean }[];
+    specialization: { name: string; plus: string; met: boolean } | null;
+  }
+>(function BuildCard({ build, values, ghost, spent, available, topGroups, signatures, specialization }, ref) {
   const arch = ARCHETYPES.find((a) => a.key === build.archetype)!;
   const accent = LINE_COLORS[arch.line];
   const groups = radarGroups(build);
   const W = 360;
   const H = 560;
-  const styles = build.playstyles.slice(0, MAX_PLAYSTYLES);
+  const styles = [
+    ...signatures.map((s) => ({ name: s.plus ? `${s.name}+` : s.name, sig: true })),
+    ...(specialization?.met ? [{ name: `${specialization.plus}+`, sig: true }] : []),
+    ...build.playstyles.map((name) => ({ name, sig: false })),
+  ].slice(0, 8);
+  const remaining = available - spent;
   return (
     <svg ref={ref} xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`${arch.name} build card`}>
       <defs>
@@ -239,18 +254,24 @@ export const BuildCard = forwardRef<
             <tspan fill="#fbbf24">{stars(build.skillMoves)}</tspan>
           </text>
           <text y="22">
-            <tspan fill="#94a3b8">POINTS </tspan>
-            {spent}
-            {remaining !== null && <tspan fill={remaining < 0 ? "#f87171" : "#94a3b8"}>{remaining < 0 ? `  (${-remaining} over)` : `  (${remaining} left)`}</tspan>}
+            <tspan fill="#94a3b8">AP </tspan>
+            {spent}/{available}
+            {remaining < 0 && <tspan fill="#f87171">{`  (${-remaining} over)`}</tspan>}
           </text>
           <text x={W - 52} y="22" textAnchor="end">
             <tspan fill="#94a3b8">WF </tspan>
             <tspan fill="#fbbf24">{stars(build.weakFoot)}</tspan>
           </text>
-          {topGroups.length > 0 && (
+          {specialization ? (
             <text y="44" fill="#94a3b8">
-              Built for <tspan fill="#ffffff">{topGroups.join(" + ").toLowerCase()}</tspan>
+              Specialization <tspan fill={specialization.met ? "#ffffff" : "#64748b"}>{specialization.name}{specialization.met ? "" : " (not reached)"}</tspan>
             </text>
+          ) : (
+            topGroups.length > 0 && (
+              <text y="44" fill="#94a3b8">
+                Built for <tspan fill="#ffffff">{topGroups.join(" + ").toLowerCase()}</tspan>
+              </text>
+            )
           )}
         </g>
 
@@ -267,10 +288,10 @@ export const BuildCard = forwardRef<
           const col = i % 2;
           const row = Math.floor(i / 2);
           return (
-            <g key={s} transform={`translate(${26 + col * 156} ${472 + row * 15})`}>
-              <circle cx="3" cy="-3.5" r="2.5" fill={accent} />
-              <text x="10" fontSize="12" fill="#e2e8f0">
-                {s}
+            <g key={s.name} transform={`translate(${26 + col * 156} ${468 + row * 16})`}>
+              {s.sig ? <path d="M3 -8 L6 -3.5 L3 1 L0 -3.5 Z" fill="#fbbf24" /> : <circle cx="3" cy="-3.5" r="2.5" fill={accent} />}
+              <text x="10" fontSize="12" fill={s.sig ? "#fde68a" : "#e2e8f0"}>
+                {s.name}
               </text>
             </g>
           );
@@ -283,31 +304,50 @@ export const BuildCard = forwardRef<
   );
 });
 
-// Most builds put well under 30 into one attribute, so the bar spans 0-30 to stay readable; the
-// +/- buttons and arrow keys still go up to the cap.
-export const METER_MAX = 30;
-
-// Draggable meter for one attribute. Click or drag anywhere on the track; arrow keys work too.
-export function Meter({ value, onChange, color, label }: { value: number; onChange: (v: number) => void; color: string; label: string }) {
+// One attribute on the real 1-99 scale: the archetype's starting value (dim), what you trained on top
+// (bright), the cap (a tick; dashed when the cap isn't confirmed) and the in-match value from the body
+// (a small marker). Drag or use the arrow keys to set the trained value; it can't go below the start
+// or above the cap.
+export const METER_FLOOR = 25;
+const meterPct = (v: number) => Math.max(0, Math.min(100, ((v - METER_FLOOR) / (99 - METER_FLOOR)) * 100));
+export function StatMeter({
+  start,
+  value,
+  cap,
+  capKnown,
+  match,
+  color,
+  label,
+  onChange,
+}: {
+  start: number;
+  value: number;
+  cap: number;
+  capKnown: boolean;
+  match: number;
+  color: string;
+  label: string;
+  onChange: (v: number) => void;
+}) {
   const track = useRef<HTMLDivElement>(null);
+  const fit = useCallback((v: number) => Math.max(start, Math.min(cap, Math.round(v))), [start, cap]);
   const setFrom = useCallback(
     (clientX: number) => {
       const el = track.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      onChange(Math.round(Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * METER_MAX));
+      onChange(fit(METER_FLOOR + Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (99 - METER_FLOOR)));
     },
-    [onChange]
+    [onChange, fit]
   );
-  const pct = Math.min(100, (value / METER_MAX) * 100);
   return (
     <div
       ref={track}
       role="slider"
       tabIndex={0}
       aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={POINTS_MAX_PER_ATTR}
+      aria-valuemin={start}
+      aria-valuemax={cap}
       aria-valuenow={value}
       className="relative h-3 flex-1 cursor-pointer touch-none rounded-full bg-white/[0.06] outline-none ring-offset-2 ring-offset-[#070b11] focus-visible:ring-2"
       style={{ ["--tw-ring-color" as string]: color }}
@@ -320,23 +360,29 @@ export function Meter({ value, onChange, color, label }: { value: number; onChan
         const step = e.shiftKey ? 5 : 1;
         if (e.key === "ArrowRight" || e.key === "ArrowUp") {
           e.preventDefault();
-          onChange(Math.min(POINTS_MAX_PER_ATTR, value + step));
+          onChange(fit(value + step));
         }
         if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
           e.preventDefault();
-          onChange(Math.max(0, value - step));
+          onChange(fit(value - step));
         }
-        if (e.key === "Home") onChange(0);
+        if (e.key === "Home") onChange(start);
+        if (e.key === "End") onChange(cap);
       }}
     >
-      {[0.25, 0.5, 0.75].map((t) => (
-        <span key={t} className="absolute top-0 h-full w-px bg-white/10" style={{ left: `${t * 100}%` }} />
+      {[50, 75, 90].map((t) => (
+        <span key={t} className="absolute top-0 h-full w-px bg-white/10" style={{ left: `${meterPct(t)}%` }} />
       ))}
-      <span
-        className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-150"
-        style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${color}55, ${color})`, boxShadow: value ? `0 0 12px ${color}88` : undefined }}
-      />
-      {value > 0 && <span className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#070b11]" style={{ left: `${pct}%`, background: color }} />}
+      <span className="absolute inset-y-0 left-0 rounded-full bg-white/15" style={{ width: `${meterPct(start)}%` }} />
+      {value > start && (
+        <span
+          className="absolute inset-y-0 rounded-r-full transition-[width] duration-150"
+          style={{ left: `${meterPct(start)}%`, width: `${meterPct(value) - meterPct(start)}%`, background: `linear-gradient(90deg, ${color}66, ${color})`, boxShadow: `0 0 12px ${color}88` }}
+        />
+      )}
+      {cap < 99 && <span className={`absolute -top-1 h-5 w-0.5 ${capKnown ? "bg-rose-400/80" : "bg-white/30"}`} style={{ left: `${meterPct(cap)}%` }} title={`Cap ${cap}`} />}
+      {match !== value && <span className="absolute -bottom-1.5 h-1.5 w-1.5 -translate-x-1/2 rotate-45 bg-white/70" style={{ left: `${meterPct(match)}%` }} title={`${match} in matches`} />}
+      <span className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#070b11]" style={{ left: `${meterPct(value)}%`, background: value > start ? color : "#475569" }} />
     </div>
   );
 }
