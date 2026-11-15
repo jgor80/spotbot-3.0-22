@@ -514,6 +514,22 @@ export default function TeamsPage() {
     } catch { /* storage blocked */ }
   }, [look, selectedGuildId]);
 
+  // The club's signed-players Discord role and its members, for the squad list's Signed / All filter.
+  // No role set up (or the bot can't see the server): the filter stays hidden and everyone is listed.
+  const { data: signedInfo } = useQuery({
+    queryKey: ["lineup-signed", selectedGuildId, lineupTeamId],
+    enabled: !!selectedGuildId,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("announce-lineup", {
+        body: { action: "signed", guild_id: selectedGuildId, team_id: lineupTeamId || null },
+      });
+      if (error || data?.error || !data?.role) return null;
+      return { roleName: String(data.role.name), ids: new Set<string>(data.user_ids || []) };
+    },
+  });
+
   // The squad's name is the graphic's default title
   const lineupTeamName = teams?.find(t => t.id === lineupTeamId)?.name;
   useEffect(() => {
@@ -1139,6 +1155,7 @@ export default function TeamsPage() {
                   positionRating={getPositionRating}
                   tiers={positionTiers}
                   availability={eventAvailability}
+                  signed={signedInfo}
                   status={
                     savedLineup && savedLineup.board === board
                       ? <span className="text-emerald-600">● Saved</span>

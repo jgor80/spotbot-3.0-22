@@ -155,3 +155,12 @@ Deno.test("call limiter allows a burst then blocks", () => {
   assert(!allowCall(key, 1000, 3), "not blocked");
   assert(allowCall(key, 70_000, 3), "window didn't slide");
 });
+
+Deno.test("Graphics Studio stays out of AI apps unless the player or server has its own OpenAI key", async () => {
+  const { allowed } = await import("./manage.ts");
+  const studio = { id: "wb_graphics", label: "Graphics Studio" };
+  assert(!allowed(studio, "premium"), "blocked on GafferBot's allowance");
+  assert(allowed(studio, "premium", true), "open on an own key");
+  assert(!allowed({ ...studio, denied: "Managers only" }, "premium", true), "the bot's own permission still applies");
+  assert(!allowed({ id: "ad_setclub" }, "admin", true), "an own key opens nothing else");
+});

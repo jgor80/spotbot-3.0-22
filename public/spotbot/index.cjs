@@ -643,7 +643,6 @@ const hubLobbyClub = createHubLobbyClub({
   supabase, getGuildState, saveGuildSettings, hubOf: (g) => socialHub.hubOf(g), eaVersion: () => EA_FC_VERSION,
   searchClubs: (name) => searchClubCandidates(name), startMonitoring: (g, k) => startEaMonitoring(g, k), refreshBoard: (guild) => socialHub.touch(guild.id),
 });
-client.once('ready', () => hubLobbyClub.start(client));
 // Hub XP: levels, tier roles, weekly challenges and social badges for players across every lobby and team
 const hubXp = createHubXp({ supabase, hubOf: socialHub.hubOf, saveHub: socialHub.saveHub, getGuildState, linkedIds: career.linkedIds, client: () => client, chemistry: () => hubChemistry, onFirstGame: (guildId, ids) => hubCard.onFirstGame(guildId, ids) });
 // Hub chemistry: who works well together, suggested teammates and squads built from it
@@ -701,6 +700,8 @@ client.on('messageCreate', (message) => {
 client.on('roleCreate', (role) => clearPositionRolePermissions(role).catch(() => {}));
 client.on('roleUpdate', (_old, role) => clearPositionRolePermissions(role).catch(() => {}));
 client.once('ready', () => twitchLive.start());
+// Lobby club voice windows start once the client is ready (client is declared above, not before the module list)
+client.once('ready', () => hubLobbyClub.start(client));
 // The add-to-server link everywhere uses the live app id; the bot's profile gets an Add App button if it has none
 client.once('ready', () => { addBot.setAppId(client.application?.id || client.user?.id); addBot.ensureInstallLink(client).then((set) => set && console.log('[add-bot] profile Add App button set')).catch(() => {}); });
 client.once('ready', () => {
