@@ -196,7 +196,9 @@ function spotlight(stars, seed, pen) {
   return `**${s.name}**: ${lines.join(' ')}`;
 }
 
-function seasonArc(club, matches, seasonMatches, seed = 0) {
+// pen (optional) keeps the columnist's verdict from repeating across recent editions; verdict: false
+// leaves it out (the AI writer gets the facts and draws its own conclusion).
+function seasonArc(club, matches, seasonMatches, seed = 0, pen = null, { verdict: withVerdict = true } = {}) {
   if (!seasonMatches.length) return '';
   const sorted = [...seasonMatches].sort((a, b) => b.playedAt - a.playedAt);
   const rec = (arr) => {
@@ -257,13 +259,51 @@ function seasonArc(club, matches, seasonMatches, seed = 0) {
   if (nemesis) out.push(`Bogey team: **${nemesis[0]}** (${nemesis[1].w}-${nemesis[1].l} on record).`);
   else if (bunny) out.push(`Favourite opponent: **${bunny[0]}**, beaten all ${bunny[1].w} times.`);
 
-  // The verdict
+  // The verdict: the columnist's line, from several takes per situation so it doesn't read the same every edition
+  if (!withVerdict) return out.join(' ');
   const winRate = all.w / all.games;
-  const verdict = last5.games === 5 && last5.pts >= 12 ? 'Verdict: this is a side that believes right now. Ride the wave.'
-    : last5.games === 5 && last5.pts <= 3 ? 'Verdict: a reset is needed. Simple football, fewer heroics.'
-    : winRate >= 0.6 ? 'Verdict: contenders, if they keep their heads.'
-    : winRate <= 0.35 ? 'Verdict: still building. The bright spots are there; the consistency is not.'
-    : 'Verdict: a coin-flip side for now. The next week decides which way it lands.';
+  const star = scorer?.goals ? scorer.name : null;
+  const p5 = last5.games === 5 ? last5.pts : null;
+  const bucket = p5 !== null && p5 >= 12 ? 'hot' : p5 !== null && p5 <= 3 ? 'cold' : winRate >= 0.6 ? 'contender' : winRate <= 0.35 ? 'building' : 'middle';
+  const takes = {
+    hot: [
+      'This is a side that believes right now. Ride the wave.',
+      `${p5} points from 15. Nobody in that dressing room wants the session to end.`,
+      'Confidence is a tactic too, and they have plenty of it.',
+      `Form like this doesn't need explaining. ${star ? `Give ${star} the ball and get out of the way.` : 'Just keep turning up.'}`,
+      "Hot streaks end; the good sides make them last. We'll see which this is.",
+    ],
+    cold: [
+      'A reset is needed. Simple football, fewer heroics.',
+      `${p5} points from the last 15. It is time for honest conversations in the group chat.`,
+      'Nobody panics yet, but somebody should be taking notes.',
+      'The fix is not a new formation. It is the basics, done for 90 minutes.',
+      'Rock bottom has a solid floor. Build from it.',
+    ],
+    contender: [
+      'Contenders, if they keep their heads.',
+      `Win ${Math.round(winRate * 100)}% of your games and people start to notice. They have noticed.`,
+      'The talent is not the question. The next big game is.',
+      `${star ? `With ${star} firing, ` : ''}this is a side that expects to win, and usually does.`,
+      'Good teams win ugly. This one has learned how.',
+    ],
+    building: [
+      'Still building. The bright spots are there; the consistency is not.',
+      "Rome wasn't built in a session. Neither is a back line.",
+      `${star ? `${star} is doing their bit. ` : ''}Now the rest of the side needs to meet them halfway.`,
+      'There is a team in there somewhere. Finding it is the job.',
+      'Patience is thin, but the raw material is there.',
+    ],
+    middle: [
+      'A coin-flip side for now. The next week decides which way it lands.',
+      'Neither here nor there yet. The next few sessions pick a direction.',
+      `Win one, drop one. ${star ? `${star} can tip it.` : 'Someone needs to tip the balance.'}`,
+      'Mid-table mood: capable of beating anyone, capable of losing to anyone.',
+      'The ceiling is high and the floor is close. Which one shows up next is anyone\'s guess.',
+      'Too good to worry about, not good enough to relax. That is the in-between they need to leave.',
+    ],
+  };
+  const verdict = `Verdict: ${choose(pen, `verdict:${bucket}`, takes[bucket], seed >> 2)}`;
   out.push(`*${verdict}*`);
   return out.join(' ');
 }
@@ -436,7 +476,7 @@ function storyFacts({ club, matches, seasonMatches, single = false, memory = EMP
   const lead = pickLead(list, memory);
   const run = recentRun(seasonMatches, new Date(Math.max(...matches.map((m) => +m.playedAt), 0) || Date.now()));
   const recent = memory.headlines.length ? `\nRecent headlines in this paper (do not repeat their angle or wording): ${memory.headlines.slice(0, 5).join(' | ')}` : '';
-  return `Club: ${club.name}\nToday's games (in order):\n${games.join('\n') || 'none'}\n${lead ? `Lead story (open with this): ${lead.text.replace(/\*/g, '')}\n` : ''}Story angles (verified from the record):\n${list.slice(0, 10).map((a) => `- ${a.text}`).join('\n') || '- none'}\nRecent run (newest first): ${run.map((m) => `${m.result[0].toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} ${m.opponent}`).join(', ') || 'none'}\nSeason context: ${seasonArc(club.name, matches, seasonMatches).replace(/\*/g, '')}${jokes.length ? `\nOptional name gags (use one only if it lands, or write a better one): ${jokes.join(' | ')}` : ''}${recent}`;
+  return `Club: ${club.name}\nToday's games (in order):\n${games.join('\n') || 'none'}\n${lead ? `Lead story (open with this): ${lead.text.replace(/\*/g, '')}\n` : ''}Story angles (verified from the record):\n${list.slice(0, 10).map((a) => `- ${a.text}`).join('\n') || '- none'}\nRecent run (newest first): ${run.map((m) => `${m.result[0].toUpperCase()} ${m.scoreFor}-${m.scoreAgainst} ${m.opponent}`).join(', ') || 'none'}\nSeason context: ${seasonArc(club.name, matches, seasonMatches, 0, null, { verdict: false }).replace(/\*/g, '')}${jokes.length ? `\nOptional name gags (use one only if it lands, or write a better one): ${jokes.join(' | ')}` : ''}${recent}`;
 }
 
 const starScore = (t) => t.goals * 3 + t.assists * 2 + t.avg + t.motm * 2;
@@ -631,7 +671,7 @@ function buildChronicle({ club, edition, matches, upcoming = [], seasonMatches =
     storyKeys.push(...shown.map((a) => a.key));
     // The run of games, then where it leaves the season, with the verdict in the columnist's own words
     if (run.length >= 2) embed.addFields({ name: `🏃 THE RUN · ${record} in the last ${run.length}`, value: clip(runLines(run).join('\n')) });
-    const arc = seasonArc(club.name, matches, seasonMatches, seed);
+    const arc = seasonArc(club.name, matches, seasonMatches, seed, pen);
     const verdict = arc.match(/ ?\*Verdict: (.+)\*$/);
     const body = verdict ? arc.slice(0, verdict.index) : arc;
     if (body) embed.addFields({ name: '📖 THE STORYLINE', value: clip(body) });

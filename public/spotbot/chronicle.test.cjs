@@ -172,3 +172,22 @@ test('a voice session prints its own edition, and the midnight paper skips games
   const allCovered = { ...club, autopilot: { chronicle_covered_ids: ['e1', 's1', 's2'] } };
   assert.equal(await ap.buildEdition('g1', allCovered, 'overnight', new Date(at.getTime() + 3600000)), null);
 });
+
+test('the columnist verdict rotates instead of repeating the same line', () => {
+  const { seasonArc, makePen } = require('./chronicle.cjs');
+  // A middling record (W L W L ...): the old paper always called this "a coin-flip side"
+  const season = Array.from({ length: 12 }, (_, i) => ({ id: `s${i}`, result: i % 2 ? 'loss' : 'win', scoreFor: i % 2 ? 1 : 2, scoreAgainst: i % 2 ? 2 : 1, opponent: `Opp ${i % 4}`, playedAt: new Date(Date.UTC(2026, 10, 1 + i)), players: [] }));
+  const verdict = (arc) => (arc.match(/\*Verdict: (.+)\*$/) || [])[1];
+  const recent = new Set();
+  const seen = new Set();
+  for (let edition = 0; edition < 4; edition++) {
+    const pen = makePen(7, recent);
+    const v = verdict(seasonArc('Palermo', season.slice(0, 2), season, 7, pen));
+    assert.ok(v, 'has a verdict');
+    seen.add(v);
+    for (const k of pen.used) recent.add(k);
+  }
+  assert.equal(seen.size, 4, `four editions, four different verdicts: ${[...seen].join(' | ')}`);
+  // The AI writer's brief leaves the verdict out so it draws its own
+  assert.equal(verdict(seasonArc('Palermo', season.slice(0, 2), season, 7, null, { verdict: false })), undefined);
+});

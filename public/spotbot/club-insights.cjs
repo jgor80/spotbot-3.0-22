@@ -20,13 +20,19 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/lib/clubInsights.ts
 var clubInsights_exports = {};
 __export(clubInsights_exports, {
+  AREAS: () => AREAS,
+  AREA_FIX: () => AREA_FIX,
   BENCH_METRICS: () => BENCH_METRICS,
+  CLEAR_EDGE: () => CLEAR_EDGE,
   COMPETITIONS: () => COMPETITIONS,
+  GOAL_MODEL: () => GOAL_MODEL,
   MATCH_TAGS: () => MATCH_TAGS,
   MIN_ROLE_GAMES: () => MIN_ROLE_GAMES,
   PASS_STYLE_CUTOFFS: () => PASS_STYLE_CUTOFFS,
   ROLE_LABELS: () => ROLE_LABELS,
+  SCORE_MAX: () => SCORE_MAX,
   SEPARATE_COMPETITIONS: () => SEPARATE_COMPETITIONS,
+  SESSION_BREAK_MS: () => SESSION_BREAK_MS,
   SESSION_GAP_MS: () => SESSION_GAP_MS,
   benchRole: () => benchRole,
   benchmarkPlayer: () => benchmarkPlayer,
@@ -47,29 +53,40 @@ __export(clubInsights_exports, {
   decisionScore: () => decisionScore,
   deriveStats: () => deriveStats,
   divisionLabel: () => divisionLabel,
+  expectedPoints: () => expectedPoints,
   fc27Percentile: () => fc27Percentile,
   gdPerGame: () => gdPerGame,
   generateAdvancedInsights: () => generateAdvancedInsights,
   generateInsights: () => generateInsights,
+  grade: () => grade,
+  groupSessions: () => groupSessions,
   isDivisionMatch: () => isDivisionMatch,
   isSeparateCompetition: () => isSeparateCompetition,
   lineupHints: () => lineupHints,
   matchCompetition: () => matchCompetition,
   matchDeepHighlights: () => matchDeepHighlights,
+  matchPerformance: () => matchPerformance,
   matchTag: () => matchTag,
+  outcomeOdds: () => outcomeOdds,
   parseDivision: () => parseDivision,
   passStyle: () => passStyle,
   percentileText: () => percentileText,
   playerKey: () => playerKey,
   playerStatsTypeForTag: () => playerStatsTypeForTag,
+  pointsVerdict: () => pointsVerdict,
   positionalDiscipline: () => positionalDiscipline,
+  quantileScore: () => quantileScore,
   roleOf: () => roleOf,
+  sessionReport: () => sessionReport,
+  sideTotals: () => sideTotals,
   signed: () => signed,
+  summarisePerformance: () => summarisePerformance,
   summarizeDivision: () => summarizeDivision,
   teamEvents: () => teamEvents,
   teamMetrics: () => teamMetrics,
   teamPercentile: () => teamPercentile,
   toInsightMatches: () => toInsightMatches,
+  verdictFor: () => verdictFor,
   winPct: () => winPct
 });
 module.exports = __toCommonJS(clubInsights_exports);
@@ -1171,6 +1188,98 @@ var FC27_BENCHMARKS = {
       65.45,
       69.12,
       100
+    ],
+    "modelledGoalsFor": [
+      0,
+      0.15,
+      0.55,
+      1,
+      1.1,
+      1.25,
+      1.65,
+      1.8,
+      1.95,
+      2.2,
+      2.35,
+      2.65,
+      2.76,
+      2.9,
+      3.31,
+      3.46,
+      3.86,
+      4.16,
+      4.56,
+      5.51,
+      13.37
+    ],
+    "modelledGoalShare": [
+      0,
+      0.08,
+      0.17,
+      0.23,
+      0.29,
+      0.33,
+      0.36,
+      0.4,
+      0.43,
+      0.47,
+      0.5,
+      0.53,
+      0.57,
+      0.6,
+      0.64,
+      0.67,
+      0.71,
+      0.77,
+      0.83,
+      0.92,
+      1
+    ],
+    "ratingEdge": [
+      -4.65,
+      -2.3,
+      -1.82,
+      -1.47,
+      -1.2,
+      -0.97,
+      -0.75,
+      -0.55,
+      -0.35,
+      -0.17,
+      0,
+      0.17,
+      0.35,
+      0.55,
+      0.75,
+      0.97,
+      1.2,
+      1.47,
+      1.82,
+      2.3,
+      4.65
+    ],
+    "lostPerPlayer": [
+      0,
+      1,
+      1.5,
+      1.75,
+      2,
+      2.33,
+      2.5,
+      2.75,
+      3,
+      3.33,
+      3.6,
+      4,
+      4.25,
+      4.5,
+      5,
+      5.5,
+      6,
+      7,
+      8,
+      9.5,
+      18.5
     ]
   }
 };
@@ -1436,17 +1545,17 @@ function generateAdvancedInsights(matches) {
   const fatigue = computeSessionFatigue(matches);
   const early = fatigue.filter((l) => l.gameNumber <= 2);
   const late = fatigue.filter((l) => l.gameNumber >= 4);
-  const avg = (ls, k) => {
+  const avg2 = (ls, k) => {
     const g = ls.reduce((s, l) => s + (l[k] === null ? 0 : l.games), 0);
     return g ? ls.reduce((s, l) => s + (l[k] ?? 0) * l.games, 0) / g : null;
   };
   const earlyGames = early.reduce((s, l) => s + l.games, 0);
   const lateGames = late.reduce((s, l) => s + l.games, 0);
   if (earlyGames >= 5 && lateGames >= 5) {
-    const dq1 = avg(early, "decisionScore");
-    const dq2 = avg(late, "decisionScore");
-    const w1 = avg(early, "winPct");
-    const w2 = avg(late, "winPct");
+    const dq1 = avg2(early, "decisionScore");
+    const dq2 = avg2(late, "decisionScore");
+    const w1 = avg2(early, "winPct");
+    const w2 = avg2(late, "winPct");
     if (dq1 !== null && dq2 !== null && dq1 - dq2 >= 4) {
       out.push({ tone: "bad", text: `Decisions slip late in a session: ${r0(dq1)} good calls in games 1-2 vs ${r0(dq2)} from game 4 on (win rate ${r0(w1)} vs ${r0(w2)}).` });
     } else if (w1 - w2 >= 15) {
@@ -1457,7 +1566,7 @@ function generateAdvancedInsights(matches) {
   const rest = fatigue.filter((l) => l.gameNumber > 1);
   const restGames = rest.reduce((s, l) => s + l.games, 0);
   if (first && first.games >= 5 && restGames >= 5) {
-    const wr = avg(rest, "winPct");
+    const wr = avg2(rest, "winPct");
     if (wr - first.winPct >= 15) out.push({ tone: "neutral", text: `Slow starter: the club wins ${r0(first.winPct)} of the first game of a session and ${r0(wr)} after that. A warm-up game may help.` });
   }
   const pressing = computePressing(matches);
@@ -1794,6 +1903,337 @@ function signed(n) {
   return n > 0 ? `+${n}` : String(n);
 }
 
+// src/lib/matchPerformance.ts
+var GOAL_MODEL = {
+  onTargetInBox: 0.551,
+  onTargetOutsideBox: 0.149,
+  // Fallbacks when a side has no event data: goals per shot on target, then per shot
+  perShotOnTarget: 0.491,
+  perShot: 0.348
+};
+var SCORE_MAX = 1e3;
+var AREAS = [
+  { key: "attack", label: "Attack", help: "Modelled goals for: shots on target, worth more from inside the box." },
+  { key: "ballSecurity", label: "Ball security", help: "Pass completion and how rarely the ball is given away (per player)." },
+  { key: "defending", label: "Defending", help: "Modelled goals against: how few good chances you allow." },
+  { key: "control", label: "Control", help: "Your share of the game's modelled goals." },
+  { key: "ratingEdge", label: "Rating edge", help: "Your players' average EA match rating minus the opposition's." }
+];
+function num2(v) {
+  const n = typeof v === "string" ? Number(v) : v;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+}
+var mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+function sideTotals(players) {
+  if (!players.length) return null;
+  let inBox = 0, outBox = 0, sot = 0, shots = 0, made = 0, attempts = 0, lost = 0, withEvents2 = 0, sotKnown = false;
+  const ratings = [];
+  for (const p of players) {
+    const r = num2(p.rating);
+    if (r !== null && r > 0) ratings.push(r);
+    if (p.events) {
+      const s = statsFromCounts(p.events);
+      withEvents2++;
+      inBox += s.shotsOnTargetInBox || 0;
+      outBox += s.shotsOnTargetOutsideBox || 0;
+      sot += s.shotsOnTarget || 0;
+      shots += (s.shotsOnTarget || 0) + (s.shotsOffTarget || 0);
+      made += s.passesCompleted || 0;
+      attempts += (s.passesCompleted || 0) + (s.passesFailed || 0);
+      lost += s.possessionsLost || 0;
+      sotKnown = true;
+    } else {
+      shots += num2(p.shots) ?? 0;
+      const o = num2(p.shots_on_target);
+      if (o !== null) {
+        sot += o;
+        sotKnown = true;
+      }
+      made += num2(p.passes_made) ?? 0;
+      attempts += num2(p.pass_attempts) ?? 0;
+    }
+  }
+  const allEvents = withEvents2 === players.length;
+  const modelledGoals = allEvents ? inBox * GOAL_MODEL.onTargetInBox + outBox * GOAL_MODEL.onTargetOutsideBox : sotKnown ? sot * GOAL_MODEL.perShotOnTarget : shots * GOAL_MODEL.perShot;
+  return {
+    players: players.length,
+    modelledGoals,
+    passCompletion: attempts > 0 ? made / attempts * 100 : null,
+    lostPerPlayer: allEvents ? lost / players.length : null,
+    avgRating: mean(ratings),
+    shots
+  };
+}
+function poisson(lambda, k) {
+  let p = Math.exp(-lambda);
+  for (let i = 1; i <= k; i++) p *= lambda / i;
+  return p;
+}
+function outcomeOdds(forGoals, againstGoals) {
+  const a = Math.max(0.05, forGoals);
+  const b = Math.max(0.05, againstGoals);
+  let win = 0, draw = 0, loss = 0;
+  for (let i = 0; i <= 15; i++) {
+    const pi = poisson(a, i);
+    for (let j = 0; j <= 15; j++) {
+      const p = pi * poisson(b, j);
+      if (i > j) win += p;
+      else if (i === j) draw += p;
+      else loss += p;
+    }
+  }
+  const t = win + draw + loss;
+  return { win: win / t, draw: draw / t, loss: loss / t };
+}
+function expectedPoints(forGoals, againstGoals) {
+  const o = outcomeOdds(forGoals, againstGoals);
+  return 3 * o.win + o.draw;
+}
+function quantileScore(q, value, higherIsBetter = true) {
+  if (!q || !q.length || value === null || !Number.isFinite(value)) return null;
+  let p;
+  if (value <= q[0]) p = 0;
+  else if (value >= q[q.length - 1]) p = 100;
+  else {
+    let i = 0;
+    while (i < q.length - 2 && q[i + 1] <= value) i++;
+    const span = q[i + 1] - q[i];
+    p = (i + (span > 0 ? (value - q[i]) / span : 0)) * 100 / (q.length - 1);
+  }
+  return higherIsBetter ? p : 100 - p;
+}
+var team = (k) => FC27_BENCHMARKS.team?.[k];
+var CLEAR_EDGE = 0.6;
+function verdictFor(result, modelledFor, modelledAgainst) {
+  const edge = modelledFor - modelledAgainst;
+  if (result === "win") return edge >= CLEAR_EDGE ? "Deserved win" : edge > -CLEAR_EDGE ? "Edged it" : "Smash and grab";
+  if (result === "draw") return edge >= CLEAR_EDGE ? "Should have won" : edge <= -CLEAR_EDGE ? "Got away with it" : "Fair draw";
+  return edge <= -CLEAR_EDGE ? "Deserved loss" : edge < CLEAR_EDGE ? "Narrow loss" : "Hard luck";
+}
+var POINTS = { win: 3, draw: 1, loss: 0 };
+function matchPerformance(m) {
+  const us = sideTotals(m.players);
+  const them = sideTotals(m.opponentPlayers || []);
+  if (!us) return null;
+  const modelledFor = us.modelledGoals;
+  const modelledAgainst = them ? them.modelledGoals : m.scoreAgainst;
+  const share = modelledFor + modelledAgainst > 0 ? modelledFor / (modelledFor + modelledAgainst) : 0.5;
+  const ball = [quantileScore(team("passCompletion"), us.passCompletion), quantileScore(team("lostPerPlayer"), us.lostPerPlayer, false)].filter(
+    (v) => v !== null
+  );
+  const scale = (v) => v === null ? null : v * (SCORE_MAX / 100);
+  const areas = {
+    attack: scale(quantileScore(team("modelledGoalsFor"), modelledFor)),
+    ballSecurity: scale(ball.length ? mean(ball) : null),
+    defending: scale(them ? quantileScore(team("modelledGoalsFor"), modelledAgainst, false) : null),
+    control: scale(them ? quantileScore(team("modelledGoalShare"), share) : null),
+    ratingEdge: scale(them && us.avgRating !== null && them.avgRating !== null ? quantileScore(team("ratingEdge"), us.avgRating - them.avgRating) : null)
+  };
+  const scored = Object.values(areas).filter((v) => v !== null);
+  const fullData = !!them && m.players.every((p) => p.events) && (m.opponentPlayers || []).every((p) => p.events);
+  return {
+    id: m.id,
+    playedAt: m.playedAt,
+    opponent: m.opponent,
+    result: m.result,
+    scoreFor: m.scoreFor,
+    scoreAgainst: m.scoreAgainst,
+    modelledFor,
+    modelledAgainst,
+    expectedPoints: expectedPoints(modelledFor, modelledAgainst),
+    points: POINTS[m.result],
+    areas,
+    control: scored.length >= 3 ? mean(scored) : null,
+    verdict: verdictFor(m.result, modelledFor, modelledAgainst),
+    fullData
+  };
+}
+function areaMeans(perf) {
+  const out = {};
+  for (const { key } of AREAS) out[key] = mean(perf.map((p) => p.areas[key]).filter((v) => v !== null));
+  return out;
+}
+function extremes(areas) {
+  const list = AREAS.map((a) => [a.key, areas[a.key]]).filter((x) => x[1] !== null);
+  if (!list.length) return { strongest: null, weakest: null };
+  const sorted = [...list].sort((a, b) => b[1] - a[1]);
+  return { strongest: sorted[0][0], weakest: sorted.length > 1 ? sorted[sorted.length - 1][0] : null };
+}
+function summarisePerformance(matches) {
+  const perf = matches.map(matchPerformance).filter((p) => !!p).sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime());
+  const areas = areaMeans(perf);
+  const sum2 = (f) => perf.reduce((t, p) => t + f(p), 0);
+  return {
+    games: perf.length,
+    wins: perf.filter((p) => p.result === "win").length,
+    draws: perf.filter((p) => p.result === "draw").length,
+    losses: perf.filter((p) => p.result === "loss").length,
+    points: sum2((p) => p.points),
+    expectedPoints: sum2((p) => p.expectedPoints),
+    goalsFor: sum2((p) => p.scoreFor),
+    goalsAgainst: sum2((p) => p.scoreAgainst),
+    modelledFor: sum2((p) => p.modelledFor),
+    modelledAgainst: sum2((p) => p.modelledAgainst),
+    control: mean(perf.map((p) => p.control).filter((v) => v !== null)),
+    areas,
+    ...extremes(areas),
+    matches: perf,
+    fullDataShare: perf.length ? perf.filter((p) => p.fullData).length / perf.length : 0
+  };
+}
+function pointsVerdict(points, expected, games) {
+  const gap = points - expected;
+  const tolerance = Math.max(1, games * 0.35);
+  const worth = `${points} point${points === 1 ? "" : "s"} from games worth ${expected.toFixed(1)}`;
+  if (gap > tolerance) return `${worth}: you got more than the chances deserved.`;
+  if (gap < -tolerance) return `${worth}: you played well enough for more.`;
+  return `${worth}: the results matched the performances.`;
+}
+var SESSION_BREAK_MS = 90 * 60 * 1e3;
+function groupSessions(matches) {
+  const sorted = [...matches].sort((a, b) => a.playedAt.getTime() - b.playedAt.getTime());
+  const nights = [];
+  let last = -Infinity;
+  for (const m of sorted) {
+    const t = m.playedAt.getTime();
+    if (t - last > SESSION_BREAK_MS || !nights.length) nights.push([]);
+    nights[nights.length - 1].push(m);
+    last = t;
+  }
+  return nights.reverse();
+}
+function grade(control) {
+  if (control === null) return "\u2013";
+  if (control >= 800) return "A+";
+  if (control >= 700) return "A";
+  if (control >= 620) return "B+";
+  if (control >= 550) return "B";
+  if (control >= 480) return "C+";
+  if (control >= 400) return "C";
+  if (control >= 300) return "D";
+  return "F";
+}
+function tally(matches) {
+  const out = /* @__PURE__ */ new Map();
+  for (const m of matches) {
+    for (const p of m.players) {
+      const name = (p.ea_username || "").trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      let t = out.get(key);
+      if (!t) out.set(key, t = { key, name, games: 0, goals: 0, assists: 0, secondAssists: 0, tackles: 0, interceptions: 0, passMade: 0, passAtt: 0, saves: 0, conceded: 0, ratingSum: 0, rated: 0, gk: 0 });
+      t.games++;
+      const s = p.events ? statsFromCounts(p.events) : null;
+      t.goals += num2(p.goals) ?? 0;
+      t.assists += num2(p.assists) ?? 0;
+      t.secondAssists += s?.secondAssists ?? 0;
+      t.tackles += s ? s.tacklesWon || 0 : num2(p.tackles) ?? 0;
+      t.interceptions += s ? s.interceptions || 0 : num2(p.interceptions) ?? 0;
+      t.passMade += s ? s.passesCompleted || 0 : num2(p.passes_made) ?? 0;
+      t.passAtt += s ? (s.passesCompleted || 0) + (s.passesFailed || 0) : num2(p.pass_attempts) ?? 0;
+      const isGk = /^(gk|goalkeeper)$/i.test(String(p.position || ""));
+      if (isGk) {
+        t.gk++;
+        t.saves += num2(p.saves) ?? 0;
+        t.conceded += m.scoreAgainst;
+      }
+      const r = num2(p.rating);
+      if (r !== null && r > 0) {
+        t.ratingSum += r;
+        t.rated++;
+      }
+    }
+  }
+  return out;
+}
+var avg = (t) => t.rated ? t.ratingSum / t.rated : null;
+var per = (n, g) => g ? n / g : 0;
+var plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+function playerLine(t, usual) {
+  const bits = [];
+  if (t.gk >= Math.ceil(t.games / 2)) {
+    bits.push(`${plural(t.saves, "save")} in ${plural(t.games, "game")}, ${per(t.conceded, t.gk).toFixed(1)} conceded a game`);
+    if (usual?.gk) bits.push(`(usually ${per(usual.conceded, usual.gk).toFixed(1)})`);
+    return bits.join(" ");
+  }
+  const contrib = [];
+  if (t.goals) contrib.push(plural(t.goals, "goal"));
+  if (t.assists) contrib.push(plural(t.assists, "assist"));
+  if (t.secondAssists) contrib.push(plural(t.secondAssists, "second assist"));
+  bits.push(contrib.length ? `${contrib.join(", ")} in ${plural(t.games, "game")}` : `${plural(t.games, "game")}`);
+  const options = [
+    { text: "tackles won a game", now: per(t.tackles, t.games), was: usual?.games ? per(usual.tackles, usual.games) : null, scale: 1.5 },
+    { text: "interceptions a game", now: per(t.interceptions, t.games), was: usual?.games ? per(usual.interceptions, usual.games) : null, scale: 1 }
+  ];
+  if (t.passAtt >= 10) {
+    options.push({ text: "% passing", now: t.passMade / t.passAtt * 100, was: usual && usual.passAtt >= 20 ? usual.passMade / usual.passAtt * 100 : null, scale: 6 });
+  }
+  const scored = options.filter((o) => o.now > 0).map((o) => ({ ...o, z: o.was === null ? 0 : (o.now - o.was) / o.scale }));
+  const best = scored.filter((o) => o.z >= 0.5).sort((a, b) => b.z - a.z)[0] || scored.sort((a, b) => Math.abs(b.z) - Math.abs(a.z) || b.now - a.now)[0];
+  if (!best) {
+    const now = avg(t);
+    const was = usual ? avg(usual) : null;
+    if (now !== null) bits.push(`rated ${now.toFixed(1)}${was !== null ? ` (usually ${was.toFixed(1)})` : ""}`);
+  } else {
+    const value = best.text.startsWith("%") ? `${Math.round(best.now)}${best.text}` : `${best.now.toFixed(1)} ${best.text}`;
+    const was = best.was === null ? "" : best.text.startsWith("%") ? ` (usually ${Math.round(best.was)}%)` : ` (usually ${best.was.toFixed(1)})`;
+    bits.push(`${value}${was}`);
+  }
+  return bits.join(", ");
+}
+function sessionReport(session, history) {
+  if (!session.length) return null;
+  const now = summarisePerformance(session);
+  const before = history.length ? summarisePerformance(history) : null;
+  const areas = AREAS.map((a) => {
+    const score = now.areas[a.key];
+    const usual2 = before && before.games >= 3 ? before.areas[a.key] : null;
+    return { key: a.key, label: a.label, score, usual: usual2, delta: score !== null && usual2 !== null ? score - usual2 : null };
+  });
+  const withDelta = areas.filter((a) => a.delta !== null);
+  const pool = withDelta.length >= 2 ? withDelta : areas.filter((a) => a.score !== null);
+  const rank = (a) => withDelta.length >= 2 ? a.delta : a.score;
+  const sorted = [...pool].sort((a, b) => rank(b) - rank(a));
+  const strength = sorted[0] ? { key: sorted[0].key, label: sorted[0].label, delta: sorted[0].delta } : null;
+  const low = sorted.length > 1 ? sorted[sorted.length - 1] : null;
+  const fixFirst = low ? { key: low.key, label: low.label, delta: low.delta } : null;
+  const tonight = tally(session);
+  const usual = tally(history);
+  const minGames = Math.max(1, Math.ceil(session.length / 2));
+  const players = [...tonight.values()].map((t) => ({ name: t.name, games: t.games, avgRating: avg(t), usualRating: usual.get(t.key) ? avg(usual.get(t.key)) : null, line: playerLine(t, usual.get(t.key)), t })).sort((a, b) => (b.avgRating ?? 0) - (a.avgRating ?? 0) || b.games - a.games).map(({ t: _t, ...rest }) => rest);
+  const pots = [...tonight.values()].filter((t) => t.games >= minGames && avg(t) !== null).sort((a, b) => avg(b) + per(b.goals + b.assists, b.games) * 0.3 - (avg(a) + per(a.goals + a.assists, a.games) * 0.3))[0];
+  const ordered = [...session].sort((a, b) => a.playedAt.getTime() - b.playedAt.getTime());
+  return {
+    startedAt: ordered[0].playedAt,
+    endedAt: ordered[ordered.length - 1].playedAt,
+    games: now.games,
+    wins: now.wins,
+    draws: now.draws,
+    losses: now.losses,
+    goalsFor: now.goalsFor,
+    goalsAgainst: now.goalsAgainst,
+    points: now.points,
+    expectedPoints: now.expectedPoints,
+    control: now.control,
+    usualControl: before && before.games >= 3 ? before.control : null,
+    grade: grade(now.control),
+    areas,
+    strength,
+    fixFirst,
+    pointsLine: pointsVerdict(now.points, now.expectedPoints, now.games),
+    playerOfSession: pots ? players.find((p) => p.name === pots.name) || null : null,
+    players,
+    matches: now.matches
+  };
+}
+var AREA_FIX = {
+  attack: "Few good chances: get more shots away from inside the box.",
+  ballSecurity: "Too many passes going astray: keep it simple and stop forcing the ball forward.",
+  defending: "Letting the opposition get clean shots in your box: stay compact and track runners.",
+  control: "The other side made more of the game: win the ball back higher and keep it longer.",
+  ratingEdge: "Their players outperformed yours one for one: check who was out of position or chasing the game."
+};
+
 // src/lib/clubInsights.ts
 var MATCH_TAGS = [
   { value: "league", label: "League", emoji: "\u{1F3C6}" },
@@ -1837,7 +2277,7 @@ function competitionEmoji(c) {
   return COMPETITIONS.find((x) => x.value === c)?.emoji || "\u26BD";
 }
 var LINEUP_WINDOW_MS = 6 * 60 * 60 * 1e3;
-function num2(v) {
+function num3(v) {
   const n = typeof v === "string" ? Number(v) : v;
   return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
@@ -1850,14 +2290,14 @@ function normalizeResult(row) {
   if (r === "win" || r === "w") return "win";
   if (r === "loss" || r === "l") return "loss";
   if (r === "draw" || r === "d") return "draw";
-  const f = num2(row.score_for);
-  const a = num2(row.score_against);
+  const f = num3(row.score_for);
+  const a = num3(row.score_against);
   if (f === null || a === null) return null;
   return f > a ? "win" : f < a ? "loss" : "draw";
 }
 function matchTime(row) {
   const data = row.match_data;
-  const ts = num2(data?.timestamp);
+  const ts = num3(data?.timestamp);
   if (ts && ts > 1e9) return new Date(ts < 1e12 ? ts * 1e3 : ts);
   return new Date(row.created_at || 0);
 }
@@ -1898,10 +2338,10 @@ function opponentRows(row, players) {
   return clubs.filter((c) => c !== mine).flatMap((c) => Object.values(c)).filter((r) => r && r.playername).map((r) => ({
     ea_username: String(r.playername).trim(),
     position: r.pos ?? null,
-    rating: num2(r.rating) ?? void 0,
-    goals: num2(r.goals) ?? void 0,
-    assists: num2(r.assists) ?? void 0,
-    shots: num2(r.shots) ?? void 0,
+    rating: num3(r.rating) ?? void 0,
+    goals: num3(r.goals) ?? void 0,
+    assists: num3(r.assists) ?? void 0,
+    shots: num3(r.shots) ?? void 0,
     ...hasEventData(r) ? { events: eaEventCounts(r) } : {}
   }));
 }
@@ -1931,8 +2371,8 @@ function toInsightMatches(rows, lineups = []) {
     matches.push({
       id: row.id,
       result,
-      scoreFor: num2(row.score_for) ?? 0,
-      scoreAgainst: num2(row.score_against) ?? 0,
+      scoreFor: num3(row.score_for) ?? 0,
+      scoreAgainst: num3(row.score_against) ?? 0,
       matchType: row.match_type,
       tag: matchTag(row),
       competition: matchCompetition(row),
@@ -1949,7 +2389,7 @@ function sum(players, key) {
   let total = 0;
   let seen = false;
   for (const p of players) {
-    const v = num2(p[key]);
+    const v = num3(p[key]);
     if (v !== null) {
       total += v;
       seen = true;
@@ -1963,8 +2403,8 @@ function ratio(made, attempts) {
 }
 function teamMetrics(m) {
   const ps = m.players;
-  const possessions = ps.map((p) => num2(p.possession)).filter((v) => v !== null && v > 0);
-  const ratings = ps.map((p) => num2(p.rating)).filter((v) => v !== null && v > 0);
+  const possessions = ps.map((p) => num3(p.possession)).filter((v) => v !== null && v > 0);
+  const ratings = ps.map((p) => num3(p.rating)).filter((v) => v !== null && v > 0);
   const shots = sum(ps, "shots");
   return {
     // EA reports team possession on each player row
@@ -1980,7 +2420,7 @@ function teamMetrics(m) {
     avgRating: ratings.length ? ratings.reduce((a, b) => a + b, 0) / ratings.length : null
   };
 }
-function mean(values) {
+function mean2(values) {
   const v = values.filter((x) => x !== null);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 }
@@ -1998,9 +2438,9 @@ function computeOverview(matches) {
     goalsFor: matches.reduce((a, m) => a + m.scoreFor, 0),
     goalsAgainst: matches.reduce((a, m) => a + m.scoreAgainst, 0),
     cleanSheets: matches.filter((m) => m.scoreAgainst === 0).length,
-    avgPossession: mean(metrics.map((x) => x.possession)),
-    passCompletion: mean(metrics.map((x) => x.passCompletion)),
-    shotsPerGame: mean(metrics.map((x) => x.shots)),
+    avgPossession: mean2(metrics.map((x) => x.possession)),
+    passCompletion: mean2(metrics.map((x) => x.passCompletion)),
+    shotsPerGame: mean2(metrics.map((x) => x.shots)),
     form: matches.slice(0, 10).map((m) => m.result)
   };
 }
@@ -2117,7 +2557,7 @@ function computeFormations(matches) {
     return {
       formation,
       record,
-      avgRating: mean(ms.map((m) => teamMetrics(m).avgRating)),
+      avgRating: mean2(ms.map((m) => teamMetrics(m).avgRating)),
       goalsForPerGame: ms.reduce((a, m) => a + m.scoreFor, 0) / ms.length,
       goalsAgainstPerGame: ms.reduce((a, m) => a + m.scoreAgainst, 0) / ms.length
     };
@@ -2141,8 +2581,8 @@ function computeWinLossGaps(matches, minEach = 3) {
   if (wins.length < minEach || losses.length < minEach) return [];
   const gaps = [];
   for (const meta of METRIC_LABELS) {
-    const w = mean(wins.map((x) => x[meta.key]));
-    const l = mean(losses.map((x) => x[meta.key]));
+    const w = mean2(wins.map((x) => x[meta.key]));
+    const l = mean2(losses.map((x) => x[meta.key]));
     if (w === null || l === null || w === 0) continue;
     const rel = (w - l) / Math.abs(w);
     gaps.push({ ...meta, inWins: w, inLosses: l, severity: meta.higherIsBetter ? rel : -rel });
@@ -2205,13 +2645,19 @@ function generateBaseInsights(matches) {
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  AREAS,
+  AREA_FIX,
   BENCH_METRICS,
+  CLEAR_EDGE,
   COMPETITIONS,
+  GOAL_MODEL,
   MATCH_TAGS,
   MIN_ROLE_GAMES,
   PASS_STYLE_CUTOFFS,
   ROLE_LABELS,
+  SCORE_MAX,
   SEPARATE_COMPETITIONS,
+  SESSION_BREAK_MS,
   SESSION_GAP_MS,
   benchRole,
   benchmarkPlayer,
@@ -2232,28 +2678,39 @@ function generateBaseInsights(matches) {
   decisionScore,
   deriveStats,
   divisionLabel,
+  expectedPoints,
   fc27Percentile,
   gdPerGame,
   generateAdvancedInsights,
   generateInsights,
+  grade,
+  groupSessions,
   isDivisionMatch,
   isSeparateCompetition,
   lineupHints,
   matchCompetition,
   matchDeepHighlights,
+  matchPerformance,
   matchTag,
+  outcomeOdds,
   parseDivision,
   passStyle,
   percentileText,
   playerKey,
   playerStatsTypeForTag,
+  pointsVerdict,
   positionalDiscipline,
+  quantileScore,
   roleOf,
+  sessionReport,
+  sideTotals,
   signed,
+  summarisePerformance,
   summarizeDivision,
   teamEvents,
   teamMetrics,
   teamPercentile,
   toInsightMatches,
+  verdictFor,
   winPct
 });

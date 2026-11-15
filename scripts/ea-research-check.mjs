@@ -154,20 +154,27 @@ for (const r of rows) {
 }
 const goalsBy = new Map();
 for (const [id, list] of byTeam) goalsBy.set(id, list.reduce((t, r) => t + n(r.goals), 0));
+const clubsInMatch = new Map();
+for (const id of byTeam.keys()) {
+  const [matchId, clubId] = id.split(":");
+  if (!clubsInMatch.has(matchId)) clubsInMatch.set(matchId, []);
+  clubsInMatch.get(matchId).push(clubId);
+}
+const rawPlayers = (list) =>
+  Object.fromEntries(list.map((r) => [r.playerId, { playername: r.playername, pos: r.pos, rating: r.rating, goals: r.goals, assists: r.assists, shots: r.shots, match_event_aggregate_0: r.match_event_aggregate_0 }]));
 const clubs = new Map();
 for (const [id, list] of byTeam) {
   const [matchId, clubId] = id.split(":");
-  const other = [...byTeam.keys()].length && [...(byTeam.get(id) ? [] : [])];
-  void other;
-  const opp = rows.find((r) => r.matchId === matchId && r.clubId !== clubId);
+  const oppId = clubsInMatch.get(matchId).find((c) => c !== clubId);
   const scoreFor = goalsBy.get(id);
-  const scoreAgainst = opp ? goalsBy.get(`${matchId}:${opp.clubId}`) : 0;
+  const scoreAgainst = oppId ? goalsBy.get(`${matchId}:${oppId}`) : 0;
   const result = list.some((r) => n(r.wins) > 0) ? "win" : list.some((r) => n(r.losses) > 0) ? "loss" : "draw";
-  const players = Object.fromEntries(list.map((r) => [r.playerId, { playername: r.playername, pos: r.pos, match_event_aggregate_0: r.match_event_aggregate_0 }]));
+  // Both clubs' rows, like EA's match data, so opponent stats and the match model work
+  const players = { [clubId]: rawPlayers(list), ...(oppId ? { [oppId]: rawPlayers(byTeam.get(`${matchId}:${oppId}`)) } : {}) };
   const row = {
     id, result, score_for: scoreFor, score_against: scoreAgainst, match_type: "leagueMatch", created_at: null,
-    opponent_club_name: "x", match_data: { timestamp: Number(list[0].timestamp), players: { [clubId]: players } },
-    player_stats: list.map((r) => ({ ea_username: r.playername, rating: n(r.rating), position: r.pos })),
+    opponent_club_name: "x", match_data: { timestamp: Number(list[0].timestamp), players },
+    player_stats: list.map((r) => ({ ea_username: r.playername, rating: n(r.rating), position: r.pos, goals: n(r.goals), assists: n(r.assists), shots: n(r.shots), passes_made: n(r.passesmade), pass_attempts: n(r.passattempts), saves: n(r.saves) })),
   };
   if (!clubs.has(clubId)) clubs.set(clubId, []);
   clubs.get(clubId).push(row);
@@ -225,7 +232,40 @@ if (withApart.length) {
 const sample = insights.generateAdvancedInsights(clubMatches.sort((a, b) => b.length - a.length)[0]);
 info("insights for the busiest club", sample.length ? "\n        - " + sample.map((i) => i.text).join("\n        - ") : "none");
 
-// 5. Benchmarks: per-role percentiles over players with 5+ games (main role = most games)
+// 5. Match model (src/lib/matchPerformance.ts): modelled goals and expected points on the same games
+console.log("\n5. Match model");
+{
+  // Refit goals on shots on target inside / outside the box (least squares, no intercept)
+  let a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0;
+  for (const m of allMatches) {
+    const te = insights.teamEvents(m);
+    if (!te) continue;
+    const x1 = te.totals.shotsOnTargetInBox, x2 = te.totals.shotsOnTargetOutsideBox, y = m.scoreFor;
+    a11 += x1 * x1; a12 += x1 * x2; a22 += x2 * x2; b1 += x1 * y; b2 += x2 * y;
+  }
+  const det = a11 * a22 - a12 * a12;
+  const fit = { inBox: (b1 * a22 - b2 * a12) / det, outBox: (a11 * b2 - a12 * b1) / det };
+  info("refit goals per shot on target", `inside box ${fit.inBox.toFixed(3)} · outside ${fit.outBox.toFixed(3)} (app uses ${insights.GOAL_MODEL.onTargetInBox} / ${insights.GOAL_MODEL.onTargetOutsideBox})`);
+  check("app's goal model is within 0.05 of the refit", Math.abs(fit.inBox - insights.GOAL_MODEL.onTargetInBox) < 0.05 && Math.abs(fit.outBox - insights.GOAL_MODEL.onTargetOutsideBox) < 0.05 ? 1 : 0, 1);
+  const perf = allMatches.map((m) => insights.matchPerformance(m)).filter(Boolean);
+  checkCorr("modelled goals vs real goals", perf.map((p) => [p.modelledFor, p.scoreFor]), 1);
+  checkCorr("expected points vs points won", perf.map((p) => [p.expectedPoints, p.points]), 1);
+  const bands = [0, 0.5, 1, 1.5, 2, 2.5].map((lo) => {
+    const s = perf.filter((p) => p.expectedPoints >= lo && p.expectedPoints < lo + 0.5);
+    return `${lo}-${lo + 0.5}: ${s.length} games, earned ${(s.reduce((t, p) => t + p.points, 0) / Math.max(1, s.length)).toFixed(2)}`;
+  });
+  info("expected points calibration", "\n        " + bands.join("\n        "));
+  if (insights.summarisePerformance) {
+    const busiest = clubMatches.sort((a, b) => b.length - a.length)[0];
+    const sum = insights.summarisePerformance(busiest);
+    info("busiest club", `${sum.games} games · ${sum.points} pts from ${sum.expectedPoints.toFixed(1)} expected · control ${sum.control?.toFixed(1)} · ${JSON.stringify(Object.fromEntries(Object.entries(sum.areas).map(([k, v]) => [k, v === null ? null : Math.round(v)])))}`);
+    const nights = insights.groupSessions(busiest);
+    const report = insights.sessionReport(nights[0], nights.slice(1).flat());
+    if (report) info("latest session report", `${report.grade} · ${report.pointsLine} · strength ${report.strength?.label} · fix ${report.fixFirst?.label} · POTS ${report.playerOfSession?.name}: ${report.playerOfSession?.line}`);
+  }
+}
+
+// 6. Benchmarks: per-role percentiles over players with 5+ games (main role = most games)
 if (writeBenchmarks) {
   const byRole = {};
   for (const p of players) {
@@ -255,6 +295,18 @@ if (writeBenchmarks) {
     teamVals.aerialsPerGame.push(te.totals.aerialsWon);
     for (const k of ["insideBoxShotShare", "passCompletion", "decisionScore"]) if (d[k] !== null) teamVals[k].push(d[k]);
   }
+  // Match model inputs (matchPerformance.ts), games where both clubs sent event data
+  Object.assign(teamVals, { modelledGoalsFor: [], modelledGoalShare: [], ratingEdge: [], lostPerPlayer: [] });
+  for (const m of allMatches) {
+    const us = insights.sideTotals(m.players);
+    const them = insights.sideTotals(m.opponentPlayers || []);
+    if (!us || !them || us.lostPerPlayer === null || them.lostPerPlayer === null) continue;
+    teamVals.modelledGoalsFor.push(us.modelledGoals);
+    const total = us.modelledGoals + them.modelledGoals;
+    teamVals.modelledGoalShare.push(total > 0 ? us.modelledGoals / total : 0.5);
+    if (us.avgRating !== null && them.avgRating !== null) teamVals.ratingEdge.push(us.avgRating - them.avgRating);
+    teamVals.lostPerPlayer.push(us.lostPerPlayer);
+  }
   const team = {};
   for (const [k, list] of Object.entries(teamVals)) {
     const vals = list.sort((a, b) => a - b);
@@ -262,7 +314,7 @@ if (writeBenchmarks) {
   }
   const out = `// GENERATED by scripts/ea-research-check.mjs --write-benchmarks from the FC27 research dataset
 // (github.com/Interactive-63/eafc-pro-clubs-api-research). Per role: the 0th, 5th, ..., 100th
-// percentile of each stat over players with 5+ games. Do not edit by hand.
+// percentile of each stat over players with 5+ games; team: the same per club per match. Do not edit by hand.
 export const FC27_BENCHMARKS: { source: string; players: Record<string, number>; roles: Record<string, Record<string, number[]>>; team?: Record<string, number[]> } = ${JSON.stringify({ source: "eafc-pro-clubs-api-research FC27, " + rows.length + " player games", players: counts, roles, team }, null, 2)};
 `;
   writeFileSync(new URL("../src/lib/fc27Benchmarks.ts", import.meta.url), out);
