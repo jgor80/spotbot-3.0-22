@@ -361,7 +361,7 @@ export const HOME_FAQ = [
   },
   {
     q: "What does it cost?",
-    a: "GafferBot is free: every feature, every server. AI images cost us money to make, so each server gets 5 free AI images, then buys image packs (25 for $4.99 or 70 for $12.99) on the website or in Discord's store. Lineups, stats and the other graphics stay free.",
+    a: "GafferBot is free: every feature, every server. AI images cost us money to make, so each server gets 20 free AI images to start and 10 more free every month. Need more? Buy an image pack (25 for $4.99 or 70 for $12.99) on the website or in Discord's store. Lineups, stats and the other graphics stay free.",
   },
   {
     q: "Where can I find a Pro Clubs game right now?",

@@ -119,28 +119,6 @@ const STEPS = [
 ];
 
 
-export const FAQ = [
-  {
-    q: "Do my players need an account?",
-    a: "No. Players use buttons in Discord. They can sign in here with Discord if they want their own profile and stats on the web, but it's optional.",
-  },
-  {
-    q: "Where do the stats come from?",
-    a: "EA's public Pro Clubs data for your club. Link your club once in /setup and new matches sync on their own. Some numbers, like hidden stats and chemistry, are GafferBot's estimates and are labelled that way.",
-  },
-  {
-    q: "Can I run more than one club in a server?",
-    a: "Yes. Each club keeps its own roster, events, stats and colours, and players are matched by the club name in their roles.",
-  },
-  {
-    q: "What does it cost?",
-    a: "GafferBot is free: every feature, every server. AI images cost us money to make, so each server gets 20 free AI images to start and 10 more free every month. Need more? Buy an image pack (25 for $4.99 or 70 for $12.99) on the website or in Discord's store. Lineups, stats and the other graphics stay free.",
-  },
-  {
-    q: "Is this made by EA?",
-    a: "No. GafferBot is an independent project and isn't made, endorsed or sponsored by Electronic Arts or Discord.",
-  },
-];
 
 // ---------- Mockups (drawn in HTML so they stay sharp and follow the theme) ----------
 
