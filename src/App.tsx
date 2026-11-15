@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { GUIDES } from "@/content/guides";
 import { GuildProvider } from "@/contexts/GuildContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -38,6 +39,7 @@ const ControlRoomPage = lazy(() => import("./pages/ControlRoomPage"));
 const StreamOverlay = lazy(() => import("./pages/StreamOverlay"));
 const TermsPage = lazy(() => import("./pages/TermsPage"));
 const PlayPage = lazy(() => import("./pages/PlayPage"));
+const PublicGuideRoute = lazy(() => import("./pages/PublicGuideRoute"));
 const PrivacyPage = lazy(() => import("./pages/PrivacyPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const FutHomePage = lazy(() => import("./pages/fut/FutHomePage"));
@@ -107,6 +109,9 @@ const App = () => (
                   <Route path="/play/:slug" element={<PlayPage />} />
                   <Route path="/privacy" element={<PrivacyPage />} />
                   <Route path="/welcome" element={<LandingPage />} />
+                  <Route path="/guides" element={<PublicGuideRoute />} />
+                  <Route path="/faq" element={<PublicGuideRoute />} />
+                  {GUIDES.map((g) => <Route key={g.slug} path={`/${g.slug}`} element={<PublicGuideRoute />} />)}
                   <Route path="/" element={<HomeRoute />} />
                   <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
                   <Route path="/lineup" element={<ProtectedRoute><TeamsPage /></ProtectedRoute>} />
