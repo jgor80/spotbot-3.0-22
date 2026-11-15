@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
+import { ImageKeySetting } from "@/components/ImageKeySetting";
 
 // Plans and image packs for one Discord server (the billing function). The same products are on sale
 // in Discord's store at the same price, and both land on the same server balance.
@@ -114,6 +115,11 @@ export default function BillingPage() {
                   </p>
                 )}
               </div>
+            </Card>
+
+            <Card className="space-y-2 p-5" id="image-key">
+              <h2 className="text-lg font-semibold">Or use your own OpenAI key</h2>
+              <ImageKeySetting scope="server" guildId={selectedGuildId} />
             </Card>
 
             {groups.map(([title, types]) => {

@@ -10,9 +10,10 @@ import { Tool, ToolError } from "./protocol.ts";
 import { Ctx, PanelBridge, resolveGuild } from "./tools.ts";
 import { CHANGES_PER_HOUR, changesLastHour, previewed, rememberPreview } from "./limits.ts";
 import { SCOPE_MANAGE } from "../_shared/mcp-tokens.ts";
+import { imageKeyFor } from "../_shared/ai-provider-keys.ts";
 
 // Kept out of AI hands even for managers: server setup and admin, premium switches and AI art (costs
-// money), live voice drafts, cross-server Network actions, removing players or handing out manager and
+// money; open once the player or the server has its own OpenAI key, see OWN_KEY_ACTIONS), live voice drafts, cross-server Network actions, removing players or handing out manager and
 // captain, deleting presets or photos, and AI token settings themselves.
 export const BLOCKED_AREAS = new Set(["admin", "premium", "drafts"]);
 export const BLOCKED_ACTIONS = new Set([
@@ -23,6 +24,10 @@ export const BLOCKED_ACTIONS = new Set([
   "ev_presetdel", "rc_post",
   "wb_graphics", "wb_setup",
 ]);
+
+// Graphics Studio draws AI art. On GafferBot's key that spends the server's image allowance, so AI apps can't
+// reach it; on the player's own OpenAI key (or the server's) it's on their own bill, so they can.
+export const OWN_KEY_ACTIONS = new Set(["wb_graphics"]);
 
 const FIELD_TYPES: Record<number, string> = {
   3: "text", 4: "whole number", 5: "true/false", 6: "player (Discord user id from find_members)",
@@ -151,20 +156,30 @@ export function summarize(snap: Json) {
 
 // ---------- Catalogue ----------
 
-function allowed(action: Json, areaKey: string | null) {
-  return !BLOCKED_ACTIONS.has(action.id) && !(areaKey && BLOCKED_AREAS.has(areaKey)) && !action.denied && !action.discordOnly;
+export function allowed(action: Json, areaKey: string | null, ownImageKey = false) {
+  if (action.denied || action.discordOnly) return false;
+  if (ownImageKey && OWN_KEY_ACTIONS.has(action.id)) return true;
+  return !BLOCKED_ACTIONS.has(action.id) && !(areaKey && BLOCKED_AREAS.has(areaKey));
+}
+
+// Whether AI art for this player in this server would be drawn on their own (or the server's) OpenAI key
+async function hasOwnImageKey(ctx: Ctx, guildId: string) {
+  return Boolean(await imageKeyFor(ctx.db, (k) => Deno.env.get(k), { userId: ctx.discordUserId, guildId }).catch(() => null));
 }
 
 async function catalogue(ctx: Ctx, guildId: string) {
-  const c = await call(ctx, "context", { guildId });
+  const [c, ownKey] = await Promise.all([call(ctx, "context", { guildId }), hasOwnImageKey(ctx, guildId)]);
   const actions: Json[] = [];
   const add = (a: Json, area: string, areaKey: string | null) => {
-    if (!allowed(a, areaKey)) return;
+    if (!allowed(a, areaKey, ownKey)) return;
+    const hint = OWN_KEY_ACTIONS.has(a.id)
+      ? `${a.hint ? `${a.hint} ` : ""}AI art here is drawn on the player's own OpenAI key (or the server's), not GafferBot's image allowance. Every graphic is previewed privately first; it is only posted when the player presses Post it.`
+      : a.hint;
     actions.push({
       id: a.id,
       label: a.label,
       area,
-      ...(a.hint ? { hint: a.hint } : {}),
+      ...(hint ? { hint } : {}),
       fields: (a.fields || []).map((f: Json) => ({
         name: f.name,
         type: f.kind === "when" ? "date/time text (e.g. 2026-10-20 20:00 or 'tomorrow 8pm', server timezone)" : FIELD_TYPES[f.type] || "text",
@@ -277,7 +292,7 @@ export const MANAGE_TOOLS: Tool<Ctx>[] = [
     title: "Club actions I can run",
     scope: SCOPE_MANAGE,
     description: "The Discord panel actions you can run in a server (the same /manager and /me buttons you have in Discord, " +
-      "minus admin, premium, Network and removal tools), with each action's fields, plus the channels GafferBot can post in.",
+      "minus admin, premium, Network and removal tools; Graphics Studio appears once the player or the server has added their own OpenAI key on gafferbot.app), with each action's fields, plus the channels GafferBot can post in.",
     inputSchema: { type: "object", properties: { guild_id: guildIdProp }, additionalProperties: false },
     run: async (args, ctx) => {
       const guildId = await resolveGuild(args, ctx);

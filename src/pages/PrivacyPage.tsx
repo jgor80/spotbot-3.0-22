@@ -62,7 +62,8 @@ export default function PrivacyPage() {
           file storage, run on our own server at Hetzner (which also runs the bot and backend functions),
           Cloudflare (web hosting), and the AI providers OpenAI, Google (Gemini) and Anthropic (Claude).
           Uploaded photos, and stats used for AI-written recaps and coaching notes, are sent to the AI providers
-          to check photos and generate artwork and text.
+          to check photos and generate artwork and text. If you or your server add your own OpenAI API key, it is
+          stored encrypted, only ever sent to OpenAI, and the artwork made with it is billed to that OpenAI account.
         </li>
         <li>
           <strong>Services GafferBot looks data up from:</strong> Discord, EA, OpenXBL and Twitch receive the
