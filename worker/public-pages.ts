@@ -3,9 +3,13 @@
 //    tell crawlers this page is a copy of "/". Here we serve the same app shell with the hub's own title,
 //    description, canonical, structured data and a plain-HTML summary that crawlers and AI engines read
 //    without running JavaScript. The app then draws the live page on top as before.
+//  - /clubs, /clubs/compare and /club/<platform>/<clubId>: public club lookup pages. Same idea: the
+//    page's own title, description, canonical and robots, and for a club page its name and record.
 //  - /sitemap.xml: the build's sitemap plus every public hub page.
 import { hubDescription, hubTitle, type HubPublic } from "../src/lib/hubMeta";
 import { PUBLIC_SUPABASE_ANON_KEY, PUBLIC_SUPABASE_URL } from "../src/lib/publicBackend";
+import { metaFor } from "../src/lib/seo";
+import type { PublicClubPayload } from "../src/lib/publicClub";
 
 const SITE = "https://gafferbot.app";
 
@@ -112,6 +116,93 @@ export async function playPage(req: Request, env: Env, slug: string): Promise<Re
   headers.delete("Content-Length");
   headers.delete("ETag");
   return rewriter.transform(new Response(shell.body, { status: hub ? 200 : 404, headers }));
+}
+
+// Shared by the hub and club pages: the app shell with this page's own tags and crawlable summary
+async function shellWith(
+  req: Request,
+  env: Env,
+  page: { url: string; title: string; description: string; index: boolean; jsonLd?: unknown; html?: string; status?: number; maxAge?: number },
+): Promise<Response> {
+  const shell = await env.ASSETS.fetch(new Request(new URL("/", req.url)));
+  const attr = (name: string, value: string) => ({ element: (el: Element) => el.setAttribute(name, value) });
+  const rewriter = new HTMLRewriter()
+    .on("title", { element: (el) => el.setInnerContent(page.title) })
+    .on('meta[name="description"]', attr("content", page.description))
+    .on('meta[property="og:title"]', attr("content", page.title))
+    .on('meta[name="twitter:title"]', attr("content", page.title))
+    .on('meta[property="og:description"]', attr("content", page.description))
+    .on('meta[name="twitter:description"]', attr("content", page.description))
+    .on('meta[property="og:url"]', attr("content", page.url))
+    .on('link[rel="canonical"]', attr("href", page.url))
+    .on('meta[name="robots"]', attr("content", page.index ? "index, follow, max-image-preview:large" : "noindex, nofollow"))
+    .on('script[type="application/ld+json"]', {
+      element: (el) => (page.jsonLd ? el.setInnerContent(JSON.stringify(page.jsonLd).replace(/</g, "\\u003c"), { html: true }) : el.remove()),
+    })
+    .on("div#prerender", { element: (el) => el.setInnerContent(page.html ?? "", { html: true }) });
+  const headers = new Headers(shell.headers);
+  headers.set("Content-Type", "text/html; charset=utf-8");
+  headers.set("Cache-Control", `public, max-age=${page.maxAge ?? 300}`);
+  headers.delete("Content-Length");
+  headers.delete("ETag");
+  return rewriter.transform(new Response(shell.body, { status: page.status ?? 200, headers }));
+}
+
+function clubHtml(c: PublicClubPayload, url: string) {
+  const o = c.overall;
+  const record = o ? `${o.wins} wins, ${o.draws} draws and ${o.losses} losses in ${o.games} games` : null;
+  const squad = c.members.slice(0, 15).map((m) => `<li>${esc(m.name)}: ${m.games} games, ${m.goals} goals, ${m.assists} assists${m.rating !== null ? `, ${m.rating.toFixed(1)} average rating` : ""}</li>`).join("");
+  return `<main style="max-width:48rem;margin:0 auto;padding:2.5rem 1rem">
+<p>EA FC 27 Pro Clubs club</p>
+<h1>${esc(c.name)}</h1>
+${record ? `<p>All-time: ${esc(record)}${o?.skillRating ? `, skill rating ${o.skillRating}` : ""}${o?.bestDivision ? `, best division ${o.bestDivision}` : ""}.</p>` : ""}
+${squad ? `<h2>Squad</h2><ul>${squad}</ul>` : ""}
+<p>Team scores out of 1000, recent form and player scores load on <a href="${esc(url)}">this page</a>. Look up <a href="${SITE}/clubs">any other club</a> or run your own club with <a href="${SITE}/">GafferBot</a>, the free Pro Clubs Discord bot.</p>
+</main>`;
+}
+
+const CLUB_PATH = /^\/club\/(common-gen5|nx)\/(\d{1,15})\/?$/;
+export const isClubLookupPath = (path: string) => path === "/clubs" || path === "/clubs/" || path === "/clubs/compare" || path === "/clubs/compare/" || CLUB_PATH.test(path);
+
+// loadClub: fetches the public-club function (through the bot's functions server); null when it can't
+export async function clubLookupPage(req: Request, env: Env, loadClub: (platform: string, clubId: string) => Promise<PublicClubPayload | null>): Promise<Response> {
+  const path = new URL(req.url).pathname;
+  const meta = metaFor(path);
+  const url = `${SITE}${meta.path}`;
+  const m = path.match(CLUB_PATH);
+  if (!m) return shellWith(req, env, { url, title: meta.title, description: meta.description, index: meta.index !== false });
+  let club: PublicClubPayload | null = null;
+  try {
+    club = await loadClub(m[1], m[2]);
+  } catch (e) {
+    console.error("club page", e);
+  }
+  if (!club) return shellWith(req, env, { url, title: meta.title, description: meta.description, index: false, maxAge: 60 });
+  const o = club.overall;
+  const title = `${club.name}: Pro Clubs stats, form and player scores | GafferBot`;
+  const description = `${club.name} on EA FC 27 Pro Clubs${o ? `: ${o.wins}W ${o.draws}D ${o.losses}L all time${o.skillRating ? `, skill rating ${o.skillRating}` : ""}` : ""}. Recent form, team scores out of 1000 and player scores, free.`;
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        name: title,
+        description,
+        url,
+        isPartOf: { "@type": "WebSite", name: "GafferBot", url: SITE },
+        about: { "@type": "SportsTeam", name: club.name, sport: "EA SPORTS FC Pro Clubs", ...(club.crest ? { logo: club.crest } : {}) },
+      },
+      {
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: `${SITE}/` },
+          { "@type": "ListItem", position: 2, name: "Club lookup", item: `${SITE}/clubs` },
+          { "@type": "ListItem", position: 3, name: club.name, item: url },
+        ],
+      },
+    ],
+  };
+  return shellWith(req, env, { url, title, description, index: true, jsonLd, html: clubHtml(club, url) });
 }
 
 export async function sitemap(req: Request, env: Env): Promise<Response> {

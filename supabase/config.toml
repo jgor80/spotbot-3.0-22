@@ -132,5 +132,8 @@ verify_jwt = false
 [functions.web-panel]
 verify_jwt = false
 
+[functions.public-club]
+verify_jwt = false
+
 [functions.ai-keys]
 verify_jwt = false

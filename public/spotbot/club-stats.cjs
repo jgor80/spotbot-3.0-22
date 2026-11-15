@@ -15,6 +15,13 @@ const { resolveClub, activeClubs } = require('./manager-hub.cjs');
 const { where } = require('./panels.cjs');
 const { reportFor, sessionReportEmbed } = require('./session-report.cjs');
 const { playerScoresEmbed } = require('./player-scores.cjs');
+const { toFcPlatform } = require('./ea-fc27.cjs');
+
+// The club's public page on the website (any EA club has one; no sign-in)
+function publicClubUrl(club) {
+  const id = String(club?.ea_club_id || '').trim();
+  return /^\d+$/.test(id) ? `https://gafferbot.app/club/${toFcPlatform(club.ea_platform)}/${id}` : null;
+}
 
 const MATCH_WINDOW = 100;
 const FORM_WINDOW = 10;
@@ -603,14 +610,21 @@ function createClubStats(deps) {
     const embed = new EmbedBuilder()
       .setTitle(`📊 ${club.name} stats`)
       .setColor(0x22c55e)
-      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Deep Stats** decisions, positioning, pressing and partnerships from EA\'s hidden event data\n**Front Office** the management report on your last night: graded, team scores out of 1000 and what to fix first\n**Player Scores** everyone rated out of 1000 against FC27 players of their role, power rankings, clutch, carry and defending\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers\n**Tournaments** tournament & BYOT games, kept apart from the rest')
+      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Deep Stats** decisions, positioning, pressing and partnerships from EA\'s hidden event data\n**Front Office** the management report on your last night: graded, team scores out of 1000 and what to fix first\n**Player Scores** everyone rated out of 1000 against FC27 players of their role, power rankings, clutch, carry and defending\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers\n**Tournaments** tournament & BYOT games, kept apart from the rest\n\n🌐 Your club\'s public page on gafferbot.app: anyone can see it, no sign-in')
       .setFooter({ text: `${PANEL_MARK} · always stays at the bottom` });
+    const publicUrl = publicClubUrl(club);
     const b = (id, label, emoji, style = ButtonStyle.Secondary) => new ButtonBuilder().setCustomId(`statsp:${id}:${club.key}`).setLabel(label).setEmoji(emoji).setStyle(style);
     return {
       embeds: [embed],
       components: [
         new ActionRowBuilder().addComponents(b('team', 'Team Stats', '📊', ButtonStyle.Primary), b('members', 'EA Member List', '👥', ButtonStyle.Primary), b('deep', 'Deep Stats', '🧠', ButtonStyle.Primary), b('report', 'Front Office', '🗂️', ButtonStyle.Primary), b('scores', 'Player Scores', '🧮', ButtonStyle.Primary)),
         new ActionRowBuilder().addComponents(b('top', 'Top Players', '🏆'), b('form', 'In Form', '🔥'), b('matches', 'Recent Matches', '📅'), b('tournaments', 'Tournaments', '🏟️'), new ButtonBuilder().setCustomId('help_glossary').setLabel('What the stats mean').setEmoji('❓').setStyle(ButtonStyle.Secondary)),
+        ...(publicUrl
+          ? [new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setLabel('Public club page').setEmoji('🌐').setStyle(ButtonStyle.Link).setURL(publicUrl),
+              new ButtonBuilder().setLabel('Compare with another club').setEmoji('⚔️').setStyle(ButtonStyle.Link).setURL(`https://gafferbot.app/clubs/compare?a=${toFcPlatform(club.ea_platform)}:${club.ea_club_id}`)
+            )]
+          : []),
       ],
     };
   }
@@ -795,4 +809,4 @@ function createClubStats(deps) {
   return { handleInteraction, onMessage, initPanels, reportView, teamView, eaMembersView, deepView, deepPlayerView, deepOpponentView, knownEaNames, matchKnownName, helpMessage, glossaryMessage, forgetNames: (guildId) => namesCache.delete(guildId) };
 }
 
-module.exports = { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES, GLOSSARY, aggregate };
+module.exports = { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES, GLOSSARY, aggregate, publicClubUrl };
