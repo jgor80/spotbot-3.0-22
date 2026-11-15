@@ -4385,6 +4385,76 @@ async function checkRender(fetchFn, gateway, key, q, renderB64, references, time
   }
 }
 
+// supabase/functions/_shared/ai-provider-keys.ts
+var snowflake = (id) => /^\d{17,20}$/.test(id);
+var KeyError = class extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.status = status;
+  }
+};
+var unb64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+var aad = (scope, owner, provider) => new TextEncoder().encode(`${scope}:${owner}:${provider}`);
+async function sealKey(env) {
+  const secret = env("AI_KEY_SECRET") || env("HELPER_KEY_SECRET") || env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!secret) return null;
+  const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`gafferbot-provider-key:${secret}`));
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+async function decryptKey(env, scope, owner, provider, sealed) {
+  if (!sealed?.startsWith("v1:")) return null;
+  const k = await sealKey(env);
+  if (!k) return null;
+  try {
+    const raw = unb64(sealed.slice(3));
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12), additionalData: aad(scope, owner, provider) }, k, raw.slice(12));
+    return new TextDecoder().decode(plain);
+  } catch {
+    return null;
+  }
+}
+async function row(db2, scope, owner, provider) {
+  const { data, error } = await db2.from("ai_provider_keys").select("key_encrypted, key_hint, updated_at, last_used_at, last_error").eq("scope", scope).eq("owner_id", owner).eq("provider", provider).maybeSingle();
+  if (error) throw new KeyError(`Couldn't read saved keys: ${error.message}`, 500);
+  return data;
+}
+function ownKeysEnabled(env) {
+  return env("GAFFERBOT_SELF_HOSTED") === "1" && !/^(off|false|0|no)$/i.test(String(env("AI_OWN_KEYS") ?? "").trim());
+}
+async function imageKeyFor(db2, env, who) {
+  if (!ownKeysEnabled(env)) return null;
+  const tries = [["user", who.userId, "yours"], ["server", who.guildId, "server"]];
+  for (const [scope, owner, source] of tries) {
+    if (!owner || !snowflake(owner)) continue;
+    try {
+      const r = await row(db2, scope, owner, "openai");
+      const key = r ? await decryptKey(env, scope, owner, "openai", r.key_encrypted) : null;
+      if (key) return { key, source };
+    } catch (err) {
+      console.warn(`[ai-keys] ${scope} key lookup failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  return null;
+}
+async function noteKeyUse(db2, who, source, error) {
+  const scope = source === "yours" ? "user" : "server";
+  const owner = source === "yours" ? who.userId : who.guildId;
+  if (!owner) return;
+  await db2.from("ai_provider_keys").update({ last_used_at: (/* @__PURE__ */ new Date()).toISOString(), last_error: error ? error.slice(0, 300) : null }).eq("scope", scope).eq("owner_id", owner).eq("provider", "openai").then(() => {
+  }, () => {
+  });
+}
+function ownKeyProblem(status, detail, source) {
+  const whose = source === "yours" ? "Your OpenAI key" : "This server's OpenAI key";
+  const where = source === "yours" ? "on your GafferBot profile" : "on the server's Plans & AI Images page";
+  if (status === 401) return `${whose} was refused by OpenAI. Replace or remove it ${where}.`;
+  if (/verif/i.test(detail)) return `${whose} works, but OpenAI needs the account's organization verified before it can make images (platform.openai.com \u2192 Settings \u2192 Organization).`;
+  if (status === 429 && /quota|billing|credit/i.test(detail)) return `${whose} is out of OpenAI credit. Top up at platform.openai.com \u2192 Billing, or remove the key ${where}.`;
+  if (status === 429) return `${whose} hit OpenAI's rate limit. Try again in a minute.`;
+  if (status === 403) return `${whose} isn't allowed to use OpenAI's image models. Check the key's permissions ${where}.`;
+  return "";
+}
+
 // supabase/functions/club-art/index.ts
 var SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 var AI_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
@@ -4427,7 +4497,8 @@ var Body = external_exports.object({
   kit_number_override: external_exports.number().int().min(1).max(99).optional(),
   // Member-chosen upload to base a single-player card on.
   photo_asset_id: external_exports.string().uuid().optional(),
-  // Who asked for it (counts their free discards); defaults to the featured player
+  // Who asked for it (counts their free discards); defaults to the featured player. Only this member's own
+  // OpenAI key is ever used, never the featured player's.
   requester_id: external_exports.string().regex(/^\d{5,25}$/).optional(),
   // Preview first: leave the server's images reserved until the bot says keep or discard
   hold: external_exports.boolean().default(false)
@@ -4579,10 +4650,17 @@ Deno.serve(async (req) => {
   const kitNumber = b.kit_number_override ?? found?.kitNumber ?? null;
   const prompt = refs.length ? teamPrompt(b, refs, STYLE[b.style], kitLine(b.kit, b.club_name)) : `${found ? identityInstructions(found.descriptions) : ""} ${promptFor(b, !!ref, kitNumber, found?.description ?? null)}`;
   const size = b.kind === "banner" ? "1536x1024" : "1024x1536";
+  const keyOwner = { userId: b.requester_id ?? null, guildId: b.guild_id ?? null };
+  const own = await imageKeyFor(db, (k) => Deno.env.get(k), keyOwner);
+  const aiFetch = own ? (input2, init = {}) => {
+    const h = new Headers(init.headers);
+    h.set("x-ai-own-key", own.key);
+    return fetch(input2, { ...init, headers: h });
+  } : fetch;
   const billing = billingConfig();
   let reservation = null;
   let imagesLeft = null;
-  if (billing.limitsOn) {
+  if (billing.limitsOn && !own) {
     if (!b.guild_id) return json({ error: "AI images need a server to count against." }, 400);
     const r = await reserveImages(db, { guild_id: b.guild_id, discord_user_id: b.requester_id ?? b.discord_user_id, kind: b.kind, credits: creditsFor(b.kind, teamIds.length) }, billing);
     if (!r.ok) return json({ error: r.message, out_of_images: true }, 402);
@@ -4603,9 +4681,9 @@ Deno.serve(async (req) => {
         form.set("prompt", text);
         form.set("size", size);
         appendReferences(form, refs.length ? refs : (found?.files ?? []).map((file) => ({ file })));
-        res = await fetch(`${GATEWAY}/v1/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${AI_KEY}` }, body: form });
+        res = await aiFetch(`${GATEWAY}/v1/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${AI_KEY}` }, body: form });
       } else {
-        res = await fetch(`${GATEWAY}/v1/images/generations`, {
+        res = await aiFetch(`${GATEWAY}/v1/images/generations`, {
           method: "POST",
           headers: { Authorization: `Bearer ${AI_KEY}`, "Content-Type": "application/json" },
           body: JSON.stringify({ model: MODEL, prompt: text, size })
@@ -4619,6 +4697,13 @@ Deno.serve(async (req) => {
       console.error(`[club-art] AI failed: ${res.status}`);
       const safeMessage = detail?.error?.message ?? detail?.message ?? (typeof detail?.error === "string" ? detail.error : null);
       const msg = typeof safeMessage === "string" ? safeMessage : "Couldn't create the artwork.";
+      if (own) {
+        const problem = ownKeyProblem(res.status, typeof safeMessage === "string" ? safeMessage : "", own.source);
+        if (problem) {
+          await noteKeyUse(db, keyOwner, own.source, problem);
+          return { error: { error: problem, own_key: own.source }, status: res.status >= 500 ? 502 : res.status };
+        }
+      }
       return { error: { error: msg }, status: res.status >= 500 ? 502 : res.status };
     }
     const out = await res.json().catch(() => null);
@@ -4642,7 +4727,7 @@ Deno.serve(async (req) => {
     }
     const model2 = r.res.headers.get("x-ai-model") || MODEL.replace(/^openai\//, "");
     const cost = renderCost(model2, r.out?.usage);
-    const qa = r.b64 && QA_ON ? await checkRender(fetch, GATEWAY, AI_KEY, qaInput, r.b64, qaRefs) : { checked: false, pass: Boolean(r.b64), score: 0, issues: [] };
+    const qa = r.b64 && QA_ON ? await checkRender(aiFetch, GATEWAY, AI_KEY, qaInput, r.b64, qaRefs) : { checked: false, pass: Boolean(r.b64), score: 0, issues: [] };
     console.log(`[club-art] ${b.kind}/${b.style} on ${model2} (attempt ${attempt + 1}): ${referenceCount} reference(s)${cost ? `, ${cost.image_tokens} image + ${cost.text_tokens} text in, ${cost.output_tokens} out${cost.cost_usd !== null ? `, $${cost.cost_usd}` : ""}` : ", no usage returned"}${qa.checked ? `, quality ${qa.pass ? "passed" : `failed (${qa.issues.join("; ")})`}` : ""}`);
     await db.from("ai_image_renders").insert({
       guild_id: b.guild_id ?? null,
@@ -4658,6 +4743,7 @@ Deno.serve(async (req) => {
       image_tokens: cost?.image_tokens ?? null,
       output_tokens: cost?.output_tokens ?? null,
       cost_usd: cost?.cost_usd ?? null,
+      key_source: own?.source ?? "gafferbot",
       attempt: attempt + 1,
       qa_pass: qa.checked ? qa.pass : null,
       qa_issues: qa.checked && !qa.pass ? qa.issues : null
@@ -4673,6 +4759,7 @@ Deno.serve(async (req) => {
     if (qa.pass) break;
   }
   const best = pickBest(attempts);
+  if (own) await noteKeyUse(db, keyOwner, own.source, null);
   const b64 = best.b64, model = best.model;
   if (reservation) await (b.hold ? holdImages(db, reservation) : settleImages(db, reservation));
   let artworkSaved = !b.discord_user_id;
@@ -4687,7 +4774,7 @@ Deno.serve(async (req) => {
     if (!saved.error) {
       const signed = await db.storage.from("pro-photos").createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
       if (!signed.error) {
-        const { data: row, error } = await db.from("pro_photo_assets").insert({
+        const { data: row2, error } = await db.from("pro_photo_assets").insert({
           discord_user_id: b.discord_user_id,
           guild_id: "graphics-studio",
           image_url: signed.data.signedUrl,
@@ -4709,7 +4796,7 @@ Deno.serve(async (req) => {
           }
         }).select("id").maybeSingle();
         artworkSaved = !error;
-        generatedAssetId = row?.id ?? null;
+        generatedAssetId = row2?.id ?? null;
       }
     }
   }
@@ -4719,6 +4806,7 @@ Deno.serve(async (req) => {
     artwork_saved: artworkSaved,
     kit_number: teamIds.length ? null : kitNumber,
     images_left: imagesLeft,
+    own_key: own?.source ?? null,
     reservation_id: b.hold ? reservation : null,
     generated_asset_id: generatedAssetId,
     quality: { checked: best.qa.checked, pass: best.qa.pass, issues: best.qa.issues, attempts: attempts.length },

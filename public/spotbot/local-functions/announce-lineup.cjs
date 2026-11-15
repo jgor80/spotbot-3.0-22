@@ -235,6 +235,33 @@ async function voiceChannels(supabase, guildId, userIds) {
   if (checkins.length) channels.push({ id: "checkins", name: "Tonight's roll call (In and Late)", user_ids: checkins });
   return json({ channels });
 }
+async function signedPlayers(supabase, guildId, teamId) {
+  const { data: settings } = await supabase.from("guild_settings").select("clubs").eq("guild_id", guildId).maybeSingle();
+  const clubs = Array.isArray(settings?.clubs) ? settings.clubs : [];
+  const club = teamId && clubs.find((c) => c?.team_id === teamId) || (clubs.length === 1 ? clubs[0] : null);
+  const rolesRes = await discord(`/guilds/${guildId}/roles`).catch(() => null);
+  const roles = rolesRes?.ok ? await rolesRes.json().catch(() => []) : [];
+  const role = findSignedRole(roles, club);
+  if (!role) return json({ role: null, user_ids: [] });
+  const bridge = globalThis.__gafferbotVoice;
+  let ids = bridge?.membersWithRole?.(guildId, role.id) ?? null;
+  if (!ids) {
+    ids = [];
+    let after = "0";
+    for (let page = 0; page < 10; page++) {
+      const res = await discord(`/guilds/${guildId}/members?limit=1000&after=${after}`);
+      if (!res.ok) {
+        await res.body?.cancel();
+        break;
+      }
+      const members = await res.json();
+      for (const m of members) if (m?.user?.id && (m.roles || []).includes(role.id)) ids.push(m.user.id);
+      if (members.length < 1e3) break;
+      after = members[members.length - 1].user.id;
+    }
+  }
+  return json({ role: { id: role.id, name: role.name }, user_ids: ids });
+}
 async function voiceChannelsFromDiscord(guildId, ids) {
   const byChannel = /* @__PURE__ */ new Map();
   const queue = [...ids];
@@ -549,6 +576,12 @@ serve(async (req) => {
       const denied = await requireGuildAccess(req, supabase, body.guild_id, "leader") ?? await throttleWebUser(req, supabase, "announce-lineup:voice", 10, 10 * 60 * 1e3);
       if (denied) return denied;
       return await voiceChannels(supabase, body.guild_id, body.user_ids);
+    }
+    if (body.action === "signed") {
+      if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) return json({ error: "guild_id is required" }, 400);
+      const denied = await requireGuildAccess(req, supabase, body.guild_id, "member") ?? await throttleWebUser(req, supabase, "announce-lineup:signed", 30, 10 * 60 * 1e3);
+      if (denied) return denied;
+      return await signedPlayers(supabase, body.guild_id, typeof body.team_id === "string" ? body.team_id : null);
     }
     if (body.action === "announce") {
       return await announce(supabase, req, body, caller);

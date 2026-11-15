@@ -303,6 +303,8 @@ interface LineupBoardEditorProps {
   theme?: ClubTheme | null; // the club's team colours and crest from /setup
   squad?: ReactNode; // squad picker: saving and posting need one
   clubName?: string;
+  // The club's signed-players Discord role and who has it; shows the Signed / All filter on the squad list
+  signed?: { roleName: string; ids: Set<string> } | null;
 }
 
 // The lineup editor: a club-coloured header with the sheet's stats and actions, the squad rail to drag
@@ -315,6 +317,15 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
   const [dragging, setDragging] = useState<string | null>(null);
   const [held, setHeld] = useState<{ player?: string; slot?: number } | null>(null);
   const [search, setSearch] = useState("");
+  const [onlySigned, setOnlySigned] = useState(() => {
+    try { return localStorage.getItem("lineup-squad-filter") !== "all"; } catch { return true; }
+  });
+  const signed = props.signed;
+  const showSigned = !!signed && onlySigned;
+  const pickFilter = (only: boolean) => {
+    setOnlySigned(only);
+    try { localStorage.setItem("lineup-squad-filter", only ? "signed" : "all"); } catch { /* private mode */ }
+  };
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
 
@@ -332,6 +343,7 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
     const q = search.trim().toLowerCase();
     const rows = players
       .filter((p) => !onSheet.has(p.discord_user_id))
+      .filter((p) => !showSigned || signed!.ids.has(p.discord_user_id))
       .filter((p) => !q || [p.ea_username, p.discord_username, p.primary_position, tiers?.get(p.discord_user_id)?.primary].some((v) => v?.toLowerCase().includes(q)))
       .map((p) => ({
         ...p,
@@ -341,7 +353,7 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
         out: availability?.get(p.discord_user_id) === "no",
       }));
     return groupByPosition(rows);
-  }, [players, onSheet, search, availability, tiers]);
+  }, [players, onSheet, search, availability, tiers, showSigned, signed]);
 
   const update = (patch: Partial<BoardLook>) => onLook({ ...look, ...patch });
 
@@ -580,8 +592,10 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
             <p className="text-center text-xs text-muted-foreground">{hint}</p>
           </div>
 
-          {/* Squad rail */}
-          <div className="overflow-hidden rounded-2xl border bg-card shadow-sm lg:sticky lg:top-20 lg:col-start-1 lg:row-start-1">
+          {/* Squad rail. The wrapper fills the pitch's grid row so the sticky rail stays beside the pitch
+              and never slides over the Style panel below it (two-column layout) */}
+          <div className="lg:col-start-1 lg:row-start-1 lg:self-stretch">
+          <div className="overflow-hidden rounded-2xl border bg-card shadow-sm lg:sticky lg:top-20">
             <div className="flex items-center gap-2 px-3 py-2.5" style={{ background: `linear-gradient(90deg, ${alpha(chrome.primary, 0.22)}, transparent)`, borderBottom: `2px solid ${chrome.primary}` }}>
               <span className="font-display text-sm font-bold uppercase tracking-[0.2em]">Squad</span>
               <span className="rounded-full px-1.5 text-[10px] font-bold leading-4" style={{ background: chrome.primary, color: ink(chrome.primary) }}>{pool.reduce((n, g) => n + g.players.length, 0)}</span>
@@ -592,8 +606,17 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input placeholder="Search players or positions..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
               </div>
+              {signed && (
+                <div className="mb-2">
+                  <ToggleGroup type="single" value={onlySigned ? "signed" : "all"} onValueChange={(v) => v && pickFilter(v === "signed")} className="grid grid-cols-2" aria-label="Which players to list">
+                    <ToggleGroupItem value="signed" className="h-8 text-xs">Signed ({signed.ids.size})</ToggleGroupItem>
+                    <ToggleGroupItem value="all" className="h-8 text-xs">All players</ToggleGroupItem>
+                  </ToggleGroup>
+                  {onlySigned && <p className="mt-1 truncate text-[11px] text-muted-foreground">Players with the {signed.roleName} role</p>}
+                </div>
+              )}
               <Drop id="pool" onClick={() => held?.player && onSheet.has(held.player) && tapZone({ zone: "pool" })} className="rounded-lg">
-                <ScrollArea className="h-[340px] pr-2 lg:h-[calc(100vh-22rem)]">
+                <ScrollArea className={cn("h-[340px] pr-2", signed ? "lg:h-[calc(100vh-26rem)]" : "lg:h-[calc(100vh-22rem)]")}>
                   <div className="space-y-1.5">
                     {pool.map((group) => (
                       <div key={group.position} className="space-y-1.5">
@@ -633,7 +656,7 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
                         })}
                       </div>
                     ))}
-                    {pool.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Everyone is on the sheet.</p>}
+                    {pool.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">{search ? "No players match your search." : showSigned ? "Every signed player is on the sheet. Switch to All players for the rest." : "Everyone is on the sheet."}</p>}
                   </div>
                 </ScrollArea>
               </Drop>
@@ -642,6 +665,7 @@ export const LineupBoardEditor = forwardRef<HTMLDivElement, LineupBoardEditorPro
                 {tiers && tiers.size > 0 && <>Card outline: <span className="text-emerald-500">comp position</span> · <span className="text-amber-500">plays it well</span> · <span className="text-orange-500">emergency</span> · <span className="text-red-500">not their position</span></>}
               </p>
             </div>
+          </div>
           </div>
 
           {/* Style panel */}
