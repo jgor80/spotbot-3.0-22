@@ -11,11 +11,13 @@ import { useSearchParams, Link } from "react-router-dom";
 import { Loader2, Link as LinkIcon, Unlink, User, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "@/lib/notify";
 import { HelperConnection } from "@/components/fut/HelperConnection";
 import { Chrome, Sparkles } from "lucide-react";
 import { ClaudeKeySetting } from "@/components/fut/ClaudeKeySetting";
+import { ImageKeySetting } from "@/components/ImageKeySetting";
+import { ImageIcon } from "lucide-react";
 import { useFutAvailable } from "@/components/fut/FutShared";
 
 export default function ProfilePage() {
@@ -66,6 +68,10 @@ export default function ProfilePage() {
   };
 
   const futAvailable = useFutAvailable();
+  // Discord links straight to the AI image key card (gafferbot.app/profile#image-key)
+  useEffect(() => {
+    if (user && window.location.hash === "#image-key") document.getElementById("image-key")?.scrollIntoView({ behavior: "smooth" });
+  }, [user]);
   const isLoading = guildLoading || profileLoading || authLoading || linkLoading;
 
   return (
@@ -104,6 +110,22 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent>
               <ClaudeKeySetting />
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Your own OpenAI key for AI images (Jeff, 2026-11-15): Graphics Studio art goes on your OpenAI bill, not the server's allowance. */}
+        {user && (
+          <Card id="image-key">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ImageIcon className="h-5 w-5" />
+                AI image key
+              </CardTitle>
+              <CardDescription>Make AI images on your own OpenAI account</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ImageKeySetting scope="me" />
             </CardContent>
           </Card>
         )}
