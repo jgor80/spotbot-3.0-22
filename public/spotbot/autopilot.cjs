@@ -5,6 +5,7 @@
 //   subs    a starter out of voice for 3 minutes during the session gets a sub request
 //   digest  Monday morning recap of formations, pairings and show-up rates
 //   session a recap of every match played while the club's voice channel was busy, once it empties
+//   report  the session report (session-report.cjs) added to that recap: grade, team scores, fix first
 //   press   a newspaper-style match report for each game in the Chronicle's channel
 // Everything is on by default; /autopilot (or the hub's Autopilot button) switches parts off.
 // Settings and cursors live on the club in guild_settings.clubs, so no new tables are needed.
@@ -41,6 +42,7 @@ const FEATURES = {
   chronicle: { label: 'Daily Chronicle', emoji: '📰', help: 'A newspaper-style beat writer digest after midnight (server time) covering the day\'s matches, players and events, plus a session edition when the club voice channel empties after 2+ games. Every edition is saved to the website.' },
   press: { label: 'Newspaper match reports', emoji: '🗞️', help: 'Every match also gets a Chronicle-style write-up in the Chronicle channel (set it with Print Chronicle here).' },
   session: { label: 'Session recap', emoji: '🧾', help: 'When the club voice channel empties, a recap of every match played since it filled up.' },
+  report: { label: 'Session report', emoji: '📊', help: 'With the session recap: a grade for the night, team scores out of 1000 against real FC27 clubs, did-you-deserve-it per game, what to fix first and a line per player.' },
   ratings: { label: 'Teammate rating DMs', emoji: '⭐', help: 'After a match, players get a DM asking them to rate their teammates.' },
   // Premium: these only run when the server has GafferBot Premium (see premium.cjs)
   graphics: { label: 'Matchday graphics', emoji: '🖼️', premium: true, help: 'Recap images, a Team of the Week poster on Sunday night and squad cards on the 1st of the month.' },

@@ -13,6 +13,7 @@ const {
 const { benchmarkLines, signedPts } = require('./deep-stats.cjs');
 const { resolveClub, activeClubs } = require('./manager-hub.cjs');
 const { where } = require('./panels.cjs');
+const { reportFor, sessionReportEmbed } = require('./session-report.cjs');
 
 const MATCH_WINDOW = 100;
 const FORM_WINDOW = 10;
@@ -377,6 +378,15 @@ function createClubStats(deps) {
     return { matches, minGames, players: computeAdvancedPlayers(matches, minGames) };
   }
 
+  // The latest night's session report (session-report.cjs), compared with the nights before it
+  async function reportView(guildId, club) {
+    const matches = await loadClubMatches(guildId, club.key, 120);
+    const report = reportFor(matches);
+    if (!report) return { embeds: [new EmbedBuilder().setTitle(`📋 ${club.name}: session report`).setColor(0x5865f2).setDescription('No synced matches yet. Play a session and check back.')] };
+    const prefs = deps.serverPrefs ? await deps.serverPrefs(guildId).catch(() => ({})) : {};
+    return { embeds: [sessionReportEmbed(report, club, prefs)] };
+  }
+
   async function deepView(guildId, club) {
     const { matches, minGames, players } = await deepData(guildId, club);
     if (matches.length < 3) {
@@ -592,13 +602,13 @@ function createClubStats(deps) {
     const embed = new EmbedBuilder()
       .setTitle(`📊 ${club.name} stats`)
       .setColor(0x22c55e)
-      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Deep Stats** decisions, positioning, pressing and partnerships from EA\'s hidden event data\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers\n**Tournaments** tournament & BYOT games, kept apart from the rest')
+      .setDescription('Press a button — the answer comes back just for you.\n\n**Team Stats** EA record, division, goals and leaders\n**EA Member List** every member\'s full EA stats\n**Deep Stats** decisions, positioning, pressing and partnerships from EA\'s hidden event data\n**Session Report** your last night graded, team scores out of 1000 and what to fix first\n**Top Players** leaders for any stat\n**In Form** best over the last 10\n**Recent Matches** latest results and scorers\n**Tournaments** tournament & BYOT games, kept apart from the rest')
       .setFooter({ text: `${PANEL_MARK} · always stays at the bottom` });
     const b = (id, label, emoji, style = ButtonStyle.Secondary) => new ButtonBuilder().setCustomId(`statsp:${id}:${club.key}`).setLabel(label).setEmoji(emoji).setStyle(style);
     return {
       embeds: [embed],
       components: [
-        new ActionRowBuilder().addComponents(b('team', 'Team Stats', '📊', ButtonStyle.Primary), b('members', 'EA Member List', '👥', ButtonStyle.Primary), b('deep', 'Deep Stats', '🧠', ButtonStyle.Primary)),
+        new ActionRowBuilder().addComponents(b('team', 'Team Stats', '📊', ButtonStyle.Primary), b('members', 'EA Member List', '👥', ButtonStyle.Primary), b('deep', 'Deep Stats', '🧠', ButtonStyle.Primary), b('report', 'Session Report', '📋', ButtonStyle.Primary)),
         new ActionRowBuilder().addComponents(b('top', 'Top Players', '🏆'), b('form', 'In Form', '🔥'), b('matches', 'Recent Matches', '📅'), b('tournaments', 'Tournaments', '🏟️'), new ButtonBuilder().setCustomId('help_glossary').setLabel('What the stats mean').setEmoji('❓').setStyle(ButtonStyle.Secondary)),
       ],
     };
@@ -690,6 +700,7 @@ function createClubStats(deps) {
         : action === 'members' ? await eaMembersView(club)
         : action === 'form' ? await formView(interaction.guildId, club)
         : action === 'deep' ? await deepView(interaction.guildId, club)
+        : action === 'report' ? await reportView(interaction.guildId, club)
         : action === 'tournaments' ? await tournamentsView(interaction.guildId, club)
         : await matchesView(interaction.guildId, club);
       return interaction.editReply(view);
@@ -779,7 +790,7 @@ function createClubStats(deps) {
     return true;
   }
 
-  return { handleInteraction, onMessage, initPanels, teamView, eaMembersView, deepView, deepPlayerView, deepOpponentView, knownEaNames, matchKnownName, helpMessage, glossaryMessage, forgetNames: (guildId) => namesCache.delete(guildId) };
+  return { handleInteraction, onMessage, initPanels, reportView, teamView, eaMembersView, deepView, deepPlayerView, deepOpponentView, knownEaNames, matchKnownName, helpMessage, glossaryMessage, forgetNames: (guildId) => namesCache.delete(guildId) };
 }
 
 module.exports = { createClubStats, CLUBSTATS_ACTION_CHOICES, TOP_STAT_CHOICES, GLOSSARY, aggregate };

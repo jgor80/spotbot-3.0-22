@@ -70,6 +70,7 @@ const { createDossier } = require('./dossier.cjs');
 const { createStreamKit, OVERLAY_SUBCOMMAND } = require('./stream-kit.cjs');
 const { createStatRoles, TROPHIES_SUBCOMMAND } = require('./stat-roles.cjs');
 const { createCoach, COACH_SUBCOMMAND } = require('./coach.cjs');
+const { createSessionReport } = require('./session-report.cjs');
 const { createAutoLink } = require('./auto-link.cjs');
 const { createXboxLink, lookupGamertag } = require('./xbox-link.cjs');
 const { createTwitchLinks } = require('./twitch-links.cjs');
@@ -523,7 +524,7 @@ roster.setExtraFields(recruitCards.gapFields);
 
 // /help, /clubstats members|top|form|matches and the EA-name lookup behind /linkea
 const deepStats = createDeepStats({ supabase });
-const clubStats = createClubStats({ supabase, getGuildState, fetchClubMembers, fetchClubOverall, fetchClubInfo, dashboardUrl: DASHBOARD_URL });
+const clubStats = createClubStats({ supabase, getGuildState, fetchClubMembers, fetchClubOverall, fetchClubInfo, dashboardUrl: DASHBOARD_URL, serverPrefs: (g) => clubEvents.serverPrefs(g) });
 
 const managerHub = createManagerHub({
   supabase,
@@ -557,6 +558,8 @@ const autopilot = createAutopilot({
   openai,
   dashboardUrl: DASHBOARD_URL
 });
+// Session report (grade, team scores out of 100, fix first) added to the session recap before other extras
+createSessionReport({ autopilot, loadMatches: managerHub.loadMatches, events: clubEvents });
 // League / Tournament / BYOT tags on played games; new friendlies played during such an event are tagged
 // before their recap is built
 const matchTags = createMatchTags({ supabase, getGuildState, isManager, canManageClub: squads.canManageClub, callEdgeFunction });

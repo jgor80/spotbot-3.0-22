@@ -11,6 +11,7 @@ import { useGuild } from "@/contexts/GuildContext";
 import { cn } from "@/lib/utils";
 import { DivisionProgressCard } from "@/components/club/DivisionProgressCard";
 import { AdvancedStatsSection } from "@/components/insights/AdvancedStatsSection";
+import { PerformanceSection } from "@/components/insights/PerformanceSection";
 import {
   ClubMatchRow,
   LineupRow,
@@ -230,6 +231,9 @@ export default function InsightsPage() {
                 ))}
               </CardContent>
             </Card>
+
+            {/* Session report, team scores out of 100, modelled goals and expected points */}
+            <PerformanceSection matches={analysis.matches} />
 
             {/* Key insights */}
             <Card>

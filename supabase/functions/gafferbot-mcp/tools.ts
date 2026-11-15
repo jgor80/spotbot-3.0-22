@@ -5,6 +5,7 @@ import { discordMemberName } from "../_shared/auth.ts";
 import {
   toInsightMatches, computeAdvancedPlayers, computeSessionFatigue, computePressing, computePartnerships, computeFormTrends,
   computeOpponentProfiles, generateAdvancedInsights, benchRole, benchmarkPlayer, percentileText, ROLE_LABELS,
+  groupSessions, sessionReport, summarisePerformance, AREA_FIX,
   type AdvancedPlayer, type InsightMatch,
 } from "../../../src/lib/clubInsights.ts";
 
@@ -491,6 +492,72 @@ export const TOOLS: Tool<Ctx>[] = [
         pressing: computePressing(matches),
         partnerships: computePartnerships(matches, minGames).slice(0, 8),
         opponents: profiles.slice(0, 15).map((o) => ({ opponent: o.opponent, games: o.games, record: o.record })),
+      };
+    },
+  },
+  {
+    name: "get_session_report",
+    title: "Session report and performance",
+    description: "A night of games graded: team scores out of 1000 (attack, ball security, defending, control, rating edge) against 14,240 real FC27 club games, " +
+      "modelled goals from shots on target inside/outside the box (not EA xG), expected points, a did-you-deserve-it verdict per game, main strength and " +
+      "what to fix first against the club's usual, player of the session and a line per player. session 0 is the latest night, 1 the one before, and so on. " +
+      "Also returns the club's overall scores over its last 100 games.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        guild_id: guildIdProp,
+        club_key: clubKeyProp,
+        session: { type: "integer", minimum: 0, maximum: 30, description: "Which night: 0 = latest (default)." },
+      },
+      additionalProperties: false,
+    },
+    run: async (args, ctx) => {
+      const guildId = await resolveGuild(args, ctx);
+      let q = ctx.db.from("club_matches")
+        .select("id, result, score_for, score_against, match_type, created_at, opponent_club_name, player_stats, match_data")
+        .eq("guild_id", guildId).order("created_at", { ascending: false }).limit(100);
+      const clubKey = str(args.club_key);
+      if (clubKey) q = q.eq("club_key", clubKey);
+      const { data, error } = await q;
+      if (error) throw error;
+      const matches = toInsightMatches(data || []);
+      if (!matches.length) throw new ToolError("No synced matches yet. Play a session and check back.");
+      const nights = groupSessions(matches);
+      const i = Math.min(Math.max(0, Number(args.session) || 0), nights.length - 1);
+      const report = sessionReport(nights[i], nights.slice(i + 1).flat().slice(0, 60))!;
+      const r1 = (v: number | null) => (v === null ? null : Math.round(v * 10) / 10);
+      const overall = summarisePerformance(matches);
+      return {
+        session: {
+          started: report.startedAt.toISOString(),
+          games: report.games,
+          record: { wins: report.wins, draws: report.draws, losses: report.losses },
+          goals: `${report.goalsFor}-${report.goalsAgainst}`,
+          points: report.points,
+          expected_points: r1(report.expectedPoints),
+          grade: report.grade,
+          match_control: r1(report.control),
+          usual_match_control: r1(report.usualControl),
+          areas: report.areas.map((a) => ({ area: a.label, score: r1(a.score), vs_usual: r1(a.delta) })),
+          main_strength: report.strength?.label || null,
+          fix_first: report.fixFirst ? { area: report.fixFirst.label, advice: AREA_FIX[report.fixFirst.key] } : null,
+          summary: report.pointsLine,
+          player_of_the_session: report.playerOfSession,
+          players: report.players,
+          games_detail: report.matches.map((m) => ({ opponent: m.opponent, score: `${m.scoreFor}-${m.scoreAgainst}`, modelled: `${m.modelledFor.toFixed(1)}-${m.modelledAgainst.toFixed(1)}`, control: r1(m.control), verdict: m.verdict })),
+        },
+        sessions_available: nights.length,
+        overall_last_100: {
+          games: overall.games,
+          points: overall.points,
+          expected_points: r1(overall.expectedPoints),
+          goals_for: overall.goalsFor,
+          modelled_for: r1(overall.modelledFor),
+          goals_against: overall.goalsAgainst,
+          modelled_against: r1(overall.modelledAgainst),
+          match_control: r1(overall.control),
+          areas: Object.fromEntries(Object.entries(overall.areas).map(([k, v]) => [k, r1(v)])),
+        },
       };
     },
   },

@@ -24,6 +24,7 @@ export interface PlayerMatchStats {
   dribble_attempts?: number;
   fouls?: number;
   red_cards?: boolean;
+  saves?: number;
   // EA's raw event counts (match_event_aggregate_*) for this player, attached by toInsightMatches
   // from match_data. Decoded by eaEvents.ts; absent when EA sent none.
   events?: Record<number, number>;
@@ -632,3 +633,5 @@ function generateBaseInsights(matches: InsightMatch[]): Insight[] {
 export * from "./divisionProgress.ts";
 // Stats decoded from EA's per-player event counts
 export * from "./advancedStats.ts";
+// Modelled goals, expected points, team scores out of 100 and session reports
+export * from "./matchPerformance.ts";
