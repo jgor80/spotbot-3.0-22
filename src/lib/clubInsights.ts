@@ -25,6 +25,7 @@ export interface PlayerMatchStats {
   fouls?: number;
   red_cards?: boolean;
   saves?: number;
+  motm?: boolean;
   // EA's raw event counts (match_event_aggregate_*) for this player, attached by toInsightMatches
   // from match_data. Decoded by eaEvents.ts; absent when EA sent none.
   events?: Record<number, number>;
@@ -635,3 +636,5 @@ export * from "./divisionProgress.ts";
 export * from "./advancedStats.ts";
 // Modelled goals, expected points, team scores out of 100 and session reports
 export * from "./matchPerformance.ts";
+// Player contribution scores, power rankings, clutch, carry and defending
+export * from "./playerScores.ts";

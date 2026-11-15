@@ -1385,6 +1385,1189 @@ var FC27_BENCHMARKS = {
       9.5,
       18.5
     ]
+  },
+  "playerScores": {
+    "MID": {
+      "goalsPerGame": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.11,
+        0.14,
+        0.17,
+        0.2,
+        0.25,
+        0.3,
+        0.35,
+        0.4,
+        0.5,
+        0.55,
+        0.6,
+        0.71,
+        0.8,
+        1,
+        1.2,
+        2.4
+      ],
+      "chancesCreatedPerGame": [
+        0,
+        0.13,
+        0.2,
+        0.29,
+        0.35,
+        0.4,
+        0.5,
+        0.6,
+        0.64,
+        0.71,
+        0.8,
+        0.88,
+        1,
+        1,
+        1.17,
+        1.29,
+        1.43,
+        1.6,
+        1.86,
+        2.2,
+        4.25
+      ],
+      "shotsOnTargetPerGame": [
+        0,
+        0,
+        0.11,
+        0.18,
+        0.27,
+        0.33,
+        0.43,
+        0.5,
+        0.6,
+        0.71,
+        0.8,
+        0.87,
+        1,
+        1.08,
+        1.2,
+        1.3,
+        1.45,
+        1.67,
+        2,
+        2.38,
+        4.27
+      ],
+      "passCompletion": [
+        45,
+        62.16,
+        65.55,
+        67.65,
+        69.23,
+        70.54,
+        71.76,
+        72.77,
+        73.8,
+        74.74,
+        75.86,
+        76.85,
+        77.78,
+        78.95,
+        79.87,
+        81.25,
+        82.5,
+        83.82,
+        85.33,
+        87.68,
+        98.9
+      ],
+      "passesPerGame": [
+        4,
+        9,
+        10.29,
+        11.22,
+        12,
+        12.6,
+        13.29,
+        14,
+        14.6,
+        15.17,
+        15.8,
+        16.33,
+        17,
+        17.67,
+        18.63,
+        19.73,
+        20.57,
+        21.67,
+        23.27,
+        25.75,
+        44
+      ],
+      "lostPerGame": [
+        0,
+        0.82,
+        1.13,
+        1.33,
+        1.5,
+        1.73,
+        1.89,
+        2.1,
+        2.23,
+        2.44,
+        2.67,
+        2.88,
+        3.11,
+        3.4,
+        3.8,
+        4.15,
+        4.55,
+        5.18,
+        6,
+        7.2,
+        16.82
+      ],
+      "dribblesPerGame": [
+        3.14,
+        9.63,
+        11,
+        12,
+        12.86,
+        13.67,
+        14.33,
+        15,
+        15.5,
+        16.17,
+        16.8,
+        17.56,
+        18.21,
+        19,
+        19.78,
+        20.6,
+        21.71,
+        23,
+        24.54,
+        27.11,
+        41.67
+      ],
+      "tacklesWonPerGame": [
+        0,
+        0.4,
+        0.54,
+        0.6,
+        0.7,
+        0.8,
+        0.89,
+        1,
+        1,
+        1.17,
+        1.22,
+        1.3,
+        1.4,
+        1.5,
+        1.6,
+        1.71,
+        1.83,
+        2,
+        2.29,
+        2.73,
+        4.78
+      ],
+      "interceptionsPerGame": [
+        0,
+        0.71,
+        1,
+        1.13,
+        1.25,
+        1.4,
+        1.54,
+        1.67,
+        1.8,
+        1.89,
+        2,
+        2.17,
+        2.33,
+        2.5,
+        2.67,
+        2.92,
+        3.2,
+        3.6,
+        4.13,
+        4.78,
+        9.38
+      ],
+      "gainsPerGame": [
+        0,
+        0.63,
+        0.83,
+        1,
+        1,
+        1.14,
+        1.21,
+        1.33,
+        1.4,
+        1.46,
+        1.57,
+        1.64,
+        1.73,
+        1.83,
+        2,
+        2.09,
+        2.2,
+        2.36,
+        2.57,
+        2.89,
+        4.8
+      ],
+      "tackleSuccess": [
+        0,
+        14.29,
+        19.15,
+        22.22,
+        25,
+        27.45,
+        30,
+        32.14,
+        34.38,
+        36.36,
+        38.46,
+        41.3,
+        44,
+        46.94,
+        50,
+        53.33,
+        57.14,
+        61.9,
+        67.39,
+        76.47,
+        100
+      ],
+      "avgRating": [
+        5.04,
+        6.58,
+        6.77,
+        6.93,
+        7.03,
+        7.12,
+        7.23,
+        7.33,
+        7.42,
+        7.5,
+        7.58,
+        7.65,
+        7.73,
+        7.83,
+        7.94,
+        8.03,
+        8.13,
+        8.26,
+        8.43,
+        8.66,
+        9.69
+      ]
+    },
+    "GK": {
+      "goalsPerGame": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.08,
+        0.14,
+        0.17,
+        0.33,
+        0.4,
+        0.8
+      ],
+      "chancesCreatedPerGame": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.1,
+        0.17,
+        0.21,
+        0.33,
+        0.43,
+        0.6,
+        1.44
+      ],
+      "shotsOnTargetPerGame": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.07,
+        0.13,
+        0.17,
+        0.29,
+        0.57,
+        0.7,
+        1,
+        1.75
+      ],
+      "passCompletion": [
+        41.86,
+        62.92,
+        65.22,
+        67.09,
+        70.49,
+        72.09,
+        74.29,
+        75.76,
+        77.42,
+        78.05,
+        79.28,
+        80.43,
+        81.67,
+        82.86,
+        84.62,
+        85.42,
+        86.44,
+        87.5,
+        89.47,
+        90.91,
+        100
+      ],
+      "passesPerGame": [
+        1.5,
+        2.6,
+        3,
+        3.4,
+        3.8,
+        4.13,
+        4.25,
+        4.33,
+        4.44,
+        4.64,
+        5,
+        5.2,
+        5.38,
+        5.56,
+        6,
+        6.25,
+        6.79,
+        8.14,
+        9,
+        11.21,
+        17.22
+      ],
+      "lostPerGame": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.1,
+        0.14,
+        0.23,
+        0.3,
+        0.5,
+        1,
+        1.14,
+        1.43,
+        2.33,
+        3.8
+      ],
+      "dribblesPerGame": [
+        0,
+        0.57,
+        0.8,
+        1,
+        1.17,
+        1.4,
+        1.6,
+        1.67,
+        1.75,
+        2.18,
+        2.54,
+        2.8,
+        3.14,
+        3.25,
+        3.78,
+        4.7,
+        5.5,
+        6.25,
+        7.86,
+        8.93,
+        15.78
+      ],
+      "tacklesWonPerGame": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.2,
+        0.22,
+        0.43,
+        0.57,
+        0.63,
+        0.71,
+        2
+      ],
+      "interceptionsPerGame": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.09,
+        0.1,
+        0.11,
+        0.14,
+        0.2,
+        0.25,
+        0.31,
+        0.4,
+        0.56,
+        0.67,
+        0.83,
+        1.2,
+        2
+      ],
+      "gainsPerGame": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.1,
+        0.13,
+        0.17,
+        0.2,
+        0.22,
+        0.38,
+        0.5,
+        0.6,
+        0.86,
+        0.9,
+        1.71
+      ],
+      "savesPerGame": [
+        1.33,
+        1.88,
+        2.33,
+        2.57,
+        3,
+        3.36,
+        3.63,
+        3.8,
+        4.2,
+        4.5,
+        4.75,
+        5,
+        5.11,
+        5.29,
+        5.56,
+        5.75,
+        6,
+        6.3,
+        6.75,
+        7.33,
+        9.25
+      ],
+      "concededPerGame": [
+        0,
+        0.4,
+        0.6,
+        0.67,
+        0.8,
+        1,
+        1.14,
+        1.2,
+        1.38,
+        1.43,
+        1.5,
+        1.56,
+        1.67,
+        1.87,
+        2.07,
+        2.2,
+        2.4,
+        2.67,
+        3,
+        3.5,
+        6
+      ],
+      "cleanSheetRate": [
+        0,
+        0,
+        0,
+        10,
+        14.29,
+        16.67,
+        18.18,
+        20,
+        22.22,
+        25,
+        28.57,
+        33.33,
+        33.33,
+        38.46,
+        40,
+        42.86,
+        50,
+        60,
+        60,
+        66.67,
+        100
+      ],
+      "avgRating": [
+        4.8,
+        5.34,
+        5.53,
+        5.62,
+        5.8,
+        5.88,
+        5.96,
+        6.04,
+        6.08,
+        6.13,
+        6.22,
+        6.3,
+        6.33,
+        6.41,
+        6.47,
+        6.54,
+        6.64,
+        6.73,
+        6.93,
+        7.03,
+        7.8
+      ],
+      "tackleSuccess": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        12.5,
+        16.67,
+        21.05,
+        23.53,
+        30,
+        33.33,
+        38.46,
+        40,
+        44.44,
+        50,
+        54.55,
+        69.23,
+        80,
+        100,
+        100
+      ]
+    },
+    "DEF": {
+      "goalsPerGame": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.06,
+        0.09,
+        0.11,
+        0.14,
+        0.17,
+        0.2,
+        0.29,
+        0.45,
+        1.38
+      ],
+      "chancesCreatedPerGame": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.09,
+        0.13,
+        0.14,
+        0.17,
+        0.2,
+        0.24,
+        0.29,
+        0.33,
+        0.44,
+        0.6,
+        2.5
+      ],
+      "shotsOnTargetPerGame": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.08,
+        0.11,
+        0.13,
+        0.15,
+        0.17,
+        0.2,
+        0.25,
+        0.29,
+        0.33,
+        0.42,
+        0.5,
+        0.63,
+        1,
+        2.5
+      ],
+      "passCompletion": [
+        56.86,
+        68.12,
+        70.05,
+        73.42,
+        75,
+        76.29,
+        77.78,
+        78.95,
+        79.73,
+        80.83,
+        81.67,
+        82.86,
+        84.21,
+        84.75,
+        85.71,
+        86.26,
+        87.5,
+        89.19,
+        90.6,
+        91.43,
+        97.03
+      ],
+      "passesPerGame": [
+        2.75,
+        5.83,
+        6.89,
+        7.29,
+        7.69,
+        8.14,
+        8.38,
+        8.7,
+        9.17,
+        9.57,
+        9.86,
+        10.2,
+        10.64,
+        11.17,
+        11.75,
+        12.27,
+        12.78,
+        13.23,
+        13.75,
+        15.67,
+        21.75
+      ],
+      "lostPerGame": [
+        0,
+        0.17,
+        0.22,
+        0.29,
+        0.38,
+        0.44,
+        0.5,
+        0.57,
+        0.6,
+        0.67,
+        0.75,
+        0.8,
+        0.88,
+        1,
+        1.11,
+        1.2,
+        1.4,
+        1.67,
+        2,
+        2.5,
+        7.64
+      ],
+      "dribblesPerGame": [
+        2.25,
+        5.2,
+        5.9,
+        6.2,
+        6.5,
+        6.89,
+        7,
+        7.4,
+        7.88,
+        8.44,
+        8.8,
+        9.13,
+        9.6,
+        9.93,
+        10.33,
+        11,
+        11.5,
+        12.11,
+        13.1,
+        14.29,
+        21
+      ],
+      "tacklesWonPerGame": [
+        0.11,
+        0.4,
+        0.58,
+        0.67,
+        0.75,
+        0.88,
+        1,
+        1,
+        1.14,
+        1.23,
+        1.3,
+        1.38,
+        1.45,
+        1.5,
+        1.67,
+        1.8,
+        1.86,
+        2,
+        2.17,
+        2.63,
+        3.2
+      ],
+      "interceptionsPerGame": [
+        0.5,
+        1.25,
+        1.6,
+        1.83,
+        2,
+        2.13,
+        2.25,
+        2.33,
+        2.45,
+        2.58,
+        2.67,
+        2.8,
+        2.86,
+        3,
+        3.09,
+        3.2,
+        3.4,
+        3.55,
+        3.86,
+        4.25,
+        5.83
+      ],
+      "gainsPerGame": [
+        0.2,
+        0.6,
+        0.75,
+        0.8,
+        0.88,
+        1,
+        1.08,
+        1.17,
+        1.2,
+        1.29,
+        1.38,
+        1.42,
+        1.5,
+        1.56,
+        1.64,
+        1.75,
+        1.86,
+        2,
+        2.17,
+        2.33,
+        3.33
+      ],
+      "tackleSuccess": [
+        11.11,
+        26.09,
+        31.25,
+        35.29,
+        37.84,
+        39.34,
+        42.11,
+        44.44,
+        45.65,
+        47.5,
+        50,
+        51.72,
+        53.57,
+        56.25,
+        57.89,
+        60,
+        63.64,
+        66.67,
+        72.73,
+        80,
+        100
+      ],
+      "avgRating": [
+        5.86,
+        6.62,
+        6.8,
+        6.95,
+        6.99,
+        7.07,
+        7.13,
+        7.17,
+        7.22,
+        7.31,
+        7.37,
+        7.43,
+        7.54,
+        7.62,
+        7.66,
+        7.73,
+        7.82,
+        7.96,
+        8.07,
+        8.23,
+        9.3
+      ]
+    },
+    "FWD": {
+      "goalsPerGame": [
+        0,
+        0.2,
+        0.4,
+        0.5,
+        0.6,
+        0.67,
+        0.78,
+        0.83,
+        0.91,
+        1,
+        1.1,
+        1.17,
+        1.23,
+        1.33,
+        1.45,
+        1.6,
+        1.77,
+        1.9,
+        2.14,
+        2.5,
+        5.43
+      ],
+      "chancesCreatedPerGame": [
+        0,
+        0.17,
+        0.27,
+        0.33,
+        0.4,
+        0.5,
+        0.56,
+        0.62,
+        0.67,
+        0.75,
+        0.81,
+        0.88,
+        1,
+        1,
+        1.14,
+        1.2,
+        1.38,
+        1.5,
+        1.72,
+        2,
+        4.22
+      ],
+      "shotsOnTargetPerGame": [
+        0,
+        0.8,
+        1,
+        1.25,
+        1.4,
+        1.57,
+        1.71,
+        1.83,
+        2,
+        2.1,
+        2.25,
+        2.36,
+        2.5,
+        2.63,
+        2.83,
+        3,
+        3.25,
+        3.5,
+        3.83,
+        4.4,
+        7.71
+      ],
+      "passCompletion": [
+        38.18,
+        64,
+        67.2,
+        70,
+        71.6,
+        73.02,
+        74.12,
+        75.17,
+        76.14,
+        77.05,
+        77.84,
+        78.48,
+        79.45,
+        80.17,
+        80.88,
+        81.82,
+        82.68,
+        83.84,
+        85.32,
+        87.05,
+        96.97
+      ],
+      "passesPerGame": [
+        3.5,
+        7.67,
+        8.8,
+        9.76,
+        10.44,
+        11,
+        11.6,
+        12.25,
+        12.73,
+        13.22,
+        13.83,
+        14.29,
+        14.88,
+        15.56,
+        16.08,
+        16.9,
+        17.67,
+        18.83,
+        20.33,
+        22.2,
+        35
+      ],
+      "lostPerGame": [
+        0.29,
+        1.57,
+        1.93,
+        2.2,
+        2.43,
+        2.64,
+        2.86,
+        3,
+        3.25,
+        3.5,
+        3.73,
+        4,
+        4.18,
+        4.45,
+        4.73,
+        5.08,
+        5.5,
+        6.08,
+        7,
+        8.25,
+        16.91
+      ],
+      "dribblesPerGame": [
+        3,
+        8,
+        9.13,
+        9.83,
+        10.6,
+        11.25,
+        11.75,
+        12.4,
+        13,
+        13.45,
+        14,
+        14.5,
+        15,
+        15.6,
+        16.2,
+        17,
+        17.78,
+        18.63,
+        20,
+        22.2,
+        33
+      ],
+      "tacklesWonPerGame": [
+        0,
+        0.17,
+        0.29,
+        0.38,
+        0.43,
+        0.5,
+        0.54,
+        0.6,
+        0.64,
+        0.67,
+        0.73,
+        0.78,
+        0.82,
+        0.89,
+        1,
+        1,
+        1.14,
+        1.2,
+        1.36,
+        1.6,
+        2.71
+      ],
+      "interceptionsPerGame": [
+        0,
+        0.33,
+        0.43,
+        0.5,
+        0.6,
+        0.67,
+        0.75,
+        0.8,
+        0.83,
+        0.9,
+        1,
+        1,
+        1.12,
+        1.2,
+        1.25,
+        1.33,
+        1.44,
+        1.6,
+        1.8,
+        2,
+        4.36
+      ],
+      "gainsPerGame": [
+        0,
+        0.33,
+        0.5,
+        0.6,
+        0.67,
+        0.75,
+        0.8,
+        0.88,
+        0.93,
+        1,
+        1,
+        1.13,
+        1.2,
+        1.27,
+        1.38,
+        1.45,
+        1.6,
+        1.7,
+        1.86,
+        2.13,
+        3.8
+      ],
+      "tackleSuccess": [
+        0,
+        8.57,
+        11.76,
+        14.29,
+        16.67,
+        19.59,
+        21.43,
+        23.53,
+        25.49,
+        27.45,
+        29.63,
+        32,
+        33.33,
+        37.14,
+        40,
+        43.33,
+        47.62,
+        51.11,
+        59.26,
+        71.43,
+        100
+      ],
+      "avgRating": [
+        4.44,
+        6.52,
+        6.72,
+        6.86,
+        6.95,
+        7.06,
+        7.16,
+        7.24,
+        7.34,
+        7.43,
+        7.54,
+        7.67,
+        7.76,
+        7.86,
+        7.98,
+        8.1,
+        8.24,
+        8.38,
+        8.58,
+        8.88,
+        10
+      ]
+    }
   }
 };
 
@@ -2220,6 +3403,280 @@ var AREA_FIX = {
   ratingEdge: "Their players outperformed yours one for one: check who was out of position or chasing the game."
 };
 
+// src/lib/playerScores.ts
+function num3(v) {
+  const n = typeof v === "string" ? Number(v) : v;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+}
+var mean2 = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+var LOWER_IS_BETTER = { lostPerGame: true, concededPerGame: true };
+function playerLines(matches, minGames = 1) {
+  const acc = /* @__PURE__ */ new Map();
+  for (const m of matches) {
+    for (const p of m.players) {
+      const name2 = (p.ea_username || "").trim();
+      if (!name2) continue;
+      const key = name2.toLowerCase();
+      let a = acc.get(key);
+      if (!a) {
+        a = { key, name: name2, games: 0, eventGames: 0, roleGames: {}, w: 0, d: 0, l: 0, goals: 0, assists: 0, secondAssists: 0, motm: 0, ratingSum: 0, rated: 0, sot: 0, passMade: 0, passAtt: 0, lost: 0, dribbles: 0, tackles: 0, tacklesLost: 0, interceptions: 0, gains: 0, gkGames: 0, saves: 0, conceded: 0, cleanSheets: 0 };
+        acc.set(key, a);
+      }
+      a.games++;
+      if (m.result === "win") a.w++;
+      else if (m.result === "draw") a.d++;
+      else a.l++;
+      const role = roleOf(p.position);
+      if (role) a.roleGames[role] = (a.roleGames[role] || 0) + 1;
+      a.goals += num3(p.goals) ?? 0;
+      a.assists += num3(p.assists) ?? 0;
+      if (p.motm === true) a.motm++;
+      const r2 = num3(p.rating);
+      if (r2 !== null && r2 > 0) {
+        a.ratingSum += r2;
+        a.rated++;
+      }
+      if (role === "GK") {
+        a.gkGames++;
+        a.saves += num3(p.saves) ?? 0;
+        a.conceded += m.scoreAgainst;
+        if (m.scoreAgainst === 0) a.cleanSheets++;
+      }
+      if (p.events) {
+        const s = statsFromCounts(p.events);
+        a.eventGames++;
+        a.secondAssists += s.secondAssists || 0;
+        a.sot += s.shotsOnTarget || 0;
+        a.passMade += s.passesCompleted || 0;
+        a.passAtt += (s.passesCompleted || 0) + (s.passesFailed || 0);
+        a.lost += s.possessionsLost || 0;
+        a.dribbles += s.dribbles || 0;
+        a.tackles += s.tacklesWon || 0;
+        a.tacklesLost += s.tacklesLost || 0;
+        a.interceptions += s.interceptions || 0;
+        a.gains += s.possessionGains || 0;
+      }
+    }
+  }
+  const out = [];
+  for (const a of acc.values()) {
+    if (a.games < minGames) continue;
+    const role = Object.entries(a.roleGames).sort((x, y) => (y[1] || 0) - (x[1] || 0))[0]?.[0] || null;
+    const eg = a.eventGames;
+    const pg = (v) => eg ? v / eg : null;
+    out.push({
+      key: a.key,
+      name: a.name,
+      games: a.games,
+      role,
+      roleGames: a.roleGames,
+      eventGames: eg,
+      wins: a.w,
+      draws: a.d,
+      losses: a.l,
+      goals: a.goals,
+      assists: a.assists,
+      secondAssists: a.secondAssists,
+      motm: a.motm,
+      avgRating: a.rated ? a.ratingSum / a.rated : null,
+      perGame: {
+        goalsPerGame: a.goals / a.games,
+        chancesCreatedPerGame: eg ? (a.assists + a.secondAssists) / a.games : a.assists / a.games,
+        shotsOnTargetPerGame: pg(a.sot),
+        passCompletion: a.passAtt > 0 ? a.passMade / a.passAtt * 100 : null,
+        passesPerGame: pg(a.passMade),
+        lostPerGame: pg(a.lost),
+        dribblesPerGame: pg(a.dribbles),
+        tacklesWonPerGame: pg(a.tackles),
+        interceptionsPerGame: pg(a.interceptions),
+        gainsPerGame: pg(a.gains),
+        tackleSuccess: a.tackles + a.tacklesLost > 0 ? a.tackles / (a.tackles + a.tacklesLost) * 100 : null,
+        savesPerGame: a.gkGames ? a.saves / a.gkGames : null,
+        concededPerGame: a.gkGames ? a.conceded / a.gkGames : null,
+        cleanSheetRate: a.gkGames ? a.cleanSheets / a.gkGames * 100 : null,
+        avgRating: a.rated ? a.ratingSum / a.rated : null
+      }
+    });
+  }
+  return out.sort((x, y) => y.games - x.games || x.name.localeCompare(y.name));
+}
+var SCORE_AREAS = [
+  { key: "attack", label: "Attack", metrics: ["goalsPerGame", "chancesCreatedPerGame", "shotsOnTargetPerGame"] },
+  { key: "possession", label: "Possession", metrics: ["passCompletion", "passesPerGame", "lostPerGame", "dribblesPerGame"] },
+  { key: "ballWinning", label: "Ball-winning", metrics: ["tacklesWonPerGame", "interceptionsPerGame", "gainsPerGame", "tackleSuccess"] }
+];
+var ROLE_WEIGHTS = {
+  FWD: { attack: 0.6, possession: 0.3, ballWinning: 0.1 },
+  MID: { attack: 0.3, possession: 0.45, ballWinning: 0.25 },
+  DEF: { attack: 0.1, possession: 0.35, ballWinning: 0.55 }
+};
+var KEEPER_METRICS = ["savesPerGame", "concededPerGame", "cleanSheetRate"];
+function roleScore(role, metric, value) {
+  const q = FC27_BENCHMARKS.playerScores?.[role]?.[metric];
+  const p = quantileScore(q, value, !LOWER_IS_BETTER[metric]);
+  return p === null ? null : p * (SCORE_MAX / 100);
+}
+function areaScore(role, line, metrics) {
+  const s = metrics.map((k) => roleScore(role, k, line.perGame[k])).filter((v) => v !== null);
+  return s.length ? mean2(s) : null;
+}
+function scorePlayer(line) {
+  const role = line.role;
+  if (!role) return null;
+  if (role === "GK") {
+    const metrics2 = KEEPER_METRICS.map((k) => ({ metric: k, value: line.perGame[k], score: roleScore("GK", k, line.perGame[k]) }));
+    const s = metrics2.map((m) => m.score).filter((v) => v !== null);
+    const weighted = s.length === 3 ? 0.5 * metrics2[0].score + 0.25 * metrics2[1].score + 0.25 * metrics2[2].score : mean2(s);
+    return { key: line.key, name: line.name, role, games: line.games, overall: weighted, areas: { attack: null, possession: null, ballWinning: null }, metrics: metrics2, tag: (metrics2[0].score ?? 0) >= 700 ? "Shot-stopper" : "Keeper", line };
+  }
+  const areas = {};
+  for (const a of SCORE_AREAS) areas[a.key] = areaScore(role, line, a.metrics);
+  const weights = ROLE_WEIGHTS[role];
+  let total = 0, weight = 0;
+  for (const a of SCORE_AREAS) {
+    const v = areas[a.key];
+    if (v === null) continue;
+    total += v * weights[a.key];
+    weight += weights[a.key];
+  }
+  const metrics = SCORE_AREAS.flatMap((a) => a.metrics).map((k) => ({ metric: k, value: line.perGame[k], score: roleScore(role, k, line.perGame[k]) }));
+  const best = Object.entries(areas).filter(([, v]) => v !== null).sort((x, y) => y[1] - x[1]);
+  const spread = best.length >= 2 ? best[0][1] - best[best.length - 1][1] : 0;
+  const tag = !best.length ? "All-rounder" : spread < 120 ? "All-rounder" : best[0][0] === "attack" ? (line.perGame.goalsPerGame || 0) >= (line.perGame.chancesCreatedPerGame || 0) ? "Finisher" : "Creator" : best[0][0] === "possession" ? "Playmaker" : "Ball-winner";
+  return { key: line.key, name: line.name, role, games: line.games, overall: weight ? total / weight : null, areas, metrics, tag, line };
+}
+function playerScores(matches, minGames = 3) {
+  return playerLines(matches, minGames).map(scorePlayer).filter((s) => !!s && s.overall !== null).sort((a, b) => (b.overall ?? 0) - (a.overall ?? 0));
+}
+function powerRankings(matches, window2 = 5) {
+  const sorted = [...matches].sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime());
+  const rank = (games) => playerLines(games, 2).filter((l) => l.avgRating !== null).sort((a, b) => b.avgRating - a.avgRating || b.goals + b.assists - (a.goals + a.assists)).map((l, i) => ({ l, rank: i + 1 }));
+  const now2 = rank(sorted.slice(0, window2));
+  const before = new Map(rank(sorted.slice(window2, window2 * 2)).map((x) => [x.l.key, x.rank]));
+  return now2.map(({ l, rank: r2 }) => {
+    let streak = 0;
+    for (const m of sorted) {
+      if (!m.players.some((p) => (p.ea_username || "").trim().toLowerCase() === l.key)) continue;
+      if (m.result === "win") streak++;
+      else break;
+    }
+    const prev = before.get(l.key) ?? null;
+    return { name: l.name, rank: r2, previousRank: prev, move: prev === null ? null : prev - r2, games: l.games, goals: l.goals, assists: l.assists, avgRating: l.avgRating, streak };
+  });
+}
+function clutchRatings(matches, minClose = 5) {
+  const close = matches.filter((m) => Math.abs(m.scoreFor - m.scoreAgainst) <= 1);
+  const rest = matches.filter((m) => Math.abs(m.scoreFor - m.scoreAgainst) > 1);
+  const c2 = new Map(playerLines(close).map((l) => [l.key, l]));
+  const r2 = new Map(playerLines(rest).map((l) => [l.key, l]));
+  const out = [];
+  for (const [key, l] of c2) {
+    if (l.games < minClose) continue;
+    const other = r2.get(key);
+    const edge = l.avgRating !== null && other?.avgRating != null && other.games >= 3 ? l.avgRating - other.avgRating : null;
+    out.push({
+      name: l.name,
+      closeGames: l.games,
+      closeRating: l.avgRating,
+      otherRating: other?.avgRating ?? null,
+      edge,
+      closeGoals: l.goals,
+      closeAssists: l.assists,
+      label: edge === null ? "Steady" : edge >= 0.15 ? "Ice cold" : edge <= -0.3 ? "Shrinks" : "Steady"
+    });
+  }
+  return out.sort((a, b) => (b.closeRating ?? 0) - (a.closeRating ?? 0));
+}
+function carryScores(matches, minGames = 5) {
+  const lines = playerLines(matches, minGames);
+  const out = [];
+  for (const l of lines) {
+    let edgeSum = 0, edgeN = 0, goalsWith = 0, withW = 0, withN = 0, woW = 0, woN = 0;
+    for (const m of matches) {
+      const me = m.players.find((p) => (p.ea_username || "").trim().toLowerCase() === l.key);
+      if (!me) {
+        woN++;
+        if (m.result === "win") woW++;
+        continue;
+      }
+      withN++;
+      if (m.result === "win") withW++;
+      goalsWith += m.scoreFor;
+      const mine = num3(me.rating);
+      const others = m.players.filter((p) => p !== me).map((p) => num3(p.rating)).filter((v) => v !== null && v > 0);
+      if (mine !== null && mine > 0 && others.length) {
+        edgeSum += mine - others.reduce((a, b) => a + b, 0) / others.length;
+        edgeN++;
+      }
+    }
+    const ratingEdge = edgeN ? edgeSum / edgeN : null;
+    const involvementShare = goalsWith ? Math.min(1, (l.goals + l.assists) / goalsWith) : 0;
+    const winLift = woN >= 3 ? (withW / withN - woW / woN) * 100 : null;
+    const clamp2 = (v) => Math.max(0, Math.min(1, v));
+    const parts = [
+      { w: 0.4, v: ratingEdge === null ? null : clamp2((ratingEdge + 0.5) / 1.5) },
+      // Keepers don't score or set up goals, so they are judged on the other two parts only
+      { w: 0.35, v: l.role === "GK" ? null : clamp2(involvementShare / 0.5) },
+      { w: 0.25, v: winLift === null ? null : clamp2((winLift + 30) / 60) }
+    ].filter((p) => p.v !== null);
+    const wsum = parts.reduce((t, p) => t + p.w, 0);
+    const score2 = Math.round(parts.reduce((t, p) => t + p.w * p.v, 0) / wsum * SCORE_MAX);
+    out.push({
+      name: l.name,
+      games: l.games,
+      score: score2,
+      label: score2 >= 700 ? "Talisman" : score2 >= 500 ? "Key player" : score2 >= 300 ? "Contributor" : "Passenger",
+      ratingEdge,
+      involvementShare,
+      winLift
+    });
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+var atTheBack = (pos) => {
+  const r2 = roleOf(pos);
+  return r2 === "DEF" || r2 === "GK" ? r2 : null;
+};
+function defendingSummary(matches, minGames = 5, recentWindow = 10) {
+  const back = matches.map((m) => ({ m, back: m.players.filter((p) => atTheBack(p.position)) }));
+  const lines = playerLines(
+    back.filter((b) => b.back.length).map((b) => ({ ...b.m, players: b.back })),
+    minGames
+  );
+  const players = lines.filter((l) => l.role === "DEF" || l.role === "GK").map((l) => {
+    const games = back.filter((b) => b.back.some((p) => (p.ea_username || "").trim().toLowerCase() === l.key)).map((b) => b.m);
+    return {
+      name: l.name,
+      role: l.role,
+      games: games.length,
+      cleanSheetRate: games.filter((m) => m.scoreAgainst === 0).length / games.length * 100,
+      concededPerGame: games.reduce((t, m) => t + m.scoreAgainst, 0) / games.length,
+      tacklesWonPerGame: l.perGame.tacklesWonPerGame,
+      tackleSuccess: l.perGame.tackleSuccess,
+      avgRating: l.avgRating
+    };
+  }).sort((a, b) => a.concededPerGame - b.concededPerGame);
+  const pairMap = /* @__PURE__ */ new Map();
+  for (const b of back) {
+    const names = [...new Set(b.back.map((p) => (p.ea_username || "").trim()).filter(Boolean))].sort((x, y) => x.toLowerCase().localeCompare(y.toLowerCase()));
+    for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) {
+      const id = `${names[i].toLowerCase()}|${names[j].toLowerCase()}`;
+      const p = pairMap.get(id) || { names: [names[i], names[j]], games: 0, cs: 0, ga: 0 };
+      p.games++;
+      if (b.m.scoreAgainst === 0) p.cs++;
+      p.ga += b.m.scoreAgainst;
+      pairMap.set(id, p);
+    }
+  }
+  const pairs = [...pairMap.values()].filter((p) => p.games >= minGames).map((p) => ({ names: p.names, games: p.games, cleanSheetRate: p.cs / p.games * 100, concededPerGame: p.ga / p.games })).sort((a, b) => a.concededPerGame - b.concededPerGame || b.games - a.games);
+  const sorted = [...matches].sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime());
+  const sum = (ms3) => ({ games: ms3.length, cleanSheets: ms3.filter((m) => m.scoreAgainst === 0).length, concededPerGame: ms3.length ? ms3.reduce((t, m) => t + m.scoreAgainst, 0) / ms3.length : 0 });
+  const recent = sum(sorted.slice(0, recentWindow));
+  const earlier = sum(sorted.slice(recentWindow));
+  const trend = recent.games >= 5 && earlier.games >= 5 ? recent.concededPerGame <= earlier.concededPerGame - 0.4 ? "Tightening" : recent.concededPerGame >= earlier.concededPerGame + 0.4 ? "Leaking" : "Steady" : null;
+  return { players, pairs, recent, earlier, trend };
+}
+
 // src/lib/clubInsights.ts
 var MATCH_TAGS = [
   { value: "league", label: "League", emoji: "\u{1F3C6}" },
@@ -2248,7 +3705,7 @@ function matchCompetition(row) {
   return matchTag(row) || eaCompetition(row);
 }
 var LINEUP_WINDOW_MS = 6 * 60 * 60 * 1e3;
-function num3(v) {
+function num4(v) {
   const n = typeof v === "string" ? Number(v) : v;
   return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
@@ -2261,14 +3718,14 @@ function normalizeResult(row) {
   if (r2 === "win" || r2 === "w") return "win";
   if (r2 === "loss" || r2 === "l") return "loss";
   if (r2 === "draw" || r2 === "d") return "draw";
-  const f2 = num3(row.score_for);
-  const a = num3(row.score_against);
+  const f2 = num4(row.score_for);
+  const a = num4(row.score_against);
   if (f2 === null || a === null) return null;
   return f2 > a ? "win" : f2 < a ? "loss" : "draw";
 }
 function matchTime(row) {
   const data = row.match_data;
-  const ts = num3(data?.timestamp);
+  const ts = num4(data?.timestamp);
   if (ts && ts > 1e9) return new Date(ts < 1e12 ? ts * 1e3 : ts);
   return new Date(row.created_at || 0);
 }
@@ -2309,10 +3766,10 @@ function opponentRows(row, players) {
   return clubs.filter((c2) => c2 !== mine).flatMap((c2) => Object.values(c2)).filter((r2) => r2 && r2.playername).map((r2) => ({
     ea_username: String(r2.playername).trim(),
     position: r2.pos ?? null,
-    rating: num3(r2.rating) ?? void 0,
-    goals: num3(r2.goals) ?? void 0,
-    assists: num3(r2.assists) ?? void 0,
-    shots: num3(r2.shots) ?? void 0,
+    rating: num4(r2.rating) ?? void 0,
+    goals: num4(r2.goals) ?? void 0,
+    assists: num4(r2.assists) ?? void 0,
+    shots: num4(r2.shots) ?? void 0,
     ...hasEventData(r2) ? { events: eaEventCounts(r2) } : {}
   }));
 }
@@ -2342,8 +3799,8 @@ function toInsightMatches(rows, lineups = []) {
     matches.push({
       id: row.id,
       result: result2,
-      scoreFor: num3(row.score_for) ?? 0,
-      scoreAgainst: num3(row.score_against) ?? 0,
+      scoreFor: num4(row.score_for) ?? 0,
+      scoreAgainst: num4(row.score_against) ?? 0,
       matchType: row.match_type,
       tag: matchTag(row),
       competition: matchCompetition(row),
@@ -2828,6 +4285,54 @@ var TOOLS = [
           modelled_against: r13(overall.modelledAgainst),
           match_control: r13(overall.control),
           areas: Object.fromEntries(Object.entries(overall.areas).map(([k, v]) => [k, r13(v)]))
+        }
+      };
+    }
+  },
+  {
+    name: "get_player_scores",
+    title: "Player scores",
+    description: "Every player rated out of 1000 against FC27 players of the same role (community research data): overall plus attack, possession and ball-winning (keepers on saves, goals conceded and clean sheets), a tag (Finisher, Creator, Playmaker, Ball-winner, All-rounder, Keeper), power rankings (last 5 games vs the 5 before), carry scores (who carries the team), clutch ratings in one-goal games and defensive records and partnerships.",
+    inputSchema: {
+      type: "object",
+      properties: { guild_id: guildIdProp, club_key: clubKeyProp },
+      additionalProperties: false
+    },
+    run: async (args, ctx) => {
+      const guildId = await resolveGuild(args, ctx);
+      let q = ctx.db.from("club_matches").select("id, result, score_for, score_against, match_type, created_at, opponent_club_name, player_stats, match_data").eq("guild_id", guildId).order("created_at", { ascending: false }).limit(120);
+      const clubKey = str(args.club_key);
+      if (clubKey) q = q.eq("club_key", clubKey);
+      const { data, error } = await q;
+      if (error) throw error;
+      const matches = toInsightMatches(data || []);
+      if (matches.length < 3) throw new ToolError("Needs at least 3 synced matches. Play a few games and check back.");
+      const minGames = matches.length >= 40 ? 5 : 3;
+      const r02 = (v) => v === null ? null : Math.round(v);
+      const r13 = (v) => v === null ? null : Math.round(v * 10) / 10;
+      const d = defendingSummary(matches, minGames);
+      return {
+        matches: matches.length,
+        min_games: minGames,
+        players: playerScores(matches, minGames).map((p) => ({
+          player: p.name,
+          role: p.role,
+          tag: p.tag,
+          games: p.games,
+          overall: r02(p.overall),
+          attack: r02(p.areas.attack),
+          possession: r02(p.areas.possession),
+          ball_winning: r02(p.areas.ballWinning)
+        })),
+        power_rankings: powerRankings(matches).map((r2) => ({ rank: r2.rank, player: r2.name, move: r2.move, avg_rating: r13(r2.avgRating), goals: r2.goals, assists: r2.assists, win_streak: r2.streak })),
+        carry: carryScores(matches, minGames).map((c2) => ({ player: c2.name, score: c2.score, label: c2.label, rating_edge: r13(c2.ratingEdge), goal_involvement_share_pct: Math.round(c2.involvementShare * 100), win_lift_pts: r13(c2.winLift) })),
+        clutch: clutchRatings(matches, Math.max(3, minGames - 1)).map((c2) => ({ player: c2.name, close_games: c2.closeGames, close_rating: r13(c2.closeRating), other_rating: r13(c2.otherRating), edge: r13(c2.edge), label: c2.label })),
+        defending: {
+          trend: d.trend,
+          recent: d.recent,
+          earlier: d.earlier,
+          players: d.players.map((p) => ({ player: p.name, role: p.role, games: p.games, clean_sheet_pct: r02(p.cleanSheetRate), conceded_per_game: r13(p.concededPerGame) })),
+          pairs: d.pairs.slice(0, 8).map((p) => ({ players: p.names, games: p.games, clean_sheet_pct: r02(p.cleanSheetRate), conceded_per_game: r13(p.concededPerGame) }))
         }
       };
     }
@@ -9016,12 +10521,12 @@ function logReturns(series) {
   }
   return out;
 }
-function mean2(xs) {
+function mean3(xs) {
   return xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0;
 }
 function stdev(xs) {
   if (xs.length < 2) return 0;
-  const m = mean2(xs);
+  const m = mean3(xs);
   return Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / (xs.length - 1));
 }
 function median(xs) {
@@ -9136,7 +10641,7 @@ function computeIndex(basket_id, platform, members, seriesByCard, from, to, opts
       const b = fresh(s, t);
       if (a && b && a.price > 0) logs.push(Math.log(b.price / a.price));
     }
-    if (logs.length) value = value * Math.exp(mean2(logs));
+    if (logs.length) value = value * Math.exp(mean3(logs));
     points.push({ t: iso(t), value: round(value, 3), constituents: logs.length });
   }
   return { basket_id, platform, base: 100, points };
@@ -9307,7 +10812,7 @@ function meanReversion(s, peerPrices, rules = DEFAULT_MARKET_RULES) {
   const w = window(s, 168);
   const last = s.at(-1);
   const prices = w.map((p) => p.price);
-  const m = mean2(prices);
+  const m = mean3(prices);
   const sd = stdev(prices);
   const z = last && prices.length >= rules.min_points && sd > 0 ? round((last.price - m) / sd) : null;
   const lo = prices.length ? Math.min(...prices) : null;
@@ -9617,10 +11122,10 @@ function validatePriceRows(raw, opts) {
     const reject = (reason) => rejected.push({ line, reason, raw: r2 });
     let card_id = String(r2.card_id ?? "").trim();
     const eaId = Number(r2.ea_item_id);
-    const num4 = (v) => v === void 0 || v === "" || v === null || !Number.isInteger(Number(v)) ? null : Number(v);
+    const num5 = (v) => v === void 0 || v === "" || v === null || !Number.isInteger(Number(v)) ? null : Number(v);
     let pendingEa = null;
     if (!card_id && Number.isInteger(eaId) && eaId > 0) {
-      card_id = opts.resolveEaItem?.(eaId, num4(r2.asset_id), num4(r2.rating)) ?? "";
+      card_id = opts.resolveEaItem?.(eaId, num5(r2.asset_id), num5(r2.rating)) ?? "";
       if (!card_id) pendingEa = eaId;
     }
     if (!card_id && pendingEa === null) return reject("card_id (or ea_item_id) is empty");
@@ -9664,7 +11169,7 @@ function validatePriceRows(raw, opts) {
     };
     if (pendingEa === null) return void rows.push(obs);
     const details = captureDetailsFromRow(r2);
-    unmatched.push({ ea_item_id: pendingEa, asset_id: num4(r2.asset_id), rating: num4(r2.rating), ...details ? { details } : {}, observation: obs });
+    unmatched.push({ ea_item_id: pendingEa, asset_id: num5(r2.asset_id), rating: num5(r2.rating), ...details ? { details } : {}, observation: obs });
   });
   return { rows, unmatched, rejected, duplicates };
 }
@@ -10758,11 +12263,11 @@ var MAX_PULLS = 1e3;
 var EA_TAX = 0.05;
 function bandValue(bands, lo, hi, kinds) {
   let n = 0, low = 0, high = 0;
-  for (const [o, k, c2, , med, mean3] of bands) {
+  for (const [o, k, c2, , med, mean4] of bands) {
     if (o < lo || o > hi || !kinds.includes(k) || c2 <= 0) continue;
     n += c2;
     low += med * c2;
-    high += mean3 * c2;
+    high += mean4 * c2;
   }
   return n ? { low: low / n, high: high / n, cards: n } : null;
 }
@@ -11828,10 +13333,10 @@ function parseRuleLine(raw) {
   const rest = colon > 0 ? line.slice(colon + 1).trim() : line.slice(label.length).trim();
   const lead = /^(min(imum)?\.?|max(imum)?\.?|exactly)\s+(\d+)\s+([A-Za-z +]+)$/i.exec(line) ?? /^(min(imum)?\.?|max(imum)?\.?|exactly)\s+([A-Za-z +]+?)\s+(\d+)$/i.exec(line);
   if (lead) {
-    const num4 = Number(lead[4] && /^\d+$/.test(lead[4]) ? lead[4] : lead[5]);
+    const num5 = Number(lead[4] && /^\d+$/.test(lead[4]) ? lead[4] : lead[5]);
     const word = /^\d+$/.test(lead[4] ?? "") ? lead[5] : lead[4];
     const f3 = statOf(word);
-    return f3 && Number.isFinite(num4) ? { field: f3, op: opOf2(lead[1]), value: num4 } : null;
+    return f3 && Number.isFinite(num5) ? { field: f3, op: opOf2(lead[1]), value: num5 } : null;
   }
   label = label.trim();
   const f2 = statOf(label);
@@ -11866,9 +13371,9 @@ function parseUpgradeLine(raw) {
   for (const part of line.split(/\s*,\s*/)) {
     const a = /^\+?\s*(\d+)\s+([A-Za-z ]+)$/.exec(part) ?? null;
     const b = /^([A-Za-z ]+?)\s*:?\s*\+\s*(\d+)$/.exec(part) ?? null;
-    const word = a ? a[2] : b ? b[1] : null, num4 = a ? Number(a[1]) : b ? Number(b[2]) : NaN;
+    const word = a ? a[2] : b ? b[1] : null, num5 = a ? Number(a[1]) : b ? Number(b[2]) : NaN;
     const f2 = word ? statOf(word) : null;
-    if (f2 && f2 !== "playstyles" && f2 !== "playstyles_plus" && num4 > 0 && num4 <= 30) out.push({ field: f2, add: num4 });
+    if (f2 && f2 !== "playstyles" && f2 !== "playstyles_plus" && num5 > 0 && num5 <= 30) out.push({ field: f2, add: num5 });
   }
   return out;
 }

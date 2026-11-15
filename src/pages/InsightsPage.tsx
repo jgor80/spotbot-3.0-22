@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { DivisionProgressCard } from "@/components/club/DivisionProgressCard";
 import { AdvancedStatsSection } from "@/components/insights/AdvancedStatsSection";
 import { PerformanceSection } from "@/components/insights/PerformanceSection";
+import { PlayerScoresSection } from "@/components/insights/PlayerScoresSection";
 import {
   ClubMatchRow,
   LineupRow,
@@ -234,6 +235,7 @@ export default function InsightsPage() {
 
             {/* Session report, team scores out of 100, modelled goals and expected points */}
             <PerformanceSection matches={analysis.matches} />
+            <PlayerScoresSection matches={analysis.matches} />
 
             {/* Key insights */}
             <Card>
