@@ -28,6 +28,7 @@ import {
   normaliseBuild,
   type Build,
 } from "@/lib/proBuild";
+import { CommunityMetaLoader } from "@/components/build/CommunityMetaBuilds";
 
 const LINES = [
   ["GK", "Goalkeepers"],
@@ -117,6 +118,8 @@ export default function BuildPlannerPage() {
             count. The link holds the whole build, so there's nothing to sign in to.
           </p>
         </div>
+
+        <CommunityMetaLoader onLoad={(b) => { setBuild({ ...b, budget: build.budget }); toast({ title: "Community build loaded", description: "Change anything you like, then copy the link." }); }} />
 
         <Card className="grid gap-4 p-4 sm:grid-cols-2">
           <div className="space-y-1.5">

@@ -666,7 +666,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         if (typeof b.text === "string" && b.text.length > MAX_ADD_TEXT) throw new FutError(`Paste up to ${MAX_ADD_TEXT.toLocaleString("en")} characters.`);
         if (!(b.url as string | undefined)?.trim() && !(b.text as string | undefined)?.trim()) throw new FutError("Add a link or paste some text.");
         if (!aiImportAllowed(userId, own ? Infinity : Number(env("FUT_KB_ADDS_PER_HOUR")) || KB_ADDS_PER_HOUR, kbAdds)) throw new FutError("That's a lot of sources this hour. Try again later.", 429);
-        return json({ data: await addSource(db, userId, { url: b.url as string, text: b.text as string, title: b.title as string, share: b.share === true }, env, fetchFn) }, 201);
+        return json({ data: await addSource(db, userId, { url: b.url as string, text: b.text as string, title: b.title as string, share: b.share === true, area: b.area === "proclubs" ? "proclubs" : null }, env, fetchFn) }, 201);
       }
       const sd = route.match(/^\/knowledge\/sources\/([0-9a-f-]{36})$/);
       if (sd && m === "DELETE") return (await deleteKnowledgeSource(db, userId, sd[1]!)) ? json({ data: { deleted: sd[1] } }) : err(404, "You can only delete sources you added.");

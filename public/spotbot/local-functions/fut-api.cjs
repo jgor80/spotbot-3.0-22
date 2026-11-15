@@ -12060,9 +12060,387 @@ async function cardImages(env, fetcher, now2 = Date.now()) {
   };
 }
 
+// src/lib/proBuild.ts
+var ARCHETYPES = [
+  { key: "shotstopper", name: "Shot Stopper", line: "GK", blurb: "Reflexes and positioning on the line.", focus: ["goalkeeping"] },
+  { key: "sweeperkeeper", name: "Sweeper Keeper", line: "GK", blurb: "Comes off the line and plays out from the back.", focus: ["goalkeeping", "passing"] },
+  { key: "progressor", name: "Progressor", line: "DEF", blurb: "A defender who moves the ball forward.", focus: ["defending", "passing"] },
+  { key: "boss", name: "Boss", line: "DEF", blurb: "Strong, aerial, wins duels.", focus: ["defending", "physical"] },
+  { key: "marauder", name: "Marauder", line: "DEF", blurb: "Gets up and down the flank.", focus: ["pace", "defending"] },
+  { key: "disruptor", name: "Disruptor", line: "MID", blurb: "Breaks up play in midfield.", focus: ["defending", "physical"] },
+  { key: "recycler", name: "Recycler", line: "MID", blurb: "Keeps the ball moving and the shape tidy.", focus: ["passing", "defending"] },
+  { key: "maestro", name: "Maestro", line: "MID", blurb: "Controls tempo with range of passing.", focus: ["passing", "dribbling"] },
+  { key: "creator", name: "Creator", line: "MID", blurb: "Unlocks defences in the final third.", focus: ["passing", "dribbling"] },
+  { key: "spark", name: "Spark", line: "FWD", blurb: "Pace and tricks out wide.", focus: ["pace", "dribbling"] },
+  { key: "magician", name: "Magician", line: "FWD", blurb: "Close control and invention.", focus: ["dribbling", "shooting"] },
+  { key: "finisher", name: "Finisher", line: "FWD", blurb: "Lives in the box and scores.", focus: ["shooting", "pace"] },
+  { key: "target", name: "Target", line: "FWD", blurb: "Holds it up and wins headers.", focus: ["physical", "shooting"] }
+];
+var ATTRIBUTES = [
+  { key: "acceleration", label: "Acceleration", group: "pace" },
+  { key: "sprintSpeed", label: "Sprint Speed", group: "pace" },
+  { key: "positioning", label: "Att. Positioning", group: "shooting", aliases: ["attPosition", "attackPositioning", "attPositioning"] },
+  { key: "finishing", label: "Finishing", group: "shooting" },
+  { key: "shotPower", label: "Shot Power", group: "shooting" },
+  { key: "longShots", label: "Long Shots", group: "shooting" },
+  { key: "volleys", label: "Volleys", group: "shooting" },
+  { key: "penalties", label: "Penalties", group: "shooting" },
+  { key: "vision", label: "Vision", group: "passing" },
+  { key: "crossing", label: "Crossing", group: "passing" },
+  { key: "fkAccuracy", label: "FK Accuracy", group: "passing", aliases: ["freeKick", "freeKickAccuracy", "fkAcc"] },
+  { key: "shortPassing", label: "Short Passing", group: "passing" },
+  { key: "longPassing", label: "Long Passing", group: "passing" },
+  { key: "curve", label: "Curve", group: "passing" },
+  { key: "agility", label: "Agility", group: "dribbling" },
+  { key: "balance", label: "Balance", group: "dribbling" },
+  { key: "reactions", label: "Reactions", group: "dribbling" },
+  { key: "ballControl", label: "Ball Control", group: "dribbling" },
+  { key: "dribbling", label: "Dribbling", group: "dribbling" },
+  { key: "composure", label: "Composure", group: "dribbling" },
+  { key: "interceptions", label: "Interceptions", group: "defending" },
+  { key: "headingAccuracy", label: "Heading Acc.", group: "defending", aliases: ["heading", "headingAcc"] },
+  { key: "defAware", label: "Def. Awareness", group: "defending", aliases: ["defensiveAwareness", "defAwareness", "marking"] },
+  { key: "standingTackle", label: "Standing Tackle", group: "defending" },
+  { key: "slidingTackle", label: "Sliding Tackle", group: "defending" },
+  { key: "jumping", label: "Jumping", group: "physical" },
+  { key: "stamina", label: "Stamina", group: "physical" },
+  { key: "strength", label: "Strength", group: "physical" },
+  { key: "aggression", label: "Aggression", group: "physical" },
+  { key: "gkDiving", label: "GK Diving", group: "goalkeeping", aliases: ["diving"] },
+  { key: "gkHandling", label: "GK Handling", group: "goalkeeping", aliases: ["handling"] },
+  { key: "gkKicking", label: "GK Kicking", group: "goalkeeping", aliases: ["kicking"] },
+  { key: "gkPositioning", label: "GK Positioning", group: "goalkeeping", aliases: ["gkPosition"] },
+  { key: "gkReflexes", label: "GK Reflexes", group: "goalkeeping", aliases: ["reflexes"] }
+];
+var ATTR_BY_ANY = /* @__PURE__ */ new Map();
+for (const a of ATTRIBUTES) for (const k of [a.key, ...a.aliases ?? []]) ATTR_BY_ANY.set(k.toLowerCase(), a);
+var PLAYSTYLES2 = [
+  ...["Finesse Shot", "Chip Shot", "Power Shot", "Dead Ball", "Precision Header", "Acrobatic", "Low Driven Shot", "Power Header", "Game Changer"].map((name2) => ({ name: name2, group: "shooting" })),
+  ...["Incisive Pass", "Pinged Pass", "Long Ball Pass", "Tiki Taka", "Whipped Pass", "Inventive"].map((name2) => ({ name: name2, group: "passing" })),
+  ...["Technical", "Rapid", "First Touch", "Trickster", "Press Proven", "Flair"].map((name2) => ({ name: name2, group: "dribbling" })),
+  ...["Jockey", "Block", "Intercept", "Anticipate", "Slide Tackle", "Aerial Fortress"].map((name2) => ({ name: name2, group: "defending" })),
+  ...["Quick Step", "Relentless", "Long Throw", "Bruiser", "Enforcer"].map((name2) => ({ name: name2, group: "physical" })),
+  ...["Far Throw", "Footwork", "Cross Claimer", "Rush Out", "Far Reach", "Deflector"].map((name2) => ({ name: name2, group: "goalkeeping" }))
+];
+var MAX_PLAYSTYLES = 10;
+var LEVEL_MAX = 100;
+var HEIGHT_RANGE = [150, 210];
+var WEIGHT_RANGE = [45, 115];
+var POINTS_MAX_PER_ATTR = 60;
+var emptyBuild = (archetype = "finisher") => ({
+  name: "",
+  archetype,
+  level: 1,
+  heightCm: 180,
+  weightKg: 75,
+  skillMoves: 3,
+  weakFoot: 3,
+  points: {},
+  playstyles: [],
+  budget: null
+});
+var clamp3 = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+var int2 = (v, lo, hi, fallback) => {
+  const n2 = Math.round(Number(v));
+  return Number.isFinite(n2) ? clamp3(n2, lo, hi) : fallback;
+};
+function normaliseBuild(b) {
+  const base = emptyBuild();
+  const points = {};
+  for (const [k, v] of Object.entries(b.points ?? {})) {
+    const a = ATTR_BY_ANY.get(k.toLowerCase());
+    const n2 = int2(v, 0, POINTS_MAX_PER_ATTR, 0);
+    if (a && n2) points[a.key] = n2;
+  }
+  const known = new Set(PLAYSTYLES2.map((p) => p.name));
+  return {
+    name: String(b.name ?? "").replace(/[|\n\r]/g, " ").trim().slice(0, 40),
+    archetype: ARCHETYPES.some((a) => a.key === b.archetype) ? b.archetype : base.archetype,
+    level: int2(b.level, 1, LEVEL_MAX, 1),
+    heightCm: int2(b.heightCm, ...HEIGHT_RANGE, base.heightCm),
+    weightKg: int2(b.weightKg, ...WEIGHT_RANGE, base.weightKg),
+    skillMoves: int2(b.skillMoves, 1, 5, 3),
+    weakFoot: int2(b.weakFoot, 1, 5, 3),
+    points,
+    playstyles: [...new Set((b.playstyles ?? []).filter((p) => known.has(p)))].slice(0, MAX_PLAYSTYLES),
+    budget: b.budget === null || b.budget === void 0 || b.budget === "" ? null : int2(b.budget, 0, 5e3, 0)
+  };
+}
+var b64Decode = (s) => {
+  const norm10 = s.trim().replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(norm10 + "=".repeat((4 - norm10.length % 4) % 4));
+  return new TextDecoder().decode(Uint8Array.from(bin, (c5) => c5.charCodeAt(0)));
+};
+function decodeBuild(code) {
+  try {
+    const parts = b64Decode(code).split("~");
+    if (parts[0] !== "gb1" || parts.length < 11) return null;
+    const [, archetype, level, h, w, sm, wf, budget, attrs, styles, ...name2] = parts;
+    const points = {};
+    for (const pair of attrs ? attrs.split(",") : []) {
+      const [k, v] = pair.split(".");
+      const a = ATTRIBUTES[Number(k)];
+      if (a) points[a.key] = Number(v);
+    }
+    return normaliseBuild({
+      archetype,
+      level: Number(level),
+      heightCm: Number(h),
+      weightKg: Number(w),
+      skillMoves: Number(sm),
+      weakFoot: Number(wf),
+      budget: budget === "" ? null : Number(budget),
+      points,
+      playstyles: (styles ? styles.split(",") : []).map((i) => PLAYSTYLES2[Number(i)]?.name).filter(Boolean),
+      name: name2.join("~")
+    });
+  } catch {
+    return null;
+  }
+}
+function importProClubsBuilder(linkOrCode) {
+  let code = linkOrCode.trim().replace(/[?#].*$/, "");
+  const at2 = code.lastIndexOf("/b/");
+  if (at2 >= 0) code = code.slice(at2 + 3);
+  code = code.replace(/\/+$/, "");
+  if (!/^[A-Za-z0-9_\-+/=]{8,}$/.test(code)) return null;
+  let text5;
+  try {
+    text5 = b64Decode(code);
+  } catch {
+    return null;
+  }
+  const f2 = text5.split("|");
+  if (f2.length < 8 || !/^\d+$/.test(f2[0])) return null;
+  const arch = ARCHETYPES[Number(f2[1]) - 1];
+  if (!arch) return null;
+  const points = {};
+  const skipped = [];
+  for (const pair of f2[7] ? f2[7].split(",") : []) {
+    const [k, v] = pair.split(":");
+    const a = ATTR_BY_ANY.get(String(k).toLowerCase());
+    if (a) points[a.key] = Number(v);
+    else if (k) skipped.push(k);
+  }
+  const name2 = f2.slice(8).filter(Boolean).pop() ?? "";
+  return {
+    build: normaliseBuild({ archetype: arch.key, level: Number(f2[2]), heightCm: Number(f2[3]), weightKg: Number(f2[4]), skillMoves: Number(f2[5]), weakFoot: Number(f2[6]), points, name: name2 }),
+    skipped
+  };
+}
+
+// src/lib/metaBuilds.ts
+var META_POSITIONS2 = [
+  { key: "ST", label: "Striker", line: "FWD", aliases: ["ST", "CF"] },
+  { key: "W", label: "Winger", line: "FWD", aliases: ["LW", "RW", "LM", "RM"] },
+  { key: "CAM", label: "Attacking mid", line: "MID", aliases: ["CAM"] },
+  { key: "CM", label: "Central mid", line: "MID", aliases: ["CM", "box-to-box"] },
+  { key: "CDM", label: "Defensive mid", line: "MID", aliases: ["CDM"] },
+  { key: "FB", label: "Full-back", line: "DEF", aliases: ["LB", "RB", "LWB", "RWB"] },
+  { key: "CB", label: "Centre-back", line: "DEF", aliases: ["CB"] },
+  { key: "GK", label: "Goalkeeper", line: "GK", aliases: ["GK"] }
+];
+var META_POSITION_KEYS = META_POSITIONS2.map((p) => p.key);
+
+// supabase/functions/_shared/fut/meta-builds.ts
+var DEFAULT_MODEL3 = "claude-opus-5-5";
+var DEFAULT_BUILD_QUERIES = [
+  "FC 27 Pro Clubs best striker build",
+  "FC 27 Pro Clubs best winger CAM build",
+  "FC 27 Pro Clubs best CDM CM build",
+  "FC 27 Pro Clubs best CB fullback goalkeeper build"
+];
+var squash = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
+var buildsFeedOn = (env) => env("FUT_KB_BUILDS") !== "off";
+var BUILD_POST = /\b(builds?|archetypes?|playstyles?\+?|height|weight|\d{3}\s?cm|\d'\d{1,2}|skill points|attribute points|perks?|meta (st|cb|cdm|cm|cam|winger|striker|keeper|gk|lb|rb)|best (st|cb|cdm|cm|cam|lw|rw|winger|striker|keeper|gk|fullback|full-back|lb|rb|position)|finisher|target man|spark|magician|maestro|creator|recycler|disruptor|marauder|progressor|boss|shot stopper|sweeper keeper|proclubsbuilder)\b/i;
+var isBuildPost = (p) => BUILD_POST.test(`${p.title ?? ""} ${(p.selftext ?? "").slice(0, 2e3)}`);
+async function collectBuildSources(env, fetchFn, known, use, now2 = Date.now()) {
+  const out = [];
+  let failure = null;
+  if (use.reddit) {
+    const feeds = [
+      { sub: "ProClubs", url: "https://www.reddit.com/r/ProClubs/top/.rss?t=week&limit=40" },
+      { sub: "ProClubs", url: "https://www.reddit.com/r/ProClubs/search.rss?q=build&restrict_sr=on&sort=top&t=month&limit=25" },
+      { sub: "EASportsFC", url: "https://www.reddit.com/r/EASportsFC/search.rss?q=%22pro+clubs%22+build&restrict_sr=on&sort=top&t=month&limit=25" }
+    ];
+    try {
+      out.push(...await collectRedditRss(env, fetchFn, known, { feeds, filter: isBuildPost, threads: Number(env("FUT_KB_BUILD_THREADS_PER_RUN") ?? 4) }));
+    } catch (e) {
+      failure = e;
+    }
+  }
+  if (use.youtube) {
+    try {
+      const queries = (env("FUT_KB_BUILD_QUERIES") ?? "").split("|").map((q) => q.trim()).filter(Boolean);
+      const after = new Date(now2 - 14 * 864e5).toISOString();
+      const ids = /* @__PURE__ */ new Set();
+      for (const q of queries.length ? queries.slice(0, 6) : DEFAULT_BUILD_QUERIES) {
+        const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "8", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
+        for (const item of found.items ?? []) if (item.id?.videoId) ids.add(item.id.videoId);
+      }
+      const seen = ids.size ? await known([...ids]).catch(() => /* @__PURE__ */ new Set()) : /* @__PURE__ */ new Set();
+      out.push(...await youtubeSources([...ids].filter((id3) => !seen.has(id3)).slice(0, 30), env, fetchFn, Number(env("FUT_KB_BUILD_MIN_VIEWS")) || 1e3));
+    } catch (e) {
+      failure ??= e;
+    }
+  }
+  if (!out.length && failure) throw failure;
+  const unique = /* @__PURE__ */ new Map();
+  for (const s of out) if (!unique.has(`${s.kind}:${s.external_id}`)) unique.set(`${s.kind}:${s.external_id}`, { ...s, area: "proclubs" });
+  return [...unique.values()];
+}
+function extractBuildLinks(text5) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const m of text5.matchAll(/https?:\/\/(?:www\.)?proclubsbuilder\.co\.uk\/b\/[A-Za-z0-9_\-+/=%]{8,}/gi)) {
+    const link = decodeURIComponent(m[0]).replace(/[).,\]]+$/, "");
+    if (seen.has(link)) continue;
+    const r2 = importProClubsBuilder(link);
+    if (r2) {
+      seen.add(link);
+      out.push({ link, build: r2.build });
+    }
+  }
+  for (const m of text5.matchAll(/https?:\/\/(?:www\.)?gafferbot\.app\/build\?(?:[^\s]*&)?b=([A-Za-z0-9_-]{8,})/gi)) {
+    if (seen.has(m[1])) continue;
+    const b = decodeBuild(m[1]);
+    if (b) {
+      seen.add(m[1]);
+      out.push({ link: m[0], build: b });
+    }
+  }
+  return out.slice(0, 10);
+}
+var archName = (key2) => ARCHETYPES.find((a) => a.key === key2)?.name ?? key2;
+var attrLabel = (key2) => ATTRIBUTES.find((a) => a.key === key2)?.label ?? key2;
+function describeLinked(l, i) {
+  const b = l.build;
+  const pts = Object.entries(b.points).sort((x, y) => y[1] - x[1]).map(([k, v]) => `${attrLabel(k)} ${v}`).join(", ");
+  return `[L${i + 1}] ${b.name ? `"${b.name}", ` : ""}${archName(b.archetype)}, level ${b.level}, ${b.heightCm} cm, ${b.weightKg} kg, ${b.skillMoves}\u2605 skill moves, ${b.weakFoot}\u2605 weak foot${pts ? `; points: ${pts}` : ""}`;
+}
+var ARCH_KEYS = ARCHETYPES.map((a) => a.key);
+var STYLE_NAMES = PLAYSTYLES2.map((p) => p.name);
+var ATTR_KEYS = ATTRIBUTES.map((a) => a.key);
+var BUILD_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["relevant", "summary", "builds"],
+  properties: {
+    relevant: { type: "boolean" },
+    summary: { type: "string" },
+    builds: { type: "array", items: {
+      type: "object",
+      additionalProperties: false,
+      required: ["position", "archetype", "height_cm", "weight_kg", "skill_moves", "weak_foot", "playstyles", "key_attributes", "link", "stance", "strength", "statement"],
+      properties: {
+        position: { type: "string", enum: [...META_POSITION_KEYS] },
+        archetype: { type: "string", enum: [...ARCH_KEYS, "none"] },
+        height_cm: { type: "integer" },
+        weight_kg: { type: "integer" },
+        skill_moves: { type: "integer" },
+        weak_foot: { type: "integer" },
+        playstyles: { type: "array", items: { type: "string", enum: STYLE_NAMES } },
+        key_attributes: { type: "array", items: { type: "string", enum: ATTR_KEYS } },
+        link: { type: "integer" },
+        stance: { type: "string", enum: ["for", "against", "mixed"] },
+        strength: { type: "integer", enum: [1, 2, 3] },
+        statement: { type: "string" }
+      }
+    } }
+  }
+};
+function buildReaderPrompt() {
+  return [
+    "You read EA SPORTS FC 27 Pro Clubs (Clubs) community posts, video descriptions and their comments, and write down the Virtual Pro builds people recommend or warn against, for a knowledge bank that shows the community's meta build for each position. Return JSON only.",
+    "",
+    "relevant: false when the source has no Pro Clubs build in it (Ultimate Team, career mode, memes, complaints with no build); then builds is empty.",
+    "summary: one plain sentence on what the source is about (under 25 words).",
+    "builds: up to 12, one per build per position the source describes:",
+    `- position: ST (striker, CF), W (winger: LW, RW, LM, RM), CAM, CM (box-to-box), CDM, FB (full-back or wing-back), CB, GK.`,
+    `- archetype: the FC 27 archetype, one of ${ARCHETYPES.map((a) => `${a.key} (${a.name})`).join(", ")}; none when not stated.`,
+    `- height_cm, weight_kg: as stated, converted to cm and kg (6'2" = 188 cm, 180 lb = 82 kg); 0 when not stated.`,
+    "- skill_moves, weak_foot: stars 1-5; 0 when not stated.",
+    "- playstyles: only PlayStyles the source picks for this build, spelled as in the list allowed (PlayStyle+ counts as the PlayStyle).",
+    "- key_attributes: the attributes the source says to max or prioritise first, most important first (at most 8).",
+    "- link: when the build is one of the shared build links listed under <links>, its number (1 for [L1]); otherwise 0. The link's numbers are exact, so don't copy them into other fields.",
+    "- stance: for = recommended, meta, the best; against = people say it's bad, nerfed or a trap; mixed = it depends, or a build shown without a view.",
+    "- strength: 3 = the main build of the post or video, or echoed by many upvoted comments; 2 = clearly argued; 1 = a passing mention.",
+    "- statement: why, in your own plain words, under 30 words (what it's good at, how it plays, the trade-off). Never copy long passages and never include usernames.",
+    "- When commenters push back or offer a different build for the same position, record that as its own build. Never invent numbers or PlayStyles the source doesn't give."
+  ].join("\n");
+}
+var intIn2 = (v, lo, hi) => {
+  const n2 = Math.round(Number(v));
+  return Number.isFinite(n2) && n2 >= lo && n2 <= hi ? n2 : null;
+};
+function cleanBuildReading(raw, links = []) {
+  const o = raw && typeof raw === "object" ? raw : {};
+  const builds = [];
+  for (const c5 of Array.isArray(o.builds) ? o.builds.slice(0, 16) : []) {
+    const x = c5 && typeof c5 === "object" ? c5 : {};
+    const position = String(x.position ?? "");
+    if (!META_POSITION_KEYS.includes(position)) continue;
+    const statement = squash(x.statement, 300);
+    if (statement.length < 3) continue;
+    const linked = links[(intIn2(x.link, 1, links.length) ?? 0) - 1]?.build ?? null;
+    const archetype = linked?.archetype ?? (ARCH_KEYS.includes(String(x.archetype)) ? String(x.archetype) : null);
+    const styles = [...new Set((Array.isArray(x.playstyles) ? x.playstyles : []).map(String).filter((p) => STYLE_NAMES.includes(p)))].slice(0, 15);
+    const attrs = [...new Set((Array.isArray(x.key_attributes) ? x.key_attributes : []).map(String).filter((a) => ATTR_KEYS.includes(a)))].slice(0, 8);
+    builds.push({
+      position,
+      archetype,
+      height_cm: linked?.heightCm ?? intIn2(x.height_cm, 150, 210),
+      weight_kg: linked?.weightKg ?? intIn2(x.weight_kg, 45, 115),
+      skill_moves: linked?.skillMoves ?? intIn2(x.skill_moves, 1, 5),
+      weak_foot: linked?.weakFoot ?? intIn2(x.weak_foot, 1, 5),
+      level: linked ? linked.level : null,
+      playstyles: styles.length ? styles : linked?.playstyles ?? [],
+      key_attrs: attrs.length ? attrs : linked ? Object.entries(linked.points).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k]) => k) : [],
+      points: linked && Object.keys(linked.points).length ? linked.points : null,
+      stance: x.stance === "for" ? 1 : x.stance === "against" ? -1 : 0,
+      strength: [1, 2, 3].includes(Number(x.strength)) ? Number(x.strength) : 1,
+      statement
+    });
+  }
+  return { relevant: o.relevant !== false && builds.length > 0, summary: squash(o.summary, 300), builds };
+}
+async function readBuildSource(text5, env, fetchFn) {
+  const links = extractBuildLinks(text5);
+  const res = await callClaude(env, fetchFn, {
+    model: env("FUT_KB_MODEL") || DEFAULT_MODEL3,
+    max_tokens: 6e3,
+    output_config: { effort: "low", format: { type: "json_schema", schema: BUILD_SCHEMA } },
+    system: buildReaderPrompt(),
+    messages: [{ role: "user", content: [{ type: "text", text: `<source>
+${text5.slice(0, 14e3)}
+</source>${links.length ? `
+<links>
+${links.map(describeLinked).join("\n")}
+</links>` : ""}` }] }]
+  });
+  const out = await res.json().catch(() => null);
+  if (!res.ok) {
+    const why = out?.error?.message ?? `HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403 || res.status === 400 && /credit balance|billing/i.test(why)) throw new ReaderUnavailable(why);
+    throw new FutError(res.status === 429 || res.status >= 500 ? "The reader is busy. Try again in a minute." : `The reader couldn't read that source (${why}).`, 502);
+  }
+  if (out?.stop_reason === "refusal") return { relevant: false, summary: "The reader declined this source.", builds: [] };
+  const body2 = (out?.content ?? []).filter((c5) => c5.type === "text").map((c5) => c5.text ?? "").join("");
+  try {
+    return cleanBuildReading(JSON.parse(body2), links);
+  } catch {
+    throw new FutError("The reader returned something unreadable.", 502);
+  }
+}
+async function saveBuildReading(db2, id3, reading) {
+  const { data, error } = await db2.rpc("kb_save_builds", { p_source: id3, p_status: reading.relevant ? "read" : "skipped", p_note: reading.summary || null, p_builds: reading.builds });
+  if (error) throw new FutError(`The knowledge bank is unavailable: ${error.message ?? "error"}`, 500);
+  return Number(data) || 0;
+}
+
 // supabase/functions/_shared/fut/knowledge.ts
 var KB_CATEGORIES = ["formations", "tactics", "players", "playstyles", "attacking", "defending", "skills", "settings", "modes", "market", "other"];
-var DEFAULT_MODEL3 = "claude-opus-5-5";
+var DEFAULT_MODEL4 = "claude-opus-5-5";
 var DEFAULT_SUBREDDITS = ["EASportsFC", "fut"];
 var DEFAULT_YOUTUBE_QUERIES = [
   "FC 27 meta formation",
@@ -12083,7 +12461,7 @@ async function rpcData(db2, name2, args) {
   if (error) throw new FutError(`The knowledge bank is unavailable: ${error.message ?? "error"}`, 500);
   return data;
 }
-var squash = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
+var squash2 = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
 var keep = (s, max) => typeof s === "string" ? s.replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim().slice(0, max) : "";
 function topicKey(topic) {
   return topic.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\+/g, " plus ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80).replace(/-+$/, "");
@@ -12105,7 +12483,7 @@ ${text5 ? `${keep(text5, 5e3)}
 ` : ""}`;
   if (comments.length) out += "Top comments:\n";
   for (const c5 of comments) {
-    const line = `- ${c5.score == null ? "" : `(${c5.score} ${c5.score === 1 ? "point" : "points"}) `}${squash(c5.body, 700)}
+    const line = `- ${c5.score == null ? "" : `(${c5.score} ${c5.score === 1 ? "point" : "points"}) `}${squash2(c5.body, 700)}
 `;
     if (out.length + line.length > MAX_BODY) break;
     out += line;
@@ -12155,14 +12533,14 @@ function redditSource(p, comments) {
     kind: "reddit",
     external_id: p.id,
     url: `https://www.reddit.com${p.permalink}`,
-    title: squash(p.title, 300),
-    author: p.author ? squash(p.author, 100) : null,
+    title: squash2(p.title, 300),
+    author: p.author ? squash2(p.author, 100) : null,
     community,
     published_at: new Date(p.created_utc * 1e3).toISOString(),
     score: Math.max(0, p.score | 0),
     comments: Math.max(0, (p.num_comments ?? 0) | 0),
-    body: threadBody([`Reddit post in ${community} (${p.score} upvotes${p.link_flair_text ? `, flair "${squash(p.link_flair_text, 40)}"` : ""})`, `Title: ${squash(p.title, 300)}`], p.selftext ?? "", comments),
-    excerpt: squash(p.selftext || p.title, 280)
+    body: threadBody([`Reddit post in ${community} (${p.score} upvotes${p.link_flair_text ? `, flair "${squash2(p.link_flair_text, 40)}"` : ""})`, `Title: ${squash2(p.title, 300)}`], p.selftext ?? "", comments),
+    excerpt: squash2(p.selftext || p.title, 280)
   };
 }
 function redditSubs(env) {
@@ -12207,7 +12585,7 @@ function parseRedditRss(xml) {
     const author = decodeEntities(tag(tag(e, "author"), "name")).trim().replace(/^\/u\//, "");
     return [{
       id: id3,
-      title: squash(decodeEntities(tag(e, "title")), 300),
+      title: squash2(decodeEntities(tag(e, "title")), 300),
       author: author || null,
       link: decodeEntities(e.match(/<link\b[^>]*href="([^"]+)"/)?.[1] ?? ""),
       published: tag(e, "published").trim() || tag(e, "updated").trim() || null,
@@ -12256,19 +12634,21 @@ function rssSource(sub, post, comments, rank) {
     external_id: post.id.slice(3),
     url: `https://www.reddit.com${permalink}`,
     title: post.title,
-    author: post.author ? squash(post.author, 100) : null,
+    author: post.author ? squash2(post.author, 100) : null,
     community,
     published_at: post.published ?? (/* @__PURE__ */ new Date()).toISOString(),
     score: 0,
     comments: comments.length,
     body: threadBody([`Reddit post in ${community}${rank ? ` (number ${rank} in today's top posts)` : ""}`, `Title: ${post.title}`], post.text, comments),
-    excerpt: squash(post.text || post.title, 280)
+    excerpt: squash2(post.text || post.title, 280)
   };
 }
-async function collectRedditRss(env, fetchFn, known = () => Promise.resolve(/* @__PURE__ */ new Set())) {
+async function collectRedditRss(env, fetchFn, known = () => Promise.resolve(/* @__PURE__ */ new Set()), opts = {}) {
   const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 10;
   const gap = Number(env("FUT_KB_REDDIT_GAP_MS") ?? 5e3);
-  let threadsLeft = Number(env("FUT_KB_REDDIT_THREADS_PER_RUN") ?? 8);
+  let threadsLeft = opts.threads ?? Number(env("FUT_KB_REDDIT_THREADS_PER_RUN") ?? 8);
+  const feeds = opts.feeds ?? redditSubs(env).map((sub) => ({ sub, url: `https://www.reddit.com/r/${sub}/top/.rss?t=day&limit=40` }));
+  const wanted = opts.filter ?? ((p) => isGameplayPost(p));
   let calls = 0, limited = null;
   const rss = async (url) => {
     if (calls++ && gap > 0) await new Promise((r2) => setTimeout(r2, gap));
@@ -12276,9 +12656,9 @@ async function collectRedditRss(env, fetchFn, known = () => Promise.resolve(/* @
   };
   const out = [];
   try {
-    for (const sub of redditSubs(env)) {
-      const top = (await rss(`https://www.reddit.com/r/${sub}/top/.rss?t=day&limit=40`)).filter((e) => e.id.startsWith("t3_"));
-      const posts = top.map((e, i) => ({ e, rank: i + 1 })).filter(({ e }) => isGameplayPost({ title: e.title, selftext: e.text })).slice(0, perSub);
+    for (const { sub, url } of feeds) {
+      const top = (await rss(url)).filter((e) => e.id.startsWith("t3_"));
+      const posts = top.map((e, i) => ({ e, rank: i + 1 })).filter(({ e }) => wanted({ title: e.title, selftext: e.text })).slice(0, perSub);
       const seen = posts.length ? await known(posts.map(({ e }) => e.id.slice(3))) : /* @__PURE__ */ new Set();
       for (const { e, rank } of posts) {
         if (seen.has(e.id.slice(3))) continue;
@@ -12324,14 +12704,14 @@ async function youtubeSources(ids, env, fetchFn, minViews) {
       kind: "youtube",
       external_id: v.id,
       url: `https://www.youtube.com/watch?v=${v.id}`,
-      title: squash(s.title, 300),
-      author: s.channelTitle ? squash(s.channelTitle, 100) : null,
-      community: squash(s.channelTitle || "YouTube", 100),
+      title: squash2(s.title, 300),
+      author: s.channelTitle ? squash2(s.channelTitle, 100) : null,
+      community: squash2(s.channelTitle || "YouTube", 100),
       published_at: s.publishedAt ?? (/* @__PURE__ */ new Date()).toISOString(),
       score: views,
       comments: Number(v.statistics?.commentCount) || 0,
-      body: threadBody([`YouTube video by ${squash(s.channelTitle, 100)} (${views.toLocaleString("en")} views)`, `Title: ${squash(s.title, 300)}`, "Description (the video itself isn't included):"], s.description ?? "", comments),
-      excerpt: squash(s.description || s.title, 280)
+      body: threadBody([`YouTube video by ${squash2(s.channelTitle, 100)} (${views.toLocaleString("en")} views)`, `Title: ${squash2(s.title, 300)}`, "Description (the video itself isn't included):"], s.description ?? "", comments),
+      excerpt: squash2(s.description || s.title, 280)
     });
   }
   return out;
@@ -12426,18 +12806,18 @@ function cleanReading(raw) {
   const claims = [];
   for (const c5 of Array.isArray(o.claims) ? o.claims.slice(0, 15) : []) {
     const x = c5 && typeof c5 === "object" ? c5 : {};
-    const topic = squash(x.topic, 80), statement = squash(x.statement, 300), key2 = topicKey(topic);
+    const topic = squash2(x.topic, 80), statement = squash2(x.statement, 300), key2 = topicKey(topic);
     const category = KB_CATEGORIES.includes(x.category) ? x.category : "other";
     const stance = x.stance === "for" ? 1 : x.stance === "against" ? -1 : 0;
     const strength = [1, 2, 3].includes(Number(x.strength)) ? Number(x.strength) : 1;
     if (!key2 || statement.length < 3) continue;
     claims.push({ topic, topic_key: key2, category, statement, stance, strength });
   }
-  return { relevant: o.relevant !== false && claims.length > 0, summary: squash(o.summary, 300), claims };
+  return { relevant: o.relevant !== false && claims.length > 0, summary: squash2(o.summary, 300), claims };
 }
 async function readSource(text5, known, env, fetchFn) {
   const res = await callClaude(env, fetchFn, {
-    model: env("FUT_KB_MODEL") || DEFAULT_MODEL3,
+    model: env("FUT_KB_MODEL") || DEFAULT_MODEL4,
     max_tokens: 6e3,
     output_config: { effort: "low", format: { type: "json_schema", schema: READ_SCHEMA } },
     system: readerPrompt(known),
@@ -12480,21 +12860,38 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
       feeds[name2] = { status: "ok", collected: stored };
     } catch (e) {
       console.error(`[fut-api] knowledge ${name2}:`, e);
-      feeds[name2] = { status: e instanceof RedditRateLimited ? "limited" : "failed", error: squash(e.message, 200) };
+      feeds[name2] = { status: e instanceof RedditRateLimited ? "limited" : "failed", error: squash2(e.message, 200) };
     }
   };
   const knownReddit = async (ids) => new Set(await rpcData(db2, "kb_known", { p_kind: "reddit", p_ids: ids }) ?? []);
+  const knownSources = async (ids) => /* @__PURE__ */ new Set([...await knownReddit(ids), ...await rpcData(db2, "kb_known", { p_kind: "youtube", p_ids: ids }) ?? []]);
   await collect("reddit", redditFeedOn(env), () => collectReddit(env, fetchFn, knownReddit));
   const youtubeHours = (env("FUT_KB_YOUTUBE_HOURS") ?? "1,7,13,19").split(",").map(Number);
-  if (youtubeFeedOn(env) && !youtubeHours.includes(now2.getUTCHours())) feeds.youtube = { status: "later" };
+  const youtubeNow = youtubeHours.includes(now2.getUTCHours());
+  if (youtubeFeedOn(env) && !youtubeNow) feeds.youtube = { status: "later" };
   else await collect("youtube", youtubeFeedOn(env), () => collectYouTube(env, fetchFn, now2.getTime()));
-  const result2 = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0 };
+  const redditLimited = feeds.reddit?.status === "limited";
+  await collect(
+    "builds",
+    buildsFeedOn(env) && (redditMode(env) !== "off" || youtubeFeedOn(env)),
+    () => collectBuildSources(env, fetchFn, knownSources, { reddit: redditMode(env) !== "off" && !redditLimited, youtube: youtubeNow && youtubeFeedOn(env) }, now2.getTime())
+  );
+  const result2 = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0, builds: 0 };
   const hasKey = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
   if (hasKey) {
     const pending = await rpcData(db2, "kb_pending", { p_limit: Number(env("FUT_KB_READ_PER_RUN")) || 40 });
-    const known = pending.length ? await rpcData(db2, "kb_known_topics", { p_limit: 150 }) : [];
+    const known = pending.some((s) => s.area !== "proclubs") ? await rpcData(db2, "kb_known_topics", { p_limit: 150 }) : [];
     for (const s of pending) {
       try {
+        if (s.area === "proclubs") {
+          const n3 = await saveBuildReading(db2, s.id, await readBuildSource(s.body, env, fetchFn));
+          if (n3 > 0) {
+            result2.read++;
+            result2.builds++;
+            result2.claims += n3;
+          } else result2.skipped++;
+          continue;
+        }
         const reading = await readSource(s.body, known, env, fetchFn);
         const n2 = await saveReading(db2, s.id, reading);
         if (n2 > 0) {
@@ -12504,11 +12901,11 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
         for (const c5 of reading.claims) if (!known.some((k) => k.topic === c5.topic)) known.push({ topic: c5.topic, category: c5.category });
       } catch (e) {
         if (e instanceof ReaderUnavailable) {
-          feeds.reader = { status: "failed", error: squash(e.message, 200) };
+          feeds.reader = { status: "failed", error: squash2(e.message, 200) };
           break;
         }
         result2.failed++;
-        await rpcData(db2, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash(e.message, 200), p_claims: null });
+        await rpcData(db2, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash2(e.message, 200), p_claims: null });
         if (e instanceof FutError && e.status === 502 && /busy/.test(e.message)) break;
       }
     }
@@ -12532,10 +12929,12 @@ async function addSource(db2, userId, input, env, fetchFn) {
     });
     if (!fetched) throw new FutError(`${link.kind === "reddit" ? "Reddit" : "YouTube"} links can't be fetched here yet. Paste the post or the video's transcript into the text box too.`, 422);
   }
-  if (!fetched && text5.length < 40) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
-  const title = squash(input.title, 300) || fetched?.title || squash(text5.split("\n")[0], 120) || "Pasted source";
+  const area = input.area === "proclubs" ? "proclubs" : "fut";
+  const buildLink = area === "proclubs" && !!url && extractBuildLinks(url).length > 0;
+  if (!fetched && text5.length < 40 && !buildLink) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
+  const title = squash2(input.title, 300) || fetched?.title || squash2(text5.split("\n")[0], 120) || (buildLink ? "Shared build link" : "Pasted source");
   const share = input.share === true && (!!url || !!fetched);
-  const source = fetched ? { ...fetched, shared: true } : {
+  const source = fetched ? { ...fetched, shared: true, area } : {
     kind: url ? "web" : "note",
     external_id: null,
     url: url || null,
@@ -12546,11 +12945,22 @@ async function addSource(db2, userId, input, env, fetchFn) {
     score: 0,
     comments: 0,
     body: text5,
-    excerpt: squash(text5, 280),
-    shared: share
+    excerpt: squash2(text5, 280),
+    shared: share,
+    area
   };
   const id3 = await rpcData(db2, "kb_add", { p_user: userId, p_source: source });
   if (!id3) throw new FutError("That source couldn't be saved.", 500);
+  if (area === "proclubs") {
+    const body3 = fetched ? fetched.body : `${url ? `Page: ${url}
+` : "The user's own notes or a pasted source.\n"}Title: ${title}
+
+${text5}${url && !text5.includes(url) ? `
+${url}` : ""}`;
+    const reading2 = await readBuildSource(body3, env, fetchFn);
+    const builds = await saveBuildReading(db2, id3, reading2);
+    return { id: id3, claims: builds, relevant: reading2.relevant, summary: reading2.summary, shared: fetched ? true : share, topics: [...new Set(reading2.builds.map((b) => b.position))] };
+  }
   const known = await rpcData(db2, "kb_known_topics", { p_limit: 150 });
   const body2 = fetched ? fetched.body : `${url ? `Page: ${url}
 ` : "The user's own notes or a pasted source.\n"}Title: ${title}
@@ -12571,7 +12981,7 @@ var ASK_SCHEMA = {
   }
 };
 async function ask(db2, userId, question, history, env, fetchFn, beforeAi) {
-  const q = squash(question, MAX_QUESTION);
+  const q = squash2(question, MAX_QUESTION);
   if (!q) throw new FutError("Ask a question about FUT gameplay or strategy.");
   const context = [...history.filter((t) => t.role === "user").slice(-2).map((t) => t.text), q].join(" ");
   const found = await rpcData(db2, "kb_search", { p_user: userId, p_q: context, p_limit: 40, p_days: 120 });
@@ -12589,7 +12999,7 @@ async function ask(db2, userId, question, history, env, fetchFn, beforeAi) {
   beforeAi?.();
   const notes = claims.map((c5) => `[${cite(c5)}] ${c5.topic} (${c5.category}; ${c5.stance === 1 ? "for" : c5.stance === -1 ? "against" : "mixed"}; ${c5.said_at.slice(0, 10)}${c5.source.score ? `; ${c5.source.kind === "youtube" ? "views" : "upvotes"} ${c5.source.score}` : ""}): ${c5.statement}`).join("\n");
   const res = await callClaude(env, fetchFn, {
-    model: env("FUT_KB_MODEL") || DEFAULT_MODEL3,
+    model: env("FUT_KB_MODEL") || DEFAULT_MODEL4,
     max_tokens: 4e3,
     output_config: { effort: "low", format: { type: "json_schema", schema: ASK_SCHEMA } },
     system: [
@@ -12635,7 +13045,7 @@ async function knowledgeStatus(db2, env) {
 }
 
 // supabase/functions/_shared/fut/knowledge-team.ts
-var DEFAULT_MODEL4 = "claude-opus-5-5";
+var DEFAULT_MODEL5 = "claude-opus-5-5";
 var POSITION_ORDER = ["GK", "LB", "CB", "RB", "CDM", "CM", "LM", "RM", "CAM", "LW", "RW", "ST"];
 var posRank = (p) => {
   const i = POSITION_ORDER.indexOf(p);
@@ -12646,7 +13056,7 @@ async function rpcData2(db2, name2, args) {
   if (error) throw new FutError(`The knowledge bank is unavailable: ${error.message ?? "error"}`, 500);
   return data;
 }
-var squash2 = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
+var squash3 = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
 function fold(s) {
   return s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/ø/g, "o").replace(/ł/g, "l").replace(/đ/g, "d").replace(/ı/g, "i").replace(/ß/g, "ss");
 }
@@ -12784,7 +13194,7 @@ var APPLY_SCHEMA = {
 };
 async function claudeJson(env, fetchFn, system, user, schema, maxTokens) {
   const res = await callClaude(env, fetchFn, {
-    model: env("FUT_KB_MODEL") || DEFAULT_MODEL4,
+    model: env("FUT_KB_MODEL") || DEFAULT_MODEL5,
     max_tokens: maxTokens,
     output_config: { effort: "low", format: { type: "json_schema", schema } },
     system,
@@ -12805,8 +13215,8 @@ async function claudeJson(env, fetchFn, system, user, schema, maxTokens) {
 function cleanAdvice(raw) {
   const o = raw && typeof raw === "object" ? raw : null;
   if (!o) return null;
-  const list2 = (v, n2) => Array.isArray(v) ? v.map((x) => squash2(x, 300)).filter(Boolean).slice(0, n2) : [];
-  const headline = squash2(o.headline, 300);
+  const list2 = (v, n2) => Array.isArray(v) ? v.map((x) => squash3(x, 300)).filter(Boolean).slice(0, n2) : [];
+  const headline = squash3(o.headline, 300);
   if (!headline) return null;
   return { fit: o.fit === "high" || o.fit === "low" ? o.fit : "some", headline, points: list2(o.points, 5), actions: list2(o.actions, 4) };
 }
@@ -13111,7 +13521,7 @@ async function teamPlan(db2, userId, opts, team, env, fetchFn, beforeAi, statPic
       [
         "You turn what the EA SPORTS FC 27 Ultimate Team community says (claims from Reddit, YouTube and the player's own notes, numbered by source) into a game plan for one player's team. Return JSON only.",
         `The formation is decided already: ${planFormation} (${basis === "playstyle" ? `picked for how the player likes to play, the community view and their club: ${chosen.why}` : basis === "community" ? "the one the community backs most" : basis === "least_criticised" ? "nobody is clearly for any formation, this is the least criticised" : basis === "your_squad" ? "the bank has no formation talk, so the player's own" : "the bank has no formation talk, so the usual meta shape"}). Formation ranking (score = buzz x sentiment): ${ranked.slice(0, 6).map((f2) => `${f2.formation} ${f2.score}`).join(", ") || "none"}.`,
-        ...opts.playstyle ? [`The player describes how they like to play: "${squash2(opts.playstyle, 600)}". Fit the settings, instructions and notes to that style, lean on the community view where the two agree, and say plainly where their style departs from the consensus.`] : [],
+        ...opts.playstyle ? [`The player describes how they like to play: "${squash3(opts.playstyle, 600)}". Fit the settings, instructions and notes to that style, lean on the community view where the two agree, and say plainly where their style departs from the consensus.`] : [],
         "Use ALL the data you are given every time: the claims, the team's cards, the price moves and the stat picks. Never say there is not enough data and never tell the player to wait for more. Where the claims are thin or silent, reason it through from what you do have (the formation's shape, the team's players and their PlayStyles, the stat picks, how prices are moving) and set inferred: true on that row, with the reasoning in why. Rows taken from claims have inferred: false and cite them.",
         "summary: 2 or 3 plain sentences: the community's current view and what it means for this team.",
         "formation_why: one or two sentences on why people rate that formation, from the claims (empty if none).",
@@ -13140,12 +13550,12 @@ ${notes || "none in the bank yet"}`,
     if (raw) {
       const valid = (cites) => Array.isArray(cites) ? [...new Set(cites.map(Number).filter((n2) => Number.isInteger(n2) && n2 >= 1 && n2 <= citations.length))].slice(0, 6) : [];
       const rows = (v) => Array.isArray(v) ? v.filter((x) => x && typeof x === "object") : [];
-      plan.summary = squash2(raw.summary, 800) || null;
-      plan.formation_why = squash2(raw.formation_why, 500) || null;
-      plan.settings = rows(raw.settings).map((r2) => ({ setting: squash2(r2.setting, 60), value: squash2(r2.value, 80), why: squash2(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.setting && r2.value).slice(0, 8);
-      plan.instructions = rows(raw.instructions).map((r2) => ({ position: squash2(r2.position, 12).toUpperCase(), instruction: squash2(r2.instruction, 80), why: squash2(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.position && r2.instruction).slice(0, 11);
-      plan.for_your_team = Array.isArray(raw.for_your_team) ? raw.for_your_team.map((x) => squash2(x, 300)).filter(Boolean).slice(0, 5) : [];
-      const placed = new Map(rows(raw.player_positions).map((r2) => [fold(squash2(r2.topic, 80)), squash2(r2.position, 4).toUpperCase()]));
+      plan.summary = squash3(raw.summary, 800) || null;
+      plan.formation_why = squash3(raw.formation_why, 500) || null;
+      plan.settings = rows(raw.settings).map((r2) => ({ setting: squash3(r2.setting, 60), value: squash3(r2.value, 80), why: squash3(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.setting && r2.value).slice(0, 8);
+      plan.instructions = rows(raw.instructions).map((r2) => ({ position: squash3(r2.position, 12).toUpperCase(), instruction: squash3(r2.instruction, 80), why: squash3(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.position && r2.instruction).slice(0, 11);
+      plan.for_your_team = Array.isArray(raw.for_your_team) ? raw.for_your_team.map((x) => squash3(x, 300)).filter(Boolean).slice(0, 5) : [];
+      const placed = new Map(rows(raw.player_positions).map((r2) => [fold(squash3(r2.topic, 80)), squash3(r2.position, 4).toUpperCase()]));
       for (const p of players) if (!p.position) {
         const pos = placed.get(fold(p.topic));
         if (pos && POSITION_ORDER.includes(pos)) p.position = pos;
@@ -13681,7 +14091,7 @@ async function coachPlan(db2, userId, platform) {
 
 // supabase/functions/_shared/fut/ideal-squad.ts
 var MAX_PLAYSTYLE = 600;
-var DEFAULT_MODEL5 = "claude-opus-5-5";
+var DEFAULT_MODEL6 = "claude-opus-5-5";
 var shapeOf = (formation) => {
   const out = {};
   for (const s of FORMATIONS[formation] ?? []) out[s.position] = (out[s.position] ?? 0) + 1;
@@ -13752,7 +14162,7 @@ async function readPlaystyle(text5, env, fetchFn) {
   if (!text5.trim() || !(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) return words;
   try {
     const res = await callClaude(env, fetchFn, {
-      model: env("FUT_KB_MODEL") || DEFAULT_MODEL5,
+      model: env("FUT_KB_MODEL") || DEFAULT_MODEL6,
       max_tokens: 1200,
       output_config: { effort: "low", format: { type: "json_schema", schema: STYLE_SCHEMA } },
       system: [
@@ -16495,7 +16905,7 @@ async function handle(req, deps) {
         if (typeof b.text === "string" && b.text.length > MAX_ADD_TEXT) throw new FutError(`Paste up to ${MAX_ADD_TEXT.toLocaleString("en")} characters.`);
         if (!b.url?.trim() && !b.text?.trim()) throw new FutError("Add a link or paste some text.");
         if (!aiImportAllowed(userId, own ? Infinity : Number(env("FUT_KB_ADDS_PER_HOUR")) || KB_ADDS_PER_HOUR, kbAdds)) throw new FutError("That's a lot of sources this hour. Try again later.", 429);
-        return json({ data: await addSource(db2, userId, { url: b.url, text: b.text, title: b.title, share: b.share === true }, env, fetchFn) }, 201);
+        return json({ data: await addSource(db2, userId, { url: b.url, text: b.text, title: b.title, share: b.share === true, area: b.area === "proclubs" ? "proclubs" : null }, env, fetchFn) }, 201);
       }
       const sd = route.match(/^\/knowledge\/sources\/([0-9a-f-]{36})$/);
       if (sd && m === "DELETE") return await deleteKnowledgeSource(db2, userId, sd[1]) ? json({ data: { deleted: sd[1] } }) : err(404, "You can only delete sources you added.");

@@ -9,6 +9,7 @@
 // The map, topic pages, search and the "Ask" chat read the SQL functions in 20261110160000_fut_knowledge_bank.sql.
 import { FutError } from "./service.ts";
 import { callClaude } from "./squad-import.ts";
+import { buildsFeedOn, collectBuildSources, extractBuildLinks, readBuildSource, saveBuildReading } from "./meta-builds.ts";
 
 type Env = (k: string) => string | undefined;
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -46,6 +47,8 @@ export function topicKey(topic: string): string {
 // ---------------------------------------------------------------- collecting
 
 export interface CollectedSource {
+  /** 'proclubs' for Pro Clubs build sources (meta-builds.ts); Ultimate Team otherwise. */
+  area?: "fut" | "proclubs";
   kind: "reddit" | "youtube"; external_id: string; url: string; title: string; author: string | null; community: string;
   published_at: string; score: number; comments: number; body: string; excerpt: string;
 }
@@ -216,10 +219,18 @@ function rssSource(sub: string, post: RssEntry, comments: { body: string; score:
 /** The day's top gameplay posts from each subreddit's RSS feed, with the top comments of posts the bank hasn't seen yet.
  * Reddit rate-limits these feeds, so requests are spaced out (FUT_KB_REDDIT_GAP_MS, default 5 s), only a few comment
  * feeds are read per run (FUT_KB_REDDIT_THREADS_PER_RUN, default 8), and a 429 stops the run's Reddit requests. */
-export async function collectRedditRss(env: Env, fetchFn: Fetch, known: (ids: string[]) => Promise<Set<string>> = () => Promise.resolve(new Set())): Promise<CollectedSource[]> {
+export interface RssFeedOptions {
+  /** Listing feeds to read instead of each subreddit's top posts of the day (Pro Clubs builds use their own). */
+  feeds?: { sub: string; url: string }[];
+  filter?: (p: { title: string; selftext: string }) => boolean;
+  threads?: number;
+}
+export async function collectRedditRss(env: Env, fetchFn: Fetch, known: (ids: string[]) => Promise<Set<string>> = () => Promise.resolve(new Set()), opts: RssFeedOptions = {}): Promise<CollectedSource[]> {
   const perSub = Number(env("FUT_KB_REDDIT_PER_SUB")) || 10;
   const gap = Number(env("FUT_KB_REDDIT_GAP_MS") ?? 5000);
-  let threadsLeft = Number(env("FUT_KB_REDDIT_THREADS_PER_RUN") ?? 8);
+  let threadsLeft = opts.threads ?? Number(env("FUT_KB_REDDIT_THREADS_PER_RUN") ?? 8);
+  const feeds = opts.feeds ?? redditSubs(env).map((sub) => ({ sub, url: `https://www.reddit.com/r/${sub}/top/.rss?t=day&limit=40` }));
+  const wanted = opts.filter ?? ((p: { title: string; selftext: string }) => isGameplayPost(p));
   let calls = 0, limited: RedditRateLimited | null = null;
   const rss = async (url: string) => {
     if (calls++ && gap > 0) await new Promise((r) => setTimeout(r, gap));
@@ -227,9 +238,9 @@ export async function collectRedditRss(env: Env, fetchFn: Fetch, known: (ids: st
   };
   const out: CollectedSource[] = [];
   try {
-    for (const sub of redditSubs(env)) {
-      const top = (await rss(`https://www.reddit.com/r/${sub}/top/.rss?t=day&limit=40`)).filter((e) => e.id.startsWith("t3_"));
-      const posts = top.map((e, i) => ({ e, rank: i + 1 })).filter(({ e }) => isGameplayPost({ title: e.title, selftext: e.text })).slice(0, perSub);
+    for (const { sub, url } of feeds) {
+      const top = (await rss(url)).filter((e) => e.id.startsWith("t3_"));
+      const posts = top.map((e, i) => ({ e, rank: i + 1 })).filter(({ e }) => wanted({ title: e.title, selftext: e.text })).slice(0, perSub);
       const seen = posts.length ? await known(posts.map(({ e }) => e.id.slice(3))) : new Set<string>();
       for (const { e, rank } of posts) {
         if (seen.has(e.id.slice(3))) continue; // already in the bank; collecting again changes nothing
@@ -256,14 +267,14 @@ const YT = "https://www.googleapis.com/youtube/v3";
 interface YtVideo { id: string; snippet?: { title?: string; description?: string; channelTitle?: string; publishedAt?: string; defaultAudioLanguage?: string };
   statistics?: { viewCount?: string; commentCount?: string } }
 
-async function ytJson(path: string, params: Record<string, string>, env: Env, fetchFn: Fetch): Promise<Record<string, unknown>> {
+export async function ytJson(path: string, params: Record<string, string>, env: Env, fetchFn: Fetch): Promise<Record<string, unknown>> {
   const q = new URLSearchParams({ ...params, key: env("YOUTUBE_API_KEY")! });
   const res = await fetchFn(`${YT}/${path}?${q}`);
   if (!res.ok) throw new Error(`YouTube answered HTTP ${res.status}`);
   return await res.json() as Record<string, unknown>;
 }
 
-async function youtubeSources(ids: string[], env: Env, fetchFn: Fetch, minViews: number): Promise<CollectedSource[]> {
+export async function youtubeSources(ids: string[], env: Env, fetchFn: Fetch, minViews: number): Promise<CollectedSource[]> {
   if (!ids.length) return [];
   const videos = ((await ytJson("videos", { part: "snippet,statistics", id: ids.join(","), maxResults: "50" }, env, fetchFn)).items ?? []) as YtVideo[];
   const out: CollectedSource[] = [];
@@ -418,7 +429,9 @@ async function saveReading(db: Rpc, id: string, reading: Reading): Promise<numbe
 
 // ---------------------------------------------------------------- the scheduled job
 
-export interface IngestResult { feeds: Record<string, { status: "ok" | "off" | "failed" | "later" | "limited"; collected?: number; error?: string }>; read: number; skipped: number; failed: number; claims: number; waiting: number; cleaned: number }
+export interface IngestResult { feeds: Record<string, { status: "ok" | "off" | "failed" | "later" | "limited"; collected?: number; error?: string }>; read: number; skipped: number; failed: number; claims: number; waiting: number; cleaned: number;
+  /** Pro Clubs build sources read this run (their builds count in claims). */
+  builds: number }
 
 /** Collect from each configured feed, then read what's waiting (most popular first). YouTube runs on its own hours to stay inside the API quota. */
 export async function runKnowledgeIngest(db: Rpc, env: Env, fetchFn: Fetch, now = new Date()): Promise<IngestResult> {
@@ -435,18 +448,30 @@ export async function runKnowledgeIngest(db: Rpc, env: Env, fetchFn: Fetch, now 
     }
   };
   const knownReddit = async (ids: string[]) => new Set(await rpcData<string[]>(db, "kb_known", { p_kind: "reddit", p_ids: ids }) ?? []);
+  // Reddit ids and YouTube ids never look alike (YouTube's are 11 characters), so one lookup serves both
+  const knownSources = async (ids: string[]) => new Set([...await knownReddit(ids), ...(await rpcData<string[]>(db, "kb_known", { p_kind: "youtube", p_ids: ids }) ?? [])]);
   await collect("reddit", redditFeedOn(env), () => collectReddit(env, fetchFn, knownReddit));
   const youtubeHours = (env("FUT_KB_YOUTUBE_HOURS") ?? "1,7,13,19").split(",").map(Number);
-  if (youtubeFeedOn(env) && !youtubeHours.includes(now.getUTCHours())) feeds.youtube = { status: "later" };
+  const youtubeNow = youtubeHours.includes(now.getUTCHours());
+  if (youtubeFeedOn(env) && !youtubeNow) feeds.youtube = { status: "later" };
   else await collect("youtube", youtubeFeedOn(env), () => collectYouTube(env, fetchFn, now.getTime()));
+  // Pro Clubs builds for the community meta builds (meta-builds.ts); a Reddit 429 above leaves Reddit alone this run
+  const redditLimited = feeds.reddit?.status === "limited";
+  await collect("builds", buildsFeedOn(env) && (redditMode(env) !== "off" || youtubeFeedOn(env)),
+    () => collectBuildSources(env, fetchFn, knownSources, { reddit: redditMode(env) !== "off" && !redditLimited, youtube: youtubeNow && youtubeFeedOn(env) }, now.getTime()));
 
-  const result: IngestResult = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0 };
+  const result: IngestResult = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0, builds: 0 };
   const hasKey = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
   if (hasKey) {
-    const pending = await rpcData<{ id: string; body: string }[]>(db, "kb_pending", { p_limit: Number(env("FUT_KB_READ_PER_RUN")) || 40 });
-    const known = pending.length ? await rpcData<{ topic: string; category: string }[]>(db, "kb_known_topics", { p_limit: 150 }) : [];
+    const pending = await rpcData<{ id: string; body: string; area?: string }[]>(db, "kb_pending", { p_limit: Number(env("FUT_KB_READ_PER_RUN")) || 40 });
+    const known = pending.some((s) => s.area !== "proclubs") ? await rpcData<{ topic: string; category: string }[]>(db, "kb_known_topics", { p_limit: 150 }) : [];
     for (const s of pending) {
       try {
+        if (s.area === "proclubs") {
+          const n = await saveBuildReading(db, s.id, await readBuildSource(s.body, env, fetchFn));
+          if (n > 0) { result.read++; result.builds++; result.claims += n; } else result.skipped++;
+          continue;
+        }
         const reading = await readSource(s.body, known, env, fetchFn);
         const n = await saveReading(db, s.id, reading);
         if (n > 0) { result.read++; result.claims += n; } else result.skipped++;
@@ -468,7 +493,9 @@ export async function runKnowledgeIngest(db: Rpc, env: Env, fetchFn: Fetch, now 
 
 // ---------------------------------------------------------------- what users do
 
-export interface AddInput { url?: string | null; text?: string | null; title?: string | null; share?: boolean }
+export interface AddInput { url?: string | null; text?: string | null; title?: string | null; share?: boolean;
+  /** 'proclubs': a Pro Clubs build post or video, read into builds for the community meta builds. */
+  area?: string | null }
 
 /** Add a source: a Reddit or YouTube link (fetched through the official APIs when configured) and/or pasted text. Read straight away. */
 export async function addSource(db: Rpc, userId: string, input: AddInput, env: Env, fetchFn: Fetch) {
@@ -482,15 +509,24 @@ export async function addSource(db: Rpc, userId: string, input: AddInput, env: E
     fetched = await fetchLinked(link, env, fetchFn).catch((e) => { console.error("[fut-api] knowledge link:", e); return null; });
     if (!fetched) throw new FutError(`${link.kind === "reddit" ? "Reddit" : "YouTube"} links can't be fetched here yet. Paste the post or the video's transcript into the text box too.`, 422);
   }
-  if (!fetched && text.length < 40) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
-  const title = squash(input.title, 300) || fetched?.title || squash(text.split("\n")[0], 120) || "Pasted source";
+  const area = input.area === "proclubs" ? "proclubs" : "fut";
+  // A build share link on its own is enough for a Pro Clubs build: its numbers are in the link
+  const buildLink = area === "proclubs" && !!url && extractBuildLinks(url).length > 0;
+  if (!fetched && text.length < 40 && !buildLink) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
+  const title = squash(input.title, 300) || fetched?.title || squash(text.split("\n")[0], 120) || (buildLink ? "Shared build link" : "Pasted source");
   const share = input.share === true && (!!url || !!fetched);
   const source = fetched
-    ? { ...fetched, shared: true }
+    ? { ...fetched, shared: true, area }
     : { kind: url ? "web" : "note", external_id: null, url: url || null, title, author: null, community: url ? new URL(url).hostname.replace(/^www\./, "") : null,
-        published_at: new Date().toISOString(), score: 0, comments: 0, body: text, excerpt: squash(text, 280), shared: share };
+        published_at: new Date().toISOString(), score: 0, comments: 0, body: text, excerpt: squash(text, 280), shared: share, area };
   const id = await rpcData<string | null>(db, "kb_add", { p_user: userId, p_source: source });
   if (!id) throw new FutError("That source couldn't be saved.", 500);
+  if (area === "proclubs") {
+    const body = fetched ? fetched.body : `${url ? `Page: ${url}\n` : "The user's own notes or a pasted source.\n"}Title: ${title}\n\n${text}${url && !text.includes(url) ? `\n${url}` : ""}`;
+    const reading = await readBuildSource(body, env, fetchFn);
+    const builds = await saveBuildReading(db, id, reading);
+    return { id, claims: builds, relevant: reading.relevant, summary: reading.summary, shared: fetched ? true : share, topics: [...new Set(reading.builds.map((b) => b.position))] };
+  }
   const known = await rpcData<{ topic: string; category: string }[]>(db, "kb_known_topics", { p_limit: 150 });
   const body = fetched ? fetched.body : `${url ? `Page: ${url}\n` : "The user's own notes or a pasted source.\n"}Title: ${title}\n\n${text}`;
   const reading = await readSource(body, known, env, fetchFn);

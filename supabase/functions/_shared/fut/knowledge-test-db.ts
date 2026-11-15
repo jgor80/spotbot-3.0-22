@@ -17,7 +17,7 @@ export const OTHER = "00000000-0000-0000-0000-000000000002";
 export async function knowledgeDb() {
   const db = new PGlite();
   await db.exec(KB_SETUP);
-  for (const m of ["20261110160000_fut_knowledge_bank.sql", "20261112010000_fut_kb_retry.sql", "20261112090000_fut_kb_team.sql", "20261110230000_fut_sell_or_keep.sql"]) {
+  for (const m of ["20261110160000_fut_knowledge_bank.sql", "20261112010000_fut_kb_retry.sql", "20261112090000_fut_kb_team.sql", "20261110230000_fut_sell_or_keep.sql", "20261115210000_kb_meta_builds.sql"]) {
     await db.exec(await Deno.readTextFile(new URL(`../../../migrations/${m}`, import.meta.url)));
   }
   await db.exec("SET ROLE service_role");

@@ -422,7 +422,7 @@ export const futApi = {
     map: (days: number, category: KbCategory | null) => futRequest<KbMap>(`/knowledge/map?${new URLSearchParams({ days: String(days), ...(category ? { category } : {}) })}`),
     topic: (key: string, days: number) => futRequest<KbTopicDetail>(`/knowledge/topics/${encodeURIComponent(key)}?${new URLSearchParams({ days: String(days) })}`),
     sources: (mine: boolean, page = 0, limit = 30) => futRequest<{ total: number; sources: KbSource[] }>(`/knowledge/sources?${new URLSearchParams({ mine: String(mine), limit: String(limit), offset: String(page * limit) })}`),
-    add: (input: { url?: string; text?: string; title?: string; share: boolean }) => futRequest<KbAddResult>("/knowledge/sources", "POST", input),
+    add: (input: { url?: string; text?: string; title?: string; share: boolean; area?: "proclubs" }) => futRequest<KbAddResult>("/knowledge/sources", "POST", input),
     remove: (id: string) => futRequest<{ deleted: string }>(`/knowledge/sources/${encodeURIComponent(id)}`, "DELETE"),
     ask: (question: string, history: FinderTurn[]) => futRequest<KbAnswer>("/knowledge/ask", "POST", { question, history }),
     apply: (target: { topic?: string; source?: string; squad?: string }) => futRequest<KbApplyResult>("/knowledge/apply", "POST", target),
