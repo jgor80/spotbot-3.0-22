@@ -5,6 +5,9 @@
 // POST { action: "voice", guild_id, user_ids }
 //   -> { channels: [{ id, name, user_ids }] }  who is in which voice channel right now,
 //      plus { id: "checkins" } for players who answered In or Late to tonight's roll call
+// POST { action: "signed", guild_id, team_id? }
+//   -> { role: { id, name } | null, user_ids }  the club's signed-players role and who has it,
+//      for the lineup builder's Signed players filter
 // POST { action: "announce", lineup_id, channel_id, mention_players?, dm_players?, message?, image_base64? }
 //   -> { success, message_id, channel_id, updated, changes, dm_sent, dm_failed }
 //   Re-publishing a squad's lineup (same event, or within a day) edits the earlier team sheet and
@@ -104,6 +107,36 @@ async function voiceChannels(supabase: any, guildId: string, userIds: string[]) 
   const checkins = await rollCallCheckins(supabase, guildId);
   if (checkins.length) channels.push({ id: "checkins", name: "Tonight's roll call (In and Late)", user_ids: checkins });
   return json({ channels });
+}
+
+// The club's signed-players role (set in /manager, else one named like "Signed Players") and who has it
+type MemberBridge = { membersWithRole?(guildId: string, roleId: string): string[] | null };
+
+async function signedPlayers(supabase: any, guildId: string, teamId: string | null) {
+  const { data: settings } = await supabase.from("guild_settings").select("clubs").eq("guild_id", guildId).maybeSingle();
+  const clubs: any[] = Array.isArray(settings?.clubs) ? settings.clubs : [];
+  const club = (teamId && clubs.find((c: any) => c?.team_id === teamId)) || (clubs.length === 1 ? clubs[0] : null);
+  const rolesRes = await discord(`/guilds/${guildId}/roles`).catch(() => null);
+  const roles: any[] = rolesRes?.ok ? await rolesRes.json().catch(() => []) : [];
+  const role = findSignedRole(roles, club);
+  if (!role) return json({ role: null, user_ids: [] });
+
+  // The bot's member cache first (GuildMembers intent), else page through the members list
+  const bridge = (globalThis as unknown as { __gafferbotVoice?: MemberBridge }).__gafferbotVoice;
+  let ids = bridge?.membersWithRole?.(guildId, role.id) ?? null;
+  if (!ids) {
+    ids = [];
+    let after = "0";
+    for (let page = 0; page < 10; page++) {
+      const res = await discord(`/guilds/${guildId}/members?limit=1000&after=${after}`);
+      if (!res.ok) { await res.body?.cancel(); break; }
+      const members = await res.json() as any[];
+      for (const m of members) if (m?.user?.id && (m.roles || []).includes(role.id)) ids.push(m.user.id);
+      if (members.length < 1000) break;
+      after = members[members.length - 1].user.id;
+    }
+  }
+  return json({ role: { id: role.id, name: role.name }, user_ids: ids });
 }
 
 // Without the bot's cache: one Discord call per player, five at a time
@@ -536,6 +569,13 @@ serve(async (req) => {
         ?? await throttleWebUser(req, supabase, "announce-lineup:voice", 10, 10 * 60 * 1000);
       if (denied) return denied;
       return await voiceChannels(supabase, body.guild_id, body.user_ids);
+    }
+    if (body.action === "signed") {
+      if (!body.guild_id || !DISCORD_ID_REGEX.test(body.guild_id)) return json({ error: "guild_id is required" }, 400);
+      const denied = await requireGuildAccess(req, supabase, body.guild_id, "member")
+        ?? await throttleWebUser(req, supabase, "announce-lineup:signed", 30, 10 * 60 * 1000);
+      if (denied) return denied;
+      return await signedPlayers(supabase, body.guild_id, typeof body.team_id === "string" ? body.team_id : null);
     }
     if (body.action === "announce") {
       return await announce(supabase, req, body, caller);
