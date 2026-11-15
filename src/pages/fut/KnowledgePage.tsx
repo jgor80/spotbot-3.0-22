@@ -7,6 +7,7 @@ import { TopicPanel } from "@/components/fut/knowledge/TopicPanel";
 import { AskBank } from "@/components/fut/knowledge/AskBank";
 import { TeamPlan } from "@/components/fut/knowledge/TeamPlan";
 import { FeedStatus, SourcesPanel } from "@/components/fut/knowledge/SourcesPanel";
+import { ProClubsBuilds } from "@/components/fut/knowledge/ProClubsBuilds";
 import { ago, CATEGORY_LABELS } from "@/components/fut/knowledge/knowledgePresentation";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 const PERIODS = [7, 30, 90] as const;
-const TABS = ["map", "team", "ask", "sources"] as const;
+const TABS = ["map", "team", "builds", "ask", "sources"] as const;
 type Tab = typeof TABS[number];
 
 /** Knowledge Bank: what the FUT community says about gameplay and strategy, as a map, an Ask chat and the sources. */
@@ -43,7 +44,7 @@ export default function KnowledgePage() {
       {s?.topics != null ? ` ${s.topics.toLocaleString()} topics from ${(s.sources ?? 0).toLocaleString()} sources, last collected ${ago(s.last_run?.finished_at)}.` : ""}
     </p>
     <Tabs value={tab} onValueChange={(v) => set({ tab: v === "map" ? null : v })}>
-      <TabsList><TabsTrigger value="map">Map</TabsTrigger><TabsTrigger value="team">For my team</TabsTrigger><TabsTrigger value="ask">Ask</TabsTrigger><TabsTrigger value="sources">Sources</TabsTrigger></TabsList>
+      <TabsList><TabsTrigger value="map">Map</TabsTrigger><TabsTrigger value="team">For my team</TabsTrigger><TabsTrigger value="builds">Pro Clubs builds</TabsTrigger><TabsTrigger value="ask">Ask</TabsTrigger><TabsTrigger value="sources">Sources</TabsTrigger></TabsList>
 
       <TabsContent value="map" className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -78,6 +79,8 @@ export default function KnowledgePage() {
       </TabsContent>
 
       <TabsContent value="team"><TeamPlan onPick={pick} /></TabsContent>
+
+      <TabsContent value="builds"><ProClubsBuilds /></TabsContent>
 
       <TabsContent value="ask"><AskBank /></TabsContent>
 

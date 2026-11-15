@@ -23,6 +23,7 @@ import {
   normaliseBuild,
   type Build,
 } from "@/lib/proBuild";
+import { CommunityMetaLoader } from "@/components/build/CommunityMetaBuilds";
 import { BodyFigure, BuildCard, GROUP_COLORS, LINE_COLORS, Meter, PitchPicker, downloadCard, radarGroups, shapeValues } from "@/components/build/BuildVisuals";
 
 // Accepts our links/codes and Pro Clubs Builder links
@@ -244,6 +245,14 @@ export default function BuildPlannerPage() {
           </aside>
 
           <main className="space-y-6">
+            <CommunityMetaLoader
+              className="rounded-3xl border-white/10 bg-white/[0.03] p-4 text-slate-200 shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset] backdrop-blur-xl sm:p-6"
+              innerClassName="rounded-2xl border-white/10 bg-black/20"
+              onLoad={(b) => {
+                setBuild((cur) => ({ ...b, budget: cur.budget }));
+                toast({ title: "Community build loaded", description: "Change anything you like, then copy the link." });
+              }}
+            />
             <Panel step="01" title="Pick your spot">
               <div className="grid gap-5 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
                 <div className="mx-auto w-full max-w-[260px]">

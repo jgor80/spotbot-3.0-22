@@ -10,6 +10,8 @@ import {
   banterWindow, banterRankings, superlatives, betterWithout, betterTogether, whoGetsTheShirt, headToHead,
   type AdvancedPlayer, type InsightMatch,
 } from "../../../src/lib/clubInsights.ts";
+import { describeMetaBuild, isMetaPosition, META_POSITION_KEYS } from "../../../src/lib/metaBuilds.ts";
+import { loadMetaBuilds } from "../_shared/fut/meta-builds.ts";
 
 export interface Ctx {
   // deno-lint-ignore no-explicit-any
@@ -658,6 +660,35 @@ export const TOOLS: Tool<Ctx>[] = [
         min_games: minGames,
         rankings: banterRankings(ms, minGames).map((r) => ({ ranking: r.title, question: r.question, entries: r.entries.slice(0, 5).map((e) => ({ player: e.name, verdict: e.verdict, receipt: e.line })) })),
         superlatives: superlatives(ms, minGames).map((s) => ({ award: s.title, player: s.name, receipt: s.line })),
+      };
+    },
+  },
+  {
+    name: "get_meta_builds",
+    title: "Community meta Virtual Pro builds",
+    description: "EA FC 27 Pro Clubs: the build the community says is best for each position (ST, W, CAM, CM, CDM, FB, CB, GK), read from Reddit posts and YouTube videos: archetype with its share of builds, height, weight, skill moves, weak foot, PlayStyles, the attributes to max first, what people warn against, the sources, and a gafferbot.app/build link that opens it in the Build lab. These are community opinions, not facts: say how many builds and sources back each one and link the sources.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        position: { type: "string", enum: [...META_POSITION_KEYS], description: "One position; leave out for all of them." },
+        days: { type: "integer", description: "Only builds from the last N days (default 180)." },
+      },
+      additionalProperties: false,
+    },
+    run: async (args, ctx) => {
+      const position = str(args.position);
+      if (position && !isMetaPosition(position)) throw new ToolError(`position must be one of ${META_POSITION_KEYS.join(", ")}.`);
+      const out = await loadMetaBuilds(ctx.db.schema("fut"), clampInt(args.days, 180, 7, 730));
+      const list = out.positions.filter((m) => !position || m.position === position);
+      return {
+        days: out.days,
+        positions: list.map((m) => ({
+          ...m,
+          build: undefined,
+          summary: describeMetaBuild(m),
+          build_lab_url: m.code ? `https://gafferbot.app/build?b=${m.code}` : null,
+        })),
+        note: "Community opinions from Reddit and YouTube, not facts. A position with 0 builds has no community data yet.",
       };
     },
   },
