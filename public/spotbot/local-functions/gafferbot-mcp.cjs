@@ -4015,18 +4015,18 @@ var COMPETITIONS = [
   { value: "cup", label: "Cup/Playoff", emoji: "\u{1F947}" },
   { value: "friendly", label: "Friendly", emoji: "\u{1F91D}" }
 ];
-function matchTag(row) {
-  const t = row.match_data?._tag;
+function matchTag(row2) {
+  const t = row2.match_data?._tag;
   return MATCH_TAGS.some((m) => m.value === t) ? t : null;
 }
-function eaCompetition(row) {
-  const raw = String(row.match_data?._matchCategory || row.match_type || "").toLowerCase();
+function eaCompetition(row2) {
+  const raw = String(row2.match_data?._matchCategory || row2.match_type || "").toLowerCase();
   if (/friendly/.test(raw)) return "friendly";
   if (/competition|cup|playoff/.test(raw)) return "cup";
   return "league";
 }
-function matchCompetition(row) {
-  return matchTag(row) || eaCompetition(row);
+function matchCompetition(row2) {
+  return matchTag(row2) || eaCompetition(row2);
 }
 var LINEUP_WINDOW_MS = 6 * 60 * 60 * 1e3;
 function num4(v) {
@@ -4037,28 +4037,28 @@ function playerKey(p) {
   const name2 = (p.ea_username || "").trim();
   return name2 ? name2.toLowerCase() : null;
 }
-function normalizeResult(row) {
-  const r2 = (row.result || "").toLowerCase();
+function normalizeResult(row2) {
+  const r2 = (row2.result || "").toLowerCase();
   if (r2 === "win" || r2 === "w") return "win";
   if (r2 === "loss" || r2 === "l") return "loss";
   if (r2 === "draw" || r2 === "d") return "draw";
-  const f2 = num4(row.score_for);
-  const a = num4(row.score_against);
+  const f2 = num4(row2.score_for);
+  const a = num4(row2.score_against);
   if (f2 === null || a === null) return null;
   return f2 > a ? "win" : f2 < a ? "loss" : "draw";
 }
-function matchTime(row) {
-  const data = row.match_data;
+function matchTime(row2) {
+  const data = row2.match_data;
   const ts = num4(data?.timestamp);
   if (ts && ts > 1e9) return new Date(ts < 1e12 ? ts * 1e3 : ts);
-  return new Date(row.created_at || 0);
+  return new Date(row2.created_at || 0);
 }
-function rawClubs(row) {
-  const byClub = row.match_data?.players;
+function rawClubs(row2) {
+  const byClub = row2.match_data?.players;
   return byClub && typeof byClub === "object" ? byClub : null;
 }
-function rawPlayerRows(row, players) {
-  const byClub = rawClubs(row);
+function rawPlayerRows(row2, players) {
+  const byClub = rawClubs(row2);
   const out = /* @__PURE__ */ new Map();
   if (!byClub) return out;
   const ours = new Set(players.map(playerKey).filter((k) => !!k));
@@ -4078,8 +4078,8 @@ function rawPlayerRows(row, players) {
   }
   return out;
 }
-function opponentRows(row, players) {
-  const byClub = rawClubs(row);
+function opponentRows(row2, players) {
+  const byClub = rawClubs(row2);
   if (!byClub) return [];
   const ours = new Set(players.map(playerKey).filter((k) => !!k));
   const clubs = Object.values(byClub).filter((c2) => c2 && typeof c2 === "object");
@@ -4097,8 +4097,8 @@ function opponentRows(row, players) {
     ...hasEventData(r2) ? { events: eaEventCounts(r2) } : {}
   }));
 }
-function withEvents(row, players) {
-  const raw = rawPlayerRows(row, players);
+function withEvents(row2, players) {
+  const raw = rawPlayerRows(row2, players);
   if (!raw.size) return players;
   return players.map((p) => {
     const r2 = raw.get(playerKey(p) || "");
@@ -4109,29 +4109,29 @@ function withEvents(row, players) {
 function toInsightMatches(rows, lineups = []) {
   const sortedLineups = lineups.map((l) => ({ formation: l.formation, at: new Date(l.created_at).getTime() })).sort((a, b) => a.at - b.at);
   const matches = [];
-  for (const row of rows) {
-    const result2 = normalizeResult(row);
+  for (const row2 of rows) {
+    const result2 = normalizeResult(row2);
     if (!result2) continue;
-    const playedAt = matchTime(row);
+    const playedAt = matchTime(row2);
     const t = playedAt.getTime();
     let formation = null;
     for (const l of sortedLineups) {
       if (l.at > t) break;
       if (t - l.at <= LINEUP_WINDOW_MS) formation = l.formation;
     }
-    const players = Array.isArray(row.player_stats) ? row.player_stats : [];
+    const players = Array.isArray(row2.player_stats) ? row2.player_stats : [];
     matches.push({
-      id: row.id,
+      id: row2.id,
       result: result2,
-      scoreFor: num4(row.score_for) ?? 0,
-      scoreAgainst: num4(row.score_against) ?? 0,
-      matchType: row.match_type,
-      tag: matchTag(row),
-      competition: matchCompetition(row),
+      scoreFor: num4(row2.score_for) ?? 0,
+      scoreAgainst: num4(row2.score_against) ?? 0,
+      matchType: row2.match_type,
+      tag: matchTag(row2),
+      competition: matchCompetition(row2),
       playedAt,
-      opponent: row.opponent_club_name || "Unknown",
-      players: withEvents(row, players),
-      opponentPlayers: opponentRows(row, players),
+      opponent: row2.opponent_club_name || "Unknown",
+      players: withEvents(row2, players),
+      opponentPlayers: opponentRows(row2, players),
       formation
     });
   }
@@ -4752,6 +4752,58 @@ function previewed(discordUserId, tool, guildId, args, now2 = Date.now()) {
   return at2 !== void 0 && now2 - at2 <= PREVIEW_TTL_MS;
 }
 
+// supabase/functions/_shared/ai-provider-keys.ts
+var snowflake2 = (id) => /^\d{17,20}$/.test(id);
+var KeyError = class extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.status = status;
+  }
+};
+var unb64 = (text2) => Uint8Array.from(atob(text2), (c2) => c2.charCodeAt(0));
+var aad = (scope, owner, provider) => new TextEncoder().encode(`${scope}:${owner}:${provider}`);
+async function sealKey(env) {
+  const secret = env("AI_KEY_SECRET") || env("HELPER_KEY_SECRET") || env("SUPABASE_SERVICE_ROLE_KEY");
+  if (!secret) return null;
+  const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`gafferbot-provider-key:${secret}`));
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+async function decryptKey(env, scope, owner, provider, sealed) {
+  if (!sealed?.startsWith("v1:")) return null;
+  const k = await sealKey(env);
+  if (!k) return null;
+  try {
+    const raw = unb64(sealed.slice(3));
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12), additionalData: aad(scope, owner, provider) }, k, raw.slice(12));
+    return new TextDecoder().decode(plain);
+  } catch {
+    return null;
+  }
+}
+async function row(db, scope, owner, provider) {
+  const { data, error } = await db.from("ai_provider_keys").select("key_encrypted, key_hint, updated_at, last_used_at, last_error").eq("scope", scope).eq("owner_id", owner).eq("provider", provider).maybeSingle();
+  if (error) throw new KeyError(`Couldn't read saved keys: ${error.message}`, 500);
+  return data;
+}
+function ownKeysEnabled(env) {
+  return env("GAFFERBOT_SELF_HOSTED") === "1" && !/^(off|false|0|no)$/i.test(String(env("AI_OWN_KEYS") ?? "").trim());
+}
+async function imageKeyFor(db, env, who) {
+  if (!ownKeysEnabled(env)) return null;
+  const tries = [["user", who.userId, "yours"], ["server", who.guildId, "server"]];
+  for (const [scope, owner, source] of tries) {
+    if (!owner || !snowflake2(owner)) continue;
+    try {
+      const r2 = await row(db, scope, owner, "openai");
+      const key = r2 ? await decryptKey(env, scope, owner, "openai", r2.key_encrypted) : null;
+      if (key) return { key, source };
+    } catch (err) {
+      console.warn(`[ai-keys] ${scope} key lookup failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  return null;
+}
+
 // supabase/functions/gafferbot-mcp/manage.ts
 var BLOCKED_AREAS = /* @__PURE__ */ new Set(["admin", "premium", "drafts"]);
 var BLOCKED_ACTIONS = /* @__PURE__ */ new Set([
@@ -4776,6 +4828,7 @@ var BLOCKED_ACTIONS = /* @__PURE__ */ new Set([
   "wb_graphics",
   "wb_setup"
 ]);
+var OWN_KEY_ACTIONS = /* @__PURE__ */ new Set(["wb_graphics"]);
 var FIELD_TYPES = {
   3: "text",
   4: "whole number",
@@ -4885,19 +4938,25 @@ function summarize(snap) {
     next: snap?.modal ? "A form opened. Ask the player for the answers, preview with submit_form, then confirm." : !snap?.done ? "Still running. Call check_action with this run_id in a few seconds." : messages.some((m) => m.controls.length) ? "Buttons and menus above can be used with press_button (preview first)." : "Done."
   };
 }
-function allowed(action, areaKey) {
-  return !BLOCKED_ACTIONS.has(action.id) && !(areaKey && BLOCKED_AREAS.has(areaKey)) && !action.denied && !action.discordOnly;
+function allowed(action, areaKey, ownImageKey = false) {
+  if (action.denied || action.discordOnly) return false;
+  if (ownImageKey && OWN_KEY_ACTIONS.has(action.id)) return true;
+  return !BLOCKED_ACTIONS.has(action.id) && !(areaKey && BLOCKED_AREAS.has(areaKey));
+}
+async function hasOwnImageKey(ctx, guildId) {
+  return Boolean(await imageKeyFor(ctx.db, (k) => Deno.env.get(k), { userId: ctx.discordUserId, guildId }).catch(() => null));
 }
 async function catalogue(ctx, guildId) {
-  const c2 = await call(ctx, "context", { guildId });
+  const [c2, ownKey] = await Promise.all([call(ctx, "context", { guildId }), hasOwnImageKey(ctx, guildId)]);
   const actions = [];
   const add = (a, area, areaKey) => {
-    if (!allowed(a, areaKey)) return;
+    if (!allowed(a, areaKey, ownKey)) return;
+    const hint = OWN_KEY_ACTIONS.has(a.id) ? `${a.hint ? `${a.hint} ` : ""}AI art here is drawn on the player's own OpenAI key (or the server's), not GafferBot's image allowance. Every graphic is previewed privately first; it is only posted when the player presses Post it.` : a.hint;
     actions.push({
       id: a.id,
       label: a.label,
       area,
-      ...a.hint ? { hint: a.hint } : {},
+      ...hint ? { hint } : {},
       fields: (a.fields || []).map((f2) => ({
         name: f2.name,
         type: f2.kind === "when" ? "date/time text (e.g. 2026-10-20 20:00 or 'tomorrow 8pm', server timezone)" : FIELD_TYPES[f2.type] || "text",
@@ -4998,7 +5057,7 @@ var MANAGE_TOOLS = [
     name: "list_club_actions",
     title: "Club actions I can run",
     scope: SCOPE_MANAGE,
-    description: "The Discord panel actions you can run in a server (the same /manager and /me buttons you have in Discord, minus admin, premium, Network and removal tools), with each action's fields, plus the channels GafferBot can post in.",
+    description: "The Discord panel actions you can run in a server (the same /manager and /me buttons you have in Discord, minus admin, premium, Network and removal tools; Graphics Studio appears once the player or the server has added their own OpenAI key on gafferbot.app), with each action's fields, plus the channels GafferBot can post in.",
     inputSchema: { type: "object", properties: { guild_id: guildIdProp2 }, additionalProperties: false },
     run: async (args, ctx) => {
       const guildId = await resolveGuild(args, ctx);
@@ -5690,7 +5749,7 @@ function diffSquadChemistry(before, after) {
 var FACE_STATS = ["pac", "sho", "pas", "dri", "def", "phy"];
 
 // supabase/functions/_shared/fut/xilab/workspace/formations.ts
-var f = (rows) => rows.flatMap((r2, row) => r2.map(([slot, position]) => ({ slot, position, row })));
+var f = (rows) => rows.flatMap((r2, row2) => r2.map(([slot, position]) => ({ slot, position, row: row2 })));
 var GK = [["GK", "GK"]];
 var BACK3 = [["LCB", "CB"], ["CB", "CB"], ["RCB", "CB"]];
 var BACK4 = [["LB", "LB"], ["LCB", "CB"], ["RCB", "CB"], ["RB", "RB"]];
@@ -10679,7 +10738,7 @@ var PgSquadStore = class {
     fail(error);
     if (existing && existing.user_id !== owner) throw new NotFoundError(`No squad ${squad.id}`);
     const parent = squad.parent_id && squad.parent_id !== squad.id && await this.get(owner, squad.parent_id) ? squad.parent_id : null;
-    const row = {
+    const row2 = {
       name: squad.name,
       formation: squad.formation,
       platform: squad.platform ?? null,
@@ -10689,14 +10748,14 @@ var PgSquadStore = class {
       updated_at: squad.updated_at
     };
     if (existing) {
-      fail((await this.db.from("squads").update(row).eq("id", squad.id).eq("user_id", owner)).error);
+      fail((await this.db.from("squads").update(row2).eq("id", squad.id).eq("user_id", owner)).error);
       fail((await this.db.from("squad_slots").delete().eq("squad_id", squad.id)).error);
     } else {
       const { count, error: e } = await this.db.from("squads").select("id", { count: "exact", head: true }).eq("user_id", owner);
       fail(e);
       if ((count ?? 0) >= MAX_SQUADS_PER_USER) throw new FutError(`You can keep up to ${MAX_SQUADS_PER_USER} squads. Delete one first.`);
       await ensureAccount(this.db, owner);
-      fail((await this.db.from("squads").insert({ ...row, id: squad.id, user_id: owner, created_at: squad.created_at })).error);
+      fail((await this.db.from("squads").insert({ ...row2, id: squad.id, user_id: owner, created_at: squad.created_at })).error);
     }
     const slots = [];
     for (const [i, s] of squad.slots.entries()) {
@@ -11423,7 +11482,7 @@ function assertUsable(source, use) {
 // supabase/functions/_shared/fut/xilab/shared/csv.ts
 function parseCsv(text2) {
   const rows = [];
-  let row = [];
+  let row2 = [];
   let field = "";
   let quoted = false;
   const s = text2.replace(/^﻿/, "");
@@ -11438,18 +11497,18 @@ function parseCsv(text2) {
       } else field += c2;
     } else if (c2 === '"') quoted = true;
     else if (c2 === ",") {
-      row.push(field);
+      row2.push(field);
       field = "";
     } else if (c2 === "\n" || c2 === "\r") {
       if (c2 === "\r" && s[i + 1] === "\n") i++;
-      row.push(field);
+      row2.push(field);
       field = "";
-      if (row.some((f2) => f2 !== "")) rows.push(row);
-      row = [];
+      if (row2.some((f2) => f2 !== "")) rows.push(row2);
+      row2 = [];
     } else field += c2;
   }
-  row.push(field);
-  if (row.some((f2) => f2 !== "")) rows.push(row);
+  row2.push(field);
+  if (row2.some((f2) => f2 !== "")) rows.push(row2);
   const [header, ...body] = rows;
   if (!header) return [];
   const keys = header.map((h) => h.trim());
@@ -12014,7 +12073,7 @@ function createMarketService(deps) {
       const snap = await snapshot(owner, opts.platform ?? "console", opts.as_of);
       const card = getCard2(snap, card_id);
       const others = opts.others?.length ? opts.others.map((id) => getCard2(snap, id)) : comparableCards(card, snap.cards);
-      const row = (c2) => {
+      const row2 = (c2) => {
         const s = snap.series.get(c2.id) ?? [];
         const f2 = freshness(s, snap.as_of, rules);
         const u = cardUtility(c2);
@@ -12022,7 +12081,7 @@ function createMarketService(deps) {
         const fit = u.gameplay.best?.score ?? null;
         return { card_id: c2.id, name: c2.name, rating: c2.rating, best_fit: u.gameplay.best, versatility: u.gameplay.versatility, latest_price: price, freshness: f2.status, coins_per_fit_point: price !== null && fit ? Math.round(price / fit) : null };
       };
-      return { subject: row(card), others: others.map(row), note: "Fit is a face-stat estimate. Coins per fit point compares price to that estimate only; PlayStyles, roles and chemistry aren't in it yet.", provenance: provenance(snap) };
+      return { subject: row2(card), others: others.map(row2), note: "Fit is a face-stat estimate. Coins per fit point compares price to that estimate only; PlayStyles, roles and chemistry aren't in it yet.", provenance: provenance(snap) };
     },
     /** analyze_trade_thesis */
     async analyzeTradeThesis(owner, input, opts = {}) {
@@ -12333,10 +12392,10 @@ var PgPriceStore = class {
     }
     const wanted = q.card_ids?.length ? new Set(q.card_ids) : null;
     const catalogueIds = /* @__PURE__ */ new Map();
-    for (const row of await this.catalogue()) {
-      const key = eaKey(row.source_card_key);
-      if (key === null || byEa.has(key) || wanted && !wanted.has(String(row.id))) continue;
-      catalogueIds.set(key, String(row.id));
+    for (const row2 of await this.catalogue()) {
+      const key = eaKey(row2.source_card_key);
+      if (key === null || byEa.has(key) || wanted && !wanted.has(String(row2.id))) continue;
+      catalogueIds.set(key, String(row2.id));
     }
     const out = [];
     const push = (quote, cardId) => out.push({
