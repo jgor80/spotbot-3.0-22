@@ -62,6 +62,17 @@ export const PUBLIC_PAGES: Record<string, PageMeta> = {
     sitemap: true,
     index: true,
   },
+  "/clubs": {
+    title: "EA FC 27 Pro Clubs Club Lookup: Stats, Form and Player Scores | GafferBot",
+    description: "Look up any EA FC 27 Pro Clubs club: record, recent form, team scores out of 1000 against real FC27 clubs, player scores and the squad. Free, no sign-in.",
+    sitemap: true,
+    index: true,
+  },
+  "/clubs/compare": {
+    title: "Compare Two Pro Clubs Clubs Side by Side | GafferBot",
+    description: "Put two EA FC 27 Pro Clubs clubs side by side: all-time record, skill rating, recent form and team scores out of 1000. Free, no sign-in.",
+    index: true,
+  },
 };
 
 // Sign-in is reachable but not worth indexing (robots.txt also keeps crawlers off it).
@@ -86,9 +97,16 @@ const PLAY: PageMeta = {
   index: true,
 };
 
+// Public club pages (/club/<platform>/<clubId>): any EA club, found by its name in search
+const CLUB: PageMeta = {
+  title: "Pro Clubs club stats, form and player scores | GafferBot",
+  description: "This EA FC 27 Pro Clubs club's record, recent form, team scores out of 1000 against real FC27 clubs, player scores and squad. Free, no sign-in.",
+  index: true,
+};
+
 export function metaFor(pathname: string): PageMeta & { path: string } {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
-  const page = PUBLIC_PAGES[path] ?? (path === "/auth" ? AUTH : /^\/play\/[a-z0-9-]+$/.test(path) ? PLAY : undefined);
+  const page = PUBLIC_PAGES[path] ?? (path === "/auth" ? AUTH : /^\/play\/[a-z0-9-]+$/.test(path) ? PLAY : /^\/club\/(common-gen5|nx)\/\d+$/.test(path) ? CLUB : undefined);
   return { ...(page ?? APP_META), path };
 }
 
