@@ -74,6 +74,12 @@ export const PUBLIC_PAGES: Record<string, PageMeta> = {
     sitemap: true,
     index: true,
   },
+  "/build": {
+    title: "EA FC 27 Pro Clubs Build Planner: Plan and Share Your Virtual Pro | GafferBot",
+    description: "Plan an EA FC 27 Pro Clubs Virtual Pro: archetype, height and weight, attribute points against what you have, PlayStyles, and a share link for your club. Free, no sign-in.",
+    sitemap: true,
+    index: true,
+  },
   "/clubs/compare": {
     title: "Compare Two Pro Clubs Clubs Side by Side | GafferBot",
     description: "Put two EA FC 27 Pro Clubs clubs side by side: all-time record, skill rating, recent form and team scores out of 1000. Free, no sign-in.",
