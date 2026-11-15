@@ -76,8 +76,8 @@ async function guildAccessLevel(admin, guildId, discordUserId) {
     _roles: ["admin", "moderator", "manager", "captain"]
   });
   if (leader || await isDiscordClubLeader(guildId, discordUserId)) return "leader";
-  const { data: played } = await admin.from("player_stats").select("id").eq("guild_id", guildId).eq("discord_user_id", discordUserId).limit(1).maybeSingle();
-  if (played) return "member";
+  const { data: played2 } = await admin.from("player_stats").select("id").eq("guild_id", guildId).eq("discord_user_id", discordUserId).limit(1).maybeSingle();
+  if (played2) return "member";
   const member = await discordGet(`/guilds/${guildId}/members/${discordUserId}`);
   return member ? "member" : null;
 }
@@ -3677,6 +3677,330 @@ function defendingSummary(matches, minGames = 5, recentWindow = 10) {
   return { players, pairs, recent, earlier, trend };
 }
 
+// src/lib/banter.ts
+var keyOf2 = (p) => (p.ea_username || "").trim().toLowerCase();
+var played = (m, key) => m.players.some((p) => keyOf2(p) === key);
+var pts = (m) => m.result === "win" ? 3 : m.result === "draw" ? 1 : 0;
+var f1 = (n) => n.toFixed(1);
+var pctS = (n) => `${Math.round(n)}%`;
+function banterWindow(matches, window2) {
+  const sorted = [...matches].sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime());
+  if (!sorted.length || window2 === "all") return sorted;
+  if (window2 === "week") {
+    const from = sorted[0].playedAt.getTime() - 7 * 864e5;
+    return sorted.filter((m) => m.playedAt.getTime() >= from);
+  }
+  const out = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    if (out[out.length - 1].playedAt.getTime() - sorted[i].playedAt.getTime() > 90 * 6e4) break;
+    out.push(sorted[i]);
+  }
+  return out;
+}
+function roleAverages(lines) {
+  const out = {};
+  for (const role of ["GK", "DEF", "MID", "FWD"]) {
+    const ls = lines.filter((l) => l.role === role && l.avgRating !== null);
+    if (!ls.length) continue;
+    const games = ls.reduce((t, l) => t + l.games, 0);
+    out[role] = {
+      rating: ls.reduce((t, l) => t + (l.avgRating || 0) * l.games, 0) / games,
+      gaPerGame: ls.reduce((t, l) => t + l.goals + l.assists, 0) / games
+    };
+  }
+  return out;
+}
+function involvement(matches) {
+  const out = /* @__PURE__ */ new Map();
+  for (const m of matches) {
+    for (const p of m.players) {
+      const k = keyOf2(p);
+      if (!k) continue;
+      const a = out.get(k) || { shots: 0, touches: 0, eventGames: 0 };
+      if (p.events) {
+        const s = statsFromCounts(p.events);
+        const shots = (s.shotsOnTarget || 0) + (s.shotsOffTarget || 0);
+        a.shots += shots;
+        a.touches += (s.passesCompleted || 0) + (s.passesFailed || 0) + (s.tacklesWon || 0) + (s.tacklesLost || 0) + (s.dribbles || 0) + shots;
+        a.eventGames++;
+      } else {
+        a.shots += Number(p.shots) || 0;
+      }
+      out.set(k, a);
+    }
+  }
+  return out;
+}
+function banterRankings(matches, minGames = 3) {
+  const lines = playerLines(matches, minGames).filter((l) => l.role);
+  if (!lines.length) return [];
+  const roleAvg = roleAverages(playerLines(matches, 1));
+  const inv = involvement(matches);
+  const teamWin = matches.length ? matches.filter((m) => m.result === "win").length / matches.length * 100 : 0;
+  const teamShots = [...inv.values()].reduce((t, a) => t + a.shots, 0);
+  const teamGoals = lines.reduce((t, l) => t + l.goals, 0);
+  const roleWord = (r2) => r2 === "GK" ? "keepers" : r2 === "DEF" ? "defenders" : r2 === "MID" ? "midfielders" : "forwards";
+  const rankings = [];
+  const tigers = lines.filter((l) => l.avgRating !== null && roleAvg[l.role]).map((l) => {
+    const winPct = l.wins / l.games * 100;
+    const ratingGap = l.avgRating - roleAvg[l.role].rating;
+    return { l, winPct, ratingGap, value: ratingGap * 10 + (teamWin - winPct) / 5 };
+  }).filter((x) => x.ratingGap > 0 && x.winPct < teamWin).sort((a, b) => b.value - a.value);
+  rankings.push({
+    key: "paperTiger",
+    title: "Paper Tiger",
+    emoji: "\u{1F42F}",
+    question: "Looks great on the ratings, but do the results follow?",
+    entries: tigers.map((x) => ({
+      name: x.l.name,
+      value: x.value,
+      line: `${f1(x.l.avgRating)} average (squad ${roleWord(x.l.role)} ${f1(roleAvg[x.l.role].rating)}), yet wins ${pctS(x.winPct)} of games to the squad's ${pctS(teamWin)}.`,
+      verdict: x.value >= 6 ? "All bark" : "Suspicious"
+    }))
+  });
+  const mains = lines.filter((l) => l.role !== "GK").map((l) => {
+    const shotShare = teamShots ? (inv.get(l.key)?.shots || 0) / teamShots * 100 : 0;
+    const goalShare = teamGoals ? l.goals / teamGoals * 100 : 0;
+    return { l, shotShare, goalShare, value: shotShare + goalShare + l.motm * 2 };
+  }).filter((x) => x.shotShare + x.goalShare > 0).sort((a, b) => b.value - a.value);
+  rankings.push({
+    key: "mainCharacter",
+    title: "Main Character",
+    emoji: "\u{1F451}",
+    question: "Who thinks this is their story and everyone else is an extra?",
+    entries: mains.map((x) => ({
+      name: x.l.name,
+      value: x.value,
+      line: `${pctS(x.shotShare)} of the shots, ${pctS(x.goalShare)} of the goals and ${x.l.motm} man of the match award${x.l.motm === 1 ? "" : "s"} in ${x.l.games} games.`,
+      verdict: x.goalShare >= 35 ? "Lead role" : x.shotShare >= 25 ? "Wants the lead role" : "Ensemble cast"
+    }))
+  });
+  const withTouches = lines.filter((l) => l.role !== "GK" && (inv.get(l.key)?.eventGames || 0) >= minGames);
+  const touchAvg = {};
+  for (const role of ["DEF", "MID", "FWD"]) {
+    const ls = withTouches.filter((l) => l.role === role);
+    const g = ls.reduce((t, l) => t + inv.get(l.key).eventGames, 0);
+    if (g) touchAvg[role] = ls.reduce((t, l) => t + inv.get(l.key).touches, 0) / g;
+  }
+  const ghosts = withTouches.map((l) => {
+    const a = inv.get(l.key);
+    const perGame2 = a.touches / a.eventGames;
+    const avg2 = touchAvg[l.role] || perGame2;
+    return { l, perGame: perGame2, avg: avg2, value: avg2 ? (avg2 - perGame2) / avg2 * 100 : 0 };
+  }).filter((x) => x.value > 10).sort((a, b) => b.value - a.value);
+  rankings.push({
+    key: "invisible",
+    title: "Invisible Man",
+    emoji: "\u{1F47B}",
+    question: "Was anyone actually on the pitch?",
+    entries: ghosts.map((x) => ({
+      name: x.l.name,
+      value: x.value,
+      line: `${f1(x.perGame)} on-ball actions a game, where the squad's ${roleWord(x.l.role)} average ${f1(x.avg)}.`,
+      verdict: x.value >= 35 ? "Missing person" : "Quiet"
+    }))
+  });
+  const magnets = lines.map((l) => {
+    const without = matches.filter((m) => !played(m, l.key));
+    if (without.length < 3) return null;
+    const withWin = l.wins / l.games * 100;
+    const woWin = without.filter((m) => m.result === "win").length / without.length * 100;
+    return { l, withWin, woWin, woGames: without.length, value: woWin - withWin };
+  }).filter((x) => !!x && x.value > 0).sort((a, b) => b.value - a.value);
+  rankings.push({
+    key: "lossMagnet",
+    title: "Loss Magnet",
+    emoji: "\u{1F9F2}",
+    question: "Do the defeats follow someone around?",
+    entries: magnets.map((x) => ({
+      name: x.l.name,
+      value: x.value,
+      line: `The squad wins ${pctS(x.withWin)} with them (${x.l.games} games) and ${pctS(x.woWin)} without (${x.woGames}). Different games, so not proof.`,
+      verdict: x.value >= 25 ? "Black cat" : "Unlucky charm"
+    }))
+  });
+  const padders = lines.map((l) => {
+    let goals = 0, padded = 0, tight = 0;
+    for (const m of matches) {
+      const me = m.players.find((p) => keyOf2(p) === l.key);
+      const g = Number(me?.goals) || 0;
+      if (!g) continue;
+      goals += g;
+      if (m.scoreFor - m.scoreAgainst >= 3) padded += g;
+      if (Math.abs(m.scoreFor - m.scoreAgainst) <= 1) tight += g;
+    }
+    return { l, goals, padded, tight, value: goals ? padded / goals * 100 : 0 };
+  }).filter((x) => x.goals >= 3 && x.value >= 40).sort((a, b) => b.value - a.value);
+  rankings.push({
+    key: "statPadder",
+    title: "Stat Padder",
+    emoji: "\u{1F4CA}",
+    question: "Whose goals come when the game is already over?",
+    entries: padders.map((x) => ({
+      name: x.l.name,
+      value: x.value,
+      line: `${x.padded} of ${x.goals} goals came in wins by three or more; ${x.tight} in one-goal games or draws.`,
+      verdict: x.value >= 60 ? "Padding merchant" : "Garbage-time specialist"
+    }))
+  });
+  const squadGoals = lines.reduce((t, l) => t + l.goals, 0);
+  const squadRatio = squadGoals ? lines.reduce((t, l) => t + l.assists, 0) / squadGoals : 0;
+  const hogs = lines.filter((l) => l.role !== "GK" && l.goals >= 3).map((l) => {
+    const ratio = l.assists / l.goals;
+    return { l, ratio, value: squadRatio - ratio };
+  }).filter((x) => x.value > 0.15).sort((a, b) => b.value - a.value || b.l.goals - a.l.goals);
+  rankings.push({
+    key: "ballHog",
+    title: "Ball Hog",
+    emoji: "\u{1F437}",
+    question: "Who never looks up?",
+    entries: hogs.map((x) => ({
+      name: x.l.name,
+      value: x.value,
+      line: `${x.l.goals} goals, ${x.l.assists} assist${x.l.assists === 1 ? "" : "s"}: ${x.ratio.toFixed(2)} assists per goal, where the squad manages ${squadRatio.toFixed(2)}.`,
+      verdict: x.ratio < 0.2 ? "Pass it, mate" : "Selective vision"
+    }))
+  });
+  return rankings.filter((r2) => r2.entries.length);
+}
+function superlatives(matches, minGames = 3) {
+  const lines = playerLines(matches, minGames);
+  const inv = involvement(matches);
+  const out = [];
+  const top = (list, f2) => [...list].sort((a, b) => f2(b) - f2(a))[0];
+  const outfield = lines.filter((l) => l.role && l.role !== "GK");
+  const scorer = top(outfield, (l) => l.goals / l.games);
+  if (scorer?.goals) out.push({ key: "score", title: "Most likely to score", emoji: "\u26BD", name: scorer.name, line: `${f1(scorer.goals / scorer.games)} goals a game` });
+  const misser = top(
+    outfield.filter((l) => (inv.get(l.key)?.shots || 0) >= 5),
+    (l) => (inv.get(l.key).shots - l.goals) / l.games
+  );
+  if (misser) out.push({ key: "miss", title: "Most likely to miss", emoji: "\u{1F3AF}", name: misser.name, line: `${inv.get(misser.key).shots - misser.goals} shots without a goal` });
+  const architect = top(outfield, (l) => (l.assists + l.secondAssists) / l.games);
+  if (architect && architect.assists + architect.secondAssists) out.push({ key: "architect", title: "The Architect", emoji: "\u{1F3A8}", name: architect.name, line: `${architect.assists} assists, ${architect.secondAssists} second assists` });
+  const og = top(lines, (l) => l.games);
+  if (og) out.push({ key: "og", title: "The OG", emoji: "\u{1F474}", name: og.name, line: `${og.games} games, never misses a session` });
+  const wall = top(
+    lines.filter((l) => l.role === "DEF" || l.role === "GK"),
+    (l) => -matches.filter((m) => played(m, l.key)).reduce((t, m) => t + m.scoreAgainst, 0) / l.games
+  );
+  if (wall) {
+    const ga = matches.filter((m) => played(m, wall.key)).reduce((t, m) => t + m.scoreAgainst, 0) / wall.games;
+    out.push({ key: "wall", title: "The Wall", emoji: "\u{1F9F1}", name: wall.name, line: `${f1(ga)} conceded a game with them at the back` });
+  }
+  const star = top(lines, (l) => l.motm / l.games);
+  if (star?.motm) out.push({ key: "star", title: "Man of the Match machine", emoji: "\u{1F31F}", name: star.name, line: `${star.motm} MOTM in ${star.games}` });
+  const rated = lines.filter((l) => l.avgRating !== null);
+  const steady = top(rated, (l) => l.avgRating);
+  if (steady) out.push({ key: "rated", title: "Highest rated", emoji: "\u2B50", name: steady.name, line: `${f1(steady.avgRating)} average` });
+  const cards = /* @__PURE__ */ new Map();
+  for (const m of matches) for (const p of m.players) if (p.events) cards.set(keyOf2(p), (cards.get(keyOf2(p)) || 0) + (statsFromCounts(p.events).yellowCards || 0) + (p.red_cards ? 1 : 0));
+  const hot = top(lines.filter((l) => (cards.get(l.key) || 0) > 0), (l) => (cards.get(l.key) || 0) / l.games);
+  if (hot) out.push({ key: "cards", title: "Most likely to see red", emoji: "\u{1F7E5}", name: hot.name, line: `${cards.get(hot.key)} cards in ${hot.games} games` });
+  return out;
+}
+function split(ms3) {
+  const w = ms3.filter((m) => m.result === "win").length;
+  const d = ms3.filter((m) => m.result === "draw").length;
+  return {
+    games: ms3.length,
+    wins: w,
+    draws: d,
+    losses: ms3.length - w - d,
+    pointsPerGame: ms3.length ? ms3.reduce((t, m) => t + pts(m), 0) / ms3.length : 0,
+    goalsFor: ms3.length ? ms3.reduce((t, m) => t + m.scoreFor, 0) / ms3.length : 0,
+    goalsAgainst: ms3.length ? ms3.reduce((t, m) => t + m.scoreAgainst, 0) / ms3.length : 0
+  };
+}
+function nameOf(matches, key) {
+  for (const m of matches) for (const p of m.players) if (keyOf2(p) === key) return (p.ea_username || "").trim();
+  return key;
+}
+function betterWithout(matches, player) {
+  const key = player.trim().toLowerCase();
+  const withMs = matches.filter((m) => played(m, key));
+  const without = matches.filter((m) => !played(m, key));
+  if (!withMs.length) return null;
+  const a = split(withMs), b = split(without);
+  const name2 = nameOf(matches, key);
+  const headline = !without.length ? `${name2} has played every game. No receipts without them.` : b.pointsPerGame > a.pointsPerGame + 0.3 ? `The squad is better off when ${name2} is offline.` : a.pointsPerGame > b.pointsPerGame + 0.3 ? `Without ${name2}, it falls apart.` : `${name2} makes no difference either way.`;
+  return { kind: "without", name: name2, with: a, without: b, headline };
+}
+function betterTogether(matches, a, b) {
+  const ka = a.trim().toLowerCase(), kb = b.trim().toLowerCase();
+  if (ka === kb) return null;
+  const both = matches.filter((m) => played(m, ka) && played(m, kb));
+  const onlyA = matches.filter((m) => played(m, ka) && !played(m, kb));
+  const onlyB = matches.filter((m) => !played(m, ka) && played(m, kb));
+  if (!both.length && !onlyA.length && !onlyB.length) return null;
+  const t = split(both), sa = split(onlyA), sb = split(onlyB);
+  const na = nameOf(matches, ka), nb = nameOf(matches, kb);
+  const apart = [sa, sb].filter((s) => s.games);
+  const apartPpg = apart.length ? apart.reduce((x, s) => x + s.pointsPerGame * s.games, 0) / apart.reduce((x, s) => x + s.games, 0) : null;
+  const headline = !both.length ? `${na} and ${nb} have never played together.` : apartPpg === null ? `${na} and ${nb} have only ever played together.` : t.pointsPerGame > apartPpg + 0.3 ? `${na} and ${nb}: a proper partnership.` : apartPpg > t.pointsPerGame + 0.3 ? `${na} and ${nb} should be kept apart.` : `${na} and ${nb}: no chemistry, no problem.`;
+  return { kind: "together", names: [na, nb], together: t, onlyA: sa, onlyB: sb, headline };
+}
+function whoGetsTheShirt(matches, a, b) {
+  const ka = a.trim().toLowerCase(), kb = b.trim().toLowerCase();
+  if (ka === kb) return null;
+  const roleIn = (m, k) => roleOf(m.players.find((p) => keyOf2(p) === k)?.position);
+  const counts = /* @__PURE__ */ new Map();
+  for (const m of matches) for (const k of [ka, kb]) {
+    const r2 = roleIn(m, k);
+    if (r2) counts.set(r2, (counts.get(r2) || 0) + 1);
+  }
+  const role = [...counts.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+  const side = (k, other) => {
+    const ms3 = matches.filter((m) => roleIn(m, k) === role && roleIn(m, other) !== role);
+    const rows = ms3.map((m) => m.players.find((p) => keyOf2(p) === k));
+    const ratings = rows.map((p) => Number(p.rating) || 0).filter((r2) => r2 > 0);
+    const ev = rows.filter((p) => p.events);
+    return {
+      name: nameOf(matches, k),
+      games: ms3.length,
+      avgRating: ratings.length ? ratings.reduce((x, y) => x + y, 0) / ratings.length : null,
+      pointsPerGame: ms3.length ? ms3.reduce((t, m) => t + pts(m), 0) / ms3.length : 0,
+      goalInvolvementsPerGame: ms3.length ? rows.reduce((t, p) => t + (Number(p.goals) || 0) + (Number(p.assists) || 0), 0) / ms3.length : 0,
+      tackleWinsPerGame: ev.length ? ev.reduce((t, p) => t + (statsFromCounts(p.events).tacklesWon || 0), 0) / ev.length : null
+    };
+  };
+  const pa = side(ka, kb), pb = side(kb, ka);
+  if (!pa.games && !pb.games) return null;
+  let winner = null;
+  if (pa.games >= 3 && pb.games >= 3) {
+    const diff2 = pa.pointsPerGame - pb.pointsPerGame;
+    if (Math.abs(diff2) >= 0.2) winner = diff2 > 0 ? pa.name : pb.name;
+    else if (pa.avgRating !== null && pb.avgRating !== null && Math.abs(pa.avgRating - pb.avgRating) >= 0.2) winner = pa.avgRating > pb.avgRating ? pa.name : pb.name;
+  }
+  const roleName = role === "GK" ? "in goal" : role === "DEF" ? "in defence" : role === "MID" ? "in midfield" : role === "FWD" ? "up front" : "";
+  const headline = winner ? `${winner} gets the shirt ${roleName}.`.replace(" .", ".") : pa.games < 3 || pb.games < 3 ? `Not enough games apart ${roleName} to call it yet.`.replace("  ", " ") : `Too close to call ${roleName}. Share the shirt.`.replace("  ", " ");
+  return { kind: "shirt", role, players: [pa, pb], winner, headline };
+}
+function headToHead(matches, a, b) {
+  const lines = playerLines(matches, 1);
+  const la = lines.find((l) => l.key === a.trim().toLowerCase());
+  const lb = lines.find((l) => l.key === b.trim().toLowerCase());
+  if (!la || !lb || la === lb) return null;
+  const rows = [];
+  const add = (label, va, vb, fmt2, lowerBetter = false) => {
+    if (va === null && vb === null) return;
+    const better = va === null || vb === null || Math.abs(va - vb) < 1e-9 ? null : va > vb !== lowerBetter ? 0 : 1;
+    rows.push({ label, values: [va === null ? "\u2013" : fmt2(va), vb === null ? "\u2013" : fmt2(vb)], better });
+  };
+  add("Games", la.games, lb.games, (n) => String(n));
+  add("Average rating", la.avgRating, lb.avgRating, f1);
+  add("Win rate", la.wins / la.games * 100, lb.wins / lb.games * 100, pctS);
+  add("Goals a game", la.perGame.goalsPerGame, lb.perGame.goalsPerGame, (n) => n.toFixed(2));
+  add("Chances created a game", la.perGame.chancesCreatedPerGame, lb.perGame.chancesCreatedPerGame, (n) => n.toFixed(2));
+  add("Pass completion", la.perGame.passCompletion, lb.perGame.passCompletion, pctS);
+  add("Tackles won a game", la.perGame.tacklesWonPerGame, lb.perGame.tacklesWonPerGame, f1);
+  add("Interceptions a game", la.perGame.interceptionsPerGame, lb.perGame.interceptionsPerGame, f1);
+  add("Dribbles a game", la.perGame.dribblesPerGame, lb.perGame.dribblesPerGame, f1);
+  add("Ball lost a game", la.perGame.lostPerGame, lb.perGame.lostPerGame, f1, true);
+  add("Man of the match", la.motm, lb.motm, (n) => String(n));
+  return { players: [la, lb], rows };
+}
+
 // src/lib/clubInsights.ts
 var MATCH_TAGS = [
   { value: "league", label: "League", emoji: "\u{1F3C6}" },
@@ -3827,13 +4151,13 @@ var guildIdProp = { type: "string", description: "Discord server ID from list_se
 var clubKeyProp = { type: "string", description: "Club key from list_servers (e.g. club1) for servers that run more than one club." };
 var playerProp = { type: "string", description: 'A Discord username (partial match) or "me".' };
 async function accessibleServers(ctx) {
-  const [{ data: settings }, { data: played }, { data: roles }] = await Promise.all([
+  const [{ data: settings }, { data: played2 }, { data: roles }] = await Promise.all([
     ctx.db.from("guild_settings").select("guild_id, name, clubs").limit(500),
     ctx.db.from("player_summary").select("guild_id").eq("discord_user_id", ctx.discordUserId).limit(200),
     ctx.db.from("user_roles").select("guild_id").eq("discord_user_id", ctx.discordUserId).limit(200)
   ]);
   const all = settings || [];
-  const linked = new Set([...played || [], ...roles || []].map((r2) => r2.guild_id));
+  const linked = new Set([...played2 || [], ...roles || []].map((r2) => r2.guild_id));
   const candidates = all.length <= PROBE_ALL_LIMIT ? all : all.filter((g) => linked.has(g.guild_id));
   const checked = await Promise.all(candidates.map(async (g) => ({ g, level: await ctx.access(g.guild_id) })));
   return checked.filter((c2) => c2.level).map(({ g, level }) => ({
@@ -4334,6 +4658,51 @@ var TOOLS = [
           players: d.players.map((p) => ({ player: p.name, role: p.role, games: p.games, clean_sheet_pct: r02(p.cleanSheetRate), conceded_per_game: r13(p.concededPerGame) })),
           pairs: d.pairs.slice(0, 8).map((p) => ({ players: p.names, games: p.games, clean_sheet_pct: r02(p.cleanSheetRate), conceded_per_game: r13(p.concededPerGame) }))
         }
+      };
+    }
+  },
+  {
+    name: "get_dressing_room",
+    title: "Dressing room banter",
+    description: "Banter from real match numbers. With no players: rankings (Paper Tiger, Main Character, Invisible Man, Loss Magnet, Stat Padder, Ball Hog) and squad superlatives for tonight, this week or all time. With one player: how the squad does with and without them. With two players and a receipt: better together, who gets the shirt (same role, games apart) or head to head. Every line quotes its numbers.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        guild_id: guildIdProp,
+        club_key: clubKeyProp,
+        window: { type: "string", enum: ["session", "week", "all"], description: "Rankings window: the latest night, the last 7 days or everything (default all)." },
+        player: { type: "string", description: "EA name of a player for a receipt." },
+        other_player: { type: "string", description: "A second EA name for a two-player receipt." },
+        receipt: { type: "string", enum: ["without", "together", "shirt", "head_to_head"], description: "Which receipt (default: without for one player, head_to_head for two)." }
+      },
+      additionalProperties: false
+    },
+    run: async (args, ctx) => {
+      const guildId = await resolveGuild(args, ctx);
+      let q = ctx.db.from("club_matches").select("id, result, score_for, score_against, match_type, created_at, opponent_club_name, player_stats, match_data").eq("guild_id", guildId).order("created_at", { ascending: false }).limit(120);
+      const clubKey = str(args.club_key);
+      if (clubKey) q = q.eq("club_key", clubKey);
+      const { data, error } = await q;
+      if (error) throw error;
+      const matches = toInsightMatches(data || []);
+      if (!matches.length) throw new ToolError("No synced matches yet. Play a few games and check back.");
+      const a = str(args.player), b = str(args.other_player);
+      if (a) {
+        const kind = str(args.receipt) || (b ? "head_to_head" : "without");
+        if (kind !== "without" && !b) throw new ToolError("That receipt needs other_player too.");
+        const out = kind === "without" ? betterWithout(matches, a) : kind === "together" ? betterTogether(matches, a, b) : kind === "shirt" ? whoGetsTheShirt(matches, a, b) : headToHead(matches, a, b);
+        if (!out) throw new ToolError("Couldn't find games for those players (use their EA names, and two different players).");
+        return { receipt: kind, ...out };
+      }
+      const win = ["session", "week", "all"].includes(str(args.window) || "") ? str(args.window) : "all";
+      const ms3 = banterWindow(matches, win);
+      const minGames = win === "all" ? ms3.length >= 40 ? 5 : 3 : win === "week" ? 2 : 1;
+      return {
+        window: win,
+        matches: ms3.length,
+        min_games: minGames,
+        rankings: banterRankings(ms3, minGames).map((r2) => ({ ranking: r2.title, question: r2.question, entries: r2.entries.slice(0, 5).map((e) => ({ player: e.name, verdict: e.verdict, receipt: e.line })) })),
+        superlatives: superlatives(ms3, minGames).map((s) => ({ award: s.title, player: s.name, receipt: s.line }))
       };
     }
   }
@@ -11385,7 +11754,7 @@ function createMarketService(deps) {
       latest.set(c2.id, s.at(-1).price);
     }
     const keys = /* @__PURE__ */ new Map();
-    const keyOf2 = (c2) => {
+    const keyOf3 = (c2) => {
       let k = keys.get(c2.id);
       if (!k) keys.set(c2.id, k = Object.fromEntries(PEER_BENCHMARKS.map((b) => [b, peerGroupKey(b, c2)])));
       return k;
@@ -11396,7 +11765,7 @@ function createMarketService(deps) {
       let g = groups.get(id);
       if (g) return g;
       const inGroup = (o) => {
-        const ok = keyOf2(o)[b];
+        const ok = keyOf3(o)[b];
         if (ok === null) return false;
         if (b === "rating") return Math.abs(o.rating - sample.rating) <= 1;
         if (b === "utility") {
@@ -11425,7 +11794,7 @@ function createMarketService(deps) {
     }
     const peers = {
       changes(b, card) {
-        const key = keyOf2(card)[b];
+        const key = keyOf3(card)[b];
         const mine = own.get(card.id);
         const out = {};
         for (const w of WINDOWS) {
@@ -13644,13 +14013,13 @@ var EA_TAX3 = 0.05;
 var afterTax = (v) => Math.floor(v * (1 - EA_TAX3));
 var MAX_TRADES = 5e3;
 function tradeSummary(rows, names, now2 = Date.now()) {
-  const nameOf = (r2) => names.get(r2.ea_item_id)?.name ?? `Item ${r2.ea_item_id}`;
+  const nameOf2 = (r2) => names.get(r2.ea_item_id)?.name ?? `Item ${r2.ea_item_id}`;
   const flips = rows.filter((r2) => r2.bought_for !== null && r2.sold_for !== null && r2.sold_at).map((r2) => {
     const at2 = afterTax(r2.sold_for), profit = at2 - r2.bought_for;
     return {
       item_id: r2.item_id,
       ea_item_id: r2.ea_item_id,
-      name: nameOf(r2),
+      name: nameOf2(r2),
       rating: r2.rating,
       bought_for: r2.bought_for,
       sold_for: r2.sold_for,
@@ -13670,9 +14039,9 @@ function tradeSummary(rows, names, now2 = Date.now()) {
   const history = [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, p]) => ({ t: `${day}T12:00:00Z`, value: running += p }));
   const open = rows.filter((r2) => r2.bought_for !== null && r2.sold_for === null).map((r2) => {
     const price = names.get(r2.ea_item_id)?.price ?? null;
-    return { item_id: r2.item_id, ea_item_id: r2.ea_item_id, name: nameOf(r2), rating: r2.rating, bought_for: r2.bought_for, bought_at: r2.bought_at, listed_for: r2.listed_for, price, unrealised: price === null ? null : afterTax(price) - r2.bought_for };
+    return { item_id: r2.item_id, ea_item_id: r2.ea_item_id, name: nameOf2(r2), rating: r2.rating, bought_for: r2.bought_for, bought_at: r2.bought_at, listed_for: r2.listed_for, price, unrealised: price === null ? null : afterTax(price) - r2.bought_for };
   }).sort((a, b) => (a.bought_at ?? "").localeCompare(b.bought_at ?? ""));
-  const unknownBuy = rows.filter((r2) => r2.bought_for === null && r2.sold_for !== null).map((r2) => ({ item_id: r2.item_id, ea_item_id: r2.ea_item_id, name: nameOf(r2), rating: r2.rating, sold_for: r2.sold_for, after_tax: afterTax(r2.sold_for), sold_at: r2.sold_at }));
+  const unknownBuy = rows.filter((r2) => r2.bought_for === null && r2.sold_for !== null).map((r2) => ({ item_id: r2.item_id, ea_item_id: r2.ea_item_id, name: nameOf2(r2), rating: r2.rating, sold_for: r2.sold_for, after_tax: afterTax(r2.sold_for), sold_at: r2.sold_at }));
   const wins = flips.filter((f2) => f2.profit > 0).length;
   return {
     totals: {

@@ -15,6 +15,7 @@ const { activeClubs, resolveClub } = require('./manager-hub.cjs');
 const { toSessions } = require('./coach.cjs');
 const { identityOf } = require('./club-identity.cjs');
 const { clubAccent } = require('./club-colors.cjs');
+const { dressingRoomButtons } = require('./dressing-room.cjs');
 
 const PINK = 0xf4a7c4;
 
@@ -283,6 +284,7 @@ function createFunZone({ getGuildState, saveGuildSettings, loadMatches }) {
           '🚨 **Rumour** — a made-up transfer exclusive about you',
           '📜 **Save Quote** · 🎧 **Random Quote** — the voice-chat archive (the Chronicle prints the best ones)',
           `${funVoice(club).curseEmoji} **Curse** — check or break the ${funVoice(club).curse}`,
+          '🚪 **Dressing Room** · 🏅 **Superlatives** · 🧾 **Receipts** — settle the group chat with real numbers',
         ].join('\n'))
         .setFooter({ text: 'Roasts use real stats · rumours are fiction' })],
       components: [
@@ -296,6 +298,7 @@ function createFunZone({ getGuildState, saveGuildSettings, loadMatches }) {
           new ButtonBuilder().setCustomId('fun_panel:quotes').setLabel('Random Quote').setEmoji('🎧').setStyle(ButtonStyle.Secondary),
           new ButtonBuilder().setCustomId('fun_panel:curse').setLabel('Curse').setEmoji(funVoice(club).curseEmoji).setStyle(ButtonStyle.Danger),
         ),
+        new ActionRowBuilder().addComponents(...dressingRoomButtons()),
       ],
     };
   }

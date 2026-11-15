@@ -634,7 +634,9 @@ function generateBaseInsights(matches: InsightMatch[]): Insight[] {
 export * from "./divisionProgress.ts";
 // Stats decoded from EA's per-player event counts
 export * from "./advancedStats.ts";
-// Modelled goals, expected points, team scores out of 100 and session reports
+// Modelled goals, expected points, team scores out of 1000 and session reports
 export * from "./matchPerformance.ts";
 // Player contribution scores, power rankings, clutch, carry and defending
 export * from "./playerScores.ts";
+// Dressing room banter: rankings, superlatives, receipts and head to head
+export * from "./banter.ts";

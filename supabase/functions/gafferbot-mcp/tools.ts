@@ -7,6 +7,7 @@ import {
   computeOpponentProfiles, generateAdvancedInsights, benchRole, benchmarkPlayer, percentileText, ROLE_LABELS,
   groupSessions, sessionReport, summarisePerformance, AREA_FIX,
   playerScores, powerRankings, clutchRatings, carryScores, defendingSummary,
+  banterWindow, banterRankings, superlatives, betterWithout, betterTogether, whoGetsTheShirt, headToHead,
   type AdvancedPlayer, type InsightMatch,
 } from "../../../src/lib/clubInsights.ts";
 
@@ -605,6 +606,58 @@ export const TOOLS: Tool<Ctx>[] = [
           players: d.players.map((p) => ({ player: p.name, role: p.role, games: p.games, clean_sheet_pct: r0(p.cleanSheetRate), conceded_per_game: r1(p.concededPerGame) })),
           pairs: d.pairs.slice(0, 8).map((p) => ({ players: p.names, games: p.games, clean_sheet_pct: r0(p.cleanSheetRate), conceded_per_game: r1(p.concededPerGame) })),
         },
+      };
+    },
+  },
+  {
+    name: "get_dressing_room",
+    title: "Dressing room banter",
+    description: "Banter from real match numbers. With no players: rankings (Paper Tiger, Main Character, Invisible Man, Loss Magnet, Stat Padder, " +
+      "Ball Hog) and squad superlatives for tonight, this week or all time. With one player: how the squad does with and without them. With two " +
+      "players and a receipt: better together, who gets the shirt (same role, games apart) or head to head. Every line quotes its numbers.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        guild_id: guildIdProp,
+        club_key: clubKeyProp,
+        window: { type: "string", enum: ["session", "week", "all"], description: "Rankings window: the latest night, the last 7 days or everything (default all)." },
+        player: { type: "string", description: "EA name of a player for a receipt." },
+        other_player: { type: "string", description: "A second EA name for a two-player receipt." },
+        receipt: { type: "string", enum: ["without", "together", "shirt", "head_to_head"], description: "Which receipt (default: without for one player, head_to_head for two)." },
+      },
+      additionalProperties: false,
+    },
+    run: async (args, ctx) => {
+      const guildId = await resolveGuild(args, ctx);
+      let q = ctx.db.from("club_matches")
+        .select("id, result, score_for, score_against, match_type, created_at, opponent_club_name, player_stats, match_data")
+        .eq("guild_id", guildId).order("created_at", { ascending: false }).limit(120);
+      const clubKey = str(args.club_key);
+      if (clubKey) q = q.eq("club_key", clubKey);
+      const { data, error } = await q;
+      if (error) throw error;
+      const matches = toInsightMatches(data || []);
+      if (!matches.length) throw new ToolError("No synced matches yet. Play a few games and check back.");
+      const a = str(args.player), b = str(args.other_player);
+      if (a) {
+        const kind = str(args.receipt) || (b ? "head_to_head" : "without");
+        if (kind !== "without" && !b) throw new ToolError("That receipt needs other_player too.");
+        const out = kind === "without" ? betterWithout(matches, a)
+          : kind === "together" ? betterTogether(matches, a, b!)
+          : kind === "shirt" ? whoGetsTheShirt(matches, a, b!)
+          : headToHead(matches, a, b!);
+        if (!out) throw new ToolError("Couldn't find games for those players (use their EA names, and two different players).");
+        return { receipt: kind, ...out };
+      }
+      const win = (["session", "week", "all"].includes(str(args.window) || "") ? str(args.window) : "all") as "session" | "week" | "all";
+      const ms = banterWindow(matches, win);
+      const minGames = win === "all" ? (ms.length >= 40 ? 5 : 3) : win === "week" ? 2 : 1;
+      return {
+        window: win,
+        matches: ms.length,
+        min_games: minGames,
+        rankings: banterRankings(ms, minGames).map((r) => ({ ranking: r.title, question: r.question, entries: r.entries.slice(0, 5).map((e) => ({ player: e.name, verdict: e.verdict, receipt: e.line })) })),
+        superlatives: superlatives(ms, minGames).map((s) => ({ award: s.title, player: s.name, receipt: s.line })),
       };
     },
   },
