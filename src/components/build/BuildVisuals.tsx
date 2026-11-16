@@ -2,7 +2,7 @@
 // radar, the shareable build card (one SVG, shown on the page and saved as a PNG as-is), attribute
 // meters on the real 1-99 scale you can drag, and the body silhouette.
 import { forwardRef, useCallback, useRef } from "react";
-import { ARCHETYPES, ATTR_GROUPS, formatHeight, formatWeight, type AttrGroup, type Build, type Units } from "@/lib/proBuild";
+import { ARCHETYPES, ATTR_GROUPS, ATTR_MAX, formatHeight, formatWeight, type AttrGroup, type Build, type Units } from "@/lib/proBuild";
 
 export const GROUP_COLORS: Record<AttrGroup, string> = {
   pace: "#22d3ee",
@@ -166,7 +166,7 @@ export function RadarShape({
 // outline is the player's real shape and two builds compare on the same scale.
 export const RADAR_FLOOR = 30;
 export function shapeValues(averages: Record<AttrGroup, number>, groups: { key: AttrGroup }[]) {
-  return groups.map((g) => Math.max(0, (averages[g.key] - RADAR_FLOOR) / (99 - RADAR_FLOOR)));
+  return groups.map((g) => Math.max(0, (averages[g.key] - RADAR_FLOOR) / (ATTR_MAX - RADAR_FLOOR)));
 }
 
 const stars = (n: number) => "★".repeat(n) + "☆".repeat(5 - n);
@@ -336,12 +336,11 @@ export const BuildCard = forwardRef<
 // (a small marker). Drag or use the arrow keys to set the trained value; it can't go below the start
 // or above the cap.
 export const METER_FLOOR = 25;
-const meterPct = (v: number) => Math.max(0, Math.min(100, ((v - METER_FLOOR) / (99 - METER_FLOOR)) * 100));
+const meterPct = (v: number) => Math.max(0, Math.min(100, ((v - METER_FLOOR) / (ATTR_MAX - METER_FLOOR)) * 100));
 export function StatMeter({
   start,
   value,
   cap,
-  capKnown,
   match,
   color,
   label,
@@ -350,7 +349,6 @@ export function StatMeter({
   start: number;
   value: number;
   cap: number;
-  capKnown: boolean;
   match: number;
   color: string;
   label: string;
@@ -363,7 +361,7 @@ export function StatMeter({
       const el = track.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      onChange(fit(METER_FLOOR + Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (99 - METER_FLOOR)));
+      onChange(fit(METER_FLOOR + Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (ATTR_MAX - METER_FLOOR)));
     },
     [onChange, fit]
   );
@@ -407,7 +405,7 @@ export function StatMeter({
           style={{ left: `${meterPct(start)}%`, width: `${meterPct(value) - meterPct(start)}%`, background: `linear-gradient(90deg, ${color}66, ${color})`, boxShadow: `0 0 12px ${color}88` }}
         />
       )}
-      {cap < 99 && <span className={`absolute -top-1 h-5 w-0.5 ${capKnown ? "bg-rose-400/80" : "bg-white/30"}`} style={{ left: `${meterPct(cap)}%` }} title={`Cap ${cap}`} />}
+      {cap < ATTR_MAX && <span className="absolute -top-1 h-5 w-0.5 bg-rose-400/80" style={{ left: `${meterPct(cap)}%` }} title={`Cap ${cap}`} />}
       {match !== value && <span className="absolute -bottom-1.5 h-1.5 w-1.5 -translate-x-1/2 rotate-45 bg-white/70" style={{ left: `${meterPct(match)}%` }} title={`${match} in matches`} />}
       <span className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#070b11]" style={{ left: `${meterPct(value)}%`, background: value > start ? color : "#475569" }} />
     </div>

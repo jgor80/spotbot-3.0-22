@@ -7,6 +7,20 @@
 // EA's own notes (19 Oct 2026 archetypes update) confirm the 13 archetypes, that each archetype prices each
 // attribute differently, and the reset. Anything still unconfirmed is marked UNCONFIRMED and the planner says so.
 // When EA changes prices, edit COST_TIERS / COST_BANDS here and the whole planner follows.
+//
+// Every number the game decides lives in this file. Pages and the rules in proBuild.ts read it and never
+// repeat a level, a threshold or a cap of their own, so a new season is an edit here:
+//   - higher level cap: append the new levels' AP to AP_GAINS (LEVEL_CAP follows), then add any new
+//     PlayStyle slot, PlayStyle+, Signature Perk or Mastery level to the lists further down;
+//   - new prices or ceilings: COST_TIERS, COST_BANDS, CAPS;
+//   - then bump RULESET and run the tests (pro-build.test.ts checks the tables against each other).
+
+// Which version of the game these tables describe (shown on the page).
+export const RULESET = { game: "FC 27", season: 2, updated: "22 October 2026" } as const;
+
+// The attribute scale
+export const ATTR_MIN = 1;
+export const ATTR_MAX = 99;
 
 export const ATTRIBUTE_KEYS = [
   "acceleration", "sprintSpeed", "positioning", "finishing", "shotPower", "longShots", "volleys", "penalties",
@@ -77,24 +91,48 @@ export const TIER_LABELS = ["", "Cheapest", "Cheap", "Expensive", "Most expensiv
 // Total AP you have at each level (index = level). Level 1 starts with 100.
 const AP_GAINS = [0, 100, 9, 9, 9, 19, 10, 10, 10, 10, 38, 13, 13, 13, 13, 25, 13, 13, 13, 13, 44, 19, 19, 19, 19, 38, 25, 25, 25, 25, 63, 25, 25, 25, 25, 38, 25, 25, 25, 25, 50, 25, 25, 25, 25, 44, 25, 25, 25, 25, 63, 25, 25, 25, 25, 50];
 export const AP_BY_LEVEL: number[] = AP_GAINS.reduce<number[]>((acc, g, i) => (acc.push((acc[i - 1] ?? 0) + g), acc), []);
-export const LEVEL_CAP = 55;
+// The level cap is the last level AP_GAINS has a row for.
+export const LEVEL_CAP = AP_GAINS.length - 1;
 
-// Highest value an attribute can be trained to, where the community has confirmed one below 99. Everything
-// else is treated as 99: UNCONFIRMED for most attributes (EA has per-archetype maximums it doesn't publish).
-export const CAPS: Record<string, Partial<Record<AttrKey, number>>> = {
-  spark: { acceleration: 99, sprintSpeed: 95 },
-  finisher: { acceleration: 95, sprintSpeed: 95, standingTackle: 75 },
-  magician: { acceleration: 95, sprintSpeed: 95, standingTackle: 75 },
-  marauder: { acceleration: 95, sprintSpeed: 95 },
-  creator: { acceleration: 92, sprintSpeed: 92 },
-  progressor: { acceleration: 92, sprintSpeed: 92 },
-  disruptor: { acceleration: 92, sprintSpeed: 92 },
-  target: { acceleration: 90, sprintSpeed: 92, standingTackle: 75, jumping: 96, finishing: 96, shortPassing: 96, ballControl: 92, agility: 92 },
-  maestro: { acceleration: 90, sprintSpeed: 90 },
-  recycler: { acceleration: 90, sprintSpeed: 90 },
-  boss: { acceleration: 90, sprintSpeed: 90, curve: 75 },
-  shotstopper: { sprintSpeed: 85, defAware: 75, standingTackle: 75 },
-  sweeperkeeper: { sprintSpeed: 88, defAware: 75 },
+// Highest value each attribute can be trained to (its ceiling), per archetype, in ATTRIBUTE_KEYS order.
+// 0 = can't train. From Pro Clubs HQ's ceiling tables (read in game; PRO11 republishes the same set), so
+// this is one source: it does reproduce every "which archetypes can reach this PlayStyle" list they publish.
+export const CAPS: Record<string, number[]> = {
+  shotstopper: [92, 85, 85, 75, 75, 60, 60, 70, 92, 82, 75, 92, 90, 75, 90, 90, 96, 85, 75, 90, 90, 75, 75, 75, 70, 96, 90, 96, 92, 99, 99, 99, 99, 99],
+  sweeperkeeper: [92, 88, 85, 75, 75, 60, 60, 80, 99, 85, 75, 92, 96, 75, 90, 90, 96, 90, 85, 92, 96, 90, 75, 85, 90, 99, 92, 96, 96, 99, 99, 99, 99, 99],
+  progressor: [92, 92, 90, 85, 92, 85, 75, 92, 92, 92, 90, 96, 96, 85, 92, 92, 99, 96, 92, 96, 96, 96, 99, 99, 96, 99, 92, 96, 96, 0, 0, 0, 0, 0],
+  boss: [90, 90, 90, 82, 96, 85, 80, 92, 90, 90, 90, 92, 90, 75, 90, 90, 99, 92, 88, 92, 96, 99, 96, 96, 99, 99, 92, 99, 99, 0, 0, 0, 0, 0],
+  marauder: [95, 95, 92, 90, 92, 90, 96, 96, 92, 99, 95, 92, 92, 96, 95, 92, 99, 96, 92, 92, 96, 90, 96, 96, 96, 92, 96, 92, 96, 0, 0, 0, 0, 0],
+  disruptor: [92, 92, 90, 90, 92, 85, 90, 92, 90, 96, 95, 96, 92, 90, 92, 96, 99, 92, 92, 92, 92, 90, 92, 92, 92, 92, 99, 96, 96, 0, 0, 0, 0, 0],
+  recycler: [90, 90, 90, 90, 96, 96, 90, 92, 96, 92, 99, 96, 96, 90, 92, 92, 99, 96, 92, 99, 99, 90, 99, 96, 92, 90, 96, 96, 96, 0, 0, 0, 0, 0],
+  maestro: [90, 90, 96, 96, 96, 96, 96, 99, 99, 92, 99, 96, 99, 96, 99, 96, 99, 99, 96, 99, 92, 85, 90, 90, 90, 90, 92, 92, 92, 0, 0, 0, 0, 0],
+  creator: [92, 92, 99, 96, 96, 99, 96, 99, 99, 96, 99, 96, 96, 99, 99, 96, 99, 96, 96, 96, 85, 85, 85, 90, 90, 90, 92, 92, 92, 0, 0, 0, 0, 0],
+  spark: [99, 95, 96, 96, 92, 92, 96, 99, 96, 99, 99, 96, 92, 96, 99, 96, 99, 96, 99, 96, 85, 85, 85, 80, 75, 85, 92, 90, 92, 0, 0, 0, 0, 0],
+  magician: [95, 95, 96, 99, 92, 96, 96, 99, 96, 92, 99, 96, 92, 99, 99, 99, 99, 96, 96, 96, 82, 85, 82, 75, 75, 85, 92, 90, 92, 0, 0, 0, 0, 0],
+  finisher: [95, 95, 99, 99, 99, 96, 99, 99, 92, 92, 99, 92, 92, 96, 99, 96, 99, 96, 96, 99, 85, 96, 85, 75, 75, 92, 92, 92, 96, 0, 0, 0, 0, 0],
+  target: [90, 92, 96, 96, 99, 96, 96, 99, 92, 90, 99, 96, 92, 90, 92, 92, 99, 92, 92, 96, 82, 99, 82, 75, 75, 96, 92, 99, 92, 0, 0, 0, 0, 0],
+};
+
+// Skill move and weak foot stars: each archetype starts on `start` stars and can buy up to `max`, paid in AP
+// from the same budget as attributes. `cost[i]` is the AP for the (i+1)th extra star. Totals for all 13 are
+// published (PRO11 archetype pages, Pro Clubs HQ); the star-by-star split is published for the Finisher,
+// Magician, Spark, Maestro and Disruptor, and every other split with two or more stars follows the same two
+// price ladders. Splits marked "inferred" add up to the published total but weren't published star by star.
+export interface StarRule { start: number; max: number; cost: number[]; inferred?: boolean }
+export const STARS: Record<string, { skillMoves: StarRule; weakFoot: StarRule }> = {
+  shotstopper: { skillMoves: { start: 1, max: 2, cost: [5] }, weakFoot: { start: 1, max: 3, cost: [10, 20], inferred: true } },
+  sweeperkeeper: { skillMoves: { start: 1, max: 3, cost: [5, 10], inferred: true }, weakFoot: { start: 1, max: 4, cost: [8, 15, 25], inferred: true } },
+  progressor: { skillMoves: { start: 2, max: 4, cost: [10, 20] }, weakFoot: { start: 3, max: 4, cost: [25] } },
+  boss: { skillMoves: { start: 2, max: 3, cost: [10] }, weakFoot: { start: 2, max: 4, cost: [20, 35], inferred: true } },
+  marauder: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  disruptor: { skillMoves: { start: 2, max: 4, cost: [10, 20] }, weakFoot: { start: 3, max: 5, cost: [35, 50] } },
+  recycler: { skillMoves: { start: 2, max: 4, cost: [8, 15], inferred: true }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  maestro: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  creator: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  spark: { skillMoves: { start: 3, max: 5, cost: [15, 25] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  magician: { skillMoves: { start: 3, max: 5, cost: [20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  finisher: { skillMoves: { start: 3, max: 5, cost: [15, 25] }, weakFoot: { start: 3, max: 5, cost: [35, 50] } },
+  target: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 2, max: 5, cost: [20, 35, 50], inferred: true } },
 };
 
 // Height (cm) and weight (kg): allowed range and the default each archetype starts at.
@@ -114,8 +152,11 @@ export const BODY: Record<string, { h: [number, number]; w: [number, number]; st
   sweeperkeeper: { h: [184, 200], w: [80, 100], startH: 192, startW: 90 },
 };
 
-// Body changes apply in matches only (the menu shows trained values). Each 4 cm from the archetype's default
-// height moves the listed attributes by 1 (1-4 cm = 1, 5-8 = 2, ...); each 8 kg from default weight by 1.
+// Body changes apply in matches only (the menu shows trained values). Each BODY_STEP.heightCm from the
+// archetype's default height moves the listed attributes by 1 (1-4 cm = 1, 5-8 = 2, ...); each
+// BODY_STEP.weightKg from default weight by 1. These are FC 26's shifts, which the community reports carried
+// into FC 27 unchanged (not re-measured attribute by attribute).
+export const BODY_STEP = { heightCm: 4, weightKg: 8 } as const;
 export const BODY_EFFECTS = {
   outfield: {
     taller: { up: ["jumping", "sprintSpeed", "strength"], down: ["acceleration", "agility", "balance"] },
@@ -132,14 +173,19 @@ export const BODY_EFFECTS = {
 // height >= 183 cm, Strength 65+, Strength at least 4 above Agility, Acceleration 40+. Everything else is
 // Controlled. Lengthy's minimum height is disputed: 183 cm (FC 27 guide) vs 185 cm (an FC 26 change some
 // sources still quote), so the planner uses 183 and says so.
-export const ACCELERATE_HEIGHT_SPLIT = 182;
 export const ACCELERATE = {
   explosive: { maxHeight: 182, agility: 65, agilityOverStrength: 10, acceleration: 80 },
   lengthy: { minHeight: 183, strength: 65, strengthOverAgility: 4, acceleration: 40 },
 } as const;
 
-// Masteries: levelling an archetype adds +1 to a pair of attributes on every archetype you own.
-// At level 10 both get +1, level 30 the second gets +1 more, level 55 the first.
+// Masteries: levelling an archetype adds +1 to a pair of attributes on every archetype you own (the pairs
+// are EA's own table). MASTERY_MILESTONES says which of the pair each milestone level raises: at level 10
+// both get +1, level 30 the second gets +1 more, level 55 the first. A new milestone is one more row.
+export const MASTERY_MILESTONES: { level: number; first: number; second: number }[] = [
+  { level: 10, first: 1, second: 1 },
+  { level: 30, first: 0, second: 1 },
+  { level: 55, first: 1, second: 0 },
+];
 export const MASTERIES: Record<string, [AttrKey, AttrKey]> = {
   shotstopper: ["gkPositioning", "gkReflexes"],
   sweeperkeeper: ["gkHandling", "gkDiving"],
@@ -201,7 +247,7 @@ export const PLAYSTYLE_DEFS: PlayStyleDef[] = [
   { name: "Footwork", group: "goalkeeping", req: { agility: 80, balance: 80, gkReflexes: 75 }, keeperOnly: true, unconfirmed: true },
 ];
 
-// Regular PlayStyle slots open at these levels (4 at the cap). Signatures don't use a slot.
+// Regular PlayStyle slots open at these levels (one slot per entry). Signatures don't use a slot.
 export const PLAYSTYLE_SLOT_LEVELS = [5, 15, 40, 55];
 // Signature 1 becomes PlayStyle+ at 20, Signature 2 at 55. Signature Perks at 10 and 45.
 export const SIGNATURE_PLUS_LEVELS: [number, number] = [20, 55];
@@ -227,15 +273,18 @@ export const ARCHETYPE_RULES: Record<string, ArchetypeRules> = {
   target: { signatures: ["Precision Header", "Enforcer"], perk45: { name: "Physical Shooter", trigger: "shield off a defender then shoot in the box", boosts: "Strength, Shot Power, Balance" } },
 };
 
-// Specializations: three per archetype. Reach the first attribute at 92 and the other two at 90 and you can
-// swap one Signature for the listed PlayStyle+ (one Specialization at a time, free to swap back).
+// Specializations: three per archetype. Reach the first attribute at SPECIALIZATION_TARGETS.main and the
+// others at .other and you can swap either Signature for the listed PlayStyle+ (one Specialization at a
+// time, free to swap back). EA removed Attacking Positioning from every requirement on 22 October 2026
+// without naming replacements, which leaves four open: see the `unconfirmed` notes below.
+export const SPECIALIZATION_TARGETS = { main: 92, other: 90 } as const;
 export interface Specialization { key: string; archetype: string; name: string; plus: string; req: [AttrKey, number][]; unconfirmed?: string }
 const spec = (archetype: string, name: string, plus: string, a: AttrKey, b: AttrKey, c: AttrKey | null, unconfirmed?: string): Specialization => ({
   key: `${archetype}.${name.toLowerCase().replace(/[^a-z0-9]+/g, "")}`,
   archetype,
   name,
   plus,
-  req: [[a, 92], [b, 90], ...(c ? ([[c, 90]] as [AttrKey, number][]) : [])],
+  req: [[a, SPECIALIZATION_TARGETS.main], [b, SPECIALIZATION_TARGETS.other], ...(c ? ([[c, SPECIALIZATION_TARGETS.other]] as [AttrKey, number][]) : [])],
   ...(unconfirmed ? { unconfirmed } : {}),
 });
 export const SPECIALIZATIONS: Specialization[] = [
@@ -266,25 +315,34 @@ export const SPECIALIZATIONS: Specialization[] = [
   spec("creator", "Creator+", "Whipped Pass", "vision", "crossing", "longPassing"),
   spec("creator", "Architect", "Dead Ball", "crossing", "shotPower", "fkAccuracy"),
   spec("creator", "Sniper", "Power Shot", "shotPower", "finishing", "longShots"),
-  spec("spark", "Joker", "Whipped Pass", "crossing", "longPassing", null, "third attribute not confirmed"),
+  spec("spark", "Joker", "Whipped Pass", "crossing", "longPassing", null, "EA dropped its Att. Positioning target; no replacement confirmed"),
   spec("spark", "Spark+", "Quick Step", "agility", "acceleration", "sprintSpeed"),
   spec("spark", "Ace", "Chip Shot", "finishing", "reactions", "ballControl"),
-  spec("magician", "Invader", "Incisive Pass", "longPassing", "vision", null, "third attribute not confirmed"),
+  spec("magician", "Invader", "Incisive Pass", "longPassing", "vision", null, "EA dropped its Att. Positioning target; no replacement confirmed"),
   spec("magician", "Magician+", "First Touch", "ballControl", "acceleration", "composure"),
   spec("magician", "Hotshot", "Power Shot", "shotPower", "finishing", "longShots"),
   spec("finisher", "Finisher+", "Chip Shot", "composure", "reactions", "ballControl"),
-  spec("finisher", "Hunter", "Gamechanger", "curve", "finishing", "balance", "Balance target reported by players"),
+  spec("finisher", "Hunter", "Gamechanger", "curve", "finishing", "balance", "Balance replaced Att. Positioning according to one player report"),
   spec("finisher", "Presser", "Relentless", "stamina", "agility", "aggression"),
   spec("target", "Target+", "Acrobatic", "jumping", "agility", "volleys"),
-  spec("target", "Runner", "Enforcer", "sprintSpeed", "strength", "aggression", "Aggression target reported by players"),
+  spec("target", "Runner", "Enforcer", "sprintSpeed", "strength", "aggression", "Aggression replaced Att. Positioning according to one player report"),
   spec("target", "Roamer", "Incisive Pass", "shortPassing", "vision", "longPassing"),
 ];
 
+// Club facilities boost attributes in matches. EA publishes no FC 27 facility numbers, so players type in
+// what their club has; this is the most the planner accepts per attribute (our own limit, not the game's).
+export const FACILITY_BOOST_MAX = 10;
+
 // What we still don't know, shown on the page
 export const UNCONFIRMED_NOTES = [
-  "Maximum values for most attributes (only the ones listed are confirmed below 99).",
-  "Goalkeeper PlayStyle requirements (FC 26 values).",
-  "How skill moves and weak foot stars are set in FC 27.",
+  "Attribute ceilings come from one community source (Pro Clubs HQ, read in game).",
+  "Goalkeeper PlayStyle requirements (FC 26 values; a keeper's list hasn't been read in FC 27).",
+  "The third requirement of Joker and Invader, and one requirement each of Hunter and Runner, since EA removed Attacking Positioning.",
+  "The star-by-star split of some skill move and weak foot prices (the totals are published).",
   "AP prices for keepers' Long Shots and Volleys.",
-  "Lengthy AcceleRATE's minimum height: 183 cm here; some sources say 185 cm.",
+  "Lengthy AcceleRATE's minimum height: 183 cm here; some sources say 185 cm for FC 27.",
+  "Height and weight shifts are FC 26's, reported unchanged in FC 27.",
+  "Whether Mastery points count towards PlayStyle and Specialization targets, and whether they can pass a ceiling (the planner assumes yes, up to 99).",
+  "Club facility boost sizes: type in what your club has.",
+  "Amps (timed boosts, PlayStyles and PlayStyle+) aren't modelled.",
 ];

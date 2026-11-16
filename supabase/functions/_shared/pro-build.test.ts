@@ -5,8 +5,12 @@ import {
   accelerate, accelerateType, apAtLevel, apSpent, ARCHETYPES, attrCap, ATTRIBUTES, BODY, bodyEffects, buildPath, buildSummary, costBetween, costTier, decodeBuild, emptyBuild,
   encodeBuild, importProClubsBuilder, levelNeeded, matchValue, MAX_PLAYSTYLES, menuValue, normaliseBuild, PLAYSTYLE_DEFS, playstyleSlots, playstyleStatus, pointCost,
   raiseFor, SPECIALIZATIONS, specializationStatus, startValue, trainable,
+  levelRewards, masteryText, nextStarCost, starCost, starRule, starsAp, LEVEL_CAP, HEIGHT_RANGE, WEIGHT_RANGE,
 } from "../../../src/lib/proBuild.ts";
-import { ATTRIBUTE_KEYS } from "../../../src/lib/proClubsData.ts";
+import {
+  AP_BY_LEVEL, ATTR_MAX, ATTRIBUTE_KEYS, CAPS, COST_BANDS, COST_TIERS, MASTERIES, MASTERY_MILESTONES, PLAYSTYLE_SLOT_LEVELS,
+  SIGNATURE_PERK_LEVELS, SIGNATURE_PLUS_LEVELS, STARS, START_VALUES, ARCHETYPE_RULES,
+} from "../../../src/lib/proClubsData.ts";
 
 const eq = (a: unknown, b: unknown, msg?: string) => assertNode.deepEqual(a, b, msg);
 const ok = (v: unknown, msg?: string) => assertNode.ok(v, msg);
@@ -198,4 +202,107 @@ Deno.test("a player's saved masteries and facility boosts apply to every build",
   assertNode.deepEqual(applyProfile(emptyBuild("shotstopper"), profile).boosts, { finishing: 3, gkDiving: 2 });
   // Removing a boost from the profile removes it from builds that had it
   assertNode.deepEqual(applyProfile({ ...striker, boosts: { finishing: 5 } }, { boosts: {} }).boosts, {});
+});
+
+// ---------- The data layer checks itself, so a new season's edit can't leave the tables out of step ----------
+
+Deno.test("data tables line up: every archetype has every table, and the level lists fit under the cap", () => {
+  const keys = ARCHETYPES.map((a) => a.key).sort();
+  for (const [name, table] of Object.entries({ START_VALUES, COST_TIERS, CAPS, BODY, STARS, MASTERIES, ARCHETYPE_RULES })) eq(Object.keys(table).sort(), keys, `${name} covers all archetypes`);
+  for (const a of keys) {
+    for (const table of [START_VALUES, COST_TIERS, CAPS]) eq(table[a].length, ATTRIBUTE_KEYS.length, `${a} row length`);
+    ATTRIBUTE_KEYS.forEach((k, i) => {
+      const [start, tier, cap] = [START_VALUES[a][i], COST_TIERS[a][i], CAPS[a][i]];
+      eq([start > 0, tier > 0], [cap > 0, cap > 0], `${a}.${k}: trainable in all three tables or none`);
+      if (cap) ok(start <= cap && cap <= ATTR_MAX, `${a}.${k}: start ${start} <= ceiling ${cap} <= ${ATTR_MAX}`);
+    });
+    for (const kind of ["skillMoves", "weakFoot"] as const) {
+      const r = STARS[a][kind];
+      ok(r.start >= 1 && r.max <= 5 && r.start <= r.max, `${a} ${kind} range`);
+      eq(r.cost.length, r.max - r.start, `${a} ${kind}: one price per extra star`);
+    }
+    for (const sig of ARCHETYPE_RULES[a].signatures) ok(PLAYSTYLE_DEFS.some((p) => p.name === sig), `${a} signature ${sig} is a PlayStyle`);
+  }
+  eq(LEVEL_CAP, AP_BY_LEVEL.length - 1, "the cap is the last level with AP");
+  const levels = [...PLAYSTYLE_SLOT_LEVELS, ...SIGNATURE_PLUS_LEVELS, ...SIGNATURE_PERK_LEVELS, ...MASTERY_MILESTONES.map((m) => m.level)];
+  for (const l of levels) ok(l >= 1 && l <= LEVEL_CAP, `level ${l} is within the cap`);
+  for (const list of [PLAYSTYLE_SLOT_LEVELS, MASTERY_MILESTONES.map((m) => m.level)]) eq([...list].sort((x, y) => x - y), list, "levels ascend");
+  eq(COST_BANDS[COST_BANDS.length - 1][0], ATTR_MAX, "the last price band reaches the top of the scale");
+  for (let i = 1; i < COST_BANDS.length; i++) ok(COST_BANDS[i][0] > COST_BANDS[i - 1][0], "price bands ascend");
+  for (const p of PLAYSTYLE_DEFS) for (const k of Object.keys(p.req)) ok((ATTRIBUTE_KEYS as readonly string[]).includes(k), `${p.name} needs a real attribute`);
+  for (const sp of SPECIALIZATIONS) {
+    ok(PLAYSTYLE_DEFS.some((p) => p.name === sp.plus), `${sp.key} gives a real PlayStyle`);
+    for (const [k, need] of sp.req) ok(need <= attrCap(sp.archetype, k), `${sp.key}: ${k} ${need} is under the ceiling`);
+  }
+  // No attribute is in two Mastery pairs (EA's table)
+  const mastered = Object.values(MASTERIES).flat();
+  eq(new Set(mastered).size, mastered.length);
+  eq(HEIGHT_RANGE, [162, 200]);
+  eq(WEIGHT_RANGE, [60, 100]);
+});
+
+Deno.test("ceilings reproduce the published lists of which PlayStyles each archetype can't reach", () => {
+  // Pro Clubs HQ, PlayStyle requirements guide: outfield archetypes over the 30 outfield PlayStyles, keepers over all 36
+  const OUT: Record<string, string[]> = {
+    finisher: ["Anticipate", "Jockey"], magician: ["Anticipate", "Jockey"], target: ["Anticipate", "Jockey"],
+    spark: [], creator: [], disruptor: [], maestro: [], recycler: [], marauder: [], progressor: [],
+    boss: ["Finesse Shot", "Gamechanger", "Incisive Pass", "Inventive"],
+    shotstopper: ["Acrobatic", "Dead Ball", "Finesse Shot", "Gamechanger", "Low Driven Shot", "Power Shot", "Incisive Pass", "Inventive", "Anticipate", "Jockey", "Slide Tackle", "Rapid", "Technical", "Trickster", "Bruiser"],
+    sweeperkeeper: ["Acrobatic", "Dead Ball", "Finesse Shot", "Gamechanger", "Low Driven Shot", "Power Shot", "Incisive Pass", "Inventive", "Jockey", "Bruiser"],
+  };
+  for (const a of ARCHETYPES) {
+    const gk = a.line === "GK";
+    const out = PLAYSTYLE_DEFS.filter((p) => (gk || !p.keeperOnly) && Object.entries(p.req).some(([k, need]) => need! > attrCap(a.key, k))).map((p) => p.name);
+    eq(out.sort(), [...OUT[a.key]].sort(), `${a.key} can't reach`);
+  }
+  // Their ceilings summary: Reactions is 99 on every outfield archetype; the Finisher reaches 99 in nine, the Disruptor and Marauder in two
+  const at99 = (a: string) => ATTRIBUTE_KEYS.filter((k) => attrCap(a, k) === 99).length;
+  eq([at99("finisher"), at99("disruptor"), at99("marauder")], [9, 2, 2]);
+  for (const a of ARCHETYPES) if (a.line !== "GK") eq(attrCap(a.key, "reactions"), 99);
+  eq([attrCap("spark", "acceleration"), attrCap("spark", "sprintSpeed"), attrCap("disruptor", "stamina"), attrCap("boss", "curve"), attrCap("finisher", "slidingTackle")], [99, 95, 99, 75, 75]);
+  // and the cheapest PlayStyle prices they quote from a fresh build
+  const cost = (a: string, n: string) => playstyleStatus(emptyBuild(a)).find((s) => s.def.name === n)!.apToUnlock;
+  eq([cost("finisher", "Chip Shot"), cost("creator", "Whipped Pass"), cost("recycler", "Slide Tackle"), cost("maestro", "First Touch"), cost("disruptor", "Slide Tackle"), cost("progressor", "Power Shot")], [52, 31, 21, 31, 26, 265]);
+  eq(costBetween("spark", "sprintSpeed", 75, 90), 129);
+});
+
+Deno.test("skill move and weak foot stars: each archetype's range, and extra stars cost AP", () => {
+  // Published totals from each archetype's starting stars to its maximum: [skill moves, weak foot]
+  const TOTALS: Record<string, [string, number, string, number]> = {
+    shotstopper: ["1-2", 5, "1-3", 30], sweeperkeeper: ["1-3", 15, "1-4", 48], progressor: ["2-4", 30, "3-4", 25], boss: ["2-3", 10, "2-4", 55],
+    marauder: ["2-5", 65, "3-5", 65], disruptor: ["2-4", 30, "3-5", 85], recycler: ["2-4", 23, "3-5", 65], maestro: ["2-5", 65, "3-5", 65],
+    creator: ["2-5", 65, "3-5", 65], spark: ["3-5", 40, "3-5", 65], magician: ["3-5", 55, "3-5", 65], finisher: ["3-5", 40, "3-5", 85], target: ["2-5", 65, "2-5", 105],
+  };
+  for (const a of ARCHETYPES) {
+    const sm = starRule(a.key, "skillMoves"), wf = starRule(a.key, "weakFoot");
+    eq([`${sm.start}-${sm.max}`, starCost(a.key, "skillMoves", sm.max), `${wf.start}-${wf.max}`, starCost(a.key, "weakFoot", wf.max)], TOTALS[a.key], a.key);
+    eq(starsAp(emptyBuild(a.key)), 0, "starting stars are free");
+  }
+  // Published star by star: a Finisher's skill moves cost 15 then 25, weak foot 35 then 50
+  eq([starCost("finisher", "skillMoves", 4), nextStarCost("finisher", "skillMoves", 4), nextStarCost("finisher", "skillMoves", 5)], [15, 25, null]);
+  eq([starCost("finisher", "weakFoot", 4), starCost("finisher", "weakFoot", 5)], [35, 85]);
+  // They come out of the same budget, and a build can't hold stars its archetype doesn't allow
+  const f = normaliseBuild({ archetype: "finisher", skillMoves: 5, weakFoot: 4, points: { finishing: 5 } });
+  eq(apSpent(f), costBetween("finisher", "finishing", 75, 80) + 40 + 35);
+  eq(buildSummary(f).starsAp, 75);
+  eq([normaliseBuild({ archetype: "boss", skillMoves: 5, weakFoot: 1 }).skillMoves, normaliseBuild({ archetype: "boss", skillMoves: 5, weakFoot: 1 }).weakFoot], [3, 2]);
+  eq(decodeBuild(encodeBuild(f)), f);
+});
+
+Deno.test("level rewards and mastery wording come from the data tables", () => {
+  // The published FC 27 ladder
+  eq(levelRewards(), [
+    { level: 5, rewards: ["PlayStyle slot 1"] },
+    { level: 10, rewards: ["Signature Perk 1", "Mastery +1 +1"] },
+    { level: 15, rewards: ["PlayStyle slot 2"] },
+    { level: 20, rewards: ["Signature 1 becomes PlayStyle+"] },
+    { level: 30, rewards: ["Mastery +1"] },
+    { level: 40, rewards: ["PlayStyle slot 3"] },
+    { level: 45, rewards: ["Signature Perk 2"] },
+    { level: 55, rewards: ["PlayStyle slot 4", "Signature 2 becomes PlayStyle+", "Mastery +1"] },
+  ]);
+  eq(masteryText("finisher", (k) => k), "+1 composure and +1 finishing at level 10, +1 finishing at 30, +1 composure at 55");
+  // A fully mastered archetype is worth +2 on both of its attributes
+  const all = normaliseBuild({ archetype: "boss", masteryLevels: { finisher: LEVEL_CAP } });
+  eq([menuValue(all, "composure") - startValue("boss", "composure"), menuValue(all, "finishing") - startValue("boss", "finishing")], [2, 2]);
 });

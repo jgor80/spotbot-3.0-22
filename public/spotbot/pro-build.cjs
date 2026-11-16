@@ -25,17 +25,22 @@ __export(proBuild_exports, {
   ARCHETYPE_RULES: () => ARCHETYPE_RULES,
   ATTRIBUTES: () => ATTRIBUTES,
   ATTR_GROUPS: () => ATTR_GROUPS,
+  ATTR_MAX: () => ATTR_MAX,
+  ATTR_MIN: () => ATTR_MIN,
   BODY: () => BODY,
   BOOST_MAX: () => BOOST_MAX,
   HEIGHT_RANGE: () => HEIGHT_RANGE,
   LEVEL_CAP: () => LEVEL_CAP,
   LEVEL_MAX: () => LEVEL_MAX,
+  MASTERY_MILESTONES: () => MASTERY_MILESTONES,
   MAX_PLAYSTYLES: () => MAX_PLAYSTYLES,
   PLAYSTYLES: () => PLAYSTYLES,
   PLAYSTYLE_DEFS: () => PLAYSTYLE_DEFS,
   PLAYSTYLE_SLOT_LEVELS: () => PLAYSTYLE_SLOT_LEVELS,
-  POINTS_MAX_PER_ATTR: () => POINTS_MAX_PER_ATTR,
+  RULESET: () => RULESET,
   SPECIALIZATIONS: () => SPECIALIZATIONS,
+  SPECIALIZATION_TARGETS: () => SPECIALIZATION_TARGETS,
+  STARS: () => STARS,
   STYLE_GROUPS: () => STYLE_GROUPS,
   WEIGHT_RANGE: () => WEIGHT_RANGE,
   accelerate: () => accelerate,
@@ -44,11 +49,11 @@ __export(proBuild_exports, {
   apSpent: () => apSpent,
   applyProfile: () => applyProfile,
   attrCap: () => attrCap,
+  attributeAp: () => attributeAp,
   bodyEffects: () => bodyEffects,
   buildPath: () => buildPath,
   buildSummary: () => buildSummary,
   canonStyle: () => canonStyle,
-  capConfirmed: () => capConfirmed,
   cleanProfile: () => cleanProfile,
   costBetween: () => costBetween,
   costTier: () => costTier,
@@ -62,11 +67,14 @@ __export(proBuild_exports, {
   importProClubsBuilder: () => importProClubsBuilder,
   isKeeper: () => isKeeper,
   levelNeeded: () => levelNeeded,
+  levelRewards: () => levelRewards,
   masteryBonus: () => masteryBonus,
   masteryLevelOf: () => masteryLevelOf,
+  masteryText: () => masteryText,
   matchValue: () => matchValue,
   menuValue: () => menuValue,
   nextSlotLevel: () => nextSlotLevel,
+  nextStarCost: () => nextStarCost,
   normaliseBuild: () => normaliseBuild,
   playstyleSlots: () => playstyleSlots,
   playstyleStatus: () => playstyleStatus,
@@ -74,6 +82,9 @@ __export(proBuild_exports, {
   pointsSpent: () => pointsSpent,
   raiseFor: () => raiseFor,
   specializationStatus: () => specializationStatus,
+  starCost: () => starCost,
+  starRule: () => starRule,
+  starsAp: () => starsAp,
   startValue: () => startValue,
   trainable: () => trainable,
   trainedValue: () => trainedValue
@@ -81,6 +92,9 @@ __export(proBuild_exports, {
 module.exports = __toCommonJS(proBuild_exports);
 
 // src/lib/proClubsData.ts
+var RULESET = { game: "FC 27", season: 2, updated: "22 October 2026" };
+var ATTR_MIN = 1;
+var ATTR_MAX = 99;
 var ATTRIBUTE_KEYS = [
   "acceleration",
   "sprintSpeed",
@@ -166,21 +180,36 @@ var COST_BANDS = [
 ];
 var AP_GAINS = [0, 100, 9, 9, 9, 19, 10, 10, 10, 10, 38, 13, 13, 13, 13, 25, 13, 13, 13, 13, 44, 19, 19, 19, 19, 38, 25, 25, 25, 25, 63, 25, 25, 25, 25, 38, 25, 25, 25, 25, 50, 25, 25, 25, 25, 44, 25, 25, 25, 25, 63, 25, 25, 25, 25, 50];
 var AP_BY_LEVEL = AP_GAINS.reduce((acc, g, i) => (acc.push((acc[i - 1] ?? 0) + g), acc), []);
-var LEVEL_CAP = 55;
+var LEVEL_CAP = AP_GAINS.length - 1;
 var CAPS = {
-  spark: { acceleration: 99, sprintSpeed: 95 },
-  finisher: { acceleration: 95, sprintSpeed: 95, standingTackle: 75 },
-  magician: { acceleration: 95, sprintSpeed: 95, standingTackle: 75 },
-  marauder: { acceleration: 95, sprintSpeed: 95 },
-  creator: { acceleration: 92, sprintSpeed: 92 },
-  progressor: { acceleration: 92, sprintSpeed: 92 },
-  disruptor: { acceleration: 92, sprintSpeed: 92 },
-  target: { acceleration: 90, sprintSpeed: 92, standingTackle: 75, jumping: 96, finishing: 96, shortPassing: 96, ballControl: 92, agility: 92 },
-  maestro: { acceleration: 90, sprintSpeed: 90 },
-  recycler: { acceleration: 90, sprintSpeed: 90 },
-  boss: { acceleration: 90, sprintSpeed: 90, curve: 75 },
-  shotstopper: { sprintSpeed: 85, defAware: 75, standingTackle: 75 },
-  sweeperkeeper: { sprintSpeed: 88, defAware: 75 }
+  shotstopper: [92, 85, 85, 75, 75, 60, 60, 70, 92, 82, 75, 92, 90, 75, 90, 90, 96, 85, 75, 90, 90, 75, 75, 75, 70, 96, 90, 96, 92, 99, 99, 99, 99, 99],
+  sweeperkeeper: [92, 88, 85, 75, 75, 60, 60, 80, 99, 85, 75, 92, 96, 75, 90, 90, 96, 90, 85, 92, 96, 90, 75, 85, 90, 99, 92, 96, 96, 99, 99, 99, 99, 99],
+  progressor: [92, 92, 90, 85, 92, 85, 75, 92, 92, 92, 90, 96, 96, 85, 92, 92, 99, 96, 92, 96, 96, 96, 99, 99, 96, 99, 92, 96, 96, 0, 0, 0, 0, 0],
+  boss: [90, 90, 90, 82, 96, 85, 80, 92, 90, 90, 90, 92, 90, 75, 90, 90, 99, 92, 88, 92, 96, 99, 96, 96, 99, 99, 92, 99, 99, 0, 0, 0, 0, 0],
+  marauder: [95, 95, 92, 90, 92, 90, 96, 96, 92, 99, 95, 92, 92, 96, 95, 92, 99, 96, 92, 92, 96, 90, 96, 96, 96, 92, 96, 92, 96, 0, 0, 0, 0, 0],
+  disruptor: [92, 92, 90, 90, 92, 85, 90, 92, 90, 96, 95, 96, 92, 90, 92, 96, 99, 92, 92, 92, 92, 90, 92, 92, 92, 92, 99, 96, 96, 0, 0, 0, 0, 0],
+  recycler: [90, 90, 90, 90, 96, 96, 90, 92, 96, 92, 99, 96, 96, 90, 92, 92, 99, 96, 92, 99, 99, 90, 99, 96, 92, 90, 96, 96, 96, 0, 0, 0, 0, 0],
+  maestro: [90, 90, 96, 96, 96, 96, 96, 99, 99, 92, 99, 96, 99, 96, 99, 96, 99, 99, 96, 99, 92, 85, 90, 90, 90, 90, 92, 92, 92, 0, 0, 0, 0, 0],
+  creator: [92, 92, 99, 96, 96, 99, 96, 99, 99, 96, 99, 96, 96, 99, 99, 96, 99, 96, 96, 96, 85, 85, 85, 90, 90, 90, 92, 92, 92, 0, 0, 0, 0, 0],
+  spark: [99, 95, 96, 96, 92, 92, 96, 99, 96, 99, 99, 96, 92, 96, 99, 96, 99, 96, 99, 96, 85, 85, 85, 80, 75, 85, 92, 90, 92, 0, 0, 0, 0, 0],
+  magician: [95, 95, 96, 99, 92, 96, 96, 99, 96, 92, 99, 96, 92, 99, 99, 99, 99, 96, 96, 96, 82, 85, 82, 75, 75, 85, 92, 90, 92, 0, 0, 0, 0, 0],
+  finisher: [95, 95, 99, 99, 99, 96, 99, 99, 92, 92, 99, 92, 92, 96, 99, 96, 99, 96, 96, 99, 85, 96, 85, 75, 75, 92, 92, 92, 96, 0, 0, 0, 0, 0],
+  target: [90, 92, 96, 96, 99, 96, 96, 99, 92, 90, 99, 96, 92, 90, 92, 92, 99, 92, 92, 96, 82, 99, 82, 75, 75, 96, 92, 99, 92, 0, 0, 0, 0, 0]
+};
+var STARS = {
+  shotstopper: { skillMoves: { start: 1, max: 2, cost: [5] }, weakFoot: { start: 1, max: 3, cost: [10, 20], inferred: true } },
+  sweeperkeeper: { skillMoves: { start: 1, max: 3, cost: [5, 10], inferred: true }, weakFoot: { start: 1, max: 4, cost: [8, 15, 25], inferred: true } },
+  progressor: { skillMoves: { start: 2, max: 4, cost: [10, 20] }, weakFoot: { start: 3, max: 4, cost: [25] } },
+  boss: { skillMoves: { start: 2, max: 3, cost: [10] }, weakFoot: { start: 2, max: 4, cost: [20, 35], inferred: true } },
+  marauder: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  disruptor: { skillMoves: { start: 2, max: 4, cost: [10, 20] }, weakFoot: { start: 3, max: 5, cost: [35, 50] } },
+  recycler: { skillMoves: { start: 2, max: 4, cost: [8, 15], inferred: true }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  maestro: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  creator: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  spark: { skillMoves: { start: 3, max: 5, cost: [15, 25] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  magician: { skillMoves: { start: 3, max: 5, cost: [20, 35] }, weakFoot: { start: 3, max: 5, cost: [25, 40] } },
+  finisher: { skillMoves: { start: 3, max: 5, cost: [15, 25] }, weakFoot: { start: 3, max: 5, cost: [35, 50] } },
+  target: { skillMoves: { start: 2, max: 5, cost: [10, 20, 35] }, weakFoot: { start: 2, max: 5, cost: [20, 35, 50], inferred: true } }
 };
 var BODY = {
   finisher: { h: [164, 190], w: [70, 90], startH: 177, startW: 80 },
@@ -197,6 +226,7 @@ var BODY = {
   shotstopper: { h: [179, 197], w: [80, 100], startH: 188, startW: 90 },
   sweeperkeeper: { h: [184, 200], w: [80, 100], startH: 192, startW: 90 }
 };
+var BODY_STEP = { heightCm: 4, weightKg: 8 };
 var BODY_EFFECTS = {
   outfield: {
     taller: { up: ["jumping", "sprintSpeed", "strength"], down: ["acceleration", "agility", "balance"] },
@@ -211,6 +241,11 @@ var ACCELERATE = {
   explosive: { maxHeight: 182, agility: 65, agilityOverStrength: 10, acceleration: 80 },
   lengthy: { minHeight: 183, strength: 65, strengthOverAgility: 4, acceleration: 40 }
 };
+var MASTERY_MILESTONES = [
+  { level: 10, first: 1, second: 1 },
+  { level: 30, first: 0, second: 1 },
+  { level: 55, first: 1, second: 0 }
+];
 var MASTERIES = {
   shotstopper: ["gkPositioning", "gkReflexes"],
   sweeperkeeper: ["gkHandling", "gkDiving"],
@@ -266,6 +301,7 @@ var PLAYSTYLE_DEFS = [
 ];
 var PLAYSTYLE_SLOT_LEVELS = [5, 15, 40, 55];
 var SIGNATURE_PLUS_LEVELS = [20, 55];
+var SIGNATURE_PERK_LEVELS = [10, 45];
 var ARCHETYPE_RULES = {
   shotstopper: { signatures: ["Far Reach", "Deflector"], perk45: { name: "Ready to Act", trigger: "jockey a dribbler in your attacking third", boosts: "Diving, Balance, Reflexes" } },
   sweeperkeeper: { signatures: ["Footwork", "Cross Claimer"], perk45: { name: "Rush Specialist", trigger: "rush a dribbler in the box", boosts: "Acceleration, Aggression, Reactions" } },
@@ -281,12 +317,13 @@ var ARCHETYPE_RULES = {
   finisher: { signatures: ["Low Driven Shot", "First Touch"], perk45: { name: "1v1 Master", trigger: "go one on one with the keeper", boosts: "Ball Control, Agility, Balance" } },
   target: { signatures: ["Precision Header", "Enforcer"], perk45: { name: "Physical Shooter", trigger: "shield off a defender then shoot in the box", boosts: "Strength, Shot Power, Balance" } }
 };
+var SPECIALIZATION_TARGETS = { main: 92, other: 90 };
 var spec = (archetype, name, plus, a, b, c, unconfirmed) => ({
   key: `${archetype}.${name.toLowerCase().replace(/[^a-z0-9]+/g, "")}`,
   archetype,
   name,
   plus,
-  req: [[a, 92], [b, 90], ...c ? [[c, 90]] : []],
+  req: [[a, SPECIALIZATION_TARGETS.main], [b, SPECIALIZATION_TARGETS.other], ...c ? [[c, SPECIALIZATION_TARGETS.other]] : []],
   ...unconfirmed ? { unconfirmed } : {}
 });
 var SPECIALIZATIONS = [
@@ -317,19 +354,20 @@ var SPECIALIZATIONS = [
   spec("creator", "Creator+", "Whipped Pass", "vision", "crossing", "longPassing"),
   spec("creator", "Architect", "Dead Ball", "crossing", "shotPower", "fkAccuracy"),
   spec("creator", "Sniper", "Power Shot", "shotPower", "finishing", "longShots"),
-  spec("spark", "Joker", "Whipped Pass", "crossing", "longPassing", null, "third attribute not confirmed"),
+  spec("spark", "Joker", "Whipped Pass", "crossing", "longPassing", null, "EA dropped its Att. Positioning target; no replacement confirmed"),
   spec("spark", "Spark+", "Quick Step", "agility", "acceleration", "sprintSpeed"),
   spec("spark", "Ace", "Chip Shot", "finishing", "reactions", "ballControl"),
-  spec("magician", "Invader", "Incisive Pass", "longPassing", "vision", null, "third attribute not confirmed"),
+  spec("magician", "Invader", "Incisive Pass", "longPassing", "vision", null, "EA dropped its Att. Positioning target; no replacement confirmed"),
   spec("magician", "Magician+", "First Touch", "ballControl", "acceleration", "composure"),
   spec("magician", "Hotshot", "Power Shot", "shotPower", "finishing", "longShots"),
   spec("finisher", "Finisher+", "Chip Shot", "composure", "reactions", "ballControl"),
-  spec("finisher", "Hunter", "Gamechanger", "curve", "finishing", "balance", "Balance target reported by players"),
+  spec("finisher", "Hunter", "Gamechanger", "curve", "finishing", "balance", "Balance replaced Att. Positioning according to one player report"),
   spec("finisher", "Presser", "Relentless", "stamina", "agility", "aggression"),
   spec("target", "Target+", "Acrobatic", "jumping", "agility", "volleys"),
-  spec("target", "Runner", "Enforcer", "sprintSpeed", "strength", "aggression", "Aggression target reported by players"),
+  spec("target", "Runner", "Enforcer", "sprintSpeed", "strength", "aggression", "Aggression replaced Att. Positioning according to one player report"),
   spec("target", "Roamer", "Incisive Pass", "shortPassing", "vision", "longPassing")
 ];
+var FACILITY_BOOST_MAX = 10;
 
 // src/lib/proBuild.ts
 var ARCHETYPES = [
@@ -408,10 +446,22 @@ var MAX_PLAYSTYLES = PLAYSTYLE_SLOT_LEVELS.length;
 var STYLE_ALIASES = { "Game Changer": "Gamechanger", "Game changer": "Gamechanger", "1v1 Close down": "1v1 Close Down" };
 var canonStyle = (name) => STYLE_ALIASES[name] ?? name;
 var LEVEL_MAX = LEVEL_CAP;
-var HEIGHT_RANGE = [162, 200];
-var WEIGHT_RANGE = [60, 100];
-var POINTS_MAX_PER_ATTR = 59;
-var BOOST_MAX = 10;
+var HEIGHT_RANGE = [Math.min(...Object.values(BODY).map((b) => b.h[0])), Math.max(...Object.values(BODY).map((b) => b.h[1]))];
+var WEIGHT_RANGE = [Math.min(...Object.values(BODY).map((b) => b.w[0])), Math.max(...Object.values(BODY).map((b) => b.w[1]))];
+var BOOST_MAX = FACILITY_BOOST_MAX;
+var NO_STARS = { start: 1, max: 5, cost: [0, 0, 0, 0] };
+var starRule = (archetype, kind) => STARS[archetype]?.[kind] ?? NO_STARS;
+function starCost(archetype, kind, stars) {
+  const r = starRule(archetype, kind);
+  let t = 0;
+  for (let s = r.start + 1; s <= Math.min(stars, r.max); s++) t += r.cost[s - r.start - 1] ?? 0;
+  return t;
+}
+var nextStarCost = (archetype, kind, stars) => {
+  const r = starRule(archetype, kind);
+  return stars >= r.max ? null : r.cost[stars - r.start] ?? 0;
+};
+var starsAp = (b) => starCost(b.archetype, "skillMoves", b.skillMoves) + starCost(b.archetype, "weakFoot", b.weakFoot);
 var archOf = (key) => ARCHETYPES.find((a) => a.key === key) ?? ARCHETYPES[ARCHETYPES.length - 2];
 var isKeeper = (archetype) => archOf(archetype).line === "GK";
 var emptyBuild = (archetype = "finisher") => ({
@@ -420,8 +470,8 @@ var emptyBuild = (archetype = "finisher") => ({
   level: 1,
   heightCm: BODY[archetype]?.startH ?? 180,
   weightKg: BODY[archetype]?.startW ?? 75,
-  skillMoves: 3,
-  weakFoot: 3,
+  skillMoves: starRule(archetype, "skillMoves").start,
+  weakFoot: starRule(archetype, "weakFoot").start,
   points: {},
   playstyles: [],
   specialization: null,
@@ -436,8 +486,7 @@ var int = (v, lo, hi, fallback) => {
 };
 var startValue = (archetype, key) => START_VALUES[archetype]?.[KEY_INDEX.get(key) ?? -1] ?? 0;
 var trainable = (archetype, key) => startValue(archetype, key) > 0;
-var attrCap = (archetype, key) => trainable(archetype, key) ? CAPS[archetype]?.[key] ?? 99 : 0;
-var capConfirmed = (archetype, key) => CAPS[archetype]?.[key] !== void 0;
+var attrCap = (archetype, key) => trainable(archetype, key) ? Math.max(startValue(archetype, key), CAPS[archetype]?.[KEY_INDEX.get(key) ?? -1] || ATTR_MAX) : 0;
 var costTier = (archetype, key) => COST_TIERS[archetype]?.[KEY_INDEX.get(key) ?? -1] ?? 0;
 function pointCost(archetype, key, value) {
   const tier = costTier(archetype, key);
@@ -458,15 +507,14 @@ function masteryLevelOf(b, archetype) {
 function masteryBonus(b, key) {
   let n = 0;
   for (const [arch, pair] of Object.entries(MASTERIES)) {
-    const level = masteryLevelOf(b, arch);
-    if (level < 10) continue;
     const [first, second] = pair;
-    if (key === first) n += 1 + (level >= 55 ? 1 : 0);
-    if (key === second) n += 1 + (level >= 30 ? 1 : 0);
+    if (key !== first && key !== second) continue;
+    const level = masteryLevelOf(b, arch);
+    for (const m of MASTERY_MILESTONES) if (level >= m.level) n += key === first ? m.first : m.second;
   }
   return n;
 }
-var menuValue = (b, key) => trainable(b.archetype, key) ? Math.min(99, trainedValue(b, key) + masteryBonus(b, key)) : 0;
+var menuValue = (b, key) => trainable(b.archetype, key) ? Math.min(ATTR_MAX, trainedValue(b, key) + masteryBonus(b, key)) : 0;
 var steps = (diff, per) => Math.sign(diff) * Math.ceil(Math.abs(diff) / per);
 function bodyEffects(b) {
   const body = BODY[b.archetype];
@@ -474,8 +522,8 @@ function bodyEffects(b) {
   const out = {};
   const add = (keys, n) => keys.forEach((k) => out[k] = (out[k] ?? 0) + n);
   if (!body) return out;
-  const h = steps(b.heightCm - body.startH, 4);
-  const w = steps(b.weightKg - body.startW, 8);
+  const h = steps(b.heightCm - body.startH, BODY_STEP.heightCm);
+  const w = steps(b.weightKg - body.startW, BODY_STEP.weightKg);
   add(fx.taller.up, h);
   add(fx.taller.down, -h);
   add(fx.heavier.up, w);
@@ -483,7 +531,7 @@ function bodyEffects(b) {
   for (const k of Object.keys(out)) if (!out[k] || !trainable(b.archetype, k)) delete out[k];
   return out;
 }
-var matchValue = (b, key, fx = bodyEffects(b)) => trainable(b.archetype, key) ? clamp(menuValue(b, key) + (fx[key] ?? 0) + (b.boosts?.[key] ?? 0), 1, 99) : 0;
+var matchValue = (b, key, fx = bodyEffects(b)) => trainable(b.archetype, key) ? clamp(menuValue(b, key) + (fx[key] ?? 0) + (b.boosts?.[key] ?? 0), ATTR_MIN, ATTR_MAX) : 0;
 function accelerate(b, fx = bodyEffects(b)) {
   const acc = matchValue(b, "acceleration", fx), agi = matchValue(b, "agility", fx), str = matchValue(b, "strength", fx);
   const E = ACCELERATE.explosive, L = ACCELERATE.lengthy;
@@ -510,11 +558,12 @@ function formatHeight(cm, units = "imperial") {
 }
 var formatWeight = (kg, units = "imperial") => units === "metric" ? `${kg} kg` : `${Math.round(kg * 2.20462)} lb`;
 var apAtLevel = (level) => AP_BY_LEVEL[clamp(Math.round(level), 1, LEVEL_CAP)];
-function apSpent(b) {
+function attributeAp(b) {
   let t = 0;
   for (const [k, p] of Object.entries(b.points)) if (p > 0) t += costBetween(b.archetype, k, startValue(b.archetype, k), startValue(b.archetype, k) + p);
   return t;
 }
+var apSpent = (b) => attributeAp(b) + starsAp(b);
 function levelNeeded(spent) {
   const lvl = AP_BY_LEVEL.findIndex((ap, i) => i >= 1 && ap >= spent);
   return lvl === -1 ? null : lvl;
@@ -564,6 +613,23 @@ function playstyleStatus(b) {
 }
 var playstyleSlots = (level) => PLAYSTYLE_SLOT_LEVELS.filter((l) => level >= l).length;
 var nextSlotLevel = (level) => PLAYSTYLE_SLOT_LEVELS.find((l) => level < l) ?? null;
+function levelRewards() {
+  const at = /* @__PURE__ */ new Map();
+  const add = (level, text) => at.set(level, [...at.get(level) ?? [], text]);
+  PLAYSTYLE_SLOT_LEVELS.forEach((l, i) => add(l, `PlayStyle slot ${i + 1}`));
+  SIGNATURE_PERK_LEVELS.forEach((l, i) => add(l, `Signature Perk ${i + 1}`));
+  SIGNATURE_PLUS_LEVELS.forEach((l, i) => add(l, `Signature ${i + 1} becomes PlayStyle+`));
+  for (const m of MASTERY_MILESTONES) add(m.level, `Mastery ${[m.first, m.second].filter(Boolean).map((n) => `+${n}`).join(" ")}`);
+  return [...at.entries()].sort((x, y) => x[0] - y[0]).map(([level, rewards]) => ({ level, rewards }));
+}
+function masteryText(archetype, label) {
+  const pair = MASTERIES[archetype];
+  if (!pair) return "";
+  return MASTERY_MILESTONES.map((m, i) => {
+    const parts = [m.first ? `+${m.first} ${label(pair[0])}` : "", m.second ? `+${m.second} ${label(pair[1])}` : ""].filter(Boolean).join(" and ");
+    return `${parts} at ${i === 0 ? "level " : ""}${m.level}`;
+  }).join(", ");
+}
 function specializationStatus(b) {
   return SPECIALIZATIONS.filter((s) => s.archetype === b.archetype).map((spec2) => {
     const { missing, ap } = raisePlan(b, spec2.req);
@@ -590,8 +656,8 @@ function normaliseBuild(b) {
     level: int(b.level, 1, LEVEL_CAP, 1),
     heightCm: int(b.heightCm, body.h[0], body.h[1], base.heightCm),
     weightKg: int(b.weightKg, body.w[0], body.w[1], base.weightKg),
-    skillMoves: int(b.skillMoves, 1, 5, 3),
-    weakFoot: int(b.weakFoot, 1, 5, 3),
+    skillMoves: int(b.skillMoves, starRule(archetype, "skillMoves").start, starRule(archetype, "skillMoves").max, base.skillMoves),
+    weakFoot: int(b.weakFoot, starRule(archetype, "weakFoot").start, starRule(archetype, "weakFoot").max, base.weakFoot),
     points,
     playstyles: [...new Set((b.playstyles ?? []).map(canonStyle).filter((p) => known.has(p) && !sigs.has(p)))].slice(0, MAX_PLAYSTYLES),
     specialization: spec2 ? spec2.key : null,
@@ -643,7 +709,8 @@ function buildSummary(b) {
     const p = b.points[a.key];
     if (p) byGroup[a.group] += costBetween(b.archetype, a.key, startValue(b.archetype, a.key), startValue(b.archetype, a.key) + p);
   }
-  const focus = ATTR_GROUPS.map((g) => ({ group: g.key, label: g.label, share: spent ? byGroup[g.key] / spent : 0 })).filter((f) => f.share > 0).sort((x, y) => y.share - x.share);
+  const onAttrs = attributeAp(b);
+  const focus = ATTR_GROUPS.map((g) => ({ group: g.key, label: g.label, share: onAttrs ? byGroup[g.key] / onAttrs : 0 })).filter((f) => f.share > 0).sort((x, y) => y.share - x.share);
   const notes = [];
   const need = levelNeeded(spent);
   if (spent > available) notes.push(need ? `${spent - available} AP over what level ${b.level} gives you: this build needs level ${need}.` : `${spent - available} AP over: more than even level ${LEVEL_CAP} gives (${apAtLevel(LEVEL_CAP)} AP).`);
@@ -654,7 +721,7 @@ function buildSummary(b) {
   if (locked.length) notes.push(`Not unlocked yet: ${locked.join(", ")}.`);
   const spec2 = specializationStatus(b).find((s) => s.spec.key === b.specialization);
   if (spec2 && !spec2.met) notes.push(`${spec2.spec.name} isn't reached yet.`);
-  return { spent, available, remaining: available - spent, levelNeeded: need, slots, focus, notes };
+  return { spent, starsAp: starsAp(b), available, remaining: available - spent, levelNeeded: need, slots, focus, notes };
 }
 var LEGACY_STYLES = [
   "Finesse Shot",
@@ -793,17 +860,22 @@ function importProClubsBuilder(linkOrCode) {
   ARCHETYPE_RULES,
   ATTRIBUTES,
   ATTR_GROUPS,
+  ATTR_MAX,
+  ATTR_MIN,
   BODY,
   BOOST_MAX,
   HEIGHT_RANGE,
   LEVEL_CAP,
   LEVEL_MAX,
+  MASTERY_MILESTONES,
   MAX_PLAYSTYLES,
   PLAYSTYLES,
   PLAYSTYLE_DEFS,
   PLAYSTYLE_SLOT_LEVELS,
-  POINTS_MAX_PER_ATTR,
+  RULESET,
   SPECIALIZATIONS,
+  SPECIALIZATION_TARGETS,
+  STARS,
   STYLE_GROUPS,
   WEIGHT_RANGE,
   accelerate,
@@ -812,11 +884,11 @@ function importProClubsBuilder(linkOrCode) {
   apSpent,
   applyProfile,
   attrCap,
+  attributeAp,
   bodyEffects,
   buildPath,
   buildSummary,
   canonStyle,
-  capConfirmed,
   cleanProfile,
   costBetween,
   costTier,
@@ -830,11 +902,14 @@ function importProClubsBuilder(linkOrCode) {
   importProClubsBuilder,
   isKeeper,
   levelNeeded,
+  levelRewards,
   masteryBonus,
   masteryLevelOf,
+  masteryText,
   matchValue,
   menuValue,
   nextSlotLevel,
+  nextStarCost,
   normaliseBuild,
   playstyleSlots,
   playstyleStatus,
@@ -842,6 +917,9 @@ function importProClubsBuilder(linkOrCode) {
   pointsSpent,
   raiseFor,
   specializationStatus,
+  starCost,
+  starRule,
+  starsAp,
   startValue,
   trainable,
   trainedValue

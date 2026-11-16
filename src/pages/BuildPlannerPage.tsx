@@ -19,7 +19,6 @@ import {
   bodyEffects,
   buildPath,
   buildSummary,
-  capConfirmed,
   costTier,
   decodeBuild,
   emptyBuild,
@@ -28,6 +27,14 @@ import {
   formatWeight,
   groupAverages,
   importProClubsBuilder,
+  levelRewards,
+  PLAYSTYLE_SLOT_LEVELS,
+  masteryText,
+  nextStarCost,
+  starRule,
+  RULESET,
+  SPECIALIZATION_TARGETS,
+  MASTERY_MILESTONES,
   isKeeper,
   masteryBonus,
   masteryLevelOf,
@@ -48,7 +55,7 @@ import {
   type ProProfile,
   type Units,
 } from "@/lib/proBuild";
-import { MASTERIES, SIGNATURE_PERK_LEVELS, SIGNATURE_PLUS_LEVELS, TIER_LABELS, UNCONFIRMED_NOTES } from "@/lib/proClubsData";
+import { BODY_STEP, MASTERIES, SIGNATURE_PLUS_LEVELS, TIER_LABELS, UNCONFIRMED_NOTES } from "@/lib/proClubsData";
 import { CommunityMetaLoader } from "@/components/build/CommunityMetaBuilds";
 import { MyBuildsPanel, useMyBuilds, useMyProPhoto } from "@/components/build/MyBuilds";
 import { BodyFigure, BuildCard, GROUP_COLORS, LINE_COLORS, PitchPicker, StatMeter, downloadCard, radarGroups, shapeValues } from "@/components/build/BuildVisuals";
@@ -72,17 +79,9 @@ const STYLE_COLOR: Record<StyleGroup, string> = {
 };
 const TIER_COLORS = ["", "#34d399", "#a3e635", "#fbbf24", "#fb7185"];
 
-// What happens at each level, for the level slider
-const MILESTONES: [number, string][] = [
-  [5, "PlayStyle slot 1"],
-  [10, "Signature Perk 1, Mastery +1 +1"],
-  [15, "PlayStyle slot 2"],
-  [SIGNATURE_PLUS_LEVELS[0], "Signature 1 becomes PlayStyle+"],
-  [30, "Mastery +1"],
-  [40, "PlayStyle slot 3"],
-  [SIGNATURE_PERK_LEVELS[1], "Signature Perk 2"],
-  [55, "PlayStyle slot 4, Signature 2 becomes PlayStyle+, Mastery +1"],
-];
+// What happens at each level, for the level slider (from the data tables)
+const MILESTONES: [number, string][] = levelRewards().map((r) => [r.level, r.rewards.join(", ")]);
+const MASTERY_LEVELS = MASTERY_MILESTONES.map((m) => m.level);
 
 // Imperial by default; the choice is remembered on this browser
 function readUnits(): Units {
@@ -127,17 +126,18 @@ function Panel({ step, title, aside, children }: { step: string; title: string; 
   );
 }
 
-function Stars({ value, onChange, label }: { value: number; onChange: (v: number) => void; label: string }) {
+// Stars the archetype starts with are fixed; the ones up to its maximum are bought with AP
+function Stars({ value, onChange, label, min, max }: { value: number; onChange: (v: number) => void; label: string; min: number; max: number }) {
   return (
     <div className="flex items-center gap-1" role="radiogroup" aria-label={label}>
-      {[1, 2, 3, 4, 5].map((n) => (
+      {Array.from({ length: max }, (_, i) => i + 1).map((n) => (
         <button
           key={n}
           type="button"
           role="radio"
           aria-checked={value === n}
           aria-label={`${label} ${n}`}
-          onClick={() => onChange(n)}
+          onClick={() => onChange(Math.max(min, n))}
           className={`text-2xl leading-none transition-transform hover:scale-125 ${n <= value ? "text-amber-400 drop-shadow-[0_0_6px_rgba(251,191,36,0.6)]" : "text-white/15"}`}
         >
           ★
@@ -145,6 +145,11 @@ function Stars({ value, onChange, label }: { value: number; onChange: (v: number
       ))}
     </div>
   );
+}
+
+function StarPrice({ archetype, kind, stars }: { archetype: string; kind: "skillMoves" | "weakFoot"; stars: number }) {
+  const next = nextStarCost(archetype, kind, stars);
+  return <div className="mt-1 text-[11px] tabular-nums text-slate-500">{next === null ? `${stars}★ is this archetype's most` : `Next star ${next} AP`}</div>;
 }
 
 function Nudge({ onClick, disabled, label, children }: { onClick: () => void; disabled: boolean; label: string; children: ReactNode }) {
@@ -504,7 +509,7 @@ export default function BuildPlannerPage() {
                   </div>
                   {mastery && (
                     <p className="text-xs text-slate-500">
-                      Mastery for levelling a {arch.name}: +1 {attrLabel(mastery[0])} and +1 {attrLabel(mastery[1])} at level 10, +1 {attrLabel(mastery[1])} at 30, +1 {attrLabel(mastery[0])} at 55.
+                      Mastery for levelling a {arch.name}: {masteryText(build.archetype, attrLabel)}.
                     </p>
                   )}
                   <div className="space-y-1.5 pt-1">
@@ -554,14 +559,18 @@ export default function BuildPlannerPage() {
                   <div className="flex flex-wrap gap-x-8 gap-y-3">
                     <div>
                       <div className={`mb-1 ${label}`}>Skill moves</div>
-                      <Stars label="Skill moves" value={build.skillMoves} onChange={(v) => set({ skillMoves: v })} />
+                      <Stars label="Skill moves" value={build.skillMoves} min={starRule(build.archetype, "skillMoves").start} max={starRule(build.archetype, "skillMoves").max} onChange={(v) => set({ skillMoves: v })} />
+                      <StarPrice archetype={build.archetype} kind="skillMoves" stars={build.skillMoves} />
                     </div>
                     <div>
                       <div className={`mb-1 ${label}`}>Weak foot</div>
-                      <Stars label="Weak foot" value={build.weakFoot} onChange={(v) => set({ weakFoot: v })} />
+                      <Stars label="Weak foot" value={build.weakFoot} min={starRule(build.archetype, "weakFoot").start} max={starRule(build.archetype, "weakFoot").max} onChange={(v) => set({ weakFoot: v })} />
+                      <StarPrice archetype={build.archetype} kind="weakFoot" stars={build.weakFoot} />
                     </div>
                   </div>
-                  <p className="text-xs text-slate-500">Stars are for the card only: how FC 27 sets skill moves and weak foot isn't confirmed.</p>
+                  <p className="text-xs text-slate-500">
+                    Extra stars are bought with AP from the same budget as attributes{summary.starsAp ? ` (${summary.starsAp} AP on this build)` : ""}. Each archetype has its own starting stars and maximum.
+                  </p>
                 </div>
 
                 <div className="grid gap-5 sm:grid-cols-[96px_minmax(0,1fr)]">
@@ -598,7 +607,7 @@ export default function BuildPlannerPage() {
                           ))
                         )}
                       </div>
-                      <p className="mt-2 text-xs text-slate-500">Every 4 cm (about 1.5 in) or 8 kg (about 18 lb) from the default moves these by 1.</p>
+                      <p className="mt-2 text-xs text-slate-500">Every {BODY_STEP.heightCm} cm (about {(BODY_STEP.heightCm / 2.54).toFixed(1)} in) or {BODY_STEP.weightKg} kg (about {Math.round(BODY_STEP.weightKg * 2.20462)} lb) from the default moves these by 1.</p>
                     </div>
                   </div>
                 </div>
@@ -723,7 +732,7 @@ export default function BuildPlannerPage() {
                                 <span className="leading-tight text-slate-300">{a.label}</span>
                               </span>
                               <div className="col-span-2 row-start-2 flex items-center gap-2 sm:col-span-1 sm:row-start-auto xl:col-span-2 xl:row-start-2">
-                                <StatMeter start={start} value={v} cap={cap} capKnown={capConfirmed(build.archetype, a.key)} match={match} color={c} label={a.label} onChange={(n) => setValue(a.key, n)} />
+                                <StatMeter start={start} value={v} cap={cap} match={match} color={c} label={a.label} onChange={(n) => setValue(a.key, n)} />
                               </div>
                               <div className="col-start-2 row-start-1 flex items-center gap-1 sm:col-start-auto sm:row-start-auto xl:col-start-2 xl:row-start-1">
                                 <span className="min-w-[2rem] whitespace-nowrap text-right tabular-nums sm:w-16" title={`Starts at ${start}${bonus ? `, +${bonus} mastery` : ""}, ${match} in matches`}>
@@ -731,7 +740,7 @@ export default function BuildPlannerPage() {
                                   {match !== shown && <span className={`ml-1 text-[11px] ${match > shown ? "text-emerald-400" : "text-rose-400"}`}>◆{match}</span>}
                                 </span>
                                 <span className="w-11 whitespace-nowrap text-right text-[11px] tabular-nums text-slate-500" title="AP for the next point">
-                                  {next === null ? (capConfirmed(build.archetype, a.key) ? "cap" : "max") : `${next} AP`}
+                                  {next === null ? "cap" : `${next} AP`}
                                 </span>
                                 <Nudge label={`Less ${a.label}`} disabled={v <= start} onClick={() => setValue(a.key, v - 1)}>
                                   <Minus className="h-3 w-3" />
@@ -771,7 +780,7 @@ export default function BuildPlannerPage() {
                     )}
                   </div>
                   <p className="mb-3 text-xs text-slate-400">
-                    Masteries carry over: every archetype you've taken to level 10 adds +1 to its two attributes on all your builds, then +1 more at 30 and 55.
+                    Masteries carry over: every archetype you've taken to level {MASTERY_LEVELS[0]} adds to its two attributes on all your builds{MASTERY_LEVELS.length > 1 ? `, then more at ${MASTERY_LEVELS.slice(1).join(" and ")}` : ""}.
                     {mine.signedIn
                       ? " Enter them once: they're saved to your account and used on every build, here and on your Graphics Studio cards. Your saved builds' levels count by themselves."
                       : " Sign in to save them once for every build; your saved builds' levels then count by themselves."}
@@ -877,7 +886,7 @@ export default function BuildPlannerPage() {
 
             <Panel step="05" title="Specializations" aside={<span className="text-xs text-slate-500">one at a time</span>}>
               <p className="mb-4 text-sm text-slate-400">
-                Get the first attribute to 92 and the other two to 90 to unlock a Specialization. It swaps one of your Signatures for its PlayStyle+.
+                Get the first attribute to {SPECIALIZATION_TARGETS.main} and the others to {SPECIALIZATION_TARGETS.other} to unlock a Specialization. Its PlayStyle+ can take the place of either of your Signatures.
               </p>
               <div className="grid gap-3 md:grid-cols-3">
                 {specs.map((s) => {
@@ -907,7 +916,7 @@ export default function BuildPlannerPage() {
                           );
                         })}
                       </div>
-                      {s.spec.unconfirmed && <p className="mb-2 text-[11px] text-slate-500">Not confirmed: {s.spec.unconfirmed.toLowerCase()}.</p>}
+                      {s.spec.unconfirmed && <p className="mb-2 text-[11px] text-slate-500">Not confirmed: {s.spec.unconfirmed}.</p>}
                       <div className="mt-auto flex flex-wrap gap-2">
                         {s.met ? (
                           <button className={`${ghostBtn} px-3 py-1.5 text-xs`} onClick={() => set({ specialization: on ? null : s.spec.key })} aria-pressed={on}>
@@ -931,7 +940,7 @@ export default function BuildPlannerPage() {
               step="06"
               title="PlayStyles"
               aside={
-                <span className="font-display text-lg font-bold tabular-nums text-slate-300" title="Slots open at levels 5, 15, 40 and 55">
+                <span className="font-display text-lg font-bold tabular-nums text-slate-300" title={`Slots open at levels ${PLAYSTYLE_SLOT_LEVELS.join(", ")}`}>
                   {build.playstyles.length}/{summary.slots}
                 </span>
               }
@@ -1049,7 +1058,7 @@ export default function BuildPlannerPage() {
                 <Info className="h-4 w-4" /> Where these numbers come from
               </h2>
               <p>
-                EA doesn't publish AP prices, starting values or unlock thresholds. These are the FC 27 Season 2 numbers (level cap 55) measured by the Pro Clubs
+                EA doesn't publish AP prices, starting values or unlock thresholds. These are the {RULESET.game} Season {RULESET.season} numbers (from {RULESET.updated}, level cap {LEVEL_CAP}) measured by the Pro Clubs
                 community and cross-checked: the prices reproduce every published worked example and all 39 Specialization costs. When EA changes them, the planner
                 is updated in one place.
               </p>
