@@ -2,7 +2,8 @@
 # One-time setup on the Hetzner server (run as root): installs spotbot-deploy.timer, which runs
 # auto-deploy.sh every 2 minutes, and records the migrations the database already has.
 #   sudo bash /opt/spotbot/scripts/hetzner/install-auto-deploy.sh
-# Re-running is safe. Migrations before BASELINE_BEFORE are marked applied without running them
+# Re-running is safe, and auto-deploy.sh re-runs it by itself whenever scripts/hetzner/ changes on main.
+# On a fresh database tracker, migrations before BASELINE_BEFORE are marked applied without running them
 # (the database was restored with them); later ones run on the next deploy.
 set -euo pipefail
 
@@ -12,7 +13,13 @@ DB_CONTAINER="${DB_CONTAINER:-supabase-db-xue3q5tb1udz4bvq6oxbg1pv}"
 BASELINE_BEFORE="${BASELINE_BEFORE:-20261010080000}"
 PM2_BIN=$(command -v pm2)
 SYSTEMCTL_BIN=$(command -v systemctl)
+SRC="$(cd "$(dirname "$0")" && pwd)"
+# Root-owned copy of auto-deploy.sh, so edits to the repo's working tree can't change what root runs
+LIB=/usr/local/lib/spotbot-ops
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
+install -d -m 755 "$LIB"
+# Copy then rename: the running deploy calls this script, and bash keeps reading its old file undisturbed.
+install -m 755 "$SRC/auto-deploy.sh" "$LIB/.auto-deploy.sh.new" && mv -f "$LIB/.auto-deploy.sh.new" "$LIB/auto-deploy.sh"
 
 psql_db() { docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q "$@"; }
 
@@ -25,7 +32,9 @@ psql_db -c "do \$\$ begin if to_regclass('public._applied_migrations') is not nu
   execute 'insert into ops.applied_migrations(filename) select filename from public._applied_migrations on conflict do nothing';
 end if; end \$\$;" >/dev/null 2>&1 || true
 COUNT=0
-for f in $(ls "$REPO_DIR/supabase/migrations" | grep -E '\.sql$' | sort); do
+# Only a tracker that has never recorded anything gets a baseline; after that every new file must really run.
+TRACKED=$(psql_db -Atc "select count(*) from ops.applied_migrations")
+[ "$TRACKED" = 0 ] && for f in $(ls "$REPO_DIR/supabase/migrations" | grep -E '\.sql$' | sort); do
   [[ "$f" < "$BASELINE_BEFORE" ]] || continue
   psql_db -c "insert into ops.applied_migrations(filename) values ('$f') on conflict do nothing" >/dev/null
   COUNT=$((COUNT + 1))
@@ -47,7 +56,7 @@ After=network-online.target docker.service
 Type=oneshot
 Environment=HOME=/root PM2_HOME=/root/.pm2 REPO_DIR=$REPO_DIR REPO_USER=$REPO_USER DB_CONTAINER=$DB_CONTAINER
 EnvironmentFile=-/etc/spotbot-deploy.env
-ExecStart=/usr/bin/env bash $REPO_DIR/scripts/hetzner/auto-deploy.sh
+ExecStart=/usr/bin/env bash $LIB/auto-deploy.sh
 EOF
 
 cat > /etc/systemd/system/spotbot-restart.service <<EOF

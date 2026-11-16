@@ -202,6 +202,19 @@ function sameSecret(given, expected) {
 // With FUNCTIONS_ORIGIN_SECRET set (the same value as the Worker's), anything that didn't come through the
 // Worker is refused, so the open port can't be used to skip Cloudflare. FUNCTIONS_HOST=127.0.0.1 keeps
 // the port off the internet entirely when a Cloudflare Tunnel or local proxy fronts it.
+// What the server's auto-deploy last did (scripts/hetzner/auto-deploy.sh writes it as root). Only the
+// fields below are passed on: commit ids, migration file names and our own short messages, no logs.
+const DEPLOY_FIELDS = ['state', 'commit', 'running_commit', 'failed_commit', 'message', 'migrations', 'at'];
+function deployStatus(res, file = process.env.DEPLOY_STATUS_FILE || '/var/lib/spotbot-deploy/status.json') {
+  let body = null;
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    body = Object.fromEntries(DEPLOY_FIELDS.filter(k => k in raw).map(k => [k, raw[k]]));
+  } catch { /* no deploy has written a status yet */ }
+  res.writeHead(body ? 200 : 404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  return res.end(JSON.stringify(body || { error: 'No deploy status yet' }));
+}
+
 // discordReady: whether the bot is connected to Discord, answered on /health/discord for the health checks.
 function startServer({ port, supabaseUrl, host = process.env.FUNCTIONS_HOST || '0.0.0.0', originSecret = process.env.FUNCTIONS_ORIGIN_SECRET || '', discordReady = null }) {
   wrapFetch(supabaseUrl);
@@ -211,6 +224,7 @@ function startServer({ port, supabaseUrl, host = process.env.FUNCTIONS_HOST || '
     try {
       if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
       if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok'); }
+      if (req.url === '/health/deploy') return deployStatus(res);
       if (req.url === '/health/discord') {
         const ready = discordReady ? Boolean(discordReady()) : true;
         res.writeHead(ready ? 200 : 503, { 'Content-Type': 'text/plain' });
