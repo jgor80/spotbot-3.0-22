@@ -63,8 +63,20 @@ untracked `.env` files and backups are kept). A systemd timer runs it every 2 mi
   `ops.applied_migrations`. A failing migration rolls back, stops the deploy and leaves the bot on its
   old code; the next push (or `auto-deploy.sh --force`) retries it.
 - runs `npm ci` in `public/spotbot` when its package files changed.
-- restarts the pm2 `spotbot` process when anything under `public/spotbot/` changed and checks it is
-  back online. Backend functions run inside the bot, so this is also how function changes go live.
+- restarts the pm2 `spotbot` process when anything under `public/spotbot/` changed and waits (up to
+  3 minutes) until the bot says it is connected to Discord. If it never connects, the bot is put back on
+  the last good commit and an alert says so. Backend functions run inside the bot, so this is also how
+  function changes go live.
+- reinstalls the server's own scripts (this deploy script, health checks, backups) from the deployed
+  commit whenever `scripts/hetzner/` changed, so `install-ops.sh` / `install-auto-deploy.sh` never need
+  re-running by hand.
+- a failed commit is retried once after 10 minutes, then waits for the next push (or `--force`).
+- writes `/var/lib/spotbot-deploy/status.json`, served by the bot on `/health/deploy` and by the site on
+  `https://gafferbot.app/api/deploy-status`. The **Deploy check** GitHub workflow reads it after every
+  merge and goes red (GitHub emails you) when the merge didn't reach the server or the bot is offline.
+
+Alerts go to `DEPLOY_WEBHOOK_URL` in `/etc/spotbot-deploy.env`, or to the health alerts webhook
+(`ALERT_WEBHOOK_URL` in `/etc/spotbot-ops.env`) when that is empty.
 
 Function sources are bundled by the `Rebuild local functions` GitHub Action, which commits
 `public/spotbot/local-functions/` whenever `supabase/functions/` changes on `main` (including Lovable's
@@ -91,8 +103,8 @@ sudo tail -n 300 /root/.pm2/logs/spotbot-error.log
 
 ## 5. Backups and health alerts
 
-Install once, as root (re-run after these scripts change; it copies them to the root-owned
-`/usr/local/lib/spotbot-ops` so the repo user can't alter what root runs):
+Install once, as root (auto-deploy re-runs it whenever these scripts change; it copies them to the
+root-owned `/usr/local/lib/spotbot-ops` so the repo user can't alter what root runs):
 
 ```sh
 sudo bash /opt/spotbot/scripts/hetzner/install-ops.sh

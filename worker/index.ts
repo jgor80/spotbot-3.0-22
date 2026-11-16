@@ -177,6 +177,21 @@ async function botLeaderCheck(env: Env, discordUserId: string): Promise<boolean>
   return body?.leader === true;
 }
 
+// What the server's auto-deploy last did and whether the bot is connected to Discord, for the GitHub
+// "Deploy check" workflow (.github/workflows/deploy-check.yml). Read-only: commit ids and short messages.
+async function deployStatus(env: Env): Promise<Response> {
+  if (!env.FUNCTIONS_ORIGIN) return json({ error: "Functions server is not configured" }, 503);
+  const base = originUrl(env.FUNCTIONS_ORIGIN);
+  const get = (path: string) =>
+    fetch(base + path, { headers: originHeaders(env), signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  const [deploy, discord] = await Promise.all([get("/health/deploy"), get("/health/discord")]);
+  if (!deploy && !discord) return json({ error: "Server not reachable" }, 502);
+  return json({
+    deploy: deploy?.ok ? await deploy.json().catch(() => null) : null,
+    discord_connected: discord ? discord.status === 200 : null,
+  });
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -211,6 +226,7 @@ export default {
       for (const [k, v] of Object.entries(originHeaders(env))) headers.set(k, v);
       return fetch(target, { method: req.method, headers, body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body });
     }
+    if (url.pathname === "/api/deploy-status" && req.method === "GET") return deployStatus(env);
     if (url.pathname.startsWith("/api/")) return json({ error: "Not found" }, 404);
     // Public pages built from live data (public-pages.ts)
     const play = url.pathname.match(/^\/play\/([^/]+)\/?$/);

@@ -6,7 +6,8 @@
 # - /etc/spotbot-ops.env (root-only) for ALERT_WEBHOOK_URL, RCLONE_REMOTE and overrides
 # - pm2 resurrects the bot at boot (pm2-root.service) and the current process list is saved
 # The scripts are copied to /usr/local/lib/spotbot-ops (root-owned) so the repo user can't change
-# what root runs; re-run this after pulling changes to them. Re-running is safe.
+# what root runs. auto-deploy.sh re-runs this by itself whenever scripts/hetzner/ changes on main.
+# Re-running is safe.
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 
@@ -17,7 +18,10 @@ SYSTEMCTL_BIN=$(command -v systemctl)
 NODE_DIR=$(dirname "$(command -v node)")
 
 install -d -m 755 "$LIB"
-install -m 755 "$SRC/backup.sh" "$SRC/healthcheck.sh" "$SRC/restore-test.sh" "$LIB/"
+# Copy then rename, so a health check or backup running right now keeps reading its old file.
+for f in backup.sh healthcheck.sh restore-test.sh; do
+  install -m 755 "$SRC/$f" "$LIB/.$f.new" && mv -f "$LIB/.$f.new" "$LIB/$f"
+done
 install -d -m 700 /var/backups/spotbot
 command -v rclone >/dev/null || { apt-get update -qq && apt-get install -y -qq rclone; }
 

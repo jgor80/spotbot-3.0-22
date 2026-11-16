@@ -1,0 +1,28 @@
+name: Deploy check
+
+# After every merge, waits for the Hetzner server's auto-deploy to pick main up (migrations applied, bot
+# restarted and connected to Discord) and goes red with the server's message if it didn't. A red run means
+# GitHub emails whoever merged. Re-run it from the Actions tab after fixing something by hand.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-check
+  # A newer merge's check also covers the older commits
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Wait for the server to deploy this commit
+        run: bash scripts/deploy-check.sh "$GITHUB_SHA"
