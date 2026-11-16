@@ -11,6 +11,7 @@ import {
   BODY,
   LEVEL_CAP,
   BOOST_MAX,
+  applyProfile,
   STYLE_GROUPS,
   accelerate,
   apAtLevel,
@@ -44,6 +45,7 @@ import {
   type AttrGroup,
   type Build,
   type StyleGroup,
+  type ProProfile,
   type Units,
 } from "@/lib/proBuild";
 import { MASTERIES, SIGNATURE_PERK_LEVELS, SIGNATURE_PLUS_LEVELS, TIER_LABELS, UNCONFIRMED_NOTES } from "@/lib/proClubsData";
@@ -192,6 +194,28 @@ export default function BuildPlannerPage() {
   const mine = useMyBuilds();
   const [boostKey, setBoostKey] = useState("");
   const [boostAmt, setBoostAmt] = useState(2);
+  // Signed in: masteries and facility boosts live on the player's account (saved once, applied to every build)
+  const [profile, setProfile] = useState<ProProfile | null>(null);
+  const [profileDirty, setProfileDirty] = useState(false);
+  const savedLevels = useMemo(() => mine.list.data?.levels ?? {}, [mine.list.data]);
+  const serverProfile = mine.list.data?.profile ?? null;
+  const listLoaded = mine.signedIn && mine.list.isSuccess;
+  useEffect(() => {
+    if (listLoaded && !profile && serverProfile) setProfile(serverProfile);
+  }, [listLoaded, serverProfile, profile]);
+  // The profile (and the levels of every saved build) goes onto the build on screen
+  useEffect(() => {
+    if (!listLoaded) return;
+    setBuild((b) => applyProfile(b, profile ?? { masteryLevels: b.masteryLevels, boosts: b.boosts }, savedLevels));
+  }, [listLoaded, profile, savedLevels]);
+  const saveProfile = mine.saveProfile.mutate;
+  useEffect(() => {
+    if (!profile || !profileDirty) return;
+    const t = window.setTimeout(() => saveProfile(profile), 700);
+    return () => window.clearTimeout(t);
+  }, [profile, profileDirty, saveProfile]);
+  // Every build that comes in (opened, imported, community, new archetype) gets the player's own masteries and boosts
+  const withProfile = (b: Partial<Build>) => (profile ? applyProfile(normaliseBuild(b), profile, savedLevels) : normaliseBuild(b));
 
   // Keep the address bar in sync so a copied URL is always the current build
   useEffect(() => {
@@ -225,12 +249,24 @@ export default function BuildPlannerPage() {
   const signatures = styles.filter((s) => s.signature).sort((a, b) => a.signature - b.signature);
   const nextSlot = nextSlotLevel(build.level);
   const mastery = MASTERIES[build.archetype];
-  const savedLevels = mine.list.data?.levels ?? {};
   const boostable = ATTRIBUTES.filter((a) => trainable(build.archetype, a.key));
-  const boosts = Object.entries(build.boosts ?? {}).filter(([, n]) => n > 0);
+  const boosts = Object.entries((profile ? profile.boosts : build.boosts) ?? {}).filter(([, n]) => n > 0);
   const masteryTotals = boostable.map((a) => [a.key, masteryBonus(build, a.key)] as const).filter(([, n]) => n > 0);
-  const setMastery = (k: string, n: number) => set({ masteryLevels: { ...build.masteryLevels, [k]: Math.max(0, Math.min(LEVEL_CAP, Math.round(n) || 0)) } });
-  const setBoost = (k: string, n: number) => set({ boosts: { ...build.boosts, [k]: Math.max(0, Math.min(BOOST_MAX, n)) } });
+  // Signed in, edits go to the account profile (saved shortly after); signed out, they stay on this build
+  const editProfile = (patch: (p: ProProfile) => ProProfile) => {
+    setProfile((p) => patch(p ?? { masteryLevels: { ...build.masteryLevels }, boosts: { ...build.boosts } }));
+    setProfileDirty(true);
+  };
+  const setMastery = (k: string, n: number) => {
+    const v = Math.max(0, Math.min(LEVEL_CAP, Math.round(n) || 0));
+    if (listLoaded) return editProfile((p) => ({ ...p, masteryLevels: { ...p.masteryLevels, [k]: v } }));
+    set({ masteryLevels: { ...build.masteryLevels, [k]: v } });
+  };
+  const setBoost = (k: string, n: number) => {
+    const v = Math.max(0, Math.min(BOOST_MAX, n));
+    if (listLoaded) return editProfile((p) => ({ ...p, boosts: { ...p.boosts, [k]: v } }));
+    set({ boosts: { ...build.boosts, [k]: v } });
+  };
 
   const share = async () => {
     const url = `${window.location.origin}${buildPath(build)}`;
@@ -255,7 +291,7 @@ export default function BuildPlannerPage() {
   const doImport = () => {
     const r = readAnyBuild(importText);
     if (!r) return setImportNote("That doesn't look like a build link or code.");
-    setBuild((b) => normaliseBuild({ ...r.build, playstyles: r.build.playstyles.length ? r.build.playstyles : b.playstyles }));
+    setBuild((b) => withProfile({ ...r.build, playstyles: r.build.playstyles.length ? r.build.playstyles : b.playstyles }));
     setImportNote(r.skipped.length ? `Loaded. Skipped attributes we don't know: ${r.skipped.join(", ")}.` : "Loaded.");
   };
 
@@ -433,7 +469,7 @@ export default function BuildPlannerPage() {
               className="rounded-3xl border-white/10 bg-white/[0.03] p-4 text-slate-200 shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset] backdrop-blur-xl sm:p-6"
               innerClassName="rounded-2xl border-white/10 bg-black/20"
               onLoad={(b) => {
-                setBuild(normaliseBuild(b));
+                setBuild(withProfile(b));
                 toast({ title: "Community build loaded", description: "Change anything you like, then copy the link." });
               }}
             />
@@ -441,7 +477,7 @@ export default function BuildPlannerPage() {
             <Panel step="01" title="Pick your spot">
               <div className="grid gap-5 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
                 <div className="mx-auto w-full max-w-[260px]">
-                  <PitchPicker value={build.archetype} onChange={(k) => setBuild((b) => normaliseBuild({ ...emptyBuild(k), name: b.name, level: b.level, skillMoves: b.skillMoves, weakFoot: b.weakFoot }))} />
+                  <PitchPicker value={build.archetype} onChange={(k) => setBuild((b) => withProfile({ ...emptyBuild(k), name: b.name, level: b.level, skillMoves: b.skillMoves, weakFoot: b.weakFoot, masteryLevels: b.masteryLevels, boosts: { ...b.boosts } }))} />
                 </div>
                 <div className="flex flex-col justify-center gap-3">
                   <div className="text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: accent }}>
@@ -722,15 +758,23 @@ export default function BuildPlannerPage() {
                 <div>
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <span className={label}>Your level on each archetype</span>
-                    {mine.signedIn && Object.keys(savedLevels).length > 0 && (
-                      <button className={`${ghostBtn} px-3 py-1 text-xs`} onClick={() => set({ masteryLevels: { ...savedLevels } })}>
-                        Fill from my saved builds
-                      </button>
+                    {listLoaded && (
+                      <span className="text-[11px] text-slate-500">
+                        {mine.saveProfile.isPending
+                          ? "Saving..."
+                          : mine.saveProfile.isError
+                            ? "Couldn't save, change one to try again"
+                            : profile
+                              ? "Saved to your account · used on every build"
+                              : "Saved to your account when you change one"}
+                      </span>
                     )}
                   </div>
                   <p className="mb-3 text-xs text-slate-400">
                     Masteries carry over: every archetype you've taken to level 10 adds +1 to its two attributes on all your builds, then +1 more at 30 and 55.
-                    {mine.signedIn ? " Saved builds fill these in for you." : " Sign in and save builds to fill these in."}
+                    {mine.signedIn
+                      ? " Enter them once: they're saved to your account and used on every build, here and on your Graphics Studio cards. Your saved builds' levels count by themselves."
+                      : " Sign in to save them once for every build; your saved builds' levels then count by themselves."}
                   </p>
                   <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 2xl:grid-cols-3">
                     {ARCHETYPES.map((a) => {
@@ -774,7 +818,10 @@ export default function BuildPlannerPage() {
                   <div className={`mb-2 flex items-center gap-2 ${label}`}>
                     <Building2 className="h-3.5 w-3.5" /> Club facility boosts
                   </div>
-                  <p className="mb-3 text-xs text-slate-400">Enter what your club's facilities add. They count in matches only, so they don't unlock PlayStyles or Specializations.</p>
+                  <p className="mb-3 text-xs text-slate-400">
+                    Enter what your club's facilities add. They count in matches only, so they don't unlock PlayStyles or Specializations.
+                    {mine.signedIn ? " Saved to your account and used on every build." : ""}
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     <select
                       aria-label="Attribute to boost"
@@ -971,7 +1018,7 @@ export default function BuildPlannerPage() {
                     toast({ title: "Build saved" });
                   }}
                   onOpen={(b, id) => {
-                    setBuild(normaliseBuild(b));
+                    setBuild(withProfile(b));
                     setSavedId(id);
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}

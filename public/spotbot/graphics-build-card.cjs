@@ -15,12 +15,23 @@ function theme(style, accent) {
   return { bg: '#0b0f17', panel: '#121a28', ink: '#f4f6fb', sub: '#9aa6bd', accent: accent || '#22c55e', line: '#2a3446', head: accent || '#22c55e', headInk: '#0b0f17', track: '#ffffff' };
 }
 
-// The member's build picked for their cards (on_cards), or null (a missing table or bad code never blocks a card)
+// The member's build picked for their cards (on_cards), or null (a missing table or bad code never blocks a card).
+// Their saved masteries and club facility boosts (player_build_profiles) and the levels of all their saved builds
+// are applied on top, the same way the website does (applyProfile).
+const quiet = (q) => q.then((r) => r, () => ({ data: null }));
 async function loadBuild(supabase, userId) {
   if (!supabase || !userId) return null;
-  const { data } = await supabase.from('player_builds').select('code, units').eq('discord_user_id', userId).eq('on_cards', true).maybeSingle().then((r) => r, () => ({ data: null }));
+  const { data } = await quiet(supabase.from('player_builds').select('code, units').eq('discord_user_id', userId).eq('on_cards', true).maybeSingle());
   const build = data?.code ? P.decodeBuild(data.code) : null;
-  return build ? { build, units: data.units === 'metric' ? 'metric' : 'imperial' } : null;
+  if (!build) return null;
+  const [{ data: prof }, { data: rows }] = await Promise.all([
+    quiet(supabase.from('player_build_profiles').select('mastery_levels, boosts').eq('discord_user_id', userId).maybeSingle()),
+    quiet(supabase.from('player_builds').select('archetype, level').eq('discord_user_id', userId)),
+  ]);
+  const levels = {};
+  for (const r of rows || []) levels[r.archetype] = Math.max(levels[r.archetype] || 0, Number(r.level) || 0);
+  const withProfile = prof ? P.applyProfile(build, { masteryLevels: prof.mastery_levels, boosts: prof.boosts }, levels) : P.applyProfile(build, { masteryLevels: build.masteryLevels, boosts: build.boosts }, levels);
+  return { build: withProfile, units: data.units === 'metric' ? 'metric' : 'imperial' };
 }
 
 const archetypeOf = (b) => P.ARCHETYPES.find((a) => a.key === b.archetype) || P.ARCHETYPES[0];

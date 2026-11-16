@@ -4379,6 +4379,16 @@ function normaliseBuild(b) {
     )
   };
 }
+function cleanProfile(p) {
+  return {
+    masteryLevels: Object.fromEntries(
+      Object.entries(p?.masteryLevels ?? {}).filter(([k]) => ARCHETYPES.some((a) => a.key === k)).map(([k, v]) => [k, int(v, 0, LEVEL_CAP, 0)]).filter(([, v]) => v)
+    ),
+    boosts: Object.fromEntries(
+      Object.entries(p?.boosts ?? {}).map(([k, v]) => [ATTR_BY_ANY.get(k.toLowerCase())?.key, int(v, 0, BOOST_MAX, 0)]).filter(([k, v]) => k && v)
+    )
+  };
+}
 var LEGACY_STYLES = [
   "Finesse Shot",
   "Chip Shot",
@@ -4488,6 +4498,12 @@ var Body = external_exports.discriminatedUnion("action", [
     units: external_exports.enum(["imperial", "metric"]).optional()
   }),
   external_exports.object({ action: external_exports.literal("build_delete"), id: external_exports.string().uuid() }),
+  // Masteries and club facility boosts, saved once and applied to every build
+  external_exports.object({
+    action: external_exports.literal("build_profile"),
+    mastery_levels: external_exports.record(external_exports.string().max(40), external_exports.number().int().min(0).max(99)).refine((r) => Object.keys(r).length <= 40),
+    boosts: external_exports.record(external_exports.string().max(40), external_exports.number().int().min(0).max(99)).refine((r) => Object.keys(r).length <= 60)
+  }),
   external_exports.object({ action: external_exports.literal("build_cards"), id: external_exports.string().uuid().nullable(), units: external_exports.enum(["imperial", "metric"]).optional() }),
   external_exports.object({ action: external_exports.literal("latest"), guild_id: id, discord_user_ids: external_exports.array(id).max(100).optional() }),
   external_exports.object({
@@ -4512,10 +4528,18 @@ async function listBuilds(member) {
   const builds = data ?? [];
   const levels = {};
   for (const r of builds) levels[r.archetype] = Math.max(levels[r.archetype] ?? 0, r.level);
-  return { builds, levels };
+  const { data: prof } = await db.from("player_build_profiles").select("mastery_levels, boosts").eq("discord_user_id", member).maybeSingle();
+  const profile = prof ? cleanProfile({ masteryLevels: prof.mastery_levels, boosts: prof.boosts }) : null;
+  return { builds, levels, profile };
 }
 async function buildsAction(member, b) {
   if (b.action === "builds_list") return [await listBuilds(member)];
+  if (b.action === "build_profile") {
+    const p = cleanProfile({ masteryLevels: b.mastery_levels, boosts: b.boosts });
+    const { error } = await db.from("player_build_profiles").upsert({ discord_user_id: member, mastery_levels: p.masteryLevels, boosts: p.boosts, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+    if (error) return [{ error: "Couldn't save your masteries and facilities." }, 500];
+    return [await listBuilds(member)];
+  }
   if (b.action === "build_delete") {
     await db.from("player_builds").delete().eq("discord_user_id", member).eq("id", b.id);
     return [await listBuilds(member)];
@@ -4551,7 +4575,7 @@ Deno.serve(async (req) => {
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return json({ error: "Invalid request." }, 400);
   const b = p.data;
-  if (b.action === "builds_list" || b.action === "build_save" || b.action === "build_delete" || b.action === "build_cards") {
+  if (b.action === "builds_list" || b.action === "build_save" || b.action === "build_delete" || b.action === "build_cards" || b.action === "build_profile") {
     if (bot || caller?.kind !== "user") return json({ error: "Forbidden" }, 403);
     const { data: link } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).limit(1).maybeSingle();
     const member = link?.discord_user_id;

@@ -3,7 +3,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
 import { identifyCaller } from "../_shared/auth.ts";
-import { decodeBuild } from "../../../src/lib/proBuild.ts";
+import { cleanProfile, decodeBuild } from "../../../src/lib/proBuild.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const db = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "");
@@ -24,6 +24,9 @@ const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("build_save"), id: z.string().uuid().optional(), code: z.string().min(8).max(800).regex(/^[A-Za-z0-9_-]+$/),
     on_cards: z.boolean().optional(), units: z.enum(["imperial", "metric"]).optional() }),
   z.object({ action: z.literal("build_delete"), id: z.string().uuid() }),
+  // Masteries and club facility boosts, saved once and applied to every build
+  z.object({ action: z.literal("build_profile"), mastery_levels: z.record(z.string().max(40), z.number().int().min(0).max(99)).refine((r) => Object.keys(r).length <= 40),
+    boosts: z.record(z.string().max(40), z.number().int().min(0).max(99)).refine((r) => Object.keys(r).length <= 60) }),
   z.object({ action: z.literal("build_cards"), id: z.string().uuid().nullable(), units: z.enum(["imperial", "metric"]).optional() }),
   z.object({ action: z.literal("latest"), guild_id: id, discord_user_ids: z.array(id).max(100).optional() }),
   z.object({ action: z.literal("save"), guild_id: id, discord_user_id: id, style: z.string().max(30), name: z.string().min(1).max(40),
@@ -37,17 +40,25 @@ const sign = async (path: string | null) => path ? (await db.storage.from(BUCKET
 
 const MAX_BUILDS = 30;
 const BUILD_COLS = "id, name, code, archetype, level, on_cards, units, updated_at";
-type BuildAction = Extract<z.infer<typeof Body>, { action: "builds_list" | "build_save" | "build_delete" | "build_cards" }>;
+type BuildAction = Extract<z.infer<typeof Body>, { action: "builds_list" | "build_save" | "build_delete" | "build_cards" | "build_profile" }>;
 async function listBuilds(member: string) {
   const { data } = await db.from("player_builds").select(BUILD_COLS).eq("discord_user_id", member).order("updated_at", { ascending: false }).limit(MAX_BUILDS);
   const builds = data ?? [];
   // Highest level saved per archetype: what the member has levelled (their Masteries)
   const levels: Record<string, number> = {};
   for (const r of builds) levels[r.archetype] = Math.max(levels[r.archetype] ?? 0, r.level);
-  return { builds, levels };
+  const { data: prof } = await db.from("player_build_profiles").select("mastery_levels, boosts").eq("discord_user_id", member).maybeSingle();
+  const profile = prof ? cleanProfile({ masteryLevels: prof.mastery_levels, boosts: prof.boosts }) : null;
+  return { builds, levels, profile };
 }
 async function buildsAction(member: string, b: BuildAction): Promise<[unknown, number?]> {
   if (b.action === "builds_list") return [await listBuilds(member)];
+  if (b.action === "build_profile") {
+    const p = cleanProfile({ masteryLevels: b.mastery_levels, boosts: b.boosts });
+    const { error } = await db.from("player_build_profiles").upsert({ discord_user_id: member, mastery_levels: p.masteryLevels, boosts: p.boosts, updated_at: new Date().toISOString() });
+    if (error) return [{ error: "Couldn't save your masteries and facilities." }, 500];
+    return [await listBuilds(member)];
+  }
   if (b.action === "build_delete") {
     await db.from("player_builds").delete().eq("discord_user_id", member).eq("id", b.id);
     return [await listBuilds(member)];
@@ -84,7 +95,7 @@ Deno.serve(async (req) => {
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return json({ error: "Invalid request." }, 400);
   const b = p.data;
-  if (b.action === "builds_list" || b.action === "build_save" || b.action === "build_delete" || b.action === "build_cards") {
+  if (b.action === "builds_list" || b.action === "build_save" || b.action === "build_delete" || b.action === "build_cards" || b.action === "build_profile") {
     if (bot || caller?.kind !== "user") return json({ error: "Forbidden" }, 403);
     const { data: link } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).limit(1).maybeSingle();
     const member = link?.discord_user_id;
