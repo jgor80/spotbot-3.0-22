@@ -332,7 +332,7 @@ export type KbArea = "fut" | "proclubs";
 /** pending: waiting to be read (note says why when a try failed); reading: being read now. */
 export interface KbSource extends KbSourceRef { author: string | null; excerpt: string | null; collected_at: string; comments: number; status: "pending" | "reading" | "read" | "skipped" | "failed"; reading_at?: string | null; note: string | null; shared: boolean; claims: number; area?: KbArea }
 export interface KbRun { started_at: string; finished_at: string | null; feeds: Record<string, { status: string; collected?: number; error?: string }>; read: number; skipped: number; failed: number; error: string | null }
-export interface KbStatus { sources: number; claims: number; topics: number; waiting: number; reading?: number; last_run: KbRun | null; last_success: string | null; feeds: { reddit: boolean; reddit_mode?: "api" | "rss" | "off"; youtube: boolean; reader: boolean }; paused: boolean }
+export interface KbStatus { area?: KbArea | null; sources: number; claims: number; topics: number; builds?: number; waiting: number; reading?: number; last_run: KbRun | null; last_success: string | null; feeds: { reddit: boolean; reddit_mode?: "api" | "rss" | "off"; youtube: boolean; reader: boolean }; paused: boolean }
 /** Adding a source answers at once; it's read in the background and its status shows in the source list. */
 export interface KbAddResult { id: string; status: "reading"; area: KbArea; shared: boolean; title: string }
 // Knowledge Bank for my team: a topic or source applied to the user's squad, and the community game plan
@@ -422,10 +422,11 @@ export const futApi = {
     sources: (platform: MarketPlatform) => futRequest<MarketSource[]>(marketPath("/sources", platform)),
   },
   knowledge: {
-    status: () => futRequest<KbStatus>("/knowledge/status"),
+    /** One bank's status: fut (FUT side) or proclubs (Club side). */
+    status: (area: KbArea) => futRequest<KbStatus>(`/knowledge/status?area=${area}`),
     map: (days: number, category: KbCategory | null) => futRequest<KbMap>(`/knowledge/map?${new URLSearchParams({ days: String(days), ...(category ? { category } : {}) })}`),
     topic: (key: string, days: number) => futRequest<KbTopicDetail>(`/knowledge/topics/${encodeURIComponent(key)}?${new URLSearchParams({ days: String(days) })}`),
-    sources: (mine: boolean, page = 0, limit = 30) => futRequest<{ total: number; sources: KbSource[] }>(`/knowledge/sources?${new URLSearchParams({ mine: String(mine), limit: String(limit), offset: String(page * limit) })}`),
+    sources: (area: KbArea, mine: boolean, page = 0, limit = 30) => futRequest<{ total: number; sources: KbSource[] }>(`/knowledge/sources?${new URLSearchParams({ area, mine: String(mine), limit: String(limit), offset: String(page * limit) })}`),
     add: (input: { url?: string; text?: string; title?: string; share: boolean; area?: KbArea }) => futRequest<KbAddResult>("/knowledge/sources", "POST", input),
     retry: (id: string) => futRequest<{ id: string; status: "reading"; area: KbArea }>(`/knowledge/sources/${encodeURIComponent(id)}/retry`, "POST", {}),
     remove: (id: string) => futRequest<{ deleted: string }>(`/knowledge/sources/${encodeURIComponent(id)}`, "DELETE"),

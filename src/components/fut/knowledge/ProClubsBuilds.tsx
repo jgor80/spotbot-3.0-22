@@ -34,7 +34,7 @@ function AddBuildSource() {
       <Button onClick={() => add.mutate()} disabled={add.isPending || (!url.trim() && !text.trim())}><Plus className="mr-1 h-4 w-4" />{add.isPending ? "Adding..." : "Add"}</Button>
     </div>
     <ErrorNotice error={add.error} />
-    {r && <p className="text-sm text-muted-foreground" role="status">Added. Claude is reading the builds out of it now (up to a minute); you can follow it on the Sources tab under Added by me. {r.shared ? "Once read, it counts in the community builds." : "It's kept private to you."}</p>}
+    {r && <p className="text-sm text-muted-foreground" role="status">Added. Claude is reading the builds out of it now (up to a minute); you can follow it on the Sources tab. {r.shared ? "Once read, it counts in the community builds." : "It's kept private to you."}</p>}
   </section>;
 }
 

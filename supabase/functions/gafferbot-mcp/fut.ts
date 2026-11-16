@@ -529,7 +529,7 @@ FUT_TOOLS.push(
 
 // Knowledge bank: what the FUT community says about gameplay and strategy (Reddit, YouTube, the player's own notes).
 // The AI app answers from the claims itself, so these never call Claude on the server.
-const KB_NOTE = "These are community opinions read from Reddit posts, YouTube videos and the player's own notes, not facts: say how many sources back a view, where people disagree, and link the sources.";
+const KB_NOTE = "Ultimate Team only: for Pro Clubs Virtual Pro builds use get_meta_builds. These are community opinions read from Reddit posts, YouTube videos and the player's own notes, not facts: say how many sources back a view, where people disagree, and link the sources.";
 FUT_TOOLS.push(
   {
     name: "search_fut_knowledge",

@@ -687,11 +687,14 @@ export const knowledgeMap = (db: Rpc, userId: string, days: number, category: st
   rpcData(db, "kb_map", { p_user: userId, p_days: days, p_category: category });
 export const knowledgeTopic = (db: Rpc, userId: string, key: string, days: number) =>
   rpcData(db, "kb_topic", { p_user: userId, p_key: key, p_days: days });
-export const knowledgeSources = (db: Rpc, userId: string, mine: boolean, limit: number, offset: number) =>
-  rpcData(db, "kb_source_list", { p_user: userId, p_mine: mine, p_limit: limit, p_offset: offset });
+/** The two banks: Ultimate Team claims (FUT side) and Pro Clubs builds (Club side). */
+export type KbArea = "fut" | "proclubs";
+export const kbArea = (v: unknown): KbArea | null => v === "fut" || v === "proclubs" ? v : null;
+export const knowledgeSources = (db: Rpc, userId: string, mine: boolean, limit: number, offset: number, area: KbArea | null = null) =>
+  rpcData(db, "kb_source_list", { p_user: userId, p_mine: mine, p_limit: limit, p_offset: offset, p_area: area });
 export const deleteKnowledgeSource = (db: Rpc, userId: string, id: string) => rpcData<boolean>(db, "kb_delete", { p_user: userId, p_id: id });
-export async function knowledgeStatus(db: Rpc, env: Env) {
-  const status = await rpcData<Record<string, unknown>>(db, "kb_status", {});
+export async function knowledgeStatus(db: Rpc, env: Env, area: KbArea | null = null) {
+  const status = await rpcData<Record<string, unknown>>(db, "kb_status", { p_area: area });
   return { ...status, feeds: { reddit: redditFeedOn(env), reddit_mode: redditMode(env), youtube: youtubeFeedOn(env), reader: !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) },
     paused: env("FUT_KNOWLEDGE") === "off", categories: KB_CATEGORIES };
 }

@@ -64,6 +64,7 @@ const FutAccountPage = lazy(() => import("./pages/fut/FutAccountPage"));
 const FutStrategyPage = lazy(() => import("./pages/fut/FutStrategyPage"));
 const SbcSolverPage = lazy(() => import("./pages/fut/SbcSolverPage"));
 const KnowledgePage = lazy(() => import("./pages/fut/KnowledgePage"));
+const ProClubsKnowledgePage = lazy(() => import("./pages/ProClubsKnowledgePage"));
 const EvolutionsPage = lazy(() => import("./pages/fut/EvolutionsPage"));
 const TradesPage = lazy(() => import("./pages/fut/TradesPage"));
 const SellOrKeepPage = lazy(() => import("./pages/fut/SellOrKeepPage"));
@@ -141,6 +142,7 @@ const App = () => (
                   <Route path="/paper" element={<ProtectedRoute><NewspaperPage /></ProtectedRoute>} />
                   <Route path="/wrapped" element={<ProtectedRoute><WrappedPage /></ProtectedRoute>} />
                   <Route path="/hub" element={<ProtectedRoute><HubPage /></ProtectedRoute>} />
+                  <Route path="/knowledge" element={<ProtectedRoute><ProClubsKnowledgePage /></ProtectedRoute>} />
                   <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
                   <Route path="/players" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
                   <Route path="/fut" element={<ProtectedRoute><FutCoachPage /></ProtectedRoute>} />
