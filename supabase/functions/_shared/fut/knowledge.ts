@@ -458,7 +458,7 @@ export async function runKnowledgeIngest(db: Rpc, env: Env, fetchFn: Fetch, now 
   // Pro Clubs builds for the community meta builds (meta-builds.ts); a Reddit 429 above leaves Reddit alone this run
   const redditLimited = feeds.reddit?.status === "limited";
   await collect("builds", buildsFeedOn(env) && (redditMode(env) !== "off" || youtubeFeedOn(env)),
-    () => collectBuildSources(env, fetchFn, knownSources, { reddit: redditMode(env) !== "off" && !redditLimited, youtube: youtubeNow && youtubeFeedOn(env) }, now.getTime()));
+    () => collectBuildSources(env, fetchFn, knownSources, { reddit: redditMode(env) !== "off" && !redditLimited, youtube: youtubeNow && youtubeFeedOn(env), seed: youtubeFeedOn(env) }, now.getTime()));
 
   const result: IngestResult = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0, builds: 0 };
   await readWaiting(db, env, fetchFn, result, Number(env("FUT_KB_READ_PER_RUN")) || 40, false);
