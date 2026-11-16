@@ -78,6 +78,7 @@ const clubMore: NavItem[] = [
   { path: "/paper", label: "The Paper", icon: Newspaper },
   { path: "/wrapped", label: "Club Wrapped", icon: Gift },
   { path: "/hub", label: "Hub XP", icon: Sparkles },
+  { path: "/knowledge", label: "Knowledge Bank", icon: BookOpenText },
   { path: "/billing", label: "Plans & AI Images", icon: CreditCard },
   { path: "/ratings", label: "Ratings", icon: Star },
   { path: "/drafts", label: "Drafts", icon: Swords },

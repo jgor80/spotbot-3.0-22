@@ -153,3 +153,31 @@ Deno.test("migration: sources filed as Pro Clubs build talk move to the Pro Club
     eq(waiting.rows[0]!.r.waiting, 1, "the video waits to be fetched again");
   } finally { await db.close(); }
 });
+
+Deno.test("the two banks: sources and status by side, and no Ultimate Team claims on a Pro Clubs source", async () => {
+  const pg = await knowledgeDb();
+  try {
+    const { rpc } = rpcOver(pg);
+    const deps: Deps = {
+      db: { rpc } as unknown as Deps["db"], userFor: () => Promise.resolve(ME), env: (k) => ({ FUT_ENABLED: "true", FUT_KB_REDDIT_RSS: "off" } as Record<string, string>)[k],
+      isBot: () => Promise.resolve(false),
+    };
+    // deno-lint-ignore no-explicit-any
+    const get = async (path: string): Promise<{ status: number; data: any }> => {
+      const res = await handle(new Request(`http://local/functions/v1/fut-api/v1${path}`), deps);
+      return { status: res.status, data: await res.json() };
+    };
+    const fut = await pg.query<{ id: string }>("INSERT INTO fut.kb_sources (kind, title, added_by, shared, status, area) VALUES ('note', 'fut notes', $1, false, 'read', 'fut') RETURNING id", [ME]);
+    const clubs = await pg.query<{ id: string }>("INSERT INTO fut.kb_sources (kind, title, added_by, shared, status, area) VALUES ('note', 'clubs build', $1, false, 'read', 'proclubs') RETURNING id", [ME]);
+    eq((await get("/knowledge/sources?mine=true&area=fut")).data.data.sources.map((s: { title: string }) => s.title), ["fut notes"]);
+    eq((await get("/knowledge/sources?mine=true&area=proclubs")).data.data.sources.map((s: { title: string }) => s.title), ["clubs build"]);
+    eq((await get("/knowledge/sources?mine=true")).data.data.total, 2, "no area: both, as before");
+    eq((await get("/knowledge/sources?area=nope")).status, 400);
+    const st = await get("/knowledge/status?area=proclubs");
+    eq([st.status, st.data.data.area], [200, "proclubs"]);
+    // A claim can't land on a Pro Clubs source, so the map and Ask never show Pro Clubs builds
+    const claims = [{ topic_key: "x", topic: "X", category: "other", statement: "a claim", stance: 1, strength: 1 }];
+    eq((await rpc("kb_save_reading", { p_source: clubs.rows[0]!.id, p_status: "read", p_note: null, p_claims: claims })).data, 0);
+    eq((await rpc("kb_save_reading", { p_source: fut.rows[0]!.id, p_status: "read", p_note: null, p_claims: claims })).data, 1);
+  } finally { await pg.close(); }
+});

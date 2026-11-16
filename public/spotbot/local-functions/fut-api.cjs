@@ -13377,10 +13377,11 @@ Question: ${q}` }
 }
 var knowledgeMap = (db2, userId, days, category) => rpcData(db2, "kb_map", { p_user: userId, p_days: days, p_category: category });
 var knowledgeTopic = (db2, userId, key2, days) => rpcData(db2, "kb_topic", { p_user: userId, p_key: key2, p_days: days });
-var knowledgeSources = (db2, userId, mine, limit, offset) => rpcData(db2, "kb_source_list", { p_user: userId, p_mine: mine, p_limit: limit, p_offset: offset });
+var kbArea = (v) => v === "fut" || v === "proclubs" ? v : null;
+var knowledgeSources = (db2, userId, mine, limit, offset, area = null) => rpcData(db2, "kb_source_list", { p_user: userId, p_mine: mine, p_limit: limit, p_offset: offset, p_area: area });
 var deleteKnowledgeSource = (db2, userId, id3) => rpcData(db2, "kb_delete", { p_user: userId, p_id: id3 });
-async function knowledgeStatus(db2, env) {
-  const status = await rpcData(db2, "kb_status", {});
+async function knowledgeStatus(db2, env, area = null) {
+  const status = await rpcData(db2, "kb_status", { p_area: area });
   return {
     ...status,
     feeds: { reddit: redditFeedOn(env), reddit_mode: redditMode(env), youtube: youtubeFeedOn(env), reader: !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) },
@@ -17242,7 +17243,9 @@ async function handle(req, deps) {
       const fetchFn = deps.fetch ?? fetch;
       const p = url.searchParams;
       const days = intParam(p.get("days"), "days", 1, 365);
-      if (route === "/knowledge/status" && m === "GET") return json({ data: await knowledgeStatus(db2, env) });
+      const area = p.has("area") ? kbArea(p.get("area")) : null;
+      if (p.has("area") && !area) throw new FutError("area must be fut or proclubs.");
+      if (route === "/knowledge/status" && m === "GET") return json({ data: await knowledgeStatus(db2, env, area) });
       if (route === "/knowledge/map" && m === "GET") {
         const category = p.get("category") || null;
         if (category && !KB_CATEGORIES.includes(category)) throw new FutError(`category must be one of ${KB_CATEGORIES.join(", ")}.`);
@@ -17254,7 +17257,7 @@ async function handle(req, deps) {
         return topic ? json({ data: topic }) : err(404, "Nobody has talked about that topic in this period.");
       }
       if (route === "/knowledge/sources" && m === "GET") {
-        return json({ data: await knowledgeSources(db2, userId, p.get("mine") === "true", intParam(p.get("limit"), "limit", 1, 100) ?? 30, intParam(p.get("offset"), "offset", 0, 1e5) ?? 0) });
+        return json({ data: await knowledgeSources(db2, userId, p.get("mine") === "true", intParam(p.get("limit"), "limit", 1, 100) ?? 30, intParam(p.get("offset"), "offset", 0, 1e5) ?? 0, area) });
       }
       if (route === "/knowledge/sources" && m === "POST") {
         const b = obj2(await body(req, MAX_ADD_TEXT * 4 + 8192));

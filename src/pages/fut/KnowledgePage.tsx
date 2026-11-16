@@ -1,4 +1,4 @@
-import { useSearchParams } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { futApi, futKeys, KB_CATEGORIES, type KbCategory } from "@/lib/futApi";
 import { Busy, ErrorNotice, FutShell, useFutAvailable } from "@/components/fut/FutShared";
@@ -7,7 +7,6 @@ import { TopicPanel } from "@/components/fut/knowledge/TopicPanel";
 import { AskBank } from "@/components/fut/knowledge/AskBank";
 import { TeamPlan } from "@/components/fut/knowledge/TeamPlan";
 import { FeedStatus, SourcesPanel } from "@/components/fut/knowledge/SourcesPanel";
-import { ProClubsBuilds } from "@/components/fut/knowledge/ProClubsBuilds";
 import { ago, CATEGORY_LABELS } from "@/components/fut/knowledge/knowledgePresentation";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,12 +14,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 const PERIODS = [7, 30, 90] as const;
-const TABS = ["map", "team", "builds", "ask", "sources"] as const;
+const TABS = ["map", "team", "ask", "sources"] as const;
 type Tab = typeof TABS[number];
 
-/** Knowledge Bank: what the FUT community says about gameplay and strategy, as a map, an Ask chat and the sources. */
+/** Knowledge Bank (FUT side): what the Ultimate Team community says about gameplay and strategy, as a map, an Ask
+ * chat and the sources. Pro Clubs builds have their own bank on the Club side (/knowledge, ProClubsKnowledgePage). */
 export default function KnowledgePage() {
   const [params, setParams] = useSearchParams();
+  // The Pro Clubs builds tab moved to the Club side
+  if (params.get("tab") === "builds") return <Navigate to="/knowledge" replace />;
+  return <FutKnowledge params={params} setParams={setParams} />;
+}
+
+function FutKnowledge({ params, setParams }: { params: URLSearchParams; setParams: ReturnType<typeof useSearchParams>[1] }) {
   const tab: Tab = (TABS as readonly string[]).includes(params.get("tab") ?? "") ? params.get("tab") as Tab : "map";
   const daysRaw = Number(params.get("days"));
   const days = (PERIODS as readonly number[]).includes(daysRaw) ? daysRaw : 30;
@@ -33,18 +39,19 @@ export default function KnowledgePage() {
   }, { replace: true });
 
   const enabled = useFutAvailable();
-  const status = useQuery({ queryKey: [...futKeys.knowledge, "status"], queryFn: futApi.knowledge.status, enabled, staleTime: 60_000 });
+  const status = useQuery({ queryKey: [...futKeys.knowledge, "status", "fut"], queryFn: () => futApi.knowledge.status("fut"), enabled, staleTime: 60_000 });
   const map = useQuery({ queryKey: [...futKeys.knowledge, "map", days, category], queryFn: () => futApi.knowledge.map(days, category), enabled: enabled && tab === "map", placeholderData: keepPreviousData });
   const pick = (key: string) => set({ topic: key });
   const s = status.data;
 
   return <FutShell title="Knowledge Bank">
     <p className="-mt-3 text-sm text-muted-foreground">
-      What the FUT community is saying about formations, tactics, players and gameplay, gathered from Reddit, YouTube and sources you add.
+      What the Ultimate Team community is saying about formations, tactics, players and gameplay, gathered from Reddit, YouTube and sources you add.
+      {" "}Pro Clubs builds have their own bank on the Club side: <Link to="/knowledge" className="underline underline-offset-2">Pro Clubs Knowledge Bank</Link>.
       {s?.topics != null ? ` ${s.topics.toLocaleString()} topics from ${(s.sources ?? 0).toLocaleString()} sources, last collected ${ago(s.last_run?.finished_at)}.` : ""}
     </p>
     <Tabs value={tab} onValueChange={(v) => set({ tab: v === "map" ? null : v })}>
-      <TabsList><TabsTrigger value="map">Map</TabsTrigger><TabsTrigger value="team">For my team</TabsTrigger><TabsTrigger value="builds">Pro Clubs builds</TabsTrigger><TabsTrigger value="ask">Ask</TabsTrigger><TabsTrigger value="sources">Sources</TabsTrigger></TabsList>
+      <TabsList><TabsTrigger value="map">Map</TabsTrigger><TabsTrigger value="team">For my team</TabsTrigger><TabsTrigger value="ask">Ask</TabsTrigger><TabsTrigger value="sources">Sources</TabsTrigger></TabsList>
 
       <TabsContent value="map" className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -64,7 +71,7 @@ export default function KnowledgePage() {
               <p className="font-medium">Nothing on the map for this period yet.</p>
               <p className="text-sm text-muted-foreground">Sources are collected every 3 hours once Reddit or YouTube is connected, and you can add your own on the Sources tab.</p>
               <Button variant="outline" onClick={() => set({ tab: "sources" })}>Add a source</Button>
-              {s && <div className="text-left"><FeedStatus status={s} /></div>}
+              {s && <div className="text-left"><FeedStatus status={s} area="fut" /></div>}
             </div>
           : <>
               <section className={cn("rounded-xl border border-border bg-card p-4 transition-opacity", map.isPlaceholderData && "opacity-60")}>
@@ -80,13 +87,11 @@ export default function KnowledgePage() {
 
       <TabsContent value="team"><TeamPlan onPick={pick} /></TabsContent>
 
-      <TabsContent value="builds"><ProClubsBuilds /></TabsContent>
-
       <TabsContent value="ask"><AskBank /></TabsContent>
 
       <TabsContent value="sources" className="space-y-4">
-        {s && <FeedStatus status={s} />}
-        <SourcesPanel />
+        {s && <FeedStatus status={s} area="fut" />}
+        <SourcesPanel area="fut" />
       </TabsContent>
     </Tabs>
     <TopicPanel topicKey={topic} days={days} onClose={() => set({ topic: null })} />

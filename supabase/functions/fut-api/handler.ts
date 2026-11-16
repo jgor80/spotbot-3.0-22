@@ -37,7 +37,7 @@ import { findPlayers, MAX_FINDER_TEXT, searchPlayers, type FinderTurn } from "..
 import { cleanPlayerQuery } from "../_shared/fut/stats.ts";
 import { cardImages } from "../_shared/fut/card-images.ts";
 import {
-  addSource, ask, deleteKnowledgeSource, retrySource, runKnowledgeQueue, KB_CATEGORIES, knowledgeMap, knowledgeSources, knowledgeStatus, knowledgeTopic, MAX_ADD_TEXT, MAX_QUESTION,
+  addSource, ask, deleteKnowledgeSource, kbArea, retrySource, runKnowledgeQueue, KB_CATEGORIES, knowledgeMap, knowledgeSources, knowledgeStatus, knowledgeTopic, MAX_ADD_TEXT, MAX_QUESTION,
   runKnowledgeIngest, type AskTurn,
 } from "../_shared/fut/knowledge.ts";
 import { applyToTeam, loadTeam, teamPlan } from "../_shared/fut/knowledge-team.ts";
@@ -661,7 +661,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
       const p = url.searchParams;
       const days = intParam(p.get("days"), "days", 1, 365);
-      if (route === "/knowledge/status" && m === "GET") return json({ data: await knowledgeStatus(db, env) });
+      // ?area=fut (FUT side) or proclubs (Club side); without it, both banks together as before
+      const area = p.has("area") ? kbArea(p.get("area")) : null;
+      if (p.has("area") && !area) throw new FutError("area must be fut or proclubs.");
+      if (route === "/knowledge/status" && m === "GET") return json({ data: await knowledgeStatus(db, env, area) });
       if (route === "/knowledge/map" && m === "GET") {
         const category = p.get("category") || null;
         if (category && !(KB_CATEGORIES as readonly string[]).includes(category)) throw new FutError(`category must be one of ${KB_CATEGORIES.join(", ")}.`);
@@ -673,7 +676,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         return topic ? json({ data: topic }) : err(404, "Nobody has talked about that topic in this period.");
       }
       if (route === "/knowledge/sources" && m === "GET") {
-        return json({ data: await knowledgeSources(db, userId, p.get("mine") === "true", intParam(p.get("limit"), "limit", 1, 100) ?? 30, intParam(p.get("offset"), "offset", 0, 100_000) ?? 0) });
+        return json({ data: await knowledgeSources(db, userId, p.get("mine") === "true", intParam(p.get("limit"), "limit", 1, 100) ?? 30, intParam(p.get("offset"), "offset", 0, 100_000) ?? 0, area) });
       }
       if (route === "/knowledge/sources" && m === "POST") {
         const b = obj(await body(req, MAX_ADD_TEXT * 4 + 8192));
