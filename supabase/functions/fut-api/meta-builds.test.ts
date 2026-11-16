@@ -227,3 +227,37 @@ Deno.test("public meta-builds function and adding a build source on the website"
     await pg.close();
   }
 });
+
+Deno.test("build collector: one search per position, five new videos each, and the hand-picked videos once", async () => {
+  const { collectBuildSources, BUILD_SEED_VIDEOS, DEFAULT_BUILD_QUERIES } = await import("../_shared/fut/meta-builds.ts");
+  const searches: string[] = [];
+  let listed: string[] = [];
+  const vid = (n: number, q: number) => `q${q}v${String(n).padStart(8, "0")}`.slice(0, 11);
+  const fetcher = (url: string) => {
+    const u = new URL(url);
+    if (u.pathname.endsWith("/search")) {
+      const q = DEFAULT_BUILD_QUERIES.indexOf(u.searchParams.get("q")!);
+      searches.push(u.searchParams.get("q")!);
+      return Promise.resolve(new Response(JSON.stringify({ items: Array.from({ length: 10 }, (_, n) => ({ id: { videoId: vid(n, q) } })) })));
+    }
+    if (u.pathname.endsWith("/videos")) {
+      const ids = u.searchParams.get("id")!.split(",");
+      listed = listed.concat(ids);
+      return Promise.resolve(new Response(JSON.stringify({ items: ids.map((id) => ({ id, snippet: { title: `Build ${id}`, channelTitle: "c", description: "A level 55 build", publishedAt: new Date().toISOString() }, statistics: { viewCount: "5000", commentCount: "0" } })) })));
+    }
+    return Promise.resolve(new Response("{}", { status: 404 }));
+  };
+  const env = (k: string) => ({ YOUTUBE_API_KEY: "y" } as Record<string, string>)[k];
+  // The first seed video is already in the bank
+  const known = (ids: string[]) => Promise.resolve(new Set(ids.filter((id) => id === BUILD_SEED_VIDEOS[0])));
+  const got = await collectBuildSources(env, fetcher as never, known, { reddit: false, youtube: true, seed: true });
+  eq(searches.length, 8);
+  ok(DEFAULT_BUILD_QUERIES.some((q) => /goalkeeper/i.test(q)) && DEFAULT_BUILD_QUERIES.some((q) => /fullback/i.test(q)));
+  eq(got.filter((s) => BUILD_SEED_VIDEOS.includes(s.external_id)).length, BUILD_SEED_VIDEOS.length - 1);
+  eq(got.filter((s) => s.external_id.startsWith("q7")).length, 5, "five per search");
+  ok(got.every((s) => s.area === "proclubs"));
+  // Off the YouTube hours only the seed runs (no searches)
+  searches.length = 0;
+  await collectBuildSources(env, fetcher as never, () => Promise.resolve(new Set(BUILD_SEED_VIDEOS)), { reddit: false, youtube: false, seed: true });
+  eq(searches.length, 0);
+});

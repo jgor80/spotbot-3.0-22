@@ -20,8 +20,27 @@ type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 type Rpc = { rpc: (name: string, args?: Record<string, unknown>) => PromiseLike<{ data: any; error: { message?: string } | null }> };
 
 const DEFAULT_MODEL = "claude-opus-5-5";
-export const DEFAULT_BUILD_QUERIES = ["FC 27 Pro Clubs best striker build", "FC 27 Pro Clubs best winger CAM build", "FC 27 Pro Clubs best CDM CM build",
-  "FC 27 Pro Clubs best CB fullback goalkeeper build"];
+// One search per position (Jeff, 2026-11-16: "at least 5 for each position"). Four broad searches sorted by views only
+// ever found striker and winger videos, so full-backs, keepers and CMs had no builds. 8 searches x 4 runs a day = 3,200
+// YouTube quota units, next to the Ultimate Team searches' 3,200, inside the 10,000 daily quota.
+export const DEFAULT_BUILD_QUERIES = [
+  "FC 27 Clubs best striker ST build level 55", "FC 27 Clubs best winger LW RW build level 55", "FC 27 Clubs best CAM build level 55",
+  "FC 27 Clubs best CM box to box build level 55", "FC 27 Clubs best CDM build level 55", "FC 27 Clubs best fullback LB RB build",
+  "FC 27 Clubs best CB centre back build level 55", "FC 27 Clubs best goalkeeper GK build",
+];
+// Pro Clubs build videos found by hand on 2026-11-16 so every position starts with at least five sources (most of them are
+// older than the searches' look-back). Each is fetched once through the YouTube API and then skipped (kb_known);
+// FUT_KB_BUILD_SEED=off turns this off. By position: GK, CB, FB, CDM, CM, CAM, W, ST (some cover several).
+export const BUILD_SEED_VIDEOS = [
+  "z_bTu7cqEqI", "8ayxW3GKsWg", "u01yJjdgX1g", "Ao_UEEEZOeE", "Q2UcXD7kq40", "fptZQH-b5xY",
+  "jzlOG_OIy90", "RFAilZw37SE", "b5CkfpfN7b8", "F2ohRX2mgnc",
+  "JmkwjfrBp1I", "Siq5HhEQfSw", "h_NdCpamo84", "1LoAiw1s294", "CY77avsq8sI",
+  "kQbZbfdUKQo", "O3qtUbLdWKQ", "21zoVW0llRA", "zaDYtQNo24o", "86Oo21_FRU0",
+  "CBO8pC-XWGQ", "6bZ3zt1pdWg", "At7JjrKk__k", "HgzKPR1Xjok",
+  "at1JkTUALGY", "bWSuxS70B-4", "0RuZJC6bAWA", "LpMra9GuC6Y",
+  "aJLL3PgVN2U", "oVOvMFtiCcQ", "qTM99HWFLQU", "wNCyECb9vIw", "BTJ112ubqWA",
+  "E18UOuXzBwo", "2FgIycXv6gw",
+];
 const squash = (s: unknown, max: number) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
 
 export const buildsFeedOn = (env: Env) => env("FUT_KB_BUILDS") !== "off";
@@ -32,7 +51,7 @@ const BUILD_POST = /\b(builds?|archetypes?|playstyles?\+?|height|weight|\d{3}\s?
 export const isBuildPost = (p: { title?: string; selftext?: string }) => BUILD_POST.test(`${p.title ?? ""} ${(p.selftext ?? "").slice(0, 2000)}`);
 
 /** Pro Clubs build posts and (on YouTube hours) build videos, tagged area 'proclubs'. */
-export async function collectBuildSources(env: Env, fetchFn: Fetch, known: (ids: string[]) => Promise<Set<string>>, use: { reddit: boolean; youtube: boolean }, now = Date.now()): Promise<CollectedSource[]> {
+export async function collectBuildSources(env: Env, fetchFn: Fetch, known: (ids: string[]) => Promise<Set<string>>, use: { reddit: boolean; youtube: boolean; seed?: boolean }, now = Date.now()): Promise<CollectedSource[]> {
   const out: CollectedSource[] = [];
   let failure: Error | null = null;
   if (use.reddit) {
@@ -45,18 +64,28 @@ export async function collectBuildSources(env: Env, fetchFn: Fetch, known: (ids:
       out.push(...await collectRedditRss(env, fetchFn, known, { feeds, filter: isBuildPost, threads: Number(env("FUT_KB_BUILD_THREADS_PER_RUN") ?? 4) }));
     } catch (e) { failure = e as Error; }
   }
+  // Hand-picked build videos not in the bank yet: one cheap videos.list call (1 quota unit), any hour
+  if (use.seed && env("FUT_KB_BUILD_SEED") !== "off") {
+    try {
+      const seen = await known(BUILD_SEED_VIDEOS);
+      const fresh = BUILD_SEED_VIDEOS.filter((id) => !seen.has(id));
+      if (fresh.length) out.push(...await youtubeSources(fresh.slice(0, 50), env, fetchFn, 0));
+    } catch (e) { failure ??= e as Error; }
+  }
   if (use.youtube) {
     try {
       const queries = (env("FUT_KB_BUILD_QUERIES") ?? "").split("|").map((q) => q.trim()).filter(Boolean);
-      // Build videos come out less often than meta videos: look back two weeks
-      const after = new Date(now - 14 * 86_400_000).toISOString();
+      // Build videos come out less often than meta videos and stay useful for weeks: look back 60 days
+      const after = new Date(now - 60 * 86_400_000).toISOString();
+      // Up to 5 new videos per search, so every position gets its share instead of the most-watched striker videos
       const ids = new Set<string>();
-      for (const q of queries.length ? queries.slice(0, 6) : DEFAULT_BUILD_QUERIES) {
-        const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "8", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
-        for (const item of (found.items ?? []) as { id?: { videoId?: string } }[]) if (item.id?.videoId) ids.add(item.id.videoId);
+      for (const q of queries.length ? queries.slice(0, 8) : DEFAULT_BUILD_QUERIES) {
+        const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "10", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
+        const hits = ((found.items ?? []) as { id?: { videoId?: string } }[]).map((i) => i.id?.videoId).filter((id): id is string => !!id && !ids.has(id));
+        const seen = hits.length ? await known(hits).catch(() => new Set<string>()) : new Set<string>();
+        for (const id of hits.filter((id) => !seen.has(id)).slice(0, 5)) ids.add(id);
       }
-      const seen = ids.size ? await known([...ids]).catch(() => new Set<string>()) : new Set<string>();
-      out.push(...await youtubeSources([...ids].filter((id) => !seen.has(id)).slice(0, 30), env, fetchFn, Number(env("FUT_KB_BUILD_MIN_VIEWS")) || 1000));
+      out.push(...await youtubeSources([...ids].slice(0, 50), env, fetchFn, Number(env("FUT_KB_BUILD_MIN_VIEWS")) || 300));
     } catch (e) { failure ??= e as Error; }
   }
   if (!out.length && failure) throw failure;

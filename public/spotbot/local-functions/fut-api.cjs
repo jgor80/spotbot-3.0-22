@@ -12526,10 +12526,51 @@ var META_POSITION_KEYS = META_POSITIONS2.map((p) => p.key);
 // supabase/functions/_shared/fut/meta-builds.ts
 var DEFAULT_MODEL3 = "claude-opus-5-5";
 var DEFAULT_BUILD_QUERIES = [
-  "FC 27 Pro Clubs best striker build",
-  "FC 27 Pro Clubs best winger CAM build",
-  "FC 27 Pro Clubs best CDM CM build",
-  "FC 27 Pro Clubs best CB fullback goalkeeper build"
+  "FC 27 Clubs best striker ST build level 55",
+  "FC 27 Clubs best winger LW RW build level 55",
+  "FC 27 Clubs best CAM build level 55",
+  "FC 27 Clubs best CM box to box build level 55",
+  "FC 27 Clubs best CDM build level 55",
+  "FC 27 Clubs best fullback LB RB build",
+  "FC 27 Clubs best CB centre back build level 55",
+  "FC 27 Clubs best goalkeeper GK build"
+];
+var BUILD_SEED_VIDEOS = [
+  "z_bTu7cqEqI",
+  "8ayxW3GKsWg",
+  "u01yJjdgX1g",
+  "Ao_UEEEZOeE",
+  "Q2UcXD7kq40",
+  "fptZQH-b5xY",
+  "jzlOG_OIy90",
+  "RFAilZw37SE",
+  "b5CkfpfN7b8",
+  "F2ohRX2mgnc",
+  "JmkwjfrBp1I",
+  "Siq5HhEQfSw",
+  "h_NdCpamo84",
+  "1LoAiw1s294",
+  "CY77avsq8sI",
+  "kQbZbfdUKQo",
+  "O3qtUbLdWKQ",
+  "21zoVW0llRA",
+  "zaDYtQNo24o",
+  "86Oo21_FRU0",
+  "CBO8pC-XWGQ",
+  "6bZ3zt1pdWg",
+  "At7JjrKk__k",
+  "HgzKPR1Xjok",
+  "at1JkTUALGY",
+  "bWSuxS70B-4",
+  "0RuZJC6bAWA",
+  "LpMra9GuC6Y",
+  "aJLL3PgVN2U",
+  "oVOvMFtiCcQ",
+  "qTM99HWFLQU",
+  "wNCyECb9vIw",
+  "BTJ112ubqWA",
+  "E18UOuXzBwo",
+  "2FgIycXv6gw"
 ];
 var squash = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
 var buildsFeedOn = (env) => env("FUT_KB_BUILDS") !== "off";
@@ -12550,17 +12591,27 @@ async function collectBuildSources(env, fetchFn, known, use, now2 = Date.now()) 
       failure = e;
     }
   }
+  if (use.seed && env("FUT_KB_BUILD_SEED") !== "off") {
+    try {
+      const seen = await known(BUILD_SEED_VIDEOS);
+      const fresh = BUILD_SEED_VIDEOS.filter((id3) => !seen.has(id3));
+      if (fresh.length) out.push(...await youtubeSources(fresh.slice(0, 50), env, fetchFn, 0));
+    } catch (e) {
+      failure ??= e;
+    }
+  }
   if (use.youtube) {
     try {
       const queries = (env("FUT_KB_BUILD_QUERIES") ?? "").split("|").map((q) => q.trim()).filter(Boolean);
-      const after = new Date(now2 - 14 * 864e5).toISOString();
+      const after = new Date(now2 - 60 * 864e5).toISOString();
       const ids = /* @__PURE__ */ new Set();
-      for (const q of queries.length ? queries.slice(0, 6) : DEFAULT_BUILD_QUERIES) {
-        const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "8", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
-        for (const item of found.items ?? []) if (item.id?.videoId) ids.add(item.id.videoId);
+      for (const q of queries.length ? queries.slice(0, 8) : DEFAULT_BUILD_QUERIES) {
+        const found = await ytJson("search", { part: "snippet", type: "video", order: "viewCount", maxResults: "10", publishedAfter: after, q, relevanceLanguage: "en" }, env, fetchFn);
+        const hits2 = (found.items ?? []).map((i) => i.id?.videoId).filter((id3) => !!id3 && !ids.has(id3));
+        const seen = hits2.length ? await known(hits2).catch(() => /* @__PURE__ */ new Set()) : /* @__PURE__ */ new Set();
+        for (const id3 of hits2.filter((id4) => !seen.has(id4)).slice(0, 5)) ids.add(id3);
       }
-      const seen = ids.size ? await known([...ids]).catch(() => /* @__PURE__ */ new Set()) : /* @__PURE__ */ new Set();
-      out.push(...await youtubeSources([...ids].filter((id3) => !seen.has(id3)).slice(0, 30), env, fetchFn, Number(env("FUT_KB_BUILD_MIN_VIEWS")) || 1e3));
+      out.push(...await youtubeSources([...ids].slice(0, 50), env, fetchFn, Number(env("FUT_KB_BUILD_MIN_VIEWS")) || 300));
     } catch (e) {
       failure ??= e;
     }
@@ -13155,7 +13206,7 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
   await collect(
     "builds",
     buildsFeedOn(env) && (redditMode(env) !== "off" || youtubeFeedOn(env)),
-    () => collectBuildSources(env, fetchFn, knownSources, { reddit: redditMode(env) !== "off" && !redditLimited, youtube: youtubeNow && youtubeFeedOn(env) }, now2.getTime())
+    () => collectBuildSources(env, fetchFn, knownSources, { reddit: redditMode(env) !== "off" && !redditLimited, youtube: youtubeNow && youtubeFeedOn(env), seed: youtubeFeedOn(env) }, now2.getTime())
   );
   const result2 = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0, builds: 0 };
   await readWaiting(db2, env, fetchFn, result2, Number(env("FUT_KB_READ_PER_RUN")) || 40, false);
