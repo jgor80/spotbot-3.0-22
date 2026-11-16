@@ -5,10 +5,10 @@ import {
   accelerate, accelerateType, apAtLevel, apSpent, ARCHETYPES, attrCap, ATTRIBUTES, BODY, bodyEffects, buildPath, buildSummary, costBetween, costTier, decodeBuild, emptyBuild,
   encodeBuild, importProClubsBuilder, levelNeeded, matchValue, MAX_PLAYSTYLES, menuValue, normaliseBuild, PLAYSTYLE_DEFS, playstyleSlots, playstyleStatus, pointCost,
   raiseFor, SPECIALIZATIONS, specializationStatus, startValue, trainable,
-  levelRewards, masteryText, nextStarCost, starCost, starRule, starsAp, LEVEL_CAP, HEIGHT_RANGE, WEIGHT_RANGE,
+  levelRewards, levelNeededEstimate, limitToLevel, masteryText, nextStarCost, starCost, starRule, starsAp, LEVEL_CAP, HEIGHT_RANGE, WEIGHT_RANGE,
 } from "../../../src/lib/proBuild.ts";
 import {
-  AP_BY_LEVEL, ATTR_MAX, ATTRIBUTE_KEYS, CAPS, COST_BANDS, COST_TIERS, MASTERIES, MASTERY_MILESTONES, PLAYSTYLE_SLOT_LEVELS,
+  AP_BY_LEVEL, AP_BY_LEVEL_ESTIMATE, ATTR_MAX, ATTRIBUTE_KEYS, CAPS, COST_BANDS, COST_TIERS, MASTERIES, MASTERY_MILESTONES, PLAYSTYLE_SLOT_LEVELS,
   SIGNATURE_PERK_LEVELS, SIGNATURE_PLUS_LEVELS, STARS, START_VALUES, ARCHETYPE_RULES,
 } from "../../../src/lib/proClubsData.ts";
 
@@ -305,4 +305,57 @@ Deno.test("level rewards and mastery wording come from the data tables", () => {
   // A fully mastered archetype is worth +2 on both of its attributes
   const all = normaliseBuild({ archetype: "boss", masteryLevels: { finisher: LEVEL_CAP } });
   eq([menuValue(all, "composure") - startValue("boss", "composure"), menuValue(all, "finishing") - startValue("boss", "finishing")], [2, 2]);
+});
+
+Deno.test("past today's cap the level needed is an estimate from FC 26's ladder", () => {
+  // The estimate ladder is the real one up to the cap, then keeps rising
+  eq(AP_BY_LEVEL_ESTIMATE.slice(0, AP_BY_LEVEL.length), AP_BY_LEVEL);
+  ok(AP_BY_LEVEL_ESTIMATE.length > AP_BY_LEVEL.length);
+  for (let i = AP_BY_LEVEL.length; i < AP_BY_LEVEL_ESTIMATE.length; i++) ok(AP_BY_LEVEL_ESTIMATE[i] > AP_BY_LEVEL_ESTIMATE[i - 1], `level ${i}`);
+  eq(levelNeededEstimate(1419), { level: 55, estimate: false });
+  eq(levelNeededEstimate(1420), { level: 56, estimate: true });
+  eq(levelNeededEstimate(1444), { level: 56, estimate: true });
+  eq(levelNeededEstimate(1445), { level: 57, estimate: true });
+  // FC 26 gave 3,167 AP at level 100
+  eq(levelNeededEstimate(3167), { level: 100, estimate: true });
+  eq(levelNeededEstimate(3168), null);
+  // A build past the cap says so, as an estimate
+  const pts: Record<string, number> = {};
+  for (const a of ATTRIBUTES) if (trainable("finisher", a.key)) pts[a.key] = attrCap("finisher", a.key) - startValue("finisher", a.key);
+  const s = buildSummary(normaliseBuild({ archetype: "finisher", level: LEVEL_CAP, points: pts }));
+  eq(s.levelNeeded, null);
+  ok(s.spent > apAtLevel(LEVEL_CAP));
+  eq(s.levelEstimate, levelNeededEstimate(s.spent)?.level ?? null);
+  if (s.levelEstimate) ok(s.notes[0].includes(`Estimate: about level ${s.levelEstimate}`));
+});
+
+Deno.test("limit to my level: edits can't spend more AP than the level gives", () => {
+  const base = normaliseBuild({ archetype: "finisher", level: 1 });
+  const left = apAtLevel(1) - apSpent(base);
+  // One attribute dragged to its ceiling stops where the AP runs out
+  const dragged = limitToLevel(base, normaliseBuild({ ...base, points: { finishing: attrCap("finisher", "finishing") - startValue("finisher", "finishing") } }));
+  ok(dragged.points.finishing > 0);
+  ok(apSpent(dragged) <= apAtLevel(1));
+  ok(apSpent(dragged) + pointCost("finisher", "finishing", startValue("finisher", "finishing") + dragged.points.finishing + 1) > apAtLevel(1));
+  // An edit inside the budget goes through untouched
+  const small = normaliseBuild({ ...base, points: { finishing: 1 } });
+  ok(apSpent(small) - apSpent(base) <= left);
+  eq(limitToLevel(base, small), small);
+  // Lowering the level stops at the level the build needs
+  const high = normaliseBuild({ archetype: "finisher", level: 40, points: { finishing: 20, composure: 15 } });
+  const need = levelNeeded(apSpent(high))!;
+  ok(need > 1 && need <= 40);
+  eq(limitToLevel(high, { ...high, level: 1 }).level, need);
+  // A multi-attribute jump that doesn't fit is refused whole (same object back)
+  const big = normaliseBuild({ ...base, points: { finishing: 30, composure: 30, sprintSpeed: 30 } });
+  ok(apSpent(big) > apAtLevel(1));
+  ok(limitToLevel(base, big) === base);
+  // A star the level can't pay for is refused
+  const rule = starRule("finisher", "weakFoot");
+  const starred = normaliseBuild({ ...dragged, weakFoot: rule.max });
+  if (apSpent(starred) > apAtLevel(1)) ok(limitToLevel(dragged, starred) === dragged);
+  // A build that is already over can still be brought down
+  const overB = normaliseBuild({ ...big });
+  const less = normaliseBuild({ ...overB, points: { ...overB.points, finishing: 29 } });
+  eq(limitToLevel(overB, less), less);
 });

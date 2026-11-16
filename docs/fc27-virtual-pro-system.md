@@ -37,6 +37,7 @@ source" means it is published once and nothing contradicts it.
 | AcceleRATE thresholds | Confirmed, except one | Pro Clubs HQ and FIFAUTeam agree on everything but Lengthy's minimum height: 183 cm (Pro Clubs HQ, FC 26 value carried over) or 185 cm (FIFAUTeam says it changed in FC 27). The planner uses 183 |
 | Club facility boosts | Not confirmed | No source publishes FC 27 facility numbers (FCClub says the values can't be read yet), so they are typed in by hand |
 | Amps | Not modelled | EA: up to three at a time, timed, attribute boosts and on the top tiers PlayStyles and PlayStyle+ |
+| Levels past 55 | Estimate | FC 27 stops at 55. FC 26's AP for levels 56 to 100 (3,167 AP at 100; its first 55 levels pay exactly what FC 27's do) is used only to say "about level N" for a build that spends more than level 55 gives, and is labelled an estimate |
 
 Two assumptions the planner makes that no source settles: Mastery points count towards PlayStyle and
 Specialization targets, and they can lift an attribute past its ceiling (up to 99).
@@ -67,6 +68,11 @@ store positions in them.
 
 ## How the planner uses it
 
+- **Limit to my level** (on by default, remembered per browser): on, an edit can't spend more AP than the
+  level gives (`limitToLevel`). Off, a build can overspend and the page says which level it needs; past level 55
+  that is an estimate from `AP_BY_LEVEL_ESTIMATE`. A build that arrives over budget turns the limit off for
+  that visit so no points are cut. When EA raises the cap, append the real numbers to `AP_GAINS` and the
+  estimate shrinks to whatever is still unknown.
 - The AP budget comes from the level (no more typing it in). The page shows AP spent, AP left and the
   lowest level that pays for the build.
 - Each attribute shows its starting value, trained value, ceiling, price tier, the AP for the next point and

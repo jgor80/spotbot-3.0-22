@@ -29,6 +29,7 @@ __export(proBuild_exports, {
   ATTR_MIN: () => ATTR_MIN,
   BODY: () => BODY,
   BOOST_MAX: () => BOOST_MAX,
+  ESTIMATE_SOURCE: () => ESTIMATE_SOURCE,
   HEIGHT_RANGE: () => HEIGHT_RANGE,
   LEVEL_CAP: () => LEVEL_CAP,
   LEVEL_MAX: () => LEVEL_MAX,
@@ -67,7 +68,9 @@ __export(proBuild_exports, {
   importProClubsBuilder: () => importProClubsBuilder,
   isKeeper: () => isKeeper,
   levelNeeded: () => levelNeeded,
+  levelNeededEstimate: () => levelNeededEstimate,
   levelRewards: () => levelRewards,
+  limitToLevel: () => limitToLevel,
   masteryBonus: () => masteryBonus,
   masteryLevelOf: () => masteryLevelOf,
   masteryText: () => masteryText,
@@ -181,6 +184,13 @@ var COST_BANDS = [
 var AP_GAINS = [0, 100, 9, 9, 9, 19, 10, 10, 10, 10, 38, 13, 13, 13, 13, 25, 13, 13, 13, 13, 44, 19, 19, 19, 19, 38, 25, 25, 25, 25, 63, 25, 25, 25, 25, 38, 25, 25, 25, 25, 50, 25, 25, 25, 25, 44, 25, 25, 25, 25, 63, 25, 25, 25, 25, 50];
 var AP_BY_LEVEL = AP_GAINS.reduce((acc, g, i) => (acc.push((acc[i - 1] ?? 0) + g), acc), []);
 var LEVEL_CAP = AP_GAINS.length - 1;
+var ESTIMATE_FROM_LEVEL = 56;
+var ESTIMATE_GAINS = [25, 25, 25, 25, 50, 25, 25, 25, 25, 50, 25, 25, 25, 25, 50, 25, 25, 25, 25, 75, 31, 31, 31, 31, 63, 31, 31, 31, 31, 88, 31, 31, 31, 31, 63, 31, 31, 31, 31, 100, 50, 50, 50, 50, 113];
+var ESTIMATE_SOURCE = "FC 26";
+var AP_BY_LEVEL_ESTIMATE = ESTIMATE_GAINS.slice(Math.max(0, LEVEL_CAP + 1 - ESTIMATE_FROM_LEVEL)).reduce(
+  (acc, g) => (acc.push(acc[acc.length - 1] + g), acc),
+  [...AP_BY_LEVEL]
+);
 var CAPS = {
   shotstopper: [92, 85, 85, 75, 75, 60, 60, 70, 92, 82, 75, 92, 90, 75, 90, 90, 96, 85, 75, 90, 90, 75, 75, 75, 70, 96, 90, 96, 92, 99, 99, 99, 99, 99],
   sweeperkeeper: [92, 88, 85, 75, 75, 60, 60, 80, 99, 85, 75, 92, 96, 75, 90, 90, 96, 90, 85, 92, 96, 90, 75, 85, 90, 99, 92, 96, 96, 99, 99, 99, 99, 99],
@@ -568,6 +578,33 @@ function levelNeeded(spent) {
   const lvl = AP_BY_LEVEL.findIndex((ap, i) => i >= 1 && ap >= spent);
   return lvl === -1 ? null : lvl;
 }
+function levelNeededEstimate(spent) {
+  const lvl = AP_BY_LEVEL_ESTIMATE.findIndex((ap, i) => i >= 1 && ap >= spent);
+  return lvl === -1 ? null : { level: lvl, estimate: lvl > LEVEL_CAP };
+}
+function limitToLevel(prev, next) {
+  const spent = apSpent(next);
+  if (spent <= apAtLevel(next.level)) return next;
+  const before = apSpent(prev);
+  if (next.archetype === prev.archetype && spent <= before) {
+    if (next.level >= prev.level) return next;
+    const need = levelNeeded(spent) ?? prev.level;
+    return { ...next, level: Math.max(next.level, Math.min(prev.level, need)) };
+  }
+  if (next.archetype !== prev.archetype || next.level !== prev.level || starsAp(next) !== starsAp(prev)) return prev;
+  const raised = Object.keys(next.points).filter((k) => (next.points[k] ?? 0) > (prev.points[k] ?? 0));
+  const lowered = Object.keys(prev.points).some((k) => (next.points[k] ?? 0) < (prev.points[k] ?? 0));
+  if (raised.length !== 1 || lowered) return prev;
+  const key = raised[0];
+  const start = startValue(next.archetype, key);
+  let left = apAtLevel(next.level) - before;
+  let pts = prev.points[key] ?? 0;
+  while (pts < next.points[key] && pointCost(next.archetype, key, start + pts + 1) <= left) {
+    left -= pointCost(next.archetype, key, start + pts + 1);
+    pts++;
+  }
+  return pts > (prev.points[key] ?? 0) ? { ...next, points: { ...next.points, [key]: pts } } : prev;
+}
 function raisePlan(b, req) {
   const missing = [];
   let ap = 0;
@@ -713,7 +750,11 @@ function buildSummary(b) {
   const focus = ATTR_GROUPS.map((g) => ({ group: g.key, label: g.label, share: onAttrs ? byGroup[g.key] / onAttrs : 0 })).filter((f) => f.share > 0).sort((x, y) => y.share - x.share);
   const notes = [];
   const need = levelNeeded(spent);
-  if (spent > available) notes.push(need ? `${spent - available} AP over what level ${b.level} gives you: this build needs level ${need}.` : `${spent - available} AP over: more than even level ${LEVEL_CAP} gives (${apAtLevel(LEVEL_CAP)} AP).`);
+  const beyond = need ? null : levelNeededEstimate(spent);
+  if (spent > available)
+    notes.push(
+      need ? `${spent - available} AP over what level ${b.level} gives you: this build needs level ${need}.` : `${spent - available} AP over: more than level ${LEVEL_CAP}, today's cap, gives (${apAtLevel(LEVEL_CAP)} AP).${beyond ? ` Estimate: about level ${beyond.level} if the cap rises and later levels pay what ${ESTIMATE_SOURCE}'s did.` : ""}`
+    );
   const slots = playstyleSlots(b.level);
   if (b.playstyles.length > slots) notes.push(`Level ${b.level} has ${slots} PlayStyle slot${slots === 1 ? "" : "s"}; ${b.playstyles.length} are picked.`);
   const status = new Map(playstyleStatus(b).map((s) => [s.def.name, s]));
@@ -721,7 +762,7 @@ function buildSummary(b) {
   if (locked.length) notes.push(`Not unlocked yet: ${locked.join(", ")}.`);
   const spec2 = specializationStatus(b).find((s) => s.spec.key === b.specialization);
   if (spec2 && !spec2.met) notes.push(`${spec2.spec.name} isn't reached yet.`);
-  return { spent, starsAp: starsAp(b), available, remaining: available - spent, levelNeeded: need, slots, focus, notes };
+  return { spent, starsAp: starsAp(b), available, remaining: available - spent, levelNeeded: need, levelEstimate: beyond?.level ?? null, slots, focus, notes };
 }
 var LEGACY_STYLES = [
   "Finesse Shot",
@@ -864,6 +905,7 @@ function importProClubsBuilder(linkOrCode) {
   ATTR_MIN,
   BODY,
   BOOST_MAX,
+  ESTIMATE_SOURCE,
   HEIGHT_RANGE,
   LEVEL_CAP,
   LEVEL_MAX,
@@ -902,7 +944,9 @@ function importProClubsBuilder(linkOrCode) {
   importProClubsBuilder,
   isKeeper,
   levelNeeded,
+  levelNeededEstimate,
   levelRewards,
+  limitToLevel,
   masteryBonus,
   masteryLevelOf,
   masteryText,

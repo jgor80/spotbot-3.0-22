@@ -94,6 +94,19 @@ export const AP_BY_LEVEL: number[] = AP_GAINS.reduce<number[]>((acc, g, i) => (a
 // The level cap is the last level AP_GAINS has a row for.
 export const LEVEL_CAP = AP_GAINS.length - 1;
 
+// ESTIMATE, for planning past the cap only. FC 27 has no levels above LEVEL_CAP yet. FC 26 ran to level 100
+// and paid exactly the same AP as FC 27 at every level up to 55, so its later levels are the best guess for
+// what a higher FC 27 cap would pay. AP gained at each FC 26 level from 56 to 100 (Pro Clubs HQ level table).
+// When EA raises the cap, move the real numbers into AP_GAINS; the estimate then starts above the new cap.
+const ESTIMATE_FROM_LEVEL = 56;
+const ESTIMATE_GAINS = [25, 25, 25, 25, 50, 25, 25, 25, 25, 50, 25, 25, 25, 25, 50, 25, 25, 25, 25, 75, 31, 31, 31, 31, 63, 31, 31, 31, 31, 88, 31, 31, 31, 31, 63, 31, 31, 31, 31, 100, 50, 50, 50, 50, 113];
+export const ESTIMATE_SOURCE = "FC 26";
+// Total AP by level like AP_BY_LEVEL, continued past the cap with the estimate (index = level).
+export const AP_BY_LEVEL_ESTIMATE: number[] = ESTIMATE_GAINS.slice(Math.max(0, LEVEL_CAP + 1 - ESTIMATE_FROM_LEVEL)).reduce<number[]>(
+  (acc, g) => (acc.push(acc[acc.length - 1] + g), acc),
+  [...AP_BY_LEVEL],
+);
+
 // Highest value each attribute can be trained to (its ceiling), per archetype, in ATTRIBUTE_KEYS order.
 // 0 = can't train. From Pro Clubs HQ's ceiling tables (read in game; PRO11 republishes the same set), so
 // this is one source: it does reproduce every "which archetypes can reach this PlayStyle" list they publish.
@@ -345,4 +358,5 @@ export const UNCONFIRMED_NOTES = [
   "Whether Mastery points count towards PlayStyle and Specialization targets, and whether they can pass a ceiling (the planner assumes yes, up to 99).",
   "Club facility boost sizes: type in what your club has.",
   "Amps (timed boosts, PlayStyles and PlayStyle+) aren't modelled.",
+  "Levels past 55: FC 27 stops at 55 for now, so the level a bigger build would need is an estimate from FC 26's levels 56 to 100.",
 ];
