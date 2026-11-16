@@ -1,6 +1,6 @@
 import assertNode from "node:assert/strict";
 import {
-  accelerateType, apAtLevel, apSpent, ARCHETYPES, attrCap, ATTRIBUTES, BODY, bodyEffects, buildPath, buildSummary, costBetween, costTier, decodeBuild, emptyBuild,
+  accelerate, accelerateType, apAtLevel, apSpent, ARCHETYPES, attrCap, ATTRIBUTES, BODY, bodyEffects, buildPath, buildSummary, costBetween, costTier, decodeBuild, emptyBuild,
   encodeBuild, importProClubsBuilder, levelNeeded, matchValue, MAX_PLAYSTYLES, menuValue, normaliseBuild, PLAYSTYLE_DEFS, playstyleSlots, playstyleStatus, pointCost,
   raiseFor, SPECIALIZATIONS, specializationStatus, startValue, trainable,
 } from "../../../src/lib/proBuild.ts";
@@ -142,11 +142,47 @@ Deno.test("body: height and weight shift attributes in matches only", () => {
   eq(menuValue(t, "balance"), startValue("target", "balance"), "the menu doesn't show body effects");
   eq(matchValue(t, "balance"), startValue("target", "balance") - 5);
   eq(bodyEffects(emptyBuild("target")), {});
-  ok(accelerateType({ ...t, heightCm: 182 }).startsWith("Explosive"));
-  ok(accelerateType(t).startsWith("Lengthy"));
+});
+
+Deno.test("AcceleRATE comes from height and in-match Agility, Strength and Acceleration", () => {
+  // A 195 cm Target is strong and tall: Lengthy
+  const t = { ...emptyBuild("target"), heightCm: 195, weightKg: 80 };
+  eq(accelerateType(t), "Lengthy");
+  // A short, agile, quick Spark: Explosive once Acceleration reaches 80
+  const spark = normaliseBuild({ ...emptyBuild("spark"), heightCm: 170, points: { acceleration: 30, agility: 20 } });
+  eq(accelerateType(spark), "Explosive");
+  const r = accelerate(spark);
+  ok(r.explosive.every((c) => c.ok));
+  // Too tall for Explosive: Controlled
+  eq(accelerateType({ ...spark, heightCm: 186 }), "Controlled");
+  ok(accelerate({ ...spark, heightCm: 186 }).explosive.some((c) => c.label === "Height" && !c.ok));
+  // A facility boost counts (in matches)
+  const slow = normaliseBuild({ ...spark, points: { ...spark.points, acceleration: 0 } });
+  const needed = 80 - matchValue(slow, "acceleration");
+  if (needed > 0 && needed <= 10) eq(accelerateType({ ...slow, boosts: { acceleration: needed } }), "Explosive");
 });
 
 Deno.test("archetype and attribute lists line up with the share format", () => {
   eq(ARCHETYPES.length, 13);
   eq(new Set(ATTRIBUTES.map((a) => a.key)).size, ATTRIBUTES.length);
+});
+
+Deno.test("masteries from other archetypes and club facility boosts, kept in share codes", () => {
+  // Finisher mastery is Composure + Finishing, and it counts on every archetype, a Boss included
+  const boss = emptyBuild("boss");
+  const base = menuValue(boss, "finishing");
+  const withMastery = normaliseBuild({ ...boss, masteryLevels: { finisher: 55, nope: 9 } });
+  eq(withMastery.masteryLevels, { finisher: 55 });
+  eq(menuValue(withMastery, "finishing"), base + 2, "finishing is Finisher's second mastery attribute: +1 at 10, +1 at 30");
+  eq(menuValue(normaliseBuild({ ...boss, masteryLevels: { finisher: 9 } }), "finishing"), base, "nothing below level 10");
+  // Facility boosts: in matches only, capped at BOOST_MAX
+  const boosted = normaliseBuild({ ...boss, boosts: { strength: 4, gkDiving: 3, crossing: 99 } });
+  eq(boosted.boosts, { strength: 4, crossing: 10 });
+  eq(matchValue(boosted, "strength", {}), Math.min(99, menuValue(boosted, "strength") + 4));
+  eq(menuValue(boosted, "strength"), menuValue(boss, "strength"));
+  // Round trip through a gb3 code; builds without either stay gb2
+  const code = encodeBuild({ ...withMastery, boosts: { strength: 4 } });
+  ok(atob(code.replace(/-/g, "+").replace(/_/g, "/") + "==".slice(0, (4 - (code.length % 4)) % 4)).startsWith("gb3~"));
+  eq(decodeBuild(code), normaliseBuild({ ...withMastery, boosts: { strength: 4 } }));
+  ok(atob(encodeBuild(boss).replace(/-/g, "+").replace(/_/g, "/") + "==".slice(0, (4 - (encodeBuild(boss).length % 4)) % 4)).startsWith("gb2~"));
 });

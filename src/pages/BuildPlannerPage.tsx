@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Minus, Plus, Link2, ImageDown, Import, RotateCcw, GitCompareArrows, X, Sparkles, Lock, Check, Info, Target } from "lucide-react";
+import { Minus, Plus, Link2, ImageDown, Import, RotateCcw, GitCompareArrows, X, Sparkles, Lock, Check, Info, Target, Zap, Building2, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
@@ -10,8 +10,9 @@ import {
   ATTRIBUTES,
   BODY,
   LEVEL_CAP,
+  BOOST_MAX,
   STYLE_GROUPS,
-  accelerateType,
+  accelerate,
   apAtLevel,
   attrCap,
   bodyEffects,
@@ -22,10 +23,13 @@ import {
   decodeBuild,
   emptyBuild,
   encodeBuild,
+  formatHeight,
+  formatWeight,
   groupAverages,
   importProClubsBuilder,
   isKeeper,
   masteryBonus,
+  masteryLevelOf,
   matchValue,
   menuValue,
   nextSlotLevel,
@@ -40,9 +44,11 @@ import {
   type AttrGroup,
   type Build,
   type StyleGroup,
+  type Units,
 } from "@/lib/proBuild";
 import { MASTERIES, SIGNATURE_PERK_LEVELS, SIGNATURE_PLUS_LEVELS, TIER_LABELS, UNCONFIRMED_NOTES } from "@/lib/proClubsData";
 import { CommunityMetaLoader } from "@/components/build/CommunityMetaBuilds";
+import { MyBuildsPanel, useMyBuilds, useMyProPhoto } from "@/components/build/MyBuilds";
 import { BodyFigure, BuildCard, GROUP_COLORS, LINE_COLORS, PitchPicker, StatMeter, downloadCard, radarGroups, shapeValues } from "@/components/build/BuildVisuals";
 
 // Accepts our links/codes and Pro Clubs Builder links
@@ -75,6 +81,34 @@ const MILESTONES: [number, string][] = [
   [SIGNATURE_PERK_LEVELS[1], "Signature Perk 2"],
   [55, "PlayStyle slot 4, Signature 2 becomes PlayStyle+, Mastery +1"],
 ];
+
+// Imperial by default; the choice is remembered on this browser
+function readUnits(): Units {
+  try {
+    return window.localStorage.getItem("gb-units") === "metric" ? "metric" : "imperial";
+  } catch {
+    return "imperial";
+  }
+}
+
+function UnitsToggle({ value, onChange }: { value: Units; onChange: (u: Units) => void }) {
+  return (
+    <div className="inline-flex rounded-full border border-white/10 bg-black/40 p-0.5 text-[11px] font-semibold" role="radiogroup" aria-label="Units">
+      {(["imperial", "metric"] as const).map((u) => (
+        <button
+          key={u}
+          type="button"
+          role="radio"
+          aria-checked={value === u}
+          onClick={() => onChange(u)}
+          className={`rounded-full px-2.5 py-1 transition ${value === u ? "bg-white text-[#05080c]" : "text-slate-400 hover:text-white"}`}
+        >
+          {u === "imperial" ? "ft / lb" : "cm / kg"}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function Panel({ step, title, aside, children }: { step: string; title: string; aside?: ReactNode; children: ReactNode }) {
   return (
@@ -143,6 +177,21 @@ export default function BuildPlannerPage() {
   const [compareText, setCompareText] = useState("");
   const [rival, setRival] = useState<Build | null>(null);
   const cardRef = useRef<SVGSVGElement>(null);
+  const [units, setUnitsState] = useState<Units>(readUnits);
+  const setUnits = (u: Units) => {
+    setUnitsState(u);
+    try {
+      window.localStorage.setItem("gb-units", u);
+    } catch {
+      /* private window: keep it for this visit only */
+    }
+  };
+  const [savedId, setSavedId] = useState<string | null>(null);
+  const [usePhoto, setUsePhoto] = useState(false);
+  const photo = useMyProPhoto(usePhoto);
+  const mine = useMyBuilds();
+  const [boostKey, setBoostKey] = useState("");
+  const [boostAmt, setBoostAmt] = useState(2);
 
   // Keep the address bar in sync so a copied URL is always the current build
   useEffect(() => {
@@ -156,6 +205,7 @@ export default function BuildPlannerPage() {
   const averages = useMemo(() => groupAverages(build), [build]);
   const rivalAverages = useMemo(() => (rival ? groupAverages(rival) : null), [rival]);
   const fx = useMemo(() => bodyEffects(build), [build]);
+  const accel = useMemo(() => accelerate(build, fx), [build, fx]);
   const styles = useMemo(() => playstyleStatus(build), [build]);
   const specs = useMemo(() => specializationStatus(build), [build]);
   const arch = ARCHETYPES.find((a) => a.key === build.archetype)!;
@@ -175,6 +225,12 @@ export default function BuildPlannerPage() {
   const signatures = styles.filter((s) => s.signature).sort((a, b) => a.signature - b.signature);
   const nextSlot = nextSlotLevel(build.level);
   const mastery = MASTERIES[build.archetype];
+  const savedLevels = mine.list.data?.levels ?? {};
+  const boostable = ATTRIBUTES.filter((a) => trainable(build.archetype, a.key));
+  const boosts = Object.entries(build.boosts ?? {}).filter(([, n]) => n > 0);
+  const masteryTotals = boostable.map((a) => [a.key, masteryBonus(build, a.key)] as const).filter(([, n]) => n > 0);
+  const setMastery = (k: string, n: number) => set({ masteryLevels: { ...build.masteryLevels, [k]: Math.max(0, Math.min(LEVEL_CAP, Math.round(n) || 0)) } });
+  const setBoost = (k: string, n: number) => set({ boosts: { ...build.boosts, [k]: Math.max(0, Math.min(BOOST_MAX, n)) } });
 
   const share = async () => {
     const url = `${window.location.origin}${buildPath(build)}`;
@@ -227,7 +283,7 @@ export default function BuildPlannerPage() {
   const goForSpec = (key: string, req: [string, number][]) => setBuild((b) => normaliseBuild({ ...raiseFor(b, req), specialization: key }));
 
   return (
-    <div className="dark relative min-h-screen overflow-x-hidden bg-[#05080c] font-body text-slate-200">
+    <div className="dark relative min-h-screen overflow-x-clip bg-[#05080c] font-body text-slate-200">
       {/* Stage lighting: soft colour pools that follow the archetype's line, over a faint grid */}
       <div aria-hidden className="pointer-events-none fixed inset-0">
         <div className="absolute -left-32 -top-32 h-[520px] w-[520px] rounded-full opacity-25 blur-[120px] transition-colors duration-700" style={{ background: accent }} />
@@ -238,7 +294,36 @@ export default function BuildPlannerPage() {
         />
       </div>
 
-      <div className="relative mx-auto max-w-6xl px-4 pb-28 pt-8 sm:pt-12 lg:pb-16">
+      {/* Slim AP bar that stays at the top while you scroll, above the content but out of the way of the controls */}
+      <div className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#05080c]/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-11 max-w-[1440px] items-center gap-3 px-4 sm:px-6 xl:px-10">
+          <span className="hidden max-w-[16rem] truncate font-display text-sm font-bold uppercase tracking-wide sm:block" style={{ color: accent }}>
+            {arch.name} · Lvl {build.level}
+          </span>
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <span className="whitespace-nowrap text-sm tabular-nums text-slate-400">
+              <b className="text-white">{summary.spent}</b>/{summary.available} AP
+            </span>
+            <div className="relative hidden h-1.5 max-w-[240px] flex-1 overflow-hidden rounded-full bg-white/[0.08] min-[400px]:block" aria-hidden>
+              <div className="absolute inset-y-0 left-0 rounded-full transition-all" style={{ width: `${Math.min(100, (summary.spent / summary.available) * 100)}%`, background: over ? "#fb7185" : accent }} />
+            </div>
+            <span className={`whitespace-nowrap font-display text-sm font-bold tabular-nums ${over ? "text-rose-400" : "text-white"}`}>
+              {over ? `${-summary.remaining} over` : `${summary.remaining} left`}
+            </span>
+          </div>
+          <span className="hidden items-center gap-1 rounded-full border border-white/10 px-2.5 py-0.5 text-xs font-semibold text-slate-200 md:inline-flex" title="AcceleRATE from height, Agility, Strength and Acceleration in matches">
+            <Zap className="h-3 w-3" style={{ color: accent }} /> {accel.type}
+          </span>
+          <div className="hidden sm:block">
+            <UnitsToggle value={units} onChange={setUnits} />
+          </div>
+          <button className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold text-[#05080c] transition hover:brightness-110" style={{ background: accent }} onClick={share}>
+            <Link2 className="h-3.5 w-3.5" /> Share
+          </button>
+        </div>
+      </div>
+
+      <div className="relative mx-auto max-w-[1440px] px-4 pb-16 pt-6 sm:px-6 sm:pt-10 xl:px-10">
         <header className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em]" style={{ color: accent }}>
@@ -266,10 +351,10 @@ export default function BuildPlannerPage() {
           </div>
         </header>
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,390px)_minmax(0,1fr)] xl:gap-8">
           {/* The live card */}
-          <aside className="lg:sticky lg:top-6 lg:self-start">
-            <div className="mx-auto max-w-[380px] [perspective:1200px]">
+          <aside className="lg:sticky lg:top-16 lg:self-start">
+            <div className="mx-auto max-w-[390px] [perspective:1200px]">
               <div className="transition-transform duration-500 hover:[transform:rotateY(-6deg)_rotateX(4deg)]" style={{ filter: `drop-shadow(0 24px 48px ${accent}33)` }}>
                 <BuildCard
                   ref={cardRef}
@@ -281,6 +366,9 @@ export default function BuildPlannerPage() {
                   topGroups={topGroups}
                   signatures={signatures.map((s) => ({ name: s.def.name, plus: s.plus }))}
                   specialization={activeSpec ? { name: activeSpec.spec.name, plus: activeSpec.spec.plus, met: activeSpec.met } : null}
+                  units={units}
+                  accel={accel.type}
+                  photo={usePhoto ? photo.data ?? null : null}
                 />
               </div>
               <div className="mt-4 grid grid-cols-2 gap-2 lg:hidden">
@@ -291,6 +379,15 @@ export default function BuildPlannerPage() {
                   <Link2 className="h-4 w-4" /> Copy link
                 </button>
               </div>
+              {mine.signedIn && (
+                <label className="mt-4 flex cursor-pointer items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-sm text-slate-200">
+                  <input type="checkbox" className="h-4 w-4 accent-current" checked={usePhoto} onChange={(e) => setUsePhoto(e.target.checked)} />
+                  <Camera className="h-4 w-4 text-slate-400" /> Put my pro photo on the card
+                  <span className="ml-auto text-xs text-slate-500">
+                    {usePhoto && photo.isLoading ? "loading..." : usePhoto && photo.isSuccess && !photo.data ? "no photo yet" : usePhoto && photo.isError ? "couldn't load" : ""}
+                  </span>
+                </label>
+              )}
               <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
                 <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
                   <GitCompareArrows className="h-4 w-4" /> Compare with another build
@@ -384,80 +481,41 @@ export default function BuildPlannerPage() {
               </div>
             </Panel>
 
-            <Panel step="02" title="Level and body">
-              <div className="mb-6">
-                <div className="mb-2 flex items-baseline justify-between">
-                  <span className={label}>Level</span>
-                  <span className="font-display text-2xl font-bold tabular-nums text-white">
-                    {build.level}
-                    <span className="ml-2 text-sm font-normal text-slate-400">{summary.available} AP</span>
-                  </span>
-                </div>
-                <Slider aria-label="Level" value={[build.level]} min={1} max={LEVEL_CAP} step={1} onValueChange={([n]) => set({ level: n })} />
-                <div className="relative mt-2 h-4">
-                  {MILESTONES.map(([lvl, what]) => (
-                    <button
-                      key={lvl}
-                      type="button"
-                      title={`Level ${lvl}: ${what}`}
-                      aria-label={`Go to level ${lvl}: ${what}`}
-                      onClick={() => set({ level: lvl })}
-                      className={`absolute -translate-x-1/2 text-[10px] font-bold tabular-nums transition ${build.level >= lvl ? "text-white" : "text-slate-600 hover:text-slate-300"}`}
-                      style={{ left: `${((lvl - 1) / (LEVEL_CAP - 1)) * 100}%` }}
-                    >
-                      {lvl}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-slate-400">
-                  {(() => {
-                    const next = MILESTONES.find(([l]) => l > build.level);
-                    return next ? `Next: level ${next[0]}, ${next[1]}.` : "Level cap reached: everything is unlocked.";
-                  })()}
-                </p>
-              </div>
-              <div className="grid gap-6 sm:grid-cols-[110px_minmax(0,1fr)]">
-                <div className="mx-auto h-40 sm:h-56">
-                  <BodyFigure heightCm={build.heightCm} weightKg={build.weightKg} color={accent} />
-                </div>
+            <Panel step="02" title="Level and body" aside={<UnitsToggle value={units} onChange={setUnits} />}>
+              <div className="grid gap-6 lg:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)_minmax(0,1fr)]">
                 <div className="space-y-5">
-                  {(
-                    [
-                      ["Height", build.heightCm, body.h, body.startH, " cm", (v: number) => set({ heightCm: v })],
-                      ["Weight", build.weightKg, body.w, body.startW, " kg", (v: number) => set({ weightKg: v })],
-                    ] as const
-                  ).map(([name, v, range, start, unit, onSet]) => (
-                    <div key={name}>
-                      <div className="mb-2 flex items-baseline justify-between">
-                        <span className={label}>
-                          {name} <span className="normal-case tracking-normal text-slate-600">({range[0]}-{range[1]}, default {start})</span>
-                        </span>
-                        <span className="font-display text-2xl font-bold tabular-nums text-white">
-                          {v}
-                          <span className="text-sm text-slate-500">{unit}</span>
-                        </span>
-                      </div>
-                      <Slider aria-label={name} value={[v]} min={range[0]} max={range[1]} step={1} onValueChange={([n]) => onSet(n)} />
-                    </div>
-                  ))}
                   <div>
-                    <div className="mb-1.5 text-xs text-slate-400">In matches, your body changes:</div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.keys(fx).length === 0 ? (
-                        <span className="text-xs text-slate-500">Nothing at the default height and weight.</span>
-                      ) : (
-                        Object.entries(fx).map(([k, d]) => (
-                          <span key={k} className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold tabular-nums ${d! > 0 ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border-rose-400/30 bg-rose-400/10 text-rose-300"}`}>
-                            {attrLabel(k)} {d! > 0 ? `+${d}` : d}
-                          </span>
-                        ))
-                      )}
+                    <div className="mb-2 flex items-baseline justify-between">
+                      <span className={label}>Level</span>
+                      <span className="font-display text-2xl font-bold tabular-nums text-white">
+                        {build.level}
+                        <span className="ml-2 text-sm font-normal text-slate-400">{summary.available} AP</span>
+                      </span>
                     </div>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Every 4 cm or 8 kg from the default moves these by 1. AcceleRATE at {build.heightCm} cm: <span className="text-slate-300">{accelerateType(build)}</span>.
+                    <Slider aria-label="Level" value={[build.level]} min={1} max={LEVEL_CAP} step={1} onValueChange={([n]) => set({ level: n })} />
+                    <div className="relative mt-2 h-4">
+                      {MILESTONES.map(([lvl, what]) => (
+                        <button
+                          key={lvl}
+                          type="button"
+                          title={`Level ${lvl}: ${what}`}
+                          aria-label={`Go to level ${lvl}: ${what}`}
+                          onClick={() => set({ level: lvl })}
+                          className={`absolute -translate-x-1/2 text-[10px] font-bold tabular-nums transition ${build.level >= lvl ? "text-white" : "text-slate-600 hover:text-slate-300"}`}
+                          style={{ left: `${((lvl - 1) / (LEVEL_CAP - 1)) * 100}%` }}
+                        >
+                          {lvl}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-400">
+                      {(() => {
+                        const next = MILESTONES.find(([l]) => l > build.level);
+                        return next ? `Next: level ${next[0]}, ${next[1]}.` : "Level cap reached: everything is unlocked.";
+                      })()}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-x-8 gap-y-3 pt-1">
+                  <div className="flex flex-wrap gap-x-8 gap-y-3">
                     <div>
                       <div className={`mb-1 ${label}`}>Skill moves</div>
                       <Stars label="Skill moves" value={build.skillMoves} onChange={(v) => set({ skillMoves: v })} />
@@ -468,6 +526,85 @@ export default function BuildPlannerPage() {
                     </div>
                   </div>
                   <p className="text-xs text-slate-500">Stars are for the card only: how FC 27 sets skill moves and weak foot isn't confirmed.</p>
+                </div>
+
+                <div className="grid gap-5 sm:grid-cols-[96px_minmax(0,1fr)]">
+                  <div className="mx-auto h-40 sm:h-56">
+                    <BodyFigure heightCm={build.heightCm} weightKg={build.weightKg} color={accent} />
+                  </div>
+                  <div className="space-y-5">
+                    {(
+                      [
+                        ["Height", build.heightCm, body.h, body.startH, formatHeight, (v: number) => set({ heightCm: v })],
+                        ["Weight", build.weightKg, body.w, body.startW, formatWeight, (v: number) => set({ weightKg: v })],
+                      ] as const
+                    ).map(([name, v, range, start, fmt, onSet]) => (
+                      <div key={name}>
+                        <div className="mb-2 flex items-baseline justify-between gap-2">
+                          <span className={label}>
+                            {name} <span className="normal-case tracking-normal text-slate-600">({fmt(range[0], units)} to {fmt(range[1], units)}, default {fmt(start, units)})</span>
+                          </span>
+                          <span className="whitespace-nowrap font-display text-2xl font-bold tabular-nums text-white">{fmt(v, units)}</span>
+                        </div>
+                        <Slider aria-label={name} value={[v]} min={range[0]} max={range[1]} step={1} onValueChange={([n]) => onSet(n)} />
+                      </div>
+                    ))}
+                    <div>
+                      <div className="mb-1.5 text-xs text-slate-400">In matches, your body changes:</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.keys(fx).length === 0 ? (
+                          <span className="text-xs text-slate-500">Nothing at the default height and weight.</span>
+                        ) : (
+                          Object.entries(fx).map(([k, d]) => (
+                            <span key={k} className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold tabular-nums ${d! > 0 ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : "border-rose-400/30 bg-rose-400/10 text-rose-300"}`}>
+                              {attrLabel(k)} {d! > 0 ? `+${d}` : d}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                      <p className="mt-2 text-xs text-slate-500">Every 4 cm (about 1.5 in) or 8 kg (about 18 lb) from the default moves these by 1.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/25 p-4 lg:col-span-2 2xl:col-span-1">
+                  <div className={label}>AcceleRATE</div>
+                  <div className="mt-1 flex items-center gap-2 font-display text-3xl font-bold text-white">
+                    <Zap className="h-6 w-6" style={{ color: accent }} /> {accel.type}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {accel.type === "Explosive"
+                      ? "Quick off the mark, top speed comes a little later."
+                      : accel.type === "Lengthy"
+                        ? "Slower first steps, then long strides that hold top speed."
+                        : "Even acceleration all the way to top speed."}
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 2xl:grid-cols-1">
+                    {(
+                      [
+                        ["Explosive needs", accel.explosive],
+                        ["Lengthy needs", accel.lengthy],
+                      ] as const
+                    ).map(([title, checks]) => (
+                      <div key={title}>
+                        <div className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-slate-500">{title}</div>
+                        <ul className="space-y-0.5 text-xs">
+                          {checks.map((c) => (
+                            <li key={c.label} className="flex items-center justify-between gap-2">
+                              <span className="flex items-center gap-1.5 text-slate-300">
+                                {c.ok ? <Check className="h-3 w-3 text-emerald-400" /> : <X className="h-3 w-3 text-slate-600" />}
+                                {c.label}
+                              </span>
+                              <span className={`tabular-nums ${c.ok ? "text-emerald-300" : "text-slate-500"}`}>
+                                {c.label === "Height" ? `${units === "imperial" ? `${formatHeight(c.have, units)}, ` : ""}${c.have} cm / ${c.need}` : `${c.have} / ${c.need}`}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-[11px] text-slate-500">Uses in-match values (body, masteries and facilities). Everything else is Controlled.</p>
                 </div>
               </div>
             </Panel>
@@ -521,7 +658,7 @@ export default function BuildPlannerPage() {
                 </span>
                 <span>Grey = starting value · ◆ = in matches · red tick = cap</span>
               </div>
-              <div className="grid gap-4">
+              <div className="grid gap-4 xl:grid-cols-2">
                 {pointGroups.map((g) => {
                   const c = GROUP_COLORS[g.key as AttrGroup];
                   return (
@@ -544,15 +681,15 @@ export default function BuildPlannerPage() {
                           const next = v < cap ? pointCost(build.archetype, a.key, v + 1) : null;
                           const bonus = masteryBonus(build, a.key);
                           return (
-                            <div key={a.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 text-sm sm:grid-cols-[9.5rem_minmax(0,1fr)_auto]">
+                            <div key={a.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 text-sm sm:grid-cols-[9.5rem_minmax(0,1fr)_auto] xl:grid-cols-[minmax(0,1fr)_auto]">
                               <span className="flex min-w-0 items-center gap-2">
                                 <TierPips tier={costTier(build.archetype, a.key)} />
                                 <span className="leading-tight text-slate-300">{a.label}</span>
                               </span>
-                              <div className="col-span-2 row-start-2 flex items-center gap-2 sm:col-span-1 sm:row-start-auto">
+                              <div className="col-span-2 row-start-2 flex items-center gap-2 sm:col-span-1 sm:row-start-auto xl:col-span-2 xl:row-start-2">
                                 <StatMeter start={start} value={v} cap={cap} capKnown={capConfirmed(build.archetype, a.key)} match={match} color={c} label={a.label} onChange={(n) => setValue(a.key, n)} />
                               </div>
-                              <div className="col-start-2 row-start-1 flex items-center gap-1 sm:col-start-auto sm:row-start-auto">
+                              <div className="col-start-2 row-start-1 flex items-center gap-1 sm:col-start-auto sm:row-start-auto xl:col-start-2 xl:row-start-1">
                                 <span className="min-w-[2rem] whitespace-nowrap text-right tabular-nums sm:w-16" title={`Starts at ${start}${bonus ? `, +${bonus} mastery` : ""}, ${match} in matches`}>
                                   <b className="text-white">{shown}</b>
                                   {match !== shown && <span className={`ml-1 text-[11px] ${match > shown ? "text-emerald-400" : "text-rose-400"}`}>◆{match}</span>}
@@ -580,7 +717,118 @@ export default function BuildPlannerPage() {
               </p>
             </Panel>
 
-            <Panel step="04" title="Specializations" aside={<span className="text-xs text-slate-500">one at a time</span>}>
+            <Panel step="04" title="Masteries and club facilities">
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+                <div>
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <span className={label}>Your level on each archetype</span>
+                    {mine.signedIn && Object.keys(savedLevels).length > 0 && (
+                      <button className={`${ghostBtn} px-3 py-1 text-xs`} onClick={() => set({ masteryLevels: { ...savedLevels } })}>
+                        Fill from my saved builds
+                      </button>
+                    )}
+                  </div>
+                  <p className="mb-3 text-xs text-slate-400">
+                    Masteries carry over: every archetype you've taken to level 10 adds +1 to its two attributes on all your builds, then +1 more at 30 and 55.
+                    {mine.signedIn ? " Saved builds fill these in for you." : " Sign in and save builds to fill these in."}
+                  </p>
+                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 2xl:grid-cols-3">
+                    {ARCHETYPES.map((a) => {
+                      const own = a.key === build.archetype;
+                      const lvl = masteryLevelOf(build, a.key);
+                      const pair = MASTERIES[a.key];
+                      return (
+                        <label key={a.key} className={`flex items-center gap-2 rounded-xl border px-2.5 py-1.5 ${lvl >= 10 ? "border-white/15 bg-white/[0.04]" : "border-white/[0.06] bg-black/20"}`}>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-white">{a.name}</span>
+                            <span className="block truncate text-[11px] text-slate-500">{pair ? `${attrLabel(pair[0])}, ${attrLabel(pair[1])}` : ""}</span>
+                          </span>
+                          <Input
+                            type="number"
+                            inputMode="numeric"
+                            min={0}
+                            max={LEVEL_CAP}
+                            aria-label={`${a.name} level`}
+                            value={own ? Math.max(build.level, build.masteryLevels?.[a.key] ?? 0) : build.masteryLevels?.[a.key] ?? ""}
+                            placeholder="0"
+                            disabled={own}
+                            title={own ? "This build's own level" : undefined}
+                            onChange={(e) => setMastery(a.key, Number(e.target.value))}
+                            className="h-8 w-16 border-white/10 bg-black/30 text-right tabular-nums"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {masteryTotals.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {masteryTotals.map(([k, n]) => (
+                        <span key={k} className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-0.5 text-xs font-semibold tabular-nums text-sky-200">
+                          {attrLabel(k)} +{n}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className={`mb-2 flex items-center gap-2 ${label}`}>
+                    <Building2 className="h-3.5 w-3.5" /> Club facility boosts
+                  </div>
+                  <p className="mb-3 text-xs text-slate-400">Enter what your club's facilities add. They count in matches only, so they don't unlock PlayStyles or Specializations.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <select
+                      aria-label="Attribute to boost"
+                      value={boostKey}
+                      onChange={(e) => setBoostKey(e.target.value)}
+                      className="h-9 min-w-0 flex-1 rounded-md border border-white/10 bg-black/30 px-2 text-sm text-slate-200"
+                    >
+                      <option value="">Pick an attribute</option>
+                      {boostable.map((a) => (
+                        <option key={a.key} value={a.key}>
+                          {a.label}
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={BOOST_MAX}
+                      aria-label="Boost amount"
+                      value={boostAmt}
+                      onChange={(e) => setBoostAmt(Math.max(1, Math.min(BOOST_MAX, Number(e.target.value) || 1)))}
+                      className="h-9 w-16 border-white/10 bg-black/30 text-right tabular-nums"
+                    />
+                    <button
+                      className={`${ghostBtn} h-9 px-3 py-1 text-xs`}
+                      disabled={!boostKey}
+                      onClick={() => {
+                        setBoost(boostKey, boostAmt);
+                        setBoostKey("");
+                      }}
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add
+                    </button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {boosts.length === 0 ? (
+                      <span className="text-xs text-slate-500">No facility boosts yet.</span>
+                    ) : (
+                      boosts.map(([k, n]) => (
+                        <span key={k} className="inline-flex items-center gap-1 rounded-full border border-violet-400/30 bg-violet-400/10 py-0.5 pl-2.5 pr-1 text-xs font-semibold tabular-nums text-violet-200">
+                          {attrLabel(k)} +{n}
+                          <button aria-label={`Remove ${attrLabel(k)} boost`} onClick={() => setBoost(k, 0)} className="grid h-4 w-4 place-items-center rounded-full hover:bg-white/10">
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))
+                    )}
+                  </div>
+                  <p className="mt-3 text-[11px] text-slate-500">Up to +{BOOST_MAX} per attribute. EA doesn't publish FC 27's facility numbers, so copy them from your club's facilities screen.</p>
+                </div>
+              </div>
+            </Panel>
+
+            <Panel step="05" title="Specializations" aside={<span className="text-xs text-slate-500">one at a time</span>}>
               <p className="mb-4 text-sm text-slate-400">
                 Get the first attribute to 92 and the other two to 90 to unlock a Specialization. It swaps one of your Signatures for its PlayStyle+.
               </p>
@@ -633,7 +881,7 @@ export default function BuildPlannerPage() {
             </Panel>
 
             <Panel
-              step="05"
+              step="06"
               title="PlayStyles"
               aside={
                 <span className="font-display text-lg font-bold tabular-nums text-slate-300" title="Slots open at levels 5, 15, 40 and 55">
@@ -711,24 +959,43 @@ export default function BuildPlannerPage() {
               </div>
             </Panel>
 
-            <Panel step="06" title="Bring a build in">
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  value={importText}
-                  placeholder="Paste a GafferBot or Pro Clubs Builder link"
-                  aria-label="Build link to import"
-                  onChange={(e) => {
-                    setImportText(e.target.value);
-                    setImportNote(null);
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+              <Panel step="07" title="My builds">
+                <MyBuildsPanel
+                  build={build}
+                  currentId={savedId}
+                  units={units}
+                  accent={accent}
+                  onSaved={(id) => {
+                    setSavedId(id);
+                    toast({ title: "Build saved" });
                   }}
-                  className="border-white/10 bg-black/30"
+                  onOpen={(b, id) => {
+                    setBuild(normaliseBuild(b));
+                    setSavedId(id);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
                 />
-                <button className={ghostBtn} onClick={doImport} disabled={!importText.trim()}>
-                  <Import className="h-4 w-4" /> Import
-                </button>
-              </div>
-              {importNote && <p className="mt-2 text-xs text-slate-400">{importNote}</p>}
-            </Panel>
+              </Panel>
+              <Panel step="08" title="Bring a build in">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    value={importText}
+                    placeholder="Paste a GafferBot or Pro Clubs Builder link"
+                    aria-label="Build link to import"
+                    onChange={(e) => {
+                      setImportText(e.target.value);
+                      setImportNote(null);
+                    }}
+                    className="border-white/10 bg-black/30"
+                  />
+                  <button className={ghostBtn} onClick={doImport} disabled={!importText.trim()}>
+                    <Import className="h-4 w-4" /> Import
+                  </button>
+                </div>
+                {importNote && <p className="mt-2 text-xs text-slate-400">{importNote}</p>}
+              </Panel>
+            </div>
 
             <section className="rounded-3xl border border-white/10 bg-black/20 p-4 text-sm text-slate-400 sm:p-6">
               <h2 className="mb-2 flex items-center gap-2 font-display text-lg font-bold uppercase tracking-wide text-white">
@@ -764,24 +1031,6 @@ export default function BuildPlannerPage() {
         </div>
       </div>
 
-      {/* Phone: AP and share always in reach */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-white/10 bg-[#05080c]/85 px-4 py-3 backdrop-blur-xl lg:hidden">
-        <div className="mx-auto flex max-w-6xl items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="truncate font-display text-sm font-bold uppercase tracking-wide" style={{ color: accent }}>
-              {arch.name} · Lvl {build.level}
-              {build.name ? <span className="text-slate-400"> · {build.name}</span> : null}
-            </div>
-            <div className="text-sm tabular-nums text-slate-300">
-              <b className="text-white">{summary.spent}</b>/{summary.available} AP
-              <span className={over ? "text-rose-400" : ""}> · {over ? `${-summary.remaining} over` : `${summary.remaining} left`}</span>
-            </div>
-          </div>
-          <button className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold text-[#05080c]" style={{ background: accent }} onClick={share}>
-            <Link2 className="h-4 w-4" /> Share
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

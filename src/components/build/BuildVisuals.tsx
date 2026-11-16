@@ -2,7 +2,7 @@
 // radar, the shareable build card (one SVG, shown on the page and saved as a PNG as-is), attribute
 // meters on the real 1-99 scale you can drag, and the body silhouette.
 import { forwardRef, useCallback, useRef } from "react";
-import { ARCHETYPES, ATTR_GROUPS, type AttrGroup, type Build } from "@/lib/proBuild";
+import { ARCHETYPES, ATTR_GROUPS, formatHeight, formatWeight, type AttrGroup, type Build, type Units } from "@/lib/proBuild";
 
 export const GROUP_COLORS: Record<AttrGroup, string> = {
   pace: "#22d3ee",
@@ -182,8 +182,11 @@ export const BuildCard = forwardRef<
     topGroups: string[];
     signatures: { name: string; plus: boolean }[];
     specialization: { name: string; plus: string; met: boolean } | null;
+    units?: Units;
+    accel?: string;
+    photo?: string | null; // data URL of the player's own pro photo
   }
->(function BuildCard({ build, values, ghost, spent, available, topGroups, signatures, specialization }, ref) {
+>(function BuildCard({ build, values, ghost, spent, available, topGroups, signatures, specialization, units = "imperial", accel, photo }, ref) {
   const arch = ARCHETYPES.find((a) => a.key === build.archetype)!;
   const accent = LINE_COLORS[arch.line];
   const groups = radarGroups(build);
@@ -212,6 +215,16 @@ export const BuildCard = forwardRef<
           <stop offset="0" stopColor={accent} stopOpacity="0.28" />
           <stop offset="1" stopColor={accent} stopOpacity="0" />
         </radialGradient>
+        <linearGradient id="card-photo-fade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0.55" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#000000" />
+        </linearGradient>
+        <mask id="card-photo-mask">
+          <rect x="196" y="4" width="160" height="200" fill="url(#card-photo-fade)" />
+        </mask>
+        <clipPath id="card-clip">
+          <rect x="4" y="4" width={W - 8} height={H - 8} rx="20" />
+        </clipPath>
         <pattern id="card-hex" width="14" height="24" patternUnits="userSpaceOnUse" patternTransform="scale(1.2)">
           <path d="M7 0 L14 4 L14 12 L7 16 L0 12 L0 4 Z M7 16 L7 24" fill="none" stroke="#ffffff" strokeOpacity="0.035" />
         </pattern>
@@ -219,6 +232,12 @@ export const BuildCard = forwardRef<
       <rect x="1.5" y="1.5" width={W - 3} height={H - 3} rx="22" fill="url(#card-bg)" stroke="url(#card-edge)" strokeWidth="3" />
       <rect x="4" y="4" width={W - 8} height={H - 8} rx="20" fill="url(#card-hex)" />
       <rect x="4" y="4" width={W - 8} height={H - 8} rx="20" fill="url(#card-glow)" />
+      {/* The player's own pro photo, top right, fading into the card */}
+      {photo && (
+        <g clipPath="url(#card-clip)">
+          <image href={photo} x="196" y="4" width="160" height="200" preserveAspectRatio="xMidYMin slice" mask="url(#card-photo-mask)" opacity="0.92" />
+        </g>
+      )}
 
       <g style={{ fontFamily: "Rajdhani, 'Exo 2', Arial, sans-serif" }}>
         <text x="26" y="44" fontSize="12" fontWeight="700" letterSpacing="2.5" fill={accent}>
@@ -230,7 +249,7 @@ export const BuildCard = forwardRef<
         <text x="26" y="100" fontSize="15" fill="#cbd5e1">
           {(build.name || "Untitled build").slice(0, 34)}
         </text>
-        <g transform={`translate(${W - 76} 26)`}>
+        <g transform={photo ? `translate(${W - 66} 150)` : `translate(${W - 76} 26)`}>
           <rect width="50" height="58" rx="12" fill="#ffffff" fillOpacity="0.06" stroke={accent} strokeOpacity="0.6" />
           <text x="25" y="20" textAnchor="middle" fontSize="10" letterSpacing="1.5" fill="#94a3b8">
             LVL
@@ -245,9 +264,17 @@ export const BuildCard = forwardRef<
         <g transform="translate(26 368)" fontSize="13" fill="#e2e8f0">
           <text>
             <tspan fill="#94a3b8">HT </tspan>
-            {build.heightCm} cm
-            <tspan fill="#94a3b8" dx="14">WT </tspan>
-            {build.weightKg} kg
+            {formatHeight(build.heightCm, units)}
+            <tspan fill="#94a3b8" dx="12">WT </tspan>
+            {formatWeight(build.weightKg, units)}
+            {accel && (
+              <>
+                <tspan fill="#94a3b8" dx="12">
+                  ·{" "}
+                </tspan>
+                {accel}
+              </>
+            )}
           </text>
           <text x={W - 52} textAnchor="end">
             <tspan fill="#94a3b8">SM </tspan>
