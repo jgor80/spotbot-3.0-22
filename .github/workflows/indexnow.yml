@@ -1,0 +1,29 @@
+name: IndexNow
+
+# Pings Bing and the other IndexNow search engines about gafferbot.app's public pages
+# (scripts/indexnow.mjs): after each deploy of the website, and daily for the Social Hub pages.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/**"
+      - "!public/spotbot/**"
+      - "scripts/prerender.mjs"
+      - "worker/**"
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Give Cloudflare's build a head start; the script then waits for the key file to be live
+      - if: github.event_name == 'push'
+        run: sleep 150
+      - run: node scripts/indexnow.mjs ${{ github.event_name == 'schedule' && '--only-hubs' || '' }}
