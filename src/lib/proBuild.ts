@@ -2,12 +2,16 @@
 // PlayStyles, priced and unlocked the way the game does it (rules and data in proClubsData.ts), saved in a short
 // share code (gafferbot.app/build?b=...). Builds from Pro Clubs Builder share links can be imported.
 import {
-  ACCELERATE, AP_BY_LEVEL, ARCHETYPE_RULES, ATTRIBUTE_KEYS, BODY, BODY_EFFECTS, CAPS, COST_BANDS, COST_TIERS,
-  LEVEL_CAP, MASTERIES, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, SIGNATURE_PLUS_LEVELS, SPECIALIZATIONS, START_VALUES,
-  type AttrKey, type PlayStyleDef, type Specialization, type StyleGroup,
+  ACCELERATE, AP_BY_LEVEL, ARCHETYPE_RULES, ATTR_MAX, ATTR_MIN, ATTRIBUTE_KEYS, BODY, BODY_EFFECTS, BODY_STEP, CAPS, COST_BANDS,
+  COST_TIERS, FACILITY_BOOST_MAX, LEVEL_CAP, MASTERIES, MASTERY_MILESTONES, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, RULESET,
+  SIGNATURE_PERK_LEVELS, SIGNATURE_PLUS_LEVELS, SPECIALIZATION_TARGETS, SPECIALIZATIONS, STARS, START_VALUES,
+  type AttrKey, type PlayStyleDef, type Specialization, type StarRule, type StyleGroup,
 } from "./proClubsData.ts";
 
-export { AP_BY_LEVEL, ARCHETYPE_RULES, BODY, LEVEL_CAP, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, SPECIALIZATIONS, type AttrKey, type PlayStyleDef, type Specialization, type StyleGroup };
+export {
+  AP_BY_LEVEL, ARCHETYPE_RULES, ATTR_MAX, ATTR_MIN, BODY, LEVEL_CAP, MASTERY_MILESTONES, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, RULESET,
+  SPECIALIZATION_TARGETS, SPECIALIZATIONS, STARS, type AttrKey, type PlayStyleDef, type Specialization, type StarRule, type StyleGroup,
+};
 
 export type Line = "GK" | "DEF" | "MID" | "FWD";
 
@@ -113,18 +117,18 @@ const STYLE_ALIASES: Record<string, string> = { "Game Changer": "Gamechanger", "
 export const canonStyle = (name: string) => STYLE_ALIASES[name] ?? name;
 
 export const LEVEL_MAX = LEVEL_CAP;
-export const HEIGHT_RANGE: [number, number] = [162, 200];
-export const WEIGHT_RANGE: [number, number] = [60, 100];
-export const POINTS_MAX_PER_ATTR = 59;
+// The widest body any archetype allows (each archetype's own range is in BODY)
+export const HEIGHT_RANGE: [number, number] = [Math.min(...Object.values(BODY).map((b) => b.h[0])), Math.max(...Object.values(BODY).map((b) => b.h[1]))];
+export const WEIGHT_RANGE: [number, number] = [Math.min(...Object.values(BODY).map((b) => b.w[0])), Math.max(...Object.values(BODY).map((b) => b.w[1]))];
 
 export interface Build {
   name: string;
   archetype: string; // ARCHETYPES key
-  level: number; // 1..55
+  level: number; // 1..LEVEL_CAP
   heightCm: number;
   weightKg: number;
-  skillMoves: number; // 1-5
-  weakFoot: number; // 1-5
+  skillMoves: number; // stars, within the archetype's range (STARS); extra stars cost AP
+  weakFoot: number; // same
   points: Record<string, number>; // attribute key -> points added above the archetype's starting value
   playstyles: string[]; // regular PlayStyles picked for the slots (Signatures are automatic)
   specialization: string | null; // SPECIALIZATIONS key
@@ -133,9 +137,27 @@ export interface Build {
   boosts: Record<string, number>; // attribute key -> club facility boost (in matches)
 }
 
-// Club facilities: the boost a club's facilities give one attribute in matches. FC 27's facility list
-// isn't published in numbers, so players type in what their club has; this is the most we accept.
-export const BOOST_MAX = 10;
+// Club facilities: the most the planner accepts for one attribute's boost (see FACILITY_BOOST_MAX).
+export const BOOST_MAX = FACILITY_BOOST_MAX;
+
+// ---------- Skill move and weak foot stars ----------
+export type StarKind = "skillMoves" | "weakFoot";
+const NO_STARS: StarRule = { start: 1, max: 5, cost: [0, 0, 0, 0] };
+export const starRule = (archetype: string, kind: StarKind): StarRule => STARS[archetype]?.[kind] ?? NO_STARS;
+// AP to take an archetype from its starting stars to `stars`
+export function starCost(archetype: string, kind: StarKind, stars: number): number {
+  const r = starRule(archetype, kind);
+  let t = 0;
+  for (let s = r.start + 1; s <= Math.min(stars, r.max); s++) t += r.cost[s - r.start - 1] ?? 0;
+  return t;
+}
+// AP for the next star, or null at the archetype's maximum
+export const nextStarCost = (archetype: string, kind: StarKind, stars: number): number | null => {
+  const r = starRule(archetype, kind);
+  return stars >= r.max ? null : (r.cost[stars - r.start] ?? 0);
+};
+export const starsAp = (b: Pick<Build, "archetype" | "skillMoves" | "weakFoot">) =>
+  starCost(b.archetype, "skillMoves", b.skillMoves) + starCost(b.archetype, "weakFoot", b.weakFoot);
 
 const archOf = (key: string) => ARCHETYPES.find((a) => a.key === key) ?? ARCHETYPES[ARCHETYPES.length - 2];
 export const isKeeper = (archetype: string) => archOf(archetype).line === "GK";
@@ -146,8 +168,8 @@ export const emptyBuild = (archetype = "finisher"): Build => ({
   level: 1,
   heightCm: BODY[archetype]?.startH ?? 180,
   weightKg: BODY[archetype]?.startW ?? 75,
-  skillMoves: 3,
-  weakFoot: 3,
+  skillMoves: starRule(archetype, "skillMoves").start,
+  weakFoot: starRule(archetype, "weakFoot").start,
   points: {},
   playstyles: [],
   specialization: null,
@@ -165,8 +187,9 @@ const int = (v: unknown, lo: number, hi: number, fallback: number) => {
 // ---------- Attribute values and prices ----------
 export const startValue = (archetype: string, key: string) => START_VALUES[archetype]?.[KEY_INDEX.get(key) ?? -1] ?? 0;
 export const trainable = (archetype: string, key: string) => startValue(archetype, key) > 0;
-export const attrCap = (archetype: string, key: string) => (trainable(archetype, key) ? (CAPS[archetype]?.[key as AttrKey] ?? 99) : 0);
-export const capConfirmed = (archetype: string, key: string) => CAPS[archetype]?.[key as AttrKey] !== undefined;
+// The archetype's ceiling for an attribute (never below its starting value)
+export const attrCap = (archetype: string, key: string) =>
+  trainable(archetype, key) ? Math.max(startValue(archetype, key), CAPS[archetype]?.[KEY_INDEX.get(key) ?? -1] || ATTR_MAX) : 0;
 export const costTier = (archetype: string, key: string) => COST_TIERS[archetype]?.[KEY_INDEX.get(key) ?? -1] ?? 0;
 
 // AP for one point that takes the attribute up to `value`
@@ -186,9 +209,8 @@ export function costBetween(archetype: string, key: string, from: number, to: nu
 
 export const trainedValue = (b: Build, key: string) => (trainable(b.archetype, key) ? startValue(b.archetype, key) + (b.points[key] ?? 0) : 0);
 
-// Mastery from levelling this archetype (other archetypes' masteries aren't known here)
-// Masteries: every archetype you've levelled adds +1 to its pair at level 10, the second again at 30 and the
-// first again at 55, on every archetype you play. This build's own level counts for its own archetype.
+// Masteries: every archetype you've levelled adds to its pair of attributes at each MASTERY_MILESTONES
+// level, on every archetype you play. This build's own level counts for its own archetype.
 export function masteryLevelOf(b: Build, archetype: string): number {
   const own = archetype === b.archetype ? b.level : 0;
   return Math.max(own, b.masteryLevels?.[archetype] ?? 0);
@@ -196,16 +218,15 @@ export function masteryLevelOf(b: Build, archetype: string): number {
 export function masteryBonus(b: Build, key: string): number {
   let n = 0;
   for (const [arch, pair] of Object.entries(MASTERIES)) {
-    const level = masteryLevelOf(b, arch);
-    if (level < 10) continue;
     const [first, second] = pair;
-    if (key === first) n += 1 + (level >= 55 ? 1 : 0);
-    if (key === second) n += 1 + (level >= 30 ? 1 : 0);
+    if (key !== first && key !== second) continue;
+    const level = masteryLevelOf(b, arch);
+    for (const m of MASTERY_MILESTONES) if (level >= m.level) n += key === first ? m.first : m.second;
   }
   return n;
 }
 
-export const menuValue = (b: Build, key: string) => (trainable(b.archetype, key) ? Math.min(99, trainedValue(b, key) + masteryBonus(b, key)) : 0);
+export const menuValue = (b: Build, key: string) => (trainable(b.archetype, key) ? Math.min(ATTR_MAX, trainedValue(b, key) + masteryBonus(b, key)) : 0);
 
 const steps = (diff: number, per: number) => Math.sign(diff) * Math.ceil(Math.abs(diff) / per);
 // Height/weight shifts, applied in matches only
@@ -215,8 +236,8 @@ export function bodyEffects(b: Build): Partial<Record<AttrKey, number>> {
   const out: Partial<Record<AttrKey, number>> = {};
   const add = (keys: readonly AttrKey[], n: number) => keys.forEach((k) => (out[k] = (out[k] ?? 0) + n));
   if (!body) return out;
-  const h = steps(b.heightCm - body.startH, 4);
-  const w = steps(b.weightKg - body.startW, 8);
+  const h = steps(b.heightCm - body.startH, BODY_STEP.heightCm);
+  const w = steps(b.weightKg - body.startW, BODY_STEP.weightKg);
   add(fx.taller.up, h);
   add(fx.taller.down, -h);
   add(fx.heavier.up, w);
@@ -227,7 +248,7 @@ export function bodyEffects(b: Build): Partial<Record<AttrKey, number>> {
 
 // In matches: menu value plus height/weight and the club's facility boost
 export const matchValue = (b: Build, key: string, fx = bodyEffects(b)) =>
-  trainable(b.archetype, key) ? clamp(menuValue(b, key) + (fx[key as AttrKey] ?? 0) + (b.boosts?.[key] ?? 0), 1, 99) : 0;
+  trainable(b.archetype, key) ? clamp(menuValue(b, key) + (fx[key as AttrKey] ?? 0) + (b.boosts?.[key] ?? 0), ATTR_MIN, ATTR_MAX) : 0;
 
 // AcceleRATE from the in-match values (body and facility boosts count). `explosive` and `lengthy` list
 // what's still short for each, so the page can say what it would take.
@@ -265,11 +286,14 @@ export const formatWeight = (kg: number, units: Units = "imperial") => (units ==
 
 // ---------- AP ----------
 export const apAtLevel = (level: number) => AP_BY_LEVEL[clamp(Math.round(level), 1, LEVEL_CAP)];
-export function apSpent(b: Build): number {
+// AP on attributes only
+export function attributeAp(b: Build): number {
   let t = 0;
   for (const [k, p] of Object.entries(b.points)) if (p > 0) t += costBetween(b.archetype, k, startValue(b.archetype, k), startValue(b.archetype, k) + p);
   return t;
 }
+// Everything the build spends: attributes plus extra skill move and weak foot stars
+export const apSpent = (b: Build): number => attributeAp(b) + starsAp(b);
 // Lowest level whose AP covers what the build spends (null if more than the cap allows)
 export function levelNeeded(spent: number): number | null {
   const lvl = AP_BY_LEVEL.findIndex((ap, i) => i >= 1 && ap >= spent);
@@ -330,6 +354,27 @@ export function playstyleStatus(b: Build): StyleStatus[] {
 export const playstyleSlots = (level: number) => PLAYSTYLE_SLOT_LEVELS.filter((l) => level >= l).length;
 export const nextSlotLevel = (level: number) => PLAYSTYLE_SLOT_LEVELS.find((l) => level < l) ?? null;
 
+// What each level unlocks, built from the data tables (so a new cap or milestone shows up by itself)
+export function levelRewards(): { level: number; rewards: string[] }[] {
+  const at = new Map<number, string[]>();
+  const add = (level: number, text: string) => at.set(level, [...(at.get(level) ?? []), text]);
+  PLAYSTYLE_SLOT_LEVELS.forEach((l, i) => add(l, `PlayStyle slot ${i + 1}`));
+  SIGNATURE_PERK_LEVELS.forEach((l, i) => add(l, `Signature Perk ${i + 1}`));
+  SIGNATURE_PLUS_LEVELS.forEach((l, i) => add(l, `Signature ${i + 1} becomes PlayStyle+`));
+  for (const m of MASTERY_MILESTONES) add(m.level, `Mastery ${[m.first, m.second].filter(Boolean).map((n) => `+${n}`).join(" ")}`);
+  return [...at.entries()].sort((x, y) => x[0] - y[0]).map(([level, rewards]) => ({ level, rewards }));
+}
+
+// "+1 Composure and +1 Finishing at level 10, +1 Finishing at 30, +1 Composure at 55" for one archetype's Mastery
+export function masteryText(archetype: string, label: (key: string) => string): string {
+  const pair = MASTERIES[archetype];
+  if (!pair) return "";
+  return MASTERY_MILESTONES.map((m, i) => {
+    const parts = [m.first ? `+${m.first} ${label(pair[0])}` : "", m.second ? `+${m.second} ${label(pair[1])}` : ""].filter(Boolean).join(" and ");
+    return `${parts} at ${i === 0 ? "level " : ""}${m.level}`;
+  }).join(", ");
+}
+
 export interface SpecStatus { spec: Specialization; met: boolean; missing: Missing[]; apToReach: number | null }
 export function specializationStatus(b: Build): SpecStatus[] {
   return SPECIALIZATIONS.filter((s) => s.archetype === b.archetype).map((spec) => {
@@ -359,8 +404,8 @@ export function normaliseBuild(b: Partial<Build>): Build {
     level: int(b.level, 1, LEVEL_CAP, 1),
     heightCm: int(b.heightCm, body.h[0], body.h[1], base.heightCm),
     weightKg: int(b.weightKg, body.w[0], body.w[1], base.weightKg),
-    skillMoves: int(b.skillMoves, 1, 5, 3),
-    weakFoot: int(b.weakFoot, 1, 5, 3),
+    skillMoves: int(b.skillMoves, starRule(archetype, "skillMoves").start, starRule(archetype, "skillMoves").max, base.skillMoves),
+    weakFoot: int(b.weakFoot, starRule(archetype, "weakFoot").start, starRule(archetype, "weakFoot").max, base.weakFoot),
     points,
     playstyles: [...new Set((b.playstyles ?? []).map(canonStyle).filter((p) => known.has(p) && !sigs.has(p)))].slice(0, MAX_PLAYSTYLES),
     specialization: spec ? spec.key : null,
@@ -419,7 +464,8 @@ export function groupAverages(b: Build): Record<AttrGroup, number> {
 }
 
 export interface BuildSummary {
-  spent: number; // AP
+  spent: number; // AP, stars included
+  starsAp: number; // the part of it spent on skill move and weak foot stars
   available: number; // AP at this level
   remaining: number;
   levelNeeded: number | null;
@@ -435,7 +481,8 @@ export function buildSummary(b: Build): BuildSummary {
     const p = b.points[a.key];
     if (p) byGroup[a.group] += costBetween(b.archetype, a.key, startValue(b.archetype, a.key), startValue(b.archetype, a.key) + p);
   }
-  const focus = ATTR_GROUPS.map((g) => ({ group: g.key, label: g.label, share: spent ? byGroup[g.key] / spent : 0 }))
+  const onAttrs = attributeAp(b);
+  const focus = ATTR_GROUPS.map((g) => ({ group: g.key, label: g.label, share: onAttrs ? byGroup[g.key] / onAttrs : 0 }))
     .filter((f) => f.share > 0)
     .sort((x, y) => y.share - x.share);
   const notes: string[] = [];
@@ -448,7 +495,7 @@ export function buildSummary(b: Build): BuildSummary {
   if (locked.length) notes.push(`Not unlocked yet: ${locked.join(", ")}.`);
   const spec = specializationStatus(b).find((s) => s.spec.key === b.specialization);
   if (spec && !spec.met) notes.push(`${spec.spec.name} isn't reached yet.`);
-  return { spent, available, remaining: available - spent, levelNeeded: need, slots, focus, notes };
+  return { spent, starsAp: starsAp(b), available, remaining: available - spent, levelNeeded: need, slots, focus, notes };
 }
 
 // ---------- Share codes ----------

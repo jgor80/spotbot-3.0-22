@@ -9,37 +9,69 @@ for FC 27 Season 2 (from the 22 October 2026 update), cross-checked against each
 archetype notes (19 October 2026) confirm the 13 archetypes, the reset, and that each archetype prices
 each attribute differently.
 
-## Confirmed (sources agree, worked examples reproduce)
+## Audit, 16 November 2026
 
-| Part | How it works |
-| --- | --- |
-| Archetypes | 13: Shot Stopper, Sweeper Keeper, Progressor, Boss, Marauder, Disruptor, Recycler, Maestro, Creator, Spark, Magician, Finisher, Target. Each has its own starting value for all 34 attributes (keepers have 5 GK attributes, outfielders can't train them). |
-| Level and AP | Level cap 55. AP is a fixed chart by level: 100 at level 1, 224 at 10, 397 at 20, 962 at 40, 1,419 at 55. Big jumps land on every 5th level. |
-| AP prices | Each attribute sits on one of 4 price tiers for each archetype (cheapest to most expensive). A point's cost depends on the value you take it to: 1-2 AP up to 60, rising to 35-50 AP for the 99th point. So the last few points of an attribute cost as much as the first twenty. Example: 75→90 Crossing is 92 AP on a Marauder but 194 AP (from 45) on a Boss. |
-| Height and weight | Each archetype has its own range and default body. Every 4 cm from the default moves Jumping, Sprint Speed and Strength up and Acceleration, Agility and Balance down by 1 (the other way when shorter). Every 8 kg moves Balance, Jumping and Strength up and Acceleration, Agility and Sprint Speed down. Keepers have their own list (Diving, Reflexes, Handling). This applies in matches only; the menu shows trained values. |
-| AcceleRATE | 182 cm and under can be Explosive; 183 cm and over is Lengthy (Controlled at any height). |
-| PlayStyles | 36 (30 outfield, 6 keeper). Each unlocks when its 2-3 attributes reach set values (for example Finesse Shot: Curve 80, Finishing 80, Shot Power 75). Regular slots open at levels 5, 15, 40 and 55 (4 at the cap). |
-| Signatures | Each archetype has 2 Signature PlayStyles that come free and don't use a slot. The first becomes PlayStyle+ at level 20, the second at level 55. |
-| Signature Perks | One at level 10, a second (archetype-specific, triggered by a game situation) at level 45. |
-| Masteries | Levelling an archetype gives +1 to a pair of attributes at level 10, then +1 to the second at 30 and +1 to the first at 55. |
-| Specializations | 3 per archetype (39). Reach the first attribute at 92 and the other two at 90 to unlock one; it swaps a Signature for its PlayStyle+. One active at a time. The planner reproduces all 39 published AP costs from a fresh build (cheapest Finisher+ 308 AP, dearest Anchor 618 AP). |
-| Attribute caps | Confirmed caps below 99 are used (for example Boss Acceleration and Sprint Speed 90, Target Jumping 96, Finisher Standing Tackle 75). |
+Every table was checked again against EA's own pages and the community sources below. "Confirmed" means
+EA says it or two or more community sources agree and the numbers reproduce their worked examples. "One
+source" means it is published once and nothing contradicts it.
 
-## Not confirmed (the page says so)
+| Part | Status | Checked against |
+| --- | --- | --- |
+| 13 archetypes, free resets, AP reset on 22 October | Confirmed (EA) | EA Grounds deep dive; EA Archetypes Update, 19 Oct 2026 |
+| Level cap 55 and AP at every level (100 at 1, 224 at 10, 397 at 20, 962 at 40, 1,419 at 55) | Confirmed | Pro Clubs HQ level rewards, Pro Clubs Builder AP table: all 55 levels identical. Levels 41-55 are read in game by Pro Clubs HQ only |
+| AP price bands (1-2 AP up to 60, 35-50 AP for the 99th point) | Confirmed | Pro Clubs HQ and Pro Clubs Builder publish the same 15 bands |
+| Price tier of every attribute on every archetype (387 values) | Confirmed | Matches Pro Clubs HQ's data exactly, and every attribute EA lists as dearer or cheaper on 19 Oct sits where EA's note says |
+| Starting value of every attribute (387 values) | Confirmed | Matches Pro Clubs HQ exactly; PRO11 re-checked them in October |
+| Attribute ceilings (387 values) | One source, **fixed in this audit** | Pro Clubs HQ ceiling tables (PRO11 republishes them). The planner used to know 35 ceilings and treat the other 276 below 99 as 99. The full table reproduces every published "which archetypes can reach this PlayStyle" list |
+| Skill move and weak foot stars | One source, **fixed in this audit** | Each archetype has its own starting stars and maximum, and extra stars cost AP from the same budget (Finisher: 5★ skill moves 40 AP, 5★ weak foot 85 AP). The planner used to allow 1-5 on everything for free. Totals for all 13 are published; the star-by-star split is published for five archetypes and inferred for six rows |
+| Height and weight ranges and defaults | Confirmed | Pro Clubs HQ height and weight guide: all 13 identical |
+| Height and weight shifts (4 cm and 8 kg steps) | One source, carried over | Pro Clubs HQ says these are FC 26's shifts carried into FC 27, not re-measured |
+| 30 outfield PlayStyle requirements | Confirmed | Pro Clubs HQ (read in FC 27) and PRO11 agree on every row |
+| 6 goalkeeper PlayStyle requirements | Not confirmed | FC 26 values: a keeper's list hasn't been read in FC 27 |
+| PlayStyle slots (5, 15, 40, 55), PlayStyle+ (20, 55), Signature Perks (10, 45) | Confirmed | Pro Clubs HQ ladder, PRO11 archetype pages |
+| Signatures (two per archetype since 22 Oct) and level-45 perks | Confirmed | Pro Clubs HQ archetype changes, PRO11 |
+| Mastery pairs | Confirmed (EA) | EA's own table in the Grounds deep dive, all 13 pairs in the same order |
+| Mastery milestones (10: +1 +1, 30: +1 second, 55: +1 first) | Confirmed | EA gives the level 10 example; Pro Clubs HQ read 30 and 55 in game |
+| 35 of 39 Specializations (92 / 90 / 90) and their AP costs | Confirmed | Pro Clubs HQ and PRO11 agree; the planner reproduces every published cost |
+| Joker, Invader, Hunter, Runner | Not confirmed | EA removed Attacking Positioning from Specialization requirements on 22 Oct and named no replacement. Hunter (Balance) and Runner (Aggression) come from one player report on the EA Forums; Joker and Invader are shown with two requirements. Pro Clubs HQ still lists Attacking Positioning for all four |
+| AcceleRATE thresholds | Confirmed, except one | Pro Clubs HQ and FIFAUTeam agree on everything but Lengthy's minimum height: 183 cm (Pro Clubs HQ, FC 26 value carried over) or 185 cm (FIFAUTeam says it changed in FC 27). The planner uses 183 |
+| Club facility boosts | Not confirmed | No source publishes FC 27 facility numbers (FCClub says the values can't be read yet), so they are typed in by hand |
+| Amps | Not modelled | EA: up to three at a time, timed, attribute boosts and on the top tiers PlayStyles and PlayStyle+ |
 
-- Maximum values for most attributes: anything without a confirmed cap is treated as 99.
-- Keeper PlayStyle requirements: FC 26 values are used.
-- How skill moves and weak foot stars are set in FC 27: the stars are cosmetic on the card.
-- AP prices for keepers' Long Shots and Volleys.
-- Four Specializations have a requirement that is reported by players only or missing (Joker, Invader: third attribute unknown; Hunter, Runner: one target reported by players). They are marked on the card.
-- Whether Amps can give a PlayStyle+ is disputed; the planner doesn't model Amps.
+Two assumptions the planner makes that no source settles: Mastery points count towards PlayStyle and
+Specialization targets, and they can lift an attribute past its ceiling (up to 99).
+
+Sources: EA SPORTS FC 27 The Grounds Deep Dive and The Grounds Developer Archetypes Update (ea.com);
+Pro Clubs HQ guides (level rewards, AP costs, PlayStyle requirements, Masteries, Specializations, height
+and weight, AcceleRATE, archetypes head to head); Pro Clubs Builder (attribute points); PRO11 (archetype
+pages, Specializations); FIFAUTeam (FC 27 AcceleRATE); FCClub (club progression).
+
+## A new season or a higher level cap
+
+Everything the game decides is in `src/lib/proClubsData.ts`; pages and `proBuild.ts` read it and repeat
+nothing. To move to a new cap or season:
+
+1. Append the new levels' AP to `AP_GAINS`. `LEVEL_CAP` is the last level in that list, and the level
+   slider, AP bar and "level needed" follow.
+2. Add any new unlock level to `PLAYSTYLE_SLOT_LEVELS`, `SIGNATURE_PLUS_LEVELS`, `SIGNATURE_PERK_LEVELS`
+   or `MASTERY_MILESTONES`. The level ladder and the Mastery wording on the page are built from these.
+3. For new prices or ceilings edit `COST_TIERS`, `COST_BANDS`, `CAPS`; for stars `STARS`; for
+   Specialization targets `SPECIALIZATION_TARGETS` and `SPECIALIZATIONS`.
+4. Update `RULESET` (the season shown on the page) and `UNCONFIRMED_NOTES`.
+5. Run `deno test supabase/functions/_shared/pro-build.test.ts`: it checks that the tables cover every
+   archetype and attribute, that levels fit under the cap, and the published worked examples. Then
+   `npm run build:bot-probuild` and `node scripts/build-local-functions.mjs`.
+
+Only append to `ATTRIBUTE_KEYS`, `PLAYSTYLE_DEFS`, `SPECIALIZATIONS` and the archetype list: share codes
+store positions in them.
 
 ## How the planner uses it
 
 - The AP budget comes from the level (no more typing it in). The page shows AP spent, AP left and the
   lowest level that pays for the build.
-- Each attribute shows its starting value, trained value, cap, price tier, the AP for the next point and
+- Each attribute shows its starting value, trained value, ceiling, price tier, the AP for the next point and
   the in-match value after body effects.
+- Skill move and weak foot stars start at the archetype's own stars; extra ones are priced and count in AP spent.
 - Locked PlayStyles and Specializations show what they need and an "unlock for N AP" button that raises
   just the attributes needed (mastery points count).
 - Share links (`gb2` codes) store attributes as points above the archetype's starting value; old `gb1`
