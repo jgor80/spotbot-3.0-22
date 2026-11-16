@@ -694,7 +694,11 @@ client.on('messageCreate', (message) => {
   clips.onMessage(message).catch((err) => console.warn('[clips] failed:', err.message));
   twitchLive.onMessage(message).catch((err) => console.warn('[twitch-live] failed:', err.message));
   hubHighlights.onMessage(message).catch((err) => console.warn('[highlights] failed:', err.message));
+  bumpReminder.onMessage(message).catch((err) => console.warn('[bump] failed:', err.message));
 });
+// Disboard bump reminders (bump-reminder.cjs) and live server counts on the bot listing sites (bot-lists.cjs)
+const bumpReminder = require('./bump-reminder.cjs').createBumpReminder({ client });
+client.once('ready', () => { bumpReminder.start(); require('./bot-lists.cjs').start(client); });
 // Someone adding permissions to a position role (or making one by hand) gets them cleared straight away,
 // not just at the next restart.
 client.on('roleCreate', (role) => clearPositionRolePermissions(role).catch(() => {}));
