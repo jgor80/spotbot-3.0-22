@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bookmark, CheckCircle2, CircleOff, ExternalLink, Lock, Plus, Trash2, Users } from "lucide-react";
-import { futApi, futKeys, type KbSource, type KbStatus } from "@/lib/futApi";
+import { Bookmark, CheckCircle2, CircleOff, ExternalLink, Loader2, Lock, Plus, RotateCcw, Trash2, Users } from "lucide-react";
+import { futApi, futKeys, type KbArea, type KbSource, type KbStatus } from "@/lib/futApi";
 import { Busy, ErrorNotice } from "@/components/fut/FutShared";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -37,16 +38,21 @@ export function FeedStatus({ status }: { status: KbStatus }) {
     </div>
     <p className="text-sm text-muted-foreground">
       {status.paused ? "Collecting is paused (FUT_KNOWLEDGE=off). " : ""}
-      Last collected {ago(run?.finished_at)}{run ? `: ${run.read} source${run.read === 1 ? "" : "s"} read` : ""}{status.waiting ? `, ${status.waiting} waiting to be read` : ""}.
+      Last collected {ago(run?.finished_at)}{run ? `: ${run.read} source${run.read === 1 ? "" : "s"} read` : ""}{status.reading ? `, ${status.reading} being read now` : ""}{status.waiting ? `, ${status.waiting} waiting to be read` : ""}.
+      {" "}Sources you add are read straight away; anything still waiting is tried again every 10 minutes.
       {failures.map(([name, f]) => ` ${name} failed: ${f.error ?? "unknown error"}.`).join("")}
       {limited.map((name) => ` ${name === "reddit" ? "Reddit" : name} asked GafferBot to slow down, so it will try again next run.`).join("")}
     </p>
   </section>;
 }
 
-function AddSource() {
+type Bank = "auto" | KbArea;
+const BANK_LABEL: Record<Bank, string> = { auto: "Work it out from the text", fut: "Ultimate Team", proclubs: "Pro Clubs builds" };
+
+function AddSource({ onAdded }: { onAdded: () => void }) {
   const qc = useQueryClient();
   const [url, setUrl] = useState(""), [title, setTitle] = useState(""), [text, setText] = useState(""), [share, setShare] = useState(false);
+  const [bank, setBank] = useState<Bank>("auto");
   const [sent, setSent] = useState(false);
   // A page sent with the "Send to Knowledge Bank" button arrives in the #fragment: fill the form, then clear it.
   useEffect(() => {
@@ -56,8 +62,8 @@ function AddSource() {
     window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
   }, []);
   const add = useMutation({
-    mutationFn: () => futApi.knowledge.add({ url: url.trim() || undefined, title: title.trim() || undefined, text: text.trim() || undefined, share }),
-    onSuccess: () => { setUrl(""); setTitle(""); setText(""); setSent(false); qc.invalidateQueries({ queryKey: futKeys.knowledge }); },
+    mutationFn: () => futApi.knowledge.add({ url: url.trim() || undefined, title: title.trim() || undefined, text: text.trim() || undefined, share, area: bank === "auto" ? undefined : bank }),
+    onSuccess: () => { setUrl(""); setTitle(""); setText(""); setSent(false); onAdded(); qc.invalidateQueries({ queryKey: futKeys.knowledge }); },
   });
   const r = add.data;
   return <section aria-labelledby="add-title" className="space-y-3 rounded-xl border border-border bg-card p-4">
@@ -76,14 +82,22 @@ function AddSource() {
         <Textarea id="kb-text" rows={6} maxLength={MAX_TEXT} placeholder="Paste the post, the video's transcript or your notes" value={text} onChange={(e) => setText(e.target.value)} />
         <p className="text-right text-xs text-muted-foreground">{text.length.toLocaleString()} / {MAX_TEXT.toLocaleString()}</p>
       </div>
+      <div className="space-y-1">
+        <Label htmlFor="kb-bank">Which knowledge bank</Label>
+        <Select value={bank} onValueChange={(v) => setBank(v as Bank)}>
+          <SelectTrigger id="kb-bank" className="sm:w-72"><SelectValue /></SelectTrigger>
+          <SelectContent>{(Object.keys(BANK_LABEL) as Bank[]).map((b) => <SelectItem key={b} value={b}>{BANK_LABEL[b]}</SelectItem>)}</SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">Pro Clubs build videos and posts go to the community meta builds; Ultimate Team talk goes on the map.</p>
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <label className="flex items-center gap-2 text-sm"><Switch checked={share} onCheckedChange={setShare} disabled={!url.trim()} aria-describedby="kb-share-help" />Share with everyone</label>
-        <Button type="submit" disabled={add.isPending || (!url.trim() && text.trim().length < 40)}>{add.isPending ? "Reading…" : "Add and read"}</Button>
+        <Button type="submit" disabled={add.isPending || (!url.trim() && text.trim().length < 40)}>{add.isPending ? "Adding…" : "Add and read"}</Button>
       </div>
       <p id="kb-share-help" className="text-xs text-muted-foreground">Reddit and YouTube links are shared once fetched. Other sources stay private to you unless they have a link and you share them; notes are always private.</p>
     </form>
     <ErrorNotice error={add.error} />
-    {r && <p className="rounded-lg bg-muted p-3 text-sm" role="status">{r.claims ? `Added ${r.claims} claim${r.claims === 1 ? "" : "s"}${r.topics.length ? ` about ${r.topics.slice(0, 4).join(", ")}` : ""}.` : "Read it, but found no gameplay or strategy claims."} {r.summary}{r.shared ? " It's shared with everyone." : " Only you can see it."}</p>}
+    {r && <p className="rounded-lg bg-muted p-3 text-sm" role="status">Added to {r.area === "proclubs" ? "Pro Clubs builds" : "Ultimate Team"}. Claude is reading it now, which takes up to a minute: its status shows under Added by me below.{r.shared ? " It's shared with everyone." : " Only you can see it."}</p>}
   </section>;
 }
 
@@ -103,9 +117,22 @@ function BrowserButton() {
   </section>;
 }
 
-const STATUS: Record<KbSource["status"], string> = { pending: "Waiting", read: "Read", skipped: "No claims", failed: "Couldn't read" };
+/** Where a source is in reading, in plain words, with the reason when it's stuck. */
+export function SourceState({ s, onRetry, retrying }: { s: KbSource; onRetry?: (id: string) => void; retrying?: boolean }) {
+  const what = s.area === "proclubs" ? "build" : "claim";
+  if (s.status === "reading") return <span className="inline-flex items-center gap-1 font-medium text-primary"><Loader2 className="h-3 w-3 animate-spin" aria-hidden />Reading now…</span>;
+  const retry = s.mine && onRetry && (s.status === "failed" || s.status === "pending")
+    ? <Button type="button" variant="link" size="sm" className="h-auto p-0 text-xs" disabled={retrying} onClick={() => onRetry(s.id)}><RotateCcw className="mr-1 h-3 w-3" />Try again</Button> : null;
+  if (s.status === "pending") return <span className="inline-flex flex-wrap items-center gap-1 text-warning">Waiting to be read{s.note ? `: ${s.note.replace(/^Waiting: /, "")}` : ""} {retry}</span>;
+  if (s.status === "failed") return <span className="inline-flex flex-wrap items-center gap-1 text-destructive">Couldn't read{s.note ? `: ${s.note}` : ""} {retry}</span>;
+  if (s.status === "skipped") return <span>Read: no {s.area === "proclubs" ? "Pro Clubs builds" : "gameplay or strategy claims"} found</span>;
+  return <span>{s.claims} {what}{s.claims === 1 ? "" : "s"}</span>;
+}
 
-function SourceRow({ s, onDelete, deleting }: { s: KbSource; onDelete: (id: string) => void; deleting: boolean }) {
+/** Keep checking while one of your sources is being read or waiting. */
+const pollWhileReading = (sources: KbSource[] | undefined) => sources?.some((s) => s.mine && (s.status === "reading" || s.status === "pending")) ? 4000 : false;
+
+function SourceRow({ s, onDelete, deleting, onRetry, retrying }: { s: KbSource; onDelete: (id: string) => void; deleting: boolean; onRetry: (id: string) => void; retrying: boolean }) {
   return <li className="flex items-start justify-between gap-3 rounded-lg border border-border p-3 text-sm">
     <div className="min-w-0 flex-1 space-y-1">
       {s.url ? <a href={s.url} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex max-w-full items-center gap-1 font-medium hover:underline"><span className="truncate">{sourceLabel(s)}</span><ExternalLink className="h-3 w-3 shrink-0" /></a>
@@ -114,11 +141,11 @@ function SourceRow({ s, onDelete, deleting }: { s: KbSource; onDelete: (id: stri
       <p className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
         <span>{ago(s.published_at)}</span>
         {s.score > 0 && <span>· {s.score.toLocaleString()} {s.kind === "youtube" ? "views" : "upvotes"}</span>}
-        <span>· {s.claims} claim{s.claims === 1 ? "" : "s"}</span>
-        {s.status !== "read" && <span>· {STATUS[s.status]}</span>}
+        {s.area === "proclubs" && <span>· Pro Clubs builds</span>}
+        <span>· <SourceState s={s} onRetry={onRetry} retrying={retrying} /></span>
         {s.mine && <span className="inline-flex items-center gap-1">· {s.shared ? <><Users className="h-3 w-3" />shared by you</> : <><Lock className="h-3 w-3" />private</>}</span>}
       </p>
-      {s.claims > 0 && <ApplyToTeam source={s.id} compact />}
+      {s.claims > 0 && s.area !== "proclubs" && <ApplyToTeam source={s.id} compact />}
     </div>
     {s.mine && <Button type="button" variant="ghost" size="icon" aria-label="Delete this source" disabled={deleting} onClick={() => onDelete(s.id)}><Trash2 className="h-4 w-4" /></Button>}
   </li>;
@@ -128,11 +155,20 @@ export function SourcesPanel() {
   const qc = useQueryClient();
   const [mine, setMine] = useState(false);
   const [page, setPage] = useState(0);
-  const list = useQuery({ queryKey: [...futKeys.knowledge, "sources", mine, page], queryFn: () => futApi.knowledge.sources(mine, page), placeholderData: keepPreviousData });
+  const list = useQuery({ queryKey: [...futKeys.knowledge, "sources", mine, page], queryFn: () => futApi.knowledge.sources(mine, page), placeholderData: keepPreviousData,
+    refetchInterval: (q) => pollWhileReading(q.state.data?.sources) });
+  // When a read finishes, the map, topics and builds pick it up
+  const busy = !!pollWhileReading(list.data?.sources);
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (wasBusy.current && !busy) { qc.invalidateQueries({ queryKey: futKeys.knowledge }); qc.invalidateQueries({ queryKey: ["meta-builds"] }); }
+    wasBusy.current = busy;
+  }, [busy, qc]);
   const remove = useMutation({ mutationFn: futApi.knowledge.remove, onSuccess: () => qc.invalidateQueries({ queryKey: futKeys.knowledge }) });
+  const retry = useMutation({ mutationFn: futApi.knowledge.retry, onSuccess: () => qc.invalidateQueries({ queryKey: futKeys.knowledge }) });
   const pages = Math.max(1, Math.ceil((list.data?.total ?? 0) / 30));
   return <div className="space-y-4">
-    <AddSource />
+    <AddSource onAdded={() => { setMine(true); setPage(0); }} />
     <BrowserButton />
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -141,9 +177,9 @@ export function SourcesPanel() {
           <TabsList><TabsTrigger value="all">All</TabsTrigger><TabsTrigger value="mine">Added by me</TabsTrigger></TabsList>
         </Tabs>
       </div>
-      <ErrorNotice error={list.error ?? remove.error} />
+      <ErrorNotice error={list.error ?? remove.error ?? retry.error} />
       {list.isPending ? <Busy /> : list.data?.sources.length
-        ? <ul className="space-y-2">{list.data.sources.map((s) => <SourceRow key={s.id} s={s} onDelete={(id) => remove.mutate(id)} deleting={remove.isPending} />)}</ul>
+        ? <ul className="space-y-2">{list.data.sources.map((s) => <SourceRow key={s.id} s={s} onDelete={(id) => remove.mutate(id)} deleting={remove.isPending} onRetry={(id) => retry.mutate(id)} retrying={retry.isPending} />)}</ul>
         : <p className="text-sm text-muted-foreground">{mine ? "You haven't added any sources yet." : "No sources yet."}</p>}
       {pages > 1 && <div className="flex items-center justify-end gap-2 text-sm">
         <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>Newer</Button>

@@ -37,7 +37,7 @@ import { findPlayers, MAX_FINDER_TEXT, searchPlayers, type FinderTurn } from "..
 import { cleanPlayerQuery } from "../_shared/fut/stats.ts";
 import { cardImages } from "../_shared/fut/card-images.ts";
 import {
-  addSource, ask, deleteKnowledgeSource, KB_CATEGORIES, knowledgeMap, knowledgeSources, knowledgeStatus, knowledgeTopic, MAX_ADD_TEXT, MAX_QUESTION,
+  addSource, ask, deleteKnowledgeSource, retrySource, runKnowledgeQueue, KB_CATEGORIES, knowledgeMap, knowledgeSources, knowledgeStatus, knowledgeTopic, MAX_ADD_TEXT, MAX_QUESTION,
   runKnowledgeIngest, type AskTurn,
 } from "../_shared/fut/knowledge.ts";
 import { applyToTeam, loadTeam, teamPlan } from "../_shared/fut/knowledge-team.ts";
@@ -74,6 +74,15 @@ export interface Deps {
   isBot?: (req: Request) => Promise<boolean>;
   /** Outbound HTTP for third-party price pulls (tests pass a fake). */
   fetch?: (url: string) => Promise<Response>;
+  /** Keeps work going after the response (a source being read). Defaults to the edge runtime's waitUntil, else lets it run. */
+  waitUntil?: (work: Promise<unknown>) => void;
+}
+
+/** Background work that outlives the request: the edge runtime needs telling; the bot's Node server just keeps running it. */
+function keepAlive(deps: Deps, work: Promise<unknown>) {
+  if (deps.waitUntil) return deps.waitUntil(work);
+  const rt = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
+  if (rt?.waitUntil) rt.waitUntil(work); else work.catch(() => {});
 }
 
 /** Price-history imports can be bigger than other requests (up to MAX_IMPORT_ROWS lines). */
@@ -200,7 +209,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (!(await deps.isBot?.(req))) return err(401, "Only the bot's scheduler can run jobs.");
     const jobBody = (await req.json().catch(() => null) ?? {}) as Record<string, unknown>;
     const job = jobBody.job;
-    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts" && job !== "strategy-learn" && job !== "club-pulls" && job !== "club-board" && job !== "club-whohas" && job !== "draft-board") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "knowledge-queue" && job !== "price-alerts" && job !== "strategy-learn" && job !== "club-pulls" && job !== "club-board" && job !== "club-whohas" && job !== "draft-board") return err(400, "Unknown job.");
     try {
       // Knowledge bank: collect Reddit/YouTube sources and read what's waiting (see knowledge.ts)
       if (job === "knowledge-ingest") {
@@ -217,6 +226,12 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
             skipped: r?.skipped ?? 0, failed: r?.failed ?? 0, error: failure });
         }
         return json({ data: result });
+      }
+      // Sources people added that are still waiting (every 10 minutes): no collecting, just reading
+      if (job === "knowledge-queue") {
+        const env = deps.env ?? ((k: string) => Deno.env.get(k));
+        if (env("FUT_KNOWLEDGE") === "off") return json({ data: { paused: true } });
+        return json({ data: await runKnowledgeQueue(deps.db, env, (deps.fetch as unknown as typeof fetch | undefined) ?? fetch) });
       }
       // Full card stats for Player Ratings, a few hundred cards per run (see futgg-attributes.ts)
       if (job === "futgg-attributes") return json({ data: await syncFutggAttributes(deps.db, deps.fetch) });
@@ -640,7 +655,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
     if (route.startsWith("/knowledge/")) {
       const baseEnv = deps.env ?? ((k: string) => Deno.env.get(k));
       // Status, adding a source and Ask use the user's own Claude key when they saved one; the map and lists need none.
-      const usesAi = route === "/knowledge/status" || route === "/knowledge/ask" || (route === "/knowledge/sources" && m === "POST")
+      const usesAi = route === "/knowledge/status" || route === "/knowledge/ask" || (route === "/knowledge/sources" && m === "POST") || /\/retry$/.test(route)
         || route === "/knowledge/apply" || route === "/knowledge/team-plan";
       const { env, own } = usesAi ? await envForUser(db, userId, baseEnv) : { env: baseEnv, own: false };
       const fetchFn = (deps.fetch as unknown as typeof fetch | undefined) ?? fetch;
@@ -666,7 +681,19 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
         if (typeof b.text === "string" && b.text.length > MAX_ADD_TEXT) throw new FutError(`Paste up to ${MAX_ADD_TEXT.toLocaleString("en")} characters.`);
         if (!(b.url as string | undefined)?.trim() && !(b.text as string | undefined)?.trim()) throw new FutError("Add a link or paste some text.");
         if (!aiImportAllowed(userId, own ? Infinity : Number(env("FUT_KB_ADDS_PER_HOUR")) || KB_ADDS_PER_HOUR, kbAdds)) throw new FutError("That's a lot of sources this hour. Try again later.", 429);
-        return json({ data: await addSource(db, userId, { url: b.url as string, text: b.text as string, title: b.title as string, share: b.share === true, area: b.area === "proclubs" ? "proclubs" : null }, env, fetchFn) }, 201);
+        const { reading, ...added } = await addSource(db, userId, { url: b.url as string, text: b.text as string, title: b.title as string, share: b.share === true,
+          area: b.area === "proclubs" || b.area === "fut" ? b.area : null }, env, fetchFn);
+        // Read in the background: the source list shows it as reading, then read (or why not)
+        keepAlive(deps, reading);
+        return json({ data: added }, 202);
+      }
+      const rs = route.match(/^\/knowledge\/sources\/([0-9a-f-]{36})\/retry$/);
+      if (rs && m === "POST") {
+        const again = await retrySource(db, userId, rs[1]!, env, fetchFn);
+        if (!again) return err(404, "You can only retry your own sources that are waiting or couldn't be read.");
+        const { reading, ...rest } = again;
+        keepAlive(deps, reading);
+        return json({ data: rest }, 202);
       }
       const sd = route.match(/^\/knowledge\/sources\/([0-9a-f-]{36})$/);
       if (sd && m === "DELETE") return (await deleteKnowledgeSource(db, userId, sd[1]!)) ? json({ data: { deleted: sd[1] } }) : err(404, "You can only delete sources you added.");

@@ -87,6 +87,15 @@ async function futKnowledge({ callFunction }) {
   if (error) throw new Error(`fut-knowledge: ${error?.message || error}`);
   console.log('⏰ fut-knowledge:', JSON.stringify(data?.data ?? data));
 }
+// Sources people added to the Knowledge Bank that are still waiting (a read that failed or never finished): read every
+// 10 minutes so nobody waits for the 3-hourly run. One small query when nothing is waiting.
+async function futKnowledgeQueue({ callFunction }) {
+  if (!knowledgeOn() || !callFunction) return;
+  const { data, error } = await callFunction('fut-api', { job: 'knowledge-queue' }, 280000);
+  if (error) throw new Error(`fut-knowledge-queue: ${error?.message || error}`);
+  const result = data?.data ?? data;
+  if (result?.read || result?.skipped || result?.failed || result?.feeds?.reader) console.log('⏰ fut-knowledge-queue:', JSON.stringify(result));
+}
 // Hourly FUT.GG check for charts (FUTGG_HOURLY=on, off by default): one manifest GET, and only when FUT.GG has newer
 // price files the index and those files, keeping just the hot cards (tracked, watched, in someone's club) for 14 days.
 const futggHourlyOn = () => futggOn() && process.env.FUTGG_HOURLY === 'on';
@@ -125,6 +134,8 @@ const JOBS = [
   { name: 'futgg-attributes', minutes: [7, 22, 37, 52], task: futggAttributes },
   // FUT knowledge bank: community posts and videos, read into claims (YouTube only on hours 1, 7, 13, 19 for its quota)
   { name: 'fut-knowledge', hours: [1, 4, 7, 10, 13, 16, 19, 22], minute: 41, task: futKnowledge },
+  // Knowledge Bank sources people added that are still waiting, every 10 minutes
+  { name: 'fut-knowledge-queue', minutes: [3, 13, 23, 33, 53], task: futKnowledgeQueue },
   { name: 'season-card-archive-nightly', hour: 6, minute: 30, rpc: ['refresh_player_season_archive'] },
   { name: 'monthly-archive-cleanup', day: 1, hour: 3, minute: 0, rpc: ['archive_old_global_league_matches', 'cleanup_old_event_occurrences', 'cleanup_mcp_oauth', 'cleanup_logs'] },
 ];

@@ -192,17 +192,26 @@ Deno.test("public meta-builds function and adding a build source on the website"
     const deps: Deps = {
       db: { rpc } as unknown as Deps["db"], userFor: () => Promise.resolve(ME), isBot: () => Promise.resolve(false), fetch: f.fetcher as unknown as Deps["fetch"],
       env: (k) => ({ FUT_ENABLED: "true", ANTHROPIC_API_KEY: "k", FUT_KB_REDDIT_RSS: "off" } as Record<string, string>)[k],
+      waitUntil: (p) => { background.push(p); },
     };
+    const background: Promise<unknown>[] = [];
     const add = async (b: unknown) => {
       const res = await handle(new Request("http://local/functions/v1/fut-api/v1/knowledge/sources", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }), deps);
-      return { status: res.status, data: await res.json() };
+      const data = await res.json();
+      while (background.length) await background.shift();
+      return { status: res.status, data };
     };
     const added = await add({ url: "https://www.youtube.com/watch?v=abcdefghijk", text: "My CB build: Boss, 6'4, 88 kg, Aerial Fortress, max Def Awareness and Strength.", share: true, area: "proclubs" });
-    eq(added.status, 201, JSON.stringify(added.data));
-    eq([added.data.data.claims, added.data.data.topics], [1, ["CB"]]);
+    eq(added.status, 202, JSON.stringify(added.data));
+    eq([added.data.data.status, added.data.data.area], ["reading", "proclubs"]);
+    // deno-lint-ignore no-explicit-any
+    const builds = ((await rpc("kb_source_list", { p_user: ME, p_mine: true })).data as any).sources;
+    eq([builds[0].status, builds[0].claims, builds[0].area], ["read", 1, "proclubs"]);
     // A build link alone is enough
-    eq((await add({ url: pcbLink, area: "proclubs", share: true })).status, 201);
-    eq((await add({ url: pcbLink })).status, 400, "an Ultimate Team source still needs text");
+    eq((await add({ url: pcbLink, area: "proclubs", share: true })).status, 202);
+    eq((await add({ url: pcbLink, area: "fut" })).status, 400, "an Ultimate Team source still needs text");
+    // Nobody said which bank: a build link is Pro Clubs on its own
+    eq((await add({ url: pcbLink })).data.data.area, "proclubs");
 
     clearCache();
     const handler = createHandler(() => ({ rpc }));
