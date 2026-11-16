@@ -2,14 +2,14 @@
 // PlayStyles, priced and unlocked the way the game does it (rules and data in proClubsData.ts), saved in a short
 // share code (gafferbot.app/build?b=...). Builds from Pro Clubs Builder share links can be imported.
 import {
-  ACCELERATE, AP_BY_LEVEL, ARCHETYPE_RULES, ATTR_MAX, ATTR_MIN, ATTRIBUTE_KEYS, BODY, BODY_EFFECTS, BODY_STEP, CAPS, COST_BANDS,
-  COST_TIERS, FACILITY_BOOST_MAX, LEVEL_CAP, MASTERIES, MASTERY_MILESTONES, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, RULESET,
+  ACCELERATE, AP_BY_LEVEL, AP_BY_LEVEL_ESTIMATE, ARCHETYPE_RULES, ATTR_MAX, ATTR_MIN, ATTRIBUTE_KEYS, BODY, BODY_EFFECTS, BODY_STEP, CAPS, COST_BANDS,
+  COST_TIERS, ESTIMATE_SOURCE, FACILITY_BOOST_MAX, LEVEL_CAP, MASTERIES, MASTERY_MILESTONES, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, RULESET,
   SIGNATURE_PERK_LEVELS, SIGNATURE_PLUS_LEVELS, SPECIALIZATION_TARGETS, SPECIALIZATIONS, STARS, START_VALUES,
   type AttrKey, type PlayStyleDef, type Specialization, type StarRule, type StyleGroup,
 } from "./proClubsData.ts";
 
 export {
-  AP_BY_LEVEL, ARCHETYPE_RULES, ATTR_MAX, ATTR_MIN, BODY, LEVEL_CAP, MASTERY_MILESTONES, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, RULESET,
+  AP_BY_LEVEL, ARCHETYPE_RULES, ATTR_MAX, ATTR_MIN, BODY, ESTIMATE_SOURCE, LEVEL_CAP, MASTERY_MILESTONES, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, RULESET,
   SPECIALIZATION_TARGETS, SPECIALIZATIONS, STARS, type AttrKey, type PlayStyleDef, type Specialization, type StarRule, type StyleGroup,
 };
 
@@ -300,6 +300,41 @@ export function levelNeeded(spent: number): number | null {
   return lvl === -1 ? null : lvl;
 }
 
+// The level a build's AP needs, looking past the cap when it has to. Up to LEVEL_CAP this is the game's own
+// ladder; above it the level is an ESTIMATE from AP_BY_LEVEL_ESTIMATE (see proClubsData.ts) and is flagged.
+export function levelNeededEstimate(spent: number): { level: number; estimate: boolean } | null {
+  const lvl = AP_BY_LEVEL_ESTIMATE.findIndex((ap, i) => i >= 1 && ap >= spent);
+  return lvl === -1 ? null : { level: lvl, estimate: lvl > LEVEL_CAP };
+}
+
+// "Limit to my level": an edit may not take the build past its level's AP. Raising one attribute goes as
+// far as the AP allows; lowering the level stops at the level the build needs; any other edit that would
+// overspend is refused (the build comes back unchanged, as the same object). Edits that don't add AP to a
+// build that is already over are let through, so an over-budget build can be brought back down.
+export function limitToLevel(prev: Build, next: Build): Build {
+  const spent = apSpent(next);
+  if (spent <= apAtLevel(next.level)) return next;
+  const before = apSpent(prev);
+  if (next.archetype === prev.archetype && spent <= before) {
+    if (next.level >= prev.level) return next;
+    const need = levelNeeded(spent) ?? prev.level;
+    return { ...next, level: Math.max(next.level, Math.min(prev.level, need)) };
+  }
+  if (next.archetype !== prev.archetype || next.level !== prev.level || starsAp(next) !== starsAp(prev)) return prev;
+  const raised = Object.keys(next.points).filter((k) => (next.points[k] ?? 0) > (prev.points[k] ?? 0));
+  const lowered = Object.keys(prev.points).some((k) => (next.points[k] ?? 0) < (prev.points[k] ?? 0));
+  if (raised.length !== 1 || lowered) return prev;
+  const key = raised[0];
+  const start = startValue(next.archetype, key);
+  let left = apAtLevel(next.level) - before;
+  let pts = prev.points[key] ?? 0;
+  while (pts < next.points[key] && pointCost(next.archetype, key, start + pts + 1) <= left) {
+    left -= pointCost(next.archetype, key, start + pts + 1);
+    pts++;
+  }
+  return pts > (prev.points[key] ?? 0) ? { ...next, points: { ...next.points, [key]: pts } } : prev;
+}
+
 // ---------- Unlocks ----------
 export interface Missing { key: string; need: number; have: number }
 // Points to add so every requirement is met; null when one is above the archetype's cap
@@ -468,7 +503,8 @@ export interface BuildSummary {
   starsAp: number; // the part of it spent on skill move and weak foot stars
   available: number; // AP at this level
   remaining: number;
-  levelNeeded: number | null;
+  levelNeeded: number | null; // within the cap
+  levelEstimate: number | null; // when it needs more than the cap gives: the estimated level (not a real FC 27 level)
   slots: number;
   focus: { group: AttrGroup; label: string; share: number }[]; // where the AP went
   notes: string[];
@@ -487,7 +523,13 @@ export function buildSummary(b: Build): BuildSummary {
     .sort((x, y) => y.share - x.share);
   const notes: string[] = [];
   const need = levelNeeded(spent);
-  if (spent > available) notes.push(need ? `${spent - available} AP over what level ${b.level} gives you: this build needs level ${need}.` : `${spent - available} AP over: more than even level ${LEVEL_CAP} gives (${apAtLevel(LEVEL_CAP)} AP).`);
+  const beyond = need ? null : levelNeededEstimate(spent);
+  if (spent > available)
+    notes.push(
+      need
+        ? `${spent - available} AP over what level ${b.level} gives you: this build needs level ${need}.`
+        : `${spent - available} AP over: more than level ${LEVEL_CAP}, today's cap, gives (${apAtLevel(LEVEL_CAP)} AP).${beyond ? ` Estimate: about level ${beyond.level} if the cap rises and later levels pay what ${ESTIMATE_SOURCE}'s did.` : ""}`,
+    );
   const slots = playstyleSlots(b.level);
   if (b.playstyles.length > slots) notes.push(`Level ${b.level} has ${slots} PlayStyle slot${slots === 1 ? "" : "s"}; ${b.playstyles.length} are picked.`);
   const status = new Map(playstyleStatus(b).map((s) => [s.def.name, s]));
@@ -495,7 +537,7 @@ export function buildSummary(b: Build): BuildSummary {
   if (locked.length) notes.push(`Not unlocked yet: ${locked.join(", ")}.`);
   const spec = specializationStatus(b).find((s) => s.spec.key === b.specialization);
   if (spec && !spec.met) notes.push(`${spec.spec.name} isn't reached yet.`);
-  return { spent, starsAp: starsAp(b), available, remaining: available - spent, levelNeeded: need, slots, focus, notes };
+  return { spent, starsAp: starsAp(b), available, remaining: available - spent, levelNeeded: need, levelEstimate: beyond?.level ?? null, slots, focus, notes };
 }
 
 // ---------- Share codes ----------

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Minus, Plus, Link2, ImageDown, Import, RotateCcw, GitCompareArrows, X, Sparkles, Lock, Check, Info, Target, Zap, Building2, Camera } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   ARCHETYPES,
@@ -28,6 +29,9 @@ import {
   groupAverages,
   importProClubsBuilder,
   levelRewards,
+  limitToLevel,
+  apSpent,
+  ESTIMATE_SOURCE,
   PLAYSTYLE_SLOT_LEVELS,
   masteryText,
   nextStarCost,
@@ -82,6 +86,14 @@ const TIER_COLORS = ["", "#34d399", "#a3e635", "#fbbf24", "#fb7185"];
 // What happens at each level, for the level slider (from the data tables)
 const MILESTONES: [number, string][] = levelRewards().map((r) => [r.level, r.rewards.join(", ")]);
 const MASTERY_LEVELS = MASTERY_MILESTONES.map((m) => m.level);
+
+function readLimit(): boolean {
+  try {
+    return window.localStorage.getItem("gb-level-limit") !== "off";
+  } catch {
+    return true;
+  }
+}
 
 // Imperial by default; the choice is remembered on this browser
 function readUnits(): Units {
@@ -185,6 +197,10 @@ export default function BuildPlannerPage() {
   const [rival, setRival] = useState<Build | null>(null);
   const cardRef = useRef<SVGSVGElement>(null);
   const [units, setUnitsState] = useState<Units>(readUnits);
+  // "Limit to my level": on, a build can't spend more AP than its level gives. Off, it can, and the page
+  // says which level it needs. Remembered on this browser.
+  const [limit, setLimitState] = useState<boolean>(readLimit);
+  const [limitNote, setLimitNote] = useState("");
   const setUnits = (u: Units) => {
     setUnitsState(u);
     try {
@@ -228,9 +244,50 @@ export default function BuildPlannerPage() {
     if (params.get("b") !== code) setParams({ b: code }, { replace: true });
   }, [build, params, setParams]);
 
-  const set = (patch: Partial<Build>) => setBuild((b) => normaliseBuild({ ...b, ...patch }));
-  const setValue = (key: string, value: number) => setBuild((b) => normaliseBuild({ ...b, points: { ...b.points, [key]: value - startValue(b.archetype, key) } }));
+  // Edits go through the level limit when it is on (see limitToLevel)
+  const edit = (change: (b: Build) => Build) => setBuild((b) => (limit ? limitToLevel(b, change(b)) : change(b)));
+  const set = (patch: Partial<Build>) => edit((b) => normaliseBuild({ ...b, ...patch }));
+  const setValue = (key: string, value: number) => edit((b) => normaliseBuild({ ...b, points: { ...b.points, [key]: value - startValue(b.archetype, key) } }));
+  // For the one-press unlocks: say why nothing happened when the level's AP doesn't cover it
+  const tryEdit = (next: Build, what: string) => {
+    if (limit && limitToLevel(build, next) === build && next !== build) {
+      const need = buildSummary(next);
+      const where = need.levelNeeded ? `level ${need.levelNeeded}` : need.levelEstimate ? `about level ${need.levelEstimate} (estimate, past today's cap)` : "more than any level gives";
+      toast({ title: `Not enough AP at level ${build.level}`, description: `${what} takes ${apSpent(next) - apSpent(build)} AP and you have ${Math.max(0, summary.remaining)} left. It needs ${where}. Turn off "Limit to my level" to plan it anyway.` });
+      return;
+    }
+    setBuild(next);
+  };
   const summary = useMemo(() => buildSummary(build), [build]);
+  const needText = summary.levelNeeded
+    ? `level ${summary.levelNeeded}`
+    : summary.levelEstimate
+      ? `about level ${summary.levelEstimate} (estimate from ${ESTIMATE_SOURCE}'s levels)`
+      : "more than any level we can estimate";
+  const setLimit = (on: boolean) => {
+    if (on && summary.remaining < 0) {
+      toast({
+        title: "This build is over its level",
+        description: `It spends ${-summary.remaining} AP more than level ${build.level} gives and needs ${needText}. ${summary.levelNeeded ? `Raise the level to ${summary.levelNeeded} or take` : "Take"} points off first.`,
+      });
+      return;
+    }
+    setLimitState(on);
+    setLimitNote("");
+    try {
+      window.localStorage.setItem("gb-level-limit", on ? "on" : "off");
+    } catch {
+      /* private window: keep it for this visit only */
+    }
+  };
+  // A build that arrives over budget (a link, an import, a saved or community build) is shown as it is:
+  // the limit steps aside for this visit instead of silently cutting points.
+  const overBudget = summary.remaining < 0;
+  useEffect(() => {
+    if (!limit || !overBudget) return;
+    setLimitState(false);
+    setLimitNote("This build spends more AP than its level gives, so the limit is off for now.");
+  }, [limit, overBudget]);
   const averages = useMemo(() => groupAverages(build), [build]);
   const rivalAverages = useMemo(() => (rival ? groupAverages(rival) : null), [rival]);
   const fx = useMemo(() => bodyEffects(build), [build]);
@@ -314,14 +371,13 @@ export default function BuildPlannerPage() {
     });
 
   // Raise just what a PlayStyle needs, and take it if a slot is free
-  const unlockStyle = (name: string, req: [string, number][]) =>
-    setBuild((b) => {
-      const raised = raiseFor(b, req);
-      const room = raised.playstyles.length < summary.slots && !raised.playstyles.includes(name);
-      return normaliseBuild({ ...raised, playstyles: room ? [...raised.playstyles, name] : raised.playstyles });
-    });
+  const unlockStyle = (name: string, req: [string, number][]) => {
+    const raised = raiseFor(build, req);
+    const room = raised.playstyles.length < summary.slots && !raised.playstyles.includes(name);
+    tryEdit(normaliseBuild({ ...raised, playstyles: room ? [...raised.playstyles, name] : raised.playstyles }), name);
+  };
 
-  const goForSpec = (key: string, req: [string, number][]) => setBuild((b) => normaliseBuild({ ...raiseFor(b, req), specialization: key }));
+  const goForSpec = (key: string, req: [string, number][]) => tryEdit(normaliseBuild({ ...raiseFor(build, req), specialization: key }), "This Specialization");
 
   return (
     <div className="dark relative min-h-screen overflow-x-clip bg-[#05080c] font-body text-slate-200">
@@ -559,12 +615,12 @@ export default function BuildPlannerPage() {
                   <div className="flex flex-wrap gap-x-8 gap-y-3">
                     <div>
                       <div className={`mb-1 ${label}`}>Skill moves</div>
-                      <Stars label="Skill moves" value={build.skillMoves} min={starRule(build.archetype, "skillMoves").start} max={starRule(build.archetype, "skillMoves").max} onChange={(v) => set({ skillMoves: v })} />
+                      <Stars label="Skill moves" value={build.skillMoves} min={starRule(build.archetype, "skillMoves").start} max={starRule(build.archetype, "skillMoves").max} onChange={(v) => tryEdit(normaliseBuild({ ...build, skillMoves: v }), "That star")} />
                       <StarPrice archetype={build.archetype} kind="skillMoves" stars={build.skillMoves} />
                     </div>
                     <div>
                       <div className={`mb-1 ${label}`}>Weak foot</div>
-                      <Stars label="Weak foot" value={build.weakFoot} min={starRule(build.archetype, "weakFoot").start} max={starRule(build.archetype, "weakFoot").max} onChange={(v) => set({ weakFoot: v })} />
+                      <Stars label="Weak foot" value={build.weakFoot} min={starRule(build.archetype, "weakFoot").start} max={starRule(build.archetype, "weakFoot").max} onChange={(v) => tryEdit(normaliseBuild({ ...build, weakFoot: v }), "That star")} />
                       <StarPrice archetype={build.archetype} kind="weakFoot" stars={build.weakFoot} />
                     </div>
                   </div>
@@ -683,9 +739,31 @@ export default function BuildPlannerPage() {
                   <div className="absolute inset-y-0 w-0.5 bg-white" style={{ left: `${availPct}%` }} />
                 </div>
                 <div className="mt-1.5 flex justify-between text-[11px] text-slate-500">
-                  <span>{summary.levelNeeded ? `This build needs level ${summary.levelNeeded}` : `More than level ${LEVEL_CAP} gives`}</span>
+                  <span>
+                    {summary.levelNeeded
+                      ? `This build needs level ${summary.levelNeeded}`
+                      : summary.levelEstimate
+                        ? `Needs about level ${summary.levelEstimate} (estimate)`
+                        : `More than level ${LEVEL_CAP} gives`}
+                  </span>
                   <span>Level {LEVEL_CAP}: {apAtLevel(LEVEL_CAP)} AP</span>
                 </div>
+                <label className="mt-3 flex cursor-pointer items-start gap-3 border-t border-white/[0.07] pt-3">
+                  <Switch checked={limit} onCheckedChange={setLimit} aria-label="Limit to my level" className="mt-0.5" />
+                  <span className="text-xs text-slate-400">
+                    <b className="block text-sm text-white">Limit to my level</b>
+                    {limit
+                      ? `On: you can't spend more than the ${summary.available} AP level ${build.level} gives. Turn it off to plan past your level.`
+                      : over
+                        ? summary.levelNeeded
+                          ? `Off: this build is ${-summary.remaining} AP over level ${build.level}. You need level ${summary.levelNeeded} for these attributes.`
+                          : summary.levelEstimate
+                            ? `Off: this build needs ${summary.spent} AP, more than level ${LEVEL_CAP} (today's cap) gives. Estimate: about level ${summary.levelEstimate}, using ${ESTIMATE_SOURCE}'s AP for levels ${LEVEL_CAP + 1} and up until FC 27's are known.`
+                            : `Off: this build is ${-summary.remaining} AP over level ${build.level}, more than any level we can estimate.`
+                        : `Off: spend past level ${build.level} and this shows the level you'd need. Past level ${LEVEL_CAP} it is an estimate from ${ESTIMATE_SOURCE}'s levels.`}
+                    {limitNote && <span className="mt-1 block text-amber-300">{limitNote}</span>}
+                  </span>
+                </label>
               </div>
               {summary.notes.length > 0 && (
                 <div className="mb-5 space-y-1 rounded-2xl border border-amber-400/30 bg-amber-400/[0.06] p-3 text-sm text-amber-200">
@@ -745,7 +823,7 @@ export default function BuildPlannerPage() {
                                 <Nudge label={`Less ${a.label}`} disabled={v <= start} onClick={() => setValue(a.key, v - 1)}>
                                   <Minus className="h-3 w-3" />
                                 </Nudge>
-                                <Nudge label={`More ${a.label}`} disabled={v >= cap} onClick={() => setValue(a.key, v + 1)}>
+                                <Nudge label={`More ${a.label}`} disabled={v >= cap || (limit && next !== null && next > summary.remaining)} onClick={() => setValue(a.key, v + 1)}>
                                   <Plus className="h-3 w-3" />
                                 </Nudge>
                               </div>
