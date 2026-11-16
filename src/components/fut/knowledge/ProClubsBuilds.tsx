@@ -31,10 +31,10 @@ function AddBuildSource() {
       <Textarea id="kb-build-text" rows={4} value={text} maxLength={12_000} placeholder="e.g. ST: Finisher, 6'1, 80 kg, 4★ skills, 5★ weak foot. Finesse Shot, Quick Step, Rapid. Max finishing and acceleration first." onChange={(e) => setText(e.target.value)} /></div>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <label className="flex items-center gap-2 text-sm"><Switch checked={share} onCheckedChange={setShare} disabled={!url.trim()} /> Count it in the community builds (links only)</label>
-      <Button onClick={() => add.mutate()} disabled={add.isPending || (!url.trim() && !text.trim())}><Plus className="mr-1 h-4 w-4" />{add.isPending ? "Reading..." : "Add"}</Button>
+      <Button onClick={() => add.mutate()} disabled={add.isPending || (!url.trim() && !text.trim())}><Plus className="mr-1 h-4 w-4" />{add.isPending ? "Adding..." : "Add"}</Button>
     </div>
     <ErrorNotice error={add.error} />
-    {r && <p className="text-sm text-muted-foreground">{r.claims ? `Read ${r.claims} build${r.claims === 1 ? "" : "s"} (${r.topics.join(", ")}). ${r.shared ? "It now counts in the community builds." : "Kept private to you."}` : "No Pro Clubs build found in that."}</p>}
+    {r && <p className="text-sm text-muted-foreground" role="status">Added. Claude is reading the builds out of it now (up to a minute); you can follow it on the Sources tab under Added by me. {r.shared ? "Once read, it counts in the community builds." : "It's kept private to you."}</p>}
   </section>;
 }
 

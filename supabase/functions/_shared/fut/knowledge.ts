@@ -461,33 +461,107 @@ export async function runKnowledgeIngest(db: Rpc, env: Env, fetchFn: Fetch, now 
     () => collectBuildSources(env, fetchFn, knownSources, { reddit: redditMode(env) !== "off" && !redditLimited, youtube: youtubeNow && youtubeFeedOn(env) }, now.getTime()));
 
   const result: IngestResult = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0, builds: 0 };
-  const hasKey = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
-  if (hasKey) {
-    const pending = await rpcData<{ id: string; body: string; area?: string }[]>(db, "kb_pending", { p_limit: Number(env("FUT_KB_READ_PER_RUN")) || 40 });
-    const known = pending.some((s) => s.area !== "proclubs") ? await rpcData<{ topic: string; category: string }[]>(db, "kb_known_topics", { p_limit: 150 }) : [];
-    for (const s of pending) {
-      try {
-        if (s.area === "proclubs") {
-          const n = await saveBuildReading(db, s.id, await readBuildSource(s.body, env, fetchFn));
-          if (n > 0) { result.read++; result.builds++; result.claims += n; } else result.skipped++;
-          continue;
-        }
-        const reading = await readSource(s.body, known, env, fetchFn);
-        const n = await saveReading(db, s.id, reading);
-        if (n > 0) { result.read++; result.claims += n; } else result.skipped++;
-        // New topics are offered to the next source in the same run
-        for (const c of reading.claims) if (!known.some((k) => k.topic === c.topic)) known.push({ topic: c.topic, category: c.category });
-      } catch (e) {
-        if (e instanceof ReaderUnavailable) { feeds.reader = { status: "failed", error: squash(e.message, 200) }; break; }
-        result.failed++;
-        await rpcData(db, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash((e as Error).message, 200), p_claims: null });
-        if (e instanceof FutError && e.status === 502 && /busy/.test(e.message)) break;
-      }
-    }
-  }
+  await readWaiting(db, env, fetchFn, result, Number(env("FUT_KB_READ_PER_RUN")) || 40, false);
   result.cleaned = await rpcData<number>(db, "kb_cleanup", {}) ?? 0;
   const status = await rpcData<{ waiting: number }>(db, "kb_status", {});
   result.waiting = status?.waiting ?? 0;
+  return result;
+}
+
+// ---------------------------------------------------------------- reading what's waiting
+
+/** One source to read: from kb_pending, kb_mark_reading or kb_retry. */
+export interface QueuedSource { id: string; kind: string; url: string | null; body: string | null; area?: string; refetch?: boolean; added?: boolean }
+export interface ReadOutcome { status: "read" | "skipped"; area: "fut" | "proclubs"; claims: number; topics: string[]; summary: string }
+
+/** Pro Clubs talk (Virtual Pro builds, archetypes, level 55) rather than Ultimate Team. */
+const PRO_CLUBS = /\b(pro ?clubs|eafc ?\d* clubs|fc ?\d* clubs|virtual pro|vpro|archetypes?|lvl ?55|level ?55|proclubsbuilder|r\/proclubs|specializations?|clubs build|build for (st|cb|cdm|cm|cam|lw|rw|winger|striker|gk|keeper))\b/i;
+const ULTIMATE_TEAM = /\b(ultimate team|fut\b|sbcs?|evolutions?|evos?|packs?|rivals|champs|squad battles|totw|coins|chemistry)/i;
+/** Which bank a source belongs to when nobody said: Pro Clubs when it talks Pro Clubs builds more than Ultimate Team. */
+export function guessArea(text: string): "fut" | "proclubs" {
+  const t = text.slice(0, 6000);
+  if (extractBuildLinks(t).length) return "proclubs";
+  const clubs = (t.match(new RegExp(PRO_CLUBS.source, "gi")) ?? []).length;
+  const fut = (t.match(new RegExp(ULTIMATE_TEAM.source, "gi")) ?? []).length;
+  return clubs > 0 && clubs >= fut ? "proclubs" : "fut";
+}
+/** The Ultimate Team reader filed it as Pro Clubs build talk ("Finisher ST build (Clubs)"): read it as builds instead. */
+const clubsClaims = (r: Reading) => r.claims.length > 0 && r.claims.filter((c) => /\(clubs\b|pro ?clubs/i.test(c.topic)).length * 2 >= r.claims.length;
+
+/** Read one source into claims (Ultimate Team) or builds (Pro Clubs), fetching its text again first when it was dropped. */
+export async function readQueued(db: Rpc, s: QueuedSource, known: { topic: string; category: string }[] | null, env: Env, fetchFn: Fetch): Promise<ReadOutcome> {
+  let body = s.body;
+  if (!body) {
+    const link = s.url ? parseSourceLink(s.url) : null;
+    const fetched = link ? await fetchLinked(link, env, fetchFn).catch((e) => { console.error("[fut-api] knowledge refetch:", e); return null; }) : null;
+    if (!fetched) throw new FutError("Couldn't fetch this link again. Add it again with the text pasted in.", 422);
+    body = fetched.body;
+    await rpcData(db, "kb_fetched", { p_source: s.id, p_body: body });
+  }
+  let area: "fut" | "proclubs" = s.area === "proclubs" ? "proclubs" : "fut";
+  if (area === "fut") {
+    const topics = known ?? await rpcData<{ topic: string; category: string }[]>(db, "kb_known_topics", { p_limit: 150 });
+    const reading = await readSource(body, topics, env, fetchFn);
+    if (!clubsClaims(reading)) {
+      const n = await saveReading(db, s.id, reading);
+      for (const c of reading.claims) if (!topics.some((k) => k.topic === c.topic)) topics.push({ topic: c.topic, category: c.category });
+      return { status: n > 0 ? "read" : "skipped", area, claims: n, topics: [...new Set(reading.claims.map((c) => c.topic))], summary: reading.summary };
+    }
+    area = "proclubs";
+    await rpcData(db, "kb_set_area", { p_source: s.id, p_area: area });
+  }
+  const builds = await readBuildSource(body, env, fetchFn);
+  const n = await saveBuildReading(db, s.id, builds);
+  return { status: n > 0 ? "read" : "skipped", area, claims: n, topics: [...new Set(builds.builds.map((b) => b.position))], summary: builds.summary };
+}
+
+/** Plain words for why reading stopped, kept on the source so people can see it. */
+export function readerProblem(e: unknown): string {
+  const m = (e as Error)?.message ?? "";
+  if (/credit balance|billing/i.test(m)) return "Waiting: the Claude account that reads sources is out of credit. It's read as soon as that's topped up, or add your own Claude key on your profile.";
+  if (/401|403|invalid x-api-key|authentication|permission/i.test(m)) return "Waiting: the Claude key that reads sources was refused. It's read as soon as the key works again.";
+  return `Waiting: ${squash(m, 200) || "the reader couldn't run"}`;
+}
+
+/** Read one claimed source and record what happened. ReaderUnavailable is passed on (the caller stops); other errors count as a failed try. */
+export async function readAndRecord(db: Rpc, s: QueuedSource, known: { topic: string; category: string }[] | null, env: Env, fetchFn: Fetch): Promise<ReadOutcome | null> {
+  try {
+    return await readQueued(db, s, known, env, fetchFn);
+  } catch (e) {
+    if (e instanceof ReaderUnavailable) { await rpcData(db, "kb_requeue", { p_source: s.id, p_note: readerProblem(e) }); throw e; }
+    console.error("[fut-api] knowledge read:", (e as Error)?.message);
+    await rpcData(db, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash((e as Error).message, 200), p_claims: null });
+    if (e instanceof FutError && e.status === 502 && /busy/.test(e.message)) throw e;
+    return null;
+  }
+}
+
+/** Read up to `limit` waiting sources (people's own first). Stops at the first sign the Claude account can't be used. */
+export async function readWaiting(db: Rpc, env: Env, fetchFn: Fetch, result: IngestResult, limit: number, addedOnly: boolean) {
+  if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) return;
+  const pending = await rpcData<QueuedSource[]>(db, "kb_pending", { p_limit: limit, p_added_only: addedOnly });
+  const known = pending.some((s) => s.area !== "proclubs") ? await rpcData<{ topic: string; category: string }[]>(db, "kb_known_topics", { p_limit: 150 }) : [];
+  for (let i = 0; i < pending.length; i++) {
+    const s = pending[i]!;
+    try {
+      const r = await readAndRecord(db, s, known, env, fetchFn);
+      if (!r) { result.failed++; continue; }
+      if (r.status === "read") { result.read++; result.claims += r.claims; if (r.area === "proclubs") result.builds++; } else result.skipped++;
+    } catch (e) {
+      if (e instanceof ReaderUnavailable) result.feeds.reader = { status: "failed", error: squash(e.message, 200) };
+      else result.failed++;
+      // The rest go back in the queue as they were
+      const rest = pending.slice(i + 1).map((p) => p.id);
+      if (rest.length) await rpcData(db, "kb_release", { p_ids: rest });
+      break;
+    }
+  }
+}
+
+/** The 10-minute queue job: only sources people added, so a source someone adds never waits for the 3-hourly run. */
+export async function runKnowledgeQueue(db: Rpc, env: Env, fetchFn: Fetch): Promise<IngestResult> {
+  const result: IngestResult = { feeds: {}, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0, builds: 0 };
+  await readWaiting(db, env, fetchFn, result, Number(env("FUT_KB_QUEUE_PER_RUN")) || 10, true);
   return result;
 }
 
@@ -497,8 +571,16 @@ export interface AddInput { url?: string | null; text?: string | null; title?: s
   /** 'proclubs': a Pro Clubs build post or video, read into builds for the community meta builds. */
   area?: string | null }
 
-/** Add a source: a Reddit or YouTube link (fetched through the official APIs when configured) and/or pasted text. Read straight away. */
-export async function addSource(db: Rpc, userId: string, input: AddInput, env: Env, fetchFn: Fetch) {
+/** What adding a source returns straight away; `reading` finishes the read in the background (the caller keeps it alive). */
+export interface AddedSource { id: string; status: "reading"; area: "fut" | "proclubs"; shared: boolean; title: string }
+
+/**
+ * Add a source: a Reddit or YouTube link (fetched through the official APIs when configured) and/or pasted text.
+ * It's saved and marked 'reading' at once, and read in the background: reading can take a minute, longer than a web
+ * request should wait. The source list shows its status (reading, read, no claims, waiting with the reason, couldn't read).
+ * area: 'fut' or 'proclubs' when the page says which bank; otherwise guessed from the text.
+ */
+export async function addSource(db: Rpc, userId: string, input: AddInput, env: Env, fetchFn: Fetch): Promise<AddedSource & { reading: Promise<ReadOutcome | null> }> {
   const url = typeof input.url === "string" ? input.url.trim() : "";
   const text = typeof input.text === "string" ? keep(input.text, MAX_ADD_TEXT) : "";
   if (url && (!/^https:\/\/\S+$/.test(url) || url.length > 600)) throw new FutError("Links must start with https:// (up to 600 characters).");
@@ -509,29 +591,36 @@ export async function addSource(db: Rpc, userId: string, input: AddInput, env: E
     fetched = await fetchLinked(link, env, fetchFn).catch((e) => { console.error("[fut-api] knowledge link:", e); return null; });
     if (!fetched) throw new FutError(`${link.kind === "reddit" ? "Reddit" : "YouTube"} links can't be fetched here yet. Paste the post or the video's transcript into the text box too.`, 422);
   }
-  const area = input.area === "proclubs" ? "proclubs" : "fut";
+  const area: "fut" | "proclubs" = input.area === "proclubs" || input.area === "fut" ? input.area
+    : guessArea(`${url}\n${input.title ?? ""}\n${fetched ? `${fetched.title}\n${fetched.body}` : text}`);
   // A build share link on its own is enough for a Pro Clubs build: its numbers are in the link
   const buildLink = area === "proclubs" && !!url && extractBuildLinks(url).length > 0;
   if (!fetched && text.length < 40 && !buildLink) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
   const title = squash(input.title, 300) || fetched?.title || squash(text.split("\n")[0], 120) || (buildLink ? "Shared build link" : "Pasted source");
   const share = input.share === true && (!!url || !!fetched);
+  const body = fetched ? fetched.body
+    : `${url ? `Page: ${url}\n` : "The user's own notes or a pasted source.\n"}Title: ${title}\n\n${text}${area === "proclubs" && url && !text.includes(url) ? `\n${url}` : ""}`;
   const source = fetched
     ? { ...fetched, shared: true, area }
     : { kind: url ? "web" : "note", external_id: null, url: url || null, title, author: null, community: url ? new URL(url).hostname.replace(/^www\./, "") : null,
-        published_at: new Date().toISOString(), score: 0, comments: 0, body: text, excerpt: squash(text, 280), shared: share, area };
+        published_at: new Date().toISOString(), score: 0, comments: 0, body, excerpt: squash(text, 280), shared: share, area };
   const id = await rpcData<string | null>(db, "kb_add", { p_user: userId, p_source: source });
   if (!id) throw new FutError("That source couldn't be saved.", 500);
-  if (area === "proclubs") {
-    const body = fetched ? fetched.body : `${url ? `Page: ${url}\n` : "The user's own notes or a pasted source.\n"}Title: ${title}\n\n${text}${url && !text.includes(url) ? `\n${url}` : ""}`;
-    const reading = await readBuildSource(body, env, fetchFn);
-    const builds = await saveBuildReading(db, id, reading);
-    return { id, claims: builds, relevant: reading.relevant, summary: reading.summary, shared: fetched ? true : share, topics: [...new Set(reading.builds.map((b) => b.position))] };
-  }
-  const known = await rpcData<{ topic: string; category: string }[]>(db, "kb_known_topics", { p_limit: 150 });
-  const body = fetched ? fetched.body : `${url ? `Page: ${url}\n` : "The user's own notes or a pasted source.\n"}Title: ${title}\n\n${text}`;
-  const reading = await readSource(body, known, env, fetchFn);
-  const claims = await saveReading(db, id, reading);
-  return { id, claims, relevant: reading.relevant, summary: reading.summary, shared: fetched ? true : share, topics: [...new Set(reading.claims.map((c) => c.topic))] };
+  // A link already in the bank is read again from what was just fetched, in the bank chosen now
+  const queued = await rpcData<QueuedSource | null>(db, "kb_mark_reading", { p_id: id });
+  if (queued && queued.area !== area) await rpcData(db, "kb_set_area", { p_source: id, p_area: area });
+  const reading = readAndRecord(db, { id, kind: source.kind, url: source.url, body, area, added: true }, null, env, fetchFn)
+    .catch((e) => { console.error("[fut-api] knowledge add:", (e as Error)?.message); return null; });
+  return { id, status: "reading", area, shared: fetched ? true : share, title, reading };
+}
+
+/** "Try again" on one of your own sources that couldn't be read or is still waiting. */
+export async function retrySource(db: Rpc, userId: string, id: string, env: Env, fetchFn: Fetch) {
+  if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) throw new FutError("Reading sources needs a Claude API key: add yours on your profile.", 503);
+  const queued = await rpcData<QueuedSource | null>(db, "kb_retry", { p_user: userId, p_id: id });
+  if (!queued) return null;
+  const reading = readAndRecord(db, queued, null, env, fetchFn).catch((e) => { console.error("[fut-api] knowledge retry:", (e as Error)?.message); return null; });
+  return { id, status: "reading" as const, area: queued.area === "proclubs" ? "proclubs" as const : "fut" as const, reading };
 }
 
 export interface AskTurn { role: "user" | "assistant"; text: string }

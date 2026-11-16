@@ -13130,42 +13130,99 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
     () => collectBuildSources(env, fetchFn, knownSources, { reddit: redditMode(env) !== "off" && !redditLimited, youtube: youtubeNow && youtubeFeedOn(env) }, now2.getTime())
   );
   const result2 = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0, builds: 0 };
-  const hasKey = !!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"));
-  if (hasKey) {
-    const pending = await rpcData(db2, "kb_pending", { p_limit: Number(env("FUT_KB_READ_PER_RUN")) || 40 });
-    const known = pending.some((s) => s.area !== "proclubs") ? await rpcData(db2, "kb_known_topics", { p_limit: 150 }) : [];
-    for (const s of pending) {
-      try {
-        if (s.area === "proclubs") {
-          const n3 = await saveBuildReading(db2, s.id, await readBuildSource(s.body, env, fetchFn));
-          if (n3 > 0) {
-            result2.read++;
-            result2.builds++;
-            result2.claims += n3;
-          } else result2.skipped++;
-          continue;
-        }
-        const reading = await readSource(s.body, known, env, fetchFn);
-        const n2 = await saveReading(db2, s.id, reading);
-        if (n2 > 0) {
-          result2.read++;
-          result2.claims += n2;
-        } else result2.skipped++;
-        for (const c5 of reading.claims) if (!known.some((k) => k.topic === c5.topic)) known.push({ topic: c5.topic, category: c5.category });
-      } catch (e) {
-        if (e instanceof ReaderUnavailable) {
-          feeds.reader = { status: "failed", error: squash2(e.message, 200) };
-          break;
-        }
-        result2.failed++;
-        await rpcData(db2, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash2(e.message, 200), p_claims: null });
-        if (e instanceof FutError && e.status === 502 && /busy/.test(e.message)) break;
-      }
-    }
-  }
+  await readWaiting(db2, env, fetchFn, result2, Number(env("FUT_KB_READ_PER_RUN")) || 40, false);
   result2.cleaned = await rpcData(db2, "kb_cleanup", {}) ?? 0;
   const status = await rpcData(db2, "kb_status", {});
   result2.waiting = status?.waiting ?? 0;
+  return result2;
+}
+var PRO_CLUBS = /\b(pro ?clubs|eafc ?\d* clubs|fc ?\d* clubs|virtual pro|vpro|archetypes?|lvl ?55|level ?55|proclubsbuilder|r\/proclubs|specializations?|clubs build|build for (st|cb|cdm|cm|cam|lw|rw|winger|striker|gk|keeper))\b/i;
+var ULTIMATE_TEAM = /\b(ultimate team|fut\b|sbcs?|evolutions?|evos?|packs?|rivals|champs|squad battles|totw|coins|chemistry)/i;
+function guessArea(text5) {
+  const t = text5.slice(0, 6e3);
+  if (extractBuildLinks(t).length) return "proclubs";
+  const clubs = (t.match(new RegExp(PRO_CLUBS.source, "gi")) ?? []).length;
+  const fut = (t.match(new RegExp(ULTIMATE_TEAM.source, "gi")) ?? []).length;
+  return clubs > 0 && clubs >= fut ? "proclubs" : "fut";
+}
+var clubsClaims = (r2) => r2.claims.length > 0 && r2.claims.filter((c5) => /\(clubs\b|pro ?clubs/i.test(c5.topic)).length * 2 >= r2.claims.length;
+async function readQueued(db2, s, known, env, fetchFn) {
+  let body2 = s.body;
+  if (!body2) {
+    const link = s.url ? parseSourceLink(s.url) : null;
+    const fetched = link ? await fetchLinked(link, env, fetchFn).catch((e) => {
+      console.error("[fut-api] knowledge refetch:", e);
+      return null;
+    }) : null;
+    if (!fetched) throw new FutError("Couldn't fetch this link again. Add it again with the text pasted in.", 422);
+    body2 = fetched.body;
+    await rpcData(db2, "kb_fetched", { p_source: s.id, p_body: body2 });
+  }
+  let area = s.area === "proclubs" ? "proclubs" : "fut";
+  if (area === "fut") {
+    const topics = known ?? await rpcData(db2, "kb_known_topics", { p_limit: 150 });
+    const reading = await readSource(body2, topics, env, fetchFn);
+    if (!clubsClaims(reading)) {
+      const n3 = await saveReading(db2, s.id, reading);
+      for (const c5 of reading.claims) if (!topics.some((k) => k.topic === c5.topic)) topics.push({ topic: c5.topic, category: c5.category });
+      return { status: n3 > 0 ? "read" : "skipped", area, claims: n3, topics: [...new Set(reading.claims.map((c5) => c5.topic))], summary: reading.summary };
+    }
+    area = "proclubs";
+    await rpcData(db2, "kb_set_area", { p_source: s.id, p_area: area });
+  }
+  const builds = await readBuildSource(body2, env, fetchFn);
+  const n2 = await saveBuildReading(db2, s.id, builds);
+  return { status: n2 > 0 ? "read" : "skipped", area, claims: n2, topics: [...new Set(builds.builds.map((b) => b.position))], summary: builds.summary };
+}
+function readerProblem(e) {
+  const m = e?.message ?? "";
+  if (/credit balance|billing/i.test(m)) return "Waiting: the Claude account that reads sources is out of credit. It's read as soon as that's topped up, or add your own Claude key on your profile.";
+  if (/401|403|invalid x-api-key|authentication|permission/i.test(m)) return "Waiting: the Claude key that reads sources was refused. It's read as soon as the key works again.";
+  return `Waiting: ${squash2(m, 200) || "the reader couldn't run"}`;
+}
+async function readAndRecord(db2, s, known, env, fetchFn) {
+  try {
+    return await readQueued(db2, s, known, env, fetchFn);
+  } catch (e) {
+    if (e instanceof ReaderUnavailable) {
+      await rpcData(db2, "kb_requeue", { p_source: s.id, p_note: readerProblem(e) });
+      throw e;
+    }
+    console.error("[fut-api] knowledge read:", e?.message);
+    await rpcData(db2, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash2(e.message, 200), p_claims: null });
+    if (e instanceof FutError && e.status === 502 && /busy/.test(e.message)) throw e;
+    return null;
+  }
+}
+async function readWaiting(db2, env, fetchFn, result2, limit, addedOnly) {
+  if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) return;
+  const pending = await rpcData(db2, "kb_pending", { p_limit: limit, p_added_only: addedOnly });
+  const known = pending.some((s) => s.area !== "proclubs") ? await rpcData(db2, "kb_known_topics", { p_limit: 150 }) : [];
+  for (let i = 0; i < pending.length; i++) {
+    const s = pending[i];
+    try {
+      const r2 = await readAndRecord(db2, s, known, env, fetchFn);
+      if (!r2) {
+        result2.failed++;
+        continue;
+      }
+      if (r2.status === "read") {
+        result2.read++;
+        result2.claims += r2.claims;
+        if (r2.area === "proclubs") result2.builds++;
+      } else result2.skipped++;
+    } catch (e) {
+      if (e instanceof ReaderUnavailable) result2.feeds.reader = { status: "failed", error: squash2(e.message, 200) };
+      else result2.failed++;
+      const rest = pending.slice(i + 1).map((p) => p.id);
+      if (rest.length) await rpcData(db2, "kb_release", { p_ids: rest });
+      break;
+    }
+  }
+}
+async function runKnowledgeQueue(db2, env, fetchFn) {
+  const result2 = { feeds: {}, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0, builds: 0 };
+  await readWaiting(db2, env, fetchFn, result2, Number(env("FUT_KB_QUEUE_PER_RUN")) || 10, true);
   return result2;
 }
 async function addSource(db2, userId, input, env, fetchFn) {
@@ -13182,11 +13239,19 @@ async function addSource(db2, userId, input, env, fetchFn) {
     });
     if (!fetched) throw new FutError(`${link.kind === "reddit" ? "Reddit" : "YouTube"} links can't be fetched here yet. Paste the post or the video's transcript into the text box too.`, 422);
   }
-  const area = input.area === "proclubs" ? "proclubs" : "fut";
+  const area = input.area === "proclubs" || input.area === "fut" ? input.area : guessArea(`${url}
+${input.title ?? ""}
+${fetched ? `${fetched.title}
+${fetched.body}` : text5}`);
   const buildLink = area === "proclubs" && !!url && extractBuildLinks(url).length > 0;
   if (!fetched && text5.length < 40 && !buildLink) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
   const title = squash2(input.title, 300) || fetched?.title || squash2(text5.split("\n")[0], 120) || (buildLink ? "Shared build link" : "Pasted source");
   const share = input.share === true && (!!url || !!fetched);
+  const body2 = fetched ? fetched.body : `${url ? `Page: ${url}
+` : "The user's own notes or a pasted source.\n"}Title: ${title}
+
+${text5}${area === "proclubs" && url && !text5.includes(url) ? `
+${url}` : ""}`;
   const source = fetched ? { ...fetched, shared: true, area } : {
     kind: url ? "web" : "note",
     external_id: null,
@@ -13197,31 +13262,30 @@ async function addSource(db2, userId, input, env, fetchFn) {
     published_at: (/* @__PURE__ */ new Date()).toISOString(),
     score: 0,
     comments: 0,
-    body: text5,
+    body: body2,
     excerpt: squash2(text5, 280),
     shared: share,
     area
   };
   const id3 = await rpcData(db2, "kb_add", { p_user: userId, p_source: source });
   if (!id3) throw new FutError("That source couldn't be saved.", 500);
-  if (area === "proclubs") {
-    const body3 = fetched ? fetched.body : `${url ? `Page: ${url}
-` : "The user's own notes or a pasted source.\n"}Title: ${title}
-
-${text5}${url && !text5.includes(url) ? `
-${url}` : ""}`;
-    const reading2 = await readBuildSource(body3, env, fetchFn);
-    const builds = await saveBuildReading(db2, id3, reading2);
-    return { id: id3, claims: builds, relevant: reading2.relevant, summary: reading2.summary, shared: fetched ? true : share, topics: [...new Set(reading2.builds.map((b) => b.position))] };
-  }
-  const known = await rpcData(db2, "kb_known_topics", { p_limit: 150 });
-  const body2 = fetched ? fetched.body : `${url ? `Page: ${url}
-` : "The user's own notes or a pasted source.\n"}Title: ${title}
-
-${text5}`;
-  const reading = await readSource(body2, known, env, fetchFn);
-  const claims = await saveReading(db2, id3, reading);
-  return { id: id3, claims, relevant: reading.relevant, summary: reading.summary, shared: fetched ? true : share, topics: [...new Set(reading.claims.map((c5) => c5.topic))] };
+  const queued = await rpcData(db2, "kb_mark_reading", { p_id: id3 });
+  if (queued && queued.area !== area) await rpcData(db2, "kb_set_area", { p_source: id3, p_area: area });
+  const reading = readAndRecord(db2, { id: id3, kind: source.kind, url: source.url, body: body2, area, added: true }, null, env, fetchFn).catch((e) => {
+    console.error("[fut-api] knowledge add:", e?.message);
+    return null;
+  });
+  return { id: id3, status: "reading", area, shared: fetched ? true : share, title, reading };
+}
+async function retrySource(db2, userId, id3, env, fetchFn) {
+  if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) throw new FutError("Reading sources needs a Claude API key: add yours on your profile.", 503);
+  const queued = await rpcData(db2, "kb_retry", { p_user: userId, p_id: id3 });
+  if (!queued) return null;
+  const reading = readAndRecord(db2, queued, null, env, fetchFn).catch((e) => {
+    console.error("[fut-api] knowledge retry:", e?.message);
+    return null;
+  });
+  return { id: id3, status: "reading", area: queued.area === "proclubs" ? "proclubs" : "fut", reading };
 }
 var ASK_SCHEMA = {
   type: "object",
@@ -16640,6 +16704,13 @@ var corsHeaders = {
 var json = (body2, status = 200) => new Response(JSON.stringify(body2), { status, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" } });
 var err = (status, message) => json({ error: message }, status);
 var MAX_BODY2 = 64 * 1024;
+function keepAlive(deps, work) {
+  if (deps.waitUntil) return deps.waitUntil(work);
+  const rt = globalThis.EdgeRuntime;
+  if (rt?.waitUntil) rt.waitUntil(work);
+  else work.catch(() => {
+  });
+}
 var MAX_IMPORT_BODY = 1024 * 1024;
 var MAX_STORE_BODY = 2 * 1024 * 1024;
 var MAX_SQUAD_IMPORT_BODY = 6 * 1024 * 1024;
@@ -16741,7 +16812,7 @@ async function handle(req, deps) {
     if (!await deps.isBot?.(req)) return err(401, "Only the bot's scheduler can run jobs.");
     const jobBody = await req.json().catch(() => null) ?? {};
     const job = jobBody.job;
-    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "price-alerts" && job !== "strategy-learn" && job !== "club-pulls" && job !== "club-board" && job !== "club-whohas" && job !== "draft-board") return err(400, "Unknown job.");
+    if (job !== "fc27-market" && job !== "futgg-catalogue" && job !== "futgg-attributes" && job !== "knowledge-ingest" && job !== "knowledge-queue" && job !== "price-alerts" && job !== "strategy-learn" && job !== "club-pulls" && job !== "club-board" && job !== "club-whohas" && job !== "draft-board") return err(400, "Unknown job.");
     try {
       if (job === "knowledge-ingest") {
         const env = deps.env ?? ((k) => Deno.env.get(k));
@@ -16767,6 +16838,11 @@ async function handle(req, deps) {
           });
         }
         return json({ data: result2 });
+      }
+      if (job === "knowledge-queue") {
+        const env = deps.env ?? ((k) => Deno.env.get(k));
+        if (env("FUT_KNOWLEDGE") === "off") return json({ data: { paused: true } });
+        return json({ data: await runKnowledgeQueue(deps.db, env, deps.fetch ?? fetch) });
       }
       if (job === "futgg-attributes") return json({ data: await syncFutggAttributes(deps.db, deps.fetch) });
       if (job === "price-alerts") return json({ data: await runPriceAlerts(deps.db) });
@@ -17133,7 +17209,7 @@ async function handle(req, deps) {
     }
     if (route.startsWith("/knowledge/")) {
       const baseEnv = deps.env ?? ((k) => Deno.env.get(k));
-      const usesAi = route === "/knowledge/status" || route === "/knowledge/ask" || route === "/knowledge/sources" && m === "POST" || route === "/knowledge/apply" || route === "/knowledge/team-plan";
+      const usesAi = route === "/knowledge/status" || route === "/knowledge/ask" || route === "/knowledge/sources" && m === "POST" || /\/retry$/.test(route) || route === "/knowledge/apply" || route === "/knowledge/team-plan";
       const { env, own } = usesAi ? await envForUser(db2, userId, baseEnv) : { env: baseEnv, own: false };
       const fetchFn = deps.fetch ?? fetch;
       const p = url.searchParams;
@@ -17158,7 +17234,23 @@ async function handle(req, deps) {
         if (typeof b.text === "string" && b.text.length > MAX_ADD_TEXT) throw new FutError(`Paste up to ${MAX_ADD_TEXT.toLocaleString("en")} characters.`);
         if (!b.url?.trim() && !b.text?.trim()) throw new FutError("Add a link or paste some text.");
         if (!aiImportAllowed(userId, own ? Infinity : Number(env("FUT_KB_ADDS_PER_HOUR")) || KB_ADDS_PER_HOUR, kbAdds)) throw new FutError("That's a lot of sources this hour. Try again later.", 429);
-        return json({ data: await addSource(db2, userId, { url: b.url, text: b.text, title: b.title, share: b.share === true, area: b.area === "proclubs" ? "proclubs" : null }, env, fetchFn) }, 201);
+        const { reading, ...added } = await addSource(db2, userId, {
+          url: b.url,
+          text: b.text,
+          title: b.title,
+          share: b.share === true,
+          area: b.area === "proclubs" || b.area === "fut" ? b.area : null
+        }, env, fetchFn);
+        keepAlive(deps, reading);
+        return json({ data: added }, 202);
+      }
+      const rs = route.match(/^\/knowledge\/sources\/([0-9a-f-]{36})\/retry$/);
+      if (rs && m === "POST") {
+        const again = await retrySource(db2, userId, rs[1], env, fetchFn);
+        if (!again) return err(404, "You can only retry your own sources that are waiting or couldn't be read.");
+        const { reading, ...rest } = again;
+        keepAlive(deps, reading);
+        return json({ data: rest }, 202);
       }
       const sd = route.match(/^\/knowledge\/sources\/([0-9a-f-]{36})$/);
       if (sd && m === "DELETE") return await deleteKnowledgeSource(db2, userId, sd[1]) ? json({ data: { deleted: sd[1] } }) : err(404, "You can only delete sources you added.");

@@ -127,8 +127,10 @@ Deno.test("knowledge routes and the ingest job", async () => {
     const env0: Record<string, string> = { FUT_ENABLED: "true", FUT_KB_REDDIT_RSS: "off" };
     const deps = (env: Record<string, string> = {}, bot = false): Deps => ({
       db: db as unknown as Deps["db"], userFor: (req) => Promise.resolve(req.headers.get("x-test-user")), env: (k) => ({ ...env0, ...env })[k],
-      isBot: () => Promise.resolve(bot), fetch: f.fetcher as unknown as Deps["fetch"],
+      isBot: () => Promise.resolve(bot), fetch: f.fetcher as unknown as Deps["fetch"], waitUntil: (p) => { background.push(p); },
     });
+    const background: Promise<unknown>[] = [];
+    const settle = async () => { while (background.length) await background.shift(); };
     // deno-lint-ignore no-explicit-any
     const call = async (path: string, method = "GET", body?: unknown, env: Record<string, string> = {}, user = ME): Promise<{ status: number; data: any }> => {
       const res = await handle(new Request(`http://local/functions/v1/fut-api/v1${path}`, { method, headers: { "content-type": "application/json", "x-test-user": user }, body: body === undefined ? undefined : JSON.stringify(body) }), deps(env));
@@ -185,14 +187,21 @@ Deno.test("knowledge routes and the ingest job", async () => {
     assert((await call("/knowledge/sources", "POST", { url: "https://www.reddit.com/r/fut/comments/zz9999/x/" }, { ANTHROPIC_API_KEY: "k" })).status === 422);
     assert((await call("/knowledge/sources", "POST", { text: "x".repeat(100) })).status === 503, "needs a key");
     const added = await call("/knowledge/sources", "POST", { text: "I tested it all weekend: explosive AcceleRATE wingers win every race against lengthy defenders.", share: true }, { ANTHROPIC_API_KEY: "k" });
-    assert(added.status === 201 && added.data.data.claims === 1 && added.data.data.shared === false, `notes stay private: ${JSON.stringify(added.data)}`);
+    assert(added.status === 202 && added.data.data.status === "reading" && added.data.data.area === "fut" && added.data.data.shared === false, `notes stay private: ${JSON.stringify(added.data)}`);
+    const whileReading = await call("/knowledge/sources?mine=true");
+    assert(whileReading.data.data.sources[0].status === "reading", "shows as reading until the background read finishes");
+    await settle();
+    const afterRead = await call("/knowledge/sources?mine=true");
+    assert(afterRead.data.data.sources[0].status === "read" && afterRead.data.data.sources[0].claims === 1, JSON.stringify(afterRead.data));
     assert(!(await call("/knowledge/map", "GET", undefined, {}, OTHER)).data.data.topics.some((t: { key: string }) => t.key === "explosive-accelerate"));
     const mine = await call("/knowledge/sources?mine=true");
     assert(mine.data.data.total === 1 && mine.data.data.sources[0].mine, JSON.stringify(mine.data));
     const linked = await call("/knowledge/sources", "POST", { url: "https://www.reddit.com/r/EASportsFC/comments/p1/x/" }, { ...keys });
-    assert(linked.status === 201 && linked.data.data.shared === true, `a link already in the bank is read again: ${JSON.stringify(linked.data)}`);
+    await settle();
+    assert(linked.status === 202 && linked.data.data.shared === true, `a link already in the bank is read again: ${JSON.stringify(linked.data)}`);
     const viaRss = await call("/knowledge/sources", "POST", { url: "https://www.reddit.com/r/fut/comments/rss1/x/" }, { ANTHROPIC_API_KEY: "k", FUT_KB_REDDIT_RSS: "" });
-    assert(viaRss.status === 201 && viaRss.data.data.shared === true, `without Reddit keys a link is fetched from its RSS feed: ${JSON.stringify(viaRss.data)}`);
+    await settle();
+    assert(viaRss.status === 202 && viaRss.data.data.shared === true, `without Reddit keys a link is fetched from its RSS feed: ${JSON.stringify(viaRss.data)}`);
     const rssRead = JSON.stringify(f.calls.filter((c) => c.url.includes("anthropic")).at(-1)!.body);
     assert(rssRead.includes("Play 4-4-2 with two strikers") && rssRead.includes("Agree, 4-4-2 is the meta") && !rssRead.includes("submitted by"), rssRead.slice(0, 600));
 
