@@ -12308,6 +12308,7 @@ var PLAYSTYLES2 = PLAYSTYLE_DEFS.map(({ name: name2, group }) => ({ name: name2,
 var MAX_PLAYSTYLES = PLAYSTYLE_SLOT_LEVELS.length;
 var STYLE_ALIASES = { "Game Changer": "Gamechanger", "Game changer": "Gamechanger", "1v1 Close down": "1v1 Close Down" };
 var canonStyle = (name2) => STYLE_ALIASES[name2] ?? name2;
+var BOOST_MAX = 10;
 var archOf = (key2) => ARCHETYPES.find((a) => a.key === key2) ?? ARCHETYPES[ARCHETYPES.length - 2];
 var isKeeper = (archetype) => archOf(archetype).line === "GK";
 var emptyBuild = (archetype = "finisher") => ({
@@ -12321,7 +12322,9 @@ var emptyBuild = (archetype = "finisher") => ({
   points: {},
   playstyles: [],
   specialization: null,
-  budget: null
+  budget: null,
+  masteryLevels: {},
+  boosts: {}
 });
 var clamp3 = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 var int2 = (v, lo, hi, fallback) => {
@@ -12356,7 +12359,13 @@ function normaliseBuild(b) {
     points,
     playstyles: [...new Set((b.playstyles ?? []).map(canonStyle).filter((p) => known.has(p) && !sigs.has(p)))].slice(0, MAX_PLAYSTYLES),
     specialization: spec2 ? spec2.key : null,
-    budget: null
+    budget: null,
+    masteryLevels: Object.fromEntries(
+      Object.entries(b.masteryLevels ?? {}).filter(([k]) => ARCHETYPES.some((a) => a.key === k)).map(([k, v]) => [k, int2(v, 0, LEVEL_CAP, 0)]).filter(([, v]) => v)
+    ),
+    boosts: Object.fromEntries(
+      Object.entries(b.boosts ?? {}).map(([k, v]) => [ATTR_BY_ANY.get(k.toLowerCase())?.key, int2(v, 0, BOOST_MAX, 0)]).filter(([k, v]) => k && v && trainable(archetype, k))
+    )
   };
 }
 var LEGACY_STYLES = [
@@ -12407,16 +12416,22 @@ var b64Decode = (s) => {
 function decodeBuild(code) {
   try {
     const parts = b64Decode(code).split("~");
-    const v2 = parts[0] === "gb2";
-    if (!(v2 || parts[0] === "gb1") || parts.length < (v2 ? 11 : 11)) return null;
+    const ver = parts[0];
+    if (!["gb1", "gb2", "gb3"].includes(ver) || parts.length < (ver === "gb3" ? 13 : 11)) return null;
+    const v2 = ver !== "gb1";
     const [, archetype, level, h, w, sm, wf] = parts;
-    const [attrs, styles, specIdx, ...name2] = v2 ? parts.slice(7) : [parts[8], parts[9], "", ...parts.slice(10)];
-    const points = {};
-    for (const pair of attrs ? attrs.split(",") : []) {
-      const [k, v] = pair.split(".");
-      const a = ATTRIBUTES[Number(k)];
-      if (a) points[a.key] = Number(v);
-    }
+    const [attrs, styles, specIdx, ...rest] = v2 ? parts.slice(7) : [parts[8], parts[9], "", ...parts.slice(10)];
+    const [mast, boostList, ...name2] = ver === "gb3" ? rest : ["", "", ...rest];
+    const pairs = (list3, keys) => {
+      const out = {};
+      for (const pair of list3 ? list3.split(",") : []) {
+        const [k, v] = pair.split(".");
+        const item = keys[Number(k)];
+        if (item) out[item.key] = Number(v);
+      }
+      return out;
+    };
+    const points = pairs(attrs, ATTRIBUTES);
     const list2 = v2 ? PLAYSTYLE_DEFS.map((p) => p.name) : LEGACY_STYLES;
     return normaliseBuild({
       archetype,
@@ -12428,6 +12443,8 @@ function decodeBuild(code) {
       points,
       playstyles: (styles ? styles.split(",") : []).map((i) => list2[Number(i)]).filter(Boolean),
       specialization: specIdx !== "" && specIdx !== void 0 ? SPECIALIZATIONS[Number(specIdx)]?.key ?? null : null,
+      masteryLevels: pairs(mast, ARCHETYPES),
+      boosts: pairs(boostList, ATTRIBUTES),
       name: name2.join("~")
     });
   } catch {

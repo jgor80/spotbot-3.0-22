@@ -2,7 +2,7 @@
 // PlayStyles, priced and unlocked the way the game does it (rules and data in proClubsData.ts), saved in a short
 // share code (gafferbot.app/build?b=...). Builds from Pro Clubs Builder share links can be imported.
 import {
-  ACCELERATE_HEIGHT_SPLIT, AP_BY_LEVEL, ARCHETYPE_RULES, ATTRIBUTE_KEYS, BODY, BODY_EFFECTS, CAPS, COST_BANDS, COST_TIERS,
+  ACCELERATE, AP_BY_LEVEL, ARCHETYPE_RULES, ATTRIBUTE_KEYS, BODY, BODY_EFFECTS, CAPS, COST_BANDS, COST_TIERS,
   LEVEL_CAP, MASTERIES, PLAYSTYLE_DEFS, PLAYSTYLE_SLOT_LEVELS, SIGNATURE_PLUS_LEVELS, SPECIALIZATIONS, START_VALUES,
   type AttrKey, type PlayStyleDef, type Specialization, type StyleGroup,
 } from "./proClubsData.ts";
@@ -129,7 +129,13 @@ export interface Build {
   playstyles: string[]; // regular PlayStyles picked for the slots (Signatures are automatic)
   specialization: string | null; // SPECIALIZATIONS key
   budget: number | null; // kept for old links; the game decides AP by level now
+  masteryLevels: Record<string, number>; // archetype key -> level you have it at (its Mastery adds to every archetype)
+  boosts: Record<string, number>; // attribute key -> club facility boost (in matches)
 }
+
+// Club facilities: the boost a club's facilities give one attribute in matches. FC 27's facility list
+// isn't published in numbers, so players type in what their club has; this is the most we accept.
+export const BOOST_MAX = 10;
 
 const archOf = (key: string) => ARCHETYPES.find((a) => a.key === key) ?? ARCHETYPES[ARCHETYPES.length - 2];
 export const isKeeper = (archetype: string) => archOf(archetype).line === "GK";
@@ -146,6 +152,8 @@ export const emptyBuild = (archetype = "finisher"): Build => ({
   playstyles: [],
   specialization: null,
   budget: null,
+  masteryLevels: {},
+  boosts: {},
 });
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -179,17 +187,24 @@ export function costBetween(archetype: string, key: string, from: number, to: nu
 export const trainedValue = (b: Build, key: string) => (trainable(b.archetype, key) ? startValue(b.archetype, key) + (b.points[key] ?? 0) : 0);
 
 // Mastery from levelling this archetype (other archetypes' masteries aren't known here)
+// Masteries: every archetype you've levelled adds +1 to its pair at level 10, the second again at 30 and the
+// first again at 55, on every archetype you play. This build's own level counts for its own archetype.
+export function masteryLevelOf(b: Build, archetype: string): number {
+  const own = archetype === b.archetype ? b.level : 0;
+  return Math.max(own, b.masteryLevels?.[archetype] ?? 0);
+}
 export function masteryBonus(b: Build, key: string): number {
-  const pair = MASTERIES[b.archetype];
-  if (!pair) return 0;
-  const [first, second] = pair;
   let n = 0;
-  if (key === first) n += (b.level >= 10 ? 1 : 0) + (b.level >= 55 ? 1 : 0);
-  if (key === second) n += (b.level >= 10 ? 1 : 0) + (b.level >= 30 ? 1 : 0);
+  for (const [arch, pair] of Object.entries(MASTERIES)) {
+    const level = masteryLevelOf(b, arch);
+    if (level < 10) continue;
+    const [first, second] = pair;
+    if (key === first) n += 1 + (level >= 55 ? 1 : 0);
+    if (key === second) n += 1 + (level >= 30 ? 1 : 0);
+  }
   return n;
 }
 
-// What the attributes screen shows: trained value plus mastery
 export const menuValue = (b: Build, key: string) => (trainable(b.archetype, key) ? Math.min(99, trainedValue(b, key) + masteryBonus(b, key)) : 0);
 
 const steps = (diff: number, per: number) => Math.sign(diff) * Math.ceil(Math.abs(diff) / per);
@@ -210,10 +225,43 @@ export function bodyEffects(b: Build): Partial<Record<AttrKey, number>> {
   return out;
 }
 
+// In matches: menu value plus height/weight and the club's facility boost
 export const matchValue = (b: Build, key: string, fx = bodyEffects(b)) =>
-  trainable(b.archetype, key) ? clamp(menuValue(b, key) + (fx[key as AttrKey] ?? 0), 1, 99) : 0;
+  trainable(b.archetype, key) ? clamp(menuValue(b, key) + (fx[key as AttrKey] ?? 0) + (b.boosts?.[key] ?? 0), 1, 99) : 0;
 
-export const accelerateType = (b: Build) => (b.heightCm <= ACCELERATE_HEIGHT_SPLIT ? "Explosive or Controlled" : "Lengthy or Controlled");
+// AcceleRATE from the in-match values (body and facility boosts count). `explosive` and `lengthy` list
+// what's still short for each, so the page can say what it would take.
+export type AccelType = "Explosive" | "Controlled" | "Lengthy";
+export interface AccelCheck { label: string; ok: boolean; have: number; need: string }
+export function accelerate(b: Build, fx = bodyEffects(b)): { type: AccelType; explosive: AccelCheck[]; lengthy: AccelCheck[] } {
+  const acc = matchValue(b, "acceleration", fx), agi = matchValue(b, "agility", fx), str = matchValue(b, "strength", fx);
+  const E = ACCELERATE.explosive, L = ACCELERATE.lengthy;
+  const explosive: AccelCheck[] = [
+    { label: "Height", ok: b.heightCm <= E.maxHeight, have: b.heightCm, need: `${E.maxHeight} cm or less` },
+    { label: "Agility", ok: agi >= E.agility, have: agi, need: `${E.agility}+` },
+    { label: "Agility over Strength", ok: agi - str >= E.agilityOverStrength, have: agi - str, need: `+${E.agilityOverStrength}` },
+    { label: "Acceleration", ok: acc >= E.acceleration, have: acc, need: `${E.acceleration}+` },
+  ];
+  const lengthy: AccelCheck[] = [
+    { label: "Height", ok: b.heightCm >= L.minHeight, have: b.heightCm, need: `${L.minHeight} cm or more` },
+    { label: "Strength", ok: str >= L.strength, have: str, need: `${L.strength}+` },
+    { label: "Strength over Agility", ok: str - agi >= L.strengthOverAgility, have: str - agi, need: `+${L.strengthOverAgility}` },
+    { label: "Acceleration", ok: acc >= L.acceleration, have: acc, need: `${L.acceleration}+` },
+  ];
+  const type: AccelType = explosive.every((c) => c.ok) ? "Explosive" : lengthy.every((c) => c.ok) ? "Lengthy" : "Controlled";
+  return { type, explosive, lengthy };
+}
+export const accelerateType = (b: Build) => accelerate(b).type;
+
+// ---------- Units ----------
+// Imperial is the default everywhere (Jeff, 2026-11-16); metric is a toggle. The game itself works in cm/kg.
+export type Units = "imperial" | "metric";
+export function formatHeight(cm: number, units: Units = "imperial"): string {
+  if (units === "metric") return `${cm} cm`;
+  const inches = Math.round(cm / 2.54);
+  return `${Math.floor(inches / 12)}'${inches % 12}"`;
+}
+export const formatWeight = (kg: number, units: Units = "imperial") => (units === "metric" ? `${kg} kg` : `${Math.round(kg * 2.20462)} lb`);
 
 // ---------- AP ----------
 export const apAtLevel = (level: number) => AP_BY_LEVEL[clamp(Math.round(level), 1, LEVEL_CAP)];
@@ -317,6 +365,12 @@ export function normaliseBuild(b: Partial<Build>): Build {
     playstyles: [...new Set((b.playstyles ?? []).map(canonStyle).filter((p) => known.has(p) && !sigs.has(p)))].slice(0, MAX_PLAYSTYLES),
     specialization: spec ? spec.key : null,
     budget: null,
+    masteryLevels: Object.fromEntries(
+      Object.entries(b.masteryLevels ?? {}).filter(([k]) => ARCHETYPES.some((a) => a.key === k)).map(([k, v]) => [k, int(v, 0, LEVEL_CAP, 0)]).filter(([, v]) => v),
+    ),
+    boosts: Object.fromEntries(
+      Object.entries(b.boosts ?? {}).map(([k, v]) => [ATTR_BY_ANY.get(k.toLowerCase())?.key, int(v, 0, BOOST_MAX, 0)] as const).filter(([k, v]) => k && v && trainable(archetype, k)),
+    ),
   };
 }
 
@@ -374,7 +428,9 @@ export function buildSummary(b: Build): BuildSummary {
 }
 
 // ---------- Share codes ----------
-// gb2~archetype~level~height~weight~skill~weakfoot~attrIndex.points,...~playstyle index list~specialization~name
+// gb3~archetype~level~height~weight~skill~weakfoot~attrIndex.points,...~playstyle index list~specialization
+//    ~archetypeIndex.masteryLevel,...~attrIndex.facilityBoost,...~name
+// gb2 is the same without the mastery and boost parts.
 // Indexes into ATTRIBUTES and PLAYSTYLE_DEFS: only ever append to those lists, never reorder.
 // gb1 (first version) is still read: its PlayStyle indexes use LEGACY_STYLES.
 const LEGACY_STYLES = [
@@ -403,22 +459,31 @@ export function encodeBuild(input: Build): string {
   const attrs = ATTRIBUTES.map((a, i) => (b.points[a.key] ? `${i}.${b.points[a.key]}` : "")).filter(Boolean).join(",");
   const styles = b.playstyles.map((p) => PLAYSTYLE_DEFS.findIndex((s) => s.name === p)).filter((i) => i >= 0).join(",");
   const spec = b.specialization ? SPECIALIZATIONS.findIndex((s) => s.key === b.specialization) : -1;
-  return b64urlEncode(["gb2", b.archetype, b.level, b.heightCm, b.weightKg, b.skillMoves, b.weakFoot, attrs, styles, spec >= 0 ? spec : "", b.name].join("~"));
+  const mast = ARCHETYPES.map((a, i) => (b.masteryLevels[a.key] ? `${i}.${b.masteryLevels[a.key]}` : "")).filter(Boolean).join(",");
+  const boosts = ATTRIBUTES.map((a, i) => (b.boosts[a.key] ? `${i}.${b.boosts[a.key]}` : "")).filter(Boolean).join(",");
+  const v3 = mast || boosts;
+  return b64urlEncode([v3 ? "gb3" : "gb2", b.archetype, b.level, b.heightCm, b.weightKg, b.skillMoves, b.weakFoot, attrs, styles, spec >= 0 ? spec : "", ...(v3 ? [mast, boosts] : []), b.name].join("~"));
 }
 
 export function decodeBuild(code: string): Build | null {
   try {
     const parts = b64Decode(code).split("~");
-    const v2 = parts[0] === "gb2";
-    if (!(v2 || parts[0] === "gb1") || parts.length < (v2 ? 11 : 11)) return null;
+    const ver = parts[0];
+    if (!["gb1", "gb2", "gb3"].includes(ver) || parts.length < (ver === "gb3" ? 13 : 11)) return null;
+    const v2 = ver !== "gb1";
     const [, archetype, level, h, w, sm, wf] = parts;
-    const [attrs, styles, specIdx, ...name] = v2 ? parts.slice(7) : [parts[8], parts[9], "", ...parts.slice(10)];
-    const points: Record<string, number> = {};
-    for (const pair of attrs ? attrs.split(",") : []) {
-      const [k, v] = pair.split(".");
-      const a = ATTRIBUTES[Number(k)];
-      if (a) points[a.key] = Number(v);
-    }
+    const [attrs, styles, specIdx, ...rest] = v2 ? parts.slice(7) : [parts[8], parts[9], "", ...parts.slice(10)];
+    const [mast, boostList, ...name] = ver === "gb3" ? rest : ["", "", ...rest];
+    const pairs = (list: string, keys: { key: string }[]) => {
+      const out: Record<string, number> = {};
+      for (const pair of list ? list.split(",") : []) {
+        const [k, v] = pair.split(".");
+        const item = keys[Number(k)];
+        if (item) out[item.key] = Number(v);
+      }
+      return out;
+    };
+    const points = pairs(attrs, ATTRIBUTES);
     const list = v2 ? PLAYSTYLE_DEFS.map((p) => p.name) : LEGACY_STYLES;
     return normaliseBuild({
       archetype,
@@ -430,6 +495,8 @@ export function decodeBuild(code: string): Build | null {
       points,
       playstyles: (styles ? styles.split(",") : []).map((i) => list[Number(i)]).filter(Boolean),
       specialization: specIdx !== "" && specIdx !== undefined ? SPECIALIZATIONS[Number(specIdx)]?.key ?? null : null,
+      masteryLevels: pairs(mast, ARCHETYPES),
+      boosts: pairs(boostList, ATTRIBUTES),
       name: name.join("~"),
     });
   } catch {

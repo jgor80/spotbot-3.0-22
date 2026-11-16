@@ -127,8 +127,16 @@ export const BODY_EFFECTS = {
   },
 } as const satisfies Record<string, Record<string, { up: readonly AttrKey[]; down: readonly AttrKey[] }>>;
 
-// AcceleRATE: 182 cm and under can be Explosive, 183 and over Lengthy (other inputs not published).
+// AcceleRATE (community-measured for FC 27, men's heights; uses in-match values): Explosive needs all of
+// height <= 182 cm, Agility 65+, Agility at least 10 above Strength, Acceleration 80+. Lengthy needs all of
+// height >= 183 cm, Strength 65+, Strength at least 4 above Agility, Acceleration 40+. Everything else is
+// Controlled. Lengthy's minimum height is disputed: 183 cm (FC 27 guide) vs 185 cm (an FC 26 change some
+// sources still quote), so the planner uses 183 and says so.
 export const ACCELERATE_HEIGHT_SPLIT = 182;
+export const ACCELERATE = {
+  explosive: { maxHeight: 182, agility: 65, agilityOverStrength: 10, acceleration: 80 },
+  lengthy: { minHeight: 183, strength: 65, strengthOverAgility: 4, acceleration: 40 },
+} as const;
 
 // Masteries: levelling an archetype adds +1 to a pair of attributes on every archetype you own.
 // At level 10 both get +1, level 30 the second gets +1 more, level 55 the first.
@@ -278,4 +286,5 @@ export const UNCONFIRMED_NOTES = [
   "Goalkeeper PlayStyle requirements (FC 26 values).",
   "How skill moves and weak foot stars are set in FC 27.",
   "AP prices for keepers' Long Shots and Volleys.",
+  "Lengthy AcceleRATE's minimum height: 183 cm here; some sources say 185 cm.",
 ];

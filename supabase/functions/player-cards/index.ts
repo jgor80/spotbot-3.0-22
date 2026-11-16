@@ -3,6 +3,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { z } from "npm:zod@3";
 import { identifyCaller } from "../_shared/auth.ts";
+import { decodeBuild } from "../../../src/lib/proBuild.ts";
 
 const SECRET = Deno.env.get("BOT_PROXY_SECRET") ?? "";
 const db = createClient(Deno.env.get("SUPABASE_URL") ?? "", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "");
@@ -18,6 +19,12 @@ function safeEqual(a: string, b: string) {
 const id = z.string().regex(/^\d{5,25}$/);
 const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("binder") }),
+  // The member's saved Build lab builds; the one on_cards is used by Graphics Studio for build cards and backs
+  z.object({ action: z.literal("builds_list") }),
+  z.object({ action: z.literal("build_save"), id: z.string().uuid().optional(), code: z.string().min(8).max(800).regex(/^[A-Za-z0-9_-]+$/),
+    on_cards: z.boolean().optional(), units: z.enum(["imperial", "metric"]).optional() }),
+  z.object({ action: z.literal("build_delete"), id: z.string().uuid() }),
+  z.object({ action: z.literal("build_cards"), id: z.string().uuid().nullable(), units: z.enum(["imperial", "metric"]).optional() }),
   z.object({ action: z.literal("latest"), guild_id: id, discord_user_ids: z.array(id).max(100).optional() }),
   z.object({ action: z.literal("save"), guild_id: id, discord_user_id: id, style: z.string().max(30), name: z.string().min(1).max(40),
     front_b64: z.string().min(10).max(12_000_000), back_b64: z.string().max(12_000_000).optional() }),
@@ -28,6 +35,47 @@ const Body = z.discriminatedUnion("action", [
 const bytes = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 const sign = async (path: string | null) => path ? (await db.storage.from(BUCKET).createSignedUrl(path, 3600)).data?.signedUrl ?? null : null;
 
+const MAX_BUILDS = 30;
+const BUILD_COLS = "id, name, code, archetype, level, on_cards, units, updated_at";
+type BuildAction = Extract<z.infer<typeof Body>, { action: "builds_list" | "build_save" | "build_delete" | "build_cards" }>;
+async function listBuilds(member: string) {
+  const { data } = await db.from("player_builds").select(BUILD_COLS).eq("discord_user_id", member).order("updated_at", { ascending: false }).limit(MAX_BUILDS);
+  const builds = data ?? [];
+  // Highest level saved per archetype: what the member has levelled (their Masteries)
+  const levels: Record<string, number> = {};
+  for (const r of builds) levels[r.archetype] = Math.max(levels[r.archetype] ?? 0, r.level);
+  return { builds, levels };
+}
+async function buildsAction(member: string, b: BuildAction): Promise<[unknown, number?]> {
+  if (b.action === "builds_list") return [await listBuilds(member)];
+  if (b.action === "build_delete") {
+    await db.from("player_builds").delete().eq("discord_user_id", member).eq("id", b.id);
+    return [await listBuilds(member)];
+  }
+  if (b.action === "build_cards") {
+    await db.from("player_builds").update({ on_cards: false }).eq("discord_user_id", member).eq("on_cards", true);
+    if (b.id) await db.from("player_builds").update({ on_cards: true, ...(b.units ? { units: b.units } : {}) }).eq("discord_user_id", member).eq("id", b.id);
+    return [await listBuilds(member)];
+  }
+  const build = decodeBuild(b.code);
+  if (!build) return [{ error: "That isn't a Build lab code." }, 400];
+  const row = { name: build.name, code: b.code, archetype: build.archetype, level: build.level, units: b.units ?? "imperial", updated_at: new Date().toISOString() };
+  if (b.on_cards) await db.from("player_builds").update({ on_cards: false }).eq("discord_user_id", member).eq("on_cards", true);
+  let id = b.id;
+  if (id) {
+    const { data } = await db.from("player_builds").update({ ...row, ...(b.on_cards ? { on_cards: true } : {}) }).eq("discord_user_id", member).eq("id", id).select("id").maybeSingle();
+    if (!data) id = undefined;
+  }
+  if (!id) {
+    const { count } = await db.from("player_builds").select("id", { count: "exact", head: true }).eq("discord_user_id", member);
+    if ((count ?? 0) >= MAX_BUILDS) return [{ error: `You can keep ${MAX_BUILDS} builds. Delete one first.` }, 400];
+    const { data, error } = await db.from("player_builds").insert({ ...row, discord_user_id: member, on_cards: !!b.on_cards }).select("id").single();
+    if (error) return [{ error: "Couldn't save your build." }, 500];
+    id = data.id;
+  }
+  return [{ id, ...(await listBuilds(member)) }];
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers });
   const bot = !!SECRET && safeEqual(req.headers.get("x-bot-secret") ?? "", SECRET);
@@ -36,7 +84,14 @@ Deno.serve(async (req) => {
   const p = Body.safeParse(await req.json().catch(() => null));
   if (!p.success) return json({ error: "Invalid request." }, 400);
   const b = p.data;
-  // Binder: the signed-in member's own collection, fronts and backs. Ownership comes from their
+  if (b.action === "builds_list" || b.action === "build_save" || b.action === "build_delete" || b.action === "build_cards") {
+    if (bot || caller?.kind !== "user") return json({ error: "Forbidden" }, 403);
+    const { data: link } = await db.from("user_discord_links").select("discord_user_id").eq("auth_user_id", caller.userId).eq("verified", true).limit(1).maybeSingle();
+    const member = link?.discord_user_id;
+    if (!member) return json({ error: "Link your Discord account to save builds and put them on your cards." }, 403);
+    return json(...(await buildsAction(member, b)));
+  }
+  // Binder: the signed-in member's own collection  // Binder: the signed-in member's own collection, fronts and backs. Ownership comes from their
   // verified Discord link, never from the request body.
   if (b.action === "binder") {
     if (bot || caller?.kind !== "user") return json({ error: "Forbidden" }, 403);

@@ -4412,6 +4412,7 @@ var PLAYSTYLES = PLAYSTYLE_DEFS.map(({ name: name2, group }) => ({ name: name2, 
 var MAX_PLAYSTYLES = PLAYSTYLE_SLOT_LEVELS.length;
 var STYLE_ALIASES = { "Game Changer": "Gamechanger", "Game changer": "Gamechanger", "1v1 Close down": "1v1 Close Down" };
 var canonStyle = (name2) => STYLE_ALIASES[name2] ?? name2;
+var BOOST_MAX = 10;
 var archOf = (key) => ARCHETYPES.find((a) => a.key === key) ?? ARCHETYPES[ARCHETYPES.length - 2];
 var isKeeper = (archetype) => archOf(archetype).line === "GK";
 var emptyBuild = (archetype = "finisher") => ({
@@ -4425,7 +4426,9 @@ var emptyBuild = (archetype = "finisher") => ({
   points: {},
   playstyles: [],
   specialization: null,
-  budget: null
+  budget: null,
+  masteryLevels: {},
+  boosts: {}
 });
 var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 var int = (v, lo, hi, fallback) => {
@@ -4460,7 +4463,13 @@ function normaliseBuild(b) {
     points,
     playstyles: [...new Set((b.playstyles ?? []).map(canonStyle).filter((p) => known.has(p) && !sigs.has(p)))].slice(0, MAX_PLAYSTYLES),
     specialization: spec2 ? spec2.key : null,
-    budget: null
+    budget: null,
+    masteryLevels: Object.fromEntries(
+      Object.entries(b.masteryLevels ?? {}).filter(([k]) => ARCHETYPES.some((a) => a.key === k)).map(([k, v]) => [k, int(v, 0, LEVEL_CAP, 0)]).filter(([, v]) => v)
+    ),
+    boosts: Object.fromEntries(
+      Object.entries(b.boosts ?? {}).map(([k, v]) => [ATTR_BY_ANY.get(k.toLowerCase())?.key, int(v, 0, BOOST_MAX, 0)]).filter(([k, v]) => k && v && trainable(archetype, k))
+    )
   };
 }
 var b64urlEncode = (s) => {
@@ -4474,7 +4483,10 @@ function encodeBuild(input) {
   const attrs = ATTRIBUTES.map((a, i) => b.points[a.key] ? `${i}.${b.points[a.key]}` : "").filter(Boolean).join(",");
   const styles = b.playstyles.map((p) => PLAYSTYLE_DEFS.findIndex((s) => s.name === p)).filter((i) => i >= 0).join(",");
   const spec2 = b.specialization ? SPECIALIZATIONS.findIndex((s) => s.key === b.specialization) : -1;
-  return b64urlEncode(["gb2", b.archetype, b.level, b.heightCm, b.weightKg, b.skillMoves, b.weakFoot, attrs, styles, spec2 >= 0 ? spec2 : "", b.name].join("~"));
+  const mast = ARCHETYPES.map((a, i) => b.masteryLevels[a.key] ? `${i}.${b.masteryLevels[a.key]}` : "").filter(Boolean).join(",");
+  const boosts = ATTRIBUTES.map((a, i) => b.boosts[a.key] ? `${i}.${b.boosts[a.key]}` : "").filter(Boolean).join(",");
+  const v3 = mast || boosts;
+  return b64urlEncode([v3 ? "gb3" : "gb2", b.archetype, b.level, b.heightCm, b.weightKg, b.skillMoves, b.weakFoot, attrs, styles, spec2 >= 0 ? spec2 : "", ...v3 ? [mast, boosts] : [], b.name].join("~"));
 }
 
 // src/lib/metaBuilds.ts

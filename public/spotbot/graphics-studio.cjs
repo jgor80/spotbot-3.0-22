@@ -32,6 +32,7 @@ const { renderYearbookCard } = require('./graphics-yearbook.cjs');
 const { renderSignatureCard, SIGNATURE_STYLES } = require('./graphics-signature.cjs');
 const { renderSiciliaCard, renderSiciliaBack } = require('./graphics-sicilia.cjs');
 const { renderCardBack } = require('./graphics-card-back.cjs');
+const buildCards = require('./graphics-build-card.cjs');
 const { finishCardSvg } = require('./card-layout.cjs');
 const { cardStats } = require('./card-stats.cjs');
 const { createDeepStats } = require('./deep-stats.cjs');
@@ -471,10 +472,10 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     if (draft.data.eaTeam) draft.data.teamName = cleanTeamName(draft.data.eaTeam.name) || typed;
   }
   function draftPrompt(token, kind, club, hub = false) {
-    const choices = kind === 'card'
-      ? [['stats', 'With Stats'], ['portrait', 'Portrait Only']]
-      : [['edit', 'Edit Before Rendering']];
     const draft = DRAFTS.get(token);
+    const choices = kind === 'card'
+      ? [['stats', 'With Stats'], ...(draft?.data?.build ? [['build', 'With My Build']] : []), ['portrait', 'Portrait Only']]
+      : [['edit', 'Edit Before Rendering']];
     const kits = kitsFor(club);
     const chosen = draft?.data?.kitKey;
     const auto = kitFor(club, draft?.style);
@@ -501,13 +502,18 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     const eaButtons = ea?.kit ? [new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`gs_dteamkit:${token}`).setLabel(draft.data.ownKit ? 'Kit: my own' : `Kit: ${ea.name}`.slice(0, 80)).setEmoji('👕').setStyle(draft.data.ownKit ? ButtonStyle.Secondary : ButtonStyle.Success),
     )] : [];
-    return { content: kind === 'card' ? `🎴 Pick a kit and ${photos.length ? 'which of your uploaded photos to base it on' : 'style'} (optional), then with stats or just your pro?${hub ? ' **Pick uniform** dresses you in any kit; **Team name** puts your own team on the card.' : ' **Team name** puts your own team on the card.'} Type your EA club's name and its crest and kit are used automatically.${team}` : 'Your details are ready. Pick a kit if you like.', components: [...(ea?.kit && !draft.data.ownKit ? [] : kitRow), ...photoRow, ...eaRows, new ActionRowBuilder().addComponents(
-      ...choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary)),
-      ...(kind === 'card' ? [new ButtonBuilder().setCustomId(`gs_dback:${token}`).setLabel(draft?.data?.noBack ? 'Back of card: Off' : 'Back of card: On').setEmoji('🔄').setStyle(draft?.data?.noBack ? ButtonStyle.Secondary : ButtonStyle.Success)] : []),
-      ...(kind === 'card' ? [new ButtonBuilder().setCustomId(`gs_dteam:${token}`).setLabel('Team name').setEmoji('🏷️').setStyle(ButtonStyle.Secondary)] : []),
+    const modeButtons = choices.map(([mode, label]) => new ButtonBuilder().setCustomId(`gs_edit:${token}:${mode}`).setLabel(label).setStyle(ButtonStyle.Primary));
+    const optionButtons = kind === 'card' ? [
+      new ButtonBuilder().setCustomId(`gs_dback:${token}`).setLabel(draft?.data?.noBack ? 'Back of card: Off' : draft?.data?.build ? `Back of card: ${draft.data.backKind === 'build' ? 'My build' : 'Career'}` : 'Back of card: On').setEmoji('🔄').setStyle(draft?.data?.noBack ? ButtonStyle.Secondary : ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`gs_dteam:${token}`).setLabel('Team name').setEmoji('🏷️').setStyle(ButtonStyle.Secondary),
       // On a Social Hub server, the player's own kit (kit-catalog.cjs, saved on their profile)
-      ...(kind === 'card' && hub ? [new ButtonBuilder().setCustomId('kc_open').setLabel('Pick uniform').setEmoji('👕').setStyle(ButtonStyle.Secondary)] : []),
-    ), ...eaButtons].slice(0, 5) };
+      ...(hub ? [new ButtonBuilder().setCustomId('kc_open').setLabel('Pick uniform').setEmoji('👕').setStyle(ButtonStyle.Secondary)] : []),
+    ] : [];
+    // One row when it fits (Discord allows 5 buttons a row), else modes and options on their own rows
+    const buttonRows = modeButtons.length + optionButtons.length <= 5
+      ? [new ActionRowBuilder().addComponents(...modeButtons, ...optionButtons)]
+      : [new ActionRowBuilder().addComponents(...modeButtons), new ActionRowBuilder().addComponents(...optionButtons)];
+    return { content: kind === 'card' ? `🎴 Pick a kit and ${photos.length ? 'which of your uploaded photos to base it on' : 'style'} (optional), then with stats or just your pro?${hub ? ' **Pick uniform** dresses you in any kit; **Team name** puts your own team on the card.' : ' **Team name** puts your own team on the card.'} Type your EA club's name and its crest and kit are used automatically.${draft?.data?.build ? ' **With My Build** prints your saved gafferbot.app/build attributes instead of stats, and the back of card can show your build.' : ' Save a build at gafferbot.app/build to put your attributes on a card.'}${team}` : 'Your details are ready. Pick a kit if you like.', components: [...(ea?.kit && !draft.data.ownKit ? [] : kitRow), ...photoRow, ...eaRows, ...buttonRows, ...eaButtons].slice(0, 5) };
   }
   const input = (id, label, value, { para = false, max = 100, req = false } = {}) => new ActionRowBuilder().addComponents(
     new TextInputBuilder().setCustomId(id).setLabel(label).setStyle(para ? TextInputStyle.Paragraph : TextInputStyle.Short)
@@ -671,6 +677,8 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       supabase.from('player_season_archive').select('*').eq('guild_id', guildId).eq('discord_user_id', userId),
       supabase.from('ea_seasons').select('code, label, starts_at').order('starts_at'),
     ]);
+    // Their saved Build lab build (gafferbot.app/build), for "With My Build" cards and build backs
+    const saved = await buildCards.loadBuild(supabase, userId).catch(() => null);
     const data = cardStats((statsRows || []).map((s) => ({ ...s, primary_position: photo?.position || s.primary_position })), club);
     // Best FC27 percentile from EA's event data, when it's a real strength (top 25%)
     const badge = data.stats.length ? await deepStats.badgeFor(guildId, userId).catch(() => null) : null;
@@ -686,6 +694,7 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
     return {
       ...data, userId, name: displayName || profile?.ea_username || 'Player', position: photo?.position || data.position,
       overall: photo?.overall || '', kitNumber: verified || null, seasonRows, clubTotals,
+      build: saved?.build || null, buildUnits: saved?.units || 'imperial',
       // The member's own uploads, offered as the card's reference photo.
       photos: (assets || []).filter((a) => a.source_kind === 'upload').slice(0, 24).map((a, i) => ({
         id: a.id, label: clip(`${i + 1}. ${a.pose || 'Photo'}${a.analysis?.kit_number ? ` · #${a.analysis.kit_number}` : ''}`, 90),
@@ -740,7 +749,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       overall: d.overall || null, overallLabel: d.overallLabel || 'EA OVR', stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel, tagline: d.tagline, composition: variation.composition, number, frame,
     });
     const backName = `card-back-${d.name}.png`.replace(/[^\w.-]/g, '_');
-    const back = d.noBack ? null : style === 'sicilia'
+    const back = d.noBack ? null : d.backKind === 'build' && d.build
+      ? new AttachmentBuilder(buildCards.renderBuildBack({ style, accent: palette(style, club.kit).accent, number, name: d.name, clubName: club.name, position: shortPosition(d.position) || d.position, build: d.build, units: d.buildUnits }, G), { name: backName })
+      : style === 'sicilia'
       ? new AttachmentBuilder(renderSiciliaBack({ number, name: d.name, clubName: club.name, position: d.position, stats: d.stats, seasonLabel: d.seasonLabel, dataLabel: d.dataLabel }, G), { name: backName })
       : new AttachmentBuilder(renderCardBack({ style, accent: palette(style, club.kit).accent, number, name: d.name, clubName: club.name, position: shortPosition(d.position) || d.position, rows: d.seasonRows || [], totals: d.clubTotals || null, edited: d.dataLabel === 'MEMBER-EDITED' }, G), { name: backName });
     // Once posted, keep a copy in the member's collection (My Cards); a failed save never blocks posting.
@@ -1143,8 +1154,16 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
         await interaction.reply({ content: 'That form expired — start again from the panel.', flags: 64 });
         return true;
       }
-      const d = draft.data;
+      // The card's own stat fields, kept so picking another mode after a cancelled form starts clean
+      if (draft.kind === 'card' && !draft.data.cardBase) {
+        const { stats, overall, seasonLabel, tagline, dataLabel, overallLabel } = draft.data;
+        draft.data.cardBase = { stats, overall, seasonLabel, tagline, dataLabel, overallLabel };
+      }
+      const d = draft.kind === 'card' ? { ...draft.data, ...draft.data.cardBase } : draft.data;
+      if (draft.kind === 'card') draft.data = d;
       if (draft.kind === 'card' && a2 === 'portrait') draft.data = { ...d, stats: [], overall: '', seasonLabel: 'VIRTUAL PRO', tagline: '' };
+      // Alternate card: the saved build's in-match attributes in place of stats, with the build on the back
+      if (draft.kind === 'card' && a2 === 'build' && d.build) draft.data = { ...d, stats: buildCards.buildStats(d.build), overall: '', ...buildCards.buildLabels(d.build), backKind: d.noBack ? d.backKind : 'build' };
       await interaction.showModal(draft.kind === 'card' ? cardModal(a1, draft.data) : draft.kind === 'recruit' ? recruitModal(a1, d) : draft.kind === 'poster' ? posterModal(a1, d) : lineupModal(a1, d));
       return true;
     }
@@ -1186,7 +1205,9 @@ function createGraphicsStudio({ supabase, supabaseUrl, secret, getGuildState, sa
       if (!draft || draft.userId !== interaction.user.id || Date.now() - draft.ts > 30 * 60e3) {
         await update({ content: 'That form expired — start again from the panel.', components: [], embeds: [], attachments: [] }); return true;
       }
-      draft.data.noBack = !draft.data.noBack;
+      // Career -> My build (when one is saved) -> Off -> Career
+      const dd = draft.data;
+      if (dd.noBack) { dd.noBack = false; dd.backKind = 'career'; } else if (dd.build && dd.backKind !== 'build') dd.backKind = 'build'; else dd.noBack = true;
       await update(await draftMessage(a1, 'card', findClub(draft.clubKey), interaction.guildId)); return true;
     }
     const manager = async () => isManager(interaction.member, interaction.guildId);
