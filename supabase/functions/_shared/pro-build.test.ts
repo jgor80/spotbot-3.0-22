@@ -1,5 +1,7 @@
 import assertNode from "node:assert/strict";
 import {
+  applyProfile,
+  cleanProfile,
   accelerate, accelerateType, apAtLevel, apSpent, ARCHETYPES, attrCap, ATTRIBUTES, BODY, bodyEffects, buildPath, buildSummary, costBetween, costTier, decodeBuild, emptyBuild,
   encodeBuild, importProClubsBuilder, levelNeeded, matchValue, MAX_PLAYSTYLES, menuValue, normaliseBuild, PLAYSTYLE_DEFS, playstyleSlots, playstyleStatus, pointCost,
   raiseFor, SPECIALIZATIONS, specializationStatus, startValue, trainable,
@@ -185,4 +187,15 @@ Deno.test("masteries from other archetypes and club facility boosts, kept in sha
   ok(atob(code.replace(/-/g, "+").replace(/_/g, "/") + "==".slice(0, (4 - (code.length % 4)) % 4)).startsWith("gb3~"));
   eq(decodeBuild(code), normaliseBuild({ ...withMastery, boosts: { strength: 4 } }));
   ok(atob(encodeBuild(boss).replace(/-/g, "+").replace(/_/g, "/") + "==".slice(0, (4 - (encodeBuild(boss).length % 4)) % 4)).startsWith("gb2~"));
+});
+
+Deno.test("a player's saved masteries and facility boosts apply to every build", () => {
+  const profile = cleanProfile({ masteryLevels: { spark: 30, nope: 9 }, boosts: { finishing: 3, gkDiving: 2, junk: 4 } } as never);
+  assertNode.deepEqual(profile, { masteryLevels: { spark: 30 }, boosts: { finishing: 3, gkDiving: 2 } });
+  const striker = applyProfile(emptyBuild("finisher"), profile, { target: 20, spark: 12 });
+  assertNode.deepEqual(striker.masteryLevels, { spark: 30, target: 20 }); // higher of profile and saved builds
+  assertNode.deepEqual(striker.boosts, { finishing: 3 }); // keeper boosts only on keepers
+  assertNode.deepEqual(applyProfile(emptyBuild("shotstopper"), profile).boosts, { finishing: 3, gkDiving: 2 });
+  // Removing a boost from the profile removes it from builds that had it
+  assertNode.deepEqual(applyProfile({ ...striker, boosts: { finishing: 5 } }, { boosts: {} }).boosts, {});
 });

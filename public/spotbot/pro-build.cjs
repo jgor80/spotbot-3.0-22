@@ -42,12 +42,14 @@ __export(proBuild_exports, {
   accelerateType: () => accelerateType,
   apAtLevel: () => apAtLevel,
   apSpent: () => apSpent,
+  applyProfile: () => applyProfile,
   attrCap: () => attrCap,
   bodyEffects: () => bodyEffects,
   buildPath: () => buildPath,
   buildSummary: () => buildSummary,
   canonStyle: () => canonStyle,
   capConfirmed: () => capConfirmed,
+  cleanProfile: () => cleanProfile,
   costBetween: () => costBetween,
   costTier: () => costTier,
   decodeBuild: () => decodeBuild,
@@ -602,6 +604,22 @@ function normaliseBuild(b) {
     )
   };
 }
+function cleanProfile(p) {
+  return {
+    masteryLevels: Object.fromEntries(
+      Object.entries(p?.masteryLevels ?? {}).filter(([k]) => ARCHETYPES.some((a) => a.key === k)).map(([k, v]) => [k, int(v, 0, LEVEL_CAP, 0)]).filter(([, v]) => v)
+    ),
+    boosts: Object.fromEntries(
+      Object.entries(p?.boosts ?? {}).map(([k, v]) => [ATTR_BY_ANY.get(k.toLowerCase())?.key, int(v, 0, BOOST_MAX, 0)]).filter(([k, v]) => k && v)
+    )
+  };
+}
+function applyProfile(b, profile, savedLevels = {}) {
+  const p = cleanProfile(profile);
+  const levels = { ...p.masteryLevels };
+  for (const [k, v] of Object.entries(savedLevels)) levels[k] = Math.max(levels[k] ?? 0, Number(v) || 0);
+  return normaliseBuild({ ...b, masteryLevels: levels, boosts: p.boosts });
+}
 var pointsSpent = (b) => Object.values(b.points).reduce((t, v) => t + v, 0);
 function groupTotals(b) {
   const out = Object.fromEntries(ATTR_GROUPS.map((g) => [g.key, 0]));
@@ -792,12 +810,14 @@ function importProClubsBuilder(linkOrCode) {
   accelerateType,
   apAtLevel,
   apSpent,
+  applyProfile,
   attrCap,
   bodyEffects,
   buildPath,
   buildSummary,
   canonStyle,
   capConfirmed,
+  cleanProfile,
   costBetween,
   costTier,
   decodeBuild,

@@ -5,10 +5,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreditCard, FolderOpen, Save, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { ARCHETYPES, decodeBuild, encodeBuild, type Build, type Units } from "@/lib/proBuild";
+import { ARCHETYPES, decodeBuild, encodeBuild, type Build, type ProProfile, type Units } from "@/lib/proBuild";
 
 export interface SavedBuild { id: string; name: string; code: string; archetype: string; level: number; on_cards: boolean; units: Units; updated_at: string }
-interface BuildsResponse { builds: SavedBuild[]; levels: Record<string, number>; id?: string }
+interface BuildsResponse { builds: SavedBuild[]; levels: Record<string, number>; profile: ProProfile | null; id?: string }
 
 async function call<T>(fn: string, body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke(fn, { body });
@@ -38,7 +38,12 @@ export function useMyBuilds() {
   });
   const remove = useMutation({ mutationFn: (id: string) => call<BuildsResponse>("player-cards", { action: "build_delete", id }), onSuccess: set });
   const onCards = useMutation({ mutationFn: (v: { id: string | null; units: Units }) => call<BuildsResponse>("player-cards", { action: "build_cards", id: v.id, units: v.units }), onSuccess: set });
-  return { signedIn: !!user, list, save, remove, onCards };
+  // Masteries and club facility boosts, saved once and applied to every build
+  const saveProfile = useMutation({
+    mutationFn: (p: ProProfile) => call<BuildsResponse>("player-cards", { action: "build_profile", mastery_levels: p.masteryLevels, boosts: p.boosts }),
+    onSuccess: set,
+  });
+  return { signedIn: !!user, list, save, remove, onCards, saveProfile };
 }
 
 // The member's best photo for a card: their face headshot, else the newest upload. Returned as a data URL

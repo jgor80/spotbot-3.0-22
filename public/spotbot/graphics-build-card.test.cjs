@@ -5,10 +5,14 @@ const BC = require('./graphics-build-card.cjs');
 const P = require('./pro-build.cjs');
 
 const marauder = P.normaliseBuild({ ...P.emptyBuild('marauder'), level: 55, points: { sprintSpeed: 20, acceleration: 15 }, playstyles: ['Jockey'] });
-const fakeDb = (row) => {
-  const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data: row }) };
-  return { from: () => q };
-};
+// Fake chainable DB: the on_cards row, an optional profile row and the member's saved builds
+const fakeDb = (row, profile = null, builds = []) => ({
+  from: (table) => {
+    const data = table === 'player_build_profiles' ? profile : row;
+    const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data }), then: (ok, bad) => Promise.resolve({ data: builds }).then(ok, bad) };
+    return q;
+  },
+});
 
 test('a saved build loads from its share code, with imperial by default', async () => {
   const got = await BC.loadBuild(fakeDb({ code: P.encodeBuild(marauder), units: null }), '123456');
@@ -18,6 +22,14 @@ test('a saved build loads from its share code, with imperial by default', async 
   assert.equal((await BC.loadBuild(fakeDb({ code: P.encodeBuild(marauder), units: 'metric' }), '1')).units, 'metric');
   assert.equal(await BC.loadBuild(fakeDb({ code: 'garbage!' }), '1'), null);
   assert.equal(await BC.loadBuild(fakeDb(null), '1'), null);
+});
+
+test('saved masteries and facility boosts apply to the card build', async () => {
+  const got = await BC.loadBuild(fakeDb({ code: P.encodeBuild(marauder) }, { mastery_levels: { spark: 30 }, boosts: { finishing: 3, gkDiving: 2 } }, [{ archetype: 'finisher', level: 12 }]), '1');
+  assert.equal(got.build.masteryLevels.spark, 30);
+  assert.equal(got.build.masteryLevels.finisher, 12);
+  assert.deepEqual(got.build.boosts, { finishing: 3 }); // keeper boosts don't apply to an outfielder
+  assert.equal(P.matchValue(got.build, 'finishing', P.bodyEffects(got.build)), P.matchValue({ ...got.build, boosts: {} }, 'finishing', P.bodyEffects(got.build)) + 3);
 });
 
 test('build cards print the in-match group ratings the website shows', () => {

@@ -374,6 +374,30 @@ export function normaliseBuild(b: Partial<Build>): Build {
   };
 }
 
+// A player's own masteries and club facility boosts, saved once on their account and applied to every build.
+export interface ProProfile {
+  masteryLevels: Record<string, number>; // archetype key -> level
+  boosts: Record<string, number>; // attribute key -> facility boost (any attribute; each build keeps the ones it can train)
+}
+export function cleanProfile(p: Partial<ProProfile> | null | undefined): ProProfile {
+  return {
+    masteryLevels: Object.fromEntries(
+      Object.entries(p?.masteryLevels ?? {}).filter(([k]) => ARCHETYPES.some((a) => a.key === k)).map(([k, v]) => [k, int(v, 0, LEVEL_CAP, 0)]).filter(([, v]) => v),
+    ),
+    boosts: Object.fromEntries(
+      Object.entries(p?.boosts ?? {}).map(([k, v]) => [ATTR_BY_ANY.get(k.toLowerCase())?.key, int(v, 0, BOOST_MAX, 0)] as const).filter(([k, v]) => k && v),
+    ),
+  };
+}
+// Put a player's profile on a build: masteries are the higher of the profile and the levels of their saved
+// builds; facility boosts come from the profile alone (so removing one there removes it everywhere).
+export function applyProfile(b: Build, profile: Partial<ProProfile> | null | undefined, savedLevels: Record<string, number> = {}): Build {
+  const p = cleanProfile(profile);
+  const levels: Record<string, number> = { ...p.masteryLevels };
+  for (const [k, v] of Object.entries(savedLevels)) levels[k] = Math.max(levels[k] ?? 0, Number(v) || 0);
+  return normaliseBuild({ ...b, masteryLevels: levels, boosts: p.boosts });
+}
+
 export const pointsSpent = (b: Build) => Object.values(b.points).reduce((t, v) => t + v, 0);
 
 // Points added per attribute group
