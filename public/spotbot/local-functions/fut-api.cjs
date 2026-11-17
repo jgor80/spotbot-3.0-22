@@ -6652,7 +6652,7 @@ function parseProfile(v) {
 function parsePileItem(v) {
   const item_id = id2(v.item_id), ea_item_id = id2(v.ea_item_id);
   if (!item_id || !ea_item_id) return null;
-  return { item_id, ea_item_id, item_type: text3(v.item_type, 30), rating: rating3(v.rating), rare_flag: num(v.rare_flag, 1e3), untradeable: bool(v.untradeable) };
+  return { item_id, ea_item_id, item_type: text3(v.item_type, 30), rating: rating3(v.rating), rare_flag: num(v.rare_flag, 1e3), untradeable: bool(v.untradeable), ...v.discard_value != null ? { discard_value: num(v.discard_value, 15e6) } : {} };
 }
 function parseTrades(v) {
   if (!Array.isArray(v)) return null;
@@ -7547,7 +7547,25 @@ function marketTiming(now2) {
 }
 var RISK = { careful: { reserve: 0.35, picks: 4, cap: 0.2, min_roi: 0.05 }, normal: { reserve: 0.2, picks: 6, cap: 0.3, min_roi: 0.03 }, bold: { reserve: 0.1, picks: 8, cap: 0.4, min_roi: 0.02 } };
 var MIN_PROFIT = 150;
+var BUY_RULES = ["dip", "settled", "rising", "steady"];
+var DEFAULT_RULE = "settled";
+var RULE_LABEL = {
+  dip: { name: "Any dip", detail: "Cards 5%+ under their 7-day middle price (the old rule)." },
+  settled: { name: "Dips that stopped falling", detail: "5%+ under their week, no lower than a day ago, and not falling faster than the market." },
+  rising: { name: "Cards on the way up", detail: "Up 3%+ over 3 days and not down over the last day, doing better than the market, without a sudden spike." },
+  steady: { name: "Steady cards near their low", detail: "Flat for 3 days, at or under their week's middle, with a narrow price range." }
+};
+function marketMove(stats, byEa) {
+  const d24 = [], d72 = [];
+  for (const [ea, s] of stats) {
+    if (!byEa.get(ea)?.tracked || s.latest_age_h > 13) continue;
+    if (s.change_24h !== null) d24.push(s.change_24h);
+    if (s.change_72h !== null) d72.push(s.change_72h);
+  }
+  return { m24: d24.length >= 50 ? Math.round(median(d24) * 10) / 10 : null, m72: d72.length >= 50 ? Math.round(median(d72) * 10) / 10 : null };
+}
 function scoreBuys(cards, timing, o) {
+  const rule = o.rule ?? DEFAULT_RULE, m72 = o.market?.m72 ?? null;
   const reach = o.model?.ready ? o.model.buys.reach : 1;
   const out = [];
   for (const { card, stats: s } of cards) {
@@ -7556,12 +7574,18 @@ function scoreBuys(cards, timing, o) {
     if (s.new_card) continue;
     if (o.fresh && !o.fresh.has(card.ea_item_id)) continue;
     const discount = (s.median - s.latest) / s.median;
-    if (discount < 0.05) continue;
     if (discount > 0.45) continue;
     if (s.prev !== null && s.latest > s.prev * 1.25) continue;
     if (s.falling >= 3 && s.latest <= s.min) continue;
+    const d24 = s.change_24h, d72 = s.change_72h, vsMarket = d72 !== null && m72 !== null ? d72 - m72 : null;
+    const wide = (s.max - s.min) / s.median;
+    if (rule === "dip" && discount < 0.05) continue;
+    if (rule === "settled" && !(discount >= 0.05 && discount <= 0.35 && s.falling === 0 && d24 !== null && d24 >= 0 && (d72 === null || d72 > -15) && (vsMarket === null || vsMarket >= -3))) continue;
+    if (rule === "rising" && !(d72 !== null && d72 >= 3 && d72 <= 30 && d24 !== null && d24 >= 0 && s.falling === 0 && (vsMarket === null || vsMarket >= 3) && d24 <= 15 && wide <= 0.6)) continue;
+    if (rule === "steady" && !(d72 !== null && Math.abs(d72) <= 3 && d24 !== null && d24 >= -1 && d24 <= 3 && s.latest <= s.median && wide <= 0.25)) continue;
     const buy_at = down(s.latest);
-    const target_raw = down(Math.min(s.median, s.max * 0.98, s.latest * 1.3));
+    const rise = clamp(o.rise ?? 0.08, 0.08, 0.3);
+    const target_raw = rule === "rising" ? down(s.latest * (1 + rise)) : rule === "steady" ? down(Math.min(Math.max(s.max * 0.98, s.latest * (1 + rise)), s.latest * 1.3)) : down(Math.min(s.median, s.max * 0.98, s.latest * 1.3));
     let sell_at = reach < 1 && target_raw > buy_at ? Math.max(buy_at, down(buy_at + (target_raw - buy_at) * reach)) : target_raw;
     if (!o.model?.ready && o.model?.moves) {
       const mb = moveBucket(o.model.moves, { discount, rising: s.rising, falling: s.falling, kind: cardKind(card), price: s.latest });
@@ -7575,7 +7599,8 @@ function scoreBuys(cards, timing, o) {
     if (range > 1) continue;
     let conf = clamp(s.points / 12, 0.4, 1) * (range > 0.6 ? 0.6 : 1);
     if (s.change_72h !== null && s.change_72h < -20) conf *= 0.7;
-    const why = [`${pct(discount)}% under its 7-day middle price (${c(s.median)}).`];
+    const why = [discount >= 0.02 ? `${pct(discount)}% under its 7-day middle price (${c(s.median)}).` : discount <= -0.02 ? `${pct(-discount)}% over its 7-day middle price (${c(s.median)}), and climbing.` : `At its 7-day middle price (${c(s.median)}).`];
+    if (d24 !== null && d72 !== null) why.push(`${d72 >= 0 ? "Up" : "Down"} ${Math.abs(d72)}% over 3 days${vsMarket !== null ? ` (${vsMarket >= 0 ? "better" : "worse"} than the market by ${Math.abs(Math.round(vsMarket * 10) / 10)} points)` : ""}, ${d24 >= 0 ? `${d24 > 0 ? "up" : "flat"} over the last day` : `down ${Math.abs(d24)}% over the last day`}.`);
     if (s.rising >= 1) why.push(`Bounced off its low: up ${s.rising === 1 ? "since the last refresh" : `${s.rising} refreshes in a row`}.`);
     else if (s.falling === 0) why.push("Stopped falling at the last refresh.");
     why.push(`Traded between ${c(s.min)} and ${c(s.max)} this week.`);
@@ -7601,7 +7626,8 @@ function scoreBuys(cards, timing, o) {
       why.push(`Past picks like this reached their target ${Math.round(learned.p_hit * 100)}% of the time${learned.similar ? ` (from ${learned.similar}+ similar picks)` : ""}.`);
       if (learned.factor < 0.8) risks.push("Picks like this have done worse than average, so it's ranked lower.");
     }
-    const score3 = (roi * conf * (1 + 0.3 * timing.buy_bias) + bonus * roi) * learned.factor;
+    const strength = vsMarket === null ? 1 : clamp(1 + vsMarket / 40, 0.7, 1.4);
+    const score3 = (roi * conf * (1 + 0.3 * timing.buy_bias) + bonus * roi) * learned.factor * strength;
     if (learned.p_hit !== null) conf = learned.p_hit >= 0.6 ? 1 : learned.p_hit >= 0.4 ? 0.7 : 0.4;
     out.push({
       ea_item_id: card.ea_item_id,
@@ -7707,12 +7733,124 @@ function pileFixes(items, stats, names2) {
   for (const i of items) {
     const s = stats.get(i.ea_item_id), price = s && s.latest_age_h <= 13 ? s.latest : null;
     const name2 = names2.get(i.ea_item_id) ?? `Item ${i.ea_item_id}`;
+    const stuck = (i.state === "expired" || i.state === "unlisted") && !i.untradeable;
+    const qs = stuck ? quickSellCall({ rating: i.rating, special: (i.rare_flag ?? 0) > 1, exact: i.discard_value ?? null, price: price ?? i.buy_now, failed: i.state === "expired", change_72h: s?.change_72h ?? null }) : null;
     if (i.state === "sold") out.push({ ea_item_id: i.ea_item_id, name: name2, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "clear", list_at: null, why: `Sold for ${c(i.current_bid ?? i.buy_now ?? 0)}. Clear it to collect the coins and free the slot.` });
-    else if ((i.state === "expired" || i.state === "unlisted") && !i.untradeable) out.push({ ea_item_id: i.ea_item_id, name: name2, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "relist", list_at: price ? near(price) : null, why: price ? `Not selling. Relist at ${c(near(price))}, the current lowest price.` : "Not selling. Check the current price before relisting." });
+    else if (qs?.quicksell) out.push({ ea_item_id: i.ea_item_id, name: name2, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "quicksell", list_at: null, why: qs.why, quick_sell: qs.value });
+    else if (stuck) out.push({ ea_item_id: i.ea_item_id, name: name2, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "relist", list_at: price ? near(price) : null, why: price ? `Not selling. Relist at ${c(near(price))}, the current lowest price.` : "Not selling. Check the current price before relisting." });
     else if (i.state === "listed" && price && i.buy_now && i.buy_now > price * 1.1) out.push({ ea_item_id: i.ea_item_id, name: name2, rating: i.rating, state: i.state, buy_now: i.buy_now, price, action: "lower", list_at: near(price), why: `Listed at ${c(i.buy_now)}, ${pct(i.buy_now / price - 1)}% above the market. When it expires, relist at ${c(near(price))}.` });
   }
-  const order = { clear: 0, relist: 1, lower: 2 };
+  const order = { clear: 0, quicksell: 1, relist: 2, lower: 3 };
   return out.sort((a, b) => order[a.action] - order[b.action] || (b.price ?? 0) - (a.price ?? 0));
+}
+var QS_BASE = {
+  99: 12078,
+  98: 11956,
+  97: 11834,
+  96: 11712,
+  95: 11590,
+  94: 11468,
+  93: 11346,
+  92: 11224,
+  91: 646,
+  90: 638,
+  89: 630,
+  88: 622,
+  87: 618,
+  86: 611,
+  85: 604,
+  84: 596,
+  83: 589,
+  82: 582,
+  81: 575,
+  80: 568,
+  79: 561,
+  78: 554,
+  77: 547,
+  76: 540,
+  75: 533,
+  74: 259,
+  73: 255,
+  72: 251,
+  71: 247,
+  70: 243,
+  69: 240,
+  68: 237,
+  67: 234,
+  66: 231,
+  65: 228,
+  64: 48,
+  63: 46,
+  62: 46,
+  61: 45,
+  60: 44,
+  59: 43,
+  58: 42,
+  57: 41,
+  56: 40,
+  55: 39,
+  54: 38,
+  53: 37,
+  52: 36,
+  51: 35,
+  50: 34,
+  49: 33,
+  48: 32,
+  47: 31,
+  46: 30,
+  45: 30,
+  44: 29,
+  43: 29,
+  42: 28,
+  41: 28,
+  40: 28
+};
+function quickSellValue(rating5) {
+  if (rating5 == null || !Number.isFinite(rating5)) return null;
+  return QS_BASE[clamp(Math.round(rating5), 40, 99)] ?? null;
+}
+function quickSellCall(o) {
+  const value = o.exact && o.exact > 0 ? o.exact : quickSellValue(o.rating);
+  if (!value || !o.price || o.price <= 0) return null;
+  const at_least = !(o.exact && o.exact > 0) && !!o.special;
+  const list_at = near(Math.max(RULES.min_price, o.price)), list_net = net(list_at);
+  const cheap = list_at <= Math.max(1e3, value * 2);
+  let chance = 0.9;
+  if (cheap) chance -= 0.2;
+  if (o.failed) chance -= 0.2;
+  const fall = o.change_72h != null && o.change_72h < 0 ? Math.min(0.3, Math.abs(o.change_72h) / 200) : 0;
+  const expected = Math.round(list_net * chance * (1 - fall));
+  const quicksell = value >= expected * 0.9;
+  const v = `${at_least ? "at least " : ""}${c(value)}`;
+  const reasons = [o.failed ? "it already didn't sell once" : null, cheap ? "cards this cheap often sit unsold" : null, fall ? `its price fell ${Math.abs(o.change_72h)}% in 3 days` : null].filter(Boolean);
+  const why = quicksell ? `Quick sell it for ${v} coins now. Listing at ${c(list_at)} gets ${c(list_net)} after the 5% tax only if it sells${reasons.length ? `, and ${reasons.join(" and ")}` : ""}.` : `List it: ${c(list_at)} gets ${c(list_net)} after tax, well over the ${v} quick sell value.`;
+  return { value, at_least, list_at, list_net, expected, quicksell, why };
+}
+function quickSells(club, stats, squad) {
+  const out = [];
+  for (const card of club) {
+    if (card.tradeable_quantity <= 0 || squad.has(card.card_id)) continue;
+    const s = card.ea_item_id ? stats.get(card.ea_item_id) : void 0;
+    const price = s && s.latest_age_h <= 13 ? s.latest : card.price;
+    const kind = cardKind({ version: card.version, rating: card.rating ?? 0, is_icon: false, is_hero: false });
+    const call = quickSellCall({ rating: card.rating, special: kind === "promo", price, change_72h: s?.change_72h ?? null });
+    if (!call?.quicksell) continue;
+    out.push({
+      card_id: card.card_id,
+      ea_item_id: card.ea_item_id,
+      name: card.name,
+      rating: card.rating,
+      version: card.version,
+      quantity: card.tradeable_quantity,
+      quick_sell: call.value,
+      at_least: call.at_least,
+      list_at: call.list_at,
+      list_net: call.list_net,
+      total: call.value * card.tradeable_quantity,
+      why: call.why
+    });
+  }
+  return out.sort((a, b) => b.total - a.total);
 }
 function scorePast(past, series, latest) {
   if (!latest) return { days: 0, picks: 0, hit: 0, open_up: 0, open_down: 0, avg_now_pct: null, items: [] };
@@ -7757,10 +7895,12 @@ function buildStrategy(raw) {
   });
   const m24 = moves.length >= 50 ? Math.round(median(moves) * 10) / 10 : null, m72 = moves72.length >= 50 ? Math.round(median(moves72) * 10) / 10 : null;
   const mood = m24 === null ? "unknown" : m24 <= -2 ? "falling" : m24 >= 2 ? "rising" : "steady";
-  const moodBuy = mood === "falling" ? 0.3 : mood === "rising" ? -0.3 : 0;
+  const moodBuy = mood === "falling" ? -0.4 : mood === "rising" ? 0.2 : 0;
   const tilt = clamp(timing.buy_bias + moodBuy - timing.sell_bias, -2, 2);
   const stance = tilt >= 0.75 ? "buy" : tilt <= -0.75 ? "sell" : "flip";
-  const reserve_pct = clamp(risk.reserve + timing.extra_reserve + (stance === "sell" ? 0.15 : 0) - (stance === "buy" ? 0.05 : 0), 0.05, 0.7);
+  const picking = chooseRule(input.rules ?? input.model?.rules);
+  const market = marketMove(stats, byEa);
+  const reserve_pct = clamp(risk.reserve + timing.extra_reserve + (stance === "sell" ? 0.15 : 0) - (stance === "buy" ? 0.05 : 0) + (picking.hold ? 0.2 : 0), 0.05, 0.8);
   const coins5 = input.coins;
   const reserve = coins5 === null ? null : Math.round(coins5 * reserve_pct);
   const spend = coins5 === null ? null : coins5 - reserve;
@@ -7768,6 +7908,7 @@ function buildStrategy(raw) {
   const used_slots = input.tradepile?.length ?? 0, max_slots = input.tradepile_max ?? 100;
   const free_slots = Math.max(0, max_slots - used_slots);
   const owned = new Set((input.club ?? []).flatMap((x) => x.ea_item_id ? [x.ea_item_id] : []));
+  const pickOpts = { rule: picking.rule, market, rise: picking.rise };
   const candidates = scoreBuys([...stats].flatMap(([ea, s]) => {
     const card = byEa.get(ea);
     return card ? [{ card, stats: s }] : [];
@@ -7776,12 +7917,13 @@ function buildStrategy(raw) {
     min_roi: risk.min_roi,
     owned,
     model: input.model,
-    fresh: lived.fresh
+    fresh: lived.fresh,
+    ...pickOpts
   });
   const buys = [], seenPlayer = /* @__PURE__ */ new Set();
   let left = spend ?? 0, slots = free_slots;
   for (const p of candidates) {
-    if (buys.length >= risk.picks) break;
+    if (buys.length >= (picking.hold ? Math.min(2, risk.picks) : risk.picks)) break;
     const player = `${p.name}|${p.rating}`;
     if (seenPlayer.has(player)) continue;
     if (spend !== null) {
@@ -7797,23 +7939,28 @@ function buildStrategy(raw) {
     seenPlayer.add(player);
     buys.push(p);
   }
-  const ranges = priceRanges(stats, byEa, timing, { min_roi: risk.min_roi, owned, model: input.model, fresh: lived.fresh, per_pick, cap_slots: free_slots, taken: buys });
+  const ranges = priceRanges(stats, byEa, timing, { min_roi: risk.min_roi, owned, model: input.model, fresh: lived.fresh, per_pick, cap_slots: free_slots, taken: buys, ...pickOpts });
   const watch = candidates.filter((p) => !buys.includes(p) && !seenPlayer.has(`${p.name}|${p.rating}`)).slice(0, 8);
   const sells = input.club ? scoreSells(input.club, stats, timing, input.squad_card_ids, input.model).slice(0, stance === "sell" ? 10 : 6) : [];
   const names2 = new Map([...byEa].map(([k, v]) => [k, v.name]));
   for (const x of input.club ?? []) if (x.ea_item_id) names2.set(x.ea_item_id, x.name);
   const pile = input.tradepile ? pileFixes(input.tradepile, stats, names2) : [];
+  const listing = new Set(sells.map((x) => x.card_id));
+  const quick = input.club ? quickSells(input.club.filter((x) => !listing.has(x.card_id)), stats, input.squad_card_ids) : [];
   const record = scorePast(input.past, byEa, input.series.latest);
   const buySpend = buys.reduce((n2, b) => n2 + (b.spend ?? 0), 0), buyProfit = buys.reduce((n2, b) => n2 + (b.total_profit ?? 0), 0);
   const sellValue = sells.reduce((n2, s) => n2 + s.after_tax, 0);
-  const sold = pile.filter((p) => p.action === "clear"), relist = pile.filter((p) => p.action !== "clear");
+  const sold = pile.filter((p) => p.action === "clear"), relist = pile.filter((p) => p.action === "relist" || p.action === "lower"), pileQs = pile.filter((p) => p.action === "quicksell");
   const soldCoins = (input.tradepile ?? []).filter((i) => i.state === "sold").reduce((n2, i) => n2 + netAfterTax(i.current_bid ?? i.buy_now ?? 0, RULES), 0);
   const steps = [];
   if (sold.length) steps.push(`Clear ${sold.length} sold item${sold.length === 1 ? "" : "s"} on your transfer list to collect the coins.`);
+  if (pileQs.length) steps.push(`Quick sell ${pileQs.length} unsold item${pileQs.length === 1 ? "" : "s"} on your transfer list (about ${c(pileQs.reduce((n2, p) => n2 + (p.quick_sell ?? 0), 0))} coins): they're worth more that way than relisted.`);
+  if (quick.length) steps.push(`Quick sell ${quick.length === 1 ? quick[0].name : `${quick.length} cards you don't use`} for about ${c(quick.reduce((n2, q) => n2 + q.total, 0))} coins: listing ${quick.length === 1 ? "it" : "them"} would bring in less after tax (see Quick sell instead).`);
   if (relist.length) steps.push(`Relist ${relist.length} item${relist.length === 1 ? "" : "s"} at today's price (see Transfer list).`);
   if (sells.length) steps.push(`${timing.sell_bias > 0 ? "List now" : "List when it suits you"}: ${sells.slice(0, 3).map((s) => s.name).join(", ")}${sells.length > 3 ? ` and ${sells.length - 3} more` : ""}, about ${c(sellValue)} coins after tax.`);
   if (buys.length) steps.push(`${timing.buy_bias < 0 ? "Wait for the dip, then buy" : "Buy"} ${buys.length} card${buys.length === 1 ? "" : "s"}${buySpend ? ` for about ${c(buySpend)} coins` : ""}, and list each at its sell price straight away${buyProfit ? ` (about ${c(buyProfit)} profit after tax if they all sell)` : ""}.`);
   if (reserve !== null) steps.push(`Keep ${c(reserve)} coins (${Math.round(reserve_pct * 100)}%) back${timing.extra_reserve > 0 ? " for the drop ahead" : " for surprises"}.`);
+  if (picking.hold) steps.unshift(picking.why);
   if (coins5 === null) steps.push("Open the EA Web App with the XI Lab helper running (or enter your coins) so the plan can size each buy.");
   const moodText = m24 === null ? "Not enough price history yet to read the market." : `The market is ${mood === "steady" ? "steady" : mood} (middle card ${m24 > 0 ? "+" : ""}${m24}% in 24 hours${m72 !== null ? `, ${m72 > 0 ? "+" : ""}${m72}% in 3 days` : ""}).`;
   const stanceText = { buy: "Today is a buying day.", sell: "Today is a selling day.", flip: "Today is a day for quick flips: buy cheap, list straight away." }[stance];
@@ -7831,6 +7978,14 @@ function buildStrategy(raw) {
     headline: `${stanceText} ${moodText}`,
     stance,
     mood: { label: mood, median_24h: m24, median_72h: m72, cards: moves.length },
+    picking: {
+      rule: picking.rule,
+      name: RULE_LABEL[picking.rule].name,
+      detail: RULE_LABEL[picking.rule].detail,
+      why: picking.why,
+      hold: picking.hold,
+      replay: picking.replay ? { ...picking.replay, rules: picking.replay.rules.map((r2) => ({ ...r2, name: RULE_LABEL[r2.rule].name, detail: RULE_LABEL[r2.rule].detail })) } : null
+    },
     timing,
     prices: priceFreshness(raw.series.latest, lived.live_at, raw.live === void 0 ? null : !!raw.live, input.now),
     budget: { coins: coins5, coins_source: input.coins_source, coins_at: input.coins_at, reserve_pct: Math.round(reserve_pct * 100), reserve, spend, per_pick, buy_spend: buySpend, expected_profit: buyProfit, free_slots, risk: input.risk ?? "normal" },
@@ -7840,6 +7995,7 @@ function buildStrategy(raw) {
     buys,
     watch,
     sells,
+    quick_sells: quick.slice(0, 12),
     transfer_list: pile,
     record,
     learning: learningSummary(input.model, input.followed ?? []),
@@ -7856,7 +8012,7 @@ function priceRanges(stats, byEa, timing, o) {
   const all = scoreBuys([...stats].flatMap(([ea, st]) => {
     const card = byEa.get(ea);
     return card ? [{ card, stats: st }] : [];
-  }), timing, { max_price: 15e6, min_roi: o.min_roi, owned: o.owned, model: o.model, fresh: o.fresh });
+  }), timing, { max_price: 15e6, min_roi: o.min_roi, owned: o.owned, model: o.model, fresh: o.fresh, rule: o.rule, market: o.market, rise: o.rise });
   const taken = new Map(o.taken.map((b) => [b.ea_item_id, b]));
   return PRICE_RANGES.map((r2) => {
     const seen = /* @__PURE__ */ new Set();
@@ -7932,7 +8088,7 @@ function bestMove(o) {
       detail: `${when3}It's ${Math.round((buy.median - buy.price) / buy.median * 100)}% under its usual price. If ${qty > 1 ? "they all sell" : "it sells"}, that's ${c(profit)} profit after tax, usually within ${buy.hold}. ${odds}. Don't pay more than ${c(buy.max_buy)}: above that it isn't worth it after tax.${o.stale ? " These prices are old, so check the Buy Now price in the game first." : ""}${buy.quantity === null ? " Your coins aren't known, so buy as many as you can afford." : ""}`
     };
   }
-  const relist = o.pile.filter((p) => p.action !== "clear");
+  const relist = o.pile.filter((p) => p.action === "relist" || p.action === "lower");
   if (relist.length) return {
     ...base,
     kind: "relist",
@@ -8039,6 +8195,7 @@ async function dailyStrategy(db2, userId, platform, opts = {}) {
     const moves = learnMoves(series.cards.filter((c5) => c5.tracked).map((c5) => ({ ...cleanSeries(c5), kind: cardKind(c5) })));
     if (moves) model = model ? { ...model, moves, lessons: learnModel(platform, [], now2, moves).lessons } : learnModel(platform, [], now2, moves);
   }
+  const rules = model?.rules ?? (series.latest ? replayRules(series.cards, snaps, series.latest, { max_days: 5 }) : null);
   const plan = buildStrategy({
     now: now2,
     coins: coins5,
@@ -8052,6 +8209,7 @@ async function dailyStrategy(db2, userId, platform, opts = {}) {
     past,
     risk: opts.risk,
     model,
+    rules,
     followed: followedTrades(past, tradesRes.data ?? []),
     live: await livePromise
   });
@@ -8081,6 +8239,87 @@ function followedTrades(past, trades) {
   }
   return out;
 }
+var REPLAY_AHEAD_H = 48;
+var REPLAY_MIN_N = 30;
+function replayRules(cards, snapshots, latest, o = {}) {
+  const top = o.top ?? 10, maxAge = REPLAY_AHEAD_H + 24 * (o.max_days ?? 10), latestMs = Date.parse(latest);
+  if (!Number.isFinite(latestMs)) return null;
+  const tracked = cards.filter((c5) => c5.tracked && cardKind(c5) !== "silver_bronze").map((c5) => cleanSeries(c5));
+  const cuts = [];
+  for (const a of [...new Set(snapshots.map((x) => Math.round(x)))].sort((x, y) => x - y)) {
+    if (a < REPLAY_AHEAD_H || a > maxAge) continue;
+    if (cuts.length && a - cuts[cuts.length - 1] < 10) continue;
+    cuts.push(a);
+  }
+  const acc = new Map(BUY_RULES.map((r2) => [r2, { rets: [], pays: 0, fell: 0, peaks: [], refreshes: 0 }]));
+  const mkt = [];
+  let used = 0;
+  for (const a of cuts) {
+    const stats = /* @__PURE__ */ new Map(), byEa = /* @__PURE__ */ new Map(), ahead = /* @__PURE__ */ new Map();
+    for (const c5 of tracked) {
+      const idx = c5.ages.map((x, i) => x >= a - 0.5 && x <= a + 168 ? i : -1).filter((i) => i >= 0);
+      if (idx.length < 6) continue;
+      const card = { ...c5, prices: idx.map((i) => c5.prices[i]), ages: idx.map((i) => c5.ages[i] - a) };
+      if (card.ages[card.ages.length - 1] > 1) continue;
+      let p48 = null, gap = Infinity, peak = 0;
+      for (let i = 0; i < c5.ages.length; i++) {
+        const x = c5.ages[i];
+        if (x < a - 0.5 && x >= a - REPLAY_AHEAD_H - 0.5) peak = Math.max(peak, c5.prices[i]);
+        const g = Math.abs(x - (a - REPLAY_AHEAD_H));
+        if (g < gap && g <= 6) {
+          gap = g;
+          p48 = c5.prices[i];
+        }
+      }
+      if (p48 === null) continue;
+      const st = cardStats(card, Math.min(168, card.ages[0]));
+      if (!st) continue;
+      stats.set(c5.ea_item_id, st);
+      byEa.set(c5.ea_item_id, card);
+      ahead.set(c5.ea_item_id, { p48, peak: Math.max(peak, p48) });
+    }
+    if (stats.size < 50) continue;
+    used++;
+    const rets = [...stats].map(([ea, st]) => ahead.get(ea).p48 / st.latest - 1);
+    mkt.push(median(rets));
+    const market = marketMove(stats, byEa), timing = marketTiming(latestMs - a * 36e5);
+    const list2 = [...stats].map(([ea, st]) => ({ card: byEa.get(ea), stats: st }));
+    for (const rule of BUY_RULES) {
+      const picks = scoreBuys(list2, timing, { max_price: 15e6, min_roi: 0.03, owned: /* @__PURE__ */ new Set(), rule, market }).slice(0, top);
+      const r2 = acc.get(rule);
+      if (picks.length) r2.refreshes++;
+      for (const pk of picks) {
+        const f2 = ahead.get(pk.ea_item_id);
+        r2.rets.push(net(f2.p48) / pk.buy_at - 1);
+        r2.peaks.push(f2.peak / pk.buy_at - 1);
+        if (f2.peak >= pk.buy_at * 1.06) r2.pays++;
+        if (f2.p48 <= pk.buy_at * 0.9) r2.fell++;
+      }
+    }
+  }
+  if (!used) return null;
+  const r13 = (v) => Math.round(v * 1e3) / 10;
+  return {
+    at: latest,
+    refreshes: used,
+    days: Math.round((cuts[cuts.length - 1] - REPLAY_AHEAD_H) / 24 * 10) / 10 || 0.5,
+    market48: mkt.length ? r13(median(mkt)) : null,
+    rules: BUY_RULES.map((rule) => {
+      const r2 = acc.get(rule), n2 = r2.rets.length;
+      return { rule, n: n2, refreshes: r2.refreshes, net48: n2 ? r13(r2.rets.reduce((x, y) => x + y, 0) / n2) : null, pays: n2 ? r13(r2.pays / n2) : null, fell10: n2 ? r13(r2.fell / n2) : null, peak_mid: n2 ? Math.round(median(r2.peaks) * 1e3) / 1e3 : null };
+    })
+  };
+}
+function chooseRule(replay) {
+  const ok = (replay?.rules ?? []).filter((r2) => r2.n >= REPLAY_MIN_N && r2.net48 !== null).sort((x, y) => y.net48 - x.net48);
+  const best = ok[0];
+  if (!replay || !best) return { rule: DEFAULT_RULE, rise: null, hold: false, why: `Not enough past refreshes yet to test the picking rules, so it uses "${RULE_LABEL[DEFAULT_RULE].name}".`, replay: replay ?? null };
+  const days = replay.days >= 1.5 ? `${Math.round(replay.days)} days` : "the last day or two";
+  const rise = best.peak_mid !== null && best.peak_mid > 0 ? best.peak_mid : null;
+  const hold = best.net48 < 0;
+  const why = hold ? `No way of picking has made money after tax over ${days}: the best, "${RULE_LABEL[best.rule].name}", averaged ${best.net48}% 2 days later${replay.market48 !== null ? ` while the middle card moved ${replay.market48}%` : ""}. Buy less and keep coins until that turns.` : `"${RULE_LABEL[best.rule].name}" did best over ${days}: its picks averaged ${best.net48 > 0 ? "+" : ""}${best.net48}% after tax 2 days later, ${best.pays}% climbed enough to beat the tax and ${best.fell10}% fell 10% or more.`;
+  return { rule: best.rule, rise, hold, why, replay };
+}
 var LOG_BUYS = 80;
 var LOG_SELLS = 40;
 function marketSells(cards, stats, timing) {
@@ -8102,6 +8341,7 @@ async function runStrategyLearning(db2, now2 = Date.now()) {
     }
     const cards = (arr2(d.cards) ?? []).map((c5) => cleanSeries(c5)), snaps = arr2(d.snapshots) ?? [];
     const byEa = new Map(cards.map((c5) => [c5.ea_item_id, c5]));
+    const replay = replayRules(cards, snaps, latest), choice = chooseRule(replay);
     const settled = openRows.flatMap((r2) => {
       const base = { ...r2, ea_item_id: Number(r2.ea_item_id), outcome: null, resolved_at: null, hours_to_hit: null, best_price: null, final_price: null };
       const x = resolvePick(base, byEa.get(Number(r2.ea_item_id)), latest, now2);
@@ -8124,7 +8364,7 @@ async function runStrategyLearning(db2, now2 = Date.now()) {
       const buys = scoreBuys([...stats].flatMap(([ea, s]) => {
         const card = byEa.get(ea);
         return card ? [{ card, stats: s }] : [];
-      }), timing, { max_price: 15e6, min_roi: 0.03, owned: /* @__PURE__ */ new Set() }).slice(0, LOG_BUYS);
+      }), timing, { max_price: 15e6, min_roi: 0.03, owned: /* @__PURE__ */ new Set(), rule: choice.rule, market: marketMove(stats, byEa), rise: choice.rise }).slice(0, LOG_BUYS);
       const sells = marketSells(cards, stats, timing).slice(0, LOG_SELLS);
       const rows = [
         ...buys.map((b, i) => ({ platform, side: "buy", ea_item_id: b.ea_item_id, picked_at: latest, rank: i + 1, price: b.buy_at, target: b.target_raw, features: b.features })),
@@ -8151,10 +8391,10 @@ async function runStrategyLearning(db2, now2 = Date.now()) {
       if (!data || data.length < 1e3 || results.length >= 5e4) break;
     }
     const moves = learnMoves(cards.filter((c5) => c5.tracked).map((c5) => ({ prices: c5.prices, ages: c5.ages, kind: cardKind(c5) })));
-    const model = learnModel(platform, results, now2, moves);
+    const model = { ...learnModel(platform, results, now2, moves), rules: replay };
     fail6((await db2.from("strategy_model").upsert({ platform, model, updated_at: model.updated_at }, { onConflict: "platform" })).error);
     fail6((await db2.from("strategy_pick_log").delete().eq("platform", platform).lt("picked_at", new Date(now2 - 90 * 864e5).toISOString())).error);
-    out[platform] = { settled: settled.length, logged, results: results.length, ready: model.ready, hit_rate: model.buys.rate, moves: moves?.n ?? 0 };
+    out[platform] = { settled: settled.length, logged, results: results.length, ready: model.ready, hit_rate: model.buys.rate, moves: moves?.n ?? 0, rule: choice.rule, hold: choice.hold };
   }
   return out;
 }
@@ -14522,7 +14762,19 @@ function buildCoachPlan(x) {
     detail: "Clear sold items on your transfer list: the coins aren't yours to spend until you do.",
     link: { to: "/fut/account", label: "Transfer list" }
   });
-  const relist = x.pile.filter((p) => p.action !== "clear");
+  const quick = x.pile.filter((p) => p.action === "quicksell");
+  if (quick.length) {
+    const total = quick.reduce((n2, p) => n2 + (p.quick_sell ?? 0), 0);
+    steps.push({
+      kind: "relist",
+      title: `Quick sell ${quick.length} unsold item${quick.length === 1 ? "" : "s"} for about ${c4(total)} coins`,
+      coins: total,
+      detail: "They're worth more quick sold than relisted: listing pays after the 5% tax and only if they sell.",
+      link: { to: "/fut/strategy", label: "Daily Strategy" },
+      items: quick.slice(0, 5).map((p) => ({ name: p.name, rating: p.rating, coins: p.quick_sell ?? null, note: p.why }))
+    });
+  }
+  const relist = x.pile.filter((p) => p.action === "relist" || p.action === "lower");
   if (relist.length) steps.push({
     kind: "relist",
     title: `Relist ${relist.length} stuck item${relist.length === 1 ? "" : "s"} at today's price`,
