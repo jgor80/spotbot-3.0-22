@@ -49,7 +49,7 @@ export function topicKey(topic: string): string {
 export interface CollectedSource {
   /** 'proclubs' for Pro Clubs build sources (meta-builds.ts); Ultimate Team otherwise. */
   area?: "fut" | "proclubs";
-  kind: "reddit" | "youtube"; external_id: string; url: string; title: string; author: string | null; community: string;
+  kind: "reddit" | "youtube" | "web"; external_id: string; url: string; title: string; author: string | null; community: string;
   published_at: string; score: number; comments: number; body: string; excerpt: string;
 }
 
@@ -448,8 +448,9 @@ export async function runKnowledgeIngest(db: Rpc, env: Env, fetchFn: Fetch, now 
     }
   };
   const knownReddit = async (ids: string[]) => new Set(await rpcData<string[]>(db, "kb_known", { p_kind: "reddit", p_ids: ids }) ?? []);
-  // Reddit ids and YouTube ids never look alike (YouTube's are 11 characters), so one lookup serves both
-  const knownSources = async (ids: string[]) => new Set([...await knownReddit(ids), ...(await rpcData<string[]>(db, "kb_known", { p_kind: "youtube", p_ids: ids }) ?? [])]);
+  const knownKind = async (kind: string, ids: string[]) => await rpcData<string[]>(db, "kb_known", { p_kind: kind, p_ids: ids }) ?? [];
+  // Reddit, YouTube and web page ids never look alike (YouTube's are 11 characters, pages' start with 'w' and are 31)
+  const knownSources = async (ids: string[]) => new Set([...await knownReddit(ids), ...await knownKind("youtube", ids), ...await knownKind("web", ids)]);
   await collect("reddit", redditFeedOn(env), () => collectReddit(env, fetchFn, knownReddit));
   const youtubeHours = (env("FUT_KB_YOUTUBE_HOURS") ?? "1,7,13,19").split(",").map(Number);
   const youtubeNow = youtubeHours.includes(now.getUTCHours());
@@ -457,8 +458,9 @@ export async function runKnowledgeIngest(db: Rpc, env: Env, fetchFn: Fetch, now 
   else await collect("youtube", youtubeFeedOn(env), () => collectYouTube(env, fetchFn, now.getTime()));
   // Pro Clubs builds for the community meta builds (meta-builds.ts); a Reddit 429 above leaves Reddit alone this run
   const redditLimited = feeds.reddit?.status === "limited";
-  await collect("builds", buildsFeedOn(env) && (redditMode(env) !== "off" || youtubeFeedOn(env)),
-    () => collectBuildSources(env, fetchFn, knownSources, { reddit: redditMode(env) !== "off" && !redditLimited, youtube: youtubeNow && youtubeFeedOn(env), seed: youtubeFeedOn(env) }, now.getTime()));
+  await collect("builds", buildsFeedOn(env),
+    () => collectBuildSources(env, fetchFn, knownSources, { reddit: redditMode(env) !== "off" && !redditLimited, youtube: youtubeNow && youtubeFeedOn(env), seed: youtubeFeedOn(env),
+      creators: youtubeFeedOn(env), web: env("FUT_KB_BUILD_WEB") !== "off" }, now.getTime()));
 
   const result: IngestResult = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0, builds: 0 };
   await readWaiting(db, env, fetchFn, result, Number(env("FUT_KB_READ_PER_RUN")) || 40, false);

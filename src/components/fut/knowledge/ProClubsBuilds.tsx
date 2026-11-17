@@ -43,7 +43,7 @@ export function ProClubsBuilds() {
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <p className="max-w-2xl text-sm text-muted-foreground">
-        What the Pro Clubs community says is the best Virtual Pro build for each position: archetype, body, skill moves, PlayStyles and the attributes to max, from r/FIFAClubs, r/ProClubs and Pro Clubs build videos. Newer builds count more.
+        What the Pro Clubs community says is the best Virtual Pro build for each position: archetype, body, skill moves, PlayStyles and the attributes to max, from r/FIFAClubs, r/ProClubs, Pro Clubs build videos and build guides (PRO11, RealSport101, FenixBazaar). FC 27 only. Newer builds count more.
       </p>
       <Select value={String(days)} onValueChange={(v) => setDays(Number(v))}>
         <SelectTrigger className="w-40" aria-label="Period"><SelectValue /></SelectTrigger>

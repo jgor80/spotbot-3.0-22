@@ -852,9 +852,9 @@ async function saveSquadAs(store, squad, name2) {
 }
 var norm4 = (s) => s?.trim().toLowerCase() ?? "";
 function filterCards(cards, q) {
-  const text5 = norm4(q.text);
+  const text6 = norm4(q.text);
   return cards.filter(
-    (c5) => (!text5 || [c5.name, c5.club, c5.league, c5.nation].some((v) => norm4(v).includes(text5))) && (!q.position || c5.positions.some((p) => p.toUpperCase() === q.position.toUpperCase())) && (!q.league || norm4(c5.league) === norm4(q.league)) && (!q.nation || norm4(c5.nation) === norm4(q.nation)) && (!q.club || norm4(c5.club) === norm4(q.club)) && (!q.owned_only || c5.owned) && (q.max_price === void 0 || c5.owned || typeof c5.price === "number" && c5.price <= q.max_price)
+    (c5) => (!text6 || [c5.name, c5.club, c5.league, c5.nation].some((v) => norm4(v).includes(text6))) && (!q.position || c5.positions.some((p) => p.toUpperCase() === q.position.toUpperCase())) && (!q.league || norm4(c5.league) === norm4(q.league)) && (!q.nation || norm4(c5.nation) === norm4(q.nation)) && (!q.club || norm4(c5.club) === norm4(q.club)) && (!q.owned_only || c5.owned) && (q.max_price === void 0 || c5.owned || typeof c5.price === "number" && c5.price <= q.max_price)
   ).slice(0, q.limit ?? 200);
 }
 
@@ -5757,8 +5757,8 @@ var fail3 = (error) => {
 };
 var EA_REFERENCE_LABEL = "EA reference price (meaning unconfirmed)";
 var MAX_PRICE = 15e6;
-function referenceRows(text5) {
-  const lines = text5.trim().split(/\r?\n/);
+function referenceRows(text6) {
+  const lines = text6.trim().split(/\r?\n/);
   const head = (lines.shift() ?? "").split(",").map((h) => h.trim());
   const at2 = (n2) => head.indexOf(n2);
   const [iEa, iPl, iAt, iAvg, iSales] = ["ea_item_id", "platform", "observed_at", "market_average", "last_sales"].map(at2);
@@ -5777,9 +5777,9 @@ function referenceRows(text5) {
   }
   return [...out.values()];
 }
-async function storeEaReference(db2, userId, text5) {
-  if (!/^\s*ea_item_id,/.test(text5)) return 0;
-  const rows = referenceRows(text5).map((r2) => ({ ...r2, owner_user_id: userId }));
+async function storeEaReference(db2, userId, text6) {
+  if (!/^\s*ea_item_id,/.test(text6)) return 0;
+  const rows = referenceRows(text6).map((r2) => ({ ...r2, owner_user_id: userId }));
   for (let i = 0; i < rows.length; i += 500) {
     fail3((await db2.from("market_ea_reference").upsert(rows.slice(i, i + 500), { onConflict: "owner_user_id,ea_item_id,platform,observed_at" })).error);
   }
@@ -7335,9 +7335,9 @@ function moveLessons(m) {
   const out = [];
   out.push(`Learned from ${m.n.toLocaleString("en-US")} price moves across ${m.cards.toLocaleString("en-US")} cards over the last ${days} day${days === 1 ? "" : "s"}: what each card did in the 2 days after every refresh.`);
   if (m.check) out.push(m.check.skill > 0 ? `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen: it called whether a card would climb 6%+ within 2 days (enough to beat the tax) right ${pc(m.check.hit)}% of the time, ${pc(m.check.skill)}% better than guessing from the market average, so it's trusted ${pc(m.trust ?? 0)}%.` : `Tested on the newest ${m.check.n.toLocaleString("en-US")} moves it hadn't seen, it wasn't better than guessing from the market average at calling 6%+ climbs, so picks lean on the plain rules.`);
-  const say = (key2, text5) => {
+  const say = (key2, text6) => {
     const b = m.by[key2];
-    if (b) out.push(text5(b));
+    if (b) out.push(text6(b));
   };
   say("12%+ under|bounced", (b) => `Cards 12%+ under their usual price that had started to bounce were up a day later ${pc(b.up24)}% of the time; half of them rose ${pc(b.peak[5])}% or more within 2 days (${b.n} examples).`);
   say("12%+ under|still dipping", (b) => `Cards 12%+ under their usual price that were still falling kept falling a day later ${pc(b.down24)}% of the time (${b.n} examples), so the plan waits for a bounce.`);
@@ -8213,9 +8213,9 @@ function parseRequirementLine(raw) {
   }
   return null;
 }
-function parseRequirements(text5) {
+function parseRequirements(text6) {
   const requirements = [], unread = [];
-  for (const l of text5.split(/\r?\n|;/).map((s) => s.trim()).filter(Boolean).slice(0, 40)) {
+  for (const l of text6.split(/\r?\n|;/).map((s) => s.trim()).filter(Boolean).slice(0, 40)) {
     const r2 = parseRequirementLine(l);
     if (r2) requirements.push(r2);
     else unread.push(l.slice(0, 160));
@@ -9722,8 +9722,8 @@ function nameAndRating(rest) {
   }
   return { name: s.replace(/\s+/g, " "), rating: rating5 && rating5 >= 40 && rating5 <= 99 ? rating5 : null, version };
 }
-function parseSquadList(text5) {
-  const lines = text5.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+function parseSquadList(text6) {
+  const lines = text6.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return null;
   let formation = null;
   const first = lines[0].match(/^(?:formation\s*[:\-]?\s*)?(\d(?:-\d){2,4})\s*(?:\(\s*(\d)\s*\))?\s*$/i);
@@ -9821,10 +9821,10 @@ async function readWithClaude(squad, input, env, fetchFn = fetch) {
     throw new FutError(res.status === 429 || res.status >= 500 ? "The squad reader is busy. Try again in a minute." : "The squad reader couldn't read that. Try typing the squad as a list.", 502);
   }
   if (out?.stop_reason === "refusal") throw new FutError("The squad reader declined that request. Try typing the squad as a list.", 422);
-  const text5 = (out?.content ?? []).filter((c5) => c5.type === "text").map((c5) => c5.text ?? "").join("");
+  const text6 = (out?.content ?? []).filter((c5) => c5.type === "text").map((c5) => c5.text ?? "").join("");
   let parsed;
   try {
-    parsed = JSON.parse(text5);
+    parsed = JSON.parse(text6);
   } catch {
     throw new FutError("The squad reader returned something unreadable. Try again.", 502);
   }
@@ -10004,13 +10004,13 @@ function placeMatches(start, parsed, matches) {
   return { squad: { ...squad, slots, updated_at: (/* @__PURE__ */ new Date()).toISOString() }, rows, formation_changed, cleared, via: parsed.via, note: parsed.note ?? null };
 }
 async function importSquad(db2, userId, squad, input, env, fetchFn = fetch, hooks = {}) {
-  const text5 = input.text?.trim() ?? "";
-  if (text5.length > MAX_IMPORT_TEXT) throw new FutError(`Keep it under ${MAX_IMPORT_TEXT} characters.`);
-  if (!text5 && !input.image) throw new FutError("Type your squad or upload a screenshot or list.");
-  let parsed = input.image ? null : parseSquadList(text5);
+  const text6 = input.text?.trim() ?? "";
+  if (text6.length > MAX_IMPORT_TEXT) throw new FutError(`Keep it under ${MAX_IMPORT_TEXT} characters.`);
+  if (!text6 && !input.image) throw new FutError("Type your squad or upload a screenshot or list.");
+  let parsed = input.image ? null : parseSquadList(text6);
   if (!parsed) {
     hooks.beforeAi?.();
-    parsed = await readWithClaude(squad, { text: text5, image: input.image }, env, fetchFn);
+    parsed = await readWithClaude(squad, { text: text6, image: input.image }, env, fetchFn);
   }
   if (!parsed.entries.length && !parsed.formation && !parsed.clear_slots?.length) {
     throw new FutError(parsed.note || 'No players found in that. Try a list like "ST Mbappe 91", one player per line.', 422);
@@ -10261,10 +10261,10 @@ ${m.content}`;
     throw new FutError(res.status === 429 || res.status >= 500 ? "The player finder is busy. Try again in a minute." : "The player finder couldn't read that. Try saying it another way.", 502);
   }
   if (out?.stop_reason === "refusal") throw new FutError("The player finder declined that request.", 422);
-  const text5 = (out?.content ?? []).filter((c5) => c5.type === "text").map((c5) => c5.text ?? "").join("");
+  const text6 = (out?.content ?? []).filter((c5) => c5.type === "text").map((c5) => c5.text ?? "").join("");
   let parsed;
   try {
-    parsed = JSON.parse(text5);
+    parsed = JSON.parse(text6);
   } catch {
     throw new FutError("The player finder returned something unreadable. Try again.", 502);
   }
@@ -11162,8 +11162,8 @@ function resolve(phrase, meta) {
   return null;
 }
 function parseRequirement(name2, meta) {
-  const text5 = name2.replace(/\s+/g, " ").trim();
-  const starting = /starting (xi|11|lineup|line-up|eleven)|in your lineup|in your xi/i.test(text5);
+  const text6 = name2.replace(/\s+/g, " ").trim();
+  const starting = /starting (xi|11|lineup|line-up|eleven)|in your lineup|in your xi/i.test(text6);
   const count2 = (s) => s === void 0 ? 1 : /^\d+$/.test(s) ? Number(s) : WORDS[s.toLowerCase()] ?? 1;
   const patterns = [
     /(?:with|using|have|has|field|include)\s+(?:at least\s+|a minimum of\s+|min\.?\s+)?(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven)?\s*players?\s+from\s+(?:the\s+)?(.+?)(?=\s+(?:in|on|across|during|while|to)\b|[,.;]|$)/i,
@@ -11171,14 +11171,14 @@ function parseRequirement(name2, meta) {
     /(?:with|using|have|has|field|include)\s+(?:at least\s+)?(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven)?\s*(icons?|heroes?)\b/i
   ];
   for (const re of patterns) {
-    const m = text5.match(re);
+    const m = text6.match(re);
     if (!m) continue;
     const n2 = count2(m[1]);
     const r2 = resolve(m[2], meta);
     if (r2 && n2 >= 1 && n2 <= 11) return { req: { count: n2, ...r2, starting }, reason: null };
     if (!r2) return { req: null, reason: `GafferBot couldn't match "${m[2].trim()}" to a league, nation, club or card type in your club.` };
   }
-  return { req: null, reason: /players?/i.test(text5) ? "No player requirement GafferBot can read in this objective." : null };
+  return { req: null, reason: /players?/i.test(text6) ? "No player requirement GafferBot can read in this objective." : null };
 }
 var modeOf = (o) => MODES.find(([re]) => re.test(`${o.name} ${o.group ?? ""}`))?.[1] ?? null;
 var meets = (c5, r2) => r2.kind === "icon" ? c5.card.is_icon === true : r2.kind === "hero" ? c5.card.is_hero === true : norm9(String((r2.kind === "version" ? c5.version : c5.card[r2.kind]) ?? "")) === norm9(r2.value);
@@ -11770,9 +11770,9 @@ var EA_POSITIONS = {
 async function getJson3(fetcher, url) {
   const res = await fetcher(url);
   if (!res.ok) throw new FutError(`${new URL(url).host} returned HTTP ${res.status} for the card list`, 502);
-  const text5 = await res.text();
-  if (text5.length > MAX_BYTES) throw new FutError("Card list file is too large", 502);
-  return JSON.parse(text5);
+  const text6 = await res.text();
+  if (text6.length > MAX_BYTES) throw new FutError("Card list file is too large", 502);
+  return JSON.parse(text6);
 }
 async function getText(fetcher, url) {
   const res = await fetcher(url);
@@ -11961,7 +11961,7 @@ async function loadNames(fetcher) {
 }
 async function syncFutggAttributes(db2, fetcher = defaultFetcher, opts = {}) {
   const now2 = opts.now ?? Date.now, started = now2();
-  const budget = opts.budgetMs ?? 2e5, pause = opts.pauseMs ?? 250, conc = Math.max(1, Math.min(4, opts.concurrency ?? 2));
+  const budget = opts.budgetMs ?? 2e5, pause2 = opts.pauseMs ?? 250, conc = Math.max(1, Math.min(4, opts.concurrency ?? 2));
   const { data: queueData, error } = await db2.rpc("futgg_attribute_queue", { p_limit: opts.batch ?? 1200 });
   if (error) throw new FutError(`Stats queue failed: ${error.message}`, 500);
   const queue = (queueData?.ids ?? []).map(Number).filter(Number.isSafeInteger);
@@ -12017,7 +12017,7 @@ async function syncFutggAttributes(db2, fetcher = defaultFetcher, opts = {}) {
         } else result2.failed++;
       }
       if (pending.length >= 50) await flush();
-      if (pause) await new Promise((r2) => setTimeout(r2, pause));
+      if (pause2) await new Promise((r2) => setTimeout(r2, pause2));
     }
   };
   await Promise.all(Array.from({ length: conc }, worker));
@@ -12485,13 +12485,13 @@ function importProClubsBuilder(linkOrCode) {
   if (at2 >= 0) code = code.slice(at2 + 3);
   code = code.replace(/\/+$/, "");
   if (!/^[A-Za-z0-9_\-+/=]{8,}$/.test(code)) return null;
-  let text5;
+  let text6;
   try {
-    text5 = b64Decode(code);
+    text6 = b64Decode(code);
   } catch {
     return null;
   }
-  const f2 = text5.split("|");
+  const f2 = text6.split("|");
   if (f2.length < 8 || !/^\d+$/.test(f2[0])) return null;
   const arch = ARCHETYPES[Number(f2[1]) - 1];
   if (!arch) return null;
@@ -12522,6 +12522,192 @@ var META_POSITIONS2 = [
   { key: "GK", label: "Goalkeeper", line: "GK", aliases: ["GK"] }
 ];
 var META_POSITION_KEYS = META_POSITIONS2.map((p) => p.key);
+
+// supabase/functions/_shared/fut/build-web.ts
+var WEB_USER_AGENT = "GafferBotKB/1.0 (+https://gafferbot.app)";
+var UA_TOKEN = "gafferbotkb";
+var AI_AGENTS = ["claudebot", "claude-web", "anthropic-ai", "gptbot", "ccbot", "google-extended"];
+var BUILD_CREATORS = [
+  "@LeskiGames",
+  "@WhiteGamer7",
+  "@AddictzAnt",
+  "@StarVisionGK",
+  "@MikAegis",
+  "@VirtualProGaming",
+  "@Proclubsweekly",
+  "@imbones",
+  "@JCrowe98",
+  "@Ciege_TV",
+  "@jeskaa_gaming",
+  "@ImLearningFC",
+  "@SamTapTap",
+  "@iTzSuperfly",
+  "@dom_llaz"
+];
+var WEB_BUILD_SITES = [
+  { name: "PRO11", feed: "https://www.pro11.net/sitemap-guides-0.xml", type: "sitemap", match: /\/(best-[a-z-]*build[a-z-]*|the-best-[a-z-]*build[a-z-]*)\/?$/i },
+  { name: "RealSport101", feed: "https://realsport101.com/sitemap-articles-part-1.xml.gz", type: "sitemap", match: /\/article\/fc-27-([a-z0-9-]*-)?(builds?|archetypes?)(-[a-z0-9-]*)?$/i },
+  { name: "FenixBazaar", feed: "https://fenixbazaar.com/?s=clubs+build&feed=rss2", type: "rss", match: /\bclubs\b.*\bbuild\b|\bbuild\b.*\bclubs\b/i }
+];
+var pause = (ms3) => ms3 > 0 ? new Promise((r2) => setTimeout(r2, ms3)) : Promise.resolve();
+var squash = (s, max) => s.replace(/\s+/g, " ").trim().slice(0, max);
+var isBuildTitle = (t) => /\b(build|archetype|best (st|cb|cdm|cm|cam|lw|rw|winger|striker|gk|goalkeeper|keeper|fullback|full-back|wing-?back|lb|rb|defender|midfielder))\b/i.test(t);
+async function yt(path, params, env, fetchFn) {
+  const res = await fetchFn(`https://www.googleapis.com/youtube/v3/${path}?${new URLSearchParams({ ...params, key: env("YOUTUBE_API_KEY") })}`);
+  if (!res.ok) throw new Error(`YouTube answered HTTP ${res.status}`);
+  return await res.json();
+}
+async function creatorBuildVideos(env, fetchFn, known, since, limit = 20) {
+  const handles = (env("FUT_KB_BUILD_CREATORS") ?? "").split(",").map((h) => h.trim()).filter((h) => /^@[A-Za-z0-9._-]{2,40}$/.test(h));
+  const ids = [];
+  for (const handle2 of handles.length ? handles : BUILD_CREATORS) {
+    try {
+      const ch = await yt("channels", { part: "contentDetails", forHandle: handle2 }, env, fetchFn);
+      const uploads = ch.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+      if (!uploads) continue;
+      const list2 = await yt("playlistItems", { part: "snippet", playlistId: uploads, maxResults: "25" }, env, fetchFn);
+      for (const it of list2.items ?? []) {
+        const id3 = it.snippet?.resourceId?.videoId, at2 = Date.parse(it.snippet?.publishedAt ?? "");
+        if (id3 && at2 >= since && isBuildTitle(it.snippet?.title ?? "")) ids.push({ id: id3, at: at2 });
+      }
+    } catch (e) {
+      if (/HTTP 403/.test(e.message)) throw e;
+      console.warn(`[fut-api] build creators ${handle2}:`, e.message);
+    }
+  }
+  const fresh = [...new Map(ids.map((v) => [v.id, v])).values()].sort((a, b) => b.at - a.at);
+  const seen = fresh.length ? await known(fresh.slice(0, 200).map((v) => v.id)) : /* @__PURE__ */ new Set();
+  return fresh.filter((v) => !seen.has(v.id)).slice(0, limit).map((v) => v.id);
+}
+function robotsAllows(robots, path) {
+  const groups = [];
+  let cur = null, inRules = false;
+  for (const raw of robots.split(/\r?\n/)) {
+    const line = raw.replace(/#.*/, "").trim();
+    const m = line.match(/^([A-Za-z-]+)\s*:\s*(.*)$/);
+    if (!m) continue;
+    const key2 = m[1].toLowerCase(), val = m[2].trim();
+    if (key2 === "user-agent") {
+      if (!cur || inRules) {
+        cur = { agents: [], rules: [] };
+        groups.push(cur);
+        inRules = false;
+      }
+      cur.agents.push(val.toLowerCase().replace(/^"|"$/g, ""));
+    } else if ((key2 === "allow" || key2 === "disallow") && cur) {
+      inRules = true;
+      if (val) cur.rules.push({ allow: key2 === "allow", path: val });
+    }
+  }
+  const matches = (rule) => {
+    const re = new RegExp("^" + rule.split("*").map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*").replace(/\\\$$/, "$"));
+    return re.test(path);
+  };
+  const verdict = (rules) => {
+    let best = null;
+    for (const r2 of rules) if (matches(r2.path) && (!best || r2.path.length > best.path.length || r2.path.length === best.path.length && r2.allow)) best = r2;
+    return best ? best.allow : true;
+  };
+  const ours = groups.filter((g) => g.agents.some((a) => a === UA_TOKEN || a.startsWith(`${UA_TOKEN}/`)));
+  if (ours.length) return verdict(ours.flatMap((g) => g.rules));
+  const ai = groups.filter((g) => g.agents.some((a) => AI_AGENTS.includes(a)));
+  if (ai.length && !verdict(ai.flatMap((g) => g.rules))) return false;
+  return verdict(groups.filter((g) => g.agents.includes("*")).flatMap((g) => g.rules));
+}
+var ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", rsquo: "'", lsquo: "'", ldquo: '"', rdquo: '"', ndash: "-", mdash: "-", hellip: "..." };
+var unescape = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (all, e) => e[0] === "#" ? String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1))) : ENTITIES[e.toLowerCase()] ?? all);
+function pageText(html) {
+  const title = squash(unescape(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? ""), 300);
+  const published = html.match(/"(?:dateModified|datePublished)"\s*:\s*"([^"]+)"/)?.[1] ?? html.match(/<meta[^>]+property="article:(?:modified|published)_time"[^>]+content="([^"]+)"/i)?.[1] ?? null;
+  let body2 = html.replace(/<(script|style|noscript|svg|nav|header|footer|aside|form|iframe)\b[\s\S]*?<\/\1>/gi, " ");
+  body2 = body2.match(/<article\b[\s\S]*<\/article>/i)?.[0] ?? body2.match(/<main\b[\s\S]*<\/main>/i)?.[0] ?? body2.match(/<body\b[\s\S]*<\/body>/i)?.[0] ?? body2;
+  const text6 = unescape(body2.replace(/<(br|\/p|\/li|\/h[1-6]|\/tr|\/div)\b[^>]*>/gi, "\n").replace(/<[^>]+>/g, " ")).split("\n").map((l) => l.replace(/[ \t ]+/g, " ").trim()).filter(Boolean).join("\n");
+  return { title, text: text6, published };
+}
+async function text5(url, fetchFn) {
+  const res = await fetchFn(url, { headers: { "user-agent": WEB_USER_AGENT, accept: "text/html,application/xml,application/rss+xml;q=0.9,*/*;q=0.5" }, redirect: "follow" });
+  if (!res.ok) throw new Error(`${new URL(url).hostname} answered HTTP ${res.status}`);
+  if (url.endsWith(".gz") && res.body && !/xml|text/.test(res.headers.get("content-type") ?? "")) {
+    return await new Response(res.body.pipeThrough(new DecompressionStream("gzip"))).text();
+  }
+  return await res.text();
+}
+function feedLinks(site, xml) {
+  if (site.type === "sitemap") {
+    return [...xml.matchAll(/<url>([\s\S]*?)<\/url>/g)].map((m) => ({
+      url: unescape(m[1].match(/<loc>([^<]+)<\/loc>/)?.[1]?.trim() ?? ""),
+      title: null,
+      at: Date.parse(m[1].match(/<lastmod>([^<]+)<\/lastmod>/)?.[1] ?? "") || null,
+      content: null
+    })).filter((l) => /^https:\/\//.test(l.url) && site.match.test(new URL(l.url).pathname));
+  }
+  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => {
+    const tag = (t) => m[1].match(new RegExp(`<${t}[^>]*>([\\s\\S]*?)<\\/${t}>`))?.[1]?.replace(/^<!\[CDATA\[|\]\]>$/g, "").trim() ?? "";
+    return { url: unescape(tag("link")), title: squash(unescape(tag("title")), 300), at: Date.parse(tag("pubDate")) || null, content: tag("content:encoded") || null };
+  }).filter((l) => /^https:\/\//.test(l.url) && site.match.test(l.title ?? ""));
+}
+async function webId(url) {
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(url.replace(/[?#].*$/, "").replace(/\/$/, ""))));
+  return "w" + [...hash].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 30);
+}
+async function collectWebBuildSources(env, fetchFn, known, since, olderGame) {
+  const gap = Number(env("FUT_KB_WEB_GAP_MS") ?? 2e3);
+  let left = Number(env("FUT_KB_WEB_PER_RUN") ?? 6);
+  const out = [];
+  let failure = null;
+  for (const site of WEB_BUILD_SITES) {
+    if (left <= 0) break;
+    try {
+      const origin = new URL(site.feed).origin;
+      const robots = await text5(`${origin}/robots.txt`, fetchFn).catch(() => "");
+      if (!robotsAllows(robots, new URL(site.feed).pathname + new URL(site.feed).search)) {
+        console.warn(`[fut-api] build web ${site.name}: robots.txt says no`);
+        continue;
+      }
+      await pause(gap);
+      const links = feedLinks(site, await text5(site.feed, fetchFn)).filter((l) => (l.at ?? Date.now()) >= since && !(l.title && olderGame(l.title)) && robotsAllows(robots, new URL(l.url).pathname)).sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 60);
+      const ids = await Promise.all(links.map((l) => webId(l.url)));
+      const seen = ids.length ? await known(ids) : /* @__PURE__ */ new Set();
+      for (let i = 0; i < links.length && left > 0; i++) {
+        if (seen.has(ids[i])) continue;
+        const l = links[i];
+        let page;
+        if (l.content) page = { title: l.title ?? "", text: pageText(`<article>${unescape(l.content)}</article>`).text, published: null };
+        else {
+          await pause(gap);
+          page = pageText(await text5(l.url, fetchFn).catch(() => ""));
+        }
+        left--;
+        const title = squash(l.title || page.title, 300);
+        const at2 = l.at ?? (Date.parse(page.published ?? "") || null);
+        if (page.text.length < 400 || olderGame(title) || at2 !== null && at2 < since) continue;
+        out.push({
+          area: "proclubs",
+          kind: "web",
+          external_id: ids[i],
+          url: l.url,
+          title,
+          author: null,
+          community: site.name,
+          published_at: new Date(at2 ?? Date.now()).toISOString(),
+          score: 0,
+          comments: 0,
+          body: `Page: ${l.url}
+Site: ${site.name}
+Title: ${title}
+
+${page.text}`.slice(0, 14e3),
+          excerpt: squash(page.text, 280)
+        });
+      }
+    } catch (e) {
+      failure ??= e;
+      console.warn(`[fut-api] build web ${site.name}:`, e.message);
+    }
+  }
+  if (!out.length && failure) throw failure;
+  return out;
+}
 
 // supabase/functions/_shared/fut/meta-builds.ts
 var DEFAULT_MODEL3 = "claude-opus-5-5";
@@ -12607,7 +12793,7 @@ function redditBuildFeeds(env, now2 = Date.now()) {
   feeds.push({ sub: "EASportsFC", url: "https://www.reddit.com/r/EASportsFC/search.rss?q=%22pro+clubs%22+build&restrict_sr=on&sort=top&t=month&limit=25" });
   return feeds;
 }
-var squash = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
+var squash2 = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
 var buildsFeedOn = (env) => env("FUT_KB_BUILDS") !== "off";
 var BUILD_POST = /\b(builds?|archetypes?|playstyles?\+?|height|weight|\d{3}\s?cm|\d'\d{1,2}|skill points|attribute points|perks?|meta (st|cb|cdm|cm|cam|winger|striker|keeper|gk|lb|rb)|best (st|cb|cdm|cm|cam|lw|rw|winger|striker|keeper|goalkeeper|gk|fullback|full-back|wing-?back|lb|rb|position)|(gk|goalkeeper|keeper|fullback|full-back|wing-?back|cdm|box.to.box) (build|setup)|finisher|target man|spark|magician|maestro|creator|recycler|disruptor|marauder|progressor|boss|shot stopper|sweeper keeper|proclubsbuilder)\b/i;
 var isBuildPost = (p) => BUILD_POST.test(`${p.title ?? ""} ${(p.selftext ?? "").slice(0, 2e3)}`);
@@ -12631,6 +12817,22 @@ async function collectBuildSources(env, fetchFn, known, use, now2 = Date.now()) 
       failure ??= e;
     }
   }
+  const since = now2 - buildWindowDays(env) * 864e5;
+  if (use.creators && env("FUT_KB_BUILD_CREATORS") !== "off") {
+    try {
+      const ids = await creatorBuildVideos(env, fetchFn, known, since, Number(env("FUT_KB_BUILD_CREATOR_VIDEOS")) || 20);
+      if (ids.length) out.push(...await youtubeSources(ids, env, fetchFn, 0));
+    } catch (e) {
+      failure ??= e;
+    }
+  }
+  if (use.web) {
+    try {
+      out.push(...await collectWebBuildSources(env, fetchFn, known, since, olderGameTitle));
+    } catch (e) {
+      failure ??= e;
+    }
+  }
   if (use.youtube) {
     try {
       const queries = (env("FUT_KB_BUILD_QUERIES") ?? "").split("|").map((q) => q.trim()).filter(Boolean);
@@ -12648,15 +12850,14 @@ async function collectBuildSources(env, fetchFn, known, use, now2 = Date.now()) 
     }
   }
   if (!out.length && failure) throw failure;
-  const since = now2 - buildWindowDays(env) * 864e5;
   const unique = /* @__PURE__ */ new Map();
   for (const s of out) if (!unique.has(`${s.kind}:${s.external_id}`) && !(Date.parse(s.published_at) < since) && !olderGameTitle(s.title)) unique.set(`${s.kind}:${s.external_id}`, { ...s, area: "proclubs" });
   return [...unique.values()];
 }
-function extractBuildLinks(text5) {
+function extractBuildLinks(text6) {
   const out = [];
   const seen = /* @__PURE__ */ new Set();
-  for (const m of text5.matchAll(/https?:\/\/(?:www\.)?proclubsbuilder\.co\.uk\/b\/[A-Za-z0-9_\-+/=%]{8,}/gi)) {
+  for (const m of text6.matchAll(/https?:\/\/(?:www\.)?proclubsbuilder\.co\.uk\/b\/[A-Za-z0-9_\-+/=%]{8,}/gi)) {
     const link = decodeURIComponent(m[0]).replace(/[).,\]]+$/, "");
     if (seen.has(link)) continue;
     const r2 = importProClubsBuilder(link);
@@ -12665,7 +12866,7 @@ function extractBuildLinks(text5) {
       out.push({ link, build: r2.build });
     }
   }
-  for (const m of text5.matchAll(/https?:\/\/(?:www\.)?gafferbot\.app\/build\?(?:[^\s]*&)?b=([A-Za-z0-9_-]{8,})/gi)) {
+  for (const m of text6.matchAll(/https?:\/\/(?:www\.)?gafferbot\.app\/build\?(?:[^\s]*&)?b=([A-Za-z0-9_-]{8,})/gi)) {
     if (seen.has(m[1])) continue;
     const b = decodeBuild(m[1]);
     if (b) {
@@ -12744,7 +12945,7 @@ function cleanBuildReading(raw, links = []) {
     const x = c5 && typeof c5 === "object" ? c5 : {};
     const position = String(x.position ?? "");
     if (!META_POSITION_KEYS.includes(position)) continue;
-    const statement = squash(x.statement, 300);
+    const statement = squash2(x.statement, 300);
     if (statement.length < 3) continue;
     const linked = links[(intIn2(x.link, 1, links.length) ?? 0) - 1]?.build ?? null;
     const archetype = linked?.archetype ?? (ARCH_KEYS.includes(String(x.archetype)) ? String(x.archetype) : null);
@@ -12766,17 +12967,17 @@ function cleanBuildReading(raw, links = []) {
       statement
     });
   }
-  return { relevant: o.relevant !== false && builds.length > 0, summary: squash(o.summary, 300), builds };
+  return { relevant: o.relevant !== false && builds.length > 0, summary: squash2(o.summary, 300), builds };
 }
-async function readBuildSource(text5, env, fetchFn) {
-  const links = extractBuildLinks(text5);
+async function readBuildSource(text6, env, fetchFn) {
+  const links = extractBuildLinks(text6);
   const res = await callClaude(env, fetchFn, {
     model: env("FUT_KB_MODEL") || DEFAULT_MODEL3,
     max_tokens: 6e3,
     output_config: { effort: "low", format: { type: "json_schema", schema: BUILD_SCHEMA } },
     system: buildReaderPrompt(),
     messages: [{ role: "user", content: [{ type: "text", text: `<source>
-${text5.slice(0, 14e3)}
+${text6.slice(0, 14e3)}
 </source>${links.length ? `
 <links>
 ${links.map(describeLinked).join("\n")}
@@ -12825,7 +13026,7 @@ async function rpcData(db2, name2, args) {
   if (error) throw new FutError(`The knowledge bank is unavailable: ${error.message ?? "error"}`, 500);
   return data;
 }
-var squash2 = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
+var squash3 = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
 var keep = (s, max) => typeof s === "string" ? s.replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim().slice(0, max) : "";
 function topicKey(topic) {
   return topic.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\+/g, " plus ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80).replace(/-+$/, "");
@@ -12839,15 +13040,15 @@ function isGameplayPost(p) {
   if (flair && OFF_TOPIC_FLAIR.test(flair) && !ON_TOPIC_FLAIR.test(flair)) return false;
   return GAMEPLAY.test(`${p.title ?? ""} ${(p.selftext ?? "").slice(0, 2e3)}`) || ON_TOPIC_FLAIR.test(flair);
 }
-function threadBody(head, text5, comments) {
+function threadBody(head, text6, comments) {
   let out = `${head.join("\n")}
 
-${text5 ? `${keep(text5, 5e3)}
+${text6 ? `${keep(text6, 5e3)}
 
 ` : ""}`;
   if (comments.length) out += "Top comments:\n";
   for (const c5 of comments) {
-    const line = `- ${c5.score == null ? "" : `(${c5.score} ${c5.score === 1 ? "point" : "points"}) `}${squash2(c5.body, 700)}
+    const line = `- ${c5.score == null ? "" : `(${c5.score} ${c5.score === 1 ? "point" : "points"}) `}${squash3(c5.body, 700)}
 `;
     if (out.length + line.length > MAX_BODY) break;
     out += line;
@@ -12897,14 +13098,14 @@ function redditSource(p, comments) {
     kind: "reddit",
     external_id: p.id,
     url: `https://www.reddit.com${p.permalink}`,
-    title: squash2(p.title, 300),
-    author: p.author ? squash2(p.author, 100) : null,
+    title: squash3(p.title, 300),
+    author: p.author ? squash3(p.author, 100) : null,
     community,
     published_at: new Date(p.created_utc * 1e3).toISOString(),
     score: Math.max(0, p.score | 0),
     comments: Math.max(0, (p.num_comments ?? 0) | 0),
-    body: threadBody([`Reddit post in ${community} (${p.score} upvotes${p.link_flair_text ? `, flair "${squash2(p.link_flair_text, 40)}"` : ""})`, `Title: ${squash2(p.title, 300)}`], p.selftext ?? "", comments),
-    excerpt: squash2(p.selftext || p.title, 280)
+    body: threadBody([`Reddit post in ${community} (${p.score} upvotes${p.link_flair_text ? `, flair "${squash3(p.link_flair_text, 40)}"` : ""})`, `Title: ${squash3(p.title, 300)}`], p.selftext ?? "", comments),
+    excerpt: squash3(p.selftext || p.title, 280)
   };
 }
 function redditSubs(env) {
@@ -12949,7 +13150,7 @@ function parseRedditRss(xml) {
     const author = decodeEntities(tag(tag(e, "author"), "name")).trim().replace(/^\/u\//, "");
     return [{
       id: id3,
-      title: squash2(decodeEntities(tag(e, "title")), 300),
+      title: squash3(decodeEntities(tag(e, "title")), 300),
       author: author || null,
       link: decodeEntities(e.match(/<link\b[^>]*href="([^"]+)"/)?.[1] ?? ""),
       published: tag(e, "published").trim() || tag(e, "updated").trim() || null,
@@ -12998,13 +13199,13 @@ function rssSource(sub, post, comments, rank) {
     external_id: post.id.slice(3),
     url: `https://www.reddit.com${permalink}`,
     title: post.title,
-    author: post.author ? squash2(post.author, 100) : null,
+    author: post.author ? squash3(post.author, 100) : null,
     community,
     published_at: post.published ?? (/* @__PURE__ */ new Date()).toISOString(),
     score: 0,
     comments: comments.length,
     body: threadBody([`Reddit post in ${community}${rank ? ` (number ${rank} in today's top posts)` : ""}`, `Title: ${post.title}`], post.text, comments),
-    excerpt: squash2(post.text || post.title, 280)
+    excerpt: squash3(post.text || post.title, 280)
   };
 }
 async function collectRedditRss(env, fetchFn, known = () => Promise.resolve(/* @__PURE__ */ new Set()), opts = {}) {
@@ -13068,14 +13269,14 @@ async function youtubeSources(ids, env, fetchFn, minViews) {
       kind: "youtube",
       external_id: v.id,
       url: `https://www.youtube.com/watch?v=${v.id}`,
-      title: squash2(s.title, 300),
-      author: s.channelTitle ? squash2(s.channelTitle, 100) : null,
-      community: squash2(s.channelTitle || "YouTube", 100),
+      title: squash3(s.title, 300),
+      author: s.channelTitle ? squash3(s.channelTitle, 100) : null,
+      community: squash3(s.channelTitle || "YouTube", 100),
       published_at: s.publishedAt ?? (/* @__PURE__ */ new Date()).toISOString(),
       score: views,
       comments: Number(v.statistics?.commentCount) || 0,
-      body: threadBody([`YouTube video by ${squash2(s.channelTitle, 100)} (${views.toLocaleString("en")} views)`, `Title: ${squash2(s.title, 300)}`, "Description (the video itself isn't included):"], s.description ?? "", comments),
-      excerpt: squash2(s.description || s.title, 280)
+      body: threadBody([`YouTube video by ${squash3(s.channelTitle, 100)} (${views.toLocaleString("en")} views)`, `Title: ${squash3(s.title, 300)}`, "Description (the video itself isn't included):"], s.description ?? "", comments),
+      excerpt: squash3(s.description || s.title, 280)
     });
   }
   return out;
@@ -13170,23 +13371,23 @@ function cleanReading(raw) {
   const claims = [];
   for (const c5 of Array.isArray(o.claims) ? o.claims.slice(0, 15) : []) {
     const x = c5 && typeof c5 === "object" ? c5 : {};
-    const topic = squash2(x.topic, 80), statement = squash2(x.statement, 300), key2 = topicKey(topic);
+    const topic = squash3(x.topic, 80), statement = squash3(x.statement, 300), key2 = topicKey(topic);
     const category = KB_CATEGORIES.includes(x.category) ? x.category : "other";
     const stance = x.stance === "for" ? 1 : x.stance === "against" ? -1 : 0;
     const strength = [1, 2, 3].includes(Number(x.strength)) ? Number(x.strength) : 1;
     if (!key2 || statement.length < 3) continue;
     claims.push({ topic, topic_key: key2, category, statement, stance, strength });
   }
-  return { relevant: o.relevant !== false && claims.length > 0, summary: squash2(o.summary, 300), claims };
+  return { relevant: o.relevant !== false && claims.length > 0, summary: squash3(o.summary, 300), claims };
 }
-async function readSource(text5, known, env, fetchFn) {
+async function readSource(text6, known, env, fetchFn) {
   const res = await callClaude(env, fetchFn, {
     model: env("FUT_KB_MODEL") || DEFAULT_MODEL4,
     max_tokens: 6e3,
     output_config: { effort: "low", format: { type: "json_schema", schema: READ_SCHEMA } },
     system: readerPrompt(known),
     messages: [{ role: "user", content: [{ type: "text", text: `<source>
-${text5.slice(0, MAX_BODY + 2e3)}
+${text6.slice(0, MAX_BODY + 2e3)}
 </source>` }] }]
   });
   const out = await res.json().catch(() => null);
@@ -13224,11 +13425,12 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
       feeds[name2] = { status: "ok", collected: stored };
     } catch (e) {
       console.error(`[fut-api] knowledge ${name2}:`, e);
-      feeds[name2] = { status: e instanceof RedditRateLimited ? "limited" : "failed", error: squash2(e.message, 200) };
+      feeds[name2] = { status: e instanceof RedditRateLimited ? "limited" : "failed", error: squash3(e.message, 200) };
     }
   };
   const knownReddit = async (ids) => new Set(await rpcData(db2, "kb_known", { p_kind: "reddit", p_ids: ids }) ?? []);
-  const knownSources = async (ids) => /* @__PURE__ */ new Set([...await knownReddit(ids), ...await rpcData(db2, "kb_known", { p_kind: "youtube", p_ids: ids }) ?? []]);
+  const knownKind = async (kind, ids) => await rpcData(db2, "kb_known", { p_kind: kind, p_ids: ids }) ?? [];
+  const knownSources = async (ids) => /* @__PURE__ */ new Set([...await knownReddit(ids), ...await knownKind("youtube", ids), ...await knownKind("web", ids)]);
   await collect("reddit", redditFeedOn(env), () => collectReddit(env, fetchFn, knownReddit));
   const youtubeHours = (env("FUT_KB_YOUTUBE_HOURS") ?? "1,7,13,19").split(",").map(Number);
   const youtubeNow = youtubeHours.includes(now2.getUTCHours());
@@ -13237,8 +13439,14 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
   const redditLimited = feeds.reddit?.status === "limited";
   await collect(
     "builds",
-    buildsFeedOn(env) && (redditMode(env) !== "off" || youtubeFeedOn(env)),
-    () => collectBuildSources(env, fetchFn, knownSources, { reddit: redditMode(env) !== "off" && !redditLimited, youtube: youtubeNow && youtubeFeedOn(env), seed: youtubeFeedOn(env) }, now2.getTime())
+    buildsFeedOn(env),
+    () => collectBuildSources(env, fetchFn, knownSources, {
+      reddit: redditMode(env) !== "off" && !redditLimited,
+      youtube: youtubeNow && youtubeFeedOn(env),
+      seed: youtubeFeedOn(env),
+      creators: youtubeFeedOn(env),
+      web: env("FUT_KB_BUILD_WEB") !== "off"
+    }, now2.getTime())
   );
   const result2 = { feeds, read: 0, skipped: 0, failed: 0, claims: 0, waiting: 0, cleaned: 0, builds: 0 };
   await readWaiting(db2, env, fetchFn, result2, Number(env("FUT_KB_READ_PER_RUN")) || 40, false);
@@ -13249,8 +13457,8 @@ async function runKnowledgeIngest(db2, env, fetchFn, now2 = /* @__PURE__ */ new 
 }
 var PRO_CLUBS = /\b(pro ?clubs|eafc ?\d* clubs|fc ?\d* clubs|virtual pro|vpro|archetypes?|lvl ?55|level ?55|proclubsbuilder|r\/proclubs|specializations?|clubs build|build for (st|cb|cdm|cm|cam|lw|rw|winger|striker|gk|keeper))\b/i;
 var ULTIMATE_TEAM = /\b(ultimate team|fut\b|sbcs?|evolutions?|evos?|packs?|rivals|champs|squad battles|totw|coins|chemistry)/i;
-function guessArea(text5) {
-  const t = text5.slice(0, 6e3);
+function guessArea(text6) {
+  const t = text6.slice(0, 6e3);
   if (extractBuildLinks(t).length) return "proclubs";
   const clubs = (t.match(new RegExp(PRO_CLUBS.source, "gi")) ?? []).length;
   const fut = (t.match(new RegExp(ULTIMATE_TEAM.source, "gi")) ?? []).length;
@@ -13289,7 +13497,7 @@ function readerProblem(e) {
   const m = e?.message ?? "";
   if (/credit balance|billing/i.test(m)) return "Waiting: the Claude account that reads sources is out of credit. It's read as soon as that's topped up, or add your own Claude key on your profile.";
   if (/401|403|invalid x-api-key|authentication|permission/i.test(m)) return "Waiting: the Claude key that reads sources was refused. It's read as soon as the key works again.";
-  return `Waiting: ${squash2(m, 200) || "the reader couldn't run"}`;
+  return `Waiting: ${squash3(m, 200) || "the reader couldn't run"}`;
 }
 async function readAndRecord(db2, s, known, env, fetchFn) {
   try {
@@ -13300,7 +13508,7 @@ async function readAndRecord(db2, s, known, env, fetchFn) {
       throw e;
     }
     console.error("[fut-api] knowledge read:", e?.message);
-    await rpcData(db2, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash2(e.message, 200), p_claims: null });
+    await rpcData(db2, "kb_save_reading", { p_source: s.id, p_status: "failed", p_note: squash3(e.message, 200), p_claims: null });
     if (e instanceof FutError && e.status === 502 && /busy/.test(e.message)) throw e;
     return null;
   }
@@ -13323,7 +13531,7 @@ async function readWaiting(db2, env, fetchFn, result2, limit, addedOnly) {
         if (r2.area === "proclubs") result2.builds++;
       } else result2.skipped++;
     } catch (e) {
-      if (e instanceof ReaderUnavailable) result2.feeds.reader = { status: "failed", error: squash2(e.message, 200) };
+      if (e instanceof ReaderUnavailable) result2.feeds.reader = { status: "failed", error: squash3(e.message, 200) };
       else result2.failed++;
       const rest = pending.slice(i + 1).map((p) => p.id);
       if (rest.length) await rpcData(db2, "kb_release", { p_ids: rest });
@@ -13338,12 +13546,12 @@ async function runKnowledgeQueue(db2, env, fetchFn) {
 }
 async function addSource(db2, userId, input, env, fetchFn) {
   const url = typeof input.url === "string" ? input.url.trim() : "";
-  const text5 = typeof input.text === "string" ? keep(input.text, MAX_ADD_TEXT) : "";
+  const text6 = typeof input.text === "string" ? keep(input.text, MAX_ADD_TEXT) : "";
   if (url && (!/^https:\/\/\S+$/.test(url) || url.length > 600)) throw new FutError("Links must start with https:// (up to 600 characters).");
   if (!(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) throw new FutError("Reading sources needs a Claude API key: add yours on your profile.", 503);
   const link = url ? parseSourceLink(url) : null;
   let fetched = null;
-  if (link && !text5) {
+  if (link && !text6) {
     fetched = await fetchLinked(link, env, fetchFn).catch((e) => {
       console.error("[fut-api] knowledge link:", e);
       return null;
@@ -13353,18 +13561,18 @@ async function addSource(db2, userId, input, env, fetchFn) {
   const area = input.area === "proclubs" || input.area === "fut" ? input.area : guessArea(`${url}
 ${input.title ?? ""}
 ${fetched ? `${fetched.title}
-${fetched.body}` : text5}`);
+${fetched.body}` : text6}`);
   const buildLink = area === "proclubs" && !!url && extractBuildLinks(url).length > 0;
-  if (!fetched && text5.length < 40 && !buildLink && /^https:\/\/([a-z]+\.)?tiktok\.com\//i.test(url)) {
+  if (!fetched && text6.length < 40 && !buildLink && /^https:\/\/([a-z]+\.)?tiktok\.com\//i.test(url)) {
     throw new FutError("TikTok doesn't let apps read a video's caption. Paste the caption or the build (archetype, height, PlayStyles, attributes) into the text box with the link.");
   }
-  if (!fetched && text5.length < 40 && !buildLink) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
-  const title = squash2(input.title, 300) || fetched?.title || squash2(text5.split("\n")[0], 120) || (buildLink ? "Shared build link" : "Pasted source");
+  if (!fetched && text6.length < 40 && !buildLink) throw new FutError(url ? "Paste the text from that page too (at least a few sentences); GafferBot doesn't copy other websites itself." : "Paste at least a few sentences.");
+  const title = squash3(input.title, 300) || fetched?.title || squash3(text6.split("\n")[0], 120) || (buildLink ? "Shared build link" : "Pasted source");
   const share = input.share === true && (!!url || !!fetched);
   const body2 = fetched ? fetched.body : `${url ? `Page: ${url}
 ` : "The user's own notes or a pasted source.\n"}Title: ${title}
 
-${text5}${area === "proclubs" && url && !text5.includes(url) ? `
+${text6}${area === "proclubs" && url && !text6.includes(url) ? `
 ${url}` : ""}`;
   const source = fetched ? { ...fetched, shared: true, area } : {
     kind: url ? "web" : "note",
@@ -13377,7 +13585,7 @@ ${url}` : ""}`;
     score: 0,
     comments: 0,
     body: body2,
-    excerpt: squash2(text5, 280),
+    excerpt: squash3(text6, 280),
     shared: share,
     area
   };
@@ -13412,7 +13620,7 @@ var ASK_SCHEMA = {
   }
 };
 async function ask(db2, userId, question, history, env, fetchFn, beforeAi) {
-  const q = squash2(question, MAX_QUESTION);
+  const q = squash3(question, MAX_QUESTION);
   if (!q) throw new FutError("Ask a question about FUT gameplay or strategy.");
   const context = [...history.filter((t) => t.role === "user").slice(-2).map((t) => t.text), q].join(" ");
   const found = await rpcData(db2, "kb_search", { p_user: userId, p_q: context, p_limit: 40, p_days: 120 });
@@ -13488,7 +13696,7 @@ async function rpcData2(db2, name2, args) {
   if (error) throw new FutError(`The knowledge bank is unavailable: ${error.message ?? "error"}`, 500);
   return data;
 }
-var squash3 = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
+var squash4 = (s, max) => typeof s === "string" ? s.replace(/\s+/g, " ").trim().slice(0, max) : "";
 function fold(s) {
   return s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/ø/g, "o").replace(/ł/g, "l").replace(/đ/g, "d").replace(/ı/g, "i").replace(/ß/g, "ss");
 }
@@ -13534,8 +13742,8 @@ function describeTeam(team) {
   if (team.coins != null) lines.push(`Coins: ${team.coins.toLocaleString("en")}`);
   return lines.join("\n");
 }
-function formationName2(text5) {
-  const m = text5.match(/(?<![\d-])([3-5])-?([1-5])-?([1-5])(?:-?([1-5]))?(?:-?([1-5]))?(?![\d-])\s*(?:\((\d)\))?\s*([a-z ]{0,20})/i);
+function formationName2(text6) {
+  const m = text6.match(/(?<![\d-])([3-5])-?([1-5])-?([1-5])(?:-?([1-5]))?(?:-?([1-5]))?(?![\d-])\s*(?:\((\d)\))?\s*([a-z ]{0,20})/i);
   if (!m) return null;
   const parts = m.slice(1, 6).filter(Boolean);
   if (parts.reduce((a, b) => a + Number(b), 0) !== 10) return null;
@@ -13563,15 +13771,15 @@ function wordIn(haystack, needle) {
   for (let at2 = i; at2 >= 0; at2 = haystack.indexOf(needle, at2 + 1)) if (ok(haystack[at2 - 1]) && ok(haystack[at2 + needle.length])) return true;
   return false;
 }
-function mentions(text5, name2) {
-  const t = fold(text5), n2 = fold(name2).trim();
+function mentions(text6, name2) {
+  const t = fold(text6), n2 = fold(name2).trim();
   if (wordIn(t, n2)) return true;
   const last = n2.split(/\s+/).at(-1) ?? "";
   return last.length >= 4 && last !== n2 ? wordIn(t, last) : n2.length >= 4 && !n2.includes(" ") && wordIn(t, n2);
 }
-function playstylesIn(text5) {
+function playstylesIn(text6) {
   const out = [];
-  const t = text5.toLowerCase();
+  const t = text6.toLowerCase();
   for (const p of PLAYSTYLES) {
     const n2 = p.toLowerCase();
     const i = t.indexOf(n2);
@@ -13582,7 +13790,7 @@ function playstylesIn(text5) {
 }
 function quickApply(claims, team) {
   const out = [];
-  const text5 = claims.map((c5) => `${c5.topic}. ${c5.statement}`).join("\n");
+  const text6 = claims.map((c5) => `${c5.topic}. ${c5.statement}`).join("\n");
   const formations = [...new Set(claims.flatMap((c5) => [formationName2(c5.topic), ...[...`${c5.statement}`.matchAll(/[3-5]-?[1-5]-?[1-5](?:-?[1-5]){0,2}(?:\s*\(\d\))?(?:\s+[a-z]+)?/gi)].map((m) => formationName2(m[0]))]).filter((f2) => !!f2))];
   for (let i = formations.length - 1; i >= 0; i--) if (formations.some((f2) => f2 !== formations[i] && baseOf(f2) === formations[i])) formations.splice(i, 1);
   if (formations.length) {
@@ -13596,12 +13804,12 @@ function quickApply(claims, team) {
   const seen = /* @__PURE__ */ new Set();
   for (const c5 of team.club) {
     const key2 = fold(c5.name);
-    if (seen.has(key2) || !mentions(text5, c5.name)) continue;
+    if (seen.has(key2) || !mentions(text6, c5.name)) continue;
     seen.add(key2);
     out.push({ kind: "player", text: `You own ${c5.name} (${c5.rating}${c5.version ? ` ${c5.version}` : ""})${xi.has(key2) ? ", in your squad" : ""}.`, players: [c5.name] });
     if (seen.size >= 8) break;
   }
-  for (const ps of playstylesIn(text5).slice(0, 4)) {
+  for (const ps of playstylesIn(text6).slice(0, 4)) {
     const has = team.club.filter((c5) => (ps.plus ? c5.playstyles_plus : [...c5.playstyles, ...c5.playstyles_plus]).some((s) => s.toLowerCase() === ps.name.toLowerCase()));
     const inXi = has.filter((c5) => xi.has(fold(c5.name)));
     const label = `${ps.name}${ps.plus ? "+" : ""}`;
@@ -13647,8 +13855,8 @@ async function claudeJson(env, fetchFn, system, user, schema, maxTokens) {
 function cleanAdvice(raw) {
   const o = raw && typeof raw === "object" ? raw : null;
   if (!o) return null;
-  const list2 = (v, n2) => Array.isArray(v) ? v.map((x) => squash3(x, 300)).filter(Boolean).slice(0, n2) : [];
-  const headline = squash3(o.headline, 300);
+  const list2 = (v, n2) => Array.isArray(v) ? v.map((x) => squash4(x, 300)).filter(Boolean).slice(0, n2) : [];
+  const headline = squash4(o.headline, 300);
   if (!headline) return null;
   return { fit: o.fit === "high" || o.fit === "low" ? o.fit : "some", headline, points: list2(o.points, 5), actions: list2(o.actions, 4) };
 }
@@ -13953,7 +14161,7 @@ async function teamPlan(db2, userId, opts, team, env, fetchFn, beforeAi, statPic
       [
         "You turn what the EA SPORTS FC 27 Ultimate Team community says (claims from Reddit, YouTube and the player's own notes, numbered by source) into a game plan for one player's team. Return JSON only.",
         `The formation is decided already: ${planFormation} (${basis === "playstyle" ? `picked for how the player likes to play, the community view and their club: ${chosen.why}` : basis === "community" ? "the one the community backs most" : basis === "least_criticised" ? "nobody is clearly for any formation, this is the least criticised" : basis === "your_squad" ? "the bank has no formation talk, so the player's own" : "the bank has no formation talk, so the usual meta shape"}). Formation ranking (score = buzz x sentiment): ${ranked.slice(0, 6).map((f2) => `${f2.formation} ${f2.score}`).join(", ") || "none"}.`,
-        ...opts.playstyle ? [`The player describes how they like to play: "${squash3(opts.playstyle, 600)}". Fit the settings, instructions and notes to that style, lean on the community view where the two agree, and say plainly where their style departs from the consensus.`] : [],
+        ...opts.playstyle ? [`The player describes how they like to play: "${squash4(opts.playstyle, 600)}". Fit the settings, instructions and notes to that style, lean on the community view where the two agree, and say plainly where their style departs from the consensus.`] : [],
         "Use ALL the data you are given every time: the claims, the team's cards, the price moves and the stat picks. Never say there is not enough data and never tell the player to wait for more. Where the claims are thin or silent, reason it through from what you do have (the formation's shape, the team's players and their PlayStyles, the stat picks, how prices are moving) and set inferred: true on that row, with the reasoning in why. Rows taken from claims have inferred: false and cite them.",
         "summary: 2 or 3 plain sentences: the community's current view and what it means for this team.",
         "formation_why: one or two sentences on why people rate that formation, from the claims (empty if none).",
@@ -13982,12 +14190,12 @@ ${notes || "none in the bank yet"}`,
     if (raw) {
       const valid = (cites) => Array.isArray(cites) ? [...new Set(cites.map(Number).filter((n2) => Number.isInteger(n2) && n2 >= 1 && n2 <= citations.length))].slice(0, 6) : [];
       const rows = (v) => Array.isArray(v) ? v.filter((x) => x && typeof x === "object") : [];
-      plan.summary = squash3(raw.summary, 800) || null;
-      plan.formation_why = squash3(raw.formation_why, 500) || null;
-      plan.settings = rows(raw.settings).map((r2) => ({ setting: squash3(r2.setting, 60), value: squash3(r2.value, 80), why: squash3(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.setting && r2.value).slice(0, 8);
-      plan.instructions = rows(raw.instructions).map((r2) => ({ position: squash3(r2.position, 12).toUpperCase(), instruction: squash3(r2.instruction, 80), why: squash3(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.position && r2.instruction).slice(0, 11);
-      plan.for_your_team = Array.isArray(raw.for_your_team) ? raw.for_your_team.map((x) => squash3(x, 300)).filter(Boolean).slice(0, 5) : [];
-      const placed = new Map(rows(raw.player_positions).map((r2) => [fold(squash3(r2.topic, 80)), squash3(r2.position, 4).toUpperCase()]));
+      plan.summary = squash4(raw.summary, 800) || null;
+      plan.formation_why = squash4(raw.formation_why, 500) || null;
+      plan.settings = rows(raw.settings).map((r2) => ({ setting: squash4(r2.setting, 60), value: squash4(r2.value, 80), why: squash4(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.setting && r2.value).slice(0, 8);
+      plan.instructions = rows(raw.instructions).map((r2) => ({ position: squash4(r2.position, 12).toUpperCase(), instruction: squash4(r2.instruction, 80), why: squash4(r2.why, 240), cites: valid(r2.cites), inferred: r2.inferred === true || !valid(r2.cites).length })).filter((r2) => r2.position && r2.instruction).slice(0, 11);
+      plan.for_your_team = Array.isArray(raw.for_your_team) ? raw.for_your_team.map((x) => squash4(x, 300)).filter(Boolean).slice(0, 5) : [];
+      const placed = new Map(rows(raw.player_positions).map((r2) => [fold(squash4(r2.topic, 80)), squash4(r2.position, 4).toUpperCase()]));
       for (const p of players) if (!p.position) {
         const pos = placed.get(fold(p.topic));
         if (pos && POSITION_ORDER.includes(pos)) p.position = pos;
@@ -14571,13 +14779,13 @@ function withPills(style, traits, must) {
   const summary = [style.summary, picked.length ? `You picked ${picked.join(", ")}.` : ""].filter(Boolean).join(" ");
   return { ...style, shape, players, summary };
 }
-function readPlaystyleWords(text5) {
-  const t = ` ${text5.toLowerCase()} `;
-  const named2 = formationName2(text5);
+function readPlaystyleWords(text6) {
+  const t = ` ${text6.toLowerCase()} `;
+  const named2 = formationName2(text6);
   const shape = Object.entries(SHAPE_TRAITS).filter(([, v]) => v.words.test(t)).map(([k]) => k);
   const players = Object.entries(PLAYER_TRAITS).filter(([, v]) => v.words.test(t)).map(([k]) => k);
   const labels = [...shape.map((k) => SHAPE_TRAITS[k].label), ...players.map((k) => PLAYER_TRAITS[k].label)];
-  return { text: text5, shape, players, via: "words", summary: labels.length ? `You like ${[...new Set(labels)].join(", ")}${named2 ? `, and you named ${named2}` : ""}.` : named2 ? `You named ${named2}.` : "" };
+  return { text: text6, shape, players, via: "words", summary: labels.length ? `You like ${[...new Set(labels)].join(", ")}${named2 ? `, and you named ${named2}` : ""}.` : named2 ? `You named ${named2}.` : "" };
 }
 var STYLE_SCHEMA = {
   type: "object",
@@ -14589,9 +14797,9 @@ var STYLE_SCHEMA = {
     summary: { type: "string" }
   }
 };
-async function readPlaystyle(text5, env, fetchFn) {
-  const words = readPlaystyleWords(text5);
-  if (!text5.trim() || !(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) return words;
+async function readPlaystyle(text6, env, fetchFn) {
+  const words = readPlaystyleWords(text6);
+  if (!text6.trim() || !(env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY"))) return words;
   try {
     const res = await callClaude(env, fetchFn, {
       model: env("FUT_KB_MODEL") || DEFAULT_MODEL6,
@@ -14603,7 +14811,7 @@ async function readPlaystyle(text5, env, fetchFn) {
         `players: what it asks of the players. ${Object.entries(PLAYER_TRAITS).map(([k, v]) => `${k} = ${v.label}`).join("; ")}.`,
         'summary: one plain sentence, addressed to them as "you", saying how you read their style (under 30 words).'
       ].join("\n"),
-      messages: [{ role: "user", content: text5.slice(0, MAX_PLAYSTYLE) }]
+      messages: [{ role: "user", content: text6.slice(0, MAX_PLAYSTYLE) }]
     });
     const out = await res.json().catch(() => null);
     if (!res.ok || out?.stop_reason === "refusal") return words;
@@ -14611,7 +14819,7 @@ async function readPlaystyle(text5, env, fetchFn) {
     const list2 = (v, known) => Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === "string" && x in known))] : [];
     const shape = list2(o.shape, SHAPE_TRAITS), players = list2(o.players, PLAYER_TRAITS);
     if (!shape.length && !players.length) return words;
-    return { text: text5, shape, players, via: "ai", summary: typeof o.summary === "string" ? o.summary.replace(/\s+/g, " ").trim().slice(0, 300) : words.summary };
+    return { text: text6, shape, players, via: "ai", summary: typeof o.summary === "string" ? o.summary.replace(/\s+/g, " ").trim().slice(0, 300) : words.summary };
   } catch (e) {
     console.error("[fut-api] ideal squad playstyle:", e.message);
     return words;
@@ -14684,11 +14892,11 @@ function scoreFormations(base, pool, rules, ranked, style, current, must = {}) {
   return { options, squads };
 }
 async function idealSquad(db2, userId, base, pool, rules, input, team, env, fetchFn, beforeAi, statPicker) {
-  const text5 = input.playstyle.replace(/\s+/g, " ").trim().slice(0, MAX_PLAYSTYLE);
+  const text6 = input.playstyle.replace(/\s+/g, " ").trim().slice(0, MAX_PLAYSTYLE);
   if (env("ANTHROPIC_API_KEY") || env("CLAUDE_API_KEY")) beforeAi?.();
   const must = { strikers: input.strikers ?? null, defenders: input.defenders ?? null };
-  const style = withPills(await readPlaystyle(text5, env, fetchFn), input.traits ?? [], must);
-  const brief = [style.summary.includes("You picked") ? style.summary.slice(style.summary.indexOf("You picked")) : "", text5].filter(Boolean).join(" ");
+  const style = withPills(await readPlaystyle(text6, env, fetchFn), input.traits ?? [], must);
+  const brief = [style.summary.includes("You picked") ? style.summary.slice(style.summary.indexOf("You picked")) : "", text6].filter(Boolean).join(" ");
   let options = [], squads = /* @__PURE__ */ new Map();
   const plan = await teamPlan(db2, userId, {
     days: input.days,
@@ -14777,8 +14985,8 @@ async function setSharing(db2, userId, on) {
   }
   return { ...await getSharing(db2, userId), deleted };
 }
-function captureContributions(text5, now2 = Date.now()) {
-  const lines = text5.trim().split(/\r?\n/);
+function captureContributions(text6, now2 = Date.now()) {
+  const lines = text6.trim().split(/\r?\n/);
   const head = (lines.shift() ?? "").split(",").map((s) => s.trim());
   const col = (n2) => head.indexOf(n2);
   const [iEa, iPl, iPr, iAt, iLs] = ["ea_item_id", "platform", "price", "observed_at", "listings"].map(col);
@@ -14799,11 +15007,11 @@ function captureContributions(text5, now2 = Date.now()) {
   }
   return [...best.values()];
 }
-async function contributeCaptures(db2, userId, text5) {
-  if (!/^\s*ea_item_id,/.test(text5)) return { shared: 0, sharing: false };
+async function contributeCaptures(db2, userId, text6) {
+  if (!/^\s*ea_item_id,/.test(text6)) return { shared: 0, sharing: false };
   const { sharing } = await getSharing(db2, userId);
   if (!sharing) return { shared: 0, sharing: false };
-  const rows = captureContributions(text5);
+  const rows = captureContributions(text6);
   const ids = [...new Set(rows.map((r2) => r2.ea_item_id))];
   const have = /* @__PURE__ */ new Map();
   for (let i = 0; i < ids.length; i += 100) {
@@ -14871,7 +15079,7 @@ async function pullCommunity(db2, userId, market) {
 
 // supabase/functions/_shared/fut/ai-keys.ts
 var b64 = (bytes) => btoa(String.fromCharCode(...bytes));
-var unb64 = (text5) => Uint8Array.from(atob(text5), (c5) => c5.charCodeAt(0));
+var unb64 = (text6) => Uint8Array.from(atob(text6), (c5) => c5.charCodeAt(0));
 var KEY_SHAPE = /^sk-ant-[A-Za-z0-9_-]{20,250}$/;
 var MODELS_URL = "https://api.anthropic.com/v1/models?limit=1";
 async function sealKey(env) {
@@ -14981,7 +15189,7 @@ var REUSE_GRACE_MS = 30 * 1e3;
 var HELPER_KEY_PREFIX = "xlh_";
 var HELPER_ROUTES = /* @__PURE__ */ new Set(["/helper/prices", "/helper/club", "/helper/packs", "/helper/account", "/helper/images"]);
 var b642 = (bytes) => btoa(String.fromCharCode(...bytes));
-var unb642 = (text5) => Uint8Array.from(atob(text5), (c5) => c5.charCodeAt(0));
+var unb642 = (text6) => Uint8Array.from(atob(text6), (c5) => c5.charCodeAt(0));
 async function sealKey2(env) {
   const secret = env("HELPER_KEY_SECRET") || env("SUPABASE_SERVICE_ROLE_KEY");
   if (!secret) return null;
@@ -15656,12 +15864,12 @@ function assertUsable(source, use) {
 }
 
 // supabase/functions/_shared/fut/xilab/shared/csv.ts
-function parseCsv(text5) {
+function parseCsv(text6) {
   const rows = [];
   let row2 = [];
   let field = "";
   let quoted = false;
-  const s = text5.replace(/^﻿/, "");
+  const s = text6.replace(/^﻿/, "");
   for (let i = 0; i < s.length; i++) {
     const c5 = s[i];
     if (quoted) {
@@ -15702,8 +15910,8 @@ function captureDetailsFromRow(r2) {
 
 // supabase/functions/_shared/fut/xilab/market/import.ts
 var PLATFORM_ALIASES = { console: "console", ps: "console", playstation: "console", xbox: "console", ps5: "console", xsx: "console", pc: "pc" };
-function parsePriceImport(text5, opts) {
-  const t = text5.trim();
+function parsePriceImport(text6, opts) {
+  const t = text6.trim();
   let raw;
   if (t.startsWith("[") || t.startsWith("{")) {
     const j = JSON.parse(t);
@@ -16322,13 +16530,13 @@ function createMarketService(deps) {
       await deps.watchlists.remove(owner, card_id, platform);
     },
     /** Import a CSV/JSON price history the user owns. Rows stay private to them. */
-    async importPriceHistory(owner, text5, opts = {}) {
-      const captured = /^\s*ea_item_id,/.test(text5);
+    async importPriceHistory(owner, text6, opts = {}) {
+      const captured = /^\s*ea_item_id,/.test(text6);
       const source = sourceById.get(opts.source_id ?? (captured ? "web_app_capture" : "user_import"));
       assertUsable(source, "storage");
       const cards = await deps.cards.list(owner);
       const resolveEaItem = eaResolver(cards);
-      const res = parsePriceImport(text5, { source, received_at: opts.received_at ?? now2(), knownCardIds: new Set(cards.map((c5) => c5.id)), rules, resolveEaItem });
+      const res = parsePriceImport(text6, { source, received_at: opts.received_at ?? now2(), knownCardIds: new Set(cards.map((c5) => c5.id)), rules, resolveEaItem });
       const rejected = [...res.rejected];
       let held = 0;
       if (res.unmatched.length && deps.holds) held = (await deps.holds.hold(owner, res.unmatched)).held;
@@ -17259,14 +17467,14 @@ async function handle(req, deps) {
       }
       if (route === "/squads/import" && m === "POST") {
         const b = obj2(await body(req, MAX_SQUAD_IMPORT_BODY));
-        const text5 = typeof b.text === "string" ? b.text : null;
+        const text6 = typeof b.text === "string" ? b.text : null;
         const image = importImage(b.image);
         const { env, own } = await envForUser(db2, userId, deps.env ?? ((k) => Deno.env.get(k)));
         const perHour = own ? Infinity : Number(env("FUT_IMPORT_AI_PER_HOUR")) || AI_IMPORTS_PER_HOUR;
         const fetchFn = deps.fetch ?? fetch;
         const result2 = await runWorkspace(async () => {
           const squad = squadSchema.parse({ ...obj2(b.squad), owner_id: userId });
-          return importSquad(db2, userId, squad, { text: text5, image }, env, fetchFn, {
+          return importSquad(db2, userId, squad, { text: text6, image }, env, fetchFn, {
             beforeAi: () => {
               if (!aiImportAllowed(userId, perHour)) throw new FutError("That's a lot of squad reads this hour. Try again later, or type the squad as a list.", 429);
             }
@@ -17469,12 +17677,12 @@ async function handle(req, deps) {
       if (route === "/market/feeds/fc27-market" && m === "GET") return json({ data: await fc27MarketStatus(db2) });
       if (route === "/market/feeds/futgg" && m === "GET") return json({ data: await futggStatus(db2) });
       if (route === "/market/cards" && m === "GET") {
-        const p2 = url.searchParams, text5 = (k) => (p2.get(k) ?? "").trim() || null;
-        const position = text5("position"), type = text5("type"), sort = text5("sort") ?? "price_desc";
+        const p2 = url.searchParams, text6 = (k) => (p2.get(k) ?? "").trim() || null;
+        const position = text6("position"), type = text6("type"), sort = text6("sort") ?? "price_desc";
         if (position && !/^(GK|RB|CB|LB|CDM|CM|CAM|RM|LM|RW|LW|ST)$/.test(position)) throw new FutError("position must be a position code like ST or CB.");
         if (type && !["icon", "hero", "promo", "base"].includes(type)) throw new FutError("type must be icon, hero, promo or base.");
         if (!["price_desc", "price_asc", "rating_desc", "change_desc", "change_asc", "name"].includes(sort)) throw new FutError("Unknown sort.");
-        const q = text5("q");
+        const q = text6("q");
         if (q && q.length > 60) throw new FutError("Search is too long.");
         const { data, error } = await db2.rpc("futgg_market_cards", {
           p_platform: platformParam(p2.get("platform")),
