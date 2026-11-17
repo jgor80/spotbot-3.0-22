@@ -4679,6 +4679,8 @@ var READ_SCHEMA = {
 };
 
 // supabase/functions/_shared/fut/meta-builds.ts
+var RUN_MS = 3 * 36e5;
+var BUILD_WINDOW_DAYS = 63;
 var ARCH_KEYS = ARCHETYPES.map((a) => a.key);
 var STYLE_NAMES = PLAYSTYLES.map((p) => p.name);
 var ATTR_KEYS = ATTRIBUTES.map((a) => a.key);
@@ -4710,7 +4712,7 @@ var BUILD_SCHEMA = {
     } }
   }
 };
-async function loadMetaBuilds(db2, days = 180, now = Date.now()) {
+async function loadMetaBuilds(db2, days = BUILD_WINDOW_DAYS, now = Date.now()) {
   const { data, error } = await db2.rpc("kb_meta_build_rows", { p_days: days });
   if (error) throw new FutError(`The knowledge bank is unavailable: ${error.message ?? "error"}`, 500);
   const rows = Array.isArray(data) ? data : [];
@@ -4722,7 +4724,7 @@ var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type"
 };
-var PERIODS = [30, 90, 180, 365];
+var PERIODS = [30, 63, 90, 180, 365];
 var CACHE_MS = 10 * 6e4;
 var cached = /* @__PURE__ */ new Map();
 var json = (body, status = 200) => new Response(JSON.stringify(body), {
@@ -4734,7 +4736,7 @@ function createHandler(getDb) {
     if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
     if (req.method !== "GET") return json({ error: "GET only" }, 405);
     const asked = Number(new URL(req.url).searchParams.get("days"));
-    const days = PERIODS.includes(asked) ? asked : 180;
+    const days = PERIODS.includes(asked) ? asked : 63;
     try {
       const hit = cached.get(days);
       if (hit && Date.now() - hit.at < CACHE_MS) return json(hit.body);

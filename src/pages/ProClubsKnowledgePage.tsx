@@ -21,7 +21,7 @@ export default function ProClubsKnowledgePage() {
   const s = status.data;
   return <DashboardLayout><div className="space-y-6">
     <PageHeader title="Pro Clubs Knowledge Bank" description={<>
-      The builds the Pro Clubs community rates for each position, read from r/ProClubs, build videos and builds you add.
+      The builds the Pro Clubs community rates for each position, read from r/FIFAClubs, r/ProClubs, build videos and builds you add.
       {s ? ` ${(s.builds ?? 0).toLocaleString()} builds from ${s.sources.toLocaleString()} sources, last collected ${ago(s.last_run?.finished_at)}.` : ""}
       {" "}Ultimate Team tips are in the <Link to="/fut/knowledge" className="underline underline-offset-2">FUT Knowledge Bank</Link>.
     </>} />

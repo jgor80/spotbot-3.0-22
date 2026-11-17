@@ -32,7 +32,7 @@ export function FeedStatus({ status, area }: { status: KbStatus; area: KbArea })
   return <section className="space-y-3">
     <div className="grid gap-2 sm:grid-cols-3">
       <Feed on={status.feeds.reddit} name="Reddit" detail={!status.feeds.reddit ? "Turned off (FUT_KB_REDDIT_RSS=off)."
-        : clubs ? "Build posts from r/ProClubs, every 3 hours."
+        : clubs ? "Build posts from r/FIFAClubs and r/ProClubs, every 3 hours."
         : status.feeds.reddit_mode === "rss" ? "Top gameplay posts and comments from r/EASportsFC and r/fut through Reddit's public feeds, every 3 hours. Upvotes aren't included."
         : "Top gameplay posts and comments from r/EASportsFC and r/fut, every 3 hours."} />
       <Feed on={status.feeds.youtube} name="YouTube" detail={!status.feeds.youtube ? "Needs a YouTube Data API key (YOUTUBE_API_KEY on the server)."
@@ -76,7 +76,7 @@ function AddSource({ area, onAdded }: { area: KbArea; onAdded: () => void }) {
   return <section aria-labelledby="add-title" className="space-y-3 rounded-xl border border-border bg-card p-4">
     <div>
       <h2 id="add-title" className="flex items-center gap-2 font-display text-lg font-semibold"><Plus className="h-4 w-4 text-primary" />Add a source</h2>
-      <p className="text-sm text-muted-foreground">{clubs ? "Paste a Reddit post, a YouTube build video, a Pro Clubs Builder or GafferBot build link, or a build you write out. Claude reads the builds out of it for the community meta builds." : "Paste a Reddit or YouTube link, or any post, guide, video transcript or your own notes. Claude reads it into claims that join the map."} GafferBot doesn't copy other websites, so for other links paste the text too.</p>
+      <p className="text-sm text-muted-foreground">{clubs ? "Paste a Reddit post, a YouTube build video, a Pro Clubs Builder or GafferBot build link, or a build you write out. For a TikTok, paste the link and its caption or the build. Claude reads the builds out of it for the community meta builds." : "Paste a Reddit or YouTube link, or any post, guide, video transcript or your own notes. Claude reads it into claims that join the map."} GafferBot doesn't copy other websites, so for other links paste the text too.</p>
     </div>
     {sent && <p className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm" role="status">Here's the page you sent. Check it, trim anything that isn't gameplay talk, then press Add and read.</p>}
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!add.isPending) add.mutate(); }}>
