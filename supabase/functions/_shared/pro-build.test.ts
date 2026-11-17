@@ -5,10 +5,10 @@ import {
   accelerate, accelerateType, apAtLevel, apSpent, ARCHETYPES, attrCap, ATTRIBUTES, BODY, bodyEffects, buildPath, buildSummary, costBetween, costTier, decodeBuild, emptyBuild,
   encodeBuild, importProClubsBuilder, levelNeeded, matchValue, MAX_PLAYSTYLES, menuValue, normaliseBuild, PLAYSTYLE_DEFS, playstyleSlots, playstyleStatus, pointCost,
   raiseFor, SPECIALIZATIONS, specializationStatus, startValue, trainable,
-  levelRewards, levelNeededEstimate, limitToLevel, masteryText, nextStarCost, starCost, starRule, starsAp, LEVEL_CAP, HEIGHT_RANGE, WEIGHT_RANGE,
+  unlockValue, levelRewards, levelNeededEstimate, limitToLevel, masteryText, nextStarCost, starCost, starRule, starsAp, LEVEL_CAP, HEIGHT_RANGE, WEIGHT_RANGE,
 } from "../../../src/lib/proBuild.ts";
 import {
-  AP_BY_LEVEL, AP_BY_LEVEL_ESTIMATE, ATTR_MAX, ATTRIBUTE_KEYS, CAPS, COST_BANDS, COST_TIERS, MASTERIES, MASTERY_MILESTONES, PLAYSTYLE_SLOT_LEVELS,
+  AP_BY_LEVEL, AP_BY_LEVEL_ESTIMATE, MASTERY_COUNTS_FOR_UNLOCKS, ATTR_MAX, ATTRIBUTE_KEYS, CAPS, COST_BANDS, COST_TIERS, MASTERIES, MASTERY_MILESTONES, PLAYSTYLE_SLOT_LEVELS,
   SIGNATURE_PERK_LEVELS, SIGNATURE_PLUS_LEVELS, STARS, START_VALUES, ARCHETYPE_RULES,
 } from "../../../src/lib/proClubsData.ts";
 
@@ -114,7 +114,7 @@ Deno.test("prices follow the published worked examples", () => {
 });
 
 // AP to reach each specialization from a fresh level-1 build, as published by the community (Nov 2026)
-const SPEC_COSTS: Record<string, number> = {"shotstopper.shotstopper":455,"shotstopper.octopus":503,"shotstopper.spider":559,"sweeperkeeper.sweeperkeeper":380,"sweeperkeeper.launcher":428,"sweeperkeeper.extra":559,"progressor.progressor":401,"progressor.pioneer":543,"progressor.janitor":575,"boss.boss":316,"boss.capitano":519,"boss.enforcer":548,"marauder.marauder":353,"marauder.athlete":462,"marauder.speedster":545,"disruptor.disruptor":454,"disruptor.destroyer":497,"disruptor.anchor":618,"recycler.recycler":412,"recycler.thief":438,"recycler.driver":470,"maestro.heartbeat":397,"maestro.crasher":485,"maestro.maestro":544,"creator.creator":372,"creator.architect":394,"creator.sniper":509,"spark.joker":326,"spark.spark":465,"spark.ace":495,"magician.invader":348,"magician.magician":386,"magician.hotshot":525,"finisher.finisher":308,"finisher.hunter":388,"finisher.presser":457,"target.target":392,"target.runner":485,"target.roamer":573};
+const SPEC_COSTS: Record<string, number> = {"shotstopper.shotstopper":455,"shotstopper.octopus":503,"shotstopper.spider":559,"sweeperkeeper.sweeperkeeper":380,"sweeperkeeper.launcher":428,"sweeperkeeper.extra":559,"progressor.progressor":401,"progressor.pioneer":543,"progressor.janitor":575,"boss.boss":316,"boss.capitano":519,"boss.enforcer":548,"marauder.marauder":353,"marauder.athlete":462,"marauder.speedster":545,"disruptor.disruptor":454,"disruptor.destroyer":497,"disruptor.anchor":618,"recycler.recycler":412,"recycler.thief":438,"recycler.driver":470,"maestro.heartbeat":397,"maestro.crasher":485,"maestro.maestro":544,"creator.creator":372,"creator.architect":394,"creator.sniper":509,"spark.joker":418,"spark.spark":465,"spark.ace":495,"magician.invader":557,"magician.magician":386,"magician.hotshot":525,"finisher.finisher":308,"finisher.hunter":388,"finisher.presser":457,"target.target":392,"target.runner":485,"target.roamer":573};
 
 Deno.test("every specialization costs what the published table says from a fresh build", () => {
   eq(SPECIALIZATIONS.length, 39);
@@ -134,7 +134,8 @@ Deno.test("PlayStyles: signatures are automatic, others unlock by attribute, kee
   const fresh = playstyleStatus(emptyBuild("boss"));
   eq(fresh.find((s) => s.def.name === "Precision Header")!.apToUnlock, 30);
   eq(fresh.find((s) => s.def.name === "Slide Tackle")!.apToUnlock, 15);
-  ok(by("Precision Header").apToUnlock! < 30, "the level 55 mastery point counts towards unlocks");
+  // Boss's own Mastery adds Aggression, but Mastery points don't count towards a PlayStyle's thresholds
+  eq(by("Precision Header").apToUnlock, 30, "mastery points don't count towards unlocks");
   for (const n of ["Finesse Shot", "Gamechanger", "Incisive Pass", "Inventive"]) eq(by(n).apToUnlock, null, `${n} out of reach for a Boss`);
   eq(playstyleStatus({ ...emptyBuild("boss"), level: 19 }).filter((s) => s.plus).length, 0);
   eq(playstyleStatus({ ...emptyBuild("boss"), level: 20 }).filter((s) => s.plus).length, 1);
@@ -366,4 +367,57 @@ Deno.test("Lengthy needs 185 cm: 183 and 184 cm are Controlled", () => {
   eq([at(183), at(184)], ["Controlled", "Controlled"]);
   // Published star totals: the Target's skill moves are 48 AP to 5 stars
   eq(starCost("target", "skillMoves", 5), 48);
+});
+
+Deno.test("Pro Clubs HQ's PlayStyle page: how many archetypes reach each one, and the cheapest price", () => {
+  // "N of 13 can reach it, from X AP" for every PlayStyle on the page (keeper ones: 2 of 2). 0 = met at the start.
+  const PAGE: Record<string, [number, number]> = {
+    "Acrobatic": [11, 62], "Chip Shot": [13, 52], "Dead Ball": [11, 76], "Finesse Shot": [10, 46], "Gamechanger": [10, 58], "Low Driven Shot": [11, 52],
+    "Power Shot": [11, 112], "Precision Header": [13, 30], "Incisive Pass": [10, 46], "Inventive": [10, 60], "Long Ball Pass": [13, 70], "Pinged Pass": [13, 91],
+    "Tiki Taka": [13, 42], "Whipped Pass": [13, 31], "Aerial Fortress": [13, 0], "Anticipate": [9, 73], "Block": [13, 90], "Intercept": [13, 52], "Jockey": [8, 95],
+    "Slide Tackle": [12, 15], "First Touch": [13, 21], "Press Proven": [13, 74], "Rapid": [12, 62], "Technical": [12, 62], "Trickster": [12, 73], "Bruiser": [11, 46],
+    "Enforcer": [13, 74], "Long Throw": [13, 31], "Quick Step": [13, 46], "Relentless": [13, 79],
+    "1v1 Close Down": [2, 120], "Cross Claimer": [2, 74], "Deflector": [2, 53], "Far Reach": [2, 120], "Far Throw": [2, 31], "Footwork": [2, 152],
+  };
+  eq(Object.keys(PAGE).length, PLAYSTYLE_DEFS.length);
+  // Prices are from a new pro's starting values, as on the page (signatures priced like any other PlayStyle)
+  const price = (arch: string, def: (typeof PLAYSTYLE_DEFS)[number]) => {
+    let ap = 0;
+    for (const [k, need] of Object.entries(def.req) as [string, number][]) {
+      if (!trainable(arch, k) || need > attrCap(arch, k)) return null;
+      ap += costBetween(arch, k, startValue(arch, k), Math.max(need, startValue(arch, k)));
+    }
+    return ap;
+  };
+  for (const def of PLAYSTYLE_DEFS) {
+    const prices = ARCHETYPES.filter((a) => !def.keeperOnly || a.line === "GK").map((a) => price(a.key, def)).filter((n): n is number => n !== null);
+    eq([prices.length, Math.min(...prices)], PAGE[def.name], def.name);
+  }
+  // Aerial Fortress is the only one met at the start, on the Target, Boss and Progressor
+  eq(ARCHETYPES.filter((a) => price(a.key, PLAYSTYLE_DEFS.find((d) => d.name === "Aerial Fortress")!) === 0).map((a) => a.key).sort(), ["boss", "progressor", "target"]);
+  // The two ceilings that explain every outfield PlayStyle out of reach
+  eq(attrCap("boss", "curve"), 75);
+  eq(["finisher", "magician", "target"].map((a) => attrCap(a, "standingTackle")), [75, 75, 75]);
+  // 1,419 AP at level 55, and four regular slots at 5, 15, 40 and 55
+  eq(apAtLevel(55), 1419);
+  eq([4, 5, 14, 15, 39, 40, 54, 55].map(playstyleSlots), [0, 1, 1, 2, 2, 3, 3, 4]);
+});
+
+Deno.test("Specializations after EA's 23 October fix, and Mastery points left out of unlock checks", () => {
+  const spec = (key: string) => SPECIALIZATIONS.find((s) => s.key === key)!;
+  eq(spec("spark.joker").req, [["crossing", 92], ["longPassing", 90], ["curve", 90]]);
+  eq(spec("magician.invader").req, [["longPassing", 92], ["vision", 90], ["sprintSpeed", 90]]);
+  eq(spec("finisher.hunter").req, [["curve", 92], ["finishing", 90], ["balance", 90]]);
+  eq(spec("target.runner").req, [["sprintSpeed", 92], ["strength", 90], ["aggression", 90]]);
+  eq([spec("target.runner").plus, spec("shotstopper.octopus").plus], ["Rapid", "Footwork"]);
+  eq(spec("shotstopper.octopus").req, [["gkDiving", 92], ["strength", 90], ["gkPositioning", 90]]);
+  // No Specialization hands an archetype a PlayStyle+ it already has as a Signature
+  for (const s of SPECIALIZATIONS) ok(!ARCHETYPE_RULES[s.archetype].signatures.includes(s.plus), s.key);
+  // None of them asks for Attacking Positioning any more
+  for (const s of SPECIALIZATIONS) ok(!s.req.some(([k]) => k === "positioning"), s.key);
+  // A mastered Finisher shows +2 Finishing in the menu, but the unlock check reads the bought value
+  eq(MASTERY_COUNTS_FOR_UNLOCKS, false);
+  const b = normaliseBuild({ archetype: "finisher", level: 55, masteryLevels: { finisher: 55 }, points: { finishing: 88 - startValue("finisher", "finishing"), curve: 92 - startValue("finisher", "curve"), balance: 90 - startValue("finisher", "balance") } });
+  eq([menuValue(b, "finishing"), unlockValue(b, "finishing")], [90, 88]);
+  eq(specializationStatus(b).find((s) => s.spec.key === "finisher.hunter")!.met, false);
 });

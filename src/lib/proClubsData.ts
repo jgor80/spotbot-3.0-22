@@ -194,6 +194,10 @@ export const ACCELERATE = {
 // Masteries: levelling an archetype adds +1 to a pair of attributes on every archetype you own (the pairs
 // are EA's own table). MASTERY_MILESTONES says which of the pair each milestone level raises: at level 10
 // both get +1, level 30 the second gets +1 more, level 55 the first. A new milestone is one more row.
+// Do Mastery points count towards PlayStyle and Specialization targets? Community reports say no: the game
+// checks the attribute before bonuses (supplied by Jeff, 17 November 2026; not independently confirmed).
+// Flip this if that turns out wrong and every unlock check follows.
+export const MASTERY_COUNTS_FOR_UNLOCKS = false;
 export const MASTERY_MILESTONES: { level: number; first: number; second: number }[] = [
   { level: 10, first: 1, second: 1 },
   { level: 30, first: 0, second: 1 },
@@ -290,6 +294,11 @@ export const ARCHETYPE_RULES: Record<string, ArchetypeRules> = {
 // others at .other and you can swap either Signature for the listed PlayStyle+ (one Specialization at a
 // time, free to swap back). EA removed Attacking Positioning from every requirement on 22 October 2026
 // without naming replacements, which leaves four open: see the `unconfirmed` notes below.
+// The replacements used here (Joker Curve, Invader Sprint Speed, Hunter Balance, Runner Aggression, all 90) and
+// the two changed rewards (Runner gives Rapid+, Octopus gives Footwork+, so no Specialization repeats its own
+// archetype's Signature) come from one community post: a Reddit rundown of EA's 23 October 2026 fix by the
+// author of statifybuilder.com, passed on by Jeff on 17 November 2026. Its Signature and Mastery tables match
+// ours line for line. Not read from the game by us.
 export const SPECIALIZATION_TARGETS = { main: 92, other: 90 } as const;
 export interface Specialization { key: string; archetype: string; name: string; plus: string; req: [AttrKey, number][]; unconfirmed?: string }
 const spec = (archetype: string, name: string, plus: string, a: AttrKey, b: AttrKey, c: AttrKey | null, unconfirmed?: string): Specialization => ({
@@ -302,7 +311,7 @@ const spec = (archetype: string, name: string, plus: string, a: AttrKey, b: Attr
 });
 export const SPECIALIZATIONS: Specialization[] = [
   spec("shotstopper", "Shot Stopper+", "Cross Claimer", "gkHandling", "jumping", "gkPositioning"),
-  spec("shotstopper", "Octopus", "Deflector", "gkDiving", "strength", "gkPositioning"),
+  spec("shotstopper", "Octopus", "Footwork", "gkDiving", "strength", "gkPositioning", "Gives Footwork+ since EA's 23 October fix, was Deflector+ (one community post)"),
   spec("shotstopper", "Spider", "1v1 Close Down", "gkReflexes", "acceleration", "agility"),
   spec("sweeperkeeper", "Sweeper Keeper+", "Far Throw", "gkDiving", "vision", "gkKicking"),
   spec("sweeperkeeper", "Launcher", "Long Ball Pass", "gkKicking", "longPassing", "gkReflexes"),
@@ -328,17 +337,17 @@ export const SPECIALIZATIONS: Specialization[] = [
   spec("creator", "Creator+", "Whipped Pass", "vision", "crossing", "longPassing"),
   spec("creator", "Architect", "Dead Ball", "crossing", "shotPower", "fkAccuracy"),
   spec("creator", "Sniper", "Power Shot", "shotPower", "finishing", "longShots"),
-  spec("spark", "Joker", "Whipped Pass", "crossing", "longPassing", null, "EA dropped its Att. Positioning target; no replacement confirmed"),
+  spec("spark", "Joker", "Whipped Pass", "crossing", "longPassing", "curve", "Curve replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us)"),
   spec("spark", "Spark+", "Quick Step", "agility", "acceleration", "sprintSpeed"),
   spec("spark", "Ace", "Chip Shot", "finishing", "reactions", "ballControl"),
-  spec("magician", "Invader", "Incisive Pass", "longPassing", "vision", null, "EA dropped its Att. Positioning target; no replacement confirmed"),
+  spec("magician", "Invader", "Incisive Pass", "longPassing", "vision", "sprintSpeed", "Sprint Speed replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us)"),
   spec("magician", "Magician+", "First Touch", "ballControl", "acceleration", "composure"),
   spec("magician", "Hotshot", "Power Shot", "shotPower", "finishing", "longShots"),
   spec("finisher", "Finisher+", "Chip Shot", "composure", "reactions", "ballControl"),
-  spec("finisher", "Hunter", "Gamechanger", "curve", "finishing", "balance", "Balance replaced Att. Positioning according to one player report"),
+  spec("finisher", "Hunter", "Gamechanger", "curve", "finishing", "balance", "Balance replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us); an EA Forums player reported the same"),
   spec("finisher", "Presser", "Relentless", "stamina", "agility", "aggression"),
   spec("target", "Target+", "Acrobatic", "jumping", "agility", "volleys"),
-  spec("target", "Runner", "Enforcer", "sprintSpeed", "strength", "aggression", "Aggression replaced Att. Positioning according to one player report"),
+  spec("target", "Runner", "Rapid", "sprintSpeed", "strength", "aggression", "Aggression replaced Att. Positioning (one community post after EA's 23 October fix; not read in game by us); an EA Forums player reported the same. Gives Rapid+ since that fix, was Enforcer+"),
   spec("target", "Roamer", "Incisive Pass", "shortPassing", "vision", "longPassing"),
 ];
 
@@ -350,11 +359,11 @@ export const FACILITY_BOOST_MAX = 10;
 export const UNCONFIRMED_NOTES = [
   "Attribute ceilings: two community sites (Pro Clubs HQ, Pro Clubs Builder) agree on all 387; EA publishes none.",
   "Goalkeeper PlayStyle requirements (FC 26 values; a keeper's list hasn't been read in FC 27).",
-  "The third requirement of Joker and Invader since EA removed Attacking Positioning: no source has it. Hunter's Balance and Runner's Aggression come from one player's report.",
+  "Joker (Curve), Invader (Sprint Speed), Hunter (Balance) and Runner (Aggression): the requirement that replaced Attacking Positioning comes from one community post. So do Runner giving Rapid+ and Octopus giving Footwork+.",
   "The Target's skill move prices: 48 AP for 5 stars here (two sources); one source says 65.",
   "Lengthy AcceleRATE's minimum height: 185 cm here (EA's FC 26 number, not restated for FC 27); two community sites still show 183 cm.",
-  "Height and weight shifts are FC 26's, reported unchanged in FC 27.",
-  "Whether Mastery points count towards PlayStyle and Specialization targets, and whether they can pass a ceiling (the planner assumes yes, up to 99).",
+  "Height and weight shifts: community measurements say FC 26's apply to FC 27.",
+  "Mastery points don't count towards PlayStyle and Specialization targets here (community-reported). Whether they can pass a ceiling isn't known; the planner lets them, up to 99.",
   "Club facility boost sizes: type in what your club has.",
   "Amps (timed boosts, PlayStyles and PlayStyle+) aren't modelled.",
   "Levels past 55: FC 27 stops at 55 for now, so the level a bigger build would need is an estimate from FC 26's levels 56 to 100.",
