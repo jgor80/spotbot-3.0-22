@@ -13,6 +13,7 @@ import { META_POSITION_KEYS, metaBuilds, type BuildRow } from "../../../../src/l
 import { FutError } from "./service.ts";
 import { callClaude } from "./squad-import.ts";
 import { collectRedditRss, ReaderUnavailable, youtubeSources, ytJson, type CollectedSource } from "./knowledge.ts";
+import { collectWebBuildSources, creatorBuildVideos } from "./build-web.ts";
 
 type Env = (k: string) => string | undefined;
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -97,7 +98,7 @@ const BUILD_POST = /\b(builds?|archetypes?|playstyles?\+?|height|weight|\d{3}\s?
 export const isBuildPost = (p: { title?: string; selftext?: string }) => BUILD_POST.test(`${p.title ?? ""} ${(p.selftext ?? "").slice(0, 2000)}`);
 
 /** Pro Clubs build posts and (on YouTube hours) build videos, tagged area 'proclubs'. */
-export async function collectBuildSources(env: Env, fetchFn: Fetch, known: (ids: string[]) => Promise<Set<string>>, use: { reddit: boolean; youtube: boolean; seed?: boolean }, now = Date.now()): Promise<CollectedSource[]> {
+export async function collectBuildSources(env: Env, fetchFn: Fetch, known: (ids: string[]) => Promise<Set<string>>, use: { reddit: boolean; youtube: boolean; seed?: boolean; creators?: boolean; web?: boolean }, now = Date.now()): Promise<CollectedSource[]> {
   const out: CollectedSource[] = [];
   let failure: Error | null = null;
   if (use.reddit) {
@@ -113,6 +114,18 @@ export async function collectBuildSources(env: Env, fetchFn: Fetch, known: (ids:
       const fresh = BUILD_SEED_VIDEOS.filter((id) => !seen.has(id));
       if (fresh.length) out.push(...await youtubeSources(fresh.slice(0, 50), env, fetchFn, 0));
     } catch (e) { failure ??= e as Error; }
+  }
+  const since = now - buildWindowDays(env) * 86_400_000;
+  // Known Pro Clubs creators' newest build uploads: two quota units a channel, every run (build-web.ts)
+  if (use.creators && env("FUT_KB_BUILD_CREATORS") !== "off") {
+    try {
+      const ids = await creatorBuildVideos(env, fetchFn, known, since, Number(env("FUT_KB_BUILD_CREATOR_VIDEOS")) || 20);
+      if (ids.length) out.push(...await youtubeSources(ids, env, fetchFn, 0));
+    } catch (e) { failure ??= e as Error; }
+  }
+  // Build guides on sites that allow it (robots.txt checked each run)
+  if (use.web) {
+    try { out.push(...await collectWebBuildSources(env, fetchFn, known, since, olderGameTitle)); } catch (e) { failure ??= e as Error; }
   }
   if (use.youtube) {
     try {
@@ -132,7 +145,6 @@ export async function collectBuildSources(env: Env, fetchFn: Fetch, known: (ids:
   }
   if (!out.length && failure) throw failure;
   // One row per post or video (a post can be in more than one feed), FC 27 and inside the build window only
-  const since = now - buildWindowDays(env) * 86_400_000;
   const unique = new Map<string, CollectedSource & { area: "proclubs" }>();
   for (const s of out) if (!unique.has(`${s.kind}:${s.external_id}`) && !(Date.parse(s.published_at) < since) && !olderGameTitle(s.title)) unique.set(`${s.kind}:${s.external_id}`, { ...s, area: "proclubs" });
   return [...unique.values()];

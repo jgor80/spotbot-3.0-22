@@ -32,7 +32,7 @@ export function FeedStatus({ status, area }: { status: KbStatus; area: KbArea })
   return <section className="space-y-3">
     <div className="grid gap-2 sm:grid-cols-3">
       <Feed on={status.feeds.reddit} name="Reddit" detail={!status.feeds.reddit ? "Turned off (FUT_KB_REDDIT_RSS=off)."
-        : clubs ? "Build posts from r/FIFAClubs and r/ProClubs, every 3 hours."
+        : clubs ? "Build posts from r/FIFAClubs and r/ProClubs, Pro Clubs creators' build videos, and build guides from PRO11, RealSport101 and FenixBazaar, every 3 hours."
         : status.feeds.reddit_mode === "rss" ? "Top gameplay posts and comments from r/EASportsFC and r/fut through Reddit's public feeds, every 3 hours. Upvotes aren't included."
         : "Top gameplay posts and comments from r/EASportsFC and r/fut, every 3 hours."} />
       <Feed on={status.feeds.youtube} name="YouTube" detail={!status.feeds.youtube ? "Needs a YouTube Data API key (YOUTUBE_API_KEY on the server)."
